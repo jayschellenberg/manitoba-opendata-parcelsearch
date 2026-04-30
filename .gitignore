@@ -1,0 +1,41 @@
+# Node
+node_modules/
+web/node_modules/
+web/dist/
+.npm/
+
+# Local env (never commit API keys / Vercel tokens)
+.env
+.env.local
+.env.*.local
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Companion ETL pipeline — kept locally for reference, not part of this site
+mao-assembly/
+
+# R archive output (data files; trivially regenerable, often huge)
+*.gpkg
+*.tif
+*.parquet
+ParcelCrossRef_*.csv
+
+# Editor / tooling temp files
+*.tmp.*
+*.timestamp-*.mjs
+*.swp
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Plan files (kept in C:\Users\Jason\.claude\plans, but defensive)
+plan*.md
+*-stonebraker.md

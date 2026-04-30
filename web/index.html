@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Manitoba Parcel Search</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"
+    />
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Manitoba Parcel Search</h1>
+      <small>
+        Live data from
+        <a href="https://geoportal.gov.mb.ca" target="_blank" rel="noreferrer">Manitoba Open Data</a>
+        · <a href="#disclaimer">Disclaimer</a>
+      </small>
+    </header>
+
+    <details class="explainer" open>
+      <summary>About this tool</summary>
+      <div class="explainer-body">
+        <p>
+          Search Manitoba properties (excluding Winnipeg, which has its
+          <a href="https://winnipeg-opendata-parcelsearch.vercel.app/" target="_blank" rel="noreferrer">own portal</a>)
+          by civic address, municipality, or roll #. Each result is enriched
+          with its top-2 zoning districts (with coverage %) and its primary
+          development-plan designation, plus the bylaw numbers behind each.
+        </p>
+        <p>
+          Three live datasets are queried on every search:
+          <a href="https://geoportal.gov.mb.ca/datasets/manitoba::roll-entry/about" target="_blank" rel="noreferrer">Roll Entry</a> (parcels),
+          <a href="https://geoportal.gov.mb.ca/datasets/manitoba::manitoba-zoning-by-laws/about" target="_blank" rel="noreferrer">Zoning By-Laws</a>, and
+          <a href="https://geoportal.gov.mb.ca/datasets/manitoba::manitoba-development-plan-designations/about" target="_blank" rel="noreferrer">Development Plan Designations</a>.
+          No data is cached here — results always reflect what the province
+          published this morning.
+        </p>
+      </div>
+    </details>
+
+    <section class="controls">
+      <span class="field">
+        <select id="municipality" disabled>
+          <option value="">Loading municipalities…</option>
+        </select>
+        <span class="tip">Municipality</span>
+      </span>
+      <span class="field">
+        <input id="address" type="text" size="20" placeholder="Civic Address (contains)" />
+        <span class="tip">Civic Address (contains)</span>
+      </span>
+      <span class="field">
+        <input id="roll" type="text" size="12" placeholder="Roll # (exact)" />
+        <span class="tip">Roll # (exact match within selected municipality)</span>
+      </span>
+      <span class="field">
+        <select id="zone-category" disabled>
+          <option value="">Any zoning category</option>
+        </select>
+        <span class="tip">Zoning category</span>
+      </span>
+      <span class="field">
+        <select id="changed-status">
+          <option value="">Any status</option>
+          <option value="zoning">Zoning Changed</option>
+          <option value="devplan">Dev Plan Changed</option>
+          <option value="both">Both Changed</option>
+        </select>
+        <span class="tip">Filter by amendment status</span>
+      </span>
+      <span class="field">
+        <select id="du-mode">
+          <option value="">Any DU</option>
+          <option value="zero">0 DU only</option>
+          <option value="min">Min DU</option>
+        </select>
+        <span class="tip">Dwelling units filter</span>
+      </span>
+      <span class="field">
+        <input id="du-min" type="number" min="1" step="1" size="4" placeholder="Min #" disabled />
+        <span class="tip">Minimum dwelling units (when 'Min DU' is selected)</span>
+      </span>
+      <button id="search" type="button">Search</button>
+      <button id="clear"  type="button" class="secondary">Clear</button>
+      <button id="export" type="button" class="secondary">Export CSV</button>
+      <button id="muni-parcels-toggle" type="button" class="secondary" aria-pressed="false" disabled title="Show every parcel in the selected municipality (grey fabric under your search results)">Show Muni Parcels</button>
+      <button id="zoning-toggle"  type="button" class="secondary" aria-pressed="false">Show Zoning</button>
+      <button id="devplan-toggle" type="button" class="secondary" aria-pressed="false">Show Dev Plan</button>
+      <button id="contam-toggle"  type="button" class="secondary" aria-pressed="false" title="Manitoba Contaminated Sites Registry">Show Enviro</button>
+      <button id="traffic-toggle" type="button" class="secondary" aria-pressed="false" title="MHTIS traffic-count station locations">Show Stations</button>
+      <button id="flow-toggle"    type="button" class="secondary" aria-pressed="false" title="MHTIS Traffic Flow 2019 — segments coloured by AADT">Show Flow</button>
+      <span id="count" class="count"></span>
+    </section>
+
+    <details class="hint">
+      <summary>Search tips</summary>
+      <div class="hint-body">
+        <ul>
+          <li>
+            <strong>Address</strong> matches partial text against the
+            <code>Property_Address</code> column. Manitoba addresses are
+            often written without unit numbers (e.g. <code>285 MAIN ST</code>),
+            and rural parcels frequently store a quarter-section description
+            instead of a street address.
+          </li>
+          <li>
+            <strong>Municipality</strong> is a dropdown of every named muni
+            in the province. The same roll-number digits exist in many
+            municipalities, so always pair Roll # with a Muni for an exact
+            lookup.
+          </li>
+          <li>
+            <strong>Zoning</strong> and <strong>Dev-Plan</strong> category
+            filters resolve to a list of parcel IDs spatially, then AND with
+            your other filters. Slower than text-only searches — ~5-10
+            seconds for province-wide categorical sweeps.
+          </li>
+          <li>
+            Click any parcel polygon (or row) to focus the map on it. Toggle
+            the <em>Show Zoning</em> / <em>Show Dev Plan</em> overlays to
+            see the underlying designation polygons coloured by category.
+          </li>
+        </ul>
+      </div>
+    </details>
+
+    <div id="map">
+      <div id="map-legend" class="map-legend" hidden>
+        <strong>Legend</strong>
+        <ul>
+          <li><span class="swatch parcel"></span>Parcel (Roll Entry)</li>
+        </ul>
+      </div>
+      <div id="flow-legend" class="map-legend flow-legend" hidden>
+        <strong>AADT (2019)</strong>
+        <ul>
+          <li><span class="swatch" style="background:#cccccc"></span>&lt; 500</li>
+          <li><span class="swatch" style="background:#a8d8a8"></span>500 – 2,000</li>
+          <li><span class="swatch" style="background:#f4d35e"></span>2,000 – 5,000</li>
+          <li><span class="swatch" style="background:#ee964b"></span>5,000 – 10,000</li>
+          <li><span class="swatch" style="background:#d62828"></span>10,000 – 25,000</li>
+          <li><span class="swatch" style="background:#6d191b"></span>&gt; 25,000</li>
+        </ul>
+      </div>
+    </div>
+
+    <div id="results-wrap">
+      <table id="results">
+        <thead>
+          <tr>
+            <th data-col="roll">Roll #</th>
+            <th data-col="address">Address</th>
+            <th data-col="zone1">Zoning</th>
+            <th data-col="zone1pct">%</th>
+            <th data-col="zone2">Zoning 2</th>
+            <th data-col="zone2pct">%</th>
+            <th data-col="zbl">Zoning By-law</th>
+            <th data-col="dev1">Dev-Plan Designation</th>
+            <th data-col="dpbylaw">DP By-law</th>
+            <th data-col="changes">Changes</th>
+            <th data-col="du">DU</th>
+            <th data-col="acres">Acres</th>
+            <th data-col="sf">SF</th>
+            <th data-col="walk" title="Open this address on walkscore.com">Walkscore</th>
+            <th data-col="value">Total Value</th>
+            <th data-col="report">Asmt&nbsp;Report</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <footer id="disclaimer" class="disclaimer">
+      <strong>Disclaimer:</strong> This site is provided without warranty
+      and is for general information only. Data is queried live from the
+      Province of Manitoba's open data portal and may be incomplete, out
+      of date, or inaccurate. Zoning and development-plan designations are
+      matched to each parcel by spatial overlap; coverage percentages are
+      computed client-side and assume both layers are spatially aligned to
+      the parcel polygons (in practice they are usually but not always —
+      bylaw amendments occasionally land in the source data weeks behind
+      the actual zoning change). Do not rely on these results without
+      independent verification from Manitoba Assessment Online, the
+      municipality's planning office, or a qualified professional.
+    </footer>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

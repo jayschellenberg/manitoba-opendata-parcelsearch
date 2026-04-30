@@ -1,0 +1,21 @@
+{
+  "name": "manitoba-opendata-parcelsearch",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@turf/area": "^7.1.0",
+    "@turf/bbox": "^7.1.0",
+    "@turf/boolean-point-in-polygon": "^7.3.4",
+    "@turf/intersect": "^7.1.0",
+    "maplibre-gl": "^4.7.1"
+  },
+  "devDependencies": {
+    "vite": "^5.4.10"
+  }
+}
