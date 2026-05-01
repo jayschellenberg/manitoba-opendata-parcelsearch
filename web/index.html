@@ -35,8 +35,12 @@
           <a href="https://geoportal.gov.mb.ca/datasets/manitoba::roll-entry/about" target="_blank" rel="noreferrer">Roll Entry</a> (parcels),
           <a href="https://geoportal.gov.mb.ca/datasets/manitoba::manitoba-zoning-by-laws/about" target="_blank" rel="noreferrer">Zoning By-Laws</a>, and
           <a href="https://geoportal.gov.mb.ca/datasets/manitoba::manitoba-development-plan-designations/about" target="_blank" rel="noreferrer">Development Plan Designations</a>.
-          No data is cached here — results always reflect what the province
-          published this morning.
+          Search results always run live against the province; the
+          municipality + category dropdowns and the overlay layers
+          (zoning, dev-plan, contaminated sites, traffic flow, full muni
+          parcel fabric) are cached in your browser for up to 7 days so
+          repeat work in the same area stays snappy. The Clear button
+          wipes that cache.
         </p>
       </div>
     </details>
@@ -128,12 +132,6 @@
     </details>
 
     <div id="map">
-      <div id="map-legend" class="map-legend" hidden>
-        <strong>Legend</strong>
-        <ul>
-          <li><span class="swatch parcel"></span>Parcel (Roll Entry)</li>
-        </ul>
-      </div>
       <div id="zoning-legend" class="map-legend zoning-legend" hidden>
         <strong>Zoning category</strong>
         <ul></ul>

@@ -70,7 +70,6 @@ const $muniParcelsToggle = document.getElementById('muni-parcels-toggle');
 const $count         = document.getElementById('count');
 const $tbody         = document.querySelector('#results tbody');
 const $mapEl         = document.getElementById('map');
-const $legend        = document.getElementById('map-legend');
 const $flowLegend    = document.getElementById('flow-legend');
 const $zoningLegend  = document.getElementById('zoning-legend');
 
@@ -398,7 +397,6 @@ async function runSearch() {
 // ---------- Map / overlay helpers ----------
 
 function setMapData(parcelFc, zoningFc, devPlanFc) {
-  if ($legend) $legend.hidden = parcelFc.features.length === 0;
   mapReady.then(() => {
     showResults(map, parcelFc);
     setZoningData(map, zoningFc);
