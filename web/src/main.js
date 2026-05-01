@@ -206,6 +206,86 @@ const $staticMapOutput = document.getElementById('static-map-output');
 if ($staticMapBtn) $staticMapBtn.addEventListener('click', generateStaticMap);
 
 /**
+ * Draw the WebGL map canvas into a 2D canvas and burn the live
+ * attribution text into the bottom-right corner. Without this the
+ * saved PNG would show no basemap / data credit even though the live
+ * map does — the WebGL canvas alone doesn't include the
+ * AttributionControl DOM overlay. The returned data URL carries the
+ * credit with the image so it survives right-click → Save.
+ */
+function composeWithAttribution(srcCanvas) {
+  const w = srcCanvas.width;
+  const h = srcCanvas.height;
+  const out = document.createElement('canvas');
+  out.width = w;
+  out.height = h;
+  const ctx = out.getContext('2d');
+  ctx.drawImage(srcCanvas, 0, 0);
+
+  // Pull the exact text MapLibre shows in its attribution control. This
+  // keeps the static image in sync with whatever sources/overlays are
+  // currently visible — basemap (CARTO Positron or Esri Imagery), zoning,
+  // dev-plan, contam, traffic, etc. — without us having to enumerate them.
+  const attribEl = $mapEl.querySelector('.maplibregl-ctrl-attrib-inner') ||
+                   $mapEl.querySelector('.maplibregl-ctrl-attrib');
+  let text = attribEl ? attribEl.innerText.replace(/\s+/g, ' ').trim() : '';
+  if (!text) text = '© OpenStreetMap © CARTO';
+
+  // Style the credit similar to the live map's bottom-right overlay:
+  // small text, semi-transparent white pill, dark text. Use the device
+  // pixel ratio so it stays sharp at high-DPI; fall back to 1.
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const fontSize = Math.max(11, Math.round(11 * dpr * 0.9));
+  ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
+  ctx.textBaseline = 'middle';
+  // Wrap the attribution onto multiple lines if it's too long for the
+  // image width — common when several overlays are active.
+  const maxWidth = Math.floor(w * 0.85);
+  const lines = wrapToWidth(ctx, text, maxWidth);
+  const padX = 8;
+  const padY = 5;
+  const lineHeight = Math.round(fontSize * 1.25);
+  const blockH = lines.length * lineHeight + padY * 2 - (lineHeight - fontSize);
+  // Compute pill width as the widest line (plus padding).
+  let blockW = 0;
+  for (const line of lines) blockW = Math.max(blockW, ctx.measureText(line).width);
+  blockW = Math.ceil(blockW + padX * 2);
+  const x0 = w - blockW - 6;
+  const y0 = h - blockH - 6;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+  ctx.fillRect(x0, y0, blockW, blockH);
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x0 + 0.5, y0 + 0.5, blockW - 1, blockH - 1);
+  ctx.fillStyle = '#1a1a1a';
+  for (let i = 0; i < lines.length; i++) {
+    const yMid = y0 + padY + i * lineHeight + Math.round(fontSize / 2);
+    ctx.fillText(lines[i], x0 + padX, yMid);
+  }
+  return out.toDataURL('image/png');
+}
+
+/** Greedy word-wrap: break `text` into lines that each measure ≤ maxWidth
+ *  in the canvas' current font. Single words longer than maxWidth pass
+ *  through unbroken (rare for attribution text). */
+function wrapToWidth(ctx, text, maxWidth) {
+  const words = text.split(/\s+/);
+  const lines = [];
+  let line = '';
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (ctx.measureText(candidate).width <= maxWidth) {
+      line = candidate;
+    } else {
+      if (line) lines.push(line);
+      line = word;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+/**
  * Capture the current interactive-map view as a static <img>. Forces a
  * synchronous repaint first so every layer toggle flag (zoning, dev-plan,
  * traffic, contam, muni-parcels, etc.) is reflected in the framebuffer
@@ -235,7 +315,7 @@ async function generateStaticMap() {
       map.triggerRepaint();
     });
     const canvas = map.getCanvas();
-    const dataUrl = canvas.toDataURL('image/png');
+    const dataUrl = composeWithAttribution(canvas);
     $staticMapOutput.hidden = false;
     $staticMapOutput.innerHTML = '';
     const img = document.createElement('img');
