@@ -724,9 +724,9 @@ function renderTable(rows) {
     tr.appendChild(td(formatDu(p.Dwelling_Units), 'num'));
     tr.appendChild(td(formatAcres(ac), 'num'));
     tr.appendChild(td(formatSf(ac), 'num'));
+    tr.appendChild(assessmentCell(p));
     tr.appendChild(walkCell(row));
     tr.appendChild(floodCell(row));
-    tr.appendChild(assessmentCell(p));
     frag.appendChild(tr);
   }
   $tbody.appendChild(frag);
@@ -1057,8 +1057,8 @@ function exportCsv() {
     'Dev-Plan Designation', 'DP By-law',
     'Changes',
     'DU', 'Acres', 'SF',
-    'Walkscore URL', 'Flood-Map URL',
     csvAssessHeader(currentRows), 'Asmt Report URL',
+    'Walkscore URL', 'Flood-Map URL',
   ];
   const lines = [header.map(csvCell).join(',')];
   for (const row of currentRows) {
@@ -1076,10 +1076,10 @@ function exportCsv() {
       p.Dwelling_Units ?? '',
       formatAcresCsv(ac),
       ac != null && Number.isFinite(ac) && ac > 0 ? Math.round(ac * 43560) : '',
-      walkscoreUrl(p),
-      floodMapUrl(row),
       parseTotalValue(p.Total_Value) ?? '',
       p.Asmt_Rpt_Url ?? '',
+      walkscoreUrl(p),
+      floodMapUrl(row),
     ].map(csvCell).join(','));
   }
   const blob = new Blob(['﻿' + lines.join('\r\n')], {
