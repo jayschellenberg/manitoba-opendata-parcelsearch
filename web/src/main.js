@@ -128,7 +128,6 @@ const SORT_KEYS = {
   zone1:   (r) => strKey(r.zoning[0]?.feature.properties.ZONE),
   zone1pct:(r) => finiteOrNeg(r.zoning[0]?.ratio),
   zone2:   (r) => strKey(r.zoning[1]?.feature.properties.ZONE),
-  zone2pct:(r) => finiteOrNeg(r.zoning[1]?.ratio),
   zbl:     (r) => strKey(r.zoning[0]?.feature.properties.ZBL),
   dev1:    (r) => strKey(r.devPlan[0]?.feature.properties.DES_NAME),
   dpbylaw: (r) => strKey(r.devPlan[0]?.feature.properties.DP_BYLAW),
@@ -513,6 +512,12 @@ async function runSearch() {
       if (z) row.parcel.properties._zoneCode = z.ZONE || z.ZONE_NAME || null;
     }
 
+    // Stamp the most-common assessment year into the Total Value column
+    // header so users can tell which assessment cycle the dollar figure
+    // is anchored to (Manitoba's general assessment year rolls every
+    // two years; the field is sometimes mid-cycle for a recent revision).
+    updateAssessmentYearHeader(rows);
+
     renderTable(rows);
     setMapData(parcelFc, zoningFc, devPlanFc);
     setCount(baseMsg);
@@ -712,7 +717,6 @@ function renderTable(rows) {
     tr.appendChild(td(formatZoneCode(z1)));
     tr.appendChild(td(formatPercent(row.zoning[0]?.ratio), 'num'));
     tr.appendChild(td(z2Show ? formatZoneCode(z2) : null));
-    tr.appendChild(td(z2Show ? formatPercent(z2ratio) : null, 'num'));
     tr.appendChild(td(z1.ZBL));
     tr.appendChild(td(formatDes(d1)));
     tr.appendChild(td(d1.DP_BYLAW));
@@ -1017,12 +1021,12 @@ function exportCsv() {
   const header = [
     'Roll #', 'Address',
     'Zoning', 'Zoning %',
-    'Zoning 2', 'Zoning 2 %', 'Zoning By-law',
+    'Zoning 2', 'ZBL',
     'Dev-Plan Designation', 'DP By-law',
     'Changes',
     'DU', 'Acres', 'SF',
     'Walkscore URL', 'Flood-Map URL',
-    'Total Value ($)', 'Asmt Report URL',
+    csvAssessHeader(currentRows), 'Asmt Report URL',
   ];
   const lines = [header.map(csvCell).join(',')];
   for (const row of currentRows) {
@@ -1034,7 +1038,7 @@ function exportCsv() {
     lines.push([
       p.Roll_No_Txt, p.Property_Address,
       formatZoneCode(z1), ratioPct(row.zoning[0]?.ratio),
-      formatZoneCode(z2), ratioPct(row.zoning[1]?.ratio), z1.ZBL,
+      formatZoneCode(z2), z1.ZBL,
       formatDes(d1), d1.DP_BYLAW,
       formatChanges(row),
       p.Dwelling_Units ?? '',
@@ -1069,6 +1073,44 @@ function ratioPct(v) {
 function formatAcresCsv(v) {
   if (v == null || !Number.isFinite(v)) return '';
   return v.toFixed(3);
+}
+
+/** CSV header label for the Assessment column. Mirrors the table-header
+ *  logic so the export carries the same year stamp as what the user saw. */
+function csvAssessHeader(rows) {
+  const counts = new Map();
+  for (const row of rows || []) {
+    const yr = Number(row.parcel.properties?.AsmtYr);
+    if (Number.isFinite(yr)) counts.set(yr, (counts.get(yr) || 0) + 1);
+  }
+  let best = null, bestCount = 0;
+  for (const [yr, c] of counts) if (c > bestCount) { best = yr; bestCount = c; }
+  return best != null ? `Assess-${best} ($)` : 'Assessment ($)';
+}
+
+/**
+ * Update the Total Value column header to "Assess-{year}" using the
+ * most-common AsmtYr across the current result set. Falls back to a
+ * generic "Assessment" label when no rows have an AsmtYr (rare —
+ * the field is on every Roll_Entry record). One header per search.
+ */
+function updateAssessmentYearHeader(rows) {
+  const $hdr = document.getElementById('value-header');
+  if (!$hdr) return;
+  const counts = new Map();
+  for (const row of rows || []) {
+    const yr = row.parcel.properties?.AsmtYr;
+    if (yr == null || yr === '') continue;
+    const n = Number(yr);
+    if (!Number.isFinite(n)) continue;
+    counts.set(n, (counts.get(n) || 0) + 1);
+  }
+  let best = null;
+  let bestCount = 0;
+  for (const [yr, c] of counts) {
+    if (c > bestCount) { best = yr; bestCount = c; }
+  }
+  $hdr.textContent = best != null ? `Assess-${best}` : 'Assessment';
 }
 
 /** Compose the walkscore.com search URL for a parcel, or '' when no

@@ -503,21 +503,21 @@ header small a {
 }
 
 /* Free-form text columns read better left-aligned: Address (2), Zoning (3),
-   Zoning 2 (5), Zoning By-law (7), Dev-Plan (8), DP By-law (9), Changes (10). */
+   Zoning 2 (5), ZBL (6), Dev-Plan (7), DP By-law (8), Changes (9). */
 #results th:nth-child(2),
 #results td:nth-child(2),
 #results th:nth-child(3),
 #results td:nth-child(3),
 #results th:nth-child(5),
 #results td:nth-child(5),
+#results th:nth-child(6),
+#results td:nth-child(6),
 #results th:nth-child(7),
 #results td:nth-child(7),
 #results th:nth-child(8),
 #results td:nth-child(8),
 #results th:nth-child(9),
-#results td:nth-child(9),
-#results th:nth-child(10),
-#results td:nth-child(10) {
+#results td:nth-child(9) {
   text-align: left;
 }
 

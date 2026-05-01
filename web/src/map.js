@@ -581,9 +581,14 @@ export function initMap(container, { onFeatureClick } = {}) {
         if (overSearchResult) { muniHoverPopup.remove(); return; }
         const p = e.features?.[0]?.properties;
         if (!p) return;
+        // Pull zoning + dev-plan info from whatever overlay layers are
+        // currently visible at the cursor so the muni-parcel popup is
+        // as informative as the search-result popup. Without this, hover
+        // on a non-result parcel showed only the Roll Entry attributes.
+        const overlay = readOverlaysAt(map, e.point);
         muniHoverPopup
           .setLngLat(e.lngLat)
-          .setHTML(muniParcelHtml(p))
+          .setHTML(muniParcelHtml(p, { overlay }))
           .addTo(map);
         map.getCanvas().style.cursor = 'pointer';
       });
@@ -604,9 +609,10 @@ export function initMap(container, { onFeatureClick } = {}) {
         if (overSearchResult) return;
         const p = e.features?.[0]?.properties;
         if (!p) return;
+        const overlay = readOverlaysAt(map, e.point);
         muniClickPopup
           .setLngLat(e.lngLat)
-          .setHTML(muniParcelHtml(p, { withReportLink: true }))
+          .setHTML(muniParcelHtml(p, { withReportLink: true, overlay }))
           .addTo(map);
       });
 
@@ -869,12 +875,35 @@ function trafficFlowHtml(p) {
   return `<div style="max-width:260px;line-height:1.4">${lines.join('<br>')}</div>`;
 }
 
+/** Read whichever overlay polygons sit under a screen point, restricted
+ *  to layers that are currently visible. Used by the muni-parcels hover/
+ *  click popups so they can show zoning + dev-plan info on parcels that
+ *  aren't the search result. Returns the first hit's properties for each
+ *  layer, or null if the layer is hidden / nothing's there. */
+function readOverlaysAt(map, point) {
+  const out = { zoning: null, devplan: null };
+  if (map.getLayer('zoning-fill') &&
+      map.getLayoutProperty('zoning-fill', 'visibility') === 'visible') {
+    const hit = map.queryRenderedFeatures(point, { layers: ['zoning-fill'] })[0];
+    if (hit) out.zoning = hit.properties;
+  }
+  if (map.getLayer('devplan-fill') &&
+      map.getLayoutProperty('devplan-fill', 'visibility') === 'visible') {
+    const hit = map.queryRenderedFeatures(point, { layers: ['devplan-fill'] })[0];
+    if (hit) out.devplan = hit.properties;
+  }
+  return out;
+}
+
 /**
  * Build the popup body for a muni-parcels feature. Hover variant shows
  * just the lightweight info; click variant adds an assessment-report
- * link if Asmt_Rpt_Url is present.
+ * link if Asmt_Rpt_Url is present. When the zoning or dev-plan overlay
+ * is currently active, the matching info from those layers is appended
+ * — same behaviour as the search-result hover, but for arbitrary muni
+ * parcels.
  */
-function muniParcelHtml(p, { withReportLink = false } = {}) {
+function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
   const lines = [];
   if (p.Roll_No_Txt)      lines.push(`<strong>Roll #</strong> ${escapeHtml(p.Roll_No_Txt)}`);
   if (p.Property_Address) lines.push(escapeHtml(p.Property_Address));
@@ -900,13 +929,31 @@ function muniParcelHtml(p, { withReportLink = false } = {}) {
       lines.push(`<strong>Total Value</strong> $${Math.round(n).toLocaleString('en-US')}`);
     }
   }
+  if (overlay?.zoning) {
+    const z = overlay.zoning;
+    const code = z.ZONE || z.ZONE_NAME;
+    const name = z.ZONE_NAME && z.ZONE_NAME !== z.ZONE ? z.ZONE_NAME : null;
+    const bits = [];
+    if (code) bits.push(`<strong>${escapeHtml(code)}</strong>`);
+    if (name) bits.push(escapeHtml(name));
+    if (z.ZBL) bits.push(`By-law ${escapeHtml(z.ZBL)}`);
+    if (bits.length) lines.push(`<span style="color:#1a3a4a">Zoning</span>: ${bits.join(' &middot; ')}`);
+  }
+  if (overlay?.devplan) {
+    const d = overlay.devplan;
+    const bits = [];
+    if (d.DES_NAME)     bits.push(`<strong>${escapeHtml(d.DES_NAME)}</strong>`);
+    if (d.DES_CATEGORY) bits.push(escapeHtml(d.DES_CATEGORY));
+    if (d.DP_BYLAW)     bits.push(`By-law ${escapeHtml(d.DP_BYLAW)}`);
+    if (bits.length) lines.push(`<span style="color:#1a3a4a">Dev Plan</span>: ${bits.join(' &middot; ')}`);
+  }
   if (withReportLink) {
     const safeReport = safeExternalUrl(p.Asmt_Rpt_Url);
     if (safeReport) {
       lines.push(`<a href="${escapeHtml(safeReport)}" target="_blank" rel="noreferrer">Assessment report →</a>`);
     }
   }
-  return `<div style="max-width:260px;line-height:1.4">${lines.join('<br>')}</div>`;
+  return `<div style="max-width:300px;line-height:1.4">${lines.join('<br>')}</div>`;
 }
 
 function emptyFc() { return { type: 'FeatureCollection', features: [] }; }
