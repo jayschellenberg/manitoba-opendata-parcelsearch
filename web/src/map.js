@@ -39,6 +39,50 @@ export function paletteLegendEntries(palette) {
   return entries;
 }
 
+/** Stable HSL colour from a string. Same input always produces the same
+ *  colour, so a zoning code (e.g. "C2") looks identical across sessions
+ *  and across the paint expression / legend swatch. The hue spread is
+ *  golden-ratio-derived so adjacent codes never collide. */
+export function colorForZoneCode(code) {
+  if (!code) return '#cccccc';
+  let hash = 0;
+  const s = String(code);
+  for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) | 0;
+  // Golden-ratio hue spacing keeps distinct codes well-separated.
+  const hue = ((hash >>> 0) * 0.61803398875) % 1;
+  return hslToHex(hue, 0.55, 0.72);
+}
+function hslToHex(h, s, l) {
+  const f = (n) => {
+    const k = (n + h * 12) % 12;
+    const a = s * Math.min(l, 1 - l);
+    const v = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    return Math.round(v * 255).toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+/** Build the [match-key, color, ...] pair list MapLibre needs for a
+ *  per-feature zoning paint, given the zoning-overlay FC currently on
+ *  screen. Returns { matchPairs, legend } where legend is sorted by
+ *  zoning code for predictable rendering. */
+export function buildZoneCodePaint(zoningFc) {
+  const codes = new Set();
+  for (const f of zoningFc?.features || []) {
+    const code = (f.properties?.ZONE || '').trim();
+    if (code) codes.add(code);
+  }
+  const sorted = [...codes].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const matchPairs = [];
+  const legend = [];
+  for (const code of sorted) {
+    const color = colorForZoneCode(code);
+    matchPairs.push(code, color);
+    legend.push({ label: code, color });
+  }
+  return { matchPairs, legend };
+}
+
 // Categorical fill colors keyed off ZONE_CATEGORY. The real Manitoba
 // Zoning dataset uses a long-tailed vocabulary (~30 distinct values
 // including a few obvious typos like "Residental" and "Settlement Center"
@@ -211,7 +255,10 @@ export function initMap(container, { onFeatureClick } = {}) {
         source: 'zoning',
         layout: { visibility: 'none' },
         paint: {
-          'fill-color': ['match', ['get', 'ZONE_CATEGORY'], ...ZONING_PALETTE, '#cccccc'],
+          // Seed paint reads ZONE; the real per-search match-expression is
+          // pushed in by main.js via setZoningPaint() once we know which
+          // codes are on screen. Until then everything renders grey.
+          'fill-color': '#cccccc',
           'fill-opacity': 0.45,
           'fill-outline-color': '#444',
         },
@@ -565,6 +612,23 @@ export function flyToFeature(map, feature) {
 export function setZoningData(map, fc) {
   const src = map.getSource('zoning');
   if (src) src.setData(fc);
+}
+
+/**
+ * Swap the zoning-fill paint to a `match` expression keyed on ZONE code.
+ * `pairs` is the flat [code, color, code, color, ...] list returned from
+ * buildZoneCodePaint(). Falls back to grey for any unmatched codes (which
+ * shouldn't happen since pairs are derived from the same FC) and clears
+ * to a flat grey when there are no pairs.
+ */
+export function setZoningPaint(map, pairs) {
+  if (!map.getLayer('zoning-fill')) return;
+  if (!pairs || pairs.length === 0) {
+    map.setPaintProperty('zoning-fill', 'fill-color', '#cccccc');
+    return;
+  }
+  map.setPaintProperty('zoning-fill', 'fill-color',
+    ['match', ['get', 'ZONE'], ...pairs, '#cccccc']);
 }
 export function setDevPlanData(map, fc) {
   const src = map.getSource('devplan');

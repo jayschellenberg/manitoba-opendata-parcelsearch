@@ -34,6 +34,7 @@ import {
   initMap,
   showResults,
   setZoningData,
+  setZoningPaint,
   setDevPlanData,
   setZoningVisible,
   setDevPlanVisible,
@@ -46,8 +47,7 @@ import {
   setMuniParcelsData,
   setMuniParcelsVisible,
   flyToFeature,
-  ZONING_PALETTE,
-  paletteLegendEntries,
+  buildZoneCodePaint,
 } from './map.js';
 import turfArea from '@turf/area';
 
@@ -74,15 +74,32 @@ const $legend        = document.getElementById('map-legend');
 const $flowLegend    = document.getElementById('flow-legend');
 const $zoningLegend  = document.getElementById('zoning-legend');
 
-// Build the zoning-category legend once at startup from the same palette
-// the map paint expression uses, so the swatches and the rendered colours
-// can never drift apart.
-(function buildZoningLegend() {
+/**
+ * Refresh the zoning-code legend AND the corresponding map paint
+ * expression. Called after every search once the zoning enrichment FC
+ * has landed, so the legend reflects only the codes actually visible
+ * on screen — much more useful than a static category list when the
+ * user is looking at one specific muni.
+ */
+function rebuildZoningLegend(zoningFc) {
   if (!$zoningLegend) return;
   const ul = $zoningLegend.querySelector('ul');
+  const head = $zoningLegend.querySelector('strong');
+  if (head) head.textContent = 'Zoning code';
   if (!ul) return;
+  const { matchPairs, legend } = buildZoneCodePaint(zoningFc);
+  // Mirror the colour assignment into the live paint expression so the
+  // map and legend can never drift.
+  mapReady.then(() => setZoningPaint(map, matchPairs));
   ul.innerHTML = '';
-  for (const { label, color } of paletteLegendEntries(ZONING_PALETTE)) {
+  if (legend.length === 0) {
+    const li = document.createElement('li');
+    li.style.color = '#888';
+    li.textContent = '— no zoning data for this search —';
+    ul.appendChild(li);
+    return;
+  }
+  for (const { label, color } of legend) {
     const li = document.createElement('li');
     const sw = document.createElement('span');
     sw.className = 'swatch';
@@ -91,7 +108,7 @@ const $zoningLegend  = document.getElementById('zoning-legend');
     li.appendChild(document.createTextNode(label));
     ul.appendChild(li);
   }
-})();
+}
 
 const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
@@ -347,6 +364,7 @@ async function runSearch() {
     }
     lastZoningFc = zoningFc;
     lastDevPlanFc = devPlanFc;
+    rebuildZoningLegend(zoningFc);
 
     const zoningTop2  = joinTopNByArea(parcelFc, zoningFc, 2);
     const devPlanTop2 = joinTopNByArea(parcelFc, devPlanFc, 2);
