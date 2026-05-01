@@ -552,6 +552,66 @@ header small a {
   text-decoration: underline;
 }
 
+/* Static-map capture: button + downstream <img>. Sits between the
+   results table and the About / Disclaimer footers — appraisers click
+   the button, then right-click → Save Image As to drop the snapshot
+   into a Word/PDF report. */
+.static-map-section {
+  padding: 14px 20px 6px;
+  background: #fff;
+  border-top: 1px solid #e2e4e9;
+}
+
+.static-map-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.static-map-header button {
+  padding: 8px 16px;
+  background: #fff;
+  color: #1a3a4a;
+  border: 1px solid #1a3a4a;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.static-map-header button:hover:not(:disabled) {
+  background: #eef6fb;
+}
+
+.static-map-header button:disabled {
+  background: #f3f4f7;
+  color: #7a8299;
+  border-color: #c2c5cc;
+  cursor: default;
+}
+
+.static-map-hint {
+  flex: 1 1 320px;
+  font-size: 12px;
+  color: #5a6273;
+  line-height: 1.4;
+}
+
+.static-map-output {
+  margin-top: 12px;
+  padding-bottom: 6px;
+}
+
+.static-map-output img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid #c2c5cc;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
 .disclaimer {
   margin: 0;
   padding: 14px 20px 22px;

@@ -241,6 +241,10 @@ export function initMap(container, { onFeatureClick } = {}) {
     center: MB_CENTER,
     zoom: MB_ZOOM,
     attributionControl: { compact: true },
+    // preserveDrawingBuffer keeps the WebGL framebuffer readable so
+    // canvas.toDataURL() works for the "Generate Static Map" feature.
+    // Small perf cost on continuous interaction; fine for our scale.
+    preserveDrawingBuffer: true,
   });
   // Expose for runtime debugging in any environment.
   window._map = map;

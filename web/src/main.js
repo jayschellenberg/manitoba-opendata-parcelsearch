@@ -200,6 +200,59 @@ $zoningToggle.addEventListener('click', () => toggleOverlay('zoning'));
 $devplanToggle.addEventListener('click', () => toggleOverlay('devplan'));
 $contamToggle.addEventListener('click', () => toggleAuxOverlay('contam'));
 $flowToggle.addEventListener('click', () => toggleAuxOverlay('flow'));
+
+const $staticMapBtn    = document.getElementById('static-map-btn');
+const $staticMapOutput = document.getElementById('static-map-output');
+if ($staticMapBtn) $staticMapBtn.addEventListener('click', generateStaticMap);
+
+/**
+ * Capture the current interactive-map view as a static <img>. Forces a
+ * synchronous repaint first so every layer toggle flag (zoning, dev-plan,
+ * traffic, contam, muni-parcels, etc.) is reflected in the framebuffer
+ * before we read pixels. The map was created with preserveDrawingBuffer:
+ * true so canvas.toDataURL() returns real bytes; without that the buffer
+ * would be cleared after each frame and the URL would come back blank.
+ *
+ * The output goes into a sibling div as an <img> the user can right-click
+ * → Save Image As… for dropping into appraisal reports. We don't auto-
+ * download because the user wants control over filename and destination,
+ * and right-click + paste-into-Word is the actual workflow they
+ * described.
+ */
+async function generateStaticMap() {
+  if (!$staticMapOutput) return;
+  await mapReady;
+  $staticMapBtn.disabled = true;
+  const originalLabel = $staticMapBtn.textContent;
+  $staticMapBtn.textContent = 'Capturing…';
+  try {
+    // Force MapLibre to redraw and wait until it's idle so the canvas
+    // contents fully match the on-screen view (otherwise a still-loading
+    // tile or mid-animation frame can show up in the snapshot).
+    await new Promise((resolve) => {
+      const onIdle = () => { map.off('idle', onIdle); resolve(); };
+      map.on('idle', onIdle);
+      map.triggerRepaint();
+    });
+    const canvas = map.getCanvas();
+    const dataUrl = canvas.toDataURL('image/png');
+    $staticMapOutput.hidden = false;
+    $staticMapOutput.innerHTML = '';
+    const img = document.createElement('img');
+    img.src = dataUrl;
+    img.alt = 'Static snapshot of the current map view';
+    img.title = 'Right-click → Save Image As… to drop into a report';
+    $staticMapOutput.appendChild(img);
+    $staticMapOutput.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (err) {
+    console.error('static map capture failed', err);
+    $staticMapOutput.hidden = false;
+    $staticMapOutput.innerHTML = '<p style="color:#c0392b">Capture failed — try toggling the satellite basemap and re-trying. If it persists, check the browser console.</p>';
+  } finally {
+    $staticMapBtn.disabled = false;
+    $staticMapBtn.textContent = originalLabel;
+  }
+}
 $muniParcelsToggle.addEventListener('click', () => toggleAuxOverlay('muniParcels'));
 $municipality.addEventListener('change', () => {
   refilterCategoryDropdowns();

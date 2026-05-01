@@ -85,38 +85,6 @@
 
       <main class="main-pane">
 
-    <details class="hint">
-      <summary>Search tips</summary>
-      <div class="hint-body">
-        <ul>
-          <li>
-            <strong>Address</strong> matches partial text against the
-            <code>Property_Address</code> column. Manitoba addresses are
-            often written without unit numbers (e.g. <code>285 MAIN ST</code>),
-            and rural parcels frequently store a quarter-section description
-            instead of a street address.
-          </li>
-          <li>
-            <strong>Municipality</strong> is a dropdown of every named muni
-            in the province. The same roll-number digits exist in many
-            municipalities, so always pair Roll # with a Muni for an exact
-            lookup.
-          </li>
-          <li>
-            <strong>Zoning</strong> and <strong>Dev-Plan</strong> category
-            filters resolve to a list of parcel IDs spatially, then AND with
-            your other filters. Slower than text-only searches — ~5-10
-            seconds for province-wide categorical sweeps.
-          </li>
-          <li>
-            Click any parcel polygon (or row) to focus the map on it. Toggle
-            the <em>Show Zoning</em> / <em>Show Dev Plan</em> overlays to
-            see the underlying designation polygons coloured by category.
-          </li>
-        </ul>
-      </div>
-    </details>
-
     <div id="map">
       <div id="zoning-legend" class="map-legend zoning-legend" hidden>
         <strong>Zoning category</strong>
@@ -163,6 +131,14 @@
     </div>
       </main>
     </div>
+
+    <section id="static-map-section" class="static-map-section">
+      <div class="static-map-header">
+        <button id="static-map-btn" type="button" class="secondary">Generate Static Map</button>
+        <span class="static-map-hint">Captures the current interactive-map view (extent, zoom, layers toggled). Right-click the image &amp; choose <em>Save Image As…</em> to drop it into a report.</span>
+      </div>
+      <div id="static-map-output" class="static-map-output" hidden></div>
+    </section>
 
     <details class="explainer">
       <summary>About this tool</summary>
