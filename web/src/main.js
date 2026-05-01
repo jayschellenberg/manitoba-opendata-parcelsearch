@@ -25,10 +25,8 @@ import {
   fetchMunicipalityList,
   fetchZoneCategoryList,
   fetchContaminatedSites,
-  fetchTrafficStations,
   fetchTrafficFlow,
   fetchAllParcelsInMunicipality,
-  buildAadtIndex,
 } from './arcgis.js';
 import {
   initMap,
@@ -40,8 +38,6 @@ import {
   setDevPlanVisible,
   setContamData,
   setContamVisible,
-  setTrafficData,
-  setTrafficVisible,
   setTrafficFlowData,
   setTrafficFlowVisible,
   setMuniParcelsData,
@@ -64,7 +60,6 @@ const $export        = document.getElementById('export');
 const $zoningToggle  = document.getElementById('zoning-toggle');
 const $devplanToggle = document.getElementById('devplan-toggle');
 const $contamToggle  = document.getElementById('contam-toggle');
-const $trafficToggle = document.getElementById('traffic-toggle');
 const $flowToggle    = document.getElementById('flow-toggle');
 const $muniParcelsToggle = document.getElementById('muni-parcels-toggle');
 const $count         = document.getElementById('count');
@@ -204,7 +199,6 @@ $export.addEventListener('click', exportCsv);
 $zoningToggle.addEventListener('click', () => toggleOverlay('zoning'));
 $devplanToggle.addEventListener('click', () => toggleOverlay('devplan'));
 $contamToggle.addEventListener('click', () => toggleAuxOverlay('contam'));
-$trafficToggle.addEventListener('click', () => toggleAuxOverlay('traffic'));
 $flowToggle.addEventListener('click', () => toggleAuxOverlay('flow'));
 $muniParcelsToggle.addEventListener('click', () => toggleAuxOverlay('muniParcels'));
 $municipality.addEventListener('change', () => {
@@ -442,8 +436,8 @@ function toggleOverlay(which) {
  * the segment AADT inline (and vice-versa: loading stations after flow
  * triggers the same join). Failures are non-fatal — the button reverts.
  */
-const auxLoaded = { contam: false, traffic: false, flow: false, muniParcels: false };
-const auxData   = { contam: null, traffic: null, flow: null, muniParcels: null };
+const auxLoaded = { contam: false, flow: false, muniParcels: false };
+const auxData   = { contam: null, flow: null, muniParcels: null };
 // Tracks which muni's parcels are currently in the muni-parcels source so
 // we know whether to refetch when the user switches munis.
 let muniParcelsLoadedFor = null;
@@ -451,9 +445,7 @@ let muniParcelsLoadedFor = null;
 const AUX_META = {
   contam:      { btn: () => $contamToggle,      on: 'Enviro',       off: 'Enviro',       busy: 'Loading…',
                  fetch: () => fetchContaminatedSites(),       setData: (m, fc) => setContamData(m, fc),      setVis: setContamVisible },
-  traffic:     { btn: () => $trafficToggle,     on: 'Stations',     off: 'Stations',     busy: 'Loading…',
-                 fetch: () => fetchTrafficStations(),         setData: (m, fc) => setTrafficData(m, fc),     setVis: setTrafficVisible },
-  flow:        { btn: () => $flowToggle,        on: 'Flow',         off: 'Flow',         busy: 'Loading…',
+  flow:        { btn: () => $flowToggle,        on: 'Traffic',      off: 'Traffic',      busy: 'Loading…',
                  fetch: () => fetchTrafficFlow(),             setData: (m, fc) => setTrafficFlowData(m, fc), setVis: setTrafficFlowVisible },
   muniParcels: { btn: () => $muniParcelsToggle, on: 'Muni Parcels', off: 'Muni Parcels', busy: 'Loading…',
                  fetch: () => fetchAllParcelsInMunicipality($municipality.value),
@@ -502,8 +494,6 @@ async function toggleAuxOverlay(which) {
       // station with the matching segment's AADT so the station popup can
       // render the value inline. Done as a stable index lookup, no per-
       // popup network calls.
-      if (which === 'flow' && auxData.traffic) stampStationAadt(auxData.traffic, fc);
-      if (which === 'traffic' && auxData.flow) stampStationAadt(fc, auxData.flow);
       meta.setData(map, fc);
       auxLoaded[which] = true;
       if (which === 'muniParcels') muniParcelsLoadedFor = $municipality.value;
@@ -522,21 +512,6 @@ async function toggleAuxOverlay(which) {
   // The AADT-colour legend rides along with the Flow toggle so the user
   // can read what each segment colour means. Only one place toggles it.
   if (which === 'flow' && $flowLegend) $flowLegend.hidden = !visible;
-}
-
-/** Mutate each station feature in-place to carry the AADT value of the
- *  matching Traffic Flow segment (max AADT across all matching segments).
- *  Re-pushes the station data to the map so the popup template sees the
- *  updated property. */
-function stampStationAadt(stationsFc, flowFc) {
-  const idx = buildAadtIndex(flowFc);
-  for (const f of stationsFc.features || []) {
-    const sn = f.properties?.StationNum;
-    if (sn != null && idx.has(sn)) f.properties._aadt = idx.get(sn);
-  }
-  // If the stations layer is currently visible, push the updated FC so
-  // the popup hits the new property.
-  setTrafficData(map, stationsFc);
 }
 
 // ---------- UI helpers ----------

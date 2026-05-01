@@ -52,18 +52,20 @@
           </select>
           <span class="tip">Filter by amendment status</span>
         </span>
-        <span class="field">
-          <select id="du-mode">
-            <option value="">Any DU</option>
-            <option value="zero">0 DU only</option>
-            <option value="min">Min DU</option>
-          </select>
-          <span class="tip">Dwelling units filter</span>
-        </span>
-        <span class="field">
-          <input id="du-min" type="number" min="1" step="1" placeholder="Min DU #" disabled />
-          <span class="tip">Minimum dwelling units (when 'Min DU' is selected)</span>
-        </span>
+        <div class="du-row">
+          <span class="field du-mode-field">
+            <select id="du-mode">
+              <option value="">Any DU</option>
+              <option value="zero">0 DU only</option>
+              <option value="min">Min DU</option>
+            </select>
+            <span class="tip">Dwelling units filter</span>
+          </span>
+          <span class="field du-min-field">
+            <input id="du-min" type="number" min="1" step="1" placeholder="#" disabled />
+            <span class="tip">Minimum dwelling units (when 'Min DU' is selected)</span>
+          </span>
+        </div>
         <div class="action-row">
           <button id="search" type="button">Search</button>
           <button id="clear"  type="button" class="secondary">Clear</button>
@@ -74,11 +76,10 @@
         <h2>Map overlays</h2>
         <div class="overlay-grid">
           <button id="muni-parcels-toggle" type="button" class="secondary" aria-pressed="false" disabled title="Show every parcel in the selected municipality (grey fabric under your search results)">Muni Parcels</button>
+          <button id="flow-toggle"    type="button" class="secondary" aria-pressed="false" title="MHTIS Traffic Flow 2019 — segments coloured by AADT">Traffic</button>
           <button id="zoning-toggle"  type="button" class="secondary" aria-pressed="false">Zoning</button>
           <button id="devplan-toggle" type="button" class="secondary" aria-pressed="false">Dev Plan</button>
           <button id="contam-toggle"  type="button" class="secondary" aria-pressed="false" title="Manitoba Contaminated Sites Registry">Enviro</button>
-          <button id="traffic-toggle" type="button" class="secondary" aria-pressed="false" title="MHTIS traffic-count station locations">Stations</button>
-          <button id="flow-toggle"    type="button" class="secondary" aria-pressed="false" title="MHTIS Traffic Flow 2019 — segments coloured by AADT">Flow</button>
         </div>
       </aside>
 

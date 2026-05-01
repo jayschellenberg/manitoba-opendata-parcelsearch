@@ -96,6 +96,17 @@ header small a {
   text-align: center;
 }
 
+/* DU mode + min-# in a side-by-side row inside the sidebar. The mode
+   select takes ~half the width, the min-# input takes the rest, so the
+   user can still see both at the same time at the 280-px sidebar width. */
+.sidebar .du-row {
+  display: flex;
+  gap: 6px;
+}
+
+.sidebar .du-row .du-mode-field { flex: 1 1 50%; min-width: 0; }
+.sidebar .du-row .du-min-field  { flex: 0 0 64px; min-width: 0; }
+
 /* Map-overlay buttons sit in a 2-column grid inside the sidebar so the
    list of toggles stays compact. Each button stretches to its grid cell;
    text labels were trimmed to single keywords (Zoning / Dev Plan / Enviro
