@@ -486,7 +486,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         paint: {
           'text-color': '#1a1a1a',
           'text-halo-color': '#ffffff',
-          'text-halo-width': 1.6,
+          'text-halo-width': 0.8,
         },
       });
 
