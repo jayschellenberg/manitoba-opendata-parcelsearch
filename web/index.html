@@ -45,59 +45,67 @@
       </div>
     </details>
 
-    <section class="controls">
-      <span class="field">
-        <select id="municipality" disabled>
-          <option value="">Loading municipalities…</option>
-        </select>
-        <span class="tip">Municipality</span>
-      </span>
-      <span class="field">
-        <input id="address" type="text" size="20" placeholder="Civic Address (contains)" />
-        <span class="tip">Civic Address (contains)</span>
-      </span>
-      <span class="field">
-        <input id="roll" type="text" size="12" placeholder="Roll # (exact)" />
-        <span class="tip">Roll # (exact match within selected municipality)</span>
-      </span>
-      <span class="field">
-        <select id="zone-category" disabled>
-          <option value="">Any zoning category</option>
-        </select>
-        <span class="tip">Zoning category</span>
-      </span>
-      <span class="field">
-        <select id="changed-status">
-          <option value="">Any status</option>
-          <option value="zoning">Zoning Changed</option>
-          <option value="devplan">Dev Plan Changed</option>
-          <option value="both">Both Changed</option>
-        </select>
-        <span class="tip">Filter by amendment status</span>
-      </span>
-      <span class="field">
-        <select id="du-mode">
-          <option value="">Any DU</option>
-          <option value="zero">0 DU only</option>
-          <option value="min">Min DU</option>
-        </select>
-        <span class="tip">Dwelling units filter</span>
-      </span>
-      <span class="field">
-        <input id="du-min" type="number" min="1" step="1" size="4" placeholder="Min #" disabled />
-        <span class="tip">Minimum dwelling units (when 'Min DU' is selected)</span>
-      </span>
-      <button id="search" type="button">Search</button>
-      <button id="clear"  type="button" class="secondary">Clear</button>
-      <button id="export" type="button" class="secondary">Export CSV</button>
-      <button id="muni-parcels-toggle" type="button" class="secondary" aria-pressed="false" disabled title="Show every parcel in the selected municipality (grey fabric under your search results)">Show Muni Parcels</button>
-      <button id="zoning-toggle"  type="button" class="secondary" aria-pressed="false">Show Zoning</button>
-      <button id="devplan-toggle" type="button" class="secondary" aria-pressed="false">Show Dev Plan</button>
-      <button id="contam-toggle"  type="button" class="secondary" aria-pressed="false" title="Manitoba Contaminated Sites Registry">Show Enviro</button>
-      <button id="traffic-toggle" type="button" class="secondary" aria-pressed="false" title="MHTIS traffic-count station locations">Show Stations</button>
-      <button id="flow-toggle"    type="button" class="secondary" aria-pressed="false" title="MHTIS Traffic Flow 2019 — segments coloured by AADT">Show Flow</button>
-      <span id="count" class="count"></span>
-    </section>
+    <div class="layout">
+      <aside class="controls sidebar" aria-label="Search and overlay controls">
+        <h2>Search</h2>
+        <span class="field">
+          <select id="municipality" disabled>
+            <option value="">Loading municipalities…</option>
+          </select>
+          <span class="tip">Municipality</span>
+        </span>
+        <span class="field">
+          <input id="address" type="text" placeholder="Civic Address (contains)" />
+          <span class="tip">Civic Address (contains)</span>
+        </span>
+        <span class="field">
+          <input id="roll" type="text" placeholder="Roll # (exact)" />
+          <span class="tip">Roll # (exact match within selected municipality)</span>
+        </span>
+        <span class="field">
+          <select id="zone-category" disabled>
+            <option value="">Any zoning category</option>
+          </select>
+          <span class="tip">Zoning category</span>
+        </span>
+        <span class="field">
+          <select id="changed-status">
+            <option value="">Any status</option>
+            <option value="zoning">Zoning Changed</option>
+            <option value="devplan">Dev Plan Changed</option>
+            <option value="both">Both Changed</option>
+          </select>
+          <span class="tip">Filter by amendment status</span>
+        </span>
+        <span class="field">
+          <select id="du-mode">
+            <option value="">Any DU</option>
+            <option value="zero">0 DU only</option>
+            <option value="min">Min DU</option>
+          </select>
+          <span class="tip">Dwelling units filter</span>
+        </span>
+        <span class="field">
+          <input id="du-min" type="number" min="1" step="1" placeholder="Min DU #" disabled />
+          <span class="tip">Minimum dwelling units (when 'Min DU' is selected)</span>
+        </span>
+        <div class="action-row">
+          <button id="search" type="button">Search</button>
+          <button id="clear"  type="button" class="secondary">Clear</button>
+          <button id="export" type="button" class="secondary">Export CSV</button>
+        </div>
+        <span id="count" class="count"></span>
+
+        <h2>Map overlays</h2>
+        <button id="muni-parcels-toggle" type="button" class="secondary block" aria-pressed="false" disabled title="Show every parcel in the selected municipality (grey fabric under your search results)">Show Muni Parcels</button>
+        <button id="zoning-toggle"  type="button" class="secondary block" aria-pressed="false">Show Zoning</button>
+        <button id="devplan-toggle" type="button" class="secondary block" aria-pressed="false">Show Dev Plan</button>
+        <button id="contam-toggle"  type="button" class="secondary block" aria-pressed="false" title="Manitoba Contaminated Sites Registry">Show Enviro</button>
+        <button id="traffic-toggle" type="button" class="secondary block" aria-pressed="false" title="MHTIS traffic-count station locations">Show Stations</button>
+        <button id="flow-toggle"    type="button" class="secondary block" aria-pressed="false" title="MHTIS Traffic Flow 2019 — segments coloured by AADT">Show Flow</button>
+      </aside>
+
+      <main class="main-pane">
 
     <details class="hint">
       <summary>Search tips</summary>
@@ -174,6 +182,8 @@
         </thead>
         <tbody></tbody>
       </table>
+    </div>
+      </main>
     </div>
 
     <footer id="disclaimer" class="disclaimer">
