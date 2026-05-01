@@ -904,22 +904,37 @@ function formatDes(d) {
  * sometimes stores the from→to text directly, e.g. "RG8 to RG5"); otherwise
  * falls back to "ZBL → ZBL_A".
  */
+/**
+ * Treat a value as a real string only if it isn't one of the source's
+ * various stand-ins for null: actual nullish, empty/whitespace string,
+ * or the literal text "<Null>" / "Null" / "null" (Esri's stringified-
+ * null sneaks through some service configs as text). Returns the
+ * trimmed string when real, otherwise null.
+ */
+function realStr(v) {
+  if (v == null) return null;
+  const s = String(v).trim();
+  if (s === '' || s === '<Null>' || s.toLowerCase() === 'null') return null;
+  return s;
+}
+
 function formatChanges(row) {
   const parts = [];
   const z = row.zoning[0]?.feature.properties || {};
-  // The source data stores ~385 AMENDMENT_DESCRIPTION values as a literal
-  // single-space (or other whitespace) instead of null. Treat those as
-  // empty so the cell doesn't render as "Z: " with nothing useful after.
-  const amendDesc = z.AMENDMENT_DESCRIPTION && z.AMENDMENT_DESCRIPTION.trim();
-  const zblChanged = z.ZBL_A && z.ZBL && z.ZBL_A !== z.ZBL;
+  const amendDesc = realStr(z.AMENDMENT_DESCRIPTION);
+  const zbl   = realStr(z.ZBL);
+  const zblA  = realStr(z.ZBL_A);
+  const zblChanged = zbl && zblA && zbl !== zblA;
   if (zblChanged) {
-    parts.push(`Z: ${amendDesc || `${z.ZBL} → ${z.ZBL_A}`}`);
+    parts.push(`Z: ${amendDesc || `${zbl} → ${zblA}`}`);
   } else if (amendDesc) {
     parts.push(`Z: ${amendDesc}`);
   }
   const d = row.devPlan[0]?.feature.properties || {};
-  if (d.DPA_BYLAW && d.DP_BYLAW && d.DPA_BYLAW !== d.DP_BYLAW) {
-    parts.push(`DP: ${d.DP_BYLAW} → ${d.DPA_BYLAW}`);
+  const dp  = realStr(d.DP_BYLAW);
+  const dpA = realStr(d.DPA_BYLAW);
+  if (dp && dpA && dp !== dpA) {
+    parts.push(`DP: ${dp} → ${dpA}`);
   }
   return parts.length === 0 ? null : parts.join(' · ');
 }

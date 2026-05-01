@@ -543,11 +543,16 @@ async function resolveOverlayFilter({ zoneCategory, devPlanCategory, zoningChang
   // narrow the same overlay layer, so they AND together within one query.
   const zoningClauses = [];
   if (zoneCategory)   zoningClauses.push(`ZONE_CATEGORY = '${escapeSql(zoneCategory)}'`);
-  // 385 source rows store AMENDMENT_DESCRIPTION as a single-space or empty
-  // string instead of null. ArcGIS Online's SQL92 dialect does NOT expose
-  // TRIM() in the where clause (returns 400 "'where' parameter is invalid"),
-  // so reject the known whitespace values explicitly.
-  if (zoningChanged)  zoningClauses.push(`((ZBL_A IS NOT NULL AND ZBL_A <> ZBL) OR (AMENDMENT_DESCRIPTION IS NOT NULL AND AMENDMENT_DESCRIPTION <> '' AND AMENDMENT_DESCRIPTION <> ' '))`);
+  // The source rows in this layer have several "this is really null"
+  // representations: actual NULL, '' (empty), ' ' (single-space, ~385
+  // rows), and the literal string '<Null>' (Esri's stringified-null).
+  // ArcGIS Online's SQL92 dialect doesn't expose TRIM(), so we list the
+  // known sentinels explicitly. Same exclusion applies to ZBL_A.
+  const NOT_REAL_VALUE = (col) =>
+    `(${col} IS NOT NULL AND ${col} <> '' AND ${col} <> ' ' AND ${col} <> '<Null>')`;
+  if (zoningChanged)  zoningClauses.push(
+    `((${NOT_REAL_VALUE('ZBL_A')} AND ZBL_A <> ZBL) OR ${NOT_REAL_VALUE('AMENDMENT_DESCRIPTION')})`
+  );
   if (zoningClauses.length > 0) {
     overlayQueries.push({ url: ZONING_URL, clauses: zoningClauses });
   }
@@ -555,7 +560,11 @@ async function resolveOverlayFilter({ zoneCategory, devPlanCategory, zoningChang
   // Dev-plan-side queries — same structure.
   const devClauses = [];
   if (devPlanCategory) devClauses.push(`DES_CATEGORY = '${escapeSql(devPlanCategory)}'`);
-  if (devPlanChanged)  devClauses.push(`(DPA_BYLAW IS NOT NULL AND DPA_BYLAW <> DP_BYLAW)`);
+  // Same null-sentinel handling as the zoning side: '', ' ', '<Null>'
+  // are all "really null" in this dataset.
+  if (devPlanChanged)  devClauses.push(
+    `(DPA_BYLAW IS NOT NULL AND DPA_BYLAW <> '' AND DPA_BYLAW <> ' ' AND DPA_BYLAW <> '<Null>' AND DPA_BYLAW <> DP_BYLAW)`
+  );
   if (devClauses.length > 0) {
     overlayQueries.push({ url: DEVPLAN_URL, clauses: devClauses });
   }
