@@ -427,19 +427,29 @@ export function initMap(container, { onFeatureClick } = {}) {
       // seconds for big RMs. Lets the user see the surrounding parcel
       // pattern without filtering every search to that level of detail.
       map.addSource('muni-parcels', { type: 'geojson', data: emptyFc() });
+      // Fill kept extremely faint so it doesn't overwhelm the basemap on
+      // either Streets or Satellite. The outline does the heavy lifting:
+      // a bright cyan that contrasts against both the light CARTO basemap
+      // and the dark Esri imagery basemap (an earlier dark-grey outline
+      // disappeared completely against satellite tiles). Hover/click is
+      // still triggered by the fill, so a near-invisible fill is fine.
       map.addLayer({
         id: 'muni-parcels-fill',
         type: 'fill',
         source: 'muni-parcels',
         layout: { visibility: 'none' },
-        paint: { 'fill-color': '#9aa0b0', 'fill-opacity': 0.10 },
+        paint: { 'fill-color': '#ffffff', 'fill-opacity': 0.04 },
       });
       map.addLayer({
         id: 'muni-parcels-line',
         type: 'line',
         source: 'muni-parcels',
         layout: { visibility: 'none' },
-        paint: { 'line-color': '#5a6273', 'line-width': 0.6, 'line-opacity': 0.55 },
+        paint: {
+          'line-color': '#00d1ff',
+          'line-width': 0.9,
+          'line-opacity': 0.85,
+        },
       });
 
       // Parcel highlight — primary layer, always on. Red fill so it pops
