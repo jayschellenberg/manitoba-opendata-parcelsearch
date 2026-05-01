@@ -644,7 +644,7 @@ function walkCell(row) {
   a.href = `https://www.walkscore.com/score/${addressForUrl}`;
   a.target = '_blank';
   a.rel = 'noreferrer';
-  a.textContent = 'view';
+  a.textContent = 'Walkscore';
   a.addEventListener('click', (e) => e.stopPropagation());
   cell.appendChild(a);
   return cell;
@@ -708,7 +708,7 @@ function floodCell(row) {
   a.href = url.toString();
   a.target = '_blank';
   a.rel = 'noopener noreferrer';
-  a.textContent = 'view';
+  a.textContent = 'Flood';
   a.title = 'Open this parcel in the Manitoba flood-mapping tool';
   a.addEventListener('click', (e) => e.stopPropagation());
   cell.appendChild(a);
@@ -746,7 +746,7 @@ function reportCell(url) {
   a.href = safe;
   a.target = '_blank';
   a.rel = 'noreferrer';
-  a.textContent = 'view';
+  a.textContent = 'MAO';
   // Don't trigger the row's fly-to handler when the link is clicked.
   a.addEventListener('click', (e) => e.stopPropagation());
   cell.appendChild(a);
