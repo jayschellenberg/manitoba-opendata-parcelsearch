@@ -145,6 +145,10 @@ const SORT_KEYS = {
   // Walkscore column is just a link — sort by whether we have an address
   // to send to walkscore.com (rows without an address sort last).
   walk:    (r) => strKey(r.parcel.properties.Property_Address),
+  // Flood column sorts on whether the parcel has any geometry-derivable
+  // location at all (lat/lon centroid OR a usable street address); rows
+  // that can't deep-link sort last.
+  flood:   (r) => strKey(r.parcel.geometry ? '1' : r.parcel.properties.Property_Address),
   value:   (r) => finiteOrNeg(parseTotalValue(r.parcel.properties.Total_Value)),
   report:  (r) => strKey(r.parcel.properties.Asmt_Rpt_Url),
 };
@@ -607,6 +611,7 @@ function renderTable(rows) {
     tr.appendChild(td(formatAcres(ac), 'num'));
     tr.appendChild(td(formatSf(ac), 'num'));
     tr.appendChild(walkCell(row));
+    tr.appendChild(floodCell(row));
     tr.appendChild(td(formatCurrency(p.Total_Value), 'num'));
     tr.appendChild(reportCell(p.Asmt_Rpt_Url));
     frag.appendChild(tr);
@@ -659,6 +664,74 @@ function safeExternalUrl(raw) {
     if (u.protocol === 'http:' || u.protocol === 'https:') return u.toString();
   } catch { /* not a parseable URL */ }
   return null;
+}
+
+/**
+ * Flood-screening deep-link. Sister tool at mb-flood-mapping.vercel.app
+ * accepts ?lat=&lon=&label=… (preferred) or ?address=… (geocodes via
+ * Mapbox/Nominatim). We pass lat/lon when we can compute a centroid from
+ * the parcel polygon, otherwise fall back to the address. Cell renders
+ * a "view" link in the same style as the Walkscore / Asmt Report cells;
+ * rows with no usable location render the dash.
+ */
+function floodCell(row) {
+  const cell = document.createElement('td');
+  const p = row.parcel.properties || {};
+  const url = new URL('https://mb-flood-mapping.vercel.app/');
+  let haveTarget = false;
+  if (row.parcel.geometry) {
+    try {
+      const [minLon, minLat, maxLon, maxLat] = bboxOfFeature(row.parcel);
+      const lat = (minLat + maxLat) / 2;
+      const lon = (minLon + maxLon) / 2;
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        url.searchParams.set('lat', lat.toFixed(6));
+        url.searchParams.set('lon', lon.toFixed(6));
+        haveTarget = true;
+      }
+    } catch { /* topology errors — fall through to address */ }
+  }
+  if (!haveTarget && p.Property_Address) {
+    const muni = (p.Muni_Name_With_Typ || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
+    url.searchParams.set('address', [p.Property_Address, muni, 'MB'].filter(Boolean).join(', '));
+    haveTarget = true;
+  }
+  if (haveTarget && p.Property_Address) {
+    url.searchParams.set('label', p.Property_Address);
+  }
+  if (!haveTarget) {
+    cell.textContent = '—';
+    cell.classList.add('empty');
+    return cell;
+  }
+  const a = document.createElement('a');
+  a.href = url.toString();
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  a.textContent = 'view';
+  a.title = 'Open this parcel in the Manitoba flood-mapping tool';
+  a.addEventListener('click', (e) => e.stopPropagation());
+  cell.appendChild(a);
+  return cell;
+}
+
+/** Walk a Feature's coordinates and return [minLon, minLat, maxLon, maxLat].
+ *  Inlined here so the flood/walkscore cells don't drag in another turf
+ *  import — same logic as @turf/bbox for our Polygon/MultiPolygon shapes. */
+function bboxOfFeature(feature) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const visit = (c) => {
+    if (typeof c[0] === 'number' && typeof c[1] === 'number') {
+      if (c[0] < minX) minX = c[0];
+      if (c[0] > maxX) maxX = c[0];
+      if (c[1] < minY) minY = c[1];
+      if (c[1] > maxY) maxY = c[1];
+    } else {
+      for (const sub of c) visit(sub);
+    }
+  };
+  visit(feature.geometry.coordinates);
+  return [minX, minY, maxX, maxY];
 }
 
 function reportCell(url) {
@@ -823,7 +896,7 @@ function exportCsv() {
     'Dev-Plan Designation', 'DP By-law',
     'Changes',
     'DU', 'Acres', 'SF',
-    'Walkscore URL',
+    'Walkscore URL', 'Flood-Map URL',
     'Total Value ($)', 'Asmt Report URL',
   ];
   const lines = [header.map(csvCell).join(',')];
@@ -843,6 +916,7 @@ function exportCsv() {
       formatAcresCsv(ac),
       ac != null && Number.isFinite(ac) && ac > 0 ? Math.round(ac * 43560) : '',
       walkscoreUrl(p),
+      floodMapUrl(row),
       parseTotalValue(p.Total_Value) ?? '',
       p.Asmt_Rpt_Url ?? '',
     ].map(csvCell).join(','));
@@ -880,6 +954,34 @@ function walkscoreUrl(p) {
   if (!street) return '';
   const muni = (p.Muni_Name_With_Typ || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
   return `https://www.walkscore.com/score/${encodeURIComponent([street, muni, 'MB'].filter(Boolean).join(', '))}`;
+}
+
+/** Compose the mb-flood-mapping deep-link for a parcel — same lat/lon-
+ *  preferring, address-fallback logic as floodCell(). Returns '' when
+ *  neither geometry nor address is available. */
+function floodMapUrl(row) {
+  const p = row.parcel.properties || {};
+  const url = new URL('https://mb-flood-mapping.vercel.app/');
+  let have = false;
+  if (row.parcel.geometry) {
+    try {
+      const [minLon, minLat, maxLon, maxLat] = bboxOfFeature(row.parcel);
+      const lat = (minLat + maxLat) / 2;
+      const lon = (minLon + maxLon) / 2;
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        url.searchParams.set('lat', lat.toFixed(6));
+        url.searchParams.set('lon', lon.toFixed(6));
+        have = true;
+      }
+    } catch { /* fall through */ }
+  }
+  if (!have && p.Property_Address) {
+    const muni = (p.Muni_Name_With_Typ || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
+    url.searchParams.set('address', [p.Property_Address, muni, 'MB'].filter(Boolean).join(', '));
+    have = true;
+  }
+  if (have && p.Property_Address) url.searchParams.set('label', p.Property_Address);
+  return have ? url.toString() : '';
 }
 
 function csvCell(value) {
