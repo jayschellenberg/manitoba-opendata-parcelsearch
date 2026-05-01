@@ -541,12 +541,19 @@ function setBusy(busy) {
   $search.textContent = busy ? 'Searching…' : 'Search';
 }
 
-/** Hard-reset the page. A full reload + sessionStorage clear guarantees
- *  every piece of state — inputs, table, sort, map zoom, overlay toggles,
- *  in-flight requests, AND the cached muni/category dropdown lists — goes
- *  back to first-load. */
+/** Hard-reset the page. A full reload + cache clear guarantees every
+ *  piece of state — inputs, table, sort, map zoom, overlay toggles,
+ *  in-flight requests, AND every cached overlay/dropdown — goes back
+ *  to first-load. Walks both storage types since older builds used
+ *  sessionStorage and current builds namespace into localStorage. */
 function clearAll() {
   try { sessionStorage.clear(); } catch { /* private mode quota errors etc. */ }
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('mbpsCache.')) localStorage.removeItem(k);
+    }
+  } catch { /* private mode etc. */ }
   window.location.href = window.location.pathname + window.location.search;
 }
 

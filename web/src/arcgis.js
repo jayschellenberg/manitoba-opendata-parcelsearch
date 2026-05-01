@@ -124,9 +124,14 @@ export async function searchParcels({ address, municipality, roll, zoneCategory,
   }
 
   const where = clauses.join(' AND ');
+  // Only the fields the table/map/popup actually use. Drops Shape__Area,
+  // Shape__Length, FID, and a couple of internal fields that the previous
+  // outFields:'*' was pulling in unread — typically ~30% wire-size cut on
+  // a full 1000-row response.
+  const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Muni_Name_With_Typ,Asmt_Roll,Dwelling_Units,Frontage_or_Area,Total_Value,Asmt_Rpt_Url';
   return fetchAllPages(ROLL_URL, {
     where,
-    outFields: '*',
+    outFields: PARCEL_OUTFIELDS,
     returnGeometry: 'true',
     outSR: '4326',
     f: 'geojson',
@@ -796,25 +801,59 @@ async function fetchDistinctValues(baseUrl, field, cacheKey, where = null) {
   return values;
 }
 
+// Province-published data (Roll Entry, zoning, dev-plan) doesn't change
+// hour-to-hour — overnight at most. Caching for a week keeps the typical
+// "what changed in this muni" workflow snappy without ever serving data
+// that's meaningfully out of sync. localStorage so the cache survives
+// across browser tabs / sessions; sessionStorage was the old choice and
+// re-fetched on every tab restart.
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const CACHE_NS_PREFIX = 'mbpsCache.';
+
 function readCache(key) {
-  // Accept any of the three shapes we cache here:
+  // Accept any of the shapes we cache here:
   //   - Array<string>          — distinct-values dropdowns (munis, categories)
   //   - FeatureCollection      — overlay datasets (contam, traffic, flow, muni parcels)
   //   - { walk, transit, ... } — Walk Score score lookup (legacy; harmless)
-  // Earlier versions of this helper hard-rejected non-array values, so
-  // every FeatureCollection cache silently re-fetched on every toggle.
+  // Wrapped with { v, t } envelope where t is the unix-ms timestamp; if
+  // it's older than CACHE_TTL_MS we treat the entry as missing (and the
+  // caller refetches and rewrites). Unwrapped legacy entries (from the
+  // sessionStorage era) are tolerated for one read then ignored.
   try {
-    const raw = sessionStorage.getItem(key);
+    const namespaced = `${CACHE_NS_PREFIX}${key}`;
+    const raw = localStorage.getItem(namespaced) || sessionStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (parsed == null) return null;
+    // Envelope: { v: <value>, t: <writtenAtMs> }
+    if (typeof parsed === 'object' && !Array.isArray(parsed) && 't' in parsed && 'v' in parsed) {
+      if (Date.now() - parsed.t > CACHE_TTL_MS) return null;
+      const v = parsed.v;
+      if (Array.isArray(v) || (typeof v === 'object' && v !== null)) return v;
+      return null;
+    }
+    // Legacy unwrapped value (older code wrote the value directly).
     if (Array.isArray(parsed)) return parsed;
     if (typeof parsed === 'object') return parsed;
     return null;
   } catch { return null; }
 }
 function writeCache(key, value) {
-  try { sessionStorage.setItem(key, JSON.stringify(value)); } catch { /* quota, private mode, etc. */ }
+  const namespaced = `${CACHE_NS_PREFIX}${key}`;
+  const envelope = JSON.stringify({ v: value, t: Date.now() });
+  try {
+    localStorage.setItem(namespaced, envelope);
+  } catch (err) {
+    // localStorage may be full (browser quota typically 5 MB); evict
+    // any of our older namespaced entries first, then retry once.
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(CACHE_NS_PREFIX) && k !== namespaced) localStorage.removeItem(k);
+      }
+      localStorage.setItem(namespaced, envelope);
+    } catch { /* still no room — fall back silently */ }
+  }
 }
 
 /**
