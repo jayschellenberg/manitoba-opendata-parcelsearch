@@ -937,7 +937,7 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
     if (code) bits.push(`<strong>${escapeHtml(code)}</strong>`);
     if (name) bits.push(escapeHtml(name));
     if (z.ZBL) bits.push(`By-law ${escapeHtml(z.ZBL)}`);
-    if (bits.length) lines.push(`<span style="color:#1a3a4a">Zoning</span>: ${bits.join(' &middot; ')}`);
+    if (bits.length) lines.push(`<strong style="color:#1a3a4a">Zoning</strong>: ${bits.join(' &middot; ')}`);
   }
   if (overlay?.devplan) {
     const d = overlay.devplan;
@@ -945,7 +945,7 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
     if (d.DES_NAME)     bits.push(`<strong>${escapeHtml(d.DES_NAME)}</strong>`);
     if (d.DES_CATEGORY) bits.push(escapeHtml(d.DES_CATEGORY));
     if (d.DP_BYLAW)     bits.push(`By-law ${escapeHtml(d.DP_BYLAW)}`);
-    if (bits.length) lines.push(`<span style="color:#1a3a4a">Dev Plan</span>: ${bits.join(' &middot; ')}`);
+    if (bits.length) lines.push(`<strong style="color:#1a3a4a">Dev Plan</strong>: ${bits.join(' &middot; ')}`);
   }
   if (withReportLink) {
     const safeReport = safeExternalUrl(p.Asmt_Rpt_Url);

@@ -726,8 +726,7 @@ function renderTable(rows) {
     tr.appendChild(td(formatSf(ac), 'num'));
     tr.appendChild(walkCell(row));
     tr.appendChild(floodCell(row));
-    tr.appendChild(td(formatCurrency(p.Total_Value), 'num'));
-    tr.appendChild(reportCell(p.Asmt_Rpt_Url));
+    tr.appendChild(assessmentCell(p));
     frag.appendChild(tr);
   }
   $tbody.appendChild(frag);
@@ -846,6 +845,39 @@ function bboxOfFeature(feature) {
   };
   visit(feature.geometry.coordinates);
   return [minX, minY, maxX, maxY];
+}
+
+/**
+ * Combined Assessment column cell: renders the formatted Total_Value
+ * as a link to the parcel's Manitoba Assessment Online report when
+ * Asmt_Rpt_Url is present, otherwise renders the value as plain text.
+ * Earlier versions had a separate "Asmt Report" column with a 'MAO'
+ * link; merging the two cuts a column and gives users a single
+ * affordance — the dollar figure itself is the link.
+ */
+function assessmentCell(p) {
+  const cell = document.createElement('td');
+  cell.classList.add('num');
+  const value = formatCurrency(p.Total_Value);
+  const safe  = safeExternalUrl(p.Asmt_Rpt_Url);
+  if (value == null) {
+    cell.textContent = '—';
+    cell.classList.add('empty');
+    return cell;
+  }
+  if (!safe) {
+    cell.textContent = value;
+    return cell;
+  }
+  const a = document.createElement('a');
+  a.href = safe;
+  a.target = '_blank';
+  a.rel = 'noreferrer';
+  a.textContent = value;
+  a.title = 'Open this parcel on Manitoba Assessment Online';
+  a.addEventListener('click', (e) => e.stopPropagation());
+  cell.appendChild(a);
+  return cell;
 }
 
 function reportCell(url) {
