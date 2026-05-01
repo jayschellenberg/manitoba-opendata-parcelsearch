@@ -64,21 +64,47 @@ function hslToHex(h, s, l) {
 
 /** Build the [match-key, color, ...] pair list MapLibre needs for a
  *  per-feature zoning paint, given the zoning-overlay FC currently on
- *  screen. Returns { matchPairs, legend } where legend is sorted by
- *  zoning code for predictable rendering. */
+ *  screen. Returns { matchPairs, legend } where each legend entry
+ *  includes both the ZONE code and the ZONE_NAME label found alongside
+ *  it in the source data, sorted by code for predictable rendering. If
+ *  the same ZONE has multiple distinct ZONE_NAME values across polygons
+ *  (rare but it happens — historical bylaw wording drift), the most
+ *  common one wins. */
 export function buildZoneCodePaint(zoningFc) {
-  const codes = new Set();
+  // codeToNames: code → Map<name, count> — pick the most-frequent name.
+  const codeToNames = new Map();
   for (const f of zoningFc?.features || []) {
     const code = (f.properties?.ZONE || '').trim();
-    if (code) codes.add(code);
+    if (!code) continue;
+    const name = (f.properties?.ZONE_NAME || '').trim();
+    if (!codeToNames.has(code)) codeToNames.set(code, new Map());
+    if (name) {
+      const counts = codeToNames.get(code);
+      counts.set(name, (counts.get(name) || 0) + 1);
+    } else {
+      codeToNames.get(code); // ensure the code is registered even without a name
+    }
   }
-  const sorted = [...codes].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const sorted = [...codeToNames.keys()].sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true })
+  );
   const matchPairs = [];
   const legend = [];
   for (const code of sorted) {
     const color = colorForZoneCode(code);
+    const names = codeToNames.get(code);
+    let bestName = '';
+    let bestCount = 0;
+    for (const [name, count] of names) {
+      if (count > bestCount) { bestName = name; bestCount = count; }
+    }
     matchPairs.push(code, color);
-    legend.push({ label: code, color });
+    legend.push({
+      code,
+      name: bestName,
+      label: bestName ? `${code} – ${bestName}` : code,
+      color,
+    });
   }
   return { matchPairs, legend };
 }
