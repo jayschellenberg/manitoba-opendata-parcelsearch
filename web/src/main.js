@@ -406,8 +406,12 @@ function setMapData(parcelFc, zoningFc, devPlanFc) {
 
 function toggleOverlay(which) {
   const btn = which === 'zoning' ? $zoningToggle : $devplanToggle;
-  const labelOn  = which === 'zoning' ? 'Hide Zoning'   : 'Hide Dev Plan';
-  const labelOff = which === 'zoning' ? 'Show Zoning'   : 'Show Dev Plan';
+  // Two-word labels keep the 2-column overlay grid in the sidebar tidy.
+  // The button face just shows the layer name; pressed state colours
+  // the button (CSS .active class) so an extra "Hide …" prefix isn't
+  // needed and only made the label wrap.
+  const labelOn  = which === 'zoning' ? 'Zoning'   : 'Dev Plan';
+  const labelOff = which === 'zoning' ? 'Zoning'   : 'Dev Plan';
   const wasActive = btn.classList.contains('active');
   const visible = !wasActive;
   btn.classList.toggle('active', visible);
@@ -445,13 +449,13 @@ const auxData   = { contam: null, traffic: null, flow: null, muniParcels: null }
 let muniParcelsLoadedFor = null;
 
 const AUX_META = {
-  contam:      { btn: () => $contamToggle,      on: 'Hide Enviro',       off: 'Show Enviro',       busy: 'Loading enviro…',
+  contam:      { btn: () => $contamToggle,      on: 'Enviro',       off: 'Enviro',       busy: 'Loading…',
                  fetch: () => fetchContaminatedSites(),       setData: (m, fc) => setContamData(m, fc),      setVis: setContamVisible },
-  traffic:     { btn: () => $trafficToggle,     on: 'Hide Stations',     off: 'Show Stations',     busy: 'Loading stations…',
+  traffic:     { btn: () => $trafficToggle,     on: 'Stations',     off: 'Stations',     busy: 'Loading…',
                  fetch: () => fetchTrafficStations(),         setData: (m, fc) => setTrafficData(m, fc),     setVis: setTrafficVisible },
-  flow:        { btn: () => $flowToggle,        on: 'Hide Flow',         off: 'Show Flow',         busy: 'Loading flow…',
+  flow:        { btn: () => $flowToggle,        on: 'Flow',         off: 'Flow',         busy: 'Loading…',
                  fetch: () => fetchTrafficFlow(),             setData: (m, fc) => setTrafficFlowData(m, fc), setVis: setTrafficFlowVisible },
-  muniParcels: { btn: () => $muniParcelsToggle, on: 'Hide Muni Parcels', off: 'Show Muni Parcels', busy: 'Loading muni parcels…',
+  muniParcels: { btn: () => $muniParcelsToggle, on: 'Muni Parcels', off: 'Muni Parcels', busy: 'Loading…',
                  fetch: () => fetchAllParcelsInMunicipality($municipality.value),
                  setData: (m, fc) => setMuniParcelsData(m, fc), setVis: setMuniParcelsVisible },
 };
@@ -473,7 +477,7 @@ function resetMuniParcelsToggle() {
     if ($muniParcelsToggle.classList.contains('active')) {
       $muniParcelsToggle.classList.remove('active');
       $muniParcelsToggle.setAttribute('aria-pressed', 'false');
-      $muniParcelsToggle.textContent = 'Show Muni Parcels';
+      $muniParcelsToggle.textContent = 'Muni Parcels';
       mapReady.then(() => setMuniParcelsVisible(map, false));
     }
   }

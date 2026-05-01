@@ -20,31 +20,6 @@
       </small>
     </header>
 
-    <details class="explainer" open>
-      <summary>About this tool</summary>
-      <div class="explainer-body">
-        <p>
-          Search Manitoba properties (excluding Winnipeg, which has its
-          <a href="https://winnipeg-opendata-parcelsearch.vercel.app/" target="_blank" rel="noreferrer">own portal</a>)
-          by civic address, municipality, or roll #. Each result is enriched
-          with its top-2 zoning districts (with coverage %) and its primary
-          development-plan designation, plus the bylaw numbers behind each.
-        </p>
-        <p>
-          Three live datasets are queried on every search:
-          <a href="https://geoportal.gov.mb.ca/datasets/manitoba::roll-entry/about" target="_blank" rel="noreferrer">Roll Entry</a> (parcels),
-          <a href="https://geoportal.gov.mb.ca/datasets/manitoba::manitoba-zoning-by-laws/about" target="_blank" rel="noreferrer">Zoning By-Laws</a>, and
-          <a href="https://geoportal.gov.mb.ca/datasets/manitoba::manitoba-development-plan-designations/about" target="_blank" rel="noreferrer">Development Plan Designations</a>.
-          Search results always run live against the province; the
-          municipality + category dropdowns and the overlay layers
-          (zoning, dev-plan, contaminated sites, traffic flow, full muni
-          parcel fabric) are cached in your browser for up to 7 days so
-          repeat work in the same area stays snappy. The Clear button
-          wipes that cache.
-        </p>
-      </div>
-    </details>
-
     <div class="layout">
       <aside class="controls sidebar" aria-label="Search and overlay controls">
         <h2>Search</h2>
@@ -97,12 +72,14 @@
         <span id="count" class="count"></span>
 
         <h2>Map overlays</h2>
-        <button id="muni-parcels-toggle" type="button" class="secondary block" aria-pressed="false" disabled title="Show every parcel in the selected municipality (grey fabric under your search results)">Show Muni Parcels</button>
-        <button id="zoning-toggle"  type="button" class="secondary block" aria-pressed="false">Show Zoning</button>
-        <button id="devplan-toggle" type="button" class="secondary block" aria-pressed="false">Show Dev Plan</button>
-        <button id="contam-toggle"  type="button" class="secondary block" aria-pressed="false" title="Manitoba Contaminated Sites Registry">Show Enviro</button>
-        <button id="traffic-toggle" type="button" class="secondary block" aria-pressed="false" title="MHTIS traffic-count station locations">Show Stations</button>
-        <button id="flow-toggle"    type="button" class="secondary block" aria-pressed="false" title="MHTIS Traffic Flow 2019 — segments coloured by AADT">Show Flow</button>
+        <div class="overlay-grid">
+          <button id="muni-parcels-toggle" type="button" class="secondary" aria-pressed="false" disabled title="Show every parcel in the selected municipality (grey fabric under your search results)">Muni Parcels</button>
+          <button id="zoning-toggle"  type="button" class="secondary" aria-pressed="false">Zoning</button>
+          <button id="devplan-toggle" type="button" class="secondary" aria-pressed="false">Dev Plan</button>
+          <button id="contam-toggle"  type="button" class="secondary" aria-pressed="false" title="Manitoba Contaminated Sites Registry">Enviro</button>
+          <button id="traffic-toggle" type="button" class="secondary" aria-pressed="false" title="MHTIS traffic-count station locations">Stations</button>
+          <button id="flow-toggle"    type="button" class="secondary" aria-pressed="false" title="MHTIS Traffic Flow 2019 — segments coloured by AADT">Flow</button>
+        </div>
       </aside>
 
       <main class="main-pane">
@@ -185,6 +162,31 @@
     </div>
       </main>
     </div>
+
+    <details class="explainer">
+      <summary>About this tool</summary>
+      <div class="explainer-body">
+        <p>
+          Search Manitoba properties (excluding Winnipeg, which has its
+          <a href="https://winnipeg-opendata-parcelsearch.vercel.app/" target="_blank" rel="noreferrer">own portal</a>)
+          by civic address, municipality, or roll #. Each result is enriched
+          with its top-2 zoning districts (with coverage %) and its primary
+          development-plan designation, plus the bylaw numbers behind each.
+        </p>
+        <p>
+          Three live datasets are queried on every search:
+          <a href="https://geoportal.gov.mb.ca/datasets/manitoba::roll-entry/about" target="_blank" rel="noreferrer">Roll Entry</a> (parcels),
+          <a href="https://geoportal.gov.mb.ca/datasets/manitoba::manitoba-zoning-by-laws/about" target="_blank" rel="noreferrer">Zoning By-Laws</a>, and
+          <a href="https://geoportal.gov.mb.ca/datasets/manitoba::manitoba-development-plan-designations/about" target="_blank" rel="noreferrer">Development Plan Designations</a>.
+          Search results always run live against the province; the
+          municipality + category dropdowns and the overlay layers
+          (zoning, dev-plan, contaminated sites, traffic flow, full muni
+          parcel fabric) are cached in your browser for up to 7 days so
+          repeat work in the same area stays snappy. The Clear button
+          wipes that cache.
+        </p>
+      </div>
+    </details>
 
     <footer id="disclaimer" class="disclaimer">
       <strong>Disclaimer:</strong> This site is provided without warranty

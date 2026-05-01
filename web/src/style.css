@@ -96,6 +96,22 @@ header small a {
   text-align: center;
 }
 
+/* Map-overlay buttons sit in a 2-column grid inside the sidebar so the
+   list of toggles stays compact. Each button stretches to its grid cell;
+   text labels were trimmed to single keywords (Zoning / Dev Plan / Enviro
+   / etc.) so the buttons don't wrap at this width. */
+.sidebar .overlay-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.sidebar .overlay-grid button {
+  width: 100%;
+  padding: 8px 6px;
+  font-size: 13px;
+}
+
 .controls {
   align-items: stretch;
 }
@@ -301,8 +317,7 @@ header small a {
 
 #map {
   width: 100%;
-  /* 10% taller than the original 480 px so the map dominates its pane. */
-  height: 528px;
+  height: 700px;
   background: #eaeaec;
   position: relative;
 }
