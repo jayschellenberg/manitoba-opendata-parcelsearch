@@ -321,14 +321,13 @@ export function initMap(container, { onFeatureClick } = {}) {
           // of it or being silently dropped by the collision system.
           'text-allow-overlap': true,
           'text-ignore-placement': true,
-          // Anchor at the bottom of the text and shift the label up by
-          // ~1.2 em from the polygon centroid. Means the bottom edge of
-          // the zoning code ends just above the centroid; the roll-
-          // number label (which renders centered on each parcel
-          // centroid in muni-parcels-label) sits below it with clear
-          // air between the two.
+          // Anchor at the bottom of the text and shift it well above
+          // the polygon centroid so the zoning code clears the roll-
+          // number label below (which renders centered on each parcel
+          // centroid in muni-parcels-label). Negative-y in em units;
+          // -1.2 em ≈ 13 px gap above the centroid before the text.
           'text-anchor': 'bottom',
-          'text-offset': [0, -0.4],
+          'text-offset': [0, -1.2],
         },
         paint: { 'text-color': '#1a1a1a', 'text-halo-color': '#fff', 'text-halo-width': 1.5 },
       });
