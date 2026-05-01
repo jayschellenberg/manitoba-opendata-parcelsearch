@@ -59,6 +59,8 @@ const $clear         = document.getElementById('clear');
 const $export        = document.getElementById('export');
 const $zoningToggle  = document.getElementById('zoning-toggle');
 const $devplanToggle = document.getElementById('devplan-toggle');
+const $muniWebsiteBtn = document.getElementById('muni-website-btn');
+const $pdWebsiteBtn   = document.getElementById('pd-website-btn');
 const $contamToggle  = document.getElementById('contam-toggle');
 const $flowToggle    = document.getElementById('flow-toggle');
 const $muniParcelsToggle = document.getElementById('muni-parcels-toggle');
@@ -105,6 +107,49 @@ function rebuildZoningLegend(zoningFc) {
 }
 
 const EMPTY_FC = { type: 'FeatureCollection', features: [] };
+
+/**
+ * RM / municipality website URLs, keyed on Muni_Name_With_Typ exactly as
+ * Roll_Entry stores it (e.g. "STONEWALL (TOWN)"). Manitoba's open data
+ * doesn't carry website URLs, so this is a hand-curated list — extend
+ * over time as new munis are encountered. Missing entries render the
+ * button as "N/A" and disabled.
+ */
+const MUNI_WEBSITES = {
+  'BRANDON (CITY)':            'https://www.brandon.ca/',
+  'STEINBACH (CITY)':          'https://www.steinbach.ca/',
+  'THOMPSON (CITY)':           'https://www.thompson.ca/',
+  'WINKLER (CITY)':            'https://www.cityofwinkler.ca/',
+  'DAUPHIN (CITY)':            'https://www.dauphin.ca/',
+  'SELKIRK (CITY)':            'https://www.cityofselkirk.com/',
+  'PORTAGE LA PRAIRIE (CITY)': 'https://www.city-plap.com/',
+  'FLIN FLON (CITY)':          'https://www.flinflon.ca/',
+  'MORDEN (CITY)':             'https://www.mordenmb.com/',
+  'STONEWALL (TOWN)':          'https://www.stonewall.ca/',
+  'BEAUSEJOUR (TOWN)':         'https://www.beausejour.ca/',
+  'CARMAN (TOWN)':             'https://www.townofcarman.com/',
+  'MORRIS (TOWN)':             'https://www.townofmorris.ca/',
+  'NIVERVILLE (TOWN)':         'https://www.whereyoubelong.ca/',
+};
+
+/**
+ * Planning District website URLs, keyed on the exact PLANNINGDISTRICT
+ * value from the Manitoba Development Plan Designations layer. The
+ * planning district for a given muni is inferred at search time from
+ * the dev-plan polygons that fall in that muni; this map only carries
+ * the URL. Extend as needed.
+ */
+const PD_WEBSITES = {
+  'RED RIVER PLANNING DISTRICT':       'https://www.rrpd.ca/',
+  'CARTIER-HEADINGLEY PLANNING DISTRICT': 'https://chpd.ca/',
+  'PEMBINA VALLEY PLANNING DISTRICT':  'https://pvpd.ca/',
+  'WEST INTERLAKE PLANNING DISTRICT':  'https://wipd.ca/',
+  'EASTMAN REGIONAL PLANNING DISTRICT':'https://eastmanregion.ca/',
+  'CENTRAL PLAINS PLANNING DISTRICT':  'https://centralplainspd.com/',
+  'SOUTH INTERLAKE PLANNING DISTRICT': 'https://www.sipd.ca/',
+  'WHITESHELL PLANNING DISTRICT':      'https://whiteshellplanning.ca/',
+  'TIGER HILLS PLANNING DISTRICT':     'https://thpd.ca/',
+};
 
 // Most recent table rows, kept around for CSV export.
 let currentRows = [];
@@ -336,6 +381,10 @@ $muniParcelsToggle.addEventListener('click', () => toggleAuxOverlay('muniParcels
 $municipality.addEventListener('change', () => {
   refilterCategoryDropdowns();
   resetMuniParcelsToggle();
+  updateMuniWebsiteButton();
+  // Reset the PD button until the next search resolves the planning
+  // district from the dev-plan layer's PLANNINGDISTRICT field.
+  setExternalLinkButton($pdWebsiteBtn, null, 'PD Website', 'Run a search to detect the planning district');
 });
 // The "Min #" number input is only meaningful when Min DU is selected.
 // Disable it otherwise so users can't type a value that has no effect.
@@ -494,6 +543,7 @@ async function runSearch() {
     lastZoningFc = zoningFc;
     lastDevPlanFc = devPlanFc;
     rebuildZoningLegend(zoningFc);
+    updatePdWebsiteButton(devPlanFc);
 
     const zoningTop2  = joinTopNByArea(parcelFc, zoningFc, 2);
     const devPlanTop2 = joinTopNByArea(parcelFc, devPlanFc, 2);
@@ -1105,6 +1155,69 @@ function ratioPct(v) {
 function formatAcresCsv(v) {
   if (v == null || !Number.isFinite(v)) return '';
   return v.toFixed(3);
+}
+
+/**
+ * Generic helper to point an overlay-grid button at an external URL.
+ * When `url` is a real http(s) string, the button is enabled, its
+ * label becomes the active label, and clicking opens the URL in a
+ * new tab. When `url` is null, the button is disabled and labelled
+ * with the inactive label (typically "N/A" suffixed).
+ */
+function setExternalLinkButton(btn, url, activeLabel, inactiveTitle) {
+  if (!btn) return;
+  // Drop any prior click handler so we don't stack listeners across
+  // muni-change events.
+  if (btn._extHandler) btn.removeEventListener('click', btn._extHandler);
+  const safe = safeExternalUrl(url);
+  if (safe) {
+    btn.disabled = false;
+    btn.textContent = activeLabel;
+    btn.title = `Open ${safe} in a new tab`;
+    btn.classList.add('active');
+    btn._extHandler = () => window.open(safe, '_blank', 'noopener,noreferrer');
+    btn.addEventListener('click', btn._extHandler);
+  } else {
+    btn.disabled = true;
+    btn.textContent = `${activeLabel.split(' ')[0]} N/A`;
+    btn.title = inactiveTitle;
+    btn.classList.remove('active');
+    btn._extHandler = null;
+  }
+}
+
+/** Refresh the RM Website button against the current muni dropdown
+ *  selection. Pulls from the static MUNI_WEBSITES mapping. */
+function updateMuniWebsiteButton() {
+  const muni = $municipality.value;
+  if (!muni) {
+    setExternalLinkButton($muniWebsiteBtn, null, 'RM Website', 'Select a municipality to enable');
+    return;
+  }
+  const url = MUNI_WEBSITES[muni];
+  setExternalLinkButton($muniWebsiteBtn, url || null, 'RM Website',
+    `No website on file for ${muni}. Add it to MUNI_WEBSITES in main.js.`);
+}
+
+/** After a search lands, infer the parcel set's Planning District from
+ *  the dev-plan layer's PLANNINGDISTRICT field (most-frequent value
+ *  wins) and look up its URL in PD_WEBSITES. */
+function updatePdWebsiteButton(devPlanFc) {
+  const counts = new Map();
+  for (const f of devPlanFc?.features || []) {
+    const pd = f.properties?.PLANNINGDISTRICT;
+    if (pd) counts.set(pd, (counts.get(pd) || 0) + 1);
+  }
+  let best = null, bestCount = 0;
+  for (const [pd, c] of counts) if (c > bestCount) { best = pd; bestCount = c; }
+  if (!best) {
+    setExternalLinkButton($pdWebsiteBtn, null, 'PD Website',
+      'No planning district found in this search\'s dev-plan polygons');
+    return;
+  }
+  const url = PD_WEBSITES[best];
+  setExternalLinkButton($pdWebsiteBtn, url || null, 'PD Website',
+    `${best} — no website on file. Add it to PD_WEBSITES in main.js.`);
 }
 
 /** Parse the 4-digit year out of Roll_Entry's Asmt_Roll field. Values
