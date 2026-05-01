@@ -109,47 +109,270 @@ function rebuildZoningLegend(zoningFc) {
 const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
 /**
- * RM / municipality website URLs, keyed on Muni_Name_With_Typ exactly as
- * Roll_Entry stores it (e.g. "STONEWALL (TOWN)"). Manitoba's open data
- * doesn't carry website URLs, so this is a hand-curated list — extend
- * over time as new munis are encountered. Missing entries render the
- * button as "N/A" and disabled.
+ * Municipality website URLs, keyed on the Muni_Name_With_Typ value
+ * Roll_Entry returns (e.g. "STONEWALL (TOWN)", "BRANDON (CITY)",
+ * "ROCKWOOD (RM)"). Compiled from the province's official Municipal
+ * Contact Directory — every muni with a published website is here.
+ * Munis whose only published contact is an email (Ethelbert, Grand
+ * Rapids, Leaf Rapids, Mystery Lake) intentionally have no entry, so
+ * the RM Website button reads "RM N/A" for those.
+ *
+ * The lookupMuniWebsite() helper below tolerates dash/diacritic
+ * variants the data layer might use (e.g. en-dash vs hyphen, accented
+ * É vs plain E), so a single canonical key here covers minor
+ * formatting drift on the source side.
  */
 const MUNI_WEBSITES = {
-  'BRANDON (CITY)':            'https://www.brandon.ca/',
-  'STEINBACH (CITY)':          'https://www.steinbach.ca/',
-  'THOMPSON (CITY)':           'https://www.thompson.ca/',
-  'WINKLER (CITY)':            'https://www.cityofwinkler.ca/',
-  'DAUPHIN (CITY)':            'https://www.dauphin.ca/',
-  'SELKIRK (CITY)':            'https://www.cityofselkirk.com/',
-  'PORTAGE LA PRAIRIE (CITY)': 'https://www.city-plap.com/',
-  'FLIN FLON (CITY)':          'https://www.flinflon.ca/',
-  'MORDEN (CITY)':             'https://www.mordenmb.com/',
-  'STONEWALL (TOWN)':          'https://www.stonewall.ca/',
-  'BEAUSEJOUR (TOWN)':         'https://www.beausejour.ca/',
-  'CARMAN (TOWN)':             'https://www.townofcarman.com/',
-  'MORRIS (TOWN)':             'https://www.townofmorris.ca/',
-  'NIVERVILLE (TOWN)':         'https://www.whereyoubelong.ca/',
+  // Cities
+  'BRANDON (CITY)':              'https://www.brandon.ca/',
+  'DAUPHIN (CITY)':              'https://www.dauphin.ca/',
+  'FLIN FLON (CITY)':            'https://www.cityofflinflon.ca/',
+  'MORDEN (CITY)':               'https://www.mymorden.ca/',
+  'PORTAGE LA PRAIRIE (CITY)':   'https://www.city-plap.com/',
+  'SELKIRK (CITY)':              'https://www.myselkirk.ca/',
+  'STEINBACH (CITY)':            'https://www.steinbach.ca/',
+  'THOMPSON (CITY)':             'https://www.thompson.ca/',
+  'WINKLER (CITY)':              'https://www.winkler.ca/',
+  'WINNIPEG (CITY)':             'https://www.winnipeg.ca/',
+
+  // Towns
+  'ALTONA (TOWN)':               'https://www.altona.ca/',
+  'ARBORG (TOWN)':               'https://www.townofarborg.com/',
+  'BEAUSEJOUR (TOWN)':           'https://www.townofbeausejour.com/',
+  'CARBERRY (TOWN)':             'https://www.townofcarberry.ca/',
+  'CARMAN (TOWN)':               'https://www.carmandufferin.ca/',
+  'CHURCHILL (TOWN)':            'https://www.churchill.ca/',
+  'GILLAM (TOWN)':               'https://www.townofgillam.com/',
+  'LAC DU BONNET (TOWN)':        'https://www.townoflacdubonnet.com/',
+  'LYNN LAKE (TOWN)':            'https://www.lynnlake.ca/',
+  'MELITA (TOWN)':               'https://www.melitamb.ca/',
+  'MINNEDOSA (TOWN)':            'https://www.discoverminnedosa.com/',
+  'MORRIS (TOWN)':               'https://www.townofmorris.ca/',
+  'NEEPAWA (TOWN)':              'https://www.neepawa.ca/',
+  'NIVERVILLE (TOWN)':           'https://www.whereyoubelong.ca/',
+  'POWERVIEW-PINE FALLS (TOWN)': 'https://www.powerview-pinefalls.com/',
+  'SNOW LAKE (TOWN)':            'https://www.snowlake.com/',
+  'STE. ANNE (TOWN)':            'https://www.steannemb.ca/',
+  'STONEWALL (TOWN)':            'https://www.stonewall.ca/',
+  'SWAN RIVER (TOWN)':           'https://www.swanrivermanitoba.ca/',
+  'TEULON (TOWN)':               'https://www.teulon.ca/',
+  'THE PAS (TOWN)':              'https://www.townofthepas.ca/',
+  'VIRDEN (TOWN)':               'https://www.virden.ca/',
+  'WINNIPEG BEACH (TOWN)':       'https://www.winnipegbeach.ca/',
+
+  // Rural Municipalities
+  'ALEXANDER (RM)':              'https://www.rmalexander.com/',
+  'ALONSA (RM)':                 'https://www.rmofalonsa.com/',
+  'ARGYLE (RM)':                 'https://www.rmofargyle.ca/',
+  'ARMSTRONG (RM)':              'https://www.rmofarmstrong.com/',
+  'BROKENHEAD (RM)':             'https://www.ourhomeyourhome.ca/',
+  'CARTIER (RM)':                'https://www.rmofcartier.ca/',
+  'COLDWELL (RM)':               'https://www.lundar.ca/',
+  'CORNWALLIS (RM)':             'https://www.gov.cornwallis.mb.ca/',
+  'DAUPHIN (RM)':                'https://www.rmofdauphin.ca/',
+  'DE SALABERRY (RM)':           'https://www.rmdesalaberry.mb.ca/',
+  'DUFFERIN (RM)':               'https://www.carmanmanitoba.ca/',
+  'EAST ST. PAUL (RM)':          'https://www.eaststpaul.com/',
+  'ELLICE-ARCHIE (RM)':          'https://www.rmofellicearchie.ca/',
+  'ELTON (RM)':                  'https://www.elton.ca/',
+  'FISHER (RM)':                 'https://www.rmoffisher.com/',
+  'GIMLI (RM)':                  'https://www.gimli.ca/',
+  'GRAHAMDALE (RM)':             'https://www.grahamdale.ca/',
+  'GREY (RM)':                   'https://www.rmofgrey.ca/',
+  'HANOVER (RM)':                'https://www.hanovermb.ca/',
+  'HEADINGLEY (RM)':             'https://www.rmofheadingley.ca/',
+  'KELSEY (RM)':                 'https://www.rmofkelsey.ca/',
+  'LA BROQUERIE (RM)':           'https://www.labroquerie.com/',
+  'LAC DU BONNET (RM)':          'https://www.rmoflacdubonnet.com/',
+  'LAKESHORE (RM)':              'https://www.rmoflakeshore.ca/',
+  'MACDONALD (RM)':              'https://www.rmofmacdonald.com/',
+  'MINTO-ODANAH (RM)':           'https://www.discoverminnedosa.com/',
+  'MONTCALM (RM)':               'https://www.rmofmontcalm.com/',
+  'MORRIS (RM)':                 'https://www.rmofmorris.com/',
+  'MOUNTAIN (RM)':               'https://www.rmofmountain.com/',
+  'OAKVIEW (RM)':                'https://www.rmofoakview.ca/',
+  'PINEY (RM)':                  'https://www.rmofpiney.mb.ca/',
+  'PIPESTONE (RM)':              'https://www.rmofpipestone.com/',
+  'PORTAGE LA PRAIRIE (RM)':     'https://www.rmofportage.ca/',
+  'PRAIRIE LAKES (RM)':          'https://www.rmofprairielakes.ca/',
+  'REYNOLDS (RM)':               'https://www.rmofreynolds.com/',
+  'RIDING MOUNTAIN WEST (RM)':   'https://www.rmwest.ca/',
+  'RITCHOT (RM)':                'https://www.ritchot.com/',
+  'ROCKWOOD (RM)':               'https://www.rockwood.ca/',
+  'ROLAND (RM)':                 'https://www.rmofroland.com/',
+  'ROSEDALE (RM)':               'https://www.rmrosedale.com/',
+  'ROSSER (RM)':                 'https://www.rmofrosser.com/',
+  'SIFTON (RM)':                 'https://www.rmofsifton.com/',
+  'SPRINGFIELD (RM)':            'https://www.rmofspringfield.ca/',
+  'ST. ANDREWS (RM)':            'https://www.rmofstandrews.com/',
+  'ST. CLEMENTS (RM)':           'https://www.rmofstclements.com/',
+  'ST. FRANCOIS XAVIER (RM)':    'https://www.rm-stfrancois.mb.ca/',
+  'ST. LAURENT (RM)':            'https://www.rmstlaurent.com/',
+  'STANLEY (RM)':                'https://www.rmofstanley.ca/',
+  'STE. ANNE (RM)':              'https://www.rmofsteanne.com/',
+  'STUARTBURN (RM)':             'https://www.rmofstuartburn.com/',
+  'TACHE (RM)':                  'https://www.rmtache.ca/',
+  'THOMPSON (RM)':               'https://www.rmofthompson.com/',
+  'VICTORIA (RM)':               'https://www.rmofvictoria.com/',
+  'VICTORIA BEACH (RM)':         'https://www.rmofvictoriabeach.ca/',
+  'WALLACE-WOODWORTH (RM)':      'https://www.wallace-woodworth.com/',
+  'WEST INTERLAKE (RM)':         'https://www.rmofwestinterlake.com/',
+  'WEST ST. PAUL (RM)':          'https://www.weststpaul.com/',
+  'WHITEHEAD (RM)':              'https://www.rmofwhitehead.ca/',
+  'WHITEMOUTH (RM)':             'https://www.rmwhitemouth.com/',
+  'WOODLANDS (RM)':              'https://www.rmwoodlands.ca/',
+  'YELLOWHEAD (RM)':             'https://www.yellowheadmunicipality.ca/',
+
+  // Municipalities (post-amalgamation single-tier)
+  'BIFROST-RIVERTON (MUNICIPALITY)':       'https://www.bifrostriverton.ca/',
+  'BOISSEVAIN-MORTON (MUNICIPALITY)':      'https://www.boissevain.ca/',
+  'BRENDA-WASKADA (MUNICIPALITY)':         'https://www.waskada.org/',
+  'CARTWRIGHT-ROBLIN (MUNICIPALITY)':      'https://cartwrightroblin.com/',
+  'CLANWILLIAM-ERICKSON (MUNICIPALITY)':   'https://www.ericksonmb.ca/',
+  'DELORAINE-WINCHESTER (MUNICIPALITY)':   'https://www.delowin.ca/',
+  'EMERSON-FRANKLIN (MUNICIPALITY)':       'https://www.emersonfranklin.com/',
+  'GILBERT PLAINS (MUNICIPALITY)':         'https://www.gilbertplains.com/',
+  'GLENBORO-SOUTH CYPRESS (MUNICIPALITY)': 'https://www.glenboro.com/',
+  'GLENELLA-LANSDOWNE (MUNICIPALITY)':     'https://www.glenella.ca/',
+  'GRANDVIEW (MUNICIPALITY)':              'https://grandviewmanitoba.com/',
+  'GRASSLAND (MUNICIPALITY)':              'https://www.grasslandmunicipality.ca/',
+  'HAMIOTA (MUNICIPALITY)':                'https://www.hamiota.com/',
+  'HARRISON PARK (MUNICIPALITY)':          'https://www.harrisonpark.ca/',
+  'KILLARNEY-TURTLE MOUNTAIN (MUNICIPALITY)': 'https://www.killarney.ca/',
+  'LORNE (MUNICIPALITY)':                  'https://www.rmoflorne.ca/',
+  'LOUISE (MUNICIPALITY)':                 'https://www.louisemb.com/',
+  'MCCREARY (MUNICIPALITY)':               'https://www.exploremccreary.com/',
+  'MINITONAS-BOWSMAN (MUNICIPALITY)':      'https://www.minitonas-bowsman.ca/',
+  'MOSSEY RIVER (MUNICIPALITY)':           'https://www.mosseyrivermunicipality.com/',
+  'NORFOLK TREHERNE (MUNICIPALITY)':       'https://www.treherne.ca/',
+  'NORTH CYPRESS-LANGFORD (MUNICIPALITY)': 'https://www.rmofnorthcypress.ca/',
+  'NORTH NORFOLK (MUNICIPALITY)':          'https://www.northnorfolk.ca/',
+  'OAKLAND-WAWANESA (MUNICIPALITY)':       'https://www.oakland-wawanesa.ca/',
+  'PEMBINA (MUNICIPALITY)':                'https://www.pembina.ca/',
+  'PRAIRIE VIEW (MUNICIPALITY)':           'https://www.myprairieview.ca/',
+  'RHINELAND (MUNICIPALITY)':              'https://www.rmofrhineland.com/',
+  'RIVERDALE (MUNICIPALITY)':              'https://www.riversdaly.ca/',
+  'ROBLIN (MUNICIPALITY)':                 'https://www.roblinmanitoba.com/',
+  'ROSSBURN (MUNICIPALITY)':               'https://www.rossburn.ca/',
+  'RUSSELL-BINSCARTH (MUNICIPALITY)':      'https://www.russellbinscarth.com/',
+  'SOURIS-GLENWOOD (MUNICIPALITY)':        'https://www.sourismanitoba.com/',
+  'STE. ROSE (MUNICIPALITY)':              'https://www.sterose.ca/',
+  'SWAN VALLEY WEST (MUNICIPALITY)':       'https://www.munswanvalleywest.ca/',
+  'TWO BORDERS (MUNICIPALITY)':            'https://www.twoborders.ca/',
+  'WESTLAKE-GLADSTONE (MUNICIPALITY)':     'https://www.westlake-gladstone.ca/',
+
+  // Villages
+  'DUNNOTTAR (VILLAGE)':                   'https://www.dunnottar.ca/',
+  'ST. PIERRE-JOLYS (VILLAGE)':            'https://www.villagestpierrejolys.ca/',
+
+  // Local Government Districts
+  'PINAWA (LGD)':                          'https://www.pinawa.com/',
 };
 
+/** Normalize a Muni_Name_With_Typ for tolerant lookup: uppercase, strip
+ *  diacritics (é → e), normalize en-/em-dashes to hyphen-minus, collapse
+ *  whitespace. Used on both sides of the lookup so dash/accent drift in
+ *  the source data doesn't break the match. */
+function normalizeMuniKey(name) {
+  if (!name) return '';
+  return String(name)
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')   // strip combining diacritics
+    .toUpperCase()
+    .replace(/[‐-―−]/g, '-') // any unicode dash → hyphen-minus
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Look up the website URL for a given Muni_Name_With_Typ. Tries exact
+ *  match first, then a normalized match against a normalized index of
+ *  the MUNI_WEBSITES keys. Returns null when nothing matches. */
+let _muniIndex = null;
+function lookupMuniWebsite(muniNameWithTyp) {
+  if (!muniNameWithTyp) return null;
+  if (MUNI_WEBSITES[muniNameWithTyp]) return MUNI_WEBSITES[muniNameWithTyp];
+  if (_muniIndex === null) {
+    _muniIndex = new Map();
+    for (const [k, v] of Object.entries(MUNI_WEBSITES)) {
+      _muniIndex.set(normalizeMuniKey(k), v);
+    }
+  }
+  return _muniIndex.get(normalizeMuniKey(muniNameWithTyp)) || null;
+}
+
 /**
- * Planning District website URLs, keyed on the exact PLANNINGDISTRICT
- * value from the Manitoba Development Plan Designations layer. The
- * planning district for a given muni is inferred at search time from
- * the dev-plan polygons that fall in that muni; this map only carries
- * the URL. Extend as needed.
+ * Planning District website URLs. Keyed on a normalized form of the
+ * PLANNINGDISTRICT value: uppercased, with any trailing
+ * " PLANNING DISTRICT" suffix stripped, whitespace collapsed. The
+ * lookup helper (lookupPdWebsite below) does the normalization on the
+ * incoming value too, so the map keeps short canonical names.
+ *
+ * Sourced from the province's official PD contact directory. PDs whose
+ * contact information is only an email at a generic host (mymts.net,
+ * gmail.com) or whose communications are routed through a member RM
+ * are intentionally omitted — those would need a separate phone/email
+ * UI rather than a "website" button. Extend as more come online.
  */
 const PD_WEBSITES = {
-  'RED RIVER PLANNING DISTRICT':       'https://www.rrpd.ca/',
-  'CARTIER-HEADINGLEY PLANNING DISTRICT': 'https://chpd.ca/',
-  'PEMBINA VALLEY PLANNING DISTRICT':  'https://pvpd.ca/',
-  'WEST INTERLAKE PLANNING DISTRICT':  'https://wipd.ca/',
-  'EASTMAN REGIONAL PLANNING DISTRICT':'https://eastmanregion.ca/',
-  'CENTRAL PLAINS PLANNING DISTRICT':  'https://centralplainspd.com/',
-  'SOUTH INTERLAKE PLANNING DISTRICT': 'https://www.sipd.ca/',
-  'WHITESHELL PLANNING DISTRICT':      'https://whiteshellplanning.ca/',
-  'TIGER HILLS PLANNING DISTRICT':     'https://thpd.ca/',
+  // From the Manitoba PD contact directory (websites or unmistakable
+  // PD-specific email-domain → website inferences):
+  'BROKENHEAD RIVER':                  'https://www.brpd.ca/',
+  'CARMAN-DUFFERIN-GREY':              'https://www.cdgplanning.com/',
+  'CYPRESS':                           'https://www.cypressplanningdistrict.com/',
+  'EASTERN INTERLAKE':                 'https://www.eipd.ca/',
+  'KEYSTONE':                          'https://www.keystonepd.ca/',
+  'MID-WEST':                          'https://www.midwestplanning.ca/',
+  'MORDEN/STANLEY/THOMPSON/WINKLER':   'https://www.mstw.ca/',
+  'M.S.T.W':                           'https://www.mstw.ca/',
+  'MSTW':                              'https://www.mstw.ca/',
+  'NEEPAWA & AREA':                    'https://www.neepawaareaplanning.com/',
+  'PORTAGE LA PRAIRIE':                'https://www.ptgplanning.ca/',
+  'RHINELAND, PLUM COULEE GRETNA, ALTONA': 'https://www.rpgamb.ca/',
+  'RHINELAND PLUM COULEE GRETNA ALTONA':   'https://www.rpgamb.ca/',
+  'RPGA':                              'https://www.rpgamb.ca/',
+  'RED RIVER':                         'https://www.rrpd.ca/',
+  'SOUTH CENTRAL':                     'https://www.scpd.ca/',
+  'SOUTH INTERLAKE':                   'https://www.sipd.ca/',
+  'TRANS CANADA WEST':                 'https://www.tcwpd.ca/',
+  'TRI-ROADS':                         'https://www.triroads.ca/',
+  // PDs administered through a member RM rather than their own site —
+  // pointed at the RM's planning page so the button still reaches the
+  // right office:
+  'LAC DU BONNET':                     'https://www.lacdubonnet.com/',
+  'LAKESHORE':                         'https://www.rmofdauphin.ca/',
+  'MACDONALD - RITCHOT':               'https://www.ritchot.com/',
+  'MACDONALD-RITCHOT':                 'https://www.ritchot.com/',
+  'MOUNTAIN VIEW':                     'https://www.gilbertplains.net/',
+  'KELSEY':                            'https://www.townofthepas.ca/',
+  'THOMPSON':                          'https://www.thompson.ca/',
+  'WHITE HORSE PLAINS':                'https://www.rmofcartier.ca/',
+  'WINNIPEG RIVER':                    'https://www.rmalexander.com/',
+  // PDs whose contact is only a generic-host email (no PD-specific
+  // website on file): DENNIS COUNTY, FISHER ARMSTRONG, PELICAN-ROCK
+  // LAKE, SOUTHWEST, SWAN VALLEY, TANNER'S CROSSING, WESTERN INTERLAKE,
+  // WHITEMOUTH REYNOLDS. Add when a website is published.
 };
+
+/** Normalize a PLANNINGDISTRICT value the way PD_WEBSITES is keyed.
+ *  Uppercase, drop a trailing " PLANNING DISTRICT", collapse whitespace.
+ *  Returns the empty string for nullish input so the lookup fall-through
+ *  is uniform. */
+function normalizePdKey(name) {
+  if (!name) return '';
+  return String(name)
+    .toUpperCase()
+    .replace(/\s+PLANNING\s+DISTRICT\s*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Try the normalized key first, then the raw value as a fallback for
+ *  any PD whose name we happen to have in the source format. */
+function lookupPdWebsite(pdName) {
+  if (!pdName) return null;
+  const norm = normalizePdKey(pdName);
+  return PD_WEBSITES[norm] || PD_WEBSITES[pdName] || null;
+}
 
 // Most recent table rows, kept around for CSV export.
 let currentRows = [];
@@ -1194,8 +1417,8 @@ function updateMuniWebsiteButton() {
     setExternalLinkButton($muniWebsiteBtn, null, 'RM Website', 'Select a municipality to enable');
     return;
   }
-  const url = MUNI_WEBSITES[muni];
-  setExternalLinkButton($muniWebsiteBtn, url || null, 'RM Website',
+  const url = lookupMuniWebsite(muni);
+  setExternalLinkButton($muniWebsiteBtn, url, 'RM Website',
     `No website on file for ${muni}. Add it to MUNI_WEBSITES in main.js.`);
 }
 
@@ -1215,8 +1438,8 @@ function updatePdWebsiteButton(devPlanFc) {
       'No planning district found in this search\'s dev-plan polygons');
     return;
   }
-  const url = PD_WEBSITES[best];
-  setExternalLinkButton($pdWebsiteBtn, url || null, 'PD Website',
+  const url = lookupPdWebsite(best);
+  setExternalLinkButton($pdWebsiteBtn, url, 'PD Website',
     `${best} — no website on file. Add it to PD_WEBSITES in main.js.`);
 }
 
