@@ -328,7 +328,14 @@ header small a {
 
 #map {
   width: 100%;
-  height: 700px;
+  /* Lock to 16:9 — height falls out from whatever width the main pane
+     actually has at the user's viewport. On a typical 1512-px-wide
+     viewport (sidebar 280 → map ~1232 wide) this lands at ~693 px
+     tall; wider viewports get proportionally taller maps. The
+     min-height keeps small / collapsed-sidebar viewports from going
+     so short that the map's controls overlap the basemap. */
+  aspect-ratio: 16 / 9;
+  min-height: 420px;
   background: #eaeaec;
   position: relative;
 }
