@@ -456,6 +456,39 @@ export function initMap(container, { onFeatureClick } = {}) {
           'line-opacity': 0.9,
         },
       });
+      // Roll-number labels at each parcel's centroid. Polygon symbol
+      // placement uses the polygon's centroid by default (MapLibre falls
+      // back to the largest interior anchor point if the centroid is
+      // outside the geometry). minzoom 14 keeps the labels from piling
+      // on each other at town- or province-wide views; at street-level
+      // zoom the parcels are large enough to host the text. White halo
+      // keeps it legible against either basemap or the parcels' own
+      // light-blue fill.
+      map.addLayer({
+        id: 'muni-parcels-label',
+        type: 'symbol',
+        source: 'muni-parcels',
+        minzoom: 14,
+        layout: {
+          visibility: 'none',
+          'text-field': ['coalesce', ['get', 'Roll_No_Txt'], ''],
+          'text-font': ['Open Sans Semibold'],
+          'text-size': [
+            'interpolate', ['linear'], ['zoom'],
+            14, 9,
+            17, 11,
+            19, 13,
+          ],
+          'text-allow-overlap': false,
+          'text-ignore-placement': false,
+          'symbol-placement': 'point',
+        },
+        paint: {
+          'text-color': '#1a1a1a',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.6,
+        },
+      });
 
       // Parcel highlight — primary layer, always on. Red fill so it pops
       // against any pale-coloured zoning/dev-plan overlay underneath.
@@ -730,7 +763,7 @@ export function setMuniParcelsData(map, fc) {
 }
 export function setMuniParcelsVisible(map, visible) {
   const v = visible ? 'visible' : 'none';
-  for (const id of ['muni-parcels-fill', 'muni-parcels-line']) {
+  for (const id of ['muni-parcels-fill', 'muni-parcels-line', 'muni-parcels-label']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
   }
 }
