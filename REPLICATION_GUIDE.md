@@ -1,6 +1,8 @@
 # Parcel Search Tool — Replication Guide
 
-This document explains how to build the same parcel-search tool for a different jurisdiction (e.g. Manitoba Open Data, another Canadian municipality). It covers the full architecture, every non-obvious decision, every bug already solved, and the exact checklist of files and lines to change.
+This document explains how to build the same parcel-search tool for a different jurisdiction. It covers the full architecture, every non-obvious decision, every bug already solved, and the exact checklist of files and lines to change.
+
+> **Two reference implementations** — this guide was originally written from the Winnipeg Open Data (Socrata) site. The same architecture has since been adapted to Manitoba Open Data (ArcGIS REST), and §14 below captures every Manitoba-specific decision, gotcha, and feature that wasn't present in the Winnipeg original.
 
 ---
 
@@ -788,3 +790,153 @@ https://data.example.ca/resource/DATASET-ID.json
 ```
 
 The deployed app exposes `window._map` for runtime inspection — handy for confirming layer state, source contents, and zoom level when troubleshooting on the live site.
+
+---
+
+## 14. Manitoba (ArcGIS REST) implementation notes
+
+This section captures everything that was new, surprising, or different when adapting the Winnipeg site to Manitoba Open Data. Use it alongside §12 ("Non-Socrata portals → ArcGIS") for the high-level pattern; the items below are the operational details.
+
+### 14.1 Datasets used
+
+| Layer | FeatureServer | Notes |
+|---|---|---|
+| ROLL_ENTRY | `services.arcgis.com/mMUesHYPkXjaFGfS/.../ROLL_ENTRY/FeatureServer/0` | Single parcel layer — no separate survey/legal-lots dataset, so the dual-flow architecture collapses to one direction. |
+| Manitoba_Zoning_By_Laws | same org | Carries `ZBL`, `ZBL_A`, `AMENDMENT_DESCRIPTION` for change-history filters. |
+| Manitoba_Development_Plan_Designations | same org | Carries `DP_BYLAW`, `DPA_BYLAW` for change-history. |
+| All_Stations_C_Only | `services6.arcgis.com/HQUud09zgy3Asw9X/.../FeatureServer/0` | MHTIS count-station locations; **no AADT field**. |
+| MHTIS_Traffic_Flow_2019 | same org | AADT polylines, joinable to stations on `StationNum`. |
+| Manitoba Contaminated Sites | CSV at `manitoba.ca/.../cs-data.csv` | Not a FeatureServer; CSV file behind the official ArcGIS web map. |
+
+### 14.2 Single-flow architecture
+
+ROLL_ENTRY contains the parcel polygons AND the assessment attributes (Roll #, address, total value, dwelling units, MAO link). There's no Land-Titles "survey" layer to separately query, so:
+
+- Drop the `searchSurveyParcels` / `searchAssessmentParcels` split — collapse to a single `searchParcels` that ANDs every filter against ROLL_ENTRY.
+- Drop `mergeSurveyFeatures`, `joinSurveyWithAssessment`, `joinAssessmentWithSurvey`, `parcelsOverlap`, partial-lot detection, and the dual-layer map. Just one parcel layer.
+- The Winnipeg multi-address civic-xref pattern (cam2-ii3u) doesn't apply — Manitoba has no province-wide civic-address dataset. `Property_Address` on ROLL_ENTRY is the only address field, and rural parcels often store a quarter-section description there (e.g. `SE 08-08-20 W`).
+
+### 14.3 Two enrichment overlays instead of one
+
+The Manitoba site enriches each result with **top-2 zoning** AND **primary dev-plan designation**, run as parallel spatial queries:
+
+- When the user has selected a Municipality, fire one bulk query per overlay (`UPPER(MUNI_NAME) = '<bare>'`) — gets every overlay polygon in the muni in a single paginated response. The client then runs `joinTopNByArea(parcelFc, overlayFc)` locally.
+- When the user hasn't selected a Muni (province-wide search), fall back to per-parcel envelope queries with a concurrency cap.
+
+The bulk path is ~30× faster for muni-scoped searches and eliminated a class of transient-failure bugs where 1000 per-parcel queries overlapped with concurrency limits and silently dropped some rows' enrichment.
+
+### 14.4 ArcGIS SQL92 dialect quirks
+
+- **Use POST with form-encoded body** for queries, not GET — geometry envelopes plus long `OBJECTID IN (...)` clauses easily push GET URLs past 8 KB.
+- `f=geojson` returns standard GeoJSON; `f=json` returns Esri JSON with `attributes`/`geometry`. We use `geojson` everywhere for consistency with turf.js.
+- `spatialRel=esriSpatialRelIntersects` is a true intersection — **no bbox padding needed** (Bug 10.2 from the Winnipeg side does not apply).
+- **`TRIM()` is not supported** in `where` clauses on hosted Feature Services — returns `400 "'where' parameter is invalid"`. Use explicit comparisons (`x <> '' AND x <> ' '`) instead. The dialect is a stripped subset of SQL92.
+- `LIKE` is case-sensitive; wrap fields in `UPPER(...)` for case-insensitive partial matching, same as Socrata.
+- Hosted Feature Services cap `resultRecordCount` at 2000. Walk through pages with `resultOffset` until `exceededTransferLimit` is false or fewer rows come back than requested.
+
+### 14.5 Roll # exact-match with decimal padding
+
+ROLL_ENTRY stores roll numbers with a `.000` decimal suffix (e.g. `3600.000`), but users type the integer (`3600`). Build the where clause to accept both forms with a single OR:
+
+```sql
+(Roll_No_Txt = '<input>' OR Roll_No_Txt = '<input>.000')
+```
+
+Roll # digits are NOT unique province-wide — the same digits exist in many municipalities — so the UI should pair Roll # with a Municipality dropdown.
+
+### 14.6 Amendment-status filter
+
+Both overlay layers carry change-history fields:
+
+- **Zoning**: `ZBL` (original by-law), `ZBL_A` (amendment by-law), `AMENDMENT_DESCRIPTION` (sometimes the from→to text, e.g. `"RG8 to RG5"`).
+- **Dev Plan**: `DP_BYLAW`, `DPA_BYLAW`.
+
+A "changed" predicate ORs the two signals on the zoning side and a single comparison on the dev-plan side:
+
+```sql
+-- zoning changed
+((ZBL_A IS NOT NULL AND ZBL_A <> ZBL)
+ OR (AMENDMENT_DESCRIPTION IS NOT NULL
+     AND AMENDMENT_DESCRIPTION <> ''
+     AND AMENDMENT_DESCRIPTION <> ' '))   -- 385 rows store " " literally
+-- dev-plan changed
+DPA_BYLAW IS NOT NULL AND DPA_BYLAW <> DP_BYLAW
+```
+
+The UI exposes a single "Status" dropdown (`Any` / `Zoning Changed` / `Dev Plan Changed` / `Both Changed`) that maps to two booleans, then `resolveOverlayFilter` pulls the matching overlay polygons, finds parcel OBJECTIDs that intersect them, and ANDs `OBJECTID IN (...)` into the parcel query.
+
+### 14.7 Top-N area-weighted join
+
+`joinTopNByArea(parcelFc, overlayFc, n=2)` mirrors `mao-assembly/scripts/pipeline_utils.R::get_multiple_by_area()`:
+
+1. For each parcel, bbox-overlap reject overlays that can't possibly intersect.
+2. `intersect({ type: 'FeatureCollection', features: [parcel, overlay] })` (turf 7.x signature — the v6 `intersect(a, b)` API is gone).
+3. Wrap in try/catch — topology errors on real-world data are common.
+4. `area(intersection)` gives geodesic m²; divide by parcel area for ratio.
+5. Sort desc, take top N.
+
+Hide the secondary entry when its ratio < 1% — those are GIS digitization slivers, not real multi-zone parcels.
+
+### 14.8 Auxiliary overlays beyond the core search
+
+The Manitoba site adds five toggleable map overlays not present in the Winnipeg original:
+
+- **Show Enviro** — Manitoba Contaminated Sites Registry. Pulled from a CSV at `manitoba.ca`. Coloured points by designation (red / orange / grey).
+- **Show Stations** — MHTIS traffic-count station locations.
+- **Show Flow** — MHTIS Traffic Flow 2019 polylines coloured by AADT in 6 step-function bins. AADT label rendered along each segment at zoom ≥ 8.
+- **Show Muni Parcels** — every parcel in the selected muni rendered as a muted-grey fabric. Disabled until a muni is picked, lazy-loaded on first toggle, cached per-muni in sessionStorage. Hover popup shows roll #, address, DU, land size (ac · sf), total value.
+- **Streets / Satellite** basemap toggle (Esri World Imagery alongside CARTO Positron).
+
+All overlays are lazily fetched on first activation, cached in sessionStorage, and use `aux-overlay` toggle plumbing in `main.js` so adding a new overlay is a single entry in `AUX_META`.
+
+### 14.9 CORS proxy for the contaminated-sites CSV
+
+`manitoba.ca` returns 200 OK for the CSV but does **not** send `Access-Control-Allow-Origin` — the browser fetch fails silently CORS-blocked. Fix in two places:
+
+```jsonc
+// vercel.json — production
+{
+  "rewrites": [
+    { "source": "/proxy/contam-sites.csv",
+      "destination": "https://manitoba.ca/sd/waste_management/contaminated_sites/registry/cs-data.csv" }
+  ]
+}
+```
+
+```js
+// vite.config.js — local dev
+server: {
+  proxy: {
+    '/proxy/contam-sites.csv': {
+      target: 'https://manitoba.ca',
+      changeOrigin: true,
+      rewrite: (p) => p.replace(/^\/proxy\/contam-sites\.csv$/,
+        '/sd/waste_management/contaminated_sites/registry/cs-data.csv'),
+    },
+  },
+},
+```
+
+Then the browser fetches `'/proxy/contam-sites.csv'` (relative path, works in both environments). Same pattern works for any other open-data file whose origin server forgot CORS.
+
+### 14.10 Joining AADT into station popups
+
+The MHTIS station-locations FeatureServer exposes only metadata (StationNum, Highway, Location), not AADT. The actual AADT lives in the separate `MHTIS_Traffic_Flow_2019` polyline layer, joinable on `StationNum`. When the user toggles both Show Stations and Show Flow on (in either order), `stampStationAadt(stationsFc, flowFc)`:
+
+1. Builds a `Map<StationNum, max-AADT>` from the flow features (max across all directional segments for the same station).
+2. Mutates each station feature in-place with `_aadt` from the index.
+3. Re-pushes the stations FC to the map source so the popup template sees the new property.
+
+If a station is clicked before Show Flow has loaded, the popup nudges the user to toggle it on.
+
+### 14.11 Walkscore (deferred to walkscore.com)
+
+Earlier prototypes called the Walk Score professional API per row but ran into rate-limit, key-management, and rural-coverage friction (most non-Winnipeg Manitoba addresses return null). Final design is a single per-row link cell pointing at `walkscore.com/score/<encoded address>` — the Walk Score page does its own lookup of Walk + Transit + Bike on arrival. No API key, no rate limit, no quota tracking. Same pattern as the Asmt Report column.
+
+### 14.12 Legends generated from the paint-expression source of truth
+
+Both the zoning and AADT legends are built at startup from the same arrays the MapLibre paint expressions consume (`ZONING_PALETTE` is exported from `map.js` for this reason). `paletteLegendEntries(palette)` walks the flat `[label, color, ...]` array, dedupes by colour (the source data has typo aliases like `Residental` / `Residential` mapped to the same swatch), and the legend renderer in `main.js` builds the `<ul>`. This guarantees the legend can never drift from what the map actually paints.
+
+### 14.13 R archive scripts
+
+`r/download_parcels.R` snapshots all three primary FeatureServer layers via paginated GeoJSON to dated GeoPackages, and `r/parcel_search_app.R` is a Shiny app that runs the same search workflow against the local snapshot — useful for searching against an older snapshot when a parcel has been split or consolidated since. Both files hardcode `data_dir <- "D:/Dropbox/ClaudeCode/MBOpenData/WebSearch"`; edit at the top of each file to run elsewhere.

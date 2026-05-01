@@ -22,6 +22,23 @@ import bbox from '@turf/bbox';
 const MB_CENTER = [-97.6, 51.0];
 const MB_ZOOM = 5;
 
+/** Build a legend descriptor [{ label, color }] from a flat MapLibre
+ *  match-expression palette ([key, color, key, color, ...]). De-dupes
+ *  aliases (the source data has typos like "Residental"/"Residential"
+ *  pointing at the same swatch — only show one entry per swatch). */
+export function paletteLegendEntries(palette) {
+  const seenColors = new Set();
+  const entries = [];
+  for (let i = 0; i < palette.length; i += 2) {
+    const label = palette[i];
+    const color = palette[i + 1];
+    if (seenColors.has(color)) continue;
+    seenColors.add(color);
+    entries.push({ label, color });
+  }
+  return entries;
+}
+
 // Categorical fill colors keyed off ZONE_CATEGORY. The real Manitoba
 // Zoning dataset uses a long-tailed vocabulary (~30 distinct values
 // including a few obvious typos like "Residental" and "Settlement Center"
@@ -29,7 +46,7 @@ const MB_ZOOM = 5;
 // distinct values from a live distinct-values sweep are mapped here so
 // nothing falls through to grey unless the source adds a brand-new
 // category. Aliases are listed adjacent to the canonical key.
-const ZONING_PALETTE = [
+export const ZONING_PALETTE = [
   // Residential family — warm yellows.
   'Residential',          '#fff4a3',
   'Residental',           '#fff4a3', // typo in source data

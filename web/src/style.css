@@ -316,6 +316,23 @@ header small a {
   bottom: 70px;
 }
 
+/* Zoning category legend — many entries, so this one scrolls if it gets
+   taller than ~280 px. Stacks above the flow legend; the flow legend
+   itself bumps up if both are visible (handled by JS below). */
+.map-legend.zoning-legend {
+  bottom: 70px;
+  max-height: 320px;
+  overflow-y: auto;
+  pointer-events: auto;
+}
+
+/* When both the zoning AND flow legends are visible, push the flow
+   legend further up so it doesn't collide. .with-zoning class is
+   toggled on the flow legend by main.js. */
+.map-legend.flow-legend.with-zoning {
+  bottom: 400px;
+}
+
 .map-legend.flow-legend .swatch {
   border: 1px solid rgba(0, 0, 0, 0.2);
 }

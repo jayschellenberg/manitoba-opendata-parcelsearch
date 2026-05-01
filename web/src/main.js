@@ -46,6 +46,8 @@ import {
   setMuniParcelsData,
   setMuniParcelsVisible,
   flyToFeature,
+  ZONING_PALETTE,
+  paletteLegendEntries,
 } from './map.js';
 import turfArea from '@turf/area';
 
@@ -70,6 +72,26 @@ const $tbody         = document.querySelector('#results tbody');
 const $mapEl         = document.getElementById('map');
 const $legend        = document.getElementById('map-legend');
 const $flowLegend    = document.getElementById('flow-legend');
+const $zoningLegend  = document.getElementById('zoning-legend');
+
+// Build the zoning-category legend once at startup from the same palette
+// the map paint expression uses, so the swatches and the rendered colours
+// can never drift apart.
+(function buildZoningLegend() {
+  if (!$zoningLegend) return;
+  const ul = $zoningLegend.querySelector('ul');
+  if (!ul) return;
+  ul.innerHTML = '';
+  for (const { label, color } of paletteLegendEntries(ZONING_PALETTE)) {
+    const li = document.createElement('li');
+    const sw = document.createElement('span');
+    sw.className = 'swatch';
+    sw.style.background = color;
+    li.appendChild(sw);
+    li.appendChild(document.createTextNode(label));
+    ul.appendChild(li);
+  }
+})();
 
 const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
@@ -374,6 +396,10 @@ function toggleOverlay(which) {
   mapReady.then(() => {
     if (which === 'zoning') {
       setZoningVisible(map, visible);
+      if ($zoningLegend) $zoningLegend.hidden = !visible;
+      // The flow legend's bottom anchor needs to bump up when the much
+      // taller zoning legend is also visible, so they don't overlap.
+      if ($flowLegend) $flowLegend.classList.toggle('with-zoning', visible);
     } else {
       setDevPlanVisible(map, visible);
     }
