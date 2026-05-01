@@ -411,21 +411,38 @@ header small a {
   bottom: 70px;
 }
 
-/* Zoning category legend — many entries, so this one scrolls if it gets
-   taller than ~280 px. Stacks above the flow legend; the flow legend
-   itself bumps up if both are visible (handled by JS below). */
+/* Zoning category legend — sized to use most of the map's vertical
+   space so it fits without scrolling whenever there's room. The map is
+   16:9, so its height grows with the viewport; cap the legend at 85%
+   of the map's height (#map height) so it never crowds the basemap
+   attribution along the bottom edge. Falls back to scrolling only
+   when there are more zone codes than the cap can show. */
 .map-legend.zoning-legend {
   bottom: 70px;
-  max-height: 320px;
+  max-height: calc(0.85 * (100vw - 280px) * 9 / 16);
   overflow-y: auto;
   pointer-events: auto;
 }
 
+/* On the collapsed (single-column) layout below 900 px, the map's full
+   width is the viewport width, not viewport-minus-sidebar. */
+@media (max-width: 900px) {
+  .map-legend.zoning-legend {
+    max-height: calc(0.85 * 100vw * 9 / 16);
+  }
+}
+
 /* When both the zoning AND flow legends are visible, push the flow
-   legend further up so it doesn't collide. .with-zoning class is
-   toggled on the flow legend by main.js. */
+   legend up so it doesn't collide. The shift is the legend's own
+   max-height plus a small gap. .with-zoning class is toggled on the
+   flow legend by main.js. */
 .map-legend.flow-legend.with-zoning {
-  bottom: 400px;
+  bottom: calc(70px + 0.85 * (100vw - 280px) * 9 / 16 + 12px);
+}
+@media (max-width: 900px) {
+  .map-legend.flow-legend.with-zoning {
+    bottom: calc(70px + 0.85 * 100vw * 9 / 16 + 12px);
+  }
 }
 
 .map-legend.flow-legend .swatch {
