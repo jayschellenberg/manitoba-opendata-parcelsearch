@@ -128,7 +128,7 @@ export async function searchParcels({ address, municipality, roll, zoneCategory,
   // Shape__Length, FID, and a couple of internal fields that the previous
   // outFields:'*' was pulling in unread — typically ~30% wire-size cut on
   // a full 1000-row response.
-  const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Muni_Name_With_Typ,Asmt_Roll,AsmtYr,Dwelling_Units,Frontage_or_Area,Total_Value,Asmt_Rpt_Url';
+  const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Muni_Name_With_Typ,Asmt_Roll,Dwelling_Units,Frontage_or_Area,Total_Value,Asmt_Rpt_Url';
   return fetchAllPages(ROLL_URL, {
     where,
     outFields: PARCEL_OUTFIELDS,
@@ -408,7 +408,7 @@ export async function fetchAllParcelsInMunicipality(municipality) {
   // the wire size: a ~30k-parcel rural muni at this output is ~6-10 MB.
   const fc = await fetchAllPages(ROLL_URL, {
     where: `Muni_Name_With_Typ = '${escapeSql(municipality)}'`,
-    outFields: 'OBJECTID,Roll_No_Txt,Property_Address,Muni_Name_With_Typ,Asmt_Roll,AsmtYr,Dwelling_Units,Frontage_or_Area,Total_Value,Asmt_Rpt_Url',
+    outFields: 'OBJECTID,Roll_No_Txt,Property_Address,Muni_Name_With_Typ,Asmt_Roll,Dwelling_Units,Frontage_or_Area,Total_Value,Asmt_Rpt_Url',
     returnGeometry: 'true',
     outSR: '4326',
     f: 'geojson',

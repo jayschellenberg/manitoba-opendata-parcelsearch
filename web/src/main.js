@@ -1075,42 +1075,48 @@ function formatAcresCsv(v) {
   return v.toFixed(3);
 }
 
-/** CSV header label for the Assessment column. Mirrors the table-header
- *  logic so the export carries the same year stamp as what the user saw. */
-function csvAssessHeader(rows) {
+/** Parse the 4-digit year out of Roll_Entry's Asmt_Roll field. Values
+ *  look like "2024 Final" / "2025 Preliminary" / "2024 Tax", with the
+ *  first 4 digits being the assessment year. Returns null when the
+ *  field is missing or malformed. */
+function parseAssessmentYear(asmtRoll) {
+  if (asmtRoll == null) return null;
+  const m = String(asmtRoll).match(/(\d{4})/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Find the most-common assessment year across a result set. */
+function dominantAssessmentYear(rows) {
   const counts = new Map();
   for (const row of rows || []) {
-    const yr = Number(row.parcel.properties?.AsmtYr);
-    if (Number.isFinite(yr)) counts.set(yr, (counts.get(yr) || 0) + 1);
+    const yr = parseAssessmentYear(row.parcel.properties?.Asmt_Roll);
+    if (yr != null) counts.set(yr, (counts.get(yr) || 0) + 1);
   }
   let best = null, bestCount = 0;
   for (const [yr, c] of counts) if (c > bestCount) { best = yr; bestCount = c; }
-  return best != null ? `Assess-${best} ($)` : 'Assessment ($)';
+  return best;
+}
+
+/** CSV header label for the Assessment column. Mirrors the table-header
+ *  logic so the export carries the same year stamp as what the user saw. */
+function csvAssessHeader(rows) {
+  const yr = dominantAssessmentYear(rows);
+  return yr != null ? `Assess-${yr} ($)` : 'Assessment ($)';
 }
 
 /**
  * Update the Total Value column header to "Assess-{year}" using the
- * most-common AsmtYr across the current result set. Falls back to a
- * generic "Assessment" label when no rows have an AsmtYr (rare —
- * the field is on every Roll_Entry record). One header per search.
+ * most-common assessment year (parsed from Asmt_Roll, e.g. "2024
+ * Final" → 2024) across the current result set. Falls back to a
+ * generic "Assessment" label when no rows have a parseable year.
  */
 function updateAssessmentYearHeader(rows) {
   const $hdr = document.getElementById('value-header');
   if (!$hdr) return;
-  const counts = new Map();
-  for (const row of rows || []) {
-    const yr = row.parcel.properties?.AsmtYr;
-    if (yr == null || yr === '') continue;
-    const n = Number(yr);
-    if (!Number.isFinite(n)) continue;
-    counts.set(n, (counts.get(n) || 0) + 1);
-  }
-  let best = null;
-  let bestCount = 0;
-  for (const [yr, c] of counts) {
-    if (c > bestCount) { best = yr; bestCount = c; }
-  }
-  $hdr.textContent = best != null ? `Assess-${best}` : 'Assessment';
+  const yr = dominantAssessmentYear(rows);
+  $hdr.textContent = yr != null ? `Assess-${yr}` : 'Assessment';
 }
 
 /** Compose the walkscore.com search URL for a parcel, or '' when no
