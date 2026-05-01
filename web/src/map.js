@@ -435,7 +435,9 @@ export function initMap(container, { onFeatureClick } = {}) {
       // either basemap. Cool light-blue is neutral against the cream
       // CARTO streets and the dark Esri imagery, and the moderate alpha
       // lets the basemap show through without looking washed-out.
-      // Outline does the precise per-parcel definition.
+      // Outline does the precise per-parcel definition — royal blue
+      // contrasts cleanly against both basemaps without competing with
+      // the search-result red on top.
       map.addLayer({
         id: 'muni-parcels-fill',
         type: 'fill',
@@ -449,20 +451,24 @@ export function initMap(container, { onFeatureClick } = {}) {
         source: 'muni-parcels',
         layout: { visibility: 'none' },
         paint: {
-          'line-color': '#00d1ff',
+          'line-color': '#1d4ed8',
           'line-width': 0.9,
-          'line-opacity': 0.85,
+          'line-opacity': 0.9,
         },
       });
 
       // Parcel highlight — primary layer, always on. Red fill so it pops
       // against any pale-coloured zoning/dev-plan overlay underneath.
+      // Fill opacity is intentionally light (0.18) so the basemap and
+      // any underlying overlay (zoning category, muni parcel fabric)
+      // remain readable beneath the highlight; the line stroke does the
+      // heavy lifting for parcel boundary visibility.
       map.addSource('parcels', { type: 'geojson', data: emptyFc() });
       map.addLayer({
         id: 'parcel-fill',
         type: 'fill',
         source: 'parcels',
-        paint: { 'fill-color': '#b22222', 'fill-opacity': 0.32 },
+        paint: { 'fill-color': '#b22222', 'fill-opacity': 0.18 },
       });
       map.addLayer({
         id: 'parcel-line',
