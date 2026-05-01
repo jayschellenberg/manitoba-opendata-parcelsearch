@@ -638,15 +638,32 @@ function walkCell(row) {
   return cell;
 }
 
+/**
+ * Validate an external URL and only return it when its protocol is one
+ * we trust. Defensive against unsafe javascript: / data: / vbscript:
+ * URLs sneaking in from external open-data sources we don't control
+ * (Manitoba Assessment Online, contaminated-sites registry, etc.).
+ * Returns null for invalid or non-http(s) URLs.
+ */
+function safeExternalUrl(raw) {
+  if (!raw) return null;
+  try {
+    const u = new URL(String(raw), window.location.origin);
+    if (u.protocol === 'http:' || u.protocol === 'https:') return u.toString();
+  } catch { /* not a parseable URL */ }
+  return null;
+}
+
 function reportCell(url) {
   const cell = document.createElement('td');
-  if (!url) {
+  const safe = safeExternalUrl(url);
+  if (!safe) {
     cell.textContent = '—';
     cell.classList.add('empty');
     return cell;
   }
   const a = document.createElement('a');
-  a.href = url;
+  a.href = safe;
   a.target = '_blank';
   a.rel = 'noreferrer';
   a.textContent = 'view';

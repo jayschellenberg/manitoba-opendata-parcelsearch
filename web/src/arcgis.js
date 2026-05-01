@@ -579,29 +579,37 @@ async function resolveOverlayFilter({ zoneCategory, devPlanCategory, zoningChang
     })
   );
 
-  // For each overlay set, find Roll_Entry OBJECTIDs that intersect via
-  // per-feature envelope queries (same parallel batched pattern as
-  // fetchSpatialOverlap, but only asking for OBJECTIDs back).
+  // For each overlay set, find Roll_Entry OBJECTIDs that actually
+  // intersect the overlay polygon (not just its envelope), via per-overlay
+  // queries. Two important changes vs. the earlier version:
+  //   1. We send the overlay polygon geometry itself (not its envelope)
+  //      so ArcGIS's spatialRel=esriSpatialRelIntersects gives a true
+  //      geometric intersection — no bbox false positives that previously
+  //      pulled in parcels outside the polygon.
+  //   2. We paginate via fetchAllPages instead of a single fetchPage,
+  //      since a large polygon can match well past the 2000-row page cap
+  //      and silently drop matches.
   const oidSets = await Promise.all(
     overlayFcs.map(async (fc) => {
-      const fc4326 = fc;
       const results = await runParallelBatched(
-        fc4326.features,
+        fc.features,
         SPATIAL_CONCURRENCY,
         async (overlay) => {
-          const env = featureEnvelope(overlay);
-          if (!env) return [];
-          const fcResp = await fetchPage(ROLL_URL, {
+          const esriGeom = polygonToEsriGeometry(overlay);
+          if (!esriGeom) return [];
+          const oidFc = await fetchAllPages(ROLL_URL, {
             where: '1=1',
-            geometry: JSON.stringify(env),
-            geometryType: 'esriGeometryEnvelope',
+            geometry: JSON.stringify(esriGeom),
+            geometryType: 'esriGeometryPolygon',
             inSR: '4326',
             spatialRel: 'esriSpatialRelIntersects',
             outFields: 'OBJECTID',
             returnGeometry: 'false',
             f: 'json',
-          });
-          return (fcResp.features || []).map((f) => f.attributes?.OBJECTID).filter((v) => v != null);
+          }, 100000);
+          return (oidFc.features || [])
+            .map((f) => f.attributes?.OBJECTID ?? f.properties?.OBJECTID)
+            .filter((v) => v != null);
         }
       );
       return new Set(results.flat());
@@ -717,7 +725,12 @@ async function fetchAllPages(baseUrl, params, cap) {
     if (feats.length < page) break;
     if (!hasMore) break;
     if (all.length >= cap) {
-      truncated = fc.exceededTransferLimit === true;
+      // If the service set exceededTransferLimit, we know there's more
+      // data left. But the flag is inconsistent across hosted services —
+      // a full page at the app-level cap also implies "probably more,"
+      // since the alternative (the dataset ending exactly at the cap)
+      // is rare. Treat both as truncated so the UI surfaces it.
+      truncated = fc.exceededTransferLimit === true || feats.length === page;
       break;
     }
   }
@@ -784,11 +797,20 @@ async function fetchDistinctValues(baseUrl, field, cacheKey, where = null) {
 }
 
 function readCache(key) {
+  // Accept any of the three shapes we cache here:
+  //   - Array<string>          — distinct-values dropdowns (munis, categories)
+  //   - FeatureCollection      — overlay datasets (contam, traffic, flow, muni parcels)
+  //   - { walk, transit, ... } — Walk Score score lookup (legacy; harmless)
+  // Earlier versions of this helper hard-rejected non-array values, so
+  // every FeatureCollection cache silently re-fetched on every toggle.
   try {
     const raw = sessionStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : null;
+    if (parsed == null) return null;
+    if (Array.isArray(parsed)) return parsed;
+    if (typeof parsed === 'object') return parsed;
+    return null;
   } catch { return null; }
 }
 function writeCache(key, value) {
@@ -818,6 +840,30 @@ function featureEnvelope(feature) {
 
 function bboxesOverlap(a, b) {
   return !(a[2] < b[0] || a[0] > b[2] || a[3] < b[1] || a[1] > b[3]);
+}
+
+/**
+ * Convert a GeoJSON Polygon or MultiPolygon Feature to an Esri-shaped
+ * polygon for `geometry=...` query params: { rings: [[...]], spatialReference }.
+ * ArcGIS Online's intersects test accepts rings in either winding order,
+ * so we don't reverse them. Returns null for unsupported geometries.
+ */
+function polygonToEsriGeometry(feature) {
+  const g = feature?.geometry;
+  if (!g) return null;
+  let rings;
+  if (g.type === 'Polygon') {
+    rings = g.coordinates;
+  } else if (g.type === 'MultiPolygon') {
+    // Flatten all polygons' rings into one rings list — Esri's polygon
+    // type accepts arbitrary ring counts (interpreted via winding rules).
+    rings = [];
+    for (const poly of g.coordinates) for (const ring of poly) rings.push(ring);
+  } else {
+    return null;
+  }
+  if (!rings || rings.length === 0) return null;
+  return { rings, spatialReference: { wkid: 4326 } };
 }
 
 function makeEmptyFc({ truncated = false } = {}) {

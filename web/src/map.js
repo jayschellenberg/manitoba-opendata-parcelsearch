@@ -770,8 +770,9 @@ function contamHtml(p) {
                  : '#7f8c8d';
     lines.push(`<em style="color:${colour}">${escapeHtml(p.CSGROUP)}</em>`);
   }
-  if (p.LINK) {
-    lines.push(`<a href="${escapeHtml(p.LINK)}" target="_blank" rel="noreferrer">Registry page →</a>`);
+  const safeLink = safeExternalUrl(p.LINK);
+  if (safeLink) {
+    lines.push(`<a href="${escapeHtml(safeLink)}" target="_blank" rel="noreferrer">Registry page →</a>`);
   }
   return `<div style="max-width:260px;line-height:1.4">${lines.join('<br>')}</div>`;
 }
@@ -843,8 +844,11 @@ function muniParcelHtml(p, { withReportLink = false } = {}) {
       lines.push(`<strong>Total Value</strong> $${Math.round(n).toLocaleString('en-US')}`);
     }
   }
-  if (withReportLink && p.Asmt_Rpt_Url) {
-    lines.push(`<a href="${escapeHtml(p.Asmt_Rpt_Url)}" target="_blank" rel="noreferrer">Assessment report →</a>`);
+  if (withReportLink) {
+    const safeReport = safeExternalUrl(p.Asmt_Rpt_Url);
+    if (safeReport) {
+      lines.push(`<a href="${escapeHtml(safeReport)}" target="_blank" rel="noreferrer">Assessment report →</a>`);
+    }
   }
   return `<div style="max-width:260px;line-height:1.4">${lines.join('<br>')}</div>`;
 }
@@ -885,6 +889,17 @@ class BasemapToggleControl {
     this._container.parentNode?.removeChild(this._container);
     this._map = null;
   }
+}
+
+/** Allow only http/https URLs into anchor hrefs that come from external
+ *  data (contaminated-sites CSV, ROLL_ENTRY's Asmt_Rpt_Url, etc.). */
+function safeExternalUrl(raw) {
+  if (!raw) return null;
+  try {
+    const u = new URL(String(raw), window.location.origin);
+    if (u.protocol === 'http:' || u.protocol === 'https:') return u.toString();
+  } catch { /* not parseable */ }
+  return null;
 }
 
 function escapeHtml(s) {
