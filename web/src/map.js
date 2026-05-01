@@ -314,7 +314,21 @@ export function initMap(container, { onFeatureClick } = {}) {
           ],
           'text-font': ['Open Sans Semibold'],
           'text-size': 11,
-          'text-allow-overlap': false,
+          // Always render the zoning code — never suppress it because a
+          // parcel roll-number label landed on the same pixel. Combined
+          // with the upward text-offset below, this lets the code sit
+          // visibly above the roll number rather than stacking on top
+          // of it or being silently dropped by the collision system.
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+          // Anchor at the bottom of the text and shift the label up by
+          // ~1.2 em from the polygon centroid. Means the bottom edge of
+          // the zoning code ends just above the centroid; the roll-
+          // number label (which renders centered on each parcel
+          // centroid in muni-parcels-label) sits below it with clear
+          // air between the two.
+          'text-anchor': 'bottom',
+          'text-offset': [0, -0.4],
         },
         paint: { 'text-color': '#1a1a1a', 'text-halo-color': '#fff', 'text-halo-width': 1.5 },
       });
