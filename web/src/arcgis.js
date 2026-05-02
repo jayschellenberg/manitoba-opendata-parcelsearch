@@ -289,18 +289,30 @@ const MUNICIPALITY_URL      = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcg
 
 /**
  * Province-wide municipal boundaries — a stable reference layer that's
- * shown by default. Pulled at simplified resolution
- * (maxAllowableOffset=100, geometryPrecision=4) so the payload is ~58 KB
- * instead of ~7 MB at full resolution. The simplification is invisible
- * at province-wide and muni-overview zooms; users zooming all the way in
- * to street level won't generally need to see boundaries to the metre.
+ * shown by default. Pulled at simplified resolution to keep the payload
+ * small without sacrificing visible accuracy:
+ *
+ *   - maxAllowableOffset=0.0005 — units match outSR (degrees here), so
+ *     0.0005° ≈ 50 m at Manitoba latitude. Faithful to the boundary at
+ *     every zoom where this layer is meant to be useful (province-wide
+ *     to muni-overview); imperceptible drift only kicks in past zoom 16
+ *     where the parcel-detail layers take over anyway.
+ *
+ *   - geometryPrecision=4 — 4 decimal places (~11 m) of coordinate
+ *     precision per vertex, smaller wire payload without changing
+ *     vertex count.
+ *
+ * Combined payload: ~298 KB vs ~7.1 MB at full resolution. (An earlier
+ * attempt with maxAllowableOffset=100 returned a 58 KB payload but
+ * collapsed polygons to absurd minimum shapes — the unit is degrees
+ * with outSR=4326, not metres. Don't repeat that mistake.)
  *
  * Cached for 30 days — boundaries change on a multi-year cadence
  * (amalgamations) so a month is comfortable. Loaded async on page open
  * so it never blocks the first paint of the search controls or map.
  */
 export async function fetchMunicipalBoundaries() {
-  const cacheKey = 'mb_muni_boundaries_v1';
+  const cacheKey = 'mb_muni_boundaries_v2';
   const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
   const fc = await fetchAllPages(MUNICIPALITY_URL, {
@@ -309,7 +321,7 @@ export async function fetchMunicipalBoundaries() {
     returnGeometry: 'true',
     outSR: '4326',
     geometryPrecision: '4',
-    maxAllowableOffset: '100',
+    maxAllowableOffset: '0.0005',
     f: 'geojson',
   }, 1000);
   writeCache(cacheKey, fc);
