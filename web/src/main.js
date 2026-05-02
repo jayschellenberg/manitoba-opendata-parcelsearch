@@ -115,7 +115,7 @@ const EMPTY_FC = { type: 'FeatureCollection', features: [] };
  * Contact Directory — every muni with a published website is here.
  * Munis whose only published contact is an email (Ethelbert, Grand
  * Rapids, Leaf Rapids, Mystery Lake) intentionally have no entry, so
- * the RM Website button reads "RM N/A" for those.
+ * the Muni Website button reads "Muni N/A" for those.
  *
  * The lookupMuniWebsite() helper below tolerates dash/diacritic
  * variants the data layer might use (e.g. en-dash vs hyphen, accented
@@ -607,7 +607,7 @@ $municipality.addEventListener('change', () => {
   updateMuniWebsiteButton();
   // Reset the PD button until the next search resolves the planning
   // district from the dev-plan layer's PLANNINGDISTRICT field.
-  setExternalLinkButton($pdWebsiteBtn, null, 'PD Website', 'Run a search to detect the planning district');
+  setExternalLinkButton($pdWebsiteBtn, null, 'Planning Web', 'Run a search to detect the planning district');
 });
 // The "Min #" number input is only meaningful when Min DU is selected.
 // Disable it otherwise so users can't type a value that has no effect.
@@ -815,8 +815,8 @@ function toggleOverlay(which) {
   // The button face just shows the layer name; pressed state colours
   // the button (CSS .active class) so an extra "Hide …" prefix isn't
   // needed and only made the label wrap.
-  const labelOn  = which === 'zoning' ? 'Zoning'   : 'Dev Plan';
-  const labelOff = which === 'zoning' ? 'Zoning'   : 'Dev Plan';
+  const labelOn  = which === 'zoning' ? 'Zoning Layer' : 'Dev Plan';
+  const labelOff = which === 'zoning' ? 'Zoning Layer' : 'Dev Plan';
   const wasActive = btn.classList.contains('active');
   const visible = !wasActive;
   btn.classList.toggle('active', visible);
@@ -854,9 +854,9 @@ const auxData   = { contam: null, flow: null, muniParcels: null };
 let muniParcelsLoadedFor = null;
 
 const AUX_META = {
-  contam:      { btn: () => $contamToggle,      on: 'Enviro',       off: 'Enviro',       busy: 'Loading…',
+  contam:      { btn: () => $contamToggle,      on: 'Enviro Sites', off: 'Enviro Sites', busy: 'Loading…',
                  fetch: () => fetchContaminatedSites(),       setData: (m, fc) => setContamData(m, fc),      setVis: setContamVisible },
-  flow:        { btn: () => $flowToggle,        on: 'Traffic',      off: 'Traffic',      busy: 'Loading…',
+  flow:        { btn: () => $flowToggle,        on: 'Traffic Flow', off: 'Traffic Flow', busy: 'Loading…',
                  fetch: () => fetchTrafficFlow(),             setData: (m, fc) => setTrafficFlowData(m, fc), setVis: setTrafficFlowVisible },
   muniParcels: { btn: () => $muniParcelsToggle, on: 'Muni Parcels', off: 'Muni Parcels', busy: 'Loading…',
                  fetch: () => fetchAllParcelsInMunicipality($municipality.value),
@@ -1414,11 +1414,11 @@ function setExternalLinkButton(btn, url, activeLabel, inactiveTitle) {
 function updateMuniWebsiteButton() {
   const muni = $municipality.value;
   if (!muni) {
-    setExternalLinkButton($muniWebsiteBtn, null, 'RM Website', 'Select a municipality to enable');
+    setExternalLinkButton($muniWebsiteBtn, null, 'Muni Website', 'Select a municipality to enable');
     return;
   }
   const url = lookupMuniWebsite(muni);
-  setExternalLinkButton($muniWebsiteBtn, url, 'RM Website',
+  setExternalLinkButton($muniWebsiteBtn, url, 'Muni Website',
     `No website on file for ${muni}. Add it to MUNI_WEBSITES in main.js.`);
 }
 
@@ -1434,12 +1434,12 @@ function updatePdWebsiteButton(devPlanFc) {
   let best = null, bestCount = 0;
   for (const [pd, c] of counts) if (c > bestCount) { best = pd; bestCount = c; }
   if (!best) {
-    setExternalLinkButton($pdWebsiteBtn, null, 'PD Website',
+    setExternalLinkButton($pdWebsiteBtn, null, 'Planning Web',
       'No planning district found in this search\'s dev-plan polygons');
     return;
   }
   const url = lookupPdWebsite(best);
-  setExternalLinkButton($pdWebsiteBtn, url, 'PD Website',
+  setExternalLinkButton($pdWebsiteBtn, url, 'Planning Web',
     `${best} — no website on file. Add it to PD_WEBSITES in main.js.`);
 }
 
