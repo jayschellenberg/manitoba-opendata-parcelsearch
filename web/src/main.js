@@ -607,7 +607,7 @@ $municipality.addEventListener('change', () => {
   updateMuniWebsiteButton();
   // Reset the PD button until the next search resolves the planning
   // district from the dev-plan layer's PLANNINGDISTRICT field.
-  setExternalLinkButton($pdWebsiteBtn, null, 'Planning Web', 'Run a search to detect the planning district');
+  setExternalLinkButton($pdWebsiteBtn, null, 'PD Website', 'Run a search to detect the planning district');
 });
 // The "Min #" number input is only meaningful when Min DU is selected.
 // Disable it otherwise so users can't type a value that has no effect.
@@ -815,8 +815,8 @@ function toggleOverlay(which) {
   // The button face just shows the layer name; pressed state colours
   // the button (CSS .active class) so an extra "Hide …" prefix isn't
   // needed and only made the label wrap.
-  const labelOn  = which === 'zoning' ? 'Zoning Layer' : 'Dev Plan';
-  const labelOff = which === 'zoning' ? 'Zoning Layer' : 'Dev Plan';
+  const labelOn  = which === 'zoning' ? 'Zoning Layer' : 'Dev Plan Layer';
+  const labelOff = which === 'zoning' ? 'Zoning Layer' : 'Dev Plan Layer';
   const wasActive = btn.classList.contains('active');
   const visible = !wasActive;
   btn.classList.toggle('active', visible);
@@ -858,7 +858,7 @@ const AUX_META = {
                  fetch: () => fetchContaminatedSites(),       setData: (m, fc) => setContamData(m, fc),      setVis: setContamVisible },
   flow:        { btn: () => $flowToggle,        on: 'Traffic Flow', off: 'Traffic Flow', busy: 'Loading…',
                  fetch: () => fetchTrafficFlow(),             setData: (m, fc) => setTrafficFlowData(m, fc), setVis: setTrafficFlowVisible },
-  muniParcels: { btn: () => $muniParcelsToggle, on: 'Muni Parcels', off: 'Muni Parcels', busy: 'Loading…',
+  muniParcels: { btn: () => $muniParcelsToggle, on: 'Roll Layer', off: 'Roll Layer', busy: 'Loading…',
                  fetch: () => fetchAllParcelsInMunicipality($municipality.value),
                  setData: (m, fc) => setMuniParcelsData(m, fc), setVis: setMuniParcelsVisible },
 };
@@ -880,7 +880,7 @@ function resetMuniParcelsToggle() {
     if ($muniParcelsToggle.classList.contains('active')) {
       $muniParcelsToggle.classList.remove('active');
       $muniParcelsToggle.setAttribute('aria-pressed', 'false');
-      $muniParcelsToggle.textContent = 'Muni Parcels';
+      $muniParcelsToggle.textContent = 'Roll Layer';
       mapReady.then(() => setMuniParcelsVisible(map, false));
     }
   }
@@ -1434,12 +1434,12 @@ function updatePdWebsiteButton(devPlanFc) {
   let best = null, bestCount = 0;
   for (const [pd, c] of counts) if (c > bestCount) { best = pd; bestCount = c; }
   if (!best) {
-    setExternalLinkButton($pdWebsiteBtn, null, 'Planning Web',
+    setExternalLinkButton($pdWebsiteBtn, null, 'PD Website',
       'No planning district found in this search\'s dev-plan polygons');
     return;
   }
   const url = lookupPdWebsite(best);
-  setExternalLinkButton($pdWebsiteBtn, url, 'Planning Web',
+  setExternalLinkButton($pdWebsiteBtn, url, 'PD Website',
     `${best} — no website on file. Add it to PD_WEBSITES in main.js.`);
 }
 
