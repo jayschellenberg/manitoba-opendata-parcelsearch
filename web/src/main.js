@@ -27,6 +27,7 @@ import {
   fetchContaminatedSites,
   fetchTrafficFlow,
   fetchAllParcelsInMunicipality,
+  fetchMunicipalBoundaries,
 } from './arcgis.js';
 import {
   initMap,
@@ -42,6 +43,7 @@ import {
   setTrafficFlowVisible,
   setMuniParcelsData,
   setMuniParcelsVisible,
+  setMuniBoundariesData,
   flyToFeature,
   buildZoneCodePaint,
 } from './map.js';
@@ -639,6 +641,21 @@ for (const th of document.querySelectorAll('#results th[data-col]')) {
 // Populate the three dropdowns in parallel — the muni list is the slow one
 // (~190 distinct values), the categories are short and quick.
 populateDropdowns();
+
+// Pull municipal boundaries in the background and load them onto the
+// map as soon as both the data and the map are ready. Cached for 30
+// days so this is a one-time hit per month per browser; on a cache
+// hit it lands instantly. Failures are non-fatal — boundaries are
+// reference data, not critical to a search.
+(async () => {
+  try {
+    const fc = await fetchMunicipalBoundaries();
+    await mapReady;
+    setMuniBoundariesData(map, fc);
+  } catch (err) {
+    console.warn('muni boundaries fetch failed (non-fatal)', err);
+  }
+})();
 
 async function populateDropdowns() {
   try {

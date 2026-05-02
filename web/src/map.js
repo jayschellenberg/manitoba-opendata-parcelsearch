@@ -255,6 +255,52 @@ export function initMap(container, { onFeatureClick } = {}) {
 
   const ready = new Promise((resolve) => {
     map.on('load', () => {
+      // Municipal boundaries — a stable reference layer that's on by
+      // default. Drawn first so every other overlay (zoning, dev-plan,
+      // muni parcels, search results) renders above. Light grey fill
+      // with subtle dark-grey outline; readable on both Streets and
+      // Satellite without competing with the data layers.
+      map.addSource('muni-boundaries', { type: 'geojson', data: emptyFc() });
+      map.addLayer({
+        id: 'muni-boundaries-line',
+        type: 'line',
+        source: 'muni-boundaries',
+        paint: {
+          'line-color': '#555',
+          'line-width': [
+            'interpolate', ['linear'], ['zoom'],
+            5, 0.5,
+            10, 1.0,
+            14, 1.4,
+          ],
+          'line-opacity': 0.55,
+        },
+      });
+      map.addLayer({
+        id: 'muni-boundaries-label',
+        type: 'symbol',
+        source: 'muni-boundaries',
+        minzoom: 7,
+        maxzoom: 12,
+        layout: {
+          'text-field': ['get', 'MUNI_NAME'],
+          'text-font': ['Open Sans Semibold'],
+          'text-size': [
+            'interpolate', ['linear'], ['zoom'],
+            7, 9,
+            10, 11,
+            12, 12,
+          ],
+          'symbol-placement': 'point',
+          'text-allow-overlap': false,
+        },
+        paint: {
+          'text-color': '#333',
+          'text-halo-color': '#fff',
+          'text-halo-width': 1.4,
+        },
+      });
+
       // Dev-plan overlay (bottom). Source starts empty; main.js populates it
       // after each search. Hidden until the user toggles it on.
       map.addSource('devplan', { type: 'geojson', data: emptyFc() });
@@ -774,6 +820,11 @@ export function setTrafficFlowVisible(map, visible) {
   for (const id of ['traffic-flow-line', 'traffic-flow-label']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
   }
+}
+
+export function setMuniBoundariesData(map, fc) {
+  const src = map.getSource('muni-boundaries');
+  if (src) src.setData(fc);
 }
 
 export function setMuniParcelsData(map, fc) {

@@ -285,6 +285,36 @@ export async function fetchDevPlanCategoryList(municipality = null) {
 const CONTAM_CSV_URL = '/proxy/contam-sites.csv';
 const TRAFFIC_STATIONS_URL  = 'https://services6.arcgis.com/HQUud09zgy3Asw9X/arcgis/rest/services/All_Stations_C_Only/FeatureServer/0';
 const TRAFFIC_FLOW_URL      = 'https://services6.arcgis.com/HQUud09zgy3Asw9X/arcgis/rest/services/MHTIS_Traffic_Flow_2019/FeatureServer/0';
+const MUNICIPALITY_URL      = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/MUNICIPALITY/FeatureServer/0';
+
+/**
+ * Province-wide municipal boundaries — a stable reference layer that's
+ * shown by default. Pulled at simplified resolution
+ * (maxAllowableOffset=100, geometryPrecision=4) so the payload is ~58 KB
+ * instead of ~7 MB at full resolution. The simplification is invisible
+ * at province-wide and muni-overview zooms; users zooming all the way in
+ * to street level won't generally need to see boundaries to the metre.
+ *
+ * Cached for 30 days — boundaries change on a multi-year cadence
+ * (amalgamations) so a month is comfortable. Loaded async on page open
+ * so it never blocks the first paint of the search controls or map.
+ */
+export async function fetchMunicipalBoundaries() {
+  const cacheKey = 'mb_muni_boundaries_v1';
+  const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  if (cached) return cached;
+  const fc = await fetchAllPages(MUNICIPALITY_URL, {
+    where: '1=1',
+    outFields: 'OBJECTID,MUNI_NAME,MUNI_TYPE,MUNI_LIST_NAME_WITH_TYPE',
+    returnGeometry: 'true',
+    outSR: '4326',
+    geometryPrecision: '4',
+    maxAllowableOffset: '100',
+    f: 'geojson',
+  }, 1000);
+  writeCache(cacheKey, fc);
+  return fc;
+}
 
 /**
  * Fetch the Manitoba Contaminated Sites Registry. Source is a single CSV
@@ -817,16 +847,19 @@ async function fetchDistinctValues(baseUrl, field, cacheKey, where = null) {
 // across browser tabs / sessions; sessionStorage was the old choice and
 // re-fetched on every tab restart.
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+// Municipal boundaries are a stable reference layer — amalgamations
+// happen on a multi-year cadence — so they get a longer 30-day TTL.
+const MUNI_BOUNDARIES_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CACHE_NS_PREFIX = 'mbpsCache.';
 
-function readCache(key) {
+function readCache(key, ttlMs = CACHE_TTL_MS) {
   // Accept any of the shapes we cache here:
   //   - Array<string>          — distinct-values dropdowns (munis, categories)
   //   - FeatureCollection      — overlay datasets (contam, traffic, flow, muni parcels)
   //   - { walk, transit, ... } — Walk Score score lookup (legacy; harmless)
   // Wrapped with { v, t } envelope where t is the unix-ms timestamp; if
-  // it's older than CACHE_TTL_MS we treat the entry as missing (and the
-  // caller refetches and rewrites). Unwrapped legacy entries (from the
+  // it's older than the caller-provided ttlMs (defaults to CACHE_TTL_MS)
+  // we treat the entry as missing. Unwrapped legacy entries (from the
   // sessionStorage era) are tolerated for one read then ignored.
   try {
     const namespaced = `${CACHE_NS_PREFIX}${key}`;
@@ -836,7 +869,7 @@ function readCache(key) {
     if (parsed == null) return null;
     // Envelope: { v: <value>, t: <writtenAtMs> }
     if (typeof parsed === 'object' && !Array.isArray(parsed) && 't' in parsed && 'v' in parsed) {
-      if (Date.now() - parsed.t > CACHE_TTL_MS) return null;
+      if (Date.now() - parsed.t > ttlMs) return null;
       const v = parsed.v;
       if (Array.isArray(v) || (typeof v === 'object' && v !== null)) return v;
       return null;
