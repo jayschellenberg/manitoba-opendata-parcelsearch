@@ -42,7 +42,7 @@ header small a {
    narrow viewports (<900 px) so the form stays usable on tablets. */
 .layout {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 350px 1fr;
   gap: 0;
   align-items: stretch;
 }
@@ -419,7 +419,7 @@ header small a {
    when there are more zone codes than the cap can show. */
 .map-legend.zoning-legend {
   bottom: 70px;
-  max-height: calc(0.85 * (100vw - 280px) * 9 / 16);
+  max-height: calc(0.85 * (100vw - 350px) * 9 / 16);
   overflow-y: auto;
   pointer-events: auto;
 }
@@ -437,7 +437,7 @@ header small a {
    max-height plus a small gap. .with-zoning class is toggled on the
    flow legend by main.js. */
 .map-legend.flow-legend.with-zoning {
-  bottom: calc(70px + 0.85 * (100vw - 280px) * 9 / 16 + 12px);
+  bottom: calc(70px + 0.85 * (100vw - 350px) * 9 / 16 + 12px);
 }
 @media (max-width: 900px) {
   .map-legend.flow-legend.with-zoning {
