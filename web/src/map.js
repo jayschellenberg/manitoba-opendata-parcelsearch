@@ -845,6 +845,8 @@ function parcelHtml(p) {
   if (p.Roll_No_Txt)        lines.push(`<strong>Roll #</strong> ${escapeHtml(p.Roll_No_Txt)}`);
   if (p.Property_Address)   lines.push(escapeHtml(p.Property_Address));
   if (p.Muni_Name_With_Typ) lines.push(`<em>${escapeHtml(p.Muni_Name_With_Typ)}</em>`);
+  if (p._legalDescription)  lines.push(`<strong>Legal</strong> ${escapeHtml(p._legalDescription)}`);
+  if (p._certificatesOfTitle) lines.push(`<strong>Title</strong> ${escapeHtml(p._certificatesOfTitle)}`);
   // Inline summary line: zoning code + DU. Zoning is stamped onto the
   // parcel feature by main.js after the top-2 area-weighted join lands.
   const summary = [];

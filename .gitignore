@@ -35,6 +35,7 @@ ParcelCrossRef_*.csv
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+web/vite-dev.*.log
 
 # Plan files (kept in C:\Users\Jason\.claude\plans, but defensive)
 plan*.md

@@ -806,14 +806,16 @@ This section captures every operational decision, gotcha, and pattern that emerg
 | Manitoba_Development_Plan_Designations | same org | Carries `DP_BYLAW`, `DPA_BYLAW` for change-history. `PLANNINGDISTRICT` is the key for the data-driven PD-website lookup. |
 | MHTIS_Traffic_Flow_2019 | `services6.arcgis.com/HQUud09zgy3Asw9X/.../FeatureServer/0` | AADT polylines. Used directly for the Traffic overlay (the older station-locations layer was tried first but dropped — it carried no AADT, so the user had to click out to MHTIS for the data; the flow layer renders AADT directly on the road). |
 | Manitoba Contaminated Sites | CSV at `manitoba.ca/.../cs-data.csv` | Not a FeatureServer; CSV file behind the official ArcGIS web map. Proxied via `vercel.json` because the upstream lacks `Access-Control-Allow-Origin`. |
+| Generated MAO legal index | `web/public/data/legal-index.json` | Static browser artifact generated from `ParcelSearch/mao-scrape/results/parcels.parquet`; supplies Legal Description, Lot, Block, Plan, certificates of title, and `(muni_no, roll_no_txt)` lookup keys. |
 
 ### 14.2 Single-flow architecture
 
-ROLL_ENTRY contains the parcel polygons AND the assessment attributes (Roll #, address, total value, dwelling units, MAO link). There's no Land-Titles "survey" layer to separately query, so:
+ROLL_ENTRY contains the parcel polygons AND the assessment attributes (Roll #, address, total value, dwelling units, MAO link). It does **not** carry Lot / Block / Plan or certificate-of-title fields. There's no Land-Titles "survey" layer to separately query, so:
 
 - Drop the `searchSurveyParcels` / `searchAssessmentParcels` split — collapse to a single `searchParcels` that ANDs every filter against ROLL_ENTRY.
 - Drop `mergeSurveyFeatures`, `joinSurveyWithAssessment`, `joinAssessmentWithSurvey`, `parcelsOverlap`, partial-lot detection, and the dual-layer map. Just one parcel layer.
 - The Winnipeg multi-address civic-xref pattern (cam2-ii3u) doesn't apply — Manitoba has no province-wide civic-address dataset. `Property_Address` on ROLL_ENTRY is the only address field, and rural parcels often store a quarter-section description there (e.g. `SE 08-08-20 W`).
+- Legal-description search is the exception: it starts from the generated MAO scrape index, finds matching `(muni_no, roll_no_txt)` keys, then uses those keys to fetch current Roll Entry geometries and assessment attributes live.
 
 ### 14.3 Two enrichment overlays instead of one
 
@@ -844,6 +846,23 @@ ROLL_ENTRY stores roll numbers with a `.000` decimal suffix (e.g. `3600.000`), b
 ```
 
 Roll # digits are NOT unique province-wide — the same digits exist in many municipalities — so the UI should pair Roll # with a Municipality dropdown.
+
+### 14.5.1 Generated legal-description index
+
+ROLL_ENTRY has no direct fields for legal description, Lot / Block / Plan, or certificates of title. The Manitoba implementation fills that gap with a static JSON index generated from the companion MAO scrape:
+
+```bash
+cd web
+npm run legal:index
+```
+
+The command runs `r/build_legal_index.R`, reads `ParcelSearch/mao-scrape/results/parcels.parquet`, and writes `web/public/data/legal-index.json`. The JSON is intentionally a lookup artifact, not the parcel source of truth: the browser searches the index for legal text, exact parsed Lot / Block / Plan, and title text; matching `(muni_no, roll_no_txt)` keys are then grouped into ArcGIS Roll Entry `where` clauses:
+
+```sql
+(Municipality LIKE '<muni_no> - %' AND Roll_No_Txt IN (...))
+```
+
+Those live Roll Entry features drive the map/table, while the legal fields from the index are stamped onto the feature properties for display, tooltips, popups, and CSV export. This preserves current geometry/value data while allowing searches on fields that only MAO exposes.
 
 ### 14.6 Amendment-status filter
 
@@ -983,11 +1002,12 @@ The bulk path is ~30× faster on muni-scoped searches and eliminates a transient
 
 ### 14.16 localStorage cache with TTL and namespace
 
-Three categories of data, three strategies:
+Four classes of data, distinct strategies:
 
 | Data | Strategy |
 |---|---|
-| Search results | Never cached. Every Search hits ROLL_ENTRY live. |
+| Search results | Never cached. Every Search hits ROLL_ENTRY live, even when a generated legal-index match supplies the lookup keys. |
+| Generated legal index | Static deployment artifact, regenerated from the MAO scrape with `npm run legal:index` whenever `ParcelSearch/mao-scrape/results/parcels.parquet` is refreshed. |
 | Dropdown lists, auxiliary overlay datasets, per-muni overlay enrichments | `localStorage` under `mbpsCache.` namespace, 7-day TTL |
 | In-memory MapLibre source data | Mutated in place during a session; thrown away on reload |
 

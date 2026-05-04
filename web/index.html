@@ -38,6 +38,28 @@
           <span class="tip">Roll # (exact match within selected municipality)</span>
         </span>
         <span class="field">
+          <input id="legal-text" type="text" placeholder="Legal description (contains)" />
+          <span class="tip">Search scraped MAO legal description and legal-detail text</span>
+        </span>
+        <div class="legal-row">
+          <span class="field">
+            <input id="lot" type="text" placeholder="Lot" />
+            <span class="tip">Lot (exact)</span>
+          </span>
+          <span class="field">
+            <input id="block" type="text" placeholder="Block" />
+            <span class="tip">Block (exact)</span>
+          </span>
+          <span class="field">
+            <input id="plan" type="text" placeholder="Plan" />
+            <span class="tip">Plan (exact)</span>
+          </span>
+        </div>
+        <span class="field">
+          <input id="title" type="text" placeholder="Certificate of title (contains)" />
+          <span class="tip">Certificate of title number or LTO text</span>
+        </span>
+        <span class="field">
           <select id="zone-category" disabled>
             <option value="">Any zoning category</option>
           </select>
@@ -111,6 +133,8 @@
           <tr>
             <th data-col="roll">Roll #</th>
             <th data-col="address">Address</th>
+            <th data-col="legal">Legal</th>
+            <th data-col="title">Title</th>
             <th data-col="zone1">Zoning</th>
             <th data-col="zone1pct">%</th>
             <th data-col="zone2">Zoning 2</th>
@@ -146,17 +170,21 @@
         <p>
           Search Manitoba properties (excluding Winnipeg, which has its
           <a href="https://winnipeg-opendata-parcelsearch.vercel.app/" target="_blank" rel="noreferrer">own portal</a>)
-          by civic address, municipality, or roll #. Each result is enriched
+          by civic address, municipality, roll #, legal description,
+          Lot/Block/Plan, or certificate of title. Each result is enriched
           with its top-2 zoning districts (with coverage %) and its primary
           development-plan designation, plus the bylaw numbers behind each.
         </p>
         <p>
-          Three live datasets are queried on every search:
-          <a href="https://geoportal.gov.mb.ca/datasets/manitoba::roll-entry/about" target="_blank" rel="noreferrer">Roll Entry</a> (parcels),
+          Roll Entry is queried live for parcel geometry and current
+          assessment fields on every search. Legal-description fields use
+          a generated MAO scrape index to find matching roll keys first.
+          The live parcel source is
+          <a href="https://geoportal.gov.mb.ca/datasets/manitoba::roll-entry/about" target="_blank" rel="noreferrer">Roll Entry</a>;
+          enrichment comes from
           <a href="https://geoportal.gov.mb.ca/datasets/manitoba::manitoba-zoning-by-laws/about" target="_blank" rel="noreferrer">Zoning By-Laws</a>, and
           <a href="https://geoportal.gov.mb.ca/datasets/manitoba::manitoba-development-plan-designations/about" target="_blank" rel="noreferrer">Development Plan Designations</a>.
-          Search results always run live against the province; the
-          municipality + category dropdowns and the overlay layers
+          Municipality + category dropdowns and the overlay layers
           (zoning, dev-plan, contaminated sites, traffic flow, full muni
           parcel fabric) are cached in your browser for up to 7 days so
           repeat work in the same area stays snappy. The Clear button

@@ -1,6 +1,6 @@
 # Manitoba Open Data Parcel Search
 
-A firm-facing web tool for researching Manitoba properties (excluding Winnipeg, which has its [own portal](https://winnipeg-opendata-parcelsearch.vercel.app/)) by **municipality + civic address + roll #**, with each result enriched live from five provincial open-data sources and rendered on an interactive map. Pulls together what would otherwise be a five-tab workflow — Manitoba Assessment Online, the provincial Zoning By-Laws layer, the Development Plan Designations layer, the MHTIS traffic-flow layer, and the Contaminated Sites Registry — into one search window with a single CSV export.
+A firm-facing web tool for researching Manitoba properties (excluding Winnipeg, which has its [own portal](https://winnipeg-opendata-parcelsearch.vercel.app/)) by **municipality + civic address + roll # + legal description**, with each result enriched live from five provincial open-data sources and rendered on an interactive map. Pulls together what would otherwise be a five-tab workflow — Manitoba Assessment Online, the provincial Zoning By-Laws layer, the Development Plan Designations layer, the MHTIS traffic-flow layer, and the Contaminated Sites Registry — into one search window with a single CSV export.
 
 ## Live site
 
@@ -13,12 +13,22 @@ Source: <https://github.com/jayschellenberg/manitoba-opendata-parcelsearch>. Dep
 | `web/` | Vite + vanilla JS static site. Queries Manitoba Open Data's ArcGIS REST API live on every search. Deployed to Vercel. | Firm colleagues |
 | `r/download_parcels.R` | Snapshots the three primary FeatureServer layers to dated GeoPackages. | Local archive |
 | `r/parcel_search_app.R` | Shiny app that searches the **local** snapshot for offline / historical lookups. | Personal use |
+| `r/build_legal_index.R` | Converts `ParcelSearch/mao-scrape/results/parcels.parquet` into the static browser legal-search index at `web/public/data/legal-index.json`. | Web deploy prep |
 | `vercel.json` | Build config + production CORS rewrite for the contaminated-sites CSV. | — |
 | [`REPLICATION_GUIDE.md`](REPLICATION_GUIDE.md) | Step-by-step guide for adapting this tool to another jurisdiction. Originally written for the Winnipeg sister site (Socrata); §14 captures every Manitoba-specific decision and lesson. | Anyone replicating |
 
 ## Data sources
 
-All data is queried live; no copies are shipped with the bundle. Search results are always against the current state of the province's published data; auxiliary overlay datasets are cached in the browser for 7 days (clearable from the **Clear** button) so repeat work in the same area stays snappy.
+Most parcel, zoning, dev-plan, traffic, and environmental data is queried live. Search results are always against the current state of the province's published data; auxiliary overlay datasets are cached in the browser for 7 days (clearable from the **Clear** button) so repeat work in the same area stays snappy.
+
+Legal-description search is backed by a generated static index from the companion MAO scrape. Run this after `ParcelSearch/mao-scrape/results/parcels.parquet` is assembled or refreshed:
+
+```bash
+cd web
+npm run legal:index
+```
+
+The browser searches that index for legal description text, Lot/Block/Plan, and certificate-of-title text. Matching `(muni_no, roll_no_txt)` keys are used only as a lookup bridge; the app still fetches the current parcel geometry and assessment fields live from Roll Entry.
 
 | Dataset | FeatureServer | Used for |
 |---|---|---|
@@ -27,6 +37,7 @@ All data is queried live; no copies are shipped with the bundle. Search results 
 | [Development Plan Designations](https://geoportal.gov.mb.ca/datasets/manitoba::manitoba-development-plan-designations/about) | `…/Manitoba_Development_Plan_Designations/FeatureServer/0` | Designation name, category, dev-plan bylaw (`DP_BYLAW`), amendment bylaw (`DPA_BYLAW`), planning district |
 | [MHTIS Traffic Flow 2019](https://www.gov.mb.ca/mti/traffic/counts.html) | `…/MHTIS_Traffic_Flow_2019/FeatureServer/0` | AADT polylines for the colour-coded Traffic overlay |
 | [Manitoba Contaminated Sites Registry](https://www.gov.mb.ca/sd/waste_management/contaminated_sites/registry/index.html) | CSV at `manitoba.ca/.../cs-data.csv` (proxied via `vercel.json` because the upstream lacks `Access-Control-Allow-Origin`) | Designated Contaminated, Designated Impacted, and Not Designated sites for the Enviro overlay |
+| MAO scrape legal index | `web/public/data/legal-index.json` generated from `ParcelSearch/mao-scrape/results/parcels.parquet` | Legal description text, Lot, Block, Plan, certificates of title, and `(muni_no, roll_no_txt)` lookup keys |
 
 ## Layout (sidebar + main pane)
 
@@ -36,6 +47,7 @@ The page splits into a fixed-width left sidebar holding all controls and a fluid
 - Municipality dropdown (preloaded with every distinct `Muni_Name_With_Typ` value; narrows the Zoning Category dropdown to the codes actually present in the muni)
 - Civic Address (case-insensitive `LIKE`)
 - Roll # (exact match; accepts both `3600` and `3600.000`)
+- Legal Description (contains), Lot / Block / Plan (exact), and Certificate of Title (contains) from the generated MAO scrape index
 - Zoning Category dropdown (per-muni narrowed)
 - Status dropdown — `Any` / `Zoning Changed` / `Dev Plan Changed` / `Both Changed`
 - DU mode + Min # input — `Any DU` / `0 DU only` (vacant) / `Min DU N` (≥ N units)
@@ -55,8 +67,9 @@ The page splits into a fixed-width left sidebar holding all controls and a fluid
 
 ## Results table
 
-| Roll # | Address | Zoning | % | Zoning 2 | ZBL | Dev-Plan Designation | DP By-law | Changes | DU | Acres | SF | Assess-{year} | Walkscore | Flood |
+| Roll # | Address | Legal | Title | Zoning | % | Zoning 2 | ZBL | Dev-Plan Designation | DP By-law | Changes | DU | Acres | SF | Assess-{year} | Walkscore | Flood |
 
+- **Legal** and **Title** populate for searches that match the generated MAO scrape index. Legal displays the brief legal description, with detailed legal text and parsed Lot / Block / Plan available in the cell tooltip and CSV export.
 - **Zoning 2** hidden when its coverage is < 1% (digitization slivers).
 - **Zoning** and **Zoning 2** show the short ZONE code only; the full ZONE_NAME is in the parcel hover popup and the zoning legend.
 - **Changes** column shows `Z: AG-5 → RR1` or `DP: 03/10 → 23-05` when an amendment is recorded for the row's primary overlay match. Whitespace and Esri `<Null>` sentinels in the source data are filtered out so spurious "Z: " entries no longer appear.
@@ -64,7 +77,7 @@ The page splits into a fixed-width left sidebar holding all controls and a fluid
 - **Walkscore** — opens `walkscore.com/score/<address>`; no API key needed (the Walk Score page renders Walk / Transit / Bike on arrival).
 - **Flood** — deep-links into the sister [Manitoba flood-mapping tool](https://mb-flood-mapping.vercel.app/) with `?lat=<centroid>&lon=<centroid>&label=<address>`. Falls back to `?address=…` when geometry is missing.
 
-All columns sortable; CSV export carries the same column order plus the raw coverage ratios and the URLs for Walkscore / Flood / MAO Report.
+All columns sortable; CSV export carries the same column order plus legal detail, parsed Lot / Block / Plan, certificate-of-title text, raw coverage ratios, and the URLs for Walkscore / Flood / MAO Report.
 
 ## Static map capture
 
@@ -72,19 +85,21 @@ A **Generate Static Map** button between the table and the About section capture
 
 ## Architecture summary
 
-Pure static. Vercel serves the Vite-built bundle. The browser makes its own ArcGIS REST queries directly to `services.arcgis.com` (CORS open). The contaminated-sites CSV at `manitoba.ca` is proxied through `vercel.json` `rewrites` (and a matching Vite dev-server proxy in `vite.config.js`) because the upstream doesn't send `Access-Control-Allow-Origin`.
+Pure static. Vercel serves the Vite-built bundle plus the generated legal-search JSON. The browser makes its own ArcGIS REST queries directly to `services.arcgis.com` (CORS open). The contaminated-sites CSV at `manitoba.ca` is proxied through `vercel.json` `rewrites` (and a matching Vite dev-server proxy in `vite.config.js`) because the upstream doesn't send `Access-Control-Allow-Origin`.
 
 **Per-search flow** (single direction, one parcel layer):
 
-1. Build the parcel `where` clause from the sidebar inputs. Categorical and amendment-status filters resolve through a separate spatial query against the matching overlay layer (using actual polygon geometry, not bbox envelopes — paginated to handle large overlays); the resulting parcel OBJECTID list is ANDed into the parcel query.
-2. Paginated parcel fetch from ROLL_ENTRY with a 1,000-row cap and a `_truncated` flag set whenever the cap or `exceededTransferLimit` triggers.
-3. Spatial enrichment — when a muni is selected, **one bulk fetch** of every overlay polygon in that muni replaces the per-parcel envelope queries (~30× faster, eliminates transient-failure mode). Province-wide searches fall back to per-parcel envelope queries with a concurrency cap of 16.
-4. Top-N area-weighted join in the browser via `@turf/intersect` + `@turf/area`, mirroring `mao-assembly/scripts/pipeline_utils.R::get_multiple_by_area()`. Top-2 zonings per parcel (with coverage % per match), top-1 dev-plan designation.
-5. Results enrich the table, the map fits to bounds, and the zoning legend rebuilds against the actual codes present.
+1. If legal-description, Lot, Block, Plan, or certificate-of-title fields are filled, search `legal-index.json` first. The matching `(muni_no, roll_no_txt)` keys become a lookup filter for the live Roll Entry query.
+2. Build the parcel `where` clause from the sidebar inputs. Categorical and amendment-status filters resolve through a separate spatial query against the matching overlay layer (using actual polygon geometry, not bbox envelopes — paginated to handle large overlays); the resulting parcel OBJECTID list is ANDed into the parcel query.
+3. Paginated parcel fetch from ROLL_ENTRY with a 1,000-row cap and a `_truncated` flag set whenever the cap or `exceededTransferLimit` triggers.
+4. Spatial enrichment — when a muni is selected, **one bulk fetch** of every overlay polygon in that muni replaces the per-parcel envelope queries (~30× faster, eliminates transient-failure mode). Province-wide searches fall back to per-parcel envelope queries with a concurrency cap of 16.
+5. Top-N area-weighted join in the browser via `@turf/intersect` + `@turf/area`, mirroring `mao-assembly/scripts/pipeline_utils.R::get_multiple_by_area()`. Top-2 zonings per parcel (with coverage % per match), top-1 dev-plan designation.
+6. Results enrich the table, the map fits to bounds, and the zoning legend rebuilds against the actual codes present.
 
-**Caching.** Three classes of data, distinct strategies:
+**Caching.** Four classes of data, distinct strategies:
 
-- **Search results** — never cached. Every Search hits ROLL_ENTRY live.
+- **Search results** — never cached. Every Search fetches current ROLL_ENTRY rows live, even when a generated legal-index match supplies the lookup keys.
+- **Generated legal index** — static deployment artifact, regenerated from the MAO scrape with `npm run legal:index` whenever `ParcelSearch/mao-scrape/results/parcels.parquet` is refreshed.
 - **Dropdown lists + auxiliary overlays** — cached in `localStorage` under the `mbpsCache.` namespace with a 7-day TTL. Survives across tabs and sessions. Quota recovery evicts older namespaced entries before failing. Clear button wipes the namespace.
 - **Per-muni overlay fetches** — cached per-muni so switching back to a recently-visited muni is instant.
 
@@ -93,7 +108,7 @@ Pure static. Vercel serves the Vite-built bundle. The browser makes its own ArcG
 - `maplibre-gl` — map (no API key; CARTO Positron + Esri World Imagery raster tiles)
 - `@turf/area`, `@turf/bbox`, `@turf/intersect`, `@turf/boolean-point-in-polygon` — spatial primitives for the area-weighted join
 
-No backend, no database, no precomputed data, no scheduled jobs.
+No backend, no database, no scheduled jobs. The only precomputed browser artifact is `web/public/data/legal-index.json`, derived from the companion MAO scrape.
 
 ## Running the web app locally
 
@@ -102,6 +117,7 @@ Prerequisites: Node.js 18+ and npm.
 ```bash
 cd web
 npm install
+npm run legal:index   # refresh after the MAO scrape output changes
 npm run dev
 ```
 
