@@ -47,11 +47,22 @@ import {
   flyToFeature,
   buildZoneCodePaint,
 } from './map.js';
+import {
+  hasLegalCriteria,
+  legalRecordKey,
+  parcelLegalKey,
+  searchLegalIndex,
+} from './legalIndex.js';
 import turfArea from '@turf/area';
 
 const $address       = document.getElementById('address');
 const $municipality  = document.getElementById('municipality');
 const $roll          = document.getElementById('roll');
+const $legalText     = document.getElementById('legal-text');
+const $lot           = document.getElementById('lot');
+const $block         = document.getElementById('block');
+const $plan          = document.getElementById('plan');
+const $title         = document.getElementById('title');
 const $zoneCategory  = document.getElementById('zone-category');
 const $changedStatus = document.getElementById('changed-status');
 const $duMode        = document.getElementById('du-mode');
@@ -388,6 +399,14 @@ const rowFeatureMap = new Map();
 let lastZoningFc = EMPTY_FC;
 let lastDevPlanFc = EMPTY_FC;
 
+// Tracks which muni's zoning / dev-plan polygons are currently loaded
+// in each map source. Lets a Zoning Layer / Dev Plan Layer toggle
+// short-circuit when the displayed muni already matches the dropdown
+// (avoiding a redundant refetch), and lets a muni dropdown change
+// trigger a refresh when those layers are visible.
+let zoningLayerLoadedFor = null;
+let devPlanLayerLoadedFor = null;
+
 // ---------- Column sort ----------
 
 let currentSort = { col: 'roll', dir: 'asc' };
@@ -395,6 +414,8 @@ let currentSort = { col: 'roll', dir: 'asc' };
 const SORT_KEYS = {
   roll:    (r) => strKey(r.parcel.properties.Roll_No_Txt),
   address: (r) => strKey(r.parcel.properties.Property_Address),
+  legal:   (r) => strKey(legalDisplay(r.parcel.properties)),
+  title:   (r) => strKey(r.parcel.properties._certificatesOfTitle),
   zone1:   (r) => strKey(r.zoning[0]?.feature.properties.ZONE),
   zone1pct:(r) => finiteOrNeg(r.zoning[0]?.ratio),
   zone2:   (r) => strKey(r.zoning[1]?.feature.properties.ZONE),
@@ -610,6 +631,10 @@ $municipality.addEventListener('change', () => {
   // Reset the PD button until the next search resolves the planning
   // district from the dev-plan layer's PLANNINGDISTRICT field.
   setExternalLinkButton($pdWebsiteBtn, null, 'PD Website', 'Run a search to detect the planning district');
+  // If the Zoning Layer / Dev Plan Layer are currently active, swap
+  // their data to match the new muni. Skipped quietly when neither
+  // layer is on; doesn't refetch when the new muni already matches.
+  refreshOverlayLayersForMuniChange();
 });
 // The "Min #" number input is only meaningful when Min DU is selected.
 // Disable it otherwise so users can't type a value that has no effect.
@@ -619,7 +644,7 @@ $duMode.addEventListener('change', () => {
   if (!enableMin) $duMin.value = '';
   if (enableMin && !$duMin.value) $duMin.value = '1';
 });
-for (const el of [$address, $roll]) {
+for (const el of [$address, $roll, $legalText, $lot, $block, $plan, $title]) {
   el.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') runSearch();
   });
@@ -713,6 +738,13 @@ function fillSelect(sel, values, blankLabel) {
 
 async function runSearch() {
   const status = $changedStatus.value;
+  const legalInputs = {
+    legalText:      $legalText.value.trim(),
+    lot:            $lot.value.trim(),
+    block:          $block.value.trim(),
+    plan:           $plan.value.trim(),
+    title:          $title.value.trim(),
+  };
   const inputs = {
     address:         $address.value.trim(),
     municipality:    $municipality.value.trim(),
@@ -723,8 +755,9 @@ async function runSearch() {
     duMode:          $duMode.value,
     duMin:           $duMin.value,
   };
+  const hasLegalSearch = hasLegalCriteria(legalInputs);
 
-  if (!Object.values(inputs).some(Boolean)) {
+  if (!Object.values(inputs).some(Boolean) && !hasLegalSearch) {
     setCount('Enter at least one search field.');
     clearTable();
     setMapData(EMPTY_FC, EMPTY_FC, EMPTY_FC);
@@ -737,6 +770,28 @@ async function runSearch() {
   setMapData(EMPTY_FC, EMPTY_FC, EMPTY_FC);
 
   try {
+    let legalResult = null;
+    if (hasLegalSearch) {
+      setCount('Searching legal index…');
+      try {
+        legalResult = await searchLegalIndex({
+          ...legalInputs,
+          municipality: inputs.municipality,
+        });
+      } catch (err) {
+        console.error(err);
+        setCount(err.message);
+        return;
+      }
+      if (legalResult.matches.length === 0) {
+        setCount('No legal-description matches found.');
+        return;
+      }
+      inputs.parcelKeys = legalResult.matches;
+      const legalCap = legalResult.truncated ? '+' : '';
+      setCount(`${legalResult.matches.length}${legalCap} legal matches · fetching live parcels…`);
+    }
+
     let parcelFc;
     try {
       parcelFc = await searchParcels(inputs);
@@ -745,6 +800,7 @@ async function runSearch() {
       setCount(`Search failed: ${err.message}`);
       return;
     }
+    if (legalResult) attachLegalMetadata(parcelFc, legalResult.matches);
 
     const n = parcelFc.features.length;
     if (n === 0) {
@@ -752,8 +808,11 @@ async function runSearch() {
       return;
     }
 
-    const baseMsg = parcelFc._truncated
-      ? `${n} parcels found (server cap reached — refine your search)`
+    const capNotes = [];
+    if (legalResult?.truncated) capNotes.push('legal index cap reached — refine legal search');
+    if (parcelFc._truncated) capNotes.push('server cap reached — refine your search');
+    const baseMsg = capNotes.length
+      ? `${n} parcels found (${capNotes.join('; ')})`
       : `${n} parcels found`;
     setCount(`${baseMsg} · loading zoning + dev-plan…`);
 
@@ -782,6 +841,18 @@ async function runSearch() {
     }
     lastZoningFc = zoningFc;
     lastDevPlanFc = devPlanFc;
+    // When the search is muni-scoped, fetchZoningOverlap /
+    // fetchDevPlanOverlap take the bulk-by-muni path (see arcgis.js),
+    // so the overlay FCs already cover the entire muni. Stamp the
+    // loaded-for state so the Zoning Layer / Dev Plan Layer toggles
+    // can short-circuit when the user clicks them next.
+    if (inputs.municipality) {
+      zoningLayerLoadedFor = inputs.municipality;
+      devPlanLayerLoadedFor = inputs.municipality;
+    } else {
+      zoningLayerLoadedFor = null;
+      devPlanLayerLoadedFor = null;
+    }
     rebuildZoningLegend(zoningFc);
     updatePdWebsiteButton(devPlanFc);
 
@@ -816,6 +887,27 @@ async function runSearch() {
   }
 }
 
+function attachLegalMetadata(parcelFc, legalMatches) {
+  const byKey = new Map();
+  for (const rec of legalMatches || []) {
+    const key = legalRecordKey(rec);
+    if (key && !byKey.has(key)) byKey.set(key, rec);
+  }
+  for (const feature of parcelFc.features || []) {
+    const p = feature.properties || {};
+    const rec = byKey.get(parcelLegalKey(p));
+    if (!rec) continue;
+    p._extrctPropId = rec.extrct_prop_id || null;
+    p._legalDescription = rec.legal_description || null;
+    p._legalDetail = rec.legal_detail || null;
+    p._lot = rec.lot || null;
+    p._block = rec.block || null;
+    p._plan = rec.plan || null;
+    p._certificatesOfTitle = rec.certificates_of_title || null;
+    p._legalSourceUrl = rec.source_url || null;
+  }
+}
+
 // ---------- Map / overlay helpers ----------
 
 function setMapData(parcelFc, zoningFc, devPlanFc) {
@@ -826,31 +918,145 @@ function setMapData(parcelFc, zoningFc, devPlanFc) {
   });
 }
 
-function toggleOverlay(which) {
+/**
+ * Toggle Zoning Layer / Dev Plan Layer visibility, lazy-fetching the
+ * full-muni overlay polygons when the layer is being turned on with a
+ * municipality selected and the currently-loaded muni doesn't match.
+ *
+ * Lets a user select a muni and click Zoning Layer (or Dev Plan Layer)
+ * to see the entire muni's zoning without first running a parcel
+ * search — the most natural workflow for "show me what zones exist
+ * here". Searching afterwards still works the same; the in-memory
+ * overlay FC stays valid for the same muni.
+ *
+ * Without a muni selected, the toggle uses whatever data the previous
+ * search loaded; if there's nothing cached, it gently reverts and
+ * nudges the user to pick a muni.
+ */
+async function toggleOverlay(which) {
   const btn = which === 'zoning' ? $zoningToggle : $devplanToggle;
-  // Two-word labels keep the 2-column overlay grid in the sidebar tidy.
-  // The button face just shows the layer name; pressed state colours
-  // the button (CSS .active class) so an extra "Hide …" prefix isn't
-  // needed and only made the label wrap.
-  const labelOn  = which === 'zoning' ? 'Zoning Layer' : 'Dev Plan Layer';
-  const labelOff = which === 'zoning' ? 'Zoning Layer' : 'Dev Plan Layer';
+  const label = which === 'zoning' ? 'Zoning Layer' : 'Dev Plan Layer';
   const wasActive = btn.classList.contains('active');
   const visible = !wasActive;
   btn.classList.toggle('active', visible);
   btn.setAttribute('aria-pressed', String(visible));
-  btn.textContent = visible ? labelOn : labelOff;
-  mapReady.then(() => {
-    if (which === 'zoning') {
-      setZoningVisible(map, visible);
-      if ($zoningLegend) $zoningLegend.hidden = !visible;
-      // The flow legend's bottom anchor needs to bump up when the much
-      // taller zoning legend is also visible, so they don't overlap.
-      if ($flowLegend) $flowLegend.classList.toggle('with-zoning', visible);
-    } else {
-      setDevPlanVisible(map, visible);
+
+  await mapReady;
+
+  if (!visible) {
+    btn.textContent = label;
+    applyOverlayVisibility(which, false);
+    return;
+  }
+
+  // Turning on — fetch first if a muni is selected and the loaded
+  // muni doesn't match the dropdown.
+  const muni = $municipality.value;
+  const loadedFor = which === 'zoning' ? zoningLayerLoadedFor : devPlanLayerLoadedFor;
+  const cachedFc  = which === 'zoning' ? lastZoningFc        : lastDevPlanFc;
+  const haveData  = (cachedFc?.features?.length || 0) > 0;
+  const needFetch = muni && loadedFor !== muni;
+
+  if (needFetch) {
+    btn.disabled = true;
+    btn.textContent = 'Loading…';
+    try {
+      if (which === 'zoning') {
+        const fc = await fetchZoningOverlap(EMPTY_FC, { municipality: muni });
+        setZoningData(map, fc);
+        lastZoningFc = fc;
+        rebuildZoningLegend(fc);
+        zoningLayerLoadedFor = muni;
+      } else {
+        const fc = await fetchDevPlanOverlap(EMPTY_FC, { municipality: muni });
+        setDevPlanData(map, fc);
+        lastDevPlanFc = fc;
+        devPlanLayerLoadedFor = muni;
+      }
+    } catch (err) {
+      console.warn(`${label} fetch failed`, err);
+      btn.classList.remove('active');
+      btn.setAttribute('aria-pressed', 'false');
+      btn.disabled = false;
+      btn.textContent = label;
+      setCount(`Failed to load ${label}: ${err.message}`);
+      return;
     }
-  });
+    btn.disabled = false;
+  } else if (!muni && !haveData) {
+    // No muni selected and nothing cached from a previous search —
+    // revert the toggle and tell the user what to do.
+    btn.classList.remove('active');
+    btn.setAttribute('aria-pressed', 'false');
+    btn.textContent = label;
+    setCount(`Select a municipality to load the ${label}.`);
+    return;
+  }
+
+  btn.textContent = label;
+  applyOverlayVisibility(which, true);
 }
+
+/** Apply the visible/hidden styling for the zoning or dev-plan overlay
+ *  layers, including the floating zoning legend and the AADT-legend
+ *  bump-up class that keeps the two legends from overlapping. */
+function applyOverlayVisibility(which, visible) {
+  if (which === 'zoning') {
+    setZoningVisible(map, visible);
+    if ($zoningLegend) $zoningLegend.hidden = !visible;
+    if ($flowLegend) $flowLegend.classList.toggle('with-zoning', visible);
+  } else {
+    setDevPlanVisible(map, visible);
+  }
+}
+
+/**
+ * When the muni dropdown changes, refresh any currently-active Zoning
+ * Layer / Dev Plan Layer to the new muni's polygons. Avoids the user
+ * having to toggle off-then-on after picking a new muni. If the muni
+ * is cleared, the layers are emptied.
+ */
+async function refreshOverlayLayersForMuniChange() {
+  const muni = $municipality.value;
+  await mapReady;
+
+  if ($zoningToggle.classList.contains('active') && zoningLayerLoadedFor !== muni) {
+    if (muni) {
+      try {
+        const fc = await fetchZoningOverlap(EMPTY_FC, { municipality: muni });
+        setZoningData(map, fc);
+        lastZoningFc = fc;
+        rebuildZoningLegend(fc);
+        zoningLayerLoadedFor = muni;
+      } catch (err) {
+        console.warn('zoning layer refresh failed on muni change', err);
+      }
+    } else {
+      setZoningData(map, EMPTY_FC);
+      lastZoningFc = EMPTY_FC;
+      rebuildZoningLegend(EMPTY_FC);
+      zoningLayerLoadedFor = null;
+    }
+  }
+
+  if ($devplanToggle.classList.contains('active') && devPlanLayerLoadedFor !== muni) {
+    if (muni) {
+      try {
+        const fc = await fetchDevPlanOverlap(EMPTY_FC, { municipality: muni });
+        setDevPlanData(map, fc);
+        lastDevPlanFc = fc;
+        devPlanLayerLoadedFor = muni;
+      } catch (err) {
+        console.warn('dev-plan layer refresh failed on muni change', err);
+      }
+    } else {
+      setDevPlanData(map, EMPTY_FC);
+      lastDevPlanFc = EMPTY_FC;
+      devPlanLayerLoadedFor = null;
+    }
+  }
+}
+
 
 /**
  * Toggle one of the province-wide auxiliary overlays:
@@ -1004,6 +1210,8 @@ function renderTable(rows) {
 
     tr.appendChild(td(p.Roll_No_Txt));
     tr.appendChild(td(p.Property_Address));
+    tr.appendChild(legalCell(p));
+    tr.appendChild(td(p._certificatesOfTitle));
     tr.appendChild(td(formatZoneCode(z1)));
     tr.appendChild(td(formatPercent(row.zoning[0]?.ratio), 'num'));
     tr.appendChild(td(z2Show ? formatZoneCode(z2) : null));
@@ -1021,6 +1229,28 @@ function renderTable(rows) {
   }
   $tbody.appendChild(frag);
   setExportEnabled(rows.length > 0);
+}
+
+function legalCell(p) {
+  const cell = td(legalDisplay(p));
+  const details = [
+    p._legalDetail ? `Detail: ${p._legalDetail}` : null,
+    p._lot ? `Lot: ${p._lot}` : null,
+    p._block ? `Block: ${p._block}` : null,
+    p._plan ? `Plan: ${p._plan}` : null,
+  ].filter(Boolean);
+  if (details.length) cell.title = details.join('\n');
+  return cell;
+}
+
+function legalDisplay(p = {}) {
+  if (realStr(p._legalDescription)) return realStr(p._legalDescription);
+  const parts = [];
+  if (realStr(p._lot)) parts.push(`L ${realStr(p._lot)}`);
+  if (realStr(p._block)) parts.push(`B ${realStr(p._block)}`);
+  if (realStr(p._plan)) parts.push(`P ${realStr(p._plan)}`);
+  if (parts.length) return parts.join(' · ');
+  return realStr(p._legalDetail);
 }
 
 /**
@@ -1342,6 +1572,8 @@ function exportCsv() {
   if (!currentRows.length) return;
   const header = [
     'Roll #', 'Address',
+    'Legal Description', 'Legal Detail', 'Lot', 'Block', 'Plan',
+    'Certificates of Title', 'MAO Legal Source URL',
     'Zoning', 'Zoning %',
     'Zoning 2', 'ZBL',
     'Dev-Plan Designation', 'DP By-law',
@@ -1359,6 +1591,13 @@ function exportCsv() {
     const ac = parcelAcres(row.parcel);
     lines.push([
       p.Roll_No_Txt, p.Property_Address,
+      p._legalDescription ?? '',
+      p._legalDetail ?? '',
+      p._lot ?? '',
+      p._block ?? '',
+      p._plan ?? '',
+      p._certificatesOfTitle ?? '',
+      p._legalSourceUrl ?? '',
       formatZoneCode(z1), ratioPct(row.zoning[0]?.ratio),
       formatZoneCode(z2), z1.ZBL,
       formatDes(d1), d1.DP_BYLAW,

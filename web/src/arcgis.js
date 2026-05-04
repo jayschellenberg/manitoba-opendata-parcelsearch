@@ -55,10 +55,17 @@ const PAGE_SIZE = 2000;
 // needs to refine. Roll_Entry has ~437k features province-wide so a
 // hard cap is essential for both server etiquette and browser sanity.
 const MAX_RESULTS = 1000;
+// Keep legal-index lookups as short POST bodies. Each chunk becomes one
+// grouped (muni_no + roll IN (...)) clause against Roll_Entry.
+const ROLL_KEY_CHUNK_SIZE = 80;
 // How many per-feature spatial queries we run in parallel. ArcGIS hosted
 // services tolerate this comfortably; staying conservative keeps us off
 // any rate-limit radar.
 const SPATIAL_CONCURRENCY = 16;
+// Only the fields the table/map/popup actually use. Drops Shape__Area,
+// Shape__Length, FID, and a couple of internal fields that older
+// outFields:'*' requests pulled in unread.
+const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Muni_Name_With_Typ,Asmt_Roll,Dwelling_Units,Frontage_or_Area,Total_Value,Asmt_Rpt_Url';
 
 // ---------- Public API ----------
 
@@ -68,7 +75,53 @@ const SPATIAL_CONCURRENCY = 16;
  * (already paginated to MAX_RESULTS, with `_truncated` set true on the
  * collection if the cap was reached).
  */
-export async function searchParcels({ address, municipality, roll, zoneCategory, devPlanCategory, zoningChanged, devPlanChanged, duMode, duMin }) {
+export async function searchParcels(args) {
+  const {
+    zoneCategory,
+    devPlanCategory,
+    zoningChanged,
+    devPlanChanged,
+    municipality,
+    parcelKeys,
+  } = args || {};
+  const clauses = buildParcelClauses(args || {});
+
+  // Zone / Dev-Plan category aren't fields on Roll_Entry — they live on the
+  // overlay layers. We resolve them to a list of parcel OBJECTIDs by spatial
+  // query against the matching overlay first, then add an `OBJECTID IN (...)`
+  // clause to the parcel query. Done up front so the result row cap respects
+  // the category filter.
+  let oidFilter = null;
+  if (zoneCategory || devPlanCategory || zoningChanged || devPlanChanged) {
+    oidFilter = await resolveOverlayFilter({
+      zoneCategory, devPlanCategory, zoningChanged, devPlanChanged,
+      municipality,
+    });
+    // Empty result set on the overlay side → empty parcel result.
+    if (oidFilter !== null && oidFilter.length === 0) {
+      return makeEmptyFc({ truncated: false });
+    }
+  }
+
+  if (clauses.length === 0 && !oidFilter && !hasParcelKeys(parcelKeys)) {
+    return makeEmptyFc({ truncated: false });
+  }
+
+  if (oidFilter && oidFilter.length > 0) {
+    // Esri SQL `IN (a, b, c)` clause. ArcGIS Online services tolerate
+    // very long IN-lists (we cap at MAX_RESULTS so worst-case ~12 KB).
+    clauses.push(`OBJECTID IN (${oidFilter.join(',')})`);
+  }
+
+  if (hasParcelKeys(parcelKeys)) {
+    return fetchRollEntryByKeyChunks(parcelKeys, clauses);
+  }
+
+  const where = clauses.join(' AND ');
+  return fetchRollEntryWhere(where, MAX_RESULTS);
+}
+
+function buildParcelClauses({ address, municipality, roll, duMode, duMin }) {
   const clauses = [];
   if (address)         clauses.push(`UPPER(Property_Address) LIKE '%${escapeSql(address.toUpperCase())}%'`);
   // Muni dropdown delivers the exact stored form, e.g. "STONEWALL (TOWN)";
@@ -95,47 +148,100 @@ export async function searchParcels({ address, municipality, roll, zoneCategory,
     const n = Math.max(1, Math.floor(Number(duMin) || 1));
     clauses.push(`Dwelling_Units >= ${n}`);
   }
+  return clauses;
+}
 
-  // Zone / Dev-Plan category aren't fields on Roll_Entry — they live on the
-  // overlay layers. We resolve them to a list of parcel OBJECTIDs by spatial
-  // query against the matching overlay first, then add an `OBJECTID IN (...)`
-  // clause to the parcel query. Done up front so the result row cap respects
-  // the category filter.
-  let oidFilter = null;
-  if (zoneCategory || devPlanCategory || zoningChanged || devPlanChanged) {
-    oidFilter = await resolveOverlayFilter({
-      zoneCategory, devPlanCategory, zoningChanged, devPlanChanged,
-      municipality,
-    });
-    // Empty result set on the overlay side → empty parcel result.
-    if (oidFilter !== null && oidFilter.length === 0) {
-      return makeEmptyFc({ truncated: false });
-    }
-  }
-
-  if (clauses.length === 0 && !oidFilter) {
-    return makeEmptyFc({ truncated: false });
-  }
-
-  if (oidFilter && oidFilter.length > 0) {
-    // Esri SQL `IN (a, b, c)` clause. ArcGIS Online services tolerate
-    // very long IN-lists (we cap at MAX_RESULTS so worst-case ~12 KB).
-    clauses.push(`OBJECTID IN (${oidFilter.join(',')})`);
-  }
-
-  const where = clauses.join(' AND ');
-  // Only the fields the table/map/popup actually use. Drops Shape__Area,
-  // Shape__Length, FID, and a couple of internal fields that the previous
-  // outFields:'*' was pulling in unread — typically ~30% wire-size cut on
-  // a full 1000-row response.
-  const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Muni_Name_With_Typ,Asmt_Roll,Dwelling_Units,Frontage_or_Area,Total_Value,Asmt_Rpt_Url';
+function fetchRollEntryWhere(where, cap) {
   return fetchAllPages(ROLL_URL, {
     where,
     outFields: PARCEL_OUTFIELDS,
     returnGeometry: 'true',
     outSR: '4326',
     f: 'geojson',
-  }, MAX_RESULTS);
+  }, cap);
+}
+
+async function fetchRollEntryByKeyChunks(parcelKeys, clauses) {
+  const chunks = chunkRollKeys(parcelKeys, ROLL_KEY_CHUNK_SIZE);
+  if (chunks.length === 0) return makeEmptyFc({ truncated: false });
+
+  const features = [];
+  const seenOids = new Set();
+  let truncated = parcelKeys.length > MAX_RESULTS;
+
+  for (const chunk of chunks) {
+    const keyClause = rollKeyWhereClause(chunk);
+    if (!keyClause) continue;
+    const where = [...clauses, keyClause].join(' AND ');
+    const remaining = MAX_RESULTS - features.length;
+    if (remaining <= 0) {
+      truncated = true;
+      break;
+    }
+    const fc = await fetchRollEntryWhere(where, remaining);
+    truncated = truncated || fc._truncated === true;
+    for (const f of fc.features || []) {
+      const oid = f.properties?.OBJECTID;
+      const dedupeKey = oid == null
+        ? `${f.properties?.Municipality || ''}|${f.properties?.Roll_No_Txt || ''}`
+        : `oid:${oid}`;
+      if (seenOids.has(dedupeKey)) continue;
+      seenOids.add(dedupeKey);
+      features.push(f);
+      if (features.length >= MAX_RESULTS) {
+        truncated = true;
+        break;
+      }
+    }
+    if (features.length >= MAX_RESULTS) break;
+  }
+
+  return {
+    type: 'FeatureCollection',
+    features,
+    _truncated: truncated,
+  };
+}
+
+function hasParcelKeys(parcelKeys) {
+  return Array.isArray(parcelKeys) && parcelKeys.length > 0;
+}
+
+function chunkRollKeys(parcelKeys, chunkSize) {
+  const normalized = [];
+  const seen = new Set();
+  for (const key of parcelKeys || []) {
+    const muniNo = Number(key.muni_no ?? key.muniNo);
+    const roll = String(key.roll_no_txt ?? key.rollNoTxt ?? '').trim();
+    if (!Number.isFinite(muniNo) || !roll) continue;
+    const dedupe = `${muniNo}|${roll}`;
+    if (seen.has(dedupe)) continue;
+    seen.add(dedupe);
+    normalized.push({ muniNo: Math.trunc(muniNo), roll });
+  }
+
+  const chunks = [];
+  for (let i = 0; i < normalized.length; i += chunkSize) {
+    chunks.push(normalized.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
+function rollKeyWhereClause(keys) {
+  const byMuni = new Map();
+  for (const { muniNo, roll } of keys) {
+    if (!byMuni.has(muniNo)) byMuni.set(muniNo, []);
+    byMuni.get(muniNo).push(roll);
+  }
+  const parts = [];
+  for (const [muniNo, rolls] of byMuni) {
+    const rollList = [...new Set(rolls)]
+      .map((r) => `'${escapeSql(r)}'`)
+      .join(',');
+    if (!rollList) continue;
+    parts.push(`(Municipality LIKE '${escapeSql(String(muniNo))} - %' AND Roll_No_Txt IN (${rollList}))`);
+  }
+  return parts.length ? `(${parts.join(' OR ')})` : null;
 }
 
 /**

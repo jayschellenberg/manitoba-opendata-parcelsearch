@@ -107,6 +107,16 @@ header small a {
 .sidebar .du-row .du-mode-field { flex: 1 1 50%; min-width: 0; }
 .sidebar .du-row .du-min-field  { flex: 0 0 64px; min-width: 0; }
 
+.sidebar .legal-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.sidebar .legal-row input {
+  text-align: center;
+}
+
 /* Map-overlay buttons sit in a 2-column grid inside the sidebar so the
    list of toggles stays compact. Each button stretches to its grid cell;
    text labels were trimmed to single keywords (Zoning / Dev Plan / Enviro
@@ -502,22 +512,25 @@ header small a {
   white-space: nowrap;
 }
 
-/* Free-form text columns read better left-aligned: Address (2), Zoning (3),
-   Zoning 2 (5), ZBL (6), Dev-Plan (7), DP By-law (8), Changes (9). */
+/* Free-form text columns read better left-aligned. */
 #results th:nth-child(2),
 #results td:nth-child(2),
 #results th:nth-child(3),
 #results td:nth-child(3),
+#results th:nth-child(4),
+#results td:nth-child(4),
 #results th:nth-child(5),
 #results td:nth-child(5),
-#results th:nth-child(6),
-#results td:nth-child(6),
 #results th:nth-child(7),
 #results td:nth-child(7),
 #results th:nth-child(8),
 #results td:nth-child(8),
 #results th:nth-child(9),
-#results td:nth-child(9) {
+#results td:nth-child(9),
+#results th:nth-child(10),
+#results td:nth-child(10),
+#results th:nth-child(11),
+#results td:nth-child(11) {
   text-align: left;
 }
 

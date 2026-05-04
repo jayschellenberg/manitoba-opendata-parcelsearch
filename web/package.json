@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "legal:index": "Rscript ../r/build_legal_index.R",
     "build": "vite build",
     "preview": "vite preview"
   },
