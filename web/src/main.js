@@ -915,6 +915,16 @@ async function runSearch() {
     renderTable(rows);
     setMapData(parcelFc, zoningFc, devPlanFc);
     setCount(baseMsg);
+    // Auto-show the muni-wide parcel fabric so the search results
+    // sit in their surrounding context. Only fires when a muni is
+    // selected (the layer can't fetch without one) and the toggle
+    // isn't already active. Uses the existing toggle plumbing so
+    // the layer's lazy-fetch + 30-day cache + collision logic all
+    // continue to apply unchanged.
+    if (inputs.municipality && !$muniParcelsToggle.disabled
+        && !$muniParcelsToggle.classList.contains('active')) {
+      toggleAuxOverlay('muniParcels');
+    }
   } finally {
     setBusy(false);
   }
