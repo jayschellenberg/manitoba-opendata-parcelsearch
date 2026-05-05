@@ -28,6 +28,8 @@ import {
   fetchTrafficFlow,
   fetchAllParcelsInMunicipality,
   fetchMunicipalBoundaries,
+  parseRollList,
+  missingRollsFromResults,
 } from './arcgis.js';
 import {
   initMap,
@@ -809,17 +811,42 @@ async function runSearch() {
     if (legalResult) attachLegalMetadata(parcelFc, legalResult.matches);
 
     const n = parcelFc.features.length;
+
+    // Bulk roll-list diagnostics. When the user pasted a comma-separated
+    // list of rolls, compare what came back against what they asked for
+    // and surface any rolls that didn't match. List up to 10 inline; the
+    // rest collapse into a "and N others" tail so a 50-roll typo doesn't
+    // produce a 200-character count badge.
+    const rollList = parseRollList(inputs.roll);
+    const isBulkRollSearch = rollList.length > 1;
+    let missingRolls = [];
+    if (isBulkRollSearch) {
+      missingRolls = missingRollsFromResults(inputs.roll, parcelFc);
+    }
+
     if (n === 0) {
-      setCount('No parcels found.');
+      if (isBulkRollSearch) {
+        setCount(`No parcels found — none of the ${rollList.length} rolls matched in this municipality.`);
+      } else {
+        setCount('No parcels found.');
+      }
       return;
     }
 
     const capNotes = [];
     if (legalResult?.truncated) capNotes.push('legal index cap reached — refine legal search');
     if (parcelFc._truncated) capNotes.push('server cap reached — refine your search');
-    const baseMsg = capNotes.length
-      ? `${n} parcels found (${capNotes.join('; ')})`
+    if (isBulkRollSearch && missingRolls.length > 0) {
+      const inline = missingRolls.slice(0, 10).join(', ');
+      const tail = missingRolls.length > 10 ? ` and ${missingRolls.length - 10} others` : '';
+      capNotes.push(`${missingRolls.length} of ${rollList.length} not found: ${inline}${tail}`);
+    }
+    const countLabel = isBulkRollSearch
+      ? `${n} of ${rollList.length} rolls matched`
       : `${n} parcels found`;
+    const baseMsg = capNotes.length
+      ? `${countLabel} (${capNotes.join('; ')})`
+      : countLabel;
     setCount(`${baseMsg} · loading zoning + dev-plan…`);
 
     // Stamp _rowKey so map clicks can find the matching table row.

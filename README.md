@@ -46,7 +46,7 @@ The page splits into a fixed-width left sidebar holding all controls and a fluid
 **Sidebar — Search section:**
 - Municipality dropdown (preloaded with every distinct `Muni_Name_With_Typ` value; narrows the Zoning Category dropdown to the codes actually present in the muni)
 - Civic Address (case-insensitive `LIKE`)
-- Roll # (exact match; accepts both `3600` and `3600.000`)
+- Roll # — single value or comma-separated list. One roll runs as before; pasting many runs them all in one query and the count badge calls out any rolls that didn't match (e.g. `23 of 25 rolls matched · 2 of 25 not found: 1234, 5678`). Accepts both `3600` and `3600.000`. Cross-muni bulk via LINC is documented as future work in REPLICATION_GUIDE §15.5.
 - Legal Description (contains), Lot / Block / Plan (exact), and Certificate of Title (contains) from the generated MAO scrape index
 - Zoning Category dropdown (per-muni narrowed)
 - Status dropdown — `Any` / `Zoning Changed` / `Dev Plan Changed` / `Both Changed`

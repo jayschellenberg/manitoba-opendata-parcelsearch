@@ -127,14 +127,23 @@ function buildParcelClauses({ address, municipality, roll, duMode, duMin }) {
   // Muni dropdown delivers the exact stored form, e.g. "STONEWALL (TOWN)";
   // exact equality is faster than LIKE and avoids surprise partial-matches.
   if (municipality)    clauses.push(`Muni_Name_With_Typ = '${escapeSql(municipality)}'`);
-  // Roll # is an exact match. The source data stores rolls with a ".000"
-  // decimal suffix (e.g. "3600.000"); accept either form by checking both.
-  if (roll) {
-    const trimmed = roll.trim();
-    const withDecimal = /\./.test(trimmed) ? trimmed : `${trimmed}.000`;
-    clauses.push(
-      `(Roll_No_Txt = '${escapeSql(trimmed)}' OR Roll_No_Txt = '${escapeSql(withDecimal)}')`
-    );
+  // Roll # accepts either a single value or a comma- / whitespace- /
+  // newline-separated list (paste from a spreadsheet). Source data stores
+  // rolls with a ".000" decimal suffix (e.g. "3600.000"); we generate
+  // both the bare integer and the .000-suffixed form for each input
+  // value, then build a single Roll_No_Txt IN (...) clause. The list can
+  // get long — the pasted-list branch keeps each input form separated so
+  // the caller can later compare against the result set to figure out
+  // which rolls didn't match.
+  const rollList = parseRollList(roll);
+  if (rollList.length > 0) {
+    const expanded = new Set();
+    for (const r of rollList) {
+      expanded.add(r);
+      if (!/\./.test(r)) expanded.add(`${r}.000`);
+    }
+    const inList = [...expanded].map((v) => `'${escapeSql(v)}'`).join(',');
+    clauses.push(`Roll_No_Txt IN (${inList})`);
   }
 
   // Dwelling-units filter. The source field is Dwelling_Units (smallInteger).
@@ -1067,6 +1076,55 @@ function polygonToEsriGeometry(feature) {
 
 function makeEmptyFc({ truncated = false } = {}) {
   return { type: 'FeatureCollection', features: [], _truncated: truncated };
+}
+
+/**
+ * Parse a Roll # input that may be a single value or a list (commas,
+ * whitespace, newlines, semicolons all work as separators). Trims
+ * each entry, drops empties and pure-junk values, dedupes, returns an
+ * array preserving first-seen order. Empty array for empty input.
+ *
+ * Exported so the bulk-search "missing rolls" diagnostic in main.js
+ * can reuse the same parser the SQL clause builds against — keeps
+ * the user-facing list of "not found" rolls aligned with what
+ * actually got queried.
+ */
+export function parseRollList(input) {
+  if (!input) return [];
+  const seen = new Set();
+  const out = [];
+  for (const raw of String(input).split(/[\s,;]+/)) {
+    const v = raw.trim();
+    if (!v) continue;
+    if (seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
+  }
+  return out;
+}
+
+/**
+ * Given the Roll # input the user typed and the FeatureCollection of
+ * matching parcels, return the list of input rolls that didn't match
+ * any returned parcel. Roll equality is checked against both the bare
+ * input form and the ".000"-suffixed form (the source data uses the
+ * decimal suffix). Order preserves the user's input order so the UI
+ * can list them back in a familiar sequence.
+ */
+export function missingRollsFromResults(input, parcelFc) {
+  const wanted = parseRollList(input);
+  if (wanted.length === 0) return [];
+  const have = new Set();
+  for (const f of parcelFc?.features || []) {
+    const r = f.properties?.Roll_No_Txt;
+    if (r != null) have.add(String(r));
+  }
+  const missing = [];
+  for (const r of wanted) {
+    const decimal = /\./.test(r) ? r : `${r}.000`;
+    if (!have.has(r) && !have.has(decimal)) missing.push(r);
+  }
+  return missing;
 }
 
 // SQL string literal escape: double any single quotes per Esri SQL92 dialect.
