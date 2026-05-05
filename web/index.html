@@ -106,6 +106,7 @@
           <button id="contam-toggle"  type="button" class="secondary" aria-pressed="false" title="Manitoba Contaminated Sites Registry">Enviro Sites</button>
           <button id="muni-website-btn" type="button" class="secondary" disabled title="Select a municipality to enable">Muni Website</button>
           <button id="pd-website-btn"   type="button" class="secondary" disabled title="Select a municipality to enable">PD Website</button>
+          <button id="static-map-btn"   type="button" class="secondary" title="Capture the current map view as a PNG. Right-click the rendered image below the table and Save Image As… to drop into a report.">Generate Map</button>
         </div>
       </aside>
 
@@ -167,11 +168,12 @@
       </main>
     </div>
 
-    <section id="static-map-section" class="static-map-section">
-      <div class="static-map-header">
-        <button id="static-map-btn" type="button" class="secondary">Generate Static Map</button>
-        <span class="static-map-hint">Captures the current interactive-map view (extent, zoom, layers toggled). Right-click the image &amp; choose <em>Save Image As…</em> to drop it into a report.</span>
-      </div>
+    <!--
+      The Generate Map button lives in the sidebar overlay grid; this
+      section just hosts the rendered image so it appears in-flow below
+      the table where the user can right-click → Save Image As.
+    -->
+    <section id="static-map-section" class="static-map-section" hidden>
       <div id="static-map-output" class="static-map-output" hidden></div>
     </section>
 

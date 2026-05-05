@@ -497,8 +497,9 @@ $devplanToggle.addEventListener('click', () => toggleOverlay('devplan'));
 $contamToggle.addEventListener('click', () => toggleAuxOverlay('contam'));
 $flowToggle.addEventListener('click', () => toggleAuxOverlay('flow'));
 
-const $staticMapBtn    = document.getElementById('static-map-btn');
-const $staticMapOutput = document.getElementById('static-map-output');
+const $staticMapBtn     = document.getElementById('static-map-btn');
+const $staticMapOutput  = document.getElementById('static-map-output');
+const $staticMapSection = document.getElementById('static-map-section');
 if ($staticMapBtn) $staticMapBtn.addEventListener('click', generateStaticMap);
 
 /**
@@ -612,6 +613,7 @@ async function generateStaticMap() {
     });
     const canvas = map.getCanvas();
     const dataUrl = composeWithAttribution(canvas);
+    if ($staticMapSection) $staticMapSection.hidden = false;
     $staticMapOutput.hidden = false;
     $staticMapOutput.innerHTML = '';
     const img = document.createElement('img');
@@ -622,6 +624,7 @@ async function generateStaticMap() {
     $staticMapOutput.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {
     console.error('static map capture failed', err);
+    if ($staticMapSection) $staticMapSection.hidden = false;
     $staticMapOutput.hidden = false;
     $staticMapOutput.innerHTML = '<p style="color:#c0392b">Capture failed — try toggling the satellite basemap and re-trying. If it persists, check the browser console.</p>';
   } finally {
