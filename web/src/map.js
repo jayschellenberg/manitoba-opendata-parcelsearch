@@ -348,7 +348,12 @@ export function initMap(container, { onFeatureClick } = {}) {
             15, 13,
           ],
           'text-max-width': 9,
-          'text-allow-overlap': false,
+          // Always render — the muni-parcels roll-number label was
+          // previously winning the collision and suppressing this one
+          // when both layers were on. Pairs with the roll-number
+          // label's semi-transparent paint above so designation names
+          // visually dominate where they overlap.
+          'text-allow-overlap': true,
           'text-ignore-placement': true,
           'symbol-placement': 'point',
         },
@@ -574,14 +579,21 @@ export function initMap(container, { onFeatureClick } = {}) {
             17, 11,
             19, 13,
           ],
-          'text-allow-overlap': false,
-          'text-ignore-placement': false,
+          // Always render, and don't reserve space against other labels.
+          // This lets dev-plan + zoning labels coexist with the roll
+          // number at the same anchor instead of one suppressing the
+          // other. The semi-transparent paint below tones the roll
+          // numbers down so the more substantive layer labels read on
+          // top.
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
           'symbol-placement': 'point',
         },
         paint: {
-          'text-color': '#1a1a1a',
-          'text-halo-color': '#ffffff',
+          'text-color': 'rgba(26, 26, 26, 0.55)',
+          'text-halo-color': 'rgba(255, 255, 255, 0.7)',
           'text-halo-width': 0.8,
+          'text-opacity': 0.9,
         },
       });
 
