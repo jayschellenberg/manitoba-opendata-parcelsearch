@@ -38,36 +38,29 @@
           <span class="tip">Roll # (exact match within selected municipality)</span>
         </span>
         <!--
-          Legal / Lot / Block / Plan / Certificate of Title inputs are
-          hidden until the MAO scrape and the legal-search index are
-          fully wired up. The IDs stay in the DOM (with the `hidden`
-          attribute) so main.js's getElementById lookups still resolve;
-          the empty .value reads simply contribute no SQL clauses to the
-          search query. To re-enable, remove the `hidden` attributes and
-          confirm web/public/data/legal-index.json is being served.
+          Legal description / Lot / Block / Plan / Certificate of Title
+          inputs were here. Removed from the markup until the MAO scrape
+          and the legal-search index are fully wired up. main.js is
+          null-tolerant for the missing IDs so re-enabling is just a
+          matter of restoring this block:
+
+            <span class="field">
+              <input id="legal-text" type="text" placeholder="Legal description (contains)" />
+              <span class="tip">Search scraped MAO legal description and legal-detail text</span>
+            </span>
+            <div class="legal-row">
+              <span class="field"><input id="lot" type="text" placeholder="Lot" />
+                <span class="tip">Lot (exact)</span></span>
+              <span class="field"><input id="block" type="text" placeholder="Block" />
+                <span class="tip">Block (exact)</span></span>
+              <span class="field"><input id="plan" type="text" placeholder="Plan" />
+                <span class="tip">Plan (exact)</span></span>
+            </div>
+            <span class="field">
+              <input id="title" type="text" placeholder="Certificate of title (contains)" />
+              <span class="tip">Certificate of title number or LTO text</span>
+            </span>
         -->
-        <span class="field" hidden>
-          <input id="legal-text" type="text" placeholder="Legal description (contains)" />
-          <span class="tip">Search scraped MAO legal description and legal-detail text</span>
-        </span>
-        <div class="legal-row" hidden>
-          <span class="field">
-            <input id="lot" type="text" placeholder="Lot" />
-            <span class="tip">Lot (exact)</span>
-          </span>
-          <span class="field">
-            <input id="block" type="text" placeholder="Block" />
-            <span class="tip">Block (exact)</span>
-          </span>
-          <span class="field">
-            <input id="plan" type="text" placeholder="Plan" />
-            <span class="tip">Plan (exact)</span>
-          </span>
-        </div>
-        <span class="field" hidden>
-          <input id="title" type="text" placeholder="Certificate of title (contains)" />
-          <span class="tip">Certificate of title number or LTO text</span>
-        </span>
         <span class="field">
           <select id="zone-category" disabled>
             <option value="">Any zoning category</option>
@@ -142,12 +135,17 @@
           <tr>
             <th data-col="roll">Roll #</th>
             <th data-col="address">Address</th>
-            <!-- Legal and Title columns hidden until the MAO scrape index is
-                 wired up; renderTable still appends a cell at each position
-                 so the rest of the column indexing stays correct. CSS hides
-                 both header and matching <td> via :nth-child below. -->
-            <th data-col="legal" hidden>Legal</th>
-            <th data-col="title" hidden>Title</th>
+            <!-- Legal and Title columns are kept in the markup but hidden
+                 via CSS until the MAO scrape index is wired up. The <th>s
+                 stay in place so the column count between thead and tbody
+                 stays consistent (renderTable still appends placeholder
+                 cells at positions 3 and 4); the existing nth-child rules
+                 that key off subsequent column positions remain valid. CSS
+                 hides both header and matching <td>s — see style.css:
+                 #results th[data-col="legal" / "title"] and
+                 #results td:nth-child(3 / 4) { display: none }. -->
+            <th data-col="legal">Legal</th>
+            <th data-col="title">Title</th>
             <th data-col="zone1">Zoning</th>
             <th data-col="zone1pct">%</th>
             <th data-col="zone2">Zoning 2</th>

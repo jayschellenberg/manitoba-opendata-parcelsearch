@@ -58,6 +58,10 @@ import turfArea from '@turf/area';
 const $address       = document.getElementById('address');
 const $municipality  = document.getElementById('municipality');
 const $roll          = document.getElementById('roll');
+// Legal-search inputs are removed from the DOM until the MAO scrape
+// index is wired up. The lookups below all return null in that state.
+// Every read-site uses optional chaining ?? '' so the empty .value
+// passes through harmlessly and hasLegalCriteria() short-circuits.
 const $legalText     = document.getElementById('legal-text');
 const $lot           = document.getElementById('lot');
 const $block         = document.getElementById('block');
@@ -644,7 +648,9 @@ $duMode.addEventListener('change', () => {
   if (!enableMin) $duMin.value = '';
   if (enableMin && !$duMin.value) $duMin.value = '1';
 });
-for (const el of [$address, $roll, $legalText, $lot, $block, $plan, $title]) {
+// Filter out any nulls so the keydown wiring tolerates removed inputs
+// (legal/lot/block/plan/title are currently absent from the markup).
+for (const el of [$address, $roll, $legalText, $lot, $block, $plan, $title].filter(Boolean)) {
   el.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') runSearch();
   });
@@ -739,11 +745,11 @@ function fillSelect(sel, values, blankLabel) {
 async function runSearch() {
   const status = $changedStatus.value;
   const legalInputs = {
-    legalText:      $legalText.value.trim(),
-    lot:            $lot.value.trim(),
-    block:          $block.value.trim(),
-    plan:           $plan.value.trim(),
-    title:          $title.value.trim(),
+    legalText:      $legalText?.value.trim() ?? '',
+    lot:            $lot?.value.trim()       ?? '',
+    block:          $block?.value.trim()     ?? '',
+    plan:           $plan?.value.trim()      ?? '',
+    title:          $title?.value.trim()     ?? '',
   };
   const inputs = {
     address:         $address.value.trim(),
