@@ -1241,7 +1241,7 @@ function renderTable(rows) {
     const z2ratio = row.zoning[1]?.ratio;
     const z2Show = Number.isFinite(z2ratio) && z2ratio >= 0.01;
 
-    tr.appendChild(td(p.Roll_No_Txt));
+    tr.appendChild(rollNumberCell(p));
     tr.appendChild(td(p.Property_Address));
     tr.appendChild(legalCell(p));
     tr.appendChild(td(p._certificatesOfTitle));
@@ -1408,6 +1408,39 @@ function bboxOfFeature(feature) {
  * link; merging the two cuts a column and gives users a single
  * affordance — the dollar figure itself is the link.
  */
+/**
+ * Roll # cell: renders Roll_No_Txt as a link to the parcel's
+ * Manitoba Assessment Online report when Asmt_Rpt_Url is present,
+ * matching the affordance offered by assessmentCell() below. Both
+ * cells point at the same MAO URL — appraisers can click whichever
+ * value (the roll # or the dollar figure) is closer to where their
+ * eye landed. The cost of carrying two links per row is just the
+ * extra <a> element; same network behaviour either way.
+ */
+function rollNumberCell(p) {
+  const cell = document.createElement('td');
+  const value = p.Roll_No_Txt;
+  if (value == null || value === '') {
+    cell.textContent = '—';
+    cell.classList.add('empty');
+    return cell;
+  }
+  const safe = safeExternalUrl(p.Asmt_Rpt_Url);
+  if (!safe) {
+    cell.textContent = value;
+    return cell;
+  }
+  const a = document.createElement('a');
+  a.href = safe;
+  a.target = '_blank';
+  a.rel = 'noreferrer';
+  a.textContent = value;
+  a.title = 'Open this parcel on Manitoba Assessment Online';
+  a.addEventListener('click', (e) => e.stopPropagation());
+  cell.appendChild(a);
+  return cell;
+}
+
 function assessmentCell(p) {
   const cell = document.createElement('td');
   cell.classList.add('num');
