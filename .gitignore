@@ -26,6 +26,11 @@ mao-assembly/
 *.parquet
 ParcelCrossRef_*.csv
 
+# Generated legal-search index — built by r/build_legal_index.R from
+# the MAO scrape parquet. ~60 MB; trivially regenerable. Production
+# build pulls it from the build output rather than tracking it here.
+web/public/data/legal-index.json
+
 # Editor / tooling temp files
 *.tmp.*
 *.timestamp-*.mjs
