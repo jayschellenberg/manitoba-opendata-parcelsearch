@@ -37,11 +37,20 @@
           <input id="roll" type="text" placeholder="Roll # (exact)" />
           <span class="tip">Roll # (exact match within selected municipality)</span>
         </span>
-        <span class="field">
+        <!--
+          Legal / Lot / Block / Plan / Certificate of Title inputs are
+          hidden until the MAO scrape and the legal-search index are
+          fully wired up. The IDs stay in the DOM (with the `hidden`
+          attribute) so main.js's getElementById lookups still resolve;
+          the empty .value reads simply contribute no SQL clauses to the
+          search query. To re-enable, remove the `hidden` attributes and
+          confirm web/public/data/legal-index.json is being served.
+        -->
+        <span class="field" hidden>
           <input id="legal-text" type="text" placeholder="Legal description (contains)" />
           <span class="tip">Search scraped MAO legal description and legal-detail text</span>
         </span>
-        <div class="legal-row">
+        <div class="legal-row" hidden>
           <span class="field">
             <input id="lot" type="text" placeholder="Lot" />
             <span class="tip">Lot (exact)</span>
@@ -55,7 +64,7 @@
             <span class="tip">Plan (exact)</span>
           </span>
         </div>
-        <span class="field">
+        <span class="field" hidden>
           <input id="title" type="text" placeholder="Certificate of title (contains)" />
           <span class="tip">Certificate of title number or LTO text</span>
         </span>
@@ -133,8 +142,12 @@
           <tr>
             <th data-col="roll">Roll #</th>
             <th data-col="address">Address</th>
-            <th data-col="legal">Legal</th>
-            <th data-col="title">Title</th>
+            <!-- Legal and Title columns hidden until the MAO scrape index is
+                 wired up; renderTable still appends a cell at each position
+                 so the rest of the column indexing stays correct. CSS hides
+                 both header and matching <td> via :nth-child below. -->
+            <th data-col="legal" hidden>Legal</th>
+            <th data-col="title" hidden>Title</th>
             <th data-col="zone1">Zoning</th>
             <th data-col="zone1pct">%</th>
             <th data-col="zone2">Zoning 2</th>
@@ -170,16 +183,15 @@
         <p>
           Search Manitoba properties (excluding Winnipeg, which has its
           <a href="https://winnipeg-opendata-parcelsearch.vercel.app/" target="_blank" rel="noreferrer">own portal</a>)
-          by civic address, municipality, roll #, legal description,
-          Lot/Block/Plan, or certificate of title. Each result is enriched
+          by civic address, municipality, or roll #. Each result is enriched
           with its top-2 zoning districts (with coverage %) and its primary
           development-plan designation, plus the bylaw numbers behind each.
+          Legal-description and certificate-of-title search are coming
+          once the MAO scrape and matching index are linked in.
         </p>
         <p>
           Roll Entry is queried live for parcel geometry and current
-          assessment fields on every search. Legal-description fields use
-          a generated MAO scrape index to find matching roll keys first.
-          The live parcel source is
+          assessment fields on every search. The live parcel source is
           <a href="https://geoportal.gov.mb.ca/datasets/manitoba::roll-entry/about" target="_blank" rel="noreferrer">Roll Entry</a>;
           enrichment comes from
           <a href="https://geoportal.gov.mb.ca/datasets/manitoba::manitoba-zoning-by-laws/about" target="_blank" rel="noreferrer">Zoning By-Laws</a>, and

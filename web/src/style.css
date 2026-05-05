@@ -504,6 +504,19 @@ header small a {
   border: 1px solid #e2e4e9;
 }
 
+/* Legal (3rd) and Title (4th) columns are hidden in the markup until
+   the MAO scrape legal-search index is wired up. The `hidden` attribute
+   on a <th> hides the header cell but not the matching <td>s in the
+   body, so we suppress them explicitly here. nth-child still counts
+   hidden cells, so the existing left-alignment rules below stay valid
+   without renumbering. */
+#results th[data-col="legal"],
+#results th[data-col="title"],
+#results td:nth-child(3),
+#results td:nth-child(4) {
+  display: none;
+}
+
 #results th,
 #results td {
   padding: 7px 10px;
