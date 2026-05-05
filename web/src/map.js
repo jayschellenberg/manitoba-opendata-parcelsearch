@@ -322,6 +322,42 @@ export function initMap(container, { onFeatureClick } = {}) {
         layout: { visibility: 'none' },
         paint: { 'line-color': '#444', 'line-width': 0.6, 'line-opacity': 0.6 },
       });
+      // Dev-plan label — DES_NAME at each polygon centroid. Designation
+      // names tend to be longer than zoning ZONE codes (e.g. "Park,
+      // Institution, and Open Space Area") so we render slightly later
+      // than the zoning-label layer to avoid clutter at province-wide
+      // zooms, and use line-wrap so multi-word names break instead of
+      // overflowing the polygon. Collision detection is on so adjacent
+      // polygons don't pile labels on top of each other; text-allow-
+      // overlap is false but text-ignore-placement is true so the dev-
+      // plan label can coexist with parcel / zoning labels at the same
+      // anchor without one suppressing the other.
+      map.addLayer({
+        id: 'devplan-label',
+        type: 'symbol',
+        source: 'devplan',
+        minzoom: 8,
+        layout: {
+          visibility: 'none',
+          'text-field': ['coalesce', ['get', 'DES_NAME'], ['get', 'DES_CATEGORY'], ''],
+          'text-font': ['Open Sans Semibold'],
+          'text-size': [
+            'interpolate', ['linear'], ['zoom'],
+            8, 10,
+            12, 12,
+            15, 13,
+          ],
+          'text-max-width': 9,
+          'text-allow-overlap': false,
+          'text-ignore-placement': true,
+          'symbol-placement': 'point',
+        },
+        paint: {
+          'text-color': '#1a3a4a',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.2,
+        },
+      });
 
       // Zoning overlay (above dev-plan, below parcels).
       map.addSource('zoning', { type: 'geojson', data: emptyFc() });
@@ -786,7 +822,7 @@ export function setZoningVisible(map, visible) {
 }
 export function setDevPlanVisible(map, visible) {
   const v = visible ? 'visible' : 'none';
-  for (const id of ['devplan-fill', 'devplan-line']) {
+  for (const id of ['devplan-fill', 'devplan-line', 'devplan-label']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
   }
 }
