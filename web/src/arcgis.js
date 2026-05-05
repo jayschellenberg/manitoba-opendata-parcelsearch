@@ -128,20 +128,22 @@ function buildParcelClauses({ address, municipality, roll, duMode, duMin }) {
   // exact equality is faster than LIKE and avoids surprise partial-matches.
   if (municipality)    clauses.push(`Muni_Name_With_Typ = '${escapeSql(municipality)}'`);
   // Roll # accepts either a single value or a comma- / whitespace- /
-  // newline-separated list (paste from a spreadsheet). Source data stores
-  // rolls with a ".000" decimal suffix (e.g. "3600.000"); we generate
-  // both the bare integer and the .000-suffixed form for each input
-  // value, then build a single Roll_No_Txt IN (...) clause. The list can
-  // get long — the pasted-list branch keeps each input form separated so
-  // the caller can later compare against the result set to figure out
-  // which rolls didn't match.
+  // newline-separated list (paste from a spreadsheet). Source data
+  // always stores Roll_No_Txt as <digits>.<3 digits> — e.g. "3600.000",
+  // "3600.001", "3600.500". canonicalRoll() turns whatever shorthand
+  // the user typed into that canonical form so the IN-list matches:
+  //   "3600"      → "3600.000"
+  //   "3600.0"    → "3600.000"
+  //   "3600.01"   → "3600.010"
+  //   "3600.1"    → "3600.100"
+  //   "3600.500"  → "3600.500"
+  // Inputs that don't shape into a roll (pure junk) are left as-is so
+  // the missing-rolls diagnostic in main.js can still flag them by
+  // input form, rather than silently dropping bogus entries.
   const rollList = parseRollList(roll);
   if (rollList.length > 0) {
     const expanded = new Set();
-    for (const r of rollList) {
-      expanded.add(r);
-      if (!/\./.test(r)) expanded.add(`${r}.000`);
-    }
+    for (const r of rollList) expanded.add(canonicalRoll(r));
     const inList = [...expanded].map((v) => `'${escapeSql(v)}'`).join(',');
     clauses.push(`Roll_No_Txt IN (${inList})`);
   }
@@ -1104,12 +1106,42 @@ export function parseRollList(input) {
 }
 
 /**
+ * Canonicalize a single roll-number input to the source's stored form
+ * — `<digits>.<3 digits>`. Any dot-suffix the user types is padded
+ * (or truncated, defensively) to exactly three digits; an input
+ * without a dot gets `.000` appended. Pure-junk inputs that don't
+ * match the digits[.digits] shape are returned unchanged, so the
+ * missing-rolls diagnostic can flag them with the same text the user
+ * typed.
+ *
+ * Examples:
+ *   "3600"      → "3600.000"
+ *   "3600.0"    → "3600.000"
+ *   "3600.01"   → "3600.010"
+ *   "3600.1"    → "3600.100"
+ *   "3600.500"  → "3600.500"
+ *   "3600.5000" → "3600.500"   (defensive truncation; won't normally fire)
+ *   "abc"       → "abc"        (passthrough so it surfaces as missing)
+ */
+export function canonicalRoll(input) {
+  if (input == null) return '';
+  const s = String(input).trim();
+  if (s === '') return '';
+  const m = s.match(/^(\d+)(?:\.(\d*))?$/);
+  if (!m) return s;
+  const whole = m[1];
+  const frac  = (m[2] || '').padEnd(3, '0').slice(0, 3);
+  return `${whole}.${frac}`;
+}
+
+/**
  * Given the Roll # input the user typed and the FeatureCollection of
  * matching parcels, return the list of input rolls that didn't match
- * any returned parcel. Roll equality is checked against both the bare
- * input form and the ".000"-suffixed form (the source data uses the
- * decimal suffix). Order preserves the user's input order so the UI
- * can list them back in a familiar sequence.
+ * any returned parcel. Both sides are normalized through canonicalRoll
+ * so a user typing `3600.01` correctly matches a stored `3600.010`,
+ * and any junk input that doesn't shape into a roll is reported back
+ * exactly as the user typed it. Order preserves the user's input
+ * order so the UI lists them in the same sequence they pasted.
  */
 export function missingRollsFromResults(input, parcelFc) {
   const wanted = parseRollList(input);
@@ -1117,12 +1149,11 @@ export function missingRollsFromResults(input, parcelFc) {
   const have = new Set();
   for (const f of parcelFc?.features || []) {
     const r = f.properties?.Roll_No_Txt;
-    if (r != null) have.add(String(r));
+    if (r != null) have.add(canonicalRoll(r));
   }
   const missing = [];
   for (const r of wanted) {
-    const decimal = /\./.test(r) ? r : `${r}.000`;
-    if (!have.has(r) && !have.has(decimal)) missing.push(r);
+    if (!have.has(canonicalRoll(r))) missing.push(r);
   }
   return missing;
 }

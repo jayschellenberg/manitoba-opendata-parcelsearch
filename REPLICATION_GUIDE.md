@@ -1114,31 +1114,39 @@ export function missingRollsFromResults(input, parcelFc) {
 }
 ```
 
+A third helper canonicalizes user input to the source's stored form before the SQL clause is built:
+
+```js
+export function canonicalRoll(input) {
+  // <digits>(.<digits>)? → <digits>.<3 digits>
+  // pads (or defensively truncates) the fractional part to 3 digits;
+  // appends ".000" when no dot is present. Pure-junk inputs pass
+  // through unchanged so the missing-rolls diagnostic can flag them.
+}
+```
+
+ROLL_ENTRY always stores `Roll_No_Txt` as `<digits>.<3 digits>` (e.g. `"3600.000"`, `"3600.001"`, `"3600.500"`), so the input forms a user is likely to type — `3600`, `3600.0`, `3600.01`, `3600.1` — all need to fold to that canonical form before equality comparison. Canonicalize **once**, on both sides of any comparison: the SQL IN-list, and the diff in `missingRollsFromResults`.
+
 `searchParcels()`'s Roll # branch:
 
 ```js
 const rollList = parseRollList(roll);
 if (rollList.length > 0) {
   const expanded = new Set();
-  for (const r of rollList) {
-    expanded.add(r);
-    if (!/\./.test(r)) expanded.add(`${r}.000`);
-  }
+  for (const r of rollList) expanded.add(canonicalRoll(r));
   const inList = [...expanded].map((v) => `'${escapeSql(v)}'`).join(',');
   clauses.push(`Roll_No_Txt IN (${inList})`);
 }
 ```
 
-The IN-list expansion handles ROLL_ENTRY's mixed `"3600"` / `"3600.000"` storage (Manitoba's source data uses the decimal-suffixed form for most munis but not all — generating both forms covers every variant without per-muni branching).
-
-For Winnipeg's Socrata equivalent, the where clause is the same shape with SoQL syntax:
+For the Winnipeg sister site, the same shape works with SoQL syntax — but **double-check the storage format first**. Probe the `d4mq-wa44` Assessment Parcels dataset with `?$select=roll_number&$limit=10` to see whether Winnipeg's roll numbers also carry a fractional suffix or are clean integers. If they're clean integers, drop `canonicalRoll()` from the Winnipeg port; otherwise port the helper with the suffix-width that Winnipeg actually uses (Manitoba's is 3 digits — Winnipeg may differ). The where-clause shape stays the same:
 
 ```js
 const inList = [...expanded].map((v) => `'${escapeSoql(v)}'`).join(',');
 clauses.push(`upper(roll_number) IN (${inList})`);
 ```
 
-Note `upper()` wrapping for case-insensitive match (Bug 10.1 in §10) and that Winnipeg's Assessment Parcels dataset uses `roll_number`, not `Roll_No_Txt`. Also worth probing whether Winnipeg's roll values come back with leading zeros or any other formatting quirk before deciding whether to expand — Socrata's case-sensitive `LIKE` and Winnipeg's clean integer roll storage usually mean the bare-input form alone is sufficient.
+Note `upper()` wrapping for case-insensitive match (Bug 10.1 in §10) and that Winnipeg's Assessment Parcels dataset uses `roll_number`, not `Roll_No_Txt`.
 
 ### 15.3 Implementation — `main.js`
 
@@ -1180,11 +1188,17 @@ Smoke tests for the bulk path:
 
 | Input | Expected |
 |---|---|
-| `3600` | Single-roll behaviour unchanged. Count: `1 parcels found`. |
+| `3600` | Canonicalized to `3600.000`. Count: `1 parcels found`. |
+| `3600.000` | Same canonical form; same result. |
+| `3600.0` | Padded to `3600.000`; same result. |
+| `3600.01` | Padded to `3600.010` and matched against the canonical-form result set. |
+| `3600.1` | Padded to `3600.100` and matched. |
+| `3600.500` | Used verbatim; matches a real `3600.500` parcel. |
 | `3600,3700,3800` (in muni) | Bulk: `3 of 3 rolls matched`. Three parcels on map + table. |
 | `3600,9999999,3700` (one bogus) | `2 of 3 rolls matched (1 of 3 not found: 9999999)`. |
 | 25 rolls, 3 typos | `22 of 25 rolls matched (3 of 25 not found: 9999999, 8888, 7777)`. |
 | 12 rolls, 11 typos | `1 of 12 rolls matched (11 of 12 not found: a, b, c, d, e, f, g, h, i, j and 1 others)`. |
 | 25 typos, 0 valid | `No parcels found — none of the 25 rolls matched in this municipality.` |
 | Same roll twice (`3600,3600`) | `parseRollList` dedupes — single-roll behaviour. |
+| Same roll two forms (`3600,3600.000,3600.0`) | All canonicalize to `3600.000`; the Set in `searchParcels` dedupes; missing-rolls diagnostic returns nothing because all three input forms match. |
 | Mixed separators (`3600 , 3700; 3800\n3900`) | All four parsed; bulk path runs.
