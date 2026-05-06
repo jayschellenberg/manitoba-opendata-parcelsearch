@@ -1374,10 +1374,33 @@ async function toggleSurveyGridOverlay() {
           setCount(`Couldn't locate boundary for ${muni}; can't load the section-township grid.`);
           return;
         }
-        const fc = await fetchSurveyGridForMuni(muni, muniFeat);
+        // Fetch the per-muni section grid AND the province-wide river-
+        // lots file in parallel. The river-lots fetch is cheap on
+        // repeat: same static file as the province path, served from
+        // the browser's HTTP cache after the first hit. We keep only
+        // the river lots whose bounding box intersects the selected
+        // muni so the map source doesn't carry every Manitoba river
+        // lot when only the local handful are visible at this zoom.
+        const [fc, riverFc] = await Promise.all([
+          fetchSurveyGridForMuni(muni, muniFeat),
+          fetchRiverLots(),
+        ]);
         const rows = surveyFcToRows(fc || { features: [] });
         const lines = sectionLinesFromRows(rows);
-        setSurveyGridData(map, lines);
+        const muniBbox = bboxOfFeature(muniFeat);
+        const riverInMuni = (riverFc?.features || []).filter((f) => {
+          try {
+            const fb = bboxOfFeature(f);
+            return bboxesIntersect(muniBbox, fb);
+          } catch {
+            return false;
+          }
+        });
+        const merged = {
+          type: 'FeatureCollection',
+          features: [...(lines.features || []), ...riverInMuni],
+        };
+        setSurveyGridData(map, merged);
       }
       surveyGridLoadedFor = loadKey;
     } catch (err) {
@@ -1695,6 +1718,15 @@ function bboxOfFeature(feature) {
   };
   visit(feature.geometry.coordinates);
   return [minX, minY, maxX, maxY];
+}
+
+/** Cheap bbox-vs-bbox overlap test. Both bboxes are [minX, minY, maxX, maxY].
+ *  Used in the per-muni Sec-Twp Grid path to keep only the river lots
+ *  whose envelope touches the selected muni's envelope — avoids
+ *  pushing the entire province's river-lot polygon set onto the map
+ *  source when the user is focused on one muni. */
+function bboxesIntersect(a, b) {
+  return !(a[2] < b[0] || b[2] < a[0] || a[3] < b[1] || b[3] < a[1]);
 }
 
 /**
