@@ -607,7 +607,8 @@ export async function fetchParcelMascForMuni(muniNameWithTyp) {
  * without them.
  */
 export async function fetchRiverLots() {
-  const cacheKey = 'mb_river_lots_v1';
+  // v2: prettifies the raw KMZ labels (e.g. "AGRL338" → "AG-RL-338").
+  const cacheKey = 'mb_river_lots_v2';
   const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
   const url = `${import.meta.env?.BASE_URL || '/'}data/river-lots.json`;
@@ -619,8 +620,32 @@ export async function fetchRiverLots() {
   }
   if (!res.ok) return null;
   const fc = await res.json();
+  // The KMZ ships labels as concatenated codes — "AGRL338", "LORL79" —
+  // hard to read at a glance. Split into PARISH-TYPE-NUMBER (e.g.
+  // "AG-RL-338", "LO-RL-79") so the parish prefix, lot type, and
+  // number all stand out. Mutates the parsed FC in place before
+  // we cache it, so the prettified form is what every consumer sees.
+  for (const f of fc?.features || []) {
+    const lbl = f?.properties?.label;
+    if (lbl) {
+      const pretty = prettyRiverLotLabel(lbl);
+      if (pretty) f.properties.label = pretty;
+    }
+  }
   writeCache(cacheKey, fc);
   return fc;
+}
+
+/** Convert a raw KMZ river-lot identifier ("AGRL338", "LORL79") into
+ *  PARISH-TYPE-NUMBER form ("AG-RL-338", "LO-RL-79"). Returns null when
+ *  the input doesn't match the expected pattern (preserve the raw
+ *  string in that case so unusual labels still render). */
+function prettyRiverLotLabel(raw) {
+  const s = String(raw).trim().toUpperCase();
+  // Two-or-more-letter parish prefix + two-letter type (RL/PL/WL/SL/OT) + digits.
+  const m = s.match(/^([A-Z]{2,5})(RL|PL|WL|SL|OT)(\d+[A-Z]?)$/);
+  if (!m) return null;
+  return `${m[1]}-${m[2]}-${m[3]}`;
 }
 
 export async function fetchSurveyGridForMuni(muniNameWithTyp, muniBoundaryFeature) {
