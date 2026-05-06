@@ -525,6 +525,111 @@ export function initMap(container, { onFeatureClick } = {}) {
         },
       });
 
+      // MASC soil-rating overlay — quarter-section polygons coloured by
+      // rating (A → J). Polygons are constructed client-side from the
+      // MASC CSV shard's lat/lon centroids (see masc.js). The fill
+      // expression matches against the rating code; any unrecognized
+      // value falls through to neutral grey. Hidden until the user
+      // toggles it on with a muni selected.
+      map.addSource('masc', { type: 'geojson', data: emptyFc() });
+      map.addLayer({
+        id: 'masc-fill',
+        type: 'fill',
+        source: 'masc',
+        layout: { visibility: 'none' },
+        paint: {
+          'fill-color': [
+            'match', ['get', 'rating'],
+            'A', '#1a9850',
+            'B', '#66bd63',
+            'C', '#a6d96a',
+            'D', '#d9ef8b',
+            'E', '#fee08b',
+            'F', '#fdae61',
+            'G', '#f46d43',
+            'H', '#d73027',
+            'I', '#a50026',
+            'J', '#67001f',
+            '#cccccc',
+          ],
+          'fill-opacity': 0.45,
+          'fill-outline-color': 'rgba(0, 0, 0, 0.3)',
+        },
+      });
+      map.addLayer({
+        id: 'masc-label',
+        type: 'symbol',
+        source: 'masc',
+        minzoom: 13,
+        layout: {
+          visibility: 'none',
+          'text-field': ['get', 'rating'],
+          'text-font': ['Open Sans Semibold'],
+          'text-size': [
+            'interpolate', ['linear'], ['zoom'],
+            13, 11,
+            16, 14,
+            18, 16,
+          ],
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+          'symbol-placement': 'point',
+        },
+        paint: {
+          'text-color': '#1a1a1a',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.5,
+        },
+      });
+
+      // Section-township grid — line layer derived from the
+      // MB_LegalDesc point centroids by aggregating quarters into
+      // section bounding boxes (see masc.js sectionLinesFromRows).
+      // Lines only; the grid sits visually above zoning/dev-plan
+      // overlays but below the muni-parcels and search-result layers.
+      map.addSource('survey-grid', { type: 'geojson', data: emptyFc() });
+      map.addLayer({
+        id: 'survey-grid-line',
+        type: 'line',
+        source: 'survey-grid',
+        layout: { visibility: 'none', 'line-cap': 'square' },
+        paint: {
+          'line-color': '#444',
+          'line-width': [
+            'interpolate', ['linear'], ['zoom'],
+            8,  0.4,
+            12, 0.9,
+            16, 1.4,
+          ],
+          'line-opacity': 0.7,
+          'line-dasharray': [4, 3],
+        },
+      });
+      map.addLayer({
+        id: 'survey-grid-label',
+        type: 'symbol',
+        source: 'survey-grid',
+        minzoom: 11,
+        layout: {
+          visibility: 'none',
+          'text-field': ['get', 'label'],
+          'text-font': ['Open Sans Semibold'],
+          'text-size': [
+            'interpolate', ['linear'], ['zoom'],
+            11, 9,
+            14, 11,
+            17, 13,
+          ],
+          'text-allow-overlap': false,
+          'text-ignore-placement': true,
+        },
+        paint: {
+          'text-color': '#333',
+          'text-halo-color': '#fff',
+          'text-halo-width': 1.2,
+        },
+      });
+
       // Muni-wide parcel fabric — every Roll_Entry parcel in the selected
       // municipality, rendered in muted grey under the search-result
       // parcels. Toggleable; off by default since fetching can take a few
@@ -866,6 +971,28 @@ export function setTrafficFlowData(map, fc) {
 export function setTrafficFlowVisible(map, visible) {
   const v = visible ? 'visible' : 'none';
   for (const id of ['traffic-flow-line', 'traffic-flow-label']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
+  }
+}
+
+export function setMascData(map, fc) {
+  const src = map.getSource('masc');
+  if (src) src.setData(fc);
+}
+export function setMascVisible(map, visible) {
+  const v = visible ? 'visible' : 'none';
+  for (const id of ['masc-fill', 'masc-label']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
+  }
+}
+
+export function setSurveyGridData(map, fc) {
+  const src = map.getSource('survey-grid');
+  if (src) src.setData(fc);
+}
+export function setSurveyGridVisible(map, visible) {
+  const v = visible ? 'visible' : 'none';
+  for (const id of ['survey-grid-line', 'survey-grid-label']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
   }
 }

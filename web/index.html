@@ -104,6 +104,8 @@
           <button id="zoning-toggle"  type="button" class="secondary" aria-pressed="false">Zoning Layer</button>
           <button id="devplan-toggle" type="button" class="secondary" aria-pressed="false">Dev Plan Layer</button>
           <button id="contam-toggle"  type="button" class="secondary" aria-pressed="false" title="Manitoba Contaminated Sites Registry">Enviro Sites</button>
+          <button id="masc-toggle"   type="button" class="secondary" aria-pressed="false" disabled title="MASC crop-insurance soil ratings (A best → J worst). Select a municipality first.">MASC Soil</button>
+          <button id="grid-toggle"   type="button" class="secondary" aria-pressed="false" disabled title="Section-township grid from Manitoba Original Survey. Select a municipality first.">Sec-Twp Grid</button>
           <button id="muni-website-btn" type="button" class="secondary" disabled title="Select a municipality to enable">Muni Website</button>
           <button id="pd-website-btn"   type="button" class="secondary" disabled title="Select a municipality to enable">PD Website</button>
           <button id="static-map-btn"   type="button" class="secondary" title="Capture the current map view as a PNG. Right-click the rendered image below the table and Save Image As… to drop into a report.">Generate Map</button>
@@ -116,6 +118,21 @@
       <div id="zoning-legend" class="map-legend zoning-legend" hidden>
         <strong>Zoning category</strong>
         <ul></ul>
+      </div>
+      <div id="masc-legend" class="map-legend masc-legend" hidden>
+        <strong>MASC soil rating</strong>
+        <ul>
+          <li><span class="swatch" style="background:#1a9850"></span>A — best</li>
+          <li><span class="swatch" style="background:#66bd63"></span>B</li>
+          <li><span class="swatch" style="background:#a6d96a"></span>C</li>
+          <li><span class="swatch" style="background:#d9ef8b"></span>D</li>
+          <li><span class="swatch" style="background:#fee08b"></span>E</li>
+          <li><span class="swatch" style="background:#fdae61"></span>F</li>
+          <li><span class="swatch" style="background:#f46d43"></span>G</li>
+          <li><span class="swatch" style="background:#d73027"></span>H</li>
+          <li><span class="swatch" style="background:#a50026"></span>I</li>
+          <li><span class="swatch" style="background:#67001f"></span>J — worst</li>
+        </ul>
       </div>
       <div id="flow-legend" class="map-legend flow-legend" hidden>
         <strong>AADT (2019)</strong>

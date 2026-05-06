@@ -428,6 +428,106 @@ const MUNICIPALITY_URL      = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcg
  * (amalgamations) so a month is comfortable. Loaded async on page open
  * so it never blocks the first paint of the search controls or map.
  */
+/**
+ * MASC soil-rating shards. Built by r/build_masc_shards.R from the
+ * province's masc_soil_ratings_with_latlon.csv into per-muni JSON
+ * files at web/public/data/masc/<MUNI>.json plus an _index.json
+ * manifest mapping normalized muni keys → { file, count }.
+ *
+ * The frontend fetches the manifest once (cached 30 days), then
+ * fetches each muni's shard on demand when the MASC overlay is
+ * toggled on. Each shard caches per-muni in localStorage with the
+ * same 30-day TTL — they're build-time artifacts that only change
+ * when MASC publishes new ratings.
+ *
+ * Returns null when no shard exists for the requested muni (the
+ * registered manifest doesn't include it). Caller should treat that
+ * as "no MASC data for this area" rather than an error.
+ */
+const MASC_INDEX_URL = '/data/masc/_index.json';
+
+export async function fetchMascIndex() {
+  const cacheKey = 'mb_masc_index_v1';
+  const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  if (cached) return cached;
+  try {
+    const res = await fetch(MASC_INDEX_URL);
+    if (!res.ok) return null;
+    const idx = await res.json();
+    writeCache(cacheKey, idx);
+    return idx;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchMascRatingsForMuni(muniNameWithTyp) {
+  if (!muniNameWithTyp) return null;
+  // Strip the "(TYPE)" suffix and normalize to the same key format
+  // the build script writes — uppercase, dash-collapsed, accent-stripped.
+  const bare = String(muniNameWithTyp)
+    .replace(/\s*\([^)]*\)\s*$/, '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toUpperCase()
+    .replace(/[‐-―−]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const cacheKey = `mb_masc_${bare}_v1`;
+  const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  if (cached) return cached;
+
+  const idx = await fetchMascIndex();
+  if (!idx || !idx[bare]) return null;
+  const file = idx[bare].file;
+  try {
+    const res = await fetch(`/data/masc/${file}`);
+    if (!res.ok) return null;
+    const rows = await res.json();
+    writeCache(cacheKey, rows);
+    return rows;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Manitoba Original Survey Legal Descriptions — point layer with
+ * QUARTER, SECTION, TOWNSHIP, RANGE, MERIDIAN attributes at each
+ * quarter-section centroid (and parish lots, river lots, etc; we
+ * filter to D.L.S. quarter sections only). Used to render the
+ * section-township grid as derived line/polygon features in
+ * map.js.
+ *
+ * No muni name on this layer, so we scope spatially using the
+ * municipal-boundary polygon as the geometry filter. Cached 30
+ * days (the survey grid is stable).
+ */
+const SURVEY_GRID_URL = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/MB_LegalDesc/FeatureServer/0';
+
+export async function fetchSurveyGridForMuni(muniNameWithTyp, muniBoundaryFeature) {
+  if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
+  const cacheKey = `mb_survey_grid_${muniNameWithTyp}_v1`;
+  const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  if (cached) return cached;
+
+  const esriGeom = polygonToEsriGeometry(muniBoundaryFeature);
+  if (!esriGeom) return null;
+
+  const fc = await fetchAllPages(SURVEY_GRID_URL, {
+    where: "TYPE = 'D.L.S.' OR TYPE LIKE '%QUARTER%' OR TYPE LIKE '%SECTION%'",
+    geometry: JSON.stringify(esriGeom),
+    geometryType: 'esriGeometryPolygon',
+    inSR: '4326',
+    spatialRel: 'esriSpatialRelIntersects',
+    outFields: 'OBJECTID_1,QUARTER,SECTION,TOWNSHIP,RANGE,MERIDIAN,TYPE',
+    returnGeometry: 'true',
+    outSR: '4326',
+    f: 'geojson',
+  }, 50000);
+  writeCache(cacheKey, fc);
+  return fc;
+}
+
 export async function fetchMunicipalBoundaries() {
   const cacheKey = 'mb_muni_boundaries_v2';
   const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
