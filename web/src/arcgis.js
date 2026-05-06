@@ -444,10 +444,10 @@ const MUNICIPALITY_URL      = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcg
  * registered manifest doesn't include it). Caller should treat that
  * as "no MASC data for this area" rather than an error.
  */
-const MASC_INDEX_URL = '/data/masc/_index.json';
+const MASC_INDEX_URL = `${import.meta.env?.BASE_URL || '/'}data/masc/_index.json`;
 
 export async function fetchMascIndex() {
-  const cacheKey = 'mb_masc_index_v1';
+  const cacheKey = 'mb_masc_index_v2';
   const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
   try {
@@ -472,7 +472,7 @@ export async function fetchMascRatingsForMuni(muniNameWithTyp) {
     .replace(/[‐-―−]/g, '-')
     .replace(/\s+/g, ' ')
     .trim();
-  const cacheKey = `mb_masc_${bare}_v1`;
+  const cacheKey = `mb_masc_${bare}_v2`;
   const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
 
@@ -480,7 +480,7 @@ export async function fetchMascRatingsForMuni(muniNameWithTyp) {
   if (!idx || !idx[bare]) return null;
   const file = idx[bare].file;
   try {
-    const res = await fetch(`/data/masc/${file}`);
+    const res = await fetch(`${import.meta.env?.BASE_URL || '/'}data/masc/${file}`);
     if (!res.ok) return null;
     const rows = await res.json();
     writeCache(cacheKey, rows);
@@ -504,9 +504,128 @@ export async function fetchMascRatingsForMuni(muniNameWithTyp) {
  */
 const SURVEY_GRID_URL = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/MB_LegalDesc/FeatureServer/0';
 
+/**
+ * Fetch the pre-baked province-wide Sec-Twp grid as a single static
+ * GeoJSON file. Built by r/build_section_grid.R — section geometry
+ * doesn't change, so the file is committed to source control and
+ * served from web/public/data/section-grid.json.
+ *
+ * Cached in localStorage with the same 30-day TTL as muni boundaries
+ * (ample, since the grid never actually changes — TTL just prevents
+ * unbounded staleness if the file is ever rebuilt). First load is
+ * a single ~2 MB gzipped fetch; subsequent loads come from the cache.
+ *
+ * Returns a FeatureCollection of polygon features, the same shape
+ * sectionLinesFromRows() produces. main.js can drop it straight onto
+ * the survey-grid map source.
+ */
+export async function fetchProvinceSectionGrid() {
+  const cacheKey = 'mb_section_grid_province_v1';
+  const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  if (cached) return cached;
+  const url = `${import.meta.env?.BASE_URL || '/'}data/section-grid.json`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(
+      `Province-wide section grid not found at ${url} (status ${res.status}). ` +
+      `Run \`Rscript r/build_section_grid.R\` to generate it.`
+    );
+  }
+  const fc = await res.json();
+  writeCache(cacheKey, fc);
+  return fc;
+}
+
+/**
+ * Fetch the pre-baked dominant MASC soil rating for every parcel in a
+ * single municipality. Built by r/build_parcel_masc.R from a spatial
+ * intersection of ROLL_ENTRY parcels × MASC quarter-section polygons.
+ *
+ * Per-muni shards live at web/public/data/parcel-masc/<MUNI_KEY>.json.
+ * Shape: a flat dictionary keyed by Roll_No_Txt:
+ *   { "3600.000": { rating: "C", ra: 32, q: "NE", s: 1, t: 12, r: 5, d: "E" }, ... }
+ * Manifest at web/public/data/parcel-masc/_index.json maps the original
+ * Muni_Name_With_Typ values to shard filenames + counts.
+ *
+ * Returns a {rollNoTxt → ratingObj} map, or null when the muni isn't
+ * in the index (urban munis with no farmland — Winnipeg, Brandon centre,
+ * etc. — typically drop out of the build).
+ *
+ * Cached in localStorage with the same 30-day TTL as MASC overlay shards.
+ */
+const PARCEL_MASC_INDEX_URL = `${import.meta.env?.BASE_URL || '/'}data/parcel-masc/_index.json`;
+
+let parcelMascIndexPromise = null;
+
+async function fetchParcelMascIndex() {
+  if (parcelMascIndexPromise) return parcelMascIndexPromise;
+  parcelMascIndexPromise = (async () => {
+    const cacheKey = 'mb_parcel_masc_index_v1';
+    const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+    if (cached) return cached;
+    try {
+      const res = await fetch(PARCEL_MASC_INDEX_URL);
+      if (!res.ok) return null;
+      const idx = await res.json();
+      writeCache(cacheKey, idx);
+      return idx;
+    } catch {
+      return null;
+    }
+  })();
+  return parcelMascIndexPromise;
+}
+
+export async function fetchParcelMascForMuni(muniNameWithTyp) {
+  if (!muniNameWithTyp) return null;
+  const idx = await fetchParcelMascIndex();
+  if (!idx || !idx[muniNameWithTyp]) return null;
+  const file = idx[muniNameWithTyp].file;
+  const cacheKey = `mb_parcel_masc_${file}_v1`;
+  const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  if (cached) return cached;
+  try {
+    const res = await fetch(`${import.meta.env?.BASE_URL || '/'}data/parcel-masc/${file}`);
+    if (!res.ok) return null;
+    const dict = await res.json();
+    writeCache(cacheKey, dict);
+    return dict;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch the pre-baked Manitoba river-lots polygon overlay. Built by
+ * r/build_river_lots.R from MB-RIVER-LOTS.kmz. Same load pattern as
+ * fetchProvinceSectionGrid — committed to source control, cached
+ * 30 days. Returns a FeatureCollection of polygons each with
+ * properties.kind = 'riverlot' and properties.label = lot identifier.
+ *
+ * Returns null (not an error) if the static file is missing — river
+ * lots are an optional reference layer; the section grid still works
+ * without them.
+ */
+export async function fetchRiverLots() {
+  const cacheKey = 'mb_river_lots_v1';
+  const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  if (cached) return cached;
+  const url = `${import.meta.env?.BASE_URL || '/'}data/river-lots.json`;
+  let res;
+  try {
+    res = await fetch(url);
+  } catch {
+    return null;
+  }
+  if (!res.ok) return null;
+  const fc = await res.json();
+  writeCache(cacheKey, fc);
+  return fc;
+}
+
 export async function fetchSurveyGridForMuni(muniNameWithTyp, muniBoundaryFeature) {
   if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
-  const cacheKey = `mb_survey_grid_${muniNameWithTyp}_v1`;
+  const cacheKey = `mb_survey_grid_${muniNameWithTyp}_v2`;
   const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
 
@@ -514,7 +633,12 @@ export async function fetchSurveyGridForMuni(muniNameWithTyp, muniBoundaryFeatur
   if (!esriGeom) return null;
 
   const fc = await fetchAllPages(SURVEY_GRID_URL, {
-    where: "TYPE = 'D.L.S.' OR TYPE LIKE '%QUARTER%' OR TYPE LIKE '%SECTION%'",
+    // MB_LegalDesc TYPE vocabulary: Lot, OT, PL, Quarter, RL, SL, WL.
+    // Quarter rows (~970k province-wide) are the only ones that carry
+    // SECTION+TOWNSHIP+RANGE values useful for the township grid;
+    // everything else drops out. Match the exact literal — hosted
+    // ArcGIS LIKE is case-sensitive, so '%QUARTER%' missed every row.
+    where: "TYPE = 'Quarter'",
     geometry: JSON.stringify(esriGeom),
     geometryType: 'esriGeometryPolygon',
     inSR: '4326',

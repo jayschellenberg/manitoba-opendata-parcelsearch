@@ -122,7 +122,10 @@ export function sectionLinesFromRows(rows) {
       },
       properties: {
         section: sec.s, township: sec.t, range: sec.r, direction: sec.d,
-        label: `S${sec.s} T${sec.t} R${sec.r}${sec.d}`,
+        // Manitoba's standard short-form: SECTION-TOWNSHIP-RANGE+DIRECTION
+        // (e.g. "7-5-6E"). MB_LegalDesc encodes meridian as "E1"/"W1";
+        // strip the digit so only the W/E letter survives.
+        label: `${sec.s}-${sec.t}-${sec.r}${String(sec.d || '').replace(/[^EW]/gi, '').toUpperCase()}`,
       },
     });
   }
