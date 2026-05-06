@@ -3,28 +3,35 @@
 // ArcGIS Roll Entry for the live parcel geometry and current assessment data.
 
 // The legal-search index is large (~130 MB) — too big to track in
-// source control past GitHub's 100 MB single-file ceiling, and
-// expensive to bundle into Vercel's static build. We host it as a
-// GitHub Release asset and reach it through a same-origin
-// rewrite proxy (`/proxy/legal-index.json`) configured in
-// vercel.json (production) and vite.config.js (dev). A direct
-// browser fetch of the release URL fails CORS — github.com's
-// 302 redirect to release-assets.githubusercontent.com carries
-// no Access-Control-Allow-Origin header on either hop. The
-// rewrite hides that complexity from the client; the browser's
-// HTTP cache handles re-use across visits.
+// source control past GitHub's 100 MB single-file ceiling, too big
+// to bundle into Vercel's static build, and too big to push through
+// a vercel.json `rewrites` proxy (Vercel buffers static-asset
+// rewrites and 502s past ~4-5 MB).
 //
-// In dev, npm run dev still serves any in-tree copy from
-// web/public/data/ first; the proxy only fires when that
-// file is absent (fresh clone, no build_legal_index.R run yet).
+// Production hosting: the file is uploaded to a GitHub Release
+// asset and served through a Vercel Edge Function at
+// /api/legal-index (api/legal-index.js). The Edge runtime supports
+// streaming responses, so a 130 MB body flows from GitHub through
+// the edge to the browser without ever being buffered. The
+// function adds Access-Control-Allow-Origin so the browser
+// accepts the response (the upstream GitHub redirect chain
+// doesn't send that header on either hop).
 //
-// To publish a new index: regenerate via
+// Dev: vite serves any in-tree copy at web/public/data/legal-index.json
+// directly. legalIndex.js tries the local URL first and falls back
+// to /api/legal-index — in dev the local copy wins and the API path
+// is never hit (vite doesn't run Vercel functions); in production
+// the local file isn't shipped and the API path takes over.
+//
+// To publish a new index:
 //   Rscript r/build_legal_index.R
-// upload to a fresh release tag (or replace the asset on the
-// existing tag), then bump the release-tag fragment in vercel.json
-// + vite.config.js. legalIndex.js doesn't need to change.
+//   gh release create data-YYYY-MM-DD web/public/data/legal-index.json --title "..."
+// Then bump RELEASE_URL in api/legal-index.js. No client-side change
+// needed; the browser HTTP cache will pick up the new file via the
+// Cache-Control: max-age=604800 the function already sets, and the
+// URL change invalidates any stale cached response automatically.
 const LEGAL_INDEX_LOCAL_URL = `${import.meta.env?.BASE_URL || '/'}data/legal-index.json`;
-const LEGAL_INDEX_PROXY_URL = '/proxy/legal-index.json';
+const LEGAL_INDEX_PROXY_URL = '/api/legal-index';
 const MAX_LEGAL_MATCHES = 1000;
 
 const FIELD = {
