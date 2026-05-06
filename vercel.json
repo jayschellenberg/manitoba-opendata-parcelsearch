@@ -7,6 +7,10 @@
     {
       "source": "/proxy/contam-sites.csv",
       "destination": "https://manitoba.ca/sd/waste_management/contaminated_sites/registry/cs-data.csv"
+    },
+    {
+      "source": "/proxy/legal-index.json",
+      "destination": "https://github.com/jayschellenberg/manitoba-opendata-parcelsearch/releases/download/data-2026-05-06/legal-index.json"
     }
   ]
 }
