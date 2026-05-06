@@ -446,6 +446,21 @@ header small a {
   pointer-events: auto;
 }
 
+/* MASC soil-rating chip used in the Soil column of the results table.
+   Pill-style swatch carrying the rating letter, sized to read clearly
+   against the table grid without dominating its row. Background colour
+   is set inline (matches the per-rating MASC palette). */
+.soil-chip {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  text-align: center;
+  font-size: 0.85em;
+  line-height: 1.4;
+}
+
 /* On the collapsed (single-column) layout below 900 px, the map's full
    width is the viewport width, not viewport-minus-sidebar. */
 @media (max-width: 900px) {

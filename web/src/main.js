@@ -30,6 +30,9 @@ import {
   fetchMunicipalBoundaries,
   fetchMascRatingsForMuni,
   fetchSurveyGridForMuni,
+  fetchProvinceSectionGrid,
+  fetchRiverLots,
+  fetchParcelMascForMuni,
   parseRollList,
   missingRollsFromResults,
 } from './arcgis.js';
@@ -443,6 +446,9 @@ const SORT_KEYS = {
   zbl:     (r) => strKey(r.zoning[0]?.feature.properties.ZBL),
   dev1:    (r) => strKey(r.devPlan[0]?.feature.properties.DES_NAME),
   dpbylaw: (r) => strKey(r.devPlan[0]?.feature.properties.DP_BYLAW),
+  // Sort by MASC rating (A best → J worst). Empty cells go last.
+  soil:     (r) => strKey(r.parcel.properties._soilRating),
+  riskarea: (r) => finiteOrNeg(r.parcel.properties._soilRiskArea),
   changes: (r) => strKey(formatChanges(r)),
   du:      (r) => finiteOrNeg(r.parcel.properties.Dwelling_Units),
   acres:   (r) => finiteOrNeg(parcelAcres(r.parcel)),
@@ -701,9 +707,16 @@ populateDropdowns();
 // days so this is a one-time hit per month per browser; on a cache
 // hit it lands instantly. Failures are non-fatal — boundaries are
 // reference data, not critical to a search.
+// Full muni-boundaries FC, cached at module scope so the Sec-Twp Grid
+// toggle can hand the un-clipped polygon to the spatial query. Going
+// through map.querySourceFeatures returns whatever the render pipeline
+// clipped to the current viewport tiles, which truncated large RMs
+// like Hanover.
+let muniBoundariesFc = null;
 (async () => {
   try {
     const fc = await fetchMunicipalBoundaries();
+    muniBoundariesFc = fc;
     await mapReady;
     setMuniBoundariesData(map, fc);
   } catch (err) {
@@ -925,6 +938,32 @@ async function runSearch() {
     for (const row of rows) {
       const z = row.zoning[0]?.feature.properties;
       if (z) row.parcel.properties._zoneCode = z.ZONE || z.ZONE_NAME || null;
+    }
+
+    // Attach the pre-baked dominant MASC soil rating for each parcel
+    // (per-muni shard built by r/build_parcel_masc.R). Lazy: skipped
+    // when the muni isn't in the index (urban-only munis don't get a
+    // shard). Falls through silently on network or parse errors so a
+    // missing shard never blocks the search.
+    if (inputs.municipality) {
+      try {
+        const dict = await fetchParcelMascForMuni(inputs.municipality);
+        if (dict) {
+          for (const row of rows) {
+            const roll = row.parcel.properties?.Roll_No_Txt;
+            const hit  = roll ? dict[roll] : null;
+            if (hit) {
+              row.parcel.properties._soilRating = hit.rating || null;
+              row.parcel.properties._soilRiskArea = (hit.ra != null) ? hit.ra : null;
+              row.parcel.properties._soilQuarter = hit.q
+                ? `${hit.q} ${hit.s}-${hit.t}-${hit.r}${hit.d || ''}`
+                : null;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('parcel-MASC enrichment failed (non-fatal):', err);
+      }
     }
 
     // Stamp the most-common assessment year into the Total Value column
@@ -1186,7 +1225,9 @@ let surveyGridLoadedFor = null;
 function resetMascAndGridToggles() {
   const muniSelected = !!$municipality.value;
   $mascToggle.disabled = !muniSelected;
-  $gridToggle.disabled = !muniSelected;
+  // Sec-Twp Grid stays enabled with or without a muni — without a muni
+  // selected it falls back to the pre-baked province-wide static file.
+  $gridToggle.disabled = false;
   if (mascLoadedFor && mascLoadedFor !== $municipality.value) {
     mascLoadedFor = null;
     if ($mascToggle.classList.contains('active')) {
@@ -1199,7 +1240,11 @@ function resetMascAndGridToggles() {
       });
     }
   }
-  if (surveyGridLoadedFor && surveyGridLoadedFor !== $municipality.value) {
+  // Survey grid: track muni vs the __PROVINCE__ sentinel. Switching
+  // between "any muni" and a specific muni invalidates the loaded
+  // dataset so the toggle refetches the right scope.
+  const desiredKey = $municipality.value || '__PROVINCE__';
+  if (surveyGridLoadedFor && surveyGridLoadedFor !== desiredKey) {
     surveyGridLoadedFor = null;
     if ($gridToggle.classList.contains('active')) {
       $gridToggle.classList.remove('active');
@@ -1286,30 +1331,55 @@ async function toggleSurveyGridOverlay() {
     return;
   }
 
-  if (surveyGridLoadedFor !== muni) {
+  // Use a sentinel string rather than null to track the "province-wide"
+  // load — that way reselecting "any muni" → empty doesn't refetch the
+  // province grid every time.
+  const loadKey = muni || '__PROVINCE__';
+  if (surveyGridLoadedFor !== loadKey) {
     $gridToggle.disabled = true;
     $gridToggle.textContent = 'Loading…';
     try {
-      // Need the muni's boundary polygon as the spatial query envelope.
-      // The boundaries layer is loaded at startup and cached, so the
-      // queryRenderedFeatures call here is essentially free.
-      const muniFeats = map.querySourceFeatures('muni-boundaries', {
-        filter: ['==', ['get', 'MUNI_LIST_NAME_WITH_TYPE'], muni],
-      });
-      const muniFeat = muniFeats[0] ? toGeoJsonFeature(muniFeats[0]) : null;
-      if (!muniFeat) {
-        $gridToggle.classList.remove('active');
-        $gridToggle.setAttribute('aria-pressed', 'false');
-        $gridToggle.disabled = false;
-        $gridToggle.textContent = 'Sec-Twp Grid';
-        setCount(`Couldn't locate boundary for ${muni}; can't load the section-township grid.`);
-        return;
+      if (!muni) {
+        // No muni selected — load the pre-baked province-wide grid AND
+        // the river-lots overlay as static files in parallel. Both are
+        // cached in localStorage on first hit; subsequent toggles are
+        // instant. River lots are optional — if the file is missing
+        // we just render the section grid alone.
+        const [gridFc, riverFc] = await Promise.all([
+          fetchProvinceSectionGrid(),
+          fetchRiverLots(),
+        ]);
+        const merged = {
+          type: 'FeatureCollection',
+          features: [
+            ...(gridFc?.features || []),
+            ...(riverFc?.features || []),
+          ],
+        };
+        setSurveyGridData(map, merged);
+      } else {
+        // Pull the muni's full boundary polygon from the cached
+        // FeatureCollection (NOT querySourceFeatures, which returns
+        // viewport-clipped geometry — that's why earlier Hanover queries
+        // only covered the southern part of the RM). The full FC is set
+        // by the boundaries fetch at startup.
+        const muniFeat = muniBoundariesFc?.features?.find(
+          (f) => f.properties?.MUNI_LIST_NAME_WITH_TYPE === muni,
+        ) || null;
+        if (!muniFeat) {
+          $gridToggle.classList.remove('active');
+          $gridToggle.setAttribute('aria-pressed', 'false');
+          $gridToggle.disabled = false;
+          $gridToggle.textContent = 'Sec-Twp Grid';
+          setCount(`Couldn't locate boundary for ${muni}; can't load the section-township grid.`);
+          return;
+        }
+        const fc = await fetchSurveyGridForMuni(muni, muniFeat);
+        const rows = surveyFcToRows(fc || { features: [] });
+        const lines = sectionLinesFromRows(rows);
+        setSurveyGridData(map, lines);
       }
-      const fc = await fetchSurveyGridForMuni(muni, muniFeat);
-      const rows = surveyFcToRows(fc || { features: [] });
-      const lines = sectionLinesFromRows(rows);
-      setSurveyGridData(map, lines);
-      surveyGridLoadedFor = muni;
+      surveyGridLoadedFor = loadKey;
     } catch (err) {
       console.warn('Sec-Twp Grid fetch failed', err);
       $gridToggle.classList.remove('active');
@@ -1445,6 +1515,8 @@ function renderTable(rows) {
     tr.appendChild(td(z1.ZBL));
     tr.appendChild(td(formatDes(d1)));
     tr.appendChild(td(d1.DP_BYLAW));
+    tr.appendChild(soilCell(p));
+    tr.appendChild(td(p._soilRiskArea != null ? String(p._soilRiskArea) : null, 'num'));
     tr.appendChild(td(formatChanges(row)));
     tr.appendChild(td(formatDu(p.Dwelling_Units), 'num'));
     tr.appendChild(td(formatAcres(ac), 'num'));
@@ -1456,6 +1528,37 @@ function renderTable(rows) {
   }
   $tbody.appendChild(frag);
   setExportEnabled(rows.length > 0);
+}
+
+/**
+ * Soil rating cell. Renders the dominant MASC rating letter (A→J) as a
+ * coloured chip matching the overlay's A→J palette. Tooltip carries the
+ * source quarter-section label so the user can verify which quarter
+ * dominated a multi-quarter parcel. Empty cell when the parcel falls
+ * outside MASC coverage (typical of urban lots).
+ */
+function soilCell(p) {
+  const cell = document.createElement('td');
+  const rating = p?._soilRating;
+  if (!rating) {
+    cell.textContent = '';
+    return cell;
+  }
+  const swatch = document.createElement('span');
+  swatch.className = 'soil-chip';
+  swatch.textContent = rating;
+  swatch.style.backgroundColor = soilColor(rating);
+  // Use white text on the dark end of the ramp (G/H/I/J) for legibility.
+  swatch.style.color = ['G', 'H', 'I', 'J'].includes(rating) ? '#fff' : '#1a1a1a';
+  if (p._soilQuarter) cell.title = `Source: ${p._soilQuarter}`;
+  cell.appendChild(swatch);
+  return cell;
+}
+
+function soilColor(code) {
+  const map = { A:'#1a9850', B:'#66bd63', C:'#a6d96a', D:'#d9ef8b', E:'#fee08b',
+                F:'#fdae61', G:'#f46d43', H:'#d73027', I:'#a50026', J:'#67001f' };
+  return map[code] || '#cccccc';
 }
 
 function legalCell(p) {
@@ -1837,6 +1940,7 @@ function exportCsv() {
     'Zoning', 'Zoning %',
     'Zoning 2', 'ZBL',
     'Dev-Plan Designation', 'DP By-law',
+    'Soil Rating', 'Risk Area',
     'Changes',
     'DU', 'Acres', 'SF',
     csvAssessHeader(currentRows), 'Asmt Report URL',
@@ -1861,6 +1965,7 @@ function exportCsv() {
       formatZoneCode(z1), ratioPct(row.zoning[0]?.ratio),
       formatZoneCode(z2), z1.ZBL,
       formatDes(d1), d1.DP_BYLAW,
+      p._soilRating ?? '', p._soilRiskArea ?? '',
       formatChanges(row),
       p.Dwelling_Units ?? '',
       formatAcresCsv(ac),

@@ -588,10 +588,15 @@ export function initMap(container, { onFeatureClick } = {}) {
       // Lines only; the grid sits visually above zoning/dev-plan
       // overlays but below the muni-parcels and search-result layers.
       map.addSource('survey-grid', { type: 'geojson', data: emptyFc() });
+      // Section-grid lines (DLS): grey dashed. The MapLibre line-dasharray
+      // paint property doesn't accept a per-feature `case` expression, so
+      // sections and river lots must live on separate layers — same source,
+      // different kind filter, different paint.
       map.addLayer({
         id: 'survey-grid-line',
         type: 'line',
         source: 'survey-grid',
+        filter: ['!=', ['get', 'kind'], 'riverlot'],
         layout: { visibility: 'none', 'line-cap': 'square' },
         paint: {
           'line-color': '#444',
@@ -603,6 +608,25 @@ export function initMap(container, { onFeatureClick } = {}) {
           ],
           'line-opacity': 0.7,
           'line-dasharray': [4, 3],
+        },
+      });
+      // River lots: solid teal line. Slightly heavier than the section
+      // grid so the lot pattern reads at a glance against the basemap.
+      map.addLayer({
+        id: 'survey-grid-riverlot',
+        type: 'line',
+        source: 'survey-grid',
+        filter: ['==', ['get', 'kind'], 'riverlot'],
+        layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': '#0f766e',
+          'line-width': [
+            'interpolate', ['linear'], ['zoom'],
+            8,  0.5,
+            12, 1.1,
+            16, 1.7,
+          ],
+          'line-opacity': 0.85,
         },
       });
       map.addLayer({
@@ -992,7 +1016,7 @@ export function setSurveyGridData(map, fc) {
 }
 export function setSurveyGridVisible(map, visible) {
   const v = visible ? 'visible' : 'none';
-  for (const id of ['survey-grid-line', 'survey-grid-label']) {
+  for (const id of ['survey-grid-line', 'survey-grid-riverlot', 'survey-grid-label']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
   }
 }

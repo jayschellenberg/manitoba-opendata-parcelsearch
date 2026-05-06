@@ -33,10 +33,11 @@ web/public/data/legal-index.json
 
 # Generated per-municipality MASC soil-rating shards built by
 # r/build_masc_shards.R from masc_soil_ratings_with_latlon.csv.
-# ~14 MB across ~100 shards; trivially regenerable. Same hosting
-# question as the legal-index above (production deploy needs these
-# served from somewhere). Bundled with the dev build's web/public/.
-web/public/data/masc/
+# ~14 MB across ~99 shards; max single file ~448 KB. Tracked in
+# source control so Vercel ships them as static assets — well
+# under GitHub's 100 MB / file ceiling, no LFS needed. To refresh:
+# rerun build_masc_shards.R, commit the changed shards.
+# web/public/data/masc/
 
 # Source CSV the MASC shards are built from. ~8 MB raw.
 masc_soil_ratings_with_latlon.csv
