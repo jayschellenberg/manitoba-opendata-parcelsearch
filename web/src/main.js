@@ -28,9 +28,17 @@ import {
   fetchTrafficFlow,
   fetchAllParcelsInMunicipality,
   fetchMunicipalBoundaries,
+  fetchMascRatingsForMuni,
+  fetchSurveyGridForMuni,
   parseRollList,
   missingRollsFromResults,
 } from './arcgis.js';
+import {
+  quartersToFc,
+  sectionLinesFromRows,
+  surveyFcToRows,
+  MASC_PALETTE,
+} from './masc.js';
 import {
   initMap,
   showResults,
@@ -46,6 +54,10 @@ import {
   setMuniParcelsData,
   setMuniParcelsVisible,
   setMuniBoundariesData,
+  setMascData,
+  setMascVisible,
+  setSurveyGridData,
+  setSurveyGridVisible,
   flyToFeature,
   buildZoneCodePaint,
 } from './map.js';
@@ -83,10 +95,13 @@ const $pdWebsiteBtn   = document.getElementById('pd-website-btn');
 const $contamToggle  = document.getElementById('contam-toggle');
 const $flowToggle    = document.getElementById('flow-toggle');
 const $muniParcelsToggle = document.getElementById('muni-parcels-toggle');
+const $mascToggle    = document.getElementById('masc-toggle');
+const $gridToggle    = document.getElementById('grid-toggle');
 const $count         = document.getElementById('count');
 const $tbody         = document.querySelector('#results tbody');
 const $mapEl         = document.getElementById('map');
 const $flowLegend    = document.getElementById('flow-legend');
+const $mascLegend    = document.getElementById('masc-legend');
 const $zoningLegend  = document.getElementById('zoning-legend');
 
 /**
@@ -633,9 +648,12 @@ async function generateStaticMap() {
   }
 }
 $muniParcelsToggle.addEventListener('click', () => toggleAuxOverlay('muniParcels'));
+$mascToggle.addEventListener('click', () => toggleMascOverlay());
+$gridToggle.addEventListener('click', () => toggleSurveyGridOverlay());
 $municipality.addEventListener('change', () => {
   refilterCategoryDropdowns();
   resetMuniParcelsToggle();
+  resetMascAndGridToggles();
   updateMuniWebsiteButton();
   // Reset the PD button until the next search resolves the planning
   // district from the dev-plan layer's PLANNINGDISTRICT field.
@@ -1153,6 +1171,169 @@ function resetMuniParcelsToggle() {
       mapReady.then(() => setMuniParcelsVisible(map, false));
     }
   }
+}
+
+// MASC + Sec-Twp Grid state. Tracks which muni's data is currently
+// loaded into each source so a toggle off-then-on doesn't refetch and
+// a muni-change can prompt a refetch when the layer is active.
+let mascLoadedFor = null;
+let surveyGridLoadedFor = null;
+
+/** Enable/disable MASC and Sec-Twp Grid toggles based on whether a
+ *  muni is selected, and clear stale data + active state if the muni
+ *  changed since the layers were last loaded. Mirrors the
+ *  resetMuniParcelsToggle pattern. */
+function resetMascAndGridToggles() {
+  const muniSelected = !!$municipality.value;
+  $mascToggle.disabled = !muniSelected;
+  $gridToggle.disabled = !muniSelected;
+  if (mascLoadedFor && mascLoadedFor !== $municipality.value) {
+    mascLoadedFor = null;
+    if ($mascToggle.classList.contains('active')) {
+      $mascToggle.classList.remove('active');
+      $mascToggle.setAttribute('aria-pressed', 'false');
+      $mascToggle.textContent = 'MASC Soil';
+      mapReady.then(() => {
+        setMascVisible(map, false);
+        if ($mascLegend) $mascLegend.hidden = true;
+      });
+    }
+  }
+  if (surveyGridLoadedFor && surveyGridLoadedFor !== $municipality.value) {
+    surveyGridLoadedFor = null;
+    if ($gridToggle.classList.contains('active')) {
+      $gridToggle.classList.remove('active');
+      $gridToggle.setAttribute('aria-pressed', 'false');
+      $gridToggle.textContent = 'Sec-Twp Grid';
+      mapReady.then(() => setSurveyGridVisible(map, false));
+    }
+  }
+}
+
+/**
+ * Toggle the MASC Soil layer. Lazy-loads the muni's MASC shard from
+ * /data/masc/<MUNI>.json, builds quarter-section polygons via
+ * masc.js's quartersToFc(), and pushes them onto the map's `masc`
+ * source. The shard's per-muni cache is 30 days. Layer absence (a
+ * muni with no MASC ratings — typically urban munis without crop
+ * insurance) reverts the toggle and posts an explanatory count
+ * message so the failure mode is informative, not silent.
+ */
+async function toggleMascOverlay() {
+  const muni = $municipality.value;
+  const wasActive = $mascToggle.classList.contains('active');
+  const visible = !wasActive;
+  $mascToggle.classList.toggle('active', visible);
+  $mascToggle.setAttribute('aria-pressed', String(visible));
+  await mapReady;
+
+  if (!visible) {
+    $mascToggle.textContent = 'MASC Soil';
+    setMascVisible(map, false);
+    if ($mascLegend) $mascLegend.hidden = true;
+    return;
+  }
+
+  if (mascLoadedFor !== muni) {
+    $mascToggle.disabled = true;
+    $mascToggle.textContent = 'Loading…';
+    try {
+      const rows = await fetchMascRatingsForMuni(muni);
+      if (!rows || rows.length === 0) {
+        $mascToggle.classList.remove('active');
+        $mascToggle.setAttribute('aria-pressed', 'false');
+        $mascToggle.disabled = false;
+        $mascToggle.textContent = 'MASC Soil';
+        setCount(`No MASC soil ratings on file for ${muni}.`);
+        return;
+      }
+      setMascData(map, quartersToFc(rows));
+      mascLoadedFor = muni;
+    } catch (err) {
+      console.warn('MASC fetch failed', err);
+      $mascToggle.classList.remove('active');
+      $mascToggle.setAttribute('aria-pressed', 'false');
+      $mascToggle.disabled = false;
+      $mascToggle.textContent = 'MASC Soil';
+      setCount(`Failed to load MASC soil ratings: ${err.message}`);
+      return;
+    }
+    $mascToggle.disabled = false;
+  }
+  $mascToggle.textContent = 'MASC Soil';
+  setMascVisible(map, true);
+  if ($mascLegend) $mascLegend.hidden = false;
+}
+
+/**
+ * Toggle the Sec-Twp Grid layer. Lazy-fetches the Manitoba Original
+ * Survey FeatureServer scoped to the active muni's boundary polygon,
+ * adapts the resulting points into the row shape sectionLinesFromRows
+ * expects, and renders the section bounding boxes as a dashed-line
+ * grid. Cached 30 days per-muni.
+ */
+async function toggleSurveyGridOverlay() {
+  const muni = $municipality.value;
+  const wasActive = $gridToggle.classList.contains('active');
+  const visible = !wasActive;
+  $gridToggle.classList.toggle('active', visible);
+  $gridToggle.setAttribute('aria-pressed', String(visible));
+  await mapReady;
+
+  if (!visible) {
+    $gridToggle.textContent = 'Sec-Twp Grid';
+    setSurveyGridVisible(map, false);
+    return;
+  }
+
+  if (surveyGridLoadedFor !== muni) {
+    $gridToggle.disabled = true;
+    $gridToggle.textContent = 'Loading…';
+    try {
+      // Need the muni's boundary polygon as the spatial query envelope.
+      // The boundaries layer is loaded at startup and cached, so the
+      // queryRenderedFeatures call here is essentially free.
+      const muniFeats = map.querySourceFeatures('muni-boundaries', {
+        filter: ['==', ['get', 'MUNI_LIST_NAME_WITH_TYPE'], muni],
+      });
+      const muniFeat = muniFeats[0] ? toGeoJsonFeature(muniFeats[0]) : null;
+      if (!muniFeat) {
+        $gridToggle.classList.remove('active');
+        $gridToggle.setAttribute('aria-pressed', 'false');
+        $gridToggle.disabled = false;
+        $gridToggle.textContent = 'Sec-Twp Grid';
+        setCount(`Couldn't locate boundary for ${muni}; can't load the section-township grid.`);
+        return;
+      }
+      const fc = await fetchSurveyGridForMuni(muni, muniFeat);
+      const rows = surveyFcToRows(fc || { features: [] });
+      const lines = sectionLinesFromRows(rows);
+      setSurveyGridData(map, lines);
+      surveyGridLoadedFor = muni;
+    } catch (err) {
+      console.warn('Sec-Twp Grid fetch failed', err);
+      $gridToggle.classList.remove('active');
+      $gridToggle.setAttribute('aria-pressed', 'false');
+      $gridToggle.disabled = false;
+      $gridToggle.textContent = 'Sec-Twp Grid';
+      setCount(`Failed to load section-township grid: ${err.message}`);
+      return;
+    }
+    $gridToggle.disabled = false;
+  }
+  $gridToggle.textContent = 'Sec-Twp Grid';
+  setSurveyGridVisible(map, true);
+}
+
+/** Convert a MapLibre rendered Feature (which has lazily-evaluated
+ *  geometry) into a plain GeoJSON Feature so polygonToEsriGeometry
+ *  in arcgis.js can read its `coordinates`. */
+function toGeoJsonFeature(f) {
+  return {
+    type: 'Feature',
+    geometry: f.geometry,
+    properties: f.properties || {},
+  };
 }
 
 async function toggleAuxOverlay(which) {

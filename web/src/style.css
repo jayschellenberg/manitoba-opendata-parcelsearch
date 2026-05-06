@@ -421,6 +421,18 @@ header small a {
   bottom: 70px;
 }
 
+/* MASC soil-rating colour ramp legend. 10 entries; tighter line
+   spacing than the AADT legend so it stays compact. Sits below the
+   zoning legend (which can be tall) and above the AADT legend. */
+.map-legend.masc-legend {
+  bottom: 12px;
+  font-size: 11px;
+  line-height: 1.3;
+}
+.map-legend.masc-legend .swatch {
+  border: 1px solid rgba(0, 0, 0, 0.2);
+}
+
 /* Zoning category legend — sized to use most of the map's vertical
    space so it fits without scrolling whenever there's room. The map is
    16:9, so its height grows with the viewport; cap the legend at 85%

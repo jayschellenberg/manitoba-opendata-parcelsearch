@@ -31,6 +31,16 @@ ParcelCrossRef_*.csv
 # build pulls it from the build output rather than tracking it here.
 web/public/data/legal-index.json
 
+# Generated per-municipality MASC soil-rating shards built by
+# r/build_masc_shards.R from masc_soil_ratings_with_latlon.csv.
+# ~14 MB across ~100 shards; trivially regenerable. Same hosting
+# question as the legal-index above (production deploy needs these
+# served from somewhere). Bundled with the dev build's web/public/.
+web/public/data/masc/
+
+# Source CSV the MASC shards are built from. ~8 MB raw.
+masc_soil_ratings_with_latlon.csv
+
 # Editor / tooling temp files
 *.tmp.*
 *.timestamp-*.mjs
