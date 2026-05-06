@@ -2,7 +2,25 @@
 // The index stores only lightweight search/join fields, then main.js asks
 // ArcGIS Roll Entry for the live parcel geometry and current assessment data.
 
-const LEGAL_INDEX_URL = `${import.meta.env?.BASE_URL || '/'}data/legal-index.json`;
+// The legal-search index is large (~130 MB) — too big to track in
+// source control past GitHub's 100 MB single-file ceiling, and
+// expensive to bundle into Vercel's static build. We host it as a
+// GitHub Release asset and let the browser's HTTP cache handle
+// re-use across visits (GitHub's release-asset CDN serves with
+// reasonable Cache-Control headers).
+//
+// Locally, npm run dev still serves the file from web/public/data/
+// (see vite.config.js) so the dev workflow doesn't depend on the
+// release. The const below first tries the local copy and falls
+// back to the release URL — production deploys don't ship the file
+// so the local fetch 404s and the fallback runs; locally the
+// in-tree copy wins and the fallback never fires.
+//
+// To publish a new index: regenerate via `Rscript r/build_legal_index.R`,
+// then upload to a fresh release tag (or replace the asset on the
+// existing tag) and bump LEGAL_INDEX_RELEASE_URL below.
+const LEGAL_INDEX_LOCAL_URL = `${import.meta.env?.BASE_URL || '/'}data/legal-index.json`;
+const LEGAL_INDEX_RELEASE_URL = 'https://github.com/jayschellenberg/manitoba-opendata-parcelsearch/releases/download/data-2026-05-06/legal-index.json';
 const MAX_LEGAL_MATCHES = 1000;
 
 const FIELD = {
@@ -91,21 +109,44 @@ export function parcelLegalKey(props = {}) {
 
 function loadLegalIndex() {
   if (!indexPromise) {
-    indexPromise = fetch(LEGAL_INDEX_URL, { cache: 'no-cache' })
-      .then(async (res) => {
-        if (!res.ok) {
-          throw new Error(`Legal index not available at ${LEGAL_INDEX_URL}. Run \`npm run legal:index\` in web/ after the MAO scrape has assembled parcels.parquet.`);
-        }
-        return res.json();
-      })
-      .then((json) => {
-        if (!json || !Array.isArray(json.rows)) {
-          throw new Error('Legal index is malformed: expected a rows array.');
-        }
-        return json;
-      });
+    indexPromise = fetchLegalIndex();
   }
   return indexPromise;
+}
+
+async function fetchLegalIndex() {
+  // Try the in-tree dev copy first; in production it 404s and we
+  // fall through to the GitHub Release asset. The local default
+  // cache mode is fine — a 304 from a stale fetch is still cheap
+  // and the release URL has its own cache headers.
+  let json;
+  try {
+    const localRes = await fetch(LEGAL_INDEX_LOCAL_URL);
+    if (localRes.ok) {
+      json = await localRes.json();
+    }
+  } catch { /* network/parse failure on local — fall through */ }
+
+  if (!json) {
+    let releaseRes;
+    try {
+      releaseRes = await fetch(LEGAL_INDEX_RELEASE_URL);
+    } catch (err) {
+      throw new Error(`Legal index could not be fetched from the GitHub Release: ${err.message}`);
+    }
+    if (!releaseRes.ok) {
+      throw new Error(
+        `Legal index not available locally (${LEGAL_INDEX_LOCAL_URL}) and the GitHub Release fetch returned ${releaseRes.status}. ` +
+        `Confirm the release asset exists, or run \`Rscript r/build_legal_index.R\` and serve via npm run dev.`
+      );
+    }
+    json = await releaseRes.json();
+  }
+
+  if (!json || !Array.isArray(json.rows)) {
+    throw new Error('Legal index is malformed: expected a rows array.');
+  }
+  return json;
 }
 
 function rowToRecord(row) {
