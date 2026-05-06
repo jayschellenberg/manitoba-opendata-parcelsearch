@@ -5,22 +5,26 @@
 // The legal-search index is large (~130 MB) — too big to track in
 // source control past GitHub's 100 MB single-file ceiling, and
 // expensive to bundle into Vercel's static build. We host it as a
-// GitHub Release asset and let the browser's HTTP cache handle
-// re-use across visits (GitHub's release-asset CDN serves with
-// reasonable Cache-Control headers).
+// GitHub Release asset and reach it through a same-origin
+// rewrite proxy (`/proxy/legal-index.json`) configured in
+// vercel.json (production) and vite.config.js (dev). A direct
+// browser fetch of the release URL fails CORS — github.com's
+// 302 redirect to release-assets.githubusercontent.com carries
+// no Access-Control-Allow-Origin header on either hop. The
+// rewrite hides that complexity from the client; the browser's
+// HTTP cache handles re-use across visits.
 //
-// Locally, npm run dev still serves the file from web/public/data/
-// (see vite.config.js) so the dev workflow doesn't depend on the
-// release. The const below first tries the local copy and falls
-// back to the release URL — production deploys don't ship the file
-// so the local fetch 404s and the fallback runs; locally the
-// in-tree copy wins and the fallback never fires.
+// In dev, npm run dev still serves any in-tree copy from
+// web/public/data/ first; the proxy only fires when that
+// file is absent (fresh clone, no build_legal_index.R run yet).
 //
-// To publish a new index: regenerate via `Rscript r/build_legal_index.R`,
-// then upload to a fresh release tag (or replace the asset on the
-// existing tag) and bump LEGAL_INDEX_RELEASE_URL below.
+// To publish a new index: regenerate via
+//   Rscript r/build_legal_index.R
+// upload to a fresh release tag (or replace the asset on the
+// existing tag), then bump the release-tag fragment in vercel.json
+// + vite.config.js. legalIndex.js doesn't need to change.
 const LEGAL_INDEX_LOCAL_URL = `${import.meta.env?.BASE_URL || '/'}data/legal-index.json`;
-const LEGAL_INDEX_RELEASE_URL = 'https://github.com/jayschellenberg/manitoba-opendata-parcelsearch/releases/download/data-2026-05-06/legal-index.json';
+const LEGAL_INDEX_PROXY_URL = '/proxy/legal-index.json';
 const MAX_LEGAL_MATCHES = 1000;
 
 const FIELD = {
@@ -128,19 +132,20 @@ async function fetchLegalIndex() {
   } catch { /* network/parse failure on local — fall through */ }
 
   if (!json) {
-    let releaseRes;
+    let proxyRes;
     try {
-      releaseRes = await fetch(LEGAL_INDEX_RELEASE_URL);
+      proxyRes = await fetch(LEGAL_INDEX_PROXY_URL);
     } catch (err) {
-      throw new Error(`Legal index could not be fetched from the GitHub Release: ${err.message}`);
+      throw new Error(`Legal index proxy fetch failed: ${err.message}`);
     }
-    if (!releaseRes.ok) {
+    if (!proxyRes.ok) {
       throw new Error(
-        `Legal index not available locally (${LEGAL_INDEX_LOCAL_URL}) and the GitHub Release fetch returned ${releaseRes.status}. ` +
-        `Confirm the release asset exists, or run \`Rscript r/build_legal_index.R\` and serve via npm run dev.`
+        `Legal index not available locally (${LEGAL_INDEX_LOCAL_URL}) and the proxy at ${LEGAL_INDEX_PROXY_URL} returned ${proxyRes.status}. ` +
+        `Confirm the GitHub Release asset exists and that vercel.json's rewrite for /proxy/legal-index.json points at it. ` +
+        `For local dev, run \`Rscript r/build_legal_index.R\` to populate web/public/data/legal-index.json.`
       );
     }
-    json = await releaseRes.json();
+    json = await proxyRes.json();
   }
 
   if (!json || !Array.isArray(json.rows)) {
