@@ -38,29 +38,30 @@
           <span class="tip">Roll # — exact match. Paste a comma-separated list to highlight many parcels at once (within the selected municipality).</span>
         </span>
         <!--
-          Legal description / Lot / Block / Plan / Certificate of Title
-          inputs were here. Removed from the markup until the MAO scrape
-          and the legal-search index are fully wired up. main.js is
-          null-tolerant for the missing IDs so re-enabling is just a
-          matter of restoring this block:
+          Legal-description and Certificate-of-Title search are
+          backed by the generated MAO scrape index at
+          web/public/data/legal-index.json (built locally by
+          r/build_legal_index.R from the MAO scrape parquet).
+          Substring matching against legal_description, legal_detail,
+          and certificates_of_title; matching (muni_no, roll_no_txt)
+          keys then drive a normal Roll Entry query so geometry and
+          assessment fields are still live.
 
-            <span class="field">
-              <input id="legal-text" type="text" placeholder="Legal description (contains)" />
-              <span class="tip">Search scraped MAO legal description and legal-detail text</span>
-            </span>
-            <div class="legal-row">
-              <span class="field"><input id="lot" type="text" placeholder="Lot" />
-                <span class="tip">Lot (exact)</span></span>
-              <span class="field"><input id="block" type="text" placeholder="Block" />
-                <span class="tip">Block (exact)</span></span>
-              <span class="field"><input id="plan" type="text" placeholder="Plan" />
-                <span class="tip">Plan (exact)</span></span>
-            </div>
-            <span class="field">
-              <input id="title" type="text" placeholder="Certificate of title (contains)" />
-              <span class="tip">Certificate of title number or LTO text</span>
-            </span>
+          Lot / Block / Plan inputs are intentionally NOT restored
+          here — the legalIndex.js plumbing supports them, but the
+          two free-text fields below (which match against the
+          per-row legal-description and detail text) are usually
+          more practical for appraisal work than typing exact
+          parsed parts.
         -->
+        <span class="field">
+          <input id="legal-text" type="text" placeholder="Legal description (contains)" />
+          <span class="tip">Substring search against the MAO scrape's legal description + legal-detail text. Use to find a parcel by its legal description, e.g. "PCL G", "RIVER LOT 12", "PLAN 24208".</span>
+        </span>
+        <span class="field">
+          <input id="title" type="text" placeholder="Certificate of title (contains)" />
+          <span class="tip">Substring search against the MAO scrape's certificates_of_title field. Accepts plain title numbers (e.g. "2476500") or full prefixed forms ("CT 2476500").</span>
+        </span>
         <span class="field">
           <select id="zone-category" disabled>
             <option value="">Any zoning category</option>
@@ -153,15 +154,10 @@
           <tr>
             <th data-col="roll">Roll #</th>
             <th data-col="address">Address</th>
-            <!-- Legal and Title columns are kept in the markup but hidden
-                 via CSS until the MAO scrape index is wired up. The <th>s
-                 stay in place so the column count between thead and tbody
-                 stays consistent (renderTable still appends placeholder
-                 cells at positions 3 and 4); the existing nth-child rules
-                 that key off subsequent column positions remain valid. CSS
-                 hides both header and matching <td>s — see style.css:
-                 #results th[data-col="legal" / "title"] and
-                 #results td:nth-child(3 / 4) { display: none }. -->
+            <!-- Legal and Title populate from the MAO scrape legal-index
+                 join in main.js's attachLegalMetadata(). renderTable
+                 appends a cell at each position; styling rules below in
+                 style.css align them as text columns. -->
             <th data-col="legal">Legal</th>
             <th data-col="title">Title</th>
             <th data-col="zone1">Zoning</th>
@@ -200,11 +196,14 @@
         <p>
           Search Manitoba properties (excluding Winnipeg, which has its
           <a href="https://winnipeg-opendata-parcelsearch.vercel.app/" target="_blank" rel="noreferrer">own portal</a>)
-          by civic address, municipality, or roll #. Each result is enriched
-          with its top-2 zoning districts (with coverage %) and its primary
-          development-plan designation, plus the bylaw numbers behind each.
-          Legal-description and certificate-of-title search are coming
-          once the MAO scrape and matching index are linked in.
+          by civic address, municipality, roll #, legal description, or
+          certificate of title. Each result is enriched with its top-2
+          zoning districts (with coverage %) and its primary
+          development-plan designation, plus the bylaw numbers behind
+          each. Legal-description and certificate-of-title search are
+          backed by a generated MAO scrape index — substring matches
+          there resolve to live parcel records via Roll Entry, so
+          geometry and assessment fields are always current.
         </p>
         <p>
           Roll Entry is queried live for parcel geometry and current
