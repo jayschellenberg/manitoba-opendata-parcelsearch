@@ -139,6 +139,8 @@ masc_sf <- sf::st_sf(
   d      = masc$direction,
   rating = masc$soil_rating,
   ra     = as.integer(masc$risk_area),
+  source = "quarter",
+  label  = NA_character_,
   geometry = sf::st_sfc(geoms, crs = 4326)
 )
 cat("  quarters:", nrow(masc_sf), "\n")
@@ -522,6 +524,8 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
         d      = parish_code,
         rating = rating,
         ra     = as.integer(ra),
+        source = "riverlot",
+        label  = paste0(prefix, "-", lot_type, "-", lot_num),
         geometry
       )
     cat("  rated river-lot polygons:", nrow(riverlot_polys), "\n")
@@ -545,6 +549,7 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
         rating = rating,
         ra     = as.integer(ra),
         muni   = muni_with_typ,
+        source = "riverlot",
         geometry
       )
     if (file.exists(masc_riverlots_out)) file.remove(masc_riverlots_out)
@@ -624,6 +629,8 @@ dominant <- inter |>
     r  = first(r),
     d  = first(d),
     ra = first(ra),
+    source = first(source),
+    label  = first(label),
     .groups = "drop_last"
   ) |>
   arrange(desc(area_m2), rating) |>
@@ -687,6 +694,8 @@ if (nrow(unmatched) > 0) {
     r                  = masc_pts$r[near_idx],
     d                  = masc_pts$d[near_idx],
     ra                 = masc_pts$ra[near_idx],
+    source             = "nearest-quarter",
+    label              = NA_character_,
     near_m             = near_dist
   ) |>
     filter(near_m <= 1000) |>      # within 1 km of a real quarter centroid
@@ -733,7 +742,9 @@ for (key in muni_keys) {
         s      = rows$s[i],
         t      = rows$t[i],
         r      = rows$r[i],
-        d      = rows$d[i]
+        d      = rows$d[i],
+        source = rows$source[i],
+        label  = rows$label[i]
       )
     }),
     rows$Roll_No_Txt

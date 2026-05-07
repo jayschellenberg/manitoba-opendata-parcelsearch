@@ -530,6 +530,10 @@ $devplanToggle.addEventListener('click', () => toggleOverlay('devplan'));
 $contamToggle.addEventListener('click', () => toggleAuxOverlay('contam'));
 $flowToggle.addEventListener('click', () => toggleAuxOverlay('flow'));
 $riskAreaToggle.addEventListener('click', () => toggleAuxOverlay('riskAreas'));
+$muniParcelsToggle.addEventListener('click', () => toggleAuxOverlay('muniParcels'));
+$mascToggle.addEventListener('click', () => toggleMascOverlay());
+$cliToggle.addEventListener('click', () => toggleCliOverlay());
+$gridToggle.addEventListener('click', () => toggleSurveyGridOverlay());
 
 const $staticMapBtn     = document.getElementById('static-map-btn');
 const $staticMapOutput  = document.getElementById('static-map-output');
@@ -666,10 +670,6 @@ async function generateStaticMap() {
     $staticMapBtn.textContent = originalLabel;
   }
 }
-$muniParcelsToggle.addEventListener('click', () => toggleAuxOverlay('muniParcels'));
-$mascToggle.addEventListener('click', () => toggleMascOverlay());
-$cliToggle.addEventListener('click', () => toggleCliOverlay());
-$gridToggle.addEventListener('click', () => toggleSurveyGridOverlay());
 $municipality.addEventListener('change', () => {
   refilterCategoryDropdowns();
   resetMuniParcelsToggle();
@@ -976,9 +976,7 @@ async function runSearch() {
             const hit  = roll ? dict[roll] : null;
             if (hit) {
               row.parcel.properties._soilRating = hit.rating || null;
-              row.parcel.properties._soilQuarter = hit.q
-                ? `${hit.q} ${hit.s}-${hit.t}-${hit.r}${hit.d || ''}`
-                : null;
+              row.parcel.properties._soilQuarter = soilSourceLabel(hit);
             }
           }
         }
@@ -1338,17 +1336,7 @@ async function toggleMascOverlay() {
         fetchMascRiverlots(),
       ]);
       const hasQuarters = !!(rows && rows.length);
-      // Tolerant muni match: the dropdown's value comes from ROLL_ENTRY's
-      // Muni_Name_With_Typ while masc-riverlots.json's `muni` field
-      // sometimes carries the MUNICIPALITY-layer name, which differs by
-      // punctuation (period after ST/STE), language (FRANCOIS vs FRANCIS
-      // for St François Xavier), and Town-vs-RM split for enclave munis
-      // like Ste Anne. Normalize both sides before comparing so the
-      // overlay still paints river lots even when the names disagree
-      // on those details.
-      const muniRiverlots = (riverlotsAll?.features || []).filter(
-        (f) => normalizeMuniMatch(f?.properties?.muni) === normalizeMuniMatch(muni),
-      );
+      const muniRiverlots = filterMascRiverlotsForMuni(riverlotsAll?.features || [], muni);
       if (!hasQuarters && muniRiverlots.length === 0) {
         $mascToggle.classList.remove('active');
         $mascToggle.setAttribute('aria-pressed', 'false');
@@ -1718,6 +1706,31 @@ function soilCell(p) {
   return cell;
 }
 
+function soilSourceLabel(hit) {
+  if (!hit) return null;
+  if (hit.source === 'riverlot' || isMascRiverLotHit(hit)) {
+    const label = hit.label || riverLotHitLabel(hit);
+    return label ? `River lot ${label}` : null;
+  }
+  if (!hit.q) return null;
+  return `${hit.q} ${hit.s}-${hit.t}-${hit.r}${hit.d || ''}`;
+}
+
+function isMascRiverLotHit(hit) {
+  if (!hit) return false;
+  const q = String(hit.q || '').toUpperCase();
+  return /(?:RL|OT|WL|SL)$/.test(q) || hit.s == null || hit.t == null;
+}
+
+function riverLotHitLabel(hit) {
+  if (!hit) return null;
+  const q = String(hit.q || '').toUpperCase().trim();
+  const lot = hit.r == null ? '' : String(hit.r).trim();
+  const suffix = hit.d == null ? '' : String(hit.d).trim().toUpperCase();
+  if (!q && !lot) return null;
+  return `${q || 'RL'}${lot ? `-${lot}` : ''}${suffix}`;
+}
+
 /**
  * Stamp each parcel with the official MASC Risk_Area polygon containing
  * the parcel's bbox-centre point. Risk areas are broad crop-insurance
@@ -1912,20 +1925,72 @@ function bboxesIntersect(a, b) {
   return !(a[2] < b[0] || b[2] < a[0] || a[3] < b[1] || b[3] < a[1]);
 }
 
-/** Aggressively-normalized muni key for cross-source matching. ROLL_ENTRY,
- *  Manitoba's MUNICIPALITY layer, and the MASC scrape all spell the same
- *  muni differently — periods after ST/STE, language (Francois vs Francis),
- *  Town/RM/Municipality suffix variants. Strip them all to the bare name
- *  letters so the overlay's per-muni filter works regardless of which
- *  source produced the property. */
-function normalizeMuniMatch(s) {
-  if (!s) return '';
-  let v = String(s).toUpperCase().replace(/\./g, '').replace(/_/g, ' ');
-  v = v.replace(/\s*\([^)]*\)\s*$/, '');
-  v = v.replace(/\b(RM|MUNICIPALITY|TOWN|CITY|VILLAGE)\s+OF\b/g, '');
-  v = v.replace(/\s+(RM|MUNICIPALITY|TOWN|CITY|VILLAGE)$/g, '');
-  v = v.replace(/\bFRANCOIS\b/g, 'FRANCIS');
-  return v.replace(/\s+/g, ' ').trim();
+function filterMascRiverlotsForMuni(features, selectedMuni) {
+  const exact = features.filter((f) => muniIdentitiesMatch(f?.properties?.muni, selectedMuni, {
+    allowTypeFallback: false,
+  }));
+  if (exact.length > 0) return exact;
+
+  // Some long parish lots are boundary-tagged to a same-name enclave
+  // Town while Roll Entry parcels are in the surrounding RM. If there
+  // is no exact typed match, fall back to the shared bare muni name so
+  // those rated river lots still surface for parcel users.
+  return features.filter((f) => muniIdentitiesMatch(f?.properties?.muni, selectedMuni, {
+    allowTypeFallback: true,
+  }));
+}
+
+function muniIdentitiesMatch(sourceMuni, selectedMuni, { allowTypeFallback = false } = {}) {
+  const source = parseMuniIdentity(sourceMuni);
+  const selected = parseMuniIdentity(selectedMuni);
+  if (!source.name || !selected.name || source.name !== selected.name) return false;
+  if (!source.type || !selected.type || source.type === selected.type) return true;
+  return allowTypeFallback;
+}
+
+function parseMuniIdentity(value) {
+  let s = String(value || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[\u2010-\u2015\u2212]/g, '-')
+    .replace(/\./g, '')
+    .replace(/_/g, ' ')
+    .replace(/&/g, ' AND ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  let type = null;
+
+  const parenthetical = s.match(/\((RM|RURAL MUNICIPALITY|MUNICIPALITY|TOWN|CITY|VILLAGE)\)\s*$/);
+  if (parenthetical) {
+    type = normalizeMuniType(parenthetical[1]);
+    s = s.replace(/\s*\([^)]*\)\s*$/, '').trim();
+  }
+
+  s = s.replace(
+    /\b(RM|RURAL MUNICIPALITY|MUNICIPALITY|TOWN|CITY|VILLAGE)\s+OF\b/g,
+    (_, t) => {
+      type ||= normalizeMuniType(t);
+      return '';
+    },
+  );
+  s = s.replace(/\s+(RM|RURAL MUNICIPALITY|MUNICIPALITY|TOWN|CITY|VILLAGE)$/g, (_, t) => {
+    type ||= normalizeMuniType(t);
+    return '';
+  });
+  s = s
+    .replace(/\bMTN\b/g, 'MOUNTAIN')
+    .replace(/\bFRANCOIS\b/g, 'FRANCIS')
+    .replace(/\bSAINTE\b/g, 'STE')
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return { name: s, type };
+}
+
+function normalizeMuniType(value) {
+  const t = String(value || '').toUpperCase().trim();
+  if (t === 'RURAL MUNICIPALITY') return 'RM';
+  return t;
 }
 
 /**

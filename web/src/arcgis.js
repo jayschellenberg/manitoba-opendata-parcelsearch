@@ -641,7 +641,7 @@ let parcelMascIndexPromise = null;
 async function fetchParcelMascIndex() {
   if (parcelMascIndexPromise) return parcelMascIndexPromise;
   parcelMascIndexPromise = (async () => {
-    const cacheKey = 'mb_parcel_masc_index_v2';
+    const cacheKey = 'mb_parcel_masc_index_v3';
     const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
     if (cached) return cached;
     try {
@@ -663,7 +663,7 @@ export async function fetchParcelMascForMuni(muniNameWithTyp) {
   const entry = lookupMuniManifestEntry(idx, muniNameWithTyp, { stripType: false });
   if (!entry) return null;
   const file = entry.file;
-  const cacheKey = `mb_parcel_masc_${file}_v2`;
+  const cacheKey = `mb_parcel_masc_${file}_v3`;
   const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
   try {
@@ -707,12 +707,41 @@ function normalizeMuniLookupKey(name, { stripType = false } = {}) {
 }
 
 function compactMuniLookupKey(name, { stripType = false } = {}) {
-  return normalizeMuniLookupKey(name, { stripType })
+  let type = '';
+  let s = normalizeMuniLookupKey(name, { stripType: false });
+  if (stripType) {
+    s = s.replace(/\s*\([^)]*\)\s*$/, '');
+  } else {
+    const parenthetical = s.match(/\((RM|RURAL MUNICIPALITY|MUNICIPALITY|TOWN|CITY|VILLAGE)\)\s*$/);
+    if (parenthetical) {
+      type = normalizeMuniLookupType(parenthetical[1]);
+      s = s.replace(/\s*\([^)]*\)\s*$/, '');
+    }
+    s = s.replace(
+      /\b(RM|RURAL MUNICIPALITY|MUNICIPALITY|TOWN|CITY|VILLAGE)\s+OF\b/g,
+      (_, t) => {
+        type ||= normalizeMuniLookupType(t);
+        return '';
+      },
+    );
+    s = s.replace(/\s+(RM|RURAL MUNICIPALITY|MUNICIPALITY|TOWN|CITY|VILLAGE)$/g, (_, t) => {
+      type ||= normalizeMuniLookupType(t);
+      return '';
+    });
+  }
+  const compact = s
     .replace(/&/g, ' AND ')
     .replace(/\bMTN\b/g, 'MOUNTAIN')
     .replace(/\bFRANCOIS\b/g, 'FRANCIS')
     .replace(/\bSAINTE\b/g, 'STE')
     .replace(/[^A-Z0-9]+/g, '');
+  return stripType ? compact : `${compact}${type}`;
+}
+
+function normalizeMuniLookupType(value) {
+  const t = String(value || '').toUpperCase().trim();
+  if (t === 'RURAL MUNICIPALITY') return 'RM';
+  return t;
 }
 
 /**
@@ -741,7 +770,7 @@ function compactMuniLookupKey(name, { stripType = false } = {}) {
  * just renders the quarter-section overlay alone.
  */
 export async function fetchMascRiverlots() {
-  const cacheKey = 'mb_masc_riverlots_v1';
+  const cacheKey = 'mb_masc_riverlots_v2';
   const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
   const url = `${import.meta.env?.BASE_URL || '/'}data/masc-riverlots.json`;

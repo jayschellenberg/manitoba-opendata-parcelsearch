@@ -58,3 +58,6 @@ plan*.md
 *-stonebraker.md
 .Rproj.user
 .positai
+
+# RStudio project file — local IDE state, no need to track.
+*.Rproj
