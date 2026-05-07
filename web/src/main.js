@@ -1197,7 +1197,7 @@ const AUX_META = {
                  fetch: () => fetchContaminatedSites(),       setData: (m, fc) => setContamData(m, fc),      setVis: setContamVisible },
   flow:        { btn: () => $flowToggle,        on: 'Traffic Flow', off: 'Traffic Flow', busy: 'Loading…',
                  fetch: () => fetchTrafficFlow(),             setData: (m, fc) => setTrafficFlowData(m, fc), setVis: setTrafficFlowVisible },
-  riskAreas:   { btn: () => $riskAreaToggle,    on: 'Risk Areas', off: 'Risk Areas', busy: 'Loading…',
+  riskAreas:   { btn: () => $riskAreaToggle,    on: 'MASC Risk Areas', off: 'MASC Risk Areas', busy: 'Loading…',
                  fetch: () => fetchMascRiskAreas(),            setData: (m, fc) => setMascRiskAreasData(m, fc), setVis: setMascRiskAreasVisible },
   muniParcels: { btn: () => $muniParcelsToggle, on: 'Roll Layer', off: 'Roll Layer', busy: 'Loading…',
                  fetch: () => fetchAllParcelsInMunicipality($municipality.value),
