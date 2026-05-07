@@ -396,6 +396,39 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
         geometry
       )
     cat("  rated river-lot polygons:", nrow(riverlot_polys), "\n")
+
+    # ALSO write the rated river-lot polygons to a single static file
+    # the frontend can use to render river-lot ratings on the MASC
+    # Rating overlay. The existing per-muni masc/<MUNI>.json shards
+    # only carry quarter-section centroids (built by build_masc_shards.R
+    # from the quarter-section CSV), so river lots paint nothing on
+    # the overlay until this file lands. ~6,700 polygons across the
+    # province; ~2-4 MB minified, gzipped under 1 MB on the wire.
+    masc_riverlots_out <- file.path(
+      source_dir, "web/public/data/masc-riverlots.json"
+    )
+    riverlot_overlay <- rl_polys |>
+      filter(name %in% rl_join$name) |>
+      left_join(rl_join |> select(name, rating, ra, parish_name, parish_code),
+                by = "name") |>
+      transmute(
+        label  = paste0(prefix, "-", lot_type, "-", lot_num),
+        rating = rating,
+        ra     = as.integer(ra),
+        muni   = muni_with_typ,
+        geometry
+      )
+    if (file.exists(masc_riverlots_out)) file.remove(masc_riverlots_out)
+    sf::st_write(
+      riverlot_overlay,
+      masc_riverlots_out,
+      driver        = "GeoJSON",
+      layer_options = c("COORDINATE_PRECISION=5", "RFC7946=YES"),
+      quiet         = TRUE
+    )
+    cat(sprintf("  wrote %s (%.2f MB)\n",
+                masc_riverlots_out,
+                file.info(masc_riverlots_out)$size / 1024 / 1024))
   } else {
     cat("  no river-lot ratings matched — check parish_prefix_overrides\n")
   }
