@@ -230,13 +230,25 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
     paste0(substr(words[1], 1, 1), substr(words[2], 1, 1))
   }
 
-  # Parse the lot number out of "R 1 241 /001 B" — the second integer.
+  parse_riverlot_id <- function(x) {
+    out <- toupper(trimws(sub("^[A-Z]\\s+\\d+\\s+([A-Z0-9]+)\\s*/.*$", "\\1", x)))
+    out[!grepl("^[A-Z0-9]+$", out)] <- NA_character_
+    # KMZ names strip leading zeroes: MASC "001" -> KMZ "1",
+    # MASC "94A" -> KMZ "94A", and lettered lots stay as-is.
+    out <- sub("^0+([0-9])", "\\1", out)
+    out
+  }
+
+  # Parse the lot identifier out of "R 1 241 /001 B" or
+  # "R 1   A /001 V". Most lots are numeric, but some parish lots
+  # are lettered or carry suffixes such as 94A; keep the ID as text
+  # for the KMZ join and use the explicit `label` field downstream.
   rl_csv <- rl_csv |>
     mutate(
       prefix  = vapply(parish_name, parish_to_prefix, character(1)),
-      lot_num = as.integer(sub("^[A-Z]\\s+\\d+\\s+(\\d+).*$", "\\1", land_parcel))
+      lot_id = parse_riverlot_id(land_parcel)
     ) |>
-    filter(!is.na(lot_num))
+    filter(!is.na(lot_id))
 
   # WHITEMOUTH RIVER SETTLEMENT carries the same parish_name for both
   # banks of the river but two parish_codes (K = north, L = south),
@@ -252,7 +264,7 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
   # stores them all under one parish_name (POPLAR POINT, parish_code
   # J), so we don't know upfront which range a given row belongs to.
   # Duplicate every POPLAR POINT row under both prefixes — the
-  # downstream join is on (muni, prefix, lot_num) so a row only
+  # downstream join is on (muni, prefix, lot_id) so a row only
   # matches a KMZ feature with the right prefix AND lot number;
   # extras silently drop out.
   pp_dupes <- rl_csv |>
@@ -281,6 +293,10 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
       # Muni_Name_With_Typ uses the English 'FRANCIS'. Normalize both to
       # FRANCIS so the spatial-tag → Roll_Entry-name mapping works.
       gsub(pattern = "\\bFRANCOIS\\b",       replacement = "FRANCIS") |>
+      # MASC's river-lot scrape uses DESALABERRY; Roll_Entry and the
+      # municipal boundary layer use DE SALABERRY. Normalize before the
+      # river-lot KMZ join so Rat River / St. Malo lots are retained.
+      gsub(pattern = "\\bDESALABERRY\\b",    replacement = "DE SALABERRY") |>
       gsub(pattern = "\\s+",                 replacement = " ") |>
       trimws()
   }
@@ -318,14 +334,15 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
   }
   rl_polys <- sf::st_zm(rl_polys, drop = TRUE, what = "ZM")
 
-  # Parse KMZ label: "NORL241" → prefix="NO", type="RL", lot_num=241.
+  # Parse KMZ label: "NORL241" -> prefix="NO", type="RL", lot_id="241";
+  # lettered and suffix lots such as "RRRLA" / "MARL94A" are valid too.
   m <- regmatches(rl_polys$name,
-                  regexec("^([A-Z]{2,5})(RL|PL|WL|SL|OT)(\\d+)([A-Z]?)$",
+                  regexec("^([A-Z]{2,5})(RL|PL|WL|SL|OT)([0-9]+[A-Z]?|[A-Z])$",
                           toupper(rl_polys$name)))
   rl_polys$prefix   <- vapply(m, function(x) if (length(x) >= 2) x[2] else NA_character_, character(1))
   rl_polys$lot_type <- vapply(m, function(x) if (length(x) >= 3) x[3] else NA_character_, character(1))
-  rl_polys$lot_num  <- as.integer(vapply(m, function(x) if (length(x) >= 4) x[4] else NA_character_, character(1)))
-  rl_polys <- rl_polys[!is.na(rl_polys$prefix) & !is.na(rl_polys$lot_num), ]
+  rl_polys$lot_id   <- vapply(m, function(x) if (length(x) >= 4) x[4] else NA_character_, character(1))
+  rl_polys <- rl_polys[!is.na(rl_polys$prefix) & !is.na(rl_polys$lot_id), ]
 
   # Spatially attach a muni to each KMZ polygon. Earlier versions
   # spatially joined against the parcels FC, which dropped any river
@@ -461,22 +478,57 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
   cat(sprintf("  river-lot polygons with muni assigned: %d / %d\n",
               sum(!is.na(rl_polys$muni_norm)), nrow(rl_polys)))
 
-  # Now do the join: KMZ (muni_norm, prefix, lot_num) ⨝ MASC (muni_norm, prefix, lot_num)
-  rl_join <- rl_polys |>
-    sf::st_drop_geometry() |>
-    select(name, muni_norm, prefix, lot_num) |>
-    inner_join(
-      rl_csv |>
-        select(muni_norm, prefix, lot_num, parish_name, parish_code,
-               rating = soil_rating, ra = risk_area),
-      by = c("muni_norm", "prefix", "lot_num"),
-      relationship = "many-to-many"
+  parcel_norm_to_name <- setNames(parcel_muni_names, parcel_muni_norm)
+  rl_csv_join <- rl_csv |>
+    mutate(
+      rating_muni_norm = muni_norm,
+      rating_muni_with_typ = unname(parcel_norm_to_name[muni_norm])
     ) |>
+    select(
+      rating_muni_norm, rating_muni_with_typ, prefix, lot_id,
+      parish_name, parish_code, rating = soil_rating, ra = risk_area
+    )
+  rl_poly_keys <- rl_polys |>
+    sf::st_drop_geometry() |>
+    select(name, poly_muni_norm = muni_norm, prefix, lot_id)
+
+  # Primary join: KMZ (muni_norm, prefix, lot_id) x MASC (muni_norm, prefix, lot_id)
+  rl_join_primary <- rl_poly_keys |>
+    inner_join(
+      rl_csv_join,
+      by = c("poly_muni_norm" = "rating_muni_norm", "prefix", "lot_id"),
+      relationship = "many-to-many"
+    )
+
+  # Fallback join for enclave/split-muni lots. Example: Rat River lots
+  # 27-31 are spatially majority-tagged to ST PIERRE-JOLYS (VILLAGE),
+  # but MASC publishes their ratings under DESALABERRY. If a KMZ
+  # prefix+lot_id has no same-muni hit but has exactly one MASC source
+  # municipality province-wide, the source is unambiguous enough to use.
+  unique_source_keys <- rl_csv_join |>
+    group_by(prefix, lot_id) |>
+    summarise(source_munis = n_distinct(rating_muni_norm), .groups = "drop") |>
+    filter(source_munis == 1L) |>
+    select(prefix, lot_id)
+  rl_join_fallback <- rl_poly_keys |>
+    anti_join(rl_join_primary |> select(name) |> distinct(), by = "name") |>
+    inner_join(
+      rl_csv_join |> inner_join(unique_source_keys, by = c("prefix", "lot_id")),
+      by = c("prefix", "lot_id"),
+      relationship = "many-to-many"
+    )
+
+  rl_join <- bind_rows(
+    rl_join_primary |> mutate(join_mode = "muni"),
+    rl_join_fallback |> mutate(join_mode = "prefix-fallback")
+  ) |>
     distinct(name, .keep_all = TRUE)   # keep one rating per KMZ feature
 
   cat("  KMZ river-lot polygons:", nrow(rl_polys), "\n")
   cat("  MASC river-lot rows:   ", nrow(rl_csv), "\n")
-  cat("  KMZ ⨝ MASC matches:    ", nrow(rl_join), "\n")
+  cat("  KMZ x MASC primary matches:  ", nrow(rl_join_primary), "\n")
+  cat("  KMZ x MASC fallback matches: ", nrow(rl_join_fallback), "\n")
+  cat("  KMZ x MASC total matches:    ", nrow(rl_join), "\n")
 
   # Diagnostic: list (muni, prefix) combos that exist in the KMZ for
   # munis where MASC does have river-lot data, but produced zero
@@ -508,7 +560,7 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
 
   # Build sf object: KMZ geometry + MASC rating columns, in the same
   # column shape as the quarter-section masc_sf so we can rbind later.
-  # rl_polys already carries `prefix` and `lot_num`; drop them out of
+  # rl_polys already carries `prefix` and `lot_id`; drop them out of
   # the rl_join select so the left_join doesn't suffix the duplicates
   # (prefix.x / prefix.y) and break the transmute below.
   if (nrow(rl_join) > 0) {
@@ -520,12 +572,12 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
         q      = paste0(prefix, "RL"),                    # mimic the quarter "q" column
         s      = NA_integer_,
         t      = NA_integer_,
-        r      = lot_num,
+        r      = suppressWarnings(as.integer(lot_id)),
         d      = parish_code,
         rating = rating,
         ra     = as.integer(ra),
         source = "riverlot",
-        label  = paste0(prefix, "-", lot_type, "-", lot_num),
+        label  = paste0(prefix, "-", lot_type, "-", lot_id),
         geometry
       )
     cat("  rated river-lot polygons:", nrow(riverlot_polys), "\n")
@@ -542,13 +594,15 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
     )
     riverlot_overlay <- rl_polys |>
       filter(name %in% rl_join$name) |>
-      left_join(rl_join |> select(name, rating, ra, parish_name, parish_code),
+      left_join(
+        rl_join |> select(name, rating, ra, parish_name, parish_code, rating_muni_with_typ),
                 by = "name") |>
       transmute(
-        label  = paste0(prefix, "-", lot_type, "-", lot_num),
+        label  = paste0(prefix, "-", lot_type, "-", lot_id),
         rating = rating,
         ra     = as.integer(ra),
         muni   = muni_with_typ,
+        rating_muni = coalesce(rating_muni_with_typ, muni_with_typ),
         source = "riverlot",
         geometry
       )
