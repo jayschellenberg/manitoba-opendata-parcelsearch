@@ -1338,8 +1338,16 @@ async function toggleMascOverlay() {
         fetchMascRiverlots(),
       ]);
       const hasQuarters = !!(rows && rows.length);
+      // Tolerant muni match: the dropdown's value comes from ROLL_ENTRY's
+      // Muni_Name_With_Typ while masc-riverlots.json's `muni` field
+      // sometimes carries the MUNICIPALITY-layer name, which differs by
+      // punctuation (period after ST/STE), language (FRANCOIS vs FRANCIS
+      // for St François Xavier), and Town-vs-RM split for enclave munis
+      // like Ste Anne. Normalize both sides before comparing so the
+      // overlay still paints river lots even when the names disagree
+      // on those details.
       const muniRiverlots = (riverlotsAll?.features || []).filter(
-        (f) => f?.properties?.muni === muni,
+        (f) => normalizeMuniMatch(f?.properties?.muni) === normalizeMuniMatch(muni),
       );
       if (!hasQuarters && muniRiverlots.length === 0) {
         $mascToggle.classList.remove('active');
@@ -1902,6 +1910,22 @@ function bboxOfFeature(feature) {
  *  source when the user is focused on one muni. */
 function bboxesIntersect(a, b) {
   return !(a[2] < b[0] || b[2] < a[0] || a[3] < b[1] || b[3] < a[1]);
+}
+
+/** Aggressively-normalized muni key for cross-source matching. ROLL_ENTRY,
+ *  Manitoba's MUNICIPALITY layer, and the MASC scrape all spell the same
+ *  muni differently — periods after ST/STE, language (Francois vs Francis),
+ *  Town/RM/Municipality suffix variants. Strip them all to the bare name
+ *  letters so the overlay's per-muni filter works regardless of which
+ *  source produced the property. */
+function normalizeMuniMatch(s) {
+  if (!s) return '';
+  let v = String(s).toUpperCase().replace(/\./g, '').replace(/_/g, ' ');
+  v = v.replace(/\s*\([^)]*\)\s*$/, '');
+  v = v.replace(/\b(RM|MUNICIPALITY|TOWN|CITY|VILLAGE)\s+OF\b/g, '');
+  v = v.replace(/\s+(RM|MUNICIPALITY|TOWN|CITY|VILLAGE)$/g, '');
+  v = v.replace(/\bFRANCOIS\b/g, 'FRANCIS');
+  return v.replace(/\s+/g, ' ').trim();
 }
 
 /**
