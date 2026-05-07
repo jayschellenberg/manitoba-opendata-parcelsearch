@@ -1248,7 +1248,7 @@ function resetMascAndGridToggles() {
     if ($mascToggle.classList.contains('active')) {
       $mascToggle.classList.remove('active');
       $mascToggle.setAttribute('aria-pressed', 'false');
-      $mascToggle.textContent = 'MASC Soil';
+      $mascToggle.textContent = 'MASC Rating';
       mapReady.then(() => {
         setMascVisible(map, false);
         if ($mascLegend) $mascLegend.hidden = true;
@@ -1296,7 +1296,7 @@ async function toggleMascOverlay() {
   await mapReady;
 
   if (!visible) {
-    $mascToggle.textContent = 'MASC Soil';
+    $mascToggle.textContent = 'MASC Rating';
     setMascVisible(map, false);
     if ($mascLegend) $mascLegend.hidden = true;
     return;
@@ -1311,7 +1311,7 @@ async function toggleMascOverlay() {
         $mascToggle.classList.remove('active');
         $mascToggle.setAttribute('aria-pressed', 'false');
         $mascToggle.disabled = false;
-        $mascToggle.textContent = 'MASC Soil';
+        $mascToggle.textContent = 'MASC Rating';
         setCount(`No MASC soil ratings on file for ${muni}.`);
         return;
       }
@@ -1322,13 +1322,13 @@ async function toggleMascOverlay() {
       $mascToggle.classList.remove('active');
       $mascToggle.setAttribute('aria-pressed', 'false');
       $mascToggle.disabled = false;
-      $mascToggle.textContent = 'MASC Soil';
+      $mascToggle.textContent = 'MASC Rating';
       setCount(`Failed to load MASC soil ratings: ${err.message}`);
       return;
     }
     $mascToggle.disabled = false;
   }
-  $mascToggle.textContent = 'MASC Soil';
+  $mascToggle.textContent = 'MASC Rating';
   setMascVisible(map, true);
   if ($mascLegend) $mascLegend.hidden = false;
 }
