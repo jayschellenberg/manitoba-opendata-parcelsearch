@@ -29,6 +29,7 @@ import {
   fetchAllParcelsInMunicipality,
   fetchMunicipalBoundaries,
   fetchMascRatingsForMuni,
+  fetchMascRiskAreas,
   fetchSurveyGridForMuni,
   fetchProvinceSectionGrid,
   fetchRiverLots,
@@ -59,6 +60,8 @@ import {
   setMuniBoundariesData,
   setMascData,
   setMascVisible,
+  setMascRiskAreasData,
+  setMascRiskAreasVisible,
   setSurveyGridData,
   setSurveyGridVisible,
   flyToFeature,
@@ -71,6 +74,7 @@ import {
   searchLegalIndex,
 } from './legalIndex.js';
 import turfArea from '@turf/area';
+import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
 
 const $address       = document.getElementById('address');
 const $municipality  = document.getElementById('municipality');
@@ -99,6 +103,7 @@ const $contamToggle  = document.getElementById('contam-toggle');
 const $flowToggle    = document.getElementById('flow-toggle');
 const $muniParcelsToggle = document.getElementById('muni-parcels-toggle');
 const $mascToggle    = document.getElementById('masc-toggle');
+const $riskAreaToggle = document.getElementById('riskarea-toggle');
 const $gridToggle    = document.getElementById('grid-toggle');
 const $count         = document.getElementById('count');
 const $tbody         = document.querySelector('#results tbody');
@@ -517,6 +522,7 @@ $zoningToggle.addEventListener('click', () => toggleOverlay('zoning'));
 $devplanToggle.addEventListener('click', () => toggleOverlay('devplan'));
 $contamToggle.addEventListener('click', () => toggleAuxOverlay('contam'));
 $flowToggle.addEventListener('click', () => toggleAuxOverlay('flow'));
+$riskAreaToggle.addEventListener('click', () => toggleAuxOverlay('riskAreas'));
 
 const $staticMapBtn     = document.getElementById('static-map-btn');
 const $staticMapOutput  = document.getElementById('static-map-output');
@@ -896,10 +902,16 @@ async function runSearch() {
     // Spatial enrichment in parallel — both overlay layers from one pass.
     let zoningFc = EMPTY_FC;
     let devPlanFc = EMPTY_FC;
+    let riskAreaFc = EMPTY_FC;
+    const riskAreaPromise = fetchMascRiskAreas().catch((err) => {
+      console.warn('official MASC risk-area fetch failed (non-fatal):', err);
+      return EMPTY_FC;
+    });
     try {
-      [zoningFc, devPlanFc] = await Promise.all([
+      [zoningFc, devPlanFc, riskAreaFc] = await Promise.all([
         fetchZoningOverlap(parcelFc, { municipality: inputs.municipality }),
         fetchDevPlanOverlap(parcelFc, { municipality: inputs.municipality }),
+        riskAreaPromise,
       ]);
     } catch (err) {
       console.warn('overlay fetch failed', err);
@@ -940,6 +952,8 @@ async function runSearch() {
       if (z) row.parcel.properties._zoneCode = z.ZONE || z.ZONE_NAME || null;
     }
 
+    stampOfficialRiskAreas(rows, riskAreaFc);
+
     // Attach the pre-baked dominant MASC soil rating for each parcel
     // (per-muni shard built by r/build_parcel_masc.R). Lazy: skipped
     // when the muni isn't in the index (urban-only munis don't get a
@@ -954,7 +968,6 @@ async function runSearch() {
             const hit  = roll ? dict[roll] : null;
             if (hit) {
               row.parcel.properties._soilRating = hit.rating || null;
-              row.parcel.properties._soilRiskArea = (hit.ra != null) ? hit.ra : null;
               row.parcel.properties._soilQuarter = hit.q
                 ? `${hit.q} ${hit.s}-${hit.t}-${hit.r}${hit.d || ''}`
                 : null;
@@ -1164,17 +1177,17 @@ async function refreshOverlayLayersForMuniChange() {
 /**
  * Toggle one of the province-wide auxiliary overlays:
  *   contam  — Manitoba Contaminated Sites Registry (CSV → coloured points)
- *   traffic — MHTIS station locations (FeatureServer points)
  *   flow    — MHTIS Traffic Flow 2019 (FeatureServer polylines, AADT-coloured)
+ *   riskAreas — official MASC crop-insurance risk-area polygons
  *
- * All three are lazily fetched on first activation and cached in
- * sessionStorage. Loading the flow layer also opportunistically joins
+ * These are lazily fetched on first activation and cached through the
+ * shared localStorage cache. Loading the flow layer also opportunistically joins
  * AADT onto the already-loaded stations so the station popup can show
  * the segment AADT inline (and vice-versa: loading stations after flow
  * triggers the same join). Failures are non-fatal — the button reverts.
  */
-const auxLoaded = { contam: false, flow: false, muniParcels: false };
-const auxData   = { contam: null, flow: null, muniParcels: null };
+const auxLoaded = { contam: false, flow: false, riskAreas: false, muniParcels: false };
+const auxData   = { contam: null, flow: null, riskAreas: null, muniParcels: null };
 // Tracks which muni's parcels are currently in the muni-parcels source so
 // we know whether to refetch when the user switches munis.
 let muniParcelsLoadedFor = null;
@@ -1184,6 +1197,8 @@ const AUX_META = {
                  fetch: () => fetchContaminatedSites(),       setData: (m, fc) => setContamData(m, fc),      setVis: setContamVisible },
   flow:        { btn: () => $flowToggle,        on: 'Traffic Flow', off: 'Traffic Flow', busy: 'Loading…',
                  fetch: () => fetchTrafficFlow(),             setData: (m, fc) => setTrafficFlowData(m, fc), setVis: setTrafficFlowVisible },
+  riskAreas:   { btn: () => $riskAreaToggle,    on: 'Risk Areas', off: 'Risk Areas', busy: 'Loading…',
+                 fetch: () => fetchMascRiskAreas(),            setData: (m, fc) => setMascRiskAreasData(m, fc), setVis: setMascRiskAreasVisible },
   muniParcels: { btn: () => $muniParcelsToggle, on: 'Roll Layer', off: 'Roll Layer', busy: 'Loading…',
                  fetch: () => fetchAllParcelsInMunicipality($municipality.value),
                  setData: (m, fc) => setMuniParcelsData(m, fc), setVis: setMuniParcelsVisible },
@@ -1576,6 +1591,47 @@ function soilCell(p) {
   if (p._soilQuarter) cell.title = `Source: ${p._soilQuarter}`;
   cell.appendChild(swatch);
   return cell;
+}
+
+/**
+ * Stamp each parcel with the official MASC Risk_Area polygon containing
+ * the parcel's bbox-centre point. Risk areas are broad crop-insurance
+ * polygons, so a representative point is sufficient and avoids running
+ * expensive parcel x province-boundary polygon intersections in the
+ * search path.
+ */
+function stampOfficialRiskAreas(rows, riskAreaFc) {
+  const features = (riskAreaFc?.features || [])
+    .map((feature) => {
+      const risk = String(feature.properties?.Risk_Area ?? '').trim();
+      if (!risk) return null;
+      try {
+        return { feature, risk, bbox: bboxOfFeature(feature) };
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+  if (features.length === 0) return;
+
+  for (const row of rows || []) {
+    const parcel = row?.parcel;
+    if (!parcel?.geometry) continue;
+    try {
+      const [minLon, minLat, maxLon, maxLat] = bboxOfFeature(parcel);
+      const point = [(minLon + maxLon) / 2, (minLat + maxLat) / 2];
+      if (!Number.isFinite(point[0]) || !Number.isFinite(point[1])) continue;
+      const hit = features.find(({ feature, bbox }) => (
+        point[0] >= bbox[0] && point[0] <= bbox[2] &&
+        point[1] >= bbox[1] && point[1] <= bbox[3] &&
+        booleanPointInPolygon(point, feature)
+      ));
+      if (hit) parcel.properties._soilRiskArea = hit.risk;
+    } catch {
+      // Leave the cell blank for malformed geometries; risk areas should
+      // never make an otherwise-good parcel row fail to render.
+    }
+  }
 }
 
 function soilColor(code) {

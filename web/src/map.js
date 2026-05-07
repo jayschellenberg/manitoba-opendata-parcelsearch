@@ -556,32 +556,55 @@ export function initMap(container, { onFeatureClick } = {}) {
           'fill-outline-color': 'rgba(0, 0, 0, 0.3)',
         },
       });
+
+      // Official MASC Risk Areas. Separate from the soil-rating quarters:
+      // Risk_Area comes from the Manitoba Maps MASC_Risk_Areas polygon
+      // layer, not from the compact `ra` field in the soil CSV shard.
+      map.addSource('masc-risk-areas', { type: 'geojson', data: emptyFc() });
       map.addLayer({
-        id: 'masc-label',
-        type: 'symbol',
-        source: 'masc',
-        minzoom: 13,
-        layout: {
-          visibility: 'none',
-          'text-field': ['get', 'rating'],
-          'text-font': ['Open Sans Semibold'],
-          'text-size': [
-            'interpolate', ['linear'], ['zoom'],
-            13, 11,
-            16, 14,
-            18, 16,
-          ],
-          'text-allow-overlap': true,
-          'text-ignore-placement': true,
-          'symbol-placement': 'point',
-        },
+        id: 'masc-risk-area-fill',
+        type: 'fill',
+        source: 'masc-risk-areas',
+        layout: { visibility: 'none' },
         paint: {
-          'text-color': '#1a1a1a',
-          'text-halo-color': '#ffffff',
-          'text-halo-width': 1.5,
+          'fill-color': [
+            'match', ['get', 'Risk_Area'],
+            '1', '#8dd3c7',
+            '2', '#ffffb3',
+            '3', '#bebada',
+            '4', '#fb8072',
+            '5', '#80b1d3',
+            '6', '#fdb462',
+            '7', '#b3de69',
+            '8', '#fccde5',
+            '9', '#d9d9d9',
+            '10', '#bc80bd',
+            '11', '#ccebc5',
+            '12', '#ffed6f',
+            '14', '#9ecae1',
+            '15', '#fdae6b',
+            '16', '#a1d99b',
+            '#dddddd',
+          ],
+          'fill-opacity': 0.08,
         },
       });
-
+      map.addLayer({
+        id: 'masc-risk-area-line',
+        type: 'line',
+        source: 'masc-risk-areas',
+        layout: { visibility: 'none', 'line-join': 'round' },
+        paint: {
+          'line-color': '#111827',
+          'line-width': [
+            'interpolate', ['linear'], ['zoom'],
+            5, 0.8,
+            9, 1.4,
+            13, 2.2,
+          ],
+          'line-opacity': 0.75,
+        },
+      });
       // Section-township grid — line layer derived from the
       // MB_LegalDesc point centroids by aggregating quarters into
       // section bounding boxes (see masc.js sectionLinesFromRows).
@@ -745,6 +768,59 @@ export function initMap(container, { onFeatureClick } = {}) {
         source: 'parcels',
         paint: { 'line-color': '#690000', 'line-width': 2.5 },
       });
+      // MASC label overlay is intentionally above the parcel/roll-fabric
+      // layers so the rating letter stays visible when the user turns
+      // MASC on after a parcel search.
+      map.addLayer({
+        id: 'masc-label',
+        type: 'symbol',
+        source: 'masc',
+        minzoom: 13,
+        layout: {
+          visibility: 'none',
+          'text-field': ['coalesce', ['get', 'rating'], ''],
+          'text-font': ['Open Sans Semibold'],
+          'text-size': [
+            'interpolate', ['linear'], ['zoom'],
+            13, 12,
+            16, 15,
+            18, 17,
+          ],
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+          'symbol-placement': 'point',
+        },
+        paint: {
+          'text-color': '#1a1a1a',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.5,
+        },
+      });
+      map.addLayer({
+        id: 'masc-risk-area-label',
+        type: 'symbol',
+        source: 'masc-risk-areas',
+        minzoom: 6,
+        layout: {
+          visibility: 'none',
+          'text-field': ['concat', 'Risk ', ['to-string', ['get', 'Risk_Area']]],
+          'text-font': ['Open Sans Semibold'],
+          'text-size': [
+            'interpolate', ['linear'], ['zoom'],
+            6, 11,
+            10, 14,
+            14, 18,
+          ],
+          'text-allow-overlap': false,
+          'text-ignore-placement': true,
+          'symbol-placement': 'point',
+        },
+        paint: {
+          'text-color': '#111827',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.8,
+        },
+      });
 
       // Hover popup — works on every layer that's currently visible. Text
       // composed from whichever layer was hit (parcels take priority).
@@ -853,6 +929,21 @@ export function initMap(container, { onFeatureClick } = {}) {
         }
       });
       map.on('mouseleave', 'contam-circle', () => { map.getCanvas().style.cursor = ''; });
+
+      // Click an official MASC risk-area polygon → small popup with the
+      // Risk_Area number from Manitoba Maps.
+      const riskAreaPopup = new maplibregl.Popup({ closeButton: true });
+      map.on('click', 'masc-risk-area-fill', (e) => {
+        const p = e.features?.[0]?.properties;
+        if (!p) return;
+        riskAreaPopup.setLngLat(e.lngLat).setHTML(riskAreaHtml(p)).addTo(map);
+      });
+      map.on('mouseenter', 'masc-risk-area-fill', () => {
+        if (map.getLayoutProperty('masc-risk-area-fill', 'visibility') === 'visible') {
+          map.getCanvas().style.cursor = 'pointer';
+        }
+      });
+      map.on('mouseleave', 'masc-risk-area-fill', () => { map.getCanvas().style.cursor = ''; });
 
       // Click a traffic-count station → popup with station / highway /
       // location and the AADT (when the Traffic Flow layer has been loaded
@@ -1010,6 +1101,17 @@ export function setMascVisible(map, visible) {
   }
 }
 
+export function setMascRiskAreasData(map, fc) {
+  const src = map.getSource('masc-risk-areas');
+  if (src) src.setData(fc);
+}
+export function setMascRiskAreasVisible(map, visible) {
+  const v = visible ? 'visible' : 'none';
+  for (const id of ['masc-risk-area-fill', 'masc-risk-area-line', 'masc-risk-area-label']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
+  }
+}
+
 export function setSurveyGridData(map, fc) {
   const src = map.getSource('survey-grid');
   if (src) src.setData(fc);
@@ -1089,6 +1191,11 @@ function contamHtml(p) {
     lines.push(`<a href="${escapeHtml(safeLink)}" target="_blank" rel="noreferrer">Registry page →</a>`);
   }
   return `<div style="max-width:260px;line-height:1.4">${lines.join('<br>')}</div>`;
+}
+
+function riskAreaHtml(p) {
+  const risk = String(p.Risk_Area ?? '').trim();
+  return `<div style="max-width:220px;line-height:1.4"><strong>MASC Risk Area ${escapeHtml(risk || 'N/A')}</strong><br><em>Official Manitoba Maps boundary</em></div>`;
 }
 
 function trafficHtml(p) {
