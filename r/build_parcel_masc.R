@@ -188,24 +188,36 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
     "PASQUIA SETTLEMENT"           = "PQ",  # PA reserved for ST. PAUL
     "BIRCH RIVER SETTLEMENT NORTH" = "BN",
     "BIRCH RIVER SETTLEMENT SOUTH" = "BS",
-    "WHITEMOUTH RIVER SETTLEMENT"  = "WS",  # ambiguous K/L codes; both → WS
     "BAIE ST. PAUL"                = "BP",
     "MANITOBA HOUSE SETTLEMENT (1)" = "MH",
     "MANITOBA HOUSE SETTLEMENT (2)" = "MH",
-    "MANITOBA HOUSE SETTLEMENT (3)" = "MH"
+    "MANITOBA HOUSE SETTLEMENT (3)" = "MH",
+    # Heuristic mismatches against the KMZ encoding:
+    "ST. ANDREWS"                  = "AD",  # heuristic would give AN (collides with STE. ANNE)
+    "POPLAR POINT"                 = "PO",  # heuristic would give PP
+    "CARROT RIVER SETTLEMENT"      = "CA"   # heuristic would give CR
+    # WHITEMOUTH RIVER SETTLEMENT is split K/L for north/south; handled
+    # row-by-row below since the parish_name is identical for both.
   )
   parish_to_prefix <- function(name) {
     if (name %in% names(parish_prefix_overrides)) {
       return(unname(parish_prefix_overrides[name]))
     }
     s <- toupper(name)
-    s <- gsub("\\bSTE?\\.?\\b",            "", s)  # strip ST., STE. anywhere
-    s <- gsub("\\s+SETTLEMENT.*$",         "", s)
-    s <- gsub("\\s+INDIAN\\s+RESERVE.*$",  "", s)
-    s <- gsub("\\([^)]*\\)",               "", s)
+    # Strip "ST." / "STE." prefix words. The earlier regex
+    # `\bSTE?\.?\b` failed because the trailing word boundary doesn't
+    # exist between ".  " (period and space — both non-word chars), so
+    # the period stayed behind and broke the first-letter heuristic
+    # ("ST. NORBERT" → ". NORBERT" → ".N"). Match optional period then
+    # whitespace explicitly instead.
+    s <- gsub("(^|\\s)STE?\\.?\\s+",       "\\1", s)  # leading or mid-string
+    s <- gsub("\\s+SETTLEMENT.*$",         "",    s)
+    s <- gsub("\\s+INDIAN\\s+RESERVE.*$",  "",    s)
+    s <- gsub("\\([^)]*\\)",               "",    s)
     s <- gsub("\\s+", " ", trimws(s))
     words <- strsplit(s, "\\s+")[[1]]
-    if (length(words) <= 1) return(substr(words[1], 1, 2))
+    if (length(words) == 0L) return(NA_character_)
+    if (length(words) == 1L) return(substr(words[1], 1, 2))
     paste0(substr(words[1], 1, 1), substr(words[2], 1, 1))
   }
 
@@ -216,6 +228,15 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
       lot_num = as.integer(sub("^[A-Z]\\s+\\d+\\s+(\\d+).*$", "\\1", land_parcel))
     ) |>
     filter(!is.na(lot_num))
+
+  # WHITEMOUTH RIVER SETTLEMENT carries the same parish_name for both
+  # banks of the river but two parish_codes (K = north, L = south),
+  # while the KMZ uses two distinct prefixes (WN / WS). Route per-row
+  # via parish_code so each set lines up with its KMZ counterpart.
+  rl_csv$prefix[rl_csv$parish_name == "WHITEMOUTH RIVER SETTLEMENT" &
+                rl_csv$parish_code == "K"] <- "WN"
+  rl_csv$prefix[rl_csv$parish_name == "WHITEMOUTH RIVER SETTLEMENT" &
+                rl_csv$parish_code == "L"] <- "WS"
 
   # Normalize muni names so the join with KMZ-derived muni keys works
   # regardless of which source uses (RM)/(MUNICIPALITY)/etc. Both sides
