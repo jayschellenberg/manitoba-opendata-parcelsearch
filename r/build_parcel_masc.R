@@ -205,6 +205,12 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
       return(unname(parish_prefix_overrides[name]))
     }
     s <- toupper(name)
+    # MASC sometimes ships parish names with no space after "ST." —
+    # e.g. "ST.PAUL" (West St. Paul muni). The heuristic below matches
+    # "STE?\.?\s+" (word + optional period + REQUIRED whitespace), so
+    # without the space the strip silently fails and the heuristic
+    # produces "ST" instead of "PA". Insert the missing space first.
+    s <- gsub("\\bSTE?\\.([A-Z])", "ST. \\1", s)
     # Strip "ST." / "STE." prefix words. The earlier regex
     # `\bSTE?\.?\b` failed because the trailing word boundary doesn't
     # exist between ".  " (period and space — both non-word chars), so
