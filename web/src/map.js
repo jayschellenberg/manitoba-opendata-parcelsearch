@@ -23,7 +23,7 @@ import bbox from '@turf/bbox';
 // happens in this band; the user can scroll/zoom out to reach the
 // northern LGDs when needed.
 const MB_CENTER = [-98.0, 50.3];
-const MB_ZOOM = 6;
+const MB_ZOOM = 7;
 
 /** Build a legend descriptor [{ label, color }] from a flat MapLibre
  *  match-expression palette ([key, color, key, color, ...]). De-dupes
