@@ -310,25 +310,37 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
   rl_polys$lot_num  <- as.integer(vapply(m, function(x) if (length(x) >= 4) x[4] else NA_character_, character(1)))
   rl_polys <- rl_polys[!is.na(rl_polys$prefix) & !is.na(rl_polys$lot_num), ]
 
-  # Spatially attach a muni to each KMZ polygon by intersecting its
-  # centroid with the parcels FC's Muni_Name_With_Typ. This is the
-  # cheapest reliable way to know which muni a given river lot is
-  # in; KMZ doesn't tell us directly. UTM-project both sides so
-  # st_intersects is fast.
+  # Spatially attach a muni to each KMZ polygon. Earlier versions
+  # used the polygon's centroid, which dropped river lots whose
+  # geometric centre fell on a road, in water, or in any sliver not
+  # covered by a current ROLL_ENTRY parcel — including ~788 PERL
+  # (Parish of St. Peter) features in St. Andrews / St. Clements.
+  # Switching to a polygon-level intersect is more permissive: any
+  # KMZ polygon that overlaps any parcel picks up that parcel's muni.
+  # Slower per-feature but the dataset is small (~7k features).
   cat("Tagging river-lot polygons with muni ...\n")
-  rl_polys_utm  <- sf::st_transform(rl_polys, utm14)
-  rl_centroids  <- suppressWarnings(sf::st_centroid(rl_polys_utm))
+  rl_polys_utm <- sf::st_transform(rl_polys, utm14)
 
   # Quick lookup: build a parcels muni-tag layer with just (muni, geom).
   parcels_muni_tag_utm <- sf::st_transform(
     parcels |> select(Muni_Name_With_Typ), utm14
   )
-  hits <- sf::st_intersects(rl_centroids, parcels_muni_tag_utm)
+  hits <- sf::st_intersects(rl_polys_utm, parcels_muni_tag_utm)
   rl_polys$muni_with_typ <- vapply(hits, function(idx) {
     if (length(idx) == 0L) return(NA_character_)
-    parcels_muni_tag_utm$Muni_Name_With_Typ[idx[1]]
+    # Pick the most common Muni_Name_With_Typ across all overlapping
+    # parcels — defends against river lots that straddle a muni
+    # boundary (a single parcel-overlap could be misleading; the
+    # majority vote tracks the muni the lot actually sits in).
+    munis <- parcels_muni_tag_utm$Muni_Name_With_Typ[idx]
+    munis <- munis[!is.na(munis)]
+    if (length(munis) == 0L) return(NA_character_)
+    tab <- table(munis)
+    names(tab)[which.max(tab)]
   }, character(1))
   rl_polys$muni_norm <- norm_muni(rl_polys$muni_with_typ)
+  cat(sprintf("  river-lot polygons with muni assigned: %d / %d\n",
+              sum(!is.na(rl_polys$muni_norm)), nrow(rl_polys)))
 
   # Now do the join: KMZ (muni_norm, prefix, lot_num) ⨝ MASC (muni_norm, prefix, lot_num)
   rl_join <- rl_polys |>
