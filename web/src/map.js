@@ -823,28 +823,33 @@ export function initMap(container, { onFeatureClick } = {}) {
         paint: {
           'line-color': '#1d4ed8',
           'line-width': 0.9,
-          'line-opacity': 0.9,
+          // Toned down from 0.9 so the muni-wide parcel fabric reads
+          // as supporting context without competing with overlays
+          // (zoning, MASC, CLI) painted on top.
+          'line-opacity': 0.55,
         },
       });
       // Roll-number labels at each parcel's centroid. Polygon symbol
       // placement uses the polygon's centroid by default (MapLibre falls
       // back to the largest interior anchor point if the centroid is
-      // outside the geometry). minzoom 14 keeps the labels from piling
-      // on each other at town- or province-wide views; at street-level
-      // zoom the parcels are large enough to host the text. White halo
-      // keeps it legible against either basemap or the parcels' own
-      // light-blue fill.
+      // outside the geometry). minzoom 13 keeps the labels from piling
+      // on each other at province-wide views while still surfacing roll
+      // numbers one step further out than before — appraisers comparing
+      // a few neighbouring parcels at zoom 13 can read the rolls without
+      // needing to zoom in another step. White halo keeps it legible
+      // against either basemap or the parcels' own light-blue fill.
       map.addLayer({
         id: 'muni-parcels-label',
         type: 'symbol',
         source: 'muni-parcels',
-        minzoom: 14,
+        minzoom: 13,
         layout: {
           visibility: 'none',
           'text-field': ['coalesce', ['get', 'Roll_No_Txt'], ''],
           'text-font': ['Open Sans Semibold'],
           'text-size': [
             'interpolate', ['linear'], ['zoom'],
+            13, 8,
             14, 9,
             17, 11,
             19, 13,
@@ -939,6 +944,15 @@ export function initMap(container, { onFeatureClick } = {}) {
           'text-halo-width': 1.8,
         },
       });
+
+      // Section-township grid labels always render on top of every
+      // other overlay (parcels, MASC, CLI, etc). Layers in MapLibre
+      // are stacked in addLayer() order, so to keep the grid label
+      // dominant we re-anchor it to the top once every other layer
+      // has been registered. The line and river-lot strokes stay
+      // where they are below the parcel highlight so the search
+      // result red still reads on top of the dashed grid.
+      if (map.getLayer('survey-grid-label')) map.moveLayer('survey-grid-label');
 
       // Hover popup — works on every layer that's currently visible. Text
       // composed from whichever layer was hit (parcels take priority).
