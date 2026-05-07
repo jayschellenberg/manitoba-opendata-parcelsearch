@@ -401,17 +401,28 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
   # majority vote here translates to "biggest overlap area" since
   # adjacent parcels in one muni share that muni.
   hits <- sf::st_intersects(rl_polys_utm, bounds_utm)
-  rl_polys$muni_with_typ <- vapply(hits, function(idx) {
+  rl_polys$muni_with_typ <- vapply(seq_along(hits), function(k) {
+    idx <- hits[[k]]
     if (length(idx) == 0L) return(NA_character_)
     munis <- bounds_utm$MUNI_LIST_NAME_WITH_TYPE[idx]
-    munis <- munis[!is.na(munis)]
+    keep  <- !is.na(munis)
+    idx <- idx[keep]; munis <- munis[keep]
     if (length(munis) == 0L) return(NA_character_)
-    tab <- table(munis)
-    boundary_pick <- names(tab)[which.max(tab)]
-    # Translate to the Roll_Entry name format the downstream join +
-    # frontend filter both expect. Falls back to the boundary name if
-    # there's no Roll_Entry counterpart (fringe LGDs, Indigenous
-    # community territories not in ROLL_ENTRY).
+    # Area-weighted vote: for river lots that span a muni boundary
+    # (especially common around small enclave Towns surrounded by an
+    # RM — Ste Anne, Steinbach, Stonewall, etc.), pick the muni that
+    # contains the LARGER share of the polygon, not just the muni
+    # with more boundary fragments overlapping. Single-overlap polygons
+    # (the common case) skip the area calc entirely.
+    boundary_pick <- if (length(idx) == 1L) {
+      munis[1]
+    } else {
+      areas <- vapply(seq_along(idx), function(j) {
+        ovlp <- sf::st_intersection(rl_polys_utm[k, ], bounds_utm[idx[j], ])
+        if (nrow(ovlp) == 0L) 0 else sum(as.numeric(sf::st_area(ovlp)))
+      }, numeric(1))
+      munis[which.max(areas)]
+    }
     parcel_pick <- boundary_to_parcel[boundary_pick]
     if (is.na(parcel_pick)) boundary_pick else unname(parcel_pick)
   }, character(1))
