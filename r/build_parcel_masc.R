@@ -401,6 +401,17 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
   rl_polys_utm  <- sf::st_transform(rl_polys, utm14)
   bounds_utm    <- sf::st_transform(muni_bounds, utm14)
 
+  # Repair invalid geometries on both sides. Some KMZ polygons ship
+  # with self-touching rings, and Manitoba's MUNICIPALITY layer has
+  # at least one polygon that triggers GEOS's "side location conflict"
+  # check. MakeValid decomposes those into clean geometry; the
+  # collection-extract keeps just the polygon parts since the
+  # area-weighted intersect only cares about polygon-vs-polygon area.
+  rl_polys_utm <- sf::st_make_valid(rl_polys_utm)
+  rl_polys_utm <- sf::st_collection_extract(rl_polys_utm, "POLYGON", warn = FALSE)
+  bounds_utm   <- sf::st_make_valid(bounds_utm)
+  bounds_utm   <- sf::st_collection_extract(bounds_utm, "POLYGON", warn = FALSE)
+
   # Use polygon-to-polygon intersect against muni boundaries. Any KMZ
   # polygon that overlaps any muni boundary gets tagged. Lots that
   # span a muni line tag with the muni containing the largest share —
@@ -423,11 +434,23 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
     boundary_pick <- if (length(idx) == 1L) {
       munis[1]
     } else {
+      # Wrap each pair-wise intersect in tryCatch — even after
+      # st_make_valid, the occasional pair still trips a GEOS topology
+      # error and we'd rather skip that pair than kill the whole run.
       areas <- vapply(seq_along(idx), function(j) {
-        ovlp <- sf::st_intersection(rl_polys_utm[k, ], bounds_utm[idx[j], ])
-        if (nrow(ovlp) == 0L) 0 else sum(as.numeric(sf::st_area(ovlp)))
+        tryCatch({
+          ovlp <- sf::st_intersection(rl_polys_utm[k, ], bounds_utm[idx[j], ])
+          if (nrow(ovlp) == 0L) 0 else sum(as.numeric(sf::st_area(ovlp)))
+        }, error = function(e) 0)
       }, numeric(1))
-      munis[which.max(areas)]
+      # If every pair errored, fall back to count-vote so we don't
+      # tag NA — better an imprecise muni than no muni at all.
+      if (all(areas == 0)) {
+        tab <- table(munis)
+        names(tab)[which.max(tab)]
+      } else {
+        munis[which.max(areas)]
+      }
     }
     parcel_pick <- boundary_to_parcel[boundary_pick]
     if (is.na(parcel_pick)) boundary_pick else unname(parcel_pick)
