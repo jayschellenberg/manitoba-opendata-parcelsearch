@@ -849,10 +849,10 @@ export function initMap(container, { onFeatureClick } = {}) {
           'text-font': ['Open Sans Semibold'],
           'text-size': [
             'interpolate', ['linear'], ['zoom'],
-            13, 8,
-            14, 9,
-            17, 11,
-            19, 13,
+            13, 11,
+            14, 12,
+            17, 15,
+            19, 17,
           ],
           // Always render, and don't reserve space against other labels.
           // This lets dev-plan + zoning labels coexist with the roll
@@ -865,10 +865,13 @@ export function initMap(container, { onFeatureClick } = {}) {
           'symbol-placement': 'point',
         },
         paint: {
-          'text-color': 'rgba(26, 26, 26, 0.55)',
-          'text-halo-color': 'rgba(255, 255, 255, 0.7)',
-          'text-halo-width': 0.8,
-          'text-opacity': 0.9,
+          // Fully-opaque text + thicker halo — the roll number is now
+          // the dominant per-parcel label, not a quiet supporting
+          // layer, so it has to read clearly even on top of the
+          // search-result red fill, MASC/CLI fills, etc.
+          'text-color': '#1a1a1a',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.4,
         },
       });
 
