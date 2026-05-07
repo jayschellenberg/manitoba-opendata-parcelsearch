@@ -37,6 +37,7 @@
           <input id="roll" type="text" placeholder="Roll # (exact or comma separated list)" />
           <span class="tip">Roll # — exact match. Paste a comma-separated list to highlight many parcels at once (within the selected municipality).</span>
         </span>
+        <hr class="control-sep" />
         <!--
           Legal-description and Certificate-of-Title search are
           backed by the generated MAO scrape index at
@@ -62,6 +63,7 @@
           <input id="title" type="text" placeholder="Certificate of title (contains)" />
           <span class="tip">Substring search against the MAO scrape's certificates_of_title field. Accepts plain title numbers (e.g. "2476500") or full prefixed forms ("CT 2476500").</span>
         </span>
+        <hr class="control-sep" />
         <span class="field">
           <select id="zone-category" disabled>
             <option value="">Any zoning category</option>
@@ -108,8 +110,8 @@
           <button id="masc-toggle"   type="button" class="secondary" aria-pressed="false" disabled title="MASC crop-insurance soil ratings (A best → J worst). Select a municipality first.">MASC Soil</button>
           <button id="riskarea-toggle" type="button" class="secondary" aria-pressed="false" title="Official MASC crop-insurance risk-area boundaries from Manitoba Maps">Risk Areas</button>
           <button id="grid-toggle"   type="button" class="secondary" aria-pressed="false" title="Section-township grid + river lots. Select a municipality for a focused view, or toggle without one for the province-wide overlay.">Sec-Twp Grid</button>
-          <button id="muni-website-btn" type="button" class="secondary" disabled title="Select a municipality to enable">Muni Website</button>
-          <button id="pd-website-btn"   type="button" class="secondary" disabled title="Select a municipality to enable">PD Website</button>
+          <button id="muni-website-btn" type="button" class="secondary" disabled title="Select a municipality to enable">Muni Website ↗</button>
+          <button id="pd-website-btn"   type="button" class="secondary" disabled title="Select a municipality to enable">PD Website ↗</button>
           <button id="static-map-btn"   type="button" class="secondary" title="Capture the current map view as a PNG. Right-click the rendered image below the table and Save Image As… to drop into a report.">Generate Map</button>
         </div>
       </aside>

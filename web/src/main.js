@@ -669,7 +669,7 @@ $municipality.addEventListener('change', () => {
   updateMuniWebsiteButton();
   // Reset the PD button until the next search resolves the planning
   // district from the dev-plan layer's PLANNINGDISTRICT field.
-  setExternalLinkButton($pdWebsiteBtn, null, 'PD Website', 'Run a search to detect the planning district');
+  setExternalLinkButton($pdWebsiteBtn, null, 'PD Website ↗', 'Run a search to detect the planning district');
   // If the Zoning Layer / Dev Plan Layer are currently active, swap
   // their data to match the new muni. Skipped quietly when neither
   // layer is on; doesn't refetch when the new muni already matches.
@@ -2131,11 +2131,11 @@ function setExternalLinkButton(btn, url, activeLabel, inactiveTitle) {
 function updateMuniWebsiteButton() {
   const muni = $municipality.value;
   if (!muni) {
-    setExternalLinkButton($muniWebsiteBtn, null, 'Muni Website', 'Select a municipality to enable');
+    setExternalLinkButton($muniWebsiteBtn, null, 'Muni Website ↗', 'Select a municipality to enable');
     return;
   }
   const url = lookupMuniWebsite(muni);
-  setExternalLinkButton($muniWebsiteBtn, url, 'Muni Website',
+  setExternalLinkButton($muniWebsiteBtn, url, 'Muni Website ↗',
     `No website on file for ${muni}. Add it to MUNI_WEBSITES in main.js.`);
 }
 
@@ -2151,12 +2151,12 @@ function updatePdWebsiteButton(devPlanFc) {
   let best = null, bestCount = 0;
   for (const [pd, c] of counts) if (c > bestCount) { best = pd; bestCount = c; }
   if (!best) {
-    setExternalLinkButton($pdWebsiteBtn, null, 'PD Website',
+    setExternalLinkButton($pdWebsiteBtn, null, 'PD Website ↗',
       'No planning district found in this search\'s dev-plan polygons');
     return;
   }
   const url = lookupPdWebsite(best);
-  setExternalLinkButton($pdWebsiteBtn, url, 'PD Website',
+  setExternalLinkButton($pdWebsiteBtn, url, 'PD Website ↗',
     `${best} — no website on file. Add it to PD_WEBSITES in main.js.`);
 }
 

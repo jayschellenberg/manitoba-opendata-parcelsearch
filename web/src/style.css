@@ -82,6 +82,16 @@ header small a {
   margin-top: 0;
 }
 
+/* Hairline divider between logical groups in the search sidebar
+   (after Roll #, after Certificate of Title). Soft slate-grey to
+   match the sidebar's other borders without competing with the
+   form inputs above and below. */
+.sidebar hr.control-sep {
+  border: none;
+  border-top: 1px solid #d6dde5;
+  margin: 10px 0 8px;
+}
+
 /* Action row keeps Search / Clear / Export CSV together as a group. */
 .sidebar .action-row {
   display: flex;
