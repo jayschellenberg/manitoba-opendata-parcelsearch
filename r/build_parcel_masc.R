@@ -265,6 +265,14 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
       gsub(pattern = "\\bTOWN\\s+OF\\b",     replacement = "") |>
       gsub(pattern = "\\bCITY\\s+OF\\b",     replacement = "") |>
       gsub(pattern = "\\bVILLAGE\\s+OF\\b",  replacement = "") |>
+      # Strip periods so "ST. ANDREWS" (Roll_Entry) matches "ST ANDREWS"
+      # (MUNICIPALITY layer / Manitoba Open Data canonical form).
+      gsub(pattern = "\\.",                  replacement = "") |>
+      # Manitoba's official MUNI_NAME for the parish-of-St-Francis-Xavier
+      # RM uses the French spelling 'FRANCOIS' while ROLL_ENTRY's
+      # Muni_Name_With_Typ uses the English 'FRANCIS'. Normalize both to
+      # FRANCIS so the spatial-tag → Roll_Entry-name mapping works.
+      gsub(pattern = "\\bFRANCOIS\\b",       replacement = "FRANCIS") |>
       gsub(pattern = "\\s+",                 replacement = " ") |>
       trimws()
   }
@@ -356,6 +364,33 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
   muni_bounds <- fetch_muni_boundaries()
   cat(sprintf("  fetched %d municipal polygons\n", nrow(muni_bounds)))
 
+  # Build a translation map: boundary-layer MUNI_LIST_NAME_WITH_TYPE
+  # → ROLL_ENTRY Muni_Name_With_Typ. The two layers don't agree on
+  # punctuation (boundary drops the period after ST/STE) or language
+  # (boundary uses 'ST FRANCOIS XAVIER'; ROLL_ENTRY uses 'ST. FRANCIS
+  # XAVIER'). The downstream frontend filters river-lot polygons by
+  # the dropdown's Muni_Name_With_Typ, so we translate before stamping
+  # the muni onto each polygon — otherwise river lots in St. Andrews,
+  # St. Clements, St. Francis Xavier, etc. never match the dropdown
+  # selection on the live site.
+  parcel_muni_names <- unique(parcels$Muni_Name_With_Typ)
+  parcel_muni_names <- parcel_muni_names[!is.na(parcel_muni_names) & nzchar(parcel_muni_names)]
+  parcel_muni_norm  <- norm_muni(parcel_muni_names)
+  boundary_names    <- unique(muni_bounds$MUNI_LIST_NAME_WITH_TYPE)
+  boundary_to_parcel <- setNames(
+    vapply(boundary_names, function(b) {
+      idx <- which(parcel_muni_norm == norm_muni(b))
+      if (length(idx) == 0L) return(NA_character_)
+      parcel_muni_names[idx[1]]
+    }, character(1)),
+    boundary_names
+  )
+  unmatched_boundaries <- sum(is.na(boundary_to_parcel))
+  if (unmatched_boundaries > 0) {
+    cat(sprintf("  warning: %d boundary-layer munis have no Roll_Entry counterpart\n",
+                unmatched_boundaries))
+  }
+
   cat("Tagging river-lot polygons with muni ...\n")
   rl_polys_utm  <- sf::st_transform(rl_polys, utm14)
   bounds_utm    <- sf::st_transform(muni_bounds, utm14)
@@ -372,7 +407,13 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
     munis <- munis[!is.na(munis)]
     if (length(munis) == 0L) return(NA_character_)
     tab <- table(munis)
-    names(tab)[which.max(tab)]
+    boundary_pick <- names(tab)[which.max(tab)]
+    # Translate to the Roll_Entry name format the downstream join +
+    # frontend filter both expect. Falls back to the boundary name if
+    # there's no Roll_Entry counterpart (fringe LGDs, Indigenous
+    # community territories not in ROLL_ENTRY).
+    parcel_pick <- boundary_to_parcel[boundary_pick]
+    if (is.na(parcel_pick)) boundary_pick else unname(parcel_pick)
   }, character(1))
   rl_polys$muni_norm <- norm_muni(rl_polys$muni_with_typ)
   cat(sprintf("  river-lot polygons with muni assigned: %d / %d\n",
