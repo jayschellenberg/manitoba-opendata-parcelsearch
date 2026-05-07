@@ -109,6 +109,7 @@
           <button id="contam-toggle"  type="button" class="secondary" aria-pressed="false" title="Manitoba Contaminated Sites Registry">Enviro Sites</button>
           <button id="masc-toggle"   type="button" class="secondary" aria-pressed="false" disabled title="MASC crop-insurance soil ratings (A best → J worst). Select a municipality first.">MASC Rating</button>
           <button id="riskarea-toggle" type="button" class="secondary" aria-pressed="false" title="Official MASC crop-insurance risk-area boundaries from Manitoba Maps">MASC Risk Areas</button>
+          <button id="cli-toggle" type="button" class="secondary" aria-pressed="false" disabled title="Canada Land Inventory — Soil Capability for Agriculture (1=prime, 7=no agricultural capability). Select a municipality first.">CLI Soil</button>
           <button id="grid-toggle"   type="button" class="secondary" aria-pressed="false" title="Section-township grid + river lots. Select a municipality for a focused view, or toggle without one for the province-wide overlay.">Sec-Twp Grid</button>
           <button id="muni-website-btn" type="button" class="secondary" disabled title="Select a municipality to enable">Muni Website ↗</button>
           <button id="pd-website-btn"   type="button" class="secondary" disabled title="Select a municipality to enable">PD Website ↗</button>
@@ -136,6 +137,18 @@
           <li><span class="swatch" style="background:#e6228b"></span>H</li>
           <li><span class="swatch" style="background:#dc0000"></span>I</li>
           <li><span class="swatch" style="background:#9c27b0"></span>J — worst</li>
+        </ul>
+      </div>
+      <div id="cli-legend" class="map-legend masc-legend" hidden>
+        <strong>CLI Soil Capability</strong>
+        <ul>
+          <li><span class="swatch" style="background:#1a6b26"></span>1 — prime</li>
+          <li><span class="swatch" style="background:#4fab57"></span>2</li>
+          <li><span class="swatch" style="background:#a6e29f"></span>3</li>
+          <li><span class="swatch" style="background:#f2d640"></span>4</li>
+          <li><span class="swatch" style="background:#f4a040"></span>5</li>
+          <li><span class="swatch" style="background:#a8754f"></span>6</li>
+          <li><span class="swatch" style="background:#9c27b0"></span>7 — no agric.</li>
         </ul>
       </div>
       <div id="flow-legend" class="map-legend flow-legend" hidden>

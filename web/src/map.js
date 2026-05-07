@@ -664,6 +664,65 @@ export function initMap(container, { onFeatureClick } = {}) {
           'line-opacity': 0.75,
         },
       });
+      // Canada Land Inventory — Soil Capability for Agriculture.
+      // Federal AAFC dataset rated 1 (best) to 7 (worst). Painted by
+      // CLASS_A (the dominant class for the polygon). Subclass codes
+      // (W=excess water, T=topography, F=low fertility, etc.) come
+      // along on the feature for popup/tooltip use. Hidden until the
+      // user toggles it on with a muni selected.
+      map.addSource('cli-agr', { type: 'geojson', data: emptyFc() });
+      map.addLayer({
+        id: 'cli-agr-fill',
+        type: 'fill',
+        source: 'cli-agr',
+        layout: { visibility: 'none' },
+        paint: {
+          'fill-color': [
+            'match', ['get', 'CLASS_A'],
+            '1', '#1a6b26',  // dark green   — prime
+            '2', '#4fab57',  // medium green — minor limitations
+            '3', '#a6e29f',  // light green  — moderate
+            '4', '#f2d640',  // yellow       — severe / marginal
+            '5', '#f4a040',  // orange       — perennial only
+            '6', '#a8754f',  // brown        — native pasture only
+            '7', '#9c27b0',  // purple       — no agricultural capability
+            '#cccccc',       // unrated / urban / water
+          ],
+          'fill-opacity': 0.5,
+          'fill-outline-color': 'rgba(0, 0, 0, 0.25)',
+        },
+      });
+      map.addLayer({
+        id: 'cli-agr-label',
+        type: 'symbol',
+        source: 'cli-agr',
+        minzoom: 11,
+        layout: {
+          visibility: 'none',
+          // Dominant class with subclass appended when the polygon
+          // carries one (e.g. "3W", "5T"). Helps appraisers read
+          // the map without clicking each polygon.
+          'text-field': [
+            'concat',
+            ['coalesce', ['get', 'CLASS_A'], ''],
+            ['coalesce', ['get', 'SUBCLAS_A1'], ''],
+          ],
+          'text-font': ['Open Sans Semibold'],
+          'text-size': [
+            'interpolate', ['linear'], ['zoom'],
+            11, 10, 14, 12, 17, 14,
+          ],
+          'text-allow-overlap': false,
+          'text-ignore-placement': false,
+          'symbol-placement': 'point',
+        },
+        paint: {
+          'text-color': '#1a1a1a',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.4,
+        },
+      });
+
       // Section-township grid — line layer derived from the
       // MB_LegalDesc point centroids by aggregating quarters into
       // section bounding boxes (see masc.js sectionLinesFromRows).
@@ -1174,6 +1233,17 @@ export function setMascRiskAreasData(map, fc) {
 export function setMascRiskAreasVisible(map, visible) {
   const v = visible ? 'visible' : 'none';
   for (const id of ['masc-risk-area-fill', 'masc-risk-area-line', 'masc-risk-area-label']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
+  }
+}
+
+export function setCliAgrData(map, fc) {
+  const src = map.getSource('cli-agr');
+  if (src) src.setData(fc);
+}
+export function setCliAgrVisible(map, visible) {
+  const v = visible ? 'visible' : 'none';
+  for (const id of ['cli-agr-fill', 'cli-agr-label']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
   }
 }
