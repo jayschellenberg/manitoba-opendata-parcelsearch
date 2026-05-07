@@ -145,6 +145,11 @@ cat("  quarters:", nrow(masc_sf), "\n")
 # ----------------------------------------------------------------------
 # 2b. River-lot ratings — join MASC riverlot scrape to KMZ polygons
 # ----------------------------------------------------------------------
+# Planar projection used by the spatial join below — same CRS the
+# section-3 intersection uses, hoisted up here so this block can
+# share it.
+utm14 <- 26914
+
 # Quarter-section MASC squares miss river-lot parcels (long narrow
 # strips perpendicular to the river that fall between the discrete
 # quarter centroids). MASC publishes a separate per-lot table for
@@ -345,8 +350,8 @@ if (!is.null(riverlot_polys) && nrow(riverlot_polys) > 0) {
 # ----------------------------------------------------------------------
 # Use a planar projection for area calculations — UTM 14N covers most
 # of southern Manitoba's farmland; minor distortion at the extremes is
-# fine for "pick the dominant rating".
-utm14 <- 26914
+# fine for "pick the dominant rating". `utm14` is already defined up
+# in section 2b so the river-lot block could share it.
 parcels_utm <- sf::st_transform(parcels, utm14)
 masc_utm    <- sf::st_transform(masc_sf, utm14)
 
