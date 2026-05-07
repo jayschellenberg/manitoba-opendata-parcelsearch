@@ -1608,8 +1608,10 @@ function soilCell(p) {
   swatch.className = 'soil-chip';
   swatch.textContent = rating;
   swatch.style.backgroundColor = soilColor(rating);
-  // Use white text on the dark end of the ramp (G/H/I/J) for legibility.
-  swatch.style.color = ['G', 'H', 'I', 'J'].includes(rating) ? '#fff' : '#1a1a1a';
+  // White text on the visually-dark swatches (C olive, F dark green,
+  // H magenta, I red, J purple) so the rating letter stays legible
+  // against the chip background.
+  swatch.style.color = ['C', 'F', 'H', 'I', 'J'].includes(rating) ? '#fff' : '#1a1a1a';
   if (p._soilQuarter) cell.title = `Source: ${p._soilQuarter}`;
   cell.appendChild(swatch);
   return cell;
@@ -1657,8 +1659,10 @@ function stampOfficialRiskAreas(rows, riskAreaFc) {
 }
 
 function soilColor(code) {
-  const map = { A:'#1a9850', B:'#66bd63', C:'#a6d96a', D:'#d9ef8b', E:'#fee08b',
-                F:'#fdae61', G:'#f46d43', H:'#d73027', I:'#a50026', J:'#67001f' };
+  // Mirrors MASC_PALETTE in masc.js (and the masc-fill paint expression
+  // in map.js). Keep the three lists synced when updating the palette.
+  const map = { A:'#fff8c8', B:'#f2d640', C:'#847b14', D:'#a6e29f', E:'#4fab57',
+                F:'#1a6b26', G:'#f4c2d1', H:'#e6228b', I:'#dc0000', J:'#9c27b0' };
   return map[code] || '#cccccc';
 }
 

@@ -174,17 +174,21 @@ export function surveyFcToRows(fc) {
  * through yellow to red for the lowest. Returned as a flat
  * [code, color, ...] palette ready for MapLibre's `match` expression.
  */
+// MASC's published "Soil Zones" palette: yellows for A/B (best), olive
+// for C, greens D→F (mid range), pinks/red G→I, purple for J (worst).
+// Mirrors the legend in MASC's own crop-insurance maps so the colours
+// users see here match what they'd see in printed publications.
 export const MASC_PALETTE = [
-  'A', '#1a9850',
-  'B', '#66bd63',
-  'C', '#a6d96a',
-  'D', '#d9ef8b',
-  'E', '#fee08b',
-  'F', '#fdae61',
-  'G', '#f46d43',
-  'H', '#d73027',
-  'I', '#a50026',
-  'J', '#67001f',
+  'A', '#fff8c8',  // pale yellow
+  'B', '#f2d640',  // golden yellow
+  'C', '#847b14',  // dark olive
+  'D', '#a6e29f',  // light green
+  'E', '#4fab57',  // medium green
+  'F', '#1a6b26',  // dark green
+  'G', '#f4c2d1',  // light pink
+  'H', '#e6228b',  // magenta
+  'I', '#dc0000',  // red
+  'J', '#9c27b0',  // purple
 ];
 
 /** Lookup helper for the popup / legend — returns the hex for a code. */
