@@ -193,7 +193,73 @@ dominant <- inter |>
   slice_head(n = 1) |>
   ungroup()
 
-cat("  parcels with a rating:", nrow(dominant), "\n")
+cat("  parcels with a rating from intersection:", nrow(dominant), "\n")
+
+# ----------------------------------------------------------------------
+# 4b. Nearest-quarter fallback for parcels that no quarter polygon
+#     overlapped. River lots are the typical case — they're long
+#     narrow strips perpendicular to the riverbank that can fall
+#     entirely between the discrete MASC quarter centroids' 800 m
+#     padded boxes, missing every intersection. For each unmatched
+#     parcel, find the nearest MASC quarter centroid and adopt its
+#     rating. Tolerance = 1 km from the parcel centroid; beyond that
+#     we leave the parcel unrated (genuinely outside MASC coverage).
+# ----------------------------------------------------------------------
+matched_rolls <- unique(dominant$Roll_No_Txt)
+unmatched <- parcels_utm[!parcels_utm$Roll_No_Txt %in% matched_rolls, ]
+cat("  parcels missing intersection (river lots, narrow strips):",
+    nrow(unmatched), "\n")
+
+if (nrow(unmatched) > 0) {
+  cat("Running centroid-nearest fallback ...\n")
+  # MASC centroids (the original lat/lon, UTM-projected). We match
+  # against centroids — not the padded quarter polygons — so a river
+  # lot just outside the box still pulls the closest rating.
+  masc_pts <- sf::st_sf(
+    rating = masc$soil_rating,
+    ra     = as.integer(masc$risk_area),
+    q      = masc$quarter,
+    s      = as.integer(masc$section),
+    t      = as.integer(masc$township),
+    r      = as.integer(masc$range_num),
+    d      = masc$direction,
+    geometry = sf::st_sfc(
+      mapply(function(lon, lat) sf::st_point(c(lon, lat)),
+             masc$lon, masc$lat, SIMPLIFY = FALSE),
+      crs = 4326
+    )
+  )
+  masc_pts <- sf::st_transform(masc_pts, utm14)
+
+  # Use parcel centroids; sf prints a "centroid is approximate" warning
+  # for projected CRS that we suppress. nearest_feature returns one
+  # index per source row.
+  parcel_pts <- suppressWarnings(sf::st_centroid(unmatched))
+  near_idx <- sf::st_nearest_feature(parcel_pts, masc_pts)
+  near_dist <- as.numeric(
+    sf::st_distance(parcel_pts, masc_pts[near_idx, ], by_element = TRUE)
+  )
+
+  fallback <- data.frame(
+    Roll_No_Txt        = unmatched$Roll_No_Txt,
+    Muni_Name_With_Typ = unmatched$Muni_Name_With_Typ,
+    rating             = masc_pts$rating[near_idx],
+    q                  = masc_pts$q[near_idx],
+    s                  = masc_pts$s[near_idx],
+    t                  = masc_pts$t[near_idx],
+    r                  = masc_pts$r[near_idx],
+    d                  = masc_pts$d[near_idx],
+    ra                 = masc_pts$ra[near_idx],
+    near_m             = near_dist
+  ) |>
+    filter(near_m <= 1000) |>      # within 1 km of a real quarter centroid
+    select(-near_m)
+
+  cat("  parcels rescued by fallback:", nrow(fallback), "\n")
+  dominant <- bind_rows(dominant, fallback)
+}
+
+cat("  parcels with a rating (intersection + fallback):", nrow(dominant), "\n")
 
 # ----------------------------------------------------------------------
 # 5. Per-muni shards

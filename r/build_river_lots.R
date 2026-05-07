@@ -104,8 +104,26 @@ cat("  river-lot polygons:", nrow(river), "\n")
 # alongside (but distinguishably from) the section-grid features in
 # the same survey-grid map source. Keep just (kind, label, geometry)
 # columns so the GeoJSON ships only what the frontend needs.
+#
+# Pretty-print the label here rather than at runtime in JS:
+# raw KMZ labels jam parish + lot type + number into a single
+# string ("AGRL338", "LORL79"). Split into PARISH-TYPE-NUMBER
+# ("AG-RL-338", "LO-RL-79") so the parish prefix, lot type, and
+# lot number all stand out. Anything that doesn't match the expected
+# pattern keeps its raw form so unusual identifiers still render.
+prettify_river_lot <- function(raw) {
+  out <- raw
+  hit <- !is.na(raw) &
+         grepl("^[A-Z]{2,5}(RL|PL|WL|SL|OT)\\d+[A-Z]?$", toupper(raw))
+  if (any(hit)) {
+    pattern <- "^([A-Z]{2,5})(RL|PL|WL|SL|OT)(\\d+[A-Z]?)$"
+    out[hit] <- sub(pattern, "\\1-\\2-\\3", toupper(raw[hit]))
+  }
+  out
+}
+
 river$kind  <- "riverlot"
-river$label <- ifelse(is.na(river$name), NA_character_, river$name)
+river$label <- prettify_river_lot(river$name)
 river <- river[, c("kind", "label", attr(river, "sf_column"))]
 
 cat("Writing", output_path, "...\n")

@@ -120,8 +120,12 @@ build_ring <- function(min_lon, max_lon, min_lat, max_lat, lat0) {
   list(c(w, s), c(e, s), c(e, n), c(w, n), c(w, s))
 }
 
-# Round coordinates to 5 decimals (~1 m) to keep the file small without
-# any visible loss of precision at the section grid scale.
+# Round coordinates to 4 decimals (~10 m) — a section is ~1.6 km on a
+# side, so 10 m precision is invisible at any zoom the grid layer
+# renders at, and shaves ~30% off the GeoJSON. Drop the individual
+# section/township/range/direction properties since `label` already
+# encodes them — knocks another ~20% off. Result: ~25 MB instead of
+# ~53 MB, comfortably under GitHub's 50 MB warning threshold.
 features <- vector("list", nrow(sections))
 for (i in seq_len(nrow(sections))) {
   ring <- build_ring(
@@ -129,7 +133,7 @@ for (i in seq_len(nrow(sections))) {
     sections$min_lat[i], sections$max_lat[i],
     sections$lat0[i]
   )
-  ring_rounded <- lapply(ring, function(p) round(p, 5))
+  ring_rounded <- lapply(ring, function(p) round(p, 4))
   features[[i]] <- list(
     type = "Feature",
     geometry = list(
@@ -137,12 +141,8 @@ for (i in seq_len(nrow(sections))) {
       coordinates = list(ring_rounded)
     ),
     properties = list(
-      section   = sections$s[i],
-      township  = sections$t[i],
-      range     = sections$r[i],
-      direction = sections$dir[i],
-      label     = sprintf("%d-%d-%d%s", sections$s[i], sections$t[i],
-                          sections$r[i], sections$dir[i])
+      label = sprintf("%d-%d-%d%s", sections$s[i], sections$t[i],
+                      sections$r[i], sections$dir[i])
     )
   )
 }
