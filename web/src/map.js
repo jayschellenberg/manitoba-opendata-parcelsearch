@@ -17,10 +17,13 @@
 import maplibregl from 'maplibre-gl';
 import bbox from '@turf/bbox';
 
-// Manitoba's centroid sits roughly here. Initial zoom shows ~the populated
-// southern half of the province.
-const MB_CENTER = [-97.6, 51.0];
-const MB_ZOOM = 5;
+// Initial view focuses on populated south-central Manitoba — from the
+// US border up to ~Grahamdale and from RM of Pipestone east to the
+// Ontario line. The vast majority of parcels and appraisal work
+// happens in this band; the user can scroll/zoom out to reach the
+// northern LGDs when needed.
+const MB_CENTER = [-98.0, 50.3];
+const MB_ZOOM = 6;
 
 /** Build a legend descriptor [{ label, color }] from a flat MapLibre
  *  match-expression palette ([key, color, key, color, ...]). De-dupes
