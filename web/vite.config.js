@@ -5,6 +5,29 @@ export default defineConfig({
   cacheDir: process.env.VITE_CACHE_DIR || 'node_modules/.vite',
   build: {
     target: 'es2020',
+    // MapLibre is fundamentally ~800 kB minified (~217 kB gzipped) and
+    // there's no good way to split it further without dynamic imports
+    // that defer the map render. Lift the warning ceiling so the
+    // legitimate vendor chunk doesn't trip the noise; everything else
+    // is comfortably under 500 kB.
+    chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      output: {
+        // Split heavy third-party deps into named vendor chunks so a
+        // change in our app code doesn't bust their browser cache, and
+        // the warning ceiling on the main bundle drops back under
+        // 500 kB. maplibre is by far the heaviest (~700 kB minified);
+        // the @turf/* helpers + papaparse together are ~150 kB.
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('maplibre-gl')) return 'maplibre';
+          if (id.includes('@turf/'))      return 'turf';
+          if (id.includes('papaparse'))   return 'papaparse';
+          // Everything else stays in the default vendor chunk.
+          return 'vendor';
+        },
+      },
+    },
   },
   server: {
     // Proxy the Manitoba Contaminated Sites Registry CSV in dev — the
