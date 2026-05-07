@@ -55,6 +55,7 @@ suppressPackageStartupMessages({
   library(readr)
   library(jsonlite)
   library(stringi)
+  library(httr2)
 })
 
 source_dir <- "D:/Dropbox/ClaudeCode/MBOpenData/WebSearch"
@@ -311,28 +312,63 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
   rl_polys <- rl_polys[!is.na(rl_polys$prefix) & !is.na(rl_polys$lot_num), ]
 
   # Spatially attach a muni to each KMZ polygon. Earlier versions
-  # used the polygon's centroid, which dropped river lots whose
-  # geometric centre fell on a road, in water, or in any sliver not
-  # covered by a current ROLL_ENTRY parcel — including ~788 PERL
-  # (Parish of St. Peter) features in St. Andrews / St. Clements.
-  # Switching to a polygon-level intersect is more permissive: any
-  # KMZ polygon that overlaps any parcel picks up that parcel's muni.
-  # Slower per-feature but the dataset is small (~7k features).
-  cat("Tagging river-lot polygons with muni ...\n")
-  rl_polys_utm <- sf::st_transform(rl_polys, utm14)
-
-  # Quick lookup: build a parcels muni-tag layer with just (muni, geom).
-  parcels_muni_tag_utm <- sf::st_transform(
-    parcels |> select(Muni_Name_With_Typ), utm14
+  # spatially joined against the parcels FC, which dropped any river
+  # lot that didn't overlap a current ROLL_ENTRY parcel. Many of the
+  # historic parishes (Parish of St. Peter in St. Andrews/St. Clements,
+  # St. Francis Xavier RM along the Assiniboine) have river-lot
+  # polygons that don't correspond to a present-day taxable parcel,
+  # so the parcel-based tag returned nothing for them.
+  #
+  # Switch to the official Municipalities polygon layer instead — it
+  # covers every square inch of every muni regardless of parcel
+  # status. Fetched once from the ArcGIS Online host the frontend
+  # uses; no caching needed at this scale.
+  cat("Fetching municipal boundaries for muni tagging ...\n")
+  muni_url <- paste0(
+    "https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/",
+    "MUNICIPALITY/FeatureServer/0/query"
   )
-  hits <- sf::st_intersects(rl_polys_utm, parcels_muni_tag_utm)
+  fetch_muni_boundaries <- function() {
+    pages <- list()
+    offset <- 0
+    repeat {
+      resp <- httr2::request(muni_url) |>
+        httr2::req_body_form(
+          where             = "1=1",
+          outFields         = "MUNI_NAME,MUNI_TYPE,MUNI_LIST_NAME_WITH_TYPE",
+          returnGeometry    = "true",
+          outSR             = "4326",
+          f                 = "geojson",
+          resultOffset      = as.character(offset),
+          resultRecordCount = "1000"
+        ) |>
+        httr2::req_retry(max_tries = 5) |>
+        httr2::req_perform()
+      body <- httr2::resp_body_string(resp)
+      page <- tryCatch(sf::st_read(body, quiet = TRUE), error = function(e) NULL)
+      if (is.null(page) || nrow(page) == 0L) break
+      pages[[length(pages) + 1L]] <- page
+      if (nrow(page) < 1000L) break
+      offset <- offset + 1000L
+    }
+    do.call(rbind, pages)
+  }
+  muni_bounds <- fetch_muni_boundaries()
+  cat(sprintf("  fetched %d municipal polygons\n", nrow(muni_bounds)))
+
+  cat("Tagging river-lot polygons with muni ...\n")
+  rl_polys_utm  <- sf::st_transform(rl_polys, utm14)
+  bounds_utm    <- sf::st_transform(muni_bounds, utm14)
+
+  # Use polygon-to-polygon intersect against muni boundaries. Any KMZ
+  # polygon that overlaps any muni boundary gets tagged. Lots that
+  # span a muni line tag with the muni containing the largest share —
+  # majority vote here translates to "biggest overlap area" since
+  # adjacent parcels in one muni share that muni.
+  hits <- sf::st_intersects(rl_polys_utm, bounds_utm)
   rl_polys$muni_with_typ <- vapply(hits, function(idx) {
     if (length(idx) == 0L) return(NA_character_)
-    # Pick the most common Muni_Name_With_Typ across all overlapping
-    # parcels — defends against river lots that straddle a muni
-    # boundary (a single parcel-overlap could be misleading; the
-    # majority vote tracks the muni the lot actually sits in).
-    munis <- parcels_muni_tag_utm$Muni_Name_With_Typ[idx]
+    munis <- bounds_utm$MUNI_LIST_NAME_WITH_TYPE[idx]
     munis <- munis[!is.na(munis)]
     if (length(munis) == 0L) return(NA_character_)
     tab <- table(munis)
