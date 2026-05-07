@@ -555,7 +555,7 @@ export function initMap(container, { onFeatureClick } = {}) {
             'J', '#9c27b0',
             '#cccccc',
           ],
-          'fill-opacity': 0.45,
+          'fill-opacity': 0.35,
           'fill-outline-color': 'rgba(0, 0, 0, 0.3)',
         },
       });
@@ -588,7 +588,7 @@ export function initMap(container, { onFeatureClick } = {}) {
             'J', '#9c27b0',
             '#cccccc',
           ],
-          'fill-opacity': 0.45,
+          'fill-opacity': 0.35,
           'fill-outline-color': 'rgba(0, 0, 0, 0.3)',
         },
       });
@@ -688,7 +688,7 @@ export function initMap(container, { onFeatureClick } = {}) {
             '7', '#9c27b0',  // purple       — no agricultural capability
             '#cccccc',       // unrated / urban / water
           ],
-          'fill-opacity': 0.5,
+          'fill-opacity': 0.35,
           'fill-outline-color': 'rgba(0, 0, 0, 0.25)',
         },
       });
@@ -781,9 +781,9 @@ export function initMap(container, { onFeatureClick } = {}) {
           'text-font': ['Open Sans Semibold'],
           'text-size': [
             'interpolate', ['linear'], ['zoom'],
-            11, 9,
-            14, 11,
-            17, 13,
+            11, 11,
+            14, 13,
+            17, 15,
           ],
           'text-allow-overlap': false,
           'text-ignore-placement': true,
@@ -883,7 +883,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         id: 'parcel-fill',
         type: 'fill',
         source: 'parcels',
-        paint: { 'fill-color': '#b22222', 'fill-opacity': 0.18 },
+        paint: { 'fill-color': '#b22222', 'fill-opacity': 0.15 },
       });
       map.addLayer({
         id: 'parcel-line',
@@ -945,14 +945,17 @@ export function initMap(container, { onFeatureClick } = {}) {
         },
       });
 
-      // Section-township grid labels always render on top of every
-      // other overlay (parcels, MASC, CLI, etc). Layers in MapLibre
-      // are stacked in addLayer() order, so to keep the grid label
-      // dominant we re-anchor it to the top once every other layer
-      // has been registered. The line and river-lot strokes stay
-      // where they are below the parcel highlight so the search
-      // result red still reads on top of the dashed grid.
-      if (map.getLayer('survey-grid-label')) map.moveLayer('survey-grid-label');
+      // Section-township grid labels and Roll Layer roll-number
+      // labels always render on top of every other overlay (parcels,
+      // MASC, CLI, etc). Layers in MapLibre stack in addLayer() order,
+      // so we re-anchor both to the top once every other layer has
+      // been registered. moveLayer() with no `before` arg moves to
+      // the very top — the LAST call wins, so muni-parcels-label
+      // ends up above survey-grid-label. Both are text-only with
+      // halos, so where they coincide the roll number reads on top
+      // without occluding the section grid significantly.
+      if (map.getLayer('survey-grid-label'))   map.moveLayer('survey-grid-label');
+      if (map.getLayer('muni-parcels-label'))  map.moveLayer('muni-parcels-label');
 
       // Hover popup — works on every layer that's currently visible. Text
       // composed from whichever layer was hit (parcels take priority).
