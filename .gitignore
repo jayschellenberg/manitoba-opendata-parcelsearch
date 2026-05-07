@@ -56,3 +56,5 @@ web/vite-dev.*.log
 # Plan files (kept in C:\Users\Jason\.claude\plans, but defensive)
 plan*.md
 *-stonebraker.md
+.Rproj.user
+.positai
