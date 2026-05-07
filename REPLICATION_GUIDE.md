@@ -1099,17 +1099,35 @@ The MASC workflow has three generated artifacts. Quarter sections come from `mas
 { "3600.000": { "rating": "C", "ra": 32, "q": "NE", "s": 1, "t": 12, "r": 5, "d": "E", "source": "quarter", "label": null } }
 ```
 
-Existing deployed parcel-MASC shards may omit `source` and `label`; the frontend infers river-lot sources from `q` values ending in `RL`/`OT`/`WL`/`SL` or null section/township fields. Future regenerated shards carry explicit labels such as `AD-RL-3`.
+Regenerated parcel-MASC shards carry `source` and `label`; the frontend still infers river-lot sources from `q` values ending in `RL`/`OT`/`WL`/`SL` or null section/township fields when reading older deployed shards. River-lot IDs are text during the KMZ join so numeric, lettered, and suffix lots all survive (`RR-RL-F`, `MA-RL-94B`, `AD-RL-3`).
 
 The map overlay and Soil table column intentionally use separate artifacts. The map needs every quarter/river lot in the selected municipality; the table only needs the dominant rating by parcel. Keeping them separate avoids browser-side parcel x soil-source spatial joins during search. The Risk Area table column no longer uses the MASC CSV's compact `ra` value; it is derived from the official MASC Risk Areas polygon layer.
+
+Coverage-gap triage is source-first. When a blank area appears in the MASC Rating overlay, first test whether any MASC source centroids fall inside that blank under the selected municipality or another municipality. If no source centroids exist there, do not fill the map overlay by interpolation or nearest-neighbour inference; record it as a MASC source coverage gap or non-rated area. The parcel-MASC table can still show ratings for parcels whose geometry touches a nearby rated quarter/river lot or whose dominant rating was resolved by the parcel build, but that is parcel attribution rather than proof that the blank map area has published MASC coverage.
+
+The 2026-05-07 review checked the largest current blanks in the reported target municipalities against the MASC CSV, generated river-lot overlay, Roll Entry parcels, municipal boundaries, zoning, and development-plan polygons. Every target had zero MASC source centroids inside the blank, including zero centroids filed under another municipality:
+
+| Municipality | Largest blank | Source centroids in blank | Dominant land-use read |
+| --- | ---: | ---: | --- |
+| `WEST INTERLAKE (RM)` | 185.8 km2 | 0 | Mixed WMA/agricultural fringe. |
+| `PINEY (RM)` | 158.8 km2 | 0 | Provincial forest/rural/agricultural fringe. |
+| `TACHE (RM)` | 44.3 km2 | 0 | Mostly agriculture/escarpment/rural living. |
+| `RIDING MOUNTAIN WEST (RM)` | 236.3 km2 | 0 | Agricultural policy area. |
+| `DAUPHIN (RM)` | 224.2 km2 | 0 | Agriculture/rural area. |
+| `ALONSA (RM)` | 193.5 km2 | 0 | Mostly agriculture with limited agriculture/WMA edges. |
+| `GILBERT PLAINS (MUNICIPALITY)` | 176.7 km2 | 0 | Rural agricultural area. |
+| `PORTAGE LA PRAIRIE (RM)` | 186.9 km2 | 0 | Mostly agriculture with small settlement/residential edges. |
+| `TWO BORDERS (MUNICIPALITY)` | 131.2 km2 | 0 | Agricultural policy area. |
+| `ARMSTRONG (RM)` | 112.9 km2 | 0 | Mostly agricultural. |
 
 Important implementation details:
 
 - The MASC CSV carries bare municipality names (`RITCHOT`), while the app dropdown carries `Muni_Name_With_Typ` (`RITCHOT (RM)`). `lookupMuniManifestEntry()` therefore tries the direct key, a normalized key with type stripped for the MASC map shards, and a compact normalized comparison. This is what prevents the false "No MASC soil ratings on file for RITCHOT (RM)" failure.
 - Parcel-MASC shards are keyed by the original `Muni_Name_With_Typ`, so `fetchParcelMascForMuni()` uses the same manifest helper with `stripType: false`. Its compact lookup preserves the muni type while tolerating dotted `ST.`/`STE.` spellings and `RM OF ...` word order.
-- Rated river-lot overlay matching uses `main.js::filterMascRiverlotsForMuni()`: first require the same normalized name and type, then, only if no exact typed river-lot features exist, fall back to the shared bare name. This surfaces same-name enclave cases such as `STE ANNE (RM)`, whose rated `AN-RL-*` polygons are tagged `STE ANNE (TOWN)` by the boundary-majority step but still intersect Roll Entry parcels in the surrounding RM.
+- `r/build_parcel_masc.R` normalizes `DESALABERRY` to `DE SALABERRY` before joining the MASC river-lot scrape to the KMZ. It also adds a constrained prefix+lot fallback: if a KMZ lot has no same-muni MASC hit but its prefix+lot ID has exactly one MASC source municipality province-wide, keep that rating. This covers split-boundary Rat River lots 27-31, which are polygon-majority tagged to `ST PIERRE-JOLYS (VILLAGE)` but published by MASC under De Salaberry.
+- Rated river-lot overlay matching uses `main.js::filterMascRiverlotsForMuni()`: first check exact typed matches against both `properties.muni` and `properties.rating_muni`, then, only if no exact typed river-lot features exist, fall back to the shared bare name. This surfaces same-name enclave cases such as `STE ANNE (RM)` and split-boundary cases such as De Salaberry / St-Pierre-Jolys.
 - Official risk areas are fetched by `fetchMascRiskAreas()` from `MASC_Risk_Areas/FeatureServer/0`, source package <https://open.canada.ca/data/en/dataset/739cb8ed-b661-5a60-7a26-eb60cd06541f>. The API returns valid risk-area numbers `1` through `12`, plus `14`, `15`, and `16`; blank polygons are filtered out in the `where` clause.
-- MASC cache keys are versioned (`mb_masc_*_v3`, `mb_parcel_masc_*_v3`, `mb_masc_riverlots_v2`). If a shard exists and the app still claims no ratings, check browser `localStorage` first or bump the cache version after changing lookup semantics or generated artifact shapes.
+- MASC cache keys are versioned (`mb_masc_*_v3`, `mb_parcel_masc_*_v4`, `mb_masc_riverlots_v3`). If a shard exists and the app still claims no ratings, check browser `localStorage` first or bump the cache version after changing lookup semantics or generated artifact shapes.
 - `masc.js::quarterPolygon()` draws approximate 800 m squares around centroids. This is a research/visual overlay, not a cadastral boundary layer.
 - `map.js` renders quarter-section MASC soil layers from the `masc` source (`masc-fill`, `masc-label`) and river-lot MASC soil layers from the `masc-riverlots` source (`masc-riverlots-fill`, `masc-riverlots-label`). Both use the same A-J colour ramp. The label expression is intentionally only the soil rating:
 
@@ -1120,7 +1138,7 @@ Important implementation details:
 - Layer order matters. MASC labels are added after `parcel-line`, above the parcel and muni-parcel fabric layers, so labels remain legible when the user searches parcels and then toggles MASC. `setMascVisible()` must toggle all four soil-rating layers: `masc-fill`, `masc-label`, `masc-riverlots-fill`, and `masc-riverlots-label`.
 - `map.js` renders official risk areas as separate `masc-risk-area-fill`, `masc-risk-area-line`, and `masc-risk-area-label` layers. `setMascRiskAreasVisible()` toggles all three.
 - `main.js::stampOfficialRiskAreas()` computes each parcel's bbox-centre point and finds the containing official risk polygon with `@turf/boolean-point-in-polygon`. Risk areas are broad enough that this representative point keeps search-time cost low without mixing the legacy MASC CSV `ra` into official labels.
-- Smoke tests: select `RITCHOT (RM)`, toggle `MASC Rating`, zoom to >= 13 near the southeast side of Winnipeg/St. Adolphe, and confirm coloured quarter sections label as letters only with no "No MASC soil ratings..." status message. Then toggle `MASC Risk Areas` and confirm risk boundaries/labels appear separately. For river-lot coverage, search `ST ANDREWS (RM)` + roll `100.000` (Soil `C`, tooltip `Source: River lot ADRL-3Q`), `ST CLEMENTS (RM)` + roll `100.000` (Soil `C`, tooltip `Source: River lot ADRL-199Q`), and `STE ANNE (RM)` + roll `100000.000` (Soil `D`, tooltip `Source: River lot ANRL-83T`).
+- Smoke tests: select `RITCHOT (RM)`, toggle `MASC Rating`, zoom to >= 13 near the southeast side of Winnipeg/St. Adolphe, and confirm coloured quarter sections label as letters only with no "No MASC soil ratings..." status message. Then toggle `MASC Risk Areas` and confirm risk boundaries/labels appear separately. For river-lot coverage, search `ST ANDREWS (RM)` + roll `100.000` (Soil `C`, tooltip `Source: River lot ADRL-3Q`), `ST CLEMENTS (RM)` + roll `100.000` (Soil `C`, tooltip `Source: River lot ADRL-199Q`), `STE ANNE (RM)` + roll `100000.000` (Soil `D`, tooltip `Source: River lot ANRL-83T`), `DE SALABERRY (RM)` + roll `158550.000` (Soil `C`, tooltip `Source: River lot RR-RL-31`), and `MORRIS (RM)` + roll `254000.000` (Soil `C`, tooltip `Source: River lot AG-RL-299`).
 
 ### 14.23 Performance follow-ups deferred
 

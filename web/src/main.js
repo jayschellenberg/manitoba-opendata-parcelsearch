@@ -1926,18 +1926,28 @@ function bboxesIntersect(a, b) {
 }
 
 function filterMascRiverlotsForMuni(features, selectedMuni) {
-  const exact = features.filter((f) => muniIdentitiesMatch(f?.properties?.muni, selectedMuni, {
-    allowTypeFallback: false,
-  }));
+  const exact = features.filter((f) => featureMascMunis(f).some((muni) => (
+    muniIdentitiesMatch(muni, selectedMuni, { allowTypeFallback: false })
+  )));
   if (exact.length > 0) return exact;
 
-  // Some long parish lots are boundary-tagged to a same-name enclave
-  // Town while Roll Entry parcels are in the surrounding RM. If there
-  // is no exact typed match, fall back to the shared bare muni name so
-  // those rated river lots still surface for parcel users.
-  return features.filter((f) => muniIdentitiesMatch(f?.properties?.muni, selectedMuni, {
-    allowTypeFallback: true,
-  }));
+  // Some long parish lots are boundary-tagged to an enclave Town while
+  // the MASC source or Roll Entry parcel sits with the surrounding RM.
+  // If there is no exact typed match, fall back to the shared bare
+  // muni name so those rated river lots still surface for parcel users.
+  return features.filter((f) => featureMascMunis(f).some((muni) => (
+    muniIdentitiesMatch(muni, selectedMuni, { allowTypeFallback: true })
+  )));
+}
+
+function featureMascMunis(feature) {
+  const p = feature?.properties || {};
+  return [
+    p.muni,
+    p.rating_muni,
+    p.ratingMuni,
+    p.source_muni,
+  ].filter((value, idx, values) => value && values.indexOf(value) === idx);
 }
 
 function muniIdentitiesMatch(sourceMuni, selectedMuni, { allowTypeFallback = false } = {}) {
@@ -1980,6 +1990,7 @@ function parseMuniIdentity(value) {
   s = s
     .replace(/\bMTN\b/g, 'MOUNTAIN')
     .replace(/\bFRANCOIS\b/g, 'FRANCIS')
+    .replace(/\bDESALABERRY\b/g, 'DE SALABERRY')
     .replace(/\bSAINTE\b/g, 'STE')
     .replace(/[^A-Z0-9]+/g, ' ')
     .replace(/\s+/g, ' ')
