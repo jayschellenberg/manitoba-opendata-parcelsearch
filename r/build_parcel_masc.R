@@ -238,6 +238,19 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
   rl_csv$prefix[rl_csv$parish_name == "WHITEMOUTH RIVER SETTLEMENT" &
                 rl_csv$parish_code == "L"] <- "WS"
 
+  # POPLAR POINT lots in Portage la Prairie split across two KMZ
+  # prefixes (PO and PP) covering different lot-number ranges. MASC
+  # stores them all under one parish_name (POPLAR POINT, parish_code
+  # J), so we don't know upfront which range a given row belongs to.
+  # Duplicate every POPLAR POINT row under both prefixes — the
+  # downstream join is on (muni, prefix, lot_num) so a row only
+  # matches a KMZ feature with the right prefix AND lot number;
+  # extras silently drop out.
+  pp_dupes <- rl_csv |>
+    filter(parish_name == "POPLAR POINT") |>
+    mutate(prefix = "PP")
+  rl_csv <- bind_rows(rl_csv, pp_dupes)
+
   # Normalize muni names so the join with KMZ-derived muni keys works
   # regardless of which source uses (RM)/(MUNICIPALITY)/etc. Both sides
   # get stripped to the bare uppercase name with whitespace normalized.
