@@ -9,6 +9,13 @@
 #                                               from r/download_parcels.R
 #   * masc_soil_ratings_with_latlon.csv       — quarter-section centroids
 #                                               with rating + risk-area cols
+#   * MB-RIVER-LOTS.kmz (optional)             — historic parish/river lot
+#                                               polygon geometry
+#   * D:/Dropbox/ClaudeCode/MASC-SCRAPE/masc_soil_ratings_riverlots.csv
+#                                              (optional) — per-lot ratings
+#                                              for parish/river lots; joined
+#                                              to the KMZ via parish-prefix
+#                                              + lot-number heuristic
 #
 # Output:
 #   web/public/data/parcel-masc/<MUNI_KEY>.json
@@ -134,6 +141,204 @@ masc_sf <- sf::st_sf(
   geometry = sf::st_sfc(geoms, crs = 4326)
 )
 cat("  quarters:", nrow(masc_sf), "\n")
+
+# ----------------------------------------------------------------------
+# 2b. River-lot ratings — join MASC riverlot scrape to KMZ polygons
+# ----------------------------------------------------------------------
+# Quarter-section MASC squares miss river-lot parcels (long narrow
+# strips perpendicular to the river that fall between the discrete
+# quarter centroids). MASC publishes a separate per-lot table for
+# parish/river lots that we ingest from a sister scrape. The MASC
+# table has no geometry — we attach geometry from the public
+# MB-RIVER-LOTS.kmz polygon set.
+#
+# The two sources use different parish encodings:
+#   KMZ label       PARISH_PREFIX + LOT_TYPE + LOT_NUMBER
+#                   (e.g. "NORL241" = NORBERT, river lot, lot 241)
+#                   PARISH_PREFIX is 2 letters, mostly the first
+#                   letters of the parish name (after stripping
+#                   ST./STE.).
+#   MASC scrape     parish_code = single letter, scoped within muni.
+#                   parish_name = full name ("ST. NORBERT").
+#                   land_parcel = "R 1 241 /001 B" with B = parish_code.
+#
+# We bridge them by deriving the expected KMZ prefix from each MASC
+# parish_name (heuristic + override map) and matching on
+# (muni, prefix, lot_number).
+riverlot_kmz_path <- file.path(source_dir, "MB-RIVER-LOTS.kmz")
+riverlot_csv_path <- "D:/Dropbox/ClaudeCode/MASC-SCRAPE/masc_soil_ratings_riverlots.csv"
+
+riverlot_polys <- NULL
+if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
+
+  cat("Reading river-lot MASC scrape ...\n")
+  rl_csv <- readr::read_csv(riverlot_csv_path, show_col_types = FALSE)
+  cat("  rows:", nrow(rl_csv), "\n")
+
+  # Hardcoded overrides for parish names whose KMZ prefix doesn't
+  # follow the simple "first 2 letters after ST./STE." rule. Built
+  # by inspecting the KMZ prefix list against the MASC parish list.
+  # Add to this map if the build warns about unmapped (muni, prefix).
+  parish_prefix_overrides <- c(
+    "PASQUIA SETTLEMENT"           = "PQ",  # PA reserved for ST. PAUL
+    "BIRCH RIVER SETTLEMENT NORTH" = "BN",
+    "BIRCH RIVER SETTLEMENT SOUTH" = "BS",
+    "WHITEMOUTH RIVER SETTLEMENT"  = "WS",  # ambiguous K/L codes; both → WS
+    "BAIE ST. PAUL"                = "BP",
+    "MANITOBA HOUSE SETTLEMENT (1)" = "MH",
+    "MANITOBA HOUSE SETTLEMENT (2)" = "MH",
+    "MANITOBA HOUSE SETTLEMENT (3)" = "MH"
+  )
+  parish_to_prefix <- function(name) {
+    if (name %in% names(parish_prefix_overrides)) {
+      return(unname(parish_prefix_overrides[name]))
+    }
+    s <- toupper(name)
+    s <- gsub("\\bSTE?\\.?\\b",            "", s)  # strip ST., STE. anywhere
+    s <- gsub("\\s+SETTLEMENT.*$",         "", s)
+    s <- gsub("\\s+INDIAN\\s+RESERVE.*$",  "", s)
+    s <- gsub("\\([^)]*\\)",               "", s)
+    s <- gsub("\\s+", " ", trimws(s))
+    words <- strsplit(s, "\\s+")[[1]]
+    if (length(words) <= 1) return(substr(words[1], 1, 2))
+    paste0(substr(words[1], 1, 1), substr(words[2], 1, 1))
+  }
+
+  # Parse the lot number out of "R 1 241 /001 B" — the second integer.
+  rl_csv <- rl_csv |>
+    mutate(
+      prefix  = vapply(parish_name, parish_to_prefix, character(1)),
+      lot_num = as.integer(sub("^[A-Z]\\s+\\d+\\s+(\\d+).*$", "\\1", land_parcel))
+    ) |>
+    filter(!is.na(lot_num))
+
+  # Normalize muni names so the join with KMZ-derived muni keys works
+  # regardless of which source uses (RM)/(MUNICIPALITY)/etc. Both sides
+  # get stripped to the bare uppercase name with whitespace normalized.
+  norm_muni <- function(x) {
+    x |>
+      stringi::stri_trans_general(id = "Latin-ASCII") |>
+      toupper() |>
+      gsub(pattern = "\\s*\\([^)]*\\)\\s*$", replacement = "") |>
+      gsub(pattern = "\\bRM\\s+OF\\b",       replacement = "") |>
+      gsub(pattern = "\\bMUNICIPALITY\\s+OF\\b", replacement = "") |>
+      gsub(pattern = "\\bTOWN\\s+OF\\b",     replacement = "") |>
+      gsub(pattern = "\\bCITY\\s+OF\\b",     replacement = "") |>
+      gsub(pattern = "\\bVILLAGE\\s+OF\\b",  replacement = "") |>
+      gsub(pattern = "\\s+",                 replacement = " ") |>
+      trimws()
+  }
+  rl_csv$muni_norm <- norm_muni(rl_csv$muni_name)
+
+  cat("Reading MB-RIVER-LOTS.kmz ...\n")
+  tmp <- tempfile("rl_kmz_")
+  dir.create(tmp)
+  unzip(riverlot_kmz_path, exdir = tmp)
+  kml_file <- file.path(tmp, "doc.kml")
+  layers <- sf::st_layers(kml_file)
+  poly_layers <- layers$name[vapply(seq_along(layers$name), function(i) {
+    gt <- layers$geomtype[[i]]
+    length(gt) > 0 && any(grepl("polygon|multipolygon", tolower(gt)))
+  }, logical(1))]
+
+  rl_polys_list <- list()
+  for (lyr in poly_layers) {
+    g <- sf::st_read(kml_file, layer = lyr, quiet = TRUE)
+    if (nrow(g) == 0L) next
+    g <- sf::st_collection_extract(g, "POLYGON", warn = FALSE)
+    g <- g[!sf::st_is_empty(g), ]
+    if (nrow(g) == 0L) next
+    cols_lower <- tolower(names(g))
+    name_col   <- which(cols_lower == "name")
+    g$name     <- if (length(name_col) == 0L) NA_character_ else as.character(g[[name_col[1]]])
+    g <- g[, c("name", attr(g, "sf_column"))]
+    rl_polys_list[[length(rl_polys_list) + 1L]] <- g
+  }
+  unlink(tmp, recursive = TRUE)
+
+  rl_polys <- do.call(rbind, rl_polys_list)
+  if (sf::st_crs(rl_polys)$epsg != 4326L) {
+    rl_polys <- sf::st_transform(rl_polys, 4326)
+  }
+  rl_polys <- sf::st_zm(rl_polys, drop = TRUE, what = "ZM")
+
+  # Parse KMZ label: "NORL241" → prefix="NO", type="RL", lot_num=241.
+  m <- regmatches(rl_polys$name,
+                  regexec("^([A-Z]{2,5})(RL|PL|WL|SL|OT)(\\d+)([A-Z]?)$",
+                          toupper(rl_polys$name)))
+  rl_polys$prefix   <- vapply(m, function(x) if (length(x) >= 2) x[2] else NA_character_, character(1))
+  rl_polys$lot_type <- vapply(m, function(x) if (length(x) >= 3) x[3] else NA_character_, character(1))
+  rl_polys$lot_num  <- as.integer(vapply(m, function(x) if (length(x) >= 4) x[4] else NA_character_, character(1)))
+  rl_polys <- rl_polys[!is.na(rl_polys$prefix) & !is.na(rl_polys$lot_num), ]
+
+  # Spatially attach a muni to each KMZ polygon by intersecting its
+  # centroid with the parcels FC's Muni_Name_With_Typ. This is the
+  # cheapest reliable way to know which muni a given river lot is
+  # in; KMZ doesn't tell us directly. UTM-project both sides so
+  # st_intersects is fast.
+  cat("Tagging river-lot polygons with muni ...\n")
+  rl_polys_utm  <- sf::st_transform(rl_polys, utm14)
+  rl_centroids  <- suppressWarnings(sf::st_centroid(rl_polys_utm))
+
+  # Quick lookup: build a parcels muni-tag layer with just (muni, geom).
+  parcels_muni_tag_utm <- sf::st_transform(
+    parcels |> select(Muni_Name_With_Typ), utm14
+  )
+  hits <- sf::st_intersects(rl_centroids, parcels_muni_tag_utm)
+  rl_polys$muni_with_typ <- vapply(hits, function(idx) {
+    if (length(idx) == 0L) return(NA_character_)
+    parcels_muni_tag_utm$Muni_Name_With_Typ[idx[1]]
+  }, character(1))
+  rl_polys$muni_norm <- norm_muni(rl_polys$muni_with_typ)
+
+  # Now do the join: KMZ (muni_norm, prefix, lot_num) ⨝ MASC (muni_norm, prefix, lot_num)
+  rl_join <- rl_polys |>
+    sf::st_drop_geometry() |>
+    select(name, muni_norm, prefix, lot_num) |>
+    inner_join(
+      rl_csv |>
+        select(muni_norm, prefix, lot_num, parish_name, parish_code,
+               rating = soil_rating, ra = risk_area),
+      by = c("muni_norm", "prefix", "lot_num"),
+      relationship = "many-to-many"
+    ) |>
+    distinct(name, .keep_all = TRUE)   # keep one rating per KMZ feature
+
+  cat("  KMZ river-lot polygons:", nrow(rl_polys), "\n")
+  cat("  MASC river-lot rows:   ", nrow(rl_csv), "\n")
+  cat("  KMZ ⨝ MASC matches:    ", nrow(rl_join), "\n")
+
+  # Build sf object: KMZ geometry + MASC rating columns, in the same
+  # column shape as the quarter-section masc_sf so we can rbind later.
+  if (nrow(rl_join) > 0) {
+    riverlot_polys <- rl_polys |>
+      filter(name %in% rl_join$name) |>
+      left_join(rl_join |> select(name, rating, ra, parish_name, parish_code, prefix, lot_num),
+                by = "name") |>
+      transmute(
+        q      = paste0(prefix, "RL"),                    # mimic the quarter "q" column
+        s      = NA_integer_,
+        t      = NA_integer_,
+        r      = lot_num,
+        d      = parish_code,
+        rating = rating,
+        ra     = as.integer(ra),
+        geometry
+      )
+    cat("  rated river-lot polygons:", nrow(riverlot_polys), "\n")
+  } else {
+    cat("  no river-lot ratings matched — check parish_prefix_overrides\n")
+  }
+}
+
+# Combine quarter-section squares + rated river-lot polygons (when
+# present) into a single sf for the intersection step. Same columns,
+# same CRS — just two different sources of MASC ratings.
+if (!is.null(riverlot_polys) && nrow(riverlot_polys) > 0) {
+  cat("Merging quarter-section + river-lot MASC sources ...\n")
+  masc_sf <- rbind(masc_sf, riverlot_polys)
+  cat("  combined ratings:", nrow(masc_sf), "\n")
+}
 
 # ----------------------------------------------------------------------
 # 3. Spatial intersection (parcel × quarter), area-weighted
