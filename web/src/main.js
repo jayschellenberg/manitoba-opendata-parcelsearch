@@ -35,6 +35,7 @@ import {
   fetchRiverLots,
   fetchParcelMascForMuni,
   fetchMascRiverlots,
+  fetchCliAgrForMuni,
   parseRollList,
   missingRollsFromResults,
 } from './arcgis.js';
@@ -62,6 +63,8 @@ import {
   setMascData,
   setMascRiverlotsData,
   setMascVisible,
+  setCliAgrData,
+  setCliAgrVisible,
   setMascRiskAreasData,
   setMascRiskAreasVisible,
   setSurveyGridData,
@@ -106,6 +109,8 @@ const $flowToggle    = document.getElementById('flow-toggle');
 const $muniParcelsToggle = document.getElementById('muni-parcels-toggle');
 const $mascToggle    = document.getElementById('masc-toggle');
 const $riskAreaToggle = document.getElementById('riskarea-toggle');
+const $cliToggle     = document.getElementById('cli-toggle');
+const $cliLegend     = document.getElementById('cli-legend');
 const $gridToggle    = document.getElementById('grid-toggle');
 const $count         = document.getElementById('count');
 const $tbody         = document.querySelector('#results tbody');
@@ -663,6 +668,7 @@ async function generateStaticMap() {
 }
 $muniParcelsToggle.addEventListener('click', () => toggleAuxOverlay('muniParcels'));
 $mascToggle.addEventListener('click', () => toggleMascOverlay());
+$cliToggle.addEventListener('click', () => toggleCliOverlay());
 $gridToggle.addEventListener('click', () => toggleSurveyGridOverlay());
 $municipality.addEventListener('change', () => {
   refilterCategoryDropdowns();
@@ -1234,6 +1240,7 @@ function resetMuniParcelsToggle() {
 // a muni-change can prompt a refetch when the layer is active.
 let mascLoadedFor = null;
 let surveyGridLoadedFor = null;
+let cliLoadedFor = null;
 
 /** Enable/disable MASC and Sec-Twp Grid toggles based on whether a
  *  muni is selected, and clear stale data + active state if the muni
@@ -1242,6 +1249,7 @@ let surveyGridLoadedFor = null;
 function resetMascAndGridToggles() {
   const muniSelected = !!$municipality.value;
   $mascToggle.disabled = !muniSelected;
+  if ($cliToggle) $cliToggle.disabled = !muniSelected;
   // Sec-Twp Grid stays enabled with or without a muni — without a muni
   // selected it falls back to the pre-baked province-wide static file.
   $gridToggle.disabled = false;
@@ -1254,6 +1262,19 @@ function resetMascAndGridToggles() {
       mapReady.then(() => {
         setMascVisible(map, false);
         if ($mascLegend) $mascLegend.hidden = true;
+      });
+    }
+  }
+  // CLI: same off-on-muni-change logic as MASC.
+  if (cliLoadedFor && cliLoadedFor !== $municipality.value) {
+    cliLoadedFor = null;
+    if ($cliToggle && $cliToggle.classList.contains('active')) {
+      $cliToggle.classList.remove('active');
+      $cliToggle.setAttribute('aria-pressed', 'false');
+      $cliToggle.textContent = 'CLI Soil';
+      mapReady.then(() => {
+        setCliAgrVisible(map, false);
+        if ($cliLegend) $cliLegend.hidden = true;
       });
     }
   }
@@ -1345,6 +1366,78 @@ async function toggleMascOverlay() {
   $mascToggle.textContent = 'MASC Rating';
   setMascVisible(map, true);
   if ($mascLegend) $mascLegend.hidden = false;
+}
+
+/**
+ * Toggle the Canada Land Inventory — Soil Capability for Agriculture
+ * overlay. Live-fetched per-muni from AAFC's hosted FeatureServer
+ * scoped by the cached muni boundary polygon. 30-day localStorage
+ * cache means subsequent toggles for the same muni are instant.
+ * Off-state hides the layer; on-state lazy-loads (if the muni
+ * changed) and shows the legend.
+ */
+async function toggleCliOverlay() {
+  if (!$cliToggle) return;
+  const muni = $municipality.value;
+  const wasActive = $cliToggle.classList.contains('active');
+  const visible = !wasActive;
+  $cliToggle.classList.toggle('active', visible);
+  $cliToggle.setAttribute('aria-pressed', String(visible));
+  await mapReady;
+
+  if (!visible) {
+    $cliToggle.textContent = 'CLI Soil';
+    setCliAgrVisible(map, false);
+    if ($cliLegend) $cliLegend.hidden = true;
+    return;
+  }
+
+  if (!muni) {
+    $cliToggle.classList.remove('active');
+    $cliToggle.setAttribute('aria-pressed', 'false');
+    return;
+  }
+
+  if (cliLoadedFor !== muni) {
+    $cliToggle.disabled = true;
+    $cliToggle.textContent = 'Loading…';
+    try {
+      const muniFeat = muniBoundariesFc?.features?.find(
+        (f) => f.properties?.MUNI_LIST_NAME_WITH_TYPE === muni,
+      ) || null;
+      if (!muniFeat) {
+        $cliToggle.classList.remove('active');
+        $cliToggle.setAttribute('aria-pressed', 'false');
+        $cliToggle.disabled = false;
+        $cliToggle.textContent = 'CLI Soil';
+        setCount(`Couldn't locate boundary for ${muni}; can't load CLI.`);
+        return;
+      }
+      const fc = await fetchCliAgrForMuni(muni, muniFeat);
+      if (!fc || !fc.features || fc.features.length === 0) {
+        $cliToggle.classList.remove('active');
+        $cliToggle.setAttribute('aria-pressed', 'false');
+        $cliToggle.disabled = false;
+        $cliToggle.textContent = 'CLI Soil';
+        setCount(`No CLI soil-capability polygons in ${muni}.`);
+        return;
+      }
+      setCliAgrData(map, fc);
+      cliLoadedFor = muni;
+    } catch (err) {
+      console.warn('CLI fetch failed', err);
+      $cliToggle.classList.remove('active');
+      $cliToggle.setAttribute('aria-pressed', 'false');
+      $cliToggle.disabled = false;
+      $cliToggle.textContent = 'CLI Soil';
+      setCount(`Failed to load CLI soil capability: ${err.message}`);
+      return;
+    }
+    $cliToggle.disabled = false;
+  }
+  $cliToggle.textContent = 'CLI Soil';
+  setCliAgrVisible(map, true);
+  if ($cliLegend) $cliLegend.hidden = false;
 }
 
 /**
