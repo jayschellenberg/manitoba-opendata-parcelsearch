@@ -21,6 +21,8 @@ This document explains how to build the same parcel-search tool for a different 
 11. [SoQL quick reference](#11-soql-quick-reference)
 12. [Non-Socrata portals](#12-non-socrata-portals)
 13. [Local dev workflow](#13-local-dev-workflow)
+14. [Manitoba (ArcGIS REST) implementation notes](#14-manitoba-arcgis-rest-implementation-notes)
+15. [Bulk roll-number search](#15-bulk-roll-number-search)
 
 ---
 
@@ -807,6 +809,9 @@ This section captures every operational decision, gotcha, and pattern that emerg
 | MHTIS_Traffic_Flow_2019 | `services6.arcgis.com/HQUud09zgy3Asw9X/.../FeatureServer/0` | AADT polylines. Used directly for the Traffic overlay (the older station-locations layer was tried first but dropped — it carried no AADT, so the user had to click out to MHTIS for the data; the flow layer renders AADT directly on the road). |
 | Manitoba Contaminated Sites | CSV at `manitoba.ca/.../cs-data.csv` | Not a FeatureServer; CSV file behind the official ArcGIS web map. Proxied via `vercel.json` because the upstream lacks `Access-Control-Allow-Origin`. |
 | Generated MAO legal index | `web/public/data/legal-index.json` | Static browser artifact generated from `ParcelSearch/mao-scrape/results/parcels.parquet`; supplies Legal Description, Lot, Block, Plan, certificates of title, and `(muni_no, roll_no_txt)` lookup keys. |
+| MASC soil ratings | `masc_soil_ratings_with_latlon.csv` -> `web/public/data/masc/` | Static per-municipality quarter-section shards. The MASC Soil map layer draws approximate quarter polygons from centroid lat/lon, colours by A-J rating, and labels each quarter with the rating letter only. |
+| Parcel-level MASC ratings | `RollEntry_YYYYMMDD.gpkg` + MASC CSV -> `web/public/data/parcel-masc/` | Static per-municipality dictionaries keyed by `Roll_No_Txt`; table enrichment for the dominant Soil column. |
+| MASC_Risk_Areas | `services.arcgis.com/mMUesHYPkXjaFGfS/.../MASC_Risk_Areas/FeatureServer/0` | Official MASC crop-insurance risk-area polygons published through Open Canada package `739cb8ed-b661-5a60-7a26-eb60cd06541f`; drives the Risk Areas overlay and parcel-level Risk Area column. |
 
 ### 14.2 Single-flow architecture
 
@@ -913,6 +918,9 @@ The Manitoba site exposes the following map overlays not present in the Winnipeg
 - **Zoning** — coloured per-search by `ZONE` code (not `ZONE_CATEGORY`) using a stable hash-derived HSL palette so the same code always renders the same colour, with golden-ratio hue spacing to avoid adjacent-code collisions. Zoning *codes* labelled at each polygon centroid with a `text-anchor: bottom` + `text-offset: [0, -1.2]` so they sit cleanly above the muni-parcels roll-number when both layers are on. `text-allow-overlap` and `text-ignore-placement` are both `true` on the zoning label so it never gets suppressed by collision detection.
 - **Dev Plan** — coloured by `DES_CATEGORY`. No labels (the long designation names don't fit in a polygon at typical zooms; the table carries the text).
 - **Enviro** — Manitoba Contaminated Sites Registry as red / orange / grey points by designation, with a registry-page link in each popup. Sourced from a CSV proxied through `vercel.json` (§14.9).
+- **MASC Soil** — per-municipality MASC crop-insurance soil ratings. Disabled until a municipality is selected. On first activation, `fetchMascRatingsForMuni()` loads `web/public/data/masc/_index.json`, resolves the selected `Muni_Name_With_Typ` to a shard using tolerant name normalization, fetches `web/public/data/masc/<file>.json`, and caches it for 30 days. `quartersToFc()` converts centroid rows into approximate 800 m quarter-section polygons; `masc-fill` colours by `rating` with the A-J ramp, and `masc-label` renders the rating letter only. The label layer is deliberately added above the parcel/roll-fabric layers so it remains visible after parcel searches or when Roll Layer is active.
+- **Risk Areas** — official MASC crop-insurance risk-area polygons from the Manitoba Maps `MASC_Risk_Areas` FeatureServer. The app fetches `Risk_Area` polygons with `f=geojson`, filters blank values (`Risk_Area IS NOT NULL AND Risk_Area <> '' AND Risk_Area <> ' '`), labels the separate overlay as `Risk <Risk_Area>`, and stamps the table's Risk Area column from the containing polygon.
+- **Sec-Twp Grid** — section-township grid plus river lots. With a municipality selected, it fetches the Manitoba Original Survey Legal Descriptions point layer scoped to the muni boundary; without a municipality, it uses the prebuilt province-wide static grid. The grid shares the MASC helper's DLS section-shape logic but is a separate overlay.
 - **RM Website / PD Website** — not overlays in the spatial sense; they sit at the bottom of the overlay grid as link-out buttons (§14.19).
 - **Streets / Satellite** basemap toggle in the map's top-right (Esri World Imagery alongside CARTO Positron). Custom `BasemapToggleControl` registered via `map.addControl(..., 'top-right')`; flips both raster sources' `visibility`.
 
@@ -1002,13 +1010,14 @@ The bulk path is ~30× faster on muni-scoped searches and eliminates a transient
 
 ### 14.16 localStorage cache with TTL and namespace
 
-Four classes of data, distinct strategies:
+Data classes use distinct strategies:
 
 | Data | Strategy |
 |---|---|
 | Search results | Never cached. Every Search hits ROLL_ENTRY live, even when a generated legal-index match supplies the lookup keys. |
 | Generated legal index | Static deployment artifact, regenerated from the MAO scrape with `npm run legal:index` whenever `ParcelSearch/mao-scrape/results/parcels.parquet` is refreshed. |
-| Dropdown lists, auxiliary overlay datasets, per-muni overlay enrichments | `localStorage` under `mbpsCache.` namespace, 7-day TTL |
+| Generated MASC artifacts | Static deployment artifacts. `r/build_masc_shards.R` writes quarter-section map shards to `web/public/data/masc/`; `r/build_parcel_masc.R` writes parcel-level dominant soil-rating shards to `web/public/data/parcel-masc/`. |
+| Dropdown lists, auxiliary overlay datasets, per-muni overlay enrichments | `localStorage` under `mbpsCache.` namespace. Most live data uses a 7-day TTL; stable generated/reference layers such as MASC, MASC Risk Areas, municipal boundaries, section grid, and river lots use a 30-day TTL. |
 | In-memory MapLibre source data | Mutated in place during a session; thrown away on reload |
 
 The `readCache` / `writeCache` helpers in `arcgis.js` wrap every value in `{ v, t: Date.now() }` and reject reads where `Date.now() - t > CACHE_TTL_MS`. Quota recovery on `setItem` failure walks the namespace and evicts older entries before falling back silently. The Clear button does `sessionStorage.clear()` *and* iterates `localStorage` evicting `mbpsCache.*` entries, then full-reloads to a clean URL — the bulletproof reset Winnipeg's site already had, extended to cover the new cache.
@@ -1072,7 +1081,43 @@ function externalLinkCell({ url, text, title }) {
 
 CSV export keeps each URL as a separate column so spreadsheet workflows can copy them out cleanly.
 
-### 14.22 Performance follow-ups deferred
+### 14.22 MASC soil-rating artifacts and official risk areas
+
+The MASC workflow has two generated artifacts, both derived from `masc_soil_ratings_with_latlon.csv`:
+
+1. `r/build_masc_shards.R` writes `web/public/data/masc/<MUNI>.json` plus `_index.json`. Each row is a compact quarter-section record:
+
+```json
+{ "q": "NE", "s": 1, "t": 7, "r": 3, "d": "E", "rating": "D", "ra": 32, "lat": 49.543106, "lon": -97.054278 }
+```
+
+2. `r/build_parcel_masc.R` intersects the most recent `RollEntry_YYYYMMDD.gpkg` against approximate MASC quarter polygons and writes `web/public/data/parcel-masc/<MUNI_KEY>.json` dictionaries keyed by `Roll_No_Txt`:
+
+```json
+{ "3600.000": { "rating": "C", "ra": 32, "q": "NE", "s": 1, "t": 12, "r": 5, "d": "E" } }
+```
+
+The quarter map overlay and Soil table column intentionally use separate artifacts. The map needs every quarter in the selected municipality; the table only needs the dominant rating by parcel. Keeping them separate avoids browser-side parcel x quarter spatial joins during search. The Risk Area table column no longer uses the MASC CSV's compact `ra` value; it is derived from the official MASC Risk Areas polygon layer.
+
+Important implementation details:
+
+- The MASC CSV carries bare municipality names (`RITCHOT`), while the app dropdown carries `Muni_Name_With_Typ` (`RITCHOT (RM)`). `lookupMuniManifestEntry()` therefore tries the direct key, a normalized key with type stripped for the MASC map shards, and a compact normalized comparison. This is what prevents the false "No MASC soil ratings on file for RITCHOT (RM)" failure.
+- Parcel-MASC shards are keyed by the original `Muni_Name_With_Typ`, so `fetchParcelMascForMuni()` uses the same manifest helper with `stripType: false`.
+- Official risk areas are fetched by `fetchMascRiskAreas()` from `MASC_Risk_Areas/FeatureServer/0`, source package <https://open.canada.ca/data/en/dataset/739cb8ed-b661-5a60-7a26-eb60cd06541f>. The API returns valid risk-area numbers `1` through `12`, plus `14`, `15`, and `16`; blank polygons are filtered out in the `where` clause.
+- MASC cache keys are versioned (`mb_masc_*_v3`, `mb_parcel_masc_*_v2`). If a shard exists and the app still claims no ratings, check browser `localStorage` first or bump the cache version after changing lookup semantics.
+- `masc.js::quarterPolygon()` draws approximate 800 m squares around centroids. This is a research/visual overlay, not a cadastral boundary layer.
+- `map.js` renders two MASC soil layers from the same source: `masc-fill` for the A-J colour ramp and `masc-label` for the text. The label expression is intentionally only the soil rating:
+
+```js
+['coalesce', ['get', 'rating'], '']
+```
+
+- Layer order matters. `masc-label` is added after `parcel-line`, above the parcel and muni-parcel fabric layers, so labels remain legible when the user searches parcels and then toggles MASC Soil. `setMascVisible()` must toggle both `masc-fill` and `masc-label`.
+- `map.js` renders official risk areas as separate `masc-risk-area-fill`, `masc-risk-area-line`, and `masc-risk-area-label` layers. `setMascRiskAreasVisible()` toggles all three.
+- `main.js::stampOfficialRiskAreas()` computes each parcel's bbox-centre point and finds the containing official risk polygon with `@turf/boolean-point-in-polygon`. Risk areas are broad enough that this representative point keeps search-time cost low without mixing the legacy MASC CSV `ra` into official labels.
+- Smoke test: select `RITCHOT (RM)`, toggle `MASC Soil`, zoom to >= 13 near the southeast side of Winnipeg/St. Adolphe, and confirm coloured quarter sections label as letters only with no "No MASC soil ratings..." status message. Then toggle `Risk Areas` and confirm risk boundaries/labels appear separately. Search `RITCHOT (RM)` + roll `100.000`; the row should show Soil `D` and Risk Area `12`.
+
+### 14.23 Performance follow-ups deferred
 
 Two follow-up items remain on the books from a code review and were deferred from the initial build:
 

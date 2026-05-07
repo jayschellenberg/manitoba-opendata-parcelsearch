@@ -106,6 +106,7 @@
           <button id="devplan-toggle" type="button" class="secondary" aria-pressed="false">Dev Plan Layer</button>
           <button id="contam-toggle"  type="button" class="secondary" aria-pressed="false" title="Manitoba Contaminated Sites Registry">Enviro Sites</button>
           <button id="masc-toggle"   type="button" class="secondary" aria-pressed="false" disabled title="MASC crop-insurance soil ratings (A best → J worst). Select a municipality first.">MASC Soil</button>
+          <button id="riskarea-toggle" type="button" class="secondary" aria-pressed="false" title="Official MASC crop-insurance risk-area boundaries from Manitoba Maps">Risk Areas</button>
           <button id="grid-toggle"   type="button" class="secondary" aria-pressed="false" title="Section-township grid + river lots. Select a municipality for a focused view, or toggle without one for the province-wide overlay.">Sec-Twp Grid</button>
           <button id="muni-website-btn" type="button" class="secondary" disabled title="Select a municipality to enable">Muni Website</button>
           <button id="pd-website-btn"   type="button" class="secondary" disabled title="Select a municipality to enable">PD Website</button>
@@ -167,7 +168,7 @@
             <th data-col="dev1">Dev-Plan Designation</th>
             <th data-col="dpbylaw">DP By-law</th>
             <th data-col="soil"     title="Dominant MASC soil-rating (A best → J worst), area-weighted across the parcel. Built per-muni from MASC's quarter-section ratings.">Soil</th>
-            <th data-col="riskarea" title="MASC Risk Area zone (1–47). Drives crop-insurance premium tiers.">Risk Area</th>
+            <th data-col="riskarea" title="Official MASC Risk_Area polygon from Manitoba Maps / Open Canada. Drives crop-insurance premium tiers.">Risk Area</th>
             <th data-col="changes">Changes</th>
             <th data-col="du">DU</th>
             <th data-col="acres">Acres</th>

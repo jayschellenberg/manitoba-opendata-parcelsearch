@@ -1,6 +1,6 @@
 # Manitoba Open Data Parcel Search
 
-A firm-facing web tool for researching Manitoba properties (excluding Winnipeg, which has its [own portal](https://winnipeg-opendata-parcelsearch.vercel.app/)) by **municipality + civic address + roll # + legal description**, with each result enriched live from five provincial open-data sources and rendered on an interactive map. Pulls together what would otherwise be a five-tab workflow — Manitoba Assessment Online, the provincial Zoning By-Laws layer, the Development Plan Designations layer, the MHTIS traffic-flow layer, and the Contaminated Sites Registry — into one search window with a single CSV export.
+A firm-facing web tool for researching Manitoba properties (excluding Winnipeg, which has its [own portal](https://winnipeg-opendata-parcelsearch.vercel.app/)) by **municipality + civic address + roll # + legal description**, with each result enriched from provincial open-data sources and rendered on an interactive map. Pulls together what would otherwise be a multi-tab workflow — Manitoba Assessment Online, the provincial Zoning By-Laws layer, the Development Plan Designations layer, the MHTIS traffic-flow layer, MASC soil ratings, and the Contaminated Sites Registry — into one search window with a single CSV export.
 
 ## Live site
 
@@ -14,7 +14,10 @@ Source: <https://github.com/jayschellenberg/manitoba-opendata-parcelsearch>. Dep
 | `r/download_parcels.R` | Snapshots the three primary FeatureServer layers to dated GeoPackages. | Local archive |
 | `r/parcel_search_app.R` | Shiny app that searches the **local** snapshot for offline / historical lookups. | Personal use |
 | `r/build_legal_index.R` | Converts `ParcelSearch/mao-scrape/results/parcels.parquet` into the static browser legal-search index at `web/public/data/legal-index.json`. | Web deploy prep |
+| `r/build_masc_shards.R` | Splits the MASC quarter-section rating CSV into per-municipality static shards for the MASC Soil map layer. | Web deploy prep |
+| `r/build_parcel_masc.R` | Pre-bakes the dominant MASC soil rating per Roll Entry parcel for the Soil table column. | Web deploy prep |
 | `vercel.json` | Build config + production CORS rewrite for the contaminated-sites CSV. | — |
+| [`HANDOFF.md`](HANDOFF.md) | Current implementation notes, verification steps, generated artifacts, and open follow-ups. | Maintainers |
 | [`REPLICATION_GUIDE.md`](REPLICATION_GUIDE.md) | Step-by-step guide for adapting this tool to another jurisdiction. Originally written for the Winnipeg sister site (Socrata); §14 captures every Manitoba-specific decision and lesson. | Anyone replicating |
 
 ## Data sources
@@ -30,6 +33,13 @@ npm run legal:index
 
 The browser searches that index for legal description text, Lot/Block/Plan, and certificate-of-title text. Matching `(muni_no, roll_no_txt)` keys are used only as a lookup bridge; the app still fetches the current parcel geometry and assessment fields live from Roll Entry.
 
+MASC soil data is also shipped as generated static artifacts rather than queried live. The quarter-section layer uses per-municipality JSON shards under `web/public/data/masc/`, while the table's dominant parcel-level soil rating uses `web/public/data/parcel-masc/`. Risk-area numbers come from the official Manitoba Maps / Open Canada `MASC_Risk_Areas` polygon layer and are joined to parcel results at search time. Refresh the generated soil artifacts after a new MASC CSV or Roll Entry snapshot:
+
+```bash
+Rscript r/build_masc_shards.R
+Rscript r/build_parcel_masc.R
+```
+
 | Dataset | FeatureServer | Used for |
 |---|---|---|
 | [ROLL ENTRY](https://geoportal.gov.mb.ca/datasets/manitoba::roll-entry/about) | `…/ROLL_ENTRY/FeatureServer/0` | Parcel polygons, roll #, civic address, municipality, dwelling units, total assessed value, link to MAO report |
@@ -38,6 +48,8 @@ The browser searches that index for legal description text, Lot/Block/Plan, and 
 | [MHTIS Traffic Flow 2019](https://www.gov.mb.ca/mti/traffic/counts.html) | `…/MHTIS_Traffic_Flow_2019/FeatureServer/0` | AADT polylines for the colour-coded Traffic overlay |
 | [Manitoba Contaminated Sites Registry](https://www.gov.mb.ca/sd/waste_management/contaminated_sites/registry/index.html) | CSV at `manitoba.ca/.../cs-data.csv` (proxied via `vercel.json` because the upstream lacks `Access-Control-Allow-Origin`) | Designated Contaminated, Designated Impacted, and Not Designated sites for the Enviro overlay |
 | MAO scrape legal index | `web/public/data/legal-index.json` generated from `ParcelSearch/mao-scrape/results/parcels.parquet` | Legal description text, Lot, Block, Plan, certificates of title, and `(muni_no, roll_no_txt)` lookup keys |
+| MASC soil ratings | `masc_soil_ratings_with_latlon.csv` → `web/public/data/masc/` and `web/public/data/parcel-masc/` | Quarter-section MASC layer, A-J rating colours, visible rating-letter labels, and parcel-level Soil table field |
+| [MASC Risk Areas / Risk Regions](https://open.canada.ca/data/en/dataset/739cb8ed-b661-5a60-7a26-eb60cd06541f) | `…/MASC_Risk_Areas/FeatureServer/0` | Official crop-insurance risk-area polygons, Risk Areas overlay labels, and parcel-level Risk Area table field |
 
 ## Layout (sidebar + main pane)
 
@@ -60,6 +72,9 @@ The page splits into a fixed-width left sidebar holding all controls and a fluid
 - **Zoning** — coloured per-search by `ZONE` code with a stable hash-derived HSL palette. Floating legend in the bottom-right lists every code on screen with its `ZONE_NAME`. Zoning code labels render above each polygon centroid (offset to clear the muni-parcels roll number when both layers are on).
 - **Dev Plan** — coloured by `DES_CATEGORY`.
 - **Enviro** — Manitoba Contaminated Sites Registry as red / orange / grey points by designation, with a registry-page link in each popup.
+- **MASC Soil** — per-municipality MASC crop-insurance soil ratings. Disabled until a municipality is selected; on first activation it lazy-loads that muni's shard from `web/public/data/masc/`, draws approximate quarter-section polygons from MASC centroids, colours them A (best) through J (worst), and labels each quarter at zoom >= 13 with the rating letter only. The label layer sits above the parcel and roll-fabric layers so the text remains legible when MASC is combined with parcel overlays. A floating A-J legend appears while active.
+- **Risk Areas** — official MASC crop-insurance risk-area polygons from the Manitoba Maps `MASC_Risk_Areas` FeatureServer published through Open Canada. Lazy-loaded province-wide, cached for 30 days, and labelled from `Risk_Area`.
+- **Sec-Twp Grid** — section-township grid plus river lots. With a municipality selected, it fetches the Manitoba Original Survey Legal Descriptions layer scoped to the muni boundary; without a muni, it uses the prebuilt province-wide static grid.
 - **RM Website** — opens the selected muni's official site in a new tab. Auto-detects from a comprehensive lookup of every published municipal website in the province (`MUNI_WEBSITES` in [main.js](web/src/main.js)). Reads "RM N/A" when the muni's directory entry has no website.
 - **PD Website** — data-driven. After every search, the dominant `PLANNINGDISTRICT` value across the dev-plan enrichment FC picks the active PD; `PD_WEBSITES` looks up its URL. Reads "PD N/A" when the PD has no website on file. Stays disabled until a search resolves the PD.
 
@@ -67,11 +82,12 @@ The page splits into a fixed-width left sidebar holding all controls and a fluid
 
 ## Results table
 
-| Roll # | Address | Legal | Title | Zoning | % | Zoning 2 | ZBL | Dev-Plan Designation | DP By-law | Changes | DU | Acres | SF | Assess-{year} | Walkscore | Flood |
+| Roll # | Address | Legal | Title | Zoning | % | Zoning 2 | ZBL | Dev-Plan Designation | DP By-law | Soil | Risk Area | Changes | DU | Acres | SF | Assess-{year} | Walkscore | Flood |
 
 - **Legal** and **Title** populate for searches that match the generated MAO scrape index. Legal displays the brief legal description, with detailed legal text and parsed Lot / Block / Plan available in the cell tooltip and CSV export.
 - **Zoning 2** hidden when its coverage is < 1% (digitization slivers).
 - **Zoning** and **Zoning 2** show the short ZONE code only; the full ZONE_NAME is in the parcel hover popup and the zoning legend.
+- **Soil** is the dominant MASC crop-insurance soil rating for the parcel, pre-baked per municipality from the MASC quarter-section shards. **Risk Area** is stamped from the official `MASC_Risk_Areas` polygon containing the parcel's representative point. Parcels outside the relevant coverage render blank.
 - **Changes** column shows `Z: AG-5 → RR1` or `DP: 03/10 → 23-05` when an amendment is recorded for the row's primary overlay match. Whitespace and Esri `<Null>` sentinels in the source data are filtered out so spurious "Z: " entries no longer appear.
 - **Assess-{year}** — header is dynamically year-stamped (e.g. *Assess-2024*) using the most-common assessment year parsed from `Asmt_Roll` across the result set. The dollar value itself is the link to the parcel's MAO report.
 - **Walkscore** — opens `walkscore.com/score/<address>`; no API key needed (the Walk Score page renders Walk / Transit / Bike on arrival).
@@ -94,13 +110,16 @@ Pure static. Vercel serves the Vite-built bundle plus the generated legal-search
 3. Paginated parcel fetch from ROLL_ENTRY with a 1,000-row cap and a `_truncated` flag set whenever the cap or `exceededTransferLimit` triggers.
 4. Spatial enrichment — when a muni is selected, **one bulk fetch** of every overlay polygon in that muni replaces the per-parcel envelope queries (~30× faster, eliminates transient-failure mode). Province-wide searches fall back to per-parcel envelope queries with a concurrency cap of 16.
 5. Top-N area-weighted join in the browser via `@turf/intersect` + `@turf/area`, mirroring `mao-assembly/scripts/pipeline_utils.R::get_multiple_by_area()`. Top-2 zonings per parcel (with coverage % per match), top-1 dev-plan designation.
-6. Results enrich the table, the map fits to bounds, and the zoning legend rebuilds against the actual codes present.
+6. Fetch the official MASC risk-area polygons and stamp each result with `_soilRiskArea` from the containing `Risk_Area` polygon.
+7. If a municipality is selected, fetch the precomputed parcel-MASC shard and stamp each result with `_soilRating` and quarter-section metadata for the Soil table cell.
+8. Results enrich the table, the map fits to bounds, and the zoning legend rebuilds against the actual codes present.
 
-**Caching.** Four classes of data, distinct strategies:
+**Caching.** Data classes use distinct strategies:
 
 - **Search results** — never cached. Every Search fetches current ROLL_ENTRY rows live, even when a generated legal-index match supplies the lookup keys.
 - **Generated legal index** — static deployment artifact, regenerated from the MAO scrape with `npm run legal:index` whenever `ParcelSearch/mao-scrape/results/parcels.parquet` is refreshed.
-- **Dropdown lists + auxiliary overlays** — cached in `localStorage` under the `mbpsCache.` namespace with a 7-day TTL. Survives across tabs and sessions. Quota recovery evicts older namespaced entries before failing. Clear button wipes the namespace.
+- **Generated MASC artifacts** — static deployment artifacts regenerated with `r/build_masc_shards.R` and `r/build_parcel_masc.R` whenever MASC ratings or Roll Entry snapshots are refreshed.
+- **Dropdown lists + auxiliary overlays** — cached in `localStorage` under the `mbpsCache.` namespace. Most lists and live overlays use a 7-day TTL; stable generated/reference overlays such as MASC, MASC Risk Areas, municipal boundaries, river lots, and the section grid use a 30-day TTL. Quota recovery evicts older namespaced entries before failing. Clear button wipes the namespace.
 - **Per-muni overlay fetches** — cached per-muni so switching back to a recently-visited muni is instant.
 
 **Dependencies** (`web/package.json`):
@@ -108,7 +127,7 @@ Pure static. Vercel serves the Vite-built bundle plus the generated legal-search
 - `maplibre-gl` — map (no API key; CARTO Positron + Esri World Imagery raster tiles)
 - `@turf/area`, `@turf/bbox`, `@turf/intersect`, `@turf/boolean-point-in-polygon` — spatial primitives for the area-weighted join
 
-No backend, no database, no scheduled jobs. The only precomputed browser artifact is `web/public/data/legal-index.json`, derived from the companion MAO scrape.
+No backend, no database, no scheduled jobs. The precomputed browser artifacts are the generated legal-search index, the MASC quarter-section shards, the parcel-level MASC soil shards, and static reference overlays such as the province-wide section grid / river-lot files.
 
 ## Running the web app locally
 
@@ -121,7 +140,21 @@ npm run legal:index   # refresh after the MAO scrape output changes
 npm run dev
 ```
 
+When MASC inputs change, rebuild the static shards from the repo root before starting or deploying:
+
+```bash
+Rscript r/build_masc_shards.R
+Rscript r/build_parcel_masc.R
+```
+
 Open <http://localhost:5173>. The contaminated-sites CSV proxies through Vite's dev server so Show Enviro works in dev too.
+
+If the project is running from a synced folder and Vite reports `Outdated Optimize Dep` or an `EBUSY` rename under `node_modules/.vite`, start dev with a temp cache:
+
+```powershell
+$env:VITE_CACHE_DIR = Join-Path $env:TEMP 'mbopendata-websearch-vite'
+npm run dev -- --host 127.0.0.1 --force
+```
 
 To build for production:
 
@@ -151,6 +184,8 @@ The Shiny app reads the most recent `RollEntry_YYYYMMDD.gpkg` in the project dir
 - The MHTIS Traffic Flow layer doesn't carry every road segment in the province — gaps are normal in less-trafficked corridors.
 - ROLL_ENTRY's `AsmtYr` column referenced in the offline pipeline does **not** exist on the live FeatureServer. The assessment year is parsed from the `Asmt_Roll` text field (e.g. *"2024 Final"* → 2024).
 - Some service configurations stringify null as the literal text `<Null>`; the client treats `null`, empty, single-space, and `<Null>` as equivalent.
+- MASC quarter-section polygons are visual approximations: the source CSV supplies centroids, so the app draws ~800 m squares centred on each quarter. This is suitable for appraisal-research triage, but it is not a cadastral survey boundary.
+- MASC coverage is farmland-oriented. Urban-only municipalities and parcels outside rated quarter sections can legitimately have no MASC soil rating. Risk-area coverage comes from the separate official MASC Risk Areas polygon source.
 - `MUNI_WEBSITES` and `PD_WEBSITES` (in [main.js](web/src/main.js)) are hand-curated from the province's official Municipal and Planning District contact directories. Munis whose only published contact is a generic email render as "RM N/A" — adding an entry to the constant promotes them to a working button.
 
 ## Replicating this for another jurisdiction

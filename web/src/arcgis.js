@@ -14,6 +14,8 @@
 //     DES_NAME, DES_CATEGORY, DP_BYLAW, DPA_BYLAW, PLANNINGDISTRICT,
 //     PLANNINGREGION, MUNI_NAME, RES_MIN_ACRES_PER_LOT,
 //     RES_MAX_ACRES_PER_LOT, ACRES, AU_LIMIT
+//   MASC_Risk_Areas                 risk areas  geometry: polygon
+//     Risk_Area
 //
 // Single search flow (Manitoba doesn't have a separate survey/legal-lots
 // dataset — Roll_Entry IS the parcels):
@@ -48,6 +50,7 @@ const BASE = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services'
 const ROLL_URL    = `${BASE}/ROLL_ENTRY/FeatureServer/0`;
 const ZONING_URL  = `${BASE}/Manitoba_Zoning_By_Laws/FeatureServer/0`;
 const DEVPLAN_URL = `${BASE}/Manitoba_Development_Plan_Designations/FeatureServer/0`;
+const MASC_RISK_AREAS_URL = `${BASE}/MASC_Risk_Areas/FeatureServer/0`;
 
 // ArcGIS Online hosted services cap any single page at 2000 features.
 const PAGE_SIZE = 2000;
@@ -447,7 +450,7 @@ const MUNICIPALITY_URL      = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcg
 const MASC_INDEX_URL = `${import.meta.env?.BASE_URL || '/'}data/masc/_index.json`;
 
 export async function fetchMascIndex() {
-  const cacheKey = 'mb_masc_index_v2';
+  const cacheKey = 'mb_masc_index_v3';
   const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
   try {
@@ -463,22 +466,13 @@ export async function fetchMascIndex() {
 
 export async function fetchMascRatingsForMuni(muniNameWithTyp) {
   if (!muniNameWithTyp) return null;
-  // Strip the "(TYPE)" suffix and normalize to the same key format
-  // the build script writes — uppercase, dash-collapsed, accent-stripped.
-  const bare = String(muniNameWithTyp)
-    .replace(/\s*\([^)]*\)\s*$/, '')
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .toUpperCase()
-    .replace(/[‐-―−]/g, '-')
-    .replace(/\s+/g, ' ')
-    .trim();
-  const cacheKey = `mb_masc_${bare}_v2`;
-  const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
-  if (cached) return cached;
-
   const idx = await fetchMascIndex();
-  if (!idx || !idx[bare]) return null;
-  const file = idx[bare].file;
+  const entry = lookupMuniManifestEntry(idx, muniNameWithTyp, { stripType: true });
+  if (!entry) return null;
+  const file = entry.file;
+  const cacheKey = `mb_masc_${file}_v3`;
+  const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  if (Array.isArray(cached) && cached.length > 0) return cached;
   try {
     const res = await fetch(`${import.meta.env?.BASE_URL || '/'}data/masc/${file}`);
     if (!res.ok) return null;
@@ -488,6 +482,29 @@ export async function fetchMascRatingsForMuni(muniNameWithTyp) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Official MASC Risk Areas polygon layer. This is the authoritative
+ * source for risk-area numbers; do not use the MASC soil-rating CSV's
+ * compact `ra` field for map labels or parcel table risk areas.
+ *
+ * Source: Open Canada package 739cb8ed-b661-5a60-7a26-eb60cd06541f,
+ * exposed by Manitoba Maps as MASC_Risk_Areas/FeatureServer/0.
+ */
+export async function fetchMascRiskAreas() {
+  const cacheKey = 'mb_masc_risk_areas_v1';
+  const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  if (cached) return cached;
+  const fc = await fetchAllPages(MASC_RISK_AREAS_URL, {
+    where: "Risk_Area IS NOT NULL AND Risk_Area <> '' AND Risk_Area <> ' '",
+    outFields: 'OBJECTID,Risk_Area',
+    returnGeometry: 'true',
+    outSR: '4326',
+    f: 'geojson',
+  }, PAGE_SIZE);
+  writeCache(cacheKey, fc);
+  return fc;
 }
 
 /**
@@ -560,7 +577,7 @@ let parcelMascIndexPromise = null;
 async function fetchParcelMascIndex() {
   if (parcelMascIndexPromise) return parcelMascIndexPromise;
   parcelMascIndexPromise = (async () => {
-    const cacheKey = 'mb_parcel_masc_index_v1';
+    const cacheKey = 'mb_parcel_masc_index_v2';
     const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
     if (cached) return cached;
     try {
@@ -579,9 +596,10 @@ async function fetchParcelMascIndex() {
 export async function fetchParcelMascForMuni(muniNameWithTyp) {
   if (!muniNameWithTyp) return null;
   const idx = await fetchParcelMascIndex();
-  if (!idx || !idx[muniNameWithTyp]) return null;
-  const file = idx[muniNameWithTyp].file;
-  const cacheKey = `mb_parcel_masc_${file}_v1`;
+  const entry = lookupMuniManifestEntry(idx, muniNameWithTyp, { stripType: false });
+  if (!entry) return null;
+  const file = entry.file;
+  const cacheKey = `mb_parcel_masc_${file}_v2`;
   const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
   try {
@@ -593,6 +611,44 @@ export async function fetchParcelMascForMuni(muniNameWithTyp) {
   } catch {
     return null;
   }
+}
+
+function lookupMuniManifestEntry(index, muniName, { stripType }) {
+  if (!index || !muniName) return null;
+
+  const direct = String(muniName).trim();
+  if (index[direct]) return index[direct];
+
+  const normalized = normalizeMuniLookupKey(muniName, { stripType });
+  if (index[normalized]) return index[normalized];
+
+  const requestedCompact = compactMuniLookupKey(muniName, { stripType });
+  for (const [key, entry] of Object.entries(index)) {
+    if (compactMuniLookupKey(key, { stripType: false }) === requestedCompact) {
+      return entry;
+    }
+  }
+  return null;
+}
+
+function normalizeMuniLookupKey(name, { stripType = false } = {}) {
+  let s = String(name || '');
+  if (stripType) s = s.replace(/\s*\([^)]*\)\s*$/, '');
+  return s
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[\u2010-\u2015\u2212]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function compactMuniLookupKey(name, { stripType = false } = {}) {
+  return normalizeMuniLookupKey(name, { stripType })
+    .replace(/&/g, ' AND ')
+    .replace(/\bMTN\b/g, 'MOUNTAIN')
+    .replace(/\bFRANCOIS\b/g, 'FRANCIS')
+    .replace(/\bSAINTE\b/g, 'STE')
+    .replace(/[^A-Z0-9]+/g, '');
 }
 
 /**
