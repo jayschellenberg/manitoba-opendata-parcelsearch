@@ -1063,6 +1063,25 @@ export function initMap(container, { onFeatureClick } = {}) {
       });
       map.on('mouseleave', 'masc-risk-area-fill', () => { map.getCanvas().style.cursor = ''; });
 
+      // Click a CLI polygon → popup listing every class slot the
+      // polygon carries (A through F) with class number, percentage,
+      // and subclass codes. Most polygons have a single dominant
+      // class but transition zones can carry mixed ratings like
+      // "60% 3W, 40% 4T" — the popup makes that visible without
+      // having to dig through the raw FeatureServer attributes.
+      const cliPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '320px' });
+      map.on('click', 'cli-agr-fill', (e) => {
+        const p = e.features?.[0]?.properties;
+        if (!p) return;
+        cliPopup.setLngLat(e.lngLat).setHTML(cliHtml(p)).addTo(map);
+      });
+      map.on('mouseenter', 'cli-agr-fill', () => {
+        if (map.getLayoutProperty('cli-agr-fill', 'visibility') === 'visible') {
+          map.getCanvas().style.cursor = 'pointer';
+        }
+      });
+      map.on('mouseleave', 'cli-agr-fill', () => { map.getCanvas().style.cursor = ''; });
+
       // Click a traffic-count station → popup with station / highway /
       // location and the AADT (when the Traffic Flow layer has been loaded
       // and indexed; main.js stamps the matched AADT onto each station
@@ -1332,6 +1351,79 @@ function contamHtml(p) {
 function riskAreaHtml(p) {
   const risk = String(p.Risk_Area ?? '').trim();
   return `<div style="max-width:220px;line-height:1.4"><strong>MASC Risk Area ${escapeHtml(risk || 'N/A')}</strong><br><em>Official Manitoba Maps boundary</em></div>`;
+}
+
+// CLI subclass codes — surface the human-readable limitation so the
+// popup explains *why* a parcel is rated lower without having to look
+// up the AAFC manual.
+const CLI_SUBCLASS_LABELS = {
+  C: 'climate',
+  T: 'topography',
+  W: 'excess water',
+  M: 'moisture deficiency',
+  F: 'low fertility',
+  N: 'salinity',
+  I: 'inundation',
+  E: 'erosion',
+  P: 'stoniness',
+  R: 'shallowness over rock',
+  D: 'undesirable soil structure',
+};
+
+function cliSubclassDescription(rawSubclass) {
+  if (!rawSubclass) return '';
+  const codes = String(rawSubclass).toUpperCase().replace(/[^A-Z]/g, '').split('');
+  const seen = new Set();
+  const labels = [];
+  for (const c of codes) {
+    if (seen.has(c)) continue;
+    seen.add(c);
+    if (CLI_SUBCLASS_LABELS[c]) labels.push(CLI_SUBCLASS_LABELS[c]);
+  }
+  return labels.join(', ');
+}
+
+const CLI_CLASS_COLORS = {
+  '1': '#1a6b26', '2': '#4fab57', '3': '#a6e29f',
+  '4': '#f2d640', '5': '#f4a040', '6': '#a8754f',
+  '7': '#9c27b0',
+};
+
+function cliHtml(p) {
+  // Walk every class slot (A → F) the AAFC schema can carry. Skip
+  // empty slots so a single-dominant-class polygon shows one row,
+  // a transition-zone polygon shows two or more.
+  const slots = ['A', 'B', 'C', 'D', 'E', 'F'];
+  const rows = [];
+  for (const slot of slots) {
+    const cls = p[`CLASS_${slot}`];
+    if (cls == null || String(cls).trim() === '') continue;
+    const pct  = p[`PERCENT_${slot}`];
+    const sub1 = p[`SUBCLAS_${slot}1`];
+    const sub2 = p[`SUBCLAS_${slot}2`];
+    const subRaw = [sub1, sub2].filter(Boolean).join('');
+    const subDesc = cliSubclassDescription(subRaw);
+    const color = CLI_CLASS_COLORS[String(cls).trim()] || '#cccccc';
+    const textColor = ['1', '6', '7'].includes(String(cls).trim()) ? '#fff' : '#1a1a1a';
+    const chip = `<span style="display:inline-block;min-width:1.6em;padding:1px 6px;border-radius:4px;background:${color};color:${textColor};font-weight:600;text-align:center">${escapeHtml(cls)}${escapeHtml(subRaw)}</span>`;
+    const pctTxt = (pct != null && String(pct).trim() !== '') ? `<strong>${escapeHtml(pct)}%</strong>` : '';
+    const desc   = subDesc ? `<em style="color:#555">${escapeHtml(subDesc)}</em>` : '';
+    rows.push(`<tr><td style="padding:2px 6px 2px 0">${chip}</td><td style="padding:2px 6px">${pctTxt}</td><td style="padding:2px 0">${desc}</td></tr>`);
+  }
+
+  if (rows.length === 0) {
+    return `<div style="max-width:240px;line-height:1.4"><strong>CLI Soil Capability</strong><br><em>No class data on this polygon.</em></div>`;
+  }
+
+  return `
+    <div style="max-width:300px;line-height:1.4">
+      <strong>CLI Soil Capability for Agriculture</strong>
+      <table style="margin-top:6px;font-size:12px;border-collapse:collapse">${rows.join('')}</table>
+      <div style="margin-top:6px;color:#666;font-size:11px">
+        Class 1 = prime · 7 = no agricultural capability
+      </div>
+    </div>
+  `;
 }
 
 function trafficHtml(p) {
