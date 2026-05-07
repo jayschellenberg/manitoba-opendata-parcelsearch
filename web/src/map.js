@@ -560,6 +560,62 @@ export function initMap(container, { onFeatureClick } = {}) {
         },
       });
 
+      // MASC ratings on river-lot polygons. The quarter-section CSV
+      // doesn't cover river lots, so we ship a separately-built
+      // GeoJSON of rated KMZ polygons (built by build_parcel_masc.R
+      // from the join of MB-RIVER-LOTS.kmz × masc_soil_ratings_
+      // riverlots.csv). Same A→J palette as the quarter-section
+      // squares so the two sources read as one overlay; visibility
+      // toggles together via setMascVisible().
+      map.addSource('masc-riverlots', { type: 'geojson', data: emptyFc() });
+      map.addLayer({
+        id: 'masc-riverlots-fill',
+        type: 'fill',
+        source: 'masc-riverlots',
+        layout: { visibility: 'none' },
+        paint: {
+          'fill-color': [
+            'match', ['get', 'rating'],
+            'A', '#1a9850',
+            'B', '#66bd63',
+            'C', '#a6d96a',
+            'D', '#d9ef8b',
+            'E', '#fee08b',
+            'F', '#fdae61',
+            'G', '#f46d43',
+            'H', '#d73027',
+            'I', '#a50026',
+            'J', '#67001f',
+            '#cccccc',
+          ],
+          'fill-opacity': 0.45,
+          'fill-outline-color': 'rgba(0, 0, 0, 0.3)',
+        },
+      });
+      map.addLayer({
+        id: 'masc-riverlots-label',
+        type: 'symbol',
+        source: 'masc-riverlots',
+        minzoom: 13,
+        layout: {
+          visibility: 'none',
+          'text-field': ['get', 'rating'],
+          'text-font': ['Open Sans Semibold'],
+          'text-size': [
+            'interpolate', ['linear'], ['zoom'],
+            13, 11, 16, 14, 18, 16,
+          ],
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+          'symbol-placement': 'point',
+        },
+        paint: {
+          'text-color': '#1a1a1a',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.5,
+        },
+      });
+
       // Official MASC Risk Areas. Separate from the soil-rating quarters:
       // Risk_Area comes from the Manitoba Maps MASC_Risk_Areas polygon
       // layer, not from the compact `ra` field in the soil CSV shard.
@@ -1097,9 +1153,16 @@ export function setMascData(map, fc) {
   const src = map.getSource('masc');
   if (src) src.setData(fc);
 }
+export function setMascRiverlotsData(map, fc) {
+  const src = map.getSource('masc-riverlots');
+  if (src) src.setData(fc);
+}
 export function setMascVisible(map, visible) {
   const v = visible ? 'visible' : 'none';
-  for (const id of ['masc-fill', 'masc-label']) {
+  for (const id of [
+    'masc-fill', 'masc-label',
+    'masc-riverlots-fill', 'masc-riverlots-label',
+  ]) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
   }
 }

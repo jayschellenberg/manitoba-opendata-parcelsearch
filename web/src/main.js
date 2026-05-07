@@ -34,6 +34,7 @@ import {
   fetchProvinceSectionGrid,
   fetchRiverLots,
   fetchParcelMascForMuni,
+  fetchMascRiverlots,
   parseRollList,
   missingRollsFromResults,
 } from './arcgis.js';
@@ -59,6 +60,7 @@ import {
   setMuniParcelsVisible,
   setMuniBoundariesData,
   setMascData,
+  setMascRiverlotsData,
   setMascVisible,
   setMascRiskAreasData,
   setMascRiskAreasVisible,
@@ -1306,16 +1308,28 @@ async function toggleMascOverlay() {
     $mascToggle.disabled = true;
     $mascToggle.textContent = 'Loading…';
     try {
-      const rows = await fetchMascRatingsForMuni(muni);
-      if (!rows || rows.length === 0) {
+      // Quarter-section + river-lot ratings load in parallel. Quarter
+      // sections are the primary signal for most farmland; river-lot
+      // polygons fill in the parishes around Selkirk, Ritchot, Portage,
+      // etc. that the quarter CSV doesn't cover.
+      const [rows, riverlotsAll] = await Promise.all([
+        fetchMascRatingsForMuni(muni),
+        fetchMascRiverlots(),
+      ]);
+      const hasQuarters = !!(rows && rows.length);
+      const muniRiverlots = (riverlotsAll?.features || []).filter(
+        (f) => f?.properties?.muni === muni,
+      );
+      if (!hasQuarters && muniRiverlots.length === 0) {
         $mascToggle.classList.remove('active');
         $mascToggle.setAttribute('aria-pressed', 'false');
         $mascToggle.disabled = false;
         $mascToggle.textContent = 'MASC Rating';
-        setCount(`No MASC soil ratings on file for ${muni}.`);
+        setCount(`No MASC ratings on file for ${muni}.`);
         return;
       }
-      setMascData(map, quartersToFc(rows));
+      setMascData(map, hasQuarters ? quartersToFc(rows) : { type: 'FeatureCollection', features: [] });
+      setMascRiverlotsData(map, { type: 'FeatureCollection', features: muniRiverlots });
       mascLoadedFor = muni;
     } catch (err) {
       console.warn('MASC fetch failed', err);
