@@ -1257,15 +1257,23 @@ function resetMascAndGridToggles() {
   }
   // Survey grid: track muni vs the __PROVINCE__ sentinel. Switching
   // between "any muni" and a specific muni invalidates the loaded
-  // dataset so the toggle refetches the right scope.
+  // dataset so the toggle refetches the right scope. When the toggle
+  // is already active at the moment of the muni change, re-trigger
+  // the fetch so the user doesn't have to click off-then-on to see
+  // the new muni's grid.
   const desiredKey = $municipality.value || '__PROVINCE__';
   if (surveyGridLoadedFor && surveyGridLoadedFor !== desiredKey) {
     surveyGridLoadedFor = null;
     if ($gridToggle.classList.contains('active')) {
+      // Flip active off, drop the stale layer, then re-toggle which
+      // re-enters the active branch and runs the fetch path.
       $gridToggle.classList.remove('active');
       $gridToggle.setAttribute('aria-pressed', 'false');
       $gridToggle.textContent = 'Sec-Twp Grid';
-      mapReady.then(() => setSurveyGridVisible(map, false));
+      mapReady.then(() => {
+        setSurveyGridVisible(map, false);
+        toggleSurveyGridOverlay();
+      });
     }
   }
 }
