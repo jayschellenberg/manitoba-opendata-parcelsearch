@@ -313,12 +313,43 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
   cat("  MASC river-lot rows:   ", nrow(rl_csv), "\n")
   cat("  KMZ ⨝ MASC matches:    ", nrow(rl_join), "\n")
 
+  # Diagnostic: list (muni, prefix) combos that exist in the KMZ for
+  # munis where MASC does have river-lot data, but produced zero
+  # matches. These are the candidates for adding to the override map
+  # below. Sorted by KMZ-feature count so the highest-impact rows
+  # show first.
+  unmatched <- rl_polys |>
+    sf::st_drop_geometry() |>
+    select(muni_norm, prefix) |>
+    distinct() |>
+    anti_join(rl_csv |> select(muni_norm, prefix) |> distinct(),
+              by = c("muni_norm", "prefix")) |>
+    inner_join(
+      rl_csv |> select(muni_norm) |> distinct() |>
+        mutate(masc_has_muni = TRUE),
+      by = "muni_norm"
+    ) |>
+    select(muni_norm, prefix)
+  if (nrow(unmatched) > 0) {
+    cnt <- rl_polys |>
+      sf::st_drop_geometry() |>
+      count(muni_norm, prefix, name = "kmz_features") |>
+      inner_join(unmatched, by = c("muni_norm", "prefix")) |>
+      arrange(desc(kmz_features))
+    cat("\n  Unmatched (muni, prefix) — extend parish_prefix_overrides:\n")
+    print(as.data.frame(head(cnt, 20)), row.names = FALSE)
+    cat("\n")
+  }
+
   # Build sf object: KMZ geometry + MASC rating columns, in the same
   # column shape as the quarter-section masc_sf so we can rbind later.
+  # rl_polys already carries `prefix` and `lot_num`; drop them out of
+  # the rl_join select so the left_join doesn't suffix the duplicates
+  # (prefix.x / prefix.y) and break the transmute below.
   if (nrow(rl_join) > 0) {
     riverlot_polys <- rl_polys |>
       filter(name %in% rl_join$name) |>
-      left_join(rl_join |> select(name, rating, ra, parish_name, parish_code, prefix, lot_num),
+      left_join(rl_join |> select(name, rating, ra, parish_name, parish_code),
                 by = "name") |>
       transmute(
         q      = paste0(prefix, "RL"),                    # mimic the quarter "q" column
