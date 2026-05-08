@@ -39,6 +39,7 @@ import {
   parseRollList,
   missingRollsFromResults,
   canonicalRoll,
+  acresFromFrontageField,
 } from './arcgis.js';
 import {
   quartersToFc,
@@ -2929,14 +2930,26 @@ function formatPercent(ratio) {
  * the most consistent approach across rural and urban parcels alike.
  */
 function parcelAcres(feature) {
-  if (!feature?.geometry) return null;
+  if (!feature) return null;
   // Lazy-attach the result so we don't recompute on each sort tick.
   if (feature._acres != null) return feature._acres;
+  // Prefer Roll_Entry's Frontage_or_Area when the assessor recorded
+  // an actual area ('5.000 Acres') — that's the official figure and
+  // beats anything we'd derive from the polygon. Falls back to the
+  // turf-area calc when the field is in frontage feet or missing.
+  const fromField = acresFromFrontageField(feature?.properties?.Frontage_or_Area);
+  if (fromField != null) {
+    feature._acres = fromField;
+    if (feature.properties) feature.properties._acresSource = 'assessor';
+    return fromField;
+  }
+  if (!feature.geometry) return null;
   try {
     // turf area returns sq metres for GeoJSON in WGS84 (uses geodesic calc).
     const sqm = turfArea(feature);
     const ac = sqm / 4046.8564224;
     feature._acres = ac;
+    if (feature.properties) feature.properties._acresSource = 'geometry';
     return ac;
   } catch {
     return null;
