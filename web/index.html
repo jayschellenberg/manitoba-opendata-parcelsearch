@@ -215,10 +215,17 @@
             <th data-col="zone1pct">%</th>
             <th data-col="zone2">Zoning 2</th>
             <th data-col="zbl">ZBL</th>
-            <th data-col="dev1">Dev-Plan Designation</th>
-            <th data-col="dpbylaw">DP By-law</th>
-            <th data-col="soil"     title="Dominant MASC soil-rating (A best → J worst), area-weighted across the parcel. Built per-muni from MASC's quarter-section ratings.">Soil</th>
-            <th data-col="riskarea" title="Official MASC Risk_Area polygon from Manitoba Maps / Open Canada. Drives crop-insurance premium tiers.">Risk Area</th>
+            <!-- Dev-Plan columns are revealed when #results carries the
+                 .devplan-mode class (toggled by main.js whenever the
+                 Dev Plan Layer overlay is on). Same pattern as the
+                 sales-only Sale Date / Sale Price columns. -->
+            <th data-col="dev1"    class="devplan-only">Dev-Plan Designation</th>
+            <th data-col="dpbylaw" class="devplan-only">DP By-law</th>
+            <!-- Soil + Risk Area columns are revealed when #results
+                 carries the .masc-mode class (toggled by main.js
+                 whenever the MASC Rating overlay is on). -->
+            <th data-col="soil"     class="masc-only" title="Dominant MASC soil-rating (A best → J worst), area-weighted across the parcel. Built per-muni from MASC's quarter-section ratings.">Soil</th>
+            <th data-col="riskarea" class="masc-only" title="Official MASC Risk_Area polygon from Manitoba Maps / Open Canada. Drives crop-insurance premium tiers.">Risk Area</th>
             <th data-col="changes">Changes</th>
             <th data-col="du">DU</th>
             <th data-col="acres">Acres</th>

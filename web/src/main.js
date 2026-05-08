@@ -1027,6 +1027,8 @@ async function runSearch() {
     // the table cell. The muni-parcels FC stamps _rollDisplay in
     // arcgis.js's fetchAllParcelsInMunicipality; mirror it here for
     // search-result parcels so both feature sources read the same.
+    // Also stamp _acres on properties so the hover popup can show
+    // Acres / SF without round-tripping through the feature object.
     for (const f of parcelFc.features) {
       const oid = f.properties?.OBJECTID;
       if (oid != null) f.properties._rowKey = `p:${oid}`;
@@ -1034,6 +1036,8 @@ async function runSearch() {
       if (typeof r === 'string') {
         f.properties._rollDisplay = r.endsWith('.000') ? r.slice(0, -4) : r;
       }
+      const ac = parcelAcres(f);
+      if (Number.isFinite(ac) && ac > 0) f.properties._acres = ac;
     }
 
     // Show parcels-only rows immediately so the user sees something.
@@ -1162,8 +1166,8 @@ async function handleSalesUpload(file) {
       return;
     }
 
-    // Stamp _rowKey + _rollDisplay so the table/map pipeline behaves
-    // the same as a regular search.
+    // Stamp _rowKey + _rollDisplay + _acres so the table/map pipeline
+    // behaves the same as a regular search.
     for (const f of parcelFc.features) {
       const oid = f.properties?.OBJECTID;
       if (oid != null) f.properties._rowKey = `p:${oid}`;
@@ -1171,6 +1175,8 @@ async function handleSalesUpload(file) {
       if (typeof r === 'string') {
         f.properties._rollDisplay = r.endsWith('.000') ? r.slice(0, -4) : r;
       }
+      const ac = parcelAcres(f);
+      if (Number.isFinite(ac) && ac > 0) f.properties._acres = ac;
     }
 
     // Always-on legal enrichment: same path runSearch uses.
@@ -1686,6 +1692,11 @@ function applyOverlayVisibility(which, visible) {
     if ($flowLegend) $flowLegend.classList.toggle('with-zoning', visible);
   } else {
     setDevPlanVisible(map, visible);
+    // Mirror the Dev Plan Layer's visibility on the table so the
+    // Dev-Plan Designation + DP By-law columns show only while the
+    // overlay is on. CSS rule .devplan-only / .devplan-mode picks
+    // it up.
+    if ($resultsTable) $resultsTable.classList.toggle('devplan-mode', visible);
   }
 }
 
@@ -1818,6 +1829,9 @@ function resetMascAndGridToggles() {
         setMascVisible(map, false);
         if ($mascLegend) $mascLegend.hidden = true;
       });
+      // Drop the Soil + Risk Area columns when MASC turns off on
+      // a muni change.
+      if ($resultsTable) $resultsTable.classList.remove('masc-mode');
     }
   }
   // CLI: same off-on-muni-change logic as MASC.
@@ -1877,6 +1891,7 @@ async function toggleMascOverlay() {
     $mascToggle.textContent = 'MASC Rating';
     setMascVisible(map, false);
     if ($mascLegend) $mascLegend.hidden = true;
+    if ($resultsTable) $resultsTable.classList.remove('masc-mode');
     return;
   }
 
@@ -1919,6 +1934,8 @@ async function toggleMascOverlay() {
   $mascToggle.textContent = 'MASC Rating';
   setMascVisible(map, true);
   if ($mascLegend) $mascLegend.hidden = false;
+  // Reveal the Soil + Risk Area columns alongside the overlay.
+  if ($resultsTable) $resultsTable.classList.add('masc-mode');
 }
 
 /**
@@ -2236,10 +2253,22 @@ function renderTable(rows) {
     tr.appendChild(td(formatPercent(row.zoning[0]?.ratio), 'num'));
     tr.appendChild(td(z2Show ? formatZoneCode(z2) : null));
     tr.appendChild(td(z1.ZBL));
-    tr.appendChild(td(formatDes(d1)));
-    tr.appendChild(td(d1.DP_BYLAW));
-    tr.appendChild(soilCell(p));
-    tr.appendChild(td(p._soilRiskArea != null ? String(p._soilRiskArea) : null, 'num'));
+    // Dev-Plan cells get the .devplan-only class so they show/hide
+    // with the Dev Plan Layer overlay toggle (CSS in style.css).
+    const devNameCell = td(formatDes(d1));
+    devNameCell.classList.add('devplan-only');
+    tr.appendChild(devNameCell);
+    const devBylawCell = td(d1.DP_BYLAW);
+    devBylawCell.classList.add('devplan-only');
+    tr.appendChild(devBylawCell);
+    // Soil + Risk Area cells get .masc-only so they follow the
+    // MASC Rating overlay toggle.
+    const soilCellEl = soilCell(p);
+    soilCellEl.classList.add('masc-only');
+    tr.appendChild(soilCellEl);
+    const riskAreaCell = td(p._soilRiskArea != null ? String(p._soilRiskArea) : null, 'num');
+    riskAreaCell.classList.add('masc-only');
+    tr.appendChild(riskAreaCell);
     tr.appendChild(td(formatChanges(row)));
     tr.appendChild(td(formatDu(p.Dwelling_Units), 'num'));
     tr.appendChild(td(formatAcres(ac), 'num'));

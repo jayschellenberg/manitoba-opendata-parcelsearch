@@ -1415,6 +1415,12 @@ function parcelHtml(p) {
   }
   if (p._legalDescription)  lines.push(`<strong>Legal</strong> ${escapeHtml(p._legalDescription)}`);
   if (p._certificatesOfTitle) lines.push(`<strong>Title</strong> ${escapeHtml(p._certificatesOfTitle)}`);
+  // Land Size — _acres stamped onto each parcel feature by main.js
+  // after the search lands (same shape as the muni-parcels-fill
+  // popup). Format mirrors muniParcelHtml so both popups read the
+  // same on the same parcel.
+  const landSize = formatLandSize(p._acres);
+  if (landSize) lines.push(`<strong>Land Size</strong> ${landSize}`);
   // Inline summary line: zoning code + DU. Zoning is stamped onto the
   // parcel feature by main.js after the top-2 area-weighted join lands.
   const summary = [];
@@ -1422,6 +1428,20 @@ function parcelHtml(p) {
   if (p.Dwelling_Units != null) summary.push(`<strong>DU</strong> ${escapeHtml(p.Dwelling_Units)}`);
   if (summary.length)         lines.push(summary.join(' &nbsp;·&nbsp; '));
   return lines.join('<br>');
+}
+
+/** Shared 'Land Size' formatter for both popup builders. Returns
+ *  '12.34 ac · 537,402 sf' style or null when the input isn't a
+ *  finite positive acres value. */
+function formatLandSize(rawAcres) {
+  const ac = Number(rawAcres);
+  if (!Number.isFinite(ac) || ac <= 0) return null;
+  const sf = Math.round(ac * 43560).toLocaleString('en-US');
+  const acFmt = ac < 0.1 ? ac.toFixed(3)
+              : ac < 10  ? ac.toFixed(2)
+              : ac < 1000 ? ac.toFixed(1)
+              : Math.round(ac).toLocaleString('en-US');
+  return `${acFmt} ac · ${sf} sf`;
 }
 
 function zoningHtml(p) {
@@ -1622,15 +1642,8 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
   }
   // Land size — _acres is computed and stamped onto each feature in
   // arcgis.js when the muni-parcels FC is fetched. Show both ac and sf.
-  const ac = Number(p._acres);
-  if (Number.isFinite(ac) && ac > 0) {
-    const sf = Math.round(ac * 43560).toLocaleString('en-US');
-    const acFmt = ac < 0.1 ? ac.toFixed(3)
-                : ac < 10  ? ac.toFixed(2)
-                : ac < 1000 ? ac.toFixed(1)
-                : Math.round(ac).toLocaleString('en-US');
-    lines.push(`<strong>Land Size</strong> ${acFmt} ac · ${sf} sf`);
-  }
+  const landSize = formatLandSize(p._acres);
+  if (landSize) lines.push(`<strong>Land Size</strong> ${landSize}`);
   if (p.Total_Value) {
     const cleaned = String(p.Total_Value).replace(/[^0-9.]/g, '');
     const n = Number(cleaned);
