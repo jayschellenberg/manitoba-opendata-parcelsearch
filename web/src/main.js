@@ -38,6 +38,7 @@ import {
   fetchCliAgrForMuni,
   parseRollList,
   missingRollsFromResults,
+  canonicalRoll,
 } from './arcgis.js';
 import {
   quartersToFc,
@@ -546,6 +547,27 @@ updateSortIndicators();
 $search.addEventListener('click', runSearch);
 $clear.addEventListener('click', clearAll);
 $export.addEventListener('click', exportCsv);
+
+// Sales-CSV upload — see handleSalesUpload() for the parse +
+// per-muni Roll # lookup + table/map rendering pipeline.
+const $salesUploadBtn   = document.getElementById('sales-upload-btn');
+const $salesUploadInput = document.getElementById('sales-upload-input');
+if ($salesUploadBtn && $salesUploadInput) {
+  $salesUploadBtn.addEventListener('click', () => $salesUploadInput.click());
+  $salesUploadInput.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      await handleSalesUpload(file);
+    } catch (err) {
+      console.error('Sales upload failed', err);
+      setCount(`Sales upload failed: ${err.message}`);
+    } finally {
+      // Reset so the same file can be re-selected to retry.
+      e.target.value = '';
+    }
+  });
+}
 $zoningToggle.addEventListener('click', () => toggleOverlay('zoning'));
 $devplanToggle.addEventListener('click', () => toggleOverlay('devplan'));
 $contamToggle.addEventListener('click', () => toggleAuxOverlay('contam'));
@@ -836,6 +858,9 @@ function fillSelect(sel, values, blankLabel) {
 // ---------- Search ----------
 
 async function runSearch() {
+  // Drop the sales-mode column reveal if a previous run came from a
+  // sales CSV upload — a normal search shouldn't carry those columns.
+  if ($resultsTable) $resultsTable.classList.remove('sales-mode');
   const status = $changedStatus.value;
   const legalInputs = {
     legalText:      $legalText?.value.trim() ?? '',
@@ -1020,6 +1045,271 @@ async function runSearch() {
 }
 
 const ENRICHMENT_THRESHOLD = 250;
+
+// ---------- Sales-CSV upload ----------
+
+const $resultsTable = document.getElementById('results');
+
+/**
+ * Read a sales CSV (Sale Date, Consideration, Municipality, Roll
+ * Number, [Street Address, Legal Description, Primary Property]),
+ * group by municipality, fetch matching ROLL_ENTRY parcels per muni,
+ * stamp the sale info onto each matched feature, then route
+ * everything through the same display pipeline as a regular search.
+ *
+ * The table picks up a `sales-mode` class on #results so the Sale
+ * Date / Sale Price columns reveal themselves; popups render the
+ * sale info inline. Munis that don't normalize cleanly or rolls that
+ * don't match anything in ROLL_ENTRY get reported in the count line
+ * so the user sees what was lost.
+ */
+async function handleSalesUpload(file) {
+  setBusy(true);
+  try {
+    setCount('Reading CSV…');
+    const text = await file.text();
+    const records = parseSalesCsv(text);
+    if (records.length === 0) {
+      setCount('No usable rows in CSV. Expecting Roll Number + Municipality columns.');
+      return;
+    }
+
+    // Group by normalized muni. Skip rows whose muni doesn't shape
+    // into a Roll_Entry-style 'NAME (TYPE)' value.
+    const byMuni = new Map();
+    let dropped = 0;
+    for (const r of records) {
+      const muni = normalizeMuniFromCsv(r.municipality);
+      if (!muni || !r.rollNumber) { dropped++; continue; }
+      if (!byMuni.has(muni)) byMuni.set(muni, []);
+      byMuni.get(muni).push(r);
+    }
+
+    if (byMuni.size === 0) {
+      setCount(`Couldn't normalize any of the ${records.length} CSV rows to a known municipality.`);
+      return;
+    }
+
+    setCount(`Looking up ${records.length - dropped} sales across ${byMuni.size} municipalities…`);
+
+    // Per-muni Roll # lookups in parallel. searchParcels treats the
+    // comma-separated roll list and the muni dropdown together.
+    const fetches = [...byMuni.entries()].map(async ([muni, recs]) => {
+      const rolls = recs.map((r) => r.rollNumber).filter(Boolean).join(',');
+      let fc = { type: 'FeatureCollection', features: [] };
+      try {
+        fc = await searchParcels({ municipality: muni, roll: rolls });
+      } catch (err) {
+        console.warn(`searchParcels failed for ${muni}`, err);
+      }
+      // Stamp sale info onto each matched feature, keyed by canonical
+      // Roll_No_Txt.
+      const saleByRoll = new Map();
+      for (const r of recs) {
+        const k = canonicalRoll(r.rollNumber);
+        if (k) saleByRoll.set(k, r);
+      }
+      let matched = 0;
+      for (const f of fc.features || []) {
+        const roll = f.properties?.Roll_No_Txt;
+        const sale = roll ? saleByRoll.get(roll) : null;
+        if (sale) {
+          f.properties._saleDate  = sale.saleDate || null;
+          f.properties._salePrice = sale.consideration || null;
+          matched++;
+        }
+      }
+      return { muni, fc, total: recs.length, matched };
+    });
+    const results = await Promise.all(fetches);
+
+    // Merge all FCs into one parcelFc.
+    const parcelFc = { type: 'FeatureCollection', features: [] };
+    let totalMatched = 0;
+    let totalRequested = 0;
+    for (const r of results) {
+      parcelFc.features.push(...(r.fc.features || []));
+      totalMatched += r.matched;
+      totalRequested += r.total;
+    }
+
+    if (parcelFc.features.length === 0) {
+      setCount(`No matching parcels found for the ${records.length} CSV rows. ` +
+               `Check that municipality names and roll numbers match Roll_Entry.`);
+      return;
+    }
+
+    // Stamp _rowKey + _rollDisplay so the table/map pipeline behaves
+    // the same as a regular search.
+    for (const f of parcelFc.features) {
+      const oid = f.properties?.OBJECTID;
+      if (oid != null) f.properties._rowKey = `p:${oid}`;
+      const r = f.properties?.Roll_No_Txt;
+      if (typeof r === 'string') {
+        f.properties._rollDisplay = r.endsWith('.000') ? r.slice(0, -4) : r;
+      }
+    }
+
+    // Always-on legal enrichment: same path runSearch uses.
+    const parcelKeys = [];
+    for (const f of parcelFc.features || []) {
+      const k = parcelLegalKey(f.properties || {});
+      if (k) parcelKeys.push(k);
+    }
+    try {
+      const recs2 = await lookupLegalRecordsByParcelKeys(parcelKeys);
+      if (recs2.length > 0) attachLegalMetadata(parcelFc, recs2);
+    } catch (err) {
+      console.warn('Legal lookup for sales upload failed (non-fatal):', err);
+    }
+
+    // Activate the Sale Date / Sale Price columns.
+    if ($resultsTable) $resultsTable.classList.add('sales-mode');
+
+    // Render parcels-only rows immediately, then run the same
+    // overlay enrichment pipeline runSearch uses (respecting the same
+    // ENRICHMENT_THRESHOLD threshold).
+    renderTable(parcelFc.features.map((p) => ({ parcel: p, zoning: [], devPlan: [] })));
+    setMapData(parcelFc, EMPTY_FC, EMPTY_FC);
+
+    const dropNote = dropped > 0 ? ` · ${dropped} CSV rows skipped (bad muni/roll)` : '';
+    const missNote = totalMatched < totalRequested
+      ? ` · ${totalRequested - totalMatched} not found in Roll_Entry`
+      : '';
+    const baseMsg = `${totalMatched} of ${records.length} sales plotted${dropNote}${missNote}`;
+
+    // CSV uploads don't have a single muni dropdown selection — pass
+    // an inputs object that mirrors a no-muni search so the
+    // downstream enrichment doesn't try to route through the
+    // bulk-by-muni path.
+    const fakeInputs = { municipality: '' };
+
+    if (parcelFc.features.length > ENRICHMENT_THRESHOLD) {
+      renderEnrichButton(parcelFc, fakeInputs, baseMsg);
+    } else {
+      await enrichOverlays(parcelFc, fakeInputs, baseMsg);
+    }
+  } finally {
+    setBusy(false);
+  }
+}
+
+/**
+ * Tiny CSV parser tuned for the sales-export format Jason sends:
+ *   Sale Date, Consideration, Municipality, Roll Number,
+ *   Street Address, Legal Description, Primary Property
+ *
+ * Returns an array of `{saleDate, consideration, municipality,
+ * rollNumber, streetAddress, legalDescription, primaryProperty}`
+ * objects. Quoted fields with embedded commas (e.g. "$425,000") are
+ * handled correctly. Rows missing both Roll Number AND Municipality
+ * are silently dropped.
+ */
+function parseSalesCsv(text) {
+  const rows = parseCsvRows(text);
+  if (rows.length < 2) return [];
+  const header = rows[0].map((c) => String(c || '').trim().toLowerCase());
+  const idx = (...names) => {
+    for (const n of names) {
+      const i = header.indexOf(n.toLowerCase());
+      if (i >= 0) return i;
+    }
+    return -1;
+  };
+  const i = {
+    saleDate:        idx('sale date', 'date'),
+    consideration:   idx('consideration', 'sale price', 'price'),
+    municipality:    idx('municipality', 'muni'),
+    rollNumber:      idx('roll number', 'roll #', 'roll'),
+    streetAddress:   idx('street address', 'address'),
+    legalDescription: idx('legal description', 'legal'),
+    primaryProperty: idx('primary property'),
+  };
+  if (i.rollNumber < 0 || i.municipality < 0) return [];
+
+  const out = [];
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || row.length === 0) continue;
+    const rollRaw = (row[i.rollNumber] || '').trim();
+    const muni    = (row[i.municipality] || '').trim();
+    if (!rollRaw || !muni) continue;
+    out.push({
+      saleDate:         i.saleDate         >= 0 ? (row[i.saleDate]         || '').trim() : '',
+      consideration:    i.consideration    >= 0 ? (row[i.consideration]    || '').trim() : '',
+      municipality:     muni,
+      rollNumber:       rollRaw,
+      streetAddress:    i.streetAddress    >= 0 ? (row[i.streetAddress]    || '').trim() : '',
+      legalDescription: i.legalDescription >= 0 ? (row[i.legalDescription] || '').trim() : '',
+      primaryProperty:  i.primaryProperty  >= 0 ? (row[i.primaryProperty]  || '').trim() : '',
+    });
+  }
+  return out;
+}
+
+/** Generic CSV row tokenizer — handles quoted fields with embedded
+ *  commas, escaped double-quotes (""), and \r\n / \n / \r line
+ *  endings. Returns an array of arrays. */
+function parseCsvRows(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  let i = 0;
+  const pushField = () => { row.push(field); field = ''; };
+  const pushRow   = () => {
+    if (row.length > 1 || row[0] !== '') rows.push(row);
+    row = [];
+  };
+  while (i < text.length) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i += 2; }
+        else { inQuotes = false; i++; }
+      } else { field += c; i++; }
+    } else if (c === '"') {
+      inQuotes = true; i++;
+    } else if (c === ',') {
+      pushField(); i++;
+    } else if (c === '\r' || c === '\n') {
+      pushField(); pushRow();
+      if (c === '\r' && text[i + 1] === '\n') i += 2; else i++;
+    } else {
+      field += c; i++;
+    }
+  }
+  if (field !== '' || row.length > 0) { pushField(); pushRow(); }
+  return rows;
+}
+
+/** Convert a CSV-style muni string ('CITY OF WINKLER', 'RM OF
+ *  HANOVER', 'RURAL MUNICIPALITY OF EMERSON-FRANKLIN') into the
+ *  Roll_Entry Muni_Name_With_Typ format ('WINKLER (CITY)', 'HANOVER
+ *  (RM)', 'EMERSON-FRANKLIN (MUNICIPALITY)'). Returns the empty
+ *  string for inputs that don't match any known prefix. */
+function normalizeMuniFromCsv(raw) {
+  if (!raw) return '';
+  const s = String(raw).trim().toUpperCase().replace(/\s+/g, ' ');
+  const patterns = [
+    [/^CITY\s+OF\s+(.+)$/,                                           'CITY'],
+    [/^TOWN\s+OF\s+(.+)$/,                                           'TOWN'],
+    [/^VILLAGE\s+OF\s+(.+)$/,                                        'VILLAGE'],
+    [/^RM\s+OF\s+(.+)$/,                                             'RM'],
+    [/^RURAL\s+MUNICIPALITY\s+OF\s+(.+)$/,                           'RM'],
+    [/^MUNICIPALITY\s+OF\s+(.+)$/,                                   'MUNICIPALITY'],
+    [/^LGD\s+OF\s+(.+)$/,                                            'LGD'],
+    [/^LOCAL\s+GOVERNMENT\s+DISTRICT\s+OF\s+(.+)$/,                  'LGD'],
+    [/^NORTHERN\s+COMMUNITY\s+OF\s+(.+)$/,                           'NORTHERN COMMUNITY'],
+  ];
+  for (const [re, type] of patterns) {
+    const m = s.match(re);
+    if (m) return `${m[1].trim()} (${type})`;
+  }
+  // Already in 'NAME (TYPE)' form? Pass through.
+  if (/\([A-Z][A-Z ]*\)\s*$/.test(s)) return s;
+  return '';
+}
 
 /**
  * Show the search-count line with an inline "Load zoning + dev-plan"
@@ -1821,6 +2111,16 @@ function renderTable(rows) {
     const z2Show = Number.isFinite(z2ratio) && z2ratio >= 0.01;
 
     tr.appendChild(rollNumberCell(p));
+    // Sale Date / Sale Price cells — always emitted, hidden by CSS
+    // unless #results carries the sales-mode class (toggled by
+    // handleSalesUpload). Lets the columns appear/disappear without
+    // re-renders when the user uploads a CSV.
+    const saleDateCell = td(p._saleDate || null);
+    saleDateCell.classList.add('sales-only');
+    tr.appendChild(saleDateCell);
+    const salePriceCell = td(p._salePrice || null);
+    salePriceCell.classList.add('sales-only', 'num');
+    tr.appendChild(salePriceCell);
     tr.appendChild(td(p.Property_Address));
     tr.appendChild(legalCell(p));
     tr.appendChild(titleCell(p));

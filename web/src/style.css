@@ -351,6 +351,13 @@ header small a {
   display: none;
 }
 
+/* Sale Date + Sale Price columns are hidden until #results carries
+   the .sales-mode class — set by main.js whenever the current row
+   set was populated from a sales CSV upload. Both header and body
+   cells share the .sales-only class so they show/hide together. */
+#results .sales-only { display: none; }
+#results.sales-mode .sales-only { display: table-cell; }
+
 /* Compact inline button shown next to the count text — used for the
    "Load zoning + dev-plan" opt-in when a search returns more parcels
    than the auto-enrichment threshold. Sized to read as part of the

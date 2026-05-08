@@ -1399,6 +1399,16 @@ function parcelHtml(p) {
   if (p.Roll_No_Txt)        lines.push(`<strong>Roll #</strong> ${escapeHtml(rollDisplayFor(p))}`);
   if (p.Property_Address)   lines.push(escapeHtml(p.Property_Address));
   if (p.Muni_Name_With_Typ) lines.push(`<em>${escapeHtml(p.Muni_Name_With_Typ)}</em>`);
+  // Sale Date / Sale Price — populated only when this parcel was
+  // surfaced via a sales-CSV upload (handleSalesUpload in main.js
+  // stamps these onto each matched feature). Sale info reads first
+  // because it's the appraisal-relevant payload of the upload.
+  if (p._saleDate || p._salePrice) {
+    const bits = [];
+    if (p._saleDate)  bits.push(`<strong>Sold</strong> ${escapeHtml(p._saleDate)}`);
+    if (p._salePrice) bits.push(`<strong>Price</strong> ${escapeHtml(p._salePrice)}`);
+    lines.push(bits.join(' &middot; '));
+  }
   if (p._legalDescription)  lines.push(`<strong>Legal</strong> ${escapeHtml(p._legalDescription)}`);
   if (p._certificatesOfTitle) lines.push(`<strong>Title</strong> ${escapeHtml(p._certificatesOfTitle)}`);
   // Inline summary line: zoning code + DU. Zoning is stamped onto the
