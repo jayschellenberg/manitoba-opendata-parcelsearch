@@ -854,14 +854,30 @@ export function initMap(container, { onFeatureClick } = {}) {
             17, 13,
             19, 15,
           ],
-          // Always render, and don't reserve space against other labels.
-          // This lets dev-plan + zoning labels coexist with the roll
-          // number at the same anchor instead of one suppressing the
-          // other. The semi-transparent paint below tones the roll
-          // numbers down so the more substantive layer labels read on
-          // top.
-          'text-allow-overlap': true,
+          // Auto-cull overlapping labels so dense urban grids
+          // (Carman, Steinbach core, Selkirk Main St) stay readable
+          // while rural townships still show every roll. The earlier
+          // allow-overlap:true setting forced every label to render
+          // and made dense areas a black soup of stacked numbers.
+          //
+          // - allow-overlap:false → MapLibre hides any roll-number
+          //   that would collide with a previously-drawn label.
+          //   moveLayer() puts this layer at the top of the stack, so
+          //   "previously drawn" means earlier roll numbers within
+          //   the same layer plus any survey-grid label below it; in
+          //   practice that means urban areas auto-thin while rural
+          //   stays full.
+          // - ignore-placement:true → roll numbers don't reserve
+          //   space against OTHER label layers (dev-plan, zoning,
+          //   masc, cli), so those overlay labels still render even
+          //   when a roll number sits at the same anchor.
+          // - text-padding:2 gives a small breathing zone around each
+          //   label so the cull triggers a touch earlier than the
+          //   strict glyph-bbox would, which reads more pleasant in
+          //   medium-density mid-zoom views.
+          'text-allow-overlap': false,
           'text-ignore-placement': true,
+          'text-padding': 2,
           'symbol-placement': 'point',
         },
         paint: {
