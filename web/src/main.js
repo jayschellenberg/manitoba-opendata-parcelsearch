@@ -491,6 +491,20 @@ function finiteOrNeg(v) {
   return Number.isFinite(n) ? n : -Infinity;
 }
 
+/**
+ * Roll-number display form. Manitoba ROLL_ENTRY stores Roll_No_Txt
+ * as <digits>.<3-digit-sub>; the .000 sub is the most common form
+ * and visually noisy, so we strip it for display only — actual
+ * search/comparison logic continues to use the raw Roll_No_Txt and
+ * the canonicalRoll() helper. Sub-rolls like .010 or .500 are kept
+ * since those carry information.
+ */
+function displayRoll(raw) {
+  if (raw == null) return '';
+  const s = String(raw);
+  return s.endsWith('.000') ? s.slice(0, -4) : s;
+}
+
 function sortRows(rows) {
   const { col, dir } = currentSort;
   const key = SORT_KEYS[col];
@@ -961,10 +975,18 @@ async function runSearch() {
     const baseMsg = capNotes.length
       ? `${countLabel} (${capNotes.join('; ')})`
       : countLabel;
-    // Stamp _rowKey so map clicks can find the matching table row.
+    // Stamp _rowKey so map clicks can find the matching table row,
+    // plus _rollDisplay (.000 stripped) so the hover popup matches
+    // the table cell. The muni-parcels FC stamps _rollDisplay in
+    // arcgis.js's fetchAllParcelsInMunicipality; mirror it here for
+    // search-result parcels so both feature sources read the same.
     for (const f of parcelFc.features) {
       const oid = f.properties?.OBJECTID;
       if (oid != null) f.properties._rowKey = `p:${oid}`;
+      const r = f.properties?.Roll_No_Txt;
+      if (typeof r === 'string') {
+        f.properties._rollDisplay = r.endsWith('.000') ? r.slice(0, -4) : r;
+      }
     }
 
     // Show parcels-only rows immediately so the user sees something.
@@ -2289,16 +2311,17 @@ function rollNumberCell(p) {
     cell.classList.add('empty');
     return cell;
   }
+  const display = displayRoll(value);
   const safe = safeExternalUrl(p.Asmt_Rpt_Url);
   if (!safe) {
-    cell.textContent = value;
+    cell.textContent = display;
     return cell;
   }
   const a = document.createElement('a');
   a.href = safe;
   a.target = '_blank';
   a.rel = 'noreferrer';
-  a.textContent = value;
+  a.textContent = display;
   a.title = 'Open this parcel on Manitoba Assessment Online';
   a.addEventListener('click', (e) => e.stopPropagation());
   cell.appendChild(a);
