@@ -967,10 +967,11 @@ export async function fetchTrafficFlow() {
  */
 export async function fetchAllParcelsInMunicipality(municipality) {
   if (!municipality) return makeEmptyFc();
-  // v2: each feature now carries _rollDisplay (.000 stripped); bump
-  // invalidates v1 entries that lack the stamp so the map label and
-  // popup don't fall back to the un-stripped Roll_No_Txt.
-  const cacheKey = `mb_muni_parcels_v2_${municipality}`;
+  // v3: _acres now prefers Roll_Entry's Frontage_or_Area when the
+  // assessor recorded an actual area (vs frontage feet); falls back
+  // to turf-area on the polygon when the field is in feet or
+  // missing. v2 entries don't carry the assessor-derived value.
+  const cacheKey = `mb_muni_parcels_v3_${municipality}`;
   const cached = readCache(cacheKey);
   if (cached) return cached;
   // Pull the same lightweight property set the table uses minus the
@@ -984,17 +985,27 @@ export async function fetchAllParcelsInMunicipality(municipality) {
     outSR: '4326',
     f: 'geojson',
   }, 50000);
-  // Stamp computed acreage onto each feature so the hover popup can show
-  // Land Size without needing the polygon geometry. Same calc as the
-  // table (Roll_Entry's Frontage_or_Area is sometimes acres, sometimes
-  // frontage-feet — geometry-derived acres is consistent across munis).
+  // Stamp acreage onto each feature so the hover popup can show
+  // Land Size without needing the polygon geometry. Prefers
+  // Roll_Entry's Frontage_or_Area when the assessor recorded an
+  // actual area (e.g. "5.000 Acres") — that's the assessor's
+  // official value. Falls back to turf area on the polygon when the
+  // field is in feet (frontage feet, not derivable to area) or
+  // missing entirely.
   for (const f of fc.features || []) {
-    try {
-      const sqm = area(f);
-      if (Number.isFinite(sqm) && sqm > 0) {
-        f.properties._acres = sqm / 4046.8564224;
-      }
-    } catch { /* topology errors — skip silently */ }
+    const fromField = acresFromFrontageField(f.properties?.Frontage_or_Area);
+    if (fromField != null) {
+      f.properties._acres = fromField;
+      f.properties._acresSource = 'assessor';
+    } else {
+      try {
+        const sqm = area(f);
+        if (Number.isFinite(sqm) && sqm > 0) {
+          f.properties._acres = sqm / 4046.8564224;
+          f.properties._acresSource = 'geometry';
+        }
+      } catch { /* topology errors — skip silently */ }
+    }
     // Pre-strip the .000 sub from Roll_No_Txt for display contexts
     // (the muni-parcels-label paint expression in map.js reads
     // _rollDisplay). Keeps the raw Roll_No_Txt around for search
@@ -1543,6 +1554,33 @@ export function parseRollList(input) {
  *   "3600.5000" → "3600.500"   (defensive truncation; won't normally fire)
  *   "abc"       → "abc"        (passthrough so it surfaces as missing)
  */
+/**
+ * Parse the assessor-supplied Frontage_or_Area string. ROLL_ENTRY
+ * stores this as either a frontage measurement (e.g. "120.5 Feet")
+ * or an area (e.g. "5.000 Acres"). When it's already an area in
+ * acres we use that directly — it's the assessor's official value
+ * and trumps a geometry-derived calculation. When it's a frontage
+ * measurement we can't reverse-derive area, so callers fall back
+ * to turf area on the polygon.
+ *
+ * Returns the acreage as a finite number when the input is in
+ * acres or hectares, otherwise null. Unrecognised units / malformed
+ * strings / null/empty all return null.
+ */
+export function acresFromFrontageField(raw) {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  const m = s.match(/^([0-9]+(?:\.[0-9]+)?)\s*(acres?|ac|hectares?|ha)\b/i);
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const unit = m[2].toLowerCase();
+  if (unit.startsWith('ac')) return n;
+  if (unit.startsWith('ha')) return n * 2.471053814671653;  // hectares → acres
+  return null;
+}
+
 export function canonicalRoll(input) {
   if (input == null) return '';
   const s = String(input).trim();
