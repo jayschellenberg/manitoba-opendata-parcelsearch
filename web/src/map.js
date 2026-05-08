@@ -849,10 +849,10 @@ export function initMap(container, { onFeatureClick } = {}) {
           'text-font': ['Open Sans Semibold'],
           'text-size': [
             'interpolate', ['linear'], ['zoom'],
-            13, 11,
-            14, 12,
-            17, 15,
-            19, 17,
+            13, 10,
+            14, 11,
+            17, 13,
+            19, 15,
           ],
           // Always render, and don't reserve space against other labels.
           // This lets dev-plan + zoning labels coexist with the roll
