@@ -255,6 +255,10 @@ export function initMap(container, { onFeatureClick } = {}) {
   map.on('error', (e) => console.error('[map error]', e?.error?.message || e, e));
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
   map.addControl(new BasemapToggleControl(), 'top-right');
+  // Temporary diagnostic — shows the live zoom level so we can tune
+  // zoom-dependent paint expressions (label sizes, minzoom thresholds,
+  // etc). Remove this addControl call when no longer needed.
+  map.addControl(new ZoomLevelControl(), 'top-left');
 
   const ready = new Promise((resolve) => {
     map.on('load', () => {
@@ -845,7 +849,11 @@ export function initMap(container, { onFeatureClick } = {}) {
         minzoom: 13,
         layout: {
           visibility: 'none',
-          'text-field': ['coalesce', ['get', 'Roll_No_Txt'], ''],
+          // _rollDisplay is the .000-stripped form stamped onto each
+          // muni-parcels feature in arcgis.js's
+          // fetchAllParcelsInMunicipality. Falls back to Roll_No_Txt if
+          // the stamp didn't take (older cached responses, edge cases).
+          'text-field': ['coalesce', ['get', '_rollDisplay'], ['get', 'Roll_No_Txt'], ''],
           'text-font': ['Open Sans Semibold'],
           'text-size': [
             'interpolate', ['linear'], ['zoom'],
@@ -1336,7 +1344,7 @@ export function setMuniParcelsVisible(map, visible) {
 
 function parcelHtml(p) {
   const lines = [];
-  if (p.Roll_No_Txt)        lines.push(`<strong>Roll #</strong> ${escapeHtml(p.Roll_No_Txt)}`);
+  if (p.Roll_No_Txt)        lines.push(`<strong>Roll #</strong> ${escapeHtml(rollDisplayFor(p))}`);
   if (p.Property_Address)   lines.push(escapeHtml(p.Property_Address));
   if (p.Muni_Name_With_Typ) lines.push(`<em>${escapeHtml(p.Muni_Name_With_Typ)}</em>`);
   if (p._legalDescription)  lines.push(`<strong>Legal</strong> ${escapeHtml(p._legalDescription)}`);
@@ -1530,7 +1538,7 @@ function readOverlaysAt(map, point) {
  */
 function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
   const lines = [];
-  if (p.Roll_No_Txt)      lines.push(`<strong>Roll #</strong> ${escapeHtml(p.Roll_No_Txt)}`);
+  if (p.Roll_No_Txt)      lines.push(`<strong>Roll #</strong> ${escapeHtml(rollDisplayFor(p))}`);
   if (p.Property_Address) lines.push(escapeHtml(p.Property_Address));
   if (p.Muni_Name_With_Typ) lines.push(`<em>${escapeHtml(p.Muni_Name_With_Typ)}</em>`);
   // Legal description from the MAO scrape index. Stamped onto every
@@ -1629,6 +1637,41 @@ class BasemapToggleControl {
   }
 }
 
+/**
+ * Temporary diagnostic control that shows the current zoom level in
+ * the top-left corner. Used while we're tuning zoom-dependent paint
+ * expressions (per-parcel-area label scaling, minzoom thresholds,
+ * etc). Updates on every move event; styled inline so we don't need
+ * to add a CSS rule for a control that's expected to come out again.
+ */
+class ZoomLevelControl {
+  onAdd(map) {
+    this._map = map;
+    this._container = document.createElement('div');
+    this._container.className = 'maplibregl-ctrl maplibregl-ctrl-group zoom-level';
+    this._container.style.padding = '4px 8px';
+    this._container.style.fontSize = '12px';
+    this._container.style.fontFamily = 'system-ui, sans-serif';
+    this._container.style.background = 'rgba(255, 255, 255, 0.92)';
+    this._container.style.color = '#1a3a4a';
+    this._container.style.fontWeight = '600';
+    this._container.style.minWidth = '64px';
+    this._container.style.textAlign = 'center';
+    this._update = () => {
+      const z = this._map.getZoom();
+      this._container.textContent = `Zoom ${z.toFixed(2)}`;
+    };
+    this._update();
+    this._map.on('move', this._update);
+    return this._container;
+  }
+  onRemove() {
+    if (this._map) this._map.off('move', this._update);
+    this._container.parentNode?.removeChild(this._container);
+    this._map = null;
+  }
+}
+
 /** Allow only http/https URLs into anchor hrefs that come from external
  *  data (contaminated-sites CSV, ROLL_ENTRY's Asmt_Rpt_Url, etc.). */
 function safeExternalUrl(raw) {
@@ -1638,6 +1681,18 @@ function safeExternalUrl(raw) {
     if (u.protocol === 'http:' || u.protocol === 'https:') return u.toString();
   } catch { /* not parseable */ }
   return null;
+}
+
+/** Display form of a parcel feature's roll number. Prefers the
+ *  _rollDisplay stamp set by arcgis.js (already strips a trailing
+ *  .000); falls back to a runtime strip when the stamp isn't there
+ *  (search-result features that weren't routed through the muni-
+ *  parcels enrichment). Mirrors the displayRoll() helper in main.js. */
+function rollDisplayFor(p) {
+  if (p?._rollDisplay) return p._rollDisplay;
+  const r = p?.Roll_No_Txt;
+  if (typeof r !== 'string') return '';
+  return r.endsWith('.000') ? r.slice(0, -4) : r;
 }
 
 function escapeHtml(s) {

@@ -967,7 +967,10 @@ export async function fetchTrafficFlow() {
  */
 export async function fetchAllParcelsInMunicipality(municipality) {
   if (!municipality) return makeEmptyFc();
-  const cacheKey = `mb_muni_parcels_v1_${municipality}`;
+  // v2: each feature now carries _rollDisplay (.000 stripped); bump
+  // invalidates v1 entries that lack the stamp so the map label and
+  // popup don't fall back to the un-stripped Roll_No_Txt.
+  const cacheKey = `mb_muni_parcels_v2_${municipality}`;
   const cached = readCache(cacheKey);
   if (cached) return cached;
   // Pull the same lightweight property set the table uses minus the
@@ -992,6 +995,14 @@ export async function fetchAllParcelsInMunicipality(municipality) {
         f.properties._acres = sqm / 4046.8564224;
       }
     } catch { /* topology errors — skip silently */ }
+    // Pre-strip the .000 sub from Roll_No_Txt for display contexts
+    // (the muni-parcels-label paint expression in map.js reads
+    // _rollDisplay). Keeps the raw Roll_No_Txt around for search
+    // and join keys; this is purely cosmetic.
+    const r = f.properties?.Roll_No_Txt;
+    if (typeof r === 'string') {
+      f.properties._rollDisplay = r.endsWith('.000') ? r.slice(0, -4) : r;
+    }
   }
   // Don't cache the truncated flag; if a giant muni hit the cap, we want
   // the user to know each session.
