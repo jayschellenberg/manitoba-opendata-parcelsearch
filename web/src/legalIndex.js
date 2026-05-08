@@ -253,12 +253,13 @@ function normalizeContains(v) {
  * punctuation in place so word boundaries are preserved — with two
  * coordinate-style relaxations:
  *
- *   1. Hyphens between two alphanumeric characters are removed, so a
+ *   1. Every hyphen is dropped — leading, trailing, between
+ *      alphanumerics, and double-hyphen runs like "A--51862". A
  *      section-township-range-meridian fragment like "NE-10-07-04-E"
- *      collapses to "NE100704E" and a search for "4E" finds it. As a
- *      side effect this also makes "2-E" match "2E" — accepted as a
- *      pragmatic trade-off (hyphen rarely separates legitimately
- *      different tokens in MB legal descriptions).
+ *      collapses to "NE100704E"; needles "4E", "-4E", "04-E", "4-E",
+ *      "-04-E", "-04E" all normalize to the same "4E". Hyphens almost
+ *      never separate legitimately different tokens in MB legal
+ *      descriptions, so this is the right default.
  *   2. Leading zeros on a digit run at a word boundary are stripped
  *      so "04" matches "4". Mid-string digits ("1004") aren't touched
  *      because they're not actually zero-padded numbers.
@@ -268,18 +269,23 @@ function normalizeContains(v) {
  *
  * Examples after normalization:
  *   "2E"               -> "2E"           (matches "Parcel 2E", not "2 E")
- *   "4E"               -> "4E"           (matches "04E", "04-E", "NE-10-07-04-E")
+ *   "4E" / "-4E" / "04E" / "04-E" / "4-E" / "-04-E" / "-04E"
+ *                       all -> "4E"      (matches "NE-10-07-04-E")
  *   "lot 5"            -> "LOT 5"        (matches "Lot 5", not "Lot5")
  *   "river lot 12"     -> "RIVER LOT 12" (matches "River Lot 12")
  *   "NE-10-07-04-E"    -> "NE100704E"
+ *   "A--51862"         -> "A51862"
  *   "  pcl  G  "       -> "PCL G"        (multi-space squashed to single)
  */
 function normalizeLegalText(v) {
   if (!real(v)) return '';
   let s = String(v).toUpperCase().replace(/\s+/g, ' ').trim();
-  // 1. Drop hyphens that sit between two alphanumeric characters.
-  // Whitespace and hyphen-at-end-of-token cases are left alone.
-  s = s.replace(/([A-Z0-9])-+(?=[A-Z0-9])/g, '$1');
+  // 1. Drop EVERY hyphen (leading, trailing, between alphanums, runs
+  // like 'A--51862'). The earlier between-alphanums-only rule still
+  // surfaced needles like '-4E' as different from '4E' even though
+  // both refer to the same coordinate fragment. Whitespace stays as
+  // a hard boundary so '2 E' is still distinct from '2E'.
+  s = s.replace(/-+/g, '');
   // 2. Strip leading zeros from any digit run that begins at a word
   //    boundary. The (\d) capture and "$1" replacement preserve a
   //    bare zero ("0" alone stays "0"); only "00" → "0" wouldn't get
