@@ -964,13 +964,20 @@ export function initMap(container, { onFeatureClick } = {}) {
         id: 'parcel-fill',
         type: 'fill',
         source: 'parcels',
-        paint: { 'fill-color': '#b22222', 'fill-opacity': 0.15 },
+        // Yellow highlight (Mat. yellow-A400) at slightly bumped
+        // opacity from the old 0.15 dark-red — yellow is naturally
+        // lighter so it needs more presence to read on both Carto
+        // streets and Esri imagery basemaps.
+        paint: { 'fill-color': '#ffea00', 'fill-opacity': 0.32 },
       });
       map.addLayer({
         id: 'parcel-line',
         type: 'line',
         source: 'parcels',
-        paint: { 'line-color': '#690000', 'line-width': 2.5 },
+        // Dark goldenrod outline pairs with the yellow fill — reads
+        // on both basemaps and against the dev-plan / zoning fills
+        // underneath.
+        paint: { 'line-color': '#a05a00', 'line-width': 2.5 },
       });
       // MASC label overlay is intentionally above the parcel/roll-fabric
       // layers so the rating letter stays visible when the user turns
@@ -1056,7 +1063,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         // Parcel info, then a separator line per overlay hit (deduped by layer).
         const blocks = [];
         const parcel = hits.find((h) => h.layer.id === 'parcel-fill');
-        if (parcel) blocks.push(`<div><strong style="color:#690000">Parcel</strong><br>${parcelHtml(parcel.properties)}</div>`);
+        if (parcel) blocks.push(`<div><strong style="color:#a05a00">Parcel</strong><br>${parcelHtml(parcel.properties)}</div>`);
         const zone = hits.find((h) => h.layer.id === 'zoning-fill');
         if (zone) blocks.push(`<div><strong style="color:#1a2a4a">Zoning</strong><br>${zoningHtml(zone.properties)}</div>`);
         const dev = hits.find((h) => h.layer.id === 'devplan-fill');
