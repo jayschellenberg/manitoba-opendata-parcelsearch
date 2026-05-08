@@ -1533,6 +1533,16 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
   if (p.Roll_No_Txt)      lines.push(`<strong>Roll #</strong> ${escapeHtml(p.Roll_No_Txt)}`);
   if (p.Property_Address) lines.push(escapeHtml(p.Property_Address));
   if (p.Muni_Name_With_Typ) lines.push(`<em>${escapeHtml(p.Muni_Name_With_Typ)}</em>`);
+  // Legal description from the MAO scrape index. Stamped onto every
+  // muni-parcels feature by main.js's enrichFcWithLegals() right after
+  // the muni-parcels fetch lands, so the popup renders it without any
+  // per-popup async lookup. Falls back to the longer legal_detail when
+  // the short legal_description is empty.
+  const legal = p._legalDescription || p._legalDetail;
+  if (legal) lines.push(`<strong>Legal</strong> ${escapeHtml(legal)}`);
+  if (p._certificatesOfTitle) {
+    lines.push(`<strong>Title</strong> ${escapeHtml(p._certificatesOfTitle)}`);
+  }
   if (p.Dwelling_Units != null && p.Dwelling_Units !== '') {
     lines.push(`<strong>DU</strong> ${escapeHtml(p.Dwelling_Units)}`);
   }
