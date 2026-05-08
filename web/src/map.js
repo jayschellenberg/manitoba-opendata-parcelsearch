@@ -861,13 +861,58 @@ export function initMap(container, { onFeatureClick } = {}) {
           // the stamp didn't take (older cached responses, edge cases).
           'text-field': ['coalesce', ['get', '_rollDisplay'], ['get', 'Roll_No_Txt'], ''],
           'text-font': ['Open Sans Semibold'],
+          // Two-dimensional interpolation: text-size scales by both
+          // zoom AND parcel acreage (_acres is stamped on every
+          // muni-parcels feature in arcgis.js's
+          // fetchAllParcelsInMunicipality, computed via @turf/area).
+          // The outer interpolate is over zoom; at each zoom stop the
+          // inner interpolate maps acreage to a px size. Net effect:
+          //   - tiny urban lots (0.1 ac) get small labels at every
+          //     zoom — easier on dense Carman / Steinbach / Selkirk
+          //     core grids
+          //   - quarter sections (160 ac) and full sections (640 ac)
+          //     get larger labels — easier to read in rural townships
+          //   - middle-ground rural lots (1-10 ac) sit between.
+          // text-allow-overlap:false + text-padding still applies on
+          // top, so anything that would still collide gets culled.
+          // Acreage breakpoints: 0.1 (urban lot), 1, 10, 80
+          // (half-quarter), 640 (section). Stops between zooms 13/14/
+          // 17/19 mirror the existing zoom-only ramp's general shape
+          // but with per-area variation at each level.
           'text-size': [
             'interpolate', ['linear'], ['zoom'],
-            13, 11,
-            14, 12,
-            15, 13,
-            17, 14,
-            19, 16,
+            13, [
+              'interpolate', ['linear'], ['to-number', ['get', '_acres'], 1],
+              0.1, 7,
+              1,   9,
+              10,  11,
+              80,  12,
+              640, 14,
+            ],
+            14, [
+              'interpolate', ['linear'], ['to-number', ['get', '_acres'], 1],
+              0.1, 7,
+              1,   10,
+              10,  12,
+              80,  13,
+              640, 15,
+            ],
+            17, [
+              'interpolate', ['linear'], ['to-number', ['get', '_acres'], 1],
+              0.1, 9,
+              1,   12,
+              10,  14,
+              80,  16,
+              640, 18,
+            ],
+            19, [
+              'interpolate', ['linear'], ['to-number', ['get', '_acres'], 1],
+              0.1, 11,
+              1,   14,
+              10,  16,
+              80,  18,
+              640, 20,
+            ],
           ],
           // Auto-cull overlapping labels so dense urban grids
           // (Carman, Steinbach core, Selkirk Main St) stay readable
