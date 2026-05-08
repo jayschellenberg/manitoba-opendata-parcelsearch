@@ -1019,7 +1019,7 @@ async function runSearch() {
   }
 }
 
-const ENRICHMENT_THRESHOLD = 100;
+const ENRICHMENT_THRESHOLD = 250;
 
 /**
  * Show the search-count line with an inline "Load zoning + dev-plan"
