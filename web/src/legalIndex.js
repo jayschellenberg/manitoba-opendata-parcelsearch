@@ -271,26 +271,31 @@ function normalizeContains(v) {
  *   "2E"               -> "2E"           (matches "Parcel 2E", not "2 E")
  *   "4E" / "-4E" / "04E" / "04-E" / "4-E" / "-04-E" / "-04E"
  *                       all -> "4E"      (matches "NE-10-07-04-E")
+ *   "7-5E" / "07-05E" / "07-5E"
+ *                       all -> "75E"     (matches "SE-30-07-05-E")
  *   "lot 5"            -> "LOT 5"        (matches "Lot 5", not "Lot5")
  *   "river lot 12"     -> "RIVER LOT 12" (matches "River Lot 12")
- *   "NE-10-07-04-E"    -> "NE100704E"
+ *   "NE-10-07-04-E"    -> "NE1074E"
+ *   "SE-30-07-05-E"    -> "SE3075E"
  *   "A--51862"         -> "A51862"
  *   "  pcl  G  "       -> "PCL G"        (multi-space squashed to single)
  */
 function normalizeLegalText(v) {
   if (!real(v)) return '';
   let s = String(v).toUpperCase().replace(/\s+/g, ' ').trim();
-  // 1. Drop EVERY hyphen (leading, trailing, between alphanums, runs
-  // like 'A--51862'). The earlier between-alphanums-only rule still
-  // surfaced needles like '-4E' as different from '4E' even though
-  // both refer to the same coordinate fragment. Whitespace stays as
-  // a hard boundary so '2 E' is still distinct from '2E'.
-  s = s.replace(/-+/g, '');
-  // 2. Strip leading zeros from any digit run that begins at a word
-  //    boundary. The (\d) capture and "$1" replacement preserve a
-  //    bare zero ("0" alone stays "0"); only "00" → "0" wouldn't get
-  //    fully reduced (rare and not user-visible).
+  // 1. Strip leading zeros from each digit run BEFORE removing
+  //    hyphens. Order matters: while the hyphens are still in place
+  //    they create \b word boundaries between adjacent digit groups
+  //    (e.g. "07-05" has a \b at each end of "07" and "05"), so the
+  //    \b0+(\d) regex can reduce each padded number independently.
+  //    If we stripped hyphens first the digit groups would merge
+  //    ("07-05" → "0705") and the inner zeros would survive,
+  //    breaking matches like "7-5E" against "SE-30-07-05-E".
   s = s.replace(/\b0+(\d)/g, '$1');
+  // 2. Drop EVERY hyphen (leading, trailing, between alphanums, runs
+  //    like "A--51862"). Whitespace stays as a hard boundary so
+  //    "2 E" is still distinct from "2E".
+  s = s.replace(/-+/g, '');
   return s;
 }
 
