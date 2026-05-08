@@ -974,10 +974,10 @@ export function initMap(container, { onFeatureClick } = {}) {
         id: 'parcel-line',
         type: 'line',
         source: 'parcels',
-        // Dark goldenrod outline pairs with the yellow fill — reads
-        // on both basemaps and against the dev-plan / zoning fills
-        // underneath.
-        paint: { 'line-color': '#a05a00', 'line-width': 2.5 },
+        // Mustard outline pairs with the yellow fill — reads on both
+        // basemaps and clearly belongs to the yellow palette (no
+        // red-warm undertones the way dark goldenrod has).
+        paint: { 'line-color': '#7a5c00', 'line-width': 2.5 },
       });
       // MASC label overlay is intentionally above the parcel/roll-fabric
       // layers so the rating letter stays visible when the user turns
@@ -1063,7 +1063,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         // Parcel info, then a separator line per overlay hit (deduped by layer).
         const blocks = [];
         const parcel = hits.find((h) => h.layer.id === 'parcel-fill');
-        if (parcel) blocks.push(`<div><strong style="color:#a05a00">Parcel</strong><br>${parcelHtml(parcel.properties)}</div>`);
+        if (parcel) blocks.push(`<div><strong style="color:#7a5c00">Parcel</strong><br>${parcelHtml(parcel.properties)}</div>`);
         const zone = hits.find((h) => h.layer.id === 'zoning-fill');
         if (zone) blocks.push(`<div><strong style="color:#1a2a4a">Zoning</strong><br>${zoningHtml(zone.properties)}</div>`);
         const dev = hits.find((h) => h.layer.id === 'devplan-fill');
