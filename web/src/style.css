@@ -351,6 +351,30 @@ header small a {
   display: none;
 }
 
+/* Compact inline button shown next to the count text — used for the
+   "Load zoning + dev-plan" opt-in when a search returns more parcels
+   than the auto-enrichment threshold. Sized to read as part of the
+   count line rather than a full-width action button. */
+.count .inline-action {
+  margin-left: 6px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1a3a4a;
+  background: #fff;
+  border: 1px solid #1a3a4a;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.count .inline-action:hover:not(:disabled) {
+  background: #d8eaf3;
+}
+.count .inline-action:disabled {
+  color: #6b7c8e;
+  border-color: #aab8c5;
+  cursor: default;
+}
+
 .hint {
   margin: 0;
   padding: 8px 20px;

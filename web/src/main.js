@@ -961,8 +961,6 @@ async function runSearch() {
     const baseMsg = capNotes.length
       ? `${countLabel} (${capNotes.join('; ')})`
       : countLabel;
-    setCount(`${baseMsg} · loading zoning + dev-plan…`);
-
     // Stamp _rowKey so map clicks can find the matching table row.
     for (const f of parcelFc.features) {
       const oid = f.properties?.OBJECTID;
@@ -973,106 +971,161 @@ async function runSearch() {
     renderTable(parcelFc.features.map((p) => ({ parcel: p, zoning: [], devPlan: [] })));
     setMapData(parcelFc, EMPTY_FC, EMPTY_FC);
 
-    // Spatial enrichment in parallel — both overlay layers from one pass.
-    let zoningFc = EMPTY_FC;
-    let devPlanFc = EMPTY_FC;
-    let riskAreaFc = EMPTY_FC;
-    const riskAreaPromise = fetchMascRiskAreas().catch((err) => {
-      console.warn('official MASC risk-area fetch failed (non-fatal):', err);
-      return EMPTY_FC;
-    });
-    try {
-      [zoningFc, devPlanFc, riskAreaFc] = await Promise.all([
-        fetchZoningOverlap(parcelFc, { municipality: inputs.municipality }),
-        fetchDevPlanOverlap(parcelFc, { municipality: inputs.municipality }),
-        riskAreaPromise,
-      ]);
-    } catch (err) {
-      console.warn('overlay fetch failed', err);
-      setCount(`${baseMsg} · zoning/dev-plan enrichment failed: ${err.message}`);
-      return;
-    }
-    lastZoningFc = zoningFc;
-    lastDevPlanFc = devPlanFc;
-    // When the search is muni-scoped, fetchZoningOverlap /
-    // fetchDevPlanOverlap take the bulk-by-muni path (see arcgis.js),
-    // so the overlay FCs already cover the entire muni. Stamp the
-    // loaded-for state so the Zoning Layer / Dev Plan Layer toggles
-    // can short-circuit when the user clicks them next.
-    if (inputs.municipality) {
-      zoningLayerLoadedFor = inputs.municipality;
-      devPlanLayerLoadedFor = inputs.municipality;
-    } else {
-      zoningLayerLoadedFor = null;
-      devPlanLayerLoadedFor = null;
-    }
-    rebuildZoningLegend(zoningFc);
-    updatePdWebsiteButton(devPlanFc);
-
-    const zoningTop2  = joinTopNByArea(parcelFc, zoningFc, 2);
-    const devPlanTop2 = joinTopNByArea(parcelFc, devPlanFc, 2);
-
-    const rows = parcelFc.features.map((p) => ({
-      parcel: p,
-      zoning:  zoningTop2.get(p.properties.OBJECTID) || [],
-      devPlan: devPlanTop2.get(p.properties.OBJECTID) || [],
-    }));
-
-    // Stamp primary-zoning code onto each parcel feature so the map's
-    // hover popup (which only sees the parcel-fill feature) can include
-    // the zoning code without re-running the spatial join client-side.
-    for (const row of rows) {
-      const z = row.zoning[0]?.feature.properties;
-      if (z) row.parcel.properties._zoneCode = z.ZONE || z.ZONE_NAME || null;
-    }
-
-    stampOfficialRiskAreas(rows, riskAreaFc);
-
-    // Attach the pre-baked dominant MASC soil rating for each parcel
-    // (per-muni shard built by r/build_parcel_masc.R). Lazy: skipped
-    // when the muni isn't in the index (urban-only munis don't get a
-    // shard). Falls through silently on network or parse errors so a
-    // missing shard never blocks the search.
-    if (inputs.municipality) {
-      try {
-        const dict = await fetchParcelMascForMuni(inputs.municipality);
-        if (dict) {
-          for (const row of rows) {
-            const roll = row.parcel.properties?.Roll_No_Txt;
-            const hit  = roll ? dict[roll] : null;
-            if (hit) {
-              row.parcel.properties._soilRating = hit.rating || null;
-              row.parcel.properties._soilQuarter = soilSourceLabel(hit);
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('parcel-MASC enrichment failed (non-fatal):', err);
-      }
-    }
-
-    // Stamp the most-common assessment year into the Total Value column
-    // header so users can tell which assessment cycle the dollar figure
-    // is anchored to (Manitoba's general assessment year rolls every
-    // two years; the field is sometimes mid-cycle for a recent revision).
-    updateAssessmentYearHeader(rows);
-
-    renderTable(rows);
-    setMapData(parcelFc, zoningFc, devPlanFc);
-    setCount(baseMsg);
     // Auto-show the muni-wide parcel fabric so the search results
-    // sit in their surrounding context. Only fires when a muni is
-    // selected (the layer can't fetch without one) and the toggle
-    // isn't already active. Uses the existing toggle plumbing so
-    // the layer's lazy-fetch + 30-day cache + collision logic all
-    // continue to apply unchanged.
+    // sit in their surrounding context. Done up front (not gated on
+    // enrichment finishing) so the user gets context immediately.
     if (inputs.municipality && !$muniParcelsToggle.disabled
         && !$muniParcelsToggle.classList.contains('active')) {
       toggleAuxOverlay('muniParcels');
     }
+
+    // Threshold rule: small result sets auto-enrich (typical search
+    // for a single property or small block — fast and the user expects
+    // zoning/dev-plan in the table immediately). Large result sets
+    // skip auto-enrichment because the per-parcel area-weighted join
+    // (joinTopNByArea via @turf/intersect) gets slow on the main
+    // thread; render the parcel rows now and offer a "Load zoning +
+    // dev-plan" button on the count line so the user can opt in when
+    // they actually need those columns.
+    if (parcelFc.features.length > ENRICHMENT_THRESHOLD) {
+      renderEnrichButton(parcelFc, inputs, baseMsg);
+    } else {
+      await enrichOverlays(parcelFc, inputs, baseMsg);
+    }
   } finally {
     setBusy(false);
   }
+}
+
+const ENRICHMENT_THRESHOLD = 100;
+
+/**
+ * Show the search-count line with an inline "Load zoning + dev-plan"
+ * button. Used when a search returns more parcels than the auto-
+ * enrichment threshold — the table already shows parcel rows, the
+ * button triggers the same overlay-fetch + area-weighted join when
+ * the user actually wants those columns populated.
+ */
+function renderEnrichButton(parcelFc, inputs, baseMsg) {
+  const n = parcelFc.features.length;
+  $count.innerHTML = '';
+  $count.appendChild(document.createTextNode(`${baseMsg} · `));
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'inline-action';
+  btn.textContent = `Load zoning + dev-plan (${n} parcels)`;
+  btn.title = 'Skipped automatically because the result set is larger than '
+            + `${ENRICHMENT_THRESHOLD} parcels. Click to fetch overlay polygons `
+            + 'and compute the area-weighted top-2 zoning + dev-plan per parcel.';
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.textContent = 'Loading zoning + dev-plan…';
+    try {
+      await enrichOverlays(parcelFc, inputs, baseMsg);
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = `Retry zoning + dev-plan (${err.message})`;
+    }
+  });
+  $count.appendChild(btn);
+}
+
+/**
+ * Run the zoning + dev-plan + risk-area + parcel-MASC enrichment
+ * pipeline against an already-fetched parcelFc. Both runSearch and
+ * the on-demand button feed into this. Mirrors the original inline
+ * sequence: fetch overlays in parallel, area-weighted top-2 join,
+ * stamp risk areas + soil rating, refresh the assessment-year header,
+ * then re-render table + map.
+ */
+async function enrichOverlays(parcelFc, inputs, baseMsg) {
+  setCount(`${baseMsg} · loading zoning + dev-plan…`);
+
+  let zoningFc = EMPTY_FC;
+  let devPlanFc = EMPTY_FC;
+  let riskAreaFc = EMPTY_FC;
+  const riskAreaPromise = fetchMascRiskAreas().catch((err) => {
+    console.warn('official MASC risk-area fetch failed (non-fatal):', err);
+    return EMPTY_FC;
+  });
+  try {
+    [zoningFc, devPlanFc, riskAreaFc] = await Promise.all([
+      fetchZoningOverlap(parcelFc, { municipality: inputs.municipality }),
+      fetchDevPlanOverlap(parcelFc, { municipality: inputs.municipality }),
+      riskAreaPromise,
+    ]);
+  } catch (err) {
+    console.warn('overlay fetch failed', err);
+    setCount(`${baseMsg} · zoning/dev-plan enrichment failed: ${err.message}`);
+    throw err;
+  }
+  lastZoningFc = zoningFc;
+  lastDevPlanFc = devPlanFc;
+  // When the search is muni-scoped, fetchZoningOverlap /
+  // fetchDevPlanOverlap take the bulk-by-muni path (see arcgis.js),
+  // so the overlay FCs already cover the entire muni. Stamp the
+  // loaded-for state so the Zoning Layer / Dev Plan Layer toggles
+  // can short-circuit when the user clicks them next.
+  if (inputs.municipality) {
+    zoningLayerLoadedFor = inputs.municipality;
+    devPlanLayerLoadedFor = inputs.municipality;
+  } else {
+    zoningLayerLoadedFor = null;
+    devPlanLayerLoadedFor = null;
+  }
+  rebuildZoningLegend(zoningFc);
+  updatePdWebsiteButton(devPlanFc);
+
+  const zoningTop2  = joinTopNByArea(parcelFc, zoningFc, 2);
+  const devPlanTop2 = joinTopNByArea(parcelFc, devPlanFc, 2);
+
+  const rows = parcelFc.features.map((p) => ({
+    parcel: p,
+    zoning:  zoningTop2.get(p.properties.OBJECTID) || [],
+    devPlan: devPlanTop2.get(p.properties.OBJECTID) || [],
+  }));
+
+  // Stamp primary-zoning code onto each parcel feature so the map's
+  // hover popup (which only sees the parcel-fill feature) can include
+  // the zoning code without re-running the spatial join client-side.
+  for (const row of rows) {
+    const z = row.zoning[0]?.feature.properties;
+    if (z) row.parcel.properties._zoneCode = z.ZONE || z.ZONE_NAME || null;
+  }
+
+  stampOfficialRiskAreas(rows, riskAreaFc);
+
+  // Attach the pre-baked dominant MASC soil rating for each parcel
+  // (per-muni shard built by r/build_parcel_masc.R). Lazy: skipped
+  // when the muni isn't in the index (urban-only munis don't get a
+  // shard). Falls through silently on network or parse errors so a
+  // missing shard never blocks the search.
+  if (inputs.municipality) {
+    try {
+      const dict = await fetchParcelMascForMuni(inputs.municipality);
+      if (dict) {
+        for (const row of rows) {
+          const roll = row.parcel.properties?.Roll_No_Txt;
+          const hit  = roll ? dict[roll] : null;
+          if (hit) {
+            row.parcel.properties._soilRating = hit.rating || null;
+            row.parcel.properties._soilQuarter = soilSourceLabel(hit);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('parcel-MASC enrichment failed (non-fatal):', err);
+    }
+  }
+
+  // Stamp the most-common assessment year into the Total Value column
+  // header so users can tell which assessment cycle the dollar figure
+  // is anchored to.
+  updateAssessmentYearHeader(rows);
+
+  renderTable(rows);
+  setMapData(parcelFc, zoningFc, devPlanFc);
+  setCount(baseMsg);
 }
 
 function attachLegalMetadata(parcelFc, legalMatches) {
@@ -1094,6 +1147,24 @@ function attachLegalMetadata(parcelFc, legalMatches) {
     p._certificatesOfTitle = rec.certificates_of_title || null;
     p._legalSourceUrl = rec.source_url || null;
   }
+}
+
+/**
+ * Convenience wrapper: build a parcelLegalKey list from any FC, look
+ * up the matching legal-index records, and stamp them onto each
+ * feature's properties via attachLegalMetadata. Used by the muni-
+ * parcels load (so the Roll Layer hover/click popup can show the
+ * legal description) and any future bulk-parcel enrichment caller.
+ */
+async function enrichFcWithLegals(fc) {
+  const keys = [];
+  for (const f of fc?.features || []) {
+    const k = parcelLegalKey(f?.properties || {});
+    if (k) keys.push(k);
+  }
+  if (keys.length === 0) return;
+  const recs = await lookupLegalRecordsByParcelKeys(keys);
+  if (recs.length > 0) attachLegalMetadata(fc, recs);
 }
 
 // ---------- Map / overlay helpers ----------
@@ -1636,10 +1707,17 @@ async function toggleAuxOverlay(which) {
     try {
       const fc = await meta.fetch();
       auxData[which] = fc;
-      // If the station data and the flow data are both loaded, stamp each
-      // station with the matching segment's AADT so the station popup can
-      // render the value inline. Done as a stable index lookup, no per-
-      // popup network calls.
+      // muni-parcels: enrich each parcel with its legal-index record
+      // BEFORE pushing to the map, so the hover/click popup on the
+      // Roll Layer can show the legal description without doing a
+      // per-popup async lookup. Cheap: the legal index is already
+      // module-cached via warmLegalIndex(); the lookup is one Map
+      // build + N gets.
+      if (which === 'muniParcels') {
+        await enrichFcWithLegals(fc).catch((err) => {
+          console.warn('Legal enrichment for muni-parcels failed (non-fatal):', err);
+        });
+      }
       meta.setData(map, fc);
       auxLoaded[which] = true;
       if (which === 'muniParcels') muniParcelsLoadedFor = $municipality.value;
