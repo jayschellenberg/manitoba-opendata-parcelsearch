@@ -85,7 +85,31 @@
           <input id="title" type="text" placeholder="Certificate of title (contains)" />
           <span class="tip">Substring search against the MAO scrape's certificates_of_title field. Accepts plain title numbers (e.g. "2476500") or full prefixed forms ("CT 2476500").</span>
         </span>
+        <div class="action-row">
+          <button id="search" type="button">Search</button>
+          <button id="clear"  type="button" class="secondary">Clear</button>
+          <button id="export" type="button" class="secondary">Export CSV</button>
+        </div>
+        <span id="count" class="count"></span>
+
+        <h2>Map overlays</h2>
+        <div class="overlay-grid">
+          <button id="muni-parcels-toggle" type="button" class="secondary" aria-pressed="false" disabled title="Show every parcel in the selected municipality (grey fabric under your search results)">Roll Layer</button>
+          <button id="flow-toggle"    type="button" class="secondary" aria-pressed="false" title="MHTIS Traffic Flow 2019 — segments coloured by AADT">Traffic Flow</button>
+          <button id="zoning-toggle"  type="button" class="secondary" aria-pressed="false">Zoning Layer</button>
+          <button id="devplan-toggle" type="button" class="secondary" aria-pressed="false">Dev Plan Layer</button>
+          <button id="contam-toggle"  type="button" class="secondary" aria-pressed="false" title="Manitoba Contaminated Sites Registry">Enviro Sites</button>
+          <button id="grid-toggle"   type="button" class="secondary" aria-pressed="false" title="Section-township grid + river lots. Select a municipality for a focused view, or toggle without one for the province-wide overlay.">Sec-Twp Grid</button>
+          <button id="riskarea-toggle" type="button" class="secondary" aria-pressed="false" title="Official MASC crop-insurance risk-area boundaries from Manitoba Maps">MASC Risk Areas</button>
+          <button id="masc-toggle"   type="button" class="secondary" aria-pressed="false" disabled title="MASC crop-insurance soil ratings (A best → J worst). Select a municipality first.">MASC Rating</button>
+          <button id="cli-toggle" type="button" class="secondary" aria-pressed="false" disabled title="Canada Land Inventory — Soil Capability for Agriculture (1=prime, 7=no agricultural capability). Select a municipality first.">CLI Soil</button>
+          <button id="muni-website-btn" type="button" class="secondary" disabled title="Select a municipality to enable">Muni Website ↗</button>
+          <button id="pd-website-btn"   type="button" class="secondary" disabled title="Select a municipality to enable">PD Website ↗</button>
+          <button id="static-map-btn"   type="button" class="secondary" title="Capture the current map view as a PNG. Right-click the rendered image below the table and Save Image As… to drop into a report.">Generate Map</button>
+        </div>
+
         <hr class="control-sep" />
+        <h2>Other searches</h2>
         <span class="field">
           <select id="zone-category" disabled>
             <option value="">Any zoning category</option>
@@ -114,28 +138,6 @@
             <input id="du-min" type="number" min="1" step="1" placeholder="#" disabled />
             <span class="tip">Minimum dwelling units (when 'Min DU' is selected)</span>
           </span>
-        </div>
-        <div class="action-row">
-          <button id="search" type="button">Search</button>
-          <button id="clear"  type="button" class="secondary">Clear</button>
-          <button id="export" type="button" class="secondary">Export CSV</button>
-        </div>
-        <span id="count" class="count"></span>
-
-        <h2>Map overlays</h2>
-        <div class="overlay-grid">
-          <button id="muni-parcels-toggle" type="button" class="secondary" aria-pressed="false" disabled title="Show every parcel in the selected municipality (grey fabric under your search results)">Roll Layer</button>
-          <button id="flow-toggle"    type="button" class="secondary" aria-pressed="false" title="MHTIS Traffic Flow 2019 — segments coloured by AADT">Traffic Flow</button>
-          <button id="zoning-toggle"  type="button" class="secondary" aria-pressed="false">Zoning Layer</button>
-          <button id="devplan-toggle" type="button" class="secondary" aria-pressed="false">Dev Plan Layer</button>
-          <button id="contam-toggle"  type="button" class="secondary" aria-pressed="false" title="Manitoba Contaminated Sites Registry">Enviro Sites</button>
-          <button id="grid-toggle"   type="button" class="secondary" aria-pressed="false" title="Section-township grid + river lots. Select a municipality for a focused view, or toggle without one for the province-wide overlay.">Sec-Twp Grid</button>
-          <button id="riskarea-toggle" type="button" class="secondary" aria-pressed="false" title="Official MASC crop-insurance risk-area boundaries from Manitoba Maps">MASC Risk Areas</button>
-          <button id="masc-toggle"   type="button" class="secondary" aria-pressed="false" disabled title="MASC crop-insurance soil ratings (A best → J worst). Select a municipality first.">MASC Rating</button>
-          <button id="cli-toggle" type="button" class="secondary" aria-pressed="false" disabled title="Canada Land Inventory — Soil Capability for Agriculture (1=prime, 7=no agricultural capability). Select a municipality first.">CLI Soil</button>
-          <button id="muni-website-btn" type="button" class="secondary" disabled title="Select a municipality to enable">Muni Website ↗</button>
-          <button id="pd-website-btn"   type="button" class="secondary" disabled title="Select a municipality to enable">PD Website ↗</button>
-          <button id="static-map-btn"   type="button" class="secondary" title="Capture the current map view as a PNG. Right-click the rendered image below the table and Save Image As… to drop into a report.">Generate Map</button>
         </div>
       </aside>
 
