@@ -1114,8 +1114,9 @@ async function handleSalesUpload(file) {
         const roll = f.properties?.Roll_No_Txt;
         const sale = roll ? saleByRoll.get(roll) : null;
         if (sale) {
-          f.properties._saleDate  = sale.saleDate || null;
-          f.properties._salePrice = sale.consideration || null;
+          f.properties._saleDate        = sale.saleDate || null;
+          f.properties._salePrice       = sale.consideration || null;
+          f.properties._primaryProperty = sale.primaryProperty || null;
           matched++;
         }
       }
