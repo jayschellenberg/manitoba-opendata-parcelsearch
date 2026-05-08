@@ -1207,16 +1207,45 @@ async function handleSalesUpload(file) {
       : '';
     const baseMsg = `${totalMatched} of ${records.length} sales plotted${dropNote}${missNote}`;
 
-    // CSV uploads don't have a single muni dropdown selection — pass
-    // an inputs object that mirrors a no-muni search so the
-    // downstream enrichment doesn't try to route through the
-    // bulk-by-muni path.
-    const fakeInputs = { municipality: '' };
+    // If every matched parcel sits in a single muni, sync the
+    // dropdown to that muni so muni-scoped affordances (Roll Layer
+    // / MASC Rating / CLI Soil / Muni Website / PD Website / the
+    // Other Searches category dropdown) all enable themselves the
+    // same way they would after a regular search. The 'change'
+    // dispatch fires the existing listeners so overlay state
+    // refreshes correctly. Multi-muni uploads leave the dropdown
+    // empty (Roll Layer is single-muni-scoped; we'd otherwise have
+    // to pick a winner arbitrarily).
+    const matchedMunis = [...new Set(
+      results.filter((r) => r.matched > 0).map((r) => r.muni)
+    )];
+    let inputsMuni = '';
+    if (matchedMunis.length === 1) {
+      const dominant = matchedMunis[0];
+      if ($municipality.value !== dominant) {
+        $municipality.value = dominant;
+        $municipality.dispatchEvent(new Event('change'));
+      }
+      inputsMuni = dominant;
+    }
+
+    // Pass the resolved muni (or empty for multi-muni uploads) so
+    // enrichOverlays can route through the bulk-by-muni overlay path
+    // when applicable.
+    const fakeInputs = { municipality: inputsMuni };
 
     if (parcelFc.features.length > ENRICHMENT_THRESHOLD) {
       renderEnrichButton(parcelFc, fakeInputs, baseMsg);
     } else {
       await enrichOverlays(parcelFc, fakeInputs, baseMsg);
+    }
+
+    // Mirror runSearch's auto-toggle of the Roll Layer when a single
+    // muni is in scope — gives the user the surrounding parcel
+    // fabric for context without an extra click.
+    if (inputsMuni && $muniParcelsToggle && !$muniParcelsToggle.disabled
+        && !$muniParcelsToggle.classList.contains('active')) {
+      toggleAuxOverlay('muniParcels');
     }
 
     // Lock in the enriched row set so post-upload Other-Searches
