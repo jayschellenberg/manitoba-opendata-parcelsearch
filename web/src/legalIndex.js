@@ -250,22 +250,42 @@ function normalizeContains(v) {
 /**
  * Less-aggressive normalizer for the user's free-text legal-description
  * search. Uppercases and collapses runs of whitespace, but leaves all
- * punctuation in place so word boundaries are preserved.
+ * punctuation in place so word boundaries are preserved — with two
+ * coordinate-style relaxations:
  *
- * Why: the strip-all `normalizeContains` was matching "2E" against
- * sources like "Parcel 2 E half" (collapsed to "PARCEL2EHALF") and
- * "Lot 2-E" (collapsed to "LOT2E"). Users typing "2E" want a literal
- * contiguous match — the hyphen and the space are real boundaries.
+ *   1. Hyphens between two alphanumeric characters are removed, so a
+ *      section-township-range-meridian fragment like "NE-10-07-04-E"
+ *      collapses to "NE100704E" and a search for "4E" finds it. As a
+ *      side effect this also makes "2-E" match "2E" — accepted as a
+ *      pragmatic trade-off (hyphen rarely separates legitimately
+ *      different tokens in MB legal descriptions).
+ *   2. Leading zeros on a digit run at a word boundary are stripped
+ *      so "04" matches "4". Mid-string digits ("1004") aren't touched
+ *      because they're not actually zero-padded numbers.
+ *
+ * Whitespace boundaries are still preserved: "2 E" stays "2 E" and a
+ * search for "2E" doesn't match it.
  *
  * Examples after normalization:
- *   "2E"            -> "2E"           (matches "Parcel 2E", not "2 E"/"2-E")
- *   "lot 5"         -> "LOT 5"        (matches "Lot 5", not "Lot5")
- *   "river lot 12"  -> "RIVER LOT 12" (matches "River Lot 12")
- *   "  pcl  G  "    -> "PCL G"        (multi-space squashed to single)
+ *   "2E"               -> "2E"           (matches "Parcel 2E", not "2 E")
+ *   "4E"               -> "4E"           (matches "04E", "04-E", "NE-10-07-04-E")
+ *   "lot 5"            -> "LOT 5"        (matches "Lot 5", not "Lot5")
+ *   "river lot 12"     -> "RIVER LOT 12" (matches "River Lot 12")
+ *   "NE-10-07-04-E"    -> "NE100704E"
+ *   "  pcl  G  "       -> "PCL G"        (multi-space squashed to single)
  */
 function normalizeLegalText(v) {
   if (!real(v)) return '';
-  return String(v).toUpperCase().replace(/\s+/g, ' ').trim();
+  let s = String(v).toUpperCase().replace(/\s+/g, ' ').trim();
+  // 1. Drop hyphens that sit between two alphanumeric characters.
+  // Whitespace and hyphen-at-end-of-token cases are left alone.
+  s = s.replace(/([A-Z0-9])-+(?=[A-Z0-9])/g, '$1');
+  // 2. Strip leading zeros from any digit run that begins at a word
+  //    boundary. The (\d) capture and "$1" replacement preserve a
+  //    bare zero ("0" alone stays "0"); only "00" → "0" wouldn't get
+  //    fully reduced (rare and not user-visible).
+  s = s.replace(/\b0+(\d)/g, '$1');
+  return s;
 }
 
 function normalizeLegalPart(v, kind) {
