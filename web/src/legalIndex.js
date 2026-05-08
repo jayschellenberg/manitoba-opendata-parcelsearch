@@ -67,7 +67,7 @@ export async function searchLegalIndex(criteria = {}) {
   }
 
   const index = await loadLegalIndex();
-  const legalNeedle = normalizeContains(criteria.legalText);
+  const legalNeedle = normalizeLegalText(criteria.legalText);
   const lotNeedle   = normalizeLegalPart(criteria.lot, 'lot');
   const blockNeedle = normalizeLegalPart(criteria.block, 'block');
   const planNeedle  = normalizeLegalPart(criteria.plan, 'plan');
@@ -78,14 +78,25 @@ export async function searchLegalIndex(criteria = {}) {
   let truncated = false;
   for (const row of index.rows || []) {
     const rec = rowToRecord(row);
-    const legalHaystack = normalizeContains(`${rec.legal_description} ${rec.legal_detail}`);
+    // Preserve word-boundary adjacency for the user's free-text legal
+    // search ("2E" must literally appear as 2E, not be reconstructed
+    // out of "2 E" or "2-E"). The lot/block/plan/title needles still
+    // use the older strip-all normalization so "CT 2476500" or
+    // "Plan: 24208" forgive incidental punctuation.
+    const legalHaystack = normalizeLegalText(`${rec.legal_description} ${rec.legal_detail}`);
     if (muniNeedle && normalizeMunicipality(rec.municipality) !== muniNeedle) continue;
     if (legalNeedle && !legalHaystack.includes(legalNeedle)) continue;
     if (lotNeedle && normalizeLegalPart(rec.lot, 'lot') !== lotNeedle) continue;
     if (blockNeedle && normalizeLegalPart(rec.block, 'block') !== blockNeedle) continue;
     if (planNeedle) {
       const parsedPlanMatch = normalizeLegalPart(rec.plan, 'plan') === planNeedle;
-      const rawPlanMatch = planNeedle.length >= 3 && legalHaystack.includes(planNeedle);
+      // Strip-all haystack still used for the plan-number fallback so
+      // a planNeedle of "24208" matches a description containing
+      // "Plan: 24208" or "Plan/24208" — Plan numbers are usually
+      // contiguous digits, so punctuation forgiveness is the right
+      // default for them.
+      const stripAllHaystack = normalizeContains(`${rec.legal_description} ${rec.legal_detail}`);
+      const rawPlanMatch = planNeedle.length >= 3 && stripAllHaystack.includes(planNeedle);
       if (!parsedPlanMatch && !rawPlanMatch) continue;
     }
     if (titleNeedle && !normalizeContains(rec.certificates_of_title).includes(titleNeedle)) continue;
@@ -234,6 +245,27 @@ function real(v) {
 function normalizeContains(v) {
   if (!real(v)) return '';
   return String(v).toUpperCase().replace(/[^A-Z0-9]+/g, '');
+}
+
+/**
+ * Less-aggressive normalizer for the user's free-text legal-description
+ * search. Uppercases and collapses runs of whitespace, but leaves all
+ * punctuation in place so word boundaries are preserved.
+ *
+ * Why: the strip-all `normalizeContains` was matching "2E" against
+ * sources like "Parcel 2 E half" (collapsed to "PARCEL2EHALF") and
+ * "Lot 2-E" (collapsed to "LOT2E"). Users typing "2E" want a literal
+ * contiguous match — the hyphen and the space are real boundaries.
+ *
+ * Examples after normalization:
+ *   "2E"            -> "2E"           (matches "Parcel 2E", not "2 E"/"2-E")
+ *   "lot 5"         -> "LOT 5"        (matches "Lot 5", not "Lot5")
+ *   "river lot 12"  -> "RIVER LOT 12" (matches "River Lot 12")
+ *   "  pcl  G  "    -> "PCL G"        (multi-space squashed to single)
+ */
+function normalizeLegalText(v) {
+  if (!real(v)) return '';
+  return String(v).toUpperCase().replace(/\s+/g, ' ').trim();
 }
 
 function normalizeLegalPart(v, kind) {
