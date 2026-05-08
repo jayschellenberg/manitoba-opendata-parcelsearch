@@ -407,7 +407,13 @@ export function initMap(container, { onFeatureClick } = {}) {
             '',
           ],
           'text-font': ['Open Sans Semibold'],
-          'text-size': 11,
+          'text-size': [
+            'interpolate', ['linear'], ['zoom'],
+            13, 13,
+            14, 14,
+            17, 15,
+            19, 16,
+          ],
           // Always render the zoning code — never suppress it because a
           // parcel roll-number label landed on the same pixel. Combined
           // with the upward text-offset below, this lets the code sit
@@ -857,10 +863,11 @@ export function initMap(container, { onFeatureClick } = {}) {
           'text-font': ['Open Sans Semibold'],
           'text-size': [
             'interpolate', ['linear'], ['zoom'],
-            13, 10,
-            14, 11,
-            17, 13,
-            19, 15,
+            13, 12,
+            14, 13,
+            15, 14,
+            17, 15,
+            19, 17,
           ],
           // Auto-cull overlapping labels so dense urban grids
           // (Carman, Steinbach core, Selkirk Main St) stay readable
