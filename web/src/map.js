@@ -865,13 +865,15 @@ export function initMap(container, { onFeatureClick } = {}) {
           'symbol-placement': 'point',
         },
         paint: {
-          // Fully-opaque text + thicker halo — the roll number is now
-          // the dominant per-parcel label, not a quiet supporting
-          // layer, so it has to read clearly even on top of the
-          // search-result red fill, MASC/CLI fills, etc.
+          // 75% text opacity + 1.0 px solid white halo — softens the
+          // roll number a touch so it reads as a label rather than
+          // dominating the parcel cell, while the solid halo still
+          // keeps it legible on top of the search-result red fill,
+          // MASC/CLI fills, etc.
           'text-color': '#1a1a1a',
+          'text-opacity': 0.75,
           'text-halo-color': '#ffffff',
-          'text-halo-width': 1.4,
+          'text-halo-width': 1.0,
         },
       });
 
