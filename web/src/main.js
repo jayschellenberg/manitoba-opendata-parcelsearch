@@ -443,6 +443,15 @@ const rowFeatureMap = new Map();
 let lastZoningFc = EMPTY_FC;
 let lastDevPlanFc = EMPTY_FC;
 
+// CSV-upload mode state. csvFullRows holds the full enriched row set
+// from the last sales-CSV upload (with zoning / dev-plan / risk-area
+// data joined in), so changing the Other Searches filters after upload
+// can re-filter against the same data without another round-trip.
+// null means "not in CSV mode" — Other Searches filter changes do
+// nothing in that state, matching the old runSearch-only behaviour.
+let csvFullRows = null;
+let csvFullBaseMsg = '';
+
 // Tracks which muni's zoning / dev-plan polygons are currently loaded
 // in each map source. Lets a Zoning Layer / Dev Plan Layer toggle
 // short-circuit when the displayed muni already matches the dropdown
@@ -734,6 +743,15 @@ $duMode.addEventListener('change', () => {
   if (!enableMin) $duMin.value = '';
   if (enableMin && !$duMin.value) $duMin.value = '1';
 });
+
+// CSV-upload mode: when csvFullRows is populated, changing any of the
+// Other Searches filters re-filters the displayed table + map subset
+// against the loaded sales without re-fetching. Outside CSV mode
+// these listeners are no-ops (Search button still drives the SQL).
+for (const el of [$zoneCategory, $changedStatus, $duMode, $duMin].filter(Boolean)) {
+  el.addEventListener('change', refilterCsvIfActive);
+  el.addEventListener('input',  refilterCsvIfActive);
+}
 // Filter out any nulls so the keydown wiring tolerates removed inputs
 // (legal/lot/block/plan/title are currently absent from the markup).
 // When the user tabs into the To field after typing a number into From,
@@ -861,6 +879,10 @@ async function runSearch() {
   // Drop the sales-mode column reveal if a previous run came from a
   // sales CSV upload — a normal search shouldn't carry those columns.
   if ($resultsTable) $resultsTable.classList.remove('sales-mode');
+  // Clear the CSV-mode state so the Other Searches filter listeners
+  // stop trying to re-filter the previous upload's row set.
+  csvFullRows = null;
+  csvFullBaseMsg = '';
   const status = $changedStatus.value;
   const legalInputs = {
     legalText:      $legalText?.value.trim() ?? '',
@@ -1190,9 +1212,94 @@ async function handleSalesUpload(file) {
     } else {
       await enrichOverlays(parcelFc, fakeInputs, baseMsg);
     }
+
+    // Lock in the enriched row set so post-upload Other-Searches
+    // filter changes can re-filter without another fetch. We snapshot
+    // currentRows (set by renderTable inside enrichOverlays) rather
+    // than recomputing — that way zoning/dev-plan joins aren't lost.
+    csvFullRows = currentRows.slice();
+    csvFullBaseMsg = baseMsg;
   } finally {
     setBusy(false);
   }
+}
+
+/**
+ * Re-apply the Other Searches filters (Zone Category, Status, DU)
+ * to the currently-loaded CSV row set. Called whenever the filter
+ * inputs change while csvFullRows is set. No-op outside CSV mode —
+ * runSearch results are already SQL-filtered, so changing a filter
+ * after a regular search shouldn't reshape the table.
+ */
+function refilterCsvIfActive() {
+  if (csvFullRows == null) return;
+  const filtered = filterCsvRowsByOtherSearches(csvFullRows);
+  const total = csvFullRows.length;
+  const msg = filtered.length === total
+    ? csvFullBaseMsg
+    : `${filtered.length} of ${total} sales shown (filtered)`;
+  setCount(msg);
+  renderTable(filtered);
+  // Re-narrow the map's parcel highlight to the filtered subset.
+  // Overlay sources (zoning / dev-plan) keep their full data so the
+  // category fills still cover the whole muni context.
+  const fc = {
+    type: 'FeatureCollection',
+    features: filtered.map((r) => r.parcel),
+  };
+  setMapData(fc, lastZoningFc, lastDevPlanFc);
+}
+
+function filterCsvRowsByOtherSearches(rows) {
+  const zoneCat = $zoneCategory?.value || '';
+  const status  = $changedStatus?.value || '';
+  const duMode  = $duMode?.value || '';
+  const duMin   = parseInt($duMin?.value || '', 10);
+
+  return rows.filter((row) => {
+    const p = row.parcel?.properties || {};
+
+    // DU filter — directly on the parcel field, no enrichment needed.
+    if (duMode === 'zero') {
+      const du = Number(p.Dwelling_Units);
+      if (!(Number.isFinite(du) && du === 0)) return false;
+    } else if (duMode === 'min' && Number.isFinite(duMin) && duMin > 0) {
+      const du = Number(p.Dwelling_Units);
+      if (!(Number.isFinite(du) && du >= duMin)) return false;
+    }
+
+    // Zone category — needs zoning enrichment. If the row has no
+    // zoning matches at all (enrichment skipped via the >250 button
+    // that the user never clicked), filter behaves as "exclude" so
+    // the user gets a hint that they need to enrich first.
+    if (zoneCat) {
+      const cats = (row.zoning || [])
+        .map((z) => z.feature?.properties?.ZONE_CATEGORY)
+        .filter(Boolean);
+      if (!cats.includes(zoneCat)) return false;
+    }
+
+    // Status filter — same realStr / different-bylaw logic the SQL
+    // path uses in arcgis.js's resolveOverlayFilter. Reads off the
+    // top zoning / dev-plan polygon of each row.
+    if (status === 'zoning' || status === 'both') {
+      if (!isZoningChanged(row.zoning?.[0]?.feature?.properties || {})) return false;
+    }
+    if (status === 'devplan' || status === 'both') {
+      if (!isDevPlanChanged(row.devPlan?.[0]?.feature?.properties || {})) return false;
+    }
+
+    return true;
+  });
+}
+
+function isZoningChanged(z) {
+  const realStr = (v) => v != null && String(v).trim() !== '' && String(v).trim() !== '<Null>';
+  return (realStr(z.ZBL_A) && z.ZBL_A !== z.ZBL) || realStr(z.AMENDMENT_DESCRIPTION);
+}
+function isDevPlanChanged(d) {
+  const realStr = (v) => v != null && String(v).trim() !== '' && String(v).trim() !== '<Null>';
+  return realStr(d.DPA_BYLAW) && d.DPA_BYLAW !== d.DP_BYLAW;
 }
 
 /**
