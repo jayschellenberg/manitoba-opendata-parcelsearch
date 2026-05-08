@@ -117,6 +117,17 @@ header small a {
 .sidebar .du-row .du-mode-field { flex: 1 1 50%; min-width: 0; }
 .sidebar .du-row .du-min-field  { flex: 0 0 64px; min-width: 0; }
 
+/* Civic-address From/To/Street row. From + To are narrow numeric
+   inputs; the Street Name field takes whatever's left so the row
+   stays on one line at the 280-px sidebar width. */
+.sidebar .address-row {
+  display: flex;
+  gap: 6px;
+}
+.sidebar .address-row .address-from-field   { flex: 0 0 64px; min-width: 0; }
+.sidebar .address-row .address-to-field     { flex: 0 0 64px; min-width: 0; }
+.sidebar .address-row .address-street-field { flex: 1 1 auto; min-width: 0; }
+
 .sidebar .legal-row {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
