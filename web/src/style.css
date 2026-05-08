@@ -277,6 +277,58 @@ header small a {
   cursor: default;
 }
 
+/* Per-overlay accent colours. Dark red on Generate Map signals
+   "produces a deliverable" (stands apart from the data-overlay
+   toggles). Dark green on the three agricultural-rating overlays
+   (MASC Risk Areas, MASC Rating, CLI Soil) groups them visually
+   as a related set. Active and disabled states inherit the same
+   accent so the colour stays consistent across button states. */
+#static-map-btn.secondary,
+#static-map-btn.secondary:disabled {
+  color: #690000;
+  border-color: #690000;
+}
+#static-map-btn.secondary:hover:not(:disabled) {
+  background: #fbeeee;
+}
+#static-map-btn.secondary.active {
+  background: #690000;
+  border-color: #690000;
+  color: #fff;
+}
+#static-map-btn.secondary.active:hover:not(:disabled) {
+  background: #8a1f1f;
+  border-color: #8a1f1f;
+}
+
+#riskarea-toggle.secondary,
+#masc-toggle.secondary,
+#cli-toggle.secondary,
+#riskarea-toggle.secondary:disabled,
+#masc-toggle.secondary:disabled,
+#cli-toggle.secondary:disabled {
+  color: #1a4d2e;
+  border-color: #1a4d2e;
+}
+#riskarea-toggle.secondary:hover:not(:disabled),
+#masc-toggle.secondary:hover:not(:disabled),
+#cli-toggle.secondary:hover:not(:disabled) {
+  background: #eaf3ec;
+}
+#riskarea-toggle.secondary.active,
+#masc-toggle.secondary.active,
+#cli-toggle.secondary.active {
+  background: #1a4d2e;
+  border-color: #1a4d2e;
+  color: #fff;
+}
+#riskarea-toggle.secondary.active:hover:not(:disabled),
+#masc-toggle.secondary.active:hover:not(:disabled),
+#cli-toggle.secondary.active:hover:not(:disabled) {
+  background: #2c6b44;
+  border-color: #2c6b44;
+}
+
 .count {
   margin-top: 6px;
   padding: 6px 12px;
