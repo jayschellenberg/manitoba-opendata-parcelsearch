@@ -382,7 +382,7 @@ const PD_WEBSITES = {
   'M.S.T.W':                           'https://www.mstw.ca/',
   'MSTW':                              'https://www.mstw.ca/',
   'NEEPAWA & AREA':                    'https://www.neepawaareaplanning.com/',
-  'PORTAGE LA PRAIRIE':                'https://www.ptgplanning.ca/',
+  'PORTAGE LA PRAIRIE':                'https://www.ptgplanningdistrict.ca/',
   'RHINELAND, PLUM COULEE GRETNA, ALTONA': 'https://www.rpgamb.ca/',
   'RHINELAND PLUM COULEE GRETNA ALTONA':   'https://www.rpgamb.ca/',
   'RPGA':                              'https://www.rpgamb.ca/',
@@ -2532,9 +2532,24 @@ function updateMuniWebsiteButton() {
     `No website on file for ${muni}. Add it to MUNI_WEBSITES in main.js.`);
 }
 
+/** Muni → Planning District fallback map. Used when the dev-plan
+ *  layer returns no features for a search (typical of cities, which
+ *  often manage land-use under their own bylaws and don't appear in
+ *  the provincial dev-plan polygon set) so the PD Website button
+ *  still resolves to the right planning-district URL. Keys are the
+ *  exact Muni_Name_With_Typ values from Roll_Entry; values are
+ *  PD_WEBSITES keys. Add an entry whenever a real-world city or RM
+ *  has no dev-plan coverage but a known PD URL. */
+const MUNI_TO_PD = {
+  'PORTAGE LA PRAIRIE (CITY)': 'PORTAGE LA PRAIRIE',
+  'PORTAGE LA PRAIRIE (RM)':   'PORTAGE LA PRAIRIE',
+};
+
 /** After a search lands, infer the parcel set's Planning District from
  *  the dev-plan layer's PLANNINGDISTRICT field (most-frequent value
- *  wins) and look up its URL in PD_WEBSITES. */
+ *  wins) and look up its URL in PD_WEBSITES. When the dev-plan layer
+ *  is empty for the search (common for cities), fall back to the
+ *  selected muni's MUNI_TO_PD entry so the button still resolves. */
 function updatePdWebsiteButton(devPlanFc) {
   const counts = new Map();
   for (const f of devPlanFc?.features || []) {
@@ -2543,7 +2558,18 @@ function updatePdWebsiteButton(devPlanFc) {
   }
   let best = null, bestCount = 0;
   for (const [pd, c] of counts) if (c > bestCount) { best = pd; bestCount = c; }
+
+  // Fallback: map the selected muni to a known PD when no dev-plan
+  // features were returned. Lets cities like Portage la Prairie still
+  // route to their planning-district URL.
   if (!best) {
+    const muni = $municipality.value;
+    if (muni && MUNI_TO_PD[muni]) {
+      const url = lookupPdWebsite(MUNI_TO_PD[muni]);
+      setExternalLinkButton($pdWebsiteBtn, url, 'PD Website ↗',
+        `${MUNI_TO_PD[muni]} — no website on file. Add it to PD_WEBSITES in main.js.`);
+      return;
+    }
     setExternalLinkButton($pdWebsiteBtn, null, 'PD Website ↗',
       'No planning district found in this search\'s dev-plan polygons');
     return;
