@@ -301,32 +301,37 @@ header small a {
   border-color: #8a1f1f;
 }
 
+/* Medium green for the three agricultural-rating overlays. The
+   earlier dark-green (#1a4d2e) read close enough to the slate
+   default (#1a3a4a) at small button sizes that the two clusters
+   blurred together; medium green (#2e7d32) is unambiguously green
+   while still legible against white. */
 #riskarea-toggle.secondary,
 #masc-toggle.secondary,
 #cli-toggle.secondary,
 #riskarea-toggle.secondary:disabled,
 #masc-toggle.secondary:disabled,
 #cli-toggle.secondary:disabled {
-  color: #1a4d2e;
-  border-color: #1a4d2e;
+  color: #2e7d32;
+  border-color: #2e7d32;
 }
 #riskarea-toggle.secondary:hover:not(:disabled),
 #masc-toggle.secondary:hover:not(:disabled),
 #cli-toggle.secondary:hover:not(:disabled) {
-  background: #eaf3ec;
+  background: #e8f5e9;
 }
 #riskarea-toggle.secondary.active,
 #masc-toggle.secondary.active,
 #cli-toggle.secondary.active {
-  background: #1a4d2e;
-  border-color: #1a4d2e;
+  background: #2e7d32;
+  border-color: #2e7d32;
   color: #fff;
 }
 #riskarea-toggle.secondary.active:hover:not(:disabled),
 #masc-toggle.secondary.active:hover:not(:disabled),
 #cli-toggle.secondary.active:hover:not(:disabled) {
-  background: #2c6b44;
-  border-color: #2c6b44;
+  background: #1b5e20;
+  border-color: #1b5e20;
 }
 
 .count {
