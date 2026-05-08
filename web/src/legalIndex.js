@@ -104,6 +104,55 @@ export async function searchLegalIndex(criteria = {}) {
   };
 }
 
+/**
+ * Pre-fetch the legal index in the background so the first search
+ * doesn't pay the cold-load latency. Safe to call multiple times —
+ * loadLegalIndex caches the parsed result on the module-level
+ * `indexPromise` after the first call.
+ */
+export function warmLegalIndex() {
+  loadLegalIndex().catch((err) => {
+    // Non-fatal — the explicit search and the per-parcel lookup
+    // helpers below both surface the error in their own paths.
+    console.warn('Legal-index pre-warm failed:', err.message);
+  });
+}
+
+/**
+ * Look up legal-index records for a fixed set of (muni_no, roll_no_txt)
+ * keys (formatted by `legalRecordKey` / `parcelLegalKey`). Used by the
+ * always-on table enrichment so every search — not just legal-search
+ * searches — populates the Legal and Title columns in the results
+ * table. Returns an array of records in the same shape
+ * `searchLegalIndex` produces; callers can concat it with explicit
+ * legal-search matches and hand the combined list to
+ * `attachLegalMetadata`.
+ *
+ * On a 430k-row index this scans the whole array once per call —
+ * still fast (a few hundred ms post-cache) since each row is a flat
+ * tuple. If the result-set cap ever climbs much past a few thousand
+ * we'd want a Map by key, but the current 1000 MAX_RESULTS cap
+ * keeps the lookup workload tiny.
+ */
+export async function lookupLegalRecordsByParcelKeys(keys) {
+  if (!Array.isArray(keys) || keys.length === 0) return [];
+  const wanted = new Set(keys);
+  let index;
+  try {
+    index = await loadLegalIndex();
+  } catch (err) {
+    console.warn('Legal-index lookup failed:', err.message);
+    return [];
+  }
+  const out = [];
+  for (const row of index.rows || []) {
+    const rec = rowToRecord(row);
+    const k = legalRecordKey(rec);
+    if (k && wanted.has(k)) out.push(rec);
+  }
+  return out;
+}
+
 export function legalRecordKey(rec) {
   const muni = Number(rec?.muni_no);
   const roll = String(rec?.roll_no_txt || '').trim();
