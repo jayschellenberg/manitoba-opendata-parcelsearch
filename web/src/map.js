@@ -255,10 +255,6 @@ export function initMap(container, { onFeatureClick } = {}) {
   map.on('error', (e) => console.error('[map error]', e?.error?.message || e, e));
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
   map.addControl(new BasemapToggleControl(), 'top-right');
-  // Temporary diagnostic — shows the live zoom level so we can tune
-  // zoom-dependent paint expressions (label sizes, minzoom thresholds,
-  // etc). Remove this addControl call when no longer needed.
-  map.addControl(new ZoomLevelControl(), 'top-left');
 
   const ready = new Promise((resolve) => {
     map.on('load', () => {
@@ -785,6 +781,14 @@ export function initMap(container, { onFeatureClick } = {}) {
         type: 'symbol',
         source: 'survey-grid',
         minzoom: 11,
+        // Filter to DLS section features only — river-lot features in
+        // the same source carry kind='riverlot' and have their own
+        // label values (e.g. 'AG-RL-338') that previously rendered on
+        // top of the section number, making it look like every section
+        // had two labels at zoom 14. River-lot polygons still render
+        // (via survey-grid-riverlot line layer); just no labels for
+        // them in this overlay.
+        filter: ['!=', ['get', 'kind'], 'riverlot'],
         layout: {
           visibility: 'none',
           'text-field': ['get', 'label'],
@@ -1718,41 +1722,6 @@ class BasemapToggleControl {
     this._btn.classList.toggle('active', next);
   }
   onRemove() {
-    this._container.parentNode?.removeChild(this._container);
-    this._map = null;
-  }
-}
-
-/**
- * Temporary diagnostic control that shows the current zoom level in
- * the top-left corner. Used while we're tuning zoom-dependent paint
- * expressions (per-parcel-area label scaling, minzoom thresholds,
- * etc). Updates on every move event; styled inline so we don't need
- * to add a CSS rule for a control that's expected to come out again.
- */
-class ZoomLevelControl {
-  onAdd(map) {
-    this._map = map;
-    this._container = document.createElement('div');
-    this._container.className = 'maplibregl-ctrl maplibregl-ctrl-group zoom-level';
-    this._container.style.padding = '4px 8px';
-    this._container.style.fontSize = '12px';
-    this._container.style.fontFamily = 'system-ui, sans-serif';
-    this._container.style.background = 'rgba(255, 255, 255, 0.92)';
-    this._container.style.color = '#1a3a4a';
-    this._container.style.fontWeight = '600';
-    this._container.style.minWidth = '64px';
-    this._container.style.textAlign = 'center';
-    this._update = () => {
-      const z = this._map.getZoom();
-      this._container.textContent = `Zoom ${z.toFixed(2)}`;
-    };
-    this._update();
-    this._map.on('move', this._update);
-    return this._container;
-  }
-  onRemove() {
-    if (this._map) this._map.off('move', this._update);
     this._container.parentNode?.removeChild(this._container);
     this._map = null;
   }
