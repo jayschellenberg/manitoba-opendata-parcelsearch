@@ -124,9 +124,14 @@ export async function searchParcels(args) {
   return fetchRollEntryWhere(where, MAX_RESULTS);
 }
 
-function buildParcelClauses({ address, municipality, roll, duMode, duMin }) {
+function buildParcelClauses({ addressStreet, municipality, roll, duMode, duMin }) {
   const clauses = [];
-  if (address)         clauses.push(`UPPER(Property_Address) LIKE '%${escapeSql(address.toUpperCase())}%'`);
+  // Street-name substring match against Property_Address. Civic-number
+  // range filtering happens client-side in main.js's
+  // applyCivicNumberRange — ArcGIS SQL can't cleanly cast the leading
+  // digits, and post-filtering on a per-street result set is plenty
+  // fast at our scale.
+  if (addressStreet)   clauses.push(`UPPER(Property_Address) LIKE '%${escapeSql(addressStreet.toUpperCase())}%'`);
   // Muni dropdown delivers the exact stored form, e.g. "STONEWALL (TOWN)";
   // exact equality is faster than LIKE and avoids surprise partial-matches.
   if (municipality)    clauses.push(`Muni_Name_With_Typ = '${escapeSql(municipality)}'`);

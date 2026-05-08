@@ -81,7 +81,12 @@ import {
 import turfArea from '@turf/area';
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
 
-const $address       = document.getElementById('address');
+// Civic-address search is now a 3-input row: a numeric range (From / To)
+// plus a Street Name substring. The single legacy `#address` input was
+// retired on 2026-05-08 — see commit history if rolling back.
+const $addressFrom   = document.getElementById('address-from');
+const $addressTo     = document.getElementById('address-to');
+const $addressStreet = document.getElementById('address-street');
 const $municipality  = document.getElementById('municipality');
 const $roll          = document.getElementById('roll');
 // Legal-search inputs are removed from the DOM until the MAO scrape
@@ -693,7 +698,23 @@ $duMode.addEventListener('change', () => {
 });
 // Filter out any nulls so the keydown wiring tolerates removed inputs
 // (legal/lot/block/plan/title are currently absent from the markup).
-for (const el of [$address, $roll, $legalText, $lot, $block, $plan, $title].filter(Boolean)) {
+// When the user tabs into the To field after typing a number into From,
+// prefill To with the same value AND select it. Default behaviour is
+// then "exact-number search" — start typing to overwrite for a range,
+// or press Delete to clear for an open upper bound.
+if ($addressFrom && $addressTo) {
+  $addressTo.addEventListener('focus', () => {
+    if ($addressTo.value === '' && $addressFrom.value.trim() !== '') {
+      $addressTo.value = $addressFrom.value.trim();
+      // Defer select() so it runs after the focus event finishes
+      // claiming the field — without the timeout some browsers
+      // re-collapse the selection on the trailing focus tick.
+      setTimeout(() => $addressTo.select(), 0);
+    }
+  });
+}
+
+for (const el of [$addressFrom, $addressTo, $addressStreet, $roll, $legalText, $lot, $block, $plan, $title].filter(Boolean)) {
   el.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') runSearch();
   });
@@ -802,7 +823,9 @@ async function runSearch() {
     title:          $title?.value.trim()     ?? '',
   };
   const inputs = {
-    address:         $address.value.trim(),
+    addressFrom:    $addressFrom?.value.trim()   ?? '',
+    addressTo:      $addressTo?.value.trim()     ?? '',
+    addressStreet:  $addressStreet?.value.trim() ?? '',
     municipality:    $municipality.value.trim(),
     roll:            $roll.value.trim(),
     zoneCategory:    $zoneCategory.value.trim(),
@@ -857,6 +880,14 @@ async function runSearch() {
       return;
     }
     if (legalResult) attachLegalMetadata(parcelFc, legalResult.matches);
+
+    // Civic-number range is a JS post-filter (ArcGIS SQL can't cleanly
+    // CAST the leading digits of Property_Address). Applies only when
+    // From or To is filled; if both blank the FC passes through. The
+    // street-name substring already narrowed the SQL fetch via
+    // buildParcelClauses, so the post-filter is operating on at most a
+    // few hundred rows in the typical case.
+    applyCivicNumberRange(parcelFc, inputs.addressFrom, inputs.addressTo);
 
     const n = parcelFc.features.length;
 
@@ -1923,6 +1954,75 @@ function bboxOfFeature(feature) {
  *  source when the user is focused on one muni. */
 function bboxesIntersect(a, b) {
   return !(a[2] < b[0] || b[2] < a[0] || a[3] < b[1] || b[3] < a[1]);
+}
+
+/**
+ * In-place filter on the parcel FC: keep only features whose
+ * Property_Address leads with a civic number in [from, to]. A blank
+ * `from` means no lower bound; blank `to` means no upper bound. When
+ * both are blank, the FC passes through untouched. Letter suffixes
+ * (e.g. "100A") sort between the integer and the next integer, so:
+ *   from "100"  to "200"  → matches 100, 100A, 100B, 101, ..., 200, 200A
+ *   from "100A" to "100C" → matches only 100A, 100B, 100C
+ *   from "100"  to "100"  → matches 100 and any 100x letter variants
+ * Records that don't begin with a civic number (legal descriptions
+ * stuffed into Property_Address, junk reference codes) get dropped
+ * whenever a range is set; if the user hasn't set a range, those
+ * records are left alone.
+ */
+function applyCivicNumberRange(fc, fromRaw, toRaw) {
+  const from = parseCivicBound(fromRaw, 'lower');
+  const to   = parseCivicBound(toRaw,   'upper');
+  if (from == null && to == null) return;
+  const features = fc?.features || [];
+  const kept = [];
+  for (const f of features) {
+    const k = parseCivicAddressKey(f?.properties?.Property_Address);
+    if (k == null) continue;                   // no civic number → drop when range set
+    if (from != null && k < from) continue;
+    if (to   != null && k > to)   continue;
+    kept.push(f);
+  }
+  fc.features = kept;
+}
+
+/** Parse a civic-address string into a sortable integer key.
+ *  "444 1ST ST"   -> 44400
+ *  "100A MAIN ST" -> 10001  (A = +1)
+ *  "100B MAIN ST" -> 10002
+ *  "60158 ROAD 96W" -> 6015800
+ *  "DESC NE22-21-3E" -> null
+ *  "NE1-1-3E" -> null
+ *  Letter index uses A=1..Z=26, leaving 0 for "no suffix" so a bare
+ *  number sorts BEFORE any of its letter-suffixed variants. */
+function parseCivicAddressKey(raw) {
+  if (!raw) return null;
+  const m = String(raw).match(/^(\d+)([A-Za-z]?)\s/);
+  if (!m) return null;
+  const num = Number(m[1]);
+  if (!Number.isFinite(num)) return null;
+  const letter = m[2] ? m[2].toUpperCase().charCodeAt(0) - 64 : 0;
+  return num * 100 + letter;
+}
+
+/** Parse a From/To bound into a comparison key. The asymmetry handles
+ *  user expectations:
+ *    from "100" (no letter) → 100*100 + 0   so 100 itself is included
+ *    to   "100" (no letter) → 100*100 + 99  so any 100x suffix included
+ *    from "100A" / to "100A" → exact         (100*100 + 1)
+ *  Returns null on empty/garbage input. */
+function parseCivicBound(raw, kind) {
+  const s = String(raw || '').trim();
+  if (!s) return null;
+  const m = s.match(/^(\d+)([A-Za-z]?)$/);
+  if (!m) return null;
+  const num = Number(m[1]);
+  if (!Number.isFinite(num)) return null;
+  const letter = m[2] ? m[2].toUpperCase().charCodeAt(0) - 64 : null;
+  if (letter != null) return num * 100 + letter;
+  // No letter typed: lower bound includes the bare number; upper bound
+  // extends across every letter-suffixed variant of that number.
+  return kind === 'upper' ? num * 100 + 99 : num * 100;
 }
 
 function filterMascRiverlotsForMuni(features, selectedMuni) {
