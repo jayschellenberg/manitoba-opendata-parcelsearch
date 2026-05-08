@@ -1723,7 +1723,7 @@ function renderTable(rows) {
     tr.appendChild(rollNumberCell(p));
     tr.appendChild(td(p.Property_Address));
     tr.appendChild(legalCell(p));
-    tr.appendChild(td(p._certificatesOfTitle));
+    tr.appendChild(titleCell(p));
     tr.appendChild(td(formatZoneCode(z1)));
     tr.appendChild(td(formatPercent(row.zoning[0]?.ratio), 'num'));
     tr.appendChild(td(z2Show ? formatZoneCode(z2) : null));
@@ -1856,6 +1856,53 @@ function legalCell(p) {
   ].filter(Boolean);
   if (details.length) cell.title = details.join('\n');
   return cell;
+}
+
+/**
+ * Title cell. The MAO scrape stores certificates_of_title as
+ * '<NUMBER> / <CITY>' for a single title or a semicolon-separated
+ * list for multi-title parcels. The number is the meaningful piece
+ * for an appraiser; the trailing ' / WINNIPEG' (or whichever Land
+ * Titles office) just clutters the column.
+ *
+ * Render rules:
+ *   - 1 title  → bare number, e.g. '3317402'
+ *   - 2+       → first number + ' …', e.g. '2464089 …'
+ *                full list lives in the cell's hover tooltip
+ *   - empty    → blank cell
+ */
+function titleCell(p) {
+  const raw = (p?._certificatesOfTitle || '').trim();
+  if (!raw) return td(null);
+  const numbers = parseTitleNumbers(raw);
+  if (numbers.length === 0) return td(raw);  // unexpected shape — show raw
+  const display = numbers.length === 1 ? numbers[0] : `${numbers[0]} …`;
+  const cell = td(display);
+  if (numbers.length > 1) {
+    // Tooltip lists every number on its own line so the user sees the
+    // full set without leaving the table. Includes the LTO suffix
+    // from the raw value for context.
+    cell.title = `${numbers.length} titles:\n${raw.split(/\s*;\s*/).join('\n')}`;
+  } else if (raw !== numbers[0]) {
+    // Single title with the LTO suffix — surface the suffix on hover.
+    cell.title = raw;
+  }
+  return cell;
+}
+
+/** Split a 'X / CITY; Y / CITY' style certificates_of_title string
+ *  into just the number tokens. Robust against extra whitespace and
+ *  the alphanumeric prefix-letter forms (D15630, etc.). */
+function parseTitleNumbers(raw) {
+  const out = [];
+  for (const part of String(raw || '').split(/\s*;\s*/)) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    // Take everything up to the first ' / ' (or end of string).
+    const num = trimmed.split(/\s*\/\s*/)[0].trim();
+    if (num) out.push(num);
+  }
+  return out;
 }
 
 function legalDisplay(p = {}) {
