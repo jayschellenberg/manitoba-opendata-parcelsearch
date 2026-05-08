@@ -77,6 +77,8 @@ import {
   legalRecordKey,
   parcelLegalKey,
   searchLegalIndex,
+  lookupLegalRecordsByParcelKeys,
+  warmLegalIndex,
 } from './legalIndex.js';
 import turfArea from '@turf/area';
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
@@ -737,6 +739,12 @@ for (const th of document.querySelectorAll('#results th[data-col]')) {
 // (~190 distinct values), the categories are short and quick.
 populateDropdowns();
 
+// Pre-warm the legal index in the background. The first search (legal-
+// criteria or otherwise) joins the index against the parcel result set
+// to populate the Legal + Title columns; without this kickoff, the
+// first search would block on a 130 MB cold fetch.
+warmLegalIndex();
+
 // Pull municipal boundaries in the background and load them onto the
 // map as soon as both the data and the map are ready. Cached for 30
 // days so this is a one-time hit per month per browser; on a cache
@@ -879,7 +887,34 @@ async function runSearch() {
       setCount(`Search failed: ${err.message}`);
       return;
     }
-    if (legalResult) attachLegalMetadata(parcelFc, legalResult.matches);
+    // Always enrich the result table's Legal + Title columns from the
+    // legal index, even when the user didn't type a legal-search
+    // criterion. Previously only the explicit legal-search path
+    // populated those cells, so a roll- or address-only search like
+    // 'Steinbach 160200' would render Legal/Title blank even though
+    // the index had a row for the parcel. We now look up the parcels'
+    // (muni_no, roll_no_txt) keys directly and merge with any explicit
+    // legal-search matches; the index is module-cached after first
+    // load and warmLegalIndex() pre-fetches it on page init so this
+    // join is effectively free after the first search.
+    const parcelKeys = [];
+    for (const f of parcelFc.features || []) {
+      const k = parcelLegalKey(f.properties || {});
+      if (k) parcelKeys.push(k);
+    }
+    let perParcelLegalRecs = [];
+    try {
+      perParcelLegalRecs = await lookupLegalRecordsByParcelKeys(parcelKeys);
+    } catch (err) {
+      console.warn('Legal lookup by parcel keys failed (non-fatal):', err);
+    }
+    const combinedLegalRecs = [
+      ...(legalResult?.matches || []),
+      ...perParcelLegalRecs,
+    ];
+    if (combinedLegalRecs.length > 0) {
+      attachLegalMetadata(parcelFc, combinedLegalRecs);
+    }
 
     // Civic-number range is a JS post-filter (ArcGIS SQL can't cleanly
     // CAST the leading digits of Property_Address). Applies only when
