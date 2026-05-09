@@ -735,6 +735,15 @@ export function initMap(container, { onFeatureClick } = {}) {
       // Lines only; the grid sits visually above zoning/dev-plan
       // overlays but below the muni-parcels and search-result layers.
       map.addSource('survey-grid', { type: 'geojson', data: emptyFc() });
+      // Separate Point source for the section-grid LABEL layer. The
+      // line layer above stays on the polygon source (for outlines).
+      // The label layer needs Point geometry because MapLibre's
+      // symbol-placement:'point' on large Polygons clips per vector
+      // tile and renders one label PER TILE the polygon spans —
+      // sections at zoom 16+ span 2-4 tiles, producing 2-4 visible
+      // labels for the same feature. Pre-computed centroid points
+      // sidestep the clip entirely (a Point is in exactly one tile).
+      map.addSource('survey-grid-points', { type: 'geojson', data: emptyFc() });
       // Section-grid lines (DLS): grey dashed. The MapLibre line-dasharray
       // paint property doesn't accept a per-feature `case` expression, so
       // sections and river lots must live on separate layers — same source,
@@ -779,16 +788,12 @@ export function initMap(container, { onFeatureClick } = {}) {
       map.addLayer({
         id: 'survey-grid-label',
         type: 'symbol',
-        source: 'survey-grid',
+        // Read from the dedicated Point source — see survey-grid-points
+        // comment above for why. River-lot features never enter that
+        // source, so the kind!=riverlot filter from the previous setup
+        // is no longer needed.
+        source: 'survey-grid-points',
         minzoom: 11,
-        // Filter to DLS section features only — river-lot features in
-        // the same source carry kind='riverlot' and have their own
-        // label values (e.g. 'AG-RL-338') that previously rendered on
-        // top of the section number, making it look like every section
-        // had two labels at zoom 14. River-lot polygons still render
-        // (via survey-grid-riverlot line layer); just no labels for
-        // them in this overlay.
-        filter: ['!=', ['get', 'kind'], 'riverlot'],
         layout: {
           visibility: 'none',
           'text-field': ['get', 'label'],
@@ -1379,6 +1384,49 @@ export function setCliAgrVisible(map, visible) {
 export function setSurveyGridData(map, fc) {
   const src = map.getSource('survey-grid');
   if (src) src.setData(fc);
+  // Push a parallel Point FC into the dedicated label source. Each
+  // input polygon (DLS section) becomes one Point at its centroid —
+  // labels rendered from a Point can't be tile-clipped into multiple
+  // copies the way a Polygon can. River-lot features (kind='riverlot')
+  // are filtered out so they don't get section-style labels.
+  const ptSrc = map.getSource('survey-grid-points');
+  if (ptSrc) ptSrc.setData(sectionLabelPointsFc(fc));
+}
+
+function sectionLabelPointsFc(fc) {
+  const out = [];
+  for (const f of fc?.features || []) {
+    if (f?.properties?.kind === 'riverlot') continue;
+    const c = polygonCentroid(f);
+    if (!c) continue;
+    out.push({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: c },
+      properties: { ...(f.properties || {}) },
+    });
+  }
+  return { type: 'FeatureCollection', features: out };
+}
+
+function polygonCentroid(f) {
+  const coords = f?.geometry?.coordinates?.[0];
+  if (!Array.isArray(coords) || coords.length === 0) return null;
+  let cx = 0, cy = 0, n = 0;
+  // Skip the closing duplicate point (last == first in a GeoJSON
+  // ring) so the average isn't biased.
+  const last = coords.length - 1;
+  const ringEnd = (
+    coords[last] && coords[0]
+    && coords[last][0] === coords[0][0]
+    && coords[last][1] === coords[0][1]
+  ) ? last : coords.length;
+  for (let i = 0; i < ringEnd; i++) {
+    const p = coords[i];
+    if (Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1])) {
+      cx += p[0]; cy += p[1]; n++;
+    }
+  }
+  return n > 0 ? [cx / n, cy / n] : null;
 }
 export function setSurveyGridVisible(map, visible) {
   const v = visible ? 'visible' : 'none';
