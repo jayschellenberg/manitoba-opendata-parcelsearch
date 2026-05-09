@@ -2086,7 +2086,7 @@ async function toggleSurveyGridOverlay() {
             ...(riverFc?.features || []),
           ],
         };
-        setSurveyGridData(map, merged);
+        setSurveyGridData(map, dedupSectionLabels(merged));
       } else {
         // Pull the muni's full boundary polygon from the cached
         // FeatureCollection (NOT querySourceFeatures, which returns
@@ -2130,7 +2130,7 @@ async function toggleSurveyGridOverlay() {
           type: 'FeatureCollection',
           features: [...(lines.features || []), ...riverInMuni],
         };
-        setSurveyGridData(map, merged);
+        setSurveyGridData(map, dedupSectionLabels(merged));
       }
       surveyGridLoadedFor = loadKey;
     } catch (err) {
@@ -2603,6 +2603,32 @@ function bboxOfFeature(feature) {
  *  source when the user is focused on one muni. */
 function bboxesIntersect(a, b) {
   return !(a[2] < b[0] || b[2] < a[0] || a[3] < b[1] || b[3] < a[1]);
+}
+
+/**
+ * Defensive dedupe for the survey-grid FC. River-lot features
+ * (kind='riverlot') stay as-is because each lot has its own unique
+ * label; DLS section features get deduped by label so a stale cache
+ * or any upstream duplication can't sprout multiple "5-6-6E" labels
+ * at the same section. First feature wins; the rest drop.
+ *
+ * Defensive on top of sectionLinesFromRows's meridian-normalized
+ * group key — that fix should already produce one feature per
+ * section, but this guards against pre-fix cached data, future
+ * upstream changes, or any other path I haven't anticipated.
+ */
+function dedupSectionLabels(fc) {
+  const seen = new Set();
+  const out = [];
+  for (const f of fc?.features || []) {
+    const isRiverlot = f?.properties?.kind === 'riverlot';
+    if (isRiverlot) { out.push(f); continue; }
+    const label = f?.properties?.label;
+    if (label && seen.has(label)) continue;
+    if (label) seen.add(label);
+    out.push(f);
+  }
+  return { type: 'FeatureCollection', features: out };
 }
 
 /**
