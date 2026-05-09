@@ -606,7 +606,12 @@ const SURVEY_GRID_URL = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/res
  * the survey-grid map source.
  */
 export async function fetchProvinceSectionGrid() {
-  const cacheKey = 'mb_section_grid_province_v1';
+  // v2: force a refresh so any stale cache that pre-dated the
+  // sectionLinesFromRows meridian-normalization fix gets dropped.
+  // The static file itself has always been 1 feature per section,
+  // but a v1 entry from a much-earlier iteration could still be in
+  // localStorage with duplicates.
+  const cacheKey = 'mb_section_grid_province_v2';
   const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
   const url = `${import.meta.env?.BASE_URL || '/'}data/section-grid.json`;
@@ -810,7 +815,9 @@ export async function fetchRiverLots() {
 
 export async function fetchSurveyGridForMuni(muniNameWithTyp, muniBoundaryFeature) {
   if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
-  const cacheKey = `mb_survey_grid_${muniNameWithTyp}_v2`;
+  // v3: matches the section-grid province-cache bump; pairs with the
+  // sectionLinesFromRows meridian-normalization fix.
+  const cacheKey = `mb_survey_grid_${muniNameWithTyp}_v3`;
   const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
 
