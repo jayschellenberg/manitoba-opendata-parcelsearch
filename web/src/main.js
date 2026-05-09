@@ -2958,10 +2958,9 @@ function parcelAcres(feature) {
 
 function formatAcres(v) {
   if (v == null || !Number.isFinite(v) || v <= 0) return null;
-  if (v < 0.1)   return v.toFixed(3);
-  if (v < 10)    return v.toFixed(2);
-  if (v < 1000)  return v.toFixed(1);
-  return Math.round(v).toLocaleString('en-US');
+  // Always 2 decimals for the table column. Large values still get
+  // thousands separators so '12345.67' reads as '12,345.67'.
+  return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 // Dwelling units — show 0 explicitly (it's a meaningful "vacant" signal,
