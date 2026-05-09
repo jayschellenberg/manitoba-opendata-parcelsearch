@@ -2608,27 +2608,58 @@ function bboxesIntersect(a, b) {
 /**
  * Defensive dedupe for the survey-grid FC. River-lot features
  * (kind='riverlot') stay as-is because each lot has its own unique
- * label; DLS section features get deduped by label so a stale cache
- * or any upstream duplication can't sprout multiple "5-6-6E" labels
- * at the same section. First feature wins; the rest drop.
+ * identifier; DLS section features collapse to one entry per
+ * (section, township, range, direction) regardless of how the label
+ * was spelled. Catches any upstream duplication — pre-fix cached
+ * data with mixed meridian encodings, accidental whitespace in
+ * label strings, future schema changes — and also dedups by
+ * polygon centroid as a final fallback if a feature lacks the
+ * section/township/range/direction triple in properties.
  *
- * Defensive on top of sectionLinesFromRows's meridian-normalized
- * group key — that fix should already produce one feature per
- * section, but this guards against pre-fix cached data, future
- * upstream changes, or any other path I haven't anticipated.
+ * First feature wins; the rest drop.
  */
 function dedupSectionLabels(fc) {
   const seen = new Set();
   const out = [];
+  let dropped = 0;
   for (const f of fc?.features || []) {
-    const isRiverlot = f?.properties?.kind === 'riverlot';
-    if (isRiverlot) { out.push(f); continue; }
-    const label = f?.properties?.label;
-    if (label && seen.has(label)) continue;
-    if (label) seen.add(label);
+    const p = f?.properties || {};
+    if (p.kind === 'riverlot') { out.push(f); continue; }
+    // Build the dedup key from the section coords if available; fall
+    // back to a normalized label; final fallback to a centroid hash
+    // so even malformed features dedup if they sit at the same spot.
+    let key;
+    if (p.section != null && p.township != null && p.range != null) {
+      const dir = String(p.direction || '').toUpperCase().replace(/[^EW]/g, '');
+      key = `S${p.section}|T${p.township}|R${p.range}|${dir}`;
+    } else if (p.label) {
+      key = `L:${String(p.label).trim().toUpperCase().replace(/\s+/g, '')}`;
+    } else {
+      // Centroid key — quantized to ~10m so near-identical polygons
+      // collapse.
+      const c = centroidKey(f);
+      key = c ? `C:${c}` : null;
+    }
+    if (key && seen.has(key)) { dropped++; continue; }
+    if (key) seen.add(key);
     out.push(f);
   }
+  console.info(`Sec-Twp Grid: ${fc?.features?.length || 0} features in, `
+             + `${out.length} out (${dropped} duplicates dropped).`);
   return { type: 'FeatureCollection', features: out };
+}
+
+function centroidKey(f) {
+  const coords = f?.geometry?.coordinates?.[0];
+  if (!Array.isArray(coords) || coords.length === 0) return null;
+  let cx = 0, cy = 0, n = 0;
+  for (const c of coords) {
+    if (Array.isArray(c) && Number.isFinite(c[0]) && Number.isFinite(c[1])) {
+      cx += c[0]; cy += c[1]; n++;
+    }
+  }
+  if (n === 0) return null;
+  return `${(cx / n).toFixed(4)},${(cy / n).toFixed(4)}`;
 }
 
 /**
