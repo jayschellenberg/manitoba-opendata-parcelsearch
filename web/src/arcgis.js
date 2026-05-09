@@ -614,7 +614,10 @@ export async function fetchProvinceSectionGrid() {
   const cacheKey = 'mb_section_grid_province_v2';
   const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
-  const url = `${import.meta.env?.BASE_URL || '/'}data/section-grid.json`;
+  // Cache-bust query param so any stale browser HTTP cache holding a
+  // previous build of section-grid.json gets bypassed. Bump the
+  // version when the file changes shape.
+  const url = `${import.meta.env?.BASE_URL || '/'}data/section-grid.json?v=2026-05-09`;
   const res = await fetch(url);
   if (!res.ok) {
     throw new Error(
