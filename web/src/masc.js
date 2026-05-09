@@ -84,12 +84,20 @@ export function quartersToFc(rows) {
  */
 export function sectionLinesFromRows(rows) {
   if (!Array.isArray(rows)) return { type: 'FeatureCollection', features: [] };
+  // Normalize the meridian to just the W/E letter for both the group
+  // key AND the stored direction. MB_LegalDesc returns the meridian
+  // in mixed encodings ("E1", "1E", "E", "W1", "1") for the same
+  // physical meridian; grouping on the raw value used to produce
+  // multiple identical features per section, all rendering the same
+  // label in the same place — looked like duplicates on the map.
+  const normMeridian = (raw) => String(raw || '').replace(/[^EW]/gi, '').toUpperCase();
   const sections = new Map();
   for (const row of rows) {
     if (!Number.isFinite(row?.lat) || !Number.isFinite(row?.lon)) continue;
-    const key = `${row.s}|${row.t}|${row.r}|${row.d}`;
+    const dir = normMeridian(row.d);
+    const key = `${row.s}|${row.t}|${row.r}|${dir}`;
     if (!sections.has(key)) {
-      sections.set(key, { s: row.s, t: row.t, r: row.r, d: row.d, quarters: [] });
+      sections.set(key, { s: row.s, t: row.t, r: row.r, d: dir, quarters: [] });
     }
     sections.get(key).quarters.push(row);
   }
@@ -122,10 +130,9 @@ export function sectionLinesFromRows(rows) {
       },
       properties: {
         section: sec.s, township: sec.t, range: sec.r, direction: sec.d,
-        // Manitoba's standard short-form: SECTION-TOWNSHIP-RANGE+DIRECTION
-        // (e.g. "7-5-6E"). MB_LegalDesc encodes meridian as "E1"/"W1";
-        // strip the digit so only the W/E letter survives.
-        label: `${sec.s}-${sec.t}-${sec.r}${String(sec.d || '').replace(/[^EW]/gi, '').toUpperCase()}`,
+        // sec.d is already the normalized W/E letter from the group
+        // key — Manitoba short-form '7-5-6E' / '7-5-6W'.
+        label: `${sec.s}-${sec.t}-${sec.r}${sec.d}`,
       },
     });
   }
