@@ -102,6 +102,10 @@
             <button id="unmatched-download" type="button" class="secondary">Download unmatched CSV</button>
           </div>
           <div class="unmatched-table-wrap">
+            <!-- The Reason column is hidden via .reason-col { display:none }
+                 in style.css. The data is still tracked on every record and
+                 the cell is still emitted so a future toggle can flip it
+                 back on without touching the table-build code. -->
             <table class="unmatched-table">
               <thead>
                 <tr>
@@ -110,7 +114,7 @@
                   <th>Sale Date</th>
                   <th>Price</th>
                   <th>Legal</th>
-                  <th>Reason</th>
+                  <th class="reason-col">Reason</th>
                 </tr>
               </thead>
               <tbody></tbody>

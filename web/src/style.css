@@ -260,6 +260,12 @@ body:not(.sales-mode) .sidebar .vacant-row { display: none; }
   font-style: italic;
 }
 
+/* Reason column is hidden for now to keep the unmatched panel
+   visually focused on the row identity. The cell + data are still
+   emitted so a future toggle / preference can flip this rule off
+   and surface the reasons inline without touching the row builder. */
+.unmatched-panel .unmatched-table .reason-col { display: none; }
+
 /* Civic-address From/To/Street row. From + To are narrow numeric
    inputs; the Street Name field takes whatever's left so the row
    stays on one line at the 280-px sidebar width. */

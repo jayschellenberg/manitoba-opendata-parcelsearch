@@ -1537,7 +1537,11 @@ function renderUnmatchedPanel(unmatched) {
     .replace(/"/g, '&quot;');
   const td = (s) => `<td>${esc(s)}</td>`;
   const rows = unmatched.map((u) =>
-    `<tr>${td(u.rollNumber)}${td(u.municipality)}${td(u.saleDate)}${td(u.consideration)}${td(u.legalDescription)}<td class="reason">${esc(u.reason)}</td></tr>`
+    // `reason-col` class on the <td> mirrors the <th> class so the
+    // CSS rule that hides the Reason column for now still finds
+    // every cell to hide. Flip the rule in style.css to bring it
+    // back; the data is always present.
+    `<tr>${td(u.rollNumber)}${td(u.municipality)}${td(u.saleDate)}${td(u.consideration)}${td(u.legalDescription)}<td class="reason reason-col">${esc(u.reason)}</td></tr>`
   ).join('');
   $tbody.innerHTML = rows;
   $panel.hidden = false;
