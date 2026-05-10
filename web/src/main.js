@@ -1264,7 +1264,15 @@ async function handleSalesUpload(file) {
     if (parcelFc.features.length > ENRICHMENT_THRESHOLD) {
       renderEnrichButton(parcelFc, fakeInputs, baseMsg);
     } else {
-      await enrichOverlays(parcelFc, fakeInputs, baseMsg);
+      // Wrap in try/catch — a failed zoning/dev-plan fetch shouldn't
+      // skip the group-totals computation below. The table still
+      // renders parcels-only rows in that case, with the group
+      // rollups applied.
+      try {
+        await enrichOverlays(parcelFc, fakeInputs, baseMsg);
+      } catch (err) {
+        console.warn('Sales upload: overlay enrichment failed (non-fatal):', err);
+      }
     }
 
     // Mirror runSearch's auto-toggle of the Roll Layer when a single
@@ -1319,6 +1327,7 @@ async function handleSalesUpload(file) {
  */
 function computeSaleGroupTotals(parcelFc) {
   const groups = new Map();
+  let stampedCount = 0;
   // Pass 1: collect group members + accumulate totals.
   for (const f of parcelFc?.features || []) {
     const gid = f.properties?._saleGroupId;
@@ -1348,6 +1357,7 @@ function computeSaleGroupTotals(parcelFc) {
     f.properties._saleGroupTotalPriceNum = g.priceNum;
     f.properties._saleGroupTotalAcres    = g.totalAcres;
     f.properties._saleGroupAcresIncomplete = g.acresIncomplete;
+    stampedCount++;
     if (
       g.priceNum != null &&
       Number.isFinite(g.priceNum) &&
@@ -1373,6 +1383,8 @@ function computeSaleGroupTotals(parcelFc) {
       f.properties._saleGroupPpl = null;
     }
   }
+  console.info(`Sales upload: stamped group totals on ${stampedCount} parcels `
+             + `across ${groups.size} sale groups.`);
 }
 
 /**
