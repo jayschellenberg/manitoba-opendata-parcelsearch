@@ -470,6 +470,13 @@ let lastDevPlanFc = EMPTY_FC;
 // nothing in that state, matching the old runSearch-only behaviour.
 let csvFullRows = null;
 let csvFullBaseMsg = '';
+// Full list of munis matched by the last sales-CSV upload — populated
+// in handleSalesUpload, cleared on runSearch. When non-null, the
+// MASC and CLI overlay toggles fetch+merge across every muni in this
+// list rather than scoping to the single dropdown value. The dropdown
+// still drives the dominant-muni affordances (Muni Website, PD
+// Website, Roll Layer), but the soil overlays cover the full upload.
+let csvMatchedMunis = null;
 
 // Tracks which muni's zoning / dev-plan polygons are currently loaded
 // in each map source. Lets a Zoning Layer / Dev Plan Layer toggle
@@ -933,9 +940,12 @@ async function runSearch() {
   // Hide the unmatched-records panel — also CSV-upload-specific.
   renderUnmatchedPanel([]);
   // Clear the CSV-mode state so the Other Searches filter listeners
-  // stop trying to re-filter the previous upload's row set.
+  // stop trying to re-filter the previous upload's row set. Also
+  // drop the multi-muni overlay scope so MASC/CLI fall back to the
+  // dropdown's single-muni value for non-CSV searches.
   csvFullRows = null;
   csvFullBaseMsg = '';
+  csvMatchedMunis = null;
   const status = $changedStatus.value;
   const legalInputs = {
     legalText:      $legalText?.value.trim() ?? '',
@@ -1379,8 +1389,14 @@ async function handleSalesUpload(file) {
       .filter((r) => r.matched > 0)
       .slice()
       .sort((a, b) => b.matched - a.matched || a.muni.localeCompare(b.muni));
-    const matchedMuniCount = new Set(matchedByMuni.map((r) => r.muni)).size;
+    const matchedMuniSet = new Set(matchedByMuni.map((r) => r.muni));
+    const matchedMuniCount = matchedMuniSet.size;
     const isSingleMuni = matchedMuniCount === 1;
+    // Stash the full matched-muni list BEFORE the dropdown dispatch
+    // below so resetMascAndGridToggles (which reads csvMatchedMunis to
+    // decide the overlay loadKey) sees the new sales-mode value when
+    // its 'change' handler runs. Sorted so loadKey comparison is stable.
+    csvMatchedMunis = [...matchedMuniSet].sort();
     let dominantMuni = '';
     if (matchedByMuni.length > 0) {
       dominantMuni = matchedByMuni[0].muni;
@@ -1433,6 +1449,7 @@ async function handleSalesUpload(file) {
     // re-running the upload pipeline.
     window.__parcelFc = parcelFc;
     window.__parcelHtml = parcelHtml;
+    window.__csvMatchedMunis = csvMatchedMunis;
 
     // Re-push the parcels source to MapLibre so the hover handler can
     // see _saleGroupRollIds + per-group totals on the rendered features.
@@ -2306,7 +2323,16 @@ function resetMascAndGridToggles() {
   // Sec-Twp Grid stays enabled with or without a muni — without a muni
   // selected it falls back to the pre-baked province-wide static file.
   $gridToggle.disabled = false;
-  if (mascLoadedFor && mascLoadedFor !== $municipality.value) {
+  // The MASC + CLI overlays cache against a `loadKey` that is:
+  //   - the joined+sorted list of matched munis in sales-CSV mode
+  //   - the dropdown's single value in normal-search mode
+  // So a dropdown change inside sales-CSV mode is a no-op for the
+  // cache check (the multi-muni overlay stays loaded). Outside sales
+  // mode, the dropdown value drives the key as before.
+  const desiredOverlayKey = (csvMatchedMunis && csvMatchedMunis.length > 0)
+    ? csvMatchedMunis.join('|')
+    : $municipality.value;
+  if (mascLoadedFor && mascLoadedFor !== desiredOverlayKey) {
     mascLoadedFor = null;
     if ($mascToggle.classList.contains('active')) {
       $mascToggle.classList.remove('active');
@@ -2322,7 +2348,7 @@ function resetMascAndGridToggles() {
     }
   }
   // CLI: same off-on-muni-change logic as MASC.
-  if (cliLoadedFor && cliLoadedFor !== $municipality.value) {
+  if (cliLoadedFor && cliLoadedFor !== desiredOverlayKey) {
     cliLoadedFor = null;
     if ($cliToggle && $cliToggle.classList.contains('active')) {
       $cliToggle.classList.remove('active');
@@ -2367,7 +2393,20 @@ function resetMascAndGridToggles() {
  * message so the failure mode is informative, not silent.
  */
 async function toggleMascOverlay() {
-  const muni = $municipality.value;
+  // Sales-CSV mode: load MASC across EVERY matched muni. Otherwise
+  // fall back to the dropdown's single value (matches the original
+  // non-upload search flow exactly). csvMatchedMunis is already
+  // sorted (handleSalesUpload sorts before stashing) so the joined
+  // loadKey is stable across calls and the cache check below works.
+  const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
+    ? csvMatchedMunis.slice()
+    : ($municipality.value ? [$municipality.value] : []);
+  if (munis.length === 0) {
+    $mascToggle.classList.remove('active');
+    $mascToggle.setAttribute('aria-pressed', 'false');
+    return;
+  }
+  const loadKey = munis.join('|');
   const wasActive = $mascToggle.classList.contains('active');
   const visible = !wasActive;
   $mascToggle.classList.toggle('active', visible);
@@ -2382,31 +2421,47 @@ async function toggleMascOverlay() {
     return;
   }
 
-  if (mascLoadedFor !== muni) {
+  if (mascLoadedFor !== loadKey) {
     $mascToggle.disabled = true;
     $mascToggle.textContent = 'Loading…';
     try {
       // Quarter-section + river-lot ratings load in parallel. Quarter
-      // sections are the primary signal for most farmland; river-lot
-      // polygons fill in the parishes around Selkirk, Ritchot, Portage,
-      // etc. that the quarter CSV doesn't cover.
-      const [rows, riverlotsAll] = await Promise.all([
-        fetchMascRatingsForMuni(muni),
-        fetchMascRiverlots(),
-      ]);
-      const hasQuarters = !!(rows && rows.length);
-      const muniRiverlots = filterMascRiverlotsForMuni(riverlotsAll?.features || [], muni);
-      if (!hasQuarters && muniRiverlots.length === 0) {
+      // sections are per-muni; river-lots are a single province-wide
+      // FC filtered per muni client-side, so we only fetch them once
+      // regardless of how many munis are in scope. Per-muni quarter
+      // fetches run together via Promise.all + a single quartersFc at
+      // the end.
+      const riverlotsAllPromise = fetchMascRiverlots();
+      const rowsArrays = await Promise.all(munis.map((m) => fetchMascRatingsForMuni(m)));
+      const riverlotsAll = await riverlotsAllPromise;
+      const allRows = rowsArrays.flat().filter(Boolean);
+      // Per-muni filter on the global river-lot FC, deduped by the
+      // feature's first-vertex coordinate string — adequate de-dupe
+      // key since each river lot is a single polygon and the same
+      // polygon shouldn't return twice across munis except in the
+      // boundary-tagged-vs-actual case the filter helper handles.
+      const allRiverlots = [];
+      const seenRiverlots = new Set();
+      for (const m of munis) {
+        for (const f of filterMascRiverlotsForMuni(riverlotsAll?.features || [], m)) {
+          const dedupeKey = JSON.stringify(f.geometry?.coordinates?.[0]?.[0] ?? f.properties?.OBJECTID ?? Math.random());
+          if (seenRiverlots.has(dedupeKey)) continue;
+          seenRiverlots.add(dedupeKey);
+          allRiverlots.push(f);
+        }
+      }
+      if (allRows.length === 0 && allRiverlots.length === 0) {
         $mascToggle.classList.remove('active');
         $mascToggle.setAttribute('aria-pressed', 'false');
         $mascToggle.disabled = false;
         $mascToggle.textContent = 'MASC Rating';
-        setCount(`No MASC ratings on file for ${muni}.`);
+        const label = munis.length === 1 ? munis[0] : `${munis.length} matched munis (${munis.join(', ')})`;
+        setCount(`No MASC ratings on file for ${label}.`);
         return;
       }
-      setMascData(map, hasQuarters ? quartersToFc(rows) : { type: 'FeatureCollection', features: [] });
-      setMascRiverlotsData(map, { type: 'FeatureCollection', features: muniRiverlots });
-      mascLoadedFor = muni;
+      setMascData(map, allRows.length > 0 ? quartersToFc(allRows) : { type: 'FeatureCollection', features: [] });
+      setMascRiverlotsData(map, { type: 'FeatureCollection', features: allRiverlots });
+      mascLoadedFor = loadKey;
     } catch (err) {
       console.warn('MASC fetch failed', err);
       $mascToggle.classList.remove('active');
@@ -2435,7 +2490,17 @@ async function toggleMascOverlay() {
  */
 async function toggleCliOverlay() {
   if (!$cliToggle) return;
-  const muni = $municipality.value;
+  // Sales-CSV mode: load CLI across EVERY matched muni. Otherwise
+  // fall back to the dropdown's single value.
+  const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
+    ? csvMatchedMunis.slice()
+    : ($municipality.value ? [$municipality.value] : []);
+  if (munis.length === 0) {
+    $cliToggle.classList.remove('active');
+    $cliToggle.setAttribute('aria-pressed', 'false');
+    return;
+  }
+  const loadKey = munis.join('|');
   const wasActive = $cliToggle.classList.contains('active');
   const visible = !wasActive;
   $cliToggle.classList.toggle('active', visible);
@@ -2449,38 +2514,44 @@ async function toggleCliOverlay() {
     return;
   }
 
-  if (!muni) {
-    $cliToggle.classList.remove('active');
-    $cliToggle.setAttribute('aria-pressed', 'false');
-    return;
-  }
-
-  if (cliLoadedFor !== muni) {
+  if (cliLoadedFor !== loadKey) {
     $cliToggle.disabled = true;
     $cliToggle.textContent = 'Loading…';
     try {
-      const muniFeat = muniBoundariesFc?.features?.find(
-        (f) => f.properties?.MUNI_LIST_NAME_WITH_TYPE === muni,
-      ) || null;
-      if (!muniFeat) {
+      // Resolve every muni's boundary feature up front so we can
+      // fetch CLI for all of them in parallel below. Any missing
+      // boundary is a hard fail for that muni — we surface the names
+      // so the user can act, rather than silently dropping a muni.
+      const muniBoundaries = munis.map((m) => ({
+        muni: m,
+        feat: muniBoundariesFc?.features?.find(
+          (f) => f.properties?.MUNI_LIST_NAME_WITH_TYPE === m,
+        ) || null,
+      }));
+      const missing = muniBoundaries.filter((mb) => !mb.feat).map((mb) => mb.muni);
+      if (missing.length > 0) {
         $cliToggle.classList.remove('active');
         $cliToggle.setAttribute('aria-pressed', 'false');
         $cliToggle.disabled = false;
         $cliToggle.textContent = 'CLI Soil';
-        setCount(`Couldn't locate boundary for ${muni}; can't load CLI.`);
+        setCount(`Couldn't locate boundary for ${missing.join(', ')}; can't load CLI.`);
         return;
       }
-      const fc = await fetchCliAgrForMuni(muni, muniFeat);
-      if (!fc || !fc.features || fc.features.length === 0) {
+      const fcs = await Promise.all(
+        muniBoundaries.map((mb) => fetchCliAgrForMuni(mb.muni, mb.feat)),
+      );
+      const features = fcs.flatMap((fc) => fc?.features || []);
+      if (features.length === 0) {
         $cliToggle.classList.remove('active');
         $cliToggle.setAttribute('aria-pressed', 'false');
         $cliToggle.disabled = false;
         $cliToggle.textContent = 'CLI Soil';
-        setCount(`No CLI soil-capability polygons in ${muni}.`);
+        const label = munis.length === 1 ? munis[0] : `${munis.length} matched munis (${munis.join(', ')})`;
+        setCount(`No CLI soil-capability polygons in ${label}.`);
         return;
       }
-      setCliAgrData(map, fc);
-      cliLoadedFor = muni;
+      setCliAgrData(map, { type: 'FeatureCollection', features });
+      cliLoadedFor = loadKey;
     } catch (err) {
       console.warn('CLI fetch failed', err);
       $cliToggle.classList.remove('active');
