@@ -984,15 +984,17 @@ export function initMap(container, { onFeatureClick } = {}) {
         // feature carries a `groupHover` state — used by the sales-
         // CSV multi-parcel sibling-highlight: hovering one parcel in
         // a group lights up every parcel in the same sale at the same
-        // time. Default 0.32 reads on both basemaps; 0.80 on hover so
-        // the lit-up state is unmistakable across the whole group.
+        // time. Both values are 20% more transparent than the previous
+        // 0.32 / 0.80 pair (so 0.26 default / 0.64 on hover) — yellow
+        // was reading too saturated on satellite basemap especially
+        // when stacked under MASC / CLI overlays.
         paint: {
           'fill-color': '#ffea00',
           'fill-opacity': [
             'case',
             ['boolean', ['feature-state', 'groupHover'], false],
-            0.80,
-            0.32,
+            0.64,
+            0.26,
           ],
         },
       });
@@ -1002,18 +1004,19 @@ export function initMap(container, { onFeatureClick } = {}) {
         source: 'parcels',
         // Black outline on every result parcel for maximum contrast
         // against both Streets and Satellite basemaps. Width jumps
-        // 2.1 → 3.4 px on the groupHover feature-state so a hovered
+        // 1.9 → 3.4 px on the groupHover feature-state so a hovered
         // sale-group's parcels still read as visually distinct from
-        // the rest of the result set without changing colour. (Both
-        // widths are ~15% thinner than the previous 2.5 / 4 values,
-        // which were reading as visually heavy on dense urban CSVs.)
+        // the rest of the result set without changing colour. The
+        // non-hover width is 10% thinner than the previous 2.1 — at
+        // dense urban CSV zoom levels the black outline was still
+        // dominating thin yellow fills.
         paint: {
           'line-color': '#000000',
           'line-width': [
             'case',
             ['boolean', ['feature-state', 'groupHover'], false],
             3.4,
-            2.1,
+            1.9,
           ],
         },
       });
