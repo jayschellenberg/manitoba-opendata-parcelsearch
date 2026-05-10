@@ -897,14 +897,24 @@ async function populateDropdowns() {
  * that's no longer valid in the narrowed list is reset.
  */
 async function refilterCategoryDropdowns() {
-  const muni = $municipality.value || null;
-  // Show the user we're refilling — disable until results land.
+  // Sales-CSV mode pulls categories from EVERY matched muni so the
+  // user can filter on any category present in their upload, not just
+  // the dominant muni's. Normal mode uses the dropdown's single muni.
+  const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
+    ? csvMatchedMunis.slice()
+    : ($municipality.value ? [$municipality.value] : [null]);
   const prevZone = $zoneCategory.value;
   $zoneCategory.disabled = true;
   try {
-    const zoneCats = await fetchZoneCategoryList(muni);
+    // Per-muni list fetches in parallel, then union + sort. Cached
+    // per-muni in fetchZoneCategoryList so a re-run with the same
+    // muni set is instant. `null` (province-wide) is treated as a
+    // single fetch to preserve the original startup behaviour.
+    const perMuniLists = await Promise.all(munis.map((m) => fetchZoneCategoryList(m)));
+    const zoneCats = [...new Set(perMuniLists.flat())].sort();
     fillSelect($zoneCategory, zoneCats, 'Any zoning category');
-    // Restore prior selection if it's still valid in the narrowed list.
+    // Restore prior selection if it's still valid in the (potentially
+    // narrowed/widened) list.
     if (zoneCats.includes(prevZone)) $zoneCategory.value = prevZone;
   } catch (err) {
     console.warn('Failed to refilter category dropdowns', err);
@@ -2320,9 +2330,38 @@ const AUX_META = {
   riskAreas:   { btn: () => $riskAreaToggle,    on: 'MASC Risk Areas', off: 'MASC Risk Areas', busy: 'Loading…',
                  fetch: () => fetchMascRiskAreas(),            setData: (m, fc) => setMascRiskAreasData(m, fc), setVis: setMascRiskAreasVisible },
   muniParcels: { btn: () => $muniParcelsToggle, on: 'Roll Layer', off: 'Roll Layer', busy: 'Loading…',
-                 fetch: () => fetchAllParcelsInMunicipality($municipality.value),
+                 fetch: () => fetchMuniParcelsForCurrentScope(),
                  setData: (m, fc) => setMuniParcelsData(m, fc), setVis: setMuniParcelsVisible },
 };
+
+/** Fetch the Roll Layer's parcel fabric, scoped to either the
+ *  sales-CSV mode's matched-muni list or the dropdown's single muni.
+ *  Per-muni fetches run in parallel and merge into one FC — same
+ *  pattern as the MASC/CLI/Grid/Zoning/DevPlan overlays. Returns an
+ *  empty FC when nothing is in scope (toggleAuxOverlay catches that
+ *  upstream via the disabled-button gate). */
+async function fetchMuniParcelsForCurrentScope() {
+  const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
+    ? csvMatchedMunis.slice()
+    : ($municipality.value ? [$municipality.value] : []);
+  if (munis.length === 0) {
+    return { type: 'FeatureCollection', features: [] };
+  }
+  const fcs = await Promise.all(munis.map((m) => fetchAllParcelsInMunicipality(m)));
+  return {
+    type: 'FeatureCollection',
+    features: fcs.flatMap((fc) => fc?.features || []),
+  };
+}
+
+/** Resolve the muni-parcels loadKey for the current scope. Mirrors
+ *  the joined-list pattern the other overlay toggles use so a
+ *  dropdown change inside sales mode doesn't trigger a refetch. */
+function muniParcelsLoadKey() {
+  return (csvMatchedMunis && csvMatchedMunis.length > 0)
+    ? csvMatchedMunis.join('|')
+    : ($municipality.value || '');
+}
 
 /**
  * Enable / disable the Muni Parcels toggle based on whether a muni is
@@ -2331,11 +2370,18 @@ const AUX_META = {
  * map source until then so a no-op change doesn't blank the overlay).
  */
 function resetMuniParcelsToggle() {
-  const muniSelected = !!$municipality.value;
-  $muniParcelsToggle.disabled = !muniSelected;
-  // If the active muni changed, mark the layer as needing a refetch and
-  // turn it off so we don't show another muni's parcels on screen.
-  if (muniParcelsLoadedFor && muniParcelsLoadedFor !== $municipality.value) {
+  // Button enabled when either a muni is selected OR a sales-CSV upload
+  // has loaded a multi-muni scope.
+  const inScope = !!$municipality.value
+    || !!(csvMatchedMunis && csvMatchedMunis.length > 0);
+  $muniParcelsToggle.disabled = !inScope;
+  // If the scope changed (different dropdown muni, or sales mode just
+  // ended), mark the layer as needing a refetch and turn it off so we
+  // don't keep showing another scope's parcels on screen. Inside sales
+  // mode the loadKey is the joined matched-muni list, so a dropdown
+  // change while sales mode is active is a no-op.
+  const desiredKey = muniParcelsLoadKey();
+  if (muniParcelsLoadedFor && muniParcelsLoadedFor !== desiredKey) {
     auxLoaded.muniParcels = false;
     muniParcelsLoadedFor = null;
     if ($muniParcelsToggle.classList.contains('active')) {
@@ -2359,9 +2405,15 @@ let cliLoadedFor = null;
  *  changed since the layers were last loaded. Mirrors the
  *  resetMuniParcelsToggle pattern. */
 function resetMascAndGridToggles() {
-  const muniSelected = !!$municipality.value;
-  $mascToggle.disabled = !muniSelected;
-  if ($cliToggle) $cliToggle.disabled = !muniSelected;
+  // Enabled when EITHER a dropdown muni is selected OR a sales-CSV
+  // upload has populated csvMatchedMunis — covers the rare case where
+  // sales-mode is active but the dropdown is empty (shouldn't happen
+  // with the current dominant-muni auto-set, but cheap belt-and-
+  // braces for future flows that might disable the auto-set).
+  const inScope = !!$municipality.value
+    || !!(csvMatchedMunis && csvMatchedMunis.length > 0);
+  $mascToggle.disabled = !inScope;
+  if ($cliToggle) $cliToggle.disabled = !inScope;
   // Sec-Twp Grid stays enabled with or without a muni — without a muni
   // selected it falls back to the pre-baked province-wide static file.
   $gridToggle.disabled = false;
@@ -2772,7 +2824,7 @@ async function toggleAuxOverlay(which) {
       }
       meta.setData(map, fc);
       auxLoaded[which] = true;
-      if (which === 'muniParcels') muniParcelsLoadedFor = $municipality.value;
+      if (which === 'muniParcels') muniParcelsLoadedFor = muniParcelsLoadKey();
     } catch (err) {
       console.warn(`${which} fetch failed`, err);
       btn.classList.remove('active');
