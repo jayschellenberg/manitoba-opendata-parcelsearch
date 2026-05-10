@@ -146,29 +146,35 @@ body:not(.sales-mode) .sidebar .size-row { display: none; }
 .sidebar .size-row input[type="number"] { width: 100%; }
 
 /* Pill-style two-button toggle for Acres / Sq Ft. Active half flips
-   colours so the chosen unit reads at a glance. */
-.uom-pill {
+   colours so the chosen unit reads at a glance. Selectors are
+   prefixed with `.controls` to win specificity against the generic
+   `.controls button { background: #1a3a4a; ... }` rule below — without
+   the prefix both halves of the pill render in the dark navy default
+   and you can't tell which unit is selected. */
+.controls .uom-pill {
   display: inline-flex;
   border: 1px solid #b3becc;
   border-radius: 999px;
   overflow: hidden;
   background: #fff;
 }
-.uom-pill button {
-  background: transparent;
+.controls .uom-pill button {
+  background: #fff;
   border: none;
   padding: 4px 10px;
   cursor: pointer;
   font-size: 12px;
   color: #2c3e50;
   line-height: 1.2;
+  font-weight: 500;
 }
-.uom-pill button + button { border-left: 1px solid #d6dde5; }
-.uom-pill button.active {
+.controls .uom-pill button:hover:not(.active) { background: #eef6fb; }
+.controls .uom-pill button + button { border-left: 1px solid #d6dde5; }
+.controls .uom-pill button.active {
   background: #2c3e50;
   color: #fff;
 }
-.uom-pill button:focus-visible { outline: 2px solid #4a90e2; outline-offset: -2px; }
+.controls .uom-pill button:focus-visible { outline: 2px solid #4a90e2; outline-offset: -2px; }
 
 /* Civic-address From/To/Street row. From + To are narrow numeric
    inputs; the Street Name field takes whatever's left so the row

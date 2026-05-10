@@ -1002,7 +1002,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         source: 'parcels',
         // Black outline on every result parcel for maximum contrast
         // against both Streets and Satellite basemaps. Width jumps
-        // 2.5 → 5 px on the groupHover feature-state so a hovered
+        // 2.5 → 4 px on the groupHover feature-state so a hovered
         // sale-group's parcels still read as visually distinct from
         // the rest of the result set without changing colour.
         paint: {
@@ -1010,7 +1010,7 @@ export function initMap(container, { onFeatureClick } = {}) {
           'line-width': [
             'case',
             ['boolean', ['feature-state', 'groupHover'], false],
-            5,
+            4,
             2.5,
           ],
         },
