@@ -968,22 +968,30 @@ export function initMap(container, { onFeatureClick } = {}) {
       // any underlying overlay (zoning category, muni parcel fabric)
       // remain readable beneath the highlight; the line stroke does the
       // heavy lifting for parcel boundary visibility.
-      map.addSource('parcels', { type: 'geojson', data: emptyFc() });
+      // promoteId tells MapLibre to use the OBJECTID property as the
+      // feature id at the source level. setFeatureState({source, id})
+      // can then key into each parcel by OBJECTID — required by the
+      // multi-parcel-sale sibling-highlight which calls setFeatureState
+      // for every OBJECTID in `_saleGroupRollIds`. Setting f.id at the
+      // GeoJSON-Feature level alone wasn't reliably picked up after
+      // tile re-generation, so promoteId is the canonical path.
+      map.addSource('parcels', { type: 'geojson', data: emptyFc(), promoteId: 'OBJECTID' });
       map.addLayer({
         id: 'parcel-fill',
         type: 'fill',
         source: 'parcels',
-        // Yellow highlight (Mat. yellow-A400). Bumps opacity when the
+        // Yellow highlight (Mat. yellow-A400). Jumps opacity when the
         // feature carries a `groupHover` state — used by the sales-
         // CSV multi-parcel sibling-highlight: hovering one parcel in
         // a group lights up every parcel in the same sale at the same
-        // time. Default 0.32 reads on both basemaps; 0.55 on hover.
+        // time. Default 0.32 reads on both basemaps; 0.80 on hover so
+        // the lit-up state is unmistakable across the whole group.
         paint: {
           'fill-color': '#ffea00',
           'fill-opacity': [
             'case',
             ['boolean', ['feature-state', 'groupHover'], false],
-            0.55,
+            0.80,
             0.32,
           ],
         },
@@ -992,18 +1000,17 @@ export function initMap(container, { onFeatureClick } = {}) {
         id: 'parcel-line',
         type: 'line',
         source: 'parcels',
-        // Mustard outline pairs with the yellow fill — reads on both
-        // basemaps and clearly belongs to the yellow palette (no
-        // red-warm undertones the way dark goldenrod has). Width
-        // bumps from 2.5 to 4 when the feature carries the
-        // groupHover state, giving the multi-parcel-sale sibling
-        // highlight an extra-thick ring.
+        // Black outline on every result parcel for maximum contrast
+        // against both Streets and Satellite basemaps. Width jumps
+        // 2.5 → 5 px on the groupHover feature-state so a hovered
+        // sale-group's parcels still read as visually distinct from
+        // the rest of the result set without changing colour.
         paint: {
-          'line-color': '#7a5c00',
+          'line-color': '#000000',
           'line-width': [
             'case',
             ['boolean', ['feature-state', 'groupHover'], false],
-            4,
+            5,
             2.5,
           ],
         },
@@ -1106,6 +1113,10 @@ export function initMap(container, { onFeatureClick } = {}) {
           activeGroupOids.push(oid);
         }
       };
+      // Expose for runtime debugging — call window.__setGroupHover([oid1, oid2])
+      // to manually verify the feature-state path independent of the hover handler.
+      window.__setGroupHover = setGroupHover;
+      window.__clearGroupHover = clearGroupHover;
 
       map.on('mousemove', (e) => {
         if (!map.isStyleLoaded()) return;
@@ -1124,6 +1135,24 @@ export function initMap(container, { onFeatureClick } = {}) {
         // searches) skip this — _saleGroupRollIds is absent.
         const parcelHit = hits.find((h) => h.layer.id === 'parcel-fill');
         const oids = readSaleGroupOids(parcelHit?.properties);
+        // Always-on diagnostic snapshot — readable as window.__lastHover
+        // from the devtools console without flipping a flag. Lets the
+        // user verify the multi-parcel-sale sibling-highlight pipeline
+        // is wired up correctly even when the visual state change isn't
+        // obvious (e.g. small-area parcels where the opacity bump is
+        // hard to see). Set window.__hoverDebug = true to also stream
+        // each hover to the console.
+        window.__lastHover = {
+          featureId: parcelHit?.id,
+          featureIdType: typeof parcelHit?.id,
+          roll: parcelHit?.properties?.Roll_No_Txt,
+          groupSize: parcelHit?.properties?._saleGroupSize,
+          groupOidsRaw: parcelHit?.properties?._saleGroupRollIds,
+          groupOidsRawType: typeof parcelHit?.properties?._saleGroupRollIds,
+          parsedOids: oids,
+          wouldHighlight: !!(oids && oids.length > 1),
+        };
+        if (window.__hoverDebug) console.log('[hover]', window.__lastHover);
         if (oids && oids.length > 1) setGroupHover(oids);
         else clearGroupHover();
         map.getCanvas().style.cursor = 'pointer';
@@ -1300,11 +1329,15 @@ export function initMap(container, { onFeatureClick } = {}) {
 /**
  * Push the parcel results onto the map and fit to them. Empty FC resets
  * the viewport to the province-wide default so the user sees something
- * familiar after Clear.
+ * familiar after Clear. Pass `{ fit: false }` to push the same set of
+ * features again without re-fitting the viewport — used after sales-CSV
+ * upload to refresh the source with computeSaleGroupTotals stamps so
+ * the hover-highlight feature-state can find _saleGroupRollIds.
  */
-export function showResults(map, parcelFc) {
+export function showResults(map, parcelFc, { fit = true } = {}) {
   const src = map.getSource('parcels');
   if (src) src.setData(parcelFc);
+  if (!fit) return;
   if (!parcelFc.features.length) {
     map.flyTo({ center: MB_CENTER, zoom: MB_ZOOM });
     return;
@@ -1515,7 +1548,7 @@ export function setMuniParcelsVisible(map, visible) {
 
 // ---------- popup builders ----------
 
-function parcelHtml(p) {
+export function parcelHtml(p) {
   const lines = [];
   if (p.Roll_No_Txt)        lines.push(`<strong>Roll #</strong> ${escapeHtml(rollDisplayFor(p))}`);
   if (p.Property_Address)   lines.push(escapeHtml(p.Property_Address));
@@ -1524,50 +1557,21 @@ function parcelHtml(p) {
   // this parcel was surfaced via a sales-CSV upload
   // (handleSalesUpload in main.js stamps these onto each matched
   // feature). Sale info reads first because it's the appraisal-
-  // relevant payload of the upload.
-  if (p._saleDate || p._salePrice) {
-    const bits = [];
-    if (p._saleDate)  bits.push(`<strong>Sold</strong> ${escapeHtml(p._saleDate)}`);
-    if (p._salePrice) bits.push(`<strong>Price</strong> ${escapeHtml(p._salePrice)}`);
-    lines.push(bits.join(' &middot; '));
-  }
+  // relevant payload of the upload. Sold and Price get their own
+  // lines so the price reads cleanly when it's a long figure.
+  if (p._saleDate)  lines.push(`<strong>Sold</strong> ${escapeHtml(p._saleDate)}`);
+  if (p._salePrice) lines.push(`<strong>Price</strong> ${escapeHtml(p._salePrice)}`);
   if (p._primaryProperty) {
     lines.push(`<strong>Primary Property</strong> ${escapeHtml(p._primaryProperty)}`);
   }
-  // Multi-parcel sale group: when this parcel is part of a
-  // multi-parcel sale (computeSaleGroupTotals stamped _saleGroupSize
-  // > 1), surface the group rollup so the user sees the whole-sale
-  // economics on hover.
+  // Multi-parcel sale group header — only shown when the parcel is
+  // actually part of a multi-parcel sale. The per-rate breakdown
+  // (Price/SF · Price/Acre · Price/Lot) is appended at the very
+  // bottom of the popup below, after the parcel-detail lines, so
+  // those summary rates are easy to find regardless of group size.
   const groupSize = Number(p._saleGroupSize);
   if (Number.isFinite(groupSize) && groupSize > 1) {
     lines.push(`<strong>Sale group</strong> ${escapeHtml(groupSize)} parcels`);
-    // Rate per lot is the same regardless of whether acres are
-    // complete — show it on its own line so the $/ac · $/sf rollup
-    // can independently report 'insufficient data' below.
-    const ppl = Number(p._saleGroupPpl);
-    if (Number.isFinite(ppl) && ppl > 0) {
-      const pplFmt = '$' + Math.round(ppl).toLocaleString('en-US');
-      lines.push(`<strong>Per lot</strong> ${escapeHtml(pplFmt)}/parcel`);
-    }
-    if (p._saleGroupAcresIncomplete) {
-      lines.push(`<em style="color:#888">$/ac · $/sf — insufficient data (one or more parcels missing acres)</em>`);
-    } else if (p._saleGroupPpa != null && p._saleGroupPpsf != null) {
-      const ppa  = Number(p._saleGroupPpa);
-      const ppsf = Number(p._saleGroupPpsf);
-      const totalAc = Number(p._saleGroupTotalAcres);
-      const acFmt = Number.isFinite(totalAc)
-        ? (totalAc < 10 ? totalAc.toFixed(2)
-           : totalAc < 1000 ? totalAc.toFixed(1)
-           : Math.round(totalAc).toLocaleString('en-US'))
-        : '—';
-      const ppaFmt = Number.isFinite(ppa)
-        ? '$' + Math.round(ppa).toLocaleString('en-US')
-        : '—';
-      const ppsfFmt = Number.isFinite(ppsf)
-        ? '$' + ppsf.toFixed(2)
-        : '—';
-      lines.push(`<strong>Group total</strong> ${escapeHtml(acFmt)} ac · ${escapeHtml(ppaFmt)}/ac · ${escapeHtml(ppsfFmt)}/sf`);
-    }
   }
   if (p._legalDescription)  lines.push(`<strong>Legal</strong> ${escapeHtml(p._legalDescription)}`);
   if (p._certificatesOfTitle) lines.push(`<strong>Title</strong> ${escapeHtml(p._certificatesOfTitle)}`);
@@ -1583,6 +1587,30 @@ function parcelHtml(p) {
   if (p._zoneCode)            summary.push(`<strong>Zoning</strong> ${escapeHtml(p._zoneCode)}`);
   if (p.Dwelling_Units != null) summary.push(`<strong>DU</strong> ${escapeHtml(p.Dwelling_Units)}`);
   if (summary.length)         lines.push(summary.join(' &nbsp;·&nbsp; '));
+  // Bottom-anchored sale rate breakdown. Appears whenever a sale
+  // price is present (single-parcel and multi-parcel sales alike) —
+  // the lot count in parentheses behind Price/Lot makes single-vs-
+  // multi-parcel sales visually distinguishable. Price/SF and
+  // Price/Acre suppress to em-dash when group acres are incomplete
+  // (one or more sibling parcels missing _acres) so a misleading
+  // partial-acreage rate doesn't slip through.
+  if (p._salePrice && Number.isFinite(groupSize) && groupSize > 0) {
+    const ppsf = Number(p._saleGroupPpsf);
+    const ppa  = Number(p._saleGroupPpa);
+    const ppl  = Number(p._saleGroupPpl);
+    const ppsfFmt = (Number.isFinite(ppsf) && ppsf > 0)
+      ? '$' + ppsf.toFixed(2)
+      : (p._saleGroupAcresIncomplete ? '—' : null);
+    const ppaFmt  = (Number.isFinite(ppa) && ppa > 0)
+      ? '$' + Math.round(ppa).toLocaleString('en-US')
+      : (p._saleGroupAcresIncomplete ? '—' : null);
+    const pplFmt  = (Number.isFinite(ppl) && ppl > 0)
+      ? '$' + Math.round(ppl).toLocaleString('en-US')
+      : null;
+    if (ppsfFmt) lines.push(`<strong>Price/SF</strong> ${escapeHtml(ppsfFmt)}`);
+    if (ppaFmt)  lines.push(`<strong>Price/Acre</strong> ${escapeHtml(ppaFmt)}`);
+    if (pplFmt)  lines.push(`<strong>Price/Lot</strong> ${escapeHtml(pplFmt)} (${escapeHtml(groupSize)})`);
+  }
   return lines.join('<br>');
 }
 

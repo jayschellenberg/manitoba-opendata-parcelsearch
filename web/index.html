@@ -110,21 +110,23 @@
 
         <hr class="control-sep" />
         <h2>Other searches</h2>
-        <span class="field">
-          <select id="zone-category" disabled>
-            <option value="">Any zoning category</option>
-          </select>
-          <span class="tip">Zoning category</span>
-        </span>
-        <span class="field">
-          <select id="changed-status">
-            <option value="">Any status</option>
-            <option value="zoning">Zoning Changed</option>
-            <option value="devplan">Dev Plan Changed</option>
-            <option value="both">Both Changed</option>
-          </select>
-          <span class="tip">Filter by amendment status</span>
-        </span>
+        <div class="filter-row">
+          <span class="field">
+            <select id="zone-category" disabled>
+              <option value="">Any zoning category</option>
+            </select>
+            <span class="tip">Zoning category</span>
+          </span>
+          <span class="field">
+            <select id="changed-status">
+              <option value="">Any status</option>
+              <option value="zoning">Zoning Changed</option>
+              <option value="devplan">Dev Plan Changed</option>
+              <option value="both">Both Changed</option>
+            </select>
+            <span class="tip">Filter by amendment status</span>
+          </span>
+        </div>
         <div class="du-row">
           <span class="field du-mode-field">
             <select id="du-mode">
@@ -137,6 +139,30 @@
           <span class="field du-min-field">
             <input id="du-min" type="number" min="1" step="1" placeholder="#" disabled />
             <span class="tip">Minimum dwelling units (when 'Min DU' is selected)</span>
+          </span>
+        </div>
+        <!-- Size range filter — sales-CSV-only. Visibility gated by
+             `body.sales-mode` (set after a successful upload, cleared
+             on Clear). UofM toggle pill defaults to acres; flipping to
+             sq-ft converts the entered Low/High through 1 ac = 43560 sf
+             before filtering. Empty Low → 0 (no minimum); empty High →
+             ∞ (no maximum). Parcels with no determinable acreage are
+             excluded when the filter is active. -->
+        <div class="size-row sales-only">
+          <span class="field size-low-field">
+            <input id="size-low" type="number" min="0" step="0.01" placeholder="Size low" />
+            <span class="tip">Minimum size (empty = 0)</span>
+          </span>
+          <span class="field size-high-field">
+            <input id="size-high" type="number" min="0" step="0.01" placeholder="Size high" />
+            <span class="tip">Maximum size (empty = no max)</span>
+          </span>
+          <span class="field size-uom-field">
+            <span class="uom-pill" role="group" aria-label="Unit of measure">
+              <button id="size-uom-acres" type="button" class="active" data-uom="acres">Acres</button>
+              <button id="size-uom-sf" type="button" data-uom="sf">Sq Ft</button>
+            </span>
+            <span class="tip">Unit of measure</span>
           </span>
         </div>
 
