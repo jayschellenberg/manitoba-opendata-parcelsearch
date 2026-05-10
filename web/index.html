@@ -91,6 +91,32 @@
           <button id="export" type="button" class="secondary">Export CSV</button>
         </div>
         <span id="count" class="count"></span>
+        <!-- Sales-CSV unmatched records panel. Populated by
+             handleSalesUpload when at least one CSV row failed to land
+             a parcel — either because the row was missing Roll #/Muni,
+             the muni didn't normalise to a known shape, or the roll
+             wasn't in Roll_Entry. Hidden the rest of the time. -->
+        <details id="unmatched-panel" class="unmatched-panel" hidden>
+          <summary class="unmatched-summary"></summary>
+          <div class="unmatched-actions">
+            <button id="unmatched-download" type="button" class="secondary">Download unmatched CSV</button>
+          </div>
+          <div class="unmatched-table-wrap">
+            <table class="unmatched-table">
+              <thead>
+                <tr>
+                  <th>Roll #</th>
+                  <th>Municipality</th>
+                  <th>Sale Date</th>
+                  <th>Price</th>
+                  <th>Legal</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </details>
 
         <h2>Map overlays</h2>
         <div class="overlay-grid">

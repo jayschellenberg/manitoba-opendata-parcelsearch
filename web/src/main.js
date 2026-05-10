@@ -919,6 +919,8 @@ async function runSearch() {
   if ($resultsTable) $resultsTable.classList.remove('sales-mode');
   // Hide the size-range filter row since it's CSV-only.
   document.body.classList.remove('sales-mode');
+  // Hide the unmatched-records panel — also CSV-upload-specific.
+  renderUnmatchedPanel([]);
   // Clear the CSV-mode state so the Other Searches filter listeners
   // stop trying to re-filter the previous upload's row set.
   csvFullRows = null;
@@ -1145,19 +1147,32 @@ async function handleSalesUpload(file) {
       return;
     }
 
-    // Group by normalized muni. Skip rows whose muni doesn't shape
-    // into a Roll_Entry-style 'NAME (TYPE)' value.
+    // Group by normalized muni. Track each unmatched record alongside
+    // a human-readable `reason` so the unmatched-records panel can
+    // surface why a row dropped out — three buckets, in priority
+    // order: empty Roll/Muni in the CSV, Muni didn't normalise to
+    // a Roll_Entry-style 'NAME (TYPE)' value, or made it through but
+    // the roll wasn't in Roll_Entry (added later, after the API match).
     const byMuni = new Map();
-    let dropped = 0;
+    const unmatchedRecords = [];
     for (const r of records) {
+      if (!r.rollNumber || !r.municipality) {
+        unmatchedRecords.push({ ...r, reason: 'Roll # or Municipality blank in CSV row' });
+        continue;
+      }
       const muni = normalizeMuniFromCsv(r.municipality);
-      if (!muni || !r.rollNumber) { dropped++; continue; }
+      if (!muni) {
+        unmatchedRecords.push({ ...r, reason: `Municipality not recognised: "${r.municipality}"` });
+        continue;
+      }
       if (!byMuni.has(muni)) byMuni.set(muni, []);
       byMuni.get(muni).push(r);
     }
+    const dropped = unmatchedRecords.length;
 
     if (byMuni.size === 0) {
       setCount(`Couldn't normalize any of the ${records.length} CSV rows to a known municipality.`);
+      renderUnmatchedPanel(unmatchedRecords);
       return;
     }
 
@@ -1180,11 +1195,13 @@ async function handleSalesUpload(file) {
         const k = canonicalRoll(r.rollNumber);
         if (k) saleByRoll.set(k, r);
       }
+      const matchedRollSet = new Set();
       let matched = 0;
       for (const f of fc.features || []) {
         const roll = f.properties?.Roll_No_Txt;
         const sale = roll ? saleByRoll.get(roll) : null;
         if (sale) {
+          matchedRollSet.add(roll);
           // Group date/price: parseSalesCsv already copied the
           // primary's saleDate + consideration onto every member of
           // the group, so reading them here works regardless of
@@ -1200,11 +1217,27 @@ async function handleSalesUpload(file) {
           matched++;
         }
       }
-      return { muni, fc, total: recs.length, matched };
+      // Identify the records the API didn't return — Roll_No_Txt
+      // simply not in Roll_Entry for this muni (most common cause:
+      // typo / old roll / wrong muni assignment in the source CSV).
+      const unmatchedHere = [];
+      for (const r of recs) {
+        const k = canonicalRoll(r.rollNumber);
+        if (k && !matchedRollSet.has(k)) {
+          unmatchedHere.push({
+            ...r,
+            reason: `Roll # not found in Roll_Entry for ${muni}`,
+          });
+        }
+      }
+      return { muni, fc, total: recs.length, matched, unmatched: unmatchedHere };
     });
     const results = await Promise.all(fetches);
 
-    // Merge all FCs into one parcelFc.
+    // Merge all FCs into one parcelFc. Per-muni unmatched buckets fold
+    // into the global unmatchedRecords list so the panel surfaces all
+    // three reasons (empty / muni-unrecognised / not-in-Roll-Entry) in
+    // a single place.
     const parcelFc = { type: 'FeatureCollection', features: [] };
     let totalMatched = 0;
     let totalRequested = 0;
@@ -1212,11 +1245,13 @@ async function handleSalesUpload(file) {
       parcelFc.features.push(...(r.fc.features || []));
       totalMatched += r.matched;
       totalRequested += r.total;
+      unmatchedRecords.push(...(r.unmatched || []));
     }
 
     if (parcelFc.features.length === 0) {
       setCount(`No matching parcels found for the ${records.length} CSV rows. ` +
                `Check that municipality names and roll numbers match Roll_Entry.`);
+      renderUnmatchedPanel(unmatchedRecords);
       return;
     }
 
@@ -1266,11 +1301,15 @@ async function handleSalesUpload(file) {
     renderTable(parcelFc.features.map((p) => ({ parcel: p, zoning: [], devPlan: [] })));
     setMapData(parcelFc, EMPTY_FC, EMPTY_FC);
 
-    const dropNote = dropped > 0 ? ` · ${dropped} CSV rows skipped (bad muni/roll)` : '';
-    const missNote = totalMatched < totalRequested
-      ? ` · ${totalRequested - totalMatched} not found in Roll_Entry`
+    // Single combined "N unmatched" suffix that pairs with the panel
+    // below the count line — the panel surfaces the per-row reasons
+    // (empty, muni-unrecognised, not-in-Roll-Entry) so the count text
+    // doesn't have to break it down inline.
+    const unmatchedNote = unmatchedRecords.length > 0
+      ? ` · ${unmatchedRecords.length} unmatched (see panel)`
       : '';
-    const baseMsg = `${totalMatched} of ${records.length} sales plotted${dropNote}${missNote}`;
+    const baseMsg = `${totalMatched} of ${records.length} sales plotted${unmatchedNote}`;
+    renderUnmatchedPanel(unmatchedRecords);
 
     // If every matched parcel sits in a single muni, sync the
     // dropdown to that muni so muni-scoped affordances (Roll Layer
@@ -1380,6 +1419,89 @@ async function handleSalesUpload(file) {
  * Single-parcel sales (groupId unique to one parcel) get the same
  * stamps but with size=1; UI then shows just the per-parcel price.
  */
+/**
+ * Render the unmatched-records panel below the search count. Hidden
+ * when the input list is empty; otherwise mounts a sortable / scrollable
+ * table of dropped CSV rows alongside their reason and a Download CSV
+ * button. The panel state is held in DOM only — no module-level state,
+ * so re-rendering with an empty array fully resets it.
+ *
+ * Three reason buckets surface here:
+ *   - 'Roll # or Municipality blank in CSV row'  (caught pre-API)
+ *   - 'Municipality not recognised: "<raw>"'    (normalizeMuniFromCsv → '')
+ *   - 'Roll # not found in Roll_Entry for <muni>'  (API returned no match)
+ */
+function renderUnmatchedPanel(unmatched) {
+  const $panel = document.getElementById('unmatched-panel');
+  const $summary = $panel?.querySelector('.unmatched-summary');
+  const $tbody = $panel?.querySelector('.unmatched-table tbody');
+  const $download = document.getElementById('unmatched-download');
+  if (!$panel || !$summary || !$tbody || !$download) return;
+  if (!unmatched || unmatched.length === 0) {
+    $panel.hidden = true;
+    $tbody.innerHTML = '';
+    return;
+  }
+  $summary.textContent = `${unmatched.length} unmatched record${unmatched.length === 1 ? '' : 's'} — click to expand`;
+  // Build the body as one big string instead of per-row appendChild —
+  // the unmatched lists are usually small (<20) but this stays fast at
+  // the top of the range too. esc() keeps the source CSV's quirks
+  // (ampersands, angle brackets, quotes) from breaking the markup.
+  const esc = (s) => String(s ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+  const td = (s) => `<td>${esc(s)}</td>`;
+  const rows = unmatched.map((u) =>
+    `<tr>${td(u.rollNumber)}${td(u.municipality)}${td(u.saleDate)}${td(u.consideration)}${td(u.legalDescription)}<td class="reason">${esc(u.reason)}</td></tr>`
+  ).join('');
+  $tbody.innerHTML = rows;
+  $panel.hidden = false;
+  // Wire Download CSV — re-bind every render so the latest list is
+  // captured. Older bindings get garbage-collected with the closure.
+  $download.onclick = () => downloadUnmatchedCsv(unmatched);
+}
+
+/**
+ * Generate a CSV blob from the unmatched-records list and trigger a
+ * download. Columns mirror the panel table: Roll #, Municipality,
+ * Sale Date, Consideration, Street Address, Legal Description,
+ * Primary Property, Reason. Filename includes the local-date timestamp
+ * so multiple downloads from one session don't clobber each other.
+ */
+function downloadUnmatchedCsv(unmatched) {
+  if (!Array.isArray(unmatched) || unmatched.length === 0) return;
+  const header = [
+    'Roll #', 'Municipality', 'Sale Date', 'Consideration',
+    'Street Address', 'Legal Description', 'Primary Property', 'Reason',
+  ];
+  const cell = (v) => {
+    const s = v == null ? '' : String(v);
+    // Quote when the value contains a comma, quote, or newline; double
+    // any embedded quotes per RFC 4180.
+    return /[,"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [header.map(cell).join(',')];
+  for (const u of unmatched) {
+    lines.push([
+      u.rollNumber, u.municipality, u.saleDate, u.consideration,
+      u.streetAddress, u.legalDescription, u.primaryProperty, u.reason,
+    ].map(cell).join(','));
+  }
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 16);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `unmatched-sales-${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Free the blob URL on the next tick — Chrome holds the reference
+  // until the download dialog closes, but other browsers free it
+  // immediately so a delayed revoke is the safer cross-browser path.
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
 function computeSaleGroupTotals(parcelFc) {
   const groups = new Map();
   let stampedCount = 0;
