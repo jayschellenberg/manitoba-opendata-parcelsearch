@@ -973,11 +973,20 @@ export function initMap(container, { onFeatureClick } = {}) {
         id: 'parcel-fill',
         type: 'fill',
         source: 'parcels',
-        // Yellow highlight (Mat. yellow-A400) at slightly bumped
-        // opacity from the old 0.15 dark-red — yellow is naturally
-        // lighter so it needs more presence to read on both Carto
-        // streets and Esri imagery basemaps.
-        paint: { 'fill-color': '#ffea00', 'fill-opacity': 0.32 },
+        // Yellow highlight (Mat. yellow-A400). Bumps opacity when the
+        // feature carries a `groupHover` state — used by the sales-
+        // CSV multi-parcel sibling-highlight: hovering one parcel in
+        // a group lights up every parcel in the same sale at the same
+        // time. Default 0.32 reads on both basemaps; 0.55 on hover.
+        paint: {
+          'fill-color': '#ffea00',
+          'fill-opacity': [
+            'case',
+            ['boolean', ['feature-state', 'groupHover'], false],
+            0.55,
+            0.32,
+          ],
+        },
       });
       map.addLayer({
         id: 'parcel-line',
@@ -985,8 +994,19 @@ export function initMap(container, { onFeatureClick } = {}) {
         source: 'parcels',
         // Mustard outline pairs with the yellow fill — reads on both
         // basemaps and clearly belongs to the yellow palette (no
-        // red-warm undertones the way dark goldenrod has).
-        paint: { 'line-color': '#7a5c00', 'line-width': 2.5 },
+        // red-warm undertones the way dark goldenrod has). Width
+        // bumps from 2.5 to 4 when the feature carries the
+        // groupHover state, giving the multi-parcel-sale sibling
+        // highlight an extra-thick ring.
+        paint: {
+          'line-color': '#7a5c00',
+          'line-width': [
+            'case',
+            ['boolean', ['feature-state', 'groupHover'], false],
+            4,
+            2.5,
+          ],
+        },
       });
       // MASC label overlay is intentionally above the parcel/roll-fabric
       // layers so the rating letter stays visible when the user turns
@@ -1057,6 +1077,36 @@ export function initMap(container, { onFeatureClick } = {}) {
       // Hover popup — works on every layer that's currently visible. Text
       // composed from whichever layer was hit (parcels take priority).
       const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false });
+      // Sales-CSV multi-parcel sibling highlight. When the cursor sits
+      // on a parcel that's part of a multi-parcel sale (its
+      // _saleGroupRollIds property carries the OBJECTIDs of every
+      // sibling), set feature-state groupHover:true on every sibling
+      // so the paint expression bumps the fill opacity + outline
+      // width on all of them at once. Cleared as the cursor moves
+      // off the layer.
+      let activeGroupOids = [];
+      const clearGroupHover = () => {
+        for (const oid of activeGroupOids) {
+          map.setFeatureState({ source: 'parcels', id: oid }, { groupHover: false });
+        }
+        activeGroupOids = [];
+      };
+      const setGroupHover = (oids) => {
+        if (!Array.isArray(oids) || oids.length === 0) {
+          clearGroupHover();
+          return;
+        }
+        // No-op if the same group is already lit.
+        if (activeGroupOids.length === oids.length
+            && activeGroupOids.every((v, i) => v === oids[i])) return;
+        clearGroupHover();
+        for (const oid of oids) {
+          if (oid == null) continue;
+          map.setFeatureState({ source: 'parcels', id: oid }, { groupHover: true });
+          activeGroupOids.push(oid);
+        }
+      };
+
       map.on('mousemove', (e) => {
         if (!map.isStyleLoaded()) return;
         const visibleLayers = ['parcel-fill'];
@@ -1066,8 +1116,16 @@ export function initMap(container, { onFeatureClick } = {}) {
         if (!hits.length) {
           popup.remove();
           map.getCanvas().style.cursor = '';
+          clearGroupHover();
           return;
         }
+        // Light up sibling parcels when this hit is part of a multi-
+        // parcel sale group. Single-parcel sales (or non-sales-mode
+        // searches) skip this — _saleGroupRollIds is absent.
+        const parcelHit = hits.find((h) => h.layer.id === 'parcel-fill');
+        const oids = readSaleGroupOids(parcelHit?.properties);
+        if (oids && oids.length > 1) setGroupHover(oids);
+        else clearGroupHover();
         map.getCanvas().style.cursor = 'pointer';
         // Parcel info, then a separator line per overlay hit (deduped by layer).
         const blocks = [];
@@ -1082,7 +1140,11 @@ export function initMap(container, { onFeatureClick } = {}) {
           .setHTML(blocks.join('<hr style="margin:6px 0;border:none;border-top:1px solid #ddd">'))
           .addTo(map);
       });
-      map.on('mouseout', () => { popup.remove(); map.getCanvas().style.cursor = ''; });
+      map.on('mouseout', () => {
+        popup.remove();
+        map.getCanvas().style.cursor = '';
+        clearGroupHover();
+      });
 
       // Click on a parcel → scroll the table to its row.
       if (onFeatureClick) {
@@ -1472,6 +1534,33 @@ function parcelHtml(p) {
   if (p._primaryProperty) {
     lines.push(`<strong>Primary Property</strong> ${escapeHtml(p._primaryProperty)}`);
   }
+  // Multi-parcel sale group: when this parcel is part of a
+  // multi-parcel sale (computeSaleGroupTotals stamped _saleGroupSize
+  // > 1), surface the group rollup so the user sees the whole-sale
+  // economics on hover.
+  const groupSize = Number(p._saleGroupSize);
+  if (Number.isFinite(groupSize) && groupSize > 1) {
+    lines.push(`<strong>Sale group</strong> ${escapeHtml(groupSize)} parcels`);
+    if (p._saleGroupAcresIncomplete) {
+      lines.push(`<em style="color:#888">$/ac · $/sf — insufficient data (one or more parcels missing acres)</em>`);
+    } else if (p._saleGroupPpa != null && p._saleGroupPpsf != null) {
+      const ppa  = Number(p._saleGroupPpa);
+      const ppsf = Number(p._saleGroupPpsf);
+      const totalAc = Number(p._saleGroupTotalAcres);
+      const acFmt = Number.isFinite(totalAc)
+        ? (totalAc < 10 ? totalAc.toFixed(2)
+           : totalAc < 1000 ? totalAc.toFixed(1)
+           : Math.round(totalAc).toLocaleString('en-US'))
+        : '—';
+      const ppaFmt = Number.isFinite(ppa)
+        ? '$' + Math.round(ppa).toLocaleString('en-US')
+        : '—';
+      const ppsfFmt = Number.isFinite(ppsf)
+        ? '$' + ppsf.toFixed(2)
+        : '—';
+      lines.push(`<strong>Group total</strong> ${escapeHtml(acFmt)} ac · ${escapeHtml(ppaFmt)}/ac · ${escapeHtml(ppsfFmt)}/sf`);
+    }
+  }
   if (p._legalDescription)  lines.push(`<strong>Legal</strong> ${escapeHtml(p._legalDescription)}`);
   if (p._certificatesOfTitle) lines.push(`<strong>Title</strong> ${escapeHtml(p._certificatesOfTitle)}`);
   // Land Size — _acres stamped onto each parcel feature by main.js
@@ -1783,6 +1872,23 @@ function safeExternalUrl(raw) {
     const u = new URL(String(raw), window.location.origin);
     if (u.protocol === 'http:' || u.protocol === 'https:') return u.toString();
   } catch { /* not parseable */ }
+  return null;
+}
+
+/** Read the sale-group sibling OBJECTID array off a parcel feature's
+ *  properties. queryRenderedFeatures returns properties as a plain
+ *  object with non-primitive values JSON-stringified, so an array
+ *  written by main.js arrives as a string here and needs parsing. */
+function readSaleGroupOids(props) {
+  if (!props) return null;
+  const raw = props._saleGroupRollIds;
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string' && raw.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : null;
+    } catch { return null; }
+  }
   return null;
 }
 
