@@ -2145,29 +2145,45 @@ async function toggleOverlay(which) {
     return;
   }
 
-  // Turning on — fetch first if a muni is selected and the loaded
-  // muni doesn't match the dropdown.
-  const muni = $municipality.value;
+  // Determine the muni scope for the layer fetch. Sales-CSV mode
+  // covers EVERY matched muni; outside sales mode it's the dropdown's
+  // single value. The cache key is the joined muni list so a dropdown
+  // change within sales mode doesn't trigger a refetch.
+  const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
+    ? csvMatchedMunis.slice()
+    : ($municipality.value ? [$municipality.value] : []);
+  const loadKey = munis.join('|');
   const loadedFor = which === 'zoning' ? zoningLayerLoadedFor : devPlanLayerLoadedFor;
   const cachedFc  = which === 'zoning' ? lastZoningFc        : lastDevPlanFc;
   const haveData  = (cachedFc?.features?.length || 0) > 0;
-  const needFetch = muni && loadedFor !== muni;
+  const needFetch = munis.length > 0 && loadedFor !== loadKey;
 
   if (needFetch) {
     btn.disabled = true;
     btn.textContent = 'Loading…';
     try {
+      // Per-muni bulk fetch in parallel — every matched muni gets its
+      // full zoning / dev-plan fabric, merged into one FC for the
+      // layer source so the user sees overlay coverage across the
+      // entire sales-CSV upload (not just the dominant muni's parcels).
+      const fcs = await Promise.all(munis.map((m) => (
+        which === 'zoning'
+          ? fetchZoningOverlap(EMPTY_FC, { municipality: m })
+          : fetchDevPlanOverlap(EMPTY_FC, { municipality: m })
+      )));
+      const merged = {
+        type: 'FeatureCollection',
+        features: fcs.flatMap((fc) => fc?.features || []),
+      };
       if (which === 'zoning') {
-        const fc = await fetchZoningOverlap(EMPTY_FC, { municipality: muni });
-        setZoningData(map, fc);
-        lastZoningFc = fc;
-        rebuildZoningLegend(fc);
-        zoningLayerLoadedFor = muni;
+        setZoningData(map, merged);
+        lastZoningFc = merged;
+        rebuildZoningLegend(merged);
+        zoningLayerLoadedFor = loadKey;
       } else {
-        const fc = await fetchDevPlanOverlap(EMPTY_FC, { municipality: muni });
-        setDevPlanData(map, fc);
-        lastDevPlanFc = fc;
-        devPlanLayerLoadedFor = muni;
+        setDevPlanData(map, merged);
+        lastDevPlanFc = merged;
+        devPlanLayerLoadedFor = loadKey;
       }
     } catch (err) {
       console.warn(`${label} fetch failed`, err);
@@ -2179,7 +2195,7 @@ async function toggleOverlay(which) {
       return;
     }
     btn.disabled = false;
-  } else if (!muni && !haveData) {
+  } else if (munis.length === 0 && !haveData) {
     // No muni selected and nothing cached from a previous search —
     // revert the toggle and tell the user what to do.
     btn.classList.remove('active');
@@ -2218,17 +2234,30 @@ function applyOverlayVisibility(which, visible) {
  * is cleared, the layers are emptied.
  */
 async function refreshOverlayLayersForMuniChange() {
-  const muni = $municipality.value;
+  // Same dual-mode scope as toggleOverlay: sales-CSV mode covers every
+  // matched muni; otherwise just the dropdown's value. The loadKey is
+  // the joined muni list so a dropdown change inside sales mode is a
+  // no-op (the multi-muni overlay stays loaded).
+  const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
+    ? csvMatchedMunis.slice()
+    : ($municipality.value ? [$municipality.value] : []);
+  const loadKey = munis.join('|');
   await mapReady;
 
-  if ($zoningToggle.classList.contains('active') && zoningLayerLoadedFor !== muni) {
-    if (muni) {
+  if ($zoningToggle.classList.contains('active') && zoningLayerLoadedFor !== loadKey) {
+    if (munis.length > 0) {
       try {
-        const fc = await fetchZoningOverlap(EMPTY_FC, { municipality: muni });
-        setZoningData(map, fc);
-        lastZoningFc = fc;
-        rebuildZoningLegend(fc);
-        zoningLayerLoadedFor = muni;
+        const fcs = await Promise.all(munis.map((m) => (
+          fetchZoningOverlap(EMPTY_FC, { municipality: m })
+        )));
+        const merged = {
+          type: 'FeatureCollection',
+          features: fcs.flatMap((fc) => fc?.features || []),
+        };
+        setZoningData(map, merged);
+        lastZoningFc = merged;
+        rebuildZoningLegend(merged);
+        zoningLayerLoadedFor = loadKey;
       } catch (err) {
         console.warn('zoning layer refresh failed on muni change', err);
       }
@@ -2240,13 +2269,19 @@ async function refreshOverlayLayersForMuniChange() {
     }
   }
 
-  if ($devplanToggle.classList.contains('active') && devPlanLayerLoadedFor !== muni) {
-    if (muni) {
+  if ($devplanToggle.classList.contains('active') && devPlanLayerLoadedFor !== loadKey) {
+    if (munis.length > 0) {
       try {
-        const fc = await fetchDevPlanOverlap(EMPTY_FC, { municipality: muni });
-        setDevPlanData(map, fc);
-        lastDevPlanFc = fc;
-        devPlanLayerLoadedFor = muni;
+        const fcs = await Promise.all(munis.map((m) => (
+          fetchDevPlanOverlap(EMPTY_FC, { municipality: m })
+        )));
+        const merged = {
+          type: 'FeatureCollection',
+          features: fcs.flatMap((fc) => fc?.features || []),
+        };
+        setDevPlanData(map, merged);
+        lastDevPlanFc = merged;
+        devPlanLayerLoadedFor = loadKey;
       } catch (err) {
         console.warn('dev-plan layer refresh failed on muni change', err);
       }
@@ -2367,13 +2402,14 @@ function resetMascAndGridToggles() {
       });
     }
   }
-  // Survey grid: track muni vs the __PROVINCE__ sentinel. Switching
-  // between "any muni" and a specific muni invalidates the loaded
-  // dataset so the toggle refetches the right scope. When the toggle
-  // is already active at the moment of the muni change, re-trigger
-  // the fetch so the user doesn't have to click off-then-on to see
-  // the new muni's grid.
-  const desiredKey = $municipality.value || '__PROVINCE__';
+  // Survey grid: same cache key as Zoning / Dev Plan / MASC / CLI in
+  // sales-CSV mode — the joined matched-muni list, or the dropdown's
+  // value, or the __PROVINCE__ sentinel for "any muni" loads. A
+  // dropdown change inside sales-CSV mode is a no-op so the multi-
+  // muni grid stays loaded.
+  const desiredKey = (csvMatchedMunis && csvMatchedMunis.length > 0)
+    ? csvMatchedMunis.join('|')
+    : ($municipality.value || '__PROVINCE__');
   if (surveyGridLoadedFor && surveyGridLoadedFor !== desiredKey) {
     surveyGridLoadedFor = null;
     if ($gridToggle.classList.contains('active')) {
@@ -2583,7 +2619,14 @@ async function toggleCliOverlay() {
  * grid. Cached 30 days per-muni.
  */
 async function toggleSurveyGridOverlay() {
+  // In sales-CSV mode load the grid for EVERY matched muni and merge.
+  // Outside sales mode use the dropdown's single value (or the province-
+  // wide fallback when nothing is selected).
+  const munisFromCsv = (csvMatchedMunis && csvMatchedMunis.length > 0)
+    ? csvMatchedMunis.slice()
+    : null;
   const muni = $municipality.value;
+  const munis = munisFromCsv || (muni ? [muni] : []);
   const wasActive = $gridToggle.classList.contains('active');
   const visible = !wasActive;
   $gridToggle.classList.toggle('active', visible);
@@ -2596,15 +2639,16 @@ async function toggleSurveyGridOverlay() {
     return;
   }
 
-  // Use a sentinel string rather than null to track the "province-wide"
-  // load — that way reselecting "any muni" → empty doesn't refetch the
-  // province grid every time.
-  const loadKey = muni || '__PROVINCE__';
+  // Cache key: joined muni list (sales-CSV mode), single muni (normal
+  // mode with a muni selected), or '__PROVINCE__' (nothing selected,
+  // province-wide fallback). Stable across calls so the cache check
+  // skips refetches.
+  const loadKey = munis.length > 0 ? munis.join('|') : '__PROVINCE__';
   if (surveyGridLoadedFor !== loadKey) {
     $gridToggle.disabled = true;
     $gridToggle.textContent = 'Loading…';
     try {
-      if (!muni) {
+      if (munis.length === 0) {
         // No muni selected — load the pre-baked province-wide grid AND
         // the river-lots overlay as static files in parallel. Both are
         // cached in localStorage on first hit; subsequent toggles are
@@ -2623,47 +2667,53 @@ async function toggleSurveyGridOverlay() {
         };
         setSurveyGridData(map, dedupSectionLabels(merged));
       } else {
-        // Pull the muni's full boundary polygon from the cached
-        // FeatureCollection (NOT querySourceFeatures, which returns
-        // viewport-clipped geometry — that's why earlier Hanover queries
-        // only covered the southern part of the RM). The full FC is set
-        // by the boundaries fetch at startup.
-        const muniFeat = muniBoundariesFc?.features?.find(
-          (f) => f.properties?.MUNI_LIST_NAME_WITH_TYPE === muni,
-        ) || null;
-        if (!muniFeat) {
+        // Resolve every muni's boundary feature up front. Any miss is
+        // a hard error for that muni (we can't fetch a survey grid
+        // without the polygon to scope the spatial query). Surface the
+        // names so the user can act, rather than silently dropping a muni.
+        const muniBoundaries = munis.map((m) => ({
+          muni: m,
+          feat: muniBoundariesFc?.features?.find(
+            (f) => f.properties?.MUNI_LIST_NAME_WITH_TYPE === m,
+          ) || null,
+        }));
+        const missing = muniBoundaries.filter((mb) => !mb.feat).map((mb) => mb.muni);
+        if (missing.length > 0) {
           $gridToggle.classList.remove('active');
           $gridToggle.setAttribute('aria-pressed', 'false');
           $gridToggle.disabled = false;
           $gridToggle.textContent = 'Sec-Twp Grid';
-          setCount(`Couldn't locate boundary for ${muni}; can't load the section-township grid.`);
+          setCount(`Couldn't locate boundary for ${missing.join(', ')}; can't load the section-township grid.`);
           return;
         }
-        // Fetch the per-muni section grid AND the province-wide river-
-        // lots file in parallel. The river-lots fetch is cheap on
-        // repeat: same static file as the province path, served from
-        // the browser's HTTP cache after the first hit. We keep only
-        // the river lots whose bounding box intersects the selected
-        // muni so the map source doesn't carry every Manitoba river
-        // lot when only the local handful are visible at this zoom.
-        const [fc, riverFc] = await Promise.all([
-          fetchSurveyGridForMuni(muni, muniFeat),
+        // Per-muni section grid in parallel + a single shared river-lots
+        // fetch (province-wide, browser-cached after first hit). Each
+        // muni's grid lines are built independently; river-lot filtering
+        // happens against the union of every muni's bbox.
+        const [perMuniFcs, riverFc] = await Promise.all([
+          Promise.all(muniBoundaries.map((mb) => fetchSurveyGridForMuni(mb.muni, mb.feat))),
           fetchRiverLots(),
         ]);
-        const rows = surveyFcToRows(fc || { features: [] });
-        const lines = sectionLinesFromRows(rows);
-        const muniBbox = bboxOfFeature(muniFeat);
-        const riverInMuni = (riverFc?.features || []).filter((f) => {
+        const allLines = [];
+        for (const fc of perMuniFcs) {
+          const rows = surveyFcToRows(fc || { features: [] });
+          allLines.push(...sectionLinesFromRows(rows).features);
+        }
+        // River-lot filtering: keep features whose bbox intersects ANY
+        // matched muni's bbox. Bbox checks are cheap; union semantics
+        // keep parishes that straddle multiple munis in scope.
+        const muniBboxes = muniBoundaries.map((mb) => bboxOfFeature(mb.feat));
+        const riverInMunis = (riverFc?.features || []).filter((f) => {
           try {
             const fb = bboxOfFeature(f);
-            return bboxesIntersect(muniBbox, fb);
+            return muniBboxes.some((mbBbox) => bboxesIntersect(mbBbox, fb));
           } catch {
             return false;
           }
         });
         const merged = {
           type: 'FeatureCollection',
-          features: [...(lines.features || []), ...riverInMuni],
+          features: [...allLines, ...riverInMunis],
         };
         setSurveyGridData(map, dedupSectionLabels(merged));
       }
