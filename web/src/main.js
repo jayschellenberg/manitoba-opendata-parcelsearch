@@ -1502,14 +1502,24 @@ function filterCsvRowsByOtherSearches(rows) {
 
     // Size range filter (sales-CSV mode only — the row is hidden by
     // CSS otherwise, but harmless to keep the check unconditional).
-    // Uses parcelAcres() so the assessor's Frontage_or_Area value
-    // wins when present, falling back to turf-derived polygon area.
-    // Parcels with no determinable acreage are excluded when the
-    // filter is active — there's no sensible answer for an unknown
-    // size against a numeric range.
+    // Compares against the SALE-GROUP total acres (the sum of every
+    // parcel in the same sale, stamped by computeSaleGroupTotals as
+    // _saleGroupTotalAcres) rather than the per-parcel acres — a
+    // 5,227,900 sale that bundles a 79.78 ac NE quarter and a 42 ac
+    // SE quarter is meaningfully a 121.78 ac transaction, and the
+    // user-typed range expresses interest in the deal size, not the
+    // individual lot size. Both rows of the multi-parcel sale share
+    // _saleGroupTotalAcres so they pass-or-fail together. Falls back
+    // to per-parcel parcelAcres() only when the row isn't tagged
+    // with a sale group at all (defensive — sales-CSV uploads always
+    // stamp _saleGroupId on every matched feature).
     if (sizeActive) {
-      const ac = parcelAcres(row.parcel);
-      if (!Number.isFinite(ac) || ac < sizeLoAc || ac > sizeHiAc) return false;
+      const groupAc = Number(p._saleGroupTotalAcres);
+      const parcelAc = Number.isFinite(groupAc) && groupAc > 0
+        ? groupAc
+        : parcelAcres(row.parcel);
+      if (p._saleGroupAcresIncomplete) return false;
+      if (!Number.isFinite(parcelAc) || parcelAc < sizeLoAc || parcelAc > sizeHiAc) return false;
     }
 
     // Zone category — needs zoning enrichment. If the row has no
