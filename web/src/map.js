@@ -1541,6 +1541,14 @@ function parcelHtml(p) {
   const groupSize = Number(p._saleGroupSize);
   if (Number.isFinite(groupSize) && groupSize > 1) {
     lines.push(`<strong>Sale group</strong> ${escapeHtml(groupSize)} parcels`);
+    // Rate per lot is the same regardless of whether acres are
+    // complete — show it on its own line so the $/ac · $/sf rollup
+    // can independently report 'insufficient data' below.
+    const ppl = Number(p._saleGroupPpl);
+    if (Number.isFinite(ppl) && ppl > 0) {
+      const pplFmt = '$' + Math.round(ppl).toLocaleString('en-US');
+      lines.push(`<strong>Per lot</strong> ${escapeHtml(pplFmt)}/parcel`);
+    }
     if (p._saleGroupAcresIncomplete) {
       lines.push(`<em style="color:#888">$/ac · $/sf — insufficient data (one or more parcels missing acres)</em>`);
     } else if (p._saleGroupPpa != null && p._saleGroupPpsf != null) {

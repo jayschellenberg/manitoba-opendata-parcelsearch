@@ -494,9 +494,10 @@ const SORT_KEYS = {
   report:  (r) => strKey(r.parcel.properties.Asmt_Rpt_Url),
   saledate:    (r) => strKey(r.parcel.properties._saleDate),
   saleprice:   (r) => finiteOrNeg(parseTotalValue(r.parcel.properties._salePrice)),
-  groupsize:   (r) => finiteOrNeg(r.parcel.properties._saleGroupSize),
-  grouppriceac:  (r) => finiteOrNeg(r.parcel.properties._saleGroupPpa),
-  grouppricesf:  (r) => finiteOrNeg(r.parcel.properties._saleGroupPpsf),
+  groupsize:    (r) => finiteOrNeg(r.parcel.properties._saleGroupSize),
+  grouppricelot:(r) => finiteOrNeg(r.parcel.properties._saleGroupPpl),
+  grouppriceac: (r) => finiteOrNeg(r.parcel.properties._saleGroupPpa),
+  grouppricesf: (r) => finiteOrNeg(r.parcel.properties._saleGroupPpsf),
 };
 
 function strKey(v) {
@@ -1358,6 +1359,18 @@ function computeSaleGroupTotals(parcelFc) {
     } else {
       f.properties._saleGroupPpa  = null;
       f.properties._saleGroupPpsf = null;
+    }
+    // $/lot — total sale price ÷ number of parcels in the group.
+    // Doesn't depend on acres so it works even when one or more
+    // parcels in the group are missing _acres (acresIncomplete=true).
+    if (
+      g.priceNum != null &&
+      Number.isFinite(g.priceNum) &&
+      g.oids.length > 0
+    ) {
+      f.properties._saleGroupPpl = g.priceNum / g.oids.length;
+    } else {
+      f.properties._saleGroupPpl = null;
     }
   }
 }
@@ -2410,6 +2423,9 @@ function renderTable(rows) {
     );
     groupSizeCell.classList.add('sales-only');
     tr.appendChild(groupSizeCell);
+    const pplCell = td(formatGroupPpl(p), 'num');
+    pplCell.classList.add('sales-only');
+    tr.appendChild(pplCell);
     const ppsfCell = td(formatGroupPpsf(p), 'num');
     ppsfCell.classList.add('sales-only');
     tr.appendChild(ppsfCell);
@@ -3181,6 +3197,16 @@ function formatGroupPpsf(p) {
   return '$' + ppsf.toFixed(2);
 }
 
+/** Group $/Lot table cell — sale price ÷ number of parcels in the
+ *  group. Doesn't depend on acres so it works even when acres are
+ *  incomplete (no '—' fallback needed). */
+function formatGroupPpl(p) {
+  if (!p?._saleGroupSize) return null;
+  const ppl = Number(p._saleGroupPpl);
+  if (!Number.isFinite(ppl) || ppl <= 0) return null;
+  return '$' + Math.round(ppl).toLocaleString('en-US');
+}
+
 // Dwelling units — show 0 explicitly (it's a meaningful "vacant" signal,
 // not "unknown"). Null/undefined renders as the dash.
 function formatDu(v) {
@@ -3236,7 +3262,7 @@ function exportCsv() {
     csvAssessHeader(currentRows), 'Asmt Report URL',
     'Walkscore URL', 'Flood-Map URL',
     ...(inSalesMode
-      ? ['Sale Date', 'Sale Price', 'Group #', 'Group $/SF', 'Group $/Acre']
+      ? ['Sale Date', 'Sale Price', 'Group #', 'Group $/Lot', 'Group $/SF', 'Group $/Acre']
       : []),
   ];
   const lines = [header.map(csvCell).join(',')];
@@ -3272,6 +3298,7 @@ function exportCsv() {
             p._saleDate ?? '',
             p._salePrice ?? '',
             p._saleGroupSize ?? '',
+            p._saleGroupPpl != null ? Math.round(p._saleGroupPpl) : '',
             p._saleGroupAcresIncomplete ? '' : (p._saleGroupPpsf != null ? p._saleGroupPpsf.toFixed(2) : ''),
             p._saleGroupAcresIncomplete ? '' : (p._saleGroupPpa  != null ? Math.round(p._saleGroupPpa)   : ''),
           ]
