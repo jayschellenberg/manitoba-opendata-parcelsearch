@@ -984,17 +984,16 @@ export function initMap(container, { onFeatureClick } = {}) {
         // feature carries a `groupHover` state — used by the sales-
         // CSV multi-parcel sibling-highlight: hovering one parcel in
         // a group lights up every parcel in the same sale at the same
-        // time. Both values are 20% more transparent than the previous
-        // 0.32 / 0.80 pair (so 0.26 default / 0.64 on hover) — yellow
-        // was reading too saturated on satellite basemap especially
-        // when stacked under MASC / CLI overlays.
+        // time. Default 0.20 keeps the fill faint enough that MASC /
+        // CLI / Zoning overlays underneath still read; hover bumps to
+        // 0.60 so the lit-up group is unmistakable.
         paint: {
           'fill-color': '#ffea00',
           'fill-opacity': [
             'case',
             ['boolean', ['feature-state', 'groupHover'], false],
-            0.64,
-            0.26,
+            0.6,
+            0.2,
           ],
         },
       });
@@ -1004,19 +1003,18 @@ export function initMap(container, { onFeatureClick } = {}) {
         source: 'parcels',
         // Black outline on every result parcel for maximum contrast
         // against both Streets and Satellite basemaps. Width jumps
-        // 1.9 → 3.4 px on the groupHover feature-state so a hovered
+        // 1.5 → 2.5 px on the groupHover feature-state so a hovered
         // sale-group's parcels still read as visually distinct from
-        // the rest of the result set without changing colour. The
-        // non-hover width is 10% thinner than the previous 2.1 — at
-        // dense urban CSV zoom levels the black outline was still
-        // dominating thin yellow fills.
+        // the rest of the result set without changing colour. Both
+        // widths are tuned to stay subordinate to the new lighter
+        // yellow fill — the outline is a frame, not the main signal.
         paint: {
           'line-color': '#000000',
           'line-width': [
             'case',
             ['boolean', ['feature-state', 'groupHover'], false],
-            3.4,
-            1.9,
+            2.5,
+            1.5,
           ],
         },
       });
