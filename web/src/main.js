@@ -1357,31 +1357,41 @@ async function handleSalesUpload(file) {
     const baseMsg = `${totalMatched} of ${records.length} sales plotted${unmatchedNote}`;
     renderUnmatchedPanel(unmatchedRecords);
 
-    // If every matched parcel sits in a single muni, sync the
-    // dropdown to that muni so muni-scoped affordances (Roll Layer
-    // / MASC Rating / CLI Soil / Muni Website / PD Website / the
-    // Other Searches category dropdown) all enable themselves the
-    // same way they would after a regular search. The 'change'
-    // dispatch fires the existing listeners so overlay state
-    // refreshes correctly. Multi-muni uploads leave the dropdown
-    // empty (Roll Layer is single-muni-scoped; we'd otherwise have
-    // to pick a winner arbitrarily).
-    const matchedMunis = [...new Set(
-      results.filter((r) => r.matched > 0).map((r) => r.muni)
-    )];
-    let inputsMuni = '';
-    if (matchedMunis.length === 1) {
-      const dominant = matchedMunis[0];
-      if ($municipality.value !== dominant) {
-        $municipality.value = dominant;
+    // Auto-set the muni dropdown to a "dominant" muni — the one with
+    // the most matched parcels in the upload. Single-muni uploads
+    // continue to behave exactly the same (their only muni is the
+    // dominant). Multi-muni uploads now also get a dominant muni
+    // set so the muni-scoped affordances (MASC Rating, CLI Soil,
+    // Muni Website, PD Website, the Other-Searches category dropdown,
+    // and the size/vacant filter sales-only rows) all enable
+    // themselves instead of staying disabled until the user manually
+    // picks a muni. The dropdown stays interactive so the user can
+    // switch to a different muni in the upload to view its overlays.
+    //
+    // Two things stay scoped to truly-single-muni uploads, marked
+    // with the `isSingleMuni` flag below: (a) the `inputsMuni` passed
+    // to enrichOverlays — multi-muni needs the per-parcel spatial
+    // query path so zoning/dev-plan reach every parcel, not just the
+    // dominant's; (b) the Roll Layer auto-toggle — Roll Layer renders
+    // one muni's parcel fabric at a time, and surfacing only the
+    // dominant's would mislead in a multi-muni context.
+    const matchedByMuni = results
+      .filter((r) => r.matched > 0)
+      .slice()
+      .sort((a, b) => b.matched - a.matched || a.muni.localeCompare(b.muni));
+    const matchedMuniCount = new Set(matchedByMuni.map((r) => r.muni)).size;
+    const isSingleMuni = matchedMuniCount === 1;
+    let dominantMuni = '';
+    if (matchedByMuni.length > 0) {
+      dominantMuni = matchedByMuni[0].muni;
+      if ($municipality.value !== dominantMuni) {
+        $municipality.value = dominantMuni;
         $municipality.dispatchEvent(new Event('change'));
       }
-      inputsMuni = dominant;
     }
-
-    // Pass the resolved muni (or empty for multi-muni uploads) so
-    // enrichOverlays can route through the bulk-by-muni overlay path
-    // when applicable.
+    // Only pass the muni to enrichOverlays when the upload is truly
+    // single-muni — multi-muni needs the cross-muni spatial query.
+    const inputsMuni = isSingleMuni ? dominantMuni : '';
     const fakeInputs = { municipality: inputsMuni };
 
     if (parcelFc.features.length > ENRICHMENT_THRESHOLD) {
@@ -1400,8 +1410,10 @@ async function handleSalesUpload(file) {
 
     // Mirror runSearch's auto-toggle of the Roll Layer when a single
     // muni is in scope — gives the user the surrounding parcel
-    // fabric for context without an extra click.
-    if (inputsMuni && $muniParcelsToggle && !$muniParcelsToggle.disabled
+    // fabric for context without an extra click. Skipped for multi-
+    // muni uploads (see comment above the dominant-muni block).
+    if (isSingleMuni && dominantMuni
+        && $muniParcelsToggle && !$muniParcelsToggle.disabled
         && !$muniParcelsToggle.classList.contains('active')) {
       toggleAuxOverlay('muniParcels');
     }
