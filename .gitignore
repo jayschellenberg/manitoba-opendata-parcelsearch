@@ -31,6 +31,13 @@ ParcelCrossRef_*.csv
 # build pulls it from the build output rather than tracking it here.
 web/public/data/legal-index.json
 
+# Generated assessment index — built by r/build_assessment_index.R
+# from the MAO scrape's tax_history.parquet. ~17 MB / 3.5 MB gzipped.
+# Powers the sales-CSV "Vacant land only" filter (and any future
+# value-based affordances). Production fetches via the
+# api/assessment-index Edge Function from a GitHub Release asset.
+web/public/data/assessment-index.json
+
 # Generated per-municipality MASC soil-rating shards built by
 # r/build_masc_shards.R from masc_soil_ratings_with_latlon.csv.
 # ~14 MB across ~99 shards; max single file ~448 KB. Tracked in
