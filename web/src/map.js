@@ -992,8 +992,8 @@ export function initMap(container, { onFeatureClick } = {}) {
           'fill-opacity': [
             'case',
             ['boolean', ['feature-state', 'groupHover'], false],
-            0.6,
-            0.2,
+            0.5,
+            0.22,
           ],
         },
       });
@@ -1013,8 +1013,8 @@ export function initMap(container, { onFeatureClick } = {}) {
           'line-width': [
             'case',
             ['boolean', ['feature-state', 'groupHover'], false],
-            2.5,
-            1.5,
+            2.75,
+            1.75,
           ],
         },
       });
