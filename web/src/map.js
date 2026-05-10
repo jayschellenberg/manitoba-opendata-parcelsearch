@@ -1002,16 +1002,18 @@ export function initMap(container, { onFeatureClick } = {}) {
         source: 'parcels',
         // Black outline on every result parcel for maximum contrast
         // against both Streets and Satellite basemaps. Width jumps
-        // 2.5 → 4 px on the groupHover feature-state so a hovered
+        // 2.1 → 3.4 px on the groupHover feature-state so a hovered
         // sale-group's parcels still read as visually distinct from
-        // the rest of the result set without changing colour.
+        // the rest of the result set without changing colour. (Both
+        // widths are ~15% thinner than the previous 2.5 / 4 values,
+        // which were reading as visually heavy on dense urban CSVs.)
         paint: {
           'line-color': '#000000',
           'line-width': [
             'case',
             ['boolean', ['feature-state', 'groupHover'], false],
-            4,
-            2.5,
+            3.4,
+            2.1,
           ],
         },
       });
@@ -1130,9 +1132,10 @@ export function initMap(container, { onFeatureClick } = {}) {
           clearGroupHover();
           return;
         }
-        // Light up sibling parcels when this hit is part of a multi-
-        // parcel sale group. Single-parcel sales (or non-sales-mode
-        // searches) skip this — _saleGroupRollIds is absent.
+        // Light up parcels that are part of a sale group on hover —
+        // single-parcel sales get their one parcel highlighted, multi-
+        // parcel sales get every sibling lit at once. Non-sales searches
+        // skip this (no _saleGroupRollIds stamped).
         const parcelHit = hits.find((h) => h.layer.id === 'parcel-fill');
         const oids = readSaleGroupOids(parcelHit?.properties);
         // Always-on diagnostic snapshot — readable as window.__lastHover
@@ -1153,7 +1156,7 @@ export function initMap(container, { onFeatureClick } = {}) {
           wouldHighlight: !!(oids && oids.length > 1),
         };
         if (window.__hoverDebug) console.log('[hover]', window.__lastHover);
-        if (oids && oids.length > 1) setGroupHover(oids);
+        if (oids && oids.length >= 1) setGroupHover(oids);
         else clearGroupHover();
         map.getCanvas().style.cursor = 'pointer';
         // Parcel info, then a separator line per overlay hit (deduped by layer).
@@ -1564,14 +1567,23 @@ export function parcelHtml(p) {
   if (p._primaryProperty) {
     lines.push(`<strong>Primary Property</strong> ${escapeHtml(p._primaryProperty)}`);
   }
-  // Multi-parcel sale group header — only shown when the parcel is
-  // actually part of a multi-parcel sale. The per-rate breakdown
-  // (Price/SF · Price/Acre · Price/Lot) is appended at the very
-  // bottom of the popup below, after the parcel-detail lines, so
+  // Multi-parcel sale: list every roll # in the sale on a single line
+  // formatted as `Parcels: (N) — roll1, roll2, …`. Only shown when the
+  // group has more than one parcel — for a single-parcel sale the
+  // existing Roll # line at the top already covers it. The per-rate
+  // breakdown (Price/SF · Price/Acre · Price/Lot) is appended at the
+  // very bottom of the popup below, after the parcel-detail lines, so
   // those summary rates are easy to find regardless of group size.
   const groupSize = Number(p._saleGroupSize);
   if (Number.isFinite(groupSize) && groupSize > 1) {
-    lines.push(`<strong>Sale group</strong> ${escapeHtml(groupSize)} parcels`);
+    const rolls = readSaleGroupRolls(p);
+    if (rolls && rolls.length > 0) {
+      lines.push(`<strong>Parcels:</strong> (${escapeHtml(groupSize)}) — ${escapeHtml(rolls.join(', '))}`);
+    } else {
+      // Fallback when the rolls list didn't survive tile encoding — keeps
+      // the user informed of the group size at least.
+      lines.push(`<strong>Parcels:</strong> (${escapeHtml(groupSize)})`);
+    }
   }
   if (p._legalDescription)  lines.push(`<strong>Legal</strong> ${escapeHtml(p._legalDescription)}`);
   if (p._certificatesOfTitle) lines.push(`<strong>Title</strong> ${escapeHtml(p._certificatesOfTitle)}`);
@@ -1916,8 +1928,18 @@ function safeExternalUrl(raw) {
  *  object with non-primitive values JSON-stringified, so an array
  *  written by main.js arrives as a string here and needs parsing. */
 function readSaleGroupOids(props) {
-  if (!props) return null;
-  const raw = props._saleGroupRollIds;
+  return readJsonArrayProp(props?._saleGroupRollIds);
+}
+
+/** Read the displayable roll-number array off a parcel feature's
+ *  properties. Same encoding caveat as readSaleGroupOids — properties
+ *  ferried through the geojson tile pipeline get JSON-stringified. */
+function readSaleGroupRolls(props) {
+  return readJsonArrayProp(props?._saleGroupRolls);
+}
+
+function readJsonArrayProp(raw) {
+  if (raw == null) return null;
   if (Array.isArray(raw)) return raw;
   if (typeof raw === 'string' && raw.startsWith('[')) {
     try {

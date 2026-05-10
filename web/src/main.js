@@ -1587,6 +1587,7 @@ function computeSaleGroupTotals(parcelFc) {
     if (!groups.has(gid)) {
       groups.set(gid, {
         oids: [],
+        rolls: [],
         totalAcres: 0,
         priceNum: parseTotalValue(f.properties?._salePrice),
         acresIncomplete: false,
@@ -1601,6 +1602,11 @@ function computeSaleGroupTotals(parcelFc) {
     }
     const g = groups.get(gid);
     g.oids.push(f.properties?.OBJECTID);
+    // Track the display-form roll number alongside the OID so the
+    // popup can render "Parcels (N) — 123456, 789012, ..." for
+    // multi-parcel sales without each parcel needing to scan its
+    // siblings at popup-render time.
+    g.rolls.push(displayRoll(f.properties?.Roll_No_Txt));
     const ac = Number(f.properties?._acres);
     if (Number.isFinite(ac) && ac > 0) g.totalAcres += ac;
     else g.acresIncomplete = true;
@@ -1629,6 +1635,7 @@ function computeSaleGroupTotals(parcelFc) {
     if (!g) continue;
     f.properties._saleGroupSize          = g.oids.length;
     f.properties._saleGroupRollIds       = g.oids;
+    f.properties._saleGroupRolls         = g.rolls;
     f.properties._saleGroupTotalPriceNum = g.priceNum;
     f.properties._saleGroupTotalAcres    = g.totalAcres;
     f.properties._saleGroupAcresIncomplete = g.acresIncomplete;
