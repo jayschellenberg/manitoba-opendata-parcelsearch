@@ -73,6 +73,7 @@ import {
   setSurveyGridVisible,
   flyToFeature,
   buildZoneCodePaint,
+  parcelHtml,
 } from './map.js';
 import {
   hasLegalCriteria,
@@ -106,6 +107,14 @@ const $zoneCategory  = document.getElementById('zone-category');
 const $changedStatus = document.getElementById('changed-status');
 const $duMode        = document.getElementById('du-mode');
 const $duMin         = document.getElementById('du-min');
+// Sales-CSV size-range filter. Visible only when body.sales-mode is set
+// (i.e. after a sales-CSV upload). Empty Low → 0; empty High → ∞. The
+// `_uom` state lives on the pill container; toggleSizeUom() flips both
+// buttons' .active class and updates the dataset attribute.
+const $sizeLow       = document.getElementById('size-low');
+const $sizeHigh      = document.getElementById('size-high');
+const $sizeUomAcres  = document.getElementById('size-uom-acres');
+const $sizeUomSf     = document.getElementById('size-uom-sf');
 const $search        = document.getElementById('search');
 const $clear         = document.getElementById('clear');
 const $export        = document.getElementById('export');
@@ -755,10 +764,32 @@ $duMode.addEventListener('change', () => {
 // Other Searches filters re-filters the displayed table + map subset
 // against the loaded sales without re-fetching. Outside CSV mode
 // these listeners are no-ops (Search button still drives the SQL).
-for (const el of [$zoneCategory, $changedStatus, $duMode, $duMin].filter(Boolean)) {
+for (const el of [
+  $zoneCategory, $changedStatus, $duMode, $duMin, $sizeLow, $sizeHigh,
+].filter(Boolean)) {
   el.addEventListener('change', refilterCsvIfActive);
   el.addEventListener('input',  refilterCsvIfActive);
 }
+
+// UofM toggle pill — flips between Acres and Sq Ft. Click handler
+// updates the .active class on both buttons and re-runs the CSV filter
+// so the Low/High inputs (which are entered in the chosen unit) are
+// re-applied immediately. The active unit is read off the pill's
+// dataset.uom attribute so other code can introspect it without
+// querying both buttons.
+function setSizeUom(uom) {
+  if (uom !== 'acres' && uom !== 'sf') return;
+  const pill = $sizeUomAcres?.parentElement;
+  if (pill) pill.dataset.uom = uom;
+  if ($sizeUomAcres) $sizeUomAcres.classList.toggle('active', uom === 'acres');
+  if ($sizeUomSf)    $sizeUomSf.classList.toggle('active',    uom === 'sf');
+  refilterCsvIfActive();
+}
+if ($sizeUomAcres) $sizeUomAcres.addEventListener('click', () => setSizeUom('acres'));
+if ($sizeUomSf)    $sizeUomSf.addEventListener('click',    () => setSizeUom('sf'));
+// Stamp the initial UofM onto the pill container so getSizeUom() reads
+// 'acres' before the user clicks anything.
+setSizeUom('acres');
 // Filter out any nulls so the keydown wiring tolerates removed inputs
 // (legal/lot/block/plan/title are currently absent from the markup).
 // When the user tabs into the To field after typing a number into From,
@@ -886,6 +917,8 @@ async function runSearch() {
   // Drop the sales-mode column reveal if a previous run came from a
   // sales CSV upload — a normal search shouldn't carry those columns.
   if ($resultsTable) $resultsTable.classList.remove('sales-mode');
+  // Hide the size-range filter row since it's CSV-only.
+  document.body.classList.remove('sales-mode');
   // Clear the CSV-mode state so the Other Searches filter listeners
   // stop trying to re-filter the previous upload's row set.
   csvFullRows = null;
@@ -1221,6 +1254,11 @@ async function handleSalesUpload(file) {
 
     // Activate the Sale Date / Sale Price columns.
     if ($resultsTable) $resultsTable.classList.add('sales-mode');
+    // Reveal the sidebar's size-range filter row (gated by CSS on
+    // body.sales-mode). Toggling on body rather than the sidebar
+    // alone keeps the rule shape simple and lets future sales-only
+    // affordances anywhere in the layout share the same gate.
+    document.body.classList.add('sales-mode');
 
     // Render parcels-only rows immediately, then run the same
     // overlay enrichment pipeline runSearch uses (respecting the same
@@ -1292,6 +1330,23 @@ async function handleSalesUpload(file) {
     // then surface 'insufficient data' rather than a misleading
     // partial-acreage rate.
     computeSaleGroupTotals(parcelFc);
+
+    // Runtime debugging — expose the post-stamp parcelFc + parcelHtml so the
+    // tooltip / hover path can be inspected from the console without
+    // re-running the upload pipeline.
+    window.__parcelFc = parcelFc;
+    window.__parcelHtml = parcelHtml;
+
+    // Re-push the parcels source to MapLibre so the hover handler can
+    // see _saleGroupRollIds + per-group totals on the rendered features.
+    // setMapData() was already called pre-enrichment (line ~1229) and
+    // again inside enrichOverlays (after the zoning/dev-plan join lands),
+    // but both fired BEFORE computeSaleGroupTotals stamped the group
+    // properties — so the source still held the pre-stamp shape and the
+    // multi-parcel-sale sibling highlight never fired on hover. Pushing
+    // again here syncs the map source with the now-stamped parcelFc;
+    // `fit: false` keeps the viewport where the user already is.
+    setMapData(parcelFc, lastZoningFc || EMPTY_FC, lastDevPlanFc || EMPTY_FC, { fit: false });
 
     // Lock in the enriched row set so post-upload Other-Searches
     // filter changes can re-filter without another fetch. We snapshot
@@ -1419,6 +1474,20 @@ function filterCsvRowsByOtherSearches(rows) {
   const duMode  = $duMode?.value || '';
   const duMin   = parseInt($duMin?.value || '', 10);
 
+  // Size range — Low/High are entered in the chosen UofM (acres or sq
+  // ft); convert to acres for comparison since parcelAcres() returns
+  // acres. Empty Low → 0; empty High → ∞. The filter only fires when
+  // at least one of Low/High is a finite positive number; both empty
+  // is a no-op so users who haven't touched the inputs aren't surprised
+  // by parcels disappearing.
+  const sizeLowRaw  = parseFloat($sizeLow?.value);
+  const sizeHighRaw = parseFloat($sizeHigh?.value);
+  const sizeUom     = $sizeUomAcres?.parentElement?.dataset?.uom || 'acres';
+  const toAcres = (v) => (sizeUom === 'sf' ? v / 43560 : v);
+  const sizeActive = Number.isFinite(sizeLowRaw) || Number.isFinite(sizeHighRaw);
+  const sizeLoAc = Number.isFinite(sizeLowRaw)  ? toAcres(sizeLowRaw)  : 0;
+  const sizeHiAc = Number.isFinite(sizeHighRaw) ? toAcres(sizeHighRaw) : Infinity;
+
   return rows.filter((row) => {
     const p = row.parcel?.properties || {};
 
@@ -1429,6 +1498,18 @@ function filterCsvRowsByOtherSearches(rows) {
     } else if (duMode === 'min' && Number.isFinite(duMin) && duMin > 0) {
       const du = Number(p.Dwelling_Units);
       if (!(Number.isFinite(du) && du >= duMin)) return false;
+    }
+
+    // Size range filter (sales-CSV mode only — the row is hidden by
+    // CSS otherwise, but harmless to keep the check unconditional).
+    // Uses parcelAcres() so the assessor's Frontage_or_Area value
+    // wins when present, falling back to turf-derived polygon area.
+    // Parcels with no determinable acreage are excluded when the
+    // filter is active — there's no sensible answer for an unknown
+    // size against a numeric range.
+    if (sizeActive) {
+      const ac = parcelAcres(row.parcel);
+      if (!Number.isFinite(ac) || ac < sizeLoAc || ac > sizeHiAc) return false;
     }
 
     // Zone category — needs zoning enrichment. If the row has no
@@ -1774,9 +1855,9 @@ async function enrichFcWithLegals(fc) {
 
 // ---------- Map / overlay helpers ----------
 
-function setMapData(parcelFc, zoningFc, devPlanFc) {
+function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
   mapReady.then(() => {
-    showResults(map, parcelFc);
+    showResults(map, parcelFc, opts);
     setZoningData(map, zoningFc);
     setDevPlanData(map, devPlanFc);
   });
