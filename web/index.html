@@ -204,6 +204,15 @@
                  #results based on whether any current row has _saleDate). -->
             <th data-col="saledate"  class="sales-only" title="Sale Date (from uploaded CSV)">Sale Date</th>
             <th data-col="saleprice" class="sales-only" title="Sale Price / Consideration (from uploaded CSV)">Sale Price</th>
+            <!-- Multi-parcel-sale group columns — populated by
+                 computeSaleGroupTotals after a sales CSV upload. Group
+                 Size = N parcels in the same sale; $/ac = total
+                 sale-price ÷ total acres across the group; $/sf is
+                 the same divided by 43560. Single-parcel sales show
+                 size 1 and the per-parcel rates. -->
+            <th data-col="groupsize" class="sales-only" title="Number of parcels in the same sale (1 = single-parcel sale)">Group #</th>
+            <th data-col="grouppricesf" class="sales-only" title="Sale Price ÷ total square footage of every parcel in the same sale">$/SF</th>
+            <th data-col="grouppriceac" class="sales-only" title="Sale Price ÷ total acres of every parcel in the same sale">$/Acre</th>
             <th data-col="address">Address</th>
             <!-- Legal and Title populate from the MAO scrape legal-index
                  join in main.js's attachLegalMetadata(). renderTable

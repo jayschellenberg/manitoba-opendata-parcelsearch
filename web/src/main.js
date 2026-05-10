@@ -492,6 +492,11 @@ const SORT_KEYS = {
   flood:   (r) => strKey(r.parcel.geometry ? '1' : r.parcel.properties.Property_Address),
   value:   (r) => finiteOrNeg(parseTotalValue(r.parcel.properties.Total_Value)),
   report:  (r) => strKey(r.parcel.properties.Asmt_Rpt_Url),
+  saledate:    (r) => strKey(r.parcel.properties._saleDate),
+  saleprice:   (r) => finiteOrNeg(parseTotalValue(r.parcel.properties._salePrice)),
+  groupsize:   (r) => finiteOrNeg(r.parcel.properties._saleGroupSize),
+  grouppriceac:  (r) => finiteOrNeg(r.parcel.properties._saleGroupPpa),
+  grouppricesf:  (r) => finiteOrNeg(r.parcel.properties._saleGroupPpsf),
 };
 
 function strKey(v) {
@@ -1030,9 +1035,14 @@ async function runSearch() {
     // search-result parcels so both feature sources read the same.
     // Also stamp _acres on properties so the hover popup can show
     // Acres / SF without round-tripping through the feature object.
+    // OBJECTID is lifted to feature.id so setFeatureState() works
+    // for the sales-CSV multi-parcel sibling highlight.
     for (const f of parcelFc.features) {
       const oid = f.properties?.OBJECTID;
-      if (oid != null) f.properties._rowKey = `p:${oid}`;
+      if (oid != null) {
+        f.properties._rowKey = `p:${oid}`;
+        f.id = oid;
+      }
       const r = f.properties?.Roll_No_Txt;
       if (typeof r === 'string') {
         f.properties._rollDisplay = r.endsWith('.000') ? r.slice(0, -4) : r;
@@ -1141,9 +1151,18 @@ async function handleSalesUpload(file) {
         const roll = f.properties?.Roll_No_Txt;
         const sale = roll ? saleByRoll.get(roll) : null;
         if (sale) {
+          // Group date/price: parseSalesCsv already copied the
+          // primary's saleDate + consideration onto every member of
+          // the group, so reading them here works regardless of
+          // whether this row was the primary or a continuation.
           f.properties._saleDate        = sale.saleDate || null;
           f.properties._salePrice       = sale.consideration || null;
           f.properties._primaryProperty = sale.primaryProperty || null;
+          // Group identity for the on-hover sibling-highlight + the
+          // group price-per-acre / price-per-sf table columns. Used
+          // by handleSalesUpload's group-totals pass below.
+          f.properties._saleGroupId  = sale.groupId;
+          f.properties._saleIsPrimary = sale.isPrimary;
           matched++;
         }
       }
@@ -1168,10 +1187,16 @@ async function handleSalesUpload(file) {
     }
 
     // Stamp _rowKey + _rollDisplay + _acres so the table/map pipeline
-    // behaves the same as a regular search.
+    // behaves the same as a regular search. Also lift OBJECTID up to
+    // the GeoJSON feature.id so MapLibre's setFeatureState() can
+    // address each parcel by id (used for the multi-parcel-sale
+    // sibling highlight on hover).
     for (const f of parcelFc.features) {
       const oid = f.properties?.OBJECTID;
-      if (oid != null) f.properties._rowKey = `p:${oid}`;
+      if (oid != null) {
+        f.properties._rowKey = `p:${oid}`;
+        f.id = oid;
+      }
       const r = f.properties?.Roll_No_Txt;
       if (typeof r === 'string') {
         f.properties._rollDisplay = r.endsWith('.000') ? r.slice(0, -4) : r;
@@ -1249,14 +1274,91 @@ async function handleSalesUpload(file) {
       toggleAuxOverlay('muniParcels');
     }
 
+    // Compute multi-parcel sale group totals AFTER the enrichment
+    // pipeline has stamped _acres on every parcel. Each parcel in a
+    // group gets _saleGroupSize, _saleGroupTotalAcres, _saleGroupPpa
+    // (price/acre), _saleGroupPpsf (price/sf), and a list of sibling
+    // OBJECTIDs for the on-hover highlight. _saleGroupAcresIncomplete
+    // flips true if any group member's acreage is missing — popups
+    // then surface 'insufficient data' rather than a misleading
+    // partial-acreage rate.
+    computeSaleGroupTotals(parcelFc);
+
     // Lock in the enriched row set so post-upload Other-Searches
     // filter changes can re-filter without another fetch. We snapshot
     // currentRows (set by renderTable inside enrichOverlays) rather
     // than recomputing — that way zoning/dev-plan joins aren't lost.
     csvFullRows = currentRows.slice();
     csvFullBaseMsg = baseMsg;
+    // Render once more so the new group columns / popup data show
+    // up immediately. A no-op for the table if already rendered, but
+    // updates the Group Size / $/ac / $/sf cells that depend on the
+    // group totals just computed.
+    renderTable(currentRows);
   } finally {
     setBusy(false);
+  }
+}
+
+/**
+ * Walk the post-enrichment parcel FC and compute per-group rollups
+ * for multi-parcel sales:
+ *   _saleGroupSize          — N parcels in this sale
+ *   _saleGroupTotalAcres    — sum of _acres across the group
+ *   _saleGroupTotalPriceNum — parsed numeric of consideration
+ *   _saleGroupPpa           — total price / total acres
+ *   _saleGroupPpsf          — total price / (total acres × 43560)
+ *   _saleGroupRollIds       — array of sibling OBJECTIDs (for the
+ *                             hover-highlight feature-state lookup)
+ *   _saleGroupAcresIncomplete — true if any group member is missing
+ *                               _acres; ppa/ppsf left null and the
+ *                               popup says 'insufficient data'
+ * Single-parcel sales (groupId unique to one parcel) get the same
+ * stamps but with size=1; UI then shows just the per-parcel price.
+ */
+function computeSaleGroupTotals(parcelFc) {
+  const groups = new Map();
+  // Pass 1: collect group members + accumulate totals.
+  for (const f of parcelFc?.features || []) {
+    const gid = f.properties?._saleGroupId;
+    if (gid == null) continue;
+    if (!groups.has(gid)) {
+      groups.set(gid, {
+        oids: [],
+        totalAcres: 0,
+        priceNum: parseTotalValue(f.properties?._salePrice),
+        acresIncomplete: false,
+      });
+    }
+    const g = groups.get(gid);
+    g.oids.push(f.properties?.OBJECTID);
+    const ac = Number(f.properties?._acres);
+    if (Number.isFinite(ac) && ac > 0) g.totalAcres += ac;
+    else g.acresIncomplete = true;
+  }
+  // Pass 2: stamp each parcel with its group's rollups.
+  for (const f of parcelFc?.features || []) {
+    const gid = f.properties?._saleGroupId;
+    if (gid == null) continue;
+    const g = groups.get(gid);
+    if (!g) continue;
+    f.properties._saleGroupSize          = g.oids.length;
+    f.properties._saleGroupRollIds       = g.oids;
+    f.properties._saleGroupTotalPriceNum = g.priceNum;
+    f.properties._saleGroupTotalAcres    = g.totalAcres;
+    f.properties._saleGroupAcresIncomplete = g.acresIncomplete;
+    if (
+      g.priceNum != null &&
+      Number.isFinite(g.priceNum) &&
+      g.totalAcres > 0 &&
+      !g.acresIncomplete
+    ) {
+      f.properties._saleGroupPpa  = g.priceNum / g.totalAcres;
+      f.properties._saleGroupPpsf = g.priceNum / (g.totalAcres * 43560);
+    } else {
+      f.properties._saleGroupPpa  = null;
+      f.properties._saleGroupPpsf = null;
+    }
   }
 }
 
@@ -1371,21 +1473,43 @@ function parseSalesCsv(text) {
   };
   if (i.rollNumber < 0 || i.municipality < 0) return [];
 
+  // Multi-parcel sales: a row with a Sale Date or Consideration starts
+  // a new sale group; rows that follow it with BOTH fields blank are
+  // continuation parcels in the same sale (the date/price applies to
+  // the whole group). Each record gets a sequential `groupId`, an
+  // `isPrimary` flag (true on the row that carried the date+price),
+  // and the group's date+price copied onto every member so downstream
+  // code doesn't need to hunt the primary.
   const out = [];
+  let groupCounter = 0;
+  let currentGroup = null;
   for (let r = 1; r < rows.length; r++) {
     const row = rows[r];
     if (!row || row.length === 0) continue;
-    const rollRaw = (row[i.rollNumber] || '').trim();
-    const muni    = (row[i.municipality] || '').trim();
+    const rollRaw      = (row[i.rollNumber]      || '').trim();
+    const muni         = (row[i.municipality]    || '').trim();
+    const saleDate     = i.saleDate      >= 0 ? (row[i.saleDate]      || '').trim() : '';
+    const consideration= i.consideration >= 0 ? (row[i.consideration] || '').trim() : '';
     if (!rollRaw || !muni) continue;
+    const hasSaleData = saleDate !== '' || consideration !== '';
+    if (hasSaleData || currentGroup == null) {
+      groupCounter++;
+      currentGroup = {
+        id: groupCounter,
+        saleDate,
+        consideration,
+      };
+    }
     out.push({
-      saleDate:         i.saleDate         >= 0 ? (row[i.saleDate]         || '').trim() : '',
-      consideration:    i.consideration    >= 0 ? (row[i.consideration]    || '').trim() : '',
+      saleDate:         currentGroup.saleDate,
+      consideration:    currentGroup.consideration,
       municipality:     muni,
       rollNumber:       rollRaw,
       streetAddress:    i.streetAddress    >= 0 ? (row[i.streetAddress]    || '').trim() : '',
       legalDescription: i.legalDescription >= 0 ? (row[i.legalDescription] || '').trim() : '',
       primaryProperty:  i.primaryProperty  >= 0 ? (row[i.primaryProperty]  || '').trim() : '',
+      groupId:          currentGroup.id,
+      isPrimary:        hasSaleData,
     });
   }
   return out;
@@ -2276,6 +2400,22 @@ function renderTable(rows) {
     const salePriceCell = td(p._salePrice || null);
     salePriceCell.classList.add('sales-only', 'num');
     tr.appendChild(salePriceCell);
+    // Multi-parcel-sale group columns. Identical for every parcel
+    // in the same sale. Empty (single-cell dash) for non-grouped
+    // single-parcel sales / no-sale rows.
+    const groupSize = Number(p._saleGroupSize);
+    const groupSizeCell = td(
+      Number.isFinite(groupSize) && groupSize > 0 ? String(groupSize) : null,
+      'num',
+    );
+    groupSizeCell.classList.add('sales-only');
+    tr.appendChild(groupSizeCell);
+    const ppsfCell = td(formatGroupPpsf(p), 'num');
+    ppsfCell.classList.add('sales-only');
+    tr.appendChild(ppsfCell);
+    const ppaCell = td(formatGroupPpa(p), 'num');
+    ppaCell.classList.add('sales-only');
+    tr.appendChild(ppaCell);
     tr.appendChild(td(p.Property_Address));
     tr.appendChild(legalCell(p));
     tr.appendChild(titleCell(p));
@@ -3020,6 +3160,27 @@ function formatAcres(v) {
   return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/** Group $/Acre table cell. Returns the formatted dollar string, or
+ *  '—' when group acres are incomplete (insufficient data flag set
+ *  by computeSaleGroupTotals), or null when the parcel isn't part
+ *  of a sale group at all. */
+function formatGroupPpa(p) {
+  if (!p?._saleGroupSize) return null;
+  if (p._saleGroupAcresIncomplete) return '—';
+  const ppa = Number(p._saleGroupPpa);
+  if (!Number.isFinite(ppa) || ppa <= 0) return null;
+  return '$' + Math.round(ppa).toLocaleString('en-US');
+}
+
+/** Group $/SF table cell. Same shape as formatGroupPpa. */
+function formatGroupPpsf(p) {
+  if (!p?._saleGroupSize) return null;
+  if (p._saleGroupAcresIncomplete) return '—';
+  const ppsf = Number(p._saleGroupPpsf);
+  if (!Number.isFinite(ppsf) || ppsf <= 0) return null;
+  return '$' + ppsf.toFixed(2);
+}
+
 // Dwelling units — show 0 explicitly (it's a meaningful "vacant" signal,
 // not "unknown"). Null/undefined renders as the dash.
 function formatDu(v) {
@@ -3058,6 +3219,10 @@ function setExportEnabled(enabled) { $export.disabled = !enabled; }
 
 function exportCsv() {
   if (!currentRows.length) return;
+  // Append the sales-CSV-specific columns only when the table is
+  // currently in sales-mode — otherwise they'd just be empty trailing
+  // cells on every row of a regular search export.
+  const inSalesMode = $resultsTable?.classList.contains('sales-mode');
   const header = [
     'Roll #', 'Address',
     'Legal Description', 'Legal Detail', 'Lot', 'Block', 'Plan',
@@ -3070,6 +3235,9 @@ function exportCsv() {
     'DU', 'Acres', 'SF',
     csvAssessHeader(currentRows), 'Asmt Report URL',
     'Walkscore URL', 'Flood-Map URL',
+    ...(inSalesMode
+      ? ['Sale Date', 'Sale Price', 'Group #', 'Group $/SF', 'Group $/Acre']
+      : []),
   ];
   const lines = [header.map(csvCell).join(',')];
   for (const row of currentRows) {
@@ -3099,6 +3267,15 @@ function exportCsv() {
       p.Asmt_Rpt_Url ?? '',
       walkscoreUrl(p),
       floodMapUrl(row),
+      ...(inSalesMode
+        ? [
+            p._saleDate ?? '',
+            p._salePrice ?? '',
+            p._saleGroupSize ?? '',
+            p._saleGroupAcresIncomplete ? '' : (p._saleGroupPpsf != null ? p._saleGroupPpsf.toFixed(2) : ''),
+            p._saleGroupAcresIncomplete ? '' : (p._saleGroupPpa  != null ? Math.round(p._saleGroupPpa)   : ''),
+          ]
+        : []),
     ].map(csvCell).join(','));
   }
   const blob = new Blob(['﻿' + lines.join('\r\n')], {
