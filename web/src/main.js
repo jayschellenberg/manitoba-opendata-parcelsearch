@@ -83,6 +83,11 @@ import {
   lookupLegalRecordsByParcelKeys,
   warmLegalIndex,
 } from './legalIndex.js';
+import {
+  warmAssessmentIndex,
+  lookupAssessment,
+  isVacantLand,
+} from './assessmentIndex.js';
 import turfArea from '@turf/area';
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
 
@@ -115,6 +120,10 @@ const $sizeLow       = document.getElementById('size-low');
 const $sizeHigh      = document.getElementById('size-high');
 const $sizeUomAcres  = document.getElementById('size-uom-acres');
 const $sizeUomSf     = document.getElementById('size-uom-sf');
+// Sales-CSV "Vacant land only" filter — strict group semantics. Reads
+// _saleGroupAllVacant which computeSaleGroupTotals stamps after the
+// per-parcel assessment-index lookup runs in handleSalesUpload.
+const $vacantOnly    = document.getElementById('vacant-only');
 const $search        = document.getElementById('search');
 const $clear         = document.getElementById('clear');
 const $export        = document.getElementById('export');
@@ -765,7 +774,7 @@ $duMode.addEventListener('change', () => {
 // against the loaded sales without re-fetching. Outside CSV mode
 // these listeners are no-ops (Search button still drives the SQL).
 for (const el of [
-  $zoneCategory, $changedStatus, $duMode, $duMin, $sizeLow, $sizeHigh,
+  $zoneCategory, $changedStatus, $duMode, $duMin, $sizeLow, $sizeHigh, $vacantOnly,
 ].filter(Boolean)) {
   el.addEventListener('change', refilterCsvIfActive);
   el.addEventListener('input',  refilterCsvIfActive);
@@ -917,8 +926,10 @@ async function runSearch() {
   // Drop the sales-mode column reveal if a previous run came from a
   // sales CSV upload — a normal search shouldn't carry those columns.
   if ($resultsTable) $resultsTable.classList.remove('sales-mode');
-  // Hide the size-range filter row since it's CSV-only.
+  // Hide the size-range + vacant-only filter rows since they're CSV-only.
   document.body.classList.remove('sales-mode');
+  // Reset the vacant-only checkbox so the next upload starts unfiltered.
+  if ($vacantOnly) $vacantOnly.checked = false;
   // Hide the unmatched-records panel — also CSV-upload-specific.
   renderUnmatchedPanel([]);
   // Clear the CSV-mode state so the Other Searches filter listeners
@@ -1140,6 +1151,15 @@ async function handleSalesUpload(file) {
   setBusy(true);
   try {
     setCount('Reading CSV…');
+    // Kick off the assessment-index pre-warm immediately — it's a
+    // ~3.5 MiB gzipped fetch + ~430k-row Map build, and overlapping
+    // it with the per-muni parcel lookups means the stamping pass
+    // below pays no extra latency on a warm shard. Failure is
+    // non-fatal (warmAssessmentIndex itself swallows the error and
+    // logs a warning); the per-parcel lookup helper short-circuits
+    // to null so _isVacantLand simply stays undefined when the
+    // shard isn't reachable, which the filter treats as 'unknown'.
+    warmAssessmentIndex();
     const text = await file.text();
     const records = parseSalesCsv(text);
     if (records.length === 0) {
@@ -1285,6 +1305,32 @@ async function handleSalesUpload(file) {
       if (recs2.length > 0) attachLegalMetadata(parcelFc, recs2);
     } catch (err) {
       console.warn('Legal lookup for sales upload failed (non-fatal):', err);
+    }
+
+    // Per-parcel vacant-land enrichment from the MAO-derived assessment
+    // index. Each matched parcel gets its latest-year land/buildings/
+    // total stamped onto the feature, plus a boolean _isVacantLand
+    // flag computed via the strict isVacantLand() predicate (land > 0
+    // AND buildings/total < 2%). Parcels missing from the shard get
+    // _isVacantLand = undefined — the filter treats that as 'not
+    // known to be vacant' so they drop out of "Vacant land only"
+    // results. Non-fatal: any error here just leaves the flags off
+    // and the filter degrades gracefully.
+    for (const f of parcelFc.features || []) {
+      const key = parcelLegalKey(f.properties || {});
+      if (!key) continue;
+      const [muniStr, rollStr] = key.split('|');
+      const rec = await lookupAssessment({
+        muni_no: Number(muniStr),
+        roll_no_txt: rollStr,
+      }).catch(() => null);
+      if (!rec) continue;
+      f.properties._asmtLand       = rec.land;
+      f.properties._asmtBuildings  = rec.buildings;
+      f.properties._asmtTotal      = rec.total;
+      f.properties._asmtYear       = rec.year;
+      f.properties._asmtPctBldg    = rec.pctBuildings;
+      f.properties._isVacantLand   = isVacantLand(rec);
     }
 
     // Activate the Sale Date / Sale Price columns.
@@ -1515,6 +1561,13 @@ function computeSaleGroupTotals(parcelFc) {
         totalAcres: 0,
         priceNum: parseTotalValue(f.properties?._salePrice),
         acresIncomplete: false,
+        // Strict group-vacancy semantics: every parcel in the group
+        // must have assessment data AND pass the vacancy predicate
+        // for the group to flag as 'all vacant'. Defaults to true
+        // and flips false on the first parcel that fails / lacks
+        // data — short-circuits naturally as we walk parcels.
+        allVacant: true,
+        vacantUnknown: false,
       });
     }
     const g = groups.get(gid);
@@ -1522,6 +1575,22 @@ function computeSaleGroupTotals(parcelFc) {
     const ac = Number(f.properties?._acres);
     if (Number.isFinite(ac) && ac > 0) g.totalAcres += ac;
     else g.acresIncomplete = true;
+    // Vacancy roll-up. _isVacantLand is set in handleSalesUpload
+    // when the assessment index returned a record; absent (=
+    // undefined) means the parcel wasn't in the shard.
+    const v = f.properties?._isVacantLand;
+    if (v === true) {
+      // pass — keep g.allVacant as is
+    } else if (v === false) {
+      g.allVacant = false;
+    } else {
+      // Missing data — treat the group as 'unknown' so the strict
+      // filter excludes it, matching the reviewer's recommendation
+      // ("missing assessment data should make the group fail or be
+      // treated as unknown, not silently pass").
+      g.allVacant = false;
+      g.vacantUnknown = true;
+    }
   }
   // Pass 2: stamp each parcel with its group's rollups.
   for (const f of parcelFc?.features || []) {
@@ -1534,6 +1603,8 @@ function computeSaleGroupTotals(parcelFc) {
     f.properties._saleGroupTotalPriceNum = g.priceNum;
     f.properties._saleGroupTotalAcres    = g.totalAcres;
     f.properties._saleGroupAcresIncomplete = g.acresIncomplete;
+    f.properties._saleGroupAllVacant     = g.allVacant;
+    f.properties._saleGroupVacantUnknown = g.vacantUnknown;
     stampedCount++;
     if (
       g.priceNum != null &&
@@ -1620,6 +1691,18 @@ function filterCsvRowsByOtherSearches(rows) {
     } else if (duMode === 'min' && Number.isFinite(duMin) && duMin > 0) {
       const du = Number(p.Dwelling_Units);
       if (!(Number.isFinite(du) && du >= duMin)) return false;
+    }
+
+    // Vacant-land filter (sales-CSV mode only — checkbox is hidden
+    // outside sales-mode but the predicate works regardless). Strict
+    // group semantics: the entire sale group must be flagged
+    // _saleGroupAllVacant, which is true only when every parcel in
+    // the group has assessment data AND passes the vacancy predicate
+    // (Buildings < 2% of Total). Sales with one or more parcels
+    // missing assessment data fall through `_saleGroupVacantUnknown`
+    // and get treated as 'not known to be vacant' — they drop out.
+    if ($vacantOnly?.checked) {
+      if (p._saleGroupAllVacant !== true) return false;
     }
 
     // Size range filter (sales-CSV mode only — the row is hidden by

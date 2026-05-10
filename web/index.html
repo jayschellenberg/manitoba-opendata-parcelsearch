@@ -191,6 +191,24 @@
             <span class="tip">Unit of measure</span>
           </span>
         </div>
+        <!-- Vacant-land filter — sales-CSV-only, sibling of .size-row.
+             Wraps in the existing .field span so .controls .field .tip
+             styling kicks in for the help text. Strict semantics: the
+             checkbox keeps a sale only when EVERY parcel in the sale
+             group has assessment data AND passes the vacancy predicate
+             (Buildings < 2% of Total). Sales with one or more parcels
+             missing from the assessment shard are treated as unknown
+             and dropped — see computeSaleGroupTotals + the filter
+             branch in filterCsvRowsByOtherSearches. -->
+        <div class="vacant-row sales-only">
+          <span class="field vacant-only-field">
+            <label class="vacant-only-label">
+              <input id="vacant-only" type="checkbox" />
+              <span>Vacant land only</span>
+            </label>
+            <span class="tip">Show only sales where every parcel in the group has Buildings &lt; 2% of Total in the latest MAO assessment year. Threshold is hard-coded at 2% for now — tune later.</span>
+          </span>
+        </div>
 
         <div class="action-row">
           <button id="sales-upload-btn" type="button" class="secondary" title="Upload a CSV with Roll Number, Municipality, Sale Date, Consideration columns to plot the sales on the map and table.">Upload Sales CSV…</button>
