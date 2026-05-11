@@ -757,8 +757,19 @@ populateRecentUploads();
 const $favouritesClear = document.getElementById('favourites-clear');
 if ($favouritesClear) {
   $favouritesClear.addEventListener('click', () => {
+    // Capture which parcels were starred before wiping the Set so we
+    // can flip their map feature-state off in lockstep.
+    const wereStarred = currentRows
+      ? currentRows
+          .map((r) => r.parcel)
+          .filter((p) => {
+            const k = parcelLegalKey(p?.properties || {});
+            return k && favoriteKeys.has(k);
+          })
+      : [];
     favoriteKeys.clear();
     saveFavorites();
+    for (const p of wereStarred) setStarredOnMap(p, false);
     if (currentRows && currentRows.length > 0) renderTable(currentRows);
   });
 }
@@ -1761,6 +1772,12 @@ async function handleSalesUpload(file) {
     // `fit: false` keeps the viewport where the user already is.
     setMapData(parcelFc, lastZoningFc || EMPTY_FC, lastDevPlanFc || EMPTY_FC, { fit: false });
 
+    // Re-apply starred feature-state for any parcels in the existing
+    // favourites Set. Lets a user re-upload a CSV they've already
+    // starred and have the stars surface immediately on both the
+    // map (dark-red fill) and the table (pink shading).
+    applyStarredFromFavorites(parcelFc);
+
     // Lock in the enriched row set so post-upload Other-Searches
     // filter changes can re-filter without another fetch. We snapshot
     // currentRows (set by renderTable inside enrichOverlays) rather
@@ -2026,6 +2043,10 @@ function refilterCsvIfActive() {
     features: filtered.map((r) => r.parcel),
   };
   setMapData(fc, lastZoningFc, lastDevPlanFc);
+  // setData() doesn't carry feature-state from before the re-tile,
+  // so re-apply starred state from favoriteKeys after the source
+  // refresh. mapReady gate is inside setStarredOnMap.
+  applyStarredFromFavorites(fc);
 }
 
 function filterCsvRowsByOtherSearches(rows) {
@@ -3299,11 +3320,29 @@ function renderTable(rows) {
         tr.title = `Outlier: $/Acre ${Math.round(ppa).toLocaleString('en-US')} is more than 2σ from the filtered mean ${Math.round(outlierThresholds.mean).toLocaleString('en-US')}`;
       }
     }
+    // Starred row shading. The row click handler keeps the in-memory
+    // Set in sync; this branch pre-applies the class at render time
+    // so an upload-with-existing-favourites (page reloaded, CSV
+    // re-uploaded) lights up its starred rows immediately. The map
+    // feature-state is re-applied by applyStarredFromFavorites after
+    // the FC reaches the source.
+    const favKey = parcelLegalKey(p);
+    if (favKey && favoriteKeys.has(favKey)) tr.classList.add('starred');
     tr.classList.add('clickable');
     if (!tr.title) tr.title = 'Click to zoom map to this parcel';
     tr.addEventListener('click', () => {
       const f = rowFeatureMap.get(tr.dataset.rowKey);
-      if (f) mapReady.then(() => flyToFeature(map, f));
+      if (!f) return;
+      mapReady.then(() => {
+        flyToFeature(map, f);
+        // Scroll the map back into view so the user actually sees the
+        // parcel they clicked. Without this, large result sets push
+        // the table well below the map and flyToFeature animates
+        // off-screen. block:'start' aligns the top of the map with
+        // the top of the viewport; smooth keeps it from being jarring.
+        const mapEl = document.getElementById('map');
+        if (mapEl) mapEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
     });
 
     const z1 = row.zoning[0]?.feature.properties || {};
@@ -4179,9 +4218,61 @@ function favoriteCell(row) {
     btn.textContent = nowFav ? '★' : '☆';
     btn.title = nowFav ? 'Unstar — remove from comparables' : 'Star — mark as comparable';
     btn.setAttribute('aria-pressed', String(nowFav));
+    // Row shading + map fill flip in lockstep. The closest <tr> for
+    // the click target is the row we want to restyle; the parcel
+    // feature is captured by row at render-time (no DOM walk).
+    const tr = cell.closest('tr');
+    if (tr) tr.classList.toggle('starred', nowFav);
+    setStarredOnMap(row?.parcel, nowFav);
   });
   cell.appendChild(btn);
   return cell;
+}
+
+/**
+ * Flip the `starred` map feature-state for a parcel (and every
+ * sibling in its sale group, since starring one half of a 2-parcel
+ * sale should colour the whole assembly). Reads OBJECTIDs from the
+ * sale-group rollIds array stamped by computeSaleGroupTotals; falls
+ * back to the parcel's own OBJECTID for single-parcel sales / non-
+ * CSV searches. mapReady gates the call so an early invocation (page
+ * paint before WebGL init) doesn't drop the state.
+ */
+function setStarredOnMap(parcel, on) {
+  const oids = new Set();
+  const groupOids = parcel?.properties?._saleGroupRollIds;
+  if (Array.isArray(groupOids)) for (const o of groupOids) if (o != null) oids.add(o);
+  const own = parcel?.properties?.OBJECTID;
+  if (own != null) oids.add(own);
+  if (oids.size === 0) return;
+  mapReady.then(() => {
+    for (const oid of oids) {
+      map.setFeatureState({ source: 'parcels', id: oid }, { starred: !!on });
+    }
+  });
+}
+
+/**
+ * Walk every parcel in the current FC and apply the `starred`
+ * feature-state to anyone in favoriteKeys. Called after every
+ * setMapData so stars persist across re-renders (filter changes,
+ * sort changes, fresh uploads of the same CSV). Also walks the
+ * rendered rows to apply the .starred class for table shading.
+ */
+function applyStarredFromFavorites(parcelFc) {
+  if (favoriteKeys.size === 0) return;
+  // Map-side flip
+  for (const f of parcelFc?.features || []) {
+    const k = parcelLegalKey(f.properties || {});
+    if (k && favoriteKeys.has(k)) setStarredOnMap(f, true);
+  }
+  // Table-side flip (DOM walk for currently-rendered rows)
+  for (const tr of document.querySelectorAll('#results tbody tr')) {
+    const rowKey = tr.dataset.rowKey;
+    const row = rowFeatureMap.get(rowKey);
+    const k = row ? parcelLegalKey(row.properties || {}) : null;
+    if (k && favoriteKeys.has(k)) tr.classList.add('starred');
+  }
 }
 
 /**

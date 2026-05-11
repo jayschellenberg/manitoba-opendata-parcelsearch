@@ -191,6 +191,26 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 }
 #results.sales-mode tbody tr.outlier:hover { background: #ffe8c5; }
 
+/* Starred rows — sales-mode only. Pink-tinted background + dark-red
+   left accent so the appraiser's chosen comparables read at a glance,
+   matching the dark-red parcel fill the map applies via the
+   `starred` feature-state. Hover bumps the pink so the row remains
+   distinguishable from its starred neighbours. Starred + outlier
+   coexist: the .starred rule wins for background (red > orange) but
+   we keep both accents so a hover-tooltip still flags the outlier
+   nature. */
+#results.sales-mode tbody tr.starred {
+  background: #ffe0e0;
+  box-shadow: inset 4px 0 0 #8b0000;
+}
+#results.sales-mode tbody tr.starred:hover { background: #ffcccc; }
+#results.sales-mode tbody tr.starred.outlier {
+  background: #ffe0e0;
+  /* both accents — starred outranks outlier on background but keep
+     an amber edge stripe so the user can tell the row is both. */
+  box-shadow: inset 4px 0 0 #8b0000, inset 8px 0 0 -4px #f0a500;
+}
+
 /* Recent uploads picker — slim row below the Upload button. Hidden
    when the cache is empty. */
 .sidebar .recent-uploads {
