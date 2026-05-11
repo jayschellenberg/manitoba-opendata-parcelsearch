@@ -1018,6 +1018,30 @@ export function initMap(container, { onFeatureClick } = {}) {
           ],
         },
       });
+      // Subject parcel — separate source/layers from the result set so
+      // the blue highlight stands out against the yellow sale parcels.
+      // Stacked AFTER parcel-line so the blue outline reads on top
+      // even when the subject is also one of the sales (rare but
+      // possible — the subject may legitimately be a recent comp).
+      map.addSource('subject', { type: 'geojson', data: emptyFc() });
+      map.addLayer({
+        id: 'subject-fill',
+        type: 'fill',
+        source: 'subject',
+        paint: {
+          'fill-color': '#1e6fd9',
+          'fill-opacity': 0.32,
+        },
+      });
+      map.addLayer({
+        id: 'subject-line',
+        type: 'line',
+        source: 'subject',
+        paint: {
+          'line-color': '#0c3a78',
+          'line-width': 3.5,
+        },
+      });
       // MASC label overlay is intentionally above the parcel/roll-fabric
       // layers so the rating letter stays visible when the user turns
       // MASC on after a parcel search.
@@ -1438,6 +1462,13 @@ export function setTrafficFlowVisible(map, visible) {
   for (const id of ['traffic-flow-line', 'traffic-flow-label']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
   }
+}
+
+/** Push the subject parcel onto its dedicated map layer. Pass an
+ *  empty FC (or null) to clear the highlight. */
+export function setSubjectData(map, fc) {
+  const src = map.getSource('subject');
+  if (src) src.setData(fc || { type: 'FeatureCollection', features: [] });
 }
 
 export function setMascData(map, fc) {

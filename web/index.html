@@ -213,6 +213,56 @@
             <span class="tip">Show only sales where every parcel in the group has Buildings &lt; 2% of Total in the latest MAO assessment year. Threshold is hard-coded at 2% for now — tune later.</span>
           </span>
         </div>
+        <!-- Sale Date range — sales-only. Inputs are native date pickers;
+             empty `from` = no minimum, empty `to` = no maximum. The CSV's
+             "DD-Mmm-YY" date strings get parsed into JS Date via the
+             parseSaleDate helper in main.js, then compared against the
+             chosen range. -->
+        <div class="date-row sales-only">
+          <span class="field date-from-field">
+            <input id="sale-date-from" type="date" />
+            <span class="tip">Sale on/after this date (empty = no minimum)</span>
+          </span>
+          <span class="field date-to-field">
+            <input id="sale-date-to" type="date" />
+            <span class="tip">Sale on/before this date (empty = no maximum)</span>
+          </span>
+        </div>
+        <!-- Subject parcel input. Optional and sales-only. Setting a
+             subject roll # before (or after) uploading a sales CSV
+             fetches the subject's geometry, highlights it on the map
+             in blue, and adds a "Distance (km)" column to the sales
+             table. Useful for assembling a comparable-sales analysis
+             around a known subject property. The muni dropdown drives
+             the subject's muni scope — if a sales CSV is uploaded
+             first the dominant muni is already set, so just typing
+             a roll # is usually enough. -->
+        <div class="subject-row sales-only">
+          <span class="field subject-roll-field">
+            <input id="subject-roll" type="text" placeholder="Subject roll #" autocomplete="off" />
+            <span class="tip">Roll number of the subject property — fetched from the currently-selected municipality. Adds a Distance (km) column and a blue map highlight.</span>
+          </span>
+          <button id="subject-apply" type="button" class="secondary subject-apply-btn">Set</button>
+          <button id="subject-clear" type="button" class="secondary subject-clear-btn" title="Clear the subject parcel">×</button>
+        </div>
+        <!-- Class + Tax Status filters — populated after upload from
+             the matched parcels' dominant class/status (see
+             uniqueClassesAndStatuses in assessmentIndex.js). Empty
+             option = no filter. -->
+        <div class="class-row sales-only">
+          <span class="field class-field">
+            <select id="asmt-class">
+              <option value="">Any class</option>
+            </select>
+            <span class="tip">Filter to a single MAO assessment class (RESIDENTIAL 1 / FARM PROPERTY / etc.)</span>
+          </span>
+          <span class="field status-field">
+            <select id="asmt-status">
+              <option value="">Any status</option>
+            </select>
+            <span class="tip">Filter to a single tax status (TAXABLE / EXEMPT / GRANT-IN-LIEU / etc.)</span>
+          </span>
+        </div>
 
         <div class="action-row">
           <button id="sales-upload-btn" type="button" class="secondary" title="Upload a CSV with Roll Number, Municipality, Sale Date, Consideration columns to plot the sales on the map and table.">Upload Sales CSV…</button>
@@ -271,6 +321,14 @@
       <table id="results">
         <thead>
           <tr>
+            <!-- Favourites star — sales-only column. Click the star
+                 in a row to mark that sale as a comparable; the choice
+                 is persisted to localStorage under
+                 `mb_favorite_sales_v1` keyed by (muni_no|roll). The
+                 main 'Export CSV' button exports just the starred
+                 sales when at least one is set; otherwise the full
+                 result set as before. -->
+            <th data-col="favorite" class="sales-only fav-col" title="Mark this sale as a comparable. Click to star/unstar — choices persist in this browser via localStorage. Starred-only export: hit Export CSV when at least one row is starred.">★</th>
             <th data-col="roll">Roll #</th>
             <!-- Sale Date / Sale Price headers are hidden by default
                  and only revealed when a sales CSV upload populates the
@@ -288,6 +346,8 @@
             <th data-col="grouppricelot" class="sales-only" title="Sale Price ÷ number of parcels in the same sale (works even when acres are missing)">$/Lot</th>
             <th data-col="grouppricesf" class="sales-only" title="Sale Price ÷ total square footage of every parcel in the same sale">$/SF</th>
             <th data-col="grouppriceac" class="sales-only" title="Sale Price ÷ total acres of every parcel in the same sale">$/Acre</th>
+            <th data-col="saletoasmt" class="sales-only" title="Sale Price ÷ Total Assessed (latest MAO year). For multi-parcel sales the assessed total is summed across the group. Useful for spotting non-arms-length transfers (<1) and significantly above-assessed sales (>1).">Sale/Asmt</th>
+            <th data-col="subjdist" class="sales-only subj-col" title="Centroid-to-centroid distance from the subject parcel (km). Set the subject roll # in the sidebar to populate this column.">Dist (km)</th>
             <th data-col="address">Address</th>
             <!-- Legal and Title populate from the MAO scrape legal-index
                  join in main.js's attachLegalMetadata(). renderTable
@@ -364,6 +424,15 @@
         </p>
       </div>
     </details>
+
+    <!-- Data-refresh footer — populated by populateDataRefreshFooter()
+         in main.js once each shard's metadata is available. Hidden
+         until at least one freshness timestamp lands so a fresh page
+         load doesn't flash empty. -->
+    <aside id="data-refresh-footer" class="data-refresh-footer" hidden>
+      <strong>Data refreshed:</strong>
+      <span id="data-refresh-list"></span>
+    </aside>
 
     <footer id="disclaimer" class="disclaimer">
       <strong>Disclaimer:</strong> This site is provided without warranty
