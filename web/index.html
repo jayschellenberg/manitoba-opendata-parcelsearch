@@ -97,12 +97,14 @@
           <button id="clear"  type="button" class="secondary">Clear</button>
           <button id="export" type="button" class="secondary">Export CSV</button>
         </div>
+        </section><!-- /.search-section -->
+        <!-- Count + unmatched panel sit OUTSIDE .search-section so they
+             stay visible after a sales-CSV upload (the rest of the
+             Search section collapses via body.sales-mode CSS). They're
+             the status payload for the upload — hiding them with the
+             rest of the inputs would lose the "183 of 192 plotted · 9
+             unmatched" feedback the user actually wants to see. -->
         <span id="count" class="count"></span>
-        <!-- Sales-CSV unmatched records panel. Populated by
-             handleSalesUpload when at least one CSV row failed to land
-             a parcel — either because the row was missing Roll #/Muni,
-             the muni didn't normalise to a known shape, or the roll
-             wasn't in Roll_Entry. Hidden the rest of the time. -->
         <details id="unmatched-panel" class="unmatched-panel" hidden>
           <summary class="unmatched-summary"></summary>
           <div class="unmatched-actions">
@@ -128,7 +130,6 @@
             </table>
           </div>
         </details>
-        </section><!-- /.search-section -->
 
         <h2>Map overlays</h2>
         <div class="overlay-grid">
