@@ -367,9 +367,32 @@ function muniNameMatchClause(municipality) {
   // each into its with-dot and without-dot variants. Set de-dupes
   // any overlaps (bare names without "St" produce identical dot
   // variants).
-  const stems = new Set([bare]);
-  for (const p of prefixes) stems.add(`${p} ${bare}`);
-  for (const s of suffixes) stems.add(`${bare} (${s.toUpperCase()})`);
+  // Per-muni accent + hyphenation overrides. The Manitoba Zoning and
+  // Dev-Plan layers store a handful of names with diacritics that
+  // Roll_Entry doesn't carry (its Muni_Name_With_Typ is uppercase + no
+  // accents), or with hyphens between words that Roll_Entry separates
+  // by space. Found via the audit-muni-names.js cross-reference: any
+  // bare name in this map is replaced with (or augmented by) the
+  // canonical layer-side spellings when building the variant set.
+  // Add a new entry whenever the audit surfaces another mismatch.
+  const ACCENT_HYPHEN_ALIASES = {
+    'TACHE':                      ['TACHÉ'],
+    'ST FRANCOIS XAVIER':         ['ST FRANÇOIS XAVIER'],
+    'KILLARNEY TURTLE MOUNTAIN':  ['KILLARNEY-TURTLE MOUNTAIN'],
+  };
+  // Start with the bare name and any layer-side aliases for it. The
+  // alias loop walks every stem we'd otherwise generate so the
+  // accent/hyphen variant goes through the same prefix/suffix/dot
+  // expansion as the canonical form.
+  const baseForms = new Set([bare]);
+  for (const alias of ACCENT_HYPHEN_ALIASES[bare] || []) baseForms.add(alias);
+
+  const stems = new Set();
+  for (const baseForm of baseForms) {
+    stems.add(baseForm);
+    for (const p of prefixes) stems.add(`${p} ${baseForm}`);
+    for (const s of suffixes) stems.add(`${baseForm} (${s.toUpperCase()})`);
+  }
 
   const variants = new Set();
   for (const stem of stems) {
