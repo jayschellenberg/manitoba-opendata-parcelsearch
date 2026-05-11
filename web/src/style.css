@@ -138,6 +138,13 @@ body:not(.sales-mode) .sidebar .date-row,
 body:not(.sales-mode) .sidebar .class-row,
 body:not(.sales-mode) .sidebar .subject-row { display: none; }
 
+/* Collapse the entire Search section (muni dropdown + address/roll/
+   legal/title inputs + Search/Clear/Export buttons + count +
+   unmatched panel) once a sales CSV upload completes — gives the
+   user a focused view on the Map overlays + sales-only filters. The
+   reverse rule isn't needed since the section is the default state. */
+body.sales-mode .sidebar .search-section { display: none; }
+
 /* Subject parcel row — roll # input + Set/Clear buttons inline. */
 .sidebar .subject-row {
   display: flex;
