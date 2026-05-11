@@ -133,7 +133,24 @@ header small a {
    (handleSalesUpload sets it; clearAll removes it). Low + High inputs
    on the left, UofM toggle pill on the right. */
 body:not(.sales-mode) .sidebar .size-row,
-body:not(.sales-mode) .sidebar .vacant-row { display: none; }
+body:not(.sales-mode) .sidebar .vacant-row,
+body:not(.sales-mode) .sidebar .date-row,
+body:not(.sales-mode) .sidebar .class-row,
+body:not(.sales-mode) .sidebar .subject-row { display: none; }
+
+/* Subject parcel row — roll # input + Set/Clear buttons inline. */
+.sidebar .subject-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  align-items: stretch;
+}
+.sidebar .subject-row > .field { flex: 1 1 auto; min-width: 0; }
+.sidebar .subject-row input[type="text"] { width: 100%; }
+.sidebar .subject-row .subject-apply-btn,
+.sidebar .subject-row .subject-clear-btn { flex: 0 0 auto; padding: 4px 10px; font-size: 12px; }
+.sidebar .subject-row .subject-clear-btn { width: 28px; padding: 4px 0; font-size: 14px; line-height: 1; }
+.sidebar .subject-row.has-subject input[type="text"] { background: #eef6ff; border-color: #4a90e2; }
 .sidebar .size-row {
   display: flex;
   gap: 6px;
@@ -198,6 +215,24 @@ body:not(.sales-mode) .sidebar .vacant-row { display: none; }
   margin: 0;
   cursor: pointer;
 }
+
+/* Sales-CSV sale-date range row — two native date pickers side by side. */
+.sidebar .date-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.sidebar .date-row > .field { flex: 1 1 0; min-width: 0; }
+.sidebar .date-row input[type="date"] { width: 100%; }
+
+/* Sales-CSV class + status filter row — two selects side by side. */
+.sidebar .class-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.sidebar .class-row > .field { flex: 1 1 50%; min-width: 0; }
+.sidebar .class-row select { width: 100%; }
 
 /* Sales-CSV unmatched-records panel — sits below the search count.
    Collapsed by default; click the summary to expand the table of
@@ -265,6 +300,40 @@ body:not(.sales-mode) .sidebar .vacant-row { display: none; }
    emitted so a future toggle / preference can flip this rule off
    and surface the reasons inline without touching the row builder. */
 .unmatched-panel .unmatched-table .reason-col { display: none; }
+
+/* Favourites star column — narrow, centered. Cell hidden outside
+   sales mode via the existing .sales-only rule. The button itself
+   is a giant unicode glyph; active state goes amber. Bubble-stop
+   on click is in JS so the parent row's flyToFeature listener
+   doesn't fire when the user just wants to star. */
+#results .fav-col { width: 28px; text-align: center; padding: 2px 4px; }
+.fav-star {
+  background: transparent;
+  border: none;
+  color: #c9d0d8;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 4px;
+  line-height: 1;
+}
+.fav-star:hover { color: #f0a500; }
+.fav-star.active { color: #f0a500; }
+.fav-star:focus-visible { outline: 2px solid #4a90e2; outline-offset: 2px; border-radius: 3px; }
+
+/* Data-refresh footer — sits above the disclaimer, slim, low-contrast.
+   Shown only when at least one shard's metadata has loaded so a fresh
+   page paint doesn't flash an empty bar. */
+.data-refresh-footer {
+  margin: 12px auto 4px;
+  max-width: 1400px;
+  padding: 0 14px;
+  font-size: 11px;
+  color: #6b7480;
+  text-align: center;
+}
+.data-refresh-footer[hidden] { display: none; }
+.data-refresh-footer strong { color: #4a5260; font-weight: 600; }
+.data-refresh-footer .data-refresh-list-sep { margin: 0 6px; color: #aab2bc; }
 
 /* Civic-address From/To/Street row. From + To are narrow numeric
    inputs; the Street Name field takes whatever's left so the row

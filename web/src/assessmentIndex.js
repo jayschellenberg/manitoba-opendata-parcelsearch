@@ -25,7 +25,9 @@ const ASSESSMENT_INDEX_PROXY_URL = '/api/assessment-index';
 
 // Field positions in the packed-array rows. Matches the `fields` array
 // emitted by r/build_assessment_index.R — DO NOT REORDER without
-// updating the R script in lockstep.
+// updating the R script in lockstep. `class` + `tax_status` are stored
+// at the end so older clients that only read the first 6 fields still
+// behave correctly (they'd just lose the new dimensions).
 const FIELD = {
   muni_no:      0,
   roll_no_txt:  1,
@@ -33,6 +35,8 @@ const FIELD = {
   land:         3,
   buildings:    4,
   total:        5,
+  class:        6,
+  tax_status:   7,
 };
 
 // Threshold for the "vacant" predicate. A parcel where buildings make
@@ -101,6 +105,42 @@ export function isVacantLand(rec) {
   return (buildings / total) < VACANT_BUILDING_PCT;
 }
 
+/**
+ * Returns the metadata block from the loaded assessment-index shard
+ * (generated_at, source_modified, row_count, year_min/max,
+ * vacant_threshold_pct, ...). Used by the data-refreshed footer to
+ * display the index's freshness without forcing an eager load.
+ */
+export async function getAssessmentIndexMetadata() {
+  try {
+    await loadAssessmentIndex();
+    return (typeof window !== 'undefined' ? window.__assessmentIndexMeta : null) || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Walk a parcel FeatureCollection that's already been stamped with
+ * _asmtClass / _asmtStatus values (via the handleSalesUpload loop
+ * in main.js) and return sorted unique lists of each — used to
+ * populate the Class + Status filter dropdowns post-upload.
+ */
+export function uniqueClassesAndStatuses(parcelFc) {
+  const classes = new Set();
+  const statuses = new Set();
+  for (const f of parcelFc?.features || []) {
+    const c = String(f.properties?._asmtClass || '').trim();
+    const s = String(f.properties?._asmtStatus || '').trim();
+    if (c) classes.add(c);
+    if (s) statuses.add(s);
+  }
+  return {
+    classes:  [...classes].sort(),
+    statuses: [...statuses].sort(),
+  };
+}
+
 // ---------- internals ----------
 
 function rowToRecord(row) {
@@ -118,6 +158,12 @@ function rowToRecord(row) {
     // this rather than re-deriving it. NaN-safe fallback so callers
     // can still trust `Number.isFinite()` checks at the boundary.
     pctBuildings: total > 0 && Number.isFinite(buildings) ? (buildings / total) : NaN,
+    // Dominant class + status from the latest assessment year. The R
+    // script picks the row with the largest `total` value when a
+    // parcel carries multiple classes that year (typical of mixed-use
+    // farms with RESIDENTIAL 1 + FARM PROPERTY + OTHER PROPERTY).
+    class:       String(row[FIELD.class] || ''),
+    tax_status:  String(row[FIELD.tax_status] || ''),
   };
 }
 

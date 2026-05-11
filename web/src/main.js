@@ -74,6 +74,7 @@ import {
   flyToFeature,
   buildZoneCodePaint,
   parcelHtml,
+  setSubjectData,
 } from './map.js';
 import {
   hasLegalCriteria,
@@ -82,11 +83,14 @@ import {
   searchLegalIndex,
   lookupLegalRecordsByParcelKeys,
   warmLegalIndex,
+  getLegalIndexMetadata,
 } from './legalIndex.js';
 import {
   warmAssessmentIndex,
   lookupAssessment,
   isVacantLand,
+  uniqueClassesAndStatuses,
+  getAssessmentIndexMetadata,
 } from './assessmentIndex.js';
 import turfArea from '@turf/area';
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
@@ -124,6 +128,24 @@ const $sizeUomSf     = document.getElementById('size-uom-sf');
 // _saleGroupAllVacant which computeSaleGroupTotals stamps after the
 // per-parcel assessment-index lookup runs in handleSalesUpload.
 const $vacantOnly    = document.getElementById('vacant-only');
+// Sales-CSV sale-date range. Both inputs accept HTML5 date strings
+// (YYYY-MM-DD); empty values are interpreted as "no minimum"/"no
+// maximum" respectively. Sale-date strings from the CSV go through
+// parseSaleDate() to be compared apples-to-apples.
+const $saleDateFrom  = document.getElementById('sale-date-from');
+const $saleDateTo    = document.getElementById('sale-date-to');
+// Sales-CSV class + status filters. Options populated post-upload from
+// the matched parcels' dominant class/status (assessmentIndex.js
+// uniqueClassesAndStatuses helper). Empty = no filter.
+const $asmtClass     = document.getElementById('asmt-class');
+const $asmtStatus    = document.getElementById('asmt-status');
+// Subject parcel comparison — paste a roll # to highlight a subject
+// property on the map and compute centroid-to-centroid distance from
+// every sale parcel. The current subject Feature lives on
+// `subjectFeature`; centroid (lng/lat) lives on `subjectCentroid`.
+const $subjectRoll   = document.getElementById('subject-roll');
+const $subjectApply  = document.getElementById('subject-apply');
+const $subjectClear  = document.getElementById('subject-clear');
 const $search        = document.getElementById('search');
 const $clear         = document.getElementById('clear');
 const $export        = document.getElementById('export');
@@ -478,6 +500,33 @@ let csvFullBaseMsg = '';
 // Website, Roll Layer), but the soil overlays cover the full upload.
 let csvMatchedMunis = null;
 
+// Subject parcel state. setSubjectParcel() / clearSubjectParcel()
+// drive these alongside the map source and re-stamp distances onto
+// the current CSV row set whenever they change.
+let subjectFeature = null;
+let subjectCentroid = null;   // { lng, lat } — bbox midpoint, good enough for km-scale distance
+
+// Favourites — persisted in localStorage as a Set of "muni_no|roll_no_txt"
+// keys (same shape as parcelLegalKey). Survives reloads so the user
+// can star a comp, refresh the page, re-upload the same CSV, and the
+// stars come back. Capped at FAV_CAP entries to avoid runaway growth.
+const FAV_STORAGE_KEY = 'mb_favorite_sales_v1';
+const FAV_CAP = 500;
+const favoriteKeys = loadFavorites();
+function loadFavorites() {
+  try {
+    const raw = localStorage.getItem(FAV_STORAGE_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return new Set(Array.isArray(arr) ? arr.slice(0, FAV_CAP) : []);
+  } catch { return new Set(); }
+}
+function saveFavorites() {
+  try {
+    localStorage.setItem(FAV_STORAGE_KEY, JSON.stringify([...favoriteKeys]));
+  } catch { /* quota / private mode — best-effort, the in-memory Set still works */ }
+}
+
 // Tracks which muni's zoning / dev-plan polygons are currently loaded
 // in each map source. Lets a Zoning Layer / Dev Plan Layer toggle
 // short-circuit when the displayed muni already matches the dropdown
@@ -523,6 +572,8 @@ const SORT_KEYS = {
   grouppricelot:(r) => finiteOrNeg(r.parcel.properties._saleGroupPpl),
   grouppriceac: (r) => finiteOrNeg(r.parcel.properties._saleGroupPpa),
   grouppricesf: (r) => finiteOrNeg(r.parcel.properties._saleGroupPpsf),
+  saletoasmt:   (r) => finiteOrNeg(r.parcel.properties._saleGroupSaleToAsmt),
+  subjdist:     (r) => finiteOrNeg(r.parcel.properties._distanceKm),
 };
 
 function strKey(v) {
@@ -782,6 +833,7 @@ $duMode.addEventListener('change', () => {
 // these listeners are no-ops (Search button still drives the SQL).
 for (const el of [
   $zoneCategory, $changedStatus, $duMode, $duMin, $sizeLow, $sizeHigh, $vacantOnly,
+  $saleDateFrom, $saleDateTo, $asmtClass, $asmtStatus,
 ].filter(Boolean)) {
   el.addEventListener('change', refilterCsvIfActive);
   el.addEventListener('input',  refilterCsvIfActive);
@@ -806,6 +858,19 @@ if ($sizeUomSf)    $sizeUomSf.addEventListener('click',    () => setSizeUom('sf'
 // Stamp the initial UofM onto the pill container so getSizeUom() reads
 // 'acres' before the user clicks anything.
 setSizeUom('acres');
+
+// Subject parcel — Set on button click or Enter in the roll input;
+// Clear wipes the highlight + the Distance (km) column data. Both
+// flows re-render the table so the distance values appear/disappear
+// without needing a CSV re-upload.
+if ($subjectApply) $subjectApply.addEventListener('click', applySubjectFromInput);
+if ($subjectClear) $subjectClear.addEventListener('click', clearSubjectParcel);
+if ($subjectRoll) $subjectRoll.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    applySubjectFromInput();
+  }
+});
 // Filter out any nulls so the keydown wiring tolerates removed inputs
 // (legal/lot/block/plan/title are currently absent from the markup).
 // When the user tabs into the To field after typing a number into From,
@@ -852,6 +917,13 @@ populateDropdowns();
 // to populate the Legal + Title columns; without this kickoff, the
 // first search would block on a 130 MB cold fetch.
 warmLegalIndex();
+
+// Once the legal + assessment shards have loaded (lazy, no block on
+// page paint), surface their `generated_at` timestamps in the
+// data-refresh footer so the user can tell at a glance how fresh
+// the data is. Failures are non-fatal — the footer just doesn't
+// show the missing source.
+populateDataRefreshFooter();
 
 // Pull municipal boundaries in the background and load them onto the
 // map as soon as both the data and the map are ready. Cached for 30
@@ -945,8 +1017,18 @@ async function runSearch() {
   if ($resultsTable) $resultsTable.classList.remove('sales-mode');
   // Hide the size-range + vacant-only filter rows since they're CSV-only.
   document.body.classList.remove('sales-mode');
-  // Reset the vacant-only checkbox so the next upload starts unfiltered.
-  if ($vacantOnly) $vacantOnly.checked = false;
+  // Reset the sales-only filter inputs so the next upload starts
+  // unfiltered. clearAll already does a full page reload, but a
+  // regular Search reuses the page — explicit reset matches existing
+  // pattern.
+  if ($vacantOnly)    $vacantOnly.checked = false;
+  if ($saleDateFrom)  $saleDateFrom.value = '';
+  if ($saleDateTo)    $saleDateTo.value = '';
+  if ($asmtClass)     $asmtClass.value = '';
+  if ($asmtStatus)    $asmtStatus.value = '';
+  // Drop the subject parcel — a fresh Search shouldn't inherit a
+  // previous upload's subject highlight on the map.
+  clearSubjectParcel();
   // Hide the unmatched-records panel — also CSV-upload-specific.
   renderUnmatchedPanel([]);
   // Clear the CSV-mode state so the Other Searches filter listeners
@@ -1350,6 +1432,8 @@ async function handleSalesUpload(file) {
       f.properties._asmtTotal      = rec.total;
       f.properties._asmtYear       = rec.year;
       f.properties._asmtPctBldg    = rec.pctBuildings;
+      f.properties._asmtClass      = rec.class || '';
+      f.properties._asmtStatus     = rec.tax_status || '';
       f.properties._isVacantLand   = isVacantLand(rec);
     }
 
@@ -1453,6 +1537,26 @@ async function handleSalesUpload(file) {
     // then surface 'insufficient data' rather than a misleading
     // partial-acreage rate.
     computeSaleGroupTotals(parcelFc);
+
+    // Subject parcel comparison — stamp centroid-to-centroid distance
+    // from the subject (if one is set) onto every parcel. Re-runs on
+    // every upload so a newly-uploaded CSV inherits distances from
+    // the existing subject without the user having to re-Set it.
+    if (subjectCentroid) {
+      for (const f of parcelFc.features) {
+        const c = computeCentroid(f);
+        if (c) f.properties._distanceKm = haversineKm(subjectCentroid, c);
+      }
+    }
+
+    // Populate the Class + Tax-Status filter dropdowns from the
+    // upload's matched parcels. Reuses the existing fillSelect helper
+    // so the 'Any …' placeholder + sorted-unique options behave the
+    // same as the Zoning category dropdown. Re-run on every upload
+    // since the available values depend on which parcels matched.
+    const { classes, statuses } = uniqueClassesAndStatuses(parcelFc);
+    if ($asmtClass)  fillSelect($asmtClass,  classes,  'Any class');
+    if ($asmtStatus) fillSelect($asmtStatus, statuses, 'Any status');
 
     // Runtime debugging — expose the post-stamp parcelFc + parcelHtml so the
     // tooltip / hover path can be inspected from the console without
@@ -1603,6 +1707,12 @@ function computeSaleGroupTotals(parcelFc) {
         oids: [],
         rolls: [],
         totalAcres: 0,
+        // Sum of latest-year assessed total across every parcel in the
+        // sale group — used to compute the "Sale / Assessed" ratio
+        // column. Parcels missing assessment data leave the sum
+        // alone but flip asmtIncomplete so the column renders '—'.
+        asmtTotal: 0,
+        asmtIncomplete: false,
         priceNum: parseTotalValue(f.properties?._salePrice),
         acresIncomplete: false,
         // Strict group-vacancy semantics: every parcel in the group
@@ -1624,6 +1734,12 @@ function computeSaleGroupTotals(parcelFc) {
     const ac = Number(f.properties?._acres);
     if (Number.isFinite(ac) && ac > 0) g.totalAcres += ac;
     else g.acresIncomplete = true;
+    // Assessed-total roll-up. Mirrors the acres treatment — any missing
+    // value flips the group to 'incomplete' so the ratio displays '—'
+    // rather than a misleading partial answer.
+    const at = Number(f.properties?._asmtTotal);
+    if (Number.isFinite(at) && at > 0) g.asmtTotal += at;
+    else g.asmtIncomplete = true;
     // Vacancy roll-up. _isVacantLand is set in handleSalesUpload
     // when the assessment index returned a record; absent (=
     // undefined) means the parcel wasn't in the shard.
@@ -1653,6 +1769,22 @@ function computeSaleGroupTotals(parcelFc) {
     f.properties._saleGroupTotalPriceNum = g.priceNum;
     f.properties._saleGroupTotalAcres    = g.totalAcres;
     f.properties._saleGroupAcresIncomplete = g.acresIncomplete;
+    f.properties._saleGroupAsmtTotal     = g.asmtTotal;
+    f.properties._saleGroupAsmtIncomplete = g.asmtIncomplete;
+    // Sale-to-assessed ratio. Null when either side is missing OR when
+    // the asmt is incomplete (one or more parcels missing assessment
+    // data — partial sum would mislead). Useful for spotting non-arms-
+    // length transfers (ratio << 1) and significantly above-assessed
+    // sales (ratio >> 1) that may signal a hot submarket.
+    if (
+      Number.isFinite(g.priceNum) && g.priceNum > 0 &&
+      Number.isFinite(g.asmtTotal) && g.asmtTotal > 0 &&
+      !g.asmtIncomplete
+    ) {
+      f.properties._saleGroupSaleToAsmt = g.priceNum / g.asmtTotal;
+    } else {
+      f.properties._saleGroupSaleToAsmt = null;
+    }
     f.properties._saleGroupAllVacant     = g.allVacant;
     f.properties._saleGroupVacantUnknown = g.vacantUnknown;
     stampedCount++;
@@ -1731,6 +1863,28 @@ function filterCsvRowsByOtherSearches(rows) {
   const sizeLoAc = Number.isFinite(sizeLowRaw)  ? toAcres(sizeLowRaw)  : 0;
   const sizeHiAc = Number.isFinite(sizeHighRaw) ? toAcres(sizeHighRaw) : Infinity;
 
+  // Sale-date range. Empty from = -Infinity, empty to = +Infinity. The
+  // HTML5 date input gives us YYYY-MM-DD strings — parseSaleDate() in
+  // main.js handles both that AND the CSV's DD-Mmm-YY native format,
+  // so the two ends of the comparison are always JS Dates (or null
+  // when unparseable; null sale dates fail the active filter, mirroring
+  // the size-range "missing data excluded" behaviour).
+  const dateFrom = parseSaleDate($saleDateFrom?.value);
+  const dateTo   = parseSaleDate($saleDateTo?.value);
+  const dateActive = !!(dateFrom || dateTo);
+  const dateFromMs = dateFrom ? dateFrom.getTime() : -Infinity;
+  // Inclusive 'to' — bump by 24h - 1ms so a sale on the 'to' day passes.
+  const dateToMs   = dateTo   ? dateTo.getTime() + 86399999 : Infinity;
+
+  // Class + status filters. Empty value = no filter for that axis;
+  // any selected value gates the row on the per-parcel _asmtClass /
+  // _asmtStatus stamped by handleSalesUpload. Parcels missing
+  // assessment data (rare; happens when the assessment-index shard
+  // doesn't have the parcel) are excluded when either filter is
+  // active — same defensive policy as the vacant-only filter.
+  const classFilter  = $asmtClass?.value || '';
+  const statusFilter = $asmtStatus?.value || '';
+
   return rows.filter((row) => {
     const p = row.parcel?.properties || {};
 
@@ -1775,6 +1929,30 @@ function filterCsvRowsByOtherSearches(rows) {
         : parcelAcres(row.parcel);
       if (p._saleGroupAcresIncomplete) return false;
       if (!Number.isFinite(parcelAc) || parcelAc < sizeLoAc || parcelAc > sizeHiAc) return false;
+    }
+
+    // Sale-date range. Parses the CSV's date string fresh each time;
+    // could be cached on the feature properties later but the parsing
+    // is cheap enough that the post-filter pass on 200-row CSVs is
+    // imperceptible.
+    if (dateActive) {
+      const d = parseSaleDate(p._saleDate);
+      if (!d) return false;  // missing/malformed date excluded when filter is on
+      const t = d.getTime();
+      if (t < dateFromMs || t > dateToMs) return false;
+    }
+
+    // Class filter (single-select). Drops rows whose dominant class
+    // doesn't match; rows with no assessment data fail when the filter
+    // is on.
+    if (classFilter) {
+      if (!p._asmtClass || p._asmtClass !== classFilter) return false;
+    }
+
+    // Tax-status filter (single-select). Same shape as the class
+    // filter above.
+    if (statusFilter) {
+      if (!p._asmtStatus || p._asmtStatus !== statusFilter) return false;
     }
 
     // Zone category — needs zoning enrichment. If the row has no
@@ -2906,6 +3084,12 @@ function renderTable(rows) {
     const z2ratio = row.zoning[1]?.ratio;
     const z2Show = Number.isFinite(z2ratio) && z2ratio >= 0.01;
 
+    // Favourites star — sales-only column. The cell is always emitted
+    // (so the table column count stays stable across modes); the CSS
+    // .sales-only class hides it outside sales-mode. Click toggles
+    // the in-memory Set + persists to localStorage; the cell's
+    // appearance flips immediately via the class swap.
+    tr.appendChild(favoriteCell(row));
     tr.appendChild(rollNumberCell(p));
     // Sale Date / Sale Price cells — always emitted, hidden by CSS
     // unless #results carries the sales-mode class (toggled by
@@ -2936,6 +3120,12 @@ function renderTable(rows) {
     const ppaCell = td(formatGroupPpa(p), 'num');
     ppaCell.classList.add('sales-only');
     tr.appendChild(ppaCell);
+    const saleToAsmtCell = td(formatSaleToAsmt(p), 'num');
+    saleToAsmtCell.classList.add('sales-only');
+    tr.appendChild(saleToAsmtCell);
+    const distCell = td(formatDistanceKm(p), 'num');
+    distCell.classList.add('sales-only', 'subj-col');
+    tr.appendChild(distCell);
     tr.appendChild(td(p.Property_Address));
     tr.appendChild(legalCell(p));
     tr.appendChild(titleCell(p));
@@ -3711,6 +3901,64 @@ function formatGroupPpl(p) {
   return '$' + Math.round(ppl).toLocaleString('en-US');
 }
 
+/** Build the favourites star cell for a row. Click toggles the
+ *  in-memory + localStorage favourite state and stops the click
+ *  from bubbling up to the row-click handler (which would otherwise
+ *  fly the map to the parcel). Cells outside sales-mode are hidden
+ *  by CSS — the rendered classes still flip when starred so the
+ *  user sees the change immediately on re-toggling sales mode. */
+function favoriteCell(row) {
+  const cell = document.createElement('td');
+  cell.classList.add('sales-only', 'fav-col');
+  const key = parcelLegalKey(row?.parcel?.properties || {});
+  if (!key) return cell;
+  const isFav = favoriteKeys.has(key);
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = isFav ? 'fav-star active' : 'fav-star';
+  btn.textContent = isFav ? '★' : '☆';
+  btn.title = isFav ? 'Unstar — remove from comparables' : 'Star — mark as comparable';
+  btn.setAttribute('aria-pressed', String(isFav));
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (favoriteKeys.has(key)) favoriteKeys.delete(key);
+    else if (favoriteKeys.size < FAV_CAP) favoriteKeys.add(key);
+    saveFavorites();
+    // Local DOM swap rather than a full re-render — keeps the rest
+    // of the table stable and avoids losing scroll position.
+    const nowFav = favoriteKeys.has(key);
+    btn.className = nowFav ? 'fav-star active' : 'fav-star';
+    btn.textContent = nowFav ? '★' : '☆';
+    btn.title = nowFav ? 'Unstar — remove from comparables' : 'Star — mark as comparable';
+    btn.setAttribute('aria-pressed', String(nowFav));
+  });
+  cell.appendChild(btn);
+  return cell;
+}
+
+/** Distance-to-subject table cell. Renders as km with one decimal
+ *  for in-town distances (< 10 km), no decimals for further afield.
+ *  Returns null when no subject is set or the distance isn't
+ *  computable. */
+function formatDistanceKm(p) {
+  const d = Number(p?._distanceKm);
+  if (!Number.isFinite(d) || d < 0) return null;
+  return d < 10 ? d.toFixed(1) : Math.round(d).toLocaleString('en-US');
+}
+
+/** Sale/Assessed ratio table cell. Shows '—' when the group's
+ *  assessed total is incomplete (one or more parcels missing
+ *  assessment data); null (= empty cell) when the parcel isn't
+ *  part of a sale group. Formatted to two decimals — appraisers
+ *  read ratios at that precision. */
+function formatSaleToAsmt(p) {
+  if (!p?._saleGroupSize) return null;
+  if (p._saleGroupAsmtIncomplete) return '—';
+  const r = Number(p._saleGroupSaleToAsmt);
+  if (!Number.isFinite(r) || r <= 0) return null;
+  return r.toFixed(2);
+}
+
 // Dwelling units — show 0 explicitly (it's a meaningful "vacant" signal,
 // not "unknown"). Null/undefined renders as the dash.
 function formatDu(v) {
@@ -3726,6 +3974,172 @@ function formatSf(acres) {
   return Math.round(acres * 43560).toLocaleString('en-US');
 }
 
+// ---------- Subject parcel comparison ----------
+
+/**
+ * Read the subject roll # input, derive the muni from the dropdown,
+ * fetch the parcel via ROLL_ENTRY, highlight it on the map, and
+ * re-stamp distances onto the current CSV row set. Surfaces failures
+ * via setCount() so the user sees what went wrong (bad roll, wrong
+ * muni, etc.) without opening the console.
+ */
+async function applySubjectFromInput() {
+  const raw = $subjectRoll?.value?.trim();
+  const muni = $municipality?.value;
+  if (!raw) {
+    setCount('Subject: enter a roll number first.');
+    return;
+  }
+  if (!muni) {
+    setCount('Subject: pick a municipality before setting a subject roll.');
+    return;
+  }
+  $subjectApply.disabled = true;
+  const prevLabel = $subjectApply.textContent;
+  $subjectApply.textContent = '…';
+  try {
+    const fc = await searchParcels({ municipality: muni, roll: raw });
+    const feat = fc?.features?.[0];
+    if (!feat) {
+      setCount(`Subject: roll ${raw} not found in ${muni}.`);
+      return;
+    }
+    subjectFeature = feat;
+    subjectCentroid = computeCentroid(feat);
+    setSubjectData(map, { type: 'FeatureCollection', features: [feat] });
+    document.querySelector('.subject-row')?.classList.add('has-subject');
+    // If we have CSV rows already, restamp distances and re-render
+    // so the new column shows up immediately. Outside CSV mode the
+    // column isn't visible anyway, so no-op.
+    if (csvFullRows && csvFullRows.length > 0) {
+      stampDistancesFromSubject(csvFullRows);
+      refilterCsvIfActive();
+    }
+    setCount(`Subject set to ${raw} (${muni}). Distance column populated.`);
+    // Fly the map to include the subject in view. Keep zoom modest so
+    // the surrounding sales stay on-screen.
+    mapReady.then(() => flyToFeature(map, feat));
+  } catch (err) {
+    console.warn('Subject fetch failed', err);
+    setCount(`Subject: failed to load (${err.message}).`);
+  } finally {
+    $subjectApply.disabled = false;
+    $subjectApply.textContent = prevLabel || 'Set';
+  }
+}
+
+/**
+ * Wipe the subject highlight + distance column. Called by the Clear
+ * button and indirectly by runSearch / clearAll. Safe to call when
+ * no subject is set — just no-ops everything.
+ */
+function clearSubjectParcel() {
+  subjectFeature = null;
+  subjectCentroid = null;
+  if ($subjectRoll) $subjectRoll.value = '';
+  document.querySelector('.subject-row')?.classList.remove('has-subject');
+  mapReady.then(() => setSubjectData(map, { type: 'FeatureCollection', features: [] }));
+  if (csvFullRows && csvFullRows.length > 0) {
+    for (const r of csvFullRows) {
+      if (r?.parcel?.properties) delete r.parcel.properties._distanceKm;
+    }
+    refilterCsvIfActive();
+  }
+}
+
+/**
+ * Centroid of a parcel polygon — bbox midpoint approximation. We're
+ * computing km-scale distances between rural parcels and a subject;
+ * the difference between a true centroid-of-mass and the bbox center
+ * is below the noise floor at that scale. Avoids pulling in
+ * `@turf/center` for one math op.
+ */
+function computeCentroid(feature) {
+  try {
+    const [minLon, minLat, maxLon, maxLat] = bboxOfFeature(feature);
+    return { lng: (minLon + maxLon) / 2, lat: (minLat + maxLat) / 2 };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Haversine distance between two lng/lat points, in kilometres. Plenty
+ * of precision for the parcel-to-parcel use case (the spheroidal
+ * inaccuracy is < 0.5% at this latitude).
+ */
+function haversineKm(a, b) {
+  if (!a || !b) return NaN;
+  const R = 6371; // mean Earth radius, km
+  const rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad;
+  const dLon = (b.lng - a.lng) * rad;
+  const sa = Math.sin(dLat / 2);
+  const sb = Math.sin(dLon / 2);
+  const c = sa * sa + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * sb * sb;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(c)));
+}
+
+/**
+ * Stamp `_distanceKm` onto every parcel in the CSV row set, measured
+ * from the current subject's centroid. Falls back to clearing the
+ * stamp when no subject is set. Sort + filter pick up the change
+ * automatically since they read off `_distanceKm`.
+ */
+function stampDistancesFromSubject(rows) {
+  if (!Array.isArray(rows)) return;
+  if (!subjectCentroid) {
+    for (const r of rows) if (r?.parcel?.properties) delete r.parcel.properties._distanceKm;
+    return;
+  }
+  for (const r of rows) {
+    const f = r?.parcel;
+    if (!f) continue;
+    const c = computeCentroid(f);
+    if (!c) continue;
+    f.properties._distanceKm = haversineKm(subjectCentroid, c);
+  }
+}
+
+/**
+ * Render the "Data refreshed:" footer with each shard's
+ * `generated_at` timestamp. Lazy on purpose — both helpers
+ * await the relevant shard's load before returning a metadata
+ * block, so this kicks off the assessment-index fetch (~3.5 MiB
+ * gzipped) in the background. Once both promises settle, the
+ * footer surfaces whichever sources came back successfully.
+ *
+ * Format: `Legal: 2026-05-06 · Assessment: 2026-05-10`.
+ * Source rows that failed to fetch are silently skipped — the
+ * footer is informational, not load-bearing.
+ */
+async function populateDataRefreshFooter() {
+  const $footer = document.getElementById('data-refresh-footer');
+  const $list   = document.getElementById('data-refresh-list');
+  if (!$footer || !$list) return;
+  const [legalMeta, asmtMeta] = await Promise.allSettled([
+    getLegalIndexMetadata(),
+    getAssessmentIndexMetadata(),
+  ]);
+  const parts = [];
+  const fmt = (raw) => {
+    // generated_at comes from R as ISO Zulu (YYYY-MM-DDTHH:MM:SSZ).
+    // Show just the date portion — the time is rarely interesting
+    // and a UTC timestamp formatted naively confuses the user.
+    if (!raw) return '';
+    const d = new Date(raw);
+    if (!Number.isFinite(d.valueOf())) return '';
+    return d.toISOString().slice(0, 10);
+  };
+  const legalDate = fmt(legalMeta.status === 'fulfilled' && legalMeta.value?.generated_at);
+  const asmtDate  = fmt(asmtMeta.status === 'fulfilled' && asmtMeta.value?.generated_at);
+  if (legalDate) parts.push(`<strong>Legal:</strong> ${legalDate}`);
+  if (asmtDate)  parts.push(`<strong>Assessment:</strong> ${asmtDate}`);
+  if (parts.length === 0) return;
+  $list.innerHTML = parts.join('<span class="data-refresh-list-sep">·</span>');
+  $footer.hidden = false;
+}
+
 function parseTotalValue(s) {
   if (s == null || s === '') return null;
   // Roll_Entry stores Total_Value as a string ("$1,234,500" or "1234500"
@@ -3735,6 +4149,42 @@ function parseTotalValue(s) {
   if (cleaned === '') return null;
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Parse the sales-CSV Sale Date column into a Date object. The CSV
+ * convention is `DD-Mmm-YY` (e.g. "30-Jan-26") with a two-digit year;
+ * fall back to Date.parse for anything else (so YYYY-MM-DD / ISO
+ * strings still work if the upstream CSV format ever shifts).
+ *
+ * The two-digit year disambiguates against a 50-year sliding window:
+ * 00-49 → 20xx, 50-99 → 19xx. Manitoba sales data is firmly in the
+ * 21st century, so this is just defensive.
+ *
+ * Returns null when the string can't be parsed — callers treat that
+ * as "skip the date check" so a malformed date doesn't drop the row.
+ */
+const SALE_DATE_RE = /^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})$/;
+const MONTHS = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
+function parseSaleDate(s) {
+  if (s == null) return null;
+  const str = String(s).trim();
+  if (!str) return null;
+  const m = str.match(SALE_DATE_RE);
+  if (m) {
+    const day = parseInt(m[1], 10);
+    const mon = MONTHS[m[2].toLowerCase()];
+    let year = parseInt(m[3], 10);
+    if (m[3].length === 2) year = (year < 50 ? 2000 : 1900) + year;
+    if (Number.isFinite(day) && mon != null && Number.isFinite(year)) {
+      const d = new Date(year, mon, day);
+      return Number.isFinite(d.valueOf()) ? d : null;
+    }
+  }
+  // Fallback: HTML5 date inputs hand us 'YYYY-MM-DD' directly, and the
+  // upstream sales-CSV format could shift to ISO at any point.
+  const fallback = new Date(str);
+  return Number.isFinite(fallback.valueOf()) ? fallback : null;
 }
 
 function formatCurrency(s) {
@@ -3753,6 +4203,22 @@ function exportCsv() {
   // currently in sales-mode — otherwise they'd just be empty trailing
   // cells on every row of a regular search export.
   const inSalesMode = $resultsTable?.classList.contains('sales-mode');
+  // Starred-only mode — if any row's parcel is in the favourites set,
+  // export only those rows. Lets the appraiser flag the 3-5 comps
+  // worth keeping and export just those for the report. No starred
+  // rows -> behave as the original full-export.
+  let exportRows = currentRows;
+  let starredOnly = false;
+  if (inSalesMode && favoriteKeys.size > 0) {
+    const starredRows = currentRows.filter((r) => {
+      const k = parcelLegalKey(r?.parcel?.properties || {});
+      return k && favoriteKeys.has(k);
+    });
+    if (starredRows.length > 0) {
+      exportRows = starredRows;
+      starredOnly = true;
+    }
+  }
   const header = [
     'Roll #', 'Address',
     'Legal Description', 'Legal Detail', 'Lot', 'Block', 'Plan',
@@ -3766,11 +4232,11 @@ function exportCsv() {
     csvAssessHeader(currentRows), 'Asmt Report URL',
     'Walkscore URL', 'Flood-Map URL',
     ...(inSalesMode
-      ? ['Sale Date', 'Sale Price', 'Group #', 'Group $/Lot', 'Group $/SF', 'Group $/Acre']
+      ? ['Sale Date', 'Sale Price', 'Group #', 'Group $/Lot', 'Group $/SF', 'Group $/Acre', 'Sale/Asmt']
       : []),
   ];
   const lines = [header.map(csvCell).join(',')];
-  for (const row of currentRows) {
+  for (const row of exportRows) {
     const p = row.parcel.properties || {};
     const z1 = row.zoning[0]?.feature.properties || {};
     const z2 = row.zoning[1]?.feature.properties || {};
@@ -3805,6 +4271,7 @@ function exportCsv() {
             p._saleGroupPpl != null ? Math.round(p._saleGroupPpl) : '',
             p._saleGroupAcresIncomplete ? '' : (p._saleGroupPpsf != null ? p._saleGroupPpsf.toFixed(2) : ''),
             p._saleGroupAcresIncomplete ? '' : (p._saleGroupPpa  != null ? Math.round(p._saleGroupPpa)   : ''),
+            p._saleGroupAsmtIncomplete ? '' : (Number.isFinite(p._saleGroupSaleToAsmt) ? p._saleGroupSaleToAsmt.toFixed(2) : ''),
           ]
         : []),
     ].map(csvCell).join(','));
@@ -3815,7 +4282,10 @@ function exportCsv() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `manitoba-parcels-${today()}.csv`;
+  // Filename advertises whether the export is starred-only so the
+  // file's purpose reads at-a-glance in the user's downloads folder.
+  const suffix = starredOnly ? `-starred-${exportRows.length}` : '';
+  a.download = `manitoba-parcels${suffix}-${today()}.csv`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

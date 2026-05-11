@@ -77,7 +77,8 @@ output <- normalizePath(
 message("[assessment-index] reading ", input)
 th <- read_parquet(input)
 
-required_cols <- c("muni_no", "roll_no_txt", "tax_year", "land", "buildings", "total", "summable")
+required_cols <- c("muni_no", "roll_no_txt", "tax_year", "class", "tax_status",
+                   "land", "buildings", "total", "summable")
 missing <- setdiff(required_cols, names(th))
 if (length(missing)) {
   stop("Input parquet is missing expected columns: ", paste(missing, collapse = ", "))
@@ -94,9 +95,48 @@ th <- th |>
 # land/buildings/total across the surviving classes for that year.
 # `na.rm = TRUE` so a single missing land/buildings cell doesn't wipe
 # out the whole year's sum.
-agg <- th |>
+#
+# Class + status: many parcels carry MULTIPLE classes in the same year
+# (e.g. RESIDENTIAL 1 + FARM PROPERTY + OTHER PROPERTY). For filter UX
+# we collapse to a single dominant class — the one with the largest
+# `total` value for that parcel-year. That's the assessment line most
+# of the property's value sits in, and it's what most appraisers mean
+# when they say "what kind of property is this." Same logic for status.
+# Ties broken by alphabetical first.
+latest <- th |>
   group_by(muni_no, roll_no_txt) |>
   filter(tax_year == max(tax_year, na.rm = TRUE)) |>
+  ungroup()
+
+# The MAO scrape sometimes emits class names with HTML entities un-
+# decoded (e.g. `RESIDENTIAL 3--CONDOS &amp; CO-OPS`). Normalise the
+# handful that show up so the filter dropdown doesn't display the
+# same class twice. Only the &amp; case has been observed; covering
+# the other common entities defensively in case more sneak through.
+decode_html <- function(x) {
+  x <- gsub("&amp;",  "&",  x, fixed = TRUE)
+  x <- gsub("&lt;",   "<",  x, fixed = TRUE)
+  x <- gsub("&gt;",   ">",  x, fixed = TRUE)
+  x <- gsub("&quot;", '"',  x, fixed = TRUE)
+  x <- gsub("&#39;",  "'",  x, fixed = TRUE)
+  x
+}
+latest <- latest |>
+  mutate(
+    class      = decode_html(class),
+    tax_status = decode_html(tax_status)
+  )
+
+dominant <- latest |>
+  group_by(muni_no, roll_no_txt, tax_year) |>
+  arrange(desc(total), class) |>
+  summarise(
+    class      = first(class),
+    tax_status = first(tax_status),
+    .groups = "drop"
+  )
+
+agg <- latest |>
   group_by(muni_no, roll_no_txt, tax_year) |>
   summarise(
     land      = sum(land,      na.rm = TRUE),
@@ -104,13 +144,16 @@ agg <- th |>
     total     = sum(total,     na.rm = TRUE),
     .groups = "drop"
   ) |>
+  left_join(dominant, by = c("muni_no", "roll_no_txt", "tax_year")) |>
   filter(is.finite(total) & total > 0) |>
   mutate(
     muni_no = as.integer(muni_no),
     tax_year = as.integer(tax_year),
     land = as.numeric(land),
     buildings = as.numeric(buildings),
-    total = as.numeric(total)
+    total = as.numeric(total),
+    class = as.character(class),
+    tax_status = as.character(tax_status)
   )
 
 message(
@@ -128,10 +171,26 @@ message(
   " · zero-buildings: ", true_vacant_count
 )
 
+# Top-class + top-status distribution — sanity-check the dominant-
+# class pick before the filter UI surfaces it.
+top_classes <- agg |>
+  count(class, sort = TRUE) |>
+  head(10)
+top_statuses <- agg |>
+  count(tax_status, sort = TRUE) |>
+  head(10)
+message("[assessment-index] top classes: ",
+        paste(sprintf("%s=%d", top_classes$class, top_classes$n), collapse = ", "))
+message("[assessment-index] top statuses: ",
+        paste(sprintf("%s=%d", top_statuses$tax_status, top_statuses$n), collapse = ", "))
+
 # Pack into the same array-of-arrays shape legal-index uses so the JS
 # loader can stay consistent. Field order matches the FIELD lookup in
 # web/src/assessmentIndex.js — DO NOT REORDER without updating the JS.
-fields <- c("muni_no", "roll_no_txt", "year", "land", "buildings", "total")
+# `class` and `tax_status` are stored at the end so older clients that
+# don't know about them still read [muni, roll, year, land, bldg, total]
+# correctly (the trailing fields are ignored when out of range).
+fields <- c("muni_no", "roll_no_txt", "year", "land", "buildings", "total", "class", "tax_status")
 
 rows <- unname(lapply(seq_len(nrow(agg)), function(i) {
   list(
@@ -140,7 +199,9 @@ rows <- unname(lapply(seq_len(nrow(agg)), function(i) {
     agg$tax_year[i],
     agg$land[i],
     agg$buildings[i],
-    agg$total[i]
+    agg$total[i],
+    if (is.na(agg$class[i])) "" else agg$class[i],
+    if (is.na(agg$tax_status[i])) "" else agg$tax_status[i]
   )
 }))
 

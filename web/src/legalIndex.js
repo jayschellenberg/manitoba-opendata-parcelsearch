@@ -221,6 +221,21 @@ async function fetchLegalIndex() {
   return json;
 }
 
+/**
+ * Returns the metadata block from the loaded legal index, or null if
+ * the index hasn't been loaded yet. Used by the data-refreshed footer
+ * to display the index's generated_at timestamp without forcing an
+ * eager load on page paint.
+ */
+export async function getLegalIndexMetadata() {
+  try {
+    const idx = await loadLegalIndex();
+    return idx?.metadata || null;
+  } catch {
+    return null;
+  }
+}
+
 function rowToRecord(row) {
   return {
     muni_no: row[FIELD.muni_no],
