@@ -146,6 +146,11 @@ const $asmtStatus    = document.getElementById('asmt-status');
 const $subjectRoll   = document.getElementById('subject-roll');
 const $subjectApply  = document.getElementById('subject-apply');
 const $subjectClear  = document.getElementById('subject-clear');
+// Subject muni picker. Populated by handleSalesUpload with the matched
+// muni list when an upload spans 2+ munis; hidden for single-muni
+// uploads where the answer is unambiguous.
+const $subjectMuniRow = document.getElementById('subject-muni-row');
+const $subjectMuni    = document.getElementById('subject-muni');
 // Distance-from-subject filter input.
 const $distanceMax   = document.getElementById('distance-max');
 const $search        = document.getElementById('search');
@@ -941,7 +946,7 @@ for (const el of [
 // to 12 months ago, sale-date-to to today, fire input events so the
 // filter re-runs. Click × to clear both. Today's date comes from
 // new Date() — fine for local-time appraisal use, no timezone games.
-function applyDatePreset(monthsBack, ytd, clear) {
+function applyDatePreset(monthsBack, clear) {
   if (!$saleDateFrom || !$saleDateTo) return;
   if (clear) {
     $saleDateFrom.value = '';
@@ -952,18 +957,12 @@ function applyDatePreset(monthsBack, ytd, clear) {
     const mm   = String(today.getMonth() + 1).padStart(2, '0');
     const dd   = String(today.getDate()).padStart(2, '0');
     const toIso = `${yyyy}-${mm}-${dd}`;
-    let fromIso;
-    if (ytd) {
-      fromIso = `${yyyy}-01-01`;
-    } else {
-      const back = new Date(today);
-      back.setMonth(back.getMonth() - monthsBack);
-      const fy = back.getFullYear();
-      const fm = String(back.getMonth() + 1).padStart(2, '0');
-      const fd = String(back.getDate()).padStart(2, '0');
-      fromIso = `${fy}-${fm}-${fd}`;
-    }
-    $saleDateFrom.value = fromIso;
+    const back = new Date(today);
+    back.setMonth(back.getMonth() - monthsBack);
+    const fy = back.getFullYear();
+    const fm = String(back.getMonth() + 1).padStart(2, '0');
+    const fd = String(back.getDate()).padStart(2, '0');
+    $saleDateFrom.value = `${fy}-${fm}-${fd}`;
     $saleDateTo.value = toIso;
   }
   $saleDateFrom.dispatchEvent(new Event('input', { bubbles: true }));
@@ -972,9 +971,8 @@ function applyDatePreset(monthsBack, ytd, clear) {
 for (const btn of document.querySelectorAll('.date-preset-btn')) {
   btn.addEventListener('click', () => {
     const monthsBack = parseInt(btn.dataset.months || '0', 10);
-    const ytd = btn.dataset.ytd === '1';
     const clear = btn.dataset.clear === '1';
-    applyDatePreset(monthsBack, ytd, clear);
+    applyDatePreset(monthsBack, clear);
   });
 }
 
@@ -1178,6 +1176,8 @@ async function runSearch() {
   // Drop the subject parcel — a fresh Search shouldn't inherit a
   // previous upload's subject highlight on the map.
   clearSubjectParcel();
+  // Hide the subject muni picker since it's CSV-only.
+  if ($subjectMuniRow) $subjectMuniRow.hidden = true;
   // Hide the unmatched-records panel — also CSV-upload-specific.
   renderUnmatchedPanel([]);
   // Clear the CSV-mode state so the Other Searches filter listeners
@@ -1714,6 +1714,34 @@ async function handleSalesUpload(file) {
     const { classes, statuses } = uniqueClassesAndStatuses(parcelFc);
     if ($asmtClass)  fillSelect($asmtClass,  classes,  'Any class');
     if ($asmtStatus) fillSelect($asmtStatus, statuses, 'Any status');
+
+    // Subject muni picker. Visible only when the upload spans 2+ munis
+    // — single-muni uploads use that muni implicitly so the picker
+    // would just be a one-option dropdown. Default the selection to
+    // the dominant muni (the one with the most matched parcels), so
+    // a user typing a subject roll without touching the picker gets
+    // the most-likely-correct muni.
+    if ($subjectMuni && $subjectMuniRow) {
+      if (csvMatchedMunis && csvMatchedMunis.length > 1) {
+        $subjectMuni.innerHTML = '';
+        for (const m of csvMatchedMunis) {
+          const opt = document.createElement('option');
+          opt.value = m;
+          opt.textContent = m;
+          $subjectMuni.appendChild(opt);
+        }
+        // dominantMuni is the highest-matched-count muni captured
+        // earlier in this function — fall back to the first matched
+        // muni if it's not in scope here for any reason.
+        const defaultMuni = dominantMuni || csvMatchedMunis[0];
+        if ([...$subjectMuni.options].some((o) => o.value === defaultMuni)) {
+          $subjectMuni.value = defaultMuni;
+        }
+        $subjectMuniRow.hidden = false;
+      } else {
+        $subjectMuniRow.hidden = true;
+      }
+    }
 
     // Runtime debugging — expose the post-stamp parcelFc + parcelHtml so the
     // tooltip / hover path can be inspected from the console without
@@ -4245,7 +4273,21 @@ function formatSf(acres) {
  */
 async function applySubjectFromInput() {
   const raw = $subjectRoll?.value?.trim();
-  const muni = $municipality?.value;
+  // Pick the muni for the subject in priority order:
+  //   1. The inline subject-muni dropdown when visible (multi-muni
+  //      uploads — user explicitly picks which matched muni)
+  //   2. The single matched muni when csvMatchedMunis has just one
+  //      entry (unambiguous, so we skip showing the picker)
+  //   3. The main muni dropdown's value (regular-search path, no CSV
+  //      uploaded yet)
+  let muni = '';
+  if ($subjectMuniRow && !$subjectMuniRow.hidden && $subjectMuni?.value) {
+    muni = $subjectMuni.value;
+  } else if (csvMatchedMunis && csvMatchedMunis.length === 1) {
+    muni = csvMatchedMunis[0];
+  } else {
+    muni = $municipality?.value || '';
+  }
   if (!raw) {
     setCount('Subject: enter a roll number first.');
     return;

@@ -138,8 +138,17 @@ body:not(.sales-mode) .sidebar .date-row,
 body:not(.sales-mode) .sidebar .date-presets,
 body:not(.sales-mode) .sidebar .class-row,
 body:not(.sales-mode) .sidebar .subject-row,
+body:not(.sales-mode) .sidebar .subject-muni-row,
 body:not(.sales-mode) .sidebar .distance-row,
 body:not(.sales-mode) .sidebar .favourite-row { display: none; }
+
+/* Subject muni picker — slim row directly under the subject roll
+   input. Single-muni uploads keep the row hidden (the JS toggles
+   [hidden] based on csvMatchedMunis.length). */
+.sidebar .subject-muni-row { display: flex; margin-top: 4px; }
+.sidebar .subject-muni-row[hidden] { display: none; }
+.sidebar .subject-muni-row > .field { flex: 1 1 auto; min-width: 0; }
+.sidebar .subject-muni-row select { width: 100%; }
 
 /* Date quick-preset buttons — small pill row under the date inputs. */
 .sidebar .date-presets {

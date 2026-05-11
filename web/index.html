@@ -242,11 +242,11 @@
              main.js: click a button -> set both inputs -> dispatch
              input event -> refilterCsvIfActive runs as usual. -->
         <div class="date-presets sales-only" role="group" aria-label="Date range presets">
-          <button id="date-preset-12mo" type="button" class="date-preset-btn" data-months="12">12 mo</button>
-          <button id="date-preset-6mo"  type="button" class="date-preset-btn" data-months="6">6 mo</button>
-          <button id="date-preset-3mo"  type="button" class="date-preset-btn" data-months="3">3 mo</button>
-          <button id="date-preset-ytd"  type="button" class="date-preset-btn" data-ytd="1">YTD</button>
-          <button id="date-preset-clear" type="button" class="date-preset-btn date-preset-clear" data-clear="1" title="Clear date range">×</button>
+          <button type="button" class="date-preset-btn" data-months="6">6 mo</button>
+          <button type="button" class="date-preset-btn" data-months="12">12 mo</button>
+          <button type="button" class="date-preset-btn" data-months="24">24 mo</button>
+          <button type="button" class="date-preset-btn" data-months="36">36 mo</button>
+          <button type="button" class="date-preset-btn date-preset-clear" data-clear="1" title="Clear date range">×</button>
         </div>
         <!-- Subject parcel input. Optional and sales-only. Setting a
              subject roll # before (or after) uploading a sales CSV
@@ -260,10 +260,22 @@
         <div class="subject-row sales-only">
           <span class="field subject-roll-field">
             <input id="subject-roll" type="text" placeholder="Subject roll #" autocomplete="off" />
-            <span class="tip">Roll number of the subject property — fetched from the currently-selected municipality. Adds a Distance (km) column and a blue map highlight.</span>
+            <span class="tip">Roll number of the subject property. The municipality picker beside this input controls which muni the roll is fetched from — defaults to the dominant matched muni for a multi-muni upload, hidden for single-muni uploads.</span>
           </span>
           <button id="subject-apply" type="button" class="secondary subject-apply-btn">Set</button>
           <button id="subject-clear" type="button" class="secondary subject-clear-btn" title="Clear the subject parcel">×</button>
+        </div>
+        <!-- Subject municipality picker. Visible only when a sales-CSV
+             upload matched 2+ munis — single-muni uploads use that
+             muni implicitly. Pre-populated by handleSalesUpload with
+             the matched-muni list, default selection = dominant muni.
+             applySubjectFromInput reads this picker first, falling
+             back to the main muni dropdown when it's not in use. -->
+        <div id="subject-muni-row" class="subject-muni-row sales-only" hidden>
+          <span class="field subject-muni-field">
+            <select id="subject-muni"></select>
+            <span class="tip">Municipality the subject roll # is fetched from. The list contains every muni that matched a parcel in the uploaded sales CSV.</span>
+          </span>
         </div>
         <!-- Distance-from-subject filter. Sales-only and only fires
              when a subject is set; otherwise the filter is a no-op
