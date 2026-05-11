@@ -993,7 +993,7 @@ export function initMap(container, { onFeatureClick } = {}) {
             'case',
             ['boolean', ['feature-state', 'groupHover'], false],
             0.5,
-            0.22,
+            0.3,
           ],
         },
       });

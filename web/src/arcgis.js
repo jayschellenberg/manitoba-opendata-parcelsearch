@@ -297,14 +297,90 @@ export async function fetchDevPlanOverlap(parcelFc, { municipality } = {}) {
  * ("Niverville") — strip the suffix and ignore case.
  */
 async function fetchOverlayByMunicipality(baseUrl, municipality, outFields) {
-  const bare = municipality.replace(/\s*\([^)]*\)\s*$/, '').trim().toUpperCase();
   return fetchAllPages(baseUrl, {
-    where: `UPPER(MUNI_NAME) = '${escapeSql(bare)}'`,
+    where: muniNameMatchClause(municipality),
     outFields,
     returnGeometry: 'true',
     outSR: '4326',
     f: 'geojson',
   }, 20000);
+}
+
+/**
+ * Build a `MUNI_NAME` WHERE clause that copes with the Zoning +
+ * Dev-Plan layers' wildly inconsistent muni naming. Roll_Entry stores
+ * "WEST ST PAUL (RM)" / "STONEWALL (TOWN)" — but the overlay layers
+ * use a half-dozen different conventions for the same muni:
+ *
+ *   "Stonewall"               (bare)
+ *   "Town of Stonewall"       (type-prefixed)
+ *   "City of Selkirk"         (type-prefixed)
+ *   "West St. Paul"           (bare with St. dot)
+ *   "Ste. Anne (Town)"        (dotted + parens-typed)
+ *   "Portage la Prairie (RM)" (parens-typed)
+ *
+ * The previous single-equals comparison ("UPPER(MUNI_NAME) = bare")
+ * only matched the bare form — so Stonewall, Selkirk, West St Paul,
+ * Ste. Anne, Portage la Prairie, and any other muni whose overlay-
+ * side spelling included a type prefix, parens-suffix, OR a period
+ * on St/Ste all silently returned zero features. This builds the
+ * full cross-product of (bare ± type-prefix ± parens-suffix) × (with
+ * dot ± without dot), wraps it in a UPPER(MUNI_NAME) IN-list, and
+ * lets the source pick whichever form it happens to use.
+ */
+function muniNameMatchClause(municipality) {
+  const upper = municipality.trim().toUpperCase();
+  const bareMatch = upper.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+  const bare = (bareMatch ? bareMatch[1] : upper).trim();
+  const type = (bareMatch ? bareMatch[2] : '').trim();
+
+  // Type → list of prefix candidates (e.g. "TOWN" → "TOWN OF").
+  // Multi-expansion for types that have both short + long forms in
+  // open-data layers ("RM" appears as both "RM OF" and "RURAL
+  // MUNICIPALITY OF" across different layers).
+  const PREFIX_MAP = {
+    'TOWN':               ['TOWN OF'],
+    'CITY':               ['CITY OF'],
+    'VILLAGE':            ['VILLAGE OF'],
+    'RM':                 ['RM OF', 'RURAL MUNICIPALITY OF'],
+    'MUNICIPALITY':       ['MUNICIPALITY OF'],
+    'LGD':                ['LGD OF', 'LOCAL GOVERNMENT DISTRICT OF'],
+    'NORTHERN COMMUNITY': ['NORTHERN COMMUNITY OF'],
+  };
+  const prefixes = PREFIX_MAP[type] || [];
+
+  // Type → list of parens-suffix candidates (matches the Manitoba
+  // Zoning layer's "Portage la Prairie (RM)" convention). Some munis
+  // shorten the type (e.g. "Souris-Glenwood (M)" for Municipality).
+  const SUFFIX_MAP = {
+    'TOWN':               ['Town', 'TOWN'],
+    'CITY':               ['City', 'CITY'],
+    'VILLAGE':            ['Village', 'VILLAGE'],
+    'RM':                 ['RM'],
+    'MUNICIPALITY':       ['Municipality', 'M'],
+    'LGD':                ['LGD'],
+    'NORTHERN COMMUNITY': ['NC', 'Northern Community'],
+  };
+  const suffixes = SUFFIX_MAP[type] || [];
+
+  // Build the bare/prefix/suffix cross-product first, then expand
+  // each into its with-dot and without-dot variants. Set de-dupes
+  // any overlaps (bare names without "St" produce identical dot
+  // variants).
+  const stems = new Set([bare]);
+  for (const p of prefixes) stems.add(`${p} ${bare}`);
+  for (const s of suffixes) stems.add(`${bare} (${s.toUpperCase()})`);
+
+  const variants = new Set();
+  for (const stem of stems) {
+    variants.add(stem);
+    variants.add(stem.replace(/\bST\b/g, 'ST.'));
+    variants.add(stem.replace(/\bSTE\b/g, 'STE.'));
+    variants.add(stem.replace(/\bST\./g, 'ST'));
+    variants.add(stem.replace(/\bSTE\./g, 'STE'));
+  }
+  const list = [...variants].map((v) => `'${escapeSql(v)}'`).join(',');
+  return `UPPER(MUNI_NAME) IN (${list})`;
 }
 
 /**
@@ -1108,8 +1184,11 @@ function parseCsv(text) {
 function municipalityToWhere(muni, valueField) {
   const baseValue = `${valueField} IS NOT NULL`;
   if (!muni) return baseValue;
-  const bare = muni.replace(/\s*\([^)]*\)\s*$/, '').trim();
-  return `${baseValue} AND UPPER(MUNI_NAME) = '${escapeSql(bare.toUpperCase())}'`;
+  // Reuse the same dot-variant clause the layer fetcher uses so the
+  // category dropdown and the per-muni overlay fetch agree on what
+  // matches. Without this, the dropdown finds the right zones but
+  // the layer query returns zero polygons for "St."-prefix munis.
+  return `${baseValue} AND ${muniNameMatchClause(muni)}`;
 }
 
 // ---------- Internals ----------
@@ -1173,11 +1252,10 @@ async function resolveOverlayFilter({ zoneCategory, devPlanCategory, zoningChang
 
   // Add the muni narrowing to each overlay query when set. Roll Entry's
   // Muni_Name_With_Typ ("STONEWALL (TOWN)") differs from the overlay
-  // layers' MUNI_NAME ("Stonewall") — strip the typed suffix and ignore
-  // case to match either form.
-  const muniClause = municipality
-    ? `UPPER(MUNI_NAME) = '${escapeSql(municipality.replace(/\s*\([^)]*\)\s*$/, '').trim().toUpperCase())}'`
-    : null;
+  // layers' MUNI_NAME ("Stonewall") — and some overlay-side names
+  // carry inconsistent dots on "St"/"Ste" abbreviations. muniNameMatchClause
+  // handles both differences via a UPPER(MUNI_NAME) IN-list.
+  const muniClause = municipality ? muniNameMatchClause(municipality) : null;
 
   const overlayFcs = await Promise.all(
     overlayQueries.map(async ({ url, clauses }) => {
