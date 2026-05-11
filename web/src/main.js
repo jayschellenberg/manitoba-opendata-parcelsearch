@@ -146,6 +146,8 @@ const $asmtStatus    = document.getElementById('asmt-status');
 const $subjectRoll   = document.getElementById('subject-roll');
 const $subjectApply  = document.getElementById('subject-apply');
 const $subjectClear  = document.getElementById('subject-clear');
+// Distance-from-subject filter input.
+const $distanceMax   = document.getElementById('distance-max');
 const $search        = document.getElementById('search');
 const $clear         = document.getElementById('clear');
 const $export        = document.getElementById('export');
@@ -506,6 +508,36 @@ let csvMatchedMunis = null;
 let subjectFeature = null;
 let subjectCentroid = null;   // { lng, lat } — bbox midpoint, good enough for km-scale distance
 
+// Recent uploads — last N sales CSVs cached in localStorage. Each
+// entry is { name, text, ts } where `text` is the raw CSV content.
+// 13–50 KB per CSV is realistic, so 5 entries comfortably fits under
+// localStorage's typical 5 MB quota.
+const RECENT_STORAGE_KEY = 'mb_recent_sales_csvs_v1';
+const RECENT_CAP = 5;
+function loadRecentUploads() {
+  try {
+    const raw = localStorage.getItem(RECENT_STORAGE_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.slice(0, RECENT_CAP) : [];
+  } catch { return []; }
+}
+function saveRecentUploads(list) {
+  try {
+    localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(list.slice(0, RECENT_CAP)));
+  } catch { /* quota errors — best-effort */ }
+}
+function rememberUpload(name, text) {
+  if (!name || !text) return;
+  // De-dup by name, keep newest at the front. Re-uploading the same
+  // file refreshes the timestamp + the cached text (handy when the
+  // CSV gets fresh sales between sessions).
+  const list = loadRecentUploads().filter((e) => e.name !== name);
+  list.unshift({ name, text, ts: Date.now() });
+  saveRecentUploads(list);
+  populateRecentUploads();
+}
+
 // Favourites — persisted in localStorage as a Set of "muni_no|roll_no_txt"
 // keys (same shape as parcelLegalKey). Survives reloads so the user
 // can star a comp, refresh the page, re-upload the same CSV, and the
@@ -574,6 +606,10 @@ const SORT_KEYS = {
   grouppricesf: (r) => finiteOrNeg(r.parcel.properties._saleGroupPpsf),
   saletoasmt:   (r) => finiteOrNeg(r.parcel.properties._saleGroupSaleToAsmt),
   subjdist:     (r) => finiteOrNeg(r.parcel.properties._distanceKm),
+  asmtland:     (r) => finiteOrNeg(r.parcel.properties._asmtLand),
+  asmtbldg:     (r) => finiteOrNeg(r.parcel.properties._asmtBuildings),
+  asmtpct:      (r) => finiteOrNeg(r.parcel.properties._asmtPctBldg),
+  asmtyear:     (r) => finiteOrNeg(r.parcel.properties._asmtYear),
 };
 
 function strKey(v) {
@@ -660,6 +696,68 @@ if ($salesUploadBtn && $salesUploadInput) {
     }
   });
 }
+
+// Recent uploads — picker + Forget All button. Lazily populated
+// on first page load. Picking an entry replays the cached CSV
+// through handleSalesUpload (with a synthetic { name, text } file).
+const $recentRow    = document.getElementById('recent-uploads-row');
+const $recentSelect = document.getElementById('recent-uploads-select');
+const $recentClear  = document.getElementById('recent-uploads-clear');
+function populateRecentUploads() {
+  if (!$recentSelect || !$recentRow) return;
+  const list = loadRecentUploads();
+  $recentSelect.innerHTML = '';
+  const blank = document.createElement('option');
+  blank.value = '';
+  blank.textContent = list.length ? 'Pick a recent CSV…' : '—';
+  $recentSelect.appendChild(blank);
+  for (const e of list) {
+    const opt = document.createElement('option');
+    opt.value = e.name;
+    const dt = new Date(e.ts || 0);
+    const ts = Number.isFinite(dt.valueOf()) ? dt.toISOString().slice(0, 10) : '';
+    opt.textContent = ts ? `${e.name} (${ts})` : e.name;
+    $recentSelect.appendChild(opt);
+  }
+  $recentRow.hidden = list.length === 0;
+}
+if ($recentSelect) {
+  $recentSelect.addEventListener('change', async () => {
+    const name = $recentSelect.value;
+    if (!name) return;
+    const entry = loadRecentUploads().find((e) => e.name === name);
+    if (!entry) return;
+    try {
+      await handleSalesUpload({ name: entry.name, text: entry.text });
+    } catch (err) {
+      console.error('Recent upload replay failed', err);
+      setCount(`Recent upload replay failed: ${err.message}`);
+    }
+    $recentSelect.value = '';
+  });
+}
+if ($recentClear) {
+  $recentClear.addEventListener('click', () => {
+    saveRecentUploads([]);
+    populateRecentUploads();
+  });
+}
+populateRecentUploads();
+
+// Favourites: bulk-clear button. Sales-only via the .favourite-row
+// class (hidden outside sales mode by the same body.sales-mode rule
+// the other sales-only inputs use). Wipes the in-memory Set + the
+// localStorage entry and re-renders the table so star cells reset
+// to their unstarred glyph.
+const $favouritesClear = document.getElementById('favourites-clear');
+if ($favouritesClear) {
+  $favouritesClear.addEventListener('click', () => {
+    favoriteKeys.clear();
+    saveFavorites();
+    if (currentRows && currentRows.length > 0) renderTable(currentRows);
+  });
+}
+
 $zoningToggle.addEventListener('click', () => toggleOverlay('zoning'));
 $devplanToggle.addEventListener('click', () => toggleOverlay('devplan'));
 $contamToggle.addEventListener('click', () => toggleAuxOverlay('contam'));
@@ -833,10 +931,51 @@ $duMode.addEventListener('change', () => {
 // these listeners are no-ops (Search button still drives the SQL).
 for (const el of [
   $zoneCategory, $changedStatus, $duMode, $duMin, $sizeLow, $sizeHigh, $vacantOnly,
-  $saleDateFrom, $saleDateTo, $asmtClass, $asmtStatus,
+  $saleDateFrom, $saleDateTo, $asmtClass, $asmtStatus, $distanceMax,
 ].filter(Boolean)) {
   el.addEventListener('change', refilterCsvIfActive);
   el.addEventListener('input',  refilterCsvIfActive);
+}
+
+// Date-range quick-preset buttons. Click "12 mo" -> set sale-date-from
+// to 12 months ago, sale-date-to to today, fire input events so the
+// filter re-runs. Click × to clear both. Today's date comes from
+// new Date() — fine for local-time appraisal use, no timezone games.
+function applyDatePreset(monthsBack, ytd, clear) {
+  if (!$saleDateFrom || !$saleDateTo) return;
+  if (clear) {
+    $saleDateFrom.value = '';
+    $saleDateTo.value = '';
+  } else {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm   = String(today.getMonth() + 1).padStart(2, '0');
+    const dd   = String(today.getDate()).padStart(2, '0');
+    const toIso = `${yyyy}-${mm}-${dd}`;
+    let fromIso;
+    if (ytd) {
+      fromIso = `${yyyy}-01-01`;
+    } else {
+      const back = new Date(today);
+      back.setMonth(back.getMonth() - monthsBack);
+      const fy = back.getFullYear();
+      const fm = String(back.getMonth() + 1).padStart(2, '0');
+      const fd = String(back.getDate()).padStart(2, '0');
+      fromIso = `${fy}-${fm}-${fd}`;
+    }
+    $saleDateFrom.value = fromIso;
+    $saleDateTo.value = toIso;
+  }
+  $saleDateFrom.dispatchEvent(new Event('input', { bubbles: true }));
+  $saleDateTo.dispatchEvent(new Event('input', { bubbles: true }));
+}
+for (const btn of document.querySelectorAll('.date-preset-btn')) {
+  btn.addEventListener('click', () => {
+    const monthsBack = parseInt(btn.dataset.months || '0', 10);
+    const ytd = btn.dataset.ytd === '1';
+    const clear = btn.dataset.clear === '1';
+    applyDatePreset(monthsBack, ytd, clear);
+  });
 }
 
 // UofM toggle pill — flips between Acres and Sq Ft. Click handler
@@ -996,10 +1135,17 @@ async function refilterCategoryDropdowns() {
 
 function fillSelect(sel, values, blankLabel) {
   sel.innerHTML = '';
-  const blank = document.createElement('option');
-  blank.value = '';
-  blank.textContent = blankLabel;
-  sel.appendChild(blank);
+  // Multi-select dropdowns don't get a "blank" option — the empty
+  // selection itself is the no-filter state, so a blank entry would
+  // be a no-op the user can't visually distinguish from "deselected".
+  // Single-select dropdowns keep the existing "Any zoning category"
+  // sentinel placeholder.
+  if (!sel.multiple) {
+    const blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = blankLabel;
+    sel.appendChild(blank);
+  }
   for (const v of values) {
     const opt = document.createElement('option');
     opt.value = v;
@@ -1024,8 +1170,11 @@ async function runSearch() {
   if ($vacantOnly)    $vacantOnly.checked = false;
   if ($saleDateFrom)  $saleDateFrom.value = '';
   if ($saleDateTo)    $saleDateTo.value = '';
-  if ($asmtClass)     $asmtClass.value = '';
-  if ($asmtStatus)    $asmtStatus.value = '';
+  if ($distanceMax)   $distanceMax.value = '';
+  // Multi-select: clear all selected options so the filter goes back
+  // to "any" rather than carrying over the last upload's picks.
+  if ($asmtClass)     [...$asmtClass.options].forEach((o) => { o.selected = false; });
+  if ($asmtStatus)    [...$asmtStatus.options].forEach((o) => { o.selected = false; });
   // Drop the subject parcel — a fresh Search shouldn't inherit a
   // previous upload's subject highlight on the map.
   clearSubjectParcel();
@@ -1262,12 +1411,20 @@ async function handleSalesUpload(file) {
     // to null so _isVacantLand simply stays undefined when the
     // shard isn't reachable, which the filter treats as 'unknown'.
     warmAssessmentIndex();
-    const text = await file.text();
+    // Accept both a File (from the upload input) and a pre-loaded
+    // { name, text } object (from the Recent uploads picker). Lets
+    // the same pipeline drive either entry point without copying.
+    const text = (typeof file?.text === 'function') ? await file.text() : (file?.text || '');
+    const fileName = file?.name || 'sales.csv';
+    // Cache this CSV for the Recent uploads picker — only when the
+    // text actually parsed to records (failed parses skip the cache
+    // entirely so a malformed file doesn't pollute the history).
     const records = parseSalesCsv(text);
     if (records.length === 0) {
       setCount('No usable rows in CSV. Expecting Roll Number + Municipality columns.');
       return;
     }
+    rememberUpload(fileName, text);
 
     // Group by normalized muni. Track each unmatched record alongside
     // a human-readable `reason` so the unmatched-records panel can
@@ -1876,14 +2033,25 @@ function filterCsvRowsByOtherSearches(rows) {
   // Inclusive 'to' — bump by 24h - 1ms so a sale on the 'to' day passes.
   const dateToMs   = dateTo   ? dateTo.getTime() + 86399999 : Infinity;
 
-  // Class + status filters. Empty value = no filter for that axis;
-  // any selected value gates the row on the per-parcel _asmtClass /
-  // _asmtStatus stamped by handleSalesUpload. Parcels missing
-  // assessment data (rare; happens when the assessment-index shard
-  // doesn't have the parcel) are excluded when either filter is
-  // active — same defensive policy as the vacant-only filter.
-  const classFilter  = $asmtClass?.value || '';
-  const statusFilter = $asmtStatus?.value || '';
+  // Class + status filters — multi-select. Read the selected <option>
+  // values into a Set for O(1) lookup. Empty set = no filter on that
+  // axis. Any parcel missing assessment data is excluded when at
+  // least one option is selected, matching the original single-select
+  // behaviour.
+  const classFilterSet = $asmtClass
+    ? new Set([...$asmtClass.selectedOptions].map((o) => o.value).filter(Boolean))
+    : new Set();
+  const statusFilterSet = $asmtStatus
+    ? new Set([...$asmtStatus.selectedOptions].map((o) => o.value).filter(Boolean))
+    : new Set();
+
+  // Max distance from subject. Only fires when (a) a subject is set
+  // and (b) the input parses to a positive number. Sales without a
+  // computed distance (no subject, or subject geometry unparseable)
+  // are passed through unchanged when the filter is off, dropped
+  // when it's on.
+  const distMaxRaw = parseFloat($distanceMax?.value);
+  const distActive = subjectCentroid && Number.isFinite(distMaxRaw) && distMaxRaw > 0;
 
   return rows.filter((row) => {
     const p = row.parcel?.properties || {};
@@ -1942,17 +2110,25 @@ function filterCsvRowsByOtherSearches(rows) {
       if (t < dateFromMs || t > dateToMs) return false;
     }
 
-    // Class filter (single-select). Drops rows whose dominant class
-    // doesn't match; rows with no assessment data fail when the filter
-    // is on.
-    if (classFilter) {
-      if (!p._asmtClass || p._asmtClass !== classFilter) return false;
+    // Class filter (multi-select). Drops rows whose dominant class
+    // isn't in the selected Set; rows with no assessment data fail
+    // when at least one class is selected.
+    if (classFilterSet.size > 0) {
+      if (!p._asmtClass || !classFilterSet.has(p._asmtClass)) return false;
     }
 
-    // Tax-status filter (single-select). Same shape as the class
+    // Tax-status filter (multi-select). Same shape as the class
     // filter above.
-    if (statusFilter) {
-      if (!p._asmtStatus || p._asmtStatus !== statusFilter) return false;
+    if (statusFilterSet.size > 0) {
+      if (!p._asmtStatus || !statusFilterSet.has(p._asmtStatus)) return false;
+    }
+
+    // Distance-from-subject filter. Sales without a computed
+    // _distanceKm are dropped when the filter is active — they'd be
+    // ambiguous and the safe default is "exclude unknown."
+    if (distActive) {
+      const d = Number(p._distanceKm);
+      if (!Number.isFinite(d) || d > distMaxRaw) return false;
     }
 
     // Zone category — needs zoning enrichment. If the row has no
@@ -3059,6 +3235,13 @@ function renderTable(rows) {
   currentRows = rows;
   rowFeatureMap.clear();
   const sorted = sortRows(rows);
+  // Outlier detection on $/Acre — compute mean + σ across the current
+  // (filtered) sales-mode set and tag rows beyond ±2σ. Quietly skips
+  // when fewer than 3 rows have a real $/Acre value (too few for
+  // a meaningful σ). The .outlier class adds a subtle background so
+  // the appraiser can spot likely outliers at a glance without it
+  // dominating the table.
+  const outlierThresholds = computePpaOutlierThresholds(sorted);
   const frag = document.createDocumentFragment();
   for (const row of sorted) {
     const p = row.parcel.properties || {};
@@ -3067,8 +3250,18 @@ function renderTable(rows) {
       tr.dataset.rowKey = String(p._rowKey);
       if (row.parcel.geometry) rowFeatureMap.set(String(p._rowKey), row.parcel);
     }
+    // Outlier tag — only fires in sales-mode and only on rows whose
+    // $/Acre exists. CSS rules in style.css gate visibility on
+    // body.sales-mode so non-sales searches don't get flagged.
+    if (outlierThresholds && p._saleGroupPpa != null) {
+      const ppa = Number(p._saleGroupPpa);
+      if (Number.isFinite(ppa) && (ppa < outlierThresholds.lo || ppa > outlierThresholds.hi)) {
+        tr.classList.add('outlier');
+        tr.title = `Outlier: $/Acre ${Math.round(ppa).toLocaleString('en-US')} is more than 2σ from the filtered mean ${Math.round(outlierThresholds.mean).toLocaleString('en-US')}`;
+      }
+    }
     tr.classList.add('clickable');
-    tr.title = 'Click to zoom map to this parcel';
+    if (!tr.title) tr.title = 'Click to zoom map to this parcel';
     tr.addEventListener('click', () => {
       const f = rowFeatureMap.get(tr.dataset.rowKey);
       if (f) mapReady.then(() => flyToFeature(map, f));
@@ -3126,6 +3319,22 @@ function renderTable(rows) {
     const distCell = td(formatDistanceKm(p), 'num');
     distCell.classList.add('sales-only', 'subj-col');
     tr.appendChild(distCell);
+    // Per-parcel assessment block (Land $, Bldg $, Bldg %, Asmt Yr).
+    // All four cells always emit so the sales-only column count stays
+    // stable; values fall through to empty strings when the assessment
+    // index didn't have the parcel.
+    const landCell = td(formatCurrencyNumber(p._asmtLand), 'num');
+    landCell.classList.add('sales-only');
+    tr.appendChild(landCell);
+    const bldgCell = td(formatCurrencyNumber(p._asmtBuildings), 'num');
+    bldgCell.classList.add('sales-only');
+    tr.appendChild(bldgCell);
+    const bldgPctCell = td(formatBuildingPct(p._asmtPctBldg), 'num');
+    bldgPctCell.classList.add('sales-only');
+    tr.appendChild(bldgPctCell);
+    const yearCell = td(formatAsmtYear(p._asmtYear), 'num');
+    yearCell.classList.add('sales-only');
+    tr.appendChild(yearCell);
     tr.appendChild(td(p.Property_Address));
     tr.appendChild(legalCell(p));
     tr.appendChild(titleCell(p));
@@ -3936,6 +4145,57 @@ function favoriteCell(row) {
   return cell;
 }
 
+/**
+ * Compute mean ± 2σ thresholds for $/Acre across the rendered rows.
+ * Returns `{lo, hi, mean}` (numbers) when ≥3 rows have a finite
+ * positive $/Acre value, else null (too few samples to flag).
+ *
+ * 2σ is the convention for "statistical outlier" — captures ~5% of
+ * a normal distribution. For an appraisal comp set that's the right
+ * granularity: the typical "this is suspiciously high / low" sale
+ * lands well outside 2σ, while typical market variance stays inside.
+ */
+function computePpaOutlierThresholds(rows) {
+  const vals = [];
+  for (const r of rows) {
+    const v = Number(r?.parcel?.properties?._saleGroupPpa);
+    if (Number.isFinite(v) && v > 0) vals.push(v);
+  }
+  if (vals.length < 3) return null;
+  let sum = 0;
+  for (const v of vals) sum += v;
+  const mean = sum / vals.length;
+  let sumSq = 0;
+  for (const v of vals) sumSq += (v - mean) * (v - mean);
+  const variance = sumSq / vals.length;
+  const sigma = Math.sqrt(variance);
+  return { mean, lo: mean - 2 * sigma, hi: mean + 2 * sigma };
+}
+
+/** Currency value cell — accepts a raw number, returns "$1,234,500"
+ *  or null. Used for the per-parcel Land $ / Bldg $ assessment
+ *  columns (not the sale-price ones, which already accept strings). */
+function formatCurrencyNumber(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return '$' + Math.round(n).toLocaleString('en-US');
+}
+
+/** Building % cell — 0.0853 -> "8.5%". One decimal is enough at
+ *  the appraisal granularity the appraiser actually reads here. */
+function formatBuildingPct(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return (n * 100).toFixed(1) + '%';
+}
+
+/** Assessment year cell — just the year as a string, or null. */
+function formatAsmtYear(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return String(Math.trunc(n));
+}
+
 /** Distance-to-subject table cell. Renders as km with one decimal
  *  for in-town distances (< 10 km), no decimals for further afield.
  *  Returns null when no subject is set or the distance isn't
@@ -4004,6 +4264,32 @@ async function applySubjectFromInput() {
       setCount(`Subject: roll ${raw} not found in ${muni}.`);
       return;
     }
+    // Stamp _isSubject so the shared popup builder can flag the row
+    // with the "Subject parcel" header instead of a sales-style line.
+    if (feat.properties) feat.properties._isSubject = true;
+    // Try to pull the subject's own assessment record so the popup's
+    // Land/Bldg/Year block surfaces for it the same way as a comp.
+    // Non-fatal — popup gracefully drops the block if the lookup
+    // fails or the parcel isn't in the shard.
+    try {
+      const key = parcelLegalKey(feat.properties || {});
+      if (key) {
+        const [muniStr, rollStr] = key.split('|');
+        const rec = await lookupAssessment({
+          muni_no: Number(muniStr),
+          roll_no_txt: rollStr,
+        });
+        if (rec) {
+          feat.properties._asmtLand      = rec.land;
+          feat.properties._asmtBuildings = rec.buildings;
+          feat.properties._asmtTotal     = rec.total;
+          feat.properties._asmtYear      = rec.year;
+          feat.properties._asmtPctBldg   = rec.pctBuildings;
+          feat.properties._asmtClass     = rec.class || '';
+          feat.properties._asmtStatus    = rec.tax_status || '';
+        }
+      }
+    } catch (e) { /* non-fatal */ }
     subjectFeature = feat;
     subjectCentroid = computeCentroid(feat);
     setSubjectData(map, { type: 'FeatureCollection', features: [feat] });
@@ -4203,19 +4489,37 @@ function exportCsv() {
   // currently in sales-mode — otherwise they'd just be empty trailing
   // cells on every row of a regular search export.
   const inSalesMode = $resultsTable?.classList.contains('sales-mode');
-  // Starred-only mode — if any row's parcel is in the favourites set,
-  // export only those rows. Lets the appraiser flag the 3-5 comps
-  // worth keeping and export just those for the report. No starred
-  // rows -> behave as the original full-export.
+  // Starred-only mode — if any row's parcel is in the favourites
+  // set, export only those rows AND every sibling parcel in the
+  // same sale group. Starring one half of a 2-parcel sale should
+  // pull the other half into the export too, since the appraiser
+  // is interested in the WHOLE deal, not just one parcel of it.
+  // No starred rows -> fall through to the original full-export.
   let exportRows = currentRows;
   let starredOnly = false;
   if (inSalesMode && favoriteKeys.size > 0) {
-    const starredRows = currentRows.filter((r) => {
+    const starredKeys = new Set();
+    const starredGroupIds = new Set();
+    for (const r of currentRows) {
       const k = parcelLegalKey(r?.parcel?.properties || {});
-      return k && favoriteKeys.has(k);
-    });
-    if (starredRows.length > 0) {
-      exportRows = starredRows;
+      if (k && favoriteKeys.has(k)) {
+        starredKeys.add(k);
+        const gid = r.parcel?.properties?._saleGroupId;
+        if (gid != null) starredGroupIds.add(gid);
+      }
+    }
+    if (starredKeys.size > 0) {
+      // Expand: any row whose sale group has at least one starred
+      // member gets included. Falls back to the per-row key check
+      // for rows that aren't part of a sale group (single-parcel
+      // searches starred from a non-CSV path).
+      exportRows = currentRows.filter((r) => {
+        const k = parcelLegalKey(r?.parcel?.properties || {});
+        if (k && starredKeys.has(k)) return true;
+        const gid = r.parcel?.properties?._saleGroupId;
+        if (gid != null && starredGroupIds.has(gid)) return true;
+        return false;
+      });
       starredOnly = true;
     }
   }
@@ -4232,7 +4536,10 @@ function exportCsv() {
     csvAssessHeader(currentRows), 'Asmt Report URL',
     'Walkscore URL', 'Flood-Map URL',
     ...(inSalesMode
-      ? ['Sale Date', 'Sale Price', 'Group #', 'Group $/Lot', 'Group $/SF', 'Group $/Acre', 'Sale/Asmt']
+      ? [
+          'Sale Date', 'Sale Price', 'Group #', 'Group $/Lot', 'Group $/SF', 'Group $/Acre', 'Sale/Asmt',
+          'Dist (km)', 'Asmt Land', 'Asmt Buildings', 'Asmt Bldg %', 'Asmt Year', 'Asmt Class', 'Asmt Status',
+        ]
       : []),
   ];
   const lines = [header.map(csvCell).join(',')];
@@ -4272,6 +4579,13 @@ function exportCsv() {
             p._saleGroupAcresIncomplete ? '' : (p._saleGroupPpsf != null ? p._saleGroupPpsf.toFixed(2) : ''),
             p._saleGroupAcresIncomplete ? '' : (p._saleGroupPpa  != null ? Math.round(p._saleGroupPpa)   : ''),
             p._saleGroupAsmtIncomplete ? '' : (Number.isFinite(p._saleGroupSaleToAsmt) ? p._saleGroupSaleToAsmt.toFixed(2) : ''),
+            Number.isFinite(p._distanceKm) ? p._distanceKm.toFixed(2) : '',
+            Number.isFinite(p._asmtLand) ? Math.round(p._asmtLand) : '',
+            Number.isFinite(p._asmtBuildings) ? Math.round(p._asmtBuildings) : '',
+            Number.isFinite(p._asmtPctBldg) ? (p._asmtPctBldg * 100).toFixed(2) : '',
+            Number.isFinite(p._asmtYear) ? Math.trunc(p._asmtYear) : '',
+            p._asmtClass ?? '',
+            p._asmtStatus ?? '',
           ]
         : []),
     ].map(csvCell).join(','));

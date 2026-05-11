@@ -1148,6 +1148,10 @@ export function initMap(container, { onFeatureClick } = {}) {
       map.on('mousemove', (e) => {
         if (!map.isStyleLoaded()) return;
         const visibleLayers = ['parcel-fill'];
+        // Subject parcel is on a separate source/layer — include its
+        // fill in the hit-test so hovering the subject also pops a
+        // tooltip (with the "Subject parcel" header via _isSubject).
+        if (map.getLayer('subject-fill')) visibleLayers.push('subject-fill');
         if (map.getLayoutProperty('zoning-fill', 'visibility') === 'visible') visibleLayers.push('zoning-fill');
         if (map.getLayoutProperty('devplan-fill', 'visibility') === 'visible') visibleLayers.push('devplan-fill');
         const hits = map.queryRenderedFeatures(e.point, { layers: visibleLayers });
@@ -1185,9 +1189,16 @@ export function initMap(container, { onFeatureClick } = {}) {
         else clearGroupHover();
         map.getCanvas().style.cursor = 'pointer';
         // Parcel info, then a separator line per overlay hit (deduped by layer).
+        // Subject takes precedence over parcel-fill — when the subject
+        // overlaps a sale parcel (legitimate when the subject is also
+        // a comp), the blue subject header should win the header.
         const blocks = [];
+        const subject = hits.find((h) => h.layer.id === 'subject-fill');
+        if (subject) {
+          blocks.push(`<div><strong style="color:#1e6fd9">Subject</strong><br>${parcelHtml(subject.properties)}</div>`);
+        }
         const parcel = hits.find((h) => h.layer.id === 'parcel-fill');
-        if (parcel) blocks.push(`<div><strong style="color:#7a5c00">Parcel</strong><br>${parcelHtml(parcel.properties)}</div>`);
+        if (parcel && !subject) blocks.push(`<div><strong style="color:#7a5c00">Parcel</strong><br>${parcelHtml(parcel.properties)}</div>`);
         const zone = hits.find((h) => h.layer.id === 'zoning-fill');
         if (zone) blocks.push(`<div><strong style="color:#1a2a4a">Zoning</strong><br>${zoningHtml(zone.properties)}</div>`);
         const dev = hits.find((h) => h.layer.id === 'devplan-fill');
@@ -1585,6 +1596,14 @@ export function setMuniParcelsVisible(map, visible) {
 
 export function parcelHtml(p) {
   const lines = [];
+  // Subject parcel gets a distinctive blue header above the standard
+  // identity block. _isSubject is stamped onto the subject feature by
+  // main.js's applySubjectFromInput so subjectHtml() (the dedicated
+  // builder for the subject popup) and this fallback share a single
+  // signal for "render this as the subject."
+  if (p._isSubject) {
+    lines.push('<strong style="color:#1e6fd9">Subject parcel</strong>');
+  }
   if (p.Roll_No_Txt)        lines.push(`<strong>Roll #</strong> ${escapeHtml(rollDisplayFor(p))}`);
   if (p.Property_Address)   lines.push(escapeHtml(p.Property_Address));
   if (p.Muni_Name_With_Typ) lines.push(`<em>${escapeHtml(p.Muni_Name_With_Typ)}</em>`);
@@ -1631,6 +1650,29 @@ export function parcelHtml(p) {
   if (p._zoneCode)            summary.push(`<strong>Zoning</strong> ${escapeHtml(p._zoneCode)}`);
   if (p.Dwelling_Units != null) summary.push(`<strong>DU</strong> ${escapeHtml(p.Dwelling_Units)}`);
   if (summary.length)         lines.push(summary.join(' &nbsp;·&nbsp; '));
+  // Per-parcel assessment block — surfaces the latest-year Land /
+  // Buildings / Total / Class so the user can sanity-check whether
+  // each comp (or the subject) is actually vacant land vs partially
+  // improved. Only shown when the parcel has an assessment record
+  // attached (_asmtTotal set). Class line is suppressed when empty
+  // so urban parcels missing the dominant-class field don't carry
+  // a `Class: ` line with nothing after it.
+  if (p._asmtTotal != null && Number(p._asmtTotal) > 0) {
+    const land = Number(p._asmtLand);
+    const bldg = Number(p._asmtBuildings);
+    const tot  = Number(p._asmtTotal);
+    const pct  = Number(p._asmtPctBldg);
+    const yr   = Number(p._asmtYear);
+    const moneyOrDash = (n) => Number.isFinite(n) && n > 0 ? '$' + Math.round(n).toLocaleString('en-US') : '$0';
+    const yrLabel = Number.isFinite(yr) ? ` (${yr})` : '';
+    lines.push(`<strong>Assessment${yrLabel}</strong>`);
+    const pctLabel = Number.isFinite(pct) ? ` · ${(pct * 100).toFixed(1)}% bldg` : '';
+    lines.push(`Land ${escapeHtml(moneyOrDash(land))} &nbsp;·&nbsp; Bldg ${escapeHtml(moneyOrDash(bldg))} &nbsp;·&nbsp; Total ${escapeHtml(moneyOrDash(tot))}${escapeHtml(pctLabel)}`);
+    if (p._asmtClass) {
+      const statusLabel = p._asmtStatus ? ` · ${p._asmtStatus}` : '';
+      lines.push(`<em>${escapeHtml(p._asmtClass)}${escapeHtml(statusLabel)}</em>`);
+    }
+  }
   // Bottom-anchored sale rate breakdown. Appears whenever a sale
   // price is present (single-parcel and multi-parcel sales alike) —
   // the lot count in parentheses behind Price/Lot makes single-vs-
