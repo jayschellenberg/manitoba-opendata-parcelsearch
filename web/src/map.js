@@ -987,10 +987,22 @@ export function initMap(container, { onFeatureClick } = {}) {
         // time. Default 0.20 keeps the fill faint enough that MASC /
         // CLI / Zoning overlays underneath still read; hover bumps to
         // 0.60 so the lit-up group is unmistakable.
+        // Starred parcels (favourites) override the yellow fill with
+        // dark-red so the user can spot their chosen comps on the
+        // map at a glance, even when zoomed out. The `starred`
+        // feature-state is set by main.js after each render (walks
+        // favoriteKeys + setFeatureState per matched OBJECTID).
         paint: {
-          'fill-color': '#ffea00',
+          'fill-color': [
+            'case',
+            ['boolean', ['feature-state', 'starred'], false],
+            '#8b0000',
+            '#ffea00',
+          ],
           'fill-opacity': [
             'case',
+            ['boolean', ['feature-state', 'starred'], false],
+            0.6,
             ['boolean', ['feature-state', 'groupHover'], false],
             0.5,
             0.3,
