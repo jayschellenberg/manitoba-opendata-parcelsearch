@@ -135,8 +135,66 @@ header small a {
 body:not(.sales-mode) .sidebar .size-row,
 body:not(.sales-mode) .sidebar .vacant-row,
 body:not(.sales-mode) .sidebar .date-row,
+body:not(.sales-mode) .sidebar .date-presets,
 body:not(.sales-mode) .sidebar .class-row,
-body:not(.sales-mode) .sidebar .subject-row { display: none; }
+body:not(.sales-mode) .sidebar .subject-row,
+body:not(.sales-mode) .sidebar .distance-row,
+body:not(.sales-mode) .sidebar .favourite-row { display: none; }
+
+/* Date quick-preset buttons — small pill row under the date inputs. */
+.sidebar .date-presets {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+.sidebar .date-preset-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+  background: #fff;
+  color: #2c3e50;
+  border: 1px solid #b3becc;
+  border-radius: 999px;
+  cursor: pointer;
+  line-height: 1.2;
+}
+.sidebar .date-preset-btn:hover { background: #eef6fb; }
+.sidebar .date-preset-clear {
+  font-weight: 700;
+  width: 24px;
+  padding: 3px 0;
+  text-align: center;
+}
+
+/* Distance-from-subject filter — single row, narrow input. */
+.sidebar .distance-row { display: flex; margin-top: 6px; }
+.sidebar .distance-row > .field { flex: 1 1 auto; min-width: 0; }
+.sidebar .distance-row input[type="number"] { width: 100%; }
+
+/* Outlier rows — sales-mode only. Subtle peach background +
+   left-border accent so the appraiser can spot rows whose $/Acre
+   is >2σ from the filtered mean at a glance without it dominating
+   the table. Hover stays distinct so the row's clickable affordance
+   doesn't get lost in the highlight. */
+#results.sales-mode tbody tr.outlier {
+  background: #fff3e0;
+  box-shadow: inset 4px 0 0 #f0a500;
+}
+#results.sales-mode tbody tr.outlier:hover { background: #ffe8c5; }
+
+/* Recent uploads picker — slim row below the Upload button. Hidden
+   when the cache is empty. */
+.sidebar .recent-uploads {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  align-items: center;
+  font-size: 12px;
+}
+.sidebar .recent-uploads[hidden] { display: none; }
+.sidebar .recent-uploads-label { color: #6b7480; }
+.sidebar .recent-uploads select { flex: 1 1 auto; min-width: 0; }
+.sidebar #recent-uploads-clear { padding: 2px 8px; font-size: 12px; width: 24px; text-align: center; }
 
 /* Collapse the entire Search section (muni dropdown + address/roll/
    legal/title inputs + Search/Clear/Export buttons + count +

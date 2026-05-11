@@ -237,6 +237,17 @@
             <span class="tip">Sale on/before this date (empty = no maximum)</span>
           </span>
         </div>
+        <!-- Date quick-preset buttons. Each populates from/to with a
+             common range (Last 12 / 6 / 3 months, YTD). Wired in
+             main.js: click a button -> set both inputs -> dispatch
+             input event -> refilterCsvIfActive runs as usual. -->
+        <div class="date-presets sales-only" role="group" aria-label="Date range presets">
+          <button id="date-preset-12mo" type="button" class="date-preset-btn" data-months="12">12 mo</button>
+          <button id="date-preset-6mo"  type="button" class="date-preset-btn" data-months="6">6 mo</button>
+          <button id="date-preset-3mo"  type="button" class="date-preset-btn" data-months="3">3 mo</button>
+          <button id="date-preset-ytd"  type="button" class="date-preset-btn" data-ytd="1">YTD</button>
+          <button id="date-preset-clear" type="button" class="date-preset-btn date-preset-clear" data-clear="1" title="Clear date range">×</button>
+        </div>
         <!-- Subject parcel input. Optional and sales-only. Setting a
              subject roll # before (or after) uploading a sales CSV
              fetches the subject's geometry, highlights it on the map
@@ -254,28 +265,50 @@
           <button id="subject-apply" type="button" class="secondary subject-apply-btn">Set</button>
           <button id="subject-clear" type="button" class="secondary subject-clear-btn" title="Clear the subject parcel">×</button>
         </div>
+        <!-- Distance-from-subject filter. Sales-only and only fires
+             when a subject is set; otherwise the filter is a no-op
+             so a stale "5 km" value left in the input doesn't
+             silently drop every row of a later upload. -->
+        <div class="distance-row sales-only">
+          <span class="field distance-max-field">
+            <input id="distance-max" type="number" min="0" step="0.1" placeholder="Max km from subject" />
+            <span class="tip">Filter to sales within this many kilometres of the subject's centroid. Inactive when no subject is set.</span>
+          </span>
+        </div>
         <!-- Class + Tax Status filters — populated after upload from
              the matched parcels' dominant class/status (see
              uniqueClassesAndStatuses in assessmentIndex.js). Empty
              option = no filter. -->
+        <!-- Class + Status multi-select. `multiple` on the native
+             <select> means Ctrl/Cmd-click (or shift-click for ranges)
+             selects more than one. Empty selection = no filter.
+             `size` clamps the visible height so the section doesn't
+             explode when a muni has 10+ classes. -->
         <div class="class-row sales-only">
           <span class="field class-field">
-            <select id="asmt-class">
-              <option value="">Any class</option>
-            </select>
-            <span class="tip">Filter to a single MAO assessment class (RESIDENTIAL 1 / FARM PROPERTY / etc.)</span>
+            <select id="asmt-class" multiple size="4"></select>
+            <span class="tip">Filter to one or more MAO assessment classes. Ctrl/Cmd-click to select multiple, click again to deselect. Empty = no filter.</span>
           </span>
           <span class="field status-field">
-            <select id="asmt-status">
-              <option value="">Any status</option>
-            </select>
-            <span class="tip">Filter to a single tax status (TAXABLE / EXEMPT / GRANT-IN-LIEU / etc.)</span>
+            <select id="asmt-status" multiple size="4"></select>
+            <span class="tip">Filter to one or more tax statuses (TAXABLE / EXEMPT / GRANT-IN-LIEU / etc.). Ctrl/Cmd-click to select multiple.</span>
           </span>
         </div>
 
         <div class="action-row">
           <button id="sales-upload-btn" type="button" class="secondary" title="Upload a CSV with Roll Number, Municipality, Sale Date, Consideration columns to plot the sales on the map and table.">Upload Sales CSV…</button>
           <input id="sales-upload-input" type="file" accept=".csv,text/csv" hidden />
+          <button id="favourites-clear" type="button" class="secondary favourite-row" title="Forget every starred comparable. Persisted across sessions, so this is the only way to clear stars from a previous upload that no longer applies.">Clear ★</button>
+        </div>
+        <!-- Recent uploads — last 3 sales CSVs cached in localStorage
+             (`mb_recent_sales_csvs_v1`). Selecting one re-runs the
+             upload pipeline with the cached text so the user doesn't
+             have to re-pick the file. Hidden when the cache is empty
+             (populateRecentUploads handles toggling). -->
+        <div class="recent-uploads" id="recent-uploads-row" hidden>
+          <span class="recent-uploads-label">Recent:</span>
+          <select id="recent-uploads-select"><option value="">—</option></select>
+          <button id="recent-uploads-clear" type="button" class="secondary" title="Forget all recent uploads">×</button>
         </div>
       </aside>
 
@@ -357,6 +390,14 @@
             <th data-col="grouppriceac" class="sales-only" title="Sale Price ÷ total acres of every parcel in the same sale">$/Acre</th>
             <th data-col="saletoasmt" class="sales-only" title="Sale Price ÷ Total Assessed (latest MAO year). For multi-parcel sales the assessed total is summed across the group. Useful for spotting non-arms-length transfers (<1) and significantly above-assessed sales (>1).">Sale/Asmt</th>
             <th data-col="subjdist" class="sales-only subj-col" title="Centroid-to-centroid distance from the subject parcel (km). Set the subject roll # in the sidebar to populate this column.">Dist (km)</th>
+            <!-- Per-parcel assessment columns from MAO scrape's latest
+                 year. Surfaces the land/buildings split alongside the
+                 sale rates so the user can sanity-check whether each
+                 comp is genuinely vacant or partially improved. -->
+            <th data-col="asmtland" class="sales-only" title="Latest-year assessed Land value (MAO scrape).">Land $</th>
+            <th data-col="asmtbldg" class="sales-only" title="Latest-year assessed Buildings value (MAO scrape).">Bldg $</th>
+            <th data-col="asmtpct"  class="sales-only" title="Buildings as a percentage of Total assessed value. <2% is the default vacant-land threshold.">Bldg %</th>
+            <th data-col="asmtyear" class="sales-only" title="Assessment year the Land/Bldg values are from. Single year for most rolls.">Asmt Yr</th>
             <th data-col="address">Address</th>
             <!-- Legal and Title populate from the MAO scrape legal-index
                  join in main.js's attachLegalMetadata(). renderTable
