@@ -2311,7 +2311,18 @@ function parseCsvRows(text) {
  *  string for inputs that don't match any known prefix. */
 function normalizeMuniFromCsv(raw) {
   if (!raw) return '';
-  const s = String(raw).trim().toUpperCase().replace(/\s+/g, ' ');
+  // Uppercase, collapse whitespace, AND strip periods. Roll_Entry's
+  // Muni_Name_With_Typ never carries a period — it stores "EAST ST
+  // PAUL (RM)" / "STE ANNE (RM)" / "ST FRANCOIS XAVIER (RM)" — but
+  // appraiser-supplied CSVs commonly use the formal/typographic form
+  // ("RM OF EAST ST. PAUL", "RM OF STE. ANNE"). Without the strip,
+  // the resulting normalized value contains a period and the
+  // searchParcels exact-match `Muni_Name_With_Typ = '…'` clause
+  // silently fails for every row in that muni. Found via a 1044-row
+  // industrial-comps CSV that came back with 480 unmatched — 467 of
+  // them were just the period mismatch on East/West St. Paul +
+  // Ste. Anne.
+  const s = String(raw).trim().toUpperCase().replace(/\./g, '').replace(/\s+/g, ' ');
   const patterns = [
     [/^CITY\s+OF\s+(.+)$/,                                           'CITY'],
     [/^TOWN\s+OF\s+(.+)$/,                                           'TOWN'],
