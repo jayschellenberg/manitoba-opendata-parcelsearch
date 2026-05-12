@@ -1211,7 +1211,7 @@ export function initMap(container, { onFeatureClick } = {}) {
             0.6,
             ['boolean', ['feature-state', 'groupHover'], false],
             0.5,
-            0.4,
+            0.3,
           ],
         },
       });
