@@ -1503,6 +1503,14 @@ async function handleSalesUpload(file) {
           f.properties._saleDate        = sale.saleDate || null;
           f.properties._salePrice       = sale.consideration || null;
           f.properties._primaryProperty = sale.primaryProperty || null;
+          // CSV's raw "Legal Description" cell. Lives alongside the
+          // legal-index-derived _plan/_legalDescription so the Plan #
+          // filter can fall back to substring-matching against the
+          // CSV-supplied text when the legal-index has no record for
+          // this roll (e.g. Headingley sales 6163 / 6165 carry
+          // "6--66600" / "4--66600" in the CSV but no legal-index hit
+          // → _plan is null and the filter would otherwise miss them).
+          f.properties._csvLegal        = sale.legalDescription || null;
           // Group identity for the on-hover sibling-highlight + the
           // group price-per-acre / price-per-sf table columns. Used
           // by handleSalesUpload's group-totals pass below.
@@ -2140,12 +2148,17 @@ function filterCsvRowsByOtherSearches(rows) {
     const p = row.parcel?.properties || {};
 
     // Plan # filter — runs before the other CSV-mode checks because
-    // it's the cheapest predicate. Rows whose parcel has no _plan
-    // value fail when the filter is active (treating "missing" as
-    // "not a match" rather than passing-through ambiguous data).
+    // it's the cheapest predicate. Substring-matches against both
+    // sources of plan info: the legal-index's _plan field (the
+    // structured plan identifier, when available) AND the CSV's raw
+    // _csvLegal text (the "Legal Description" column the user
+    // uploaded — typically formatted "lot--plan" or "lot-block-plan",
+    // so a plain "66600" substring catches "4--66600", "6--66600",
+    // etc). Only rows missing BOTH sources fail the filter.
     if (planFilter) {
       const plan = String(p._plan || '').toUpperCase();
-      if (!plan.includes(planFilter)) return false;
+      const csvLegal = String(p._csvLegal || '').toUpperCase();
+      if (!plan.includes(planFilter) && !csvLegal.includes(planFilter)) return false;
     }
 
     // Street Name filter — same shape as the Plan # filter above.
