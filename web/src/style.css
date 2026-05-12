@@ -232,13 +232,36 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   align-items: center;
   margin-top: 6px;
 }
+.sidebar .size-vacant-row .sales-plan-field { flex: 0 0 80px; min-width: 0; }
 .sidebar .size-vacant-row .size-low-field,
 .sidebar .size-vacant-row .size-high-field { flex: 0 0 60px; min-width: 0; }
 .sidebar .size-vacant-row .vacant-only-field { flex: 1 1 auto; min-width: 0; }
-.sidebar .size-vacant-row input[type="number"] {
+.sidebar .size-vacant-row input[type="number"],
+.sidebar .size-vacant-row input[type="text"] {
   width: 100%;
   padding: 6px 6px;
   font-size: 12px;
+}
+
+/* Hide the up/down spinner controls on the three numeric filter
+   inputs (Lo Ac, Hi Ac, Max km). Appraisers always type the value
+   directly; the spinners stole horizontal space and were never used.
+   Scoped to specific IDs so other number inputs in the app keep
+   their spinners. */
+#size-low::-webkit-outer-spin-button,
+#size-low::-webkit-inner-spin-button,
+#size-high::-webkit-outer-spin-button,
+#size-high::-webkit-inner-spin-button,
+#distance-max::-webkit-outer-spin-button,
+#distance-max::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+#size-low,
+#size-high,
+#distance-max {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }
 .sidebar .size-vacant-row .vacant-only-label {
   font-size: 13px;
