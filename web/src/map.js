@@ -251,6 +251,75 @@ const BASEMAP_STYLE = {
   ],
 };
 
+// mapbox-gl-draw style spec for the measurement tool. High-contrast orange
+// (#ff4d00) reads cleanly on both the cream CARTO Positron streets basemap
+// and the dark Esri imagery; white halo around each vertex keeps the
+// click-targets visible on busy basemaps. Filters intentionally do NOT
+// split active/inactive — keeping a single style per geometry kind
+// avoids the rendering gap we saw with the default theme on MapLibre 4.
+const MEASURE_DRAW_COLOR = '#ff4d00';
+const MEASURE_DRAW_STYLES = [
+  // Polygon fill (translucent so the underlying basemap reads through).
+  {
+    id: 'gl-draw-polygon-fill',
+    type: 'fill',
+    filter: ['all', ['==', '$type', 'Polygon']],
+    paint: {
+      'fill-color': MEASURE_DRAW_COLOR,
+      'fill-outline-color': MEASURE_DRAW_COLOR,
+      'fill-opacity': 0.18,
+    },
+  },
+  // Polygon outline (the in-progress closing edge).
+  {
+    id: 'gl-draw-polygon-stroke',
+    type: 'line',
+    filter: ['all', ['==', '$type', 'Polygon']],
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': MEASURE_DRAW_COLOR, 'line-width': 2 },
+  },
+  // Line (the polyline being measured).
+  {
+    id: 'gl-draw-line',
+    type: 'line',
+    filter: ['all', ['==', '$type', 'LineString']],
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': MEASURE_DRAW_COLOR, 'line-width': 2 },
+  },
+  // Vertex halo — white ring under the orange dot so the vertex stays
+  // visible on dark satellite tiles.
+  {
+    id: 'gl-draw-vertex-halo',
+    type: 'circle',
+    filter: ['all', ['==', 'meta', 'vertex'], ['==', '$type', 'Point']],
+    paint: {
+      'circle-radius': 6,
+      'circle-color': '#fff',
+      'circle-stroke-width': 1,
+      'circle-stroke-color': MEASURE_DRAW_COLOR,
+    },
+  },
+  // Vertex dot — solid orange centre.
+  {
+    id: 'gl-draw-vertex',
+    type: 'circle',
+    filter: ['all', ['==', 'meta', 'vertex'], ['==', '$type', 'Point']],
+    paint: { 'circle-radius': 3.5, 'circle-color': MEASURE_DRAW_COLOR },
+  },
+  // Midpoint (smaller faded dot at each segment midpoint — lets the user
+  // drag-to-insert a new vertex on completed shapes).
+  {
+    id: 'gl-draw-midpoint',
+    type: 'circle',
+    filter: ['all', ['==', 'meta', 'midpoint'], ['==', '$type', 'Point']],
+    paint: {
+      'circle-radius': 3,
+      'circle-color': MEASURE_DRAW_COLOR,
+      'circle-opacity': 0.55,
+    },
+  },
+];
+
 export function initMap(container, { onFeatureClick } = {}) {
   const map = new maplibregl.Map({
     container,
@@ -272,9 +341,16 @@ export function initMap(container, { onFeatureClick } = {}) {
   // Distance / area measurement tool. mapbox-gl-draw owns the drawing
   // state and renders the in-progress line/polygon; MeasureControl wraps
   // it in a small panel that exposes the mode switch and live readout.
+  // Explicit styles array: mapbox-gl-draw's default theme has gaps in
+  // MapLibre 4.x — the active-vs-inactive filter splits silently fail to
+  // render the in-progress vertex/line layers, so the geometry looks like
+  // it disappears between clicks. A single set of unfiltered styles (one
+  // per geometry kind) sidesteps the issue and keeps the visible shape
+  // consistent across all draw modes.
   const measureDraw = new MapboxDraw({
     displayControlsDefault: false,
     controls: {},
+    styles: MEASURE_DRAW_STYLES,
   });
   map.addControl(measureDraw);
   map.addControl(new MeasureControl(measureDraw), 'top-right');
@@ -2134,10 +2210,17 @@ class MeasureControl {
       btn.addEventListener('click', () => this._setMode(btn.dataset.mode));
     });
     this._panel.querySelector('.measure-clear').addEventListener('click', () => {
-      this._draw.deleteAll();
-      this._setReadout(this._mode
-        ? 'Cleared. Click the map to start again.'
-        : 'Pick a mode to start.');
+      // Re-running _setMode with the same mode is the cleanest reset:
+      // it deletes everything, re-enters the draw mode, and refreshes
+      // the readout instructions. Without the changeMode call, the
+      // user would still be in simple_select after the previous
+      // measurement finished and clicking the map wouldn't do anything.
+      if (this._mode) {
+        this._setMode(this._mode);
+      } else {
+        this._draw.deleteAll();
+        this._setReadout('Pick a mode to start.');
+      }
     });
     this._panel.querySelector('.measure-done').addEventListener('click', () => this._close());
 
