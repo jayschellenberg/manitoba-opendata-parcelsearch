@@ -1438,6 +1438,14 @@ export function initMap(container, { onFeatureClick } = {}) {
           .setLngLat(e.lngLat)
           .setHTML(parcelHtml(f.properties))
           .addTo(map);
+        // Wire the Coordinates copy link. e.features only carries
+        // properties from the symbol/fill layer hit; for the geometry
+        // we need the rendered feature. Fall back to the click point
+        // when no polygon geometry is available.
+        const rendered = map.queryRenderedFeatures(e.point, { layers: ['parcel-fill'] })[0];
+        const center = polygonBboxMidpoint(rendered?.geometry)
+          ?? [e.lngLat.lng, e.lngLat.lat];
+        wireCoordsCopy(parcelClickPopup, center);
       });
 
       // Muni-parcels hover popup. The muni-parcels source carries a richer
@@ -1890,6 +1898,52 @@ function polygonBboxMidpoint(geometry) {
   if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null;
   return [(minX + maxX) / 2, (minY + maxY) / 2];
 }
+
+/**
+ * Wire up a `.parcel-coords-copy` anchor inside the supplied popup so
+ * clicking it copies the centroid as "lat, lng" (six-decimal precision)
+ * to the clipboard. Briefly flips the link text to "Copied!" to confirm.
+ * The popup's getElement() is the rendered DOM container; querying for
+ * the anchor from there scopes the listener to THIS popup instance
+ * (multiple popups stacked from different layers each get their own).
+ */
+function wireCoordsCopy(popup, lngLat) {
+  if (!popup || !Array.isArray(lngLat)) return;
+  const el = popup.getElement?.();
+  const anchor = el?.querySelector('.parcel-coords-copy');
+  if (!anchor) return;
+  const [lng, lat] = lngLat;
+  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+  const text = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+  anchor.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    const onSuccess = () => {
+      const original = anchor.textContent;
+      anchor.textContent = 'Copied!';
+      setTimeout(() => { anchor.textContent = original; }, 1500);
+    };
+    const onFailure = () => { anchor.textContent = 'Copy failed'; };
+    // navigator.clipboard requires a secure context (HTTPS / localhost);
+    // fall back to the legacy execCommand path on http://0.0.0.0-style
+    // dev hosts where it's missing.
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(onSuccess, onFailure);
+    } else {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        onSuccess();
+      } catch { onFailure(); }
+    }
+  });
+}
+
 export function setMuniParcelsVisible(map, visible) {
   const v = visible ? 'visible' : 'none';
   for (const id of ['muni-parcels-fill', 'muni-parcels-line', 'muni-parcels-label', 'muni-parcels-civic-label']) {
@@ -2002,13 +2056,18 @@ export function parcelHtml(p) {
     if (ppaFmt)  lines.push(`<strong>Price/Acre</strong> ${escapeHtml(ppaFmt)}`);
     if (pplFmt)  lines.push(`<strong>Price/Lot</strong> ${escapeHtml(pplFmt)} (${escapeHtml(groupSize)})`);
   }
-  // Assessment-report link — same target as the Roll # cell in the table
-  // below the map. Appended last so the link sits at the bottom of the
-  // tooltip, beneath the parcel/sale detail block.
+  // Action row at the bottom of the popup: Assessment report link +
+  // Coordinates copy link. The Coordinates anchor is wired by the
+  // parcel-fill click handler in initMap (it computes the polygon
+  // centroid from the full feature geometry, which isn't available on
+  // p here, and attaches a click listener that writes to the clipboard).
+  const actions = [];
   const safeReport = safeExternalUrl(p.Asmt_Rpt_Url);
   if (safeReport) {
-    lines.push(`<a href="${escapeHtml(safeReport)}" target="_blank" rel="noreferrer">Assessment report →</a>`);
+    actions.push(`<a href="${escapeHtml(safeReport)}" target="_blank" rel="noreferrer">Assessment report →</a>`);
   }
+  actions.push(`<a href="#" class="parcel-coords-copy" role="button" title="Copy parcel centroid (lat, lng) to clipboard">Coordinates</a>`);
+  lines.push(actions.join(' &nbsp;·&nbsp; '));
   return lines.join('<br>');
 }
 
