@@ -966,50 +966,55 @@ export function initMap(container, { onFeatureClick } = {}) {
         },
       });
 
-      // Civic-address labels. Renders below the roll number. Filter
-      // uses `to-boolean` to gate on _civicAddress non-empty — the
-      // earlier ['has', key] + ['!=', value, ''] form was filtering
-      // away every feature on some MapLibre builds (silent zero-match
-      // bug with no console signal). to-boolean returns false for
-      // null + '' + missing, true otherwise; it's the canonical way
-      // to test "this property is set to something truthy."
-      // minzoom 14 (was 16) so addresses show at a typical urban-grid
-      // zoom level, not just one block at a time.
+      // Civic-address labels. Renders below the roll number on every
+      // parcel that has a real civic address (Property_Address
+      // distilled to non-empty via civicAddressOrEmpty in arcgis.js).
+      //
+      // History on the filter expression: tried ['all', ['has', key],
+      // ['!=', value, '']] and then ['to-boolean', ['get', key]] —
+      // both silently dropped every feature on the bundled MapLibre
+      // build (no console error, just a non-rendering layer). The
+      // legacy filter syntax ['!=', propName, ''] works reliably and
+      // is parsed by both the legacy filter path AND the expression
+      // path, so it's the safest form.
+      //
+      // Font matches the roll-number layer (Open Sans Semibold) so
+      // the glyph atlas already has every needed character — Open
+      // Sans Regular wasn't ALWAYS in the loaded fontstack which
+      // would explain a silent non-render on some basemap glyph URLs.
       map.addLayer({
         id: 'muni-parcels-civic-label',
         type: 'symbol',
         source: 'muni-parcels',
         minzoom: 14,
-        filter: ['to-boolean', ['get', '_civicAddress']],
+        filter: ['!=', '_civicAddress', ''],
         layout: {
           visibility: 'none',
           'text-field': ['get', '_civicAddress'],
-          'text-font': ['Open Sans Regular'],
+          'text-font': ['Open Sans Semibold'],
           'text-size': [
             'interpolate', ['linear'], ['zoom'],
-            14, 8,
-            16, 10,
-            18, 12,
-            20, 14,
+            14, 9,
+            16, 11,
+            18, 13,
+            20, 15,
           ],
           // Allow overlap with the roll number above — they share the
-          // same centroid anchor, and forcing both through collision
-          // detection was causing the civic label to silently lose to
-          // the roll label in dense urban grids. The roll label uses
-          // text-ignore-placement:true already, so it doesn't reserve
-          // space; matching that here keeps both visible.
+          // same centroid anchor with different offsets; forcing both
+          // through collision detection was causing the civic label
+          // to lose silently.
           'text-allow-overlap': true,
           'text-ignore-placement': true,
           'text-anchor': 'top',
-          'text-offset': [0, 1.2],
+          'text-offset': [0, 1.4],
           'symbol-placement': 'point',
           'text-max-width': 14,
         },
         paint: {
           'text-color': '#1f2937',
-          'text-opacity': 0.9,
+          'text-opacity': 0.92,
           'text-halo-color': '#ffffff',
-          'text-halo-width': 1.2,
+          'text-halo-width': 1.4,
         },
       });
 
