@@ -2298,14 +2298,18 @@ function parseSalesCsv(text) {
     }
     return -1;
   };
+  // Header aliases — both human-readable ("Sale Date") and no-space
+  // ("SaleDate") variants accepted, plus a few common short forms.
+  // Headers are lowercased before comparison so the matching is
+  // case-insensitive across all variants.
   const i = {
-    saleDate:        idx('sale date', 'date'),
-    consideration:   idx('consideration', 'sale price', 'price'),
+    saleDate:        idx('sale date', 'saledate', 'date'),
+    consideration:   idx('consideration', 'sale price', 'saleprice', 'price'),
     municipality:    idx('municipality', 'muni'),
-    rollNumber:      idx('roll number', 'roll #', 'roll'),
-    streetAddress:   idx('street address', 'address'),
-    legalDescription: idx('legal description', 'legal'),
-    primaryProperty: idx('primary property'),
+    rollNumber:      idx('roll number', 'rollnumber', 'roll #', 'roll'),
+    streetAddress:   idx('street address', 'streetaddress', 'address'),
+    legalDescription: idx('legal description', 'legaldesc', 'legaldescription', 'legal'),
+    primaryProperty: idx('primary property', 'primaryprop', 'primaryproperty'),
   };
   if (i.rollNumber < 0 || i.municipality < 0) return [];
 
