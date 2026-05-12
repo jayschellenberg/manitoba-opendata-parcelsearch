@@ -766,23 +766,26 @@ export function initMap(container, { onFeatureClick } = {}) {
           'line-dasharray': [4, 3],
         },
       });
-      // River lots: solid teal line. Slightly heavier than the section
-      // grid so the lot pattern reads at a glance against the basemap.
+      // River lots match the section grid paint exactly — same dark
+      // grey dashed stroke, same zoom ramp, same opacity. Kept as a
+      // separate filtered layer (filter on kind === 'riverlot') so
+      // either lot type can diverge later without touching the other.
       map.addLayer({
         id: 'survey-grid-riverlot',
         type: 'line',
         source: 'survey-grid',
         filter: ['==', ['get', 'kind'], 'riverlot'],
-        layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' },
+        layout: { visibility: 'none', 'line-cap': 'square' },
         paint: {
-          'line-color': '#0f766e',
+          'line-color': '#444',
           'line-width': [
             'interpolate', ['linear'], ['zoom'],
-            8,  0.5,
-            12, 1.1,
-            16, 1.7,
+            8,  0.4,
+            12, 0.9,
+            16, 1.4,
           ],
-          'line-opacity': 0.85,
+          'line-opacity': 0.7,
+          'line-dasharray': [4, 3],
         },
       });
       map.addLayer({
