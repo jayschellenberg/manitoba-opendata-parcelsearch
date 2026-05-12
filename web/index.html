@@ -214,7 +214,7 @@
         <div class="size-vacant-row sales-only">
           <span class="field sales-plan-field">
             <input id="sales-plan" type="text" placeholder="Plan #" autocomplete="off" />
-            <span class="tip">Filter uploaded sales to rows whose legal-index Plan field contains this string. Case-insensitive substring match — e.g. "32457" matches plans "32457", "1032457", etc.</span>
+            <span class="tip">Filter uploaded sales to rows whose plan number contains this string. Case-insensitive substring match against both the legal-index Plan field AND the raw "Legal Description" cell from the uploaded CSV — e.g. "66600" matches plans "66600", "1066600", and CSV legals "4--66600", "6--66600", etc.</span>
           </span>
           <span class="field size-low-field">
             <input id="size-low" type="number" min="0" step="0.01" placeholder="Lo Ac" />
