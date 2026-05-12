@@ -1203,6 +1203,11 @@ function civicAddressOrEmpty(raw) {
 
 export async function fetchAllParcelsInMunicipality(municipality) {
   if (!municipality) return makeEmptyFc();
+  // v5: dedupe pass by OBJECTID after pagination so the same Roll
+  // Layer label can't render multiple times for the same feature when
+  // an upstream cache (or transient ArcGIS pagination glitch) emitted
+  // a duplicate row. Reported case: roll 187640 in DE SALABERRY (RM)
+  // rendering its label 6× on a single polygon.
   // v4: per-feature _civicAddress stamping (civicAddressOrEmpty()
   // distills Property_Address down to actual addresses or '' for
   // the new muni-parcels-civic-label symbol layer). v3 entries
@@ -1212,7 +1217,7 @@ export async function fetchAllParcelsInMunicipality(municipality) {
   // assessor recorded an actual area (vs frontage feet); falls back
   // to turf-area on the polygon when the field is in feet or
   // missing.
-  const cacheKey = `mb_muni_parcels_v4_${municipality}`;
+  const cacheKey = `mb_muni_parcels_v5_${municipality}`;
   const cached = readCache(cacheKey);
   if (cached) return cached;
   // Pull the same lightweight property set the table uses minus the
@@ -1226,6 +1231,19 @@ export async function fetchAllParcelsInMunicipality(municipality) {
     outSR: '4326',
     f: 'geojson',
   }, 50000);
+  // OBJECTID dedupe (defensive — see v5 comment above). Drops any
+  // accidentally-paginated dups, falling back to a Roll_No_Txt+Address
+  // composite key if OBJECTID is missing on a particular feature.
+  const seenIds = new Set();
+  fc.features = (fc.features || []).filter((f) => {
+    const oid = f.properties?.OBJECTID;
+    const key = oid != null
+      ? `oid:${oid}`
+      : `roll:${f.properties?.Roll_No_Txt || ''}|${f.properties?.Property_Address || ''}`;
+    if (seenIds.has(key)) return false;
+    seenIds.add(key);
+    return true;
+  });
   // Stamp acreage onto each feature so the hover popup can show
   // Land Size without needing the polygon geometry. Prefers
   // Roll_Entry's Frontage_or_Area when the assessor recorded an
@@ -1565,11 +1583,21 @@ async function runParallelBatched(items, concurrency, fn) {
 async function fetchAllPages(baseUrl, params, cap) {
   const all = [];
   let truncated = false;
+  // ArcGIS REST best-practice: when paginating via resultOffset/
+  // resultRecordCount the service does NOT guarantee a stable row
+  // order across requests unless orderByFields is specified. Without
+  // it, two consecutive page fetches can return overlapping or missing
+  // rows — which surfaces as silent dups (e.g. the same parcel label
+  // rendered multiple times on the Roll Layer) or silent gaps. Caller-
+  // supplied orderByFields wins so query-specific ordering still works.
+  const pagedParams = params.orderByFields
+    ? params
+    : { ...params, orderByFields: 'OBJECTID ASC' };
   for (let offset = 0; offset < cap; offset += PAGE_SIZE) {
     const remaining = cap - offset;
     const page = Math.min(PAGE_SIZE, remaining);
     const fc = await fetchPage(baseUrl, {
-      ...params,
+      ...pagedParams,
       resultOffset: String(offset),
       resultRecordCount: String(page),
     });
