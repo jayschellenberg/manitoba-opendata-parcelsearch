@@ -1381,13 +1381,27 @@ export function initMap(container, { onFeatureClick } = {}) {
         clearGroupHover();
       });
 
-      // Click on a parcel → scroll the table to its row.
-      if (onFeatureClick) {
-        map.on('click', 'parcel-fill', (e) => {
-          const key = e.features?.[0]?.properties?._rowKey;
+      // Click on a parcel → scroll the table to its row AND open a sticky
+      // popup with the parcel detail. The sticky popup is needed because
+      // the global hover popup disappears on mouseout, so the user could
+      // never reach the Assessment-report link sitting at the bottom of
+      // it. Reuses parcelHtml so hover and click show identical content.
+      const parcelClickPopup = new maplibregl.Popup({ closeButton: true });
+      map.on('click', 'parcel-fill', (e) => {
+        const f = e.features?.[0];
+        if (!f) return;
+        if (onFeatureClick) {
+          const key = f.properties?._rowKey;
           if (key != null) onFeatureClick(key);
-        });
-      }
+        }
+        // Hide the hover popup so the sticky popup doesn't render on top
+        // of itself when the user hovers back over the same parcel.
+        popup.remove();
+        parcelClickPopup
+          .setLngLat(e.lngLat)
+          .setHTML(parcelHtml(f.properties))
+          .addTo(map);
+      });
 
       // Muni-parcels hover popup. The muni-parcels source carries a richer
       // property set than the parcel hover (Roll #, Address, DU, area,
@@ -1863,6 +1877,13 @@ export function parcelHtml(p) {
     if (ppsfFmt) lines.push(`<strong>Price/SF</strong> ${escapeHtml(ppsfFmt)}`);
     if (ppaFmt)  lines.push(`<strong>Price/Acre</strong> ${escapeHtml(ppaFmt)}`);
     if (pplFmt)  lines.push(`<strong>Price/Lot</strong> ${escapeHtml(pplFmt)} (${escapeHtml(groupSize)})`);
+  }
+  // Assessment-report link — same target as the Roll # cell in the table
+  // below the map. Appended last so the link sits at the bottom of the
+  // tooltip, beneath the parcel/sale detail block.
+  const safeReport = safeExternalUrl(p.Asmt_Rpt_Url);
+  if (safeReport) {
+    lines.push(`<a href="${escapeHtml(safeReport)}" target="_blank" rel="noreferrer">Assessment report →</a>`);
   }
   return lines.join('<br>');
 }
