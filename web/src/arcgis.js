@@ -1038,6 +1038,11 @@ export async function fetchSurveyGridForMuni(muniNameWithTyp, muniBoundaryFeatur
     returnGeometry: 'true',
     outSR: '4326',
     f: 'geojson',
+    // MB_LegalDesc's identity column is OBJECTID_1, not OBJECTID — the
+    // default orderByFields fetchAllPages applies would 400 on this
+    // service. Pass the correct field explicitly so pagination stays
+    // ordered and the survey-grid fetch actually returns rows.
+    orderByFields: 'OBJECTID_1 ASC',
   }, 50000);
   writeCache(cacheKey, fc);
   return fc;

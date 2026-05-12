@@ -983,7 +983,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         type: 'fill',
         source: 'muni-parcels',
         layout: { visibility: 'none' },
-        paint: { 'fill-color': '#6b7280', 'fill-opacity': 0.07 },
+        paint: { 'fill-color': '#6b7280', 'fill-opacity': 0.04 },
       });
       map.addLayer({
         id: 'muni-parcels-line',
