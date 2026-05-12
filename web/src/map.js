@@ -1149,9 +1149,10 @@ export function initMap(container, { onFeatureClick } = {}) {
         // feature carries a `groupHover` state — used by the sales-
         // CSV multi-parcel sibling-highlight: hovering one parcel in
         // a group lights up every parcel in the same sale at the same
-        // time. Default 0.20 keeps the fill faint enough that MASC /
-        // CLI / Zoning overlays underneath still read; hover bumps to
-        // 0.60 so the lit-up group is unmistakable.
+        // time. Default 0.40 reads cleanly against the dark Esri
+        // imagery basemap (yellow blends toward khaki at lower
+        // opacities); hover bumps to 0.50 so the lit-up group is
+        // unmistakable.
         // Starred parcels (favourites) override the yellow fill with
         // dark-red so the user can spot their chosen comps on the
         // map at a glance, even when zoomed out. The `starred`
@@ -1170,7 +1171,7 @@ export function initMap(container, { onFeatureClick } = {}) {
             0.6,
             ['boolean', ['feature-state', 'groupHover'], false],
             0.5,
-            0.3,
+            0.4,
           ],
         },
       });
