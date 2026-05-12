@@ -153,6 +153,12 @@ const $subjectMuniRow = document.getElementById('subject-muni-row');
 const $subjectMuni    = document.getElementById('subject-muni');
 // Distance-from-subject filter input.
 const $distanceMax   = document.getElementById('distance-max');
+// Sales-mode Plan # filter — case-insensitive substring match against
+// each parcel's _plan (stamped from the legal-index in
+// attachLegalMetadata). Separate from the regular-search $plan input
+// (#plan) because the sales filter runs post-upload, client-side,
+// while the regular search drives a server-side legal-index query.
+const $salesPlan     = document.getElementById('sales-plan');
 const $search        = document.getElementById('search');
 const $clear         = document.getElementById('clear');
 const $export        = document.getElementById('export');
@@ -936,7 +942,7 @@ $duMode.addEventListener('change', () => {
 // these listeners are no-ops (Search button still drives the SQL).
 for (const el of [
   $zoneCategory, $changedStatus, $duMode, $duMin, $sizeLow, $sizeHigh, $vacantOnly,
-  $saleDateFrom, $saleDateTo, $asmtClass, $asmtStatus, $distanceMax,
+  $saleDateFrom, $saleDateTo, $asmtClass, $asmtStatus, $distanceMax, $salesPlan,
 ].filter(Boolean)) {
   el.addEventListener('change', refilterCsvIfActive);
   el.addEventListener('input',  refilterCsvIfActive);
@@ -1163,6 +1169,7 @@ async function runSearch() {
   if ($saleDateFrom)  $saleDateFrom.value = '';
   if ($saleDateTo)    $saleDateTo.value = '';
   if ($distanceMax)   $distanceMax.value = '';
+  if ($salesPlan)     $salesPlan.value = '';
   // Multi-select: clear all selected options so the filter goes back
   // to "any" rather than carrying over the last upload's picks.
   if ($asmtClass)     [...$asmtClass.options].forEach((o) => { o.selected = false; });
@@ -2112,8 +2119,23 @@ function filterCsvRowsByOtherSearches(rows) {
   const distMaxRaw = parseFloat($distanceMax?.value);
   const distActive = subjectCentroid && Number.isFinite(distMaxRaw) && distMaxRaw > 0;
 
+  // Plan # substring filter — case-insensitive match against each
+  // parcel's _plan (stamped from the legal-index). Trimmed-empty
+  // input disables the filter; any non-empty input is searched as
+  // a substring so "32457" matches "32457", "1032457", etc.
+  const planFilter = ($salesPlan?.value || '').trim().toUpperCase();
+
   return rows.filter((row) => {
     const p = row.parcel?.properties || {};
+
+    // Plan # filter — runs before the other CSV-mode checks because
+    // it's the cheapest predicate. Rows whose parcel has no _plan
+    // value fail when the filter is active (treating "missing" as
+    // "not a match" rather than passing-through ambiguous data).
+    if (planFilter) {
+      const plan = String(p._plan || '').toUpperCase();
+      if (!plan.includes(planFilter)) return false;
+    }
 
     // DU filter — directly on the parcel field, no enrichment needed.
     if (duMode === 'zero') {

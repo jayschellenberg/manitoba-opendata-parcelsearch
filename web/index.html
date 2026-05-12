@@ -212,6 +212,10 @@
              parcel in the group has assessment data AND Buildings
              < 2% of Total. -->
         <div class="size-vacant-row sales-only">
+          <span class="field sales-plan-field">
+            <input id="sales-plan" type="text" placeholder="Plan #" autocomplete="off" />
+            <span class="tip">Filter uploaded sales to rows whose legal-index Plan field contains this string. Case-insensitive substring match — e.g. "32457" matches plans "32457", "1032457", etc.</span>
+          </span>
           <span class="field size-low-field">
             <input id="size-low" type="number" min="0" step="0.01" placeholder="Lo Ac" />
             <span class="tip">Minimum acres (empty = 0)</span>
@@ -223,7 +227,7 @@
           <span class="field vacant-only-field">
             <label class="vacant-only-label">
               <input id="vacant-only" type="checkbox" />
-              <span>Vacant land only</span>
+              <span>Vacant land</span>
             </label>
             <span class="tip">Show only sales where every parcel in the group has Buildings &lt; 2% of Total in the latest MAO assessment year. Threshold is hard-coded at 2% for now — tune later.</span>
           </span>
