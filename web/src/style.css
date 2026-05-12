@@ -797,6 +797,13 @@ body.sales-mode .sidebar .search-section { display: none; }
 #results .sales-only { display: none; }
 #results.sales-mode .sales-only { display: table-cell; }
 
+/* Basic-mode only — the Acres column moves position between basic
+   search and sales-CSV mode (in sales mode it sits right after $/Lot;
+   in basic mode it stays near DU). Both <th>/<td> are emitted; this
+   rule hides the basic-mode pair in sales mode so only one is visible
+   at a time. */
+#results.sales-mode .basic-only { display: none; }
+
 /* Dev-Plan columns (Dev-Plan Designation, DP By-law) follow the
    same pattern — only revealed while the Dev Plan Layer overlay is
    active (main.js toggles .devplan-mode on #results to match the
