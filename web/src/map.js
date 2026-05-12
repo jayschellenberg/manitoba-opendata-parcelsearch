@@ -237,6 +237,27 @@ const BASEMAP_STYLE = {
       tileSize: 256,
       attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community',
     },
+    // Transparent reference overlay (place names, road names,
+    // boundaries) designed by Esri to layer on top of aerial imagery.
+    // Visible only when the Esri imagery basemap is active — the
+    // BasemapToggleControl flips it in lockstep. Keeps the Streets
+    // basemap clean (CARTO Positron already carries its own labels).
+    'esri-reference': {
+      type: 'raster',
+      tiles: [
+        'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+      ],
+      tileSize: 256,
+      attribution: 'Reference &copy; Esri',
+    },
+    'esri-transportation': {
+      type: 'raster',
+      tiles: [
+        'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
+      ],
+      tileSize: 256,
+      attribution: 'Transportation &copy; Esri',
+    },
   },
   layers: [
     { id: 'carto-positron', type: 'raster', source: 'carto-positron', minzoom: 0, maxzoom: 20 },
@@ -244,6 +265,25 @@ const BASEMAP_STYLE = {
       id: 'esri-imagery',
       type: 'raster',
       source: 'esri-imagery',
+      minzoom: 0,
+      maxzoom: 20,
+      layout: { visibility: 'none' },
+    },
+    // Road-name overlay first, then place-name overlay on top — both
+    // start hidden; BasemapToggleControl reveals them when Satellite
+    // is on.
+    {
+      id: 'esri-transportation',
+      type: 'raster',
+      source: 'esri-transportation',
+      minzoom: 0,
+      maxzoom: 20,
+      layout: { visibility: 'none' },
+    },
+    {
+      id: 'esri-reference',
+      type: 'raster',
+      source: 'esri-reference',
       minzoom: 0,
       maxzoom: 20,
       layout: { visibility: 'none' },
@@ -1307,6 +1347,15 @@ export function initMap(container, { onFeatureClick } = {}) {
       // ends up above survey-grid-label. Both are text-only with
       // halos, so where they coincide the roll number reads on top
       // without occluding the section grid significantly.
+      // Esri reference overlays (road / place names) added in
+      // BASEMAP_STYLE sit at the bottom of the layer stack by default
+      // — which means every data overlay (zoning, MASC, CLI, Roll
+      // Layer fill) would paint over them. Move them above the data
+      // fills so road names stay visible in Satellite mode, then the
+      // subject-radius and label layers below land on top of them
+      // (with their halos / dashed strokes, those still read cleanly).
+      if (map.getLayer('esri-transportation'))       map.moveLayer('esri-transportation');
+      if (map.getLayer('esri-reference'))            map.moveLayer('esri-reference');
       if (map.getLayer('subject-radius-fill'))       map.moveLayer('subject-radius-fill');
       if (map.getLayer('subject-radius-line'))       map.moveLayer('subject-radius-line');
       if (map.getLayer('survey-grid-label'))         map.moveLayer('survey-grid-label');
@@ -2363,8 +2412,13 @@ class BasemapToggleControl {
     const map = this._map;
     const imageryVisible = map.getLayoutProperty('esri-imagery', 'visibility') === 'visible';
     const next = !imageryVisible;
-    map.setLayoutProperty('esri-imagery',  'visibility', next ? 'visible' : 'none');
-    map.setLayoutProperty('carto-positron','visibility', next ? 'none' : 'visible');
+    const imgVis  = next ? 'visible' : 'none';
+    const refVis  = imgVis;     // Esri reference overlays follow the imagery
+    const cartoVis = next ? 'none' : 'visible';
+    map.setLayoutProperty('esri-imagery',        'visibility', imgVis);
+    map.setLayoutProperty('esri-transportation', 'visibility', refVis);
+    map.setLayoutProperty('esri-reference',      'visibility', refVis);
+    map.setLayoutProperty('carto-positron',      'visibility', cartoVis);
     this._btn.textContent = next ? 'Streets' : 'Satellite';
     this._btn.classList.toggle('active', next);
   }
