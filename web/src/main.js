@@ -3406,6 +3406,13 @@ function renderTable(rows) {
     const pplCell = td(formatGroupPpl(p), 'num');
     pplCell.classList.add('sales-only');
     tr.appendChild(pplCell);
+    // Sales-mode position for the Acres column — emitted right after
+    // $/Lot so the appraiser can read lot size next to the per-lot
+    // price. The basic-mode Acres cell below carries the same value
+    // but with .basic-only so only one is visible at a time.
+    const acresSalesCell = td(formatAcres(ac), 'num');
+    acresSalesCell.classList.add('sales-only');
+    tr.appendChild(acresSalesCell);
     const ppsfCell = td(formatGroupPpsf(p), 'num');
     ppsfCell.classList.add('sales-only');
     tr.appendChild(ppsfCell);
@@ -3459,7 +3466,11 @@ function renderTable(rows) {
     tr.appendChild(riskAreaCell);
     tr.appendChild(td(formatChanges(row)));
     tr.appendChild(td(formatDu(p.Dwelling_Units), 'num'));
-    tr.appendChild(td(formatAcres(ac), 'num'));
+    // Basic-mode position for Acres — hidden in sales mode (the
+    // sales-only Acres cell above takes its place after $/Lot).
+    const acresBasicCell = td(formatAcres(ac), 'num');
+    acresBasicCell.classList.add('basic-only');
+    tr.appendChild(acresBasicCell);
     tr.appendChild(td(formatSf(ac), 'num'));
     tr.appendChild(assessmentCell(p));
     tr.appendChild(walkCell(row));
