@@ -61,6 +61,18 @@ const MAX_RESULTS = 1000;
 // Keep legal-index lookups as short POST bodies. Each chunk becomes one
 // grouped (muni_no + roll IN (...)) clause against Roll_Entry.
 const ROLL_KEY_CHUNK_SIZE = 80;
+// Bulk roll-number searches (sales-CSV upload, paste-list) split the
+// Roll_No_Txt IN-list into chunks before querying Roll_Entry. ArcGIS
+// hosted services silently return incomplete results for large IN-lists
+// without setting exceededTransferLimit — observed empirically: a single
+// 192-roll IN-list returned 62 features instead of the expected ~149.
+// Chunking sidesteps that, and the per-chunk queries run concurrently
+// so total latency is roughly unchanged.
+const ROLL_LIST_CHUNK_SIZE = 50;
+// How many roll-list chunks we fire in parallel. ArcGIS hosted services
+// rate-limit at 6000 request-units / minute; keep concurrency modest so
+// a multi-muni upload doesn't trip the cap.
+const ROLL_LIST_CONCURRENCY = 4;
 // How many per-feature spatial queries we run in parallel. ArcGIS hosted
 // services tolerate this comfortably; staying conservative keeps us off
 // any rate-limit radar.
@@ -88,6 +100,7 @@ export async function searchParcels(args) {
     parcelKeys,
   } = args || {};
   const clauses = buildParcelClauses(args || {});
+  const rollList = canonicalRollList(args?.roll);
 
   // Zone / Dev-Plan category aren't fields on Roll_Entry — they live on the
   // overlay layers. We resolve them to a list of parcel OBJECTIDs by spatial
@@ -106,7 +119,12 @@ export async function searchParcels(args) {
     }
   }
 
-  if (clauses.length === 0 && !oidFilter && !hasParcelKeys(parcelKeys)) {
+  if (
+    clauses.length === 0 &&
+    !oidFilter &&
+    !hasParcelKeys(parcelKeys) &&
+    rollList.length === 0
+  ) {
     return makeEmptyFc({ truncated: false });
   }
 
@@ -120,11 +138,24 @@ export async function searchParcels(args) {
     return fetchRollEntryByKeyChunks(parcelKeys, clauses);
   }
 
+  // Roll-list path: when the user supplied a roll list (single value, comma
+  // paste, or bulk sales-CSV upload), split into chunks before joining the
+  // IN-list into the WHERE clause. Large IN-lists silently truncate at the
+  // service side — see ROLL_LIST_CHUNK_SIZE comment for the empirical case.
+  if (rollList.length > 0) {
+    if (rollList.length <= ROLL_LIST_CHUNK_SIZE) {
+      const inList = rollList.map((v) => `'${escapeSql(v)}'`).join(',');
+      const where = [...clauses, `Roll_No_Txt IN (${inList})`].join(' AND ');
+      return fetchRollEntryWhere(where, MAX_RESULTS);
+    }
+    return fetchRollListChunked(clauses, rollList);
+  }
+
   const where = clauses.join(' AND ');
   return fetchRollEntryWhere(where, MAX_RESULTS);
 }
 
-function buildParcelClauses({ addressStreet, municipality, roll, duMode, duMin }) {
+function buildParcelClauses({ addressStreet, municipality, duMode, duMin }) {
   const clauses = [];
   // Street-name substring match against Property_Address. Civic-number
   // range filtering happens client-side in main.js's
@@ -135,26 +166,10 @@ function buildParcelClauses({ addressStreet, municipality, roll, duMode, duMin }
   // Muni dropdown delivers the exact stored form, e.g. "STONEWALL (TOWN)";
   // exact equality is faster than LIKE and avoids surprise partial-matches.
   if (municipality)    clauses.push(`Muni_Name_With_Typ = '${escapeSql(municipality)}'`);
-  // Roll # accepts either a single value or a comma- / whitespace- /
-  // newline-separated list (paste from a spreadsheet). Source data
-  // always stores Roll_No_Txt as <digits>.<3 digits> — e.g. "3600.000",
-  // "3600.001", "3600.500". canonicalRoll() turns whatever shorthand
-  // the user typed into that canonical form so the IN-list matches:
-  //   "3600"      → "3600.000"
-  //   "3600.0"    → "3600.000"
-  //   "3600.01"   → "3600.010"
-  //   "3600.1"    → "3600.100"
-  //   "3600.500"  → "3600.500"
-  // Inputs that don't shape into a roll (pure junk) are left as-is so
-  // the missing-rolls diagnostic in main.js can still flag them by
-  // input form, rather than silently dropping bogus entries.
-  const rollList = parseRollList(roll);
-  if (rollList.length > 0) {
-    const expanded = new Set();
-    for (const r of rollList) expanded.add(canonicalRoll(r));
-    const inList = [...expanded].map((v) => `'${escapeSql(v)}'`).join(',');
-    clauses.push(`Roll_No_Txt IN (${inList})`);
-  }
+  // Roll # handling moved into searchParcels() — large IN-lists need to
+  // be chunked across multiple queries (see ROLL_LIST_CHUNK_SIZE).
+  // canonicalRollList() builds the deduped, normalized list searchParcels
+  // then splits.
 
   // Dwelling-units filter. The source field is Dwelling_Units (smallInteger).
   // Most rural / commercial / vacant parcels store 0; the "0 DU only" option
@@ -220,6 +235,88 @@ async function fetchRollEntryByKeyChunks(parcelKeys, clauses) {
     features,
     _truncated: truncated,
   };
+}
+
+/**
+ * Run a chunked Roll_No_Txt IN-list search. The user-supplied roll list
+ * (parseRollList + canonicalRoll'd) is split into ROLL_LIST_CHUNK_SIZE
+ * chunks; each chunk fires as an independent fetchRollEntryWhere with
+ * the rest of the WHERE intact. Up to ROLL_LIST_CONCURRENCY chunks run
+ * concurrently. Results merge into a single FeatureCollection with
+ * OBJECTID-keyed dedupe (defensive — chunks don't overlap).
+ *
+ * Worker-pool concurrency rather than a fire-all Promise.all keeps the
+ * rate-limit footprint bounded even for large lists (an 800-roll upload
+ * is 16 chunks; we keep at most 4 in flight).
+ */
+async function fetchRollListChunked(baseClauses, canonicalRolls) {
+  const chunks = [];
+  for (let i = 0; i < canonicalRolls.length; i += ROLL_LIST_CHUNK_SIZE) {
+    chunks.push(canonicalRolls.slice(i, i + ROLL_LIST_CHUNK_SIZE));
+  }
+  if (chunks.length === 0) return makeEmptyFc({ truncated: false });
+
+  const features = [];
+  const seen = new Set();
+  let truncated = false;
+  let firstErr = null;
+
+  let next = 0;
+  async function worker() {
+    while (true) {
+      const idx = next++;
+      if (idx >= chunks.length) return;
+      if (firstErr) return;
+      const chunk = chunks[idx];
+      const inList = chunk.map((v) => `'${escapeSql(v)}'`).join(',');
+      const where = [...baseClauses, `Roll_No_Txt IN (${inList})`].join(' AND ');
+      const remaining = MAX_RESULTS - features.length;
+      if (remaining <= 0) { truncated = true; return; }
+      let fc;
+      try {
+        fc = await fetchRollEntryWhere(where, remaining);
+      } catch (e) {
+        firstErr = e;
+        return;
+      }
+      truncated = truncated || fc._truncated === true;
+      for (const f of fc.features || []) {
+        const oid = f.properties?.OBJECTID;
+        const key = oid == null
+          ? `${f.properties?.Municipality || ''}|${f.properties?.Roll_No_Txt || ''}`
+          : `oid:${oid}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        features.push(f);
+        if (features.length >= MAX_RESULTS) { truncated = true; return; }
+      }
+    }
+  }
+
+  const workerCount = Math.min(ROLL_LIST_CONCURRENCY, chunks.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  if (firstErr) throw firstErr;
+
+  return {
+    type: 'FeatureCollection',
+    features,
+    _truncated: truncated,
+  };
+}
+
+/**
+ * Parse a free-form roll-list input (single value, comma/whitespace/newline
+ * separated, paste from a spreadsheet) into the canonical, deduplicated
+ * form Roll_Entry stores: <digits>.<3 digits>. Inputs that don't shape
+ * into a roll are passed through unchanged so the missing-rolls
+ * diagnostic in main.js can still surface them by input form.
+ */
+function canonicalRollList(roll) {
+  const parsed = parseRollList(roll);
+  if (parsed.length === 0) return [];
+  const expanded = new Set();
+  for (const r of parsed) expanded.add(canonicalRoll(r));
+  return [...expanded];
 }
 
 function hasParcelKeys(parcelKeys) {
