@@ -1208,6 +1208,30 @@ export function initMap(container, { onFeatureClick } = {}) {
           'line-width': 3.5,
         },
       });
+      // Subject-distance ring — a dashed blue circle of the user-typed
+      // Max Distance value, centered on the subject's centroid. Gives
+      // the radius filter a visual reference so it's obvious why a
+      // sale near the edge of the filter passed or failed. The fill is
+      // very translucent so it doesn't obscure parcels or basemap
+      // detail; the dashed line carries the visual weight.
+      map.addSource('subject-radius', { type: 'geojson', data: emptyFc() });
+      map.addLayer({
+        id: 'subject-radius-fill',
+        type: 'fill',
+        source: 'subject-radius',
+        paint: { 'fill-color': '#1e6fd9', 'fill-opacity': 0.05 },
+      });
+      map.addLayer({
+        id: 'subject-radius-line',
+        type: 'line',
+        source: 'subject-radius',
+        paint: {
+          'line-color': '#1e6fd9',
+          'line-width': 2,
+          'line-dasharray': [4, 3],
+          'line-opacity': 0.75,
+        },
+      });
       // MASC label overlay is intentionally above the parcel/roll-fabric
       // layers so the rating letter stays visible when the user turns
       // MASC on after a parcel search.
@@ -1271,6 +1295,8 @@ export function initMap(container, { onFeatureClick } = {}) {
       // ends up above survey-grid-label. Both are text-only with
       // halos, so where they coincide the roll number reads on top
       // without occluding the section grid significantly.
+      if (map.getLayer('subject-radius-fill'))       map.moveLayer('subject-radius-fill');
+      if (map.getLayer('subject-radius-line'))       map.moveLayer('subject-radius-line');
       if (map.getLayer('survey-grid-label'))         map.moveLayer('survey-grid-label');
       if (map.getLayer('muni-parcels-civic-label'))  map.moveLayer('muni-parcels-civic-label');
       if (map.getLayer('muni-parcels-label'))        map.moveLayer('muni-parcels-label');
@@ -1661,6 +1687,48 @@ export function setTrafficFlowVisible(map, visible) {
 export function setSubjectData(map, fc) {
   const src = map.getSource('subject');
   if (src) src.setData(fc || { type: 'FeatureCollection', features: [] });
+}
+
+/**
+ * Draw a circle of the supplied radius (km) around the centroid on the
+ * subject-radius layer. Pass null/zero/no centroid to clear the ring.
+ * The geometry is a 96-vertex polygon ring built with an equirectangular
+ * approximation — accurate to <0.5 % at any latitude Manitoba covers,
+ * which is well below the precision of the visual indicator anyway.
+ */
+export function setSubjectRadius(map, centroid, radiusKm) {
+  const src = map.getSource('subject-radius');
+  if (!src) return;
+  if (!centroid || !Number.isFinite(radiusKm) || radiusKm <= 0) {
+    src.setData({ type: 'FeatureCollection', features: [] });
+    return;
+  }
+  const lng = centroid.lng ?? centroid[0];
+  const lat = centroid.lat ?? centroid[1];
+  if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
+    src.setData({ type: 'FeatureCollection', features: [] });
+    return;
+  }
+  const STEPS = 96;
+  const R = 6371; // mean earth radius in km
+  const cosLat = Math.cos((lat * Math.PI) / 180);
+  const coords = [];
+  for (let i = 0; i <= STEPS; i++) {
+    const theta = (i / STEPS) * 2 * Math.PI;
+    const dx = radiusKm * Math.cos(theta);
+    const dy = radiusKm * Math.sin(theta);
+    const dLat = (dy / R) * (180 / Math.PI);
+    const dLng = (dx / R) * (180 / Math.PI) / cosLat;
+    coords.push([lng + dLng, lat + dLat]);
+  }
+  src.setData({
+    type: 'FeatureCollection',
+    features: [{
+      type: 'Feature',
+      properties: { radiusKm },
+      geometry: { type: 'Polygon', coordinates: [coords] },
+    }],
+  });
 }
 
 export function setMascData(map, fc) {

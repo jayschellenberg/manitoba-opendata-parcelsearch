@@ -75,6 +75,7 @@ import {
   buildZoneCodePaint,
   parcelHtml,
   setSubjectData,
+  setSubjectRadius,
 } from './map.js';
 import {
   hasLegalCriteria,
@@ -950,6 +951,15 @@ for (const el of [
 ].filter(Boolean)) {
   el.addEventListener('change', refilterCsvIfActive);
   el.addEventListener('input',  refilterCsvIfActive);
+}
+// Subject-distance ring follows the Max-Distance input in real time
+// so the user sees the radius they're choosing without having to wait
+// for the table to re-filter. Triggered independently of
+// refilterCsvIfActive (which only runs in CSV mode) so the ring works
+// in basic-search mode too.
+if ($distanceMax) {
+  $distanceMax.addEventListener('input',  updateSubjectRadiusRing);
+  $distanceMax.addEventListener('change', updateSubjectRadiusRing);
 }
 
 // Date-range quick-preset buttons. Click "12 mo" -> set sale-date-from
@@ -4448,6 +4458,7 @@ async function applySubjectFromInput() {
     subjectFeature = feat;
     subjectCentroid = computeCentroid(feat);
     setSubjectData(map, { type: 'FeatureCollection', features: [feat] });
+    updateSubjectRadiusRing();
     document.querySelector('.subject-row')?.classList.add('has-subject');
     // If we have CSV rows already, restamp distances and re-render
     // so the new column shows up immediately. Outside CSV mode the
@@ -4479,13 +4490,31 @@ function clearSubjectParcel() {
   subjectCentroid = null;
   if ($subjectRoll) $subjectRoll.value = '';
   document.querySelector('.subject-row')?.classList.remove('has-subject');
-  mapReady.then(() => setSubjectData(map, { type: 'FeatureCollection', features: [] }));
+  mapReady.then(() => {
+    setSubjectData(map, { type: 'FeatureCollection', features: [] });
+    setSubjectRadius(map, null, 0);
+  });
   if (csvFullRows && csvFullRows.length > 0) {
     for (const r of csvFullRows) {
       if (r?.parcel?.properties) delete r.parcel.properties._distanceKm;
     }
     refilterCsvIfActive();
   }
+}
+
+/**
+ * Push the current subject + Max-Distance value to the subject-radius
+ * map layer. No-ops cleanly when either is absent (so the ring just
+ * disappears when the user clears the subject or empties the input).
+ * Called whenever the subject or the distance input changes.
+ */
+function updateSubjectRadiusRing() {
+  const km = parseFloat($distanceMax?.value);
+  if (!subjectCentroid || !Number.isFinite(km) || km <= 0) {
+    mapReady.then(() => setSubjectRadius(map, null, 0));
+    return;
+  }
+  mapReady.then(() => setSubjectRadius(map, subjectCentroid, km));
 }
 
 /**
