@@ -176,6 +176,7 @@ header small a {
    on the left, UofM toggle pill on the right. */
 body:not(.sales-mode) .sidebar .size-row,
 body:not(.sales-mode) .sidebar .size-vacant-row,
+body:not(.sales-mode) .sidebar .street-name-row,
 body:not(.sales-mode) .sidebar .vacant-row,
 body:not(.sales-mode) .sidebar .date-row,
 body:not(.sales-mode) .sidebar .date-presets,
@@ -266,6 +267,21 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 .sidebar .size-vacant-row .vacant-only-label {
   font-size: 13px;
   font-weight: 500;
+}
+
+/* Street Name filter row — single full-width input, sits between
+   the Plan #/Lo Ac/Hi Ac/Vacant Land row and the date preset
+   buttons. Mirrors the size-vacant-row's input styling so the two
+   sales filter rows look like a single visual block. */
+.sidebar .street-name-row {
+  display: flex;
+  margin-top: 6px;
+}
+.sidebar .street-name-row .street-name-field { flex: 1 1 auto; min-width: 0; }
+.sidebar .street-name-row input[type="text"] {
+  width: 100%;
+  padding: 6px 6px;
+  font-size: 12px;
 }
 
 /* Subject muni picker — slim row directly under the subject roll
