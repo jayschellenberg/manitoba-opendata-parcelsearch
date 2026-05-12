@@ -3402,12 +3402,12 @@ function renderTable(rows) {
     const acresSalesCell = td(formatAcres(ac), 'num');
     acresSalesCell.classList.add('sales-only');
     tr.appendChild(acresSalesCell);
-    const ppsfCell = td(formatGroupPpsf(p), 'num');
-    ppsfCell.classList.add('sales-only');
-    tr.appendChild(ppsfCell);
     const ppaCell = td(formatGroupPpa(p), 'num');
     ppaCell.classList.add('sales-only');
     tr.appendChild(ppaCell);
+    const ppsfCell = td(formatGroupPpsf(p), 'num');
+    ppsfCell.classList.add('sales-only');
+    tr.appendChild(ppsfCell);
     const saleToAsmtCell = td(formatSaleToAsmt(p), 'num');
     saleToAsmtCell.classList.add('sales-only');
     tr.appendChild(saleToAsmtCell);
