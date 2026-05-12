@@ -835,7 +835,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         type: 'fill',
         source: 'muni-parcels',
         layout: { visibility: 'none' },
-        paint: { 'fill-color': '#cfeefb', 'fill-opacity': 0.05 },
+        paint: { 'fill-color': '#6b7280', 'fill-opacity': 0.07 },
       });
       map.addLayer({
         id: 'muni-parcels-line',
@@ -848,8 +848,8 @@ export function initMap(container, { onFeatureClick } = {}) {
           // boundaries when looking for it but invisible enough that
           // zoning / MASC / CLI overlays paint cleanly on top.
           'line-color': '#6b7280',
-          'line-width': 0.5,
-          'line-opacity': 0.3,
+          'line-width': 0.7,
+          'line-opacity': 0.5,
         },
       });
       // Roll-number labels at each parcel's centroid. Polygon symbol
