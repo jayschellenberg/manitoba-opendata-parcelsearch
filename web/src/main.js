@@ -2047,7 +2047,14 @@ function refilterCsvIfActive() {
     type: 'FeatureCollection',
     features: filtered.map((r) => r.parcel),
   };
-  setMapData(fc, lastZoningFc, lastDevPlanFc);
+  // When the filter narrows to zero rows, don't re-fit the map. The
+  // empty-FC branch in showResults flies to MB_CENTER (province-wide
+  // default), which looks like a bug — e.g. setting Max Distance to
+  // 1 km with no comps within that radius zooms out from Headingley
+  // to all of Manitoba. Keeping the previous viewport leaves the
+  // subject and surrounding context on screen so the user can see
+  // "0 of N sales shown" with geographic anchor intact.
+  setMapData(fc, lastZoningFc, lastDevPlanFc, { fit: filtered.length > 0 });
   // setData() doesn't carry feature-state from before the re-tile,
   // so re-apply starred state from favoriteKeys after the source
   // refresh. mapReady gate is inside setStarredOnMap.
