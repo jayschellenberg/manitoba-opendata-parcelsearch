@@ -1454,6 +1454,12 @@ async function handleSalesUpload(file) {
 
     // Per-muni Roll # lookups in parallel. searchParcels treats the
     // comma-separated roll list and the muni dropdown together.
+    // Capture per-muni fetch errors so we can surface them in the
+    // count message instead of pretending every row was "not in
+    // Roll_Entry" — used to be a silent failure mode on rate-limit
+    // (ArcGIS returns 429, searchParcels throws, every record got
+    // tagged "Roll # not found" with no signal to the user).
+    const fetchErrors = [];
     const fetches = [...byMuni.entries()].map(async ([muni, recs]) => {
       const rolls = recs.map((r) => r.rollNumber).filter(Boolean).join(',');
       let fc = { type: 'FeatureCollection', features: [] };
@@ -1461,6 +1467,7 @@ async function handleSalesUpload(file) {
         fc = await searchParcels({ municipality: muni, roll: rolls });
       } catch (err) {
         console.warn(`searchParcels failed for ${muni}`, err);
+        fetchErrors.push({ muni, message: err.message || String(err) });
       }
       // Stamp sale info onto each matched feature, keyed by canonical
       // Roll_No_Txt.
@@ -1523,8 +1530,22 @@ async function handleSalesUpload(file) {
     }
 
     if (parcelFc.features.length === 0) {
-      setCount(`No matching parcels found for the ${records.length} CSV rows. ` +
-               `Check that municipality names and roll numbers match Roll_Entry.`);
+      // Distinguish a clean "no matches" (CSV rows don't exist in
+      // Roll_Entry) from a fetch-side failure (the most common cause
+      // of zero matches in practice: ArcGIS rate-limited the bulk
+      // query). Surface the error so the user can retry instead of
+      // chasing imagined CSV problems.
+      if (fetchErrors.length > 0) {
+        const rateLimited = fetchErrors.some((e) => /429|rate-limited/i.test(e.message));
+        if (rateLimited) {
+          setCount(`Upload failed: ArcGIS rate-limited. Wait ~60s and try again. (${fetchErrors.length} muni fetch${fetchErrors.length === 1 ? '' : 'es'} failed)`);
+        } else {
+          setCount(`Upload failed: ${fetchErrors[0].message}. Retry or check Roll_Entry for ${fetchErrors[0].muni}.`);
+        }
+      } else {
+        setCount(`No matching parcels found for the ${records.length} CSV rows. ` +
+                 `Check that municipality names and roll numbers match Roll_Entry.`);
+      }
       renderUnmatchedPanel(unmatchedRecords);
       return;
     }

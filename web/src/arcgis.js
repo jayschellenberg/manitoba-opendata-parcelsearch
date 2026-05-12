@@ -1505,23 +1505,68 @@ async function fetchPage(baseUrl, params) {
   // ArcGIS REST expects POST for long queries (the geometry param can push
   // a URL past common 8 KB length limits). POST works for everything
   // including small queries, so we use it unconditionally.
+  //
+  // Rate-limit handling: Esri's hosted FeatureServer caps requests at
+  // 6000 request-units / minute. A heavy session (multi-muni Roll
+  // Layer + Zoning + DevPlan + MASC + assessment-index warm-up + the
+  // bulk sales-CSV query) can blow past that and the server returns
+  // either HTTP 429 OR a 200 OK with {error:{code:429}} body. Without
+  // explicit handling, the caller's silent try/catch (in
+  // handleSalesUpload's per-muni fetch loop) turned a transient
+  // rate-limit into "all records unmatched" with no signal to the
+  // user. We now retry up to 3 times with exponential backoff,
+  // honouring the Retry-After header when present.
   const usp = new URLSearchParams(params);
-  const res = await fetch(`${baseUrl}/query`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: usp.toString(),
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`ArcGIS ${res.status}: ${body.slice(0, 200)}`);
+  const body = usp.toString();
+  const MAX_ATTEMPTS = 3;
+  let lastErr = null;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    let res;
+    try {
+      res = await fetch(`${baseUrl}/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      });
+    } catch (e) {
+      lastErr = e;
+      // Network/abort error — short backoff then retry.
+      if (attempt < MAX_ATTEMPTS - 1) { await sleep(500 * (attempt + 1)); continue; }
+      throw e;
+    }
+    // 429 on the HTTP layer — back off then retry.
+    if (res.status === 429) {
+      const retryAfter = parseInt(res.headers.get('Retry-After') || '', 10);
+      const waitMs = Number.isFinite(retryAfter) ? retryAfter * 1000 : 2000 * (attempt + 1);
+      lastErr = new Error(`ArcGIS rate-limited (429); retrying after ${waitMs}ms`);
+      if (attempt < MAX_ATTEMPTS - 1) { await sleep(waitMs); continue; }
+      throw new Error(`ArcGIS service is rate-limited (HTTP 429). Retried ${MAX_ATTEMPTS}× without success. Wait a minute and re-upload.`);
+    }
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`ArcGIS ${res.status}: ${text.slice(0, 200)}`);
+    }
+    const json = await res.json();
+    // ArcGIS REST sometimes returns 200 OK with an `error` body. Code
+    // 429 here is the "request quota exceeded" form — same backoff.
+    if (json && json.error) {
+      if (json.error.code === 429) {
+        const waitMs = 2000 * (attempt + 1);
+        lastErr = new Error(`ArcGIS rate-limited (200/error 429); retrying after ${waitMs}ms`);
+        if (attempt < MAX_ATTEMPTS - 1) { await sleep(waitMs); continue; }
+        throw new Error(`ArcGIS service is rate-limited (quota exceeded). Retried ${MAX_ATTEMPTS}× without success. Wait a minute and re-upload.`);
+      }
+      throw new Error(`ArcGIS error ${json.error.code}: ${json.error.message}`);
+    }
+    return json;
   }
-  const json = await res.json();
-  // ArcGIS returns 200 OK with an `error` body on invalid queries.
-  if (json && json.error) {
-    throw new Error(`ArcGIS error ${json.error.code}: ${json.error.message}`);
-  }
-  return json;
+  // Unreachable in practice (every loop iteration either returns or
+  // throws), but keeps the type checker / linter happy.
+  throw lastErr || new Error('ArcGIS fetch failed after retries');
 }
+
+/** Tiny promise-based sleep helper for the retry/backoff path. */
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 /**
  * Fetch every distinct value of a categorical column. Used for the muni
