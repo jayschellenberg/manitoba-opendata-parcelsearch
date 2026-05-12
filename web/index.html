@@ -95,9 +95,16 @@
         <div class="action-row">
           <button id="search" type="button">Search</button>
           <button id="clear"  type="button" class="secondary">Clear</button>
-          <button id="export" type="button" class="secondary">Export CSV</button>
         </div>
         </section><!-- /.search-section -->
+        <!-- Export CSV lives OUTSIDE .search-section so it remains
+             available after a sales-CSV upload (when the rest of the
+             Search section collapses via body.sales-mode CSS). The
+             button gates on results-row count via setExportEnabled,
+             so it's harmless to keep visible when the table is empty. -->
+        <div class="action-row export-row">
+          <button id="export" type="button" class="secondary">Export CSV</button>
+        </div>
         <!-- Count + unmatched panel sit OUTSIDE .search-section so they
              stay visible after a sales-CSV upload (the rest of the
              Search section collapses via body.sales-mode CSS). They're
@@ -397,8 +404,8 @@
                  a time. Both share data-col="acres" so the sort handler
                  keys on the same SORT_KEYS entry from either header. -->
             <th data-col="acres" class="sales-only" title="Parcel area in acres (assessor-recorded Frontage_or_Area when available, otherwise computed from polygon geometry).">Acres</th>
-            <th data-col="grouppricesf" class="sales-only" title="Sale Price ÷ total square footage of every parcel in the same sale">$/SF</th>
             <th data-col="grouppriceac" class="sales-only" title="Sale Price ÷ total acres of every parcel in the same sale">$/Acre</th>
+            <th data-col="grouppricesf" class="sales-only" title="Sale Price ÷ total square footage of every parcel in the same sale">$/SF</th>
             <th data-col="saletoasmt" class="sales-only" title="Sale Price ÷ Total Assessed (latest MAO year). For multi-parcel sales the assessed total is summed across the group. Useful for spotting non-arms-length transfers (<1) and significantly above-assessed sales (>1).">Sale/Asmt</th>
             <th data-col="subjdist" class="sales-only subj-col" title="Centroid-to-centroid distance from the subject parcel (km). Set the subject roll # in the sidebar to populate this column.">Dist (km)</th>
             <!-- Per-parcel assessment columns from MAO scrape's latest
