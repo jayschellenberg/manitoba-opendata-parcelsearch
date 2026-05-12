@@ -1237,8 +1237,8 @@ export function initMap(container, { onFeatureClick } = {}) {
           'line-width': [
             'case',
             ['boolean', ['feature-state', 'groupHover'], false],
-            2.75,
-            1.75,
+            3.25,
+            2,
           ],
         },
       });
