@@ -122,8 +122,7 @@ const $duMin         = document.getElementById('du-min');
 // buttons' .active class and updates the dataset attribute.
 const $sizeLow       = document.getElementById('size-low');
 const $sizeHigh      = document.getElementById('size-high');
-const $sizeUomAcres  = document.getElementById('size-uom-acres');
-const $sizeUomSf     = document.getElementById('size-uom-sf');
+// (Acres/Sq Ft pill removed — size filter is permanently acres.)
 // Sales-CSV "Vacant land only" filter — strict group semantics. Reads
 // _saleGroupAllVacant which computeSaleGroupTotals stamps after the
 // per-parcel assessment-index lookup runs in handleSalesUpload.
@@ -987,25 +986,10 @@ for (const btn of document.querySelectorAll('.date-preset-btn')) {
   });
 }
 
-// UofM toggle pill — flips between Acres and Sq Ft. Click handler
-// updates the .active class on both buttons and re-runs the CSV filter
-// so the Low/High inputs (which are entered in the chosen unit) are
-// re-applied immediately. The active unit is read off the pill's
-// dataset.uom attribute so other code can introspect it without
-// querying both buttons.
-function setSizeUom(uom) {
-  if (uom !== 'acres' && uom !== 'sf') return;
-  const pill = $sizeUomAcres?.parentElement;
-  if (pill) pill.dataset.uom = uom;
-  if ($sizeUomAcres) $sizeUomAcres.classList.toggle('active', uom === 'acres');
-  if ($sizeUomSf)    $sizeUomSf.classList.toggle('active',    uom === 'sf');
-  refilterCsvIfActive();
-}
-if ($sizeUomAcres) $sizeUomAcres.addEventListener('click', () => setSizeUom('acres'));
-if ($sizeUomSf)    $sizeUomSf.addEventListener('click',    () => setSizeUom('sf'));
-// Stamp the initial UofM onto the pill container so getSizeUom() reads
-// 'acres' before the user clicks anything.
-setSizeUom('acres');
+// Size filter is permanently in acres — the Acres/Sq Ft pill was
+// removed at the user's request. The Lo Ac / Hi Ac inputs are
+// always interpreted as acres; filterCsvRowsByOtherSearches reads
+// them directly without unit conversion.
 
 // Subject parcel — Set on button click or Enter in the roll input;
 // Clear wipes the highlight + the Distance (km) column data. Both
@@ -2055,19 +2039,18 @@ function filterCsvRowsByOtherSearches(rows) {
   const duMode  = $duMode?.value || '';
   const duMin   = parseInt($duMin?.value || '', 10);
 
-  // Size range — Low/High are entered in the chosen UofM (acres or sq
-  // ft); convert to acres for comparison since parcelAcres() returns
-  // acres. Empty Low → 0; empty High → ∞. The filter only fires when
-  // at least one of Low/High is a finite positive number; both empty
-  // is a no-op so users who haven't touched the inputs aren't surprised
-  // by parcels disappearing.
-  const sizeLowRaw  = parseFloat($sizeLow?.value);
-  const sizeHighRaw = parseFloat($sizeHigh?.value);
-  const sizeUom     = $sizeUomAcres?.parentElement?.dataset?.uom || 'acres';
-  const toAcres = (v) => (sizeUom === 'sf' ? v / 43560 : v);
-  const sizeActive = Number.isFinite(sizeLowRaw) || Number.isFinite(sizeHighRaw);
-  const sizeLoAc = Number.isFinite(sizeLowRaw)  ? toAcres(sizeLowRaw)  : 0;
-  const sizeHiAc = Number.isFinite(sizeHighRaw) ? toAcres(sizeHighRaw) : Infinity;
+  // Size range — Lo Ac / Hi Ac are always interpreted as acres
+  // (the Sq Ft pill was removed; the simplified appraisal workflow
+  // never wanted the unit toggle in practice). Empty Lo → 0;
+  // empty Hi → ∞. Filter only fires when at least one bound is a
+  // finite positive number; both empty is a no-op so users who
+  // haven't touched the inputs aren't surprised by parcels
+  // disappearing.
+  const sizeLoAcRaw = parseFloat($sizeLow?.value);
+  const sizeHiAcRaw = parseFloat($sizeHigh?.value);
+  const sizeActive = Number.isFinite(sizeLoAcRaw) || Number.isFinite(sizeHiAcRaw);
+  const sizeLoAc = Number.isFinite(sizeLoAcRaw) ? sizeLoAcRaw : 0;
+  const sizeHiAc = Number.isFinite(sizeHiAcRaw) ? sizeHiAcRaw : Infinity;
 
   // Sale-date range. Empty from = -Infinity, empty to = +Infinity. The
   // HTML5 date input gives us YYYY-MM-DD strings — parseSaleDate() in
