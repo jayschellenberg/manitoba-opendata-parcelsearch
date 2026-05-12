@@ -117,6 +117,48 @@ header small a {
 .sidebar .du-row .du-mode-field { flex: 1 1 50%; min-width: 0; }
 .sidebar .du-row .du-min-field  { flex: 0 0 64px; min-width: 0; }
 
+/* Combined DU + Size row — 4 fields on one line at the 280-px
+   sidebar width. Left half (DU mode + #) takes 50%; right half
+   (Size lo + Size hi) takes the other 50%. Size inputs hide
+   individually outside sales-mode via their .sales-only class, so
+   the row visually collapses to just DU when there's no upload. */
+.sidebar .du-size-row {
+  display: flex;
+  gap: 4px;
+}
+/* 50/50 split: DU mode + DU min on left half, Size lo + Size hi on
+   the right. DU min is fixed-width (40px) so the visible "#" input
+   stays usable; DU mode takes the rest of the left half. Size
+   inputs share the right half equally. Outside sales-mode the
+   sales-only Size fields hide and DU mode auto-expands to fill. */
+.sidebar .du-size-row .du-mode-field    { flex: 0 0 calc(50% - 48px); min-width: 0; }
+.sidebar .du-size-row .du-min-field     { flex: 0 0 40px; min-width: 0; }
+.sidebar .du-size-row .size-low-field,
+.sidebar .du-size-row .size-high-field  { flex: 0 0 calc(25% - 4px); min-width: 0; }
+.sidebar .du-size-row select,
+.sidebar .du-size-row input[type="number"] {
+  width: 100%;
+  padding: 6px 6px;
+  font-size: 12px;
+}
+
+/* UoM pill + Vacant Land Only on one row. Pill is content-width;
+   the checkbox label takes the rest. Slightly larger font on
+   Vacant Land Only to keep the label readable now that it's
+   competing horizontally with the pill. */
+.sidebar .uom-vacant-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+.sidebar .uom-vacant-row .size-uom-field   { flex: 0 0 auto; }
+.sidebar .uom-vacant-row .vacant-only-field { flex: 1 1 auto; min-width: 0; }
+.sidebar .uom-vacant-row .vacant-only-label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
 /* Side-by-side filter row — packs two sidebar selects (Zoning category
    + Status) onto one line, each at half the sidebar width. The 280-px
    sidebar is tight, so half-width selects need min-width:0 on the
@@ -140,7 +182,14 @@ body:not(.sales-mode) .sidebar .class-row,
 body:not(.sales-mode) .sidebar .subject-row,
 body:not(.sales-mode) .sidebar .subject-muni-row,
 body:not(.sales-mode) .sidebar .distance-row,
+body:not(.sales-mode) .sidebar .uom-vacant-row,
 body:not(.sales-mode) .sidebar .favourite-row { display: none; }
+/* The .du-size-row stays visible in both modes — DU filters work
+   for regular searches too. Inside it, the .sales-only Size lo/hi
+   inputs hide individually via the existing .sales-only display
+   rules, so the row visually shrinks to just the DU pair outside
+   sales mode. */
+body:not(.sales-mode) .sidebar .du-size-row .sales-only { display: none; }
 
 /* Subject muni picker — slim row directly under the subject roll
    input. Single-muni uploads keep the row hidden (the JS toggles
@@ -233,18 +282,31 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 body.sales-mode .sidebar .search-section { display: none; }
 
 /* Subject parcel row — roll # input + Set/Clear buttons inline. */
+/* Subject combo row — single line: 2/3 width = Subject Roll # input
+   + Set + X, 1/3 width = Max km from subject input. The proportions
+   are anchored on the Roll # input (flex 1 1 0, ~32% of row) and
+   the Max km input (flex 0 0 33%); the Set/X buttons grab their
+   content-width in between. */
 .sidebar .subject-row {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   margin-top: 6px;
   align-items: stretch;
 }
-.sidebar .subject-row > .field { flex: 1 1 auto; min-width: 0; }
-.sidebar .subject-row input[type="text"] { width: 100%; }
+.sidebar .subject-row .subject-roll-field {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.sidebar .subject-row .subject-roll-field input[type="text"] { width: 100%; padding: 6px 8px; font-size: 12px; }
 .sidebar .subject-row .subject-apply-btn,
-.sidebar .subject-row .subject-clear-btn { flex: 0 0 auto; padding: 4px 10px; font-size: 12px; }
-.sidebar .subject-row .subject-clear-btn { width: 28px; padding: 4px 0; font-size: 14px; line-height: 1; }
-.sidebar .subject-row.has-subject input[type="text"] { background: #eef6ff; border-color: #4a90e2; }
+.sidebar .subject-row .subject-clear-btn { flex: 0 0 auto; padding: 4px 8px; font-size: 12px; }
+.sidebar .subject-row .subject-clear-btn { width: 24px; padding: 4px 0; font-size: 14px; line-height: 1; }
+.sidebar .subject-row .distance-max-field {
+  flex: 0 0 33%;
+  min-width: 0;
+}
+.sidebar .subject-row .distance-max-field input[type="number"] { width: 100%; padding: 6px 6px; font-size: 12px; }
+.sidebar .subject-row.has-subject .subject-roll-field input[type="text"] { background: #eef6ff; border-color: #4a90e2; }
 .sidebar .size-row {
   display: flex;
   gap: 6px;
@@ -464,6 +526,17 @@ body.sales-mode .sidebar .search-section { display: none; }
   width: 100%;
   padding: 8px 6px;
   font-size: 13px;
+}
+
+/* Full-width divider inside the 2-column overlay grid. Splits the
+   grid into a 6-button base-map block above and a 6-button soil +
+   external-links block below. grid-column:1/-1 forces the hr to
+   span both columns so it doesn't collapse into a single grid cell. */
+.sidebar .overlay-grid .overlay-grid-sep {
+  grid-column: 1 / -1;
+  border: none;
+  border-top: 1px solid #d6dde5;
+  margin: 4px 0;
 }
 
 .controls {
