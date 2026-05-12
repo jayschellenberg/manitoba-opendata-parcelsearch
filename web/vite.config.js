@@ -21,7 +21,10 @@ export default defineConfig({
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined;
           if (id.includes('maplibre-gl')) return 'maplibre';
-          if (id.includes('@turf/'))      return 'turf';
+          // mapbox-gl-draw imports several @turf/* helpers; keep them
+          // co-located in the turf chunk so we don't create a
+          // vendor → turf → vendor cycle.
+          if (id.includes('@turf/') || id.includes('mapbox-gl-draw')) return 'turf';
           if (id.includes('papaparse'))   return 'papaparse';
           // Everything else stays in the default vendor chunk.
           return 'vendor';
