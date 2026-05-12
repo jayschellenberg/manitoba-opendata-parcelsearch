@@ -1501,6 +1501,13 @@ export function initMap(container, { onFeatureClick } = {}) {
           .setLngLat(e.lngLat)
           .setHTML(muniParcelHtml(p, { withReportLink: true, overlay }))
           .addTo(map);
+        // Same Coordinates-copy wiring as the parcel-fill click
+        // handler: pull the full geometry via queryRenderedFeatures,
+        // compute the bbox-midpoint centroid, attach the listener.
+        const rendered = map.queryRenderedFeatures(e.point, { layers: ['muni-parcels-fill'] })[0];
+        const center = polygonBboxMidpoint(rendered?.geometry)
+          ?? [e.lngLat.lng, e.lngLat.lat];
+        wireCoordsCopy(muniClickPopup, center);
       });
 
       // Click a contaminated-site point → small popup with the registry
@@ -2311,10 +2318,19 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
     if (bits.length) lines.push(`<strong style="color:#1a3a4a">Dev Plan</strong>: ${bits.join(' &middot; ')}`);
   }
   if (withReportLink) {
+    // Action row: Assessment report link + Coordinates copy link.
+    // Same layout as parcelHtml's action row so the search-result
+    // and Roll Layer click popups look identical at the bottom.
+    // wireCoordsCopy attaches the click listener after the popup is
+    // mounted (caller's job — see the muni-parcels-fill click
+    // handler in initMap).
+    const actions = [];
     const safeReport = safeExternalUrl(p.Asmt_Rpt_Url);
     if (safeReport) {
-      lines.push(`<a href="${escapeHtml(safeReport)}" target="_blank" rel="noreferrer">Assessment report →</a>`);
+      actions.push(`<a href="${escapeHtml(safeReport)}" target="_blank" rel="noreferrer">Assessment report →</a>`);
     }
+    actions.push(`<a href="#" class="parcel-coords-copy" role="button" title="Copy parcel centroid (lat, lng) to clipboard">Coordinates</a>`);
+    lines.push(actions.join(' &nbsp;·&nbsp; '));
   }
   return `<div style="max-width:300px;line-height:1.4">${lines.join('<br>')}</div>`;
 }
