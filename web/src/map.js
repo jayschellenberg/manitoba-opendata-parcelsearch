@@ -255,10 +255,6 @@ export function initMap(container, { onFeatureClick } = {}) {
   map.on('error', (e) => console.error('[map error]', e?.error?.message || e, e));
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
   map.addControl(new BasemapToggleControl(), 'top-right');
-  // Temporary zoom-level indicator (top-left) so we can pick the
-  // right minzoom thresholds for label layers visually. Remove this
-  // control once the user has dialled in the civic-label cutoff.
-  map.addControl(new ZoomIndicatorControl(), 'top-left');
 
   const ready = new Promise((resolve) => {
     map.on('load', () => {
@@ -990,7 +986,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         id: 'muni-parcels-civic-label',
         type: 'symbol',
         source: 'muni-parcels',
-        minzoom: 14,
+        minzoom: 16.5,
         filter: ['!=', '_civicAddress', ''],
         layout: {
           visibility: 'none',
@@ -998,10 +994,9 @@ export function initMap(container, { onFeatureClick } = {}) {
           'text-font': ['Open Sans Semibold'],
           'text-size': [
             'interpolate', ['linear'], ['zoom'],
-            14, 9,
-            16, 11,
-            18, 13,
-            20, 15,
+            16.5, 10,
+            18,   12,
+            20,   14,
           ],
           // Allow overlap with the roll number above — they share the
           // same centroid anchor with different offsets; forcing both
@@ -2054,35 +2049,6 @@ class BasemapToggleControl {
     this._btn.classList.toggle('active', next);
   }
   onRemove() {
-    this._container.parentNode?.removeChild(this._container);
-    this._map = null;
-  }
-}
-
-/** Temporary live zoom-level readout. Shown in the top-left so the
- *  user can dial in the right minzoom value for symbol layers
- *  visually. Updates on every zoom event with two-decimal precision.
- *  Drop this control once the cutoffs are dialled in. */
-class ZoomIndicatorControl {
-  onAdd(map) {
-    this._map = map;
-    this._container = document.createElement('div');
-    this._container.className = 'maplibregl-ctrl maplibregl-ctrl-group zoom-indicator';
-    this._container.style.padding = '4px 8px';
-    this._container.style.background = 'rgba(255,255,255,0.92)';
-    this._container.style.font = '600 12px/1 system-ui, sans-serif';
-    this._container.style.color = '#1f2937';
-    this._container.style.minWidth = '54px';
-    this._container.style.textAlign = 'center';
-    this._update = () => {
-      this._container.textContent = `z ${map.getZoom().toFixed(2)}`;
-    };
-    this._update();
-    map.on('zoom', this._update);
-    return this._container;
-  }
-  onRemove() {
-    if (this._map && this._update) this._map.off('zoom', this._update);
     this._container.parentNode?.removeChild(this._container);
     this._map = null;
   }
