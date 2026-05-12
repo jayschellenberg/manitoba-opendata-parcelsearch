@@ -754,25 +754,14 @@ populateRecentUploads();
 // the other sales-only inputs use). Wipes the in-memory Set + the
 // localStorage entry and re-renders the table so star cells reset
 // to their unstarred glyph.
-const $favouritesClear = document.getElementById('favourites-clear');
-if ($favouritesClear) {
-  $favouritesClear.addEventListener('click', () => {
-    // Capture which parcels were starred before wiping the Set so we
-    // can flip their map feature-state off in lockstep.
-    const wereStarred = currentRows
-      ? currentRows
-          .map((r) => r.parcel)
-          .filter((p) => {
-            const k = parcelLegalKey(p?.properties || {});
-            return k && favoriteKeys.has(k);
-          })
-      : [];
-    favoriteKeys.clear();
-    saveFavorites();
-    for (const p of wereStarred) setStarredOnMap(p, false);
-    if (currentRows && currentRows.length > 0) renderTable(currentRows);
-  });
-}
+// "Clear" button to the right of Upload Sales CSV. Performs a full
+// reset — same behavior as the sidebar Clear button — so the user
+// can wipe an uploaded CSV, search results, subject parcel, filters,
+// and all toggled overlays in one click. Routes through clearAll()
+// which also strips sessionStorage + mbpsCache localStorage entries
+// before reloading the page.
+const $salesClear = document.getElementById('sales-clear');
+if ($salesClear) $salesClear.addEventListener('click', clearAll);
 
 $zoningToggle.addEventListener('click', () => toggleOverlay('zoning'));
 $devplanToggle.addEventListener('click', () => toggleOverlay('devplan'));
