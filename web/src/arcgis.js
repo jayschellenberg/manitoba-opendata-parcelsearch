@@ -1074,13 +1074,48 @@ export async function fetchTrafficFlow() {
  * upper bound — the largest single MB muni outside Winnipeg has ~30k
  * parcels.
  */
+/**
+ * Distill Roll_Entry's Property_Address field into a real civic
+ * address or the empty string. The field is a hybrid in source: some
+ * parcels carry an actual address ("60 SILVERSIDE DR"), others carry
+ * a legal reference ("1--24134", "NE34-2-4W", "DESC NE34-2-4W"). The
+ * civic-label symbol layer reads the empty-string output and just
+ * doesn't render — so the user sees civic addresses at zoom 16 only
+ * for parcels that actually have one.
+ *
+ * Exclusions (returns '' for any of these):
+ *   - empty / whitespace
+ *   - starts with "DESC " (legal-description marker)
+ *   - only digits + dashes / slashes / spaces / dots — covers
+ *     "1--24134", "7-1-2246", "8-7-32457"
+ *   - section-township-range pattern with optional direction prefix
+ *     and meridian suffix — covers "NE34-2-4W", "NW4-3-1E", "S17-10-5"
+ */
+const RE_DESC_PREFIX = /^DESC\b/i;
+const RE_NUMERIC_REFERENCE = /^[\d\s\-./]+$/;
+const RE_SEC_TWP_RNG = /^[NSEW]{0,2}\d+-\d+-\d+[NSEW]?$/i;
+function civicAddressOrEmpty(raw) {
+  if (raw == null) return '';
+  const s = String(raw).trim();
+  if (!s) return '';
+  if (RE_DESC_PREFIX.test(s))      return '';
+  if (RE_NUMERIC_REFERENCE.test(s)) return '';
+  if (RE_SEC_TWP_RNG.test(s))      return '';
+  return s;
+}
+
 export async function fetchAllParcelsInMunicipality(municipality) {
   if (!municipality) return makeEmptyFc();
-  // v3: _acres now prefers Roll_Entry's Frontage_or_Area when the
+  // v4: per-feature _civicAddress stamping (civicAddressOrEmpty()
+  // distills Property_Address down to actual addresses or '' for
+  // the new muni-parcels-civic-label symbol layer). v3 entries
+  // don't carry the field — so a cached v3 response would render
+  // zero civic labels until a manual cache bust.
+  // v3: _acres prefers Roll_Entry's Frontage_or_Area when the
   // assessor recorded an actual area (vs frontage feet); falls back
   // to turf-area on the polygon when the field is in feet or
-  // missing. v2 entries don't carry the assessor-derived value.
-  const cacheKey = `mb_muni_parcels_v3_${municipality}`;
+  // missing.
+  const cacheKey = `mb_muni_parcels_v4_${municipality}`;
   const cached = readCache(cacheKey);
   if (cached) return cached;
   // Pull the same lightweight property set the table uses minus the
@@ -1123,6 +1158,16 @@ export async function fetchAllParcelsInMunicipality(municipality) {
     if (typeof r === 'string') {
       f.properties._rollDisplay = r.endsWith('.000') ? r.slice(0, -4) : r;
     }
+    // Civic-address pass: Property_Address is a hybrid field — for
+    // urban / serviced parcels it holds an actual civic address
+    // ("60 SILVERSIDE DR"); for rural / unimproved / legal-description-
+    // only entries it holds non-address content like "DESC NE34-2-4W",
+    // "1--24134", "NE34-2-4W", or "DESC 8-7-32457". The
+    // muni-parcels-civic-label symbol layer reads _civicAddress and
+    // skips any feature whose value is empty, so this lets non-address
+    // entries silently drop out of the on-map civic labels while
+    // staying available in the hover popup as Property_Address.
+    f.properties._civicAddress = civicAddressOrEmpty(f.properties?.Property_Address);
   }
   // Don't cache the truncated flag; if a giant muni hit the cap, we want
   // the user to know each session.

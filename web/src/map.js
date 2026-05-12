@@ -832,7 +832,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         type: 'fill',
         source: 'muni-parcels',
         layout: { visibility: 'none' },
-        paint: { 'fill-color': '#cfeefb', 'fill-opacity': 0.07 },
+        paint: { 'fill-color': '#cfeefb', 'fill-opacity': 0.05 },
       });
       map.addLayer({
         id: 'muni-parcels-line',
@@ -958,6 +958,52 @@ export function initMap(container, { onFeatureClick } = {}) {
           // MASC/CLI fills, etc.
           'text-color': '#1a1a1a',
           'text-opacity': 0.75,
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.0,
+        },
+      });
+
+      // Civic-address labels — one zoom step closer in than the roll
+      // number labels (minzoom 16 vs 13). Reads _civicAddress, which
+      // is the empty string for any parcel whose Property_Address
+      // value couldn't be distilled into a real address (DESC-prefixed
+      // legal descriptions, numeric reference forms like "1--24134",
+      // section-township-range patterns like "NE34-2-4W"). Empty
+      // string + the implicit ['has'] filter together mean a parcel
+      // with no real address just doesn't render a label.
+      // Anchored "top" with a small text-offset so the address sits
+      // below the roll number (which is centered on the centroid) —
+      // they're stacked, not overlapping.
+      map.addLayer({
+        id: 'muni-parcels-civic-label',
+        type: 'symbol',
+        source: 'muni-parcels',
+        minzoom: 16,
+        filter: ['all',
+          ['has', '_civicAddress'],
+          ['!=', ['get', '_civicAddress'], ''],
+        ],
+        layout: {
+          visibility: 'none',
+          'text-field': ['get', '_civicAddress'],
+          'text-font': ['Open Sans Regular'],
+          'text-size': [
+            'interpolate', ['linear'], ['zoom'],
+            16, 9,
+            18, 11,
+            20, 13,
+          ],
+          'text-allow-overlap': false,
+          'text-ignore-placement': true,
+          'text-padding': 2,
+          'text-anchor': 'top',
+          'text-offset': [0, 0.9],
+          'symbol-placement': 'point',
+          'text-max-width': 12,
+        },
+        paint: {
+          'text-color': '#1f2937',
+          'text-opacity': 0.85,
           'text-halo-color': '#ffffff',
           'text-halo-width': 1.0,
         },
@@ -1600,7 +1646,7 @@ export function setMuniParcelsData(map, fc) {
 }
 export function setMuniParcelsVisible(map, visible) {
   const v = visible ? 'visible' : 'none';
-  for (const id of ['muni-parcels-fill', 'muni-parcels-line', 'muni-parcels-label']) {
+  for (const id of ['muni-parcels-fill', 'muni-parcels-line', 'muni-parcels-label', 'muni-parcels-civic-label']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
   }
 }
