@@ -996,8 +996,8 @@ export function initMap(container, { onFeatureClick } = {}) {
           // boundaries when looking for it but invisible enough that
           // zoning / MASC / CLI overlays paint cleanly on top.
           'line-color': '#6b7280',
-          'line-width': 1,
-          'line-opacity': 0.75,
+          'line-width': 1.25,
+          'line-opacity': 1,
         },
       });
       // Roll-number labels at each parcel's centroid. Polygon symbol
