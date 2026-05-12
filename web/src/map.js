@@ -922,6 +922,15 @@ export function initMap(container, { onFeatureClick } = {}) {
       // seconds for big RMs. Lets the user see the surrounding parcel
       // pattern without filtering every search to that level of detail.
       map.addSource('muni-parcels', { type: 'geojson', data: emptyFc() });
+      // Parallel Point source carrying one feature per parcel at its
+      // bbox-midpoint centroid. The label symbol layers below use THIS
+      // source instead of muni-parcels (the Polygon source) because
+      // MapLibre's GeoJSON tile clipper treats each tile-clipped polygon
+      // fragment as a separate symbol-placement candidate. Without the
+      // Point source, a polygon that crosses internal tile boundaries
+      // gets its roll/civic labels rendered 2-6× — once per fragment —
+      // at high zoom. Point features render exactly once.
+      map.addSource('muni-parcels-labels', { type: 'geojson', data: emptyFc() });
       // Light shading so the muni's parcel fabric reads at a glance on
       // either basemap. Cool light-blue is neutral against the cream
       // CARTO streets and the dark Esri imagery, and the moderate alpha
@@ -963,7 +972,8 @@ export function initMap(container, { onFeatureClick } = {}) {
       map.addLayer({
         id: 'muni-parcels-label',
         type: 'symbol',
-        source: 'muni-parcels',
+        // Point source — see comment on muni-parcels-labels source above.
+        source: 'muni-parcels-labels',
         minzoom: 13,
         layout: {
           visibility: 'none',
@@ -1084,7 +1094,8 @@ export function initMap(container, { onFeatureClick } = {}) {
       map.addLayer({
         id: 'muni-parcels-civic-label',
         type: 'symbol',
-        source: 'muni-parcels',
+        // Point source — see comment on muni-parcels-labels source above.
+        source: 'muni-parcels-labels',
         minzoom: 16.5,
         filter: ['!=', '_civicAddress', ''],
         layout: {
@@ -1833,6 +1844,51 @@ export function setMuniBoundariesData(map, fc) {
 export function setMuniParcelsData(map, fc) {
   const src = map.getSource('muni-parcels');
   if (src) src.setData(fc);
+  // Build a parallel Point FC: one Point feature per parcel at its
+  // bbox-midpoint centroid, carrying the same properties (so the
+  // label symbol layers can still read _rollDisplay, _civicAddress,
+  // _acres, etc.). See the comment on the muni-parcels-labels source
+  // in initMap for why this is necessary — tile-clipped Polygon
+  // fragments cause duplicate label placement at high zoom.
+  const labelSrc = map.getSource('muni-parcels-labels');
+  if (labelSrc) {
+    const features = [];
+    for (const f of fc?.features || []) {
+      const c = polygonBboxMidpoint(f.geometry);
+      if (!c) continue;
+      features.push({
+        type: 'Feature',
+        properties: f.properties || {},
+        geometry: { type: 'Point', coordinates: c },
+      });
+    }
+    labelSrc.setData({ type: 'FeatureCollection', features });
+  }
+}
+
+/** Bbox midpoint of any Polygon / MultiPolygon geometry. Cheap
+ *  approximation of a centroid — exact enough for label placement
+ *  (we only need a point within or near the polygon). Returns null
+ *  for missing or non-polygon geometries. */
+function polygonBboxMidpoint(geometry) {
+  if (!geometry) return null;
+  const type = geometry.type;
+  if (type !== 'Polygon' && type !== 'MultiPolygon') return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const visit = (coords) => {
+    if (!coords) return;
+    if (typeof coords[0] === 'number') {
+      if (coords[0] < minX) minX = coords[0];
+      if (coords[0] > maxX) maxX = coords[0];
+      if (coords[1] < minY) minY = coords[1];
+      if (coords[1] > maxY) maxY = coords[1];
+      return;
+    }
+    for (const c of coords) visit(c);
+  };
+  visit(geometry.coordinates);
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null;
+  return [(minX + maxX) / 2, (minY + maxY) / 2];
 }
 export function setMuniParcelsVisible(map, visible) {
   const v = visible ? 'visible' : 'none';
