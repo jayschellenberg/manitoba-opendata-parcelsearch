@@ -1227,6 +1227,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         // colour. Starred parcels (favourites) override the yellow
         // with dark-red so chosen comps still stand apart from the
         // rest of the result set.
+        layout: { 'line-cap': 'butt', 'line-join': 'round' },
         paint: {
           'line-color': [
             'case',
@@ -1238,8 +1239,13 @@ export function initMap(container, { onFeatureClick } = {}) {
             'case',
             ['boolean', ['feature-state', 'groupHover'], false],
             3.25,
-            2,
+            2.5,
           ],
+          // Dashed outline so the highlight reads as a "selection"
+          // rather than competing visually with solid parcel-fabric
+          // lines (Roll Layer, zoning boundaries, etc.). Values are
+          // in line-widths: [3, 2] = 3-width dash, 2-width gap.
+          'line-dasharray': [3, 2],
         },
       });
       // Subject parcel — separate source/layers from the result set so
