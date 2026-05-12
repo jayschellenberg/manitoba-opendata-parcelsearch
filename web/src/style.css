@@ -175,6 +175,7 @@ header small a {
    (handleSalesUpload sets it; clearAll removes it). Low + High inputs
    on the left, UofM toggle pill on the right. */
 body:not(.sales-mode) .sidebar .size-row,
+body:not(.sales-mode) .sidebar .size-vacant-row,
 body:not(.sales-mode) .sidebar .vacant-row,
 body:not(.sales-mode) .sidebar .date-row,
 body:not(.sales-mode) .sidebar .date-presets,
@@ -184,12 +185,65 @@ body:not(.sales-mode) .sidebar .subject-muni-row,
 body:not(.sales-mode) .sidebar .distance-row,
 body:not(.sales-mode) .sidebar .uom-vacant-row,
 body:not(.sales-mode) .sidebar .favourite-row { display: none; }
-/* The .du-size-row stays visible in both modes — DU filters work
-   for regular searches too. Inside it, the .sales-only Size lo/hi
-   inputs hide individually via the existing .sales-only display
-   rules, so the row visually shrinks to just the DU pair outside
-   sales mode. */
-body:not(.sales-mode) .sidebar .du-size-row .sales-only { display: none; }
+
+/* "More filters" collapsible — wraps the regular-search filter
+   controls (Zoning Category, Status, Any DU, # of DU) behind a
+   click-to-expand summary so the sales-mode rows below stay one
+   click away. Defaults to collapsed (no `open` attribute). The
+   summary styles itself like the existing h2 so the visual
+   hierarchy stays consistent. */
+.sidebar .more-filters {
+  margin: 4px 0 6px;
+}
+.sidebar .more-filters > summary {
+  cursor: pointer;
+  list-style: revert;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #4a6280;
+  padding: 4px 0;
+  user-select: none;
+}
+.sidebar .more-filters > summary:hover { color: #2c3e50; }
+.sidebar .more-filters > summary:focus-visible {
+  outline: 2px solid #4a90e2;
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.sidebar .more-filters[open] > summary { margin-bottom: 6px; }
+/* Filter rows inside the collapsible get the same flex layouts the
+   old top-level rows had. */
+.sidebar .more-filters .du-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.sidebar .more-filters .du-row .du-mode-field { flex: 1 1 50%; min-width: 0; }
+.sidebar .more-filters .du-row .du-min-field  { flex: 0 0 64px; min-width: 0; }
+
+/* Size + Vacant Land Only row — all three on one line.
+   Lo Ac / Hi Ac inputs are equal-width; Vacant Land Only takes
+   the remaining space. */
+.sidebar .size-vacant-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 6px;
+}
+.sidebar .size-vacant-row .size-low-field,
+.sidebar .size-vacant-row .size-high-field { flex: 0 0 60px; min-width: 0; }
+.sidebar .size-vacant-row .vacant-only-field { flex: 1 1 auto; min-width: 0; }
+.sidebar .size-vacant-row input[type="number"] {
+  width: 100%;
+  padding: 6px 6px;
+  font-size: 12px;
+}
+.sidebar .size-vacant-row .vacant-only-label {
+  font-size: 13px;
+  font-weight: 500;
+}
 
 /* Subject muni picker — slim row directly under the subject roll
    input. Single-muni uploads keep the row hidden (the JS toggles

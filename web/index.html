@@ -155,63 +155,63 @@
         </div>
 
         <hr class="control-sep" />
-        <h2>Other searches</h2>
-        <div class="filter-row">
-          <span class="field">
-            <select id="zone-category" disabled>
-              <option value="">Any zoning category</option>
-            </select>
-            <span class="tip">Zoning category</span>
-          </span>
-          <span class="field">
-            <select id="changed-status">
-              <option value="">Any status</option>
-              <option value="zoning">Zoning Changed</option>
-              <option value="devplan">Dev Plan Changed</option>
-              <option value="both">Both Changed</option>
-            </select>
-            <span class="tip">Filter by amendment status</span>
-          </span>
-        </div>
-        <!-- DU + Size combo row. Left half = Any DU select + min-#
-             input (sales + non-sales). Right half = Size low + Size
-             high (sales-only — the inputs hide individually via
-             .sales-only). Compact layout so all four fit on one line
-             at the 280-px sidebar width. -->
-        <div class="du-size-row">
-          <span class="field du-mode-field">
-            <select id="du-mode">
-              <option value="">Any DU</option>
-              <option value="zero">0 DU only</option>
-              <option value="min">Min DU</option>
-            </select>
-            <span class="tip">Dwelling units filter</span>
-          </span>
-          <span class="field du-min-field">
-            <input id="du-min" type="number" min="1" step="1" placeholder="#" disabled />
-            <span class="tip">Minimum dwelling units (when 'Min DU' is selected)</span>
-          </span>
-          <span class="field size-low-field sales-only">
-            <input id="size-low" type="number" min="0" step="0.01" placeholder="Lo" />
-            <span class="tip">Minimum size (empty = 0)</span>
-          </span>
-          <span class="field size-high-field sales-only">
-            <input id="size-high" type="number" min="0" step="0.01" placeholder="Hi" />
-            <span class="tip">Maximum size (empty = no max)</span>
-          </span>
-        </div>
-        <!-- UoM pill + Vacant Land Only checkbox on one line.
-             Sales-CSV-only. Empty Low → 0 (no minimum); empty High → ∞
-             (no maximum). Vacancy: strict group semantics — keeps a
-             sale only when every parcel in the group has assessment
-             data AND Buildings < 2% of Total. -->
-        <div class="uom-vacant-row sales-only">
-          <span class="field size-uom-field">
-            <span class="uom-pill" role="group" aria-label="Unit of measure">
-              <button id="size-uom-acres" type="button" class="active" data-uom="acres">Acres</button>
-              <button id="size-uom-sf" type="button" data-uom="sf">Sq Ft</button>
+        <!-- "More filters" collapsible — defaults to collapsed. Holds
+             the four less-frequently-touched filter controls (Zoning
+             Category, Status, Any DU, # of DU); leaves the size /
+             date / subject / class / status sales-only controls
+             outside so they stay one click away after a CSV upload.
+             Stays at this position (top of the section, just below
+             Map Overlays) regardless of expand/collapse state. -->
+        <details class="more-filters">
+          <summary>More filters</summary>
+          <div class="filter-row">
+            <span class="field">
+              <select id="zone-category" disabled>
+                <option value="">Any zoning category</option>
+              </select>
+              <span class="tip">Zoning category</span>
             </span>
-            <span class="tip">Unit of measure for Lo/Hi above</span>
+            <span class="field">
+              <select id="changed-status">
+                <option value="">Any status</option>
+                <option value="zoning">Zoning Changed</option>
+                <option value="devplan">Dev Plan Changed</option>
+                <option value="both">Both Changed</option>
+              </select>
+              <span class="tip">Filter by amendment status</span>
+            </span>
+          </div>
+          <div class="du-row">
+            <span class="field du-mode-field">
+              <select id="du-mode">
+                <option value="">Any DU</option>
+                <option value="zero">0 DU only</option>
+                <option value="min">Min DU</option>
+              </select>
+              <span class="tip">Dwelling units filter</span>
+            </span>
+            <span class="field du-min-field">
+              <input id="du-min" type="number" min="1" step="1" placeholder="#" disabled />
+              <span class="tip">Minimum dwelling units (when 'Min DU' is selected)</span>
+            </span>
+          </div>
+        </details>
+        <!-- Size + Vacant Land Only combo row — sales-CSV-only. All
+             three controls on one line: Lo Ac + Hi Ac (~25% each) +
+             Vacant Land Only label (~50%). Filter values are
+             permanently acres (no Sq Ft pill) per the simplified
+             workflow. Empty Lo → 0; empty Hi → ∞. Vacant filter is
+             strict group semantics — keeps a sale only when every
+             parcel in the group has assessment data AND Buildings
+             < 2% of Total. -->
+        <div class="size-vacant-row sales-only">
+          <span class="field size-low-field">
+            <input id="size-low" type="number" min="0" step="0.01" placeholder="Lo Ac" />
+            <span class="tip">Minimum acres (empty = 0)</span>
+          </span>
+          <span class="field size-high-field">
+            <input id="size-high" type="number" min="0" step="0.01" placeholder="Hi Ac" />
+            <span class="tip">Maximum acres (empty = no max)</span>
           </span>
           <span class="field vacant-only-field">
             <label class="vacant-only-label">
@@ -221,25 +221,16 @@
             <span class="tip">Show only sales where every parcel in the group has Buildings &lt; 2% of Total in the latest MAO assessment year. Threshold is hard-coded at 2% for now — tune later.</span>
           </span>
         </div>
-        <!-- Sale Date range — sales-only. Inputs are native date pickers;
-             empty `from` = no minimum, empty `to` = no maximum. The CSV's
-             "DD-Mmm-YY" date strings get parsed into JS Date via the
-             parseSaleDate helper in main.js, then compared against the
-             chosen range. -->
-        <div class="date-row sales-only">
-          <span class="field date-from-field">
-            <input id="sale-date-from" type="date" />
-            <span class="tip">Sale on/after this date (empty = no minimum)</span>
-          </span>
-          <span class="field date-to-field">
-            <input id="sale-date-to" type="date" />
-            <span class="tip">Sale on/before this date (empty = no maximum)</span>
-          </span>
-        </div>
-        <!-- Date quick-preset buttons. Each populates from/to with a
-             common range (Last 12 / 6 / 3 months, YTD). Wired in
-             main.js: click a button -> set both inputs -> dispatch
-             input event -> refilterCsvIfActive runs as usual. -->
+        <!-- Sale Date range — hidden inputs only; the date-preset
+             buttons below drive them via JS (click "6 mo" → sets
+             from/to → dispatches input event → refilterCsvIfActive).
+             Per-day calendar picking was removed at the user's
+             request; the preset buttons cover all the appraisal
+             lookback windows that get used in practice. -->
+        <input id="sale-date-from" type="hidden" />
+        <input id="sale-date-to"   type="hidden" />
+        <!-- Date quick-preset buttons. Click a preset → set the
+             hidden from/to → refilterCsvIfActive runs as usual. -->
         <div class="date-presets sales-only" role="group" aria-label="Date range presets">
           <button type="button" class="date-preset-btn" data-months="6">6 mo</button>
           <button type="button" class="date-preset-btn" data-months="12">12 mo</button>
