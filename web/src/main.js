@@ -159,6 +159,11 @@ const $distanceMax   = document.getElementById('distance-max');
 // (#plan) because the sales filter runs post-upload, client-side,
 // while the regular search drives a server-side legal-index query.
 const $salesPlan     = document.getElementById('sales-plan');
+// Sales-mode Street Name filter — case-insensitive substring match
+// against Property_Address. Same client-side post-filter pattern as
+// $salesPlan; complementary because Plan # narrows by plat/legal
+// while Street Name narrows by civic address.
+const $salesStreetName = document.getElementById('sales-street-name');
 const $search        = document.getElementById('search');
 const $clear         = document.getElementById('clear');
 const $export        = document.getElementById('export');
@@ -943,6 +948,7 @@ $duMode.addEventListener('change', () => {
 for (const el of [
   $zoneCategory, $changedStatus, $duMode, $duMin, $sizeLow, $sizeHigh, $vacantOnly,
   $saleDateFrom, $saleDateTo, $asmtClass, $asmtStatus, $distanceMax, $salesPlan,
+  $salesStreetName,
 ].filter(Boolean)) {
   el.addEventListener('change', refilterCsvIfActive);
   el.addEventListener('input',  refilterCsvIfActive);
@@ -1170,6 +1176,7 @@ async function runSearch() {
   if ($saleDateTo)    $saleDateTo.value = '';
   if ($distanceMax)   $distanceMax.value = '';
   if ($salesPlan)     $salesPlan.value = '';
+  if ($salesStreetName) $salesStreetName.value = '';
   // Multi-select: clear all selected options so the filter goes back
   // to "any" rather than carrying over the last upload's picks.
   if ($asmtClass)     [...$asmtClass.options].forEach((o) => { o.selected = false; });
@@ -2124,6 +2131,10 @@ function filterCsvRowsByOtherSearches(rows) {
   // input disables the filter; any non-empty input is searched as
   // a substring so "32457" matches "32457", "1032457", etc.
   const planFilter = ($salesPlan?.value || '').trim().toUpperCase();
+  // Street Name substring filter — case-insensitive match against
+  // Property_Address. Same semantics as Plan #: missing addresses
+  // fail when the filter is active.
+  const streetFilter = ($salesStreetName?.value || '').trim().toUpperCase();
 
   return rows.filter((row) => {
     const p = row.parcel?.properties || {};
@@ -2135,6 +2146,12 @@ function filterCsvRowsByOtherSearches(rows) {
     if (planFilter) {
       const plan = String(p._plan || '').toUpperCase();
       if (!plan.includes(planFilter)) return false;
+    }
+
+    // Street Name filter — same shape as the Plan # filter above.
+    if (streetFilter) {
+      const addr = String(p.Property_Address || '').toUpperCase();
+      if (!addr.includes(streetFilter)) return false;
     }
 
     // DU filter — directly on the parcel field, no enrichment needed.

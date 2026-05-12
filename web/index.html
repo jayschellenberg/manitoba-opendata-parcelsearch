@@ -232,6 +232,17 @@
             <span class="tip">Show only sales where every parcel in the group has Buildings &lt; 2% of Total in the latest MAO assessment year. Threshold is hard-coded at 2% for now — tune later.</span>
           </span>
         </div>
+        <!-- Street Name filter — sales-mode-only, sits between the
+             Plan #/size/vacant row above and the date-preset buttons
+             below. Matches each parcel's Property_Address (case-
+             insensitive substring) so "Main" picks up "123 MAIN ST",
+             "201 MAIN AVE N", etc. -->
+        <div class="street-name-row sales-only">
+          <span class="field street-name-field">
+            <input id="sales-street-name" type="text" placeholder="Street name" autocomplete="off" />
+            <span class="tip">Filter uploaded sales to rows whose Property Address contains this string. Case-insensitive substring match — e.g. "main" matches "123 MAIN ST", "201 MAIN AVE N", etc.</span>
+          </span>
+        </div>
         <!-- Sale Date range — hidden inputs only; the date-preset
              buttons below drive them via JS (click "6 mo" → sets
              from/to → dispatches input event → refilterCsvIfActive).
@@ -247,6 +258,7 @@
           <button type="button" class="date-preset-btn" data-months="12">12 mo</button>
           <button type="button" class="date-preset-btn" data-months="24">24 mo</button>
           <button type="button" class="date-preset-btn" data-months="36">36 mo</button>
+          <button type="button" class="date-preset-btn" data-months="48">48 mo</button>
           <button type="button" class="date-preset-btn date-preset-clear" data-clear="1" title="Clear date range">×</button>
         </div>
         <!-- Subject parcel input. Optional and sales-only. Setting a
