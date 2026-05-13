@@ -574,6 +574,49 @@ export function joinTopNByArea(parcelFc, overlayFc, n = 2) {
 }
 
 /**
+ * Bbox-only fallback to joinTopNByArea. For each parcel, return overlay
+ * features whose bbox overlaps the parcel's bbox — no @turf/intersect,
+ * no area computation. Used by the "Changes" column when the
+ * area-weighted join returned empty: ArcGIS server-side spatial
+ * intersect counts edge-touching polygons as a match (so the parcel
+ * lands in the Zoning-Changed result set), but @turf/intersect requires
+ * actual area overlap and silently returns null. Bbox overlap mirrors
+ * the server's looser semantics so the Changes cell shows the candidate
+ * amendment that triggered the filter match.
+ *
+ * Less accurate than joinTopNByArea — a parcel's bbox can overlap an
+ * overlay's bbox without actual geometric intersection. Caller should
+ * prefer joinTopNByArea results and only fall back here when those are
+ * empty.
+ */
+export function bboxOverlapJoin(parcelFc, overlayFc, n = 3) {
+  const result = new Map();
+  if (!parcelFc.features.length || !overlayFc.features.length) return result;
+
+  const overlayBboxes = overlayFc.features.map((f) => {
+    try { return bbox(f); } catch { return null; }
+  });
+
+  for (const parcel of parcelFc.features) {
+    const oid = parcel.properties?.OBJECTID;
+    if (oid == null) continue;
+    let pBbox;
+    try { pBbox = bbox(parcel); } catch { continue; }
+
+    const matches = [];
+    for (let i = 0; i < overlayFc.features.length; i++) {
+      const ob = overlayBboxes[i];
+      if (!ob) continue;
+      if (!bboxesOverlap(pBbox, ob)) continue;
+      matches.push({ feature: overlayFc.features[i], ratio: null });
+      if (matches.length >= n) break;
+    }
+    if (matches.length) result.set(oid, matches);
+  }
+  return result;
+}
+
+/**
  * One-shot fetch of every distinct Muni_Name_With_Typ value in Roll_Entry,
  * sorted alphabetically. Cached in sessionStorage for the life of the tab
  * — the list barely changes year to year and the request is ~50 KB.

@@ -22,6 +22,7 @@ import {
   fetchZoningOverlap,
   fetchDevPlanOverlap,
   joinTopNByArea,
+  bboxOverlapJoin,
   fetchMunicipalityList,
   fetchZoneCategoryList,
   fetchContaminatedSites,
@@ -2539,14 +2540,29 @@ async function enrichOverlays(parcelFc, inputs, baseMsg) {
   const devPlanChangedFc = filterFcForChanged(devPlanFc, isDevPlanChanged);
   const zoningChanges  = joinTopNByArea(parcelFc, zoningChangedFc, 3);
   const devPlanChanges = joinTopNByArea(parcelFc, devPlanChangedFc, 3);
+  // Bbox-overlap fallback: ArcGIS's server-side intersect counts
+  // edge-touching polygons as a match, so a parcel can land in the
+  // Zoning-Changed result on a sliver overlap that @turf/intersect
+  // silently rejects (returns null because there's no area overlap).
+  // bboxOverlapJoin mirrors the server's looser semantics. We prefer
+  // joinTopNByArea results and only consult bbox-overlap when those
+  // are empty — keeps the Changes text accurate when turf succeeds,
+  // and surfaces the candidate amendment when turf fails.
+  const zoningChangesBbox  = bboxOverlapJoin(parcelFc, zoningChangedFc, 3);
+  const devPlanChangesBbox = bboxOverlapJoin(parcelFc, devPlanChangedFc, 3);
 
-  const rows = parcelFc.features.map((p) => ({
-    parcel: p,
-    zoning:  zoningTop2.get(p.properties.OBJECTID) || [],
-    devPlan: devPlanTop2.get(p.properties.OBJECTID) || [],
-    zoningChanges:  zoningChanges.get(p.properties.OBJECTID) || [],
-    devPlanChanges: devPlanChanges.get(p.properties.OBJECTID) || [],
-  }));
+  const rows = parcelFc.features.map((p) => {
+    const oid = p.properties.OBJECTID;
+    const zc = zoningChanges.get(oid);
+    const dc = devPlanChanges.get(oid);
+    return {
+      parcel: p,
+      zoning:  zoningTop2.get(oid) || [],
+      devPlan: devPlanTop2.get(oid) || [],
+      zoningChanges:  (zc && zc.length) ? zc : (zoningChangesBbox.get(oid) || []),
+      devPlanChanges: (dc && dc.length) ? dc : (devPlanChangesBbox.get(oid) || []),
+    };
+  });
 
   // Stamp primary-zoning code AND any amendment-change text onto
   // each parcel feature so the map's hover/click popups (which only
