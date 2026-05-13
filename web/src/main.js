@@ -2522,12 +2522,18 @@ async function enrichOverlays(parcelFc, inputs, baseMsg) {
     devPlan: devPlanTop2.get(p.properties.OBJECTID) || [],
   }));
 
-  // Stamp primary-zoning code onto each parcel feature so the map's
-  // hover popup (which only sees the parcel-fill feature) can include
-  // the zoning code without re-running the spatial join client-side.
+  // Stamp primary-zoning code AND any amendment-change text onto
+  // each parcel feature so the map's hover/click popups (which only
+  // see the parcel-fill feature, not the row object) can render
+  // them without re-running the spatial join client-side. The
+  // changes text mirrors what the Changes column in the table shows,
+  // formatted by formatChanges(row); null when neither zoning nor
+  // dev-plan has a pending amendment, so popup builders can simply
+  // skip the line.
   for (const row of rows) {
     const z = row.zoning[0]?.feature.properties;
     if (z) row.parcel.properties._zoneCode = z.ZONE || z.ZONE_NAME || null;
+    row.parcel.properties._changesText = formatChanges(row);
   }
 
   stampOfficialRiskAreas(rows, riskAreaFc);

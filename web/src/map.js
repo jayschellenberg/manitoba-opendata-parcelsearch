@@ -2078,6 +2078,13 @@ export function parcelHtml(p) {
   if (p._zoneCode)            summary.push(`<strong>Zoning</strong> ${escapeHtml(p._zoneCode)}`);
   if (p.Dwelling_Units != null) summary.push(`<strong>DU</strong> ${escapeHtml(p.Dwelling_Units)}`);
   if (summary.length)         lines.push(summary.join(' &nbsp;·&nbsp; '));
+  // Pending amendment text — same shape as the Changes column in the
+  // table (stamped onto the parcel feature by enrichOverlays via
+  // formatChanges(row)). Only emit when there's actually a change to
+  // report; null/empty parcels skip the line entirely.
+  if (p._changesText) {
+    lines.push(`<strong style="color:#1a3a4a">Changes</strong> ${escapeHtml(p._changesText)}`);
+  }
   // Per-parcel assessment block — surfaces the latest-year Land /
   // Buildings / Total / Class so the user can sanity-check whether
   // each comp (or the subject) is actually vacant land vs partially
