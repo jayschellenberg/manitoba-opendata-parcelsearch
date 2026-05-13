@@ -595,6 +595,17 @@ body.sales-mode .sidebar .search-section { display: none; }
 .sidebar .address-row .address-to-field     { flex: 0 0 64px; min-width: 0; }
 .sidebar .address-row .address-street-field { flex: 1 1 auto; min-width: 0; }
 
+/* Legal description + Certificate of Title on a single row, each at
+   ~50% width. Keeps the inputs paired (both are MAO-scrape lookups)
+   and saves vertical space in the sidebar. */
+.sidebar .legal-title-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.sidebar .legal-title-row .legal-title-field { flex: 1 1 0; min-width: 0; }
+.sidebar .legal-title-row input[type="text"] { width: 100%; }
+
 .sidebar .legal-row {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

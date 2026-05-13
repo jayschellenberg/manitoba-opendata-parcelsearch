@@ -88,14 +88,61 @@
           more practical for appraisal work than typing exact
           parsed parts.
         -->
-        <span class="field">
-          <input id="legal-text" type="text" placeholder="Legal description (contains)" />
-          <span class="tip">Substring search against the MAO scrape's legal description + legal-detail text. Use to find a parcel by its legal description, e.g. "PCL G", "RIVER LOT 12", "PLAN 24208".</span>
-        </span>
-        <span class="field">
-          <input id="title" type="text" placeholder="Certificate of title (contains)" />
-          <span class="tip">Substring search against the MAO scrape's certificates_of_title field. Accepts plain title numbers (e.g. "2476500") or full prefixed forms ("CT 2476500").</span>
-        </span>
+        <!-- Legal description + Certificate of Title on a single
+             row, each at ~50% width — they're paired conceptually
+             (both are MAO scrape lookups) and the inputs fit well
+             side-by-side. -->
+        <div class="legal-title-row">
+          <span class="field legal-title-field">
+            <input id="legal-text" type="text" placeholder="Legal description (contains)" />
+            <span class="tip">Substring search against the MAO scrape's legal description + legal-detail text. Use to find a parcel by its legal description, e.g. "PCL G", "RIVER LOT 12", "PLAN 24208".</span>
+          </span>
+          <span class="field legal-title-field">
+            <input id="title" type="text" placeholder="Certificate of title (contains)" />
+            <span class="tip">Substring search against the MAO scrape's certificates_of_title field. Accepts plain title numbers (e.g. "2476500") or full prefixed forms ("CT 2476500").</span>
+          </span>
+        </div>
+        <!-- "More filters" collapsible — sits directly above Search
+             so it's the last thing the user reviews before running a
+             query. Holds the four less-frequently-touched filter
+             controls (Zoning Category, Status, Any DU, # of DU);
+             the size / date / subject / class / status sales-only
+             controls stay outside so they're always-visible after a
+             CSV upload. -->
+        <details class="more-filters">
+          <summary>More filters</summary>
+          <div class="filter-row">
+            <span class="field">
+              <select id="zone-category" disabled>
+                <option value="">Any zoning category</option>
+              </select>
+              <span class="tip">Zoning category</span>
+            </span>
+            <span class="field">
+              <select id="changed-status">
+                <option value="">Any status</option>
+                <option value="zoning">Zoning Changed</option>
+                <option value="devplan">Dev Plan Changed</option>
+                <option value="both">Both Changed</option>
+              </select>
+              <span class="tip">Filter by amendment status</span>
+            </span>
+          </div>
+          <div class="du-row">
+            <span class="field du-mode-field">
+              <select id="du-mode">
+                <option value="">Any DU</option>
+                <option value="zero">0 DU only</option>
+                <option value="min">Min DU</option>
+              </select>
+              <span class="tip">Dwelling units filter</span>
+            </span>
+            <span class="field du-min-field">
+              <input id="du-min" type="number" min="1" step="1" placeholder="#" disabled />
+              <span class="tip">Minimum dwelling units (when 'Min DU' is selected)</span>
+            </span>
+          </div>
+        </details>
         <div class="action-row">
           <button id="search" type="button">Search</button>
           <button id="clear"  type="button" class="secondary">Clear</button>
@@ -165,48 +212,6 @@
           <button id="static-map-btn"   type="button" class="secondary" title="Capture the current map view as a PNG. Right-click the rendered image below the table and Save Image As… to drop into a report.">Generate Map</button>
         </div>
 
-        <hr class="control-sep" />
-        <!-- "More filters" collapsible — defaults to collapsed. Holds
-             the four less-frequently-touched filter controls (Zoning
-             Category, Status, Any DU, # of DU); leaves the size /
-             date / subject / class / status sales-only controls
-             outside so they stay one click away after a CSV upload.
-             Stays at this position (top of the section, just below
-             Map Overlays) regardless of expand/collapse state. -->
-        <details class="more-filters">
-          <summary>More filters</summary>
-          <div class="filter-row">
-            <span class="field">
-              <select id="zone-category" disabled>
-                <option value="">Any zoning category</option>
-              </select>
-              <span class="tip">Zoning category</span>
-            </span>
-            <span class="field">
-              <select id="changed-status">
-                <option value="">Any status</option>
-                <option value="zoning">Zoning Changed</option>
-                <option value="devplan">Dev Plan Changed</option>
-                <option value="both">Both Changed</option>
-              </select>
-              <span class="tip">Filter by amendment status</span>
-            </span>
-          </div>
-          <div class="du-row">
-            <span class="field du-mode-field">
-              <select id="du-mode">
-                <option value="">Any DU</option>
-                <option value="zero">0 DU only</option>
-                <option value="min">Min DU</option>
-              </select>
-              <span class="tip">Dwelling units filter</span>
-            </span>
-            <span class="field du-min-field">
-              <input id="du-min" type="number" min="1" step="1" placeholder="#" disabled />
-              <span class="tip">Minimum dwelling units (when 'Min DU' is selected)</span>
-            </span>
-          </div>
-        </details>
         <!-- Size + Vacant Land Only combo row — sales-CSV-only. All
              three controls on one line: Lo Ac + Hi Ac (~25% each) +
              Vacant Land Only label (~50%). Filter values are
