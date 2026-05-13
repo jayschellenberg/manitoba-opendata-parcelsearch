@@ -1369,14 +1369,20 @@ async function runSearch() {
       toggleAuxOverlay('muniParcels');
     }
 
-    // Threshold rule: small result sets auto-enrich (typical search
-    // for a single property or small block — fast and the user expects
-    // zoning/dev-plan in the table immediately). Large result sets
-    // skip auto-enrichment because the per-parcel area-weighted join
+    // Threshold rule: small/medium result sets auto-enrich so the
+    // zoning + dev-plan columns are there as soon as the search
+    // lands. Only very large result sets (above the threshold) skip
+    // auto-enrichment because the per-parcel area-weighted join
     // (joinTopNByArea via @turf/intersect) gets slow on the main
-    // thread; render the parcel rows now and offer a "Load zoning +
-    // dev-plan" button on the count line so the user can opt in when
-    // they actually need those columns.
+    // thread; in that case we render the parcel rows now and offer
+    // a "Load zoning + dev-plan" button on the count line.
+    //
+    // Threshold matches MAX_RESULTS so any normal muni-scoped
+    // search auto-enriches — the previous 250-parcel cap surfaced
+    // confusing empty Zoning columns for searches like "Springfield
+    // (RM) + Zoning Changed" (708 parcels). turf.intersect on
+    // ~1000 parcels × ~500 overlay polygons takes a few seconds,
+    // which the busy spinner already covers.
     if (parcelFc.features.length > ENRICHMENT_THRESHOLD) {
       renderEnrichButton(parcelFc, inputs, baseMsg);
     } else {
@@ -1387,7 +1393,7 @@ async function runSearch() {
   }
 }
 
-const ENRICHMENT_THRESHOLD = 250;
+const ENRICHMENT_THRESHOLD = 1000;
 
 // ---------- Sales-CSV upload ----------
 
