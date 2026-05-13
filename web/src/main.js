@@ -2282,6 +2282,17 @@ function isDevPlanChanged(d) {
   return realStr(d.DPA_BYLAW) && d.DPA_BYLAW !== d.DP_BYLAW;
 }
 
+/** Filter an overlay FeatureCollection to only the features whose
+ *  properties satisfy the supplied `changed` predicate. Returns a
+ *  GeoJSON-shaped object suitable for handing to joinTopNByArea. */
+function filterFcForChanged(fc, isChanged) {
+  if (!fc?.features?.length) return { type: 'FeatureCollection', features: [] };
+  return {
+    type: 'FeatureCollection',
+    features: fc.features.filter((f) => isChanged(f.properties || {})),
+  };
+}
+
 /**
  * Tiny CSV parser tuned for the sales-export format Jason sends:
  *   Sale Date, Consideration, Municipality, Roll Number,
@@ -2515,11 +2526,26 @@ async function enrichOverlays(parcelFc, inputs, baseMsg) {
 
   const zoningTop2  = joinTopNByArea(parcelFc, zoningFc, 2);
   const devPlanTop2 = joinTopNByArea(parcelFc, devPlanFc, 2);
+  // Per-parcel "changed-polygons" join, computed against a filtered
+  // overlay FC containing only polygons that actually carry an
+  // amendment (ZBL_A != ZBL, AMENDMENT_DESCRIPTION set, etc.). The
+  // server-side Zoning-Changed / Dev-Plan-Changed filters use a
+  // spatial intersect — so a parcel can land in the result set on a
+  // tiny sliver overlap with a changed polygon whose code never
+  // makes the top-2 area-weighted display join. Without this second
+  // pass, the Changes column reads as empty for those parcels even
+  // though they ARE the changed ones the filter surfaced.
+  const zoningChangedFc = filterFcForChanged(zoningFc, isZoningChanged);
+  const devPlanChangedFc = filterFcForChanged(devPlanFc, isDevPlanChanged);
+  const zoningChanges  = joinTopNByArea(parcelFc, zoningChangedFc, 3);
+  const devPlanChanges = joinTopNByArea(parcelFc, devPlanChangedFc, 3);
 
   const rows = parcelFc.features.map((p) => ({
     parcel: p,
     zoning:  zoningTop2.get(p.properties.OBJECTID) || [],
     devPlan: devPlanTop2.get(p.properties.OBJECTID) || [],
+    zoningChanges:  zoningChanges.get(p.properties.OBJECTID) || [],
+    devPlanChanges: devPlanChanges.get(p.properties.OBJECTID) || [],
   }));
 
   // Stamp primary-zoning code AND any amendment-change text onto
@@ -4179,21 +4205,37 @@ function realStr(v) {
 
 function formatChanges(row) {
   const parts = [];
-  const z = row.zoning[0]?.feature.properties || {};
-  const amendDesc = realStr(z.AMENDMENT_DESCRIPTION);
-  const zbl   = realStr(z.ZBL);
-  const zblA  = realStr(z.ZBL_A);
-  const zblChanged = zbl && zblA && zbl !== zblA;
-  if (zblChanged) {
-    parts.push(`Z: ${amendDesc || `${zbl} → ${zblA}`}`);
-  } else if (amendDesc) {
-    parts.push(`Z: ${amendDesc}`);
+  // Read from the changed-polygons-only join (row.zoningChanges /
+  // row.devPlanChanges) populated by enrichOverlays so a parcel that
+  // intersects a changed polygon as a sliver still shows the change
+  // text even when its top-area zoning is unchanged. Falls back to
+  // the top-2 display join when zoningChanges is empty so legacy
+  // call sites (and basic searches without the changed-join data)
+  // still produce something sensible.
+  const zoningEntries = (row.zoningChanges?.length ? row.zoningChanges : row.zoning) || [];
+  for (const entry of zoningEntries) {
+    const z = entry?.feature?.properties || {};
+    const amendDesc = realStr(z.AMENDMENT_DESCRIPTION);
+    const zbl   = realStr(z.ZBL);
+    const zblA  = realStr(z.ZBL_A);
+    const zblChanged = zbl && zblA && zbl !== zblA;
+    if (zblChanged) {
+      parts.push(`Z: ${amendDesc || `${zbl} → ${zblA}`}`);
+      break;
+    } else if (amendDesc) {
+      parts.push(`Z: ${amendDesc}`);
+      break;
+    }
   }
-  const d = row.devPlan[0]?.feature.properties || {};
-  const dp  = realStr(d.DP_BYLAW);
-  const dpA = realStr(d.DPA_BYLAW);
-  if (dp && dpA && dp !== dpA) {
-    parts.push(`DP: ${dp} → ${dpA}`);
+  const devEntries = (row.devPlanChanges?.length ? row.devPlanChanges : row.devPlan) || [];
+  for (const entry of devEntries) {
+    const d = entry?.feature?.properties || {};
+    const dp  = realStr(d.DP_BYLAW);
+    const dpA = realStr(d.DPA_BYLAW);
+    if (dp && dpA && dp !== dpA) {
+      parts.push(`DP: ${dp} → ${dpA}`);
+      break;
+    }
   }
   return parts.length === 0 ? null : parts.join(' · ');
 }
