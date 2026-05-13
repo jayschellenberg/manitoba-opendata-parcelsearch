@@ -1485,7 +1485,14 @@ export function initMap(container, { onFeatureClick } = {}) {
       // the global hover popup disappears on mouseout, so the user could
       // never reach the Assessment-report link sitting at the bottom of
       // it. Reuses parcelHtml so hover and click show identical content.
-      const parcelClickPopup = new maplibregl.Popup({ closeButton: true });
+      //
+      // focusAfterOpen:false is critical — MapLibre's default behavior is
+      // to call .focus() on the popup container when it's added to the
+      // map, which the browser handles by scrolling the popup into view.
+      // That overrides the smooth scrollIntoView() in scrollToRow and
+      // leaves the user staring at the map instead of the table row they
+      // just clicked. With focus disabled, scrollToRow wins.
+      const parcelClickPopup = new maplibregl.Popup({ closeButton: true, focusAfterOpen: false });
       map.on('click', 'parcel-fill', (e) => {
         const f = e.features?.[0];
         if (!f) return;
