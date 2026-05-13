@@ -1900,7 +1900,12 @@ export function parseRollList(input) {
   if (!input) return [];
   const seen = new Set();
   const out = [];
-  for (const raw of String(input).split(/[\s,;]+/)) {
+  // Accepted separators: whitespace, comma, semicolon, ampersand.
+  // `&` is included to match the format some external tools emit
+  // (e.g. "84900&85000.1&85900"); comma stays the preferred form in
+  // tooltips. None of these characters appear in a valid roll number
+  // (\d+(\.\d{3})?), so the cross-product is unambiguous.
+  for (const raw of String(input).split(/[\s,;&]+/)) {
     const v = raw.trim();
     if (!v) continue;
     if (seen.has(v)) continue;
