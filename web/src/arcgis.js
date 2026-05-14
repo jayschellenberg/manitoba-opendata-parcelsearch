@@ -45,6 +45,11 @@
 import area from '@turf/area';
 import bbox from '@turf/bbox';
 import intersect from '@turf/intersect';
+// Persistent cache lives in its own module so the storage backend
+// (IndexedDB primary, localStorage fallback) can evolve without
+// touching every call site. readCache + writeCache are async — every
+// caller in this file already runs inside an async function.
+import { readCache, writeCache } from './cache.js';
 
 const BASE = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services';
 const ROLL_URL    = `${BASE}/ROLL_ENTRY/FeatureServer/0`;
@@ -695,13 +700,13 @@ const MASC_INDEX_URL = `${import.meta.env?.BASE_URL || '/'}data/masc/_index.json
 
 export async function fetchMascIndex() {
   const cacheKey = 'mb_masc_index_v3';
-  const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
   try {
     const res = await fetch(MASC_INDEX_URL);
     if (!res.ok) return null;
     const idx = await res.json();
-    writeCache(cacheKey, idx);
+    await writeCache(cacheKey, idx);
     return idx;
   } catch {
     return null;
@@ -715,13 +720,13 @@ export async function fetchMascRatingsForMuni(muniNameWithTyp) {
   if (!entry) return null;
   const file = entry.file;
   const cacheKey = `mb_masc_${file}_v3`;
-  const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (Array.isArray(cached) && cached.length > 0) return cached;
   try {
     const res = await fetch(`${import.meta.env?.BASE_URL || '/'}data/masc/${file}`);
     if (!res.ok) return null;
     const rows = await res.json();
-    writeCache(cacheKey, rows);
+    await writeCache(cacheKey, rows);
     return rows;
   } catch {
     return null;
@@ -738,7 +743,7 @@ export async function fetchMascRatingsForMuni(muniNameWithTyp) {
  */
 export async function fetchMascRiskAreas() {
   const cacheKey = 'mb_masc_risk_areas_v1';
-  const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
   const fc = await fetchAllPages(MASC_RISK_AREAS_URL, {
     where: "Risk_Area IS NOT NULL AND Risk_Area <> '' AND Risk_Area <> ' '",
@@ -747,7 +752,7 @@ export async function fetchMascRiskAreas() {
     outSR: '4326',
     f: 'geojson',
   }, PAGE_SIZE);
-  writeCache(cacheKey, fc);
+  await writeCache(cacheKey, fc);
   return fc;
 }
 
@@ -788,7 +793,7 @@ const CLI_AGR_CAP_URL =
 export async function fetchCliAgrForMuni(muniNameWithTyp, muniBoundaryFeature) {
   if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
   const cacheKey = `mb_cli_agr_${muniNameWithTyp}_v1`;
-  const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
 
   const esriGeom = polygonToEsriGeometry(muniBoundaryFeature);
@@ -811,7 +816,7 @@ export async function fetchCliAgrForMuni(muniNameWithTyp, muniBoundaryFeature) {
     outSR: '4326',
     f: 'geojson',
   }, 20000);
-  writeCache(cacheKey, fc);
+  await writeCache(cacheKey, fc);
   return fc;
 }
 
@@ -851,7 +856,7 @@ export async function fetchProvinceSectionGrid() {
   // but a v1 entry from a much-earlier iteration could still be in
   // localStorage with duplicates.
   const cacheKey = 'mb_section_grid_province_v2';
-  const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
   // Cache-bust query param so any stale browser HTTP cache holding a
   // previous build of section-grid.json gets bypassed. Bump the
@@ -865,7 +870,7 @@ export async function fetchProvinceSectionGrid() {
     );
   }
   const fc = await res.json();
-  writeCache(cacheKey, fc);
+  await writeCache(cacheKey, fc);
   return fc;
 }
 
@@ -894,13 +899,13 @@ async function fetchParcelMascIndex() {
   if (parcelMascIndexPromise) return parcelMascIndexPromise;
   parcelMascIndexPromise = (async () => {
     const cacheKey = 'mb_parcel_masc_index_v4';
-    const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+    const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
     if (cached) return cached;
     try {
       const res = await fetch(PARCEL_MASC_INDEX_URL);
       if (!res.ok) return null;
       const idx = await res.json();
-      writeCache(cacheKey, idx);
+      await writeCache(cacheKey, idx);
       return idx;
     } catch {
       return null;
@@ -916,13 +921,13 @@ export async function fetchParcelMascForMuni(muniNameWithTyp) {
   if (!entry) return null;
   const file = entry.file;
   const cacheKey = `mb_parcel_masc_${file}_v4`;
-  const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
   try {
     const res = await fetch(`${import.meta.env?.BASE_URL || '/'}data/parcel-masc/${file}`);
     if (!res.ok) return null;
     const dict = await res.json();
-    writeCache(cacheKey, dict);
+    await writeCache(cacheKey, dict);
     return dict;
   } catch {
     return null;
@@ -1024,14 +1029,14 @@ function normalizeMuniLookupType(value) {
  */
 export async function fetchMascRiverlots() {
   const cacheKey = 'mb_masc_riverlots_v3';
-  const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
   const url = `${import.meta.env?.BASE_URL || '/'}data/masc-riverlots.json`;
   let res;
   try { res = await fetch(url); } catch { return null; }
   if (!res.ok) return null;
   const fc = await res.json();
-  writeCache(cacheKey, fc);
+  await writeCache(cacheKey, fc);
   return fc;
 }
 
@@ -1040,7 +1045,7 @@ export async function fetchRiverLots() {
   // (no JS-side transform needed). Bump invalidates v2 cache entries
   // that still carry the JS-prettified or raw-concatenated form.
   const cacheKey = 'mb_river_lots_v3';
-  const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
   const url = `${import.meta.env?.BASE_URL || '/'}data/river-lots.json`;
   let res;
@@ -1051,7 +1056,7 @@ export async function fetchRiverLots() {
   }
   if (!res.ok) return null;
   const fc = await res.json();
-  writeCache(cacheKey, fc);
+  await writeCache(cacheKey, fc);
   return fc;
 }
 
@@ -1060,7 +1065,7 @@ export async function fetchSurveyGridForMuni(muniNameWithTyp, muniBoundaryFeatur
   // v3: matches the section-grid province-cache bump; pairs with the
   // sectionLinesFromRows meridian-normalization fix.
   const cacheKey = `mb_survey_grid_${muniNameWithTyp}_v3`;
-  const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
 
   const esriGeom = polygonToEsriGeometry(muniBoundaryFeature);
@@ -1087,13 +1092,13 @@ export async function fetchSurveyGridForMuni(muniNameWithTyp, muniBoundaryFeatur
     // ordered and the survey-grid fetch actually returns rows.
     orderByFields: 'OBJECTID_1 ASC',
   }, 50000);
-  writeCache(cacheKey, fc);
+  await writeCache(cacheKey, fc);
   return fc;
 }
 
 export async function fetchMunicipalBoundaries() {
   const cacheKey = 'mb_muni_boundaries_v2';
-  const cached = readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
   const fc = await fetchAllPages(MUNICIPALITY_URL, {
     where: '1=1',
@@ -1104,7 +1109,7 @@ export async function fetchMunicipalBoundaries() {
     maxAllowableOffset: '0.0005',
     f: 'geojson',
   }, 1000);
-  writeCache(cacheKey, fc);
+  await writeCache(cacheKey, fc);
   return fc;
 }
 
@@ -1122,7 +1127,7 @@ export async function fetchMunicipalBoundaries() {
  */
 export async function fetchContaminatedSites() {
   const cacheKey = 'mb_contam_sites_v1';
-  const cached = readCache(cacheKey);
+  const cached = await readCache(cacheKey);
   if (cached) return cached;
   const res = await fetch(CONTAM_CSV_URL);
   if (!res.ok) throw new Error(`Contaminated-sites CSV ${res.status}`);
@@ -1159,7 +1164,7 @@ export async function fetchContaminatedSites() {
     });
   }
   const fc = { type: 'FeatureCollection', features };
-  writeCache(cacheKey, fc);
+  await writeCache(cacheKey, fc);
   return fc;
 }
 
@@ -1172,7 +1177,7 @@ export async function fetchContaminatedSites() {
  */
 export async function fetchTrafficStations() {
   const cacheKey = 'mb_traffic_stations_v1';
-  const cached = readCache(cacheKey);
+  const cached = await readCache(cacheKey);
   if (cached) return cached;
   const fc = await fetchAllPages(TRAFFIC_STATIONS_URL, {
     where: '1=1',
@@ -1181,7 +1186,7 @@ export async function fetchTrafficStations() {
     outSR: '4326',
     f: 'geojson',
   }, 5000);
-  writeCache(cacheKey, fc);
+  await writeCache(cacheKey, fc);
   return fc;
 }
 
@@ -1193,7 +1198,7 @@ export async function fetchTrafficStations() {
  */
 export async function fetchTrafficFlow() {
   const cacheKey = 'mb_traffic_flow_v1';
-  const cached = readCache(cacheKey);
+  const cached = await readCache(cacheKey);
   if (cached) return cached;
   const fc = await fetchAllPages(TRAFFIC_FLOW_URL, {
     where: '1=1',
@@ -1202,7 +1207,7 @@ export async function fetchTrafficFlow() {
     outSR: '4326',
     f: 'geojson',
   }, 20000);
-  writeCache(cacheKey, fc);
+  await writeCache(cacheKey, fc);
   return fc;
 }
 
@@ -1266,7 +1271,7 @@ export async function fetchAllParcelsInMunicipality(municipality) {
   // to turf-area on the polygon when the field is in feet or
   // missing.
   const cacheKey = `mb_muni_parcels_v5_${municipality}`;
-  const cached = readCache(cacheKey);
+  const cached = await readCache(cacheKey);
   if (cached) return cached;
   // Pull the same lightweight property set the table uses minus the
   // overlay-derived columns (zoning/dev-plan come from spatial joins, not
@@ -1334,7 +1339,7 @@ export async function fetchAllParcelsInMunicipality(municipality) {
   }
   // Don't cache the truncated flag; if a giant muni hit the cap, we want
   // the user to know each session.
-  writeCache(cacheKey, fc);
+  await writeCache(cacheKey, fc);
   return fc;
 }
 
@@ -1748,7 +1753,7 @@ function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
  */
 async function fetchDistinctValues(baseUrl, field, cacheKey, where = null) {
   if (cacheKey) {
-    const cached = readCache(cacheKey);
+    const cached = await readCache(cacheKey);
     if (cached) return cached;
   }
   const usp = new URLSearchParams({
@@ -1770,7 +1775,7 @@ async function fetchDistinctValues(baseUrl, field, cacheKey, where = null) {
   const values = (json.features || [])
     .map((f) => f.attributes?.[field])
     .filter((v) => v != null && String(v).trim() !== '');
-  if (cacheKey) writeCache(cacheKey, values);
+  if (cacheKey) await writeCache(cacheKey, values);
   return values;
 }
 
@@ -1784,53 +1789,9 @@ const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 // Municipal boundaries are a stable reference layer — amalgamations
 // happen on a multi-year cadence — so they get a longer 30-day TTL.
 const MUNI_BOUNDARIES_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-const CACHE_NS_PREFIX = 'mbpsCache.';
-
-function readCache(key, ttlMs = CACHE_TTL_MS) {
-  // Accept any of the shapes we cache here:
-  //   - Array<string>          — distinct-values dropdowns (munis, categories)
-  //   - FeatureCollection      — overlay datasets (contam, traffic, flow, muni parcels)
-  //   - { walk, transit, ... } — Walk Score score lookup (legacy; harmless)
-  // Wrapped with { v, t } envelope where t is the unix-ms timestamp; if
-  // it's older than the caller-provided ttlMs (defaults to CACHE_TTL_MS)
-  // we treat the entry as missing. Unwrapped legacy entries (from the
-  // sessionStorage era) are tolerated for one read then ignored.
-  try {
-    const namespaced = `${CACHE_NS_PREFIX}${key}`;
-    const raw = localStorage.getItem(namespaced) || sessionStorage.getItem(key);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (parsed == null) return null;
-    // Envelope: { v: <value>, t: <writtenAtMs> }
-    if (typeof parsed === 'object' && !Array.isArray(parsed) && 't' in parsed && 'v' in parsed) {
-      if (Date.now() - parsed.t > ttlMs) return null;
-      const v = parsed.v;
-      if (Array.isArray(v) || (typeof v === 'object' && v !== null)) return v;
-      return null;
-    }
-    // Legacy unwrapped value (older code wrote the value directly).
-    if (Array.isArray(parsed)) return parsed;
-    if (typeof parsed === 'object') return parsed;
-    return null;
-  } catch { return null; }
-}
-function writeCache(key, value) {
-  const namespaced = `${CACHE_NS_PREFIX}${key}`;
-  const envelope = JSON.stringify({ v: value, t: Date.now() });
-  try {
-    localStorage.setItem(namespaced, envelope);
-  } catch (err) {
-    // localStorage may be full (browser quota typically 5 MB); evict
-    // any of our older namespaced entries first, then retry once.
-    try {
-      for (let i = localStorage.length - 1; i >= 0; i--) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith(CACHE_NS_PREFIX) && k !== namespaced) localStorage.removeItem(k);
-      }
-      localStorage.setItem(namespaced, envelope);
-    } catch { /* still no room — fall back silently */ }
-  }
-}
+// readCache / writeCache moved to ./cache.js — they're now async,
+// IDB-primary with a localStorage fallback. Every call site below
+// already lives in an async function and awaits accordingly.
 
 /**
  * Build an Esri envelope object from a GeoJSON feature's bbox in 4326.

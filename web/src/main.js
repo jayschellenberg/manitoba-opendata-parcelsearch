@@ -78,6 +78,7 @@ import {
   setSubjectData,
   setSubjectRadius,
 } from './map.js';
+import { clearAllCache as clearAllCacheModule } from './cache.js';
 import {
   hasLegalCriteria,
   legalRecordKey,
@@ -3391,9 +3392,16 @@ function setBusy(busy) {
 /** Hard-reset the page. A full reload + cache clear guarantees every
  *  piece of state — inputs, table, sort, map zoom, overlay toggles,
  *  in-flight requests, AND every cached overlay/dropdown — goes back
- *  to first-load. Walks both storage types since older builds used
- *  sessionStorage and current builds namespace into localStorage. */
+ *  to first-load. Walks every storage type the app touches: IDB
+ *  (current primary), localStorage (fallback + legacy), and
+ *  sessionStorage (older builds). The IDB pass is best-effort and
+ *  intentionally doesn't block the reload — the page is going away
+ *  anyway, and IDB wipes complete in the background. */
 function clearAll() {
+  // Fire-and-forget IDB clear. clearAllCache is async; we don't await
+  // because the page reload below will tear down the IDB connection
+  // gracefully and any in-flight delete completes server-side.
+  try { clearAllCacheModule().catch(() => {}); } catch { /* ignore */ }
   try { sessionStorage.clear(); } catch { /* private mode quota errors etc. */ }
   try {
     for (let i = localStorage.length - 1; i >= 0; i--) {
