@@ -95,6 +95,7 @@ import {
   isVacantLand,
   uniqueClassesAndStatuses,
   getAssessmentIndexMetadata,
+  prefetchAssessmentShards,
 } from './assessmentIndex.js';
 import turfArea from '@turf/area';
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
@@ -1621,6 +1622,25 @@ async function handleSalesUpload(file) {
     // known to be vacant' so they drop out of "Vacant land only"
     // results. Non-fatal: any error here just leaves the flags off
     // and the filter degrades gracefully.
+    //
+    // Prefetch every muni's assessment shard up front so the loop
+    // below hits an in-memory cache for every lookup. Without this
+    // the per-parcel lookupAssessment calls would fan out as one
+    // shard fetch per muni serially — fine in steady state thanks
+    // to the in-flight Promise dedup, but slower than firing them
+    // all in parallel here. When shards aren't available (older
+    // builds without the per-muni JSONs), prefetch is a no-op and
+    // the loop falls back to the full-index worker path.
+    const muniNos = new Set();
+    for (const f of parcelFc.features || []) {
+      const key = parcelLegalKey(f.properties || {});
+      if (!key) continue;
+      muniNos.add(Number(key.split('|')[0]));
+    }
+    if (muniNos.size > 0) {
+      try { await prefetchAssessmentShards([...muniNos]); } catch { /* non-fatal */ }
+    }
+
     for (const f of parcelFc.features || []) {
       const key = parcelLegalKey(f.properties || {});
       if (!key) continue;
