@@ -33,6 +33,11 @@ const DATA_DIR = path.resolve(__dirname, '..', 'public', 'data');
 const DATASETS = [
   { name: 'legal_index',      file: 'legal-index.json',      hasMetadata: true,  schema_version: 1 },
   { name: 'assessment_index', file: 'assessment-index.json', hasMetadata: true,  schema_version: 1 },
+  // Per-municipality assessment shards — registry only; the
+  // individual shard files are discovered through assessment/_index.json
+  // at runtime, not enumerated in the manifest (avoids re-listing
+  // 200+ files on every rebuild).
+  { name: 'assessment_shards', file: 'assessment/_index.json', hasMetadata: true, schema_version: 1 },
   { name: 'section_grid',     file: 'section-grid.json',     hasMetadata: false, schema_version: 1 },
   { name: 'river_lots',       file: 'river-lots.json',       hasMetadata: false, schema_version: 1 },
   { name: 'masc_riverlots',   file: 'masc-riverlots.json',   hasMetadata: false, schema_version: 1 },

@@ -9,6 +9,15 @@ import {
   isVacantLand,
   VACANT_BUILDING_PCT,
 } from './assessmentIndex.core.js';
+import {
+  lookupInShards,
+  prefetchShards,
+  getShardIndex,
+} from './assessmentShards.js';
+
+// Re-export shard prefetch so handleSalesUpload can warm per-muni
+// shards once the matched-muni list is known.
+export { prefetchShards as prefetchAssessmentShards };
 
 const ASSESSMENT_INDEX_LOCAL_URL = `${import.meta.env?.BASE_URL || '/'}data/assessment-index.json`;
 const ASSESSMENT_INDEX_PROXY_URL = '/api/assessment-index';
@@ -103,6 +112,19 @@ export function warmAssessmentIndex() {
 
 export async function lookupAssessment(key) {
   if (!key || key.muni_no == null || !key.roll_no_txt) return null;
+  // Shard fast path: ~5-50 row file per muni, no 30 MB index load.
+  // Returns:
+  //   undefined → shard mode unavailable (no shards built / 404)
+  //   null      → shard mode active, no row for this muni|roll
+  //   array     → packed row to return as a friendly record
+  try {
+    const shardRow = await lookupInShards(key);
+    if (shardRow !== undefined) {
+      if (!shardRow) return null;
+      return packedRowToRecord(shardRow);
+    }
+  } catch { /* fall through to full-index path */ }
+
   const viaWorker = postMessage('load', {
     localUrl: ASSESSMENT_INDEX_LOCAL_URL,
     proxyUrl: ASSESSMENT_INDEX_PROXY_URL,
@@ -157,6 +179,27 @@ export function uniqueClassesAndStatuses(parcelFc) {
   return {
     classes:  [...classes].sort(),
     statuses: [...statuses].sort(),
+  };
+}
+
+// Convert the packed shard row into the same friendly record shape
+// the core module's lookupAssessment returns. Field order matches
+// FIELD in assessmentIndex.core.js — DO NOT REORDER without updating
+// the core module in lockstep.
+function packedRowToRecord(row) {
+  if (!Array.isArray(row)) return null;
+  const total = Number(row[5]);
+  const buildings = Number(row[4]);
+  return {
+    muni_no:     Number(row[0]),
+    roll_no_txt: String(row[1] || ''),
+    year:        Number(row[2]),
+    land:        Number(row[3]),
+    buildings,
+    total,
+    pctBuildings: total > 0 && Number.isFinite(buildings) ? (buildings / total) : NaN,
+    class:       String(row[6] || ''),
+    tax_status:  String(row[7] || ''),
   };
 }
 

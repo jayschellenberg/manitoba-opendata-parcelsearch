@@ -240,3 +240,75 @@ if (!renamed) {
 # File size for sanity — reviewer measured ~16.86 MiB, ~3.51 MiB gzipped.
 out_size_mb <- round(file.info(output)$size / (1024 * 1024), 2)
 message("[assessment-index] done — ", out_size_mb, " MiB on disk")
+
+# -------- Per-muni shards --------
+# In addition to the unified index above, write one JSON file per
+# muni_no into web/public/data/assessment/<muni_no>.json. Lets the
+# client fetch only the shards relevant to the parcels at hand
+# (typical sales-CSV upload knows the muni list up front) instead of
+# pulling the whole 30 MB index for a single lookup. The unified
+# file stays around as the fallback for legal-search results / other
+# paths that don't know their muni list in advance.
+
+shard_dir <- file.path(dirname(output), "assessment")
+dir.create(shard_dir, recursive = TRUE, showWarnings = FALSE)
+# Wipe any stale shards from a previous run — muni_no list can change
+# across rebuilds when MAO reorganises municipalities.
+old_shards <- list.files(shard_dir, pattern = "\\.json$", full.names = TRUE)
+if (length(old_shards)) {
+  unlink(old_shards)
+}
+
+shard_index <- list()
+unique_munis <- unique(agg$muni_no)
+for (m in unique_munis) {
+  if (!is.finite(m)) next
+  shard_rows <- agg[agg$muni_no == m, , drop = FALSE]
+  if (nrow(shard_rows) == 0) next
+  shard_packed <- unname(lapply(seq_len(nrow(shard_rows)), function(i) {
+    list(
+      shard_rows$muni_no[i],
+      as.character(shard_rows$roll_no_txt[i]),
+      shard_rows$tax_year[i],
+      shard_rows$land[i],
+      shard_rows$buildings[i],
+      shard_rows$total[i],
+      if (is.na(shard_rows$class[i])) "" else shard_rows$class[i],
+      if (is.na(shard_rows$tax_status[i])) "" else shard_rows$tax_status[i]
+    )
+  }))
+  shard_payload <- list(
+    version = 1,
+    muni_no = as.integer(m),
+    fields = fields,
+    rows = shard_packed
+  )
+  shard_file <- sprintf("%d.json", as.integer(m))
+  shard_path <- file.path(shard_dir, shard_file)
+  writeLines(toJSON(shard_payload, auto_unbox = TRUE, null = "null", digits = NA),
+             shard_path, useBytes = TRUE)
+  shard_index[[length(shard_index) + 1]] <- list(
+    muni_no = as.integer(m),
+    file = shard_file,
+    row_count = as.integer(nrow(shard_rows))
+  )
+}
+
+# Tiny index file lists every shard so the client doesn't have to
+# probe-fetch each muni_no. Metadata mirrors the unified index plus
+# the per-shard registry.
+index_payload <- list(
+  version = 1,
+  metadata = list(
+    generated_at = payload$metadata$generated_at,
+    source = payload$metadata$source,
+    source_modified = payload$metadata$source_modified,
+    shard_count = length(shard_index),
+    row_count = nrow(agg)
+  ),
+  shards = shard_index
+)
+index_path <- file.path(shard_dir, "_index.json")
+writeLines(toJSON(index_payload, auto_unbox = TRUE, null = "null", digits = NA),
+           index_path, useBytes = TRUE)
+message("[assessment-index] sharded → ", length(shard_index), " files in ", shard_dir)
