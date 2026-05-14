@@ -177,6 +177,7 @@ header small a {
 body:not(.sales-mode) .sidebar .size-row,
 body:not(.sales-mode) .sidebar .size-vacant-row,
 body:not(.sales-mode) .sidebar .street-name-row,
+body:not(.sales-mode) .sidebar .ppa-row,
 body:not(.sales-mode) .sidebar .vacant-row,
 body:not(.sales-mode) .sidebar .date-row,
 body:not(.sales-mode) .sidebar .date-presets,
@@ -282,6 +283,36 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   width: 100%;
   padding: 6px 6px;
   font-size: 12px;
+}
+
+/* $/Acre filter row — Min + Max inputs split 50/50, paired
+   visually with the Lo Ac / Hi Ac row above so the size + rate
+   bounds read as one filter block. */
+.sidebar .ppa-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.sidebar .ppa-row .ppa-low-field,
+.sidebar .ppa-row .ppa-high-field { flex: 1 1 0; min-width: 0; }
+.sidebar .ppa-row input[type="number"] {
+  width: 100%;
+  padding: 6px 6px;
+  font-size: 12px;
+}
+/* Hide the up/down spinner controls — same as the other CSV-mode
+   numeric filters. */
+#sales-ppa-low::-webkit-outer-spin-button,
+#sales-ppa-low::-webkit-inner-spin-button,
+#sales-ppa-high::-webkit-outer-spin-button,
+#sales-ppa-high::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+#sales-ppa-low,
+#sales-ppa-high {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }
 
 /* Subject muni picker — slim row directly under the subject roll

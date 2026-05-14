@@ -168,6 +168,12 @@ const $salesPlan     = document.getElementById('sales-plan');
 // $salesPlan; complementary because Plan # narrows by plat/legal
 // while Street Name narrows by civic address.
 const $salesStreetName = document.getElementById('sales-street-name');
+// Sales-mode $/Acre filter — pair of bounds against the
+// _saleGroupPpa stamped by computeSaleGroupTotals. Useful for
+// flushing out development-land sales that trade at a much higher
+// rate per acre than rural / farm comps.
+const $salesPpaLow   = document.getElementById('sales-ppa-low');
+const $salesPpaHigh  = document.getElementById('sales-ppa-high');
 const $search        = document.getElementById('search');
 const $clear         = document.getElementById('clear');
 const $export        = document.getElementById('export');
@@ -952,7 +958,7 @@ $duMode.addEventListener('change', () => {
 for (const el of [
   $zoneCategory, $changedStatus, $duMode, $duMin, $sizeLow, $sizeHigh, $vacantOnly,
   $saleDateFrom, $saleDateTo, $asmtClass, $asmtStatus, $distanceMax, $salesPlan,
-  $salesStreetName,
+  $salesStreetName, $salesPpaLow, $salesPpaHigh,
 ].filter(Boolean)) {
   el.addEventListener('change', refilterCsvIfActive);
   el.addEventListener('input',  refilterCsvIfActive);
@@ -1181,6 +1187,8 @@ async function runSearch() {
   if ($distanceMax)   $distanceMax.value = '';
   if ($salesPlan)     $salesPlan.value = '';
   if ($salesStreetName) $salesStreetName.value = '';
+  if ($salesPpaLow)   $salesPpaLow.value = '';
+  if ($salesPpaHigh)  $salesPpaHigh.value = '';
   // Multi-select: clear all selected options so the filter goes back
   // to "any" rather than carrying over the last upload's picks.
   if ($asmtClass)     [...$asmtClass.options].forEach((o) => { o.selected = false; });
@@ -1727,18 +1735,20 @@ async function handleSalesUpload(file) {
     const inputsMuni = isSingleMuni ? dominantMuni : '';
     const fakeInputs = { municipality: inputsMuni };
 
-    if (parcelFc.features.length > ENRICHMENT_THRESHOLD) {
-      renderEnrichButton(parcelFc, fakeInputs, baseMsg);
-    } else {
-      // Wrap in try/catch — a failed zoning/dev-plan fetch shouldn't
-      // skip the group-totals computation below. The table still
-      // renders parcels-only rows in that case, with the group
-      // rollups applied.
-      try {
-        await enrichOverlays(parcelFc, fakeInputs, baseMsg);
-      } catch (err) {
-        console.warn('Sales upload: overlay enrichment failed (non-fatal):', err);
-      }
+    // Sales-CSV uploads always auto-enrich, regardless of how many
+    // parcels matched. The user deliberately uploaded these comps and
+    // expects zoning + dev-plan to populate so they can filter for
+    // development-land outliers (high $/Acre against rural zoning,
+    // etc). Above the ENRICHMENT_THRESHOLD, enrichment can take
+    // several seconds on the main thread — setCount() inside
+    // enrichOverlays already updates the count line ("loading zoning
+    // + dev-plan…") so the user has feedback. The renderEnrichButton
+    // opt-in path stays available for the regular-search flow above
+    // ENRICHMENT_THRESHOLD; only the sales-CSV path skips it.
+    try {
+      await enrichOverlays(parcelFc, fakeInputs, baseMsg);
+    } catch (err) {
+      console.warn('Sales upload: overlay enrichment failed (non-fatal):', err);
     }
 
     // Mirror runSearch's auto-toggle of the Roll Layer when a single
@@ -2172,6 +2182,16 @@ function filterCsvRowsByOtherSearches(rows) {
   // Property_Address. Same semantics as Plan #: missing addresses
   // fail when the filter is active.
   const streetFilter = ($salesStreetName?.value || '').trim().toUpperCase();
+  // $/Acre filter — Min / Max bounds against _saleGroupPpa.
+  // Either bound is optional; empty = unbounded on that side. Rows
+  // missing _saleGroupPpa (no acres data on the group, or single-
+  // parcel sale without acreage) fail when the filter is active —
+  // same "missing = exclude" rule as the size filter.
+  const ppaLoRaw = parseFloat($salesPpaLow?.value);
+  const ppaHiRaw = parseFloat($salesPpaHigh?.value);
+  const ppaActive = Number.isFinite(ppaLoRaw) || Number.isFinite(ppaHiRaw);
+  const ppaLo = Number.isFinite(ppaLoRaw) ? ppaLoRaw : 0;
+  const ppaHi = Number.isFinite(ppaHiRaw) ? ppaHiRaw : Infinity;
 
   return rows.filter((row) => {
     const p = row.parcel?.properties || {};
@@ -2194,6 +2214,15 @@ function filterCsvRowsByOtherSearches(rows) {
     if (streetFilter) {
       const addr = String(p.Property_Address || '').toUpperCase();
       if (!addr.includes(streetFilter)) return false;
+    }
+
+    // $/Acre filter — bounds against the sale-group rate. Rows
+    // missing _saleGroupPpa (no acres data, or sale rate couldn't
+    // be computed) drop out when the filter is active, mirroring
+    // the size-range and date "missing = exclude" semantics.
+    if (ppaActive) {
+      const ppa = Number(p._saleGroupPpa);
+      if (!Number.isFinite(ppa) || ppa < ppaLo || ppa > ppaHi) return false;
     }
 
     // DU filter — directly on the parcel field, no enrichment needed.
