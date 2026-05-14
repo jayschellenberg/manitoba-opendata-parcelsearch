@@ -51,6 +51,44 @@ import intersect from '@turf/intersect';
 // caller in this file already runs inside an async function.
 import { readCache, writeCache } from './cache.js';
 
+// ---------- Spatial-join worker ----------
+// Lazily created on the first joinTopNByArea call. Falls back to the
+// synchronous main-thread implementation in environments without Worker
+// support (Node test runner, very old browsers).
+let _sjWorker = null;
+let _sjPending = new Map();
+let _sjNextId = 0;
+
+function _ensureSjWorker() {
+  if (_sjWorker) return _sjWorker;
+  if (typeof Worker === 'undefined' || typeof import.meta.url !== 'string') return null;
+  try {
+    _sjWorker = new Worker(
+      new URL('./workers/spatialJoin.worker.js', import.meta.url),
+      { type: 'module' },
+    );
+  } catch (err) {
+    console.warn('Spatial-join worker unavailable, falling back to main thread:', err.message);
+    return null;
+  }
+  _sjWorker.addEventListener('message', (ev) => {
+    const { id, ok, result, error } = ev.data || {};
+    const slot = _sjPending.get(id);
+    if (!slot) return;
+    _sjPending.delete(id);
+    if (ok) slot.resolve(new Map(result));
+    else slot.reject(new Error(error || 'Spatial-join worker failed'));
+  });
+  _sjWorker.addEventListener('error', (err) => {
+    for (const slot of _sjPending.values()) {
+      slot.reject(new Error(err?.message || 'Spatial-join worker errored'));
+    }
+    _sjPending.clear();
+    _sjWorker = null;
+  });
+  return _sjWorker;
+}
+
 const BASE = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services';
 const ROLL_URL    = `${BASE}/ROLL_ENTRY/FeatureServer/0`;
 const ZONING_URL  = `${BASE}/Manitoba_Zoning_By_Laws/FeatureServer/0`;
@@ -510,25 +548,38 @@ function muniNameMatchClause(municipality) {
 
 /**
  * Compute area-weighted top-N overlay matches for each parcel. Returns
- *   Map<parcelOid, Array<{ feature, ratio }>>
+ *   Promise<Map<parcelOid, Array<{ feature, ratio }>>>
  * where `ratio = intersectionArea / parcelArea` (0-1) and the array is
  * sorted descending by ratio, length ≤ n.
  *
  * Mirrors `get_multiple_by_area()` in mao-assembly/scripts/pipeline_utils.R:
  * intersect(parcel, overlay), area(intersection), sort desc, take top N.
  *
- * Failures on individual parcels are logged and skipped — one bad geometry
- * never kills the whole join.
+ * Runs inside a dedicated Web Worker (spatialJoin.worker.js) with an rbush
+ * spatial index on the overlay bboxes, so the main thread stays responsive
+ * and O(P×O) bbox checks are replaced by O(P × log O + P×k) rbush queries.
+ * Falls back to the synchronous main-thread implementation when Workers are
+ * unavailable (Node test runner, very old browsers).
  */
-export function joinTopNByArea(parcelFc, overlayFc, n = 2) {
+export async function joinTopNByArea(parcelFc, overlayFc, n = 2) {
+  const w = _ensureSjWorker();
+  if (w) {
+    const id = _sjNextId++;
+    return new Promise((resolve, reject) => {
+      _sjPending.set(id, { resolve, reject });
+      w.postMessage({ id, parcelFc, overlayFc, n });
+    });
+  }
+  return _joinTopNSync(parcelFc, overlayFc, n);
+}
+
+// Synchronous fallback — used when the Worker is unavailable.
+// Identical semantics to the worker implementation except it uses the
+// O(P×O) bbox array scan instead of an rbush tree.
+function _joinTopNSync(parcelFc, overlayFc, n) {
   const result = new Map();
   if (!parcelFc.features.length || !overlayFc.features.length) return result;
 
-  // Pre-compute parcel bboxes for a cheap reject step before turf.intersect
-  // (which is comparatively expensive). Same idea as the inner loop of
-  // get_multiple_by_area but without an explicit spatial index — at our
-  // result-set sizes (≤1000 parcels × ~10-50 overlays each) the O(P×O)
-  // bbox check is fast enough.
   const overlayBboxes = overlayFc.features.map((f) => {
     try { return bbox(f); } catch { return null; }
   });
@@ -555,10 +606,8 @@ export function joinTopNByArea(parcelFc, overlayFc, n = 2) {
       const overlay = overlayFc.features[i];
       let inter;
       try {
-        // turf 7.x takes a FeatureCollection of exactly two polygon Features.
         inter = intersect({ type: 'FeatureCollection', features: [parcel, overlay] });
-      } catch (err) {
-        // Topology errors are common on real-world data; skip and move on.
+      } catch {
         continue;
       }
       if (!inter) continue;

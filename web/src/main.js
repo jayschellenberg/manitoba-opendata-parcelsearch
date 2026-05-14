@@ -2547,8 +2547,13 @@ async function enrichOverlays(parcelFc, inputs, baseMsg) {
   rebuildZoningLegend(zoningFc);
   updatePdWebsiteButton(devPlanFc);
 
-  const zoningTop2  = joinTopNByArea(parcelFc, zoningFc, 2);
-  const devPlanTop2 = joinTopNByArea(parcelFc, devPlanFc, 2);
+  // Pre-compute the "changed-only" overlay subsets (sync, cheap) so all
+  // four area-weighted joins can be dispatched to the worker in parallel.
+  const zoningChangedFc   = filterFcForChanged(zoningFc,   isZoningChanged);
+  const devPlanChangedFc  = filterFcForChanged(devPlanFc,  isDevPlanChanged);
+  // joinTopNByArea is async (runs in a Web Worker on the first call so the
+  // main thread stays responsive). Fire all four in parallel — they queue in
+  // the worker but the UI thread is free for the whole duration.
   // Per-parcel "changed-polygons" join, computed against a filtered
   // overlay FC containing only polygons that actually carry an
   // amendment (ZBL_A != ZBL, AMENDMENT_DESCRIPTION set, etc.). The
@@ -2558,10 +2563,12 @@ async function enrichOverlays(parcelFc, inputs, baseMsg) {
   // makes the top-2 area-weighted display join. Without this second
   // pass, the Changes column reads as empty for those parcels even
   // though they ARE the changed ones the filter surfaced.
-  const zoningChangedFc = filterFcForChanged(zoningFc, isZoningChanged);
-  const devPlanChangedFc = filterFcForChanged(devPlanFc, isDevPlanChanged);
-  const zoningChanges  = joinTopNByArea(parcelFc, zoningChangedFc, 3);
-  const devPlanChanges = joinTopNByArea(parcelFc, devPlanChangedFc, 3);
+  const [zoningTop2, devPlanTop2, zoningChanges, devPlanChanges] = await Promise.all([
+    joinTopNByArea(parcelFc, zoningFc,          2),
+    joinTopNByArea(parcelFc, devPlanFc,         2),
+    joinTopNByArea(parcelFc, zoningChangedFc,   3),
+    joinTopNByArea(parcelFc, devPlanChangedFc,  3),
+  ]);
   // Bbox-overlap fallback: ArcGIS's server-side intersect counts
   // edge-touching polygons as a match, so a parcel can land in the
   // Zoning-Changed result on a sliver overlap that @turf/intersect
