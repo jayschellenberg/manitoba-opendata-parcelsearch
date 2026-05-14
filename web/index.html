@@ -252,6 +252,21 @@
             <span class="tip">Filter uploaded sales to rows whose Property Address contains this string. Case-insensitive substring match — e.g. "main" matches "123 MAIN ST", "201 MAIN AVE N", etc.</span>
           </span>
         </div>
+        <!-- $/Acre filter — Min + Max bounds against the
+             _saleGroupPpa stamped on every CSV row by computeSaleGroupTotals.
+             Designed to surface development-land sales that trade at a
+             much higher rate per acre than rural / farm comps. Empty
+             Min → 0; empty Max → ∞. -->
+        <div class="ppa-row sales-only">
+          <span class="field ppa-low-field">
+            <input id="sales-ppa-low" type="number" min="0" step="1" placeholder="Min $/Ac" />
+            <span class="tip">Minimum $/Acre (group rate). Empty = no lower limit.</span>
+          </span>
+          <span class="field ppa-high-field">
+            <input id="sales-ppa-high" type="number" min="0" step="1" placeholder="Max $/Ac" />
+            <span class="tip">Maximum $/Acre (group rate). Empty = no upper limit. Use a high Min value (e.g. 50000) on its own to surface likely development-land sales.</span>
+          </span>
+        </div>
         <!-- Sale Date range — hidden inputs only; the date-preset
              buttons below drive them via JS (click "6 mo" → sets
              from/to → dispatches input event → refilterCsvIfActive).
