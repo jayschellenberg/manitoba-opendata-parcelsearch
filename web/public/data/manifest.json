@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "generated_at": "2026-05-14T03:21:16.035Z",
+  "generated_at": "2026-05-14T13:23:39.702Z",
   "datasets": {
     "legal_index": {
       "file": "legal-index.json",
@@ -16,8 +16,8 @@
       "file": "assessment-index.json",
       "schema_version": 1,
       "size_bytes": 29217018,
-      "modified_at": "2026-05-11T00:24:47.579Z",
-      "generated_at": "2026-05-11T00:23:06Z",
+      "modified_at": "2026-05-14T13:16:24.627Z",
+      "generated_at": "2026-05-14T13:14:36Z",
       "source": "D:/Dropbox/ClaudeCode/MBOpenData/ParcelSearch/mao-scrape/results/tax_history.parquet",
       "source_modified": "2026-05-06T03:00:15Z",
       "row_count": 430366,
@@ -26,6 +26,17 @@
       "vacant_threshold_pct": 2,
       "nominal_vacant_count": 198598,
       "zero_buildings_count": 192994
+    },
+    "assessment_shards": {
+      "file": "assessment/_index.json",
+      "schema_version": 1,
+      "size_bytes": 9651,
+      "modified_at": "2026-05-14T13:19:19.716Z",
+      "generated_at": "2026-05-14T13:14:36Z",
+      "source": "D:/Dropbox/ClaudeCode/MBOpenData/ParcelSearch/mao-scrape/results/tax_history.parquet",
+      "source_modified": "2026-05-06T03:00:15Z",
+      "shard_count": 186,
+      "row_count": 430366
     },
     "section_grid": {
       "file": "section-grid.json",
