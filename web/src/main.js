@@ -79,6 +79,7 @@ import {
   setSubjectRadius,
 } from './map.js';
 import { clearAllCache as clearAllCacheModule } from './cache.js';
+import { getManifest } from './manifest.js';
 import {
   hasLegalCriteria,
   legalRecordKey,
@@ -4721,10 +4722,22 @@ async function populateDataRefreshFooter() {
   const $footer = document.getElementById('data-refresh-footer');
   const $list   = document.getElementById('data-refresh-list');
   if (!$footer || !$list) return;
-  const [legalMeta, asmtMeta] = await Promise.allSettled([
-    getLegalIndexMetadata(),
-    getAssessmentIndexMetadata(),
-  ]);
+  // Prefer the manifest (a ~2 KB file with every dataset's
+  // generated_at). Falls back to the legacy "load the full index
+  // and read its metadata" path when the manifest is missing — keeps
+  // the footer working in environments where build-manifest.js hasn't
+  // run yet (e.g. fresh dev clones before `npm run manifest`).
+  const manifest = await getManifest();
+  let legalMetaValue = manifest?.datasets?.legal_index || null;
+  let asmtMetaValue  = manifest?.datasets?.assessment_index || null;
+  if (!legalMetaValue || !asmtMetaValue) {
+    const [legalMeta, asmtMeta] = await Promise.allSettled([
+      legalMetaValue ? Promise.resolve(legalMetaValue) : getLegalIndexMetadata(),
+      asmtMetaValue  ? Promise.resolve(asmtMetaValue)  : getAssessmentIndexMetadata(),
+    ]);
+    legalMetaValue = legalMetaValue || (legalMeta.status === 'fulfilled' ? legalMeta.value : null);
+    asmtMetaValue  = asmtMetaValue  || (asmtMeta.status  === 'fulfilled' ? asmtMeta.value  : null);
+  }
   const parts = [];
   const fmt = (raw) => {
     // generated_at comes from R as ISO Zulu (YYYY-MM-DDTHH:MM:SSZ).
@@ -4735,8 +4748,8 @@ async function populateDataRefreshFooter() {
     if (!Number.isFinite(d.valueOf())) return '';
     return d.toISOString().slice(0, 10);
   };
-  const legalDate = fmt(legalMeta.status === 'fulfilled' && legalMeta.value?.generated_at);
-  const asmtDate  = fmt(asmtMeta.status === 'fulfilled' && asmtMeta.value?.generated_at);
+  const legalDate = fmt(legalMetaValue?.generated_at);
+  const asmtDate  = fmt(asmtMetaValue?.generated_at);
   if (legalDate) parts.push(`<strong>Legal:</strong> ${legalDate}`);
   if (asmtDate)  parts.push(`<strong>Assessment:</strong> ${asmtDate}`);
   if (parts.length === 0) return;

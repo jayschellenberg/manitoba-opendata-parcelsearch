@@ -1,0 +1,55 @@
+{
+  "manifest_version": 1,
+  "generated_at": "2026-05-14T03:21:16.035Z",
+  "datasets": {
+    "legal_index": {
+      "file": "legal-index.json",
+      "schema_version": 1,
+      "size_bytes": 135836646,
+      "modified_at": "2026-05-06T03:05:44.089Z",
+      "generated_at": "2026-05-06T03:03:37Z",
+      "source": "D:/Dropbox/ClaudeCode/MBOpenData/ParcelSearch/mao-scrape/results/parcels.parquet",
+      "source_modified": "2026-05-06T03:00:12Z",
+      "row_count": 430366
+    },
+    "assessment_index": {
+      "file": "assessment-index.json",
+      "schema_version": 1,
+      "size_bytes": 29217018,
+      "modified_at": "2026-05-11T00:24:47.579Z",
+      "generated_at": "2026-05-11T00:23:06Z",
+      "source": "D:/Dropbox/ClaudeCode/MBOpenData/ParcelSearch/mao-scrape/results/tax_history.parquet",
+      "source_modified": "2026-05-06T03:00:15Z",
+      "row_count": 430366,
+      "year_min": 2026,
+      "year_max": 2026,
+      "vacant_threshold_pct": 2,
+      "nominal_vacant_count": 198598,
+      "zero_buildings_count": 192994
+    },
+    "section_grid": {
+      "file": "section-grid.json",
+      "schema_version": 1,
+      "size_bytes": 42358712,
+      "modified_at": "2026-05-07T03:47:43.310Z"
+    },
+    "river_lots": {
+      "file": "river-lots.json",
+      "schema_version": 1,
+      "size_bytes": 5857676,
+      "modified_at": "2026-05-07T03:34:08.570Z"
+    },
+    "masc_riverlots": {
+      "file": "masc-riverlots.json",
+      "schema_version": 1,
+      "size_bytes": 6102800,
+      "modified_at": "2026-05-07T20:03:33.154Z"
+    },
+    "masc_index": {
+      "file": "masc/_index.json",
+      "schema_version": 1,
+      "size_bytes": 5332,
+      "modified_at": "2026-05-06T02:52:55.815Z"
+    }
+  }
+}
