@@ -1748,9 +1748,14 @@ async function handleSalesUpload(file) {
       }
     }
     // Only pass the muni to enrichOverlays when the upload is truly
-    // single-muni — multi-muni needs the cross-muni spatial query.
+    // single-muni — multi-muni gets the matched-muni list so
+    // enrichOverlays can fan out per-muni bulk overlay fetches in
+    // parallel (one fetch per muni) instead of the per-parcel
+    // envelope query path (one fetch per parcel × N).
     const inputsMuni = isSingleMuni ? dominantMuni : '';
-    const fakeInputs = { municipality: inputsMuni };
+    const fakeInputs = isSingleMuni
+      ? { municipality: inputsMuni }
+      : { municipalities: csvMatchedMunis.slice() };
 
     // Sales-CSV uploads always auto-enrich, regardless of how many
     // parcels matched. The user deliberately uploaded these comps and
@@ -2565,10 +2570,23 @@ async function enrichOverlays(parcelFc, inputs, baseMsg) {
     console.warn('official MASC risk-area fetch failed (non-fatal):', err);
     return EMPTY_FC;
   });
+  // Multi-muni CSV uploads pass a `municipalities` array so the
+  // overlay fetches take the per-muni bulk path (one fetch per muni
+  // in parallel) instead of the per-parcel envelope path. For a
+  // 2100-sale upload across 20 munis that's ~20 fetches in ~3-5s
+  // versus ~2100 fetches at 16-way concurrency in 30+ seconds. The
+  // matched-muni list is set in csvMatchedMunis at upload time;
+  // basic searches fall through to the single-muni or per-parcel
+  // path as before.
+  const overlayOpts = inputs.municipality
+    ? { municipality: inputs.municipality }
+    : (Array.isArray(inputs.municipalities) && inputs.municipalities.length > 0
+        ? { municipalities: inputs.municipalities }
+        : {});
   try {
     [zoningFc, devPlanFc, riskAreaFc] = await Promise.all([
-      fetchZoningOverlap(parcelFc, { municipality: inputs.municipality }),
-      fetchDevPlanOverlap(parcelFc, { municipality: inputs.municipality }),
+      fetchZoningOverlap(parcelFc, overlayOpts),
+      fetchDevPlanOverlap(parcelFc, overlayOpts),
       riskAreaPromise,
     ]);
   } catch (err) {
@@ -3485,20 +3503,38 @@ function clearTable() {
   setExportEnabled(false);
 }
 
-function renderTable(rows) {
+// Page size for the results grid. Big result sets (200+ comp uploads,
+// muni-wide overlay searches) are paginated client-side so the DOM
+// stays light — 2000 rows × ~25 cells/row was ~50k <td>s, which
+// noticeably stalled scroll and sort. Export CSV ignores pagination
+// and always emits the full currentRows set.
+const PAGE_SIZE = 100;
+let currentPage = 0;
+const $paginator = document.getElementById('results-paginator');
+
+function renderTable(rows, { resetPage = true } = {}) {
   $tbody.innerHTML = '';
   currentRows = rows;
   rowFeatureMap.clear();
+  if (resetPage) currentPage = 0;
   const sorted = sortRows(rows);
-  // Outlier detection on $/Acre — compute mean + σ across the current
-  // (filtered) sales-mode set and tag rows beyond ±2σ. Quietly skips
-  // when fewer than 3 rows have a real $/Acre value (too few for
-  // a meaningful σ). The .outlier class adds a subtle background so
-  // the appraiser can spot likely outliers at a glance without it
-  // dominating the table.
+  // Clamp currentPage in case the row set shrank below it (filter
+  // change, sales-CSV reload, etc).
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  if (currentPage >= pageCount) currentPage = pageCount - 1;
+  if (currentPage < 0) currentPage = 0;
+  const pageStart = currentPage * PAGE_SIZE;
+  const pageEnd   = Math.min(pageStart + PAGE_SIZE, sorted.length);
+  const pageRows  = sorted.slice(pageStart, pageEnd);
+  // Outlier detection on $/Acre — compute mean + σ across the FULL
+  // sorted set (not the page slice) so thresholds don't shift as the
+  // user pages. Quietly skips when fewer than 3 rows have a real
+  // $/Acre value (too few for a meaningful σ). The .outlier class
+  // adds a subtle background so the appraiser can spot likely
+  // outliers at a glance without it dominating the table.
   const outlierThresholds = computePpaOutlierThresholds(sorted);
   const frag = document.createDocumentFragment();
-  for (const row of sorted) {
+  for (const row of pageRows) {
     const p = row.parcel.properties || {};
     const tr = document.createElement('tr');
     if (p._rowKey != null) {
@@ -3658,7 +3694,55 @@ function renderTable(rows) {
     frag.appendChild(tr);
   }
   $tbody.appendChild(frag);
+  renderPaginator(sorted.length);
   setExportEnabled(rows.length > 0);
+}
+
+/**
+ * Update the pagination control row below the table. Hidden when
+ * everything fits on one page. Buttons are disabled at the boundaries
+ * (first/prev on page 0, next/last on the final page) so the user
+ * can't navigate off the ends. The visible page-range label uses
+ * 1-based row numbers because that's what humans expect.
+ */
+function renderPaginator(total) {
+  if (!$paginator) return;
+  if (total <= PAGE_SIZE) {
+    $paginator.hidden = true;
+    $paginator.innerHTML = '';
+    return;
+  }
+  const pageCount = Math.ceil(total / PAGE_SIZE);
+  const start = currentPage * PAGE_SIZE + 1;
+  const end   = Math.min(start + PAGE_SIZE - 1, total);
+  const onFirst = currentPage === 0;
+  const onLast  = currentPage >= pageCount - 1;
+  $paginator.hidden = false;
+  $paginator.innerHTML =
+    `<button type="button" class="paginator-btn" data-page="first" ${onFirst ? 'disabled' : ''}>« First</button>` +
+    `<button type="button" class="paginator-btn" data-page="prev"  ${onFirst ? 'disabled' : ''}>‹ Prev</button>` +
+    `<span class="paginator-info">${start}–${end} of ${total.toLocaleString('en-US')} · Page ${currentPage + 1} of ${pageCount}</span>` +
+    `<button type="button" class="paginator-btn" data-page="next" ${onLast ? 'disabled' : ''}>Next ›</button>` +
+    `<button type="button" class="paginator-btn" data-page="last" ${onLast ? 'disabled' : ''}>Last »</button>`;
+}
+
+if ($paginator) {
+  $paginator.addEventListener('click', (e) => {
+    const btn = e.target.closest('.paginator-btn');
+    if (!btn || btn.disabled) return;
+    const action = btn.dataset.page;
+    const pageCount = Math.max(1, Math.ceil(currentRows.length / PAGE_SIZE));
+    if (action === 'first')      currentPage = 0;
+    else if (action === 'prev')  currentPage = Math.max(0, currentPage - 1);
+    else if (action === 'next')  currentPage = Math.min(pageCount - 1, currentPage + 1);
+    else if (action === 'last')  currentPage = pageCount - 1;
+    // resetPage:false so renderTable doesn't bounce back to page 0.
+    renderTable(currentRows, { resetPage: false });
+    // Scroll the table's top into view so the new page lands where
+    // the user is looking, not below the fold.
+    const wrap = document.getElementById('results-wrap');
+    if (wrap) wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
 }
 
 /**

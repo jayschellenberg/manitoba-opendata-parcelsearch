@@ -490,6 +490,11 @@
         </thead>
         <tbody></tbody>
       </table>
+      <!-- Pagination controls — populated by renderPaginator() in
+           main.js. Hidden when the result set fits on a single page
+           (≤ PAGE_SIZE rows). Export CSV ignores pagination and
+           always exports the full filtered set (currentRows). -->
+      <div id="results-paginator" class="results-paginator" hidden></div>
     </div>
       </main>
     </div>

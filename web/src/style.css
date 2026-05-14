@@ -1278,6 +1278,45 @@ body.sales-mode .sidebar .search-section { display: none; }
   overflow-x: auto;
 }
 
+/* Results paginator — single horizontal row of First / Prev /
+   page-info / Next / Last beneath the table. Hidden when the
+   result set fits in a single page (renderPaginator sets the
+   `hidden` attribute). */
+.results-paginator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: #1a3a4a;
+  flex-wrap: wrap;
+}
+.results-paginator .paginator-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  color: #1a3a4a;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 3px;
+  cursor: pointer;
+  line-height: 1;
+  height: 26px;
+}
+.results-paginator .paginator-btn:hover:not(:disabled) { background: #eef6fb; }
+.results-paginator .paginator-btn:disabled {
+  color: #94a3b8;
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  cursor: default;
+}
+.results-paginator .paginator-info {
+  flex: 1 1 auto;
+  text-align: center;
+  font-weight: 500;
+}
+
 #results {
   width: 100%;
   border-collapse: collapse;
