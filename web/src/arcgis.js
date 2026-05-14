@@ -374,19 +374,55 @@ function rollKeyWhereClause(keys) {
 const ZONING_OUTFIELDS  = 'OBJECTID,ZONE,ZONE_NAME,ZONE_CATEGORY,ZBL,ZBL_A,AMENDMENT_DESCRIPTION,MUNI_NAME,PLANNINGDISTRICT,PLANNINGREGION';
 const DEVPLAN_OUTFIELDS = 'OBJECTID,DES_NAME,DES_CATEGORY,DP_BYLAW,DPA_BYLAW,PLANNINGDISTRICT,PLANNINGREGION,MUNI_NAME,RES_MIN_ACRES_PER_LOT,RES_MAX_ACRES_PER_LOT,AU_LIMIT';
 
-export async function fetchZoningOverlap(parcelFc, { municipality } = {}) {
+export async function fetchZoningOverlap(parcelFc, { municipality, municipalities } = {}) {
   if (municipality) return fetchOverlayByMunicipality(ZONING_URL, municipality, ZONING_OUTFIELDS);
+  if (Array.isArray(municipalities) && municipalities.length > 0) {
+    return fetchOverlayByMunicipalities(ZONING_URL, municipalities, ZONING_OUTFIELDS);
+  }
   return fetchSpatialOverlap(ZONING_URL, parcelFc, { outFields: ZONING_OUTFIELDS });
 }
 
 /**
  * Per-parcel envelope query against the Development Plan Designations layer.
- * Same shape as fetchZoningOverlap. When a municipality is set, takes the
- * fast bulk path (one query for the whole muni) instead.
+ * Same shape as fetchZoningOverlap. When a municipality (or array of
+ * municipalities) is set, takes the fast bulk path — one query for the
+ * whole muni — instead of fanning out one envelope query per parcel.
  */
-export async function fetchDevPlanOverlap(parcelFc, { municipality } = {}) {
+export async function fetchDevPlanOverlap(parcelFc, { municipality, municipalities } = {}) {
   if (municipality) return fetchOverlayByMunicipality(DEVPLAN_URL, municipality, DEVPLAN_OUTFIELDS);
+  if (Array.isArray(municipalities) && municipalities.length > 0) {
+    return fetchOverlayByMunicipalities(DEVPLAN_URL, municipalities, DEVPLAN_OUTFIELDS);
+  }
   return fetchSpatialOverlap(DEVPLAN_URL, parcelFc, { outFields: DEVPLAN_OUTFIELDS });
+}
+
+/**
+ * Multi-muni bulk fetch: fire one fetchOverlayByMunicipality per
+ * muni in parallel, then merge the results into a single FC,
+ * deduping by OBJECTID. Sales-CSV uploads matched against 10-30
+ * munis used to fall into the per-parcel envelope path (1 fetch
+ * per parcel × 2000+ parcels = 30+ seconds with concurrency cap);
+ * this path collapses to one fetch per muni (~20 fetches
+ * total) — generally under 5 seconds.
+ */
+async function fetchOverlayByMunicipalities(baseUrl, municipalities, outFields) {
+  const unique = [...new Set(municipalities.filter(Boolean))];
+  if (unique.length === 0) return { type: 'FeatureCollection', features: [] };
+  const fcs = await Promise.all(
+    unique.map((m) => fetchOverlayByMunicipality(baseUrl, m, outFields))
+  );
+  const seen = new Set();
+  const merged = [];
+  for (const fc of fcs) {
+    for (const f of fc?.features || []) {
+      const oid = f.properties?.OBJECTID;
+      const key = oid != null ? `oid:${oid}` : `m:${f.properties?.MUNI_NAME || ''}|${merged.length}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(f);
+    }
+  }
+  return { type: 'FeatureCollection', features: merged };
 }
 
 /**
