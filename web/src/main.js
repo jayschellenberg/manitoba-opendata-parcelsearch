@@ -599,6 +599,10 @@ let currentSort = { col: 'roll', dir: 'asc' };
 
 const SORT_KEYS = {
   roll:    (r) => strKey(r.parcel.properties.Roll_No_Txt),
+  // Muni # is the MAO authority code (e.g. 600 for RM of Headingley).
+  // Numeric sort so 600 lines up between 500 and 700, not between 6
+  // and 7 as a string sort would put it.
+  municode: (r) => finiteOrNeg(muniNoFromProps(r.parcel.properties)),
   address: (r) => strKey(r.parcel.properties.Property_Address),
   legal:   (r) => strKey(legalDisplay(r.parcel.properties)),
   title:   (r) => strKey(r.parcel.properties._certificatesOfTitle),
@@ -658,6 +662,19 @@ function displayRoll(raw) {
   if (raw == null) return '';
   const s = String(raw);
   return s.endsWith('.000') ? s.slice(0, -4) : s;
+}
+
+/**
+ * Extract the MAO muni code (the integer prefix in the Municipality
+ * field) from a parcel's properties. Returns the number or null when
+ * the field is missing / malformed.
+ * Example: "600 - RM OF HEADINGLEY" → 600.
+ */
+function muniNoFromProps(props) {
+  const m = String(props?.Municipality || '').match(/^\s*(\d+)\s*-/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : null;
 }
 
 function sortRows(rows) {
@@ -3540,6 +3557,12 @@ function renderTable(rows) {
     // appearance flips immediately via the class swap.
     tr.appendChild(favoriteCell(row));
     tr.appendChild(rollNumberCell(p));
+    // Muni code (the integer authority prefix in Municipality, e.g.
+    // 600 for "600 - RM OF HEADINGLEY"). Useful for joining external
+    // spreadsheets keyed by muni_no without re-parsing the
+    // human-readable name.
+    const muniNo = muniNoFromProps(p);
+    tr.appendChild(td(muniNo != null ? String(muniNo) : null, 'num'));
     // Sale Date / Sale Price cells — always emitted, hidden by CSS
     // unless #results carries the sales-mode class (toggled by
     // handleSalesUpload). Lets the columns appear/disappear without
@@ -4904,7 +4927,7 @@ function exportCsv() {
     }
   }
   const header = [
-    'Roll #', 'Address',
+    'Roll #', 'Muni #', 'Address',
     'Legal Description', 'Legal Detail', 'Lot', 'Block', 'Plan',
     'Certificates of Title', 'MAO Legal Source URL',
     'Zoning', 'Zoning %',
@@ -4930,7 +4953,7 @@ function exportCsv() {
     const d1 = row.devPlan[0]?.feature.properties || {};
     const ac = parcelAcres(row.parcel);
     lines.push([
-      p.Roll_No_Txt, p.Property_Address,
+      p.Roll_No_Txt, muniNoFromProps(p) ?? '', p.Property_Address,
       p._legalDescription ?? '',
       p._legalDetail ?? '',
       p._lot ?? '',
