@@ -1,64 +1,74 @@
 /*
  * Workspace resize handle. Drags the horizontal divider between the
  * map and the table to change how much vertical space each pane gets.
- * The split is expressed as a percentage of the workspace height,
- * stored on the workspace element via the `--map-pane-height` custom
- * property; the CSS rules in style.css read that variable for the
- * map's flex-basis/height. Keyboard support: arrow-up/down on a
- * focused handle nudge the split by 4% in each direction.
+ * The split is expressed in pixels via the `--map-pane-height` custom
+ * property on the workspace element; the CSS rules in style.css read
+ * that variable for the map's height. Keyboard support: arrow-up/down
+ * nudge the split by ~4% of the workspace height in each direction.
  *
- * Only activates at md+ (the width threshold matches the CSS media
- * query). Below md the panes stack and the handle hides, so there's
- * nothing to drag.
+ * Default state writes nothing — the CSS keeps `--map-pane-height:
+ * auto` and the map's `aspect-ratio: 16/9` rule sets the natural
+ * height from the workspace width. As soon as the user drags (or
+ * presses arrows on a focused handle), the JS writes a px value
+ * that takes over from aspect-ratio.
+ *
+ * Only activates at md+ (768 px breakpoint). Below md the panes
+ * stack and the handle hides.
  *
  * Side effects:
- *   - Toggles `body.workspace-resizing` while dragging so other rules
- *     (text selection, iframe pointer events) can suspend themselves.
+ *   - Toggles `body.workspace-resizing` while dragging.
  *   - Dispatches a CustomEvent('workspace:resize') on the workspace
- *     after each update so the map module can call `map.resize()` and
- *     refresh its WebGL canvas.
+ *     after each update so the map module can call `map.resize()`
+ *     and refresh its WebGL canvas.
  */
 
-const MIN_PCT = 20; // map can't get below 20% of the workspace
-const MAX_PCT = 85; // ...nor above 85% (leave room for at least 1 table row)
-const KEY_STEP_PCT = 4;
 const MD_BREAKPOINT_PX = 768;
+const MIN_MAP_PX = 200;     // map can't go below this
+const MIN_TABLE_PX = 120;   // ...nor leave the table below this
+const KEY_STEP_RATIO = 0.04; // arrow keys nudge by ~4% of workspace height
 
-let currentPct = 60;
 let workspaceEl = null;
 let handleEl = null;
 let dragging = false;
 let dragOriginY = 0;
-let dragOriginPct = 0;
+let dragOriginHeightPx = 0;
 
 function isSplitActive() {
   return window.matchMedia(`(min-width: ${MD_BREAKPOINT_PX}px)`).matches;
 }
 
-function clampPct(pct) {
-  if (!Number.isFinite(pct)) return currentPct;
-  if (pct < MIN_PCT) return MIN_PCT;
-  if (pct > MAX_PCT) return MAX_PCT;
-  return pct;
+function workspaceHeight() {
+  return workspaceEl ? workspaceEl.getBoundingClientRect().height : 0;
 }
 
-function applyPct(pct) {
-  currentPct = clampPct(pct);
-  if (workspaceEl) {
-    workspaceEl.style.setProperty('--map-pane-height', `${currentPct}%`);
-    workspaceEl.dispatchEvent(
-      new CustomEvent('workspace:resize', { detail: { pct: currentPct } })
-    );
-  }
+function currentMapHeightPx() {
+  // Read the actual rendered height of the map pane — that's the
+  // source of truth whether the CSS default (aspect-ratio) or a
+  // previously-applied --map-pane-height is in effect.
+  const mapEl = document.getElementById('map');
+  return mapEl ? mapEl.getBoundingClientRect().height : 0;
+}
+
+function clampPx(px) {
+  const total = workspaceHeight();
+  if (!Number.isFinite(px) || total <= 0) return px;
+  const maxPx = total - MIN_TABLE_PX;
+  return Math.max(MIN_MAP_PX, Math.min(maxPx, px));
+}
+
+function applyPx(px) {
+  if (!workspaceEl) return;
+  const clamped = clampPx(px);
+  workspaceEl.style.setProperty('--map-pane-height', `${Math.round(clamped)}px`);
+  workspaceEl.dispatchEvent(
+    new CustomEvent('workspace:resize', { detail: { px: clamped } })
+  );
 }
 
 function onPointerMove(e) {
-  if (!dragging || !workspaceEl) return;
-  const rect = workspaceEl.getBoundingClientRect();
-  if (rect.height <= 0) return;
+  if (!dragging) return;
   const deltaPx = e.clientY - dragOriginY;
-  const deltaPct = (deltaPx / rect.height) * 100;
-  applyPct(dragOriginPct + deltaPct);
+  applyPx(dragOriginHeightPx + deltaPx);
 }
 
 function endDrag() {
@@ -73,10 +83,12 @@ function endDrag() {
 
 function startDrag(e) {
   if (!isSplitActive()) return;
-  if (e.button != null && e.button !== 0) return; // left button / primary pointer only
+  if (e.button != null && e.button !== 0) return;
   dragging = true;
   dragOriginY = e.clientY;
-  dragOriginPct = currentPct;
+  // Capture the height that's actually rendering right now (could
+  // be the aspect-ratio default or a previously dragged px value).
+  dragOriginHeightPx = currentMapHeightPx();
   document.body.classList.add('workspace-resizing');
   if (handleEl) handleEl.classList.add('dragging');
   e.preventDefault();
@@ -87,17 +99,19 @@ function startDrag(e) {
 
 function onKeyDown(e) {
   if (!isSplitActive()) return;
+  const step = Math.max(20, Math.round(workspaceHeight() * KEY_STEP_RATIO));
+  const here = currentMapHeightPx();
   if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
-    applyPct(currentPct - KEY_STEP_PCT);
+    applyPx(here - step);
     e.preventDefault();
   } else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
-    applyPct(currentPct + KEY_STEP_PCT);
+    applyPx(here + step);
     e.preventDefault();
   } else if (e.key === 'Home') {
-    applyPct(MIN_PCT);
+    applyPx(MIN_MAP_PX);
     e.preventDefault();
   } else if (e.key === 'End') {
-    applyPct(MAX_PCT);
+    applyPx(workspaceHeight() - MIN_TABLE_PX);
     e.preventDefault();
   }
 }
@@ -110,7 +124,9 @@ export function initWorkspaceResize() {
   workspaceEl = document.getElementById('workspace');
   handleEl = document.getElementById('workspace-resize');
   if (!workspaceEl || !handleEl) return false;
-  applyPct(currentPct); // ensure the CSS var is initialised
+  // Don't write --map-pane-height up front — let CSS aspect-ratio
+  // govern the initial size. The handle starts pulling in pixels
+  // only on first user interaction.
   handleEl.addEventListener('pointerdown', startDrag);
   handleEl.addEventListener('keydown', onKeyDown);
   return true;

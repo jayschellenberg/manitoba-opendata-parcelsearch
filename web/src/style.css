@@ -208,11 +208,12 @@ header small a {
 
 @media (min-width: 768px) {
   .sidebar {
-    /* Split layout: sidebar takes 35% of the shell width, full
-       shell height with its own scrollbar. The right pane gets
-       the remaining 65% via .workspace below. */
-    flex: 0 0 35%;
-    max-width: 35%;
+    /* Split layout: sidebar takes 20% of the shell width with a
+       minimum of 280 px so the controls don't crush below their
+       single-column widths. Workspace gets the remaining 80%. */
+    flex: 0 0 20%;
+    min-width: 280px;
+    max-width: 28%;
     max-height: none;
     height: 100%;
   }
@@ -1141,15 +1142,18 @@ body.sales-mode .sidebar .search-section { display: none; }
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
-  --map-pane-height: 60%;
+  /* Default sentinel — keep `auto` so the 16:9 aspect-ratio governs
+     the map height until the user drags the divider. layout.js
+     writes a px value here on drag, which then beats aspect-ratio. */
+  --map-pane-height: auto;
 }
 
 .map-pane {
   width: 100%;
   background: #eaeaec;
   position: relative;
-  /* Stacked layout: keep the 16:9 aspect-ratio look-and-feel so
-     scrolled content below still reads. */
+  /* Stacked layout: 16:9 sets the natural height from the workspace
+     width, so scrolled content below still reads. */
   aspect-ratio: 16 / 9;
   min-height: 320px;
 }
@@ -1164,14 +1168,20 @@ body.sales-mode .sidebar .search-section { display: none; }
 
 @media (min-width: 768px) {
   .map-pane {
-    aspect-ratio: auto;
-    min-height: 0;
-    flex: 0 0 var(--map-pane-height);
-    height: var(--map-pane-height);
+    /* Still 16:9 by default; CSS aspect-ratio computes the height
+       from the workspace's actual width. When --map-pane-height is
+       a px length (set by layout.js on drag), height wins over
+       aspect-ratio and the user's chosen split takes over. */
+    flex: 0 0 auto;
+    min-height: 220px;
+    height: var(--map-pane-height, auto);
+    /* Cap so a very wide / short viewport doesn't push the table
+       below the workspace floor when no drag has happened yet. */
+    max-height: 80%;
   }
   .table-pane {
     flex: 1 1 auto;
-    min-height: 0;
+    min-height: 140px;
     overflow: auto;
     padding: 12px 20px 24px;
   }
