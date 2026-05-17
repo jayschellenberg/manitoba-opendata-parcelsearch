@@ -198,7 +198,117 @@ None.
 - Map resize wiring (`workspace:resize` -> `map.resize()`): reuse.
 
 ## Phase 3 - Tabbed sidebar
-_pending_
+
+### Decisions
+
+- Sidebar split into three tab panels by workflow:
+  Property search (default), Sales analysis, Map layers. The status
+  block (count, unmatched drawer, Export CSV) sits below the panels
+  and stays visible across tabs.
+- Tab state persisted to localStorage under `mbps_sidebar_tab_v1`
+  so a refresh keeps the user on the tab they were on.
+- Successful sales-CSV upload auto-switches to the Sales tab so the
+  newly-visible filters land in view immediately, regardless of
+  where the user dropped the file.
+- Sales upload changed from a button to a drag-and-drop area with a
+  cloud icon. The hidden `<input type="file">` keeps its id
+  (`sales-upload-input`); the dropzone wraps it, click → picker,
+  drop → handler, drag-over lights up the border.
+- Map overlays grouped by purpose: Boundaries (parcel boundaries +
+  section/township grid), Planning (zoning + dev plan), Risk
+  (environmental sites, MASC risk areas, MASC rating, CLI soil),
+  Reference (traffic flow), Quick links (muni + PD website).
+  Generate Map sits below the groups as the action button.
+- Each overlay toggle gets a coloured dot from `--dot-color` set
+  inline on the button. Colours are best-guess representatives of
+  the map render colour; verify against `map.js` if a particular
+  layer's swatch reads wrong.
+- Renames applied: Roll Layer -> Parcel boundaries, Sec-Twp Grid ->
+  Section/township grid, Zoning Layer -> Zoning, Dev Plan Layer ->
+  Development plan, Enviro Sites -> Environmental sites, MASC
+  Rating -> MASC rating, CLI Soil -> Soil productivity (CLI),
+  Traffic Flow -> Traffic flow, Muni Website -> Muni website, PD
+  Website -> PD website. The legacy technical name now lives in
+  the button's title attribute (Phase 4 replaces these with info
+  icons).
+- Legal description + Certificate of title + Zoning category +
+  Amendment status + Dwelling-unit filters all moved into a single
+  `<details>` "Advanced filters" inside the Property search tab.
+
+### Reusable patterns (lift candidates)
+
+- `web/src/tabs.js` - sidebar tab switcher. `PRIMARY_INPUT_BY_TAB`
+  map is the only thing that needs editing per app; the rest is
+  generic. Includes arrow-key + Home/End keyboard support.
+- `.sidebar-tabs` / `.sidebar-tab` / `.sidebar-tab-panel` CSS:
+  portable.
+- `.sales-dropzone` CSS + the inline SVG cloud-upload icon: portable.
+  The drag/drop wiring in `main.js` is also generic (the only
+  app-specific call is `handleSalesUpload`).
+- `.overlay-group` / `.overlay-btn` / `.overlay-dot` CSS: portable.
+  Each app's overlay list will differ; the styling won't.
+- The `Advanced filters` `<details>` shape (uppercase summary, soft
+  slate hover): portable.
+
+### Manitoba-specific (do not port)
+
+- The overlay button IDs (`muni-parcels-toggle`, `masc-toggle`,
+  `cli-toggle`, etc.) are Manitoba-specific layers. The grouping
+  shape (Boundaries / Planning / Risk / Reference / Quick links)
+  is reusable; the button list inside each group is per-app.
+- `--dot-color` values are best-guess representative swatches for
+  Manitoba's render colours. Winnipeg's render palette will differ.
+- The "Advanced filters" content (zoning category, amendment
+  status, DU filters) is Manitoba-driven; the wrapper is reusable.
+
+### Dependencies added
+
+None.
+
+### Gotchas
+
+- The legacy `body.sales-mode .sidebar .search-section { display:
+  none; }` rule no longer applies (the Search inputs are in their
+  own tab panel now). The `body.sales-mode` class still gates the
+  `.sales-only` filter row visibility inside the Sales tab, so it
+  remains useful.
+- `#sales-upload-btn` no longer exists; main.js now binds to
+  `#sales-dropzone`. The hidden `#sales-upload-input` is unchanged.
+- Tab panel hiding uses `[hidden]` + `display: none !important`
+  because the inline flex layout inside each panel could otherwise
+  win the cascade.
+- Initial tab activation skips focus (`skipFocus: true`) so the
+  muni dropdown doesn't grab focus on page load and steal it from
+  the URL/Cmd-K affordance arriving in Phase 7.
+
+### Things visually replaced / removed
+
+- The single big sidebar with two `<h2>` headings (Search, Map
+  overlays) and inline sales filters is gone. Replaced by tab
+  panels.
+- Old `Search` `<h2>` heading removed; the Property search tab is
+  itself the label.
+- Old `Map overlays` `<h2>` removed; group titles replace it.
+- Old `.overlay-grid` 2-column grid replaced by stacked
+  `.overlay-group` blocks. The dotted divider `<hr class="overlay-grid-sep">`
+  is gone.
+- Old `Upload Sales CSV…` button (`#sales-upload-btn`) replaced
+  by the dropzone (`#sales-dropzone`).
+- Old `.more-filters` details collapsed into the new
+  `.advanced-filters` details; old CSS rules remain for any
+  defensive code paths but the markup no longer uses `.more-filters`.
+
+### Phase 3 porting checklist (Winnipeg)
+
+- Tab markup + `tabs.js` + tab CSS: reuse. Update
+  `PRIMARY_INPUT_BY_TAB` for any renamed primary inputs.
+- Sales dropzone markup + CSS + drag/drop wiring: reuse.
+- Overlay group structure (Boundaries / Planning / Risk /
+  Reference / Quick links): reuse the buckets, swap the buttons.
+- Advanced filters `<details>` shape: reuse.
+- Plain-language label rename pattern (label + legacy term in
+  title attribute): apply to Winnipeg's overlays where their
+  internal names diverge from how appraisers describe them.
 
 ## Phase 4 - Form controls
 _pending_

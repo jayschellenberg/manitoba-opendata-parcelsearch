@@ -108,350 +108,373 @@
          the eventual mobile pass without a rewrite. -->
     <div class="app-shell" id="app-shell">
       <aside class="controls sidebar" aria-label="Search and overlay controls">
-        <!-- The entire Search section is collapsed once a sales CSV
-             upload completes (body.sales-mode CSS rule). Wrapping
-             everything from the h2 through the unmatched panel in
-             one container lets the rule hide the whole block in a
-             single line. The Map Overlays + Other Searches blocks
-             below stay visible in either mode. -->
-        <section class="search-section">
-        <h2>Search</h2>
-        <span class="field">
-          <!-- Skeleton pulse replaces the prior "Loading municipalities…"
-               text. The option keeps a visible space so the select keeps
-               its rendered height; the .skeleton class hides the text
-               (color:transparent) and animates a soft shimmer. fillSelect
-               removes the class once the municipality list arrives. -->
-          <select id="municipality" class="skeleton" disabled aria-label="Loading municipalities">
-            <option value="">&nbsp;</option>
-          </select>
-          <span class="tip">Municipality</span>
-        </span>
-        <!-- Roll # sits first because it's the most precise lookup —
-             one parcel per number, no fuzziness. Civic-address search
-             below handles the "I know the street, not the roll" case.
-             Legal description / Certificate of title search live
-             below the divider for legal-description-only entries
-             (e.g. 'DESC NE22-21-3E'). -->
-        <span class="field">
-          <input id="roll" type="text" placeholder="Roll # (exact or comma separated list)" />
-          <span class="tip">Roll # — exact match. Paste a comma-separated list to highlight many parcels at once (within the selected municipality).</span>
-        </span>
-        <!--
-          Civic-address search splits the leading number out of
-          Property_Address so users can filter by a street-number
-          range. Tabbing into the To field after typing in From
-          auto-fills it with the same value (and auto-selects it),
-          so the default behaviour is "search this exact number".
-          Type to overwrite for a range; clear to leave open. The
-          street-name field is a substring LIKE on the rest of the
-          address.
-        -->
-        <div class="address-row">
-          <span class="field address-from-field">
-            <input id="address-from" type="text" placeholder="From #" autocomplete="off" />
-            <span class="tip">Street number lower bound (inclusive). Leave blank for no lower limit.</span>
-          </span>
-          <span class="field address-to-field">
-            <input id="address-to" type="text" placeholder="To #" autocomplete="off" />
-            <span class="tip">Street number upper bound (inclusive). Tab here after From and it auto-fills with the same value (highlighted) for an exact-number search; overwrite for a range or clear it for an open upper bound.</span>
-          </span>
-          <span class="field address-street-field">
-            <input id="address-street" type="text" placeholder="Street Name (contains)" />
-            <span class="tip">Substring match against the street name portion of Property_Address (e.g. 'MAIN ST', 'DRURY', 'ROAD 96W').</span>
-          </span>
-        </div>
-        <hr class="control-sep" />
-        <!--
-          Legal-description and Certificate-of-Title search are
-          backed by the generated MAO scrape index at
-          web/public/data/legal-index.json (built locally by
-          r/build_legal_index.R from the MAO scrape parquet).
-          Substring matching against legal_description, legal_detail,
-          and certificates_of_title; matching (muni_no, roll_no_txt)
-          keys then drive a normal Roll Entry query so geometry and
-          assessment fields are still live.
 
-          Lot / Block / Plan inputs are intentionally NOT restored
-          here — the legalIndex.js plumbing supports them, but the
-          two free-text fields below (which match against the
-          per-row legal-description and detail text) are usually
-          more practical for appraisal work than typing exact
-          parsed parts.
-        -->
-        <!-- Legal description + Certificate of Title on a single
-             row, each at ~50% width — they're paired conceptually
-             (both are MAO scrape lookups) and the inputs fit well
-             side-by-side. -->
-        <div class="legal-title-row">
-          <span class="field legal-title-field">
-            <input id="legal-text" type="text" placeholder="Legal description (contains)" />
-            <span class="tip">Substring search against the MAO scrape's legal description + legal-detail text. Use to find a parcel by its legal description, e.g. "PCL G", "RIVER LOT 12", "PLAN 24208".</span>
-          </span>
-          <span class="field legal-title-field">
-            <input id="title" type="text" placeholder="Certificate of title (contains)" />
-            <span class="tip">Substring search against the MAO scrape's certificates_of_title field. Accepts plain title numbers (e.g. "2476500") or full prefixed forms ("CT 2476500").</span>
-          </span>
-        </div>
-        <!-- "More filters" collapsible — sits directly above Search
-             so it's the last thing the user reviews before running a
-             query. Holds the four less-frequently-touched filter
-             controls (Zoning Category, Status, Any DU, # of DU);
-             the size / date / subject / class / status sales-only
-             controls stay outside so they're always-visible after a
-             CSV upload. -->
-        <details class="more-filters">
-          <summary>More filters</summary>
-          <div class="filter-row">
-            <span class="field">
-              <select id="zone-category" disabled>
-                <option value="">Any zoning category</option>
-              </select>
-              <span class="tip">Zoning category</span>
-            </span>
-            <span class="field">
-              <select id="changed-status">
-                <option value="">Any status</option>
-                <option value="zoning">Zoning Changed</option>
-                <option value="devplan">Dev Plan Changed</option>
-                <option value="both">Both Changed</option>
-              </select>
-              <span class="tip">Filter by amendment status</span>
-            </span>
-          </div>
-          <div class="du-row">
-            <span class="field du-mode-field">
-              <select id="du-mode">
-                <option value="">Any DU</option>
-                <option value="zero">0 DU only</option>
-                <option value="min">Min DU</option>
-              </select>
-              <span class="tip">Dwelling units filter</span>
-            </span>
-            <span class="field du-min-field">
-              <input id="du-min" type="number" min="1" step="1" placeholder="#" disabled />
-              <span class="tip">Minimum dwelling units (when 'Min DU' is selected)</span>
-            </span>
-          </div>
-        </details>
-        <div class="action-row">
-          <button id="search" type="button">Search</button>
-          <button id="clear"  type="button" class="secondary">Clear</button>
-        </div>
-        </section><!-- /.search-section -->
-        <!-- Export CSV lives OUTSIDE .search-section so it remains
-             available after a sales-CSV upload (when the rest of the
-             Search section collapses via body.sales-mode CSS). The
-             button gates on results-row count via setExportEnabled,
-             so it's harmless to keep visible when the table is empty. -->
-        <div class="action-row export-row">
-          <button id="export" type="button" class="secondary">Export CSV</button>
-        </div>
-        <!-- Count + unmatched panel sit OUTSIDE .search-section so they
-             stay visible after a sales-CSV upload (the rest of the
-             Search section collapses via body.sales-mode CSS). They're
-             the status payload for the upload — hiding them with the
-             rest of the inputs would lose the "183 of 192 plotted · 9
-             unmatched" feedback the user actually wants to see. -->
-        <span id="count" class="count"></span>
-        <details id="unmatched-panel" class="unmatched-panel" hidden>
-          <summary class="unmatched-summary"></summary>
-          <div class="unmatched-actions">
-            <button id="unmatched-download" type="button" class="secondary">Download unmatched CSV</button>
-          </div>
-          <div class="unmatched-table-wrap">
-            <!-- The Reason column is hidden via .reason-col { display:none }
-                 in style.css. The data is still tracked on every record and
-                 the cell is still emitted so a future toggle can flip it
-                 back on without touching the table-build code. -->
-            <table class="unmatched-table">
-              <thead>
-                <tr>
-                  <th>Roll #</th>
-                  <th>Municipality</th>
-                  <th>Sale Date</th>
-                  <th>Price</th>
-                  <th>Legal</th>
-                  <th class="reason-col">Reason</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </details>
-
-        <h2>Map overlays</h2>
-        <div class="overlay-grid">
-          <button id="muni-parcels-toggle" type="button" class="secondary" aria-pressed="false" disabled title="Show every parcel in the selected municipality (grey fabric under your search results)">Roll Layer</button>
-          <button id="flow-toggle"    type="button" class="secondary" aria-pressed="false" title="MHTIS Traffic Flow 2019 — segments coloured by AADT">Traffic Flow</button>
-          <button id="zoning-toggle"  type="button" class="secondary" aria-pressed="false">Zoning Layer</button>
-          <button id="devplan-toggle" type="button" class="secondary" aria-pressed="false">Dev Plan Layer</button>
-          <button id="contam-toggle"  type="button" class="secondary" aria-pressed="false" title="Manitoba Contaminated Sites Registry">Enviro Sites</button>
-          <button id="grid-toggle"   type="button" class="secondary" aria-pressed="false" title="Section-township grid + river lots. Select a municipality for a focused view, or toggle without one for the province-wide overlay.">Sec-Twp Grid</button>
-          <!-- Divider splits the overlay grid into two logical halves:
-               above = base map layers (Roll / Traffic / Zoning / Dev
-               Plan / Enviro Sites / Sec-Twp Grid); below = soil &
-               external-link affordances (MASC / CLI / Muni website /
-               PD website / Generate Map). grid-column:1/-1 makes the
-               hr span both columns of the 2-col grid. -->
-          <hr class="overlay-grid-sep" />
-          <button id="riskarea-toggle" type="button" class="secondary" aria-pressed="false" title="Official MASC crop-insurance risk-area boundaries from Manitoba Maps">MASC Risk Areas</button>
-          <button id="masc-toggle"   type="button" class="secondary" aria-pressed="false" disabled title="MASC crop-insurance soil ratings (A best → J worst). Select a municipality first.">MASC Rating</button>
-          <button id="cli-toggle" type="button" class="secondary" aria-pressed="false" disabled title="Canada Land Inventory — Soil Capability for Agriculture (1=prime, 7=no agricultural capability). Select a municipality first.">CLI Soil</button>
-          <button id="muni-website-btn" type="button" class="secondary" disabled title="Select a municipality to enable">Muni Website ↗</button>
-          <button id="pd-website-btn"   type="button" class="secondary" disabled title="Select a municipality to enable">PD Website ↗</button>
-          <button id="static-map-btn"   type="button" class="secondary" title="Capture the current map view as a PNG. Right-click the rendered image below the table and Save Image As… to drop into a report.">Generate Map</button>
+        <!-- Phase 3 tab strip. Three tabs split the sidebar by
+             workflow: Property search (default), Sales analysis,
+             Map layers. The status block below the tab panels stays
+             visible across all three tabs. Tab state is persisted to
+             localStorage by `tabs.js` so a refresh keeps you put. -->
+        <div class="sidebar-tabs" role="tablist" aria-label="Sidebar sections">
+          <button
+            type="button" role="tab"
+            id="tab-btn-property" class="sidebar-tab"
+            data-tab="property"
+            aria-controls="tab-panel-property"
+            aria-selected="true"
+          >Property search</button>
+          <button
+            type="button" role="tab"
+            id="tab-btn-sales" class="sidebar-tab"
+            data-tab="sales"
+            aria-controls="tab-panel-sales"
+            aria-selected="false"
+            tabindex="-1"
+          >Sales analysis</button>
+          <button
+            type="button" role="tab"
+            id="tab-btn-layers" class="sidebar-tab"
+            data-tab="layers"
+            aria-controls="tab-panel-layers"
+            aria-selected="false"
+            tabindex="-1"
+          >Map layers</button>
         </div>
 
-        <!-- Size + Vacant Land Only combo row — sales-CSV-only. All
-             three controls on one line: Lo Ac + Hi Ac (~25% each) +
-             Vacant Land Only label (~50%). Filter values are
-             permanently acres (no Sq Ft pill) per the simplified
-             workflow. Empty Lo → 0; empty Hi → ∞. Vacant filter is
-             strict group semantics — keeps a sale only when every
-             parcel in the group has assessment data AND Buildings
-             < 2% of Total. -->
-        <div class="size-vacant-row sales-only">
-          <span class="field sales-plan-field">
-            <input id="sales-plan" type="text" placeholder="Plan #" autocomplete="off" />
-            <span class="tip">Filter uploaded sales to rows whose plan number contains this string. Case-insensitive substring match against both the legal-index Plan field AND the raw "Legal Description" cell from the uploaded CSV — e.g. "66600" matches plans "66600", "1066600", and CSV legals "4--66600", "6--66600", etc.</span>
+        <!-- ===================================================
+             Tab 1: Property search
+             =================================================== -->
+        <section
+          class="sidebar-tab-panel"
+          id="tab-panel-property"
+          data-tab="property"
+          role="tabpanel"
+          aria-labelledby="tab-btn-property"
+        >
+          <span class="field">
+            <!-- Skeleton pulse replaces the prior "Loading municipalities…"
+                 text. fillSelect removes the .skeleton class once the
+                 municipality list arrives. -->
+            <select id="municipality" class="skeleton" disabled aria-label="Loading municipalities">
+              <option value="">&nbsp;</option>
+            </select>
+            <span class="tip">Municipality</span>
           </span>
-          <span class="field size-low-field">
-            <input id="size-low" type="number" min="0" step="0.01" placeholder="Lo Ac" />
-            <span class="tip">Minimum acres (empty = 0)</span>
+          <!-- Roll # — most precise lookup, one parcel per number. -->
+          <span class="field">
+            <input id="roll" type="text" placeholder="Roll # (exact or comma separated list)" />
+            <span class="tip">Roll # — exact match. Paste a comma-separated list to highlight many parcels at once (within the selected municipality).</span>
           </span>
-          <span class="field size-high-field">
-            <input id="size-high" type="number" min="0" step="0.01" placeholder="Hi Ac" />
-            <span class="tip">Maximum acres (empty = no max)</span>
-          </span>
-          <span class="field vacant-only-field">
-            <label class="vacant-only-label">
-              <input id="vacant-only" type="checkbox" />
-              <span>Vacant land</span>
-            </label>
-            <span class="tip">Show only sales where every parcel in the group has Buildings &lt; 2% of Total in the latest MAO assessment year. Threshold is hard-coded at 2% for now — tune later.</span>
-          </span>
-        </div>
-        <!-- Street Name filter — sales-mode-only, sits between the
-             Plan #/size/vacant row above and the date-preset buttons
-             below. Matches each parcel's Property_Address (case-
-             insensitive substring) so "Main" picks up "123 MAIN ST",
-             "201 MAIN AVE N", etc. -->
-        <div class="street-name-row sales-only">
-          <span class="field street-name-field">
-            <input id="sales-street-name" type="text" placeholder="Street name" autocomplete="off" />
-            <span class="tip">Filter uploaded sales to rows whose Property Address contains this string. Case-insensitive substring match — e.g. "main" matches "123 MAIN ST", "201 MAIN AVE N", etc.</span>
-          </span>
-        </div>
-        <!-- $/Acre filter — Min + Max bounds against the
-             _saleGroupPpa stamped on every CSV row by computeSaleGroupTotals.
-             Designed to surface development-land sales that trade at a
-             much higher rate per acre than rural / farm comps. Empty
-             Min → 0; empty Max → ∞. -->
-        <div class="ppa-row sales-only">
-          <span class="field ppa-low-field">
-            <input id="sales-ppa-low" type="number" min="0" step="1" placeholder="Min $/Ac" />
-            <span class="tip">Minimum $/Acre (group rate). Empty = no lower limit.</span>
-          </span>
-          <span class="field ppa-high-field">
-            <input id="sales-ppa-high" type="number" min="0" step="1" placeholder="Max $/Ac" />
-            <span class="tip">Maximum $/Acre (group rate). Empty = no upper limit. Use a high Min value (e.g. 50000) on its own to surface likely development-land sales.</span>
-          </span>
-        </div>
-        <!-- Sale Date range — hidden inputs only; the date-preset
-             buttons below drive them via JS (click "6 mo" → sets
-             from/to → dispatches input event → refilterCsvIfActive).
-             Per-day calendar picking was removed at the user's
-             request; the preset buttons cover all the appraisal
-             lookback windows that get used in practice. -->
-        <input id="sale-date-from" type="hidden" />
-        <input id="sale-date-to"   type="hidden" />
-        <!-- Date quick-preset buttons. Click a preset → set the
-             hidden from/to → refilterCsvIfActive runs as usual. -->
-        <div class="date-presets sales-only" role="group" aria-label="Date range presets">
-          <button type="button" class="date-preset-btn" data-months="6">6 mo</button>
-          <button type="button" class="date-preset-btn" data-months="12">12 mo</button>
-          <button type="button" class="date-preset-btn" data-months="24">24 mo</button>
-          <button type="button" class="date-preset-btn" data-months="36">36 mo</button>
-          <button type="button" class="date-preset-btn" data-months="48">48 mo</button>
-          <button type="button" class="date-preset-btn date-preset-clear" data-clear="1" title="Clear date range">×</button>
-        </div>
-        <!-- Subject parcel input. Optional and sales-only. Setting a
-             subject roll # before (or after) uploading a sales CSV
-             fetches the subject's geometry, highlights it on the map
-             in blue, and adds a "Distance (km)" column to the sales
-             table. Useful for assembling a comparable-sales analysis
-             around a known subject property. The muni dropdown drives
-             the subject's muni scope — if a sales CSV is uploaded
-             first the dominant muni is already set, so just typing
-             a roll # is usually enough. -->
-        <!-- Subject parcel + max-distance combo row. Left 2/3 = roll
-             input + Set + X. Right 1/3 = max-km-from-subject input.
-             Distance filter is a no-op when no subject is set, so
-             pairing them visually mirrors the logical dependency. -->
-        <div class="subject-row sales-only">
-          <span class="field subject-roll-field">
-            <input id="subject-roll" type="text" placeholder="Subject roll #" autocomplete="off" />
-            <span class="tip">Roll number of the subject property. The municipality picker beside this input controls which muni the roll is fetched from — defaults to the dominant matched muni for a multi-muni upload, hidden for single-muni uploads.</span>
-          </span>
-          <button id="subject-apply" type="button" class="secondary subject-apply-btn">Set</button>
-          <button id="subject-clear" type="button" class="secondary subject-clear-btn" title="Clear the subject parcel">×</button>
-          <span class="field distance-max-field">
-            <input id="distance-max" type="number" min="0" step="0.1" placeholder="Max km" />
-            <span class="tip">Filter to sales within this many kilometres of the subject's centroid. Inactive when no subject is set.</span>
-          </span>
-        </div>
-        <!-- Subject municipality picker. Visible only when a sales-CSV
-             upload matched 2+ munis — single-muni uploads use that
-             muni implicitly. Pre-populated by handleSalesUpload with
-             the matched-muni list, default selection = dominant muni.
-             applySubjectFromInput reads this picker first, falling
-             back to the main muni dropdown when it's not in use. -->
-        <div id="subject-muni-row" class="subject-muni-row sales-only" hidden>
-          <span class="field subject-muni-field">
-            <select id="subject-muni"></select>
-            <span class="tip">Municipality the subject roll # is fetched from. The list contains every muni that matched a parcel in the uploaded sales CSV.</span>
-          </span>
-        </div>
-        <!-- Distance-from-subject input moved into the subject-row
-             above for the 2/3 + 1/3 combined layout. The filter only
-             fires when a subject is set; otherwise it's a no-op, so
-             a stale value left in the input doesn't silently drop
-             every row of a later upload. -->
-        <!-- Class + Tax Status filters — populated after upload from
-             the matched parcels' dominant class/status (see
-             uniqueClassesAndStatuses in assessmentIndex.js). Empty
-             option = no filter. -->
-        <!-- Class + Status multi-select. `multiple` on the native
-             <select> means Ctrl/Cmd-click (or shift-click for ranges)
-             selects more than one. Empty selection = no filter.
-             `size` clamps the visible height so the section doesn't
-             explode when a muni has 10+ classes. -->
-        <div class="class-row sales-only">
-          <span class="field class-field">
-            <select id="asmt-class" multiple size="4"></select>
-            <span class="tip">Filter to one or more MAO assessment classes. Ctrl/Cmd-click to select multiple, click again to deselect. Empty = no filter.</span>
-          </span>
-          <span class="field status-field">
-            <select id="asmt-status" multiple size="4"></select>
-            <span class="tip">Filter to one or more tax statuses (TAXABLE / EXEMPT / GRANT-IN-LIEU / etc.). Ctrl/Cmd-click to select multiple.</span>
-          </span>
-        </div>
+          <!-- Civic-address search: From/To numeric range + street
+               substring. Tabbing into "To" after "From" auto-fills
+               for an exact-number search. -->
+          <div class="address-row">
+            <span class="field address-from-field">
+              <input id="address-from" type="text" placeholder="From #" autocomplete="off" />
+              <span class="tip">Street number lower bound (inclusive). Leave blank for no lower limit.</span>
+            </span>
+            <span class="field address-to-field">
+              <input id="address-to" type="text" placeholder="To #" autocomplete="off" />
+              <span class="tip">Street number upper bound (inclusive). Tab here after From and it auto-fills with the same value (highlighted) for an exact-number search; overwrite for a range or clear it for an open upper bound.</span>
+            </span>
+            <span class="field address-street-field">
+              <input id="address-street" type="text" placeholder="Street Name (contains)" />
+              <span class="tip">Substring match against the street name portion of Property_Address (e.g. 'MAIN ST', 'DRURY', 'ROAD 96W').</span>
+            </span>
+          </div>
 
-        <div class="action-row">
-          <button id="sales-upload-btn" type="button" class="secondary" title="Upload a CSV with Roll Number, Municipality, Sale Date, Consideration columns to plot the sales on the map and table.">Upload Sales CSV…</button>
-          <input id="sales-upload-input" type="file" accept=".csv,text/csv" hidden />
-          <button id="sales-clear" type="button" class="secondary" title="Reset the page — clears any uploaded sales CSV, search results, subject, and filters, and reloads from a fresh state.">Clear</button>
-        </div>
-        <!-- Recent uploads — last 3 sales CSVs cached in localStorage
-             (`mb_recent_sales_csvs_v1`). Selecting one re-runs the
-             upload pipeline with the cached text so the user doesn't
-             have to re-pick the file. Hidden when the cache is empty
-             (populateRecentUploads handles toggling). -->
-        <div class="recent-uploads" id="recent-uploads-row" hidden>
-          <span class="recent-uploads-label">Recent:</span>
-          <select id="recent-uploads-select"><option value="">—</option></select>
-          <button id="recent-uploads-clear" type="button" class="secondary" title="Forget all recent uploads">×</button>
+          <!-- Phase 3: Advanced filters collapsible. Holds the less-
+               frequently-touched controls (legal description, certificate
+               of title, zoning category, amendment status, dwelling units).
+               Phase 4 will replace the inline tooltips with info icons. -->
+          <details class="advanced-filters">
+            <summary>Advanced filters</summary>
+            <!-- Legal description + Certificate of Title row -->
+            <div class="legal-title-row">
+              <span class="field legal-title-field">
+                <input id="legal-text" type="text" placeholder="Legal description (contains)" />
+                <span class="tip">Substring search against the MAO scrape's legal description + legal-detail text. Use to find a parcel by its legal description, e.g. "PCL G", "RIVER LOT 12", "PLAN 24208".</span>
+              </span>
+              <span class="field legal-title-field">
+                <input id="title" type="text" placeholder="Certificate of title (contains)" />
+                <span class="tip">Substring search against the MAO scrape's certificates_of_title field. Accepts plain title numbers (e.g. "2476500") or full prefixed forms ("CT 2476500").</span>
+              </span>
+            </div>
+            <div class="filter-row">
+              <span class="field">
+                <select id="zone-category" disabled>
+                  <option value="">Any zoning category</option>
+                </select>
+                <span class="tip">Zoning category</span>
+              </span>
+              <span class="field">
+                <select id="changed-status">
+                  <option value="">Any status</option>
+                  <option value="zoning">Zoning Changed</option>
+                  <option value="devplan">Dev Plan Changed</option>
+                  <option value="both">Both Changed</option>
+                </select>
+                <span class="tip">Filter by amendment status</span>
+              </span>
+            </div>
+            <div class="du-row">
+              <span class="field du-mode-field">
+                <select id="du-mode">
+                  <option value="">Any DU</option>
+                  <option value="zero">0 DU only</option>
+                  <option value="min">Min DU</option>
+                </select>
+                <span class="tip">Dwelling units filter</span>
+              </span>
+              <span class="field du-min-field">
+                <input id="du-min" type="number" min="1" step="1" placeholder="#" disabled />
+                <span class="tip">Minimum dwelling units (when 'Min DU' is selected)</span>
+              </span>
+            </div>
+          </details>
+
+          <div class="action-row">
+            <button id="search" type="button">Search</button>
+            <button id="clear" type="button" class="secondary">Clear</button>
+          </div>
+        </section><!-- /tab-panel-property -->
+
+        <!-- ===================================================
+             Tab 2: Sales analysis
+             =================================================== -->
+        <section
+          class="sidebar-tab-panel"
+          id="tab-panel-sales"
+          data-tab="sales"
+          role="tabpanel"
+          aria-labelledby="tab-btn-sales"
+          hidden
+        >
+          <!-- Phase 3 dropzone. The hidden #sales-upload-input is the
+               actual <input type="file">; clicking or dropping on the
+               dropzone wrapper drives it. main.js handles change +
+               drop events through the same handleSalesUpload pipeline
+               so the upload flow is unchanged. -->
+          <div
+            class="sales-dropzone"
+            id="sales-dropzone"
+            tabindex="0"
+            role="button"
+            aria-label="Upload sales CSV. Drag and drop or click to choose a file."
+          >
+            <input id="sales-upload-input" type="file" accept=".csv,text/csv" hidden />
+            <svg class="sales-dropzone-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M19.35 10.04A7.49 7.49 0 0 0 12 4a7.5 7.5 0 0 0-6.96 4.79A5 5 0 0 0 6 18.5h12a4.5 4.5 0 0 0 1.35-8.46zM13 13v3h-2v-3H8.5L12 9.5l3.5 3.5H13z"/>
+            </svg>
+            <strong>Upload sales CSV</strong>
+            <p>Drag and drop a file here, or click to choose.</p>
+          </div>
+          <!-- Recent uploads (last 3 cached in localStorage). Hidden
+               by populateRecentUploads when no cache exists. -->
+          <div class="recent-uploads" id="recent-uploads-row" hidden>
+            <span class="recent-uploads-label">Recent:</span>
+            <select id="recent-uploads-select"><option value="">—</option></select>
+            <button id="recent-uploads-clear" type="button" class="secondary" title="Forget all recent uploads">×</button>
+          </div>
+
+          <!-- Plan + size + vacant + street filters. Each .sales-only
+               row is hidden by body:not(.sales-mode) CSS until a CSV
+               upload completes; then the tab shows the active filter
+               set. -->
+          <div class="size-vacant-row sales-only">
+            <span class="field sales-plan-field">
+              <input id="sales-plan" type="text" placeholder="Plan #" autocomplete="off" />
+              <span class="tip">Filter uploaded sales to rows whose plan number contains this string. Case-insensitive substring match against both the legal-index Plan field AND the raw "Legal Description" cell from the uploaded CSV.</span>
+            </span>
+            <span class="field size-low-field">
+              <input id="size-low" type="number" min="0" step="0.01" placeholder="Lo Ac" />
+              <span class="tip">Minimum acres (empty = 0)</span>
+            </span>
+            <span class="field size-high-field">
+              <input id="size-high" type="number" min="0" step="0.01" placeholder="Hi Ac" />
+              <span class="tip">Maximum acres (empty = no max)</span>
+            </span>
+            <span class="field vacant-only-field">
+              <label class="vacant-only-label">
+                <input id="vacant-only" type="checkbox" />
+                <span>Vacant land</span>
+              </label>
+              <span class="tip">Show only sales where every parcel in the group has Buildings &lt; 2% of Total in the latest MAO assessment year.</span>
+            </span>
+          </div>
+          <div class="street-name-row sales-only">
+            <span class="field street-name-field">
+              <input id="sales-street-name" type="text" placeholder="Street name" autocomplete="off" />
+              <span class="tip">Filter uploaded sales to rows whose Property Address contains this string. Case-insensitive substring match.</span>
+            </span>
+          </div>
+          <div class="ppa-row sales-only">
+            <span class="field ppa-low-field">
+              <input id="sales-ppa-low" type="number" min="0" step="1" placeholder="Min $/Ac" />
+              <span class="tip">Minimum $/Acre (group rate). Empty = no lower limit.</span>
+            </span>
+            <span class="field ppa-high-field">
+              <input id="sales-ppa-high" type="number" min="0" step="1" placeholder="Max $/Ac" />
+              <span class="tip">Maximum $/Acre (group rate). Empty = no upper limit. Use a high Min on its own to surface development-land sales.</span>
+            </span>
+          </div>
+          <!-- Sale Date hidden range. Driven by the preset buttons. -->
+          <input id="sale-date-from" type="hidden" />
+          <input id="sale-date-to" type="hidden" />
+          <div class="date-presets sales-only" role="group" aria-label="Date range presets">
+            <button type="button" class="date-preset-btn" data-months="6">6 mo</button>
+            <button type="button" class="date-preset-btn" data-months="12">12 mo</button>
+            <button type="button" class="date-preset-btn" data-months="24">24 mo</button>
+            <button type="button" class="date-preset-btn" data-months="36">36 mo</button>
+            <button type="button" class="date-preset-btn" data-months="48">48 mo</button>
+            <button type="button" class="date-preset-btn date-preset-clear" data-clear="1" title="Clear date range">×</button>
+          </div>
+          <!-- Subject parcel + max-distance combo row. -->
+          <div class="subject-row sales-only">
+            <span class="field subject-roll-field">
+              <input id="subject-roll" type="text" placeholder="Subject roll #" autocomplete="off" />
+              <span class="tip">Roll number of the subject property. The municipality picker beside this input controls which muni the roll is fetched from.</span>
+            </span>
+            <button id="subject-apply" type="button" class="secondary subject-apply-btn">Set</button>
+            <button id="subject-clear" type="button" class="secondary subject-clear-btn" title="Clear the subject parcel">×</button>
+            <span class="field distance-max-field">
+              <input id="distance-max" type="number" min="0" step="0.1" placeholder="Max km" />
+              <span class="tip">Filter to sales within this many kilometres of the subject's centroid. Inactive when no subject is set.</span>
+            </span>
+          </div>
+          <div id="subject-muni-row" class="subject-muni-row sales-only" hidden>
+            <span class="field subject-muni-field">
+              <select id="subject-muni"></select>
+              <span class="tip">Municipality the subject roll # is fetched from.</span>
+            </span>
+          </div>
+          <div class="class-row sales-only">
+            <span class="field class-field">
+              <select id="asmt-class" multiple size="4"></select>
+              <span class="tip">Filter to one or more MAO assessment classes. Ctrl/Cmd-click to select multiple.</span>
+            </span>
+            <span class="field status-field">
+              <select id="asmt-status" multiple size="4"></select>
+              <span class="tip">Filter to one or more tax statuses (TAXABLE / EXEMPT / GRANT-IN-LIEU / etc.).</span>
+            </span>
+          </div>
+
+          <div class="action-row">
+            <button id="sales-clear" type="button" class="secondary" title="Reset the page — clears any uploaded sales CSV, search results, subject, and filters.">Clear</button>
+          </div>
+        </section><!-- /tab-panel-sales -->
+
+        <!-- ===================================================
+             Tab 3: Map layers
+             =================================================== -->
+        <section
+          class="sidebar-tab-panel"
+          id="tab-panel-layers"
+          data-tab="layers"
+          role="tabpanel"
+          aria-labelledby="tab-btn-layers"
+          hidden
+        >
+          <!-- Phase 3 groups overlay toggles by purpose. Each button
+               carries a coloured dot (--dot-color) that roughly matches
+               the map render colour for that layer. Plain-language
+               labels with the legacy technical name in the tooltip.
+               Phase 4 will swap the tooltips to info-icon popovers. -->
+          <div class="overlay-group">
+            <h3 class="overlay-group-title">Boundaries</h3>
+            <button id="muni-parcels-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled style="--dot-color:#94a3b8" title="Roll Layer — every parcel in the selected municipality (grey fabric under your search results)">
+              <span class="overlay-dot" aria-hidden="true"></span>
+              Parcel boundaries
+            </button>
+            <button id="grid-toggle" type="button" class="overlay-btn" aria-pressed="false" style="--dot-color:#64748b" title="Sec-Twp — section/township grid + river lots. Select a municipality for a focused view, or toggle without one for the province-wide overlay.">
+              <span class="overlay-dot" aria-hidden="true"></span>
+              Section/township grid
+            </button>
+          </div>
+
+          <div class="overlay-group">
+            <h3 class="overlay-group-title">Planning</h3>
+            <button id="zoning-toggle" type="button" class="overlay-btn" aria-pressed="false" style="--dot-color:#d97706" title="Zoning By-Laws (ZBL)">
+              <span class="overlay-dot" aria-hidden="true"></span>
+              Zoning
+            </button>
+            <button id="devplan-toggle" type="button" class="overlay-btn" aria-pressed="false" style="--dot-color:#16a34a" title="Dev Plan — Manitoba Development Plan Designations">
+              <span class="overlay-dot" aria-hidden="true"></span>
+              Development plan
+            </button>
+          </div>
+
+          <div class="overlay-group">
+            <h3 class="overlay-group-title">Risk</h3>
+            <button id="contam-toggle" type="button" class="overlay-btn" aria-pressed="false" style="--dot-color:#dc2626" title="Enviro Sites — Manitoba Contaminated Sites Registry">
+              <span class="overlay-dot" aria-hidden="true"></span>
+              Environmental sites
+            </button>
+            <button id="riskarea-toggle" type="button" class="overlay-btn" aria-pressed="false" style="--dot-color:#f97316" title="MASC Risk Areas — official crop-insurance risk-area boundaries from Manitoba Maps">
+              <span class="overlay-dot" aria-hidden="true"></span>
+              MASC risk areas
+            </button>
+            <button id="masc-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled style="--dot-color:#eab308" title="MASC Rating — crop-insurance soil ratings (A best → J worst). Select a municipality first.">
+              <span class="overlay-dot" aria-hidden="true"></span>
+              MASC rating
+            </button>
+            <button id="cli-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled style="--dot-color:#65a30d" title="Canada Land Inventory — Soil Capability for Agriculture (1=prime, 7=no agricultural capability). Select a municipality first.">
+              <span class="overlay-dot" aria-hidden="true"></span>
+              Soil productivity (CLI)
+            </button>
+          </div>
+
+          <div class="overlay-group">
+            <h3 class="overlay-group-title">Reference</h3>
+            <button id="flow-toggle" type="button" class="overlay-btn" aria-pressed="false" style="--dot-color:#2563eb" title="MHTIS Traffic Flow 2019 — segments coloured by AADT">
+              <span class="overlay-dot" aria-hidden="true"></span>
+              Traffic flow
+            </button>
+          </div>
+
+          <!-- Quick links to the muni's website and its Planning
+               District site, when one applies. Not overlays; kept
+               in the Map layers tab because that's where they used
+               to live. -->
+          <div class="overlay-group overlay-links-group">
+            <h3 class="overlay-group-title">Quick links</h3>
+            <button id="muni-website-btn" type="button" class="overlay-btn link-btn" disabled title="Select a municipality to enable">Muni website ↗</button>
+            <button id="pd-website-btn" type="button" class="overlay-btn link-btn" disabled title="Select a municipality to enable. Planning District (PD) website.">PD website ↗</button>
+          </div>
+
+          <button id="static-map-btn" type="button" class="generate-map-btn" title="Capture the current map view as a PNG. Right-click the rendered image below the table and Save Image As… to drop into a report.">Generate Map</button>
+        </section><!-- /tab-panel-layers -->
+
+        <!-- ===================================================
+             Persistent status block — visible across all tabs.
+             Holds the row count, the unmatched-sales drawer, and
+             the Export CSV action.
+             =================================================== -->
+        <div class="sidebar-status">
+          <div class="action-row export-row">
+            <button id="export" type="button" class="secondary">Export CSV</button>
+          </div>
+          <span id="count" class="count"></span>
+          <details id="unmatched-panel" class="unmatched-panel" hidden>
+            <summary class="unmatched-summary"></summary>
+            <div class="unmatched-actions">
+              <button id="unmatched-download" type="button" class="secondary">Download unmatched CSV</button>
+            </div>
+            <div class="unmatched-table-wrap">
+              <table class="unmatched-table">
+                <thead>
+                  <tr>
+                    <th>Roll #</th>
+                    <th>Municipality</th>
+                    <th>Sale Date</th>
+                    <th>Price</th>
+                    <th>Legal</th>
+                    <th class="reason-col">Reason</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </details>
         </div>
       </aside>
 
