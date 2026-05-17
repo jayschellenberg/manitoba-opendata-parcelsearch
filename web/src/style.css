@@ -361,12 +361,13 @@ header small a {
    a stacked layout: a small coloured dot (from --dot-color) +
    plain-language label. Active toggles fill in via aria-pressed. */
 .overlay-group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 6px;
   margin: 0 0 10px;
 }
 .overlay-group-title {
+  grid-column: 1 / -1;
   margin: 0 0 2px;
   font-size: 11px;
   font-weight: 700;
@@ -377,9 +378,9 @@ header small a {
 .sidebar .overlay-btn {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  padding: 7px 10px;
+  padding: 6px 8px;
   background: #fff;
   border: 1px solid var(--color-neutral-300, #d4d4d8);
   border-radius: 4px;
@@ -389,6 +390,10 @@ header small a {
   color: var(--color-neutral-800, #27272a);
   cursor: pointer;
   text-align: left;
+  /* Half-width labels often wrap to two lines (e.g.
+     "Section/township grid"); keep the dot centered vertically
+     and the two lines compact. */
+  line-height: 1.25;
 }
 .sidebar .overlay-btn:hover:not(:disabled) {
   border-color: var(--color-primary-400, #64748b);
