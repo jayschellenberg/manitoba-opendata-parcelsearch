@@ -102,7 +102,100 @@ app once this work lands.
   header is also branded teal/navy and you want the tone match.
 
 ## Phase 2 - Layout restructure
-_pending_
+
+### Decisions
+
+- App shell switched from CSS grid (`350px 1fr`) to flex. On md+
+  (>=768 px) the shell is `flex-direction: row` with the sidebar
+  capped at `flex: 0 0 35%`; below md it stacks vertically. The same
+  markup serves both layouts.
+- Right pane (`.workspace`) is a vertical flex column: map on top,
+  draggable divider, table on bottom. The split is expressed as a
+  single CSS custom property `--map-pane-height` (default 60%) that
+  `layout.js` updates on drag and arrow-key nudges. CSS rules read
+  the variable for the map's flex-basis and height, so the JS only
+  needs to update one value.
+- Sticky topbar replaces the old `<header>`. The "Data sources"
+  details element opens a 640-px-wide panel positioned absolute
+  below the topbar so it doesn't push the app shell down. Disclaimer,
+  About blurb, and data-refresh row all moved into that panel.
+- The map's `aspect-ratio: 16/9` rule still applies in the stacked
+  layout (below md). At md+ it's neutralised so the flex split
+  governs the map's height. Stacked mode is what a mobile pass will
+  hit, where 16:9 reads better than a fixed-height pane.
+- Draggable handle uses pointer events (works for mouse + touch +
+  pen) and respects arrow keys / Home / End when focused. While
+  dragging, `body.workspace-resizing` disables text selection and
+  iframe pointer events so the cursor can't escape the handle.
+- MapLibre's WebGL canvas needs a manual `map.resize()` call after
+  the container changes size. The workspace emits a custom
+  `workspace:resize` event that main.js listens to and forwards to
+  MapLibre once `mapReady` resolves.
+
+### Reusable patterns (lift candidates)
+
+- `web/src/layout.js` - workspace resize handle. Pure layout logic,
+  no Manitoba assumptions. Lift verbatim; the only contract is that
+  the parent workspace element has id `workspace`, the handle has
+  id `workspace-resize`, and CSS reads `--map-pane-height`.
+- Topbar markup (`.topbar`, `.topbar-nav`, `.topbar-details`,
+  `.topbar-panel`) - portable. The link targets and panel content
+  are content-only; structure is reusable.
+- `.app-shell` / `.workspace` / `.map-pane` / `.table-pane` CSS
+  block in `web/src/style.css` - portable. Same naming will work
+  in the Winnipeg port.
+- The `body.workspace-resizing` pattern for suspending text-selection
+  during a drag is a generic UI helper.
+
+### Manitoba-specific (do not port)
+
+- The "Data sources" panel content (About + the geoportal links) is
+  Manitoba-specific. Lift the markup shape (h2 + p + data-refresh
+  row + disclaimer section), swap the link targets and copy.
+
+### Dependencies added
+
+None.
+
+### Gotchas
+
+- Vite's default build wipes `dist/`. Repo convention (per HANDOFF.md)
+  is `npm run build -- --emptyOutDir=false` because `dist/data/`
+  contains large pre-built shards. Keep the flag when building
+  locally; production builds on Vercel start from a clean dist so
+  the flag is fine to omit there.
+- The legacy `#results-wrap { padding; overflow-x }` rule had higher
+  specificity than the new `.table-pane` class and was overriding
+  the md+ split's `overflow: auto`. Removed the rule (kept an empty
+  selector so any external CSS targeting it doesn't break).
+- The old `<details class="explainer">`, `<footer id="disclaimer">`,
+  and `<aside id="data-refresh-footer">` all relocated into the
+  topbar panel. Their IDs are preserved so `populateDataRefreshFooter()`
+  and the like keep working without a JS change.
+
+### Things visually replaced / removed
+
+- `<header>` (bare element) -> `<header class="topbar">` with title,
+  Winnipeg portal link, Data sources details.
+- `<div class="layout">` grid container -> `<div class="app-shell">`
+  flex container.
+- `<main class="main-pane">` -> `<main class="main-pane workspace"
+  id="workspace">`.
+- `#map` keeps its id; gains `.map-pane` class. The 16:9 aspect-ratio
+  applies only in the stacked layout now.
+- `#results-wrap` keeps its id; gains `.table-pane` class. Its
+  padding+overflow rules now live on the class.
+- Trailing `<details class="explainer">`, `<aside id="data-refresh-footer">`,
+  and `<footer id="disclaimer">` removed from the bottom of the page
+  and reborn inside the topbar's Data sources panel.
+
+### Phase 2 porting checklist (Winnipeg)
+
+- `.app-shell` / `.sidebar` / `.workspace` / `.map-pane` /
+  `.table-pane` CSS block: reuse.
+- `layout.js` workspace resize: reuse.
+- Topbar markup shape: reuse, swap link targets and panel content.
+- Map resize wiring (`workspace:resize` -> `map.resize()`): reuse.
 
 ## Phase 3 - Tabbed sidebar
 _pending_

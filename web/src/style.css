@@ -16,13 +16,133 @@ body {
   background: #f7f7f8;
 }
 
-header {
-  padding: 6px 20px;
+/* -------------------------------------------------------------
+   Phase 2 topbar. Sticky across the top of the viewport with the
+   app title, the Winnipeg portal link, and the Data sources
+   expandable panel (About + data-refresh row + disclaimer). The
+   panel positions absolute so opening it doesn't push the app
+   shell below downward. The legacy `header { ... }` rules above
+   no longer apply because the topbar uses `header.topbar` instead
+   of the bare element selector.
+   ------------------------------------------------------------- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
   background: var(--color-primary-500, #1e293b);
   color: #fff;
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  justify-content: space-between;
   gap: 14px;
+  padding: 8px 20px;
+}
+
+.topbar-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.topbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.topbar-link,
+.topbar-summary {
+  color: #d8e3f4;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.topbar-link:hover,
+.topbar-summary:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+.topbar-link:focus-visible,
+.topbar-summary:focus-visible {
+  outline: 2px solid var(--color-accent-500, #2563eb);
+  outline-offset: 2px;
+}
+
+.topbar-details {
+  position: relative;
+}
+.topbar-summary {
+  list-style: none;
+  user-select: none;
+}
+.topbar-summary::-webkit-details-marker { display: none; }
+.topbar-summary::after {
+  content: " \25BE";
+  font-size: 11px;
+  opacity: 0.8;
+}
+.topbar-details[open] .topbar-summary::after {
+  content: " \25B4";
+}
+
+/* Drop-down panel below the topbar. Positioned absolute so opening
+   it doesn't reflow the app shell; covers the right portion of the
+   topbar's bottom edge. Drop shadow + white surface for readability
+   against the dark topbar. */
+.topbar-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  width: min(640px, 92vw);
+  max-height: 70vh;
+  overflow-y: auto;
+  background: #fff;
+  color: #1a1a1a;
+  border: 1px solid var(--color-neutral-300, #d4d4d8);
+  border-radius: 4px;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.18);
+  padding: 14px 18px;
+}
+.topbar-panel-section + .topbar-panel-section,
+.topbar-panel .data-refresh-footer + .topbar-panel-section {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-neutral-200, #e4e4e7);
+}
+.topbar-panel-section h2 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-primary-500, #1e293b);
+}
+.topbar-panel-section p {
+  margin: 6px 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.topbar-panel-section a { color: var(--color-accent-600, #1d4ed8); }
+.topbar-panel-section .disclaimer-section { font-size: 12px; }
+.topbar-panel .data-refresh-footer {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  background: var(--color-neutral-100, #f4f4f5);
+  border: 1px solid var(--color-neutral-200, #e4e4e7);
+  border-radius: 4px;
+  font-size: 12px;
+}
+.topbar-panel .data-refresh-footer[hidden] { display: none; }
+
+/* Legacy header rules left intact below for safety in case anything
+   still targets them, but they no longer take effect (the markup
+   no longer uses bare <header>). */
+header {
+  /* Superseded by .topbar above. */
 }
 
 header h1 {
@@ -41,20 +161,34 @@ header small a {
   text-decoration: underline;
 }
 
-/* Two-pane layout: fixed-width left sidebar for search inputs and overlay
-   buttons, fluid main pane for the map / hint blocks / table. Stacks on
-   narrow viewports (<900 px) so the form stays usable on tablets. */
-.layout {
-  display: grid;
-  grid-template-columns: 350px 1fr;
-  gap: 0;
-  align-items: stretch;
+/* -------------------------------------------------------------
+   Phase 2 app shell. md+ runs a horizontal split: sidebar 35%,
+   workspace 65%. Below md, sidebar and workspace stack vertically
+   so the same markup works for a future mobile pass. The shell
+   sizes to the viewport minus the sticky topbar height so the
+   workspace can split internally without page-level scrolling.
+   ------------------------------------------------------------- */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  /* dvh keeps the calculation correct when mobile browser chrome
+     hides/shows; falls through to vh on older engines. */
+  height: calc(100dvh - var(--topbar-height, 56px));
+  min-height: 0;
 }
 
-@media (max-width: 900px) {
-  .layout {
-    grid-template-columns: 1fr;
+@media (min-width: 768px) {
+  .app-shell {
+    flex-direction: row;
+    align-items: stretch;
   }
+}
+
+/* Legacy .layout still appears in any cached HTML in dev; if the
+   class survives anywhere, neutralize the old grid so it doesn't
+   fight with .app-shell. */
+.layout {
+  display: block;
 }
 
 .sidebar {
@@ -64,13 +198,24 @@ header small a {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  /* Sticky on tall viewports so the controls stay visible while
-     scrolling the table. */
-  position: sticky;
-  top: 0;
-  align-self: flex-start;
-  max-height: 100vh;
+  /* Default (stacked) layout: sidebar caps at 40 vh so the
+     workspace below still has room. The internal scroll keeps
+     the controls reachable. */
+  flex: 0 0 auto;
+  max-height: 40vh;
   overflow-y: auto;
+}
+
+@media (min-width: 768px) {
+  .sidebar {
+    /* Split layout: sidebar takes 35% of the shell width, full
+       shell height with its own scrollbar. The right pane gets
+       the remaining 65% via .workspace below. */
+    flex: 0 0 35%;
+    max-width: 35%;
+    max-height: none;
+    height: 100%;
+  }
 }
 
 .sidebar h2 {
@@ -982,22 +1127,110 @@ body.sales-mode .sidebar .search-section { display: none; }
   color: #1a3a4a;
 }
 
+/* -------------------------------------------------------------
+   Phase 2 workspace. md+ runs a vertical split inside the right
+   pane: map on top, draggable handle, table on the bottom. Below
+   md the same elements stack in the natural flow (handle hidden,
+   no fixed heights). The --map-pane-height custom property is
+   the single source of truth for the split; the resize JS in
+   main.js updates it on drag.
+   ------------------------------------------------------------- */
+.workspace {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  --map-pane-height: 60%;
+}
+
+.map-pane {
+  width: 100%;
+  background: #eaeaec;
+  position: relative;
+  /* Stacked layout: keep the 16:9 aspect-ratio look-and-feel so
+     scrolled content below still reads. */
+  aspect-ratio: 16 / 9;
+  min-height: 320px;
+}
+
+.table-pane {
+  /* In the stacked layout the table-pane flows naturally; the page
+     itself scrolls. The 12/20/32 padding matches the original
+     #results-wrap rule replaced below. */
+  padding: 12px 20px 32px;
+  overflow-x: auto;
+}
+
+@media (min-width: 768px) {
+  .map-pane {
+    aspect-ratio: auto;
+    min-height: 0;
+    flex: 0 0 var(--map-pane-height);
+    height: var(--map-pane-height);
+  }
+  .table-pane {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    padding: 12px 20px 24px;
+  }
+}
+
+/* Draggable horizontal divider between map and table. Hidden in
+   the stacked layout because the panes flow naturally; visible
+   only at md+ where the split is fixed-height. */
+.workspace-resize {
+  display: none;
+  background: var(--color-neutral-200, #e4e4e7);
+  border-top: 1px solid var(--color-neutral-300, #d4d4d8);
+  border-bottom: 1px solid var(--color-neutral-300, #d4d4d8);
+  cursor: row-resize;
+  flex: 0 0 6px;
+  position: relative;
+}
+.workspace-resize::before {
+  content: "";
+  position: absolute;
+  inset: 50% 50%;
+  width: 36px;
+  height: 2px;
+  margin: -1px 0 0 -18px;
+  background: var(--color-neutral-400, #a1a1aa);
+  border-radius: 1px;
+}
+.workspace-resize:hover { background: var(--color-neutral-300, #d4d4d8); }
+.workspace-resize.dragging { background: var(--color-accent-400, #60a5fa); }
+.workspace-resize:focus-visible {
+  outline: 2px solid var(--color-accent-500, #2563eb);
+  outline-offset: -2px;
+}
+
+@media (min-width: 768px) {
+  .workspace-resize { display: block; }
+}
+
+/* While dragging the divider, suspend pointer events on iframes
+   and disable text selection so the cursor doesn't drift away
+   from the handle. main.js toggles body.workspace-resizing. */
+body.workspace-resizing,
+body.workspace-resizing * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+body.workspace-resizing iframe { pointer-events: none; }
+
+/* Legacy .main-pane / #map / #results-wrap rules left as fallbacks
+   for any unscoped descendant selectors elsewhere in this file. The
+   modern rules above win on specificity. */
 .main-pane {
   display: flex;
   flex-direction: column;
-  min-width: 0; /* lets the table scroll horizontally without forcing the grid wider */
+  min-width: 0;
 }
 
 #map {
   width: 100%;
-  /* Lock to 16:9 — height falls out from whatever width the main pane
-     actually has at the user's viewport. On a typical 1512-px-wide
-     viewport (sidebar 280 → map ~1232 wide) this lands at ~693 px
-     tall; wider viewports get proportionally taller maps. The
-     min-height keeps small / collapsed-sidebar viewports from going
-     so short that the map's controls overlap the basemap. */
-  aspect-ratio: 16 / 9;
-  min-height: 420px;
   background: #eaeaec;
   position: relative;
 }
@@ -1277,10 +1510,10 @@ body.sales-mode .sidebar .search-section { display: none; }
 
 .explainer-body p { margin: 6px 0; }
 
-#results-wrap {
-  padding: 12px 20px 32px;
-  overflow-x: auto;
-}
+/* Phase 2: #results-wrap padding + overflow now live on the
+   `.table-pane` class above. Keeping the ID selector empty so any
+   third-party stylesheet referencing it sees no conflict. */
+#results-wrap {}
 
 /* Results paginator — single horizontal row of First / Prev /
    page-info / Next / Last beneath the table. Hidden when the

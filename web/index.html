@@ -22,16 +22,91 @@
     <link rel="stylesheet" href="./src/style.css" />
   </head>
   <body>
-    <header>
-      <h1>Manitoba Parcel Search</h1>
-      <small>
-        Live data from
-        <a href="https://geoportal.gov.mb.ca" target="_blank" rel="noreferrer">Manitoba Open Data</a>
-        · <a href="#disclaimer">Disclaimer</a>
-      </small>
+    <!-- Sticky topbar. The "Data sources" details element opens a
+         panel below the bar holding the About this tool blurb, the
+         data-refresh timestamps, and the disclaimer. The panel is
+         positioned absolute so opening it doesn't push the workspace
+         downward; clicks outside should not auto-close it (native
+         <details> semantics are fine for this lightweight use). -->
+    <header class="topbar" role="banner">
+      <h1 class="topbar-title">Manitoba Parcel Search</h1>
+      <nav class="topbar-nav" aria-label="App navigation">
+        <a
+          class="topbar-link"
+          href="https://winnipeg-opendata-parcelsearch.vercel.app/"
+          target="_blank"
+          rel="noreferrer"
+        >Winnipeg portal</a>
+        <details class="topbar-details" id="data-sources-details">
+          <summary class="topbar-summary">Data sources</summary>
+          <div class="topbar-panel" id="data-sources-panel">
+            <section class="topbar-panel-section">
+              <h2>About this tool</h2>
+              <p>
+                Search Manitoba properties (excluding Winnipeg, which has its
+                <a href="https://winnipeg-opendata-parcelsearch.vercel.app/" target="_blank" rel="noreferrer">own portal</a>)
+                by civic address, municipality, roll #, legal description, or
+                certificate of title. Each result is enriched with its top-2
+                zoning districts (with coverage %) and its primary
+                development-plan designation, plus the bylaw numbers behind
+                each. Legal description and certificate-of-title search are
+                backed by a generated MAO scrape index; substring matches
+                resolve to live parcel records via Roll Entry, so geometry
+                and assessment fields are always current.
+              </p>
+              <p>
+                Roll Entry is queried live for parcel geometry and current
+                assessment fields on every search. The live parcel source is
+                <a href="https://geoportal.gov.mb.ca/datasets/manitoba::roll-entry/about" target="_blank" rel="noreferrer">Roll Entry</a>;
+                enrichment comes from
+                <a href="https://geoportal.gov.mb.ca/datasets/manitoba::manitoba-zoning-by-laws/about" target="_blank" rel="noreferrer">Zoning By-Laws</a>, and
+                <a href="https://geoportal.gov.mb.ca/datasets/manitoba::manitoba-development-plan-designations/about" target="_blank" rel="noreferrer">Development Plan Designations</a>.
+                Municipality + category dropdowns and the overlay layers
+                (zoning, dev-plan, contaminated sites, traffic flow, full muni
+                parcel fabric) are cached in your browser for up to 7 days so
+                repeat work in the same area stays snappy. The Clear button
+                wipes that cache.
+              </p>
+            </section>
+
+            <!-- Data-refresh row, populated by populateDataRefreshFooter()
+                 once each shard's metadata is available. Hidden until at
+                 least one freshness timestamp lands so a fresh load doesn't
+                 flash an empty row. Kept here so all data-source detail
+                 lives behind a single disclosure. -->
+            <aside id="data-refresh-footer" class="data-refresh-footer" hidden>
+              <strong>Data refreshed:</strong>
+              <span id="data-refresh-list"></span>
+            </aside>
+
+            <section class="topbar-panel-section disclaimer-section">
+              <h2 id="disclaimer">Disclaimer</h2>
+              <p>
+                This site is provided without warranty and is for general
+                information only. Data is queried live from the Province of
+                Manitoba's open data portal and may be incomplete, out of
+                date, or inaccurate. Zoning and development-plan designations
+                are matched to each parcel by spatial overlap; coverage
+                percentages are computed client-side and assume both layers
+                are spatially aligned to the parcel polygons (in practice
+                they are usually but not always, since bylaw amendments
+                occasionally land in the source data weeks behind the actual
+                zoning change). Do not rely on these results without
+                independent verification from Manitoba Assessment Online,
+                the municipality's planning office, or a qualified
+                professional.
+              </p>
+            </section>
+          </div>
+        </details>
+      </nav>
     </header>
 
-    <div class="layout">
+    <!-- App shell. md+ runs a horizontal split: sidebar on the left,
+         workspace (map + table with draggable divider) on the right.
+         Below md the same elements stack so the same markup serves
+         the eventual mobile pass without a rewrite. -->
+    <div class="app-shell" id="app-shell">
       <aside class="controls sidebar" aria-label="Search and overlay controls">
         <!-- The entire Search section is collapsed once a sales CSV
              upload completes (body.sales-mode CSS rule). Wrapping
@@ -380,9 +455,9 @@
         </div>
       </aside>
 
-      <main class="main-pane">
+      <main class="main-pane workspace" id="workspace">
 
-    <div id="map">
+    <div id="map" class="map-pane">
       <div id="zoning-legend" class="map-legend zoning-legend" hidden>
         <strong>Zoning category</strong>
         <ul></ul>
@@ -427,7 +502,22 @@
       </div>
     </div>
 
-    <div id="results-wrap">
+    <!-- Draggable horizontal divider between map and table inside the
+         workspace. Wired by the layout script in main.js to update the
+         CSS custom property --map-pane-height on the workspace. The
+         handle hides below md (sidebar+workspace stack vertically and
+         the resize gesture stops making sense). -->
+    <div
+      id="workspace-resize"
+      class="workspace-resize"
+      role="separator"
+      aria-orientation="horizontal"
+      aria-controls="map results-wrap"
+      tabindex="0"
+      title="Drag to resize the map and table panes"
+    ></div>
+
+    <div id="results-wrap" class="table-pane">
       <table id="results">
         <thead>
           <tr>
@@ -511,72 +601,20 @@
            (≤ PAGE_SIZE rows). Export CSV ignores pagination and
            always exports the full filtered set (currentRows). -->
       <div id="results-paginator" class="results-paginator" hidden></div>
+
+      <!--
+        Generate Map output. Stays inside the table pane so the
+        rendered image appears in the existing scroll context below
+        the table; the user can right-click → Save Image As as before.
+        Phase 6 will move this to a MapLibre canvas export, at which
+        point the in-flow section may go away.
+      -->
+      <section id="static-map-section" class="static-map-section" hidden>
+        <div id="static-map-output" class="static-map-output" hidden></div>
+      </section>
     </div>
       </main>
     </div>
-
-    <!--
-      The Generate Map button lives in the sidebar overlay grid; this
-      section just hosts the rendered image so it appears in-flow below
-      the table where the user can right-click → Save Image As.
-    -->
-    <section id="static-map-section" class="static-map-section" hidden>
-      <div id="static-map-output" class="static-map-output" hidden></div>
-    </section>
-
-    <details class="explainer">
-      <summary>About this tool</summary>
-      <div class="explainer-body">
-        <p>
-          Search Manitoba properties (excluding Winnipeg, which has its
-          <a href="https://winnipeg-opendata-parcelsearch.vercel.app/" target="_blank" rel="noreferrer">own portal</a>)
-          by civic address, municipality, roll #, legal description, or
-          certificate of title. Each result is enriched with its top-2
-          zoning districts (with coverage %) and its primary
-          development-plan designation, plus the bylaw numbers behind
-          each. Legal-description and certificate-of-title search are
-          backed by a generated MAO scrape index — substring matches
-          there resolve to live parcel records via Roll Entry, so
-          geometry and assessment fields are always current.
-        </p>
-        <p>
-          Roll Entry is queried live for parcel geometry and current
-          assessment fields on every search. The live parcel source is
-          <a href="https://geoportal.gov.mb.ca/datasets/manitoba::roll-entry/about" target="_blank" rel="noreferrer">Roll Entry</a>;
-          enrichment comes from
-          <a href="https://geoportal.gov.mb.ca/datasets/manitoba::manitoba-zoning-by-laws/about" target="_blank" rel="noreferrer">Zoning By-Laws</a>, and
-          <a href="https://geoportal.gov.mb.ca/datasets/manitoba::manitoba-development-plan-designations/about" target="_blank" rel="noreferrer">Development Plan Designations</a>.
-          Municipality + category dropdowns and the overlay layers
-          (zoning, dev-plan, contaminated sites, traffic flow, full muni
-          parcel fabric) are cached in your browser for up to 7 days so
-          repeat work in the same area stays snappy. The Clear button
-          wipes that cache.
-        </p>
-      </div>
-    </details>
-
-    <!-- Data-refresh footer — populated by populateDataRefreshFooter()
-         in main.js once each shard's metadata is available. Hidden
-         until at least one freshness timestamp lands so a fresh page
-         load doesn't flash empty. -->
-    <aside id="data-refresh-footer" class="data-refresh-footer" hidden>
-      <strong>Data refreshed:</strong>
-      <span id="data-refresh-list"></span>
-    </aside>
-
-    <footer id="disclaimer" class="disclaimer">
-      <strong>Disclaimer:</strong> This site is provided without warranty
-      and is for general information only. Data is queried live from the
-      Province of Manitoba's open data portal and may be incomplete, out
-      of date, or inaccurate. Zoning and development-plan designations are
-      matched to each parcel by spatial overlap; coverage percentages are
-      computed client-side and assume both layers are spatially aligned to
-      the parcel polygons (in practice they are usually but not always —
-      bylaw amendments occasionally land in the source data weeks behind
-      the actual zoning change). Do not rely on these results without
-      independent verification from Manitoba Assessment Online, the
-      municipality's planning office, or a qualified professional.
-    </footer>
 
     <script type="module" src="./src/main.js"></script>
   </body>
