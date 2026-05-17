@@ -18,10 +18,12 @@ const DEFAULT_TAB = 'property';
 
 // Each tab's primary input is what gets focused on activation —
 // the field the user is most likely to want to type into first.
+// Map layers live in an always-visible section below the tabs
+// (per the integral-to-workflow design call), so they're not in
+// this map.
 const PRIMARY_INPUT_BY_TAB = {
   property: '#municipality',
   sales: '#sales-dropzone',
-  layers: '#muni-parcels-toggle',
 };
 
 let activeTab = DEFAULT_TAB;

@@ -201,10 +201,14 @@ None.
 
 ### Decisions
 
-- Sidebar split into three tab panels by workflow:
-  Property search (default), Sales analysis, Map layers. The status
-  block (count, unmatched drawer, Export CSV) sits below the panels
-  and stays visible across tabs.
+- Sidebar split into **two** tab panels by workflow: Property search
+  (default) and Sales analysis. Plan originally called for three
+  tabs with Map layers as the third, but overlay toggles are
+  integral to the search workflow (an appraiser flips zoning / dev
+  plan / contamination on while reviewing parcels), so Map layers
+  lives as an **always-visible section below the active tab panel**
+  instead. The status block (count, unmatched drawer, Export CSV)
+  sits below Map layers and is also always visible.
 - Tab state persisted to localStorage under `mbps_sidebar_tab_v1`
   so a refresh keeps the user on the tab they were on.
 - Successful sales-CSV upload auto-switches to the Sales tab so the
