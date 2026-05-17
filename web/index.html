@@ -130,14 +130,6 @@
             aria-selected="false"
             tabindex="-1"
           >Sales analysis</button>
-          <button
-            type="button" role="tab"
-            id="tab-btn-layers" class="sidebar-tab"
-            data-tab="layers"
-            aria-controls="tab-panel-layers"
-            aria-selected="false"
-            tabindex="-1"
-          >Map layers</button>
         </div>
 
         <!-- ===================================================
@@ -364,16 +356,18 @@
         </section><!-- /tab-panel-sales -->
 
         <!-- ===================================================
-             Tab 3: Map layers
+             Map layers — always visible below the active tab.
+             Overlay toggles are integral to the search workflow
+             (the appraiser wants to flip zoning / dev plan /
+             contamination on while reviewing parcels), so they
+             stay on screen regardless of which tab is active.
              =================================================== -->
         <section
-          class="sidebar-tab-panel"
-          id="tab-panel-layers"
-          data-tab="layers"
-          role="tabpanel"
-          aria-labelledby="tab-btn-layers"
-          hidden
+          class="map-layers-section"
+          id="map-layers-section"
+          aria-label="Map layers"
         >
+          <h2 class="sidebar-section-title">Map layers</h2>
           <!-- Phase 3 groups overlay toggles by purpose. Each button
                carries a coloured dot (--dot-color) that roughly matches
                the map render colour for that layer. Plain-language
@@ -442,7 +436,7 @@
           </div>
 
           <button id="static-map-btn" type="button" class="generate-map-btn" title="Capture the current map view as a PNG. Right-click the rendered image below the table and Save Image As… to drop into a report.">Generate Map</button>
-        </section><!-- /tab-panel-layers -->
+        </section><!-- /map-layers-section -->
 
         <!-- ===================================================
              Persistent status block — visible across all tabs.
