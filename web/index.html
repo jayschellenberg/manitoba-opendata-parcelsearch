@@ -8,6 +8,17 @@
       rel="stylesheet"
       href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"
     />
+    <!-- Inter loaded from Google Fonts. The preconnect hints speed up
+         the handshake; the @import-free `<link>` form avoids a render-
+         blocking @import statement inside style.css. The page remains
+         legible if the CDN is blocked because the @theme stack falls
+         through to the system font set. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+    />
     <link rel="stylesheet" href="./src/style.css" />
   </head>
   <body>
@@ -31,8 +42,13 @@
         <section class="search-section">
         <h2>Search</h2>
         <span class="field">
-          <select id="municipality" disabled>
-            <option value="">Loading municipalities…</option>
+          <!-- Skeleton pulse replaces the prior "Loading municipalities…"
+               text. The option keeps a visible space so the select keeps
+               its rendered height; the .skeleton class hides the text
+               (color:transparent) and animates a soft shimmer. fillSelect
+               removes the class once the municipality list arrives. -->
+          <select id="municipality" class="skeleton" disabled aria-label="Loading municipalities">
+            <option value="">&nbsp;</option>
           </select>
           <span class="tip">Municipality</span>
         </span>

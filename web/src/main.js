@@ -1,3 +1,8 @@
+// Tailwind v4 entry — picked up by the @tailwindcss/vite plugin. The
+// import has no runtime export; it exists so Vite processes the file
+// and emits the generated stylesheet alongside the legacy style.css.
+import './tailwind.css';
+
 // Entry point. Wires the search inputs, the map, and the results table.
 //
 // Single search flow (Manitoba's Roll_Entry IS the parcel layer; there's no
@@ -99,6 +104,12 @@ import {
 } from './assessmentIndex.js';
 import turfArea from '@turf/area';
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
+import {
+  formatCurrency as fmtCurrency,
+  formatAcres as fmtAcres,
+  formatSqFtFromAcres,
+  formatPercent as fmtPercent,
+} from './format.js';
 
 // Civic-address search is now a 3-input row: a numeric range (From / To)
 // plus a Street Name substring. The single legacy `#address` input was
@@ -1184,6 +1195,11 @@ function fillSelect(sel, values, blankLabel) {
     sel.appendChild(opt);
   }
   sel.disabled = false;
+  // Initial markup paints the loading dropdown with a .skeleton pulse;
+  // strip it now that real options are rendered. Cheap no-op for
+  // selects that were never in the loading state.
+  sel.classList.remove('skeleton');
+  sel.removeAttribute('aria-label');
 }
 
 // ---------- Search ----------
@@ -3548,7 +3564,7 @@ function renderTable(rows, { resetPage = true } = {}) {
       const ppa = Number(p._saleGroupPpa);
       if (Number.isFinite(ppa) && (ppa < outlierThresholds.lo || ppa > outlierThresholds.hi)) {
         tr.classList.add('outlier');
-        tr.title = `Outlier: $/Acre ${Math.round(ppa).toLocaleString('en-US')} is more than 2σ from the filtered mean ${Math.round(outlierThresholds.mean).toLocaleString('en-US')}`;
+        tr.title = `Outlier: $/Acre ${fmtCurrency(ppa)} is more than 2σ from the filtered mean ${fmtCurrency(outlierThresholds.mean)}`;
       }
     }
     // Starred row shading. The row click handler keeps the in-memory
@@ -3721,7 +3737,7 @@ function renderPaginator(total) {
   $paginator.innerHTML =
     `<button type="button" class="paginator-btn" data-page="first" ${onFirst ? 'disabled' : ''}>« First</button>` +
     `<button type="button" class="paginator-btn" data-page="prev"  ${onFirst ? 'disabled' : ''}>‹ Prev</button>` +
-    `<span class="paginator-info">${start}–${end} of ${total.toLocaleString('en-US')} · Page ${currentPage + 1} of ${pageCount}</span>` +
+    `<span class="paginator-info">${start}–${end} of ${total.toLocaleString('en-CA')} · Page ${currentPage + 1} of ${pageCount}</span>` +
     `<button type="button" class="paginator-btn" data-page="next" ${onLast ? 'disabled' : ''}>Next ›</button>` +
     `<button type="button" class="paginator-btn" data-page="last" ${onLast ? 'disabled' : ''}>Last »</button>`;
 }
@@ -4463,10 +4479,11 @@ function parcelAcres(feature) {
 }
 
 function formatAcres(v) {
-  if (v == null || !Number.isFinite(v) || v <= 0) return null;
-  // Always 2 decimals for the table column. Large values still get
-  // thousands separators so '12345.67' reads as '12,345.67'.
-  return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // One-decimal acres per the Phase 1 number-formatting tokens. The
+  // 2-decimal precision that used to live here was an internal
+  // preference; appraisers reading the column will still get the
+  // thousands separator for large parcels (e.g. "12,345.6").
+  return fmtAcres(v);
 }
 
 /** Group $/Acre table cell. Returns the formatted dollar string, or
@@ -4476,18 +4493,18 @@ function formatAcres(v) {
 function formatGroupPpa(p) {
   if (!p?._saleGroupSize) return null;
   if (p._saleGroupAcresIncomplete) return '—';
-  const ppa = Number(p._saleGroupPpa);
-  if (!Number.isFinite(ppa) || ppa <= 0) return null;
-  return '$' + Math.round(ppa).toLocaleString('en-US');
+  return fmtCurrency(p._saleGroupPpa);
 }
 
-/** Group $/SF table cell. Same shape as formatGroupPpa. */
+/** Group $/SF table cell. Same shape as formatGroupPpa. $/SF is shown
+ *  to two decimals because per-foot prices land in single digits
+ *  where rounding to whole dollars would lose meaningful resolution. */
 function formatGroupPpsf(p) {
   if (!p?._saleGroupSize) return null;
   if (p._saleGroupAcresIncomplete) return '—';
   const ppsf = Number(p._saleGroupPpsf);
   if (!Number.isFinite(ppsf) || ppsf <= 0) return null;
-  return '$' + ppsf.toFixed(2);
+  return '$' + ppsf.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 /** Group $/Lot table cell — sale price ÷ number of parcels in the
@@ -4495,9 +4512,7 @@ function formatGroupPpsf(p) {
  *  incomplete (no '—' fallback needed). */
 function formatGroupPpl(p) {
   if (!p?._saleGroupSize) return null;
-  const ppl = Number(p._saleGroupPpl);
-  if (!Number.isFinite(ppl) || ppl <= 0) return null;
-  return '$' + Math.round(ppl).toLocaleString('en-US');
+  return fmtCurrency(p._saleGroupPpl);
 }
 
 /** Build the favourites star cell for a row. Click toggles the
@@ -4618,9 +4633,7 @@ function computePpaOutlierThresholds(rows) {
  *  or null. Used for the per-parcel Land $ / Bldg $ assessment
  *  columns (not the sale-price ones, which already accept strings). */
 function formatCurrencyNumber(v) {
-  const n = Number(v);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return '$' + Math.round(n).toLocaleString('en-US');
+  return fmtCurrency(v);
 }
 
 /** Building % cell — 0.0853 -> "8.5%". One decimal is enough at
@@ -4628,7 +4641,7 @@ function formatCurrencyNumber(v) {
 function formatBuildingPct(v) {
   const n = Number(v);
   if (!Number.isFinite(n) || n < 0) return null;
-  return (n * 100).toFixed(1) + '%';
+  return fmtPercent(n, { fraction: true, decimals: 1 });
 }
 
 /** Assessment year cell — just the year as a string, or null. */
@@ -4645,7 +4658,7 @@ function formatAsmtYear(v) {
 function formatDistanceKm(p) {
   const d = Number(p?._distanceKm);
   if (!Number.isFinite(d) || d < 0) return null;
-  return d < 10 ? d.toFixed(1) : Math.round(d).toLocaleString('en-US');
+  return d < 10 ? d.toFixed(1) : Math.round(d).toLocaleString('en-CA');
 }
 
 /** Sale/Assessed ratio table cell. Shows '—' when the group's
@@ -4672,8 +4685,7 @@ function formatDu(v) {
 
 // Square feet from acres. Always integer with thousands separators.
 function formatSf(acres) {
-  if (acres == null || !Number.isFinite(acres) || acres <= 0) return null;
-  return Math.round(acres * 43560).toLocaleString('en-US');
+  return formatSqFtFromAcres(acres);
 }
 
 // ---------- Subject parcel comparison ----------
@@ -4961,9 +4973,7 @@ function parseSaleDate(s) {
 }
 
 function formatCurrency(s) {
-  const n = parseTotalValue(s);
-  if (n == null || n <= 0) return null;
-  return '$' + Math.round(n).toLocaleString('en-US');
+  return fmtCurrency(parseTotalValue(s));
 }
 
 // ---------- CSV export ----------
