@@ -3,6 +3,10 @@
 // and emits the generated stylesheet alongside the legacy style.css.
 import './tailwind.css';
 
+// Phase 2 layout wiring: the workspace's draggable map↔table divider.
+// Module is small + side-effect free until initWorkspaceResize() runs.
+import { initWorkspaceResize } from './layout.js';
+
 // Entry point. Wires the search inputs, the map, and the results table.
 //
 // Single search flow (Manitoba's Roll_Entry IS the parcel layer; there's no
@@ -722,6 +726,17 @@ function updateSortIndicators() {
 const { map, ready: mapReady } = initMap($mapEl, {
   onFeatureClick: scrollToRow,
 });
+
+// Workspace divider. Once initialised, listen for resize events and
+// nudge MapLibre to refresh its WebGL canvas dimensions so the map
+// stays sharp after the user drags the handle. mapReady gates the
+// resize call so the first pre-init drag doesn't throw.
+if (initWorkspaceResize()) {
+  const workspaceEl = document.getElementById('workspace');
+  workspaceEl?.addEventListener('workspace:resize', () => {
+    mapReady.then(() => map.resize());
+  });
+}
 
 setExportEnabled(false);
 updateSortIndicators();
