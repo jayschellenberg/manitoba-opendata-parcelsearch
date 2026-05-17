@@ -228,6 +228,225 @@ header small a {
   margin: 8px 0 4px;
 }
 
+/* -------------------------------------------------------------
+   Phase 3 tabbed sidebar. The tab strip sticks to the top of the
+   sidebar's own scroll context so the user can always see which
+   tab they're on while scrolling a long control list.
+   ------------------------------------------------------------- */
+.sidebar-tabs {
+  display: flex;
+  background: var(--color-neutral-100, #f4f4f5);
+  border-bottom: 1px solid var(--color-neutral-200, #e4e4e7);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin: -14px -16px 12px;
+  padding: 0 4px;
+}
+.sidebar-tab {
+  flex: 1 1 0;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-neutral-600, #52525b);
+  cursor: pointer;
+  text-align: center;
+  font-family: inherit;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+.sidebar-tab:hover {
+  color: var(--color-primary-500, #1e293b);
+}
+.sidebar-tab[aria-selected="true"] {
+  color: var(--color-primary-500, #1e293b);
+  border-bottom-color: var(--color-accent-500, #2563eb);
+  background: #fff;
+}
+.sidebar-tab:focus-visible {
+  outline: 2px solid var(--color-accent-500, #2563eb);
+  outline-offset: -2px;
+}
+
+.sidebar-tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sidebar-tab-panel[hidden] {
+  display: none !important;
+}
+
+/* Advanced filters details — same visual treatment as the old
+   .more-filters block (uppercase summary, soft slate hover) so
+   the section reads as a single block above the action row. */
+.sidebar .advanced-filters {
+  margin: 4px 0 6px;
+}
+.sidebar .advanced-filters > summary {
+  cursor: pointer;
+  list-style: revert;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #4a6280;
+  padding: 4px 0;
+  user-select: none;
+}
+.sidebar .advanced-filters > summary:hover { color: #2c3e50; }
+.sidebar .advanced-filters > summary:focus-visible {
+  outline: 2px solid var(--color-accent-500, #2563eb);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.sidebar .advanced-filters[open] > summary { margin-bottom: 6px; }
+.sidebar .advanced-filters .filter-row,
+.sidebar .advanced-filters .du-row,
+.sidebar .advanced-filters .legal-title-row {
+  margin-top: 6px;
+}
+
+/* Sales dropzone (Phase 3). Drag-and-drop wrapper around the
+   hidden <input type="file">. The hover/drag-over state lights up
+   the border in accent blue so dropping reads as "release here".
+   The cloud icon is an inline SVG with currentColor fill. */
+.sales-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 16px 12px;
+  border: 2px dashed var(--color-neutral-300, #d4d4d8);
+  border-radius: 6px;
+  background: var(--color-neutral-50, #fafafa);
+  cursor: pointer;
+  color: var(--color-neutral-700, #3f3f46);
+  text-align: center;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
+}
+.sales-dropzone:hover,
+.sales-dropzone.drag-over {
+  border-color: var(--color-accent-500, #2563eb);
+  background: #eff6ff;
+  color: var(--color-primary-500, #1e293b);
+}
+.sales-dropzone:focus-visible {
+  outline: 2px solid var(--color-accent-500, #2563eb);
+  outline-offset: 2px;
+}
+.sales-dropzone strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.sales-dropzone p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-neutral-500, #71717a);
+}
+.sales-dropzone-icon {
+  width: 32px;
+  height: 32px;
+  fill: var(--color-neutral-400, #a1a1aa);
+}
+.sales-dropzone:hover .sales-dropzone-icon,
+.sales-dropzone.drag-over .sales-dropzone-icon {
+  fill: var(--color-accent-500, #2563eb);
+}
+
+/* Overlay groups (Phase 3 Map layers tab). Each toggle button is
+   a stacked layout: a small coloured dot (from --dot-color) +
+   plain-language label. Active toggles fill in via aria-pressed. */
+.overlay-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 10px;
+}
+.overlay-group-title {
+  margin: 0 0 2px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-neutral-500, #71717a);
+}
+.sidebar .overlay-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  background: #fff;
+  border: 1px solid var(--color-neutral-300, #d4d4d8);
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--color-neutral-800, #27272a);
+  cursor: pointer;
+  text-align: left;
+}
+.sidebar .overlay-btn:hover:not(:disabled) {
+  border-color: var(--color-primary-400, #64748b);
+  background: var(--color-neutral-50, #fafafa);
+}
+.sidebar .overlay-btn[aria-pressed="true"] {
+  border-color: var(--color-accent-500, #2563eb);
+  background: #eff6ff;
+  color: var(--color-primary-500, #1e293b);
+}
+.sidebar .overlay-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.sidebar .overlay-btn:focus-visible {
+  outline: 2px solid var(--color-accent-500, #2563eb);
+  outline-offset: 1px;
+}
+.overlay-dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  border-radius: 50%;
+  background: var(--dot-color, var(--color-neutral-400, #a1a1aa));
+  border: 1px solid rgba(0, 0, 0, 0.12);
+}
+.overlay-btn.link-btn .overlay-dot { display: none; }
+
+.sidebar .generate-map-btn {
+  width: 100%;
+  margin-top: 8px;
+  padding: 9px 12px;
+  background: var(--color-accent-500, #2563eb);
+  color: #fff;
+  border: 1px solid var(--color-accent-600, #1d4ed8);
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+.sidebar .generate-map-btn:hover { background: var(--color-accent-600, #1d4ed8); }
+.sidebar .generate-map-btn:focus-visible {
+  outline: 2px solid var(--color-primary-500, #1e293b);
+  outline-offset: 1px;
+}
+
+/* Persistent status block at the bottom of the sidebar. Separated
+   from the tab panels with a hairline so it reads as out-of-tab. */
+.sidebar-status {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-neutral-200, #e4e4e7);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .sidebar h2:first-of-type {
   margin-top: 0;
 }
@@ -548,12 +767,10 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 .sidebar .recent-uploads select { flex: 1 1 auto; min-width: 0; }
 .sidebar #recent-uploads-clear { padding: 2px 8px; font-size: 12px; width: 24px; text-align: center; }
 
-/* Collapse the entire Search section (muni dropdown + address/roll/
-   legal/title inputs + Search/Clear/Export buttons + count +
-   unmatched panel) once a sales CSV upload completes — gives the
-   user a focused view on the Map overlays + sales-only filters. The
-   reverse rule isn't needed since the section is the default state. */
-body.sales-mode .sidebar .search-section { display: none; }
+/* Phase 3: the Search inputs now live inside their own tab panel,
+   so the body.sales-mode collapse-search-section rule no longer
+   applies. The class still serves to gate the .sales-only filter
+   visibility inside the Sales tab; that gating lives below. */
 
 /* Subject parcel row — roll # input + Set/Clear buttons inline. */
 /* Subject combo row — single line: 2/3 width = Subject Roll # input

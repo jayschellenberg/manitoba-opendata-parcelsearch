@@ -7,6 +7,9 @@ import './tailwind.css';
 // Module is small + side-effect free until initWorkspaceResize() runs.
 import { initWorkspaceResize } from './layout.js';
 
+// Phase 3 sidebar tabs.
+import { initSidebarTabs, setActiveTab } from './tabs.js';
+
 // Entry point. Wires the search inputs, the map, and the results table.
 //
 // Single search flow (Manitoba's Roll_Entry IS the parcel layer; there's no
@@ -738,6 +741,10 @@ if (initWorkspaceResize()) {
   });
 }
 
+// Sidebar tabs. Restores the last-active tab from localStorage so a
+// refresh keeps the user where they left off.
+initSidebarTabs();
+
 setExportEnabled(false);
 updateSortIndicators();
 
@@ -745,25 +752,76 @@ $search.addEventListener('click', runSearch);
 $clear.addEventListener('click', clearAll);
 $export.addEventListener('click', exportCsv);
 
-// Sales-CSV upload — see handleSalesUpload() for the parse +
-// per-muni Roll # lookup + table/map rendering pipeline.
-const $salesUploadBtn   = document.getElementById('sales-upload-btn');
+// Sales-CSV upload — Phase 3 wires the dropzone (click + drag/drop)
+// instead of the previous button. The hidden <input type="file">
+// keeps its id so the change event handler is unchanged. See
+// handleSalesUpload() for the parse + per-muni Roll # lookup +
+// table/map rendering pipeline.
+const $salesDropzone    = document.getElementById('sales-dropzone');
 const $salesUploadInput = document.getElementById('sales-upload-input');
-if ($salesUploadBtn && $salesUploadInput) {
-  $salesUploadBtn.addEventListener('click', () => $salesUploadInput.click());
+
+async function runSalesUploadFromFile(file) {
+  if (!file) return;
+  try {
+    await handleSalesUpload(file);
+    // Switching to the Sales tab on success exposes the filters
+    // that just lit up via body.sales-mode, regardless of which
+    // tab the user was on when they dropped the file.
+    setActiveTab('sales', { skipFocus: true });
+  } catch (err) {
+    console.error('Sales upload failed', err);
+    setCount(`Sales upload failed: ${err.message}`);
+  }
+}
+
+if ($salesDropzone && $salesUploadInput) {
+  $salesDropzone.addEventListener('click', (e) => {
+    // Don't re-open the picker if the click landed on the hidden
+    // <input> propagating its synthetic event after a file pick.
+    if (e.target === $salesUploadInput) return;
+    $salesUploadInput.click();
+  });
+  $salesDropzone.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      $salesUploadInput.click();
+    }
+  });
   $salesUploadInput.addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    try {
-      await handleSalesUpload(file);
-    } catch (err) {
-      console.error('Sales upload failed', err);
-      setCount(`Sales upload failed: ${err.message}`);
-    } finally {
-      // Reset so the same file can be re-selected to retry.
-      e.target.value = '';
-    }
+    try { await runSalesUploadFromFile(file); }
+    finally { e.target.value = ''; }
   });
+
+  // Drag-and-drop. The drag-over class lights up the dropzone
+  // border. dragenter/leave have to be counted (children fire
+  // their own enter/leave on hover) so we keep a depth counter.
+  let dragDepth = 0;
+  const onDragEnter = (e) => {
+    e.preventDefault();
+    dragDepth += 1;
+    $salesDropzone.classList.add('drag-over');
+  };
+  const onDragLeave = () => {
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) $salesDropzone.classList.remove('drag-over');
+  };
+  const onDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+  const onDrop = async (e) => {
+    e.preventDefault();
+    dragDepth = 0;
+    $salesDropzone.classList.remove('drag-over');
+    const file = e.dataTransfer?.files?.[0];
+    if (file) await runSalesUploadFromFile(file);
+  };
+  $salesDropzone.addEventListener('dragenter', onDragEnter);
+  $salesDropzone.addEventListener('dragleave', onDragLeave);
+  $salesDropzone.addEventListener('dragover', onDragOver);
+  $salesDropzone.addEventListener('drop', onDrop);
 }
 
 // Recent uploads — picker + Forget All button. Lazily populated
