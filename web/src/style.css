@@ -6,15 +6,19 @@ html,
 body {
   margin: 0;
   padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
+  /* font-sans falls back to the previous system stack when Inter
+     hasn't loaded; the colour and surface still match the old palette
+     so this is a drop-in upgrade from the previous declaration. */
+  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif);
+  font-size: var(--text-body, 14px);
   color: #1a1a1a;
   background: #f7f7f8;
 }
 
 header {
   padding: 6px 20px;
-  background: #1a3a4a;
+  background: var(--color-primary-500, #1e293b);
   color: #fff;
   display: flex;
   align-items: baseline;
