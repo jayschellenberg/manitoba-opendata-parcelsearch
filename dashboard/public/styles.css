@@ -195,6 +195,54 @@ button.ghost:hover:not(:disabled) { background: var(--idle-bg); }
   font-size: 11px;
 }
 
+.plan-summary {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  color: var(--text);
+}
+.plan-summary strong { font-weight: 600; }
+.plan-summary .muted { color: var(--muted); }
+
+.plan-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.plan-table th,
+.plan-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.plan-table th.num,
+.plan-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.plan-table thead th {
+  font-weight: 500;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.plan-table tbody tr:last-child td { border-bottom: 0; }
+.plan-table tfoot th {
+  font-weight: 600;
+  background: #f8fafc;
+}
+.plan-tier-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  margin-right: 6px;
+}
+.plan-tier-badge.monthly  { background: var(--running-bg); color: var(--running); }
+.plan-tier-badge.sixMonth { background: var(--warn-bg);    color: var(--warn); }
+.plan-tier-badge.annual   { background: var(--idle-bg);    color: var(--muted); }
+
 .progress-header {
   display: flex;
   align-items: center;
