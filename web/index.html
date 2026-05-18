@@ -151,10 +151,24 @@
             </select>
             <span class="tip">Municipality</span>
           </span>
-          <!-- Roll # — most precise lookup, one parcel per number. -->
-          <span class="field">
-            <input id="roll" type="text" placeholder="Roll # (exact or comma separated list)" />
-            <span class="tip">Roll # — exact match. Paste a comma-separated list to highlight many parcels at once (within the selected municipality).</span>
+          <!-- Roll # — most precise lookup, one parcel per number.
+               Phase 4 wraps the value in a chip-input shell: the
+               hidden #roll input still holds the canonical comma-
+               separated string, but the user sees each value as a
+               removable chip. Existing main.js code reading
+               $roll.value continues to work unchanged. -->
+          <span class="field chip-input-field">
+            <div class="chip-input" data-target="roll">
+              <input id="roll" type="hidden" />
+              <input
+                class="chip-input-text"
+                type="text"
+                placeholder="Roll # — Enter or comma to add"
+                autocomplete="off"
+                aria-label="Roll number"
+              />
+            </div>
+            <span class="tip">Roll # — exact match. Paste a comma-separated list to highlight many parcels at once (within the selected municipality). Press Enter or type a comma to commit; Backspace on an empty input removes the last chip.</span>
           </span>
           <!-- Civic-address search: From/To numeric range + street
                substring. Tabbing into "To" after "From" auto-fills
@@ -194,39 +208,39 @@
             <div class="filter-row">
               <span class="field">
                 <select id="zone-category" disabled>
-                  <option value="">Any zoning category</option>
+                  <option value="">Any zoning by-law category</option>
                 </select>
-                <span class="tip">Zoning category</span>
+                <span class="tip">Zoning by-law (ZBL) category. Each Manitoba municipality has its own ZBL; this dropdown lists the categories that appear in the selected muni's by-law.</span>
               </span>
               <span class="field">
                 <select id="changed-status">
-                  <option value="">Any status</option>
-                  <option value="zoning">Zoning Changed</option>
-                  <option value="devplan">Dev Plan Changed</option>
-                  <option value="both">Both Changed</option>
+                  <option value="">Any amendment status</option>
+                  <option value="zoning">Zoning changed</option>
+                  <option value="devplan">Development plan changed</option>
+                  <option value="both">Both changed</option>
                 </select>
-                <span class="tip">Filter by amendment status</span>
+                <span class="tip">Filter by amendment status (recent ZBL or Development Plan changes).</span>
               </span>
             </div>
             <div class="du-row">
               <span class="field du-mode-field">
                 <select id="du-mode">
-                  <option value="">Any DU</option>
+                  <option value="">Any dwelling units</option>
                   <option value="zero">0 DU only</option>
                   <option value="min">Min DU</option>
                 </select>
-                <span class="tip">Dwelling units filter</span>
+                <span class="tip">Dwelling units (DU) filter. "0 DU only" surfaces vacant or non-residential parcels; "Min DU" pairs with the count input next to it.</span>
               </span>
               <span class="field du-min-field">
                 <input id="du-min" type="number" min="1" step="1" placeholder="#" disabled />
-                <span class="tip">Minimum dwelling units (when 'Min DU' is selected)</span>
+                <span class="tip">Minimum dwelling units (DU) — applies when 'Min DU' is selected.</span>
               </span>
             </div>
           </details>
 
           <div class="action-row">
-            <button id="search" type="button">Search</button>
-            <button id="clear" type="button" class="secondary">Clear</button>
+            <button id="search" type="button" class="primary">Search</button>
+            <button id="clear" type="button" class="tertiary">Clear</button>
           </div>
         </section><!-- /tab-panel-property -->
 
@@ -351,7 +365,7 @@
           </div>
 
           <div class="action-row">
-            <button id="sales-clear" type="button" class="secondary" title="Reset the page — clears any uploaded sales CSV, search results, subject, and filters.">Clear</button>
+            <button id="sales-clear" type="button" class="tertiary" title="Reset the page — clears any uploaded sales CSV, search results, subject, and filters.">Clear</button>
           </div>
         </section><!-- /tab-panel-sales -->
 
@@ -432,7 +446,7 @@
           <div class="overlay-group overlay-links-group">
             <h3 class="overlay-group-title">Quick links</h3>
             <button id="muni-website-btn" type="button" class="overlay-btn link-btn" disabled title="Select a municipality to enable">Muni website ↗</button>
-            <button id="pd-website-btn" type="button" class="overlay-btn link-btn" disabled title="Select a municipality to enable. Planning District (PD) website.">PD website ↗</button>
+            <button id="pd-website-btn" type="button" class="overlay-btn link-btn" disabled title="PD Website — select a municipality to enable. Planning District website.">Planning district website ↗</button>
           </div>
 
           <button id="static-map-btn" type="button" class="generate-map-btn" title="Capture the current map view as a PNG. Right-click the rendered image below the table and Save Image As… to drop into a report.">Generate Map</button>
