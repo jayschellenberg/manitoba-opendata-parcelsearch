@@ -214,14 +214,14 @@ header small a {
 
 @media (min-width: 768px) {
   .sidebar {
-    /* Split layout: sidebar takes 20% of the shell width with a
-       minimum of 280 px so the controls don't crush below their
-       single-column widths. Workspace gets the remaining 80%.
+    /* Split layout: sidebar takes 25% of the shell width with a
+       minimum of 320 px so the controls don't crush below their
+       single-column widths. Workspace gets the remaining 75%.
        Sticky to the top so the controls stay visible while the
        workspace below scrolls long result sets. */
-    flex: 0 0 20%;
-    min-width: 280px;
-    max-width: 28%;
+    flex: 0 0 25%;
+    min-width: 320px;
+    max-width: 33%;
     align-self: flex-start;
     position: sticky;
     top: var(--topbar-height, 56px);
@@ -1623,8 +1623,10 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
      the table below the fold on wide monitors. The workspace
      stays full-width (the cap leaves a soft right-side gutter);
      the table grows into the freed vertical space without
-     introducing a blank-sidebar column. */
-  max-width: min(1100px, 100%);
+     introducing a blank-sidebar column. The cap is generous so
+     on common 1080p/1440p monitors the right gutter is a thin
+     edge rather than a deliberate column. */
+  max-width: min(1280px, 100%);
   background: #eaeaec;
   position: relative;
   /* 16:9 height computed from the (capped) width. Toggling
