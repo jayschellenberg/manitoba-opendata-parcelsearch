@@ -2024,6 +2024,35 @@ body.workspace-resizing iframe { pointer-events: none; }
   font-weight: 600;
   position: sticky;
   top: 0;
+  /* Sticky thead sits above the rest of the table so the column
+     labels stay visible while the user scrolls a long result set. */
+  z-index: 4;
+}
+
+/* Phase 5: pin the leftmost visible column on horizontal scroll.
+   The first child is either the ★ favourite cell (in sales mode)
+   or the Roll # cell (otherwise) — both are short enough that
+   pinning them stays readable. The thead variant gets a higher
+   z-index so the corner cell sits above the body's sticky column. */
+#results th:first-child,
+#results td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: #fff;
+}
+#results thead th:first-child {
+  z-index: 6;
+  background: #f2f6f8;
+}
+/* Hover background needs to win on the pinned cell too, otherwise
+   it shows through the row underneath. */
+#results tbody tr:hover td:first-child { background: #f6fbff; }
+#results tbody tr.row-highlight td:first-child {
+  /* Inherit the keyframe animation by letting the row's animation
+     paint through. The cell needs a transparent background during
+     the flash so the keyframe colour shows. */
+  background: transparent;
 }
 
 #results th[data-col] {
@@ -2068,6 +2097,149 @@ body.workspace-resizing iframe { pointer-events: none; }
 }
 
 #results td.num { font-variant-numeric: tabular-nums; }
+
+/* Phase 5 selected-parcel summary card. Lives inside #results-wrap
+   above the table. Toggled hidden by main.js when no row is
+   active. The dl grid keeps the field labels narrow and the values
+   right next to them, so the card stays scannable. */
+.parcel-summary {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid var(--color-neutral-200, #e4e4e7);
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+.parcel-summary[hidden] { display: none; }
+.parcel-summary-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.parcel-summary-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-primary-500, #1e293b);
+  font-variant-numeric: tabular-nums;
+}
+.parcel-summary-close {
+  background: transparent;
+  border: none;
+  color: var(--color-neutral-500, #71717a);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.parcel-summary-close:hover {
+  background: var(--color-neutral-100, #f4f4f5);
+  color: var(--color-primary-500, #1e293b);
+}
+.parcel-summary-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px 16px;
+  margin: 0;
+}
+.parcel-summary-fields > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.parcel-summary-fields dt {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-neutral-500, #71717a);
+  margin: 0 0 2px;
+}
+.parcel-summary-fields dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-primary-500, #1e293b);
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+}
+.parcel-summary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-neutral-200, #e4e4e7);
+}
+.parcel-summary .ps-action {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  background: #fff;
+  color: var(--color-accent-600, #1d4ed8);
+  border: 1px solid var(--color-accent-500, #2563eb);
+  border-radius: 4px;
+  text-decoration: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+.parcel-summary .ps-action:hover { background: #eff6ff; }
+.parcel-summary .ps-action[hidden] { display: none; }
+.parcel-summary .ps-action:disabled {
+  color: var(--color-neutral-400, #a1a1aa);
+  border-color: var(--color-neutral-200, #e4e4e7);
+  cursor: not-allowed;
+  background: #fff;
+}
+
+/* Phase 5 badges for categorical columns. Each badge is a small
+   pill with the same font size as the cell text; the colour
+   carries the categorical meaning so the user can scan a column
+   without reading each value.
+     .badge-zone    — zoning code (light grey)
+     .badge-amend   — amendment status (amber when "Changed")
+     .badge-tax-tx  — tax status TAXABLE (light blue)
+     .badge-tax-ex  — tax status EXEMPT (grey)
+     .badge-vacant  — vacant-land proxy (green) */
+#results .badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+}
+#results .badge-zone {
+  background: var(--color-neutral-100, #f4f4f5);
+  color: var(--color-neutral-700, #3f3f46);
+  border-color: var(--color-neutral-200, #e4e4e7);
+}
+#results .badge-amend {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #fde68a;
+}
+#results .badge-tax-tx {
+  background: #dbeafe;
+  color: #1e40af;
+  border-color: #bfdbfe;
+}
+#results .badge-tax-ex {
+  background: var(--color-neutral-100, #f4f4f5);
+  color: var(--color-neutral-700, #3f3f46);
+  border-color: var(--color-neutral-200, #e4e4e7);
+}
+#results .badge-vacant {
+  background: #dcfce7;
+  color: #166534;
+  border-color: #bbf7d0;
+}
 
 #results td a {
   color: #1a4a7a;
