@@ -13,7 +13,7 @@ Source: <https://github.com/jayschellenberg/manitoba-opendata-parcelsearch>. Dep
 | `web/` | Vite + vanilla JS static site. Queries Manitoba Open Data's ArcGIS REST API live on every search. Deployed to Vercel. | Firm colleagues |
 | `r/download_parcels.R` | Snapshots the three primary FeatureServer layers to dated GeoPackages. | Local archive |
 | `r/parcel_search_app.R` | Shiny app that searches the **local** snapshot for offline / historical lookups. | Personal use |
-| `r/build_legal_index.R` | Converts `ParcelSearch/mao-scrape/results/parcels.parquet` into the static browser legal-search index at `web/public/data/legal-index.json`. | Web deploy prep |
+| `r/build_legal_index.R` | Converts `../mao-scrape/results/parcels.parquet` into the static browser legal-search index at `web/public/data/legal-index.json`. | Web deploy prep |
 | `r/build_masc_shards.R` | Splits the MASC quarter-section rating CSV into per-municipality static shards for the MASC Rating map layer. | Web deploy prep |
 | `r/build_parcel_masc.R` | Pre-bakes the dominant MASC soil rating per Roll Entry parcel for the Soil table column and writes the rated river-lot MASC overlay when river-lot inputs are present. | Web deploy prep |
 | `vercel.json` | Build config + production CORS rewrite for the contaminated-sites CSV. | — |
@@ -24,7 +24,7 @@ Source: <https://github.com/jayschellenberg/manitoba-opendata-parcelsearch>. Dep
 
 Most parcel, zoning, dev-plan, traffic, and environmental data is queried live. Search results are always against the current state of the province's published data; auxiliary overlay datasets are cached in the browser for 7 days (clearable from the **Clear** button) so repeat work in the same area stays snappy.
 
-Legal-description search is backed by a generated static index from the companion MAO scrape. Run this after `ParcelSearch/mao-scrape/results/parcels.parquet` is assembled or refreshed:
+Legal-description search is backed by a generated static index from the companion MAO scrape. Run this after `../mao-scrape/results/parcels.parquet` is assembled or refreshed:
 
 ```bash
 cd web
@@ -47,7 +47,7 @@ Rscript r/build_parcel_masc.R
 | [Development Plan Designations](https://geoportal.gov.mb.ca/datasets/manitoba::manitoba-development-plan-designations/about) | `…/Manitoba_Development_Plan_Designations/FeatureServer/0` | Designation name, category, dev-plan bylaw (`DP_BYLAW`), amendment bylaw (`DPA_BYLAW`), planning district |
 | [MHTIS Traffic Flow 2019](https://www.gov.mb.ca/mti/traffic/counts.html) | `…/MHTIS_Traffic_Flow_2019/FeatureServer/0` | AADT polylines for the colour-coded Traffic overlay |
 | [Manitoba Contaminated Sites Registry](https://www.gov.mb.ca/sd/waste_management/contaminated_sites/registry/index.html) | CSV at `manitoba.ca/.../cs-data.csv` (proxied via `vercel.json` because the upstream lacks `Access-Control-Allow-Origin`) | Designated Contaminated, Designated Impacted, and Not Designated sites for the Enviro overlay |
-| MAO scrape legal index | `web/public/data/legal-index.json` generated from `ParcelSearch/mao-scrape/results/parcels.parquet` | Legal description text, Lot, Block, Plan, certificates of title, and `(muni_no, roll_no_txt)` lookup keys |
+| MAO scrape legal index | `web/public/data/legal-index.json` generated from `../mao-scrape/results/parcels.parquet` | Legal description text, Lot, Block, Plan, certificates of title, and `(muni_no, roll_no_txt)` lookup keys |
 | MASC soil ratings | `masc_soil_ratings_with_latlon.csv` + river-lot scrape/KMZ → `web/public/data/masc/`, `web/public/data/masc-riverlots.json`, and `web/public/data/parcel-masc/` | Quarter-section and river-lot MASC layer, A-J rating colours, visible rating-letter labels, parcel-level Soil table field, and split-boundary river lots such as De Salaberry / St-Pierre-Jolys |
 | [MASC Risk Areas / Risk Regions](https://open.canada.ca/data/en/dataset/739cb8ed-b661-5a60-7a26-eb60cd06541f) | `…/MASC_Risk_Areas/FeatureServer/0` | Official crop-insurance risk-area polygons, Risk Areas overlay labels, and parcel-level Risk Area table field |
 
@@ -121,7 +121,7 @@ Pure static. Vercel serves the Vite-built bundle plus the generated legal-search
 **Caching.** Data classes use distinct strategies:
 
 - **Search results** — never cached. Every Search fetches current ROLL_ENTRY rows live, even when a generated legal-index match supplies the lookup keys.
-- **Generated legal index** — static deployment artifact, regenerated from the MAO scrape with `npm run legal:index` whenever `ParcelSearch/mao-scrape/results/parcels.parquet` is refreshed.
+- **Generated legal index** — static deployment artifact, regenerated from the MAO scrape with `npm run legal:index` whenever `../mao-scrape/results/parcels.parquet` is refreshed.
 - **Generated MASC artifacts** — static deployment artifacts regenerated with `r/build_masc_shards.R` and `r/build_parcel_masc.R` whenever MASC ratings, the river-lot scrape/KMZ, or Roll Entry snapshots are refreshed.
 - **Dropdown lists + auxiliary overlays** — cached in `localStorage` under the `mbpsCache.` namespace. Most lists and live overlays use a 7-day TTL; stable generated/reference overlays such as MASC, MASC Risk Areas, municipal boundaries, river lots, and the section grid use a 30-day TTL. Quota recovery evicts older namespaced entries before failing. Clear button wipes the namespace.
 - **Per-muni overlay fetches** — cached per-muni so switching back to a recently-visited muni is instant.
