@@ -83,10 +83,10 @@ test('encodeState — duMin integer formatted as string', () => {
   assert.equal(params.get('dn'), '3');
 });
 
-test('encodeState — vacantPct decimal preserved', () => {
-  const out = encodeState({ vacantPct: 2.5 });
+test('encodeState — vacantThreshold decimal preserved', () => {
+  const out = encodeState({ vacantThreshold: 2.5 });
   const params = new URLSearchParams(out);
-  assert.equal(params.get('vp'), '2.5');
+  assert.equal(params.get('vt'), '2.5');
 });
 
 test('decodeState — single string field', () => {
@@ -111,8 +111,8 @@ test('decodeState — integer field parsed', () => {
 });
 
 test('decodeState — float field parsed', () => {
-  const result = decodeState('vp=2.5');
-  assert.deepEqual(result, { vacantPct: 2.5 });
+  const result = decodeState('vt=2.5');
+  assert.deepEqual(result, { vacantThreshold: 2.5 });
 });
 
 test('decodeState — leading ? tolerated', () => {
@@ -143,15 +143,24 @@ test('decodeState — non-numeric integer dropped', () => {
   assert.deepEqual(result, { duMode: 'min' });
 });
 
-test('decodeState — number out of range dropped', () => {
-  // vacantPct must be 0..10
-  const result = decodeState('vp=15');
+test('decodeState — vacantThreshold negative dropped', () => {
+  const result = decodeState('vt=-1');
   assert.deepEqual(result, {});
 });
 
-test('decodeState — negative vacantPct dropped', () => {
-  const result = decodeState('vp=-1');
+test('decodeState — vacantMode invalid dropped', () => {
+  const result = decodeState('vd=both');
   assert.deepEqual(result, {});
+});
+
+test('decodeState — vacantMode pct accepted', () => {
+  const result = decodeState('vd=pct');
+  assert.deepEqual(result, { vacantMode: 'pct' });
+});
+
+test('decodeState — vacantMode dollar accepted', () => {
+  const result = decodeState('vd=dollar');
+  assert.deepEqual(result, { vacantMode: 'dollar' });
 });
 
 test('decodeState — bad oneOf value dropped', () => {
@@ -211,8 +220,8 @@ test('round-trip — full state survives encode + decode', () => {
     duMin: 5,
     tab: 'property',
     selectedRoll: '4000000',
-    vacantPct: 2.5,
-    vacantMax: 5000,
+    vacantThreshold: 2.5,
+    vacantMode: 'pct',
   };
   const encoded = encodeState(state);
   const decoded = decodeState(encoded);
@@ -226,7 +235,7 @@ test('round-trip — empty state survives', () => {
 });
 
 test('round-trip — partial state preserves only set keys', () => {
-  const state = { muni: 'TACHE (RM)', vacantPct: 2 };
+  const state = { muni: 'TACHE (RM)', vacantThreshold: 2 };
   const encoded = encodeState(state);
   const decoded = decodeState(encoded);
   assert.deepEqual(decoded, state);

@@ -76,8 +76,8 @@ export const SCHEMA = {
   duMin:       { param: 'dn', validate: cleanInt(1, 9999),     format: (v) => String(v) },
   tab:         { param: 't',  validate: oneOf(['property', 'sales']), format: (v) => v },
   selectedRoll: { param: 'sr', validate: cleanString,          format: (v) => v },
-  vacantPct:   { param: 'vp', validate: cleanNumber(0, 10),    format: (v) => String(v) },
-  vacantMax:   { param: 'vm', validate: cleanInt(0, 1e9),      format: (v) => String(v) },
+  vacantThreshold: { param: 'vt', validate: cleanNumber(0, 1e9), format: (v) => String(v) },
+  vacantMode:  { param: 'vd', validate: oneOf(['pct', 'dollar']), format: (v) => v },
 };
 
 const PARAM_TO_KEY = Object.fromEntries(
