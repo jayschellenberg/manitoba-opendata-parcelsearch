@@ -532,9 +532,10 @@ let currentRows = [];
 // result sets (200+ comp uploads, muni-wide overlay searches) are
 // paginated client-side so the DOM stays light. Declared at module
 // top rather than inline near renderTable so renderTable (and any
-// other early code path) can read currentPage without hitting TDZ.
+// other early code path) can read them without hitting TDZ.
 const PAGE_SIZE = 100;
 let currentPage = 0;
+const $paginator = document.getElementById('results-paginator');
 
 // row key -> the Feature whose geometry we should fly to when the user
 // clicks that row. Cleared on every renderTable.
@@ -4127,9 +4128,10 @@ function clearTable() {
   setExportEnabled(false);
 }
 
-// PAGE_SIZE + currentPage live at the top of the module so renderTable
-// and friends can read them without TDZ during early code paths.
-const $paginator = document.getElementById('results-paginator');
+// $paginator + PAGE_SIZE + currentPage all live near the top of the
+// module so renderTable / paginator helpers can read them without
+// hitting TDZ during early code paths (sales-CSV upload via the
+// recent-uploads dropdown, etc).
 
 function renderTable(rows, { resetPage = true } = {}) {
   $tbody.innerHTML = '';
