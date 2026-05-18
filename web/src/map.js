@@ -260,34 +260,22 @@ const BASEMAP_STYLE = {
     },
   },
   layers: [
-    { id: 'carto-positron', type: 'raster', source: 'carto-positron', minzoom: 0, maxzoom: 20 },
+    // Carto streets layer starts HIDDEN; satellite is the default
+    // basemap because that's what appraisers reach for on first
+    // open. The basemap toggle in the top-right swaps them.
     {
-      id: 'esri-imagery',
+      id: 'carto-positron',
       type: 'raster',
-      source: 'esri-imagery',
+      source: 'carto-positron',
       minzoom: 0,
       maxzoom: 20,
       layout: { visibility: 'none' },
     },
-    // Road-name overlay first, then place-name overlay on top — both
-    // start hidden; BasemapToggleControl reveals them when Satellite
-    // is on.
-    {
-      id: 'esri-transportation',
-      type: 'raster',
-      source: 'esri-transportation',
-      minzoom: 0,
-      maxzoom: 20,
-      layout: { visibility: 'none' },
-    },
-    {
-      id: 'esri-reference',
-      type: 'raster',
-      source: 'esri-reference',
-      minzoom: 0,
-      maxzoom: 20,
-      layout: { visibility: 'none' },
-    },
+    { id: 'esri-imagery', type: 'raster', source: 'esri-imagery', minzoom: 0, maxzoom: 20 },
+    // Road-name + place-name reference overlays that ride along
+    // with the satellite imagery so labels stay readable.
+    { id: 'esri-transportation', type: 'raster', source: 'esri-transportation', minzoom: 0, maxzoom: 20 },
+    { id: 'esri-reference',      type: 'raster', source: 'esri-reference',      minzoom: 0, maxzoom: 20 },
   ],
 };
 
@@ -2473,9 +2461,12 @@ class BasemapToggleControl {
     this._container.className = 'maplibregl-ctrl maplibregl-ctrl-group basemap-toggle';
     this._btn = document.createElement('button');
     this._btn.type = 'button';
-    this._btn.title = 'Toggle satellite basemap';
-    this._btn.setAttribute('aria-label', 'Toggle satellite basemap');
-    this._btn.textContent = 'Satellite';
+    this._btn.title = 'Toggle basemap (satellite ⇄ streets)';
+    this._btn.setAttribute('aria-label', 'Toggle basemap');
+    // Satellite is the default basemap; the button label reads
+    // "Streets" because that's what the click will swap to.
+    this._btn.textContent = 'Streets';
+    this._btn.classList.add('active');
     this._btn.addEventListener('click', () => this._toggle());
     this._container.appendChild(this._btn);
     return this._container;
