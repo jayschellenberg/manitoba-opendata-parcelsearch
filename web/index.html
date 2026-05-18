@@ -577,6 +577,43 @@
         </div>
       </aside>
 
+      <!-- Phase 5 table toolbar. Column preset dropdown on the left
+           (Sales analysis / Zoning check / Full detail), gear button
+           on the right that opens a checklist for per-column toggle.
+           Toolbar stays sticky to the top of the table-pane so it's
+           in reach while scrolling long result sets. -->
+      <div class="results-toolbar">
+        <label class="results-toolbar-presets">
+          <span class="results-toolbar-label">Columns:</span>
+          <select id="columns-preset" aria-label="Apply a column preset">
+            <option value="">Preset…</option>
+            <option value="Sales analysis">Sales analysis</option>
+            <option value="Zoning check">Zoning check</option>
+            <option value="Full detail">Full detail</option>
+          </select>
+        </label>
+        <div class="results-toolbar-spacer"></div>
+        <div class="columns-popover-wrap">
+          <button
+            type="button"
+            id="columns-gear"
+            class="columns-gear-btn"
+            aria-haspopup="true"
+            aria-expanded="false"
+            aria-controls="columns-popover"
+            title="Choose which columns to show"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M8 5.2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6zm5.7 4.3c.05-.32.08-.66.08-1s-.03-.68-.08-1l1.36-1.05a.4.4 0 0 0 .08-.5l-1.3-2.25a.4.4 0 0 0-.5-.18l-1.6.64c-.34-.26-.71-.48-1.1-.65L10.4 1.85a.4.4 0 0 0-.4-.35h-2.6a.4.4 0 0 0-.4.35L6.76 3.5c-.39.17-.76.39-1.1.65l-1.6-.64a.4.4 0 0 0-.5.18L2.26 5.95a.4.4 0 0 0 .08.5l1.36 1.05c-.05.32-.08.66-.08 1s.03.68.08 1L2.34 10.55a.4.4 0 0 0-.08.5l1.3 2.25a.4.4 0 0 0 .5.18l1.6-.64c.34.26.71.48 1.1.65l.24 1.66a.4.4 0 0 0 .4.35h2.6a.4.4 0 0 0 .4-.35l.24-1.66c.39-.17.76-.39 1.1-.65l1.6.64a.4.4 0 0 0 .5-.18l1.3-2.25a.4.4 0 0 0-.08-.5L13.7 9.5z" fill="currentColor"/>
+            </svg>
+            <span class="columns-gear-label">Columns</span>
+          </button>
+          <div class="columns-popover" id="columns-popover" role="menu" aria-label="Column visibility">
+            <!-- Checkboxes populated by columns.js at init time. -->
+          </div>
+        </div>
+      </div>
+
       <table id="results">
         <thead>
           <tr>

@@ -430,7 +430,115 @@ None.
   differ; the structure is identical.
 
 ## Phase 5 - Results table
-_pending_
+
+### Decisions
+
+- Sticky leftmost column on horizontal scroll. CSS pins the first
+  child cell (★ in sales mode, Roll # otherwise) without needing
+  the cells to carry their own data-col attributes — the rule
+  targets `td:first-child` and matches whichever column is leftmost
+  given the current mode. The thead corner cell gets a higher
+  z-index so it stays above both the sticky thead row and the
+  sticky column.
+- Badges:
+  - `.badge-zone` (light grey) for Zoning and Zoning 2 codes
+  - `.badge-amend` (amber) for the Changes column when "Changed"
+  - `.badge-tax-tx` / `.badge-tax-ex` / `.badge-vacant` styles
+    are in place for future columns; the current table doesn't
+    have a tax-status or vacant-flag column, so those go unused
+    until a later phase adds the column.
+- `td()` helper now accepts an Element value, and a `badge(text,
+  cls)` helper wraps a string in a pill span. Both keep the
+  null/empty -> em-dash fallback.
+- Selected-parcel summary card lives inside `#results-wrap` above
+  the table. Populates from the existing `row` object on click;
+  no async refetch needed. Action row:
+  - Open MAO -> `Asmt_Rpt_Url` (hidden when missing)
+  - Open muni website -> `lookupMuniWebsite` (hidden when no match)
+  - Copy source note -> writes a Phase 6-shaped citation to the
+    clipboard. Phase 6 will tighten the exact wording.
+  - Export selected -> `exportCsv([row])` (existing exportCsv now
+    takes an optional rows array)
+- Column visibility:
+  - `columns.js` reads the thead's `data-col` attributes to
+    enumerate columns. The visible set is a `Set<string>`
+    persisted to localStorage under `mbps_table_columns_v1`.
+  - `.col-hidden` stamped on a th + every td in that column
+    collapses the column. Mode classes (.sales-only / .basic-only /
+    .devplan-only / .masc-only / .subj-col) still apply
+    independently, so a column needs BOTH the user's visible set
+    AND the mode-allowed state to render.
+  - Default visible set follows the Phase 5 spec (8 columns).
+    Sparse in non-sales mode; user adds columns via the gear.
+  - Presets dropdown: "Sales analysis", "Zoning check", "Full
+    detail" (Full detail = unhide every column).
+  - Two ths share `data-col="acres"` (sales-mode + basic-mode
+    versions). Treated as one logical column.
+- exportCsv accepts an optional explicit-rows array. Used by the
+  Export selected button; existing call sites pass nothing and
+  retain the previous starred-only / full-set semantics.
+
+### Reusable patterns (lift candidates)
+
+- `web/src/columns.js` - column visibility module. Generic; the
+  only contract is the table id (`#results`) and that ths carry
+  `data-col`. Reuse verbatim, swap the DEFAULT_VISIBLE / PRESETS
+  sets for the target app's column keys.
+- `.parcel-summary` card markup + CSS. Generic shape (dl grid +
+  action row); per-app fields and action targets are configurable.
+- Badge CSS (`.badge`, `.badge-*` variants): reuse.
+- Sticky-first-column + sticky-thead CSS: reuse.
+- `td()` Element-aware overload + `badge()` helper: reuse.
+- `exportCsv(rows)` signature where `rows` is optional — the
+  pattern of "shared export logic, callable with or without a
+  subset" applies to any tabular app.
+
+### Manitoba-specific (do not port)
+
+- The Phase 5 default-visible set and presets reference Manitoba
+  column keys (saledate, saleprice, grouppriceac, etc.). Pattern
+  ports; key names don't.
+- Selected-parcel summary's `Asmt_Rpt_Url` field is a Manitoba MAO
+  link. Winnipeg will have a different parcel-detail URL.
+- The Phase 6-shaped source-note text references "Manitoba Open
+  Data (Roll Entry, Zoning By-Laws, Development Plan Designations)"
+  — Winnipeg gets its own data-source citation.
+
+### Dependencies added
+
+None.
+
+### Gotchas
+
+- Sticky-first-column hover state needs an explicit background on
+  the pinned cell, otherwise the row hover bleeds through. Same
+  trick for the row-flash animation: the pinned cell becomes
+  transparent during the flash so the keyframe paints.
+- The sticky toolbar shares the table-pane's scroll context. With
+  the sticky thead also at top:0, the toolbar sits ABOVE the thead
+  (z-index 7 vs thead's 4) so the column-preset dropdown isn't
+  hidden when the user scrolls into rows.
+- `applyVisibility` runs after every table render (paginate, sort,
+  filter, fresh search). Hidden columns stay hidden across all
+  re-renders without re-initialisation.
+
+### Things visually replaced / removed
+
+- No structural removals — Phase 5 is additive. Existing column
+  rendering logic, sort handlers, row click handlers, and CSV
+  export all continue to work; new pieces layer on top.
+
+### Phase 5 porting checklist (Winnipeg)
+
+- columns.js + .col-hidden CSS + toolbar markup: reuse, swap the
+  DEFAULT_VISIBLE / PRESETS sets.
+- Sticky leftmost column + sticky thead CSS: reuse.
+- Parcel summary card markup + CSS + populate function: reuse the
+  shape, swap the per-field selectors and the MAO/muni-website
+  link logic.
+- Badge CSS: reuse. Per-app: decide which categorical cells get
+  which badge class (zoning, status, etc.).
+- exportCsv(rows) signature: reuse the optional-rows pattern.
 
 ## Phase 6 - Appraisal-specific features
 _pending_
