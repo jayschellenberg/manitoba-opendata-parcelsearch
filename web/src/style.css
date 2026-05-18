@@ -1381,6 +1381,14 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   gap: 6px;
   margin-top: 4px;
 }
+/* Phase 7 follow-up: the % and $ threshold inputs stay tucked away
+   until the user actually checks "Vacant land" — they're only
+   meaningful when the filter is active. CSS :has() handles the
+   show/hide without a JS listener (supported in every browser
+   we target). */
+.sidebar:not(:has(#vacant-only:checked)) .vacant-threshold-row {
+  display: none;
+}
 .sidebar .vacant-threshold-row .vacant-pct-field,
 .sidebar .vacant-threshold-row .vacant-max-field {
   flex: 1 1 0;
