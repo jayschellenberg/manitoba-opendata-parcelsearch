@@ -528,6 +528,14 @@ function lookupPdWebsite(pdName) {
 // Most recent table rows, kept around for CSV export.
 let currentRows = [];
 
+// Page size + current pagination index for the results grid. Big
+// result sets (200+ comp uploads, muni-wide overlay searches) are
+// paginated client-side so the DOM stays light. Declared at module
+// top rather than inline near renderTable so renderTable (and any
+// other early code path) can read currentPage without hitting TDZ.
+const PAGE_SIZE = 100;
+let currentPage = 0;
+
 // row key -> the Feature whose geometry we should fly to when the user
 // clicks that row. Cleared on every renderTable.
 const rowFeatureMap = new Map();
@@ -4119,13 +4127,8 @@ function clearTable() {
   setExportEnabled(false);
 }
 
-// Page size for the results grid. Big result sets (200+ comp uploads,
-// muni-wide overlay searches) are paginated client-side so the DOM
-// stays light — 2000 rows × ~25 cells/row was ~50k <td>s, which
-// noticeably stalled scroll and sort. Export CSV ignores pagination
-// and always emits the full currentRows set.
-const PAGE_SIZE = 100;
-let currentPage = 0;
+// PAGE_SIZE + currentPage live at the top of the module so renderTable
+// and friends can read them without TDZ during early code paths.
 const $paginator = document.getElementById('results-paginator');
 
 function renderTable(rows, { resetPage = true } = {}) {
