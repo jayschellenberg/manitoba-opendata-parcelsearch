@@ -2464,9 +2464,10 @@ class BasemapToggleControl {
     this._btn.title = 'Toggle basemap (satellite ⇄ streets)';
     this._btn.setAttribute('aria-label', 'Toggle basemap');
     // Satellite is the default basemap; the button label reads
-    // "Streets" because that's what the click will swap to.
+    // "Streets" because that's what a click will swap to. Stays
+    // white/dark (the default style) on first paint — the .active
+    // dark fill only kicks in after the user clicks.
     this._btn.textContent = 'Streets';
-    this._btn.classList.add('active');
     this._btn.addEventListener('click', () => this._toggle());
     this._container.appendChild(this._btn);
     return this._container;
