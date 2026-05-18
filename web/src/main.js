@@ -10,6 +10,10 @@ import { initWorkspaceResize } from './layout.js';
 // Phase 3 sidebar tabs.
 import { initSidebarTabs, setActiveTab } from './tabs.js';
 
+// Phase 4 form controls.
+import { initChipInput } from './chipInput.js';
+import { initInfoIcons } from './infoIcon.js';
+
 // Entry point. Wires the search inputs, the map, and the results table.
 //
 // Single search flow (Manitoba's Roll_Entry IS the parcel layer; there's no
@@ -744,6 +748,19 @@ if (initWorkspaceResize()) {
 // Sidebar tabs. Restores the last-active tab from localStorage so a
 // refresh keeps the user where they left off.
 initSidebarTabs();
+
+// Roll # chip input. The hidden #roll input keeps holding the
+// canonical comma-separated string, so existing $roll.value
+// reads continue to work. Enter on an empty text input runs
+// search (mirrors the legacy Enter-runs-search binding).
+const $rollChip = document.querySelector('.chip-input[data-target="roll"]');
+if ($rollChip) initChipInput($rollChip, { onEnterEmpty: () => runSearch() });
+
+// Info icons. Walks every .field and inserts an "i" button beside
+// the existing .tip, then wires hover/click/focus to reveal the
+// tip as a popover. Idempotent; safe to re-run if new fields are
+// added later.
+initInfoIcons();
 
 setExportEnabled(false);
 updateSortIndicators();

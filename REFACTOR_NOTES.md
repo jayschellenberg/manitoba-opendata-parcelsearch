@@ -315,7 +315,119 @@ None.
   internal names diverge from how appraisers describe them.
 
 ## Phase 4 - Form controls
-_pending_
+
+### Decisions
+
+- Roll # changed from a single text input to a chip-input. The
+  canonical store is still a hidden `<input id="roll">` whose
+  `.value` holds the comma-separated string, so every existing
+  read of `$roll.value` in `main.js` keeps working. The chip-input
+  shell intercepts typing: Enter or comma commits a chip, Backspace
+  on an empty input pops the last chip, paste expands "1,2,3"
+  into three chips at once.
+- Enter-on-empty in the chip-input forwards to `runSearch()` so
+  the legacy "Enter in any search field runs Search" UX still works
+  even though the hidden input itself can't receive Enter.
+- `.tip` no longer auto-shows on field focus. Each `.field`
+  containing a `.tip` now gets an "i" info-icon button next to the
+  input; hover, click, or focus the icon to reveal the popover.
+  Click toggles a pinned state that survives outside clicks
+  except for click-away / Escape. Touch users tap to toggle.
+- Existing tip copy moved into the popovers verbatim. No
+  rewriting was required because the conversion is structural
+  (icon + popover position) rather than textual.
+- Button hierarchy:
+  - `.primary` (or no class) — filled accent blue. Used by Search
+    and bare action buttons.
+  - `.secondary` — accent-blue outlined. Used by Export CSV and
+    inline action buttons (Set, ×, sales-mode unmatched download).
+    Overlay toggles already had their own `.overlay-btn` styling
+    and aren't affected.
+  - `.tertiary` — text-only, no border. Used by Clear in both the
+    Property and Sales tabs.
+  - `.generate-map-btn` stays as-is (a primary CTA in its own class).
+- Plain-language renames per the Phase 4 spec applied where they
+  hadn't been already in Phase 3:
+  - "PD website ↗" -> "Planning district website ↗" (PD Website
+    kept in the tooltip).
+  - "Any zoning category" -> "Any zoning by-law category"
+    (with ZBL technical term in the tooltip).
+  - "Zoning Changed / Dev Plan Changed / Both Changed" -> "Zoning
+    changed / Development plan changed / Both changed" (sentence
+    case).
+  - "Any DU" -> "Any dwelling units" (with DU acronym in tooltip).
+  - "Filter by amendment status" -> "Filter by amendment status
+    (recent ZBL or Development Plan changes)".
+
+### Reusable patterns (lift candidates)
+
+- `web/src/chipInput.js` - chip input. Generic; the only contract
+  is the markup shape (a wrapper `<div class="chip-input"
+  data-target="X">` containing the hidden `<input id="X">` and a
+  `.chip-input-text` text input). `onEnterEmpty` lets callers
+  forward Enter-on-empty to a search action without coupling.
+- `web/src/infoIcon.js` - converts `.tip` siblings into icon-driven
+  popovers. Idempotent; safe to re-run after dynamic DOM updates.
+  Generic; no Manitoba assumptions.
+- Chip / chip-input / info-icon / popover CSS: portable as a block.
+- The primary / secondary / tertiary button hierarchy CSS in the
+  `.controls button*` rules: portable.
+
+### Manitoba-specific (do not port)
+
+- The exact plain-language tooltip strings are Manitoba-focused
+  (Roll Entry, ZBL, MAO, Planning District). The pattern (full
+  name in label, acronym in tooltip) ports; the strings don't.
+
+### Dependencies added
+
+None.
+
+### Gotchas
+
+- `#roll` is now `<input type="hidden">`. The legacy
+  `for (const el of [..., $roll, ...]) el.addEventListener('keydown',
+  ...)` loop binds keydown on $roll but a hidden input never
+  receives keydown events, so the binding is a no-op there. The
+  chip input's text input picks up Enter via `onEnterEmpty`.
+- Existing call sites that read `$roll.value.trim()` continue to
+  work because the chip input writes the comma-separated value
+  back to the hidden input on every change.
+- `.tip`'s legacy `white-space: nowrap` + 1-line layout was
+  replaced with `white-space: normal` + a max-width so longer
+  popovers wrap to multiple lines. Visually quite different from
+  the old short hint but matches the plan's "move existing micro-
+  copy into those tooltips verbatim".
+- `.controls button` (no class) now defaults to the accent-blue
+  primary style. Anything that relied on the legacy teal default
+  inherits the new colour. Verified Set / Subject Apply / Date
+  presets still read sensibly; the Date preset buttons override
+  with their own background so they're unaffected.
+- Native `title=""` attributes are still set on the info icons so
+  the OS-level tooltip works in browsers that block the JS
+  popover (or for screen readers).
+
+### Things visually replaced / removed
+
+- Single-line `<input id="roll">` replaced by a chip container.
+- `<span class="tip">` no longer renders as a focus-driven inline
+  bubble; it renders as an icon-driven popover. The tag itself is
+  unchanged, so the markup looks the same from a quick scan.
+- Search button no longer uses the legacy teal default; it picks
+  up `.primary` for explicit accent blue.
+- Clear buttons (`#clear`, `#sales-clear`) lost the `.secondary`
+  outline and now read as text-only via `.tertiary`.
+
+### Phase 4 porting checklist (Winnipeg)
+
+- chipInput.js + chip CSS: reuse.
+- infoIcon.js + info-icon / popover CSS: reuse.
+- Button hierarchy CSS: reuse, including the `.primary` /
+  `.secondary` / `.tertiary` triple.
+- Plain-language labels with technical terms in tooltips: apply
+  the same pattern to Winnipeg's labels (e.g. "Zoning by-law
+  100/2019" instead of the Manitoba ZBL). The exact strings
+  differ; the structure is identical.
 
 ## Phase 5 - Results table
 _pending_
