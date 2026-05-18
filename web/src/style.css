@@ -686,16 +686,18 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
    the Plan #/Lo Ac/Hi Ac/Vacant Land row and the date preset
    buttons. Mirrors the size-vacant-row's input styling so the two
    sales filter rows look like a single visual block. */
+/* Street Name + Min $/Ac + Max $/Ac share one row: 50 / 25 / 25
+   so a five-digit dollar value fits comfortably without crowding
+   the address substring search. */
 .sidebar .street-name-row {
   display: flex;
-  margin-top: 4px;
+  gap: 6px;
+  align-items: center;
 }
-.sidebar .street-name-row .street-name-field { flex: 1 1 auto; min-width: 0; }
-.sidebar .street-name-row input[type="text"] {
-  width: 100%;
-  padding: 6px 6px;
-  font-size: 12px;
-}
+.sidebar .street-name-row > .field { flex: 1 1 0; min-width: 0; }
+.sidebar .street-name-row > .street-name-field { flex: 2 1 0; }
+.sidebar .street-name-row input { width: 100%; padding: 6px 6px; font-size: 12px; }
+
 
 /* $/Acre filter row — Min + Max inputs split 50/50, paired
    visually with the Lo Ac / Hi Ac row above so the size + rate
@@ -741,6 +743,13 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   gap: 4px;
   margin-top: 4px;
   flex-wrap: wrap;
+  align-items: center;
+}
+.sidebar .date-presets-prefix {
+  font-size: 11px;
+  color: var(--color-neutral-600, #52525b);
+  white-space: nowrap;
+  margin-right: 2px;
 }
 .sidebar .date-preset-btn {
   padding: 3px 8px;
@@ -1385,8 +1394,7 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   gap: 6px;
   margin-top: 4px;
 }
-.sidebar:not(:has(#vacant-only:checked)) .vacant-threshold-row,
-.sidebar:not(:has(#vacant-only:checked)) .ppa-row {
+.sidebar:not(:has(#vacant-only:checked)) .vacant-threshold-row {
   display: none;
 }
 .sidebar .vacant-threshold-prefix {
