@@ -3119,9 +3119,28 @@ async function ensureCsvOverlayEnrichment() {
   const fc = { type: 'FeatureCollection', features: csvFullRows.map((r) => r.parcel) };
   setCount('Loading zoning + dev-plan for uploaded sales…');
   try {
-    await enrichOverlays(fc, pendingOverlayEnrichInputs, 'Sales loaded');
+    // enrichOverlays builds and returns a fresh `rows` array with
+    // .zoning / .devPlan / .zoningChanges / .devPlanChanges
+    // populated per parcel; merge those fields back onto our
+    // csvFullRows entries so renderTable sees them.
+    const enrichedRows = await enrichOverlays(fc, pendingOverlayEnrichInputs, 'Sales loaded');
+    if (Array.isArray(enrichedRows)) {
+      const byOid = new Map();
+      for (const er of enrichedRows) {
+        const oid = er?.parcel?.properties?.OBJECTID;
+        if (oid != null) byOid.set(oid, er);
+      }
+      for (const row of csvFullRows) {
+        const oid = row?.parcel?.properties?.OBJECTID;
+        const er = oid != null ? byOid.get(oid) : null;
+        if (!er) continue;
+        row.zoning         = er.zoning || [];
+        row.devPlan        = er.devPlan || [];
+        row.zoningChanges  = er.zoningChanges || [];
+        row.devPlanChanges = er.devPlanChanges || [];
+      }
+    }
     csvOverlayEnriched = true;
-    // Re-render so the freshly-stamped zoning columns appear.
     refilterCsvIfActive();
   } catch (err) {
     console.warn('Lazy overlay enrichment failed (non-fatal):', err);
@@ -4302,10 +4321,15 @@ function renderTable(rows, { resetPage = true } = {}) {
     const pplCell = td(formatGroupPpl(p), 'num');
     pplCell.classList.add('sales-only');
     tr.appendChild(pplCell);
-    // Sales-mode position for the Acres column — emitted right after
-    // $/Lot so the appraiser can read lot size next to the per-lot
-    // price. The basic-mode Acres cell below carries the same value
-    // but with .basic-only so only one is visible at a time.
+    // Address + Zoning right after $/Lot so the appraiser sees
+    // identifying info before the wide numeric block. These cells
+    // are emitted in every mode (no sales-only class); the table's
+    // thead order matches.
+    tr.appendChild(td(p.Property_Address));
+    tr.appendChild(td(badge(formatZoneCode(z1), 'badge-zone')));
+    // Sales-mode position for the Acres column. The basic-mode
+    // Acres cell below carries the same value but with .basic-only
+    // so only one is visible at a time.
     const acresSalesCell = td(formatAcres(ac), 'num');
     acresSalesCell.classList.add('sales-only');
     tr.appendChild(acresSalesCell);
@@ -4337,10 +4361,8 @@ function renderTable(rows, { resetPage = true } = {}) {
     const yearCell = td(formatAsmtYear(p._asmtYear), 'num');
     yearCell.classList.add('sales-only');
     tr.appendChild(yearCell);
-    tr.appendChild(td(p.Property_Address));
     tr.appendChild(legalCell(p));
     tr.appendChild(titleCell(p));
-    tr.appendChild(td(badge(formatZoneCode(z1), 'badge-zone')));
     tr.appendChild(td(formatPercent(row.zoning[0]?.ratio), 'num'));
     tr.appendChild(td(z2Show ? badge(formatZoneCode(z2), 'badge-zone') : null));
     tr.appendChild(td(z1.ZBL));
