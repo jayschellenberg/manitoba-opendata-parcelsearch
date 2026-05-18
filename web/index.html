@@ -549,6 +549,34 @@
     ></div>
 
     <div id="results-wrap" class="table-pane">
+      <!-- Phase 5 selected-parcel summary card. Stays hidden until
+           the user clicks a row in the table below; populated by
+           populateSelectedParcel() in main.js. The action buttons
+           link to MAO / the muni website, copy a source-attribution
+           note (Phase 6 wires this), or export the single parcel
+           as a one-row CSV. -->
+      <aside id="parcel-summary" class="parcel-summary" hidden aria-live="polite">
+        <div class="parcel-summary-header">
+          <h3 class="parcel-summary-title" id="ps-roll">Selected parcel</h3>
+          <button class="parcel-summary-close" id="ps-close" type="button" aria-label="Dismiss summary">×</button>
+        </div>
+        <dl class="parcel-summary-fields">
+          <div><dt>Address</dt><dd id="ps-address">—</dd></div>
+          <div><dt>Municipality</dt><dd id="ps-muni">—</dd></div>
+          <div><dt>Acres</dt><dd id="ps-acres">—</dd></div>
+          <div><dt>Assessment</dt><dd id="ps-asmt">—</dd></div>
+          <div><dt>Zoning</dt><dd id="ps-zoning">—</dd></div>
+          <div><dt>Development plan</dt><dd id="ps-devplan">—</dd></div>
+          <div><dt>Title</dt><dd id="ps-title">—</dd></div>
+        </dl>
+        <div class="parcel-summary-actions">
+          <a id="ps-open-mao" class="ps-action" href="#" target="_blank" rel="noreferrer">Open MAO</a>
+          <a id="ps-open-muni" class="ps-action" href="#" target="_blank" rel="noreferrer" hidden>Open muni website</a>
+          <button id="ps-copy-source" class="ps-action ps-action-btn" type="button" title="Copy a citation note for this parcel (Phase 6).">Copy source note</button>
+          <button id="ps-export-selected" class="ps-action ps-action-btn" type="button">Export selected</button>
+        </div>
+      </aside>
+
       <table id="results">
         <thead>
           <tr>

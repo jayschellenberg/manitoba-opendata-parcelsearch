@@ -3547,6 +3547,122 @@ function toGeoJsonFeature(f) {
   };
 }
 
+// ---------- Phase 5: selected-parcel summary card ----------
+
+/**
+ * Track the row that's currently shown in the parcel-summary card.
+ * Lets "Export selected" build a one-row CSV without having to walk
+ * the DOM. Null when no card is showing.
+ */
+let selectedParcelRow = null;
+
+const $parcelSummary = document.getElementById('parcel-summary');
+const $psRoll        = document.getElementById('ps-roll');
+const $psAddress     = document.getElementById('ps-address');
+const $psMuni        = document.getElementById('ps-muni');
+const $psAcres       = document.getElementById('ps-acres');
+const $psAsmt        = document.getElementById('ps-asmt');
+const $psZoning      = document.getElementById('ps-zoning');
+const $psDevplan     = document.getElementById('ps-devplan');
+const $psTitle       = document.getElementById('ps-title');
+const $psOpenMao     = document.getElementById('ps-open-mao');
+const $psOpenMuni    = document.getElementById('ps-open-muni');
+const $psCopySource  = document.getElementById('ps-copy-source');
+const $psExportSel   = document.getElementById('ps-export-selected');
+const $psClose       = document.getElementById('ps-close');
+
+function clearSelectedParcel() {
+  selectedParcelRow = null;
+  if ($parcelSummary) $parcelSummary.hidden = true;
+}
+
+function populateSelectedParcel(row) {
+  if (!$parcelSummary) return;
+  selectedParcelRow = row;
+  const p = row?.parcel?.properties || {};
+  const z1 = row?.zoning?.[0]?.feature?.properties || {};
+  const z1Ratio = row?.zoning?.[0]?.ratio;
+  const z2 = row?.zoning?.[1]?.feature?.properties || {};
+  const z2Ratio = row?.zoning?.[1]?.ratio;
+  const d1 = row?.devPlan?.[0]?.feature?.properties || {};
+  const ac = parcelAcres(row?.parcel);
+
+  if ($psRoll) $psRoll.textContent = p.Roll_No_Txt ? `Roll # ${p.Roll_No_Txt}` : 'Selected parcel';
+  if ($psAddress) $psAddress.textContent = p.Property_Address || '—';
+  if ($psMuni) $psMuni.textContent = p.Muni_Name_With_Typ || '—';
+  if ($psAcres) $psAcres.textContent = (() => {
+    const a = formatAcres(ac);
+    return a ? `${a} ac` : '—';
+  })();
+  if ($psAsmt) {
+    const total = parseTotalValue(p.Total_Value);
+    $psAsmt.textContent = fmtCurrency(total) || '—';
+  }
+  if ($psZoning) {
+    const z1Code = formatZoneCode(z1);
+    const z2Code = formatZoneCode(z2);
+    const parts = [];
+    if (z1Code) {
+      const pct = z1Ratio != null ? ` (${Math.round(z1Ratio * 100)}%)` : '';
+      parts.push(`${z1Code}${pct}`);
+    }
+    if (z2Code && z2Ratio != null && z2Ratio >= 0.01) {
+      parts.push(`${z2Code} (${Math.round(z2Ratio * 100)}%)`);
+    }
+    $psZoning.textContent = parts.length ? parts.join(' · ') : '—';
+  }
+  if ($psDevplan) {
+    const des = formatDes(d1);
+    $psDevplan.textContent = des || '—';
+  }
+  if ($psTitle) $psTitle.textContent = p._certificatesOfTitle || '—';
+
+  // Action targets.
+  if ($psOpenMao) {
+    if (p.Asmt_Rpt_Url) {
+      $psOpenMao.href = p.Asmt_Rpt_Url;
+      $psOpenMao.hidden = false;
+    } else {
+      $psOpenMao.hidden = true;
+    }
+  }
+  if ($psOpenMuni) {
+    const url = lookupMuniWebsite(p.Muni_Name_With_Typ);
+    if (url) {
+      $psOpenMuni.href = url;
+      $psOpenMuni.hidden = false;
+    } else {
+      $psOpenMuni.hidden = true;
+    }
+  }
+  $parcelSummary.hidden = false;
+}
+
+if ($psClose) $psClose.addEventListener('click', clearSelectedParcel);
+if ($psExportSel) {
+  $psExportSel.addEventListener('click', () => {
+    if (!selectedParcelRow) return;
+    exportCsv([selectedParcelRow]);
+  });
+}
+if ($psCopySource) {
+  // Phase 6 wires the real source-note builder. For now we surface
+  // a basic citation so the button is functional rather than dead.
+  $psCopySource.addEventListener('click', async () => {
+    if (!selectedParcelRow) return;
+    const p = selectedParcelRow.parcel?.properties || {};
+    const note = `Parcel data reviewed using Manitoba Open Data (Roll Entry, Zoning By-Laws, Development Plan Designations) on ${today()}. Roll #${p.Roll_No_Txt || '—'}, ${p.Muni_Name_With_Typ || '—'}. Zoning and development plan designations were matched by spatial overlap and should be verified with the applicable municipality, planning district, or Manitoba Assessment Online.`;
+    try {
+      await navigator.clipboard.writeText(note);
+      const prev = $psCopySource.textContent;
+      $psCopySource.textContent = 'Copied';
+      setTimeout(() => { $psCopySource.textContent = prev; }, 1500);
+    } catch (err) {
+      console.warn('Copy source note failed', err);
+    }
+  });
+}
+
 /**
  * Set the visible text of an overlay toggle button without nuking
  * the coloured dot or any other inner markup. The Phase 3 markup
@@ -3709,6 +3825,10 @@ function renderTable(rows, { resetPage = true } = {}) {
     tr.addEventListener('click', () => {
       const f = rowFeatureMap.get(tr.dataset.rowKey);
       if (!f) return;
+      // Phase 5: populate the parcel summary card above the table so
+      // the user sees the full attribute payload without having to
+      // scroll the wide row.
+      populateSelectedParcel(row);
       mapReady.then(() => {
         flyToFeature(map, f);
         // Scroll the map back into view so the user actually sees the
@@ -3805,9 +3925,9 @@ function renderTable(rows, { resetPage = true } = {}) {
     tr.appendChild(td(p.Property_Address));
     tr.appendChild(legalCell(p));
     tr.appendChild(titleCell(p));
-    tr.appendChild(td(formatZoneCode(z1)));
+    tr.appendChild(td(badge(formatZoneCode(z1), 'badge-zone')));
     tr.appendChild(td(formatPercent(row.zoning[0]?.ratio), 'num'));
-    tr.appendChild(td(z2Show ? formatZoneCode(z2) : null));
+    tr.appendChild(td(z2Show ? badge(formatZoneCode(z2), 'badge-zone') : null));
     tr.appendChild(td(z1.ZBL));
     // Dev-Plan cells get the .devplan-only class so they show/hide
     // with the Dev Plan Layer overlay toggle (CSS in style.css).
@@ -3825,7 +3945,7 @@ function renderTable(rows, { resetPage = true } = {}) {
     const riskAreaCell = td(p._soilRiskArea != null ? String(p._soilRiskArea) : null, 'num');
     riskAreaCell.classList.add('masc-only');
     tr.appendChild(riskAreaCell);
-    tr.appendChild(td(formatChanges(row)));
+    tr.appendChild(td(badge(formatChanges(row), 'badge-amend')));
     tr.appendChild(td(formatDu(p.Dwelling_Units), 'num'));
     // Basic-mode position for Acres — hidden in sales mode (the
     // sales-only Acres cell above takes its place after $/Lot).
@@ -5109,8 +5229,12 @@ function formatCurrency(s) {
 
 function setExportEnabled(enabled) { $export.disabled = !enabled; }
 
-function exportCsv() {
-  if (!currentRows.length) return;
+function exportCsv(explicitRows) {
+  // Phase 5: callers can pass an explicit subset (the parcel-summary
+  // card's "Export selected" button does this with a one-element
+  // array). Falls back to currentRows when nothing is passed.
+  const sourceRows = Array.isArray(explicitRows) ? explicitRows : currentRows;
+  if (!sourceRows.length) return;
   // Append the sales-CSV-specific columns only when the table is
   // currently in sales-mode — otherwise they'd just be empty trailing
   // cells on every row of a regular search export.
@@ -5121,9 +5245,12 @@ function exportCsv() {
   // pull the other half into the export too, since the appraiser
   // is interested in the WHOLE deal, not just one parcel of it.
   // No starred rows -> fall through to the original full-export.
-  let exportRows = currentRows;
+  // Explicit subsets (Phase 5 Export selected) skip the starred-only
+  // expansion — the caller has already chosen the exact set.
+  let exportRows = sourceRows;
   let starredOnly = false;
-  if (inSalesMode && favoriteKeys.size > 0) {
+  const allowStarredExpansion = !Array.isArray(explicitRows);
+  if (allowStarredExpansion && inSalesMode && favoriteKeys.size > 0) {
     const starredKeys = new Set();
     const starredGroupIds = new Set();
     for (const r of currentRows) {
@@ -5435,9 +5562,27 @@ function td(value, className) {
   if (value == null || value === '') {
     el.textContent = '—';
     el.classList.add('empty');
+  } else if (value instanceof Element) {
+    el.appendChild(value);
   } else {
     el.textContent = value;
   }
   if (className) el.classList.add(className);
   return el;
+}
+
+/**
+ * Phase 5: small inline pill that wraps a categorical cell value
+ * (zoning code, amendment status, vacant proxy). Returns null for
+ * empty / falsy input so callers can keep using `td(null)` to
+ * render the em-dash placeholder.
+ */
+function badge(text, badgeClass) {
+  if (text == null) return null;
+  const s = String(text);
+  if (s === '' || s === '—') return null;
+  const span = document.createElement('span');
+  span.className = `badge ${badgeClass}`;
+  span.textContent = s;
+  return span;
 }
