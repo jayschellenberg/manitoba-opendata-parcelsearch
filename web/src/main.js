@@ -880,6 +880,41 @@ for (const b of URL_INPUT_BINDINGS) {
   if (el.tagName === 'INPUT') el.addEventListener('input', queueUrlWrite);
 }
 
+// Phase 7 keyboard shortcuts. Cmd/Ctrl-K focuses the active tab's
+// primary input (matches the well-known shortcut of every modern
+// search bar). Esc clears the focused input. Enter on a search
+// input runs the search (already wired further up).
+document.addEventListener('keydown', (e) => {
+  // Cmd/Ctrl-K: focus the primary search input on the active tab.
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+    e.preventDefault();
+    setActiveTab(getActiveTabName(), { skipFocus: false });
+    return;
+  }
+  // Esc: clear the currently-focused text-like input.
+  if (e.key === 'Escape') {
+    const el = document.activeElement;
+    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && el.value) {
+      const tag = el.type;
+      if (tag === 'text' || tag === 'search' || tag === 'number' || tag === 'tel' || tag === 'email' || tag === 'url') {
+        el.value = '';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+  }
+});
+
+// Local helper to read the active tab from localStorage (the
+// canonical store the tabs module writes to).
+function getActiveTabName() {
+  try {
+    const v = localStorage.getItem('mbps_sidebar_tab_v1');
+    if (v === 'property' || v === 'sales') return v;
+  } catch {}
+  return 'property';
+}
+
 // Initial decode + apply. The muni dropdown loads asynchronously, so
 // re-apply the URL's muni once its option appears in the select.
 const initialUrlState = decodeState(location.search);
@@ -1522,7 +1557,7 @@ async function runSearch() {
   }
 
   setBusy(true);
-  setCount('Searching parcels…');
+  setCount('Searching Roll Entry…');
   clearTable();
   setMapData(EMPTY_FC, EMPTY_FC, EMPTY_FC);
 
@@ -1610,9 +1645,9 @@ async function runSearch() {
 
     if (n === 0) {
       if (isBulkRollSearch) {
-        setCount(`No parcels found — none of the ${rollList.length} rolls matched in this municipality.`);
+        setCount(`No parcels found. None of the ${rollList.length} rolls matched in this municipality. Try removing filters or changing municipality.`);
       } else {
-        setCount('No parcels found.');
+        setCount('No parcels found. Try removing filters or changing municipality.');
       }
       return;
     }
@@ -2831,7 +2866,7 @@ function renderEnrichButton(parcelFc, inputs, baseMsg) {
  * then re-render table + map.
  */
 async function enrichOverlays(parcelFc, inputs, baseMsg) {
-  setCount(`${baseMsg} · loading zoning + dev-plan…`);
+  setCount(`${baseMsg} · Loading zoning overlay…`);
 
   let zoningFc = EMPTY_FC;
   let devPlanFc = EMPTY_FC;
@@ -3974,7 +4009,20 @@ async function toggleAuxOverlay(which) {
 
 // ---------- UI helpers ----------
 
-function setCount(text) { $count.textContent = text; }
+// Phase 7: status messages mirror to the new results-status bar
+// above the table so the user sees search progress next to the
+// table even when the sidebar has scrolled off-screen.
+const $resultsStatus = document.getElementById('results-status');
+function setCount(text) {
+  $count.textContent = text;
+  if ($resultsStatus) {
+    const trimmed = (text ?? '').trim();
+    $resultsStatus.textContent = trimmed;
+    $resultsStatus.hidden = trimmed === '';
+    const looksLikeError = /failed|error|rate-limit|couldn't|no parcels|no usable|no matching/i.test(trimmed);
+    $resultsStatus.classList.toggle('results-status-error', looksLikeError);
+  }
+}
 function setBusy(busy) {
   $search.disabled = busy;
   $search.textContent = busy ? 'Searching…' : 'Search';
@@ -4208,6 +4256,11 @@ function renderTable(rows, { resetPage = true } = {}) {
   // DOM so hidden columns stay collapsed on every re-render (sort,
   // pagination, filter change, fresh search).
   applyColumnVisibility();
+  // Phase 7: toggle the empty-table state. Shown only when no rows
+  // are rendered AND the user hasn't run a search yet (treated as
+  // sorted.length === 0).
+  const $resultsEmpty = document.getElementById('results-empty');
+  if ($resultsEmpty) $resultsEmpty.hidden = sorted.length > 0;
   renderPaginator(sorted.length);
   setExportEnabled(rows.length > 0);
 }
