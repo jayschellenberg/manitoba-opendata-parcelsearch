@@ -260,22 +260,17 @@ const BASEMAP_STYLE = {
     },
   },
   layers: [
-    // Carto streets layer starts HIDDEN; satellite is the default
-    // basemap because that's what appraisers reach for on first
-    // open. The basemap toggle in the top-right swaps them.
-    {
-      id: 'carto-positron',
-      type: 'raster',
-      source: 'carto-positron',
-      minzoom: 0,
-      maxzoom: 20,
-      layout: { visibility: 'none' },
-    },
-    { id: 'esri-imagery', type: 'raster', source: 'esri-imagery', minzoom: 0, maxzoom: 20 },
-    // Road-name + place-name reference overlays that ride along
-    // with the satellite imagery so labels stay readable.
-    { id: 'esri-transportation', type: 'raster', source: 'esri-transportation', minzoom: 0, maxzoom: 20 },
-    { id: 'esri-reference',      type: 'raster', source: 'esri-reference',      minzoom: 0, maxzoom: 20 },
+    // Carto streets layer is the default basemap. Satellite (Esri
+    // imagery + transportation/reference label overlays) starts
+    // hidden; the basemap toggle in the top-right swaps them.
+    // Explicit `visibility: 'visible' / 'none'` on every layer so
+    // getLayoutProperty returns a real string on first click —
+    // skipping the explicit default tripped a two-click toggle
+    // bug because the initial undefined read inverted the swap.
+    { id: 'carto-positron',      type: 'raster', source: 'carto-positron',      minzoom: 0, maxzoom: 20, layout: { visibility: 'visible' } },
+    { id: 'esri-imagery',        type: 'raster', source: 'esri-imagery',        minzoom: 0, maxzoom: 20, layout: { visibility: 'none' } },
+    { id: 'esri-transportation', type: 'raster', source: 'esri-transportation', minzoom: 0, maxzoom: 20, layout: { visibility: 'none' } },
+    { id: 'esri-reference',      type: 'raster', source: 'esri-reference',      minzoom: 0, maxzoom: 20, layout: { visibility: 'none' } },
   ],
 };
 
@@ -2461,13 +2456,11 @@ class BasemapToggleControl {
     this._container.className = 'maplibregl-ctrl maplibregl-ctrl-group basemap-toggle';
     this._btn = document.createElement('button');
     this._btn.type = 'button';
-    this._btn.title = 'Toggle basemap (satellite ⇄ streets)';
+    this._btn.title = 'Toggle basemap (streets ⇄ satellite)';
     this._btn.setAttribute('aria-label', 'Toggle basemap');
-    // Satellite is the default basemap; the button label reads
-    // "Streets" because that's what a click will swap to. Stays
-    // white/dark (the default style) on first paint — the .active
-    // dark fill only kicks in after the user clicks.
-    this._btn.textContent = 'Streets';
+    // Streets is the default basemap; the button label reads
+    // "Satellite" because that's what a click will swap to.
+    this._btn.textContent = 'Satellite';
     this._btn.addEventListener('click', () => this._toggle());
     this._container.appendChild(this._btn);
     return this._container;

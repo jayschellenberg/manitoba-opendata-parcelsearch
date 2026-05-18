@@ -722,6 +722,13 @@
                  size 1 and the per-parcel rates. -->
             <th data-col="groupsize" class="sales-only" title="Number of parcels in the same sale (1 = single-parcel sale)">Group #</th>
             <th data-col="grouppricelot" class="sales-only" title="Sale Price ÷ number of parcels in the same sale (works even when acres are missing)">$/Lot</th>
+            <!-- Address + Zoning sit right after $/Lot so the
+                 appraiser sees identifying info before the wide
+                 stack of numeric columns. Legal / Title / zoning
+                 detail columns (%, Zoning 2, ZBL) stay further
+                 right where they were. -->
+            <th data-col="address">Address</th>
+            <th data-col="zone1">Zoning</th>
             <!-- Sales-mode position for the Acres header. The matching
                  basic-mode Acres header sits after DU below, tagged
                  .basic-only so only one Acres column is ever visible at
@@ -740,14 +747,12 @@
             <th data-col="asmtbldg" class="sales-only" title="Latest-year assessed Buildings value (MAO scrape).">Bldg $</th>
             <th data-col="asmtpct"  class="sales-only" title="Buildings as a percentage of Total assessed value. <2% is the default vacant-land threshold.">Bldg %</th>
             <th data-col="asmtyear" class="sales-only" title="Assessment year the Land/Bldg values are from. Single year for most rolls.">Asmt Yr</th>
-            <th data-col="address">Address</th>
             <!-- Legal and Title populate from the MAO scrape legal-index
                  join in main.js's attachLegalMetadata(). renderTable
                  appends a cell at each position; styling rules below in
                  style.css align them as text columns. -->
             <th data-col="legal">Legal</th>
             <th data-col="title">Title</th>
-            <th data-col="zone1">Zoning</th>
             <th data-col="zone1pct">%</th>
             <th data-col="zone2">Zoning 2</th>
             <th data-col="zbl">ZBL</th>
