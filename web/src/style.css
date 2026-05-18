@@ -1384,8 +1384,14 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 .sidebar:not(:has(#vacant-only:checked)) .vacant-threshold-row {
   display: none;
 }
+.sidebar .vacant-threshold-prefix {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--color-neutral-600, #52525b);
+  white-space: nowrap;
+}
 .sidebar .vacant-threshold-row .vacant-threshold-field {
-  flex: 1 1 0;
+  flex: 0 0 60px;
   min-width: 0;
 }
 .sidebar .vacant-threshold-row input[type="number"] {
@@ -1662,9 +1668,13 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 
 .table-pane {
   /* Flows below the map. Padding matches the original #results-wrap
-     rule that was removed in Phase 2. */
+     rule that was removed in Phase 2. The table-pane scrolls on
+     both axes so ~20 rows fit and longer result sets scroll inside
+     this region rather than pushing the whole page down. */
   padding: 12px 20px 32px;
   overflow-x: auto;
+  overflow-y: auto;
+  max-height: min(720px, 75vh);
 }
 
 /* Phase 5 follow-up: resize handle removed. The workspace flows
