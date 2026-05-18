@@ -2107,6 +2107,44 @@ body.workspace-resizing iframe { pointer-events: none; }
   display: none;
 }
 
+/* Phase 7 results status bar. Compact strip above the toolbar
+   that mirrors the count message so the user sees search /
+   upload progress next to the table. Hidden until a message
+   lands; toggled via the `hidden` attribute by setCount. */
+.results-status {
+  margin-bottom: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-primary-500, #1e293b);
+  background: var(--color-neutral-100, #f4f4f5);
+  border: 1px solid var(--color-neutral-200, #e4e4e7);
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.results-status[hidden] { display: none; }
+.results-status.results-status-error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
+/* Phase 7 empty-table state. Sits below the table when the body
+   has no rows; hidden once a search returns results. */
+.results-empty {
+  padding: 18px 16px;
+  background: #fff;
+  border: 1px dashed var(--color-neutral-300, #d4d4d8);
+  border-radius: 6px;
+  text-align: center;
+  color: var(--color-neutral-600, #52525b);
+  font-size: 13px;
+  line-height: 1.5;
+  margin-top: 8px;
+}
+.results-empty[hidden] { display: none; }
+.results-empty p { margin: 0; }
+
 /* Phase 5 results toolbar: column-preset dropdown on the left,
    gear button on the right. Sticks to the top of the table-pane
    scroll context so the controls stay in reach while scrolling

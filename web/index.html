@@ -609,6 +609,13 @@
         </details>
       </aside>
 
+      <!-- Phase 7 status bar above the table. Mirrors the count
+           message that also renders in the sidebar status block,
+           but lives next to the table so it's visible during a
+           search even when the sidebar has scrolled away on
+           narrow viewports. Hidden until a status message lands. -->
+      <div class="results-status" id="results-status" role="status" aria-live="polite" hidden></div>
+
       <!-- Phase 5 table toolbar. Column preset dropdown on the left
            (Sales analysis / Zoning check / Full detail), gear button
            on the right that opens a checklist for per-column toggle.
@@ -736,6 +743,14 @@
         </thead>
         <tbody></tbody>
       </table>
+      <!-- Phase 7 empty-table state. Hidden until renderTable
+           confirms no rows; replaced when results land. -->
+      <div id="results-empty" class="results-empty">
+        <p>
+          Search by roll number, address, legal description, or certificate of
+          title to begin. Or upload a sales CSV in the Sales analysis tab.
+        </p>
+      </div>
       <!-- Pagination controls — populated by renderPaginator() in
            main.js. Hidden when the result set fits on a single page
            (≤ PAGE_SIZE rows). Export CSV ignores pagination and

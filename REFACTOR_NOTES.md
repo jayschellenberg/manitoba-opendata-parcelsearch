@@ -648,7 +648,88 @@ None.
   via the static-map renderer.
 
 ## Phase 7 - Status feedback and empty states
-_pending_
+
+### Decisions
+
+- Status messages now mirror to a new `.results-status` bar that
+  sits above the results toolbar. The sidebar's `#count` still
+  shows the same text (useful on wide viewports where the sidebar
+  is in reach); the bar above the table catches the same eye-line
+  the appraiser is already on. Error-toned background lights up
+  when the text matches a `failed|error|no parcels|...` regex so
+  failures are visually distinct.
+- Empty-table state below the table: short prompt suggesting the
+  available search affordances ("Search by roll number, address,
+  legal description, or certificate of title to begin. Or upload
+  a sales CSV in the Sales analysis tab."). Hidden as soon as a
+  search returns at least one row.
+- Plain-language wording aligned with the spec:
+  - "Searching parcels…" -> "Searching Roll Entry…"
+  - "No parcels found." -> "No parcels found. Try removing
+    filters or changing municipality."
+  - "loading zoning + dev-plan…" -> "Loading zoning overlay…"
+- Keyboard shortcuts:
+  - Cmd/Ctrl-K focuses the primary input on the active tab
+    (delegates to `setActiveTab` which already knows the
+    `PRIMARY_INPUT_BY_TAB` map; `skipFocus: false` makes it
+    actually focus the field).
+  - Esc clears the currently-focused text/number/search-style
+    input AND dispatches input + change events so the URL
+    state mirror and CSV-mode refilter both react. Skips
+    non-text inputs (checkbox, select).
+  - Enter on search inputs already runs the search (legacy
+    binding kept).
+
+### Deferred items
+
+- "Data cached locally. Cache age: 2 days." status message. The
+  data-refresh footer (in the Data sources panel) already shows
+  per-shard timestamps; surfacing a single rolled-up age into the
+  status bar is a small follow-up.
+
+### Reusable patterns (lift candidates)
+
+- `.results-status` markup + CSS + the error-tone regex: portable.
+- Empty-table state pattern: portable; per-app: customise the
+  prompt copy and the affordances list.
+- The Cmd/Ctrl-K + Esc handler: portable; per-app, swap the
+  primary-input map (which tabs.js already owns).
+
+### Manitoba-specific (do not port)
+
+- The "Searching Roll Entry…" copy refers to Manitoba's
+  Roll_Entry feature server. Winnipeg's equivalent is a Socrata
+  table — rename the verb to match.
+- Empty-state copy mentions the Sales analysis tab and CSV upload;
+  Winnipeg's version may have a different secondary workflow.
+
+### Dependencies added
+
+None.
+
+### Gotchas
+
+- `setCount` is called from many places (legal lookups, sales
+  upload progress, overlay loads, etc.). Adding the status-bar
+  mirror inside setCount means every existing call site
+  automatically updates the new bar — no per-caller wiring.
+- The empty-state element lives below the table, not inside the
+  tbody. Putting it inside the tbody would conflict with the
+  sticky thead z-index and the sticky-first-column rule.
+
+### Things visually replaced / removed
+
+- Status messages now appear in two places (sidebar `#count` +
+  table `.results-status`). The sidebar version remains for
+  layout consistency; the table-side version is the more
+  visible one during active use.
+
+### Phase 7 porting checklist (Winnipeg)
+
+- Status bar markup + CSS: reuse.
+- Empty-state markup + CSS: reuse; swap the prompt copy.
+- Keyboard shortcut handler: reuse; swap the
+  PRIMARY_INPUT_BY_TAB selectors if the input ids differ.
 
 ## Phase 8 - Portability documentation pass
 _pending_
