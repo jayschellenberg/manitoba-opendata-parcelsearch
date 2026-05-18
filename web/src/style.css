@@ -1372,6 +1372,44 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   cursor: default;
 }
 
+/* Phase 6 vacant land proxy threshold inputs. Sits below the
+   Vacant land checkbox row. Two number inputs flanking the
+   "% bldg or $" connector label. */
+.sidebar .vacant-threshold-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.sidebar .vacant-threshold-row .vacant-pct-field,
+.sidebar .vacant-threshold-row .vacant-max-field {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.sidebar .vacant-threshold-row .vacant-threshold-label {
+  font-size: 11px;
+  color: var(--color-neutral-600, #52525b);
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.sidebar .vacant-threshold-row input[type="number"] {
+  width: 100%;
+  padding: 6px 6px;
+  font-size: 12px;
+}
+#vacant-pct::-webkit-outer-spin-button,
+#vacant-pct::-webkit-inner-spin-button,
+#vacant-max::-webkit-outer-spin-button,
+#vacant-max::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+#vacant-pct,
+#vacant-max {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 /* Per-overlay accent colours. Dark red on Generate Map signals
    "produces a deliverable" (stands apart from the data-overlay
    toggles). Dark green on the three agricultural-rating overlays
@@ -2305,6 +2343,49 @@ body.workspace-resizing iframe { pointer-events: none; }
   cursor: not-allowed;
   background: #fff;
 }
+
+/* Verify-this checklist. Collapsible <details> below the action
+   row. Compact list with one checkbox + label per item. */
+.parcel-summary-verify {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-neutral-200, #e4e4e7);
+}
+.parcel-summary-verify > summary {
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-neutral-500, #71717a);
+  list-style: revert;
+  user-select: none;
+  padding: 2px 0;
+}
+.parcel-summary-verify > summary:hover { color: var(--color-primary-500, #1e293b); }
+.parcel-summary-verify[open] > summary { margin-bottom: 6px; }
+.parcel-summary-verify-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 4px 14px;
+}
+.parcel-summary-verify-list li label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--color-primary-500, #1e293b);
+  padding: 2px 0;
+}
+.parcel-summary-verify-list li input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+.parcel-summary-verify-list li label:hover { color: var(--color-accent-600, #1d4ed8); }
 
 /* Phase 5 badges for categorical columns. Each badge is a small
    pill with the same font size as the cell text; the colour
