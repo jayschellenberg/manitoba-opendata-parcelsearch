@@ -4068,16 +4068,21 @@ async function toggleAuxOverlay(which) {
 
 // Phase 7: status messages mirror to the new results-status bar
 // above the table so the user sees search progress next to the
-// table even when the sidebar has scrolled off-screen.
-const $resultsStatus = document.getElementById('results-status');
+// table even when the sidebar has scrolled off-screen. Lookup is
+// lazy inside the call rather than module-scope const so setCount
+// (a hoisted function declaration) can be invoked from any code
+// path during module init without a TDZ error — the const form
+// of the same lookup tripped TDZ when setCount was reached before
+// its declaration line during sales upload boot-strapping.
 function setCount(text) {
   $count.textContent = text;
-  if ($resultsStatus) {
+  const el = document.getElementById('results-status');
+  if (el) {
     const trimmed = (text ?? '').trim();
-    $resultsStatus.textContent = trimmed;
-    $resultsStatus.hidden = trimmed === '';
+    el.textContent = trimmed;
+    el.hidden = trimmed === '';
     const looksLikeError = /failed|error|rate-limit|couldn't|no parcels|no usable|no matching/i.test(trimmed);
-    $resultsStatus.classList.toggle('results-status-error', looksLikeError);
+    el.classList.toggle('results-status-error', looksLikeError);
   }
 }
 function setBusy(busy) {
