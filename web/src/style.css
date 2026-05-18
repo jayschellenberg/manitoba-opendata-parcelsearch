@@ -648,7 +648,7 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 }
 .sidebar .size-vacant-row .sales-plan-field { flex: 0 0 120px; min-width: 0; }
 .sidebar .size-vacant-row .size-low-field,
-.sidebar .size-vacant-row .size-high-field { flex: 0 0 90px; min-width: 0; }
+.sidebar .size-vacant-row .size-high-field { flex: 0 0 85px; min-width: 0; }
 .sidebar .size-vacant-row .vacant-only-field { flex: 1 1 auto; min-width: 0; }
 .sidebar .size-vacant-row input[type="number"],
 .sidebar .size-vacant-row input[type="text"] {
