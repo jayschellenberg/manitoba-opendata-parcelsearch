@@ -14,6 +14,9 @@ import { initSidebarTabs, setActiveTab } from './tabs.js';
 import { initChipInput } from './chipInput.js';
 import { initInfoIcons } from './infoIcon.js';
 
+// Phase 5 column visibility.
+import { initColumns, applyVisibility as applyColumnVisibility } from './columns.js';
+
 // Entry point. Wires the search inputs, the map, and the results table.
 //
 // Single search flow (Manitoba's Roll_Entry IS the parcel layer; there's no
@@ -761,6 +764,10 @@ if ($rollChip) initChipInput($rollChip, { onEnterEmpty: () => runSearch() });
 // tip as a popover. Idempotent; safe to re-run if new fields are
 // added later.
 initInfoIcons();
+
+// Phase 5 column-visibility gear + presets. Reads stored visibility
+// from localStorage; falls back to the spec's default-visible set.
+initColumns();
 
 setExportEnabled(false);
 updateSortIndicators();
@@ -3959,6 +3966,10 @@ function renderTable(rows, { resetPage = true } = {}) {
     frag.appendChild(tr);
   }
   $tbody.appendChild(frag);
+  // Phase 5: re-stamp column visibility after the rows are in the
+  // DOM so hidden columns stay collapsed on every re-render (sort,
+  // pagination, filter change, fresh search).
+  applyColumnVisibility();
   renderPaginator(sorted.length);
   setExportEnabled(rows.length > 0);
 }
