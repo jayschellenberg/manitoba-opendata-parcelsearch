@@ -1059,7 +1059,28 @@ $municipality.addEventListener('change', () => {
   // their data to match the new muni. Skipped quietly when neither
   // layer is on; doesn't refetch when the new muni already matches.
   refreshOverlayLayersForMuniChange();
+  // Zoom the map to the selected muni's bounds so the user lands in
+  // the right place before running a search. Skipped if either the
+  // boundaries FC hasn't loaded yet or the selection cleared.
+  zoomMapToSelectedMuni();
 });
+
+/**
+ * Fly the map to the bounding box of the currently-selected muni in
+ * the dropdown. No-op when no muni is selected, when the boundaries
+ * FC hasn't loaded yet, or when no matching feature exists. The
+ * boundaries FC matches the dropdown value via MUNI_LIST_NAME_WITH_TYPE
+ * (same field already used elsewhere for spatial joins).
+ */
+function zoomMapToSelectedMuni() {
+  const muni = $municipality.value;
+  if (!muni || !muniBoundariesFc) return;
+  const feat = muniBoundariesFc.features?.find(
+    (f) => f.properties?.MUNI_LIST_NAME_WITH_TYPE === muni
+  );
+  if (!feat) return;
+  mapReady.then(() => flyToFeature(map, feat));
+}
 // The "Min #" number input is only meaningful when Min DU is selected.
 // Disable it otherwise so users can't type a value that has no effect.
 $duMode.addEventListener('change', () => {
@@ -2871,7 +2892,7 @@ function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
  */
 async function toggleOverlay(which) {
   const btn = which === 'zoning' ? $zoningToggle : $devplanToggle;
-  const label = which === 'zoning' ? 'Zoning Layer' : 'Dev Plan Layer';
+  const label = which === 'zoning' ? 'Zoning' : 'Development plan';
   const wasActive = btn.classList.contains('active');
   const visible = !wasActive;
   btn.classList.toggle('active', visible);
@@ -2880,7 +2901,7 @@ async function toggleOverlay(which) {
   await mapReady;
 
   if (!visible) {
-    btn.textContent = label;
+    setOverlayBtnLabel(btn, label);
     applyOverlayVisibility(which, false);
     return;
   }
@@ -2900,7 +2921,7 @@ async function toggleOverlay(which) {
 
   if (needFetch) {
     btn.disabled = true;
-    btn.textContent = 'Loading…';
+    setOverlayBtnLabel(btn, 'Loading…');
     try {
       // Per-muni bulk fetch in parallel — every matched muni gets its
       // full zoning / dev-plan fabric, merged into one FC for the
@@ -2930,7 +2951,7 @@ async function toggleOverlay(which) {
       btn.classList.remove('active');
       btn.setAttribute('aria-pressed', 'false');
       btn.disabled = false;
-      btn.textContent = label;
+      setOverlayBtnLabel(btn, label);
       setCount(`Failed to load ${label}: ${err.message}`);
       return;
     }
@@ -2940,12 +2961,12 @@ async function toggleOverlay(which) {
     // revert the toggle and tell the user what to do.
     btn.classList.remove('active');
     btn.setAttribute('aria-pressed', 'false');
-    btn.textContent = label;
+    setOverlayBtnLabel(btn, label);
     setCount(`Select a municipality to load the ${label}.`);
     return;
   }
 
-  btn.textContent = label;
+  setOverlayBtnLabel(btn, label);
   applyOverlayVisibility(which, true);
 }
 
@@ -3053,13 +3074,13 @@ const auxData   = { contam: null, flow: null, riskAreas: null, muniParcels: null
 let muniParcelsLoadedFor = null;
 
 const AUX_META = {
-  contam:      { btn: () => $contamToggle,      on: 'Enviro Sites', off: 'Enviro Sites', busy: 'Loading…',
+  contam:      { btn: () => $contamToggle,      on: 'Environmental sites', off: 'Environmental sites', busy: 'Loading…',
                  fetch: () => fetchContaminatedSites(),       setData: (m, fc) => setContamData(m, fc),      setVis: setContamVisible },
-  flow:        { btn: () => $flowToggle,        on: 'Traffic Flow', off: 'Traffic Flow', busy: 'Loading…',
+  flow:        { btn: () => $flowToggle,        on: 'Traffic flow', off: 'Traffic flow', busy: 'Loading…',
                  fetch: () => fetchTrafficFlow(),             setData: (m, fc) => setTrafficFlowData(m, fc), setVis: setTrafficFlowVisible },
-  riskAreas:   { btn: () => $riskAreaToggle,    on: 'MASC Risk Areas', off: 'MASC Risk Areas', busy: 'Loading…',
+  riskAreas:   { btn: () => $riskAreaToggle,    on: 'MASC risk areas', off: 'MASC risk areas', busy: 'Loading…',
                  fetch: () => fetchMascRiskAreas(),            setData: (m, fc) => setMascRiskAreasData(m, fc), setVis: setMascRiskAreasVisible },
-  muniParcels: { btn: () => $muniParcelsToggle, on: 'Roll Layer', off: 'Roll Layer', busy: 'Loading…',
+  muniParcels: { btn: () => $muniParcelsToggle, on: 'Parcel boundaries', off: 'Parcel boundaries', busy: 'Loading…',
                  fetch: () => fetchMuniParcelsForCurrentScope(),
                  setData: (m, fc) => setMuniParcelsData(m, fc), setVis: setMuniParcelsVisible },
 };
@@ -3117,7 +3138,7 @@ function resetMuniParcelsToggle() {
     if ($muniParcelsToggle.classList.contains('active')) {
       $muniParcelsToggle.classList.remove('active');
       $muniParcelsToggle.setAttribute('aria-pressed', 'false');
-      $muniParcelsToggle.textContent = 'Roll Layer';
+      setOverlayBtnLabel($muniParcelsToggle, 'Parcel boundaries');
       mapReady.then(() => setMuniParcelsVisible(map, false));
     }
   }
@@ -3161,7 +3182,7 @@ function resetMascAndGridToggles() {
     if ($mascToggle.classList.contains('active')) {
       $mascToggle.classList.remove('active');
       $mascToggle.setAttribute('aria-pressed', 'false');
-      $mascToggle.textContent = 'MASC Rating';
+      setOverlayBtnLabel($mascToggle, 'MASC rating');
       mapReady.then(() => {
         setMascVisible(map, false);
         if ($mascLegend) $mascLegend.hidden = true;
@@ -3177,7 +3198,7 @@ function resetMascAndGridToggles() {
     if ($cliToggle && $cliToggle.classList.contains('active')) {
       $cliToggle.classList.remove('active');
       $cliToggle.setAttribute('aria-pressed', 'false');
-      $cliToggle.textContent = 'CLI Soil';
+      setOverlayBtnLabel($cliToggle, 'Soil productivity (CLI)');
       mapReady.then(() => {
         setCliAgrVisible(map, false);
         if ($cliLegend) $cliLegend.hidden = true;
@@ -3199,7 +3220,7 @@ function resetMascAndGridToggles() {
       // re-enters the active branch and runs the fetch path.
       $gridToggle.classList.remove('active');
       $gridToggle.setAttribute('aria-pressed', 'false');
-      $gridToggle.textContent = 'Sec-Twp Grid';
+      setOverlayBtnLabel($gridToggle, 'Section/township grid');
       mapReady.then(() => {
         setSurveyGridVisible(map, false);
         toggleSurveyGridOverlay();
@@ -3239,7 +3260,7 @@ async function toggleMascOverlay() {
   await mapReady;
 
   if (!visible) {
-    $mascToggle.textContent = 'MASC Rating';
+    setOverlayBtnLabel($mascToggle, 'MASC rating');
     setMascVisible(map, false);
     if ($mascLegend) $mascLegend.hidden = true;
     if ($resultsTable) $resultsTable.classList.remove('masc-mode');
@@ -3248,7 +3269,7 @@ async function toggleMascOverlay() {
 
   if (mascLoadedFor !== loadKey) {
     $mascToggle.disabled = true;
-    $mascToggle.textContent = 'Loading…';
+    setOverlayBtnLabel($mascToggle, 'Loading…');
     try {
       // Quarter-section + river-lot ratings load in parallel. Quarter
       // sections are per-muni; river-lots are a single province-wide
@@ -3279,7 +3300,7 @@ async function toggleMascOverlay() {
         $mascToggle.classList.remove('active');
         $mascToggle.setAttribute('aria-pressed', 'false');
         $mascToggle.disabled = false;
-        $mascToggle.textContent = 'MASC Rating';
+        setOverlayBtnLabel($mascToggle, 'MASC rating');
         const label = munis.length === 1 ? munis[0] : `${munis.length} matched munis (${munis.join(', ')})`;
         setCount(`No MASC ratings on file for ${label}.`);
         return;
@@ -3292,13 +3313,13 @@ async function toggleMascOverlay() {
       $mascToggle.classList.remove('active');
       $mascToggle.setAttribute('aria-pressed', 'false');
       $mascToggle.disabled = false;
-      $mascToggle.textContent = 'MASC Rating';
+      setOverlayBtnLabel($mascToggle, 'MASC rating');
       setCount(`Failed to load MASC soil ratings: ${err.message}`);
       return;
     }
     $mascToggle.disabled = false;
   }
-  $mascToggle.textContent = 'MASC Rating';
+  setOverlayBtnLabel($mascToggle, 'MASC rating');
   setMascVisible(map, true);
   if ($mascLegend) $mascLegend.hidden = false;
   // Reveal the Soil + Risk Area columns alongside the overlay.
@@ -3333,7 +3354,7 @@ async function toggleCliOverlay() {
   await mapReady;
 
   if (!visible) {
-    $cliToggle.textContent = 'CLI Soil';
+    setOverlayBtnLabel($cliToggle, 'Soil productivity (CLI)');
     setCliAgrVisible(map, false);
     if ($cliLegend) $cliLegend.hidden = true;
     return;
@@ -3341,7 +3362,7 @@ async function toggleCliOverlay() {
 
   if (cliLoadedFor !== loadKey) {
     $cliToggle.disabled = true;
-    $cliToggle.textContent = 'Loading…';
+    setOverlayBtnLabel($cliToggle, 'Loading…');
     try {
       // Resolve every muni's boundary feature up front so we can
       // fetch CLI for all of them in parallel below. Any missing
@@ -3358,7 +3379,7 @@ async function toggleCliOverlay() {
         $cliToggle.classList.remove('active');
         $cliToggle.setAttribute('aria-pressed', 'false');
         $cliToggle.disabled = false;
-        $cliToggle.textContent = 'CLI Soil';
+        setOverlayBtnLabel($cliToggle, 'Soil productivity (CLI)');
         setCount(`Couldn't locate boundary for ${missing.join(', ')}; can't load CLI.`);
         return;
       }
@@ -3370,7 +3391,7 @@ async function toggleCliOverlay() {
         $cliToggle.classList.remove('active');
         $cliToggle.setAttribute('aria-pressed', 'false');
         $cliToggle.disabled = false;
-        $cliToggle.textContent = 'CLI Soil';
+        setOverlayBtnLabel($cliToggle, 'Soil productivity (CLI)');
         const label = munis.length === 1 ? munis[0] : `${munis.length} matched munis (${munis.join(', ')})`;
         setCount(`No CLI soil-capability polygons in ${label}.`);
         return;
@@ -3382,13 +3403,13 @@ async function toggleCliOverlay() {
       $cliToggle.classList.remove('active');
       $cliToggle.setAttribute('aria-pressed', 'false');
       $cliToggle.disabled = false;
-      $cliToggle.textContent = 'CLI Soil';
+      setOverlayBtnLabel($cliToggle, 'Soil productivity (CLI)');
       setCount(`Failed to load CLI soil capability: ${err.message}`);
       return;
     }
     $cliToggle.disabled = false;
   }
-  $cliToggle.textContent = 'CLI Soil';
+  setOverlayBtnLabel($cliToggle, 'Soil productivity (CLI)');
   setCliAgrVisible(map, true);
   if ($cliLegend) $cliLegend.hidden = false;
 }
@@ -3416,7 +3437,7 @@ async function toggleSurveyGridOverlay() {
   await mapReady;
 
   if (!visible) {
-    $gridToggle.textContent = 'Sec-Twp Grid';
+    setOverlayBtnLabel($gridToggle, 'Section/township grid');
     setSurveyGridVisible(map, false);
     return;
   }
@@ -3428,7 +3449,7 @@ async function toggleSurveyGridOverlay() {
   const loadKey = munis.length > 0 ? munis.join('|') : '__PROVINCE__';
   if (surveyGridLoadedFor !== loadKey) {
     $gridToggle.disabled = true;
-    $gridToggle.textContent = 'Loading…';
+    setOverlayBtnLabel($gridToggle, 'Loading…');
     try {
       if (munis.length === 0) {
         // No muni selected — load the pre-baked province-wide grid AND
@@ -3464,7 +3485,7 @@ async function toggleSurveyGridOverlay() {
           $gridToggle.classList.remove('active');
           $gridToggle.setAttribute('aria-pressed', 'false');
           $gridToggle.disabled = false;
-          $gridToggle.textContent = 'Sec-Twp Grid';
+          setOverlayBtnLabel($gridToggle, 'Section/township grid');
           setCount(`Couldn't locate boundary for ${missing.join(', ')}; can't load the section-township grid.`);
           return;
         }
@@ -3505,13 +3526,13 @@ async function toggleSurveyGridOverlay() {
       $gridToggle.classList.remove('active');
       $gridToggle.setAttribute('aria-pressed', 'false');
       $gridToggle.disabled = false;
-      $gridToggle.textContent = 'Sec-Twp Grid';
+      setOverlayBtnLabel($gridToggle, 'Section/township grid');
       setCount(`Failed to load section-township grid: ${err.message}`);
       return;
     }
     $gridToggle.disabled = false;
   }
-  $gridToggle.textContent = 'Sec-Twp Grid';
+  setOverlayBtnLabel($gridToggle, 'Section/township grid');
   setSurveyGridVisible(map, true);
 }
 
@@ -3526,6 +3547,24 @@ function toGeoJsonFeature(f) {
   };
 }
 
+/**
+ * Set the visible text of an overlay toggle button without nuking
+ * the coloured dot or any other inner markup. The Phase 3 markup
+ * wraps the label in `<span class="overlay-btn-label">`; if that
+ * span exists, write to it. Falls back to plain textContent for
+ * buttons that don't follow the convention (defensive, shouldn't
+ * happen in current markup).
+ */
+function setOverlayBtnLabel(btn, text) {
+  if (!btn) return;
+  const label = btn.querySelector(':scope > .overlay-btn-label');
+  if (label) {
+    label.textContent = text;
+  } else {
+    btn.textContent = text;
+  }
+}
+
 async function toggleAuxOverlay(which) {
   const meta = AUX_META[which];
   const btn = meta.btn();
@@ -3533,11 +3572,11 @@ async function toggleAuxOverlay(which) {
   const visible = !wasActive;
   btn.classList.toggle('active', visible);
   btn.setAttribute('aria-pressed', String(visible));
-  btn.textContent = visible ? meta.on : meta.off;
+  setOverlayBtnLabel(btn, visible ? meta.on : meta.off);
   await mapReady;
   if (visible && !auxLoaded[which]) {
     btn.disabled = true;
-    btn.textContent = meta.busy;
+    setOverlayBtnLabel(btn, meta.busy);
     try {
       const fc = await meta.fetch();
       auxData[which] = fc;
@@ -3559,12 +3598,12 @@ async function toggleAuxOverlay(which) {
       console.warn(`${which} fetch failed`, err);
       btn.classList.remove('active');
       btn.setAttribute('aria-pressed', 'false');
-      btn.textContent = meta.off;
+      setOverlayBtnLabel(btn, meta.off);
       btn.disabled = false;
       return;
     }
     btn.disabled = false;
-    btn.textContent = meta.on;
+    setOverlayBtnLabel(btn, meta.on);
   }
   meta.setVis(map, visible);
   // The AADT-colour legend rides along with the Flow toggle so the user
