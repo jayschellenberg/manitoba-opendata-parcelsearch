@@ -2609,6 +2609,13 @@ body:not(.has-max-km) #results td.subj-col {
   padding-bottom: 6px;
 }
 
+.static-map-output .static-map-hint {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary-500, #1e293b);
+}
+
 .static-map-output img {
   display: block;
   max-width: 100%;
