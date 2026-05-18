@@ -808,7 +808,7 @@ This section captures every operational decision, gotcha, and pattern that emerg
 | Manitoba_Development_Plan_Designations | same org | Carries `DP_BYLAW`, `DPA_BYLAW` for change-history. `PLANNINGDISTRICT` is the key for the data-driven PD-website lookup. |
 | MHTIS_Traffic_Flow_2019 | `services6.arcgis.com/HQUud09zgy3Asw9X/.../FeatureServer/0` | AADT polylines. Used directly for the Traffic overlay (the older station-locations layer was tried first but dropped — it carried no AADT, so the user had to click out to MHTIS for the data; the flow layer renders AADT directly on the road). |
 | Manitoba Contaminated Sites | CSV at `manitoba.ca/.../cs-data.csv` | Not a FeatureServer; CSV file behind the official ArcGIS web map. Proxied via `vercel.json` because the upstream lacks `Access-Control-Allow-Origin`. |
-| Generated MAO legal index | `web/public/data/legal-index.json` | Static browser artifact generated from `ParcelSearch/mao-scrape/results/parcels.parquet`; supplies Legal Description, Lot, Block, Plan, certificates of title, and `(muni_no, roll_no_txt)` lookup keys. |
+| Generated MAO legal index | `web/public/data/legal-index.json` | Static browser artifact generated from `../mao-scrape/results/parcels.parquet`; supplies Legal Description, Lot, Block, Plan, certificates of title, and `(muni_no, roll_no_txt)` lookup keys. |
 | MASC soil ratings | `masc_soil_ratings_with_latlon.csv` + river-lot scrape/KMZ -> `web/public/data/masc/` and `web/public/data/masc-riverlots.json` | Static per-municipality quarter-section shards plus rated river-lot polygons. The MASC Rating map layer draws approximate quarter polygons from centroid lat/lon and actual river-lot polygons, colours by A-J rating, and labels each feature with the rating letter only. |
 | Parcel-level MASC ratings | `RollEntry_YYYYMMDD.gpkg` + MASC CSV + optional river-lot inputs -> `web/public/data/parcel-masc/` | Static per-municipality dictionaries keyed by `Roll_No_Txt`; table enrichment for the dominant Soil column. |
 | MASC_Risk_Areas | `services.arcgis.com/mMUesHYPkXjaFGfS/.../MASC_Risk_Areas/FeatureServer/0` | Official MASC crop-insurance risk-area polygons published through Open Canada package `739cb8ed-b661-5a60-7a26-eb60cd06541f`; drives the Risk Areas overlay and parcel-level Risk Area column. |
@@ -861,7 +861,7 @@ cd web
 npm run legal:index
 ```
 
-The command runs `r/build_legal_index.R`, reads `ParcelSearch/mao-scrape/results/parcels.parquet`, and writes `web/public/data/legal-index.json`. The JSON is intentionally a lookup artifact, not the parcel source of truth: the browser searches the index for legal text, exact parsed Lot / Block / Plan, and title text; matching `(muni_no, roll_no_txt)` keys are then grouped into ArcGIS Roll Entry `where` clauses:
+The command runs `r/build_legal_index.R`, reads `../mao-scrape/results/parcels.parquet`, and writes `web/public/data/legal-index.json`. The JSON is intentionally a lookup artifact, not the parcel source of truth: the browser searches the index for legal text, exact parsed Lot / Block / Plan, and title text; matching `(muni_no, roll_no_txt)` keys are then grouped into ArcGIS Roll Entry `where` clauses:
 
 ```sql
 (Municipality LIKE '<muni_no> - %' AND Roll_No_Txt IN (...))
@@ -1015,7 +1015,7 @@ Data classes use distinct strategies:
 | Data | Strategy |
 |---|---|
 | Search results | Never cached. Every Search hits ROLL_ENTRY live, even when a generated legal-index match supplies the lookup keys. |
-| Generated legal index | Static deployment artifact, regenerated from the MAO scrape with `npm run legal:index` whenever `ParcelSearch/mao-scrape/results/parcels.parquet` is refreshed. |
+| Generated legal index | Static deployment artifact, regenerated from the MAO scrape with `npm run legal:index` whenever `../mao-scrape/results/parcels.parquet` is refreshed. |
 | Generated MASC artifacts | Static deployment artifacts. `r/build_masc_shards.R` writes quarter-section map shards to `web/public/data/masc/`; `r/build_parcel_masc.R` writes the rated river-lot overlay to `web/public/data/masc-riverlots.json` and parcel-level dominant soil-rating shards to `web/public/data/parcel-masc/`. |
 | Dropdown lists, auxiliary overlay datasets, per-muni overlay enrichments | `localStorage` under `mbpsCache.` namespace. Most live data uses a 7-day TTL; stable generated/reference layers such as MASC, MASC Risk Areas, municipal boundaries, section grid, and river lots use a 30-day TTL. |
 | In-memory MapLibre source data | Mutated in place during a session; thrown away on reload |

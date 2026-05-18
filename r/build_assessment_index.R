@@ -29,9 +29,9 @@
 # Path resolution (mirrors r/build_legal_index.R):
 #   - --input  / MAO_TAX_HISTORY_PARQUET env  → tax_history.parquet
 #   - --output / ASSESSMENT_INDEX_OUT env     → assessment-index.json
-# Defaults look for ../ParcelSearch/mao-scrape/results/tax_history.parquet
-# (same sibling repo as parcels.parquet for the legal index) and write
-# to web/public/data/assessment-index.json under this repo's root.
+# Defaults look for ../mao-scrape/results/tax_history.parquet
+# (same sibling project as parcels.parquet for the legal index) and
+# write to web/public/data/assessment-index.json under this repo's root.
 #
 # The output file is gitignored (matches legal-index.json). Refresh
 # in production by uploading to a GitHub Release and bumping
@@ -57,9 +57,10 @@ parse_arg <- function(name, default = NULL) {
 }
 
 root <- normalizePath(file.path(dirname(script_path()), ".."), winslash = "/", mustWork = TRUE)
+# mao-scrape sits as a sibling of WebSearch under MBOpenData/.
 default_input <- file.path(
   dirname(root),
-  "ParcelSearch", "mao-scrape", "results", "tax_history.parquet"
+  "mao-scrape", "results", "tax_history.parquet"
 )
 default_output <- file.path(root, "web", "public", "data", "assessment-index.json")
 

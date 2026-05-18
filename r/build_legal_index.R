@@ -19,9 +19,12 @@ parse_arg <- function(name, default = NULL) {
 }
 
 root <- normalizePath(file.path(dirname(script_path()), ".."), winslash = "/", mustWork = TRUE)
+# mao-scrape sits as a sibling of WebSearch under MBOpenData/.
+# Override at the command line (--input=...) or via the
+# MAO_PARCELS_PARQUET env var if you keep the scrape elsewhere.
 default_input <- file.path(
   dirname(root),
-  "ParcelSearch", "mao-scrape", "results", "parcels.parquet"
+  "mao-scrape", "results", "parcels.parquet"
 )
 default_output <- file.path(root, "web", "public", "data", "legal-index.json")
 
