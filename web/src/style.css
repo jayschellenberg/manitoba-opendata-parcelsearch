@@ -1032,8 +1032,8 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   display: flex;
   gap: 6px;
 }
-.sidebar .address-row .address-from-field   { flex: 0 0 64px; min-width: 0; }
-.sidebar .address-row .address-to-field     { flex: 0 0 64px; min-width: 0; }
+.sidebar .address-row .address-from-field   { flex: 0 0 96px; min-width: 0; }
+.sidebar .address-row .address-to-field     { flex: 0 0 96px; min-width: 0; }
 .sidebar .address-row .address-street-field { flex: 1 1 auto; min-width: 0; }
 
 /* Legal description + Certificate of Title on a single row, each at
