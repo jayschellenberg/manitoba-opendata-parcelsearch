@@ -56,7 +56,10 @@ function wireField(field) {
   btn.className = 'info-icon';
   btn.setAttribute('aria-label', `More info: ${titleText.slice(0, 80)}`);
   btn.setAttribute('title', titleText);
-  btn.tabIndex = 0;
+  // Skip the icon when tabbing through form fields — appraisers
+  // tab from input to input and don't want to land on every
+  // helper icon. Click + hover still open the popover.
+  btn.tabIndex = -1;
   // Inline SVG "i" — sharper than a Unicode character and styles
   // cleanly with currentColor. 12 × 12 viewport.
   btn.innerHTML =
