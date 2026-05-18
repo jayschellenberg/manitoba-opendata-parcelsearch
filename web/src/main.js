@@ -2060,21 +2060,16 @@ async function handleSalesUpload(file) {
       ? { municipality: inputsMuni }
       : { municipalities: csvMatchedMunis.slice() };
 
-    // Sales-CSV uploads always auto-enrich, regardless of how many
-    // parcels matched. The user deliberately uploaded these comps and
-    // expects zoning + dev-plan to populate so they can filter for
-    // development-land outliers (high $/Acre against rural zoning,
-    // etc). Above the ENRICHMENT_THRESHOLD, enrichment can take
-    // several seconds on the main thread — setCount() inside
-    // enrichOverlays already updates the count line ("loading zoning
-    // + dev-plan…") so the user has feedback. The renderEnrichButton
-    // opt-in path stays available for the regular-search flow above
-    // ENRICHMENT_THRESHOLD; only the sales-CSV path skips it.
-    try {
-      await enrichOverlays(parcelFc, fakeInputs, baseMsg);
-    } catch (err) {
-      console.warn('Sales upload: overlay enrichment failed (non-fatal):', err);
-    }
+    // Phase 7 follow-up: zoning + dev-plan enrichment is now deferred
+    // until the user toggles those overlays in Map Layers. The
+    // upload-time fetch was the dominant cost of a sales CSV import
+    // — for a multi-muni upload it could take 10+ seconds on a cold
+    // cache. Skipping it makes the upload feel instantaneous; the
+    // table zoning columns are blank until the user clicks Zoning,
+    // and the Zoning toggle handler runs the enrichment lazily then.
+    // Kept the inputsMuni / fakeInputs object built above so the
+    // enrichment can be triggered on demand without re-deriving.
+    pendingOverlayEnrichInputs = fakeInputs;
 
     // Mirror runSearch's auto-toggle of the Roll Layer when a single
     // muni is in scope — gives the user the surrounding parcel
@@ -3068,6 +3063,34 @@ function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
  * search loaded; if there's nothing cached, it gently reverts and
  * nudges the user to pick a muni.
  */
+// Phase 7 follow-up: stored CSV-upload enrichment inputs so the
+// Zoning / Dev plan toggle handlers can lazily enrich the loaded
+// CSV's parcels on first activation. Cleared on Clear / refresh.
+let pendingOverlayEnrichInputs = null;
+let csvOverlayEnriched = false;
+
+/**
+ * Lazy enrichment after a CSV upload. Fires once when the user
+ * first toggles Zoning or Development plan — stamps each parcel's
+ * top-2 zoning + dominant dev-plan + coverage % onto the feature
+ * so the table's zoning columns populate.
+ */
+async function ensureCsvOverlayEnrichment() {
+  if (csvOverlayEnriched) return;
+  if (!pendingOverlayEnrichInputs) return;
+  if (!csvFullRows || csvFullRows.length === 0) return;
+  const fc = { type: 'FeatureCollection', features: csvFullRows.map((r) => r.parcel) };
+  setCount('Loading zoning + dev-plan for uploaded sales…');
+  try {
+    await enrichOverlays(fc, pendingOverlayEnrichInputs, 'Sales loaded');
+    csvOverlayEnriched = true;
+    // Re-render so the freshly-stamped zoning columns appear.
+    refilterCsvIfActive();
+  } catch (err) {
+    console.warn('Lazy overlay enrichment failed (non-fatal):', err);
+  }
+}
+
 async function toggleOverlay(which) {
   const btn = which === 'zoning' ? $zoningToggle : $devplanToggle;
   const label = which === 'zoning' ? 'Zoning' : 'Development plan';
@@ -3082,6 +3105,14 @@ async function toggleOverlay(which) {
     setOverlayBtnLabel(btn, label);
     applyOverlayVisibility(which, false);
     return;
+  }
+
+  // Phase 7 follow-up: lazy CSV-overlay enrichment. First time the
+  // user toggles Zoning or Dev plan after a CSV upload, stamp the
+  // top-2 zoning + dev-plan onto each parcel so the table's zoning
+  // columns populate. Fires once per upload.
+  if (pendingOverlayEnrichInputs && !csvOverlayEnriched) {
+    ensureCsvOverlayEnrichment().catch(() => {});
   }
 
   // Determine the muni scope for the layer fetch. Sales-CSV mode
