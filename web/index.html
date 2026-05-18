@@ -345,13 +345,17 @@
               <span class="tip">Exclude sales whose Sale ÷ Assessed Total ratio exceeds the chosen cap. Useful when buildings sold before the assessment caught up (Sale/Asmt &gt;&gt; 1). Leave on "Max Sale/Asmt" for no cap.</span>
             </span>
           </div>
+          <!-- Street Name + Min $/Ac + Max $/Ac on a single row.
+               Street Name takes the left half; the two PPA inputs
+               split the right half evenly. The .ppa-row class is
+               kept on the PPA inputs so any existing JS/CSS that
+               targets it still works, but they're no longer in a
+               separate <div>. -->
           <div class="street-name-row sales-only">
             <span class="field street-name-field">
               <input id="sales-street-name" type="text" placeholder="Street name" autocomplete="off" />
               <span class="tip">Filter uploaded sales to rows whose Property Address contains this string. Case-insensitive substring match.</span>
             </span>
-          </div>
-          <div class="ppa-row sales-only">
             <span class="field ppa-low-field">
               <input id="sales-ppa-low" type="number" min="0" step="1" placeholder="Min $/Ac" />
               <span class="tip">Minimum $/Acre (group rate). Empty = no lower limit.</span>
@@ -365,6 +369,7 @@
           <input id="sale-date-from" type="hidden" />
           <input id="sale-date-to" type="hidden" />
           <div class="date-presets sales-only" role="group" aria-label="Date range presets">
+            <span class="date-presets-prefix">Date Range:</span>
             <button type="button" class="date-preset-btn" data-months="6">6 mo</button>
             <button type="button" class="date-preset-btn" data-months="12">12 mo</button>
             <button type="button" class="date-preset-btn" data-months="24">24 mo</button>
