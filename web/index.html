@@ -360,7 +360,19 @@
             <button type="button" class="date-preset-btn" data-months="48">48 mo</button>
             <button type="button" class="date-preset-btn date-preset-clear" data-clear="1" title="Clear date range">×</button>
           </div>
-          <!-- Subject parcel + max-distance combo row. -->
+          <div class="class-row sales-only">
+            <span class="field class-field">
+              <select id="asmt-class" multiple size="4"></select>
+              <span class="tip">Filter to one or more MAO assessment classes. Ctrl/Cmd-click to select multiple.</span>
+            </span>
+            <span class="field status-field">
+              <select id="asmt-status" multiple size="4"></select>
+              <span class="tip">Filter to one or more tax statuses (TAXABLE / EXEMPT / GRANT-IN-LIEU / etc.).</span>
+            </span>
+          </div>
+          <!-- Subject parcel + max-distance combo row. Sits just
+               above the Clear button so it reads as the final
+               step before kicking off the search. -->
           <div class="subject-row sales-only">
             <span class="field subject-roll-field">
               <input id="subject-roll" type="text" placeholder="Subject roll #" autocomplete="off" />
@@ -377,16 +389,6 @@
             <span class="field subject-muni-field">
               <select id="subject-muni"></select>
               <span class="tip">Municipality the subject roll # is fetched from.</span>
-            </span>
-          </div>
-          <div class="class-row sales-only">
-            <span class="field class-field">
-              <select id="asmt-class" multiple size="4"></select>
-              <span class="tip">Filter to one or more MAO assessment classes. Ctrl/Cmd-click to select multiple.</span>
-            </span>
-            <span class="field status-field">
-              <select id="asmt-status" multiple size="4"></select>
-              <span class="tip">Filter to one or more tax statuses (TAXABLE / EXEMPT / GRANT-IN-LIEU / etc.).</span>
             </span>
           </div>
 
@@ -675,6 +677,12 @@
         </div>
       </div>
 
+      <!-- Inner scroll wrapper around the table. Lets the thead
+           stick to the top of the scrollable region while the
+           toolbar above and the paginator below stay fixed in
+           the table-pane (which is no longer the scrollable
+           element). -->
+      <div class="table-scroll">
       <table id="results">
         <thead>
           <tr>
@@ -753,6 +761,7 @@
         </thead>
         <tbody></tbody>
       </table>
+      </div><!-- /.table-scroll -->
       <!-- Phase 7 empty-table state. Hidden until renderTable
            confirms no rows; replaced when results land. -->
       <div id="results-empty" class="results-empty">
