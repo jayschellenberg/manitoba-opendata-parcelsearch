@@ -646,9 +646,9 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   align-items: center;
   margin-top: 4px;
 }
-.sidebar .size-vacant-row .sales-plan-field { flex: 0 0 80px; min-width: 0; }
+.sidebar .size-vacant-row .sales-plan-field { flex: 0 0 120px; min-width: 0; }
 .sidebar .size-vacant-row .size-low-field,
-.sidebar .size-vacant-row .size-high-field { flex: 0 0 60px; min-width: 0; }
+.sidebar .size-vacant-row .size-high-field { flex: 0 0 90px; min-width: 0; }
 .sidebar .size-vacant-row .vacant-only-field { flex: 1 1 auto; min-width: 0; }
 .sidebar .size-vacant-row input[type="number"],
 .sidebar .size-vacant-row input[type="text"] {
@@ -1372,50 +1372,73 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   cursor: default;
 }
 
-/* Phase 6 vacant land proxy threshold inputs. Sits below the
-   Vacant land checkbox row. Two number inputs flanking the
-   "% bldg or $" connector label. */
+/* Phase 6 vacant land proxy threshold. Single number input + a
+   %/$ pill toggle that selects how the number is interpreted.
+   Tucked away until the Vacant land checkbox is on. */
 .sidebar .vacant-threshold-row {
   display: flex;
   align-items: center;
   gap: 6px;
   margin-top: 4px;
 }
-/* Phase 7 follow-up: the % and $ threshold inputs stay tucked away
-   until the user actually checks "Vacant land" — they're only
-   meaningful when the filter is active. CSS :has() handles the
-   show/hide without a JS listener (supported in every browser
-   we target). */
 .sidebar:not(:has(#vacant-only:checked)) .vacant-threshold-row {
   display: none;
 }
-.sidebar .vacant-threshold-row .vacant-pct-field,
-.sidebar .vacant-threshold-row .vacant-max-field {
+.sidebar .vacant-threshold-row .vacant-threshold-field {
   flex: 1 1 0;
   min-width: 0;
-}
-.sidebar .vacant-threshold-row .vacant-threshold-label {
-  font-size: 11px;
-  color: var(--color-neutral-600, #52525b);
-  flex: 0 0 auto;
-  white-space: nowrap;
 }
 .sidebar .vacant-threshold-row input[type="number"] {
   width: 100%;
   padding: 6px 6px;
   font-size: 12px;
 }
-#vacant-pct::-webkit-outer-spin-button,
-#vacant-pct::-webkit-inner-spin-button,
-#vacant-max::-webkit-outer-spin-button,
-#vacant-max::-webkit-inner-spin-button {
+#vacant-threshold::-webkit-outer-spin-button,
+#vacant-threshold::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
-#vacant-pct,
-#vacant-max {
+#vacant-threshold {
   -moz-appearance: textfield;
   appearance: textfield;
+}
+
+/* %/$ pill toggle. Two-segment switch styled like a small
+   inline radio group. Active segment fills accent blue. */
+.sidebar .vacant-mode-pill {
+  display: inline-flex;
+  flex: 0 0 auto;
+  border: 1px solid var(--color-neutral-300, #d4d4d8);
+  border-radius: 4px;
+  overflow: hidden;
+  background: #fff;
+}
+.sidebar .vacant-mode-btn {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--color-neutral-600, #52525b);
+  cursor: pointer;
+  line-height: 1;
+}
+.sidebar .vacant-mode-btn + .vacant-mode-btn {
+  border-left: 1px solid var(--color-neutral-300, #d4d4d8);
+}
+.sidebar .vacant-mode-btn:hover {
+  background: var(--color-neutral-100, #f4f4f5);
+  color: var(--color-primary-500, #1e293b);
+}
+.sidebar .vacant-mode-btn.active {
+  background: var(--color-accent-500, #2563eb);
+  color: #fff;
+}
+.sidebar .vacant-mode-btn:focus-visible {
+  outline: 2px solid var(--color-accent-500, #2563eb);
+  outline-offset: -2px;
 }
 
 /* Per-overlay accent colours. Dark red on Generate Map signals

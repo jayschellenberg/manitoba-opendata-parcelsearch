@@ -807,8 +807,7 @@ const URL_INPUT_BINDINGS = [
   { id: 'changed-status', key: 'changedStatus', event: 'change' },
   { id: 'du-mode',       key: 'duMode',        event: 'change' },
   { id: 'du-min',        key: 'duMin',         event: 'change' },
-  { id: 'vacant-pct',    key: 'vacantPct',     event: 'change' },
-  { id: 'vacant-max',    key: 'vacantMax',     event: 'change' },
+  { id: 'vacant-threshold', key: 'vacantThreshold', event: 'change' },
 ];
 
 function readCurrentUrlState() {
@@ -818,10 +817,10 @@ function readCurrentUrlState() {
     if (!el) continue;
     const raw = el.value ?? '';
     if (raw === '' || raw == null) continue;
-    if (b.key === 'duMin' || b.key === 'vacantMax') {
+    if (b.key === 'duMin') {
       const n = parseInt(raw, 10);
       if (Number.isFinite(n)) state[b.key] = n;
-    } else if (b.key === 'vacantPct') {
+    } else if (b.key === 'vacantThreshold') {
       const n = parseFloat(raw);
       if (Number.isFinite(n)) state[b.key] = n;
     } else {
@@ -3758,25 +3757,52 @@ function toGeoJsonFeature(f) {
 
 // ---------- Phase 6: vacant-land proxy thresholds ----------
 
-const $vacantPct = document.getElementById('vacant-pct');
-const $vacantMax = document.getElementById('vacant-max');
+const $vacantThreshold = document.getElementById('vacant-threshold');
+const $vacantModePill  = document.querySelector('.vacant-mode-pill');
 
 /**
- * Read the current vacant-land proxy thresholds from the sidebar
- * inputs. `pctFraction` is the building % cap as a 0-1 ratio (2% ->
- * 0.02); `max` is the building $ cap as a number or null when blank.
- * Defaults match the legacy hard-coded 2% behaviour.
+ * Read the current vacant-land proxy threshold + mode from the
+ * sidebar. The user picks one mode (% or $) and one value via
+ * the pill toggle; the unselected dimension reads as null so the
+ * filter ignores it.
+ *
+ * Defaults: 2% (matches the legacy hard-coded behaviour).
  */
 function getVacancyThresholds() {
-  const pctRaw = $vacantPct?.value;
-  const maxRaw = $vacantMax?.value;
-  let pct = pctRaw == null || pctRaw === '' ? 2 : parseFloat(pctRaw);
-  if (!Number.isFinite(pct)) pct = 2;
+  const raw = $vacantThreshold?.value;
+  const num = raw == null || raw === '' ? NaN : parseFloat(raw);
+  const mode = $vacantModePill?.querySelector('.vacant-mode-btn.active')?.dataset.mode || 'pct';
+  if (mode === 'dollar') {
+    const max = Number.isFinite(num) && num >= 0 ? num : null;
+    return { pctFraction: null, max };
+  }
+  let pct = Number.isFinite(num) ? num : 2;
   if (pct < 0) pct = 0;
-  if (pct > 10) pct = 10;
-  let max = maxRaw == null || maxRaw === '' ? null : parseFloat(maxRaw);
-  if (max != null && (!Number.isFinite(max) || max < 0)) max = null;
-  return { pctFraction: pct / 100, max };
+  return { pctFraction: pct / 100, max: null };
+}
+
+// Wire the pill toggle so click flips the active segment, updates
+// aria-pressed, and refreshes the vacancy roll-up.
+if ($vacantModePill) {
+  for (const btn of $vacantModePill.querySelectorAll('.vacant-mode-btn')) {
+    btn.addEventListener('click', () => {
+      for (const sib of $vacantModePill.querySelectorAll('.vacant-mode-btn')) {
+        const on = sib === btn;
+        sib.classList.toggle('active', on);
+        sib.setAttribute('aria-pressed', String(on));
+      }
+      // Default the input to a sensible starting value when the
+      // mode changes from one shape to the other.
+      if ($vacantThreshold) {
+        if (btn.dataset.mode === 'dollar' && (!$vacantThreshold.value || parseFloat($vacantThreshold.value) <= 10)) {
+          $vacantThreshold.value = '5000';
+        } else if (btn.dataset.mode === 'pct' && parseFloat($vacantThreshold.value) > 10) {
+          $vacantThreshold.value = '2';
+        }
+      }
+      refreshVacancyAndRefilter();
+    });
+  }
 }
 
 /**
