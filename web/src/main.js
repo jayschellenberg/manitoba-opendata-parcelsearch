@@ -13,6 +13,10 @@ import { initInfoIcons } from './infoIcon.js';
 // Phase 5 column visibility.
 import { initColumns, applyVisibility as applyColumnVisibility } from './columns.js';
 
+// Phase 6 URL state — serialises a small set of form values into the
+// query string so a session URL is shareable.
+import { encodeState, decodeState } from './urlState.js';
+
 // Entry point. Wires the search inputs, the map, and the results table.
 //
 // Single search flow (Manitoba's Roll_Entry IS the parcel layer; there's no
@@ -786,6 +790,118 @@ initInfoIcons();
 // Phase 5 column-visibility gear + presets. Reads stored visibility
 // from localStorage; falls back to the spec's default-visible set.
 initColumns();
+
+// Phase 6 URL state — apply on boot, then re-encode the current
+// form values on each input change so a copied URL reproduces the
+// session. Sales-CSV state is omitted (uploaded files can't be
+// encoded in a URL).
+const URL_INPUT_BINDINGS = [
+  { id: 'municipality',  key: 'muni',          event: 'change' },
+  { id: 'roll',          key: 'roll',          event: 'change' },
+  { id: 'address-from',  key: 'addressFrom',   event: 'change' },
+  { id: 'address-to',    key: 'addressTo',     event: 'change' },
+  { id: 'address-street', key: 'addressStreet', event: 'change' },
+  { id: 'legal-text',    key: 'legalText',     event: 'change' },
+  { id: 'title',         key: 'title',         event: 'change' },
+  { id: 'zone-category', key: 'zoneCategory',  event: 'change' },
+  { id: 'changed-status', key: 'changedStatus', event: 'change' },
+  { id: 'du-mode',       key: 'duMode',        event: 'change' },
+  { id: 'du-min',        key: 'duMin',         event: 'change' },
+  { id: 'vacant-pct',    key: 'vacantPct',     event: 'change' },
+  { id: 'vacant-max',    key: 'vacantMax',     event: 'change' },
+];
+
+function readCurrentUrlState() {
+  const state = {};
+  for (const b of URL_INPUT_BINDINGS) {
+    const el = document.getElementById(b.id);
+    if (!el) continue;
+    const raw = el.value ?? '';
+    if (raw === '' || raw == null) continue;
+    if (b.key === 'duMin' || b.key === 'vacantMax') {
+      const n = parseInt(raw, 10);
+      if (Number.isFinite(n)) state[b.key] = n;
+    } else if (b.key === 'vacantPct') {
+      const n = parseFloat(raw);
+      if (Number.isFinite(n)) state[b.key] = n;
+    } else {
+      state[b.key] = raw;
+    }
+  }
+  // Tab + selected parcel come from non-input state.
+  try {
+    const stored = localStorage.getItem('mbps_sidebar_tab_v1');
+    if (stored === 'property' || stored === 'sales') state.tab = stored;
+  } catch {}
+  if (selectedParcelRow?.parcel?.properties?.Roll_No_Txt) {
+    state.selectedRoll = selectedParcelRow.parcel.properties.Roll_No_Txt;
+  }
+  return state;
+}
+
+function writeUrlStateToHistory() {
+  try {
+    const state = readCurrentUrlState();
+    const qs = encodeState(state);
+    const url = qs ? `${location.pathname}?${qs}` : location.pathname;
+    history.replaceState(null, '', url);
+  } catch (err) {
+    console.warn('writeUrlStateToHistory failed (non-fatal):', err);
+  }
+}
+
+function applyUrlStateToInputs(state) {
+  for (const b of URL_INPUT_BINDINGS) {
+    if (!(b.key in state)) continue;
+    const el = document.getElementById(b.id);
+    if (!el) continue;
+    el.value = String(state[b.key]);
+  }
+  if (state.tab && (state.tab === 'property' || state.tab === 'sales')) {
+    try { setActiveTab(state.tab, { skipFocus: true }); } catch {}
+  }
+}
+
+// Wire input listeners. Throttled via requestAnimationFrame so a
+// rapid sequence of edits coalesces into one history.replaceState.
+let urlWritePending = false;
+function queueUrlWrite() {
+  if (urlWritePending) return;
+  urlWritePending = true;
+  requestAnimationFrame(() => {
+    urlWritePending = false;
+    writeUrlStateToHistory();
+  });
+}
+for (const b of URL_INPUT_BINDINGS) {
+  const el = document.getElementById(b.id);
+  if (!el) continue;
+  el.addEventListener(b.event, queueUrlWrite);
+  if (el.tagName === 'INPUT') el.addEventListener('input', queueUrlWrite);
+}
+
+// Initial decode + apply. The muni dropdown loads asynchronously, so
+// re-apply the URL's muni once its option appears in the select.
+const initialUrlState = decodeState(location.search);
+applyUrlStateToInputs(initialUrlState);
+
+if (initialUrlState.muni) {
+  let attempts = 0;
+  const targetMuni = initialUrlState.muni;
+  const pollId = setInterval(() => {
+    attempts += 1;
+    const hasOption = Array.from($municipality.options).some((o) => o.value === targetMuni);
+    if (hasOption) {
+      clearInterval(pollId);
+      $municipality.value = targetMuni;
+      $municipality.dispatchEvent(new Event('change', { bubbles: true }));
+    } else if (attempts > 80) {
+      // ~16 s; the muni list is finite and cached, so this is
+      // generous. Stop polling if it never arrives.
+      clearInterval(pollId);
+    }
+  }, 200);
+}
 
 setExportEnabled(false);
 updateSortIndicators();
