@@ -208,13 +208,13 @@
             <div class="filter-row">
               <span class="field">
                 <select id="zone-category" disabled>
-                  <option value="">Any zoning by-law category</option>
+                  <option value="">Zoning Category</option>
                 </select>
                 <span class="tip">Zoning by-law (ZBL) category. Each Manitoba municipality has its own ZBL; this dropdown lists the categories that appear in the selected muni's by-law.</span>
               </span>
               <span class="field">
                 <select id="changed-status">
-                  <option value="">Any amendment status</option>
+                  <option value="">Amendments</option>
                   <option value="zoning">Zoning changed</option>
                   <option value="devplan">Development plan changed</option>
                   <option value="both">Both changed</option>
@@ -403,8 +403,11 @@
                the map render colour for that layer. Plain-language
                labels with the legacy technical name in the tooltip.
                Phase 4 will swap the tooltips to info-icon popovers. -->
+          <!-- Boundaries + Planning are merged into a single group so
+               appraisers see parcel + grid + zoning + dev-plan side
+               by side without scanning two headings. -->
           <div class="overlay-group">
-            <h3 class="overlay-group-title">Boundaries</h3>
+            <h3 class="overlay-group-title">Boundaries &amp; Planning</h3>
             <button id="muni-parcels-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled style="--dot-color:#94a3b8" title="Roll Layer — every parcel in the selected municipality (grey fabric under your search results)">
               <span class="overlay-dot" aria-hidden="true"></span>
               <span class="overlay-btn-label">Parcel boundaries</span>
@@ -413,10 +416,6 @@
               <span class="overlay-dot" aria-hidden="true"></span>
               <span class="overlay-btn-label">Section/township grid</span>
             </button>
-          </div>
-
-          <div class="overlay-group">
-            <h3 class="overlay-group-title">Planning</h3>
             <button id="zoning-toggle" type="button" class="overlay-btn" aria-pressed="false" style="--dot-color:#d97706" title="Zoning By-Laws (ZBL)">
               <span class="overlay-dot" aria-hidden="true"></span>
               <span class="overlay-btn-label">Zoning</span>
@@ -424,6 +423,18 @@
             <button id="devplan-toggle" type="button" class="overlay-btn" aria-pressed="false" style="--dot-color:#16a34a" title="Dev Plan — Manitoba Development Plan Designations">
               <span class="overlay-dot" aria-hidden="true"></span>
               <span class="overlay-btn-label">Development plan</span>
+            </button>
+          </div>
+
+          <div class="overlay-group">
+            <h3 class="overlay-group-title">Reference</h3>
+            <button id="contam-toggle" type="button" class="overlay-btn" aria-pressed="false" style="--dot-color:#dc2626" title="Enviro Sites — Manitoba Contaminated Sites Registry">
+              <span class="overlay-dot" aria-hidden="true"></span>
+              <span class="overlay-btn-label">Environmental sites</span>
+            </button>
+            <button id="flow-toggle" type="button" class="overlay-btn" aria-pressed="false" style="--dot-color:#2563eb" title="MHTIS Traffic Flow 2019 — segments coloured by AADT">
+              <span class="overlay-dot" aria-hidden="true"></span>
+              <span class="overlay-btn-label">Traffic flow</span>
             </button>
           </div>
 
@@ -440,18 +451,6 @@
             <button id="cli-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled style="--dot-color:#65a30d" title="Canada Land Inventory — Soil Capability for Agriculture (1=prime, 7=no agricultural capability). Select a municipality first.">
               <span class="overlay-dot" aria-hidden="true"></span>
               <span class="overlay-btn-label">Soil productivity (CLI)</span>
-            </button>
-          </div>
-
-          <div class="overlay-group">
-            <h3 class="overlay-group-title">Reference</h3>
-            <button id="contam-toggle" type="button" class="overlay-btn" aria-pressed="false" style="--dot-color:#dc2626" title="Enviro Sites — Manitoba Contaminated Sites Registry">
-              <span class="overlay-dot" aria-hidden="true"></span>
-              <span class="overlay-btn-label">Environmental sites</span>
-            </button>
-            <button id="flow-toggle" type="button" class="overlay-btn" aria-pressed="false" style="--dot-color:#2563eb" title="MHTIS Traffic Flow 2019 — segments coloured by AADT">
-              <span class="overlay-dot" aria-hidden="true"></span>
-              <span class="overlay-btn-label">Traffic flow</span>
             </button>
           </div>
 
