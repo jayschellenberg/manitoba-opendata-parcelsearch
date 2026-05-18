@@ -7,20 +7,28 @@
 const $ = (id) => document.getElementById(id);
 
 const els = {
-  now:        $('now'),
-  pill:       $('active-pill'),
-  full:       $('status-full'),
-  delta:      $('status-delta'),
-  legal:      $('status-legal'),
-  asmt:       $('status-asmt'),
-  git:        $('status-git'),
-  btnFull:    $('btn-full'),
-  btnDelta:   $('btn-delta'),
-  btnPush:    $('btn-push'),
-  btnCancel:  $('btn-cancel'),
-  btnClear:   $('btn-clear'),
-  autoscroll: $('autoscroll'),
-  log:        $('log'),
+  now:           $('now'),
+  pill:          $('active-pill'),
+  full:          $('status-full'),
+  delta:         $('status-delta'),
+  legal:         $('status-legal'),
+  asmt:          $('status-asmt'),
+  git:           $('status-git'),
+  btnFull:       $('btn-full'),
+  btnDelta:      $('btn-delta'),
+  btnPush:       $('btn-push'),
+  btnCancel:     $('btn-cancel'),
+  btnClear:      $('btn-clear'),
+  autoscroll:    $('autoscroll'),
+  log:           $('log'),
+  planCard:      $('plan-card'),
+  planSummary:   $('plan-summary'),
+  planTbody:     $('plan-tbody'),
+  planTotalCfg:  $('plan-total-configured'),
+  planTotalMun:  $('plan-total-munis'),
+  planTotalPar:  $('plan-total-parcels'),
+  planParallel:  $('plan-parallel'),
+  planSecs:      $('plan-secs'),
 };
 
 let running = false;
@@ -104,6 +112,52 @@ function renderStatus(s) {
     els.log.textContent = s.activeRun.logTail.join('\n');
     scrollLog();
   }
+
+  renderCadencePlan(s.cadencePlan);
+}
+
+function renderCadencePlan(plan) {
+  if (!plan) { els.planCard.hidden = true; return; }
+  els.planCard.hidden = false;
+
+  const monthNames = ['January','February','March','April','May','June',
+                      'July','August','September','October','November','December'];
+  const dur = (hours) => hours < 24
+    ? `~${hours.toFixed(1)} h`
+    : `~${(hours/24).toFixed(1)} d  (~${hours.toFixed(0)} h)`;
+
+  els.planSummary.innerHTML = [
+    `<strong>${monthNames[plan.month-1]}</strong> delta will re-scrape `,
+    `<strong>${plan.triggerMunis.toLocaleString()}</strong> munis · `,
+    `<strong>${plan.triggerParcels.toLocaleString()}</strong> parcels — `,
+    `<span class="muted">est. ${dur(plan.estHours)}</span>`
+  ].join('');
+
+  const tiers = [
+    { key: 'monthly',  label: 'Monthly',  trigger: plan.breakdown.monthly,  all: plan.breakdown.monthlyAll,  note: '' },
+    { key: 'sixMonth', label: '6-month',  trigger: plan.breakdown.sixMonth, all: plan.breakdown.sixMonthAll, note: `cohort ${plan.cohortSixNow + 1} of 6` },
+    { key: 'annual',   label: 'Annual',   trigger: plan.breakdown.annual,   all: plan.breakdown.annualAll,   note: `cohort ${plan.cohortAnnualNow + 1} of 12` },
+  ];
+
+  els.planTbody.innerHTML = tiers.map((t) => `
+    <tr>
+      <td>
+        <span class="plan-tier-badge ${t.key}">${t.label}</span>
+        ${t.note ? `<span class="muted">${t.note}</span>` : ''}
+      </td>
+      <td class="num">${t.all.munis.toLocaleString()} munis · ${t.all.parcels.toLocaleString()} parcels</td>
+      <td class="num">${t.trigger.munis.toLocaleString()}</td>
+      <td class="num">${t.trigger.parcels.toLocaleString()}</td>
+    </tr>
+  `).join('');
+
+  const totalAllMunis    = tiers.reduce((a, t) => a + t.all.munis, 0);
+  const totalAllParcels  = tiers.reduce((a, t) => a + t.all.parcels, 0);
+  els.planTotalCfg.textContent = `${totalAllMunis.toLocaleString()} munis · ${totalAllParcels.toLocaleString()} parcels`;
+  els.planTotalMun.textContent = plan.triggerMunis.toLocaleString();
+  els.planTotalPar.textContent = plan.triggerParcels.toLocaleString();
+  if (els.planParallel) els.planParallel.textContent = plan.parallelN;
+  if (els.planSecs)     els.planSecs.textContent     = plan.avgSecondsReq;
 }
 
 function setRunning(isRunning, run) {

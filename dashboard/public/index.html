@@ -55,6 +55,37 @@
         </p>
       </section>
 
+      <section class="card plan-card" id="plan-card" hidden>
+        <h2>Next delta plan</h2>
+        <div id="plan-summary" class="plan-summary"></div>
+        <table class="plan-table">
+          <thead>
+            <tr>
+              <th>Tier</th>
+              <th class="num">Configured</th>
+              <th class="num">Triggers this delta</th>
+              <th class="num">Parcels</th>
+            </tr>
+          </thead>
+          <tbody id="plan-tbody"></tbody>
+          <tfoot>
+            <tr>
+              <th>Total</th>
+              <th class="num" id="plan-total-configured">—</th>
+              <th class="num" id="plan-total-munis">—</th>
+              <th class="num" id="plan-total-parcels">—</th>
+            </tr>
+          </tfoot>
+        </table>
+        <p class="hint">
+          Cadence is set per-muni in <code>mao-scrape/config/municipalities.csv</code>
+          (column <code>rescrape_cadence</code>). 6-month munis are split into 6 cohorts
+          (one fires per delta); annual munis are split into 12 cohorts. Monthly munis fire every delta.
+          Estimate uses PARALLEL_N=<span id="plan-parallel">8</span> and an observed mean of <span id="plan-secs">25</span>s per
+          summary.aspx request — adjust both in <code>scripts/scrape_summaries.R</code>.
+        </p>
+      </section>
+
       <section class="card progress-card">
         <div class="progress-header">
           <h2>Live progress</h2>

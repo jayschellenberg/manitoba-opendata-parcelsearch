@@ -30,11 +30,37 @@ import { fileURLToPath } from 'node:url';
 import { spawn, execFile } from 'node:child_process';
 
 const HERE        = path.dirname(fileURLToPath(import.meta.url));
-const WEB_ROOT    = path.resolve(HERE, '..');                 // WebSearch repo root
-const SCRAPE_ROOT = path.resolve(WEB_ROOT, '..', 'mao-scrape');
+const WEB_ROOT    = path.resolve(HERE, '..');                 // WebSearch repo root (or worktree)
+
+// mao-scrape is a sibling of the real WebSearch checkout. Under a git worktree
+// (`.claude/worktrees/<branch>/`), `..` doesn't point at the right place, so
+// climb until we hit `MBOpenData/mao-scrape`. Allow MAO_SCRAPE_ROOT to short-
+// circuit the search for dev/test setups.
+function resolveScrapeRoot() {
+  if (process.env.MAO_SCRAPE_ROOT) return path.resolve(process.env.MAO_SCRAPE_ROOT);
+  let dir = WEB_ROOT;
+  for (let i = 0; i < 6; i++) {
+    const candidate = path.resolve(dir, '..', 'mao-scrape');
+    if (fs.existsSync(path.join(candidate, 'mao-scrape.Rproj'))) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  // Last resort: the canonical path, even if missing — we'll log/warn elsewhere.
+  return path.resolve(WEB_ROOT, '..', 'mao-scrape');
+}
+
+const SCRAPE_ROOT = resolveScrapeRoot();
 const PUBLIC_DIR  = path.join(HERE, 'public');
 const MANIFEST    = path.join(WEB_ROOT, 'web', 'public', 'data', 'manifest.json');
+const MUNI_CONFIG = path.join(SCRAPE_ROOT, 'config', 'municipalities.csv');
+const ASMT_SHARDS = path.join(WEB_ROOT, 'web', 'public', 'data', 'assessment');
 const PORT        = Number(process.env.DASHBOARD_PORT || 5174);
+
+// Throughput tuning constants — must mirror scripts/scrape_summaries.R.
+// Used only for "this delta will take ~X hours" estimates on the status page.
+const SCRAPER_PARALLEL_N      = 8;     // PARALLEL_N
+const SCRAPER_AVG_SECONDS_REQ = 25;    // observed mean from MAO summary.aspx
 
 // --------------------------------------------------------------- run state
 //
@@ -120,6 +146,125 @@ function activeRunSnapshot() {
   };
 }
 
+// Parcel counts per muni — read from web/public/data/assessment/{muni}.json
+// once and memoised. Used to estimate "this delta will re-scrape N parcels".
+let parcelCountCache = null;
+function parcelCountsByMuni() {
+  if (parcelCountCache) return parcelCountCache;
+  parcelCountCache = new Map();
+  if (!fs.existsSync(ASMT_SHARDS)) return parcelCountCache;
+  for (const f of fs.readdirSync(ASMT_SHARDS)) {
+    if (!f.endsWith('.json')) continue;
+    const muni = parseInt(f.slice(0, -5), 10);
+    if (Number.isNaN(muni)) continue;
+    try {
+      const j = JSON.parse(fs.readFileSync(path.join(ASMT_SHARDS, f), 'utf8'));
+      const rows = Array.isArray(j) ? j.length
+                  : Array.isArray(j.rows)    ? j.rows.length
+                  : Array.isArray(j.records) ? j.records.length
+                  : 0;
+      parcelCountCache.set(muni, rows);
+    } catch { /* skip unreadable shard */ }
+  }
+  return parcelCountCache;
+}
+
+// Naive CSV parser — fine for the munis file, which has no quoted commas.
+function parseCsvSimple(text) {
+  const lines = text.split(/\r?\n/).filter((l) => l.length);
+  if (lines.length < 2) return { header: [], rows: [] };
+  const header = lines[0].split(',').map((s) => s.trim());
+  const rows = lines.slice(1).map((l) => {
+    const parts = l.split(',');
+    const obj = {};
+    for (let i = 0; i < header.length; i++) obj[header[i]] = (parts[i] ?? '').trim();
+    return obj;
+  });
+  return { header, rows };
+}
+
+// Build the same cadence plan that scripts/cadence.R produces, for previewing
+// in the dashboard. Returns null if the config file is missing/malformed.
+function loadCadencePlan(monthNum = new Date().getMonth() + 1) {
+  if (!fs.existsSync(MUNI_CONFIG)) return null;
+  let parsed;
+  try { parsed = parseCsvSimple(fs.readFileSync(MUNI_CONFIG, 'utf8')); }
+  catch { return null; }
+  if (!parsed.header.includes('rescrape_cadence')) return null;
+
+  const truthy = (s) => /^(Y|YES|TRUE|T|1)$/i.test((s || '').trim());
+  const norm   = (s) => {
+    const t = (s || '').trim().toLowerCase();
+    return ['monthly', '6month', 'annual'].includes(t) ? t : 'annual';
+  };
+
+  const rows = parsed.rows
+    .filter((r) => truthy(r.include))
+    .map((r) => ({
+      muni_no:  parseInt(r.muni_no, 10),
+      name:     r.municipality,
+      cadence:  norm(r.rescrape_cadence),
+    }));
+
+  // Cohorts: sort by muni_no within each tier, assign (index mod N).
+  const byTier = { monthly: [], '6month': [], annual: [] };
+  for (const r of rows) byTier[r.cadence].push(r);
+  for (const key of ['6month', 'annual']) byTier[key].sort((a, b) => a.muni_no - b.muni_no);
+
+  const cohortSixNow    = (monthNum - 1) % 6;
+  const cohortAnnualNow = (monthNum - 1) % 12;
+
+  const plan = rows.map((r) => {
+    let cohort = null;
+    let triggers = false;
+    if (r.cadence === 'monthly') {
+      triggers = true;
+    } else if (r.cadence === '6month') {
+      const idx = byTier['6month'].findIndex((x) => x.muni_no === r.muni_no);
+      cohort = idx % 6;
+      triggers = cohort === cohortSixNow;
+    } else if (r.cadence === 'annual') {
+      const idx = byTier.annual.findIndex((x) => x.muni_no === r.muni_no);
+      cohort = idx % 12;
+      triggers = cohort === cohortAnnualNow;
+    }
+    return { ...r, cohort, triggers };
+  });
+
+  const counts = parcelCountsByMuni();
+  const tally = (cad, triggeringOnly) =>
+    plan.filter((r) => r.cadence === cad && (!triggeringOnly || r.triggers))
+        .reduce((acc, r) => {
+          acc.munis += 1;
+          acc.parcels += counts.get(r.muni_no) || 0;
+          return acc;
+        }, { munis: 0, parcels: 0 });
+
+  const breakdown = {
+    monthly:    tally('monthly', true),
+    sixMonth:   tally('6month',  true),
+    annual:     tally('annual',  true),
+    monthlyAll: tally('monthly', false),
+    sixMonthAll: tally('6month', false),
+    annualAll:  tally('annual',  false),
+  };
+  const triggerParcels = breakdown.monthly.parcels + breakdown.sixMonth.parcels + breakdown.annual.parcels;
+  const triggerMunis   = breakdown.monthly.munis   + breakdown.sixMonth.munis   + breakdown.annual.munis;
+  const estHours       = triggerParcels / (SCRAPER_PARALLEL_N / SCRAPER_AVG_SECONDS_REQ) / 3600;
+
+  return {
+    month:            monthNum,
+    cohortSixNow,
+    cohortAnnualNow,
+    breakdown,
+    triggerMunis,
+    triggerParcels,
+    estHours,
+    parallelN:        SCRAPER_PARALLEL_N,
+    avgSecondsReq:    SCRAPER_AVG_SECONDS_REQ,
+  };
+}
+
 async function gatherStatus() {
   const manifest = safeReadJSON(MANIFEST);
   const legal = manifest?.datasets?.legal_index || null;
@@ -138,6 +283,7 @@ async function gatherStatus() {
     },
     git: await gatherGitStatus(),
     activeRun: activeRunSnapshot(),
+    cadencePlan: loadCadencePlan(),
   };
 }
 
