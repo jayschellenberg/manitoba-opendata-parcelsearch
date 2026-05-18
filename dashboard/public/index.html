@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MAO Data Control Panel</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>MAO Data Control Panel</h1>
+      <div class="topbar-right">
+        <span id="active-pill" class="active-pill hidden">idle</span>
+        <span id="now" class="now"></span>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="card status-card">
+        <h2>Status</h2>
+        <table class="status-table">
+          <tbody>
+            <tr>
+              <th>Last full scrape</th>
+              <td id="status-full">—</td>
+              <td class="action"><button id="btn-full" type="button" class="primary">Run Full</button></td>
+            </tr>
+            <tr>
+              <th>Last delta scrape</th>
+              <td id="status-delta">—</td>
+              <td class="action"><button id="btn-delta" type="button" class="primary">Run Delta</button></td>
+            </tr>
+            <tr>
+              <th>Last shard build (legal)</th>
+              <td id="status-legal">—</td>
+              <td class="action"></td>
+            </tr>
+            <tr>
+              <th>Last shard build (assessment)</th>
+              <td id="status-asmt">—</td>
+              <td class="action"></td>
+            </tr>
+            <tr>
+              <th>Git status</th>
+              <td id="status-git">—</td>
+              <td class="action"><button id="btn-push" type="button" class="primary">Push to Git</button></td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="hint">
+          <strong>Run Full</strong> re-pulls every MAO record; can take hours.
+          <strong>Run Delta</strong> only refreshes records changed since the last run; minutes typically.
+          Each run also rebuilds the legal + assessment shards and the manifest.
+          <strong>Push to Git</strong> requires a clean tree outside <code>web/public/data/</code>; otherwise commit your other work first.
+        </p>
+      </section>
+
+      <section class="card progress-card">
+        <div class="progress-header">
+          <h2>Live progress</h2>
+          <div class="progress-controls">
+            <label class="autoscroll-label">
+              <input type="checkbox" id="autoscroll" checked /> Auto-scroll
+            </label>
+            <button id="btn-cancel" type="button" class="danger" disabled>Cancel</button>
+            <button id="btn-clear" type="button" class="ghost">Clear</button>
+          </div>
+        </div>
+        <pre id="log" class="log"></pre>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
