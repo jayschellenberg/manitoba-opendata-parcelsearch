@@ -1236,12 +1236,17 @@ export async function fetchTrafficFlow() {
   const cacheKey = 'mb_traffic_flow_v1';
   const cached = await readCache(cacheKey);
   if (cached) return cached;
+  // The MHTIS Traffic Flow layer's OID field is `FID`, not OBJECTID,
+  // so fetchAllPages's default `orderByFields: 'OBJECTID ASC'` returns
+  // HTTP 400 "Invalid field: OBJECTID" — pass the right field name
+  // explicitly so paging works.
   const fc = await fetchAllPages(TRAFFIC_FLOW_URL, {
     where: '1=1',
     outFields: 'StationNum,ROAD_NO,ROAD_IDENT,FlowDirect,AADT,DateOfEsti,START_KM,END_KM,LENGTH_KM,REGION_NO',
     returnGeometry: 'true',
     outSR: '4326',
     f: 'geojson',
+    orderByFields: 'FID ASC',
   }, 20000);
   await writeCache(cacheKey, fc);
   return fc;

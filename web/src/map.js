@@ -396,7 +396,16 @@ export function initMap(container, { onFeatureClick } = {}) {
   map.addControl(new MeasureControl(measureDraw), 'top-right');
 
   const ready = new Promise((resolve) => {
-    map.on('load', () => {
+    // Setup runs once. Three triggers race: 'load', the first 'idle',
+    // and a polled fallback that fires once the style reports loaded.
+    // Some MapLibre 4.x builds + container-resize scenarios delay or
+    // skip 'load' entirely; the multi-trigger guard keeps mapReady
+    // from hanging the overlay toggles.
+    let setupDone = false;
+    const setupMap = () => {
+      if (setupDone) return;
+      setupDone = true;
+      try {
       // Municipal boundaries — a stable reference layer that's on by
       // default. Drawn first so every other overlay (zoning, dev-plan,
       // muni parcels, search results) renders above. Light grey fill
@@ -1660,8 +1669,45 @@ export function initMap(container, { onFeatureClick } = {}) {
       });
       map.on('mouseleave', 'traffic-flow-line', () => { map.getCanvas().style.cursor = ''; });
 
+      } catch (err) {
+        // Setup ran before the style was ready — back off and let
+        // the next trigger try again. We re-arm setupDone here.
+        setupDone = false;
+        return;
+      }
       resolve();
+    };
+
+    // Three triggers race to call setupMap. addSource throws "Style
+    // is not done loading" if fired too early; the catch above
+    // re-arms setupDone so the next trigger retries.
+    map.on('load', setupMap);
+    map.on('idle', setupMap);
+    map.on('styledata', (e) => {
+      // The 'data' event with `dataType: 'style'` is MapLibre's
+      // own signal that the style finished loading. Without
+      // filtering, styledata also fires for tile data.
+      if (!e || e.dataType === 'style' || e.dataType === 'sourcedata') {
+        setupMap();
+      }
     });
+    // Poll fallback. Some builds deliver none of the events in
+    // time; the poll runs setupMap, which guards via setupDone +
+    // catch-on-throw.
+    const pollId = setInterval(() => {
+      if (setupDone) { clearInterval(pollId); return; }
+      setupMap();
+    }, 120);
+    // Failsafe so the UI doesn't hang forever in pathological cases
+    // (style genuinely failing to load). Resolves mapReady so the
+    // overlay toggles don't get stuck on "Loading…" — setVis on a
+    // missing layer is a silent no-op.
+    setTimeout(() => {
+      if (setupDone) return;
+      console.warn('Map setup did not complete after 30s — some overlays may not render until you reload.');
+      clearInterval(pollId);
+      resolve();
+    }, 30000);
   });
 
   return { map, ready };
