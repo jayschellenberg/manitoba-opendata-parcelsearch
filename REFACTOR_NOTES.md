@@ -1,735 +1,627 @@
-# Refactor notes - Manitoba Parcel Search UI/UX pass
-
-Living document. Updated at the end of every refactor phase. Aimed at
-future-me porting these patterns to the sister Winnipeg parcel-search
-app once this work lands.
-
-## Stack snapshot
-
-- Framework: plain JavaScript (ES modules), bundled with Vite 5.4.10.
-- Map: MapLibre GL 4.7.1, `@mapbox/mapbox-gl-draw` 1.5.1, several
-  `@turf/*` 7.x helpers.
-- Styling: Tailwind CSS v4 (added in Phase 1) layered alongside the
-  existing `web/src/style.css`.
-- State: imperative DOM, no React. Module surface in `web/src/`.
-- Caching: client-only. IndexedDB primary, localStorage fallback,
-  namespaced `mbpsCache.*`. Two Vercel Edge Functions serve static
-  pre-built JSON shards from `web/public/data/`.
-- Package manager: npm. Locale convention: en-CA (Canadian English).
-- Deploy: Vercel, `framework: vite`, build `cd web && npm install &&
-  npm run build`, output `web/dist`.
-
-## Phase 1 - Foundation
-
-### Decisions
-
-- Tailwind v4 over v3. The `@tailwindcss/vite` plugin keeps the
-  config to a single Vite plugin call and a `@theme` block inside
-  `web/src/tailwind.css`; no `postcss.config.js` or
-  `tailwind.config.js` needed.
-- Tailwind is loaded *additively* during the migration: the legacy
-  `style.css` stays in place and continues to govern layout. The new
-  tokens are exposed as CSS custom properties so the legacy stylesheet
-  can consume them too (e.g. `font-family: var(--font-sans, ...)`).
-- Header colour shifted from teal `#1a3a4a` to slate-navy `#1e293b`
-  (the new `--color-primary-500`). Intentional, per the design-token
-  spec. Easy to revert by changing the variable in `tailwind.css`.
-- Inter loaded from Google Fonts via `<link>` in `index.html`, with
-  preconnect hints. Pinning to Google avoids adding a font npm package
-  and matches how MapLibre's stylesheet is loaded today. The system
-  stack remains the fallback if the CDN is blocked.
-- Locale switched from `en-US` to `en-CA` everywhere that formats
-  numbers for display. Thousands and decimal characters are identical
-  in English, so this is a no-visual-regression change today but keeps
-  future date/currency formatters honest.
-- Acres precision dropped from 2 decimals to 1 decimal per the Phase 1
-  spec. The old default was implicit; flag if appraisers want it back.
-- Loading-state pulse implemented as a single `.skeleton` class on the
-  loading element. The class hides text (`color: transparent`) and
-  animates a gradient sweep; `prefers-reduced-motion` users see a flat
-  shimmer-free placeholder.
-
-### Reusable patterns (lift candidates)
-
-- `web/src/tailwind.css` - Tailwind entry + `@theme` design tokens +
-  `.skeleton` pulse. Port verbatim, tweak colours only.
-- `web/src/format.js` - number formatters
-  (`formatCurrency`, `formatAcres`, `formatAcresWithUnit`,
-  `formatSqFt`, `formatSqFtFromAcres`, `formatSqFtWithUnit`,
-  `formatPercent`). Pure, no Manitoba assumptions; lift as-is.
-- `td(value, className)` helper in `web/src/main.js:5294` (existing,
-  unchanged in Phase 1). Maps null/empty to em-dash, accepts a class.
-  Useful baseline for both apps.
-
-### Manitoba-specific (do not port)
-
-- `web/src/main.js` formatter wrappers `formatGroupPpa`,
-  `formatGroupPpsf`, `formatGroupPpl`, `formatSaleToAsmt` -
-  sales-CSV-specific. Winnipeg sales analysis will likely re-use the
-  shape but pull from a different upload schema. Lift the call shape,
-  re-bind the field names.
-
-### Dependencies added
-
-- `tailwindcss` `^4.3.0` (devDependency)
-- `@tailwindcss/vite` `^4.3.0` (devDependency)
-
-### Gotchas
-
-- `main.js` already had a local `function formatCurrency(s)` that
-  parses strings. The new module export collides on the name, so the
-  import is aliased: `import { formatCurrency as fmtCurrency } from
-  './format.js'`. The local function now delegates to `fmtCurrency`
-  after running its string parser. Watch for the same collision in
-  the Winnipeg port.
-- Tailwind v4 with the Vite plugin requires the CSS file to be
-  imported from a JS module (`import './tailwind.css'` from
-  `main.js`); a bare `<link rel="stylesheet" href="./src/tailwind.css">`
-  in `index.html` is not enough because Vite needs to process the
-  file. Leaving the link tag in place would 404 against the source
-  path.
-- esbuild advisory (GHSA-67mh-4wv8-2f99) surfaced after install. It is
-  a dev-server-only CORS issue, not relevant to production. Fix
-  requires Vite 8 which is a breaking upgrade; defer.
-
-### Phase 1 porting checklist (Winnipeg)
-
-- Tailwind entry + `@theme` tokens: reuse as-is.
-- Inter font preconnect + link in `index.html`: reuse.
-- Number formatters (`format.js`): reuse.
-- Skeleton pulse class: reuse.
-- Header colour swap (teal -> slate): apply if the Winnipeg app's
-  header is also branded teal/navy and you want the tone match.
-
-## Phase 2 - Layout restructure
-
-### Decisions
-
-- App shell switched from CSS grid (`350px 1fr`) to flex. On md+
-  (>=768 px) the shell is `flex-direction: row` with the sidebar
-  capped at `flex: 0 0 35%`; below md it stacks vertically. The same
-  markup serves both layouts.
-- Right pane (`.workspace`) is a vertical flex column: map on top,
-  draggable divider, table on bottom. The split is expressed as a
-  single CSS custom property `--map-pane-height` (default 60%) that
-  `layout.js` updates on drag and arrow-key nudges. CSS rules read
-  the variable for the map's flex-basis and height, so the JS only
-  needs to update one value.
-- Sticky topbar replaces the old `<header>`. The "Data sources"
-  details element opens a 640-px-wide panel positioned absolute
-  below the topbar so it doesn't push the app shell down. Disclaimer,
-  About blurb, and data-refresh row all moved into that panel.
-- The map's `aspect-ratio: 16/9` rule still applies in the stacked
-  layout (below md). At md+ it's neutralised so the flex split
-  governs the map's height. Stacked mode is what a mobile pass will
-  hit, where 16:9 reads better than a fixed-height pane.
-- Draggable handle uses pointer events (works for mouse + touch +
-  pen) and respects arrow keys / Home / End when focused. While
-  dragging, `body.workspace-resizing` disables text selection and
-  iframe pointer events so the cursor can't escape the handle.
-- MapLibre's WebGL canvas needs a manual `map.resize()` call after
-  the container changes size. The workspace emits a custom
-  `workspace:resize` event that main.js listens to and forwards to
-  MapLibre once `mapReady` resolves.
-
-### Reusable patterns (lift candidates)
-
-- `web/src/layout.js` - workspace resize handle. Pure layout logic,
-  no Manitoba assumptions. Lift verbatim; the only contract is that
-  the parent workspace element has id `workspace`, the handle has
-  id `workspace-resize`, and CSS reads `--map-pane-height`.
-- Topbar markup (`.topbar`, `.topbar-nav`, `.topbar-details`,
-  `.topbar-panel`) - portable. The link targets and panel content
-  are content-only; structure is reusable.
-- `.app-shell` / `.workspace` / `.map-pane` / `.table-pane` CSS
-  block in `web/src/style.css` - portable. Same naming will work
-  in the Winnipeg port.
-- The `body.workspace-resizing` pattern for suspending text-selection
-  during a drag is a generic UI helper.
-
-### Manitoba-specific (do not port)
-
-- The "Data sources" panel content (About + the geoportal links) is
-  Manitoba-specific. Lift the markup shape (h2 + p + data-refresh
-  row + disclaimer section), swap the link targets and copy.
-
-### Dependencies added
-
-None.
-
-### Gotchas
-
-- Vite's default build wipes `dist/`. Repo convention (per HANDOFF.md)
-  is `npm run build -- --emptyOutDir=false` because `dist/data/`
-  contains large pre-built shards. Keep the flag when building
-  locally; production builds on Vercel start from a clean dist so
-  the flag is fine to omit there.
-- The legacy `#results-wrap { padding; overflow-x }` rule had higher
-  specificity than the new `.table-pane` class and was overriding
-  the md+ split's `overflow: auto`. Removed the rule (kept an empty
-  selector so any external CSS targeting it doesn't break).
-- The old `<details class="explainer">`, `<footer id="disclaimer">`,
-  and `<aside id="data-refresh-footer">` all relocated into the
-  topbar panel. Their IDs are preserved so `populateDataRefreshFooter()`
-  and the like keep working without a JS change.
-
-### Things visually replaced / removed
-
-- `<header>` (bare element) -> `<header class="topbar">` with title,
-  Winnipeg portal link, Data sources details.
-- `<div class="layout">` grid container -> `<div class="app-shell">`
-  flex container.
-- `<main class="main-pane">` -> `<main class="main-pane workspace"
-  id="workspace">`.
-- `#map` keeps its id; gains `.map-pane` class. The 16:9 aspect-ratio
-  applies only in the stacked layout now.
-- `#results-wrap` keeps its id; gains `.table-pane` class. Its
-  padding+overflow rules now live on the class.
-- Trailing `<details class="explainer">`, `<aside id="data-refresh-footer">`,
-  and `<footer id="disclaimer">` removed from the bottom of the page
-  and reborn inside the topbar's Data sources panel.
-
-### Phase 2 porting checklist (Winnipeg)
-
-- `.app-shell` / `.sidebar` / `.workspace` / `.map-pane` /
-  `.table-pane` CSS block: reuse.
-- `layout.js` workspace resize: reuse.
-- Topbar markup shape: reuse, swap link targets and panel content.
-- Map resize wiring (`workspace:resize` -> `map.resize()`): reuse.
-
-## Phase 3 - Tabbed sidebar
-
-### Decisions
-
-- Sidebar split into **two** tab panels by workflow: Property search
-  (default) and Sales analysis. Plan originally called for three
-  tabs with Map layers as the third, but overlay toggles are
-  integral to the search workflow (an appraiser flips zoning / dev
-  plan / contamination on while reviewing parcels), so Map layers
-  lives as an **always-visible section below the active tab panel**
-  instead. The status block (count, unmatched drawer, Export CSV)
-  sits below Map layers and is also always visible.
-- Tab state persisted to localStorage under `mbps_sidebar_tab_v1`
-  so a refresh keeps the user on the tab they were on.
-- Successful sales-CSV upload auto-switches to the Sales tab so the
-  newly-visible filters land in view immediately, regardless of
-  where the user dropped the file.
-- Sales upload changed from a button to a drag-and-drop area with a
-  cloud icon. The hidden `<input type="file">` keeps its id
-  (`sales-upload-input`); the dropzone wraps it, click → picker,
-  drop → handler, drag-over lights up the border.
-- Map overlays grouped by purpose: Boundaries (parcel boundaries +
-  section/township grid), Planning (zoning + dev plan), Risk
-  (environmental sites, MASC risk areas, MASC rating, CLI soil),
-  Reference (traffic flow), Quick links (muni + PD website).
-  Generate Map sits below the groups as the action button.
-- Each overlay toggle gets a coloured dot from `--dot-color` set
-  inline on the button. Colours are best-guess representatives of
-  the map render colour; verify against `map.js` if a particular
-  layer's swatch reads wrong.
-- Renames applied: Roll Layer -> Parcel boundaries, Sec-Twp Grid ->
-  Section/township grid, Zoning Layer -> Zoning, Dev Plan Layer ->
-  Development plan, Enviro Sites -> Environmental sites, MASC
-  Rating -> MASC rating, CLI Soil -> Soil productivity (CLI),
-  Traffic Flow -> Traffic flow, Muni Website -> Muni website, PD
-  Website -> PD website. The legacy technical name now lives in
-  the button's title attribute (Phase 4 replaces these with info
-  icons).
-- Legal description + Certificate of title + Zoning category +
-  Amendment status + Dwelling-unit filters all moved into a single
-  `<details>` "Advanced filters" inside the Property search tab.
-
-### Reusable patterns (lift candidates)
-
-- `web/src/tabs.js` - sidebar tab switcher. `PRIMARY_INPUT_BY_TAB`
-  map is the only thing that needs editing per app; the rest is
-  generic. Includes arrow-key + Home/End keyboard support.
-- `.sidebar-tabs` / `.sidebar-tab` / `.sidebar-tab-panel` CSS:
-  portable.
-- `.sales-dropzone` CSS + the inline SVG cloud-upload icon: portable.
-  The drag/drop wiring in `main.js` is also generic (the only
-  app-specific call is `handleSalesUpload`).
-- `.overlay-group` / `.overlay-btn` / `.overlay-dot` CSS: portable.
-  Each app's overlay list will differ; the styling won't.
-- The `Advanced filters` `<details>` shape (uppercase summary, soft
-  slate hover): portable.
-
-### Manitoba-specific (do not port)
-
-- The overlay button IDs (`muni-parcels-toggle`, `masc-toggle`,
-  `cli-toggle`, etc.) are Manitoba-specific layers. The grouping
-  shape (Boundaries / Planning / Risk / Reference / Quick links)
-  is reusable; the button list inside each group is per-app.
-- `--dot-color` values are best-guess representative swatches for
-  Manitoba's render colours. Winnipeg's render palette will differ.
-- The "Advanced filters" content (zoning category, amendment
-  status, DU filters) is Manitoba-driven; the wrapper is reusable.
-
-### Dependencies added
-
-None.
-
-### Gotchas
-
-- The legacy `body.sales-mode .sidebar .search-section { display:
-  none; }` rule no longer applies (the Search inputs are in their
-  own tab panel now). The `body.sales-mode` class still gates the
-  `.sales-only` filter row visibility inside the Sales tab, so it
-  remains useful.
-- `#sales-upload-btn` no longer exists; main.js now binds to
-  `#sales-dropzone`. The hidden `#sales-upload-input` is unchanged.
-- Tab panel hiding uses `[hidden]` + `display: none !important`
-  because the inline flex layout inside each panel could otherwise
-  win the cascade.
-- Initial tab activation skips focus (`skipFocus: true`) so the
-  muni dropdown doesn't grab focus on page load and steal it from
-  the URL/Cmd-K affordance arriving in Phase 7.
-
-### Things visually replaced / removed
-
-- The single big sidebar with two `<h2>` headings (Search, Map
-  overlays) and inline sales filters is gone. Replaced by tab
-  panels.
-- Old `Search` `<h2>` heading removed; the Property search tab is
-  itself the label.
-- Old `Map overlays` `<h2>` removed; group titles replace it.
-- Old `.overlay-grid` 2-column grid replaced by stacked
-  `.overlay-group` blocks. The dotted divider `<hr class="overlay-grid-sep">`
-  is gone.
-- Old `Upload Sales CSV…` button (`#sales-upload-btn`) replaced
-  by the dropzone (`#sales-dropzone`).
-- Old `.more-filters` details collapsed into the new
-  `.advanced-filters` details; old CSS rules remain for any
-  defensive code paths but the markup no longer uses `.more-filters`.
-
-### Phase 3 porting checklist (Winnipeg)
-
-- Tab markup + `tabs.js` + tab CSS: reuse. Update
-  `PRIMARY_INPUT_BY_TAB` for any renamed primary inputs.
-- Sales dropzone markup + CSS + drag/drop wiring: reuse.
-- Overlay group structure (Boundaries / Planning / Risk /
-  Reference / Quick links): reuse the buckets, swap the buttons.
-- Advanced filters `<details>` shape: reuse.
-- Plain-language label rename pattern (label + legacy term in
-  title attribute): apply to Winnipeg's overlays where their
-  internal names diverge from how appraisers describe them.
-
-## Phase 4 - Form controls
-
-### Decisions
-
-- Roll # changed from a single text input to a chip-input. The
-  canonical store is still a hidden `<input id="roll">` whose
-  `.value` holds the comma-separated string, so every existing
-  read of `$roll.value` in `main.js` keeps working. The chip-input
-  shell intercepts typing: Enter or comma commits a chip, Backspace
-  on an empty input pops the last chip, paste expands "1,2,3"
-  into three chips at once.
-- Enter-on-empty in the chip-input forwards to `runSearch()` so
-  the legacy "Enter in any search field runs Search" UX still works
-  even though the hidden input itself can't receive Enter.
-- `.tip` no longer auto-shows on field focus. Each `.field`
-  containing a `.tip` now gets an "i" info-icon button next to the
-  input; hover, click, or focus the icon to reveal the popover.
-  Click toggles a pinned state that survives outside clicks
-  except for click-away / Escape. Touch users tap to toggle.
-- Existing tip copy moved into the popovers verbatim. No
-  rewriting was required because the conversion is structural
-  (icon + popover position) rather than textual.
-- Button hierarchy:
-  - `.primary` (or no class) — filled accent blue. Used by Search
-    and bare action buttons.
-  - `.secondary` — accent-blue outlined. Used by Export CSV and
-    inline action buttons (Set, ×, sales-mode unmatched download).
-    Overlay toggles already had their own `.overlay-btn` styling
-    and aren't affected.
-  - `.tertiary` — text-only, no border. Used by Clear in both the
-    Property and Sales tabs.
-  - `.generate-map-btn` stays as-is (a primary CTA in its own class).
-- Plain-language renames per the Phase 4 spec applied where they
-  hadn't been already in Phase 3:
-  - "PD website ↗" -> "Planning district website ↗" (PD Website
-    kept in the tooltip).
-  - "Any zoning category" -> "Any zoning by-law category"
-    (with ZBL technical term in the tooltip).
-  - "Zoning Changed / Dev Plan Changed / Both Changed" -> "Zoning
-    changed / Development plan changed / Both changed" (sentence
-    case).
-  - "Any DU" -> "Any dwelling units" (with DU acronym in tooltip).
-  - "Filter by amendment status" -> "Filter by amendment status
-    (recent ZBL or Development Plan changes)".
-
-### Reusable patterns (lift candidates)
-
-- `web/src/chipInput.js` - chip input. Generic; the only contract
-  is the markup shape (a wrapper `<div class="chip-input"
-  data-target="X">` containing the hidden `<input id="X">` and a
-  `.chip-input-text` text input). `onEnterEmpty` lets callers
-  forward Enter-on-empty to a search action without coupling.
-- `web/src/infoIcon.js` - converts `.tip` siblings into icon-driven
-  popovers. Idempotent; safe to re-run after dynamic DOM updates.
-  Generic; no Manitoba assumptions.
-- Chip / chip-input / info-icon / popover CSS: portable as a block.
-- The primary / secondary / tertiary button hierarchy CSS in the
-  `.controls button*` rules: portable.
-
-### Manitoba-specific (do not port)
-
-- The exact plain-language tooltip strings are Manitoba-focused
-  (Roll Entry, ZBL, MAO, Planning District). The pattern (full
-  name in label, acronym in tooltip) ports; the strings don't.
-
-### Dependencies added
-
-None.
-
-### Gotchas
-
-- `#roll` is now `<input type="hidden">`. The legacy
-  `for (const el of [..., $roll, ...]) el.addEventListener('keydown',
-  ...)` loop binds keydown on $roll but a hidden input never
-  receives keydown events, so the binding is a no-op there. The
-  chip input's text input picks up Enter via `onEnterEmpty`.
-- Existing call sites that read `$roll.value.trim()` continue to
-  work because the chip input writes the comma-separated value
-  back to the hidden input on every change.
-- `.tip`'s legacy `white-space: nowrap` + 1-line layout was
-  replaced with `white-space: normal` + a max-width so longer
-  popovers wrap to multiple lines. Visually quite different from
-  the old short hint but matches the plan's "move existing micro-
-  copy into those tooltips verbatim".
-- `.controls button` (no class) now defaults to the accent-blue
-  primary style. Anything that relied on the legacy teal default
-  inherits the new colour. Verified Set / Subject Apply / Date
-  presets still read sensibly; the Date preset buttons override
-  with their own background so they're unaffected.
-- Native `title=""` attributes are still set on the info icons so
-  the OS-level tooltip works in browsers that block the JS
-  popover (or for screen readers).
-
-### Things visually replaced / removed
-
-- Single-line `<input id="roll">` replaced by a chip container.
-- `<span class="tip">` no longer renders as a focus-driven inline
-  bubble; it renders as an icon-driven popover. The tag itself is
-  unchanged, so the markup looks the same from a quick scan.
-- Search button no longer uses the legacy teal default; it picks
-  up `.primary` for explicit accent blue.
-- Clear buttons (`#clear`, `#sales-clear`) lost the `.secondary`
-  outline and now read as text-only via `.tertiary`.
-
-### Phase 4 porting checklist (Winnipeg)
-
-- chipInput.js + chip CSS: reuse.
-- infoIcon.js + info-icon / popover CSS: reuse.
-- Button hierarchy CSS: reuse, including the `.primary` /
-  `.secondary` / `.tertiary` triple.
-- Plain-language labels with technical terms in tooltips: apply
-  the same pattern to Winnipeg's labels (e.g. "Zoning by-law
-  100/2019" instead of the Manitoba ZBL). The exact strings
-  differ; the structure is identical.
-
-## Phase 5 - Results table
-
-### Decisions
-
-- Sticky leftmost column on horizontal scroll. CSS pins the first
-  child cell (★ in sales mode, Roll # otherwise) without needing
-  the cells to carry their own data-col attributes — the rule
-  targets `td:first-child` and matches whichever column is leftmost
-  given the current mode. The thead corner cell gets a higher
-  z-index so it stays above both the sticky thead row and the
-  sticky column.
-- Badges:
-  - `.badge-zone` (light grey) for Zoning and Zoning 2 codes
-  - `.badge-amend` (amber) for the Changes column when "Changed"
-  - `.badge-tax-tx` / `.badge-tax-ex` / `.badge-vacant` styles
-    are in place for future columns; the current table doesn't
-    have a tax-status or vacant-flag column, so those go unused
-    until a later phase adds the column.
-- `td()` helper now accepts an Element value, and a `badge(text,
-  cls)` helper wraps a string in a pill span. Both keep the
-  null/empty -> em-dash fallback.
-- Selected-parcel summary card lives inside `#results-wrap` above
-  the table. Populates from the existing `row` object on click;
-  no async refetch needed. Action row:
-  - Open MAO -> `Asmt_Rpt_Url` (hidden when missing)
-  - Open muni website -> `lookupMuniWebsite` (hidden when no match)
-  - Copy source note -> writes a Phase 6-shaped citation to the
-    clipboard. Phase 6 will tighten the exact wording.
-  - Export selected -> `exportCsv([row])` (existing exportCsv now
-    takes an optional rows array)
-- Column visibility:
-  - `columns.js` reads the thead's `data-col` attributes to
-    enumerate columns. The visible set is a `Set<string>`
-    persisted to localStorage under `mbps_table_columns_v1`.
-  - `.col-hidden` stamped on a th + every td in that column
-    collapses the column. Mode classes (.sales-only / .basic-only /
-    .devplan-only / .masc-only / .subj-col) still apply
-    independently, so a column needs BOTH the user's visible set
-    AND the mode-allowed state to render.
-  - Default visible set follows the Phase 5 spec (8 columns).
-    Sparse in non-sales mode; user adds columns via the gear.
-  - Presets dropdown: "Sales analysis", "Zoning check", "Full
-    detail" (Full detail = unhide every column).
-  - Two ths share `data-col="acres"` (sales-mode + basic-mode
-    versions). Treated as one logical column.
-- exportCsv accepts an optional explicit-rows array. Used by the
-  Export selected button; existing call sites pass nothing and
-  retain the previous starred-only / full-set semantics.
-
-### Reusable patterns (lift candidates)
-
-- `web/src/columns.js` - column visibility module. Generic; the
-  only contract is the table id (`#results`) and that ths carry
-  `data-col`. Reuse verbatim, swap the DEFAULT_VISIBLE / PRESETS
-  sets for the target app's column keys.
-- `.parcel-summary` card markup + CSS. Generic shape (dl grid +
-  action row); per-app fields and action targets are configurable.
-- Badge CSS (`.badge`, `.badge-*` variants): reuse.
-- Sticky-first-column + sticky-thead CSS: reuse.
-- `td()` Element-aware overload + `badge()` helper: reuse.
-- `exportCsv(rows)` signature where `rows` is optional — the
-  pattern of "shared export logic, callable with or without a
-  subset" applies to any tabular app.
-
-### Manitoba-specific (do not port)
-
-- The Phase 5 default-visible set and presets reference Manitoba
-  column keys (saledate, saleprice, grouppriceac, etc.). Pattern
-  ports; key names don't.
-- Selected-parcel summary's `Asmt_Rpt_Url` field is a Manitoba MAO
-  link. Winnipeg will have a different parcel-detail URL.
-- The Phase 6-shaped source-note text references "Manitoba Open
-  Data (Roll Entry, Zoning By-Laws, Development Plan Designations)"
-  — Winnipeg gets its own data-source citation.
-
-### Dependencies added
-
-None.
-
-### Gotchas
-
-- Sticky-first-column hover state needs an explicit background on
-  the pinned cell, otherwise the row hover bleeds through. Same
-  trick for the row-flash animation: the pinned cell becomes
-  transparent during the flash so the keyframe paints.
-- The sticky toolbar shares the table-pane's scroll context. With
-  the sticky thead also at top:0, the toolbar sits ABOVE the thead
-  (z-index 7 vs thead's 4) so the column-preset dropdown isn't
-  hidden when the user scrolls into rows.
-- `applyVisibility` runs after every table render (paginate, sort,
-  filter, fresh search). Hidden columns stay hidden across all
-  re-renders without re-initialisation.
-
-### Things visually replaced / removed
-
-- No structural removals — Phase 5 is additive. Existing column
-  rendering logic, sort handlers, row click handlers, and CSV
-  export all continue to work; new pieces layer on top.
-
-### Phase 5 porting checklist (Winnipeg)
-
-- columns.js + .col-hidden CSS + toolbar markup: reuse, swap the
-  DEFAULT_VISIBLE / PRESETS sets.
-- Sticky leftmost column + sticky thead CSS: reuse.
-- Parcel summary card markup + CSS + populate function: reuse the
-  shape, swap the per-field selectors and the MAO/muni-website
-  link logic.
-- Badge CSS: reuse. Per-app: decide which categorical cells get
-  which badge class (zoning, status, etc.).
-- exportCsv(rows) signature: reuse the optional-rows pattern.
-
-## Phase 6 - Appraisal-specific features
-
-### Decisions
-
-- Verify-this checklist on the parcel summary card. Collapsible
-  `<details>` with six checkboxes. Per-parcel state persisted to
-  localStorage under `mbps_verify_state_v1` keyed by `muni|roll`
-  so a returning user sees their prior ticks restored.
-- Vacant-land proxy thresholds:
-  - `vacant-pct` numeric input (0–10, default 2) overrides the
-    legacy hard-coded 2% from `assessmentIndex.core.js`.
-  - `vacant-max` companion input (default blank). When set, a
-    parcel reads as vacant if Buildings $ is below the cap,
-    regardless of the % cap.
-  - `parcelIsVacantDynamic(props)` evaluates against the live
-    inputs; `computeSaleGroupTotals` uses it instead of the
-    upload-frozen `_isVacantLand` flag. The threshold inputs
-    trigger `refreshVacancyAndRefilter` so the table + map update
-    without re-uploading.
-- Copy source note was already wired in Phase 5 with the Phase 6-
-  shaped citation. Tooltip language refined; no behaviour change.
-- URL state encoding (the plan's highest-risk change):
-  - `web/src/urlState.js`: schema-driven encode/decode. Every key
-    declares its `param`, `validate`, and `format` so unknown
-    params get silently dropped and malformed values never throw.
-    Out-of-range integers, oversize strings (>200 chars), and
-    unknown `oneOf` values are all rejected.
-  - State keys: muni, roll, address (from/to/street), legal text,
-    title, zoning category, amendment status, DU mode + min, tab,
-    selected parcel roll, vacant pct + max.
-  - Sales-CSV state intentionally NOT encoded — the upload is a
-    file, not a value, and putting parsed sales rows in a URL
-    would explode its length.
-  - History updates use `replaceState`, throttled via
-    `requestAnimationFrame` so a rapid edit stream coalesces.
-  - Muni dropdown loads async; initial-apply polls the dropdown
-    (up to 16 s) for the URL muni option to appear, then dispatches
-    a `change` event so the rest of the app reacts as if the
-    user had picked it.
-- Map export footer (Phase 6 item 20) is **deferred** — Generate
-  Map still uses the legacy in-flow static-map renderer. A future
-  pass will swap to MapLibre's canvas export with the two-line
-  footer text the plan describes.
-
-### Reusable patterns (lift candidates)
-
-- `web/src/urlState.js`: schema-driven URL state encoder/decoder.
-  Generic; per-app schema lives in the `SCHEMA` constant. The
-  validate/format helpers (`cleanString`, `cleanInt`, `cleanNumber`,
-  `oneOf`) are reusable as a tiny validation kit.
-- `web/test/urlState.test.js`: 37 plain-node tests covering empty,
-  malformed, out-of-range, and round-trip cases. Pattern matches
-  the rest of the repo's `test/*.test.js` plain-node tests.
-- Verify-this checklist CSS + the `mbps_verify_state_v1`
-  localStorage shape: reuse.
-- Vacant-land proxy pattern (`parcelIsVacantDynamic` reading live
-  thresholds, refreshing the group roll-up on input change): the
-  shape is generic; the specific fields (Buildings, Total) are
-  per-app.
-
-### Manitoba-specific (do not port)
-
-- The `_asmtBuildings` / `_asmtTotal` fields are MAO-derived
-  Manitoba fields. The shape (a building-$ ratio + a hard $
-  threshold) ports; the source fields differ.
-- The verify-this checklist items reference MAO, Manitoba
-  Assessment Online, zoning by-laws, and planning districts.
-
-### Dependencies added
-
-None.
-
-### Gotchas
-
-- Async muni population means the initial-apply for the URL muni
-  has to wait until the option exists in the dropdown. A
-  poll-based re-apply handles that; if the muni list never
-  arrives (offline / API down), the URL state is silently dropped.
-- `populateDropdowns()` is called early during module init;
-  trying to monkey-patch it after the fact won't help. Use a poll
-  on the dropdown's options instead.
-- `history.replaceState` was chosen over `pushState` so the
-  user's Back button still moves between *real* navigations
-  rather than every keystroke.
-
-### Things visually replaced / removed
-
-- Phase 6 additions are largely additive (verify checklist, vacant
-  threshold inputs, URL state); nothing was removed.
-
-### Phase 6 porting checklist (Winnipeg)
-
-- urlState.js + tests: reuse; swap the SCHEMA entries for the
-  Winnipeg app's fields.
-- Verify-this checklist + CSS: reuse; swap the per-item labels
-  for Winnipeg's verification steps (City of Winnipeg assessment
-  portal, etc.).
-- Vacant-land proxy threshold UI + dynamic predicate: reuse with
-  the Winnipeg field names (when the source data lands there).
-
-### Deferred for follow-up
-
-- Map export footer (Phase 6 item 20). MapLibre's `getCanvas().toBlob()`
-  plus a small text overlay would produce the two-line footer the
-  plan describes; the current Generate Map still uses html2canvas
-  via the static-map renderer.
-
-## Phase 7 - Status feedback and empty states
-
-### Decisions
-
-- Status messages now mirror to a new `.results-status` bar that
-  sits above the results toolbar. The sidebar's `#count` still
-  shows the same text (useful on wide viewports where the sidebar
-  is in reach); the bar above the table catches the same eye-line
-  the appraiser is already on. Error-toned background lights up
-  when the text matches a `failed|error|no parcels|...` regex so
-  failures are visually distinct.
-- Empty-table state below the table: short prompt suggesting the
-  available search affordances ("Search by roll number, address,
-  legal description, or certificate of title to begin. Or upload
-  a sales CSV in the Sales analysis tab."). Hidden as soon as a
-  search returns at least one row.
-- Plain-language wording aligned with the spec:
-  - "Searching parcels…" -> "Searching Roll Entry…"
-  - "No parcels found." -> "No parcels found. Try removing
-    filters or changing municipality."
-  - "loading zoning + dev-plan…" -> "Loading zoning overlay…"
-- Keyboard shortcuts:
-  - Cmd/Ctrl-K focuses the primary input on the active tab
-    (delegates to `setActiveTab` which already knows the
-    `PRIMARY_INPUT_BY_TAB` map; `skipFocus: false` makes it
-    actually focus the field).
-  - Esc clears the currently-focused text/number/search-style
-    input AND dispatches input + change events so the URL
-    state mirror and CSV-mode refilter both react. Skips
-    non-text inputs (checkbox, select).
-  - Enter on search inputs already runs the search (legacy
-    binding kept).
-
-### Deferred items
-
-- "Data cached locally. Cache age: 2 days." status message. The
-  data-refresh footer (in the Data sources panel) already shows
-  per-shard timestamps; surfacing a single rolled-up age into the
-  status bar is a small follow-up.
-
-### Reusable patterns (lift candidates)
-
-- `.results-status` markup + CSS + the error-tone regex: portable.
-- Empty-table state pattern: portable; per-app: customise the
-  prompt copy and the affordances list.
-- The Cmd/Ctrl-K + Esc handler: portable; per-app, swap the
-  primary-input map (which tabs.js already owns).
-
-### Manitoba-specific (do not port)
-
-- The "Searching Roll Entry…" copy refers to Manitoba's
-  Roll_Entry feature server. Winnipeg's equivalent is a Socrata
-  table — rename the verb to match.
-- Empty-state copy mentions the Sales analysis tab and CSV upload;
-  Winnipeg's version may have a different secondary workflow.
-
-### Dependencies added
-
-None.
-
-### Gotchas
-
-- `setCount` is called from many places (legal lookups, sales
-  upload progress, overlay loads, etc.). Adding the status-bar
-  mirror inside setCount means every existing call site
-  automatically updates the new bar — no per-caller wiring.
-- The empty-state element lives below the table, not inside the
-  tbody. Putting it inside the tbody would conflict with the
-  sticky thead z-index and the sticky-first-column rule.
-
-### Things visually replaced / removed
-
-- Status messages now appear in two places (sidebar `#count` +
-  table `.results-status`). The sidebar version remains for
-  layout consistency; the table-side version is the more
-  visible one during active use.
-
-### Phase 7 porting checklist (Winnipeg)
-
-- Status bar markup + CSS: reuse.
-- Empty-state markup + CSS: reuse; swap the prompt copy.
-- Keyboard shortcut handler: reuse; swap the
-  PRIMARY_INPUT_BY_TAB selectors if the input ids differ.
-
-## Phase 8 - Portability documentation pass
-_pending_
+# Refactor Notes — Manitoba Parcel Search
+
+This file is the hand-off doc for the Winnipeg sister-app port. It
+captures what was changed, what's safely portable, what's specific
+to Manitoba's data sources, and the pitfalls that ate the most
+debugging time. Written for someone who has not seen the original
+refactor conversation — every claim should be re-checkable from
+this file plus the repo.
+
+The chronological phase commits live in git history
+(`git log --grep "Phase [1-8]"`); this document is the steady-state
+"what landed and how to lift it" view.
+
+---
+
+## 1. Overview
+
+### What this app is
+
+A community appraisal tool for Manitoba commercial properties
+(everywhere except Winnipeg, which has its own portal). Single-
+page Vite + plain-JS app, MapLibre GL for mapping, ArcGIS REST
+queries against Province of Manitoba open data, with pre-built
+JSON shards for the MAO assessment + legal index.
+
+### What stack landed
+
+- **Build**: Vite 5.4.x, npm, plain ES modules (no React, no JSX).
+- **Styling**: Tailwind v4 via `@tailwindcss/vite` plugin, layered
+  on top of a long-standing `style.css`. Design tokens defined in
+  [web/src/lib/tailwind.css](web/src/lib/tailwind.css) via the v4
+  `@theme` block.
+- **Map**: MapLibre GL 4.7.x, `@mapbox/mapbox-gl-draw` for the
+  measurement tool, several `@turf/*` helpers for spatial joins.
+- **Data**: ArcGIS REST FeatureServers for parcels (Roll_Entry),
+  zoning by-laws, development plan designations, contaminated
+  sites, traffic flow, MASC risk areas, etc. Pre-built JSON
+  shards for the MAO scrape index live in `web/public/data/`,
+  generated by `r/*.R` scripts.
+- **Cache**: IndexedDB primary, localStorage fallback (~mbpsCache.*),
+  Vercel Edge Functions serve large index shards.
+- **Locale**: Canadian English (`en-CA`) everywhere.
+- **Tests**: Plain `node test/*.test.js` scripts. No Vitest /
+  Jest. `npm test` runs the lot.
+- **Deploy**: Vercel — `framework: vite`, build
+  `cd web && npm install && npm run build`, output `web/dist`.
+  Local build uses `npm run build -- --emptyOutDir=false` so
+  the pre-built `public/data/` shards aren't wiped.
+
+### What changed in the refactor
+
+A UI/UX pass spanning eight phases (see §5). High-level:
+
+- Sticky topbar with a Data sources expandable, replacing the
+  legacy inline header + scattered footers.
+- App shell laid out as sticky sidebar (left) + flowing workspace
+  (right) with map capped at 1280-px width + 16:9, table inside
+  its own scroll container (~20 rows).
+- Two sidebar tabs (Property Search default, Sales Analysis),
+  with **Map layers always visible** below the active tab.
+- Hand-rolled UI primitives: chip input, info-icon popovers,
+  dropzone, column-visibility gear + presets, sticky-thead
+  table, parcel-summary card, results status bar, empty state,
+  Cmd/Ctrl-K + Esc shortcuts.
+- Sales-CSV upload defers zoning + dev-plan enrichment until
+  the user toggles the corresponding overlay (was a 10+ s
+  blocker on cold multi-muni uploads).
+- URL state encoder/decoder for shareable session URLs (37 unit
+  tests).
+- Plain-language labels with technical terms in tooltips
+  ("Parcel boundaries" / Roll Layer, "Development plan" / Dev
+  Plan, etc.).
+
+### What was preserved
+
+- Every existing element id (Search button, Roll #, sales filter
+  inputs, overlay toggle ids, etc.) so existing JS continues to
+  drive the same DOM hooks.
+- The legacy `body.sales-mode` class still gates `.sales-only`
+  filter rows.
+- The pre-built `public/data/*` shards (assessment index, MASC,
+  river lots, section grid, etc.) — none of those formats
+  changed.
+- `r/*.R` shard build scripts — none touched by the refactor.
+- The disclaimer + "About this tool" copy — relocated into the
+  Data sources panel verbatim.
+
+---
+
+## 2. Reusable patterns — `web/src/lib/`
+
+Eight files live under [web/src/lib/](web/src/lib/) and contain
+no Manitoba-specific logic. The Winnipeg port can `cp -r web/src/lib/`
+across.
+
+### [web/src/lib/tailwind.css](web/src/lib/tailwind.css)
+
+Tailwind v4 entry. `@import "tailwindcss";` plus an `@theme`
+block defining the design tokens (slate-navy primary, accent
+blue, neutral greys, Inter font stack, three text sizes).
+Also defines the `.skeleton` shimmer animation. Lift verbatim.
+
+### [web/src/lib/format.js](web/src/lib/format.js)
+
+en-CA number formatters: `formatCurrency`, `formatAcres`,
+`formatAcresWithUnit`, `formatSqFt`, `formatSqFtFromAcres`,
+`formatSqFtWithUnit`, `formatPercent`. Every formatter returns
+`null` for missing/invalid input so callers can short-circuit
+with `?? '—'`. No Manitoba assumptions.
+
+### [web/src/lib/chipInput.js](web/src/lib/chipInput.js)
+
+Generic comma-separated chip-input wrapper. Contract: a `<div
+class="chip-input" data-target="X">` containing a hidden `<input
+id="X">` and a `.chip-input-text` text input. Enter or comma
+commits, Backspace on empty pops the last chip, paste of
+`"1,2,3"` expands into three chips. Hidden input's `.value`
+stays the canonical comma-separated string so legacy reads
+keep working. `onEnterEmpty` hook forwards Enter-on-empty so
+the caller can run a search without coupling.
+
+### [web/src/lib/infoIcon.js](web/src/lib/infoIcon.js)
+
+Walks every `.field > .tip` and inserts an `<button class=
+"info-icon">` next to the input. Hover, click, or focus the icon
+reveals the popover. Click toggles `.popover-pinned` for sticky
+display; click-away or Escape unpins. `tabindex="-1"` on the
+icons keeps Tab navigation moving between inputs without
+landing on every helper. Idempotent.
+
+### [web/src/lib/tabs.js](web/src/lib/tabs.js)
+
+Sidebar tab switcher. Per-tab "primary input" map drives the
+Cmd/Ctrl-K focus shortcut. Arrow keys + Home/End cycle through
+tab buttons when one is focused. `setActiveTab` is exported for
+URL-state restoration. Always boots on the default tab regardless
+of stored value (URL state overrides; see §6).
+
+### [web/src/lib/columns.js](web/src/lib/columns.js)
+
+Results-table column visibility. Reads thead `[data-col]`
+attributes to enumerate columns, persists the visible set to
+`mbps_table_columns_v1`, stamps `.col-hidden` on the matching th
+plus every td by column index. Three presets baked in (Sales
+analysis / Zoning check / Full detail). Generic; per-app swap the
+`DEFAULT_VISIBLE` Set and the `PRESETS` map.
+
+### [web/src/lib/urlState.js](web/src/lib/urlState.js)
+
+Schema-driven URL state encoder/decoder. Every state key declares
+its `param`, `validate`, and `format` so unknown params get
+dropped, out-of-range numbers fail validation, oversize strings
+(>200 chars) fail, and a malformed URL never throws. 39 unit
+tests in [web/test/urlState.test.js](web/test/urlState.test.js)
+cover empty / malformed / out-of-range / round-trip cases.
+Per-app: replace `SCHEMA` entries with the target app's keys.
+
+### [web/src/lib/layout.js](web/src/lib/layout.js)
+
+Workspace resize handle for the map ↔ table divider. Pointer +
+arrow-key drag, writes `--map-pane-height` (px) on the
+workspace element, emits a `workspace:resize` custom event so the
+map can call `map.resize()`. Currently unused (the workspace now
+flows naturally and the user has a Hide-map toggle instead), but
+the module is generic and useful for an app that wants a
+draggable split.
+
+### CSS patterns embedded in `style.css`
+
+Several reusable blocks still live in
+[web/src/style.css](web/src/style.css) because they share scope
+with Manitoba-specific selectors. Each is safe to copy out:
+
+- `.topbar`, `.topbar-nav`, `.topbar-details`, `.topbar-panel`
+  — sticky header + dropdown panel pattern.
+- `.app-shell`, `.sidebar`, `.workspace`, `.map-pane`,
+  `.table-pane`, `.table-scroll` — full layout shell.
+- `.sidebar-tabs`, `.sidebar-tab`, `.sidebar-tab-panel` — tab UI.
+- `.sales-dropzone` + the cloud-icon SVG — drag-and-drop file
+  upload.
+- `.results-status`, `.results-status-error` — status bar above
+  the table.
+- `.results-empty` — empty-state prompt below the table.
+- `.results-toolbar`, `.columns-gear-btn`, `.columns-popover`,
+  `.map-toggle-btn` — table toolbar with column gear + hide-map.
+- `.parcel-summary`, `.parcel-summary-fields`,
+  `.parcel-summary-actions`, `.parcel-summary-verify` — the
+  selected-parcel summary card with verify-this checklist.
+- `.badge`, `.badge-zone`, `.badge-amend`, `.badge-tax-tx`,
+  `.badge-tax-ex`, `.badge-vacant` — pill styles for categorical
+  table cells.
+- `#results th:first-child / td:first-child` sticky-column +
+  sticky-thead inside `.table-scroll` — pinned-header behaviour.
+- `.overlay-group`, `.overlay-btn`, `.overlay-dot`,
+  `.overlay-btn-label` — overlay toggle group layout. Per-button
+  `--dot-color` inline style.
+- `.skeleton` + `mbps-skeleton-pulse` keyframe — loading
+  placeholder animation.
+
+---
+
+## 3. Manitoba-specific code to replace
+
+Everything outside `web/src/lib/` is potentially Manitoba-specific.
+This list is the porting work the Winnipeg sister app has to
+re-do.
+
+### Data clients (entirely Manitoba ArcGIS / MAO)
+
+- **[web/src/arcgis.js](web/src/arcgis.js)** — every URL points
+  to Province of Manitoba ArcGIS FeatureServers (`services.arcgis.com/mMUesHYPkXjaFGfS/...`,
+  `services6.arcgis.com/HQUud09zgy3Asw9X/...`). Field names
+  (`Muni_Name_With_Typ`, `Roll_No_Txt`, `Asmt_Rpt_Url`, `AADT`,
+  `MUNI_LIST_NAME_WITH_TYPE`, etc.) are Manitoba-specific.
+  Pagination helper, retry-on-429 logic, and the
+  fetchPage/fetchAllPages skeleton are portable — strip them out
+  to lib if Winnipeg also uses ArcGIS.
+- **[web/src/cache.js](web/src/cache.js)** — IDB + localStorage
+  wrapper. Generic in shape, but lives next to Manitoba code and
+  the cache key prefix is `mbpsCache.*` (Manitoba Parcel Search).
+  Easy lift; rename the prefix.
+
+### MAO scrape indexes
+
+- **[web/src/legalIndex.js](web/src/legalIndex.js)**,
+  [legalIndex.core.js](web/src/legalIndex.core.js), and the
+  worker — MAO scrape legal-description / certificate-of-title
+  lookup. The R script `r/build_legal_index.R` builds the shard.
+  Winnipeg has no MAO; this whole stack is replaceable with the
+  Winnipeg open-data lookup of choice.
+- **[web/src/assessmentIndex.js](web/src/assessmentIndex.js)**,
+  [assessmentIndex.core.js](web/src/assessmentIndex.core.js),
+  [assessmentShards.js](web/src/assessmentShards.js), and the
+  worker — per-muni MAO assessment index. `r/build_assessment_index.R`
+  builds it. Winnipeg's equivalent is the City of Winnipeg
+  Assessment search (different URL, different schema).
+- **[web/src/manifest.js](web/src/manifest.js)** — reads
+  `web/public/data/manifest.json` produced by
+  `web/scripts/build-manifest.js`. Generic in shape; the
+  manifest content is per-app.
+
+### Manitoba-specific overlays
+
+- **[web/src/masc.js](web/src/masc.js)** — MASC crop-insurance
+  soil ratings + risk-area helpers. Rural-only data, irrelevant
+  in Winnipeg.
+- MASC and CLI overlay buttons in the sidebar's "Agricultural"
+  group (in [web/index.html](web/index.html)). Delete the group
+  for Winnipeg.
+
+### Map setup
+
+- **[web/src/map.js](web/src/map.js)** — MapLibre style + every
+  source/layer is set up here. Manitoba-specific bits:
+  - Parcel popup builders read `Muni_Name_With_Typ`, `Roll_No_Txt`,
+    `Asmt_Rpt_Url` etc.
+  - MASC + CLI + traffic-flow + contam layers are Manitoba sources.
+  - Custom `BasemapToggleControl` references `esri-imagery` +
+    `carto-positron`. Layer scaffolding is portable; the layer
+    list and field names are not.
+  - Multi-trigger style-load setup (`load` + `idle` + `styledata`
+    + polling + 30 s failsafe) — keep as-is. See §6 for why.
+
+### Wiring + Manitoba copy
+
+- **[web/src/main.js](web/src/main.js)** — the entry point. ~5 k
+  lines. Wires all the lib modules to the Manitoba data clients.
+  Most of the JS the user touches sits here. Porting needs a
+  careful pass; the lib imports + the form-control wiring patterns
+  are reusable, but every Manitoba field name and every Manitoba
+  filter has to change.
+- **[web/index.html](web/index.html)** — Manitoba labels
+  ("Roll #", "Property_Address" placeholders, MAO references, the
+  Data Sources panel content, MASC / CLI overlay buttons).
+- **[web/src/style.css](web/src/style.css)** — mixed. The
+  patterns listed in §2 are reusable; rules that target the
+  legacy `#results th[data-col="..."]` columns specific to
+  Manitoba (MASC, CLI, dev-plan-only) need adjustment.
+
+### Pre-built data + build scripts (Manitoba only)
+
+- `web/public/data/` — assessment / MASC / parcel-MASC /
+  river-lots / section-grid shards. All Manitoba.
+- `r/*.R` — every shard builder. Manitoba-specific inputs
+  (RollEntry GeoPackage, MASC CSV, MAO scrape parquet, etc.).
+- `api/*` (Vercel Edge Functions) — serve Manitoba shards.
+  Generic in shape; per-app re-implement.
+
+---
+
+## 4. Configuration differences anticipated for Winnipeg
+
+Best-guess list of what the Winnipeg port will need to handle
+that the Manitoba app doesn't:
+
+| Area | Manitoba app | Winnipeg port |
+| --- | --- | --- |
+| Open-data backend | Province of MB ArcGIS REST | City of Winnipeg Socrata (probably) |
+| Municipality picker | Required (180+ munis) | **Skip** — single muni |
+| Roll number format | `123456.789` (MAO with class suffix) | Different format, single-muni scope |
+| Zoning by-law | Per-RM ZBLs from MB Open Data | **Winnipeg Zoning By-law 100/2019**, single source |
+| Development plan | MB Development Plan Designations | Winnipeg Secondary Plans + OurWinnipeg + neighbourhood plans |
+| Assessment | MAO scrape (annual) | City of Winnipeg Assessment & Taxation public search |
+| MASC / CLI / soil overlays | Yes (rural / agricultural) | **Drop entirely** |
+| Section / township grid | Yes (Manitoba's DLS survey grid) | **Drop** — Winnipeg uses urban subdivision plans |
+| River lots | Yes (Red / Assiniboine / other) | Drop unless a Winnipeg-specific niche exists |
+| Traffic flow | MHTIS Province AADT lines | City of Winnipeg traffic counts (if open) |
+| Environmental sites | Province Contaminated Sites Registry | City contamination map, if available |
+| Default basemap | Carto Positron (streets) | Same — Carto + Esri Imagery toggle works fine |
+| Likely **new** overlays | — | Transit (bus / BRT), neighbourhoods, infill / mature-zone areas, downtown infill zoning, secondary plans |
+| Locale | `en-CA` | Same |
+| Cache key prefix | `mbpsCache.*` | Rename, e.g. `wpsCache.*` |
+
+The single-muni nature of Winnipeg also unlocks UX simplifications:
+
+- No municipality dropdown skeleton on first load.
+- No URL state for muni.
+- Sales-CSV upload doesn't need a multi-muni reconciliation pass.
+- Subject parcel doesn't need a per-CSV muni picker.
+
+---
+
+## 5. Phase-by-phase porting checklist
+
+For each refactor phase, this says what survives wholesale, what
+needs adjustment, and what should be skipped.
+
+### Phase 1 — Tailwind, design tokens, en-CA formatters, skeleton pulse
+
+| Item | Action |
+| --- | --- |
+| Tailwind v4 setup | **Reuse**. Copy `web/src/lib/tailwind.css` + the `@tailwindcss/vite` plugin install. |
+| Design tokens (slate/navy primary, accent blue, neutrals, Inter) | **Reuse**. Tweak hex values if Winnipeg has a different brand tone. |
+| `web/src/lib/format.js` | **Reuse as-is**. |
+| Skeleton pulse | **Reuse**. |
+
+### Phase 2 — App shell + topbar + scrollable workspace
+
+| Item | Action |
+| --- | --- |
+| `.topbar` markup + CSS | **Reuse shape**. Swap title, swap the Manitoba-portal link target ("Winnipeg portal" → "Manitoba portal" in reverse), swap Data sources panel content (Roll Entry / MAO references → Winnipeg sources). |
+| App shell + sidebar + workspace CSS | **Reuse as-is**. |
+| Map width cap (`max-width: min(1280px, 100%)`) | **Reuse**. Possibly retune for Winnipeg's typical viewport widths. |
+| Hide-map toggle | **Reuse as-is**. |
+
+### Phase 3 — Tabbed sidebar + always-visible Map layers
+
+| Item | Action |
+| --- | --- |
+| Tab strip markup + `lib/tabs.js` | **Reuse as-is**. Update `PRIMARY_INPUT_BY_TAB` if input ids differ. |
+| Sales dropzone | **Reuse as-is** if Winnipeg also supports sales-CSV upload. |
+| Map layers structure (Boundaries & Planning, Reference, Agricultural, Quick links) | **Adjust**. Drop the Agricultural group entirely. Boundaries & Planning content swaps (parcel boundaries source, zoning, dev plan all change). Reference: keep traffic / environmental concepts if Winnipeg has equivalents. |
+| Plain-language labels with legacy term in title | **Reuse pattern**. Per-overlay strings differ. |
+
+### Phase 4 — Form controls
+
+| Item | Action |
+| --- | --- |
+| `lib/chipInput.js` | **Reuse as-is**. |
+| `lib/infoIcon.js` | **Reuse as-is**. |
+| Button hierarchy (`.primary`, `.secondary`, `.tertiary`) | **Reuse CSS**. |
+| Plain-language renames | **Apply same pattern**. Winnipeg has its own terminology (Reslookup, MyProperty, etc). |
+
+### Phase 5 — Results table
+
+| Item | Action |
+| --- | --- |
+| Sticky thead + sticky first column | **Reuse as-is**. |
+| Badges | **Reuse CSS**. Per-app: choose which categorical columns get which badge. |
+| `lib/columns.js` | **Reuse as-is**. Swap `DEFAULT_VISIBLE` + `PRESETS` to Winnipeg keys. |
+| Parcel summary card | **Reuse markup + CSS**. Swap field selectors, the MAO link, the muni-website link. |
+| Multi-parcel-sale row linking (`data-group-pos`) | **Reuse** if Winnipeg also has multi-parcel sales. |
+
+### Phase 6 — Appraisal features
+
+| Item | Action |
+| --- | --- |
+| Vacant-land threshold UI + `parcelIsVacantDynamic` | **Reuse pattern**. Replace the source field names (`_asmtBuildings`, `_asmtTotal`) with Winnipeg equivalents. |
+| Verify-this checklist | **Reuse**. Swap the six list items for Winnipeg's verification steps (City of Winnipeg property search, Winnipeg zoning by-law text, etc.). |
+| Copy source note | **Reuse pattern**. Rewrite the citation text for Winnipeg open-data attribution. |
+| `lib/urlState.js` + tests | **Reuse as-is**. Update `SCHEMA` keys. |
+| Map export footer (deferred — Phase 6 item 20) | Open item. Same deferral applies. |
+
+### Phase 7 — Status feedback + empty states + keyboard shortcuts
+
+| Item | Action |
+| --- | --- |
+| Status bar above table | **Reuse**. |
+| Empty-table state | **Reuse markup + CSS**. Swap the prompt copy. |
+| Keyboard shortcuts (Cmd/Ctrl-K, Esc) | **Reuse as-is**. |
+
+### Phase 8 — Documentation pass
+
+This file. Write the Winnipeg equivalent in its own repo.
+
+---
+
+## 6. Gotchas + lessons learned
+
+The biggest time-sinks of this refactor. Pre-port reading.
+
+### TDZ (Temporal Dead Zone) on module-scope `let` / `const`
+
+Hoisted `function` declarations are accessible from any code path
+during module evaluation, **but** the bodies of those functions
+reference module-scope `let` / `const` variables that aren't yet
+initialised until their declaration line runs. If a function is
+invoked from an early-init code path (or from a synchronously-fired
+event during init), TDZ throws `Cannot access 'X' before
+initialization`.
+
+This bit us repeatedly during Phase 7 / Phase 8 wiring. Symptoms:
+
+```
+Sales upload failed: Cannot access '$resultsStatus' before initialization
+Sales upload failed: Cannot access 'currentPage' before initialization
+Sales upload failed: Cannot access '$paginator' before initialization
+```
+
+Fix patterns:
+
+- Move the module-scope state declaration to the top of the file
+  near the other `let currentRows = []` lines.
+- Or, for element refs, inline the lookup inside the function
+  body: `const el = document.getElementById('results-status')`.
+
+When porting, audit any module-scope `let X = ...` whose value is
+read by a hoisted function and ensure it's declared early.
+
+### MapLibre 'load' event isn't reliable
+
+MapLibre 4.x's `'load'` event sometimes fires after the basemap
+has rendered, sometimes after sources are added, and sometimes
+not at all (we saw "never fires after 15 s" in dev). Don't gate
+your map-setup-and-resolve-mapReady on `load` alone.
+
+The current setup ([map.js:398-1720](web/src/map.js:398)) races
+multiple triggers — `load`, `idle`, `styledata`, plus a 120-ms
+poll, plus a 30-s failsafe. The setup function is wrapped in
+try/catch that re-arms a `setupDone` flag so the next trigger
+retries if addSource throws "Style is not done loading."
+
+### ArcGIS pagination requires the right OID field
+
+`fetchAllPages` in [arcgis.js](web/src/arcgis.js) defaults to
+`orderByFields: 'OBJECTID ASC'` for stable paging. Most layers
+in Manitoba's ArcGIS use `OBJECTID`, but the **MHTIS Traffic
+Flow** layer's OID field is `FID`. A single `where=1=1` query
+worked, but the **paginated** query returned HTTP 400 every
+single request — silently reverting the Traffic Flow toggle.
+
+When porting, check each FeatureServer's `objectIdField` and
+pass `orderByFields: '<FieldName> ASC'` explicitly when it
+differs from `OBJECTID`.
+
+### Basemap toggle needs explicit visibility on every layer
+
+The `BasemapToggleControl` swaps `getLayoutProperty('esri-imagery',
+'visibility') === 'visible'`. If a layer was added without an
+explicit `layout: { visibility: 'visible' }` (because it was the
+default basemap), `getLayoutProperty` returns `undefined`, the
+toggle inverts the wrong way, and **the first click does nothing**.
+
+Always specify `layout.visibility` on every layer in the basemap
+style — even the visible default — so `getLayoutProperty` reads a
+real string.
+
+### `enrichOverlays` returns rows; it doesn't mutate
+
+`enrichOverlays(parcelFc, inputs, baseMsg)` builds and returns a
+fresh `rows` array with `.zoning` / `.devPlan` / `.zoningChanges`
+/ `.devPlanChanges` populated per parcel. It does **not**
+modify the caller's existing rows array.
+
+Phase 6's deferred-CSV-zoning enrichment forgot this for two
+commits — clicked Zoning, the network fetch ran, but the table
+zoning columns stayed blank because the enriched rows were
+dropped. Fix: merge the returned rows back onto `csvFullRows` by
+OBJECTID before re-rendering.
+
+### CSS specificity: `#results-wrap` beat `.table-pane`
+
+Legacy code used `#results-wrap { padding / overflow }`. Phase 2
+added `.table-pane { ... }` to the same element. The id selector
+has higher specificity than the class, so the legacy rule won
+silently and the table-pane CSS didn't fully apply. Either
+delete legacy id selectors or use the same selector style for
+the new rule.
+
+### Vite cache + dev build conventions
+
+- The Vite dev server's HMR is reliable for CSS but quirky for
+  JS module reorders. After moving a file or changing an export,
+  hard-refresh.
+- `npm run build` defaults to `emptyOutDir: true`, which wipes
+  `dist/data/` (the pre-built shards). Use `npm run build --
+  --emptyOutDir=false` for local builds; production builds on
+  Vercel run from a clean dist and the flag isn't needed there.
+
+### Vercel proxy for CORS-blocked CSV
+
+The Manitoba Contaminated Sites Registry CSV at
+`manitoba.ca/sd/.../cs-data.csv` doesn't send
+`Access-Control-Allow-Origin`, so a direct browser fetch is
+silently CORS-blocked. [vercel.json](vercel.json) has a rewrite
+at `/proxy/contam-sites.csv → manitoba.ca/...`, and
+[vite.config.js](web/vite.config.js) has a matching dev-server
+proxy. Per-app: any third-party CSV that misses CORS headers
+needs the same treatment.
+
+### URL state polling for async muni dropdown
+
+The municipality dropdown loads asynchronously. The URL state
+decoder runs at module init, before the dropdown's `<option>`s
+arrive. Naively setting `$municipality.value` does nothing if
+the matching option isn't yet in the select.
+
+`main.js` polls for the option's arrival (every 200 ms, up to
+16 s), then sets the value and dispatches a synthetic `change`
+event. Per-app: if your dropdown options come from a network
+fetch, the same polling pattern fits.
+
+### Tab default vs. URL state vs. localStorage
+
+The sidebar tabs module persists the active tab to localStorage,
+but `initSidebarTabs` always boots on the default tab regardless
+of the stored value. The URL state encoder/decoder writes `?t=sales`
+when the user picks Sales — so a session URL still re-applies the
+user's tab — but a vanilla page load always lands on the Property
+Search tab. This was deliberate to avoid the "I last looked at
+Sales three days ago and the app stays there" footgun. The
+localStorage write is still useful for other internal callers.
+
+### CSS `:has()` is fully usable
+
+We rely on `:has()` for several gates:
+
+- `.vacant-threshold-row` hidden unless `#vacant-only` is
+  checked.
+- Dist column hidden via `body.has-max-km` (JS-toggled rather
+  than CSS-`:has()`-driven only because `#distance-max` is a
+  number input whose live value isn't visible to `:has()` —
+  attribute-based selectors won't see it; only changes via
+  setAttribute would).
+
+Browsers we support all ship `:has()`. No polyfill needed.
+
+### Manitoba name normalisation
+
+`Muni_Name_With_Typ` from Roll_Entry doesn't match the
+boundaries layer's `MUNI_LIST_NAME_WITH_TYPE` exactly in every
+case. Apostrophes, periods (`ST. PAUL` vs `ST PAUL`), and the
+`RM OF X` vs `X (RM)` variants all show up. Several places have
+tolerant lookups that strip type suffixes, normalise case, etc.
+Search the code for `lookupMuniManifestEntry`, `lookupMuniWebsite`,
+`normMuniKey` for examples.
+
+Winnipeg's single-muni nature mostly sidesteps this, but if a
+sister app ever serves Brandon + Winnipeg, the normalisation
+helpers are reusable.
+
+### Tests
+
+`npm test` runs six plain-node test files in serial. The
+arcgis-cache test hits the live ArcGIS service and is flaky on
+slow connections — its console output sometimes shows 504
+gateway timeouts, but the test logs them and still reports
+`7/7 passed` because the failure path is what's being tested.
+Don't be alarmed by the 504 noise.
+
+URL state tests are the only ones that exercise lib code
+specifically — 39 cases covering empty / malformed / out-of-range
+/ round-trip. If you change `lib/urlState.js` the test will
+catch regressions.
+
+---
+
+## Appendix — file map at a glance
+
+```
+web/
+├── index.html              Manitoba labels + Data sources content
+├── package.json            npm scripts + deps
+├── vite.config.js          Tailwind plugin + dev proxy
+├── public/
+│   └── data/               Pre-built MB shards (assessment, MASC, ...)
+├── scripts/
+│   └── build-manifest.js   Walks public/data/, emits manifest.json
+├── src/
+│   ├── main.js             Entry; ~5 k lines, Manitoba wiring
+│   ├── map.js              MapLibre setup + MB layers
+│   ├── arcgis.js           MB ArcGIS REST client
+│   ├── cache.js            IDB + localStorage cache wrapper
+│   ├── manifest.js         Reads data manifest
+│   ├── assessmentIndex.js  MAO assessment index reader
+│   ├── assessmentIndex.core.js  Pure parser
+│   ├── assessmentShards.js Per-muni shard loader
+│   ├── legalIndex.js       MAO legal index reader
+│   ├── legalIndex.core.js  Pure parser
+│   ├── masc.js             MASC soil-rating helpers
+│   ├── style.css           Mix of reusable + Manitoba-specific
+│   ├── workers/
+│   │   ├── assessmentIndex.worker.js
+│   │   └── legalIndex.worker.js
+│   └── lib/                ← reusable: copy across to Winnipeg port
+│       ├── chipInput.js
+│       ├── columns.js
+│       ├── format.js
+│       ├── infoIcon.js
+│       ├── layout.js
+│       ├── tabs.js
+│       ├── tailwind.css
+│       └── urlState.js
+└── test/
+    ├── cache.test.js
+    ├── manifest.test.js
+    ├── indexes.test.js
+    ├── shards.test.js
+    ├── arcgis-cache.test.js
+    └── urlState.test.js
+api/
+├── assessment-index.js     Vercel edge function (serves MB shard)
+└── legal-index.js          Vercel edge function (serves MB shard)
+r/
+└── *.R                     MB shard build scripts (assessment, MASC, ...)
+vercel.json                 Build cfg + /proxy/contam-sites.csv rewrite
+```
