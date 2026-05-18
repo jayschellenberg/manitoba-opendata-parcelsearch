@@ -4,7 +4,7 @@
 //   cd web && node test/urlState.test.js
 
 import assert from 'node:assert/strict';
-import { encodeState, decodeState, SCHEMA } from '../src/urlState.js';
+import { encodeState, decodeState, SCHEMA } from '../src/lib/urlState.js';
 
 let passed = 0;
 let failed = 0;
