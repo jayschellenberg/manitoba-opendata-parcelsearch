@@ -3776,7 +3776,7 @@ function getVacancyThresholds() {
     const max = Number.isFinite(num) && num >= 0 ? num : null;
     return { pctFraction: null, max };
   }
-  let pct = Number.isFinite(num) ? num : 2;
+  let pct = Number.isFinite(num) ? num : 5;
   if (pct < 0) pct = 0;
   return { pctFraction: pct / 100, max: null };
 }
@@ -3795,9 +3795,9 @@ if ($vacantModePill) {
       // mode changes from one shape to the other.
       if ($vacantThreshold) {
         if (btn.dataset.mode === 'dollar' && (!$vacantThreshold.value || parseFloat($vacantThreshold.value) <= 10)) {
-          $vacantThreshold.value = '5000';
+          $vacantThreshold.value = '20000';
         } else if (btn.dataset.mode === 'pct' && parseFloat($vacantThreshold.value) > 10) {
-          $vacantThreshold.value = '2';
+          $vacantThreshold.value = '5';
         }
       }
       refreshVacancyAndRefilter();
