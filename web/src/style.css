@@ -2172,6 +2172,46 @@ body.workspace-resizing iframe { pointer-events: none; }
 
 #results td.num { font-variant-numeric: tabular-nums; }
 
+/* Hide the Dist (km) column unless the user has entered a Max km
+   value. The column is computed against the subject parcel and
+   only meaningful when the Max-km filter is engaged; otherwise
+   it's empty noise. body.has-max-km is toggled by main.js as the
+   input changes. */
+body:not(.has-max-km) #results th.subj-col,
+body:not(.has-max-km) #results td.subj-col {
+  display: none;
+}
+
+/* Multi-parcel sale grouping. Adjacent rows that belong to the
+   same sale group get a light tint + accent-blue left stripe so
+   the appraiser sees at a glance that these N rows describe one
+   transaction. `solo` (group has >1 parcel but the row's
+   neighbours in current sort order are different sales) gets
+   just the stripe; sibling-adjacent rows also tint. */
+#results tbody tr[data-group-pos] td:first-child {
+  box-shadow: inset 3px 0 0 var(--color-accent-500, #2563eb);
+}
+#results tbody tr[data-group-pos="first"],
+#results tbody tr[data-group-pos="middle"],
+#results tbody tr[data-group-pos="last"] {
+  background: #eff6ff;
+}
+#results tbody tr[data-group-pos="first"] td,
+#results tbody tr[data-group-pos="middle"] td {
+  border-bottom-color: transparent;
+}
+/* Hover still works — restore the hover background and the
+   sticky first-cell stripe override so the row reads as
+   interactive. */
+#results tbody tr[data-group-pos]:hover { background: #dbeafe; }
+#results tbody tr[data-group-pos]:hover td:first-child {
+  background: #dbeafe;
+  box-shadow: inset 3px 0 0 var(--color-accent-500, #2563eb);
+}
+#results tbody tr[data-group-pos] td:first-child {
+  background: #eff6ff;
+}
+
 /* Phase 5 column visibility. The columns.js module stamps
    .col-hidden on a th and every td in that column; the rule below
    collapses them out of the table without affecting the rest of
