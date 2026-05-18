@@ -161,6 +161,34 @@ header small a {
   text-decoration: underline;
 }
 
+/* MAO scrape staleness banner. Thin strip just below the
+   topbar. Three states keyed by class:
+     .data-staleness-amber — 30-60 days old (nudge, monthly cadence
+                             slipped)
+     .data-staleness-red   — 60+ days old (action needed; sales-CSV
+                             comp assessments may be wrong)
+   Hidden entirely while the data is within the monthly cadence. */
+.data-staleness-banner {
+  padding: 6px 20px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  border-bottom: 1px solid transparent;
+  text-align: center;
+}
+.data-staleness-banner[hidden] { display: none; }
+.data-staleness-banner.data-staleness-amber {
+  background: #fef3c7;
+  color: #92400e;
+  border-bottom-color: #fde68a;
+}
+.data-staleness-banner.data-staleness-red {
+  background: #fee2e2;
+  color: #991b1b;
+  border-bottom-color: #fecaca;
+}
+.data-staleness-banner strong { font-weight: 700; }
+
 /* -------------------------------------------------------------
    Phase 2 app shell. md+ runs a horizontal split: sidebar 35%,
    workspace 65%. Below md, sidebar and workspace stack vertically
