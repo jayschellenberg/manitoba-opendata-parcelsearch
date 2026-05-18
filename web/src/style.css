@@ -1373,11 +1373,15 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 }
 
 /* Phase 6 vacant land proxy threshold. Single number input + a
-   %/$ pill toggle that selects how the number is interpreted.
-   Tucked away until the Vacant land checkbox is on. */
+   %/$ pill toggle that selects how the number is interpreted,
+   plus the Sale/Asmt ratio dropdown to the right of the pill.
+   flex-wrap lets the row break onto two lines on narrow viewports
+   so the dropdown never gets squeezed below readable width.
+   Tucked away until the Vacant Only checkbox is on. */
 .sidebar .vacant-threshold-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   margin-top: 4px;
 }
@@ -1392,23 +1396,23 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   white-space: nowrap;
 }
 /* Input width fits 5 digits comfortably (e.g. "20000") at the
-   sidebar's 14 px font + 6 px x-padding. */
+   sidebar's 14 px font + 6 px x-padding, +5 px breathing room. */
 .sidebar .vacant-threshold-row .vacant-threshold-field {
-  flex: 0 0 76px;
+  flex: 0 0 81px;
   min-width: 0;
 }
+/* Sale/Asmt dropdown — flex:1 so it absorbs leftover horizontal
+   space on the row; min-width keeps the longest "Max Sale/Asmt"
+   placeholder readable. Padding tuned to match the surrounding
+   number inputs visually. */
 .sidebar .vacant-threshold-row .sale-asmt-max-field {
-  flex: 0 0 76px;
-  min-width: 0;
+  flex: 1 1 130px;
+  min-width: 130px;
 }
-#sale-asmt-max::-webkit-outer-spin-button,
-#sale-asmt-max::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-#sale-asmt-max {
-  -moz-appearance: textfield;
-  appearance: textfield;
+.sidebar .vacant-threshold-row .sale-asmt-max-field select {
+  width: 100%;
+  padding: 5px 6px;
+  font-size: 12px;
 }
 .sidebar .vacant-threshold-row input[type="number"] {
   width: 100%;
