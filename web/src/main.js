@@ -157,6 +157,7 @@ const $sizeHigh      = document.getElementById('size-high');
 // _saleGroupAllVacant which computeSaleGroupTotals stamps after the
 // per-parcel assessment-index lookup runs in handleSalesUpload.
 const $vacantOnly    = document.getElementById('vacant-only');
+const $saleAsmtMax   = document.getElementById('sale-asmt-max');
 // Sales-CSV sale-date range. Both inputs accept HTML5 date strings
 // (YYYY-MM-DD); empty values are interpreted as "no minimum"/"no
 // maximum" respectively. Sale-date strings from the CSV go through
@@ -1281,7 +1282,7 @@ $duMode.addEventListener('change', () => {
 for (const el of [
   $zoneCategory, $changedStatus, $duMode, $duMin, $sizeLow, $sizeHigh, $vacantOnly,
   $saleDateFrom, $saleDateTo, $asmtClass, $asmtStatus, $distanceMax, $salesPlan,
-  $salesStreetName, $salesPpaLow, $salesPpaHigh,
+  $salesStreetName, $salesPpaLow, $salesPpaHigh, $saleAsmtMax,
 ].filter(Boolean)) {
   el.addEventListener('change', refilterCsvIfActive);
   el.addEventListener('input',  refilterCsvIfActive);
@@ -2574,6 +2575,17 @@ function filterCsvRowsByOtherSearches(rows) {
     // and get treated as 'not known to be vacant' — they drop out.
     if ($vacantOnly?.checked) {
       if (p._saleGroupAllVacant !== true) return false;
+      // Max Sale/Asmt ratio cap. Gated by Vacant Only because
+      // the use-case is "buildings sold before the assessment
+      // caught up", which is part of the vacant-proxy workflow.
+      const saleAsmtMaxRaw = $saleAsmtMax?.value;
+      const saleAsmtMax = saleAsmtMaxRaw == null || saleAsmtMaxRaw === ''
+        ? null
+        : parseFloat(saleAsmtMaxRaw);
+      if (saleAsmtMax != null && Number.isFinite(saleAsmtMax) && saleAsmtMax > 0) {
+        const ratio = Number(p._saleGroupSaleToAsmt);
+        if (Number.isFinite(ratio) && ratio > saleAsmtMax) return false;
+      }
     }
 
     // Size range filter (sales-CSV mode only — the row is hidden by

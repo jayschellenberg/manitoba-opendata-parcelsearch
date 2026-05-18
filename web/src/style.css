@@ -1390,9 +1390,24 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   color: var(--color-neutral-600, #52525b);
   white-space: nowrap;
 }
+/* Input width fits 5 digits comfortably (e.g. "20000") at the
+   sidebar's 14 px font + 6 px x-padding. */
 .sidebar .vacant-threshold-row .vacant-threshold-field {
-  flex: 0 0 60px;
+  flex: 0 0 76px;
   min-width: 0;
+}
+.sidebar .vacant-threshold-row .sale-asmt-max-field {
+  flex: 0 0 76px;
+  min-width: 0;
+}
+#sale-asmt-max::-webkit-outer-spin-button,
+#sale-asmt-max::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+#sale-asmt-max {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }
 .sidebar .vacant-threshold-row input[type="number"] {
   width: 100%;

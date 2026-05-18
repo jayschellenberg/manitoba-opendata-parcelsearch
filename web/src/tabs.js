@@ -133,7 +133,12 @@ export function initSidebarTabs() {
     btn.addEventListener('click', () => setActiveTab(btn.dataset.tab));
     btn.addEventListener('keydown', onTabKeyDown);
   }
-  // Restore prior selection if any, otherwise default.
-  setActiveTab(readStored() || DEFAULT_TAB, { skipFocus: true });
+  // Always boot on the Property Search tab. The user's session
+  // can still switch tabs (and that's persisted to localStorage
+  // for the URL state writer to pick up), but a fresh page load
+  // never lands on Sales Analysis even if that was the last
+  // active tab. URL state with ?t=sales overrides this — the
+  // main.js applyUrlStateToInputs runs afterwards.
+  setActiveTab(DEFAULT_TAB, { skipFocus: true });
   return true;
 }
