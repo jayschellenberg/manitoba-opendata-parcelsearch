@@ -2181,10 +2181,12 @@ function computeSaleGroupTotals(parcelFc) {
     const at = Number(f.properties?._asmtTotal);
     if (Number.isFinite(at) && at > 0) g.asmtTotal += at;
     else g.asmtIncomplete = true;
-    // Vacancy roll-up. _isVacantLand is set in handleSalesUpload
-    // when the assessment index returned a record; absent (=
-    // undefined) means the parcel wasn't in the shard.
-    const v = f.properties?._isVacantLand;
+    // Vacancy roll-up. Phase 6: evaluated dynamically against the
+    // current `vacant-pct` / `vacant-max` inputs instead of the
+    // upload-time `_isVacantLand` flag (which froze at the legacy
+    // 2% threshold). parcelIsVacantDynamic returns null when the
+    // parcel wasn't in the assessment shard.
+    const v = parcelIsVacantDynamic(f.properties);
     if (v === true) {
       // pass — keep g.allVacant as is
     } else if (v === false) {
@@ -3572,6 +3574,60 @@ function toGeoJsonFeature(f) {
   };
 }
 
+// ---------- Phase 6: vacant-land proxy thresholds ----------
+
+const $vacantPct = document.getElementById('vacant-pct');
+const $vacantMax = document.getElementById('vacant-max');
+
+/**
+ * Read the current vacant-land proxy thresholds from the sidebar
+ * inputs. `pctFraction` is the building % cap as a 0-1 ratio (2% ->
+ * 0.02); `max` is the building $ cap as a number or null when blank.
+ * Defaults match the legacy hard-coded 2% behaviour.
+ */
+function getVacancyThresholds() {
+  const pctRaw = $vacantPct?.value;
+  const maxRaw = $vacantMax?.value;
+  let pct = pctRaw == null || pctRaw === '' ? 2 : parseFloat(pctRaw);
+  if (!Number.isFinite(pct)) pct = 2;
+  if (pct < 0) pct = 0;
+  if (pct > 10) pct = 10;
+  let max = maxRaw == null || maxRaw === '' ? null : parseFloat(maxRaw);
+  if (max != null && (!Number.isFinite(max) || max < 0)) max = null;
+  return { pctFraction: pct / 100, max };
+}
+
+/**
+ * Vacancy predicate using the live thresholds. Reads each parcel's
+ * stamped `_asmtBuildings` / `_asmtTotal` and returns true / false
+ * / null (null = no assessment data available).
+ */
+function parcelIsVacantDynamic(props) {
+  const { pctFraction, max } = getVacancyThresholds();
+  const buildings = Number(props?._asmtBuildings);
+  const total = Number(props?._asmtTotal);
+  if (!Number.isFinite(total) || total <= 0) return null;
+  if (!Number.isFinite(buildings) || buildings < 0) return null;
+  if ((buildings / total) < pctFraction) return true;
+  if (max != null && buildings < max) return true;
+  return false;
+}
+
+// Refresh group-vacancy roll-ups when the threshold inputs change,
+// then refilter so the table + map update without needing a fresh
+// CSV re-upload. No-op outside sales mode.
+function refreshVacancyAndRefilter() {
+  if (csvFullRows == null) return;
+  const fc = { type: 'FeatureCollection', features: csvFullRows.map((r) => r.parcel) };
+  computeSaleGroupTotals(fc);
+  refilterCsvIfActive();
+}
+
+for (const el of [$vacantPct, $vacantMax].filter(Boolean)) {
+  el.addEventListener('input', refreshVacancyAndRefilter);
+  el.addEventListener('change', refreshVacancyAndRefilter);
+}
+
 // ---------- Phase 5: selected-parcel summary card ----------
 
 /**
@@ -3595,6 +3651,50 @@ const $psOpenMuni    = document.getElementById('ps-open-muni');
 const $psCopySource  = document.getElementById('ps-copy-source');
 const $psExportSel   = document.getElementById('ps-export-selected');
 const $psClose       = document.getElementById('ps-close');
+const $psVerify      = document.getElementById('ps-verify');
+const $psVerifyList  = document.getElementById('ps-verify-list');
+
+// Phase 6 verify-this state. Keyed by `muni|roll` so the same
+// parcel restores its ticks across visits. Persisted to
+// localStorage so the user's review progress survives refreshes.
+const VERIFY_STORAGE_KEY = 'mbps_verify_state_v1';
+function loadVerifyState() {
+  try { return JSON.parse(localStorage.getItem(VERIFY_STORAGE_KEY) || '{}') || {}; }
+  catch { return {}; }
+}
+function saveVerifyState(state) {
+  try { localStorage.setItem(VERIFY_STORAGE_KEY, JSON.stringify(state)); } catch {}
+}
+function verifyKeyForParcel(p) {
+  const muni = muniNoFromProps(p);
+  const roll = p?.Roll_No_Txt;
+  if (muni == null || !roll) return null;
+  return `${muni}|${roll}`;
+}
+function populateVerifyChecklist(p) {
+  if (!$psVerifyList) return;
+  const key = verifyKeyForParcel(p);
+  const state = loadVerifyState();
+  const parcelState = (key && state[key]) || {};
+  for (const cb of $psVerifyList.querySelectorAll('input[type="checkbox"]')) {
+    cb.checked = !!parcelState[cb.dataset.key];
+    cb.disabled = !key;
+  }
+}
+if ($psVerifyList) {
+  $psVerifyList.addEventListener('change', (e) => {
+    const cb = e.target;
+    if (!(cb instanceof HTMLInputElement) || cb.type !== 'checkbox') return;
+    if (!selectedParcelRow) return;
+    const key = verifyKeyForParcel(selectedParcelRow.parcel?.properties || {});
+    if (!key) return;
+    const state = loadVerifyState();
+    const parcelState = state[key] || {};
+    parcelState[cb.dataset.key] = cb.checked;
+    state[key] = parcelState;
+    saveVerifyState(state);
+  });
+}
 
 function clearSelectedParcel() {
   selectedParcelRow = null;
@@ -3660,6 +3760,10 @@ function populateSelectedParcel(row) {
       $psOpenMuni.hidden = true;
     }
   }
+  // Phase 6 verify-this state: restore the user's prior ticks for
+  // this parcel from localStorage, keyed by muni|roll.
+  populateVerifyChecklist(p);
+
   $parcelSummary.hidden = false;
 }
 
