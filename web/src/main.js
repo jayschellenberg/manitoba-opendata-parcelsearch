@@ -1295,6 +1295,16 @@ for (const el of [
 if ($distanceMax) {
   $distanceMax.addEventListener('input',  updateSubjectRadiusRing);
   $distanceMax.addEventListener('change', updateSubjectRadiusRing);
+  // Hide the Dist (km) column unless the user has set a Max km
+  // value. The column has no meaning without a radius cap; show
+  // it only when the filter is engaged.
+  const updateMaxKmFlag = () => {
+    const n = parseFloat($distanceMax.value);
+    document.body.classList.toggle('has-max-km', Number.isFinite(n) && n > 0);
+  };
+  $distanceMax.addEventListener('input', updateMaxKmFlag);
+  $distanceMax.addEventListener('change', updateMaxKmFlag);
+  updateMaxKmFlag();
 }
 
 // Date-range quick-preset buttons. Click "12 mo" -> set sale-date-from
@@ -4167,12 +4177,38 @@ function renderTable(rows, { resetPage = true } = {}) {
   // outliers at a glance without it dominating the table.
   const outlierThresholds = computePpaOutlierThresholds(sorted);
   const frag = document.createDocumentFragment();
-  for (const row of pageRows) {
+  for (let pageIdx = 0; pageIdx < pageRows.length; pageIdx++) {
+    const row = pageRows[pageIdx];
     const p = row.parcel.properties || {};
     const tr = document.createElement('tr');
     if (p._rowKey != null) {
       tr.dataset.rowKey = String(p._rowKey);
       if (row.parcel.geometry) rowFeatureMap.set(String(p._rowKey), row.parcel);
+    }
+    // Multi-parcel sale grouping. When a sale group has more than one
+    // parcel AND the sibling rows happen to be adjacent in the
+    // current sort order, mark first/middle/last/solo so the table
+    // can connect them visually (left stripe + tint). Solo means the
+    // group has >1 parcel but the row's adjacent neighbours are
+    // different sales — still part of a group, but not adjacent.
+    const gid = p._saleGroupId;
+    const gsize = Number(p._saleGroupSize) || 0;
+    if (gid != null && gsize > 1) {
+      const prevGid = pageIdx > 0 ? pageRows[pageIdx - 1].parcel.properties?._saleGroupId : null;
+      const nextGid = pageIdx < pageRows.length - 1 ? pageRows[pageIdx + 1].parcel.properties?._saleGroupId : null;
+      const prevSame = prevGid === gid;
+      const nextSame = nextGid === gid;
+      let pos;
+      if (!prevSame && nextSame) pos = 'first';
+      else if (prevSame && nextSame) pos = 'middle';
+      else if (prevSame && !nextSame) pos = 'last';
+      else pos = 'solo';
+      tr.dataset.groupPos = pos;
+      tr.dataset.groupSize = String(gsize);
+      // Tooltip hint when the row has unique sibling info.
+      if (!tr.title && Array.isArray(p._saleGroupRolls) && p._saleGroupRolls.length > 1) {
+        tr.title = `Part of a ${gsize}-parcel sale (rolls: ${p._saleGroupRolls.join(', ')})`;
+      }
     }
     // Outlier tag — only fires in sales-mode and only on rows whose
     // $/Acre exists. CSS rules in style.css gate visibility on
