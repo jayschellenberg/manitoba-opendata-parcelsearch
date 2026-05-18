@@ -424,6 +424,10 @@ header small a {
   background: var(--dot-color, var(--color-neutral-400, #a1a1aa));
   border: 1px solid rgba(0, 0, 0, 0.12);
 }
+.overlay-btn-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .overlay-btn.link-btn .overlay-dot { display: none; }
 
 .sidebar .generate-map-btn {
