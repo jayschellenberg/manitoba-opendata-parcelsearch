@@ -197,7 +197,11 @@ header small a {
   padding: 14px 16px 20px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  /* Phase 4 follow-up: vertical gap between sidebar children
+     tightened ~33% (8 -> 5) for a denser feeling, with matching
+     reductions on row margins, section paddings, and group gaps
+     elsewhere in this file. */
+  gap: 5px;
   /* Default (stacked) layout: sidebar caps at 40 vh so the
      workspace below still has room. The internal scroll keeps
      the controls reachable. */
@@ -240,7 +244,7 @@ header small a {
   position: sticky;
   top: 0;
   z-index: 5;
-  margin: -14px -16px 12px;
+  margin: -14px -16px 8px;
   padding: 0 4px;
 }
 .sidebar-tab {
@@ -274,7 +278,7 @@ header small a {
 .sidebar-tab-panel {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 5px;
 }
 .sidebar-tab-panel[hidden] {
   display: none !important;
@@ -284,7 +288,7 @@ header small a {
    .more-filters block (uppercase summary, soft slate hover) so
    the section reads as a single block above the action row. */
 .sidebar .advanced-filters {
-  margin: 4px 0 6px;
+  margin: 3px 0 4px;
 }
 .sidebar .advanced-filters > summary {
   cursor: pointer;
@@ -303,11 +307,11 @@ header small a {
   outline-offset: 2px;
   border-radius: 3px;
 }
-.sidebar .advanced-filters[open] > summary { margin-bottom: 6px; }
+.sidebar .advanced-filters[open] > summary { margin-bottom: 4px; }
 .sidebar .advanced-filters .filter-row,
 .sidebar .advanced-filters .du-row,
 .sidebar .advanced-filters .legal-title-row {
-  margin-top: 6px;
+  margin-top: 4px;
 }
 
 /* Sales dropzone (Phase 3). Drag-and-drop wrapper around the
@@ -363,12 +367,12 @@ header small a {
 .overlay-group {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px 6px;
-  margin: 0 0 10px;
+  gap: 3px 4px;
+  margin: 0 0 7px;
 }
 .overlay-group-title {
   grid-column: 1 / -1;
-  margin: 0 0 2px;
+  margin: 0 0 1px;
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
@@ -424,7 +428,7 @@ header small a {
 
 .sidebar .generate-map-btn {
   width: 100%;
-  margin-top: 8px;
+  margin-top: 5px;
   padding: 9px 12px;
   background: var(--color-accent-500, #2563eb);
   color: #fff;
@@ -446,16 +450,16 @@ header small a {
    matching section title style reads as "this is integral, not
    tab content". */
 .map-layers-section {
-  margin-top: 14px;
-  padding-top: 12px;
+  margin-top: 9px;
+  padding-top: 8px;
   border-top: 1px solid var(--color-neutral-200, #e4e4e7);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 5px;
 }
 
 .sidebar-section-title {
-  margin: 0 0 4px;
+  margin: 0 0 3px;
   font-size: 13px;
   font-weight: 700;
   text-transform: uppercase;
@@ -466,12 +470,12 @@ header small a {
 /* Persistent status block at the bottom of the sidebar. Separated
    from the tab panels with a hairline so it reads as out-of-tab. */
 .sidebar-status {
-  margin-top: 12px;
-  padding-top: 10px;
+  margin-top: 8px;
+  padding-top: 7px;
   border-top: 1px solid var(--color-neutral-200, #e4e4e7);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .sidebar h2:first-of-type {
@@ -492,8 +496,8 @@ header small a {
 .sidebar .action-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
+  gap: 4px;
+  margin-top: 4px;
 }
 
 .sidebar button.block {
@@ -546,7 +550,7 @@ header small a {
   display: flex;
   gap: 8px;
   align-items: center;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 .sidebar .uom-vacant-row .size-uom-field   { flex: 0 0 auto; }
 .sidebar .uom-vacant-row .vacant-only-field { flex: 1 1 auto; min-width: 0; }
@@ -616,7 +620,7 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 .sidebar .more-filters .du-row {
   display: flex;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 .sidebar .more-filters .du-row .du-mode-field { flex: 1 1 50%; min-width: 0; }
 .sidebar .more-filters .du-row .du-min-field  { flex: 0 0 64px; min-width: 0; }
@@ -628,7 +632,7 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   display: flex;
   gap: 6px;
   align-items: center;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 .sidebar .size-vacant-row .sales-plan-field { flex: 0 0 80px; min-width: 0; }
 .sidebar .size-vacant-row .size-low-field,
@@ -672,7 +676,7 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
    sales filter rows look like a single visual block. */
 .sidebar .street-name-row {
   display: flex;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 .sidebar .street-name-row .street-name-field { flex: 1 1 auto; min-width: 0; }
 .sidebar .street-name-row input[type="text"] {
@@ -687,7 +691,7 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 .sidebar .ppa-row {
   display: flex;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 .sidebar .ppa-row .ppa-low-field,
 .sidebar .ppa-row .ppa-high-field { flex: 1 1 0; min-width: 0; }
@@ -745,7 +749,7 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 }
 
 /* Distance-from-subject filter — single row, narrow input. */
-.sidebar .distance-row { display: flex; margin-top: 6px; }
+.sidebar .distance-row { display: flex; margin-top: 4px; }
 .sidebar .distance-row > .field { flex: 1 1 auto; min-width: 0; }
 .sidebar .distance-row input[type="number"] { width: 100%; }
 
@@ -808,7 +812,7 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 .sidebar .subject-row {
   display: flex;
   gap: 4px;
-  margin-top: 6px;
+  margin-top: 4px;
   align-items: stretch;
 }
 .sidebar .subject-row .subject-roll-field {
@@ -829,7 +833,7 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   display: flex;
   gap: 6px;
   align-items: flex-start;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 .sidebar .size-row > .field { min-width: 0; }
 .sidebar .size-row .size-low-field,
@@ -874,7 +878,7 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
    focus/hover (same as the size-range fields). */
 .sidebar .vacant-row {
   display: flex;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 .sidebar .vacant-only-field { flex: 1 1 auto; }
 .sidebar .vacant-only-label {
@@ -894,7 +898,7 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 .sidebar .date-row {
   display: flex;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 .sidebar .date-row > .field { flex: 1 1 0; min-width: 0; }
 .sidebar .date-row input[type="date"] { width: 100%; }
@@ -903,7 +907,7 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 .sidebar .class-row {
   display: flex;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 .sidebar .class-row > .field { flex: 1 1 50%; min-width: 0; }
 .sidebar .class-row select { width: 100%; }
@@ -1026,7 +1030,7 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 .sidebar .legal-title-row {
   display: flex;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 .sidebar .legal-title-row .legal-title-field { flex: 1 1 0; min-width: 0; }
 .sidebar .legal-title-row input[type="text"] { width: 100%; }
@@ -1414,7 +1418,7 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 }
 
 .count {
-  margin-top: 6px;
+  margin-top: 4px;
   padding: 6px 12px;
   background: #eef6fb;
   border: 1px solid #c2dceb;
@@ -1923,7 +1927,7 @@ body.workspace-resizing iframe { pointer-events: none; }
 }
 
 .explainer-body {
-  margin-top: 6px;
+  margin-top: 4px;
   line-height: 1.5;
 }
 
