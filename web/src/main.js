@@ -1216,6 +1216,13 @@ async function generateStaticMap() {
     if ($staticMapSection) $staticMapSection.hidden = false;
     $staticMapOutput.hidden = false;
     $staticMapOutput.innerHTML = '';
+    // Plain-language hint above the image so the user knows what to
+    // do with the snapshot (Save Image As… isn't discoverable
+    // without prompting).
+    const hint = document.createElement('p');
+    hint.className = 'static-map-hint';
+    hint.textContent = 'Right click and Copy or Save image:';
+    $staticMapOutput.appendChild(hint);
     const img = document.createElement('img');
     img.src = dataUrl;
     img.alt = 'Static snapshot of the current map view';
