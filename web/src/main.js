@@ -5618,6 +5618,59 @@ async function populateDataRefreshFooter() {
   if (parts.length === 0) return;
   $list.innerHTML = parts.join('<span class="data-refresh-list-sep">·</span>');
   $footer.hidden = false;
+
+  // Staleness banner. Use source_modified (the underlying MAO
+  // scrape file's mtime) rather than generated_at (when the R
+  // script ran) — the user cares about how old the actual MAO
+  // data is, not when we re-built the shard from it. Falls back
+  // to generated_at when source_modified isn't present.
+  updateStalenessBanner(legalMetaValue, asmtMetaValue);
+}
+
+/**
+ * Decide whether to show the MAO staleness banner and which tone.
+ * Reads the manifest entries for legal_index + assessment_index,
+ * picks the oldest source_modified, and applies thresholds:
+ *   <= 35 days: hide (monthly cadence on track)
+ *   36-60 days: amber nudge
+ *   > 60 days: red warning
+ */
+function updateStalenessBanner(legalMeta, asmtMeta) {
+  const banner = document.getElementById('data-staleness-banner');
+  if (!banner) return;
+  const pickAge = (m) => {
+    const raw = m?.source_modified || m?.generated_at;
+    if (!raw) return null;
+    const d = new Date(raw);
+    if (!Number.isFinite(d.valueOf())) return null;
+    const ms = Date.now() - d.valueOf();
+    return Math.max(0, Math.floor(ms / 86400000));
+  };
+  const legalAge = pickAge(legalMeta);
+  const asmtAge  = pickAge(asmtMeta);
+  const ages = [legalAge, asmtAge].filter((n) => n != null);
+  if (ages.length === 0) {
+    banner.hidden = true;
+    return;
+  }
+  const oldestDays = Math.max(...ages);
+  banner.classList.remove('data-staleness-amber', 'data-staleness-red');
+  if (oldestDays <= 35) {
+    banner.hidden = true;
+    banner.textContent = '';
+    return;
+  }
+  const isRed = oldestDays > 60;
+  const tone  = isRed ? 'data-staleness-red' : 'data-staleness-amber';
+  banner.classList.add(tone);
+  const lead = isRed
+    ? `MAO scrape is ${oldestDays} days old.`
+    : `MAO scrape is ${oldestDays} days old.`;
+  const tail = isRed
+    ? ' Re-run the scrape to refresh legal descriptions and assessment values before relying on this data.'
+    : ' Monthly cadence has slipped — consider re-running the MAO scrape soon.';
+  banner.innerHTML = `<strong>${lead}</strong>${tail}`;
+  banner.hidden = false;
 }
 
 function parseTotalValue(s) {

@@ -102,6 +102,19 @@
       </nav>
     </header>
 
+    <!-- MAO scrape staleness banner. Hidden when the legal +
+         assessment shards are within the monthly cadence; turns
+         amber when the underlying MAO data is 30-60 days old and
+         red past 60 days. Populated by populateDataRefreshFooter
+         in main.js. -->
+    <div
+      id="data-staleness-banner"
+      class="data-staleness-banner"
+      role="status"
+      aria-live="polite"
+      hidden
+    ></div>
+
     <!-- App shell. md+ runs a horizontal split: sidebar on the left,
          workspace (map + table with draggable divider) on the right.
          Below md the same elements stack so the same markup serves
