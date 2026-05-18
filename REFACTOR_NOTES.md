@@ -541,7 +541,111 @@ None.
 - exportCsv(rows) signature: reuse the optional-rows pattern.
 
 ## Phase 6 - Appraisal-specific features
-_pending_
+
+### Decisions
+
+- Verify-this checklist on the parcel summary card. Collapsible
+  `<details>` with six checkboxes. Per-parcel state persisted to
+  localStorage under `mbps_verify_state_v1` keyed by `muni|roll`
+  so a returning user sees their prior ticks restored.
+- Vacant-land proxy thresholds:
+  - `vacant-pct` numeric input (0–10, default 2) overrides the
+    legacy hard-coded 2% from `assessmentIndex.core.js`.
+  - `vacant-max` companion input (default blank). When set, a
+    parcel reads as vacant if Buildings $ is below the cap,
+    regardless of the % cap.
+  - `parcelIsVacantDynamic(props)` evaluates against the live
+    inputs; `computeSaleGroupTotals` uses it instead of the
+    upload-frozen `_isVacantLand` flag. The threshold inputs
+    trigger `refreshVacancyAndRefilter` so the table + map update
+    without re-uploading.
+- Copy source note was already wired in Phase 5 with the Phase 6-
+  shaped citation. Tooltip language refined; no behaviour change.
+- URL state encoding (the plan's highest-risk change):
+  - `web/src/urlState.js`: schema-driven encode/decode. Every key
+    declares its `param`, `validate`, and `format` so unknown
+    params get silently dropped and malformed values never throw.
+    Out-of-range integers, oversize strings (>200 chars), and
+    unknown `oneOf` values are all rejected.
+  - State keys: muni, roll, address (from/to/street), legal text,
+    title, zoning category, amendment status, DU mode + min, tab,
+    selected parcel roll, vacant pct + max.
+  - Sales-CSV state intentionally NOT encoded — the upload is a
+    file, not a value, and putting parsed sales rows in a URL
+    would explode its length.
+  - History updates use `replaceState`, throttled via
+    `requestAnimationFrame` so a rapid edit stream coalesces.
+  - Muni dropdown loads async; initial-apply polls the dropdown
+    (up to 16 s) for the URL muni option to appear, then dispatches
+    a `change` event so the rest of the app reacts as if the
+    user had picked it.
+- Map export footer (Phase 6 item 20) is **deferred** — Generate
+  Map still uses the legacy in-flow static-map renderer. A future
+  pass will swap to MapLibre's canvas export with the two-line
+  footer text the plan describes.
+
+### Reusable patterns (lift candidates)
+
+- `web/src/urlState.js`: schema-driven URL state encoder/decoder.
+  Generic; per-app schema lives in the `SCHEMA` constant. The
+  validate/format helpers (`cleanString`, `cleanInt`, `cleanNumber`,
+  `oneOf`) are reusable as a tiny validation kit.
+- `web/test/urlState.test.js`: 37 plain-node tests covering empty,
+  malformed, out-of-range, and round-trip cases. Pattern matches
+  the rest of the repo's `test/*.test.js` plain-node tests.
+- Verify-this checklist CSS + the `mbps_verify_state_v1`
+  localStorage shape: reuse.
+- Vacant-land proxy pattern (`parcelIsVacantDynamic` reading live
+  thresholds, refreshing the group roll-up on input change): the
+  shape is generic; the specific fields (Buildings, Total) are
+  per-app.
+
+### Manitoba-specific (do not port)
+
+- The `_asmtBuildings` / `_asmtTotal` fields are MAO-derived
+  Manitoba fields. The shape (a building-$ ratio + a hard $
+  threshold) ports; the source fields differ.
+- The verify-this checklist items reference MAO, Manitoba
+  Assessment Online, zoning by-laws, and planning districts.
+
+### Dependencies added
+
+None.
+
+### Gotchas
+
+- Async muni population means the initial-apply for the URL muni
+  has to wait until the option exists in the dropdown. A
+  poll-based re-apply handles that; if the muni list never
+  arrives (offline / API down), the URL state is silently dropped.
+- `populateDropdowns()` is called early during module init;
+  trying to monkey-patch it after the fact won't help. Use a poll
+  on the dropdown's options instead.
+- `history.replaceState` was chosen over `pushState` so the
+  user's Back button still moves between *real* navigations
+  rather than every keystroke.
+
+### Things visually replaced / removed
+
+- Phase 6 additions are largely additive (verify checklist, vacant
+  threshold inputs, URL state); nothing was removed.
+
+### Phase 6 porting checklist (Winnipeg)
+
+- urlState.js + tests: reuse; swap the SCHEMA entries for the
+  Winnipeg app's fields.
+- Verify-this checklist + CSS: reuse; swap the per-item labels
+  for Winnipeg's verification steps (City of Winnipeg assessment
+  portal, etc.).
+- Vacant-land proxy threshold UI + dynamic predicate: reuse with
+  the Winnipeg field names (when the source data lands there).
+
+### Deferred for follow-up
+
+- Map export footer (Phase 6 item 20). MapLibre's `getCanvas().toBlob()`
+  plus a small text overlay would produce the two-line footer the
+  plan describes; the current Generate Map still uses html2canvas
+  via the static-map renderer.
 
 ## Phase 7 - Status feedback and empty states
 _pending_
