@@ -171,10 +171,12 @@ header small a {
 .app-shell {
   display: flex;
   flex-direction: column;
-  /* dvh keeps the calculation correct when mobile browser chrome
-     hides/shows; falls through to vh on older engines. */
-  height: calc(100dvh - var(--topbar-height, 56px));
-  min-height: 0;
+  /* Phase 5 follow-up: app-shell now flows past the viewport so
+     large result sets are scrollable. min-height keeps it at least
+     viewport-tall so a fresh load doesn't look cramped; max-height
+     is unset so the table grows as the row count grows. The
+     sidebar (below) stays sticky-top so it remains in reach. */
+  min-height: calc(100dvh - var(--topbar-height, 56px));
 }
 
 @media (min-width: 768px) {
@@ -214,12 +216,18 @@ header small a {
   .sidebar {
     /* Split layout: sidebar takes 20% of the shell width with a
        minimum of 280 px so the controls don't crush below their
-       single-column widths. Workspace gets the remaining 80%. */
+       single-column widths. Workspace gets the remaining 80%.
+       Sticky to the top so the controls stay visible while the
+       workspace below scrolls long result sets. */
     flex: 0 0 20%;
     min-width: 280px;
     max-width: 28%;
-    max-height: none;
-    height: 100%;
+    align-self: flex-start;
+    position: sticky;
+    top: var(--topbar-height, 56px);
+    max-height: calc(100dvh - var(--topbar-height, 56px));
+    height: auto;
+    overflow-y: auto;
   }
 }
 
@@ -1558,84 +1566,36 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   flex-direction: column;
   flex: 1 1 auto;
   min-width: 0;
-  min-height: 0;
-  /* Default sentinel — keep `auto` so the 16:9 aspect-ratio governs
-     the map height until the user drags the divider. layout.js
-     writes a px value here on drag, which then beats aspect-ratio. */
-  --map-pane-height: auto;
+  /* Phase 5 follow-up: workspace flows naturally below the
+     sticky sidebar. Map and table grow to their natural sizes
+     and the page scrolls when they exceed the viewport. */
 }
 
 .map-pane {
   width: 100%;
   background: #eaeaec;
   position: relative;
-  /* Stacked layout: 16:9 sets the natural height from the workspace
-     width, so scrolled content below still reads. */
+  /* 16:9 height computed from the workspace width — same in stacked
+     and split layouts. Toggling .map-collapsed hides the map
+     entirely so the table claims the full workspace. */
   aspect-ratio: 16 / 9;
   min-height: 320px;
 }
+.workspace.map-collapsed .map-pane { display: none; }
 
 .table-pane {
-  /* In the stacked layout the table-pane flows naturally; the page
-     itself scrolls. The 12/20/32 padding matches the original
-     #results-wrap rule replaced below. */
+  /* Flows below the map. Padding matches the original #results-wrap
+     rule that was removed in Phase 2. */
   padding: 12px 20px 32px;
   overflow-x: auto;
 }
 
-@media (min-width: 768px) {
-  .map-pane {
-    /* Still 16:9 by default; CSS aspect-ratio computes the height
-       from the workspace's actual width. When --map-pane-height is
-       a px length (set by layout.js on drag), height wins over
-       aspect-ratio and the user's chosen split takes over. */
-    flex: 0 0 auto;
-    min-height: 220px;
-    height: var(--map-pane-height, auto);
-    /* Cap so a very wide / short viewport doesn't push the table
-       below the workspace floor when no drag has happened yet. */
-    max-height: 80%;
-  }
-  .table-pane {
-    flex: 1 1 auto;
-    min-height: 140px;
-    overflow: auto;
-    padding: 12px 20px 24px;
-  }
-}
-
-/* Draggable horizontal divider between map and table. Hidden in
-   the stacked layout because the panes flow naturally; visible
-   only at md+ where the split is fixed-height. */
-.workspace-resize {
-  display: none;
-  background: var(--color-neutral-200, #e4e4e7);
-  border-top: 1px solid var(--color-neutral-300, #d4d4d8);
-  border-bottom: 1px solid var(--color-neutral-300, #d4d4d8);
-  cursor: row-resize;
-  flex: 0 0 6px;
-  position: relative;
-}
-.workspace-resize::before {
-  content: "";
-  position: absolute;
-  inset: 50% 50%;
-  width: 36px;
-  height: 2px;
-  margin: -1px 0 0 -18px;
-  background: var(--color-neutral-400, #a1a1aa);
-  border-radius: 1px;
-}
-.workspace-resize:hover { background: var(--color-neutral-300, #d4d4d8); }
-.workspace-resize.dragging { background: var(--color-accent-400, #60a5fa); }
-.workspace-resize:focus-visible {
-  outline: 2px solid var(--color-accent-500, #2563eb);
-  outline-offset: -2px;
-}
-
-@media (min-width: 768px) {
-  .workspace-resize { display: block; }
-}
+/* Phase 5 follow-up: resize handle removed. The workspace flows
+   naturally now (no fixed-height split), so a draggable divider
+   no longer applies. The element is hidden via CSS in case
+   external script still references the id. A "Hide map" toggle in
+   the results toolbar covers the "shrink the map" use case. */
+.workspace-resize { display: none !important; }
 
 /* While dragging the divider, suspend pointer events on iframes
    and disable text selection so the cursor doesn't drift away
@@ -2145,6 +2105,41 @@ body.workspace-resizing iframe { pointer-events: none; }
   background: #fff;
   font-family: inherit;
   color: var(--color-primary-500, #1e293b);
+}
+
+/* Hide-map toggle. Same visual weight as the gear button so the
+   pair reads as a small action cluster on the right of the
+   toolbar. Pressed state lights up in accent blue. */
+.map-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: #fff;
+  border: 1px solid var(--color-neutral-300, #d4d4d8);
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-primary-500, #1e293b);
+  cursor: pointer;
+  font-family: inherit;
+}
+.map-toggle-btn:hover {
+  border-color: var(--color-accent-500, #2563eb);
+  color: var(--color-accent-600, #1d4ed8);
+}
+.map-toggle-btn:focus-visible {
+  outline: 2px solid var(--color-accent-500, #2563eb);
+  outline-offset: 1px;
+}
+.map-toggle-btn[aria-pressed="true"] {
+  background: #eff6ff;
+  border-color: var(--color-accent-500, #2563eb);
+  color: var(--color-accent-600, #1d4ed8);
+}
+.map-toggle-btn svg {
+  width: 14px;
+  height: 14px;
 }
 
 /* Gear button + popover. The popover is positioned absolute

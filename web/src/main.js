@@ -3,10 +3,6 @@
 // and emits the generated stylesheet alongside the legacy style.css.
 import './tailwind.css';
 
-// Phase 2 layout wiring: the workspace's draggable map↔table divider.
-// Module is small + side-effect free until initWorkspaceResize() runs.
-import { initWorkspaceResize } from './layout.js';
-
 // Phase 3 sidebar tabs.
 import { initSidebarTabs, setActiveTab } from './tabs.js';
 
@@ -737,15 +733,37 @@ const { map, ready: mapReady } = initMap($mapEl, {
   onFeatureClick: scrollToRow,
 });
 
-// Workspace divider. Once initialised, listen for resize events and
-// nudge MapLibre to refresh its WebGL canvas dimensions so the map
-// stays sharp after the user drags the handle. mapReady gates the
-// resize call so the first pre-init drag doesn't throw.
-if (initWorkspaceResize()) {
-  const workspaceEl = document.getElementById('workspace');
-  workspaceEl?.addEventListener('workspace:resize', () => {
+// Hide-map toggle. Collapses the map-pane via the .map-collapsed
+// class on the workspace so the results table claims the full
+// workspace. The user's choice persists to localStorage so a
+// refresh keeps it consistent. mapReady gates the map.resize()
+// call when the map is restored so MapLibre recomputes its canvas.
+const MAP_HIDE_KEY = 'mbps_map_collapsed_v1';
+const $workspaceEl = document.getElementById('workspace');
+const $mapToggleBtn = document.getElementById('map-toggle-btn');
+const $mapToggleLabel = $mapToggleBtn?.querySelector('.map-toggle-label');
+
+function applyMapCollapsed(collapsed) {
+  if (!$workspaceEl || !$mapToggleBtn) return;
+  $workspaceEl.classList.toggle('map-collapsed', collapsed);
+  $mapToggleBtn.setAttribute('aria-pressed', String(collapsed));
+  if ($mapToggleLabel) $mapToggleLabel.textContent = collapsed ? 'Show map' : 'Hide map';
+  if (!collapsed) {
+    // Restoring the map: MapLibre needs to recompute its canvas
+    // size now that the container is back in the layout.
     mapReady.then(() => map.resize());
+  }
+  try { localStorage.setItem(MAP_HIDE_KEY, collapsed ? '1' : '0'); } catch {}
+}
+
+if ($mapToggleBtn) {
+  $mapToggleBtn.addEventListener('click', () => {
+    const next = !$workspaceEl.classList.contains('map-collapsed');
+    applyMapCollapsed(next);
   });
+  try {
+    if (localStorage.getItem(MAP_HIDE_KEY) === '1') applyMapCollapsed(true);
+  } catch {}
 }
 
 // Sidebar tabs. Restores the last-active tab from localStorage so a
