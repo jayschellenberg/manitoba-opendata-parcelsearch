@@ -1,21 +1,21 @@
 // Tailwind v4 entry — picked up by the @tailwindcss/vite plugin. The
 // import has no runtime export; it exists so Vite processes the file
 // and emits the generated stylesheet alongside the legacy style.css.
-import './tailwind.css';
+import './lib/tailwind.css';
 
 // Phase 3 sidebar tabs.
-import { initSidebarTabs, setActiveTab } from './tabs.js';
+import { initSidebarTabs, setActiveTab } from './lib/tabs.js';
 
 // Phase 4 form controls.
-import { initChipInput } from './chipInput.js';
-import { initInfoIcons } from './infoIcon.js';
+import { initChipInput } from './lib/chipInput.js';
+import { initInfoIcons } from './lib/infoIcon.js';
 
 // Phase 5 column visibility.
-import { initColumns, applyVisibility as applyColumnVisibility } from './columns.js';
+import { initColumns, applyVisibility as applyColumnVisibility } from './lib/columns.js';
 
 // Phase 6 URL state — serialises a small set of form values into the
 // query string so a session URL is shareable.
-import { encodeState, decodeState } from './urlState.js';
+import { encodeState, decodeState } from './lib/urlState.js';
 
 // Entry point. Wires the search inputs, the map, and the results table.
 //
@@ -123,7 +123,7 @@ import {
   formatAcres as fmtAcres,
   formatSqFtFromAcres,
   formatPercent as fmtPercent,
-} from './format.js';
+} from './lib/format.js';
 
 // Civic-address search is now a 3-input row: a numeric range (From / To)
 // plus a Street Name substring. The single legacy `#address` input was
