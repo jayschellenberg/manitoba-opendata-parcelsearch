@@ -861,14 +861,22 @@ export function initMap(container, { onFeatureClick } = {}) {
       });
 
       // Manitoba Soil Survey — provincial soil-association polygons.
-      // Coloured by the first character of CLASS1, which is the CLI
-      // agricultural-capability class (1=prime → 7=no capability,
-      // 'o' organic, 'x' unclassified). The full CLASS1 string also
-      // carries a subclass + modifier (e.g. "3w2x") that we don't
-      // paint with directly — it shows up in the popup. Companion
-      // 'soil-survey-labels' source carries point centroids for the
-      // MAPUNITNOM symbol layer, rendered alongside the fill so the
-      // user can read the soil-unit symbol without clicking.
+      // Painted by the first character of AGCAP_CLS1 (the dominant
+      // soil's agricultural-capability class). Distinct values in the
+      // field are "1"–"7", "O3"–"O7" (organic with capability class),
+      // and "$ML"/"$UL"/"$UR"/"$ZZ" special codes (mineral landscape,
+      // urban landscape, urban-residential, water).
+      //
+      // Painting by CLASS1 (which we tried first) is misleading — that
+      // field is the soil-survey internal code (e.g. "xxxx") and
+      // remains "xxxx" for most actually-rated agricultural soils,
+      // showing the entire Red River valley as grey/unrated even
+      // though it's almost all Class 2-3 land. AGCAP_CLS1 is the
+      // proper agricultural-capability rating.
+      //
+      // Companion 'soil-survey-labels' source carries point centroids
+      // for the MAPUNITNOM symbol layer, rendered alongside the fill
+      // so the user can read the soil-unit symbol without clicking.
       map.addSource('soil-survey', { type: 'geojson', data: emptyFc() });
       map.addLayer({
         id: 'soil-survey-fill',
@@ -878,7 +886,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         paint: {
           'fill-color': [
             'match',
-            ['slice', ['coalesce', ['get', 'CLASS1'], 'x'], 0, 1],
+            ['slice', ['coalesce', ['get', 'AGCAP_CLS1'], '?'], 0, 1],
             '1', '#1a6b26',  // dark green   — prime
             '2', '#4fab57',  // medium green — minor limitations
             '3', '#a6e29f',  // light green  — moderate
@@ -886,8 +894,9 @@ export function initMap(container, { onFeatureClick } = {}) {
             '5', '#f4a040',  // orange       — perennial only
             '6', '#a8754f',  // brown        — native pasture only
             '7', '#9c27b0',  // purple       — no agricultural capability
-            'o', '#5e3b1a',  // dark brown   — organic
-            '#bfbfbf',       // 'x' / unrated / urban / water
+            'O', '#5e3b1a',  // dark brown   — organic ('O3'–'O7' share one swatch)
+            '$', '#cfd6dd',  // pale slate   — $ML / $UL / $UR / $ZZ special codes
+            '#bfbfbf',       // fallback when AGCAP_CLS1 missing
           ],
           'fill-opacity': 0.35,
           'fill-outline-color': 'rgba(0, 0, 0, 0.25)',
@@ -2237,6 +2246,15 @@ export function parcelHtml(p) {
       lines.push(`<em>${escapeHtml(p._asmtClass)}${escapeHtml(statusLabel)}</em>`);
     }
   }
+  // Soil composition — top-3 soils by area overlap, stamped by
+  // main.js's stampSoilCompositionOnParcels after the Soil Survey
+  // overlay loads. Only renders when the parcel actually intersects
+  // soil-survey polygons (rural/agricultural areas); urban parcels
+  // outside the soil-survey extent get null and the section is hidden.
+  const soilTable = soilSurveyParcelHtml(p._soilComposition);
+  if (soilTable) {
+    lines.push(`<strong>Soil composition</strong>${soilTable}`);
+  }
   // Bottom-anchored sale rate breakdown. Appears whenever a sale
   // price is present (single-parcel and multi-parcel sales alike) —
   // the lot count in parentheses behind Price/Lot makes single-vs-
@@ -2404,14 +2422,27 @@ function cliHtml(p) {
   `;
 }
 
-// First char of CLASS1 = agricultural-capability class (1-7, 'o' organic,
-// 'x' unclassified). Matches the fill-paint match expression. Used by
-// both the popup chip and any future legend swatches.
+// First char of AGCAP_CLS1 = agricultural-capability class (1-7 mineral,
+// 'O' organic, '$' special codes for water/urban). Matches the fill-paint
+// match expression. Used by the popup chip + the parcel-soil composition
+// rollup. Note: white text on the visually-dark swatches (1, 6, 7, O)
+// for legibility against the chip background.
 const SOIL_SURVEY_CLASS_COLORS = {
   '1': '#1a6b26', '2': '#4fab57', '3': '#a6e29f',
   '4': '#f2d640', '5': '#f4a040', '6': '#a8754f',
-  '7': '#9c27b0', 'o': '#5e3b1a', 'x': '#bfbfbf',
+  '7': '#9c27b0', 'O': '#5e3b1a', '$': '#cfd6dd',
 };
+const SOIL_SURVEY_WHITE_TEXT = new Set(['1', '6', '7', 'O']);
+
+// Render a small Class chip (e.g. "2W", "3", "O4") given an
+// AGRI_CAP value like "2W" or an AGCAP_CLS value like "2" or "O3".
+// Returns an HTML string. Callers control whether to label it with
+// the subclass-bearing AGRI_CAP value or the cleaner AGCAP_CLS.
+function soilSurveyChip(label, capacityFirstChar) {
+  const color = SOIL_SURVEY_CLASS_COLORS[capacityFirstChar] || '#bfbfbf';
+  const textColor = SOIL_SURVEY_WHITE_TEXT.has(capacityFirstChar) ? '#fff' : '#1a1a1a';
+  return `<span style="display:inline-block;min-width:1.6em;padding:1px 6px;border-radius:4px;background:${color};color:${textColor};font-weight:600;text-align:center">${escapeHtml(label || '—')}</span>`;
+}
 
 function soilSurveyHtml(p) {
   // Walk the three soil slots. SOIL_1 is the dominant soil and is
@@ -2423,15 +2454,17 @@ function soilSurveyHtml(p) {
   for (const slot of slots) {
     const name = p[`SOILNAME${slot}`];
     if (name == null || String(name).trim() === '') continue;
-    const code   = p[`SOIL_CODE${slot}`];
-    const cls    = String(p[`CLASS${slot}`] || '').trim();
-    const ext    = p[`EXTENT${slot}`];
-    const tex    = p[`SURFTEXT${slot}`];
-    const capChar = (cls[0] || 'x').toLowerCase();
-    const color = SOIL_SURVEY_CLASS_COLORS[capChar] || '#bfbfbf';
-    const textColor = ['1', '6', '7', 'o'].includes(capChar) ? '#fff' : '#1a1a1a';
-    const chipLabel = cls.slice(0, 2) || '—';
-    const chip = `<span style="display:inline-block;min-width:1.6em;padding:1px 6px;border-radius:4px;background:${color};color:${textColor};font-weight:600;text-align:center">${escapeHtml(chipLabel)}</span>`;
+    const code     = p[`SOIL_CODE${slot}`];
+    const agriCap  = String(p[`AGRI_CAP${slot}`]  || '').trim();   // e.g. "2W"
+    const agcapCls = String(p[`AGCAP_CLS${slot}`] || '').trim();   // e.g. "2"
+    const ext      = p[`EXTENT${slot}`];
+    const tex      = p[`SURFTEXT${slot}`];
+    // Chip label: prefer AGRI_CAP (carries the subclass letter), fall
+    // back to AGCAP_CLS, then to a literal — for "$ZZ" water polygons
+    // we still want SOMETHING in the chip so the table reads cleanly.
+    const chipLabel = agriCap || agcapCls || '—';
+    const firstChar = (agcapCls[0] || agriCap[0] || '?');
+    const chip = soilSurveyChip(chipLabel, firstChar);
     const extTxt = (ext != null && String(ext).trim() !== '')
       ? `<strong>${escapeHtml(ext)}%</strong>` : '';
     const nameLine = code
@@ -2458,16 +2491,48 @@ function soilSurveyHtml(p) {
   }
 
   return `
-    <div style="max-width:320px;line-height:1.4">
+    <div style="max-width:340px;line-height:1.4">
       <strong>Manitoba Soil Survey</strong>
       <table style="margin-top:6px;font-size:12px;border-collapse:collapse">${rows.join('')}</table>
       ${mapUnit}
       <div style="margin-top:6px;color:#666;font-size:11px">
-        Class 1 = prime · 7 = no agricultural capability · o = organic · x = unrated
+        Class 1 = prime · 7 = no agricultural capability · O = organic · $ = urban/water
       </div>
       ${report}
     </div>
   `;
+}
+
+/**
+ * Build the soil-composition rows for a parcel popup. Reads the
+ * `_soilComposition` array stamped by main.js after the per-parcel
+ * soil-survey join lands. Each row in the array is a top-N soil
+ * polygon's intersection with the parcel — { agriCap, agcapCls,
+ * soilName, soilCode, mapUnit, parcelPct }. Returns null when the
+ * parcel hasn't been joined (caller suppresses the section).
+ */
+export function soilSurveyParcelHtml(composition) {
+  if (!Array.isArray(composition) || composition.length === 0) return null;
+  const rows = composition.map((c) => {
+    const chipLabel = c.agriCap || c.agcapCls || '—';
+    const firstChar = (c.agcapCls?.[0] || c.agriCap?.[0] || '?');
+    const chip = soilSurveyChip(chipLabel, firstChar);
+    const pct = Number.isFinite(c.parcelPct)
+      ? `<strong>${Math.round(c.parcelPct)}%</strong>`
+      : '';
+    const nameLine = c.soilCode
+      ? `${escapeHtml(c.soilName || '')} <span style="color:#888">(${escapeHtml(c.soilCode)})</span>`
+      : escapeHtml(c.soilName || '');
+    const muLine = c.mapUnit
+      ? `<div style="color:#555;font-size:11px">${escapeHtml(c.mapUnit)}</div>`
+      : '';
+    return `<tr>
+      <td style="padding:2px 6px 2px 0;vertical-align:top">${chip}</td>
+      <td style="padding:2px 6px;vertical-align:top">${pct}</td>
+      <td style="padding:2px 0;vertical-align:top">${nameLine}${muLine}</td>
+    </tr>`;
+  }).join('');
+  return `<table style="margin-top:4px;font-size:12px;border-collapse:collapse">${rows}</table>`;
 }
 
 function trafficHtml(p) {
