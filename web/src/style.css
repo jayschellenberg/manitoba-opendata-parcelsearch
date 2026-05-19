@@ -1951,6 +1951,13 @@ body.workspace-resizing iframe { pointer-events: none; }
   background: #eef6fb;
 }
 
+/* Optional sub-line under the legend title (e.g. "Coloured by dominant
+   soil association"). Smaller + muted so the title stays the focus. */
+.map-legend .legend-sub {
+  font-size: 10px;
+  color: #666;
+  margin: 2px 0 4px;
+}
 .map-legend strong {
   display: block;
   margin-bottom: 3px;

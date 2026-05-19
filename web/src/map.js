@@ -861,18 +861,19 @@ export function initMap(container, { onFeatureClick } = {}) {
       });
 
       // Manitoba Soil Survey — provincial soil-association polygons.
-      // Painted by the first character of AGCAP_CLS1 (the dominant
-      // soil's agricultural-capability class). Distinct values in the
-      // field are "1"–"7", "O3"–"O7" (organic with capability class),
-      // and "$ML"/"$UL"/"$UR"/"$ZZ" special codes (mineral landscape,
-      // urban landscape, urban-residential, water).
+      // Painted by `_paintColor`, which main.js's
+      // applySoilSurveyPalette() stamps onto each polygon based on
+      // its SOIL_CODE1's area-rank within the loaded muni. This makes
+      // Soil Survey a soil-IDENTITY layer (Red River vs Osborne vs
+      // Scanterbury at a glance) rather than a duplicate of the CLI
+      // overlay's 1=prime → 7=no-capability scale. The capability
+      // rating is still surfaced in the polygon-click popup as text
+      // alongside each soil's name; the colour is just about identity.
       //
-      // Painting by CLASS1 (which we tried first) is misleading — that
-      // field is the soil-survey internal code (e.g. "xxxx") and
-      // remains "xxxx" for most actually-rated agricultural soils,
-      // showing the entire Red River valley as grey/unrated even
-      // though it's almost all Class 2-3 land. AGCAP_CLS1 is the
-      // proper agricultural-capability rating.
+      // The initial expression below is a placeholder ('#bfbfbf' for
+      // everything) — there's no data until the user toggles the
+      // overlay on, at which point applySoilSurveyPalette overwrites
+      // this via setPaintProperty.
       //
       // Companion 'soil-survey-labels' source carries point centroids
       // for the MAPUNITNOM symbol layer, rendered alongside the fill
@@ -884,22 +885,9 @@ export function initMap(container, { onFeatureClick } = {}) {
         source: 'soil-survey',
         layout: { visibility: 'none' },
         paint: {
-          'fill-color': [
-            'match',
-            ['slice', ['coalesce', ['get', 'AGCAP_CLS1'], '?'], 0, 1],
-            '1', '#1a6b26',  // dark green   — prime
-            '2', '#4fab57',  // medium green — minor limitations
-            '3', '#a6e29f',  // light green  — moderate
-            '4', '#f2d640',  // yellow       — severe / marginal
-            '5', '#f4a040',  // orange       — perennial only
-            '6', '#a8754f',  // brown        — native pasture only
-            '7', '#9c27b0',  // purple       — no agricultural capability
-            'O', '#5e3b1a',  // dark brown   — organic ('O3'–'O7' share one swatch)
-            '$', '#cfd6dd',  // pale slate   — $ML / $UL / $UR / $ZZ special codes
-            '#bfbfbf',       // fallback when AGCAP_CLS1 missing
-          ],
-          'fill-opacity': 0.35,
-          'fill-outline-color': 'rgba(0, 0, 0, 0.25)',
+          'fill-color': ['coalesce', ['get', '_paintColor'], '#bfbfbf'],
+          'fill-opacity': 0.5,
+          'fill-outline-color': 'rgba(0, 0, 0, 0.3)',
         },
       });
       map.addSource('soil-survey-labels', { type: 'geojson', data: emptyFc() });
@@ -2422,26 +2410,33 @@ function cliHtml(p) {
   `;
 }
 
-// First char of AGCAP_CLS1 = agricultural-capability class (1-7 mineral,
-// 'O' organic, '$' special codes for water/urban). Matches the fill-paint
-// match expression. Used by the popup chip + the parcel-soil composition
-// rollup. Note: white text on the visually-dark swatches (1, 6, 7, O)
-// for legibility against the chip background.
-const SOIL_SURVEY_CLASS_COLORS = {
-  '1': '#1a6b26', '2': '#4fab57', '3': '#a6e29f',
-  '4': '#f2d640', '5': '#f4a040', '6': '#a8754f',
-  '7': '#9c27b0', 'O': '#5e3b1a', '$': '#cfd6dd',
-};
-const SOIL_SURVEY_WHITE_TEXT = new Set(['1', '6', '7', 'O']);
-
-// Render a small Class chip (e.g. "2W", "3", "O4") given an
-// AGRI_CAP value like "2W" or an AGCAP_CLS value like "2" or "O3".
-// Returns an HTML string. Callers control whether to label it with
-// the subclass-bearing AGRI_CAP value or the cleaner AGCAP_CLS.
-function soilSurveyChip(label, capacityFirstChar) {
-  const color = SOIL_SURVEY_CLASS_COLORS[capacityFirstChar] || '#bfbfbf';
-  const textColor = SOIL_SURVEY_WHITE_TEXT.has(capacityFirstChar) ? '#fff' : '#1a1a1a';
-  return `<span style="display:inline-block;min-width:1.6em;padding:1px 6px;border-radius:4px;background:${color};color:${textColor};font-weight:600;text-align:center">${escapeHtml(label || '—')}</span>`;
+/**
+ * Render a soil row for a popup table. Soil identity is shown as a
+ * coloured swatch (matching the polygon's map fill, when present) +
+ * the soil name + code. Capability rating is rendered as plain text
+ * to the right rather than a coloured chip — the user said the 1-7
+ * scale doesn't belong on a soil-survey legend, and matching the
+ * popup avoids the confusion.
+ */
+function soilSurveyPopupRow({ paintColor, name, code, agriCap, ext, surfaceTexture, mapUnit }) {
+  const swatch = `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${paintColor || '#bfbfbf'};border:1px solid rgba(0,0,0,0.2);margin-right:6px;vertical-align:middle"></span>`;
+  const nameLine = code
+    ? `<strong>${escapeHtml(name)}</strong> <span style="color:#888">(${escapeHtml(code)})</span>`
+    : `<strong>${escapeHtml(name)}</strong>`;
+  const capLine = agriCap
+    ? `<div style="color:#555;font-size:11px">Capability ${escapeHtml(agriCap)}</div>`
+    : '';
+  const texLine = surfaceTexture && String(surfaceTexture).trim()
+    ? `<div style="color:#777;font-size:11px">Surface: ${escapeHtml(surfaceTexture)}</div>` : '';
+  const muLine = mapUnit
+    ? `<div style="color:#777;font-size:11px">Map unit: ${escapeHtml(mapUnit)}</div>` : '';
+  const extCell = (ext != null && String(ext).trim() !== '')
+    ? `<td style="padding:2px 6px;vertical-align:top;text-align:right;white-space:nowrap"><strong>${escapeHtml(ext)}%</strong></td>`
+    : '<td></td>';
+  return `<tr>
+    <td style="padding:4px 6px 4px 0;vertical-align:top">${swatch}${nameLine}${capLine}${texLine}${muLine}</td>
+    ${extCell}
+  </tr>`;
 }
 
 function soilSurveyHtml(p) {
@@ -2449,42 +2444,30 @@ function soilSurveyHtml(p) {
   // almost always populated; SOIL_2 / SOIL_3 may be blank on small
   // homogeneous polygons. Skip blank slots so single-soil polygons
   // render a one-row table.
+  //
+  // Only the dominant soil gets the polygon's `_paintColor` swatch
+  // (that's what's actually on the map). Soils 2 / 3 are subordinate
+  // composition; they get a neutral swatch to keep the row shape
+  // consistent without implying they drive the map colour.
   const slots = ['1', '2', '3'];
   const rows = [];
   for (const slot of slots) {
     const name = p[`SOILNAME${slot}`];
     if (name == null || String(name).trim() === '') continue;
-    const code     = p[`SOIL_CODE${slot}`];
-    const agriCap  = String(p[`AGRI_CAP${slot}`]  || '').trim();   // e.g. "2W"
-    const agcapCls = String(p[`AGCAP_CLS${slot}`] || '').trim();   // e.g. "2"
-    const ext      = p[`EXTENT${slot}`];
-    const tex      = p[`SURFTEXT${slot}`];
-    // Chip label: prefer AGRI_CAP (carries the subclass letter), fall
-    // back to AGCAP_CLS, then to a literal — for "$ZZ" water polygons
-    // we still want SOMETHING in the chip so the table reads cleanly.
-    const chipLabel = agriCap || agcapCls || '—';
-    const firstChar = (agcapCls[0] || agriCap[0] || '?');
-    const chip = soilSurveyChip(chipLabel, firstChar);
-    const extTxt = (ext != null && String(ext).trim() !== '')
-      ? `<strong>${escapeHtml(ext)}%</strong>` : '';
-    const nameLine = code
-      ? `${escapeHtml(name)} <span style="color:#888">(${escapeHtml(code)})</span>`
-      : escapeHtml(name);
-    const texLine = tex && String(tex).trim()
-      ? `<div style="color:#555;font-size:11px">${escapeHtml(tex)}</div>` : '';
-    rows.push(
-      `<tr>
-        <td style="padding:2px 6px 2px 0;vertical-align:top">${chip}</td>
-        <td style="padding:2px 6px;vertical-align:top">${extTxt}</td>
-        <td style="padding:2px 0;vertical-align:top">${nameLine}${texLine}</td>
-      </tr>`
-    );
+    rows.push(soilSurveyPopupRow({
+      paintColor:     slot === '1' ? p._paintColor : null,
+      name,
+      code:           p[`SOIL_CODE${slot}`],
+      agriCap:        p[`AGRI_CAP${slot}`],
+      ext:            p[`EXTENT${slot}`],
+      surfaceTexture: p[`SURFTEXT${slot}`],
+    }));
   }
 
   const mapUnit = p.MAPUNITNOM ? `<div style="margin-top:6px"><strong>Map unit</strong>: <code>${escapeHtml(p.MAPUNITNOM)}</code></div>` : '';
   // The Shapefile-origin schema truncates REPORT_NAME to REPORT_NAM —
   // see SOIL_SURVEY_OUTFIELDS in arcgis.js.
-  const report  = p.REPORT_NAM ? `<div style="margin-top:4px;color:#666;font-size:11px">${escapeHtml(p.REPORT_NAM)}${p.SCALE ? ` · ${escapeHtml(p.SCALE)}` : ''}</div>` : '';
+  const report  = p.REPORT_NAM ? `<div style="margin-top:6px;color:#666;font-size:11px">${escapeHtml(p.REPORT_NAM)}${p.SCALE ? ` · ${escapeHtml(p.SCALE)}` : ''}</div>` : '';
 
   if (rows.length === 0) {
     return `<div style="max-width:280px;line-height:1.4"><strong>Manitoba Soil Survey</strong><br><em>No soil data on this polygon.</em>${mapUnit}${report}</div>`;
@@ -2493,11 +2476,8 @@ function soilSurveyHtml(p) {
   return `
     <div style="max-width:340px;line-height:1.4">
       <strong>Manitoba Soil Survey</strong>
-      <table style="margin-top:6px;font-size:12px;border-collapse:collapse">${rows.join('')}</table>
+      <table style="margin-top:4px;font-size:12px;border-collapse:collapse;width:100%">${rows.join('')}</table>
       ${mapUnit}
-      <div style="margin-top:6px;color:#666;font-size:11px">
-        Class 1 = prime · 7 = no agricultural capability · O = organic · $ = urban/water
-      </div>
       ${report}
     </div>
   `;
@@ -2506,33 +2486,23 @@ function soilSurveyHtml(p) {
 /**
  * Build the soil-composition rows for a parcel popup. Reads the
  * `_soilComposition` array stamped by main.js after the per-parcel
- * soil-survey join lands. Each row in the array is a top-N soil
- * polygon's intersection with the parcel — { agriCap, agcapCls,
- * soilName, soilCode, mapUnit, parcelPct }. Returns null when the
- * parcel hasn't been joined (caller suppresses the section).
+ * soil-survey join lands. Each row carries the SAME shape as the
+ * polygon-click popup (soil name + code, capability text, surface
+ * texture, map unit) plus the parcel-percent overlap. Returns null
+ * when the parcel hasn't been joined.
  */
 export function soilSurveyParcelHtml(composition) {
   if (!Array.isArray(composition) || composition.length === 0) return null;
-  const rows = composition.map((c) => {
-    const chipLabel = c.agriCap || c.agcapCls || '—';
-    const firstChar = (c.agcapCls?.[0] || c.agriCap?.[0] || '?');
-    const chip = soilSurveyChip(chipLabel, firstChar);
-    const pct = Number.isFinite(c.parcelPct)
-      ? `<strong>${Math.round(c.parcelPct)}%</strong>`
-      : '';
-    const nameLine = c.soilCode
-      ? `${escapeHtml(c.soilName || '')} <span style="color:#888">(${escapeHtml(c.soilCode)})</span>`
-      : escapeHtml(c.soilName || '');
-    const muLine = c.mapUnit
-      ? `<div style="color:#555;font-size:11px">${escapeHtml(c.mapUnit)}</div>`
-      : '';
-    return `<tr>
-      <td style="padding:2px 6px 2px 0;vertical-align:top">${chip}</td>
-      <td style="padding:2px 6px;vertical-align:top">${pct}</td>
-      <td style="padding:2px 0;vertical-align:top">${nameLine}${muLine}</td>
-    </tr>`;
-  }).join('');
-  return `<table style="margin-top:4px;font-size:12px;border-collapse:collapse">${rows}</table>`;
+  const rows = composition.map((c) => soilSurveyPopupRow({
+    paintColor:     c.paintColor,
+    name:           c.soilName,
+    code:           c.soilCode,
+    agriCap:        c.agriCap,
+    ext:            Number.isFinite(c.parcelPct) ? Math.round(c.parcelPct) : null,
+    surfaceTexture: null,
+    mapUnit:        c.mapUnit,
+  })).join('');
+  return `<table style="margin-top:4px;font-size:12px;border-collapse:collapse;width:100%">${rows}</table>`;
 }
 
 function trafficHtml(p) {

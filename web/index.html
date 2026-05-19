@@ -581,20 +581,10 @@
           <li><span class="swatch" style="background:#9c27b0"></span>7 — no agric.</li>
         </ul>
       </div>
-      <div id="soil-survey-legend" class="map-legend masc-legend" hidden>
-        <strong>Manitoba Soil Survey</strong>
-        <ul>
-          <li><span class="swatch" style="background:#1a6b26"></span>1 — prime</li>
-          <li><span class="swatch" style="background:#4fab57"></span>2</li>
-          <li><span class="swatch" style="background:#a6e29f"></span>3</li>
-          <li><span class="swatch" style="background:#f2d640"></span>4</li>
-          <li><span class="swatch" style="background:#f4a040"></span>5</li>
-          <li><span class="swatch" style="background:#a8754f"></span>6</li>
-          <li><span class="swatch" style="background:#9c27b0"></span>7 — no agric.</li>
-          <li><span class="swatch" style="background:#5e3b1a"></span>O — organic</li>
-          <li><span class="swatch" style="background:#cfd6dd"></span>$ — urban/water</li>
-        </ul>
-      </div>
+      <!-- Filled by main.js applySoilSurveyPalette / renderSoilSurveyLegend
+           after Soil Survey loads — contents reflect the top-N soil
+           associations actually present in the loaded muni. -->
+      <div id="soil-survey-legend" class="map-legend masc-legend" hidden></div>
       <div id="flow-legend" class="map-legend flow-legend" hidden>
         <strong>AADT (2019)</strong>
         <ul>
