@@ -3888,7 +3888,16 @@ function refreshVacancyAndRefilter() {
   refilterCsvIfActive();
 }
 
-for (const el of [$vacantPct, $vacantMax].filter(Boolean)) {
+// Wire the threshold input. The mode-pill click handler already fires
+// refreshVacancyAndRefilter directly (see the pill loop above), so we
+// don't need a separate listener for it here. (Pre-refactor, this list
+// referenced $vacantPct + $vacantMax — two separate inputs that were
+// merged into a single $vacantThreshold + pill toggle. The stale names
+// threw an uncaught ReferenceError that halted module init partway
+// through, so every const declared later in the file landed in TDZ —
+// notably SALE_DATE_RE at line 5708, which silently broke the
+// Sale-Date range filter.)
+for (const el of [$vacantThreshold].filter(Boolean)) {
   el.addEventListener('input', refreshVacancyAndRefilter);
   el.addEventListener('change', refreshVacancyAndRefilter);
 }
