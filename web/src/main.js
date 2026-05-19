@@ -3433,6 +3433,105 @@ let cliLoadedFor = null;
 let soilSurveyLoadedFor = null;
 
 /**
+ * Categorical palette used to colour the Manitoba Soil Survey overlay
+ * by SOIL_CODE1. Designed to read as distinct soil-TYPE colours so
+ * the user sees Red River vs Osborne vs Scanterbury at a glance,
+ * rather than the agricultural-capability scale (1=prime → 7=no
+ * capability) which already lives on the CLI Soil overlay. Tableau-10
+ * inspired but with the muddy-orange swapped for something less
+ * brown so it doesn't collide with the organic-soil swatch (see
+ * SOIL_SURVEY_ORGANIC_COLOR).
+ *
+ * Cap of 10 colours: assigned to the top-10 soil associations by
+ * area within the loaded data. Any soil outside that top-10 falls
+ * through to SOIL_SURVEY_FALLBACK_COLOR (light grey), and the
+ * legend appends an "Other soils" row when needed.
+ */
+const SOIL_SURVEY_PALETTE = [
+  '#4e79a7', '#f28e2c', '#e15759', '#76b7b2', '#59a14f',
+  '#edc949', '#af7aa1', '#ff9da7', '#9c755f', '#7f7fbf',
+];
+const SOIL_SURVEY_FALLBACK_COLOR = '#bfbfbf';
+
+/**
+ * Assign each polygon in the loaded soilFc a colour based on its
+ * SOIL_CODE1's rank by total area, stamp `_paintColor` onto the
+ * properties, update the map's fill-color expression to read that
+ * property, and render the legend dynamically. Falls back to
+ * SOIL_SURVEY_FALLBACK_COLOR for any soil outside the top-N.
+ */
+function applySoilSurveyPalette(soilFc) {
+  // 1. Tally area per SOIL_CODE1. We use turfArea (sq metres) for
+  //    sortable weighting; the absolute units don't matter, only the
+  //    ranking does.
+  const areaByCode = new Map();
+  const nameByCode = new Map();
+  for (const f of soilFc.features || []) {
+    const code = f.properties?.SOIL_CODE1;
+    if (!code) continue;
+    let a = 0;
+    try { a = turfArea(f); } catch { /* skip topology errors */ }
+    if (!Number.isFinite(a) || a <= 0) continue;
+    areaByCode.set(code, (areaByCode.get(code) || 0) + a);
+    if (!nameByCode.has(code)) nameByCode.set(code, f.properties?.SOILNAME1 || code);
+  }
+
+  // 2. Rank top-N by area; assign palette in that order.
+  const N = SOIL_SURVEY_PALETTE.length;
+  const ranked = [...areaByCode.entries()].sort((a, b) => b[1] - a[1]).slice(0, N);
+  const colorByCode = new Map();
+  ranked.forEach(([code], i) => { colorByCode.set(code, SOIL_SURVEY_PALETTE[i]); });
+
+  // 3. Stamp the resolved colour onto every polygon so the popup chip
+  //    can match the map without map.js needing a copy of the palette.
+  for (const f of soilFc.features || []) {
+    const code = f.properties?.SOIL_CODE1;
+    f.properties._paintColor = colorByCode.get(code) || SOIL_SURVEY_FALLBACK_COLOR;
+  }
+
+  // 4. Rebuild the map paint to read the stamped colour directly.
+  //    Switching off the previous AGCAP_CLS1 match expression means
+  //    the user no longer sees a duplicate of the CLI capability
+  //    scale on a layer that's meant to be about soil identity.
+  if (map.getLayer('soil-survey-fill')) {
+    map.setPaintProperty('soil-survey-fill', 'fill-color', [
+      'coalesce', ['get', '_paintColor'], SOIL_SURVEY_FALLBACK_COLOR,
+    ]);
+  }
+
+  // 5. Render the legend (top-N soils + "Other" if anything fell off
+  //    the bottom of the palette).
+  renderSoilSurveyLegend(ranked, nameByCode, areaByCode.size > N);
+}
+
+function renderSoilSurveyLegend(ranked, nameByCode, hasOther) {
+  if (!$soilSurveyLegend) return;
+  const lis = ranked.map(([code], i) => {
+    const name  = nameByCode.get(code) || code;
+    const color = SOIL_SURVEY_PALETTE[i];
+    return `<li><span class="swatch" style="background:${color}"></span>${escapeHtmlText(name)}</li>`;
+  });
+  if (hasOther) {
+    lis.push(`<li><span class="swatch" style="background:${SOIL_SURVEY_FALLBACK_COLOR}"></span>Other soils</li>`);
+  }
+  if (!lis.length) {
+    lis.push('<li><em>No soil associations in this muni.</em></li>');
+  }
+  $soilSurveyLegend.innerHTML =
+    '<strong>Manitoba Soil Survey</strong>' +
+    '<div class="legend-sub">Coloured by dominant soil association</div>' +
+    `<ul>${lis.join('')}</ul>`;
+}
+
+// Local HTML-escape helper used by the legend builder. main.js doesn't
+// import the one from map.js; cheap to duplicate.
+function escapeHtmlText(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[c]);
+}
+
+/**
  * Soil-Survey-specific enable check. Unlike MASC + CLI (which only
  * need a muni to scope their fetch), the Soil Survey overlay stamps
  * per-parcel composition onto the search-result parcels — so it's
@@ -3799,6 +3898,15 @@ async function toggleSoilSurveyOverlay() {
         return;
       }
       const soilFc = { type: 'FeatureCollection', features: polyFeatures };
+      // Build a fresh palette + dynamic legend for THIS area's actual
+      // soil associations. The map's fill-color expression gets
+      // rewritten to colour by SOIL_CODE1, so the user sees soil
+      // TYPES (Red River vs Osborne vs Scanterbury) instead of a
+      // generic capability scale duplicated from the CLI overlay.
+      // Each polygon's assigned colour is stamped as `_paintColor`
+      // so the popup chips can match the map without main.js needing
+      // to leak the palette into map.js.
+      applySoilSurveyPalette(soilFc);
       setSoilSurveyData(map, soilFc);
       setSoilSurveyLabelsData(map, { type: 'FeatureCollection', features: labelFeatures });
       // Stamp per-parcel soil composition (top-3 polygons by area
@@ -4714,6 +4822,9 @@ function stampSoilCompositionOnParcels(parcelFc, soilFc) {
       continue;
     }
     parcel.properties._soilComposition = matches.map(({ feature: f, ratio }) => ({
+      // _paintColor carries the assigned soil-association colour from
+      // applySoilSurveyPalette so the popup swatch matches the map.
+      paintColor: f.properties?._paintColor || null,
       agriCap:  f.properties?.AGRI_CAP1  || null,
       agcapCls: f.properties?.AGCAP_CLS1 || null,
       soilName: f.properties?.SOILNAME1  || null,
