@@ -4308,7 +4308,14 @@ function clearAll() {
       if (k && k.startsWith('mbpsCache.')) localStorage.removeItem(k);
     }
   } catch { /* private mode etc. */ }
-  window.location.href = window.location.pathname + window.location.search;
+  // Reload onto the clean path with NO query string + NO hash. Earlier
+  // versions appended `window.location.search`, which carried the
+  // encoded URL-state params (muni, roll, address, vacant-threshold,
+  // etc.) into the reload — `applyUrlStateToInputs(initialUrlState)`
+  // then re-populated every form field at boot, so the page came back
+  // looking like the search had just been re-run. The user's complaint
+  // was exactly this: Clear didn't actually clear.
+  window.location.href = window.location.pathname;
 }
 
 function clearTable() {
