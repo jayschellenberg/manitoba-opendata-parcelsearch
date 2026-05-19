@@ -494,6 +494,10 @@
               <span class="overlay-dot" aria-hidden="true"></span>
               <span class="overlay-btn-label">Soil productivity (CLI)</span>
             </button>
+            <button id="soil-survey-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled style="--dot-color:#5e3b1a" title="Manitoba Soil Survey — provincial soil-association polygons coloured by the dominant agricultural-capability class. Click a polygon for top-3 soils and unit-symbol details. Select a municipality first.">
+              <span class="overlay-dot" aria-hidden="true"></span>
+              <span class="overlay-btn-label">Soil Survey</span>
+            </button>
           </div>
 
           <!-- Quick links to the muni's website and its Planning
@@ -575,6 +579,20 @@
           <li><span class="swatch" style="background:#f4a040"></span>5</li>
           <li><span class="swatch" style="background:#a8754f"></span>6</li>
           <li><span class="swatch" style="background:#9c27b0"></span>7 — no agric.</li>
+        </ul>
+      </div>
+      <div id="soil-survey-legend" class="map-legend masc-legend" hidden>
+        <strong>Manitoba Soil Survey</strong>
+        <ul>
+          <li><span class="swatch" style="background:#1a6b26"></span>1 — prime</li>
+          <li><span class="swatch" style="background:#4fab57"></span>2</li>
+          <li><span class="swatch" style="background:#a6e29f"></span>3</li>
+          <li><span class="swatch" style="background:#f2d640"></span>4</li>
+          <li><span class="swatch" style="background:#f4a040"></span>5</li>
+          <li><span class="swatch" style="background:#a8754f"></span>6</li>
+          <li><span class="swatch" style="background:#9c27b0"></span>7 — no agric.</li>
+          <li><span class="swatch" style="background:#5e3b1a"></span>O — organic</li>
+          <li><span class="swatch" style="background:#bfbfbf"></span>X — unrated</li>
         </ul>
       </div>
       <div id="flow-legend" class="map-legend flow-legend" hidden>
