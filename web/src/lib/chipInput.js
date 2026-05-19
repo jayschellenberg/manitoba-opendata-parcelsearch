@@ -63,7 +63,28 @@ export function initChipInput(wrapperEl, { onEnterEmpty } = {}) {
     for (const v of values) {
       const chip = document.createElement('span');
       chip.className = 'chip';
-      chip.textContent = v;
+      // Chip text sits in its own span so the copy + remove buttons
+      // can flank it without textContent-replacement (e.g. the
+      // "Copied!" flash) clobbering them. Mirrors the Winnipeg
+      // ParcelSearch pattern.
+      const textEl = document.createElement('span');
+      textEl.className = 'chip-text';
+      textEl.textContent = v;
+      chip.appendChild(textEl);
+      // Copy-to-clipboard button. Useful for pasting a roll #
+      // straight into MAO / a report. Clipboard SVG flashes to a
+      // check for ~1.2 s on success.
+      const copyBtn = document.createElement('button');
+      copyBtn.type = 'button';
+      copyBtn.className = 'chip-copy';
+      copyBtn.setAttribute('aria-label', `Copy ${v} to clipboard`);
+      copyBtn.title = `Copy ${v} to clipboard`;
+      copyBtn.innerHTML = clipboardSvg();
+      copyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        copyChipText(v, copyBtn);
+      });
+      chip.appendChild(copyBtn);
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'chip-remove';
@@ -75,6 +96,46 @@ export function initChipInput(wrapperEl, { onEnterEmpty } = {}) {
       });
       chip.appendChild(btn);
       wrapperEl.insertBefore(chip, textInput);
+    }
+  }
+
+  function clipboardSvg() {
+    return '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">'
+      + '<rect x="4" y="3" width="8" height="11" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3"/>'
+      + '<rect x="6" y="1.5" width="4" height="2.5" rx="0.6" fill="currentColor"/>'
+      + '</svg>';
+  }
+
+  function checkSvg() {
+    return '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">'
+      + '<path d="M3 8.5l3 3 7-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'
+      + '</svg>';
+  }
+
+  function copyChipText(text, btn) {
+    const flash = () => {
+      btn.innerHTML = checkSvg();
+      btn.classList.add('chip-copy-success');
+      setTimeout(() => {
+        btn.innerHTML = clipboardSvg();
+        btn.classList.remove('chip-copy-success');
+      }, 1200);
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(flash, () => { /* swallow */ });
+    } else {
+      // Legacy / non-secure-context fallback: hidden textarea + execCommand.
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        flash();
+      } catch { /* no-op */ }
     }
   }
 
