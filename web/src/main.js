@@ -3780,8 +3780,20 @@ async function toggleSoilSurveyOverlay() {
         setCount(`No Soil Survey polygons in ${label}.`);
         return;
       }
-      setSoilSurveyData(map, { type: 'FeatureCollection', features: polyFeatures });
+      const soilFc = { type: 'FeatureCollection', features: polyFeatures };
+      setSoilSurveyData(map, soilFc);
       setSoilSurveyLabelsData(map, { type: 'FeatureCollection', features: labelFeatures });
+      // Stamp per-parcel soil composition (top-3 polygons by area
+      // overlap with each parcel) so the parcel popup can render a
+      // "Soil composition" section without re-running the spatial
+      // join on every click. Re-push the parcel source after stamping
+      // so the click handler reads the enriched properties — same
+      // pattern enrichOverlays uses for zoning + dev-plan.
+      if (currentRows.length > 0) {
+        const parcelFc = { type: 'FeatureCollection', features: currentRows.map((r) => r.parcel) };
+        stampSoilCompositionOnParcels(parcelFc, soilFc);
+        setMapData(parcelFc, lastZoningFc || EMPTY_FC, lastDevPlanFc || EMPTY_FC, { fit: false });
+      }
       soilSurveyLoadedFor = loadKey;
     } catch (err) {
       console.warn('Soil Survey fetch failed', err);
@@ -4644,6 +4656,44 @@ function riverLotHitLabel(hit) {
  * expensive parcel x province-boundary polygon intersections in the
  * search path.
  */
+/**
+ * Stamp each parcel's `_soilComposition` with the top-3 soil-survey
+ * polygons it overlaps, sorted by area-overlap ratio descending. Each
+ * entry surfaces the dominant soil (SOIL_1 / SOILNAME1 / SOIL_CODE1),
+ * the agricultural-capability rating (AGRI_CAP1 with subclass, plus
+ * AGCAP_CLS1 for the paint chip), and the parcel's percent covered.
+ *
+ * Powered by joinTopNByArea so a 32 ac quarter section that's 70 %
+ * Red River and 30 % Osborne renders as two rows in the popup with
+ * the right percents — same algorithm as the zoning + dev-plan
+ * stamping path. No-op when either side is empty.
+ *
+ * Caller is responsible for re-pushing the parcel source after the
+ * stamp so the click-time popup reads the enriched properties.
+ */
+function stampSoilCompositionOnParcels(parcelFc, soilFc) {
+  if (!parcelFc?.features?.length || !soilFc?.features?.length) return;
+  const join = joinTopNByArea(parcelFc, soilFc, 3);
+  for (const parcel of parcelFc.features) {
+    const oid = parcel.properties?.OBJECTID;
+    const matches = (oid != null) ? join.get(oid) : null;
+    if (!matches || matches.length === 0) {
+      // Explicit null so the popup builder can distinguish "no
+      // soil-survey data" from "soil survey not loaded".
+      parcel.properties._soilComposition = null;
+      continue;
+    }
+    parcel.properties._soilComposition = matches.map(({ feature: f, ratio }) => ({
+      agriCap:  f.properties?.AGRI_CAP1  || null,
+      agcapCls: f.properties?.AGCAP_CLS1 || null,
+      soilName: f.properties?.SOILNAME1  || null,
+      soilCode: f.properties?.SOIL_CODE1 || null,
+      mapUnit:  f.properties?.MAPUNITNOM || null,
+      parcelPct: ratio * 100,
+    }));
+  }
+}
+
 function stampOfficialRiskAreas(rows, riskAreaFc) {
   const features = (riskAreaFc?.features || [])
     .map((feature) => {

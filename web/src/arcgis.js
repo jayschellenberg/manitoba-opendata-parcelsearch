@@ -889,17 +889,27 @@ const SOIL_SURVEY_LABELS_URL =
 // name plus an `alias` like "REPORT_NAME" — but outFields= only accepts
 // the truncated form. Using the alias returns HTTP 400 with no useful
 // error body.
+//
+// CLASS{1-3} is the soil-survey internal code (e.g. "xxxx") — it is
+// almost always unhelpful for agricultural rating; many fertile soils
+// have CLASS = "xxxx" because the survey didn't carry the class
+// inline. Painting + the popup rating chip both use AGCAP_CLS{1-3}
+// (clean "1"-"7", "O3"-"O7", "$ML"/"$UL"/"$UR"/"$ZZ" special codes)
+// and AGRI_CAP{1-3} (class + subclass like "2W") instead.
 const SOIL_SURVEY_OUTFIELDS = [
   'OBJECTID', 'MAPUNITNOM',
-  'SOILNAME1', 'SOIL_CODE1', 'CLASS1', 'EXTENT1', 'SURFTEXT1',
-  'SOILNAME2', 'SOIL_CODE2', 'CLASS2', 'EXTENT2', 'SURFTEXT2',
-  'SOILNAME3', 'SOIL_CODE3', 'CLASS3', 'EXTENT3', 'SURFTEXT3',
+  'SOILNAME1', 'SOIL_CODE1', 'CLASS1', 'EXTENT1', 'SURFTEXT1', 'AGCAP_CLS1', 'AGRI_CAP1',
+  'SOILNAME2', 'SOIL_CODE2', 'CLASS2', 'EXTENT2', 'SURFTEXT2', 'AGCAP_CLS2', 'AGRI_CAP2',
+  'SOILNAME3', 'SOIL_CODE3', 'CLASS3', 'EXTENT3', 'SURFTEXT3', 'AGCAP_CLS3', 'AGRI_CAP3',
   'REPORT_NAM', 'SCALE',
 ].join(',');
 
 export async function fetchSoilSurveyForMuni(muniNameWithTyp, muniBoundaryFeature) {
   if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
-  const cacheKey = `mb_soil_survey_${muniNameWithTyp}_v1`;
+  // v2 (2026-05-19): added AGCAP_CLS{1-3} and AGRI_CAP{1-3} for paint
+  // + per-parcel composition. v1 payloads lack those fields and would
+  // render as grey under the new paint expression.
+  const cacheKey = `mb_soil_survey_${muniNameWithTyp}_v2`;
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
 
