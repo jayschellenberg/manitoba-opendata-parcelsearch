@@ -275,20 +275,28 @@ header small a {
    ------------------------------------------------------------- */
 .sidebar-tabs {
   display: flex;
+  gap: 4px;
   background: var(--color-neutral-100, #f4f4f5);
   border-bottom: 1px solid var(--color-neutral-200, #e4e4e7);
   position: sticky;
   top: 0;
   z-index: 5;
   margin: -14px -16px 8px;
-  padding: 0 4px;
+  padding: 6px 6px 0;
 }
-.sidebar-tab {
+/* Each tab gets a thin outline so the segment reads as a tab. The
+   inactive tabs sit on the strip background; the active tab "lifts"
+   to white with the accent underline. Bottom-border-transparent
+   keeps the active underline aligned with the strip's own border.
+   Selectors are scoped through `.sidebar-tabs` so they beat the
+   generic `.controls button` rule (the tabs live inside .controls). */
+.sidebar-tabs .sidebar-tab {
   flex: 1 1 0;
-  background: transparent;
-  border: none;
+  background: #fff;
+  border: 1px solid var(--color-neutral-200, #e4e4e7);
   border-bottom: 2px solid transparent;
-  padding: 10px 6px;
+  border-radius: 4px 4px 0 0;
+  padding: 9px 6px;
   font-size: 12px;
   font-weight: 600;
   color: var(--color-neutral-600, #52525b);
@@ -298,15 +306,18 @@ header small a {
   white-space: nowrap;
   letter-spacing: 0.01em;
 }
-.sidebar-tab:hover {
+.sidebar-tabs .sidebar-tab:hover:not([aria-selected="true"]) {
   color: var(--color-primary-500, #1e293b);
+  background: #fff;
+  border-color: var(--color-neutral-300, #d4d4d8);
 }
-.sidebar-tab[aria-selected="true"] {
+.sidebar-tabs .sidebar-tab[aria-selected="true"] {
   color: var(--color-primary-500, #1e293b);
+  border-color: var(--color-neutral-200, #e4e4e7);
   border-bottom-color: var(--color-accent-500, #2563eb);
   background: #fff;
 }
-.sidebar-tab:focus-visible {
+.sidebar-tabs .sidebar-tab:focus-visible {
   outline: 2px solid var(--color-accent-500, #2563eb);
   outline-offset: -2px;
 }
@@ -1395,17 +1406,22 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 .controls button.tertiary {
   background: transparent;
   color: var(--color-primary-500, #1e293b);
-  border: 1px solid transparent;
+  /* Visible 1-px outline so the Clear button reads as a button rather
+     than as plain text. Slightly muted so it doesn't compete with the
+     primary Search button. */
+  border: 1px solid var(--color-neutral-300, #d4d4d8);
   padding: 7px 12px;
   font-weight: 500;
 }
 .controls button.tertiary:hover:not(:disabled) {
   background: var(--color-neutral-100, #f4f4f5);
   color: var(--color-primary-700, #0f172a);
+  border-color: var(--color-neutral-400, #a1a1aa);
 }
 .controls button.tertiary:disabled {
   background: transparent;
   color: var(--color-neutral-400, #a1a1aa);
+  border-color: var(--color-neutral-200, #e4e4e7);
   cursor: default;
 }
 
