@@ -857,6 +857,102 @@ export async function fetchCliAgrForMuni(muniNameWithTyp, muniBoundaryFeature) {
 }
 
 /**
+ * Manitoba Soil Survey (Soil_Survey_MB) — provincial soil-association
+ * polygons published by Manitoba Open Data, hosted on the same Esri
+ * org as ROLL_ENTRY. Each polygon stamps the dominant 3 soils with
+ * SOILNAME{1-3}, SOIL_CODE{1-3}, CLASS{1-3} (CLI-style capability
+ * class with subclass, e.g. "3w2x"), EXTENT{1-3} (percent), the map-
+ * unit symbol MAPUNITNOM, and survey-report metadata (REPORT_NAME,
+ * SCALE, DATE).
+ *
+ * Coloured on the map by the FIRST character of CLASS1 — that's the
+ * agricultural-capability class (1=prime → 7=no capability, plus 'o'
+ * organic and 'x' unclassified). Same scale as the CLI Soil overlay,
+ * but at finer resolution and with the full soil-association record
+ * attached.
+ *
+ * Source layer carries 149 fields; we only pull what the popup +
+ * paint need so the GeoJSON payload stays small. Live-fetched per
+ * muni via the muni-boundary polygon as the spatial filter (same
+ * shape as fetchCliAgrForMuni). Cached 30 days; the soil survey is
+ * essentially static between revisions.
+ *
+ * Source: Open Manitoba — Manitoba Soil Survey.
+ */
+const SOIL_SURVEY_URL =
+  'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/Soil_Survey_MB/FeatureServer/0';
+const SOIL_SURVEY_LABELS_URL =
+  'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/Soil_Survey_Data_MB_Labels/FeatureServer/0';
+
+// The Esri layer schema truncates several field names to 10 characters
+// (a legacy of the Shapefile origin). The metadata lists each truncated
+// name plus an `alias` like "REPORT_NAME" — but outFields= only accepts
+// the truncated form. Using the alias returns HTTP 400 with no useful
+// error body.
+const SOIL_SURVEY_OUTFIELDS = [
+  'OBJECTID', 'MAPUNITNOM',
+  'SOILNAME1', 'SOIL_CODE1', 'CLASS1', 'EXTENT1', 'SURFTEXT1',
+  'SOILNAME2', 'SOIL_CODE2', 'CLASS2', 'EXTENT2', 'SURFTEXT2',
+  'SOILNAME3', 'SOIL_CODE3', 'CLASS3', 'EXTENT3', 'SURFTEXT3',
+  'REPORT_NAM', 'SCALE',
+].join(',');
+
+export async function fetchSoilSurveyForMuni(muniNameWithTyp, muniBoundaryFeature) {
+  if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
+  const cacheKey = `mb_soil_survey_${muniNameWithTyp}_v1`;
+  const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  if (cached) return cached;
+
+  const esriGeom = polygonToEsriGeometry(muniBoundaryFeature);
+  if (!esriGeom) return null;
+
+  const fc = await fetchAllPages(SOIL_SURVEY_URL, {
+    where: '1=1',
+    geometry: JSON.stringify(esriGeom),
+    geometryType: 'esriGeometryPolygon',
+    inSR: '4326',
+    spatialRel: 'esriSpatialRelIntersects',
+    outFields: SOIL_SURVEY_OUTFIELDS,
+    returnGeometry: 'true',
+    outSR: '4326',
+    f: 'geojson',
+  }, 2000);
+  await writeCache(cacheKey, fc);
+  return fc;
+}
+
+/**
+ * Companion point layer carrying the soil map-unit symbols for label
+ * placement on the map. Same field shape as Soil_Survey_MB but as
+ * points at the polygon centroid. Used by map.js's soil-survey-label
+ * symbol layer; rendered alongside the fill so the user can read
+ * the unit symbol (e.g. "ALMv-S2") at zoom ≥ 11 without clicking.
+ */
+export async function fetchSoilSurveyLabelsForMuni(muniNameWithTyp, muniBoundaryFeature) {
+  if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
+  const cacheKey = `mb_soil_survey_labels_${muniNameWithTyp}_v1`;
+  const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  if (cached) return cached;
+
+  const esriGeom = polygonToEsriGeometry(muniBoundaryFeature);
+  if (!esriGeom) return null;
+
+  const fc = await fetchAllPages(SOIL_SURVEY_LABELS_URL, {
+    where: '1=1',
+    geometry: JSON.stringify(esriGeom),
+    geometryType: 'esriGeometryPolygon',
+    inSR: '4326',
+    spatialRel: 'esriSpatialRelIntersects',
+    outFields: 'OBJECTID,MAPUNITNOM,CLASS1',
+    returnGeometry: 'true',
+    outSR: '4326',
+    f: 'geojson',
+  }, 2000);
+  await writeCache(cacheKey, fc);
+  return fc;
+}
+
+/**
  * Manitoba Original Survey Legal Descriptions — point layer with
  * QUARTER, SECTION, TOWNSHIP, RANGE, MERIDIAN attributes at each
  * quarter-section centroid (and parish lots, river lots, etc; we

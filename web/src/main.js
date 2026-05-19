@@ -56,6 +56,8 @@ import {
   fetchParcelMascForMuni,
   fetchMascRiverlots,
   fetchCliAgrForMuni,
+  fetchSoilSurveyForMuni,
+  fetchSoilSurveyLabelsForMuni,
   parseRollList,
   missingRollsFromResults,
   canonicalRoll,
@@ -87,6 +89,9 @@ import {
   setMascVisible,
   setCliAgrData,
   setCliAgrVisible,
+  setSoilSurveyData,
+  setSoilSurveyLabelsData,
+  setSoilSurveyVisible,
   setMascRiskAreasData,
   setMascRiskAreasVisible,
   setSurveyGridData,
@@ -214,6 +219,8 @@ const $mascToggle    = document.getElementById('masc-toggle');
 const $riskAreaToggle = document.getElementById('riskarea-toggle');
 const $cliToggle     = document.getElementById('cli-toggle');
 const $cliLegend     = document.getElementById('cli-legend');
+const $soilSurveyToggle = document.getElementById('soil-survey-toggle');
+const $soilSurveyLegend = document.getElementById('soil-survey-legend');
 const $gridToggle    = document.getElementById('grid-toggle');
 const $count         = document.getElementById('count');
 const $tbody         = document.querySelector('#results tbody');
@@ -1095,6 +1102,7 @@ $riskAreaToggle.addEventListener('click', () => toggleAuxOverlay('riskAreas'));
 $muniParcelsToggle.addEventListener('click', () => toggleAuxOverlay('muniParcels'));
 $mascToggle.addEventListener('click', () => toggleMascOverlay());
 $cliToggle.addEventListener('click', () => toggleCliOverlay());
+if ($soilSurveyToggle) $soilSurveyToggle.addEventListener('click', () => toggleSoilSurveyOverlay());
 $gridToggle.addEventListener('click', () => toggleSurveyGridOverlay());
 
 const $staticMapBtn     = document.getElementById('static-map-btn');
@@ -3422,6 +3430,7 @@ function resetMuniParcelsToggle() {
 let mascLoadedFor = null;
 let surveyGridLoadedFor = null;
 let cliLoadedFor = null;
+let soilSurveyLoadedFor = null;
 
 /** Enable/disable MASC and Sec-Twp Grid toggles based on whether a
  *  muni is selected, and clear stale data + active state if the muni
@@ -3437,6 +3446,7 @@ function resetMascAndGridToggles() {
     || !!(csvMatchedMunis && csvMatchedMunis.length > 0);
   $mascToggle.disabled = !inScope;
   if ($cliToggle) $cliToggle.disabled = !inScope;
+  if ($soilSurveyToggle) $soilSurveyToggle.disabled = !inScope;
   // Sec-Twp Grid stays enabled with or without a muni — without a muni
   // selected it falls back to the pre-baked province-wide static file.
   $gridToggle.disabled = false;
@@ -3474,6 +3484,19 @@ function resetMascAndGridToggles() {
       mapReady.then(() => {
         setCliAgrVisible(map, false);
         if ($cliLegend) $cliLegend.hidden = true;
+      });
+    }
+  }
+  // Soil Survey: same off-on-muni-change logic as MASC + CLI.
+  if (soilSurveyLoadedFor && soilSurveyLoadedFor !== desiredOverlayKey) {
+    soilSurveyLoadedFor = null;
+    if ($soilSurveyToggle && $soilSurveyToggle.classList.contains('active')) {
+      $soilSurveyToggle.classList.remove('active');
+      $soilSurveyToggle.setAttribute('aria-pressed', 'false');
+      setOverlayBtnLabel($soilSurveyToggle, 'Soil Survey');
+      mapReady.then(() => {
+        setSoilSurveyVisible(map, false);
+        if ($soilSurveyLegend) $soilSurveyLegend.hidden = true;
       });
     }
   }
@@ -3684,6 +3707,96 @@ async function toggleCliOverlay() {
   setOverlayBtnLabel($cliToggle, 'Soil productivity (CLI)');
   setCliAgrVisible(map, true);
   if ($cliLegend) $cliLegend.hidden = false;
+}
+
+/**
+ * Toggle the Manitoba Soil Survey overlay. Same lifecycle as the CLI
+ * overlay: muni-scoped fetch (polygons + companion label points),
+ * 30-day cache per muni, off-state hides without dropping data.
+ *
+ * Independent of MASC and CLI — can be layered alongside either, as
+ * requested. The Soil Survey is provincial-scale (1:50K) while CLI
+ * is federal (1:250K); MASC Rating is a crop-insurance soil grade
+ * that doesn't share the same polygon geometry as either.
+ */
+async function toggleSoilSurveyOverlay() {
+  if (!$soilSurveyToggle) return;
+  const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
+    ? csvMatchedMunis.slice()
+    : ($municipality.value ? [$municipality.value] : []);
+  if (munis.length === 0) {
+    $soilSurveyToggle.classList.remove('active');
+    $soilSurveyToggle.setAttribute('aria-pressed', 'false');
+    return;
+  }
+  const loadKey = munis.join('|');
+  const wasActive = $soilSurveyToggle.classList.contains('active');
+  const visible = !wasActive;
+  $soilSurveyToggle.classList.toggle('active', visible);
+  $soilSurveyToggle.setAttribute('aria-pressed', String(visible));
+  await mapReady;
+
+  if (!visible) {
+    setOverlayBtnLabel($soilSurveyToggle, 'Soil Survey');
+    setSoilSurveyVisible(map, false);
+    if ($soilSurveyLegend) $soilSurveyLegend.hidden = true;
+    return;
+  }
+
+  if (soilSurveyLoadedFor !== loadKey) {
+    $soilSurveyToggle.disabled = true;
+    setOverlayBtnLabel($soilSurveyToggle, 'Loading…');
+    try {
+      const muniBoundaries = munis.map((m) => ({
+        muni: m,
+        feat: muniBoundariesFc?.features?.find(
+          (f) => f.properties?.MUNI_LIST_NAME_WITH_TYPE === m,
+        ) || null,
+      }));
+      const missing = muniBoundaries.filter((mb) => !mb.feat).map((mb) => mb.muni);
+      if (missing.length > 0) {
+        $soilSurveyToggle.classList.remove('active');
+        $soilSurveyToggle.setAttribute('aria-pressed', 'false');
+        $soilSurveyToggle.disabled = false;
+        setOverlayBtnLabel($soilSurveyToggle, 'Soil Survey');
+        setCount(`Couldn't locate boundary for ${missing.join(', ')}; can't load Soil Survey.`);
+        return;
+      }
+      // Polygons + label points fetched in parallel per-muni. Both
+      // calls are cached individually under their own keys so a muni
+      // re-toggle stays instant after the first load.
+      const [polyFcs, labelFcs] = await Promise.all([
+        Promise.all(muniBoundaries.map((mb) => fetchSoilSurveyForMuni(mb.muni, mb.feat))),
+        Promise.all(muniBoundaries.map((mb) => fetchSoilSurveyLabelsForMuni(mb.muni, mb.feat))),
+      ]);
+      const polyFeatures  = polyFcs.flatMap((fc)  => fc?.features || []);
+      const labelFeatures = labelFcs.flatMap((fc) => fc?.features || []);
+      if (polyFeatures.length === 0) {
+        $soilSurveyToggle.classList.remove('active');
+        $soilSurveyToggle.setAttribute('aria-pressed', 'false');
+        $soilSurveyToggle.disabled = false;
+        setOverlayBtnLabel($soilSurveyToggle, 'Soil Survey');
+        const label = munis.length === 1 ? munis[0] : `${munis.length} matched munis (${munis.join(', ')})`;
+        setCount(`No Soil Survey polygons in ${label}.`);
+        return;
+      }
+      setSoilSurveyData(map, { type: 'FeatureCollection', features: polyFeatures });
+      setSoilSurveyLabelsData(map, { type: 'FeatureCollection', features: labelFeatures });
+      soilSurveyLoadedFor = loadKey;
+    } catch (err) {
+      console.warn('Soil Survey fetch failed', err);
+      $soilSurveyToggle.classList.remove('active');
+      $soilSurveyToggle.setAttribute('aria-pressed', 'false');
+      $soilSurveyToggle.disabled = false;
+      setOverlayBtnLabel($soilSurveyToggle, 'Soil Survey');
+      setCount(`Failed to load Manitoba Soil Survey: ${err.message}`);
+      return;
+    }
+    $soilSurveyToggle.disabled = false;
+  }
+  setOverlayBtnLabel($soilSurveyToggle, 'Soil Survey');
+  setSoilSurveyVisible(map, true);
+  if ($soilSurveyLegend) $soilSurveyLegend.hidden = false;
 }
 
 /**

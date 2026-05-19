@@ -860,6 +860,66 @@ export function initMap(container, { onFeatureClick } = {}) {
         },
       });
 
+      // Manitoba Soil Survey — provincial soil-association polygons.
+      // Coloured by the first character of CLASS1, which is the CLI
+      // agricultural-capability class (1=prime → 7=no capability,
+      // 'o' organic, 'x' unclassified). The full CLASS1 string also
+      // carries a subclass + modifier (e.g. "3w2x") that we don't
+      // paint with directly — it shows up in the popup. Companion
+      // 'soil-survey-labels' source carries point centroids for the
+      // MAPUNITNOM symbol layer, rendered alongside the fill so the
+      // user can read the soil-unit symbol without clicking.
+      map.addSource('soil-survey', { type: 'geojson', data: emptyFc() });
+      map.addLayer({
+        id: 'soil-survey-fill',
+        type: 'fill',
+        source: 'soil-survey',
+        layout: { visibility: 'none' },
+        paint: {
+          'fill-color': [
+            'match',
+            ['slice', ['coalesce', ['get', 'CLASS1'], 'x'], 0, 1],
+            '1', '#1a6b26',  // dark green   — prime
+            '2', '#4fab57',  // medium green — minor limitations
+            '3', '#a6e29f',  // light green  — moderate
+            '4', '#f2d640',  // yellow       — severe / marginal
+            '5', '#f4a040',  // orange       — perennial only
+            '6', '#a8754f',  // brown        — native pasture only
+            '7', '#9c27b0',  // purple       — no agricultural capability
+            'o', '#5e3b1a',  // dark brown   — organic
+            '#bfbfbf',       // 'x' / unrated / urban / water
+          ],
+          'fill-opacity': 0.35,
+          'fill-outline-color': 'rgba(0, 0, 0, 0.25)',
+        },
+      });
+      map.addSource('soil-survey-labels', { type: 'geojson', data: emptyFc() });
+      map.addLayer({
+        id: 'soil-survey-label',
+        type: 'symbol',
+        source: 'soil-survey-labels',
+        minzoom: 11,
+        layout: {
+          visibility: 'none',
+          // MAPUNITNOM is the Manitoba Soil Survey unit symbol that
+          // appears on the printed soil maps (e.g. "ALMv-S2").
+          'text-field': ['coalesce', ['get', 'MAPUNITNOM'], ''],
+          'text-font': ['Open Sans Semibold'],
+          'text-size': [
+            'interpolate', ['linear'], ['zoom'],
+            11, 9, 14, 11, 17, 13,
+          ],
+          'text-allow-overlap': false,
+          'text-ignore-placement': false,
+          'symbol-placement': 'point',
+        },
+        paint: {
+          'text-color': '#1a1a1a',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.4,
+        },
+      });
+
       // Section-township grid — line layer derived from the
       // MB_LegalDesc point centroids by aggregating quarters into
       // section bounding boxes (see masc.js sectionLinesFromRows).
@@ -1620,6 +1680,24 @@ export function initMap(container, { onFeatureClick } = {}) {
       });
       map.on('mouseleave', 'cli-agr-fill', () => { map.getCanvas().style.cursor = ''; });
 
+      // Manitoba Soil Survey popup. Walks SOIL_{1,2,3} slots showing
+      // soil name + extent percent + capability-class chip + surface
+      // texture. Closes with the map-unit symbol (MAPUNITNOM) and
+      // the source-report citation so the user can trace the data
+      // back to the printed soil survey.
+      const soilSurveyPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '340px' });
+      map.on('click', 'soil-survey-fill', (e) => {
+        const p = e.features?.[0]?.properties;
+        if (!p) return;
+        soilSurveyPopup.setLngLat(e.lngLat).setHTML(soilSurveyHtml(p)).addTo(map);
+      });
+      map.on('mouseenter', 'soil-survey-fill', () => {
+        if (map.getLayoutProperty('soil-survey-fill', 'visibility') === 'visible') {
+          map.getCanvas().style.cursor = 'pointer';
+        }
+      });
+      map.on('mouseleave', 'soil-survey-fill', () => { map.getCanvas().style.cursor = ''; });
+
       // Click a traffic-count station → popup with station / highway /
       // location and the AADT (when the Traffic Flow layer has been loaded
       // and indexed; main.js stamps the matched AADT onto each station
@@ -1891,6 +1969,21 @@ export function setCliAgrData(map, fc) {
 export function setCliAgrVisible(map, visible) {
   const v = visible ? 'visible' : 'none';
   for (const id of ['cli-agr-fill', 'cli-agr-label']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
+  }
+}
+
+export function setSoilSurveyData(map, fc) {
+  const src = map.getSource('soil-survey');
+  if (src) src.setData(fc);
+}
+export function setSoilSurveyLabelsData(map, fc) {
+  const src = map.getSource('soil-survey-labels');
+  if (src) src.setData(fc);
+}
+export function setSoilSurveyVisible(map, visible) {
+  const v = visible ? 'visible' : 'none';
+  for (const id of ['soil-survey-fill', 'soil-survey-label']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
   }
 }
@@ -2307,6 +2400,72 @@ function cliHtml(p) {
       <div style="margin-top:6px;color:#666;font-size:11px">
         Class 1 = prime · 7 = no agricultural capability
       </div>
+    </div>
+  `;
+}
+
+// First char of CLASS1 = agricultural-capability class (1-7, 'o' organic,
+// 'x' unclassified). Matches the fill-paint match expression. Used by
+// both the popup chip and any future legend swatches.
+const SOIL_SURVEY_CLASS_COLORS = {
+  '1': '#1a6b26', '2': '#4fab57', '3': '#a6e29f',
+  '4': '#f2d640', '5': '#f4a040', '6': '#a8754f',
+  '7': '#9c27b0', 'o': '#5e3b1a', 'x': '#bfbfbf',
+};
+
+function soilSurveyHtml(p) {
+  // Walk the three soil slots. SOIL_1 is the dominant soil and is
+  // almost always populated; SOIL_2 / SOIL_3 may be blank on small
+  // homogeneous polygons. Skip blank slots so single-soil polygons
+  // render a one-row table.
+  const slots = ['1', '2', '3'];
+  const rows = [];
+  for (const slot of slots) {
+    const name = p[`SOILNAME${slot}`];
+    if (name == null || String(name).trim() === '') continue;
+    const code   = p[`SOIL_CODE${slot}`];
+    const cls    = String(p[`CLASS${slot}`] || '').trim();
+    const ext    = p[`EXTENT${slot}`];
+    const tex    = p[`SURFTEXT${slot}`];
+    const capChar = (cls[0] || 'x').toLowerCase();
+    const color = SOIL_SURVEY_CLASS_COLORS[capChar] || '#bfbfbf';
+    const textColor = ['1', '6', '7', 'o'].includes(capChar) ? '#fff' : '#1a1a1a';
+    const chipLabel = cls.slice(0, 2) || '—';
+    const chip = `<span style="display:inline-block;min-width:1.6em;padding:1px 6px;border-radius:4px;background:${color};color:${textColor};font-weight:600;text-align:center">${escapeHtml(chipLabel)}</span>`;
+    const extTxt = (ext != null && String(ext).trim() !== '')
+      ? `<strong>${escapeHtml(ext)}%</strong>` : '';
+    const nameLine = code
+      ? `${escapeHtml(name)} <span style="color:#888">(${escapeHtml(code)})</span>`
+      : escapeHtml(name);
+    const texLine = tex && String(tex).trim()
+      ? `<div style="color:#555;font-size:11px">${escapeHtml(tex)}</div>` : '';
+    rows.push(
+      `<tr>
+        <td style="padding:2px 6px 2px 0;vertical-align:top">${chip}</td>
+        <td style="padding:2px 6px;vertical-align:top">${extTxt}</td>
+        <td style="padding:2px 0;vertical-align:top">${nameLine}${texLine}</td>
+      </tr>`
+    );
+  }
+
+  const mapUnit = p.MAPUNITNOM ? `<div style="margin-top:6px"><strong>Map unit</strong>: <code>${escapeHtml(p.MAPUNITNOM)}</code></div>` : '';
+  // The Shapefile-origin schema truncates REPORT_NAME to REPORT_NAM —
+  // see SOIL_SURVEY_OUTFIELDS in arcgis.js.
+  const report  = p.REPORT_NAM ? `<div style="margin-top:4px;color:#666;font-size:11px">${escapeHtml(p.REPORT_NAM)}${p.SCALE ? ` · ${escapeHtml(p.SCALE)}` : ''}</div>` : '';
+
+  if (rows.length === 0) {
+    return `<div style="max-width:280px;line-height:1.4"><strong>Manitoba Soil Survey</strong><br><em>No soil data on this polygon.</em>${mapUnit}${report}</div>`;
+  }
+
+  return `
+    <div style="max-width:320px;line-height:1.4">
+      <strong>Manitoba Soil Survey</strong>
+      <table style="margin-top:6px;font-size:12px;border-collapse:collapse">${rows.join('')}</table>
+      ${mapUnit}
+      <div style="margin-top:6px;color:#666;font-size:11px">
+        Class 1 = prime · 7 = no agricultural capability · o = organic · x = unrated
+      </div>
+      ${report}
     </div>
   `;
 }
