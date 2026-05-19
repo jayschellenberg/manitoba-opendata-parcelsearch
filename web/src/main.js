@@ -3432,6 +3432,19 @@ let surveyGridLoadedFor = null;
 let cliLoadedFor = null;
 let soilSurveyLoadedFor = null;
 
+/**
+ * Soil-Survey-specific enable check. Unlike MASC + CLI (which only
+ * need a muni to scope their fetch), the Soil Survey overlay stamps
+ * per-parcel composition onto the search-result parcels — so it's
+ * meaningful only when there's a row set to stamp against. Called
+ * from resetMascAndGridToggles, renderTable, and clearTable so the
+ * disabled state stays in sync with `currentRows`.
+ */
+function updateSoilSurveyEnabled() {
+  if (!$soilSurveyToggle) return;
+  $soilSurveyToggle.disabled = currentRows.length === 0;
+}
+
 /** Enable/disable MASC and Sec-Twp Grid toggles based on whether a
  *  muni is selected, and clear stale data + active state if the muni
  *  changed since the layers were last loaded. Mirrors the
@@ -3446,7 +3459,12 @@ function resetMascAndGridToggles() {
     || !!(csvMatchedMunis && csvMatchedMunis.length > 0);
   $mascToggle.disabled = !inScope;
   if ($cliToggle) $cliToggle.disabled = !inScope;
-  if ($soilSurveyToggle) $soilSurveyToggle.disabled = !inScope;
+  // Soil Survey gates on actual search results, not just muni-selected.
+  // The per-parcel composition rollup (stampSoilCompositionOnParcels)
+  // needs currentRows populated — enabling the toggle before a search
+  // would let the user load the overlay polygons but the parcel popup
+  // composition section would stay empty until they ran a search.
+  updateSoilSurveyEnabled();
   // Sec-Twp Grid stays enabled with or without a muni — without a muni
   // selected it falls back to the pre-baked province-wide static file.
   $gridToggle.disabled = false;
@@ -4322,6 +4340,7 @@ function clearTable() {
   $tbody.innerHTML = '';
   currentRows = [];
   setExportEnabled(false);
+  updateSoilSurveyEnabled();
 }
 
 // $paginator + PAGE_SIZE + currentPage all live near the top of the
@@ -4334,6 +4353,10 @@ function renderTable(rows, { resetPage = true } = {}) {
   currentRows = rows;
   rowFeatureMap.clear();
   if (resetPage) currentPage = 0;
+  // Keep the Soil-Survey toggle in sync with the row set — it gates
+  // on currentRows.length so the user can't enable the overlay before
+  // there's anything for the per-parcel composition to attach to.
+  updateSoilSurveyEnabled();
   const sorted = sortRows(rows);
   // Clamp currentPage in case the row set shrank below it (filter
   // change, sales-CSV reload, etc).
