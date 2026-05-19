@@ -2200,6 +2200,13 @@ async function handleSalesUpload(file) {
     // updates the Group Size / $/ac / $/sf cells that depend on the
     // group totals just computed.
     renderTable(currentRows);
+    // If the user typed filter values BEFORE the upload finished
+    // (e.g. set Lo Ac while the network round-trip was still in flight),
+    // refilterCsvIfActive's early-return on csvFullRows==null swallowed
+    // those edits. Run one final pass now that csvFullRows is locked
+    // in so any pre-set filters apply immediately instead of needing
+    // the user to bump the input again to retrigger the listener.
+    refilterCsvIfActive();
   } finally {
     setBusy(false);
   }
