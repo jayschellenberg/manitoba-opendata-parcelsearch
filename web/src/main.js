@@ -381,7 +381,7 @@ const MUNI_WEBSITES = {
   'WHITEHEAD (RM)':              'https://www.rmofwhitehead.ca/',
   'WHITEMOUTH (RM)':             'https://www.rmwhitemouth.com/',
   'WOODLANDS (RM)':              'https://www.rmwoodlands.ca/',
-  'YELLOWHEAD (RM)':             'https://www.yellowheadmunicipality.ca/',
+  'YELLOWHEAD (MUNICIPALITY)':   'https://www.yellowheadmunicipality.ca/',
 
   // Municipalities (post-amalgamation single-tier)
   'BIFROST-RIVERTON (MUNICIPALITY)':       'https://www.bifrostriverton.ca/',
@@ -398,7 +398,7 @@ const MUNI_WEBSITES = {
   'GRASSLAND (MUNICIPALITY)':              'https://www.grasslandmunicipality.ca/',
   'HAMIOTA (MUNICIPALITY)':                'https://www.hamiota.com/',
   'HARRISON PARK (MUNICIPALITY)':          'https://www.harrisonpark.ca/',
-  'KILLARNEY-TURTLE MOUNTAIN (MUNICIPALITY)': 'https://www.killarney.ca/',
+  'KILLARNEY TURTLE MOUNTAIN (MUNICIPALITY)': 'https://www.killarney.ca/',
   'LORNE (MUNICIPALITY)':                  'https://www.rmoflorne.ca/',
   'LOUISE (MUNICIPALITY)':                 'https://www.louisemb.com/',
   'MCCREARY (MUNICIPALITY)':               'https://www.exploremccreary.com/',
@@ -430,9 +430,20 @@ const MUNI_WEBSITES = {
 };
 
 /** Normalize a Muni_Name_With_Typ for tolerant lookup: uppercase, strip
- *  diacritics (é → e), normalize en-/em-dashes to hyphen-minus, collapse
- *  whitespace. Used on both sides of the lookup so dash/accent drift in
- *  the source data doesn't break the match. */
+ *  diacritics (é → e), normalize en-/em-dashes to hyphen-minus, strip
+ *  periods, collapse whitespace. Used on both sides of the lookup so
+ *  punctuation/accent drift in the source data doesn't break the match.
+ *
+ *  Roll_Entry stores muni names WITHOUT periods ("ST CLEMENTS (RM)",
+ *  "EAST ST PAUL (RM)", "STE ANNE (RM)") but the MUNI_WEBSITES dict
+ *  spells them with periods ("ST. CLEMENTS (RM)", etc.) to match how
+ *  appraisers and Manitoba's municipal directory format the names.
+ *  Without the period strip, every St./Ste. muni misses the lookup
+ *  and the Muni Website button reads "N/A" — the bug the user spotted
+ *  on St. Clements / St. Andrews / St. François Xavier.
+ *
+ *  The CSV-side normalizer (normalizeMuniFromCsv, line ~2840) already
+ *  strips periods for the same reason. */
 function normalizeMuniKey(name) {
   if (!name) return '';
   return String(name)
@@ -440,6 +451,7 @@ function normalizeMuniKey(name) {
     .replace(/[̀-ͯ]/g, '')   // strip combining diacritics
     .toUpperCase()
     .replace(/[‐-―−]/g, '-') // any unicode dash → hyphen-minus
+    .replace(/\./g, '')      // strip periods: "ST." → "ST", "STE." → "STE"
     .replace(/\s+/g, ' ')
     .trim();
 }
