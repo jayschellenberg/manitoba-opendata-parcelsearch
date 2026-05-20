@@ -1514,6 +1514,9 @@ export function initMap(container, { onFeatureClick } = {}) {
         }
         const parcel = hits.find((h) => h.layer.id === 'parcel-fill');
         if (parcel && !subject) blocks.push(`<div><strong style="color:#7a5c00">Parcel</strong><br>${parcelHtml(parcel.properties)}</div>`);
+        const overlay = readOverlaysAt(map, e.point);
+        const soil = soilSurveyHoverHtml(overlay.soilSurvey);
+        if (soil && (subject || parcel)) blocks.push(`<div>${soil}</div>`);
         const zone = hits.find((h) => h.layer.id === 'zoning-fill');
         if (zone) blocks.push(`<div><strong style="color:#1a2a4a">Zoning</strong><br>${zoningHtml(zone.properties)}</div>`);
         const dev = hits.find((h) => h.layer.id === 'devplan-fill');
@@ -2234,7 +2237,7 @@ export function parcelHtml(p) {
       lines.push(`<em>${escapeHtml(p._asmtClass)}${escapeHtml(statusLabel)}</em>`);
     }
   }
-  // Soil composition — top-3 soils by area overlap, stamped by
+  // Soil composition — top-2 soils by area overlap, stamped by
   // main.js's stampSoilCompositionOnParcels after the Soil Survey
   // overlay loads. Only renders when the parcel actually intersects
   // soil-survey polygons (rural/agricultural areas); urban parcels
@@ -2428,10 +2431,12 @@ function soilSurveyPopupRow({ paintColor, name, code, agriCap, ext, surfaceTextu
     : '';
   const texLine = surfaceTexture && String(surfaceTexture).trim()
     ? `<div style="color:#777;font-size:11px">Surface: ${escapeHtml(surfaceTexture)}</div>` : '';
-  const muLine = mapUnit
-    ? `<div style="color:#777;font-size:11px">Map unit: ${escapeHtml(mapUnit)}</div>` : '';
-  const extCell = (ext != null && String(ext).trim() !== '')
-    ? `<td style="padding:2px 6px;vertical-align:top;text-align:right;white-space:nowrap"><strong>${escapeHtml(ext)}%</strong></td>`
+  const muText = formatMapUnits(mapUnit);
+  const muLine = muText
+    ? `<div style="color:#777;font-size:11px">Map unit: ${escapeHtml(muText)}</div>` : '';
+  const extText = formatSoilExtent(ext);
+  const extCell = extText
+    ? `<td style="padding:2px 6px;vertical-align:top;text-align:right;white-space:nowrap"><strong>${escapeHtml(extText)}</strong></td>`
     : '<td></td>';
   return `<tr>
     <td style="padding:4px 6px 4px 0;vertical-align:top">${swatch}${nameLine}${capLine}${texLine}${muLine}</td>
@@ -2467,7 +2472,14 @@ function soilSurveyHtml(p) {
   const mapUnit = p.MAPUNITNOM ? `<div style="margin-top:6px"><strong>Map unit</strong>: <code>${escapeHtml(p.MAPUNITNOM)}</code></div>` : '';
   // The Shapefile-origin schema truncates REPORT_NAME to REPORT_NAM —
   // see SOIL_SURVEY_OUTFIELDS in arcgis.js.
-  const report  = p.REPORT_NAM ? `<div style="margin-top:6px;color:#666;font-size:11px">${escapeHtml(p.REPORT_NAM)}${p.SCALE ? ` · ${escapeHtml(p.SCALE)}` : ''}</div>` : '';
+  const reportBits = [];
+  if (p.REPORT_NAM) reportBits.push(escapeHtml(p.REPORT_NAM));
+  if (p.SCALE) reportBits.push(escapeHtml(p.SCALE));
+  const versionDate = formatSoilSurveyDate(p.DATE);
+  if (versionDate) reportBits.push(`Version ${escapeHtml(versionDate)}`);
+  const report = reportBits.length
+    ? `<div style="margin-top:6px;color:#666;font-size:11px">${reportBits.join(' · ')}</div>`
+    : '';
 
   if (rows.length === 0) {
     return `<div style="max-width:280px;line-height:1.4"><strong>Manitoba Soil Survey</strong><br><em>No soil data on this polygon.</em>${mapUnit}${report}</div>`;
@@ -2492,17 +2504,85 @@ function soilSurveyHtml(p) {
  * when the parcel hasn't been joined.
  */
 export function soilSurveyParcelHtml(composition) {
-  if (!Array.isArray(composition) || composition.length === 0) return null;
-  const rows = composition.map((c) => soilSurveyPopupRow({
-    paintColor:     c.paintColor,
-    name:           c.soilName,
-    code:           c.soilCode,
-    agriCap:        c.agriCap,
-    ext:            Number.isFinite(c.parcelPct) ? Math.round(c.parcelPct) : null,
-    surfaceTexture: null,
-    mapUnit:        c.mapUnit,
-  })).join('');
-  return `<table style="margin-top:4px;font-size:12px;border-collapse:collapse;width:100%">${rows}</table>`;
+  const rows = readSoilComposition(composition);
+  if (!rows.length) return null;
+  const html = rows.slice(0, 2).map((c) => {
+    const swatch = `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${escapeHtml(c.paintColor || '#bfbfbf')};border:1px solid rgba(0,0,0,0.2);margin-right:6px;vertical-align:middle"></span>`;
+    const name = c.soilName || 'Mapped soil';
+    const nameLine = c.soilCode
+      ? `${swatch}<strong>${escapeHtml(name)}</strong> <span style="color:#888">(${escapeHtml(c.soilCode)})</span>`
+      : `${swatch}<strong>${escapeHtml(name)}</strong>`;
+    const cap = c.agriCap || c.agcapCls;
+    const capLine = cap ? `<div style="color:#555;font-size:11px">Capability ${escapeHtml(cap)}</div>` : '';
+    const textureLine = c.surfaceText
+      ? `<div style="color:#666;font-size:11px">Surface: ${escapeHtml(c.surfaceText)}</div>`
+      : '';
+    const unitText = formatMapUnits(c.mapUnits || c.mapUnit);
+    const unitLine = unitText
+      ? `<div style="color:#777;font-size:11px">Map unit: ${escapeHtml(unitText)}</div>`
+      : '';
+    const areaText = Number.isFinite(c.areaAcres)
+      ? formatSoilAcres(c.areaAcres)
+      : null;
+    const pctText = Number.isFinite(c.parcelPct)
+      ? formatSoilExtent(c.parcelPct)
+      : '';
+    const areaLine = [areaText, pctText ? `${pctText} of parcel` : ''].filter(Boolean).join(' · ');
+    return `<tr>
+      <td style="padding:4px 8px 4px 0;vertical-align:top">${nameLine}${capLine}${textureLine}${unitLine}</td>
+      <td style="padding:4px 0;vertical-align:top;text-align:right;white-space:nowrap"><strong>${escapeHtml(areaLine)}</strong></td>
+    </tr>`;
+  }).join('');
+  return `<table style="margin-top:4px;font-size:12px;border-collapse:collapse;width:100%">${html}</table>`;
+}
+
+function readSoilComposition(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string' && raw.trim().startsWith('[')) {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function formatSoilExtent(value) {
+  if (value == null || value === '') return '';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return `${value}%`;
+  const decimals = n > 0 && n < 10 ? 1 : 0;
+  return `${n.toLocaleString(undefined, {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })}%`;
+}
+
+function formatMapUnits(value) {
+  const units = Array.isArray(value) ? value.filter(Boolean) : (value ? [value] : []);
+  if (!units.length) return '';
+  const shown = units.slice(0, 3);
+  const suffix = units.length > 3 ? ` +${units.length - 3} more` : '';
+  return `${shown.join(', ')}${suffix}`;
+}
+
+function formatSoilAcres(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  if (n < 0.1) return `${n.toFixed(3)} ac`;
+  if (n < 10) return `${n.toFixed(2)} ac`;
+  if (n < 1000) return `${n.toFixed(1)} ac`;
+  return `${Math.round(n).toLocaleString('en-US')} ac`;
+}
+
+function formatSoilSurveyDate(value) {
+  if (value == null || value === '') return '';
+  const n = Number(value);
+  const d = Number.isFinite(n) ? new Date(n) : new Date(value);
+  if (!Number.isFinite(d.valueOf())) return '';
+  return d.toISOString().slice(0, 10);
 }
 
 function trafficHtml(p) {
@@ -2542,12 +2622,12 @@ function trafficFlowHtml(p) {
 }
 
 /** Read whichever overlay polygons sit under a screen point, restricted
- *  to layers that are currently visible. Used by the muni-parcels hover/
- *  click popups so they can show zoning + dev-plan info on parcels that
- *  aren't the search result. Returns the first hit's properties for each
- *  layer, or null if the layer is hidden / nothing's there. */
+ *  to layers that are currently visible. Used by the parcel/muni-parcels
+ *  hover/click popups so they can show zoning, dev-plan, and soil info
+ *  on the parcel under the cursor. Returns the first hit's properties for
+ *  each layer, or null if the layer is hidden / nothing's there. */
 function readOverlaysAt(map, point) {
-  const out = { zoning: null, devplan: null };
+  const out = { zoning: null, devplan: null, soilSurvey: null };
   if (map.getLayer('zoning-fill') &&
       map.getLayoutProperty('zoning-fill', 'visibility') === 'visible') {
     const hit = map.queryRenderedFeatures(point, { layers: ['zoning-fill'] })[0];
@@ -2558,7 +2638,38 @@ function readOverlaysAt(map, point) {
     const hit = map.queryRenderedFeatures(point, { layers: ['devplan-fill'] })[0];
     if (hit) out.devplan = hit.properties;
   }
+  if (map.getLayer('soil-survey-fill') &&
+      map.getLayoutProperty('soil-survey-fill', 'visibility') === 'visible') {
+    const hit = map.queryRenderedFeatures(point, { layers: ['soil-survey-fill'] })[0];
+    if (hit) out.soilSurvey = hit.properties;
+  }
   return out;
+}
+
+function soilSurveyHoverHtml(p) {
+  if (!p) return null;
+  const rows = [];
+  for (const slot of ['1', '2', '3']) {
+    const name = p[`SOILNAME${slot}`];
+    if (name == null || String(name).trim() === '') continue;
+    const code = p[`SOIL_CODE${slot}`];
+    const ext = formatSoilExtent(p[`EXTENT${slot}`]);
+    const soil = code
+      ? `${escapeHtml(name)} <span style="color:#777">(${escapeHtml(code)})</span>`
+      : escapeHtml(name);
+    rows.push(`${soil}${ext ? ` <strong>${escapeHtml(ext)}</strong>` : ''}`);
+  }
+  if (!rows.length) return null;
+  const swatch = `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${escapeHtml(p._paintColor || '#bfbfbf')};border:1px solid rgba(0,0,0,0.2);margin-right:6px;vertical-align:middle"></span>`;
+  const detail = [];
+  if (p.MAPUNITNOM) detail.push(`Map unit ${escapeHtml(p.MAPUNITNOM)}`);
+  const cap = p.AGRI_CAP1 || p.AGCAP_CLS1;
+  if (cap) detail.push(`Capability ${escapeHtml(cap)}`);
+  if (p.SURFTEXT1) detail.push(`Surface ${escapeHtml(p.SURFTEXT1)}`);
+  const detailLine = detail.length
+    ? `<div style="color:#666;font-size:11px;margin-top:2px">${detail.join(' &middot; ')}</div>`
+    : '';
+  return `<strong>Soil under cursor</strong><br>${swatch}${rows.join(' &middot; ')}${detailLine}`;
 }
 
 /**
@@ -2615,6 +2726,14 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
     if (d.DES_CATEGORY) bits.push(escapeHtml(d.DES_CATEGORY));
     if (d.DP_BYLAW)     bits.push(`By-law ${escapeHtml(d.DP_BYLAW)}`);
     if (bits.length) lines.push(`<strong style="color:#1a3a4a">Dev Plan</strong>: ${bits.join(' &middot; ')}`);
+  }
+  const soilHover = soilSurveyHoverHtml(overlay?.soilSurvey);
+  if (soilHover) {
+    lines.push(soilHover);
+  }
+  const soilTable = soilSurveyParcelHtml(p._soilComposition);
+  if (soilTable) {
+    lines.push(`<strong>Soil composition</strong>${soilTable}`);
   }
   if (withReportLink) {
     // Action row: Assessment report link + Coordinates copy link.

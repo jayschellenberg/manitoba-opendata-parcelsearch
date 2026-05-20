@@ -129,6 +129,7 @@ import {
   formatSqFtFromAcres,
   formatPercent as fmtPercent,
 } from './lib/format.js';
+import { soilSurveyComponentsFromMatches } from './soilSurvey.js';
 
 // Civic-address search is now a 3-input row: a numeric range (From / To)
 // plus a Street Name substring. The single legacy `#address` input was
@@ -553,6 +554,7 @@ const rowFeatureMap = new Map();
 // or dev-plan layer on doesn't require re-running the spatial enrichment.
 let lastZoningFc = EMPTY_FC;
 let lastDevPlanFc = EMPTY_FC;
+let lastSoilSurveyFc = EMPTY_FC;
 
 // CSV-upload mode state. csvFullRows holds the full enriched row set
 // from the last sales-CSV upload (with zoning / dev-plan / risk-area
@@ -3093,11 +3095,23 @@ async function enrichFcWithLegals(fc) {
 // ---------- Map / overlay helpers ----------
 
 function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
+  stampActiveSoilComposition(parcelFc);
   mapReady.then(() => {
     showResults(map, parcelFc, opts);
     setZoningData(map, zoningFc);
     setDevPlanData(map, devPlanFc);
   });
+}
+
+function stampActiveSoilComposition(parcelFc) {
+  if (!$soilSurveyToggle?.classList.contains('active')) return;
+  if (!lastSoilSurveyFc?.features?.length) return;
+  stampSoilCompositionOnParcels(parcelFc, lastSoilSurveyFc);
+}
+
+function setMuniParcelsMapData(fc) {
+  stampActiveSoilComposition(fc);
+  setMuniParcelsData(map, fc);
 }
 
 /**
@@ -3190,9 +3204,10 @@ async function toggleOverlay(which) {
   // covers EVERY matched muni; outside sales mode it's the dropdown's
   // single value. The cache key is the joined muni list so a dropdown
   // change within sales mode doesn't trigger a refetch.
-  const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
+  const munisRaw = (csvMatchedMunis && csvMatchedMunis.length > 0)
     ? csvMatchedMunis.slice()
     : ($municipality.value ? [$municipality.value] : []);
+  const munis = [...new Set(munisRaw.filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const loadKey = munis.join('|');
   const loadedFor = which === 'zoning' ? zoningLayerLoadedFor : devPlanLayerLoadedFor;
   const cachedFc  = which === 'zoning' ? lastZoningFc        : lastDevPlanFc;
@@ -3362,7 +3377,7 @@ const AUX_META = {
                  fetch: () => fetchMascRiskAreas(),            setData: (m, fc) => setMascRiskAreasData(m, fc), setVis: setMascRiskAreasVisible },
   muniParcels: { btn: () => $muniParcelsToggle, on: 'Parcel boundaries', off: 'Parcel boundaries', busy: 'Loading…',
                  fetch: () => fetchMuniParcelsForCurrentScope(),
-                 setData: (m, fc) => setMuniParcelsData(m, fc), setVis: setMuniParcelsVisible },
+                 setData: (m, fc) => setMuniParcelsMapData(fc), setVis: setMuniParcelsVisible },
 };
 
 /** Fetch the Roll Layer's parcel fabric, scoped to either the
@@ -3886,8 +3901,8 @@ async function toggleSoilSurveyOverlay() {
         Promise.all(muniBoundaries.map((mb) => fetchSoilSurveyForMuni(mb.muni, mb.feat))),
         Promise.all(muniBoundaries.map((mb) => fetchSoilSurveyLabelsForMuni(mb.muni, mb.feat))),
       ]);
-      const polyFeatures  = polyFcs.flatMap((fc)  => fc?.features || []);
-      const labelFeatures = labelFcs.flatMap((fc) => fc?.features || []);
+      const polyFeatures  = dedupeFeaturesByObjectId(polyFcs.flatMap((fc)  => fc?.features || []));
+      const labelFeatures = dedupeFeaturesByObjectId(labelFcs.flatMap((fc) => fc?.features || []));
       if (polyFeatures.length === 0) {
         $soilSurveyToggle.classList.remove('active');
         $soilSurveyToggle.setAttribute('aria-pressed', 'false');
@@ -3898,6 +3913,7 @@ async function toggleSoilSurveyOverlay() {
         return;
       }
       const soilFc = { type: 'FeatureCollection', features: polyFeatures };
+      const labelsFc = { type: 'FeatureCollection', features: labelFeatures };
       // Build a fresh palette + dynamic legend for THIS area's actual
       // soil associations. The map's fill-color expression gets
       // rewritten to colour by SOIL_CODE1, so the user sees soil
@@ -3907,18 +3923,21 @@ async function toggleSoilSurveyOverlay() {
       // so the popup chips can match the map without main.js needing
       // to leak the palette into map.js.
       applySoilSurveyPalette(soilFc);
+      lastSoilSurveyFc = soilFc;
       setSoilSurveyData(map, soilFc);
-      setSoilSurveyLabelsData(map, { type: 'FeatureCollection', features: labelFeatures });
-      // Stamp per-parcel soil composition (top-3 polygons by area
-      // overlap with each parcel) so the parcel popup can render a
+      setSoilSurveyLabelsData(map, labelsFc);
+      // Stamp per-parcel soil composition (component extents weighted
+      // by parcel/map-unit overlap) so the parcel popup can render a
       // "Soil composition" section without re-running the spatial
       // join on every click. Re-push the parcel source after stamping
       // so the click handler reads the enriched properties — same
       // pattern enrichOverlays uses for zoning + dev-plan.
       if (currentRows.length > 0) {
         const parcelFc = { type: 'FeatureCollection', features: currentRows.map((r) => r.parcel) };
-        stampSoilCompositionOnParcels(parcelFc, soilFc);
         setMapData(parcelFc, lastZoningFc || EMPTY_FC, lastDevPlanFc || EMPTY_FC, { fit: false });
+      }
+      if (auxData.muniParcels?.features?.length) {
+        setMuniParcelsMapData(auxData.muniParcels);
       }
       soilSurveyLoadedFor = loadKey;
     } catch (err) {
@@ -3935,6 +3954,19 @@ async function toggleSoilSurveyOverlay() {
   setOverlayBtnLabel($soilSurveyToggle, 'Soil Survey');
   setSoilSurveyVisible(map, true);
   if ($soilSurveyLegend) $soilSurveyLegend.hidden = false;
+}
+
+function dedupeFeaturesByObjectId(features) {
+  const out = [];
+  const seen = new Set();
+  for (const feature of features || []) {
+    const oid = feature?.properties?.OBJECTID;
+    const key = oid != null ? `oid:${oid}` : null;
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    out.push(feature);
+  }
+  return out;
 }
 
 /**
@@ -4795,23 +4827,19 @@ function riverLotHitLabel(hit) {
  * search path.
  */
 /**
- * Stamp each parcel's `_soilComposition` with the top-3 soil-survey
- * polygons it overlaps, sorted by area-overlap ratio descending. Each
- * entry surfaces the dominant soil (SOIL_1 / SOILNAME1 / SOIL_CODE1),
- * the agricultural-capability rating (AGRI_CAP1 with subclass, plus
- * AGCAP_CLS1 for the paint chip), and the parcel's percent covered.
+ * Stamp each parcel's `_soilComposition` with soil components weighted
+ * by both polygon overlap and the source EXTENT1/2/3 component share.
+ * Each entry surfaces the soil name/code, agricultural-capability rating
+ * (AGRI_CAP with subclass plus AGCAP_CLS for the paint chip), surface
+ * texture, map-unit symbols, and the parcel's percent covered.
  *
- * Powered by joinTopNByArea so a 32 ac quarter section that's 70 %
- * Red River and 30 % Osborne renders as two rows in the popup with
- * the right percents — same algorithm as the zoning + dev-plan
- * stamping path. No-op when either side is empty.
- *
- * Caller is responsible for re-pushing the parcel source after the
- * stamp so the click-time popup reads the enriched properties.
+ * Powered by joinTopNByArea so a parcel split across two map units, each
+ * with mixed source extents, renders as true area-weighted component
+ * percentages instead of treating SOIL_1 as the whole map unit.
  */
 function stampSoilCompositionOnParcels(parcelFc, soilFc) {
   if (!parcelFc?.features?.length || !soilFc?.features?.length) return;
-  const join = joinTopNByArea(parcelFc, soilFc, 3);
+  const join = joinTopNByArea(parcelFc, soilFc, Infinity);
   for (const parcel of parcelFc.features) {
     const oid = parcel.properties?.OBJECTID;
     const matches = (oid != null) ? join.get(oid) : null;
@@ -4821,17 +4849,11 @@ function stampSoilCompositionOnParcels(parcelFc, soilFc) {
       parcel.properties._soilComposition = null;
       continue;
     }
-    parcel.properties._soilComposition = matches.map(({ feature: f, ratio }) => ({
-      // _paintColor carries the assigned soil-association colour from
-      // applySoilSurveyPalette so the popup swatch matches the map.
-      paintColor: f.properties?._paintColor || null,
-      agriCap:  f.properties?.AGRI_CAP1  || null,
-      agcapCls: f.properties?.AGCAP_CLS1 || null,
-      soilName: f.properties?.SOILNAME1  || null,
-      soilCode: f.properties?.SOIL_CODE1 || null,
-      mapUnit:  f.properties?.MAPUNITNOM || null,
-      parcelPct: ratio * 100,
-    }));
+    const composition = soilSurveyComponentsFromMatches(matches, {
+      maxRows: 2,
+      parcelAreaAcres: parcelAcres(parcel),
+    });
+    parcel.properties._soilComposition = composition.length ? composition : null;
   }
 }
 
