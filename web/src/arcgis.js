@@ -883,6 +883,7 @@ const SOIL_SURVEY_URL =
   'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/Soil_Survey_MB/FeatureServer/0';
 const SOIL_SURVEY_LABELS_URL =
   'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/Soil_Survey_Data_MB_Labels/FeatureServer/0';
+const SOIL_SURVEY_FETCH_CAP = 50000;
 
 // The Esri layer schema truncates several field names to 10 characters
 // (a legacy of the Shapefile origin). The metadata lists each truncated
@@ -901,15 +902,15 @@ const SOIL_SURVEY_OUTFIELDS = [
   'SOILNAME1', 'SOIL_CODE1', 'CLASS1', 'EXTENT1', 'SURFTEXT1', 'AGCAP_CLS1', 'AGRI_CAP1',
   'SOILNAME2', 'SOIL_CODE2', 'CLASS2', 'EXTENT2', 'SURFTEXT2', 'AGCAP_CLS2', 'AGRI_CAP2',
   'SOILNAME3', 'SOIL_CODE3', 'CLASS3', 'EXTENT3', 'SURFTEXT3', 'AGCAP_CLS3', 'AGRI_CAP3',
-  'REPORT_NAM', 'SCALE',
+  'REPORT_NAM', 'SCALE', 'DATE',
 ].join(',');
 
 export async function fetchSoilSurveyForMuni(muniNameWithTyp, muniBoundaryFeature) {
   if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
-  // v2 (2026-05-19): added AGCAP_CLS{1-3} and AGRI_CAP{1-3} for paint
-  // + per-parcel composition. v1 payloads lack those fields and would
-  // render as grey under the new paint expression.
-  const cacheKey = `mb_soil_survey_${muniNameWithTyp}_v2`;
+  // v3 (2026-05-19): raised the page cap above the service's 2000-row
+  // maxRecordCount and added DATE. Large RMs such as Portage la Prairie
+  // and Rockwood exceed 2000 soil polygons, so v2 caches could be partial.
+  const cacheKey = `mb_soil_survey_${muniNameWithTyp}_v3`;
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
 
@@ -926,7 +927,7 @@ export async function fetchSoilSurveyForMuni(muniNameWithTyp, muniBoundaryFeatur
     returnGeometry: 'true',
     outSR: '4326',
     f: 'geojson',
-  }, 2000);
+  }, SOIL_SURVEY_FETCH_CAP);
   await writeCache(cacheKey, fc);
   return fc;
 }
@@ -940,7 +941,8 @@ export async function fetchSoilSurveyForMuni(muniNameWithTyp, muniBoundaryFeatur
  */
 export async function fetchSoilSurveyLabelsForMuni(muniNameWithTyp, muniBoundaryFeature) {
   if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
-  const cacheKey = `mb_soil_survey_labels_${muniNameWithTyp}_v1`;
+  // v2 (2026-05-19): labels also exceed 2000 in several large RMs.
+  const cacheKey = `mb_soil_survey_labels_${muniNameWithTyp}_v2`;
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
 
@@ -957,7 +959,7 @@ export async function fetchSoilSurveyLabelsForMuni(muniNameWithTyp, muniBoundary
     returnGeometry: 'true',
     outSR: '4326',
     f: 'geojson',
-  }, 2000);
+  }, SOIL_SURVEY_FETCH_CAP);
   await writeCache(cacheKey, fc);
   return fc;
 }
