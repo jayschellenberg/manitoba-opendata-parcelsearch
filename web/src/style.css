@@ -1847,9 +1847,36 @@ body.workspace-resizing iframe { pointer-events: none; }
 /* Distance / area measurement control. Shares the .basemap-toggle visual
    language so all our custom top-right controls look consistent. The
    `.measure-panel` is the dropdown that appears under the button when
-   Measure is active. */
+   Measure is active.
+   Tightened against the Streets/Satellite toggle above it — MapLibre's
+   default `.maplibregl-ctrl` margin-top of 10 px leaves a visible gap
+   that made the two custom controls read as separate clusters. 2 px
+   keeps a hairline divider without the visual break. */
+.maplibregl-ctrl-top-right .maplibregl-ctrl.measure-control {
+  margin-top: 2px;
+}
+/* mapbox-gl-draw renders an empty .maplibregl-ctrl-group wrapper even
+   when displayControlsDefault is false (we own the modes via the
+   custom MeasureControl, so the Draw library's default UI is hidden).
+   That empty wrapper still occupies its own 10 px margin-top slot
+   between Streets/Satellite and Measure, undoing the tighten above.
+   Collapse it with the :empty selector. */
+.maplibregl-ctrl-top-right .maplibregl-ctrl-group:empty {
+  display: none;
+}
 .maplibregl-ctrl.measure-control {
   position: relative;
+}
+
+/* While the Measure panel is open the bottom-right map legends (Zoning,
+   MASC, CLI, Soil Survey, AADT) overlap the Distance/Area readout that
+   drops down from the Measure button — particularly the tall Zoning
+   legend. Hiding them outright is cleaner than re-positioning the
+   panel: the user only wants legends when they're reading the map, not
+   when they're measuring a distance or area. MeasureControl toggles
+   `body.measuring` from its open/close handlers. */
+body.measuring .map-legend {
+  display: none;
 }
 .maplibregl-ctrl.measure-control > button {
   width: auto;

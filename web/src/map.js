@@ -2882,6 +2882,12 @@ class MeasureControl {
     if (open) {
       this._panel.style.display = 'block';
       this._btn.classList.add('active');
+      // While the measurement panel is open the bottom-right map
+      // legends (Zoning, MASC, CLI, Soil Survey, AADT) would visually
+      // collide with the Distance/Area readout that drops down from
+      // the Measure button. Adding `body.measuring` lets a CSS rule
+      // hide every `.map-legend` until the user closes the panel.
+      document.body.classList.add('measuring');
     } else {
       this._close();
     }
@@ -2891,6 +2897,7 @@ class MeasureControl {
     try { this._draw.changeMode('simple_select'); } catch { /* mode may already be simple_select */ }
     this._panel.style.display = 'none';
     this._btn.classList.remove('active');
+    document.body.classList.remove('measuring');
     this._setMode(null, { skipModeChange: true });
     this._setReadout('Pick a mode to start.');
   }
