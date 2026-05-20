@@ -303,7 +303,9 @@ const MUNI_WEBSITES = {
   'CARMAN (TOWN)':               'https://www.carmandufferin.ca/',
   'CHURCHILL (TOWN)':            'https://www.churchill.ca/',
   'GILLAM (TOWN)':               'https://www.townofgillam.com/',
+  'GRAND RAPIDS (TOWN)':         'https://townofgrandrapidsmb.ca/',
   'LAC DU BONNET (TOWN)':        'https://www.townoflacdubonnet.com/',
+  'LEAF RAPIDS (TOWN)':          'https://leafrapids.com/',
   'LYNN LAKE (TOWN)':            'https://www.lynnlake.ca/',
   'MELITA (TOWN)':               'https://www.melitamb.ca/',
   'MINNEDOSA (TOWN)':            'https://www.discoverminnedosa.com/',
@@ -391,6 +393,7 @@ const MUNI_WEBSITES = {
   'CLANWILLIAM-ERICKSON (MUNICIPALITY)':   'https://www.ericksonmb.ca/',
   'DELORAINE-WINCHESTER (MUNICIPALITY)':   'https://www.delowin.ca/',
   'EMERSON-FRANKLIN (MUNICIPALITY)':       'https://www.emersonfranklin.com/',
+  'ETHELBERT (MUNICIPALITY)':              'https://www.ethelbert.ca/',
   'GILBERT PLAINS (MUNICIPALITY)':         'https://www.gilbertplains.com/',
   'GLENBORO-SOUTH CYPRESS (MUNICIPALITY)': 'https://www.glenboro.com/',
   'GLENELLA-LANSDOWNE (MUNICIPALITY)':     'https://www.glenella.ca/',
@@ -426,6 +429,7 @@ const MUNI_WEBSITES = {
   'ST. PIERRE-JOLYS (VILLAGE)':            'https://www.villagestpierrejolys.ca/',
 
   // Local Government Districts
+  'MYSTERY LAKE (LGD)':                    'https://www.lgdofmysterylake.ca/',
   'PINAWA (LGD)':                          'https://www.pinawa.com/',
 };
 
