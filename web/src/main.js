@@ -87,6 +87,7 @@ import {
   setMascVisible,
   setCliAgrData,
   setCliAgrVisible,
+  setCliPaintMode,
   setMascRiskAreasData,
   setMascRiskAreasVisible,
   setSurveyGridData,
@@ -3545,6 +3546,14 @@ let cliLoadedFor = null;
 //   identity   → "Soil Type" (top-20-by-area soil-association palette,
 //                recalculated for each selected municipality)
 let cliMode = null;
+// Centralized setter so every cliMode mutation broadcasts to map.js's
+// popup builder. map.js's readOverlaysAt reads currentCliPaintMode to
+// decide whether the muni-parcel popup should print the capability
+// code or the soil-association name on the line under Total Value.
+function setCliMode(value) {
+  cliMode = value;
+  setCliPaintMode(value);
+}
 // Last loaded CLI FC, kept so cycling between modes can re-rank the
 // palette / re-stamp _paintColor without re-fetching.
 let lastCliFc = EMPTY_FC;
@@ -3716,7 +3725,7 @@ function resetMascAndGridToggles() {
   // CLI: same off-on-muni-change logic as MASC.
   if (cliLoadedFor && cliLoadedFor !== desiredOverlayKey) {
     cliLoadedFor = null;
-    cliMode = null;
+    setCliMode(null);
     lastCliFc = EMPTY_FC;
     if ($cliToggle && $cliToggle.classList.contains('active')) {
       $cliToggle.classList.remove('active');
@@ -3956,7 +3965,7 @@ async function toggleCliOverlay() {
     ? csvMatchedMunis.slice()
     : ($municipality.value ? [$municipality.value] : []);
   if (munis.length === 0) {
-    cliMode = null;
+    setCliMode(null);
     $cliToggle.classList.remove('active');
     $cliToggle.setAttribute('aria-pressed', 'false');
     return;
@@ -3967,7 +3976,7 @@ async function toggleCliOverlay() {
 
   // Off branch: hide layer + legend, clear active state, no fetch.
   if (targetMode === null) {
-    cliMode = null;
+    setCliMode(null);
     setCliAgrVisible(map, false);
     if ($cliLegend) $cliLegend.hidden = true;
     $cliToggle.classList.remove('active');
@@ -3991,7 +4000,7 @@ async function toggleCliOverlay() {
       }));
       const missing = muniBoundaries.filter((mb) => !mb.feat).map((mb) => mb.muni);
       if (missing.length > 0) {
-        cliMode = null;
+        setCliMode(null);
         $cliToggle.classList.remove('active');
         $cliToggle.setAttribute('aria-pressed', 'false');
         $cliToggle.disabled = false;
@@ -4004,7 +4013,7 @@ async function toggleCliOverlay() {
       );
       const features = fcs.flatMap((fc) => fc?.features || []);
       if (features.length === 0) {
-        cliMode = null;
+        setCliMode(null);
         $cliToggle.classList.remove('active');
         $cliToggle.setAttribute('aria-pressed', 'false');
         $cliToggle.disabled = false;
@@ -4024,7 +4033,7 @@ async function toggleCliOverlay() {
       cliLoadedFor = loadKey;
     } catch (err) {
       console.warn('CLI fetch failed', err);
-      cliMode = null;
+      setCliMode(null);
       $cliToggle.classList.remove('active');
       $cliToggle.setAttribute('aria-pressed', 'false');
       $cliToggle.disabled = false;
@@ -4037,7 +4046,7 @@ async function toggleCliOverlay() {
 
   // Apply the new mode. Paint + legend + label expression all swap
   // here; no source re-push needed.
-  cliMode = targetMode;
+  setCliMode(targetMode);
   if (targetMode === 'capability') {
     applyCliCapabilityMode();
   } else {

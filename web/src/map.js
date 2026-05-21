@@ -1536,7 +1536,10 @@ export function initMap(container, { onFeatureClick } = {}) {
         const parcel = hits.find((h) => h.layer.id === 'parcel-fill');
         if (parcel && !subject) blocks.push(`<div><strong style="color:#7a5c00">Parcel</strong><br>${parcelHtml(parcel.properties)}</div>`);
         const overlay = readOverlaysAt(map, e.point);
-        const soil = soilSurveyHoverHtml(overlay.soilSurvey);
+        // CLI fill polygons share the same SOILNAME/EXTENT/AGRI_CAP attribute
+        // shape as the old Soil_Survey polygons, so the rich "Soil under
+        // cursor" hover block works as-is against the CLI overlay now.
+        const soil = soilSurveyHoverHtml(overlay.cli);
         if (soil && (subject || parcel)) blocks.push(`<div>${soil}</div>`);
         const zone = hits.find((h) => h.layer.id === 'zoning-fill');
         if (zone) blocks.push(`<div><strong style="color:#1a2a4a">Zoning</strong><br>${zoningHtml(zone.properties)}</div>`);
@@ -1990,6 +1993,17 @@ export function setCliAgrVisible(map, visible) {
   for (const id of ['cli-agr-fill', 'cli-agr-label']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
   }
+}
+
+// CLI tri-state mode mirror. main.js's toggleCliOverlay owns the cycle
+// (null → 'capability' → 'identity' → null); it broadcasts each change
+// in here so readOverlaysAt can stamp the right label onto muniParcelHtml
+// hover/click popups without main.js having to leak into map.js. Stays
+// null when the CLI layer is off — readOverlaysAt skips the CLI block
+// in that case, same as it does for any hidden overlay.
+let currentCliPaintMode = null;
+export function setCliPaintMode(mode) {
+  currentCliPaintMode = mode || null;
 }
 
 export function setSoilSurveyData(map, fc) {
@@ -2713,7 +2727,7 @@ function trafficFlowHtml(p) {
  *  on the parcel under the cursor. Returns the first hit's properties for
  *  each layer, or null if the layer is hidden / nothing's there. */
 function readOverlaysAt(map, point) {
-  const out = { zoning: null, devplan: null, soilSurvey: null };
+  const out = { zoning: null, devplan: null, cli: null, cliMode: null };
   if (map.getLayer('zoning-fill') &&
       map.getLayoutProperty('zoning-fill', 'visibility') === 'visible') {
     const hit = map.queryRenderedFeatures(point, { layers: ['zoning-fill'] })[0];
@@ -2724,12 +2738,54 @@ function readOverlaysAt(map, point) {
     const hit = map.queryRenderedFeatures(point, { layers: ['devplan-fill'] })[0];
     if (hit) out.devplan = hit.properties;
   }
-  if (map.getLayer('soil-survey-fill') &&
-      map.getLayoutProperty('soil-survey-fill', 'visibility') === 'visible') {
-    const hit = map.queryRenderedFeatures(point, { layers: ['soil-survey-fill'] })[0];
-    if (hit) out.soilSurvey = hit.properties;
+  // CLI overlay sits behind parcel polygons, so its capability/soil-name
+  // info should follow the cursor into the parcel popup whenever the
+  // user has the layer on. currentCliPaintMode tells the popup builder
+  // whether the active mode wants the capability code ("2W") or the
+  // soil-association name ("Red River").
+  if (map.getLayer('cli-agr-fill') &&
+      map.getLayoutProperty('cli-agr-fill', 'visibility') === 'visible') {
+    const hit = map.queryRenderedFeatures(point, { layers: ['cli-agr-fill'] })[0];
+    if (hit) {
+      out.cli = hit.properties;
+      out.cliMode = currentCliPaintMode;
+    }
   }
   return out;
+}
+
+/**
+ * Single-line CLI overlay info for muniParcelHtml — shows either the
+ * capability code or the soil-association name from the polygon under
+ * the cursor, depending on which mode the user has the CLI overlay in.
+ * Returns null when the CLI overlay is off or there's no polygon under
+ * the cursor.
+ *
+ *   capability mode → "<strong>CLI</strong> 2W"            (AGRI_CAP1)
+ *   identity mode   → "<strong>Soil Type</strong> Red River" (SOILNAME1)
+ *
+ * Includes the SAME paint-colour swatch the map polygon uses, so the
+ * popup line visually ties back to the legend's top-20 palette.
+ */
+function cliOverlayLine(cliProps, cliMode) {
+  if (!cliProps || !cliMode) return null;
+  const swatchColor = cliProps._paintColor || '#bfbfbf';
+  const swatch = `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${escapeHtml(swatchColor)};border:1px solid rgba(0,0,0,0.2);margin-right:6px;vertical-align:middle"></span>`;
+  if (cliMode === 'capability') {
+    const cap = cliProps.AGRI_CAP1 || cliProps.AGCAP_CLS1;
+    if (!cap) return null;
+    return `${swatch}<strong>CLI</strong> ${escapeHtml(cap)}`;
+  }
+  if (cliMode === 'identity') {
+    const name = cliProps.SOILNAME1 || cliProps.SOIL_CODE1;
+    if (!name) return null;
+    const code = cliProps.SOIL_CODE1;
+    const codePart = code && code !== name
+      ? ` <span style="color:#777">(${escapeHtml(code)})</span>`
+      : '';
+    return `${swatch}<strong>Soil Type</strong> ${escapeHtml(name)}${codePart}`;
+  }
+  return null;
 }
 
 function soilSurveyHoverHtml(p) {
@@ -2795,6 +2851,13 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
       lines.push(`<strong>Total Value</strong> $${Math.round(n).toLocaleString('en-US')}`);
     }
   }
+  // CLI overlay info for the polygon under the cursor — capability code
+  // when CLI is in "Soil Productivity" mode, soil-association name when
+  // it's in "Soil Type" mode. Sits right after Total Value so the user
+  // sees the agriculture context inline with the parcel's headline
+  // numbers. Skipped when the CLI overlay is off.
+  const cliLine = cliOverlayLine(overlay?.cli, overlay?.cliMode);
+  if (cliLine) lines.push(cliLine);
   if (overlay?.zoning) {
     const z = overlay.zoning;
     const code = z.ZONE || z.ZONE_NAME;
@@ -2812,10 +2875,6 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
     if (d.DES_CATEGORY) bits.push(escapeHtml(d.DES_CATEGORY));
     if (d.DP_BYLAW)     bits.push(`By-law ${escapeHtml(d.DP_BYLAW)}`);
     if (bits.length) lines.push(`<strong style="color:#1a3a4a">Dev Plan</strong>: ${bits.join(' &middot; ')}`);
-  }
-  const soilHover = soilSurveyHoverHtml(overlay?.soilSurvey);
-  if (soilHover) {
-    lines.push(soilHover);
   }
   // Build actions row (when this is the click popup, not hover).
   let actionsHtml = '';
