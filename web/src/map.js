@@ -2754,6 +2754,29 @@ function readOverlaysAt(map, point) {
   return out;
 }
 
+// Capability-mode swatch palette — mirrors main.js's CLI_CAPABILITY_FILL_COLOR
+// match expression so the popup line under "Total Value" carries the same
+// colour the user sees on the map polygon. Keyed on the first char of
+// AGCAP_CLS1 (1-7 for capability classes; O for organic; $ for urban /
+// water). Any unmatched first char falls through to the same grey the
+// map uses for unclassified polygons.
+const CLI_CAPABILITY_SWATCH_BY_CLASS = {
+  '1': '#1a6b26',
+  '2': '#4fab57',
+  '3': '#a6e29f',
+  '4': '#f2d640',
+  '5': '#f4a040',
+  '6': '#a8754f',
+  '7': '#9c27b0',
+  'O': '#5e3b1a',
+  '$': '#cfd6dd',
+};
+function cliCapabilitySwatchColor(agcapCls1) {
+  if (!agcapCls1) return '#cccccc';
+  const first = String(agcapCls1).slice(0, 1);
+  return CLI_CAPABILITY_SWATCH_BY_CLASS[first] || '#cccccc';
+}
+
 /**
  * Single-line CLI overlay info for muniParcelHtml — shows either the
  * capability code or the soil-association name from the polygon under
@@ -2765,20 +2788,26 @@ function readOverlaysAt(map, point) {
  *   identity mode   → "<strong>Soil Type</strong> Red River" (SOILNAME1)
  *
  * Includes the SAME paint-colour swatch the map polygon uses, so the
- * popup line visually ties back to the legend's top-20 palette.
+ * popup line visually ties back to the legend. In capability mode the
+ * swatch is derived from AGCAP_CLS1's first character (the same key
+ * the map's `match` expression uses); in identity mode it reads the
+ * per-feature `_paintColor` that applyIdentityPalette stamps on every
+ * polygon.
  */
 function cliOverlayLine(cliProps, cliMode) {
   if (!cliProps || !cliMode) return null;
-  const swatchColor = cliProps._paintColor || '#bfbfbf';
-  const swatch = `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${escapeHtml(swatchColor)};border:1px solid rgba(0,0,0,0.2);margin-right:6px;vertical-align:middle"></span>`;
   if (cliMode === 'capability') {
     const cap = cliProps.AGRI_CAP1 || cliProps.AGCAP_CLS1;
     if (!cap) return null;
+    const swatchColor = cliCapabilitySwatchColor(cliProps.AGCAP_CLS1);
+    const swatch = `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${escapeHtml(swatchColor)};border:1px solid rgba(0,0,0,0.2);margin-right:6px;vertical-align:middle"></span>`;
     return `${swatch}<strong>CLI</strong> ${escapeHtml(cap)}`;
   }
   if (cliMode === 'identity') {
     const name = cliProps.SOILNAME1 || cliProps.SOIL_CODE1;
     if (!name) return null;
+    const swatchColor = cliProps._paintColor || '#bfbfbf';
+    const swatch = `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${escapeHtml(swatchColor)};border:1px solid rgba(0,0,0,0.2);margin-right:6px;vertical-align:middle"></span>`;
     const code = cliProps.SOIL_CODE1;
     const codePart = code && code !== name
       ? ` <span style="color:#777">(${escapeHtml(code)})</span>`
