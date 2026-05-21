@@ -793,13 +793,22 @@ export async function fetchMascRiskAreas() {
 }
 
 /**
- * Canada Land Inventory — Soil Capability for Agriculture, 1:250,000
- * scale. Federal AAFC dataset hosted on Esri's hosted feature service
- * (NOT the Manitoba Open Data host; lives at services.arcgis.com/
- * lGOekm0RsNxYnT3j). Polygons carry up to six classes (CLASS_A through
- * CLASS_F) with their percentages and subclass codes — most polygons
- * have a single dominant class, but mixed-rating polygons happen near
- * transition zones.
+ * CLI Soil Capability for Agriculture — sourced from Manitoba's
+ * provincial Soil_Survey_MB FeatureServer (the same layer Manitoba's
+ * AgriMaps app draws on). The AGCAP_CLS{1-3} fields carry the
+ * CLI-style 1-7 agricultural-capability class with organic
+ * ("O3"-"O7") and special ("$ML"/"$UL"/"$UR"/"$ZZ") variants, plus
+ * AGRI_CAP{1-3} which appends the subclass limitation letter (e.g.
+ * "2W" = Class 2 with excess-water limitation).
+ *
+ * Source switch (2026-05): originally fetched from AAFC's federal
+ * cli_agr_cap_250k service (open.canada.ca/data/en/dataset/
+ * 0c113e2c-e20e-4b64-be6f-496b1be834ee) at 1:250,000 scale. The
+ * provincial Soil_Survey_MB layer is what AgriMaps treats as the
+ * authoritative capability source — finer 1:50,000-scale polygons,
+ * Manitoba-curated, and three soils per polygon with extent
+ * percentages so mixed-capability landscapes (Class 2 main soil +
+ * Class 3 subordinate) read accurately.
  *
  * Class scale (1 = best, 7 = worst):
  *   1 — no significant limitations
@@ -809,26 +818,38 @@ export async function fetchMascRiskAreas() {
  *   5 — only suitable for hay/perennial crops
  *   6 — only suitable for native pasture
  *   7 — no agricultural capability
+ *   O3-O7 — organic soils (capability class implied by the digit)
+ *   $ML/$UL/$UR/$ZZ — mineral landscape / urban / urban-residential /
+ *                     water (no agricultural rating)
  *
- * Subclass letters (one per class slot, e.g. SUBCLAS_A1):
+ * Subclass letters (suffix on AGRI_CAP, e.g. "2W"):
  *   C climate, T topography, W excess water, M moisture deficiency,
  *   F low fertility, N salinity, I inundation, E erosion, P stoniness,
  *   R shallowness over rock, D dense soil
  *
- * Source: open.canada.ca/data/en/dataset/0c113e2c-e20e-4b64-be6f-496b1be834ee
- *
  * Live-fetched per-muni with the muni boundary polygon as the spatial
  * filter (same pattern as the Sec-Twp Grid). Cached 30 days because
  * the underlying dataset is essentially static. Returns a
- * FeatureCollection of polygons each carrying CLASS_A as a stable
- * dominant-class field for map paint.
+ * FeatureCollection of polygons each carrying AGCAP_CLS1 as the
+ * stable dominant-class field for map paint.
  */
 const CLI_AGR_CAP_URL =
-  'https://services.arcgis.com/lGOekm0RsNxYnT3j/arcgis/rest/services/cli_agr_cap_250k/FeatureServer/0';
+  'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/Soil_Survey_MB/FeatureServer/0';
+
+const CLI_AGR_CAP_OUTFIELDS = [
+  'OBJECTID', 'MAPUNITNOM',
+  'AGCAP_CLS1', 'AGRI_CAP1', 'EXTENT1', 'SOILNAME1', 'SOIL_CODE1',
+  'AGCAP_CLS2', 'AGRI_CAP2', 'EXTENT2', 'SOILNAME2', 'SOIL_CODE2',
+  'AGCAP_CLS3', 'AGRI_CAP3', 'EXTENT3', 'SOILNAME3', 'SOIL_CODE3',
+].join(',');
 
 export async function fetchCliAgrForMuni(muniNameWithTyp, muniBoundaryFeature) {
   if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
-  const cacheKey = `mb_cli_agr_${muniNameWithTyp}_v1`;
+  // v2 (2026-05-20): source switched from AAFC's cli_agr_cap_250k to
+  // Manitoba's Soil_Survey_MB. v1 payloads had the federal CLASS_A/
+  // PERCENT_A/SUBCLAS_A1 field shape which the new paint + popup
+  // don't read — bumping the cache key forces a clean fetch.
+  const cacheKey = `mb_cli_agr_${muniNameWithTyp}_v2`;
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
 
@@ -841,17 +862,11 @@ export async function fetchCliAgrForMuni(muniNameWithTyp, muniBoundaryFeature) {
     geometryType: 'esriGeometryPolygon',
     inSR: '4326',
     spatialRel: 'esriSpatialRelIntersects',
-    outFields: [
-      'OBJECTID',
-      'CLASS_A','CLASS_B','CLASS_C','CLASS_D','CLASS_E','CLASS_F',
-      'PERCENT_A','PERCENT_B','PERCENT_C','PERCENT_D','PERCENT_E','PERCENT_F',
-      'SUBCLAS_A1','SUBCLAS_A2','SUBCLAS_B1','SUBCLAS_B2',
-      'SUBCLAS_C1','SUBCLAS_C2','SUBCLAS_D1','SUBCLAS_D2',
-    ].join(','),
+    outFields: CLI_AGR_CAP_OUTFIELDS,
     returnGeometry: 'true',
     outSR: '4326',
     f: 'geojson',
-  }, 20000);
+  }, 2000);
   await writeCache(cacheKey, fc);
   return fc;
 }

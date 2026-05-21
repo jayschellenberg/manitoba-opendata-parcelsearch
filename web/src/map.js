@@ -807,6 +807,17 @@ export function initMap(container, { onFeatureClick } = {}) {
       // (W=excess water, T=topography, F=low fertility, etc.) come
       // along on the feature for popup/tooltip use. Hidden until the
       // user toggles it on with a muni selected.
+      // CLI Soil Capability — painted by the first character of
+      // AGCAP_CLS1 (Manitoba Soil_Survey_MB's agricultural-capability
+      // class for the dominant soil). Distinct values: "1"-"7" (the
+      // standard CLI scale), "O3"-"O7" (organic soils, class implied
+      // by the digit), "$ML"/"$UL"/"$UR"/"$ZZ" (mineral landscape,
+      // urban, urban-residential, water — no agricultural rating).
+      //
+      // Source switched from AAFC's federal cli_agr_cap_250k to
+      // Manitoba's Soil_Survey_MB on 2026-05-20 (per AgriMaps'
+      // authoritative source). See arcgis.js fetchCliAgrForMuni for
+      // the source-switch context.
       map.addSource('cli-agr', { type: 'geojson', data: emptyFc() });
       map.addLayer({
         id: 'cli-agr-fill',
@@ -815,7 +826,8 @@ export function initMap(container, { onFeatureClick } = {}) {
         layout: { visibility: 'none' },
         paint: {
           'fill-color': [
-            'match', ['get', 'CLASS_A'],
+            'match',
+            ['slice', ['coalesce', ['get', 'AGCAP_CLS1'], '?'], 0, 1],
             '1', '#1a6b26',  // dark green   — prime
             '2', '#4fab57',  // medium green — minor limitations
             '3', '#a6e29f',  // light green  — moderate
@@ -823,7 +835,9 @@ export function initMap(container, { onFeatureClick } = {}) {
             '5', '#f4a040',  // orange       — perennial only
             '6', '#a8754f',  // brown        — native pasture only
             '7', '#9c27b0',  // purple       — no agricultural capability
-            '#cccccc',       // unrated / urban / water
+            'O', '#5e3b1a',  // dark brown   — organic (O3-O7)
+            '$', '#cfd6dd',  // pale slate   — urban / water specials
+            '#cccccc',       // fallback — AGCAP_CLS1 missing
           ],
           'fill-opacity': 0.35,
           'fill-outline-color': 'rgba(0, 0, 0, 0.25)',
@@ -836,14 +850,11 @@ export function initMap(container, { onFeatureClick } = {}) {
         minzoom: 11,
         layout: {
           visibility: 'none',
-          // Dominant class with subclass appended when the polygon
-          // carries one (e.g. "3W", "5T"). Helps appraisers read
-          // the map without clicking each polygon.
-          'text-field': [
-            'concat',
-            ['coalesce', ['get', 'CLASS_A'], ''],
-            ['coalesce', ['get', 'SUBCLAS_A1'], ''],
-          ],
+          // AGRI_CAP1 already concatenates class + subclass (e.g.
+          // "2W", "3MT", "O5") so we use it directly rather than
+          // assembling pieces. Helps appraisers read the map without
+          // clicking each polygon.
+          'text-field': ['coalesce', ['get', 'AGRI_CAP1'], ''],
           'text-font': ['Open Sans Semibold'],
           'text-size': [
             'interpolate', ['linear'], ['zoom'],
@@ -2370,44 +2381,68 @@ function cliSubclassDescription(rawSubclass) {
   return labels.join(', ');
 }
 
+// Capability-class swatches for the CLI popup chip. Keyed on the FIRST
+// character of AGCAP_CLS (so "1"-"7", "O" for organic, "$" for the
+// urban/water specials). Mirrors the fill-paint match expression on
+// the cli-agr-fill layer so the chip in the popup matches what the
+// user sees on the map. White text on the visually-dark swatches
+// (1, 6, 7, O) for legibility.
 const CLI_CLASS_COLORS = {
   '1': '#1a6b26', '2': '#4fab57', '3': '#a6e29f',
   '4': '#f2d640', '5': '#f4a040', '6': '#a8754f',
-  '7': '#9c27b0',
+  '7': '#9c27b0', 'O': '#5e3b1a', '$': '#cfd6dd',
 };
+const CLI_WHITE_TEXT_CLASSES = new Set(['1', '6', '7', 'O']);
 
 function cliHtml(p) {
-  // Walk every class slot (A → F) the AAFC schema can carry. Skip
-  // empty slots so a single-dominant-class polygon shows one row,
-  // a transition-zone polygon shows two or more.
-  const slots = ['A', 'B', 'C', 'D', 'E', 'F'];
+  // Walk SOIL_{1,2,3} slots from Manitoba's Soil_Survey_MB schema. Each
+  // slot carries an AGCAP_CLS (clean class digit) + AGRI_CAP (class +
+  // subclass) + EXTENT percent + dominant soil name/code. Skip empty
+  // slots so a single-soil polygon shows one row, a mixed-association
+  // polygon shows two or three.
+  const slots = ['1', '2', '3'];
   const rows = [];
   for (const slot of slots) {
-    const cls = p[`CLASS_${slot}`];
-    if (cls == null || String(cls).trim() === '') continue;
-    const pct  = p[`PERCENT_${slot}`];
-    const sub1 = p[`SUBCLAS_${slot}1`];
-    const sub2 = p[`SUBCLAS_${slot}2`];
-    const subRaw = [sub1, sub2].filter(Boolean).join('');
+    const agcapCls = String(p[`AGCAP_CLS${slot}`] || '').trim();
+    if (!agcapCls) continue;
+    const agriCap  = String(p[`AGRI_CAP${slot}`]  || '').trim();   // e.g. "2W"
+    const ext      = p[`EXTENT${slot}`];
+    const soilName = p[`SOILNAME${slot}`];
+    const soilCode = p[`SOIL_CODE${slot}`];
+    // AGRI_CAP already concatenates class + subclass letter(s). If
+    // it's missing fall back to the bare class.
+    const chipLabel = agriCap || agcapCls;
+    const firstChar = agcapCls[0];
+    const color = CLI_CLASS_COLORS[firstChar] || '#cccccc';
+    const textColor = CLI_WHITE_TEXT_CLASSES.has(firstChar) ? '#fff' : '#1a1a1a';
+    const chip = `<span style="display:inline-block;min-width:1.6em;padding:1px 6px;border-radius:4px;background:${color};color:${textColor};font-weight:600;text-align:center">${escapeHtml(chipLabel)}</span>`;
+    // The subclass letters live in agriCap AFTER the class digit/letter,
+    // e.g. "2W" → subclass "W". Slice it off so cliSubclassDescription
+    // can translate it into the friendly limitation phrase.
+    const subRaw = agriCap.replace(/^[1-7O$][A-Z0-9$]*?(?=[A-Z]*$)/, '').replace(/^[1-7O$]/, '');
     const subDesc = cliSubclassDescription(subRaw);
-    const color = CLI_CLASS_COLORS[String(cls).trim()] || '#cccccc';
-    const textColor = ['1', '6', '7'].includes(String(cls).trim()) ? '#fff' : '#1a1a1a';
-    const chip = `<span style="display:inline-block;min-width:1.6em;padding:1px 6px;border-radius:4px;background:${color};color:${textColor};font-weight:600;text-align:center">${escapeHtml(cls)}${escapeHtml(subRaw)}</span>`;
-    const pctTxt = (pct != null && String(pct).trim() !== '') ? `<strong>${escapeHtml(pct)}%</strong>` : '';
+    const pctTxt = (ext != null && String(ext).trim() !== '') ? `<strong>${escapeHtml(ext)}%</strong>` : '';
     const desc   = subDesc ? `<em style="color:#555">${escapeHtml(subDesc)}</em>` : '';
-    rows.push(`<tr><td style="padding:2px 6px 2px 0">${chip}</td><td style="padding:2px 6px">${pctTxt}</td><td style="padding:2px 0">${desc}</td></tr>`);
+    const soilLine = soilName
+      ? `<div style="color:#777;font-size:11px">${escapeHtml(soilName)}${soilCode ? ` (${escapeHtml(soilCode)})` : ''}</div>`
+      : '';
+    rows.push(`<tr>
+      <td style="padding:2px 6px 2px 0;vertical-align:top">${chip}</td>
+      <td style="padding:2px 6px;vertical-align:top">${pctTxt}</td>
+      <td style="padding:2px 0;vertical-align:top">${desc}${soilLine}</td>
+    </tr>`);
   }
 
   if (rows.length === 0) {
-    return `<div style="max-width:240px;line-height:1.4"><strong>CLI Soil Capability</strong><br><em>No class data on this polygon.</em></div>`;
+    return `<div style="max-width:260px;line-height:1.4"><strong>CLI Soil Capability</strong><br><em>No capability data on this polygon.</em></div>`;
   }
 
   return `
-    <div style="max-width:300px;line-height:1.4">
+    <div style="max-width:320px;line-height:1.4">
       <strong>CLI Soil Capability for Agriculture</strong>
       <table style="margin-top:6px;font-size:12px;border-collapse:collapse">${rows.join('')}</table>
       <div style="margin-top:6px;color:#666;font-size:11px">
-        Class 1 = prime · 7 = no agricultural capability
+        Class 1 = prime · 7 = no agricultural capability · O = organic · $ = urban/water
       </div>
     </div>
   `;
