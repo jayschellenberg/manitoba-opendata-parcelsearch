@@ -838,18 +838,24 @@ const CLI_AGR_CAP_URL =
 
 const CLI_AGR_CAP_OUTFIELDS = [
   'OBJECTID', 'MAPUNITNOM',
-  'AGCAP_CLS1', 'AGRI_CAP1', 'EXTENT1', 'SOILNAME1', 'SOIL_CODE1',
-  'AGCAP_CLS2', 'AGRI_CAP2', 'EXTENT2', 'SOILNAME2', 'SOIL_CODE2',
-  'AGCAP_CLS3', 'AGRI_CAP3', 'EXTENT3', 'SOILNAME3', 'SOIL_CODE3',
+  // Same SOIL_{1-3} composition shape the Soil Survey overlay reads, so
+  // the per-parcel `_soilComposition` stamp can use the CLI-fetched
+  // polygons interchangeably with the Soil Survey ones (both source
+  // from Soil_Survey_MB anyway). SURFTEXT included so the popup row's
+  // surface-texture line renders when the CLI overlay is the one
+  // driving the stamp.
+  'SOILNAME1', 'SOIL_CODE1', 'EXTENT1', 'SURFTEXT1', 'AGCAP_CLS1', 'AGRI_CAP1',
+  'SOILNAME2', 'SOIL_CODE2', 'EXTENT2', 'SURFTEXT2', 'AGCAP_CLS2', 'AGRI_CAP2',
+  'SOILNAME3', 'SOIL_CODE3', 'EXTENT3', 'SURFTEXT3', 'AGCAP_CLS3', 'AGRI_CAP3',
 ].join(',');
 
 export async function fetchCliAgrForMuni(muniNameWithTyp, muniBoundaryFeature) {
   if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
-  // v2 (2026-05-20): source switched from AAFC's cli_agr_cap_250k to
-  // Manitoba's Soil_Survey_MB. v1 payloads had the federal CLASS_A/
-  // PERCENT_A/SUBCLAS_A1 field shape which the new paint + popup
-  // don't read — bumping the cache key forces a clean fetch.
-  const cacheKey = `mb_cli_agr_${muniNameWithTyp}_v2`;
+  // v3 (2026-05-20): added SURFTEXT{1-3} to outFields so the CLI fetch
+  // can drive the per-parcel composition stamp without missing the
+  // surface-texture line. v2 (source switch from AAFC to Manitoba's
+  // Soil_Survey_MB) → v3 forces a refresh.
+  const cacheKey = `mb_cli_agr_${muniNameWithTyp}_v3`;
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
 

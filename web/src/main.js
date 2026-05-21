@@ -3839,7 +3839,20 @@ async function toggleCliOverlay() {
         setCount(`No CLI soil-capability polygons in ${label}.`);
         return;
       }
-      setCliAgrData(map, { type: 'FeatureCollection', features });
+      const cliFc = { type: 'FeatureCollection', features };
+      setCliAgrData(map, cliFc);
+      // CLI now sources from the same Soil_Survey_MB polygons as the
+      // Soil Survey overlay (just painted differently — capability vs
+      // soil identity). That means the per-parcel composition stamp
+      // works identically whether the data came from the CLI fetch or
+      // the Soil Survey fetch. Stamping here ensures the parcel popup's
+      // top-3 soil composition section appears even when only CLI is
+      // enabled (user doesn't have to also toggle Soil Survey to see it).
+      if (currentRows.length > 0) {
+        const parcelFc = { type: 'FeatureCollection', features: currentRows.map((r) => r.parcel) };
+        stampSoilCompositionOnParcels(parcelFc, cliFc);
+        setMapData(parcelFc, lastZoningFc || EMPTY_FC, lastDevPlanFc || EMPTY_FC, { fit: false });
+      }
       cliLoadedFor = loadKey;
     } catch (err) {
       console.warn('CLI fetch failed', err);
@@ -4866,7 +4879,7 @@ function stampSoilCompositionOnParcels(parcelFc, soilFc) {
       continue;
     }
     const composition = soilSurveyComponentsFromMatches(matches, {
-      maxRows: 2,
+      maxRows: 3,
       parcelAreaAcres: parcelAcres(parcel),
     });
     parcel.properties._soilComposition = composition.length ? composition : null;
