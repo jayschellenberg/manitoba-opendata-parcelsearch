@@ -1849,6 +1849,21 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   min-height: 320px;
 }
 .workspace.map-collapsed .map-pane { display: none; }
+/* Expanded map fills the viewport vertically and drops the 16:9
+   aspect-ratio + width cap so it claims the workspace's full
+   horizontal width too. The table still flows below the map; the
+   user scrolls the page to reach it (the sticky toolbar inside
+   .table-pane carries the "Restore map" button so they can flip
+   back without scrolling all the way down). Mutually exclusive
+   with .map-collapsed — main.js's toggle handlers clear one when
+   setting the other so they don't fight. Generate Map captures
+   the canvas as-is, so an expanded map produces a wide PNG
+   snapshot; restoring the default brings the 16:9 framing back. */
+.workspace.map-expanded .map-pane {
+  max-width: none;
+  aspect-ratio: auto;
+  height: calc(100vh - 16px);
+}
 
 .table-pane {
   /* Flows below the map. Padding matches the original #results-wrap
