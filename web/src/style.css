@@ -559,11 +559,6 @@ header small a {
   padding-left: 12px;
   border-left: 1px solid #e5e7eb;
 }
-.maplibregl-popup .parcel-popup-actions {
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid #e5e7eb;
-}
 
 .sidebar .generate-map-btn {
   width: 100%;

@@ -3470,7 +3470,7 @@ const AUX_META = {
                  fetch: () => fetchTrafficFlow(),             setData: (m, fc) => setTrafficFlowData(m, fc), setVis: setTrafficFlowVisible },
   riskAreas:   { btn: () => $riskAreaToggle,    on: 'MASC risk areas', off: 'MASC risk areas', busy: 'Loading…',
                  fetch: () => fetchMascRiskAreas(),            setData: (m, fc) => setMascRiskAreasData(m, fc), setVis: setMascRiskAreasVisible },
-  muniParcels: { btn: () => $muniParcelsToggle, on: 'Parcel boundaries', off: 'Parcel boundaries', busy: 'Loading…',
+  muniParcels: { btn: () => $muniParcelsToggle, on: 'Assessment Parcels', off: 'Assessment Parcels', busy: 'Loading…',
                  fetch: () => fetchMuniParcelsForCurrentScope(),
                  setData: (m, fc) => setMuniParcelsMapData(fc), setVis: setMuniParcelsVisible },
 };
@@ -3528,7 +3528,7 @@ function resetMuniParcelsToggle() {
     if ($muniParcelsToggle.classList.contains('active')) {
       $muniParcelsToggle.classList.remove('active');
       $muniParcelsToggle.setAttribute('aria-pressed', 'false');
-      setOverlayBtnLabel($muniParcelsToggle, 'Parcel boundaries');
+      setOverlayBtnLabel($muniParcelsToggle, 'Assessment Parcels');
       mapReady.then(() => setMuniParcelsVisible(map, false));
     }
   }
