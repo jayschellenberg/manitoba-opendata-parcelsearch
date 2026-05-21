@@ -1443,7 +1443,10 @@ export function initMap(container, { onFeatureClick } = {}) {
 
       // Hover popup — works on every layer that's currently visible. Text
       // composed from whichever layer was hit (parcels take priority).
-      const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false });
+      // maxWidth 640 px is wide enough for the 2-column parcel popup
+      // layout (parcel info on the left, soil composition on the right)
+      // — see parcelHtml. Single-column popups still constrain via CSS.
+      const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, maxWidth: '640px' });
       // Sales-CSV multi-parcel sibling highlight. When the cursor sits
       // on a parcel that's part of a multi-parcel sale (its
       // _saleGroupRollIds property carries the OBJECTIDs of every
@@ -1562,7 +1565,7 @@ export function initMap(container, { onFeatureClick } = {}) {
       // That overrides the smooth scrollIntoView() in scrollToRow and
       // leaves the user staring at the map instead of the table row they
       // just clicked. With focus disabled, scrollToRow wins.
-      const parcelClickPopup = new maplibregl.Popup({ closeButton: true, focusAfterOpen: false });
+      const parcelClickPopup = new maplibregl.Popup({ closeButton: true, focusAfterOpen: false, maxWidth: '640px' });
       map.on('click', 'parcel-fill', (e) => {
         const f = e.features?.[0];
         if (!f) return;
@@ -1596,6 +1599,7 @@ export function initMap(container, { onFeatureClick } = {}) {
       // search-result parcels also sit at the cursor those win (queried
       // first in the layer list).
       const muniHoverPopup = new maplibregl.Popup({
+        maxWidth: '640px',
         closeButton: false,
         closeOnClick: false,
       });
@@ -1626,7 +1630,7 @@ export function initMap(container, { onFeatureClick } = {}) {
       // Click on a muni-parcel polygon → sticky popup (so the user can
       // copy the roll number, click the assessment-report link, etc).
       // Same content as the hover popup but with a close button.
-      const muniClickPopup = new maplibregl.Popup({ closeButton: true });
+      const muniClickPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '640px' });
       map.on('click', 'muni-parcels-fill', (e) => {
         if (map.getLayoutProperty('muni-parcels-fill', 'visibility') !== 'visible') return;
         // Defer to the search-result click handler when both layers
@@ -2252,15 +2256,6 @@ export function parcelHtml(p) {
       lines.push(`<em>${escapeHtml(p._asmtClass)}${escapeHtml(statusLabel)}</em>`);
     }
   }
-  // Soil composition — top-2 soils by area overlap, stamped by
-  // main.js's stampSoilCompositionOnParcels after the Soil Survey
-  // overlay loads. Only renders when the parcel actually intersects
-  // soil-survey polygons (rural/agricultural areas); urban parcels
-  // outside the soil-survey extent get null and the section is hidden.
-  const soilTable = soilSurveyParcelHtml(p._soilComposition);
-  if (soilTable) {
-    lines.push(`<strong>Soil composition</strong>${soilTable}`);
-  }
   // Bottom-anchored sale rate breakdown. Appears whenever a sale
   // price is present (single-parcel and multi-parcel sales alike) —
   // the lot count in parentheses behind Price/Lot makes single-vs-
@@ -2296,8 +2291,32 @@ export function parcelHtml(p) {
     actions.push(`<a href="${escapeHtml(safeReport)}" target="_blank" rel="noreferrer">Assessment report →</a>`);
   }
   actions.push(`<a href="#" class="parcel-coords-copy" role="button" title="Copy parcel centroid (lat, lng) to clipboard">Coordinates</a>`);
-  lines.push(actions.join(' &nbsp;·&nbsp; '));
-  return lines.join('<br>');
+
+  // Soil composition — top-3 soils by area overlap, stamped by
+  // main.js's stampSoilCompositionOnParcels after the Soil Survey
+  // overlay loads. Only renders when the parcel actually intersects
+  // soil-survey polygons (rural/agricultural areas); urban parcels
+  // outside the soil-survey extent get null and the section is hidden.
+  //
+  // Layout: when composition is present, render the popup as TWO
+  // COLUMNS — parcel identity/sale/assessment in the left column,
+  // soil composition in the right. Actions row spans both at the
+  // bottom. When composition is absent, fall back to the legacy
+  // single-column layout to keep the popup narrow.
+  const soilTable = soilSurveyParcelHtml(p._soilComposition);
+  const actionsHtml = actions.join(' &nbsp;·&nbsp; ');
+
+  if (soilTable) {
+    return `<div class="parcel-popup parcel-popup-2col">
+  <div class="parcel-popup-cols">
+    <div class="parcel-popup-main">${lines.join('<br>')}</div>
+    <div class="parcel-popup-soil"><strong>Soil composition</strong>${soilTable}</div>
+  </div>
+  <div class="parcel-popup-actions">${actionsHtml}</div>
+</div>`;
+  }
+  lines.push(actionsHtml);
+  return `<div class="parcel-popup">${lines.join('<br>')}</div>`;
 }
 
 /** Shared 'Land Size' formatter for both popup builders. Returns
@@ -2798,26 +2817,35 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
   if (soilHover) {
     lines.push(soilHover);
   }
-  const soilTable = soilSurveyParcelHtml(p._soilComposition);
-  if (soilTable) {
-    lines.push(`<strong>Soil composition</strong>${soilTable}`);
-  }
+  // Build actions row (when this is the click popup, not hover).
+  let actionsHtml = '';
   if (withReportLink) {
-    // Action row: Assessment report link + Coordinates copy link.
-    // Same layout as parcelHtml's action row so the search-result
-    // and Roll Layer click popups look identical at the bottom.
-    // wireCoordsCopy attaches the click listener after the popup is
-    // mounted (caller's job — see the muni-parcels-fill click
-    // handler in initMap).
     const actions = [];
     const safeReport = safeExternalUrl(p.Asmt_Rpt_Url);
     if (safeReport) {
       actions.push(`<a href="${escapeHtml(safeReport)}" target="_blank" rel="noreferrer">Assessment report →</a>`);
     }
     actions.push(`<a href="#" class="parcel-coords-copy" role="button" title="Copy parcel centroid (lat, lng) to clipboard">Coordinates</a>`);
-    lines.push(actions.join(' &nbsp;·&nbsp; '));
+    actionsHtml = actions.join(' &nbsp;·&nbsp; ');
   }
-  return `<div style="max-width:300px;line-height:1.4">${lines.join('<br>')}</div>`;
+  // Same 2-column treatment parcelHtml uses — soil composition on the
+  // right, parcel info on the left. Falls back to single-column when
+  // composition isn't loaded for this parcel.
+  const soilTable = soilSurveyParcelHtml(p._soilComposition);
+  if (soilTable) {
+    const actionsBlock = actionsHtml
+      ? `<div class="parcel-popup-actions">${actionsHtml}</div>`
+      : '';
+    return `<div class="parcel-popup parcel-popup-2col">
+  <div class="parcel-popup-cols">
+    <div class="parcel-popup-main">${lines.join('<br>')}</div>
+    <div class="parcel-popup-soil"><strong>Soil composition</strong>${soilTable}</div>
+  </div>
+  ${actionsBlock}
+</div>`;
+  }
+  if (actionsHtml) lines.push(actionsHtml);
+  return `<div class="parcel-popup">${lines.join('<br>')}</div>`;
 }
 
 function emptyFc() { return { type: 'FeatureCollection', features: [] }; }
