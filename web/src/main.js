@@ -3924,6 +3924,13 @@ function applyCliIdentityMode(cliFc) {
     legendTitle: 'Soil Type — top 20 in selected municipality',
     legendSub: 'Coloured by dominant soil association',
   });
+  // applyIdentityPalette mutates `_paintColor` on the in-memory feature
+  // properties and rewires the fill-color expression to `['get',
+  // '_paintColor']`. MapLibre's GeoJSON source took a copy when
+  // setCliAgrData ran at fetch time, so it doesn't see the post-hoc
+  // mutation — we have to re-push the FC for the paint to find the
+  // new field. Without this every polygon paints the fallback grey.
+  setCliAgrData(map, cliFc);
   // Identity-mode labels show the soil-survey map-unit symbol (e.g.
   // "ALMv-S2") rather than the capability code ("2W"). MAPUNITNOM is
   // already on every feature.
