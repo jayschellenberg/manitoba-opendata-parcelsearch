@@ -490,7 +490,7 @@
               <span class="overlay-dot" aria-hidden="true"></span>
               <span class="overlay-btn-label">MASC rating</span>
             </button>
-            <button id="cli-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled style="--dot-color:#65a30d" title="CLI Soil Capability for Agriculture (1=prime, 7=no agricultural capability; O=organic; $=urban/water). Sourced from Manitoba Soil Survey AGCAP_CLS — same dataset Manitoba's AgriMaps treats as authoritative. Select a municipality first.">
+            <button id="cli-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled style="--dot-color:#65a30d" title="CLI Soil Capability for Agriculture, sourced from Manitoba Soil Survey AGCAP_CLS — the same dataset Manitoba's AgriMaps treats as authoritative. Click cycles through three states: 1st click → capability (1=prime, 7=no agricultural capability; O=organic; $=urban/water); 2nd click → soil identity (coloured by dominant soil association, same palette as the Soil Survey overlay); 3rd click → off. Select a municipality first.">
               <span class="overlay-dot" aria-hidden="true"></span>
               <span class="overlay-btn-label">Soil productivity (CLI)</span>
             </button>
@@ -569,21 +569,11 @@
           <li><span class="swatch" style="background:#9c27b0"></span>J — worst</li>
         </ul>
       </div>
-      <div id="cli-legend" class="map-legend masc-legend" hidden>
-        <strong>CLI Soil Capability</strong>
-        <div class="legend-sub">Manitoba Soil Survey · AGCAP_CLS1</div>
-        <ul>
-          <li><span class="swatch" style="background:#1a6b26"></span>1 — prime</li>
-          <li><span class="swatch" style="background:#4fab57"></span>2</li>
-          <li><span class="swatch" style="background:#a6e29f"></span>3</li>
-          <li><span class="swatch" style="background:#f2d640"></span>4</li>
-          <li><span class="swatch" style="background:#f4a040"></span>5</li>
-          <li><span class="swatch" style="background:#a8754f"></span>6</li>
-          <li><span class="swatch" style="background:#9c27b0"></span>7 — no agric.</li>
-          <li><span class="swatch" style="background:#5e3b1a"></span>O — organic</li>
-          <li><span class="swatch" style="background:#cfd6dd"></span>$ — urban / water</li>
-        </ul>
-      </div>
+      <!-- Filled dynamically by main.js applyCliCapabilityMode /
+           applyCliIdentityMode depending on which mode the CLI
+           tri-state cycle is currently in (1st click → capability,
+           2nd click → identity, 3rd click → off). -->
+      <div id="cli-legend" class="map-legend masc-legend" hidden></div>
       <!-- Filled by main.js applySoilSurveyPalette / renderSoilSurveyLegend
            after Soil Survey loads — contents reflect the top-N soil
            associations actually present in the loaded muni. -->
