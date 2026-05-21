@@ -1656,6 +1656,57 @@ export function initMap(container, { onFeatureClick } = {}) {
         wireCoordsCopy(muniClickPopup, center);
       });
 
+      // Bare CLI-polygon hover / click. Fires only when no higher-priority
+      // layer (search-result parcel-fill, or a visible muni-parcels-fill
+      // Parcel-Boundaries polygon) is also under the cursor — those have
+      // their own popups that already bake in the CLI line. This branch
+      // covers the "Parcel Boundaries off, CLI on" case so the user still
+      // gets a Soil Type / capability tooltip on the underlying CLI
+      // polygons. Same gating on hover and click so behaviour is
+      // consistent across the two.
+      function shouldDeferToParcelLayer(point) {
+        if (map.queryRenderedFeatures(point, { layers: ['parcel-fill'] }).length > 0) return true;
+        if (map.getLayer('muni-parcels-fill') &&
+            map.getLayoutProperty('muni-parcels-fill', 'visibility') === 'visible' &&
+            map.queryRenderedFeatures(point, { layers: ['muni-parcels-fill'] }).length > 0) return true;
+        return false;
+      }
+      const cliHoverPopup = new maplibregl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        maxWidth: '340px',
+      });
+      map.on('mousemove', 'cli-agr-fill', (e) => {
+        if (map.getLayoutProperty('cli-agr-fill', 'visibility') !== 'visible') return;
+        if (shouldDeferToParcelLayer(e.point)) { cliHoverPopup.remove(); return; }
+        const p = e.features?.[0]?.properties;
+        if (!p) return;
+        const body = soilSurveyHoverHtml(p);
+        if (!body) { cliHoverPopup.remove(); return; }
+        cliHoverPopup
+          .setLngLat(e.lngLat)
+          .setHTML(`<div style="line-height:1.4;font-size:12px">${body}</div>`)
+          .addTo(map);
+        map.getCanvas().style.cursor = 'pointer';
+      });
+      map.on('mouseleave', 'cli-agr-fill', () => {
+        cliHoverPopup.remove();
+        map.getCanvas().style.cursor = '';
+      });
+      const cliClickPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '340px' });
+      map.on('click', 'cli-agr-fill', (e) => {
+        if (map.getLayoutProperty('cli-agr-fill', 'visibility') !== 'visible') return;
+        if (shouldDeferToParcelLayer(e.point)) return;
+        const p = e.features?.[0]?.properties;
+        if (!p) return;
+        const body = soilSurveyHoverHtml(p);
+        if (!body) return;
+        cliClickPopup
+          .setLngLat(e.lngLat)
+          .setHTML(`<div style="line-height:1.4;font-size:12px">${body}</div>`)
+          .addTo(map);
+      });
+
       // Click a contaminated-site point → small popup with the registry
       // designation + a link out to the official page for that site.
       const contamPopup = new maplibregl.Popup({ closeButton: true });
@@ -2831,7 +2882,14 @@ function soilSurveyHoverHtml(p) {
     rows.push(`${soil}${ext ? ` <strong>${escapeHtml(ext)}</strong>` : ''}`);
   }
   if (!rows.length) return null;
-  const swatch = `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${escapeHtml(p._paintColor || '#bfbfbf')};border:1px solid rgba(0,0,0,0.2);margin-right:6px;vertical-align:middle"></span>`;
+  // Swatch colour falls back through the same paths cliOverlayLine uses:
+  //   identity mode stamps `_paintColor` on every feature, so we read it.
+  //   capability mode never stamps anything — derive from AGCAP_CLS1's
+  //   first char so the swatch matches the map's `match` paint expression
+  //   instead of bleeding the generic fallback grey when CLI is in
+  //   "Soil Productivity" mode.
+  const swatchColor = p._paintColor || cliCapabilitySwatchColor(p.AGCAP_CLS1);
+  const swatch = `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${escapeHtml(swatchColor)};border:1px solid rgba(0,0,0,0.2);margin-right:6px;vertical-align:middle"></span>`;
   const detail = [];
   if (p.MAPUNITNOM) detail.push(`Map unit ${escapeHtml(p.MAPUNITNOM)}`);
   const cap = p.AGRI_CAP1 || p.AGCAP_CLS1;
