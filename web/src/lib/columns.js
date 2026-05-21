@@ -39,6 +39,8 @@ export const DEFAULT_VISIBLE = new Set([
   'acres',
   'zone1',
   'subjdist',
+  'clicls',
+  'soiltype',
 ]);
 
 // Column presets — `null` value means "everything that the current
