@@ -210,6 +210,24 @@ export function initChipInput(wrapperEl, { onEnterEmpty } = {}) {
     textInput.focus();
   });
 
+  // External-update hook. The hidden input's `values` array is held
+  // in this function's closure — once initChipInput has run, later
+  // code that does `hidden.value = 'X'` (e.g. main.js's
+  // applyUrlStateToInputs on page load with a `?r=...` URL) updates
+  // the DOM but NOT this closure, so the chip layer keeps showing
+  // whatever was first parsed (often nothing on page load). Listen
+  // for a `chip-input:reseed` event on the hidden input so callers
+  // who set the value externally can ask the chip layer to re-read
+  // and re-render. Not wired to plain `input`/`change` events
+  // because `sync()` above dispatches those itself; reusing them
+  // would create a feedback loop.
+  hidden.addEventListener('chip-input:reseed', () => {
+    const next = parseList(hidden.value);
+    if (next.join(',') === values.join(',')) return;
+    values = next;
+    render();
+  });
+
   // Initial render so any preloaded value (from URL state, etc.) shows.
   render();
   return true;
