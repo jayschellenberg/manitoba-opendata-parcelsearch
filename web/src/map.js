@@ -901,11 +901,18 @@ export function initMap(container, { onFeatureClick } = {}) {
           'fill-outline-color': 'rgba(0, 0, 0, 0.3)',
         },
       });
+      // Label source kept (unused now but the setSoilSurveyLabelsData
+      // setter still pushes to it) so any external code that still
+      // references this source ID doesn't break. The label LAYER now
+      // reads directly from the polygon source — MapLibre auto-derives
+      // a placement point per polygon, which saves the ~5K-feature
+      // labels-FeatureServer fetch (parallel to the polygon fetch,
+      // doubling network time on a busy muni like St Clements).
       map.addSource('soil-survey-labels', { type: 'geojson', data: emptyFc() });
       map.addLayer({
         id: 'soil-survey-label',
         type: 'symbol',
-        source: 'soil-survey-labels',
+        source: 'soil-survey',
         minzoom: 11,
         layout: {
           visibility: 'none',
