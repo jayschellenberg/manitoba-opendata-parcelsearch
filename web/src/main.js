@@ -88,6 +88,7 @@ import {
   setCliAgrData,
   setCliAgrVisible,
   setCliPaintMode,
+  decodeSoilDescriptor,
   setMascRiskAreasData,
   setMascRiskAreasVisible,
   setSurveyGridData,
@@ -4894,6 +4895,55 @@ function dominantSoilTypeLabel(p) {
   return top.soilName || top.soilCode || null;
 }
 
+/**
+ * Build the 33 CSV cells (11 columns × 3 soils) for the per-soil land-
+ * feature descriptors. Reads `_soilComposition[0..2]` (rolled-up by
+ * soil association, each entry already carries the largest-contributing
+ * polygon's descriptor codes per soilSurveyComponentsFromMatches),
+ * decodes each code to its human-readable label via map.js's domain
+ * tables, and returns the cells in CSV order. Missing composition
+ * entries (parcel has fewer than 3 soil associations) emit empty cells
+ * so the column count stays fixed across rows.
+ */
+const SOIL_CSV_DOMAINS_PER_SOIL = [
+  ['topo',      'Slope'],
+  ['stone',     'Stones'],
+  ['salinity',  'Salinity'],
+  ['erosion',   'Erosion'],
+  ['drainage',  'Drainage'],
+  ['surftextm', 'Surface Mod'],
+  ['mancon',    'Mgmt'],
+  ['genRatin',  'Irrigation'],
+  ['spudRtng',  'Potato'],
+];
+function soilCsvHeaders() {
+  const cols = [];
+  for (const idx of ['1', '2', '3']) {
+    cols.push(`Soil ${idx} Name`);
+    cols.push(`Soil ${idx} % of Parcel`);
+    for (const [, label] of SOIL_CSV_DOMAINS_PER_SOIL) cols.push(`Soil ${idx} ${label}`);
+  }
+  return cols;
+}
+function soilCsvCells(p) {
+  const comp = Array.isArray(p?._soilComposition) ? p._soilComposition : [];
+  const out = [];
+  for (let i = 0; i < 3; i++) {
+    const c = comp[i];
+    if (!c) {
+      out.push('', '');
+      for (let j = 0; j < SOIL_CSV_DOMAINS_PER_SOIL.length; j++) out.push('');
+      continue;
+    }
+    out.push(c.soilName || c.soilCode || '');
+    out.push(Number.isFinite(c.parcelPct) ? c.parcelPct.toFixed(1) : '');
+    for (const [field] of SOIL_CSV_DOMAINS_PER_SOIL) {
+      out.push(decodeSoilDescriptor(field, c[field]));
+    }
+  }
+  return out;
+}
+
 function soilCell(p) {
   const cell = document.createElement('td');
   const rating = p?._soilRating;
@@ -6246,6 +6296,7 @@ function exportCsv(explicitRows) {
     'Dev-Plan Designation', 'DP By-law',
     'Soil Rating', 'Risk Area',
     'CLI', 'Soil Type',
+    ...soilCsvHeaders(),
     'Changes',
     'DU', 'Acres', 'SF',
     csvAssessHeader(currentRows), 'Asmt Report URL',
@@ -6278,6 +6329,7 @@ function exportCsv(explicitRows) {
       formatDes(d1), d1.DP_BYLAW,
       p._soilRating ?? '', p._soilRiskArea ?? '',
       dominantCliLabel(p) ?? '', dominantSoilTypeLabel(p) ?? '',
+      ...soilCsvCells(p),
       formatChanges(row),
       p.Dwelling_Units ?? '',
       formatAcresCsv(ac),
