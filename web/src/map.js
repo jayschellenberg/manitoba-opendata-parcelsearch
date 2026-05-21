@@ -2246,7 +2246,19 @@ export function parcelHtml(p) {
   if (p._isSubject) {
     lines.push('<strong style="color:#1e6fd9">Subject parcel</strong>');
   }
-  if (p.Roll_No_Txt)        lines.push(`<strong>Roll #</strong> ${escapeHtml(rollDisplayFor(p))}`);
+  if (p.Roll_No_Txt) {
+    // Roll # is hyperlinked to the Manitoba Assessment Online report
+    // for this parcel — the natural single-click destination for
+    // "open the assessment report" instead of stashing the link at
+    // the bottom of the popup. Falls back to plain text when there's
+    // no report URL on the parcel feature.
+    const display = escapeHtml(rollDisplayFor(p));
+    const safeReport = safeExternalUrl(p.Asmt_Rpt_Url);
+    const rollLine = safeReport
+      ? `<a href="${escapeHtml(safeReport)}" target="_blank" rel="noreferrer" title="Open Manitoba Assessment report">${display}</a>`
+      : display;
+    lines.push(`<strong>Roll #</strong> ${rollLine}`);
+  }
   if (p.Property_Address)   lines.push(escapeHtml(p.Property_Address));
   if (p.Muni_Name_With_Typ) lines.push(`<em>${escapeHtml(p.Muni_Name_With_Typ)}</em>`);
   // Sale Date / Sale Price / Primary Property — populated only when
@@ -2292,6 +2304,14 @@ export function parcelHtml(p) {
   if (p._zoneCode)            summary.push(`<strong>Zoning</strong> ${escapeHtml(p._zoneCode)}`);
   if (p.Dwelling_Units != null) summary.push(`<strong>DU</strong> ${escapeHtml(p.Dwelling_Units)}`);
   if (summary.length)         lines.push(summary.join(' &nbsp;·&nbsp; '));
+  // GPS Coordinates link sits right under the Zoning/DU summary so
+  // it's discoverable without scrolling to the bottom of the popup.
+  // .parcel-coords-copy is wired by the click handler in initMap to
+  // copy the parcel centroid to the clipboard; the hover popup
+  // renders the same line but mouse-out closes the popup before the
+  // user can click, so it's effectively click-only — same UX as the
+  // previous bottom-of-popup placement.
+  lines.push(`<a href="#" class="parcel-coords-copy" role="button" title="Copy parcel centroid (lat, lng) to clipboard">GPS Coordinates</a>`);
   // Pending amendment text — same shape as the Changes column in the
   // table (stamped onto the parcel feature by enrichOverlays via
   // formatChanges(row)). Only emit when there's actually a change to
@@ -2346,17 +2366,10 @@ export function parcelHtml(p) {
     if (ppaFmt)  lines.push(`<strong>Price/Acre</strong> ${escapeHtml(ppaFmt)}`);
     if (pplFmt)  lines.push(`<strong>Price/Lot</strong> ${escapeHtml(pplFmt)} (${escapeHtml(groupSize)})`);
   }
-  // Action row at the bottom of the popup: Assessment report link +
-  // Coordinates copy link. The Coordinates anchor is wired by the
-  // parcel-fill click handler in initMap (it computes the polygon
-  // centroid from the full feature geometry, which isn't available on
-  // p here, and attaches a click listener that writes to the clipboard).
-  const actions = [];
-  const safeReport = safeExternalUrl(p.Asmt_Rpt_Url);
-  if (safeReport) {
-    actions.push(`<a href="${escapeHtml(safeReport)}" target="_blank" rel="noreferrer">Assessment report →</a>`);
-  }
-  actions.push(`<a href="#" class="parcel-coords-copy" role="button" title="Copy parcel centroid (lat, lng) to clipboard">Coordinates</a>`);
+  // (Assessment Report + GPS Coordinates links now live inline in
+  // the `lines` array above — the Roll # is hyperlinked to the
+  // assessment report, and the GPS Coordinates link sits under the
+  // Zoning/DU summary. No bottom actions row needed.)
 
   // Soil composition — top-3 soils by area overlap, stamped by
   // main.js's stampSoilCompositionOnParcels after the Soil Survey
@@ -2370,7 +2383,6 @@ export function parcelHtml(p) {
   // bottom. When composition is absent, fall back to the legacy
   // single-column layout to keep the popup narrow.
   const soilTable = soilSurveyParcelHtml(p._soilComposition);
-  const actionsHtml = actions.join(' &nbsp;·&nbsp; ');
 
   if (soilTable) {
     return `<div class="parcel-popup parcel-popup-2col">
@@ -2378,10 +2390,8 @@ export function parcelHtml(p) {
     <div class="parcel-popup-main">${lines.join('<br>')}</div>
     <div class="parcel-popup-soil"><strong>Soil composition</strong>${soilTable}</div>
   </div>
-  <div class="parcel-popup-actions">${actionsHtml}</div>
 </div>`;
   }
-  lines.push(actionsHtml);
   return `<div class="parcel-popup">${lines.join('<br>')}</div>`;
 }
 
@@ -3159,7 +3169,19 @@ function soilSurveyHoverHtml(p) {
  */
 function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
   const lines = [];
-  if (p.Roll_No_Txt)      lines.push(`<strong>Roll #</strong> ${escapeHtml(rollDisplayFor(p))}`);
+  if (p.Roll_No_Txt) {
+    // Roll # is hyperlinked to the Manitoba Assessment Online report
+    // (same treatment as parcelHtml on search-result parcels) — the
+    // natural single-click destination for "open the assessment
+    // report". Falls back to plain text when no report URL is
+    // present on the feature.
+    const display = escapeHtml(rollDisplayFor(p));
+    const safeReport = safeExternalUrl(p.Asmt_Rpt_Url);
+    const rollLine = safeReport
+      ? `<a href="${escapeHtml(safeReport)}" target="_blank" rel="noreferrer" title="Open Manitoba Assessment report">${display}</a>`
+      : display;
+    lines.push(`<strong>Roll #</strong> ${rollLine}`);
+  }
   if (p.Property_Address) lines.push(escapeHtml(p.Property_Address));
   if (p.Muni_Name_With_Typ) lines.push(`<em>${escapeHtml(p.Muni_Name_With_Typ)}</em>`);
   // Legal description from the MAO scrape index. Stamped onto every
@@ -3174,6 +3196,13 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
   }
   if (p.Dwelling_Units != null && p.Dwelling_Units !== '') {
     lines.push(`<strong>DU</strong> ${escapeHtml(p.Dwelling_Units)}`);
+  }
+  // GPS Coordinates link sits right after DU so it's a single click
+  // away on the click popup. Only rendered for the sticky/click
+  // variant — the hover popup closes on mouse-out before the user
+  // can click, so showing a dead link there would just add noise.
+  if (withReportLink) {
+    lines.push(`<a href="#" class="parcel-coords-copy" role="button" title="Copy parcel centroid (lat, lng) to clipboard">GPS Coordinates</a>`);
   }
   // Land size — _acres is computed and stamped onto each feature in
   // arcgis.js when the muni-parcels FC is fetched. Show both ac and sf.
@@ -3211,34 +3240,23 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
     if (d.DP_BYLAW)     bits.push(`By-law ${escapeHtml(d.DP_BYLAW)}`);
     if (bits.length) lines.push(`<strong style="color:#1a3a4a">Dev Plan</strong>: ${bits.join(' &middot; ')}`);
   }
-  // Build actions row (when this is the click popup, not hover).
-  let actionsHtml = '';
-  if (withReportLink) {
-    const actions = [];
-    const safeReport = safeExternalUrl(p.Asmt_Rpt_Url);
-    if (safeReport) {
-      actions.push(`<a href="${escapeHtml(safeReport)}" target="_blank" rel="noreferrer">Assessment report →</a>`);
-    }
-    actions.push(`<a href="#" class="parcel-coords-copy" role="button" title="Copy parcel centroid (lat, lng) to clipboard">Coordinates</a>`);
-    actionsHtml = actions.join(' &nbsp;·&nbsp; ');
-  }
+  // (Assessment Report + GPS Coordinates links now live inline in the
+  // `lines` array above — the Roll # is hyperlinked to the assessment
+  // report, and the GPS Coordinates link sits right after DU. No
+  // bottom actions row needed.)
+  //
   // Same 2-column treatment parcelHtml uses — soil composition on the
   // right, parcel info on the left. Falls back to single-column when
   // composition isn't loaded for this parcel.
   const soilTable = soilSurveyParcelHtml(p._soilComposition);
   if (soilTable) {
-    const actionsBlock = actionsHtml
-      ? `<div class="parcel-popup-actions">${actionsHtml}</div>`
-      : '';
     return `<div class="parcel-popup parcel-popup-2col">
   <div class="parcel-popup-cols">
     <div class="parcel-popup-main">${lines.join('<br>')}</div>
     <div class="parcel-popup-soil"><strong>Soil composition</strong>${soilTable}</div>
   </div>
-  ${actionsBlock}
 </div>`;
   }
-  if (actionsHtml) lines.push(actionsHtml);
   return `<div class="parcel-popup">${lines.join('<br>')}</div>`;
 }
 
