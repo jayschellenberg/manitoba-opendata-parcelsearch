@@ -3500,8 +3500,18 @@ function applySoilSurveyPalette(soilFc) {
   for (const f of soilFc.features || []) {
     const code = f.properties?.SOIL_CODE1;
     if (!code) continue;
-    let a = 0;
-    try { a = turfArea(f); } catch { /* skip topology errors */ }
+    // Prefer the server-precomputed Shape__Area (source-SR square
+    // metres) — for ranking we only need relative magnitudes so the
+    // unit doesn't matter. Fall back to client-side turfArea() only
+    // when the field is missing (e.g. for muni boundaries fetched
+    // from layers that don't expose it). Skipping ~3000 turfArea
+    // calls is the biggest single perf win when opening Soil Survey
+    // on a busy muni — see commit message.
+    const serverArea = Number(f.properties?.Shape__Area);
+    let a = Number.isFinite(serverArea) && serverArea > 0 ? serverArea : 0;
+    if (a <= 0) {
+      try { a = turfArea(f); } catch { /* skip topology errors */ }
+    }
     if (!Number.isFinite(a) || a <= 0) continue;
     areaByCode.set(code, (areaByCode.get(code) || 0) + a);
     if (!nameByCode.has(code)) nameByCode.set(code, f.properties?.SOILNAME1 || code);
@@ -3923,15 +3933,18 @@ async function toggleSoilSurveyOverlay() {
         setCount(`Couldn't locate boundary for ${missing.join(', ')}; can't load Soil Survey.`);
         return;
       }
-      // Polygons + label points fetched in parallel per-muni. Both
-      // calls are cached individually under their own keys so a muni
-      // re-toggle stays instant after the first load.
-      const [polyFcs, labelFcs] = await Promise.all([
-        Promise.all(muniBoundaries.map((mb) => fetchSoilSurveyForMuni(mb.muni, mb.feat))),
-        Promise.all(muniBoundaries.map((mb) => fetchSoilSurveyLabelsForMuni(mb.muni, mb.feat))),
-      ]);
-      const polyFeatures  = dedupeFeaturesByObjectId(polyFcs.flatMap((fc)  => fc?.features || []));
-      const labelFeatures = dedupeFeaturesByObjectId(labelFcs.flatMap((fc) => fc?.features || []));
+      // Polygons only. The companion label-points fetch
+      // (fetchSoilSurveyLabelsForMuni) was running in parallel and
+      // doubling network time on busy munis (St Clements ~3k polygons
+      // + ~5k label points, both with full attribute payloads). The
+      // map's `soil-survey-label` layer now reads from the polygon
+      // source directly — MapLibre auto-derives an interior placement
+      // point per polygon, which is the same visual result with no
+      // separate fetch.
+      const polyFcs = await Promise.all(
+        muniBoundaries.map((mb) => fetchSoilSurveyForMuni(mb.muni, mb.feat)),
+      );
+      const polyFeatures = dedupeFeaturesByObjectId(polyFcs.flatMap((fc) => fc?.features || []));
       if (polyFeatures.length === 0) {
         $soilSurveyToggle.classList.remove('active');
         $soilSurveyToggle.setAttribute('aria-pressed', 'false');
@@ -3942,7 +3955,6 @@ async function toggleSoilSurveyOverlay() {
         return;
       }
       const soilFc = { type: 'FeatureCollection', features: polyFeatures };
-      const labelsFc = { type: 'FeatureCollection', features: labelFeatures };
       // Build a fresh palette + dynamic legend for THIS area's actual
       // soil associations. The map's fill-color expression gets
       // rewritten to colour by SOIL_CODE1, so the user sees soil
@@ -3954,7 +3966,10 @@ async function toggleSoilSurveyOverlay() {
       applySoilSurveyPalette(soilFc);
       lastSoilSurveyFc = soilFc;
       setSoilSurveyData(map, soilFc);
-      setSoilSurveyLabelsData(map, labelsFc);
+      // Labels source kept empty — the label LAYER now reads from the
+      // polygon source via auto-placement. setSoilSurveyLabelsData is
+      // still exported in case callers want to push label points
+      // explicitly, just no longer called from this toggle.
       // Stamp per-parcel soil composition (component extents weighted
       // by parcel/map-unit overlap) so the parcel popup can render a
       // "Soil composition" section without re-running the spatial

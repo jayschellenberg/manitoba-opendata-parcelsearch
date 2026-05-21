@@ -920,6 +920,13 @@ const SOIL_SURVEY_FETCH_CAP = 50000;
 // and AGRI_CAP{1-3} (class + subclass like "2W") instead.
 const SOIL_SURVEY_OUTFIELDS = [
   'OBJECTID', 'MAPUNITNOM',
+  // Shape__Area is server-precomputed (source-SR square metres) and
+  // travels with every feature for free. applySoilSurveyPalette uses
+  // it for the area-ranking pass so we skip ~3000 turfArea() calls
+  // on the main thread when the user opens Soil Survey for a busy
+  // muni like St Clements (~3000 polygons). Property name is
+  // case-sensitive — ArcGIS GeoJSON returns it as "Shape__Area".
+  'Shape__Area',
   'SOILNAME1', 'SOIL_CODE1', 'CLASS1', 'EXTENT1', 'SURFTEXT1', 'AGCAP_CLS1', 'AGRI_CAP1',
   'SOILNAME2', 'SOIL_CODE2', 'CLASS2', 'EXTENT2', 'SURFTEXT2', 'AGCAP_CLS2', 'AGRI_CAP2',
   'SOILNAME3', 'SOIL_CODE3', 'CLASS3', 'EXTENT3', 'SURFTEXT3', 'AGCAP_CLS3', 'AGRI_CAP3',
@@ -928,10 +935,10 @@ const SOIL_SURVEY_OUTFIELDS = [
 
 export async function fetchSoilSurveyForMuni(muniNameWithTyp, muniBoundaryFeature) {
   if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
-  // v3 (2026-05-19): raised the page cap above the service's 2000-row
-  // maxRecordCount and added DATE. Large RMs such as Portage la Prairie
-  // and Rockwood exceed 2000 soil polygons, so v2 caches could be partial.
-  const cacheKey = `mb_soil_survey_${muniNameWithTyp}_v3`;
+  // v4 (2026-05-20): added Shape__Area to outFields so the client-side
+  // palette ranking skips ~3000 turfArea calls per fetch. v3 caches
+  // lack Shape__Area, so bump to v4 to refresh them.
+  const cacheKey = `mb_soil_survey_${muniNameWithTyp}_v4`;
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
 
