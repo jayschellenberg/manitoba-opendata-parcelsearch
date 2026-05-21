@@ -532,7 +532,12 @@ header small a {
   line-height: 1.4;
 }
 .maplibregl-popup .parcel-popup-2col {
-  max-width: 620px;
+  /* Wide enough for the soil-composition column to fit the per-soil
+     "Land features" descriptor lines (e.g. "Slope: 0 – 0.5% (level to
+     nearly level)") on a single line, instead of wrapping each
+     descriptor across two rows. Bumped from 620 → 760 px so the soil
+     column's flex basis (~360 px) has room to breathe. */
+  max-width: 760px;
   line-height: 1.4;
 }
 .maplibregl-popup .parcel-popup-cols {
@@ -545,7 +550,11 @@ header small a {
   min-width: 0;
 }
 .maplibregl-popup .parcel-popup-soil {
-  flex: 1 1 280px;
+  /* Wider basis than .parcel-popup-main — the soil composition rows
+     carry the multi-line land-features sub-blocks (slope / stones /
+     salinity / etc.) which need ~360 px to render the longest label
+     ("Slope: 0 – 0.5% (level to nearly level)") on one line. */
+  flex: 1.3 1 360px;
   min-width: 0;
   padding-left: 12px;
   border-left: 1px solid #e5e7eb;
