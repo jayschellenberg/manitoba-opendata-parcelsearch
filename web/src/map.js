@@ -1678,18 +1678,15 @@ export function initMap(container, { onFeatureClick } = {}) {
       // class but transition zones can carry mixed ratings like
       // "60% 3W, 40% 4T" — the popup makes that visible without
       // having to dig through the raw FeatureServer attributes.
-      const cliPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '320px' });
-      map.on('click', 'cli-agr-fill', (e) => {
-        const p = e.features?.[0]?.properties;
-        if (!p) return;
-        cliPopup.setLngLat(e.lngLat).setHTML(cliHtml(p)).addTo(map);
-      });
-      map.on('mouseenter', 'cli-agr-fill', () => {
-        if (map.getLayoutProperty('cli-agr-fill', 'visibility') === 'visible') {
-          map.getCanvas().style.cursor = 'pointer';
-        }
-      });
-      map.on('mouseleave', 'cli-agr-fill', () => { map.getCanvas().style.cursor = ''; });
+      // The CLI overlay no longer has a polygon-click popup. With the
+      // per-parcel composition section now in the main parcel popup
+      // (top-3 soils with capability chips), the polygon popup was
+      // redundant — a click on a search-result parcel that lay over
+      // a CLI polygon would fire two popups stacked on top of each
+      // other. Removed at the user's request.
+      //
+      // If we ever want the polygon-click behaviour back, the cliHtml
+      // builder lower in this file is still here.
 
       // Manitoba Soil Survey popup. Walks SOIL_{1,2,3} slots showing
       // soil name + extent percent + capability-class chip + surface
@@ -2451,18 +2448,29 @@ function cliHtml(p) {
 /**
  * Render a soil row for a popup table. Soil identity is shown as a
  * coloured swatch (matching the polygon's map fill, when present) +
- * the soil name + code. Capability rating is rendered as plain text
- * to the right rather than a coloured chip — the user said the 1-7
- * scale doesn't belong on a soil-survey legend, and matching the
- * popup avoids the confusion.
+ * the soil name + code. Capability rating is rendered as a coloured
+ * chip ("2W", "3MT", "O5", "$ZZ") to the right of the name — the
+ * user specifically asked for the capability colour-chip back when
+ * we collapsed the polygon-click popup into the parcel popup, since
+ * the chip is the fastest way to scan capability at a glance.
  */
-function soilSurveyPopupRow({ paintColor, name, code, agriCap, ext, surfaceTexture, mapUnit }) {
+function soilSurveyPopupRow({ paintColor, name, code, agriCap, agcapCls, ext, surfaceTexture, mapUnit }) {
   const swatch = `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${paintColor || '#bfbfbf'};border:1px solid rgba(0,0,0,0.2);margin-right:6px;vertical-align:middle"></span>`;
   const nameLine = code
     ? `<strong>${escapeHtml(name)}</strong> <span style="color:#888">(${escapeHtml(code)})</span>`
     : `<strong>${escapeHtml(name)}</strong>`;
-  const capLine = agriCap
-    ? `<div style="color:#555;font-size:11px">Capability ${escapeHtml(agriCap)}</div>`
+  // Capability chip. Background colour is keyed on the FIRST character
+  // of AGCAP_CLS (mirrors the cli-agr-fill paint expression). agriCap
+  // carries the class + subclass letter (e.g. "2W"); if it's missing
+  // fall back to the bare class so the chip still has something to show.
+  const firstChar = agcapCls?.[0] || agriCap?.[0] || '?';
+  const chipLabel = agriCap || agcapCls || '';
+  const chip = chipLabel
+    ? (() => {
+        const bg = CLI_CLASS_COLORS[firstChar] || '#bfbfbf';
+        const fg = CLI_WHITE_TEXT_CLASSES.has(firstChar) ? '#fff' : '#1a1a1a';
+        return `<span style="display:inline-block;min-width:1.6em;padding:1px 6px;border-radius:4px;background:${bg};color:${fg};font-weight:600;text-align:center;font-size:11px;margin-left:6px;vertical-align:middle">${escapeHtml(chipLabel)}</span>`;
+      })()
     : '';
   const texLine = surfaceTexture && String(surfaceTexture).trim()
     ? `<div style="color:#777;font-size:11px">Surface: ${escapeHtml(surfaceTexture)}</div>` : '';
@@ -2474,7 +2482,7 @@ function soilSurveyPopupRow({ paintColor, name, code, agriCap, ext, surfaceTextu
     ? `<td style="padding:2px 6px;vertical-align:top;text-align:right;white-space:nowrap"><strong>${escapeHtml(extText)}</strong></td>`
     : '<td></td>';
   return `<tr>
-    <td style="padding:4px 6px 4px 0;vertical-align:top">${swatch}${nameLine}${capLine}${texLine}${muLine}</td>
+    <td style="padding:4px 6px 4px 0;vertical-align:top">${swatch}${nameLine}${chip}${texLine}${muLine}</td>
     ${extCell}
   </tr>`;
 }
@@ -2499,6 +2507,7 @@ function soilSurveyHtml(p) {
       name,
       code:           p[`SOIL_CODE${slot}`],
       agriCap:        p[`AGRI_CAP${slot}`],
+      agcapCls:       p[`AGCAP_CLS${slot}`],
       ext:            p[`EXTENT${slot}`],
       surfaceTexture: p[`SURFTEXT${slot}`],
     }));
@@ -2541,14 +2550,30 @@ function soilSurveyHtml(p) {
 export function soilSurveyParcelHtml(composition) {
   const rows = readSoilComposition(composition);
   if (!rows.length) return null;
-  const html = rows.slice(0, 2).map((c) => {
+  // Render every row stampSoilCompositionOnParcels left for us — the
+  // stamp already caps at maxRows: 3 + an "Other" rollup, so no
+  // further slicing here. (Earlier this function .slice(0,2)'d on top
+  // of the stamp cap, hiding the third soil even after we bumped the
+  // stamp limit to 3 — the user spotted that.)
+  const html = rows.map((c) => {
     const swatch = `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${escapeHtml(c.paintColor || '#bfbfbf')};border:1px solid rgba(0,0,0,0.2);margin-right:6px;vertical-align:middle"></span>`;
     const name = c.soilName || 'Mapped soil';
     const nameLine = c.soilCode
       ? `${swatch}<strong>${escapeHtml(name)}</strong> <span style="color:#888">(${escapeHtml(c.soilCode)})</span>`
       : `${swatch}<strong>${escapeHtml(name)}</strong>`;
-    const cap = c.agriCap || c.agcapCls;
-    const capLine = cap ? `<div style="color:#555;font-size:11px">Capability ${escapeHtml(cap)}</div>` : '';
+    // Capability chip — coloured by the first character of AGCAP_CLS
+    // (same paint as the CLI overlay's fill, so "2W" reads green,
+    // "3W" reads light green, etc.). Inline with the soil name so
+    // the row scans capability + identity at a glance.
+    const firstChar = c.agcapCls?.[0] || c.agriCap?.[0] || '?';
+    const chipLabel = c.agriCap || c.agcapCls || '';
+    const chip = chipLabel
+      ? (() => {
+          const bg = CLI_CLASS_COLORS[firstChar] || '#bfbfbf';
+          const fg = CLI_WHITE_TEXT_CLASSES.has(firstChar) ? '#fff' : '#1a1a1a';
+          return `<span style="display:inline-block;min-width:1.6em;padding:1px 6px;border-radius:4px;background:${bg};color:${fg};font-weight:600;text-align:center;font-size:11px;margin-left:6px;vertical-align:middle">${escapeHtml(chipLabel)}</span>`;
+        })()
+      : '';
     const textureLine = c.surfaceText
       ? `<div style="color:#666;font-size:11px">Surface: ${escapeHtml(c.surfaceText)}</div>`
       : '';
@@ -2564,7 +2589,7 @@ export function soilSurveyParcelHtml(composition) {
       : '';
     const areaLine = [areaText, pctText ? `${pctText} of parcel` : ''].filter(Boolean).join(' · ');
     return `<tr>
-      <td style="padding:4px 8px 4px 0;vertical-align:top">${nameLine}${capLine}${textureLine}${unitLine}</td>
+      <td style="padding:4px 8px 4px 0;vertical-align:top">${nameLine}${chip}${textureLine}${unitLine}</td>
       <td style="padding:4px 0;vertical-align:top;text-align:right;white-space:nowrap"><strong>${escapeHtml(areaLine)}</strong></td>
     </tr>`;
   }).join('');
