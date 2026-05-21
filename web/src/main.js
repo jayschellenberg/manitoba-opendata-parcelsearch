@@ -675,6 +675,12 @@ const SORT_KEYS = {
   // Sort by MASC rating (A best → J worst). Empty cells go last.
   soil:     (r) => strKey(r.parcel.properties._soilRating),
   riskarea: (r) => finiteOrNeg(r.parcel.properties._soilRiskArea),
+  // CLI capability + Soil Type sort by the dominant soil's
+  // AGRI_CAP / SOILNAME from the stamped composition. Empty
+  // composition (no Soil Survey / CLI overlay loaded) sorts last
+  // via the ￿ sentinel in strKey.
+  clicls:   (r) => strKey(dominantCliLabel(r.parcel.properties)),
+  soiltype: (r) => strKey(dominantSoilTypeLabel(r.parcel.properties)),
   changes: (r) => strKey(formatChanges(r)),
   du:      (r) => finiteOrNeg(r.parcel.properties.Dwelling_Units),
   acres:   (r) => finiteOrNeg(parcelAcres(r.parcel)),
@@ -4962,6 +4968,11 @@ function renderTable(rows, { resetPage = true } = {}) {
     const riskAreaCell = td(p._soilRiskArea != null ? String(p._soilRiskArea) : null, 'num');
     riskAreaCell.classList.add('masc-only');
     tr.appendChild(riskAreaCell);
+    // CLI capability + Soil Type for the dominant (highest area-share)
+    // soil — read directly from the stamped composition array. Empty
+    // when no overlay has loaded for this muni yet.
+    tr.appendChild(td(dominantCliLabel(p)));
+    tr.appendChild(td(dominantSoilTypeLabel(p)));
     tr.appendChild(td(badge(formatChanges(row), 'badge-amend')));
     tr.appendChild(td(formatDu(p.Dwelling_Units), 'num'));
     // Basic-mode position for Acres — hidden in sales mode (the
@@ -5043,6 +5054,29 @@ if ($paginator) {
  * dominated a multi-quarter parcel. Empty cell when the parcel falls
  * outside MASC coverage (typical of urban lots).
  */
+/**
+ * Dominant CLI capability rating for the parcel — AGRI_CAP of the
+ * top-share soil from the stamped composition (e.g. "2W"). Empty
+ * when no Soil Survey / CLI overlay has been loaded for this muni.
+ * Falls back to AGCAP_CLS if AGRI_CAP is missing.
+ */
+function dominantCliLabel(p) {
+  const top = Array.isArray(p?._soilComposition) ? p._soilComposition[0] : null;
+  if (!top) return null;
+  return top.agriCap || top.agcapCls || null;
+}
+
+/**
+ * Dominant soil association name for the parcel — SOILNAME1 of the
+ * top-share soil from the stamped composition (e.g. "Red River").
+ * Empty when no Soil Survey / CLI overlay has been loaded.
+ */
+function dominantSoilTypeLabel(p) {
+  const top = Array.isArray(p?._soilComposition) ? p._soilComposition[0] : null;
+  if (!top) return null;
+  return top.soilName || top.soilCode || null;
+}
+
 function soilCell(p) {
   const cell = document.createElement('td');
   const rating = p?._soilRating;
@@ -6394,6 +6428,7 @@ function exportCsv(explicitRows) {
     'Zoning 2', 'ZBL',
     'Dev-Plan Designation', 'DP By-law',
     'Soil Rating', 'Risk Area',
+    'CLI', 'Soil Type',
     'Changes',
     'DU', 'Acres', 'SF',
     csvAssessHeader(currentRows), 'Asmt Report URL',
@@ -6425,6 +6460,7 @@ function exportCsv(explicitRows) {
       formatZoneCode(z2), z1.ZBL,
       formatDes(d1), d1.DP_BYLAW,
       p._soilRating ?? '', p._soilRiskArea ?? '',
+      dominantCliLabel(p) ?? '', dominantSoilTypeLabel(p) ?? '',
       formatChanges(row),
       p.Dwelling_Units ?? '',
       formatAcresCsv(ac),

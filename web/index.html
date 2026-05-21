@@ -786,6 +786,14 @@
                  whenever the MASC Rating overlay is on). -->
             <th data-col="soil"     class="masc-only" title="Dominant MASC soil-rating (A best → J worst), area-weighted across the parcel. Built per-muni from MASC's quarter-section ratings.">Soil</th>
             <th data-col="riskarea" class="masc-only" title="Official MASC Risk_Area polygon from Manitoba Maps / Open Canada. Drives crop-insurance premium tiers.">Risk Area</th>
+            <!-- CLI capability + Soil Type for the dominant (highest
+                 area-share) soil on each parcel. Populated whenever the
+                 Soil Survey or Soil Productivity (CLI) overlay has
+                 loaded for the muni; left blank otherwise. Both columns
+                 read directly off the parcel's stamped _soilComposition
+                 array — see stampSoilCompositionOnParcels in main.js. -->
+            <th data-col="clicls" title="CLI capability class (with subclass) of the parcel's dominant soil, by area. Example: 2W = Class 2 with excess-water limitation. Populates when the Soil Survey or Soil Productivity (CLI) overlay has loaded.">CLI</th>
+            <th data-col="soiltype" title="Soil association name of the parcel's dominant soil, by area within the parcel polygon. Example: Red River, Osborne. Populates when the Soil Survey or Soil Productivity (CLI) overlay has loaded.">Soil Type</th>
             <th data-col="changes">Changes</th>
             <th data-col="du">DU</th>
             <th data-col="acres" class="basic-only">Acres</th>
