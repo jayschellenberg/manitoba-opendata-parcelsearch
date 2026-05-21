@@ -2545,7 +2545,7 @@ function cliHtml(p) {
  * we collapsed the polygon-click popup into the parcel popup, since
  * the chip is the fastest way to scan capability at a glance.
  */
-function soilSurveyPopupRow({ paintColor, name, code, agriCap, agcapCls, ext, surfaceTexture, mapUnit }) {
+function soilSurveyPopupRow({ paintColor, name, code, agriCap, agcapCls, ext, surfaceTexture, mapUnit, descriptors }) {
   const swatch = `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${paintColor || '#bfbfbf'};border:1px solid rgba(0,0,0,0.2);margin-right:6px;vertical-align:middle"></span>`;
   const nameLine = code
     ? `<strong>${escapeHtml(name)}</strong> <span style="color:#888">(${escapeHtml(code)})</span>`
@@ -2568,12 +2568,21 @@ function soilSurveyPopupRow({ paintColor, name, code, agriCap, agcapCls, ext, su
   const muText = formatMapUnits(mapUnit);
   const muLine = muText
     ? `<div style="color:#777;font-size:11px">Map unit: ${escapeHtml(muText)}</div>` : '';
+  // Per-slot land-feature descriptors (slope, stoniness, salinity,
+  // erosion, drainage, surface modifier, management considerations,
+  // irrigation rating, potato suitability). Each is its own short
+  // line under the surface-texture / map-unit lines, so the popup
+  // stays scannable even when all nine descriptors are populated.
+  const descriptorLines = descriptors ? soilDescriptorLines(descriptors) : [];
+  const descLines = descriptorLines.length
+    ? `<div style="color:#777;font-size:11px;margin-top:2px">${descriptorLines.map(escapeHtml).join('<br>')}</div>`
+    : '';
   const extText = formatSoilExtent(ext);
   const extCell = extText
     ? `<td style="padding:2px 6px;vertical-align:top;text-align:right;white-space:nowrap"><strong>${escapeHtml(extText)}</strong></td>`
     : '<td></td>';
   return `<tr>
-    <td style="padding:4px 6px 4px 0;vertical-align:top">${swatch}${nameLine}${chip}${texLine}${muLine}</td>
+    <td style="padding:4px 6px 4px 0;vertical-align:top">${swatch}${nameLine}${chip}${texLine}${muLine}${descLines}</td>
     ${extCell}
   </tr>`;
 }
@@ -2601,6 +2610,7 @@ function soilSurveyHtml(p) {
       agcapCls:       p[`AGCAP_CLS${slot}`],
       ext:            p[`EXTENT${slot}`],
       surfaceTexture: p[`SURFTEXT${slot}`],
+      descriptors:    descriptorsFromPolygonSlot(p, slot),
     }));
   }
 
@@ -2672,6 +2682,16 @@ export function soilSurveyParcelHtml(composition) {
     const unitLine = unitText
       ? `<div style="color:#777;font-size:11px">Map unit: ${escapeHtml(unitText)}</div>`
       : '';
+    // Per-soil land-feature descriptors (slope, stoniness, salinity,
+    // erosion, drainage, surface modifier, management considerations,
+    // irrigation rating, potato suitability). The values were
+    // attributed to this composition row by soilSurveyComponentsFromMatches
+    // from whichever polygon contributed the largest share of this soil
+    // to the parcel.
+    const descriptorLines = soilDescriptorLines(c);
+    const descBlock = descriptorLines.length
+      ? `<div style="color:#777;font-size:11px;margin-top:2px">${descriptorLines.map(escapeHtml).join('<br>')}</div>`
+      : '';
     const areaText = Number.isFinite(c.areaAcres)
       ? formatSoilAcres(c.areaAcres)
       : null;
@@ -2680,7 +2700,7 @@ export function soilSurveyParcelHtml(composition) {
       : '';
     const areaLine = [areaText, pctText ? `${pctText} of parcel` : ''].filter(Boolean).join(' · ');
     return `<tr>
-      <td style="padding:4px 8px 4px 0;vertical-align:top">${nameLine}${chip}${textureLine}${unitLine}</td>
+      <td style="padding:4px 8px 4px 0;vertical-align:top">${nameLine}${chip}${textureLine}${unitLine}${descBlock}</td>
       <td style="padding:4px 0;vertical-align:top;text-align:right;white-space:nowrap"><strong>${escapeHtml(areaLine)}</strong></td>
     </tr>`;
   }).join('');
@@ -2829,6 +2849,210 @@ function cliCapabilitySwatchColor(agcapCls1) {
 }
 
 /**
+ * Code → label tables for the per-soil-component Manitoba Soil Survey
+ * descriptors fetched via CLI_AGR_CAP_OUTFIELDS. Codes are pulled
+ * directly from the Soil_Survey_MB layer's coded-value domains so the
+ * labels stay authoritative. Special "$XX" codes (Modified land,
+ * Unclassified, Urban, Water, Marsh, Eroded slope complex) appear in
+ * several domains and are kept in each so unusual polygons read
+ * sensibly instead of falling to the raw code.
+ *
+ * Each domain has a small `decode${X}(code)` companion that returns
+ * the label or the raw code when unmapped, so renderers can stay
+ * one-liners.
+ */
+const SOIL_TOPO_LABELS = {
+  x: '0 – 0.5% (level to nearly level)',
+  b: '>0.5 – 2% (nearly level)',
+  c: '>2 – 5% (very gently rolling)',
+  d: '>5 – 9% (gently sloping)',
+  e: '>9 – 15% (moderately sloping)',
+  f: '>15 – 30% (strongly sloping)',
+  g: '>30 – 45% (very strongly sloping)',
+  h: '>45 – 70% (extremely sloping)',
+  i: '>70 – 100% (steeply sloping)',
+  j: '>100% (very steep)',
+  $ML: 'Modified land',
+  $UL: 'Unclassified land',
+  $UR: 'Urban land',
+  $ZZ: 'Water',
+  $MH: 'Marsh complex',
+};
+const SOIL_STONE_LABELS = {
+  x: 'Non-stony (<0.01%)',
+  1: 'Slightly stony (0.01% – <0.1%)',
+  2: 'Moderately stony (0.1 – <3%)',
+  3: 'Very stony (3 – <15%)',
+  4: 'Exceedingly stony (15 – 50%)',
+  5: 'Excessively stony (>50%)',
+  ORG: 'Organic soil',
+  $ER: 'Eroded slope complex',
+  $ML: 'Modified land',
+  $UL: 'Unclassified land',
+  $UR: 'Urban land',
+  $ZZ: 'Water',
+};
+const SOIL_SALINITY_LABELS = {
+  x: 'Non-saline (0 – 4 mS/cm)',
+  s: 'Weakly saline (>4 – 8 mS/cm)',
+  t: 'Moderately saline (>8 – 16 mS/cm)',
+  u: 'Strongly saline (>16 mS/cm)',
+  ORG: 'Organic soil',
+  $ML: 'Modified land',
+  $UL: 'Unclassified land',
+  $UR: 'Urban land',
+  $ZZ: 'Water',
+};
+const SOIL_EROSION_LABELS = {
+  x: 'Non-eroded or minimal',
+  1: 'Slightly eroded',
+  2: 'Moderately eroded',
+  3: 'Severely eroded',
+  o: 'Overwash / overblown',
+  ORG: 'Organic soil',
+  $ML: 'Modified land',
+  $UL: 'Unclassified land',
+  $UR: 'Urban land',
+  $ZZ: 'Water',
+};
+const SOIL_DRAINAGE_LABELS = {
+  R: 'Rapid',
+  W: 'Well',
+  I: 'Imperfect',
+  P: 'Poor',
+  VP: 'Very poor',
+  $ML: 'Modified land',
+  $UL: 'Unclassified land',
+  $UR: 'Urban land',
+  $ZZ: 'Water',
+};
+const SOIL_SURFTEXTM_LABELS = {
+  GR: 'Gravelly',
+  MU: 'Mucky',
+  VR: 'Very gravelly',
+  WY: 'Woody',
+};
+const SOIL_MANCON_LABELS = {
+  'No Constraints': 'No constraints',
+  C:    'Coarse texture',
+  'C T':'Coarse texture + topography',
+  CW:   'Coarse texture + wetness',
+  CWT:  'Coarse texture, wetness + topography',
+  F:    'Fine texture',
+  'F T':'Fine texture + topography',
+  FW:   'Fine texture + wetness',
+  FWT:  'Fine texture, wetness + topography',
+  T:    'Topography (slopes >5%)',
+  W:    'Wetness (poor / very-poor drainage)',
+  WT:   'Wetness + topography',
+  B:    'Bedrock',
+  TB:   'Topography + bedrock',
+  'W B':'Wetness + bedrock',
+  'Eroded slopes': 'Eroded slopes',
+  Marsh:        'Marsh',
+  Organic:      'Organic',
+  Rock:         'Rock',
+  Unclassified: 'Unclassified',
+  Water:        'Water',
+};
+const SOIL_SPUD_LABELS = {
+  1: 'Class 1 (most suitable for potatoes)',
+  2: 'Class 2 (potato suitability)',
+  3: 'Class 3 (potato suitability)',
+  4: 'Class 4 (potato suitability)',
+  5: 'Class 5 (least suitable for potatoes)',
+  $ML: 'Modified land',
+  $UL: 'Unclassified land',
+  $UR: 'Urban land',
+  $ZZ: 'Water',
+};
+
+function lookupSoilLabel(table, code) {
+  if (code == null) return null;
+  const raw = String(code).trim();
+  if (!raw) return null;
+  return table[raw] ?? table[raw.toLowerCase()] ?? table[raw.toUpperCase()] ?? raw;
+}
+
+// Dispatcher keyed on composition-row field name so CSV / table helpers
+// in main.js can decode a descriptor code without importing every domain
+// table individually. Returns an empty string for missing or unmappable
+// codes (so CSV cells stay blank instead of carrying raw "x" / "$ML"
+// strings). GEN_RATIN codes are already human-readable so the dispatcher
+// passes them through.
+const SOIL_DESCRIPTOR_DOMAINS = {
+  topo:      SOIL_TOPO_LABELS,
+  stone:     SOIL_STONE_LABELS,
+  salinity:  SOIL_SALINITY_LABELS,
+  erosion:   SOIL_EROSION_LABELS,
+  drainage:  SOIL_DRAINAGE_LABELS,
+  surftextm: SOIL_SURFTEXTM_LABELS,
+  mancon:    SOIL_MANCON_LABELS,
+  spudRtng:  SOIL_SPUD_LABELS,
+};
+export function decodeSoilDescriptor(domain, code) {
+  if (code == null || code === '') return '';
+  if (domain === 'genRatin') {
+    // Pass-through with cleanup of "$XX" specials.
+    const specials = { ORG: 'Organic', $ML: 'Modified land', $UL: 'Unclassified land', $UR: 'Urban land', $ZZ: 'Water' };
+    return specials[String(code).trim()] ?? String(code).trim();
+  }
+  const table = SOIL_DESCRIPTOR_DOMAINS[domain];
+  if (!table) return String(code);
+  return lookupSoilLabel(table, code) ?? '';
+}
+
+/**
+ * Build the per-slot "Land features" descriptor lines from either a
+ * polygon-properties object (slot suffix supplied) or a composition
+ * row (per-slot codes already pulled). Returns an array of "Label:
+ * value" strings, skipping any descriptor whose code is missing. The
+ * caller decides how to join (middle-dot for hover; <br> for the rich
+ * popup row).
+ *
+ *   forPolygonSlot(p, '1') → reads p.TOPO1, p.STONE1, …
+ *   forCompositionRow(row)  → reads row.topo, row.stone, … (the
+ *                             largest-contributor descriptors that
+ *                             soilSurveyComponentsFromMatches stamps)
+ */
+function soilDescriptorLines({ topo, stone, salinity, erosion, drainage, surftextm, mancon, genRatin, spudRtng }) {
+  const lines = [];
+  const push = (label, code, table) => {
+    const value = lookupSoilLabel(table, code);
+    if (value) lines.push(`${label}: ${value}`);
+  };
+  push('Slope',       topo,      SOIL_TOPO_LABELS);
+  push('Stones',      stone,     SOIL_STONE_LABELS);
+  push('Salinity',    salinity,  SOIL_SALINITY_LABELS);
+  push('Erosion',     erosion,   SOIL_EROSION_LABELS);
+  push('Drainage',    drainage,  SOIL_DRAINAGE_LABELS);
+  push('Surface mod', surftextm, SOIL_SURFTEXTM_LABELS);
+  push('Mgmt',        mancon,    SOIL_MANCON_LABELS);
+  // GEN_RATIN codes are already human readable (Excellent / Good / …)
+  // — pass through unless the polygon carries a "$XX" special.
+  if (genRatin) {
+    const value = lookupSoilLabel({ ORG: 'Organic', $ML: 'Modified land', $UL: 'Unclassified land', $UR: 'Urban land', $ZZ: 'Water' }, genRatin) ?? genRatin;
+    lines.push(`Irrigation: ${value}`);
+  }
+  push('Potato',      spudRtng,  SOIL_SPUD_LABELS);
+  return lines;
+}
+
+function descriptorsFromPolygonSlot(p, slot) {
+  return {
+    topo:      p?.[`TOPO${slot}`],
+    stone:     p?.[`STONE${slot}`],
+    salinity:  p?.[`SALINITY${slot}`],
+    erosion:   p?.[`EROSION${slot}`],
+    drainage:  p?.[`DRAINAGE${slot}`],
+    surftextm: p?.[`SURFTEXTM${slot}`],
+    mancon:    p?.[`MANCON${slot}`],
+    genRatin:  p?.[`GEN_RATIN${slot}`],
+    spudRtng:  p?.[`SPUD_RTNG${slot}`],
+  };
+}
+
+/**
  * Single-line CLI overlay info for muniParcelHtml — shows either the
  * capability code or the soil-association name from the polygon under
  * the cursor, depending on which mode the user has the CLI overlay in.
@@ -2879,7 +3103,15 @@ function soilSurveyHoverHtml(p) {
     const soil = code
       ? `${escapeHtml(name)} <span style="color:#777">(${escapeHtml(code)})</span>`
       : escapeHtml(name);
-    rows.push(`${soil}${ext ? ` <strong>${escapeHtml(ext)}</strong>` : ''}`);
+    const head = `${soil}${ext ? ` <strong>${escapeHtml(ext)}</strong>` : ''}`;
+    // Compact one-line "Land features" beneath each soil — joined with
+    // middle-dots and clamped to a shorter font so the hover stays
+    // scannable when all nine descriptors are populated.
+    const descriptors = soilDescriptorLines(descriptorsFromPolygonSlot(p, slot));
+    const descSuffix = descriptors.length
+      ? `<div style="color:#666;font-size:11px;margin:1px 0 4px 0">${escapeHtml(descriptors.join(' · '))}</div>`
+      : '';
+    rows.push(`<div style="margin-top:4px">${head}${descSuffix}</div>`);
   }
   if (!rows.length) return null;
   // Swatch colour falls back through the same paths cliOverlayLine uses:
@@ -2898,7 +3130,10 @@ function soilSurveyHoverHtml(p) {
   const detailLine = detail.length
     ? `<div style="color:#666;font-size:11px;margin-top:2px">${detail.join(' &middot; ')}</div>`
     : '';
-  return `<strong>Soil under cursor</strong><br>${swatch}${rows.join(' &middot; ')}${detailLine}`;
+  // Each row already wraps in its own block (with a per-slot land-features
+  // sub-line); join with empty string so they stack vertically instead of
+  // running together on one line.
+  return `<strong>Soil under cursor</strong> ${swatch}${rows.join('')}${detailLine}`;
 }
 
 /**

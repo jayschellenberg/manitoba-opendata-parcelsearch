@@ -847,6 +847,29 @@ const CLI_AGR_CAP_OUTFIELDS = [
   'SOILNAME1', 'SOIL_CODE1', 'EXTENT1', 'SURFTEXT1', 'AGCAP_CLS1', 'AGRI_CAP1',
   'SOILNAME2', 'SOIL_CODE2', 'EXTENT2', 'SURFTEXT2', 'AGCAP_CLS2', 'AGRI_CAP2',
   'SOILNAME3', 'SOIL_CODE3', 'EXTENT3', 'SURFTEXT3', 'AGCAP_CLS3', 'AGRI_CAP3',
+  // Per-soil-component Manitoba Soil Survey descriptors. These power
+  // the "Land features" lines in the hover/click popups (per slot,
+  // decoded via map.js's TOPO_LABELS / STONE_LABELS / etc.) and the
+  // dominant-soil descriptor columns in the CSV export.
+  //
+  //   TOPO       — slope class (a-j + level/marsh/urban/water specials)
+  //   STONE      — stoniness (Non-stony … Excessively stony)
+  //   SALINITY   — non-saline through strongly saline (mS/cm bands)
+  //   EROSION    — non-eroded through severely eroded / overwash
+  //   DRAINAGE   — rapid / well / imperfect / poor / very poor
+  //   SURFTEXTM  — surface-texture modifier (gravelly, mucky, woody)
+  //   MANCON     — rolled-up management-considerations code
+  //   GEN_RATIN  — irrigation suitability rating
+  //   SPUD_RTNG  — potato-irrigation suitability class
+  'TOPO1', 'TOPO2', 'TOPO3',
+  'STONE1', 'STONE2', 'STONE3',
+  'SALINITY1', 'SALINITY2', 'SALINITY3',
+  'EROSION1', 'EROSION2', 'EROSION3',
+  'DRAINAGE1', 'DRAINAGE2', 'DRAINAGE3',
+  'SURFTEXTM1', 'SURFTEXTM2', 'SURFTEXTM3',
+  'MANCON1', 'MANCON2', 'MANCON3',
+  'GEN_RATIN1', 'GEN_RATIN2', 'GEN_RATIN3',
+  'SPUD_RTNG1', 'SPUD_RTNG2', 'SPUD_RTNG3',
   // Server-precomputed polygon area in metres² (Shape__Area is the
   // ArcGIS Online auto-field). Lets the Soil Type palette ranking and
   // the per-parcel composition stamp skip the per-feature turfArea
@@ -856,14 +879,19 @@ const CLI_AGR_CAP_OUTFIELDS = [
 
 export async function fetchCliAgrForMuni(muniNameWithTyp, muniBoundaryFeature) {
   if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
-  // v5 (2026-05-21): added Shape__Area to outFields so the Soil Type
-  //   palette can rank by server-precomputed area instead of the slow
-  //   turfArea fallback. v4 (2026-05-20): added maxAllowableOffset
-  //   matching the Soil Survey fetch so CLI payloads also shrink by
-  //   60-80% on busy munis. CLI sources from the same Soil_Survey_MB
-  //   layer; the offset is fine for capability-class viewing at
-  //   muni-wide zoom (10-12).
-  const cacheKey = `mb_cli_agr_${muniNameWithTyp}_v5`;
+  // v6 (2026-05-21): added per-slot Manitoba Soil Survey descriptors
+  //   (TOPO, STONE, SALINITY, EROSION, DRAINAGE, SURFTEXTM, MANCON,
+  //   GEN_RATIN, SPUD_RTNG × 3 slots) so the soil popups can render
+  //   "Land features" lines and the CSV can carry dominant-soil
+  //   descriptor columns. v5 (2026-05-21): added Shape__Area to
+  //   outFields so the Soil Type palette can rank by server-
+  //   precomputed area instead of the slow turfArea fallback.
+  //   v4 (2026-05-20): added maxAllowableOffset matching the Soil
+  //   Survey fetch so CLI payloads also shrink by 60-80% on busy
+  //   munis. CLI sources from the same Soil_Survey_MB layer; the
+  //   offset is fine for capability-class viewing at muni-wide zoom
+  //   (10-12).
+  const cacheKey = `mb_cli_agr_${muniNameWithTyp}_v6`;
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
 

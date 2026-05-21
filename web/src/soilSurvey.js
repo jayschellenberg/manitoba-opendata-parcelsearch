@@ -35,6 +35,19 @@ function componentsForFeature(feature) {
       paintColor: slot === '1' ? (p._paintColor || null) : null,
       extentPct,
       mapUnit: clean(p.MAPUNITNOM) || null,
+      // Per-slot Manitoba Soil Survey descriptors — codes, not labels.
+      // map.js decodes via TOPO_LABELS etc. when rendering, so the
+      // hover popup, the rich Soil Survey popup, and the CSV export
+      // can all share one source of truth.
+      topo:        clean(p[`TOPO${slot}`])      || null,
+      stone:       clean(p[`STONE${slot}`])     || null,
+      salinity:    clean(p[`SALINITY${slot}`])  || null,
+      erosion:     clean(p[`EROSION${slot}`])   || null,
+      drainage:    clean(p[`DRAINAGE${slot}`])  || null,
+      surftextm:   clean(p[`SURFTEXTM${slot}`]) || null,
+      mancon:      clean(p[`MANCON${slot}`])    || null,
+      genRatin:    clean(p[`GEN_RATIN${slot}`]) || null,
+      spudRtng:    clean(p[`SPUD_RTNG${slot}`]) || null,
     });
   }
 
@@ -100,24 +113,51 @@ export function soilSurveyComponentsFromMatches(
           paintColor: component.paintColor,
           parcelPct: 0,
           mapUnits: new Set(),
+          // Per-slot Manitoba Soil Survey descriptors. A single soil
+          // association can appear in slot 1 of one polygon and slot 2
+          // of another with different slope / drainage / etc., so we
+          // attribute the descriptors to whichever polygon contributed
+          // the LARGEST share to this rolled-up composition row. That's
+          // the most representative single source.
+          dominantPct: 0,
+          topo: null, stone: null, salinity: null, erosion: null,
+          drainage: null, surftextm: null, mancon: null,
+          genRatin: null, spudRtng: null,
         });
       }
       const row = byComponent.get(key);
       row.parcelPct += parcelPct;
       if (!row.paintColor && component.paintColor) row.paintColor = component.paintColor;
       if (component.mapUnit) row.mapUnits.add(component.mapUnit);
+      if (parcelPct > row.dominantPct) {
+        row.dominantPct = parcelPct;
+        row.topo      = component.topo;
+        row.stone     = component.stone;
+        row.salinity  = component.salinity;
+        row.erosion   = component.erosion;
+        row.drainage  = component.drainage;
+        row.surftextm = component.surftextm;
+        row.mancon    = component.mancon;
+        row.genRatin  = component.genRatin;
+        row.spudRtng  = component.spudRtng;
+      }
     }
   }
 
   const rows = [...byComponent.values()]
-    .map((row) => ({
-      ...row,
-      parcelPct: Math.min(100, row.parcelPct),
-      areaAcres: Number.isFinite(parcelAreaAcres) && parcelAreaAcres > 0
-        ? parcelAreaAcres * Math.min(100, row.parcelPct) / 100
-        : null,
-      mapUnits: [...row.mapUnits],
-    }))
+    .map((row) => {
+      // Drop the internal `dominantPct` tracker — it only exists to
+      // pick which polygon's descriptors to attribute to this row.
+      const { dominantPct: _drop, ...rest } = row;
+      return {
+        ...rest,
+        parcelPct: Math.min(100, row.parcelPct),
+        areaAcres: Number.isFinite(parcelAreaAcres) && parcelAreaAcres > 0
+          ? parcelAreaAcres * Math.min(100, row.parcelPct) / 100
+          : null,
+        mapUnits: [...row.mapUnits],
+      };
+    })
     .sort((a, b) => (
       b.parcelPct - a.parcelPct ||
       String(a.soilName || '').localeCompare(String(b.soilName || '')) ||
@@ -140,6 +180,9 @@ export function soilSurveyComponentsFromMatches(
         ? parcelAreaAcres * Math.min(100, otherPct) / 100
         : null,
       mapUnits: [],
+      topo: null, stone: null, salinity: null, erosion: null,
+      drainage: null, surftextm: null, mancon: null,
+      genRatin: null, spudRtng: null,
     });
   }
   return shown;
