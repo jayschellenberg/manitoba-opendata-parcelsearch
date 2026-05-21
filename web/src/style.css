@@ -2544,6 +2544,29 @@ body:not(.has-max-km) #results td.subj-col {
   height: 14px;
 }
 
+/* Topbar variant of .map-toggle-btn — sits in the dark navbar to
+   the left of the Winnipeg portal link, so it needs a translucent
+   dark fill and light text instead of the light-toolbar default
+   above. Mirrors the .topbar-link weight so the cluster reads as
+   one navbar group. The base .map-toggle-btn rules above still
+   apply (display, padding, gap, font-size, font-family); only the
+   colours change. */
+.topbar .map-toggle-btn.topbar-map-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: #d8e3f4;
+}
+.topbar .map-toggle-btn.topbar-map-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.32);
+  color: #fff;
+}
+.topbar .map-toggle-btn.topbar-map-btn[aria-pressed="true"] {
+  background: rgba(37, 99, 235, 0.28);
+  border-color: var(--color-accent-500, #2563eb);
+  color: #fff;
+}
+
 /* Gear button + popover. The popover is positioned absolute
    beneath the gear so opening it doesn't reflow the table; click-
    away dismissal lives in columns.js. */
