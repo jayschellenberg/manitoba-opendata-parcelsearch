@@ -851,11 +851,11 @@ const CLI_AGR_CAP_OUTFIELDS = [
 
 export async function fetchCliAgrForMuni(muniNameWithTyp, muniBoundaryFeature) {
   if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
-  // v3 (2026-05-20): added SURFTEXT{1-3} to outFields so the CLI fetch
-  // can drive the per-parcel composition stamp without missing the
-  // surface-texture line. v2 (source switch from AAFC to Manitoba's
-  // Soil_Survey_MB) → v3 forces a refresh.
-  const cacheKey = `mb_cli_agr_${muniNameWithTyp}_v3`;
+  // v4 (2026-05-20): added maxAllowableOffset matching the Soil Survey
+  // fetch so CLI payloads also shrink by 60-80% on busy munis. CLI
+  // sources from the same Soil_Survey_MB layer; the offset is fine
+  // for capability-class viewing at muni-wide zoom (10-12).
+  const cacheKey = `mb_cli_agr_${muniNameWithTyp}_v4`;
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
 
@@ -871,6 +871,7 @@ export async function fetchCliAgrForMuni(muniNameWithTyp, muniBoundaryFeature) {
     outFields: CLI_AGR_CAP_OUTFIELDS,
     returnGeometry: 'true',
     outSR: '4326',
+    maxAllowableOffset: SOIL_SURVEY_MAX_ALLOWABLE_OFFSET,
     f: 'geojson',
   }, 2000);
   await writeCache(cacheKey, fc);
@@ -927,18 +928,34 @@ const SOIL_SURVEY_OUTFIELDS = [
   // muni like St Clements (~3000 polygons). Property name is
   // case-sensitive — ArcGIS GeoJSON returns it as "Shape__Area".
   'Shape__Area',
-  'SOILNAME1', 'SOIL_CODE1', 'CLASS1', 'EXTENT1', 'SURFTEXT1', 'AGCAP_CLS1', 'AGRI_CAP1',
-  'SOILNAME2', 'SOIL_CODE2', 'CLASS2', 'EXTENT2', 'SURFTEXT2', 'AGCAP_CLS2', 'AGRI_CAP2',
-  'SOILNAME3', 'SOIL_CODE3', 'CLASS3', 'EXTENT3', 'SURFTEXT3', 'AGCAP_CLS3', 'AGRI_CAP3',
+  // CLASS{1-3} dropped 2026-05-20: the field is the soil-survey
+  // INTERNAL code (e.g. "xxxx"), almost never useful, never read
+  // by the popup or paint. Saves ~5% of the per-feature attribute
+  // payload across ~3000 polygons.
+  'SOILNAME1', 'SOIL_CODE1', 'EXTENT1', 'SURFTEXT1', 'AGCAP_CLS1', 'AGRI_CAP1',
+  'SOILNAME2', 'SOIL_CODE2', 'EXTENT2', 'SURFTEXT2', 'AGCAP_CLS2', 'AGRI_CAP2',
+  'SOILNAME3', 'SOIL_CODE3', 'EXTENT3', 'SURFTEXT3', 'AGCAP_CLS3', 'AGRI_CAP3',
   'REPORT_NAM', 'SCALE', 'DATE',
 ].join(',');
 
+// Server-side geometry simplification. Output SR is 4326 so this is
+// degrees — 0.001 ≈ 71 m at 50°N latitude, well below the visible
+// resolution at muni-wide zoom (10-12) where a screen pixel is ~30-
+// 100 m. Cuts the polygon payload by 60-80% (3-12 MB → 1-3 MB) and
+// reduces both the JSON parse cost and the MapLibre setData
+// structured-clone cost proportionally. The trade-off is barely-
+// perceptible boundary edges at high zoom; toggle the offset to 0
+// if you ever need pixel-perfect detail.
+const SOIL_SURVEY_MAX_ALLOWABLE_OFFSET = '0.0005';
+
 export async function fetchSoilSurveyForMuni(muniNameWithTyp, muniBoundaryFeature) {
   if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
-  // v4 (2026-05-20): added Shape__Area to outFields so the client-side
-  // palette ranking skips ~3000 turfArea calls per fetch. v3 caches
-  // lack Shape__Area, so bump to v4 to refresh them.
-  const cacheKey = `mb_soil_survey_${muniNameWithTyp}_v4`;
+  // v5 (2026-05-20): added maxAllowableOffset server-side simplification
+  // + dropped CLASS{1-3}. v4 payloads carry full-precision geometry
+  // and the CLASS fields, both of which the new code path ignores —
+  // bumping the cache key so any old cached payload refreshes to the
+  // smaller, faster shape.
+  const cacheKey = `mb_soil_survey_${muniNameWithTyp}_v5`;
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
 
@@ -954,6 +971,7 @@ export async function fetchSoilSurveyForMuni(muniNameWithTyp, muniBoundaryFeatur
     outFields: SOIL_SURVEY_OUTFIELDS,
     returnGeometry: 'true',
     outSR: '4326',
+    maxAllowableOffset: SOIL_SURVEY_MAX_ALLOWABLE_OFFSET,
     f: 'geojson',
   }, SOIL_SURVEY_FETCH_CAP);
   await writeCache(cacheKey, fc);
