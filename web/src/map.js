@@ -1491,6 +1491,14 @@ export function initMap(container, { onFeatureClick } = {}) {
         if (map.getLayer('subject-fill')) visibleLayers.push('subject-fill');
         if (map.getLayoutProperty('zoning-fill', 'visibility') === 'visible') visibleLayers.push('zoning-fill');
         if (map.getLayoutProperty('devplan-fill', 'visibility') === 'visible') visibleLayers.push('devplan-fill');
+        // CLI overlay (cli-agr-fill) gets queried too so the bare-CLI
+        // hover branch can fire from this same handler without a
+        // second popup instance competing. Only added when the layer
+        // is visible — same gating as the other conditional layers.
+        if (map.getLayer('cli-agr-fill') &&
+            map.getLayoutProperty('cli-agr-fill', 'visibility') === 'visible') {
+          visibleLayers.push('cli-agr-fill');
+        }
         const hits = map.queryRenderedFeatures(e.point, { layers: visibleLayers });
         if (!hits.length) {
           popup.remove();
@@ -1536,19 +1544,21 @@ export function initMap(container, { onFeatureClick } = {}) {
         }
         const parcel = hits.find((h) => h.layer.id === 'parcel-fill');
         if (parcel && !subject) blocks.push(`<div><strong style="color:#7a5c00">Parcel</strong><br>${parcelHtml(parcel.properties)}</div>`);
-        const overlay = readOverlaysAt(map, e.point);
-        // Soil-under-cursor block was previously added here on top of
-        // the parcel block when the user hovered a search-result
-        // parcel with the CLI overlay on. That info is now redundant
-        // — parcelHtml's right column renders the full per-parcel
-        // soil composition (with the top-2 soils' land-features
-        // descriptors). Stacking the polygon-under-cursor breakdown
-        // on top of that made the hover popup tall enough that the
-        // parcel block scrolled below the viewport on smaller screens.
-        // The bare-CLI hover handler (cli-agr-fill) still shows the
-        // "Soil under cursor" block when the cursor is over a CLI
-        // polygon WITHOUT a parcel above it.
-        void overlay;
+        // Bare-CLI hover branch: when the cursor sits over a CLI polygon
+        // WITHOUT a parcel-fill / subject-fill above it (Parcel Boundaries
+        // off, or hovering between search-result polygons), surface the
+        // "Soil under cursor" block. When a parcel IS above, parcelHtml's
+        // right column already shows the rolled-up composition with the
+        // top-2 soils' land-features descriptors — adding the polygon
+        // breakdown there would duplicate content and push the parcel
+        // block off-screen.
+        if (!subject && !parcel) {
+          const cli = hits.find((h) => h.layer.id === 'cli-agr-fill');
+          if (cli) {
+            const soil = soilSurveyHoverHtml(cli.properties);
+            if (soil) blocks.push(`<div>${soil}</div>`);
+          }
+        }
         const zone = hits.find((h) => h.layer.id === 'zoning-fill');
         if (zone) blocks.push(`<div><strong style="color:#1a2a4a">Zoning</strong><br>${zoningHtml(zone.properties)}</div>`);
         const dev = hits.find((h) => h.layer.id === 'devplan-fill');
@@ -1664,43 +1674,26 @@ export function initMap(container, { onFeatureClick } = {}) {
         wireCoordsCopy(muniClickPopup, center);
       });
 
-      // Bare CLI-polygon hover / click. Fires only when no higher-priority
-      // layer (search-result parcel-fill, or a visible muni-parcels-fill
-      // Parcel-Boundaries polygon) is also under the cursor — those have
-      // their own popups that already bake in the CLI line. This branch
-      // covers the "Parcel Boundaries off, CLI on" case so the user still
-      // gets a Soil Type / capability tooltip on the underlying CLI
-      // polygons. Same gating on hover and click so behaviour is
-      // consistent across the two.
+      // Bare CLI-polygon click — sticky popup for "Parcel Boundaries
+      // off, CLI on" workflows where the user wants to click a polygon
+      // and keep its soil info on screen. Hover for bare CLI polygons
+      // is folded into the global mousemove handler above so there's
+      // only ONE popup instance racing on each mouse event; the
+      // previous standalone cli-agr-fill mousemove + its own popup
+      // instance ended up competing with the global popup and the
+      // muni-parcels popup, making hover inconsistent when CLI was
+      // on over search-result parcels. Click defers to parcel-fill
+      // / muni-parcels-fill / subject-fill the same way the hover
+      // path does.
       function shouldDeferToParcelLayer(point) {
         if (map.queryRenderedFeatures(point, { layers: ['parcel-fill'] }).length > 0) return true;
+        if (map.getLayer('subject-fill') &&
+            map.queryRenderedFeatures(point, { layers: ['subject-fill'] }).length > 0) return true;
         if (map.getLayer('muni-parcels-fill') &&
             map.getLayoutProperty('muni-parcels-fill', 'visibility') === 'visible' &&
             map.queryRenderedFeatures(point, { layers: ['muni-parcels-fill'] }).length > 0) return true;
         return false;
       }
-      const cliHoverPopup = new maplibregl.Popup({
-        closeButton: false,
-        closeOnClick: false,
-        maxWidth: '340px',
-      });
-      map.on('mousemove', 'cli-agr-fill', (e) => {
-        if (map.getLayoutProperty('cli-agr-fill', 'visibility') !== 'visible') return;
-        if (shouldDeferToParcelLayer(e.point)) { cliHoverPopup.remove(); return; }
-        const p = e.features?.[0]?.properties;
-        if (!p) return;
-        const body = soilSurveyHoverHtml(p);
-        if (!body) { cliHoverPopup.remove(); return; }
-        cliHoverPopup
-          .setLngLat(e.lngLat)
-          .setHTML(`<div style="line-height:1.4;font-size:12px">${body}</div>`)
-          .addTo(map);
-        map.getCanvas().style.cursor = 'pointer';
-      });
-      map.on('mouseleave', 'cli-agr-fill', () => {
-        cliHoverPopup.remove();
-        map.getCanvas().style.cursor = '';
-      });
       const cliClickPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '340px' });
       map.on('click', 'cli-agr-fill', (e) => {
         if (map.getLayoutProperty('cli-agr-fill', 'visibility') !== 'visible') return;
