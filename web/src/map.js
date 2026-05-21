@@ -1448,6 +1448,23 @@ export function initMap(container, { onFeatureClick } = {}) {
       // / salinity / etc.) — see parcelHtml + .parcel-popup-2col CSS.
       // Single-column popups still constrain via CSS.
       const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, maxWidth: '760px' });
+      // Soil-under-cursor hover popup, anchored to open BELOW the
+      // cursor (anchor='top' = top edge of the popup at lngLat). The
+      // main hover popup above (for parcels / subject / zoning /
+      // devplan) opens ABOVE the cursor with the default anchor —
+      // splitting the two means hovering a muni-parcel with the CLI
+      // overlay on shows muni info above the cursor and the soil
+      // breakdown below, stacked instead of overlapping. The popup
+      // is kept narrow (340 px) so the descriptor block reads as a
+      // single column. Offset 14 px keeps the popup's tip clear of
+      // the cursor icon itself.
+      const cliHoverPopup = new maplibregl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        maxWidth: '340px',
+        anchor: 'top',
+        offset: 14,
+      });
       // Sales-CSV multi-parcel sibling highlight. When the cursor sits
       // on a parcel that's part of a multi-parcel sale (its
       // _saleGroupRollIds property carries the OBJECTIDs of every
@@ -1502,6 +1519,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         const hits = map.queryRenderedFeatures(e.point, { layers: visibleLayers });
         if (!hits.length) {
           popup.remove();
+          cliHoverPopup.remove();
           map.getCanvas().style.cursor = '';
           clearGroupHover();
           return;
@@ -1544,32 +1562,52 @@ export function initMap(container, { onFeatureClick } = {}) {
         }
         const parcel = hits.find((h) => h.layer.id === 'parcel-fill');
         if (parcel && !subject) blocks.push(`<div><strong style="color:#7a5c00">Parcel</strong><br>${parcelHtml(parcel.properties)}</div>`);
-        // Bare-CLI hover branch: when the cursor sits over a CLI polygon
-        // WITHOUT a parcel-fill / subject-fill above it (Parcel Boundaries
-        // off, or hovering between search-result polygons), surface the
-        // "Soil under cursor" block. When a parcel IS above, parcelHtml's
-        // right column already shows the rolled-up composition with the
-        // top-2 soils' land-features descriptors — adding the polygon
-        // breakdown there would duplicate content and push the parcel
-        // block off-screen.
-        if (!subject && !parcel) {
-          const cli = hits.find((h) => h.layer.id === 'cli-agr-fill');
-          if (cli) {
-            const soil = soilSurveyHoverHtml(cli.properties);
-            if (soil) blocks.push(`<div>${soil}</div>`);
-          }
-        }
         const zone = hits.find((h) => h.layer.id === 'zoning-fill');
         if (zone) blocks.push(`<div><strong style="color:#1a2a4a">Zoning</strong><br>${zoningHtml(zone.properties)}</div>`);
         const dev = hits.find((h) => h.layer.id === 'devplan-fill');
         if (dev) blocks.push(`<div><strong style="color:#1a2a4a">Dev Plan</strong><br>${devPlanHtml(dev.properties)}</div>`);
-        popup
-          .setLngLat(e.lngLat)
-          .setHTML(blocks.join('<hr style="margin:6px 0;border:none;border-top:1px solid #ddd">'))
-          .addTo(map);
+        // ABOVE-CURSOR popup: parcel / subject / zoning / dev-plan info.
+        // Remove when no content blocks remain so we don't render an
+        // empty popup over a bare CLI hover (in that case only the
+        // BELOW-CURSOR cliHoverPopup will be visible).
+        if (blocks.length) {
+          popup
+            .setLngLat(e.lngLat)
+            .setHTML(blocks.join('<hr style="margin:6px 0;border:none;border-top:1px solid #ddd">'))
+            .addTo(map);
+        } else {
+          popup.remove();
+        }
+        // BELOW-CURSOR popup: soil-under-cursor breakdown for the CLI
+        // polygon under the cursor. Lives in its own popup instance so
+        // it stacks under the above-cursor popup instead of overlapping
+        // it (anchor='top' on construction). Suppressed when hovering
+        // a search-result parcel-fill / subject-fill polygon — those
+        // popups already carry a rolled-up `Soil composition` right
+        // column from parcelHtml, so showing the polygon-under-cursor
+        // breakdown again below would just duplicate the same info.
+        // For muni-parcels-fill (Assessment Parcels layer), the
+        // muniHoverPopup shows above-cursor in its own handler and
+        // this cliHoverPopup shows below — the stacked layout the
+        // user asked for.
+        const cli = hits.find((h) => h.layer.id === 'cli-agr-fill');
+        if (cli && !subject && !parcel) {
+          const soil = soilSurveyHoverHtml(cli.properties);
+          if (soil) {
+            cliHoverPopup
+              .setLngLat(e.lngLat)
+              .setHTML(`<div style="line-height:1.4;font-size:12px">${soil}</div>`)
+              .addTo(map);
+          } else {
+            cliHoverPopup.remove();
+          }
+        } else {
+          cliHoverPopup.remove();
+        }
       });
       map.on('mouseout', () => {
         popup.remove();
+        cliHoverPopup.remove();
         map.getCanvas().style.cursor = '';
         clearGroupHover();
       });
