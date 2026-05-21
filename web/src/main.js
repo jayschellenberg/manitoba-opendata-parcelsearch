@@ -889,6 +889,16 @@ function applyUrlStateToInputs(state) {
     const el = document.getElementById(b.id);
     if (!el) continue;
     el.value = String(state[b.key]);
+    // The Roll # input is a hidden <input> backing a chip-input UI
+    // (initChipInput in lib/chipInput.js). Its `values` array is
+    // captured in a closure at init time, so a plain `el.value = …`
+    // assignment updates the DOM but not the chip layer — meaning
+    // a shared URL like `?r=442950` would leave the roll field
+    // visually empty. The reseed event tells the chip layer to
+    // re-read the hidden value and re-render. Plain (non-chip)
+    // inputs have no listener for this event, so it's a no-op
+    // there.
+    el.dispatchEvent(new CustomEvent('chip-input:reseed', { bubbles: true }));
   }
   if (state.tab && (state.tab === 'property' || state.tab === 'sales')) {
     try { setActiveTab(state.tab, { skipFocus: true }); } catch {}
