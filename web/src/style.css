@@ -513,6 +513,49 @@ header small a {
   font-style: italic;
 }
 
+/* Parcel popup layout.
+   - Single-column variant constrains to ~300 px so a typical
+     parcel-identity popup stays narrow.
+   - Two-column variant (the `.parcel-popup-2col` class, applied
+     when soil composition is present) widens the popup, puts the
+     parcel identity / sale / assessment block in the left column,
+     and the soil composition table in the right column with the
+     actions row spanning both at the bottom. Keeps the popup
+     "wide rather than tall" — the user's preferred trade-off for
+     soil-rich parcels.
+   The .parcel-popup class is on the inner wrapper; the outer
+   .maplibregl-popup-content is sized by MapLibre's maxWidth option
+   on the Popup constructor (set to 640 px wherever parcelHtml
+   feeds the popup). */
+.maplibregl-popup .parcel-popup {
+  max-width: 300px;
+  line-height: 1.4;
+}
+.maplibregl-popup .parcel-popup-2col {
+  max-width: 620px;
+  line-height: 1.4;
+}
+.maplibregl-popup .parcel-popup-cols {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+.maplibregl-popup .parcel-popup-main {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+.maplibregl-popup .parcel-popup-soil {
+  flex: 1 1 280px;
+  min-width: 0;
+  padding-left: 12px;
+  border-left: 1px solid #e5e7eb;
+}
+.maplibregl-popup .parcel-popup-actions {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #e5e7eb;
+}
+
 .sidebar .generate-map-btn {
   width: 100%;
   margin-top: 5px;
