@@ -847,15 +847,23 @@ const CLI_AGR_CAP_OUTFIELDS = [
   'SOILNAME1', 'SOIL_CODE1', 'EXTENT1', 'SURFTEXT1', 'AGCAP_CLS1', 'AGRI_CAP1',
   'SOILNAME2', 'SOIL_CODE2', 'EXTENT2', 'SURFTEXT2', 'AGCAP_CLS2', 'AGRI_CAP2',
   'SOILNAME3', 'SOIL_CODE3', 'EXTENT3', 'SURFTEXT3', 'AGCAP_CLS3', 'AGRI_CAP3',
+  // Server-precomputed polygon area in metres² (Shape__Area is the
+  // ArcGIS Online auto-field). Lets the Soil Type palette ranking and
+  // the per-parcel composition stamp skip the per-feature turfArea
+  // fallback that used to spin for several seconds on busy munis.
+  'Shape__Area',
 ].join(',');
 
 export async function fetchCliAgrForMuni(muniNameWithTyp, muniBoundaryFeature) {
   if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
-  // v4 (2026-05-20): added maxAllowableOffset matching the Soil Survey
-  // fetch so CLI payloads also shrink by 60-80% on busy munis. CLI
-  // sources from the same Soil_Survey_MB layer; the offset is fine
-  // for capability-class viewing at muni-wide zoom (10-12).
-  const cacheKey = `mb_cli_agr_${muniNameWithTyp}_v4`;
+  // v5 (2026-05-21): added Shape__Area to outFields so the Soil Type
+  //   palette can rank by server-precomputed area instead of the slow
+  //   turfArea fallback. v4 (2026-05-20): added maxAllowableOffset
+  //   matching the Soil Survey fetch so CLI payloads also shrink by
+  //   60-80% on busy munis. CLI sources from the same Soil_Survey_MB
+  //   layer; the offset is fine for capability-class viewing at
+  //   muni-wide zoom (10-12).
+  const cacheKey = `mb_cli_agr_${muniNameWithTyp}_v5`;
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
 

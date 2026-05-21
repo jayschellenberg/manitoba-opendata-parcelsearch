@@ -490,13 +490,9 @@
               <span class="overlay-dot" aria-hidden="true"></span>
               <span class="overlay-btn-label">MASC rating</span>
             </button>
-            <button id="cli-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled style="--dot-color:#65a30d" title="CLI Soil Capability for Agriculture, sourced from Manitoba Soil Survey AGCAP_CLS — the same dataset Manitoba's AgriMaps treats as authoritative. Click cycles through three states: 1st click → capability (1=prime, 7=no agricultural capability; O=organic; $=urban/water); 2nd click → soil identity (coloured by dominant soil association, same palette as the Soil Survey overlay); 3rd click → off. Select a municipality first.">
+            <button id="cli-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled style="--dot-color:#65a30d" title="Soil Productivity and Soil Name from Manitoba Soil Survey (AGCAP_CLS / SOILNAME) — the same dataset Manitoba's AgriMaps treats as authoritative. Click cycles through three states: 1st click → Soil Productivity (capability 1=prime → 7=no agricultural capability; O=organic; $=urban/water); 2nd click → Soil Type (coloured by the top-20 most common soil associations in the selected municipality); 3rd click → off. Select a municipality first.">
               <span class="overlay-dot" aria-hidden="true"></span>
-              <span class="overlay-btn-label">Soil productivity (CLI)</span>
-            </button>
-            <button id="soil-survey-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled style="--dot-color:#5e3b1a" title="Manitoba Soil Survey — provincial soil-association polygons coloured by the dominant agricultural-capability class. Click a polygon for soil and unit-symbol details. The clicked parcel's own popup also gets top-2 soil composition with acres and parcel share. Run a search first.">
-              <span class="overlay-dot" aria-hidden="true"></span>
-              <span class="overlay-btn-label">Soil Survey</span>
+              <span class="overlay-btn-label">Soil Productivity/Soil Name</span>
             </button>
           </div>
 
@@ -574,10 +570,6 @@
            tri-state cycle is currently in (1st click → capability,
            2nd click → identity, 3rd click → off). -->
       <div id="cli-legend" class="map-legend masc-legend" hidden></div>
-      <!-- Filled by main.js applySoilSurveyPalette / renderSoilSurveyLegend
-           after Soil Survey loads — contents reflect the top-N soil
-           associations actually present in the loaded muni. -->
-      <div id="soil-survey-legend" class="map-legend masc-legend" hidden></div>
       <div id="flow-legend" class="map-legend flow-legend" hidden>
         <strong>AADT (2019)</strong>
         <ul>

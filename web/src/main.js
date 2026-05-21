@@ -56,8 +56,6 @@ import {
   fetchParcelMascForMuni,
   fetchMascRiverlots,
   fetchCliAgrForMuni,
-  fetchSoilSurveyForMuni,
-  fetchSoilSurveyLabelsForMuni,
   parseRollList,
   missingRollsFromResults,
   canonicalRoll,
@@ -89,9 +87,6 @@ import {
   setMascVisible,
   setCliAgrData,
   setCliAgrVisible,
-  setSoilSurveyData,
-  setSoilSurveyLabelsData,
-  setSoilSurveyVisible,
   setMascRiskAreasData,
   setMascRiskAreasVisible,
   setSurveyGridData,
@@ -220,8 +215,6 @@ const $mascToggle    = document.getElementById('masc-toggle');
 const $riskAreaToggle = document.getElementById('riskarea-toggle');
 const $cliToggle     = document.getElementById('cli-toggle');
 const $cliLegend     = document.getElementById('cli-legend');
-const $soilSurveyToggle = document.getElementById('soil-survey-toggle');
-const $soilSurveyLegend = document.getElementById('soil-survey-legend');
 const $gridToggle    = document.getElementById('grid-toggle');
 const $count         = document.getElementById('count');
 const $tbody         = document.querySelector('#results tbody');
@@ -570,8 +563,6 @@ const rowFeatureMap = new Map();
 // or dev-plan layer on doesn't require re-running the spatial enrichment.
 let lastZoningFc = EMPTY_FC;
 let lastDevPlanFc = EMPTY_FC;
-let lastSoilSurveyFc = EMPTY_FC;
-
 // CSV-upload mode state. csvFullRows holds the full enriched row set
 // from the last sales-CSV upload (with zoning / dev-plan / risk-area
 // data joined in), so changing the Other Searches filters after upload
@@ -1126,7 +1117,6 @@ $riskAreaToggle.addEventListener('click', () => toggleAuxOverlay('riskAreas'));
 $muniParcelsToggle.addEventListener('click', () => toggleAuxOverlay('muniParcels'));
 $mascToggle.addEventListener('click', () => toggleMascOverlay());
 $cliToggle.addEventListener('click', () => toggleCliOverlay());
-if ($soilSurveyToggle) $soilSurveyToggle.addEventListener('click', () => toggleSoilSurveyOverlay());
 $gridToggle.addEventListener('click', () => toggleSurveyGridOverlay());
 
 const $staticMapBtn     = document.getElementById('static-map-btn');
@@ -3133,42 +3123,34 @@ function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
   scheduleSoilCompositionStamp(parcelFc);
 }
 
-function stampActiveSoilComposition(parcelFc) {
-  if (!$soilSurveyToggle?.classList.contains('active')) return;
-  if (!lastSoilSurveyFc?.features?.length) return;
-  stampSoilCompositionOnParcels(parcelFc, lastSoilSurveyFc);
-}
-
-// Track in-flight Soil Survey work so the toggle button + legend can
+// Track in-flight CLI/soil work so the toggle button + legend can
 // reflect "still loading" even AFTER the synchronous toggle function
 // returns. Without this the deferred composition stamp ran with no UI
-// signal, so the button flipped to "Soil Survey" while the spatial
-// join was still chewing through the parcel set — making the page
-// feel unresponsive for no obvious reason.
-let soilSurveyPendingOps = 0;
-function beginSoilSurveyOp(label = 'Loading…') {
-  soilSurveyPendingOps += 1;
-  refreshSoilSurveyLoadingIndicator(label);
+// signal, so the button flipped back to its idle label while the
+// spatial join was still chewing through the parcel set — making the
+// page feel unresponsive for no obvious reason.
+let cliPendingOps = 0;
+function beginCliOp(label = 'Loading…') {
+  cliPendingOps += 1;
+  refreshCliLoadingIndicator(label);
 }
-function endSoilSurveyOp() {
-  soilSurveyPendingOps = Math.max(0, soilSurveyPendingOps - 1);
-  refreshSoilSurveyLoadingIndicator();
+function endCliOp() {
+  cliPendingOps = Math.max(0, cliPendingOps - 1);
+  refreshCliLoadingIndicator();
 }
-function refreshSoilSurveyLoadingIndicator(busyLabel = 'Loading…') {
-  const busy = soilSurveyPendingOps > 0;
-  if ($soilSurveyToggle) {
-    $soilSurveyToggle.classList.toggle('overlay-busy', busy);
-    $soilSurveyToggle.disabled = busy;
+function refreshCliLoadingIndicator(busyLabel = 'Loading…') {
+  const busy = cliPendingOps > 0;
+  if ($cliToggle) {
+    $cliToggle.classList.toggle('overlay-busy', busy);
+    $cliToggle.disabled = busy;
     if (busy) {
-      setOverlayBtnLabel($soilSurveyToggle, busyLabel);
-    } else if ($soilSurveyToggle.classList.contains('active')) {
-      setOverlayBtnLabel($soilSurveyToggle, 'Soil Survey');
+      setOverlayBtnLabel($cliToggle, busyLabel);
     } else {
-      setOverlayBtnLabel($soilSurveyToggle, 'Soil Survey');
+      setOverlayBtnLabel($cliToggle, cliButtonLabelFor(cliMode));
     }
   }
-  if ($soilSurveyLegend) {
-    $soilSurveyLegend.classList.toggle('legend-busy', busy);
+  if ($cliLegend) {
+    $cliLegend.classList.toggle('legend-busy', busy);
   }
 }
 
@@ -3180,22 +3162,26 @@ function refreshSoilSurveyLoadingIndicator(busyLabel = 'Loading…') {
  * when available (browsers' idle slot — runs only when the main
  * thread is free); falls back to setTimeout(0) otherwise.
  *
+ * Driven off the CLI overlay's loaded FC — composition stamps when
+ * the CLI overlay is on (either capability OR identity mode) and the
+ * fetched soil polygons are available.
+ *
  * `repush` defaults to re-pushing through showResults (the search-
  * results parcel source); callers driving a different source (e.g.
  * the Roll Layer's muni-parcels source) pass their own re-push fn.
  */
 function scheduleSoilCompositionStamp(parcelFc, { repush } = {}) {
-  if (!$soilSurveyToggle?.classList.contains('active')) return;
-  if (!lastSoilSurveyFc?.features?.length) return;
+  if (cliMode === null) return;
+  if (!lastCliFc?.features?.length) return;
   const defaultRepush = () => mapReady.then(() => showResults(map, parcelFc, { fit: false }));
   const doRepush = repush || defaultRepush;
-  beginSoilSurveyOp('Composing…');
+  beginCliOp('Composing…');
   const run = () => {
     try {
-      stampSoilCompositionOnParcels(parcelFc, lastSoilSurveyFc);
+      stampSoilCompositionOnParcels(parcelFc, lastCliFc);
       doRepush();
     } finally {
-      endSoilSurveyOp();
+      endCliOp();
     }
   };
   if (typeof window !== 'undefined' && window.requestIdleCallback) {
@@ -3552,67 +3538,55 @@ function resetMuniParcelsToggle() {
 let mascLoadedFor = null;
 let surveyGridLoadedFor = null;
 let cliLoadedFor = null;
-let soilSurveyLoadedFor = null;
 // CLI tri-state cycle: null (off) → 'capability' → 'identity' → null.
-// First click after off → capability paint (the historical CLI view,
-// 1-7 + organic + urban/water specials). Second click → identity
-// paint (top-N soil associations, same palette as Soil Survey but
-// driven off CLI's own fetched FC). Third click → off.
+// Cycle progression and button labels:
+//   null       → "Soil Productivity/Soil Name" (idle invitation label)
+//   capability → "Soil Productivity" (AGCAP_CLS1 1-7 + O + $ paint)
+//   identity   → "Soil Type" (top-20-by-area soil-association palette,
+//                recalculated for each selected municipality)
 let cliMode = null;
 // Last loaded CLI FC, kept so cycling between modes can re-rank the
 // palette / re-stamp _paintColor without re-fetching.
 let lastCliFc = EMPTY_FC;
 
 /**
- * Categorical palette used to colour the Manitoba Soil Survey overlay
- * by SOIL_CODE1. Designed to read as distinct soil-TYPE colours so
- * the user sees Red River vs Osborne vs Scanterbury at a glance,
- * rather than the agricultural-capability scale (1=prime → 7=no
- * capability) which already lives on the CLI Soil overlay. Tableau-10
- * inspired but with the muddy-orange swapped for something less
- * brown so it doesn't collide with the organic-soil swatch (see
- * SOIL_SURVEY_ORGANIC_COLOR).
+ * Categorical palette used by the CLI "Soil Type" mode to colour
+ * polygons by SOIL_CODE1. Designed to read as distinct soil-TYPE
+ * colours so the user sees Red River vs Osborne vs Scanterbury at
+ * a glance, rather than the agricultural-capability scale (1=prime
+ * → 7=no capability) which lives on the "Soil Productivity" mode.
  *
- * Cap of 10 colours: assigned to the top-10 soil associations by
- * area within the loaded data. Any soil outside that top-10 falls
- * through to SOIL_SURVEY_FALLBACK_COLOR (light grey), and the
- * legend appends an "Other soils" row when needed.
+ * Cap of 20 colours: assigned to the top-20 soil associations by
+ * area within the selected municipality's loaded FC. The palette
+ * is computed PER MUNI — the 20 most common soils in St. Clements
+ * get colours; the same SOIL_CODE1 in a different muni may map to
+ * a different palette slot. Any soil outside the muni's top-20
+ * falls through to SOIL_SURVEY_FALLBACK_COLOR (light grey), and
+ * the legend appends an "Other soils" row when needed.
+ *
+ * Tableau-20 inspired, with the muddy greys removed so the fallback
+ * grey stays unambiguous and the brown stays distinct from the
+ * organic-soil chip colour used elsewhere.
  */
 const SOIL_SURVEY_PALETTE = [
   '#4e79a7', '#f28e2c', '#e15759', '#76b7b2', '#59a14f',
   '#edc949', '#af7aa1', '#ff9da7', '#9c755f', '#7f7fbf',
+  '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+  '#bcbd22', '#17becf', '#aec7e8', '#98df8a', '#c5b0d5',
 ];
 const SOIL_SURVEY_FALLBACK_COLOR = '#bfbfbf';
 
 /**
- * Assign each polygon in the loaded soilFc a colour based on its
- * SOIL_CODE1's rank by total area, stamp `_paintColor` onto the
- * properties, update the map's fill-color expression to read that
- * property, and render the legend dynamically. Falls back to
- * SOIL_SURVEY_FALLBACK_COLOR for any soil outside the top-N.
- */
-function applySoilSurveyPalette(soilFc) {
-  applyIdentityPalette(soilFc, {
-    fillLayerId: 'soil-survey-fill',
-    legendEl: $soilSurveyLegend,
-    legendTitle: 'Manitoba Soil Survey',
-    legendSub: 'Coloured by dominant soil association',
-  });
-}
-
-/**
  * Stamp `_paintColor` on every polygon in `fc` based on its
- * SOIL_CODE1's rank by total area, then update the named map fill
- * layer's paint expression to read that colour and re-render the
- * supplied legend element with the top-N soil names.
+ * SOIL_CODE1's rank by total area within the loaded muni FC, then
+ * update the named map fill layer's paint expression to read that
+ * colour and re-render the supplied legend element with the top-N
+ * soil names.
  *
- * Used by:
- *   - Soil Survey overlay (via applySoilSurveyPalette wrapper)
- *   - CLI overlay's identity mode (via applyCliIdentityMode)
- *
- * Both overlays source from the same Soil_Survey_MB data, just
- * keyed under separate caches + map sources, so the same palette
- * logic works for either.
+ * Used by the CLI overlay's identity ("Soil Type") mode — the top-N
+ * is computed PER MUNI off the same Soil_Survey_MB polygons the
+ * capability mode paints, so each muni gets its own most-common-soils
+ * palette rather than a global one.
  */
 function applyIdentityPalette(fc, target) {
   const {
@@ -3698,24 +3672,6 @@ function escapeHtmlText(s) {
   })[c]);
 }
 
-/**
- * Soil-Survey-specific enable check. Unlike MASC + CLI (which only
- * need a muni to scope their fetch), the Soil Survey overlay stamps
- * per-parcel composition onto the search-result parcels — so it's
- * meaningful only when there's a row set to stamp against. Called
- * from resetMascAndGridToggles, renderTable, and clearTable so the
- * disabled state stays in sync with `currentRows`.
- */
-function updateSoilSurveyEnabled() {
-  if (!$soilSurveyToggle) return;
-  // The busy/loading indicator owns the disabled state while
-  // soilSurveyPendingOps > 0 (renderTable etc. fire while the
-  // composition stamp is still running, and would otherwise reset
-  // `disabled` to false mid-flight). Skip when busy.
-  if (soilSurveyPendingOps > 0) return;
-  $soilSurveyToggle.disabled = currentRows.length === 0;
-}
-
 /** Enable/disable MASC and Sec-Twp Grid toggles based on whether a
  *  muni is selected, and clear stale data + active state if the muni
  *  changed since the layers were last loaded. Mirrors the
@@ -3730,12 +3686,6 @@ function resetMascAndGridToggles() {
     || !!(csvMatchedMunis && csvMatchedMunis.length > 0);
   $mascToggle.disabled = !inScope;
   if ($cliToggle) $cliToggle.disabled = !inScope;
-  // Soil Survey gates on actual search results, not just muni-selected.
-  // The per-parcel composition rollup (stampSoilCompositionOnParcels)
-  // needs currentRows populated — enabling the toggle before a search
-  // would let the user load the overlay polygons but the parcel popup
-  // composition section would stay empty until they ran a search.
-  updateSoilSurveyEnabled();
   // Sec-Twp Grid stays enabled with or without a muni — without a muni
   // selected it falls back to the pre-baked province-wide static file.
   $gridToggle.disabled = false;
@@ -3771,23 +3721,10 @@ function resetMascAndGridToggles() {
     if ($cliToggle && $cliToggle.classList.contains('active')) {
       $cliToggle.classList.remove('active');
       $cliToggle.setAttribute('aria-pressed', 'false');
-      setOverlayBtnLabel($cliToggle, 'Soil productivity (CLI)');
+      setOverlayBtnLabel($cliToggle, cliButtonLabelFor(null));
       mapReady.then(() => {
         setCliAgrVisible(map, false);
         if ($cliLegend) $cliLegend.hidden = true;
-      });
-    }
-  }
-  // Soil Survey: same off-on-muni-change logic as MASC + CLI.
-  if (soilSurveyLoadedFor && soilSurveyLoadedFor !== desiredOverlayKey) {
-    soilSurveyLoadedFor = null;
-    if ($soilSurveyToggle && $soilSurveyToggle.classList.contains('active')) {
-      $soilSurveyToggle.classList.remove('active');
-      $soilSurveyToggle.setAttribute('aria-pressed', 'false');
-      setOverlayBtnLabel($soilSurveyToggle, 'Soil Survey');
-      mapReady.then(() => {
-        setSoilSurveyVisible(map, false);
-        if ($soilSurveyLegend) $soilSurveyLegend.hidden = true;
       });
     }
   }
@@ -3943,7 +3880,7 @@ const CLI_CAPABILITY_LABEL_FIELD = ['coalesce', ['get', 'AGRI_CAP1'], ''];
 const CLI_IDENTITY_LABEL_FIELD   = ['coalesce', ['get', 'MAPUNITNOM'], ''];
 
 const CLI_CAPABILITY_LEGEND_HTML = (
-  '<strong>CLI Soil Capability</strong>' +
+  '<strong>Soil Productivity (CLI)</strong>' +
   '<div class="legend-sub">Manitoba Soil Survey · AGCAP_CLS1</div>' +
   '<ul>' +
     '<li><span class="swatch" style="background:#1a6b26"></span>1 — prime</li>' +
@@ -3969,12 +3906,13 @@ function applyCliCapabilityMode() {
 }
 
 function applyCliIdentityMode(cliFc) {
-  // Reuse the same top-N-by-area palette as Soil Survey, just targeting
-  // the CLI fill layer + the CLI legend element.
+  // Top-N-by-area soil-association palette, recomputed against the
+  // currently-loaded muni FC so each muni gets its own most-common
+  // soils with distinct colours.
   applyIdentityPalette(cliFc, {
     fillLayerId: 'cli-agr-fill',
     legendEl: $cliLegend,
-    legendTitle: 'Soil productivity (CLI) — by soil',
+    legendTitle: 'Soil Type — top 20 in selected municipality',
     legendSub: 'Coloured by dominant soil association',
   });
   // Identity-mode labels show the soil-survey map-unit symbol (e.g.
@@ -3992,9 +3930,13 @@ function nextCliMode(current) {
 }
 
 function cliButtonLabelFor(mode) {
-  if (mode === 'capability') return 'Soil productivity (CLI)';
-  if (mode === 'identity')   return 'Soil productivity (CLI) — by soil';
-  return 'Soil productivity (CLI)';
+  // Tri-state labels as cycled by toggleCliOverlay:
+  //   off       → "Soil Productivity/Soil Name" (idle label inviting either mode)
+  //   capability → "Soil Productivity" (1-7 + O + $ capability paint)
+  //   identity   → "Soil Type" (top-20 soil-association palette)
+  if (mode === 'capability') return 'Soil Productivity';
+  if (mode === 'identity')   return 'Soil Type';
+  return 'Soil Productivity/Soil Name';
 }
 
 /**
@@ -4106,142 +4048,6 @@ async function toggleCliOverlay() {
   $cliToggle.setAttribute('aria-pressed', 'true');
   setOverlayBtnLabel($cliToggle, cliButtonLabelFor(targetMode));
   if ($cliLegend) $cliLegend.hidden = false;
-}
-
-/**
- * Toggle the Manitoba Soil Survey overlay. Same lifecycle as the CLI
- * overlay: muni-scoped fetch (polygons + companion label points),
- * 30-day cache per muni, off-state hides without dropping data.
- *
- * Independent of MASC and CLI — can be layered alongside either, as
- * requested. The Soil Survey is provincial-scale (1:50K) while CLI
- * is federal (1:250K); MASC Rating is a crop-insurance soil grade
- * that doesn't share the same polygon geometry as either.
- */
-async function toggleSoilSurveyOverlay() {
-  if (!$soilSurveyToggle) return;
-  const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
-    ? csvMatchedMunis.slice()
-    : ($municipality.value ? [$municipality.value] : []);
-  if (munis.length === 0) {
-    $soilSurveyToggle.classList.remove('active');
-    $soilSurveyToggle.setAttribute('aria-pressed', 'false');
-    return;
-  }
-  const loadKey = munis.join('|');
-  const wasActive = $soilSurveyToggle.classList.contains('active');
-  const visible = !wasActive;
-  $soilSurveyToggle.classList.toggle('active', visible);
-  $soilSurveyToggle.setAttribute('aria-pressed', String(visible));
-  await mapReady;
-
-  if (!visible) {
-    setOverlayBtnLabel($soilSurveyToggle, 'Soil Survey');
-    setSoilSurveyVisible(map, false);
-    if ($soilSurveyLegend) $soilSurveyLegend.hidden = true;
-    return;
-  }
-
-  if (soilSurveyLoadedFor !== loadKey) {
-    // Use the pending-ops indicator so the toggle stays in "Loading…"
-    // state through the WHOLE flow (network fetch + palette + map
-    // setData + deferred composition stamp). endSoilSurveyOp() is
-    // called from finally + from the early-exit paths below.
-    beginSoilSurveyOp('Loading…');
-    try {
-      const muniBoundaries = munis.map((m) => ({
-        muni: m,
-        feat: muniBoundariesFc?.features?.find(
-          (f) => f.properties?.MUNI_LIST_NAME_WITH_TYPE === m,
-        ) || null,
-      }));
-      const missing = muniBoundaries.filter((mb) => !mb.feat).map((mb) => mb.muni);
-      if (missing.length > 0) {
-        $soilSurveyToggle.classList.remove('active');
-        $soilSurveyToggle.setAttribute('aria-pressed', 'false');
-        endSoilSurveyOp();
-        setCount(`Couldn't locate boundary for ${missing.join(', ')}; can't load Soil Survey.`);
-        return;
-      }
-      // Polygons only. The companion label-points fetch
-      // (fetchSoilSurveyLabelsForMuni) was running in parallel and
-      // doubling network time on busy munis (St Clements ~3k polygons
-      // + ~5k label points, both with full attribute payloads). The
-      // map's `soil-survey-label` layer now reads from the polygon
-      // source directly — MapLibre auto-derives an interior placement
-      // point per polygon, which is the same visual result with no
-      // separate fetch.
-      const polyFcs = await Promise.all(
-        muniBoundaries.map((mb) => fetchSoilSurveyForMuni(mb.muni, mb.feat)),
-      );
-      const polyFeatures = dedupeFeaturesByObjectId(polyFcs.flatMap((fc) => fc?.features || []));
-      if (polyFeatures.length === 0) {
-        $soilSurveyToggle.classList.remove('active');
-        $soilSurveyToggle.setAttribute('aria-pressed', 'false');
-        endSoilSurveyOp();
-        const label = munis.length === 1 ? munis[0] : `${munis.length} matched munis (${munis.join(', ')})`;
-        setCount(`No Soil Survey polygons in ${label}.`);
-        return;
-      }
-      const soilFc = { type: 'FeatureCollection', features: polyFeatures };
-      // Build a fresh palette + dynamic legend for THIS area's actual
-      // soil associations. The map's fill-color expression gets
-      // rewritten to colour by SOIL_CODE1, so the user sees soil
-      // TYPES (Red River vs Osborne vs Scanterbury) instead of a
-      // generic capability scale duplicated from the CLI overlay.
-      // Each polygon's assigned colour is stamped as `_paintColor`
-      // so the popup chips can match the map without main.js needing
-      // to leak the palette into map.js.
-      applySoilSurveyPalette(soilFc);
-      lastSoilSurveyFc = soilFc;
-      setSoilSurveyData(map, soilFc);
-      // Labels source kept empty — the label LAYER now reads from the
-      // polygon source via auto-placement. setSoilSurveyLabelsData is
-      // still exported in case callers want to push label points
-      // explicitly, just no longer called from this toggle.
-      // Stamp per-parcel soil composition (component extents weighted
-      // by parcel/map-unit overlap) so the parcel popup can render a
-      // "Soil composition" section without re-running the spatial
-      // join on every click. Re-push the parcel source after stamping
-      // so the click handler reads the enriched properties — same
-      // pattern enrichOverlays uses for zoning + dev-plan.
-      if (currentRows.length > 0) {
-        const parcelFc = { type: 'FeatureCollection', features: currentRows.map((r) => r.parcel) };
-        setMapData(parcelFc, lastZoningFc || EMPTY_FC, lastDevPlanFc || EMPTY_FC, { fit: false });
-      }
-      if (auxData.muniParcels?.features?.length) {
-        setMuniParcelsMapData(auxData.muniParcels);
-      }
-      soilSurveyLoadedFor = loadKey;
-    } catch (err) {
-      console.warn('Soil Survey fetch failed', err);
-      $soilSurveyToggle.classList.remove('active');
-      $soilSurveyToggle.setAttribute('aria-pressed', 'false');
-      endSoilSurveyOp();
-      setCount(`Failed to load Manitoba Soil Survey: ${err.message}`);
-      return;
-    }
-    // Close the fetch/setData op. The deferred composition stamp
-    // scheduled inside setMapData / setMuniParcelsMapData has its
-    // own begin/end pair, so the indicator stays in "Composing…"
-    // until that work also lands.
-    endSoilSurveyOp();
-  }
-  setSoilSurveyVisible(map, true);
-  if ($soilSurveyLegend) $soilSurveyLegend.hidden = false;
-}
-
-function dedupeFeaturesByObjectId(features) {
-  const out = [];
-  const seen = new Set();
-  for (const feature of features || []) {
-    const oid = feature?.properties?.OBJECTID;
-    const key = oid != null ? `oid:${oid}` : null;
-    if (key && seen.has(key)) continue;
-    if (key) seen.add(key);
-    out.push(feature);
-  }
-  return out;
 }
 
 /**
@@ -4755,7 +4561,6 @@ function clearTable() {
   $tbody.innerHTML = '';
   currentRows = [];
   setExportEnabled(false);
-  updateSoilSurveyEnabled();
 }
 
 // $paginator + PAGE_SIZE + currentPage all live near the top of the
@@ -4768,10 +4573,6 @@ function renderTable(rows, { resetPage = true } = {}) {
   currentRows = rows;
   rowFeatureMap.clear();
   if (resetPage) currentPage = 0;
-  // Keep the Soil-Survey toggle in sync with the row set — it gates
-  // on currentRows.length so the user can't enable the overlay before
-  // there's anything for the per-parcel composition to attach to.
-  updateSoilSurveyEnabled();
   const sorted = sortRows(rows);
   // Clamp currentPage in case the row set shrank below it (filter
   // change, sales-CSV reload, etc).
