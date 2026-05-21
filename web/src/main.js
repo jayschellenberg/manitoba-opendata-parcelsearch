@@ -11,7 +11,7 @@ import { initChipInput } from './lib/chipInput.js';
 import { initInfoIcons } from './lib/infoIcon.js';
 
 // Phase 5 column visibility.
-import { initColumns, applyVisibility as applyColumnVisibility } from './lib/columns.js';
+import { initColumns, applyVisibility as applyColumnVisibility, setColumnVisible } from './lib/columns.js';
 
 // Phase 6 URL state — serialises a small set of form values into the
 // query string so a session URL is shareable.
@@ -777,12 +777,21 @@ const { map, ready: mapReady } = initMap($mapEl, {
 // refresh keeps it consistent. mapReady gates the map.resize()
 // call when the map is restored so MapLibre recomputes its canvas.
 const MAP_HIDE_KEY = 'mbps_map_collapsed_v1';
+const MAP_EXPAND_KEY = 'mbps_map_expanded_v1';
 const $workspaceEl = document.getElementById('workspace');
 const $mapToggleBtn = document.getElementById('map-toggle-btn');
 const $mapToggleLabel = $mapToggleBtn?.querySelector('.map-toggle-label');
+const $mapExpandBtn = document.getElementById('map-expand-btn');
+const $mapExpandLabel = $mapExpandBtn?.querySelector('.map-expand-label');
 
 function applyMapCollapsed(collapsed) {
   if (!$workspaceEl || !$mapToggleBtn) return;
+  // Hide and Expand are mutually exclusive — hiding implicitly
+  // un-expands so we don't leave the workspace carrying two
+  // contradictory layout classes.
+  if (collapsed && $workspaceEl.classList.contains('map-expanded')) {
+    applyMapExpanded(false, { silent: true });
+  }
   $workspaceEl.classList.toggle('map-collapsed', collapsed);
   $mapToggleBtn.setAttribute('aria-pressed', String(collapsed));
   if ($mapToggleLabel) $mapToggleLabel.textContent = collapsed ? 'Show map' : 'Hide map';
@@ -794,6 +803,25 @@ function applyMapCollapsed(collapsed) {
   try { localStorage.setItem(MAP_HIDE_KEY, collapsed ? '1' : '0'); } catch {}
 }
 
+function applyMapExpanded(expanded, { silent = false } = {}) {
+  if (!$workspaceEl || !$mapExpandBtn) return;
+  // Expand and Hide are mutually exclusive — expanding implicitly
+  // un-hides so a refresh that restored both prefs from localStorage
+  // doesn't render with the map both hidden AND expanded.
+  if (expanded && $workspaceEl.classList.contains('map-collapsed')) {
+    applyMapCollapsed(false);
+  }
+  $workspaceEl.classList.toggle('map-expanded', expanded);
+  $mapExpandBtn.setAttribute('aria-pressed', String(expanded));
+  if ($mapExpandLabel) $mapExpandLabel.textContent = expanded ? 'Restore map' : 'Expand map';
+  // MapLibre needs to recompute its canvas size now that the
+  // container's aspect-ratio + width-cap have changed.
+  mapReady.then(() => map.resize());
+  if (!silent) {
+    try { localStorage.setItem(MAP_EXPAND_KEY, expanded ? '1' : '0'); } catch {}
+  }
+}
+
 if ($mapToggleBtn) {
   $mapToggleBtn.addEventListener('click', () => {
     const next = !$workspaceEl.classList.contains('map-collapsed');
@@ -801,6 +829,16 @@ if ($mapToggleBtn) {
   });
   try {
     if (localStorage.getItem(MAP_HIDE_KEY) === '1') applyMapCollapsed(true);
+  } catch {}
+}
+
+if ($mapExpandBtn) {
+  $mapExpandBtn.addEventListener('click', () => {
+    const next = !$workspaceEl.classList.contains('map-expanded');
+    applyMapExpanded(next);
+  });
+  try {
+    if (localStorage.getItem(MAP_EXPAND_KEY) === '1') applyMapExpanded(true);
   } catch {}
 }
 
@@ -3564,6 +3602,18 @@ let cliMode = null;
 function setCliMode(value) {
   cliMode = value;
   setCliPaintMode(value);
+  // Ensure the CLI + Soil Type results-grid columns are visible
+  // whenever the CLI overlay is active (either capability or identity
+  // mode). The user explicitly asked that those two columns light up
+  // by default in the grid when Soil Productivity / Soil Type is on
+  // — they're in DEFAULT_VISIBLE so first-time visitors already see
+  // them, but a user who hid them via the Columns gear would expect
+  // turning the overlay on to bring them back. No-op when the
+  // columns are already visible (setColumnVisible is idempotent).
+  if (value !== null) {
+    setColumnVisible('clicls', true);
+    setColumnVisible('soiltype', true);
+  }
 }
 // Last loaded CLI FC, kept so cycling between modes can re-rank the
 // palette / re-stamp _paintColor without re-fetching.
