@@ -3230,6 +3230,13 @@ function scheduleSoilCompositionStamp(parcelFc, { repush } = {}) {
     try {
       stampSoilCompositionOnParcels(parcelFc, lastCliFc);
       doRepush();
+      // Re-render the results table so the CLI / Soil Type columns
+      // pick up the freshly-stamped _soilComposition[0]. The cells
+      // read dominantCliLabel / dominantSoilTypeLabel from each
+      // parcel's properties at render time, and without this
+      // refresh they'd show their initial empty state until the
+      // next search.
+      refreshResultsTableAfterCompositionStamp();
     } finally {
       endCliOp();
     }
@@ -3239,6 +3246,20 @@ function scheduleSoilCompositionStamp(parcelFc, { repush } = {}) {
   } else {
     setTimeout(run, 0);
   }
+}
+
+/**
+ * Re-renders the results table without resetting pagination so the
+ * CLI / Soil Type columns reflect newly-stamped _soilComposition.
+ * Safe to call at any point — no-op when currentRows is empty.
+ * Defined here near scheduleSoilCompositionStamp so the call site is
+ * obvious; both stamping paths (CLI overlay load and CLI mode swap)
+ * funnel through this helper.
+ */
+function refreshResultsTableAfterCompositionStamp() {
+  if (!currentRows || currentRows.length === 0) return;
+  try { renderTable(currentRows, { resetPage: false }); }
+  catch (err) { console.warn('table refresh after composition stamp failed', err); }
 }
 
 function setMuniParcelsMapData(fc) {
@@ -4023,6 +4044,9 @@ function restampSoilCompositionForActiveSources(soilFc) {
     const parcelFc = { type: 'FeatureCollection', features: currentRows.map((r) => r.parcel) };
     stampSoilCompositionOnParcels(parcelFc, soilFc);
     setMapData(parcelFc, lastZoningFc || EMPTY_FC, lastDevPlanFc || EMPTY_FC, { fit: false });
+    // Refresh the table so the CLI / Soil Type columns pick up the
+    // newly-stamped composition.
+    refreshResultsTableAfterCompositionStamp();
   }
   if (auxData.muniParcels?.features?.length) {
     stampSoilCompositionOnParcels(auxData.muniParcels, soilFc);
@@ -4127,6 +4151,12 @@ async function toggleCliOverlay() {
         const parcelFc = { type: 'FeatureCollection', features: currentRows.map((r) => r.parcel) };
         stampSoilCompositionOnParcels(parcelFc, cliFc);
         setMapData(parcelFc, lastZoningFc || EMPTY_FC, lastDevPlanFc || EMPTY_FC, { fit: false });
+        // Re-render the table so CLI / Soil Type columns populate
+        // from the freshly-stamped composition. Without this, the
+        // columns stay visually empty (showing their initial blank
+        // state) until the user runs another search, even though
+        // the data is on each parcel feature.
+        refreshResultsTableAfterCompositionStamp();
       }
       cliLoadedFor = loadKey;
     } catch (err) {
