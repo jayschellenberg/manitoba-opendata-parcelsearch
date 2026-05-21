@@ -3133,6 +3133,39 @@ function stampActiveSoilComposition(parcelFc) {
   stampSoilCompositionOnParcels(parcelFc, lastSoilSurveyFc);
 }
 
+// Track in-flight Soil Survey work so the toggle button + legend can
+// reflect "still loading" even AFTER the synchronous toggle function
+// returns. Without this the deferred composition stamp ran with no UI
+// signal, so the button flipped to "Soil Survey" while the spatial
+// join was still chewing through the parcel set — making the page
+// feel unresponsive for no obvious reason.
+let soilSurveyPendingOps = 0;
+function beginSoilSurveyOp(label = 'Loading…') {
+  soilSurveyPendingOps += 1;
+  refreshSoilSurveyLoadingIndicator(label);
+}
+function endSoilSurveyOp() {
+  soilSurveyPendingOps = Math.max(0, soilSurveyPendingOps - 1);
+  refreshSoilSurveyLoadingIndicator();
+}
+function refreshSoilSurveyLoadingIndicator(busyLabel = 'Loading…') {
+  const busy = soilSurveyPendingOps > 0;
+  if ($soilSurveyToggle) {
+    $soilSurveyToggle.classList.toggle('overlay-busy', busy);
+    $soilSurveyToggle.disabled = busy;
+    if (busy) {
+      setOverlayBtnLabel($soilSurveyToggle, busyLabel);
+    } else if ($soilSurveyToggle.classList.contains('active')) {
+      setOverlayBtnLabel($soilSurveyToggle, 'Soil Survey');
+    } else {
+      setOverlayBtnLabel($soilSurveyToggle, 'Soil Survey');
+    }
+  }
+  if ($soilSurveyLegend) {
+    $soilSurveyLegend.classList.toggle('legend-busy', busy);
+  }
+}
+
 /**
  * Defer stampSoilCompositionOnParcels off the synchronous map-data
  * pipeline so the map paints before the join runs. After the stamp
@@ -3150,9 +3183,14 @@ function scheduleSoilCompositionStamp(parcelFc, { repush } = {}) {
   if (!lastSoilSurveyFc?.features?.length) return;
   const defaultRepush = () => mapReady.then(() => showResults(map, parcelFc, { fit: false }));
   const doRepush = repush || defaultRepush;
+  beginSoilSurveyOp('Composing…');
   const run = () => {
-    stampSoilCompositionOnParcels(parcelFc, lastSoilSurveyFc);
-    doRepush();
+    try {
+      stampSoilCompositionOnParcels(parcelFc, lastSoilSurveyFc);
+      doRepush();
+    } finally {
+      endSoilSurveyOp();
+    }
   };
   if (typeof window !== 'undefined' && window.requestIdleCallback) {
     window.requestIdleCallback(run, { timeout: 2000 });
@@ -3634,6 +3672,11 @@ function escapeHtmlText(s) {
  */
 function updateSoilSurveyEnabled() {
   if (!$soilSurveyToggle) return;
+  // The busy/loading indicator owns the disabled state while
+  // soilSurveyPendingOps > 0 (renderTable etc. fire while the
+  // composition stamp is still running, and would otherwise reset
+  // `disabled` to false mid-flight). Skip when busy.
+  if (soilSurveyPendingOps > 0) return;
   $soilSurveyToggle.disabled = currentRows.length === 0;
 }
 
@@ -3967,8 +4010,11 @@ async function toggleSoilSurveyOverlay() {
   }
 
   if (soilSurveyLoadedFor !== loadKey) {
-    $soilSurveyToggle.disabled = true;
-    setOverlayBtnLabel($soilSurveyToggle, 'Loading…');
+    // Use the pending-ops indicator so the toggle stays in "Loading…"
+    // state through the WHOLE flow (network fetch + palette + map
+    // setData + deferred composition stamp). endSoilSurveyOp() is
+    // called from finally + from the early-exit paths below.
+    beginSoilSurveyOp('Loading…');
     try {
       const muniBoundaries = munis.map((m) => ({
         muni: m,
@@ -3980,8 +4026,7 @@ async function toggleSoilSurveyOverlay() {
       if (missing.length > 0) {
         $soilSurveyToggle.classList.remove('active');
         $soilSurveyToggle.setAttribute('aria-pressed', 'false');
-        $soilSurveyToggle.disabled = false;
-        setOverlayBtnLabel($soilSurveyToggle, 'Soil Survey');
+        endSoilSurveyOp();
         setCount(`Couldn't locate boundary for ${missing.join(', ')}; can't load Soil Survey.`);
         return;
       }
@@ -4000,8 +4045,7 @@ async function toggleSoilSurveyOverlay() {
       if (polyFeatures.length === 0) {
         $soilSurveyToggle.classList.remove('active');
         $soilSurveyToggle.setAttribute('aria-pressed', 'false');
-        $soilSurveyToggle.disabled = false;
-        setOverlayBtnLabel($soilSurveyToggle, 'Soil Survey');
+        endSoilSurveyOp();
         const label = munis.length === 1 ? munis[0] : `${munis.length} matched munis (${munis.join(', ')})`;
         setCount(`No Soil Survey polygons in ${label}.`);
         return;
@@ -4040,14 +4084,16 @@ async function toggleSoilSurveyOverlay() {
       console.warn('Soil Survey fetch failed', err);
       $soilSurveyToggle.classList.remove('active');
       $soilSurveyToggle.setAttribute('aria-pressed', 'false');
-      $soilSurveyToggle.disabled = false;
-      setOverlayBtnLabel($soilSurveyToggle, 'Soil Survey');
+      endSoilSurveyOp();
       setCount(`Failed to load Manitoba Soil Survey: ${err.message}`);
       return;
     }
-    $soilSurveyToggle.disabled = false;
+    // Close the fetch/setData op. The deferred composition stamp
+    // scheduled inside setMapData / setMuniParcelsMapData has its
+    // own begin/end pair, so the indicator stays in "Composing…"
+    // until that work also lands.
+    endSoilSurveyOp();
   }
-  setOverlayBtnLabel($soilSurveyToggle, 'Soil Survey');
   setSoilSurveyVisible(map, true);
   if ($soilSurveyLegend) $soilSurveyLegend.hidden = false;
 }
