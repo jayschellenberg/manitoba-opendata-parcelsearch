@@ -1443,10 +1443,11 @@ export function initMap(container, { onFeatureClick } = {}) {
 
       // Hover popup — works on every layer that's currently visible. Text
       // composed from whichever layer was hit (parcels take priority).
-      // maxWidth 640 px is wide enough for the 2-column parcel popup
-      // layout (parcel info on the left, soil composition on the right)
-      // — see parcelHtml. Single-column popups still constrain via CSS.
-      const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, maxWidth: '640px' });
+      // maxWidth 760 px keeps the 2-column parcel popup layout from
+      // wrapping the per-soil "Land features" sub-lines (slope / stones
+      // / salinity / etc.) — see parcelHtml + .parcel-popup-2col CSS.
+      // Single-column popups still constrain via CSS.
+      const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, maxWidth: '760px' });
       // Sales-CSV multi-parcel sibling highlight. When the cursor sits
       // on a parcel that's part of a multi-parcel sale (its
       // _saleGroupRollIds property carries the OBJECTIDs of every
@@ -1536,11 +1537,18 @@ export function initMap(container, { onFeatureClick } = {}) {
         const parcel = hits.find((h) => h.layer.id === 'parcel-fill');
         if (parcel && !subject) blocks.push(`<div><strong style="color:#7a5c00">Parcel</strong><br>${parcelHtml(parcel.properties)}</div>`);
         const overlay = readOverlaysAt(map, e.point);
-        // CLI fill polygons share the same SOILNAME/EXTENT/AGRI_CAP attribute
-        // shape as the old Soil_Survey polygons, so the rich "Soil under
-        // cursor" hover block works as-is against the CLI overlay now.
-        const soil = soilSurveyHoverHtml(overlay.cli);
-        if (soil && (subject || parcel)) blocks.push(`<div>${soil}</div>`);
+        // Soil-under-cursor block was previously added here on top of
+        // the parcel block when the user hovered a search-result
+        // parcel with the CLI overlay on. That info is now redundant
+        // — parcelHtml's right column renders the full per-parcel
+        // soil composition (with the top-2 soils' land-features
+        // descriptors). Stacking the polygon-under-cursor breakdown
+        // on top of that made the hover popup tall enough that the
+        // parcel block scrolled below the viewport on smaller screens.
+        // The bare-CLI hover handler (cli-agr-fill) still shows the
+        // "Soil under cursor" block when the cursor is over a CLI
+        // polygon WITHOUT a parcel above it.
+        void overlay;
         const zone = hits.find((h) => h.layer.id === 'zoning-fill');
         if (zone) blocks.push(`<div><strong style="color:#1a2a4a">Zoning</strong><br>${zoningHtml(zone.properties)}</div>`);
         const dev = hits.find((h) => h.layer.id === 'devplan-fill');
@@ -1568,7 +1576,7 @@ export function initMap(container, { onFeatureClick } = {}) {
       // That overrides the smooth scrollIntoView() in scrollToRow and
       // leaves the user staring at the map instead of the table row they
       // just clicked. With focus disabled, scrollToRow wins.
-      const parcelClickPopup = new maplibregl.Popup({ closeButton: true, focusAfterOpen: false, maxWidth: '640px' });
+      const parcelClickPopup = new maplibregl.Popup({ closeButton: true, focusAfterOpen: false, maxWidth: '760px' });
       map.on('click', 'parcel-fill', (e) => {
         const f = e.features?.[0];
         if (!f) return;
@@ -1602,7 +1610,7 @@ export function initMap(container, { onFeatureClick } = {}) {
       // search-result parcels also sit at the cursor those win (queried
       // first in the layer list).
       const muniHoverPopup = new maplibregl.Popup({
-        maxWidth: '640px',
+        maxWidth: '760px',
         closeButton: false,
         closeOnClick: false,
       });
@@ -1633,7 +1641,7 @@ export function initMap(container, { onFeatureClick } = {}) {
       // Click on a muni-parcel polygon → sticky popup (so the user can
       // copy the roll number, click the assessment-report link, etc).
       // Same content as the hover popup but with a close button.
-      const muniClickPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '640px' });
+      const muniClickPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '760px' });
       map.on('click', 'muni-parcels-fill', (e) => {
         if (map.getLayoutProperty('muni-parcels-fill', 'visibility') !== 'visible') return;
         // Defer to the search-result click handler when both layers
@@ -2656,7 +2664,18 @@ export function soilSurveyParcelHtml(composition) {
   // further slicing here. (Earlier this function .slice(0,2)'d on top
   // of the stamp cap, hiding the third soil even after we bumped the
   // stamp limit to 3 — the user spotted that.)
-  const html = rows.map((c) => {
+  // Land-feature descriptor sub-blocks (slope, stones, salinity,
+  // erosion, drainage, surface mod, mgmt, irrigation, potato) are
+  // multi-line and visually heavy. Cap them to the TOP-2 soils by
+  // parcel share so the popup stays compact — the user's feedback
+  // was that with 3 soils + 9 descriptors each, the popup got too
+  // tall and the descriptor lines wrapped across two rows. Soils
+  // ranked 3rd or lower still render their name, capability chip,
+  // surface texture, map unit, and area / percentage — just without
+  // the descriptor wall. (The full picture is in the CSV export
+  // for users who need every descriptor on every soil.)
+  const DETAIL_LIMIT = 2;
+  const html = rows.map((c, i) => {
     const swatch = `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${escapeHtml(c.paintColor || '#bfbfbf')};border:1px solid rgba(0,0,0,0.2);margin-right:6px;vertical-align:middle"></span>`;
     const name = c.soilName || 'Mapped soil';
     const nameLine = c.soilCode
@@ -2682,15 +2701,16 @@ export function soilSurveyParcelHtml(composition) {
     const unitLine = unitText
       ? `<div style="color:#777;font-size:11px">Map unit: ${escapeHtml(unitText)}</div>`
       : '';
-    // Per-soil land-feature descriptors (slope, stoniness, salinity,
-    // erosion, drainage, surface modifier, management considerations,
-    // irrigation rating, potato suitability). The values were
-    // attributed to this composition row by soilSurveyComponentsFromMatches
-    // from whichever polygon contributed the largest share of this soil
-    // to the parcel.
-    const descriptorLines = soilDescriptorLines(c);
-    const descBlock = descriptorLines.length
-      ? `<div style="color:#777;font-size:11px;margin-top:2px">${descriptorLines.map(escapeHtml).join('<br>')}</div>`
+    // Per-soil land-feature descriptors only for the top-2 soils. The
+    // values were attributed to this composition row by
+    // soilSurveyComponentsFromMatches from whichever polygon contributed
+    // the largest share of this soil to the parcel.
+    const descBlock = (i < DETAIL_LIMIT)
+      ? (() => {
+          const descriptorLines = soilDescriptorLines(c);
+          if (!descriptorLines.length) return '';
+          return `<div style="color:#777;font-size:11px;margin-top:2px">${descriptorLines.map(escapeHtml).join('<br>')}</div>`;
+        })()
       : '';
     const areaText = Number.isFinite(c.areaAcres)
       ? formatSoilAcres(c.areaAcres)
