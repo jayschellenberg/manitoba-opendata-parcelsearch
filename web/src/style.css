@@ -477,6 +477,42 @@ header small a {
 }
 .overlay-btn.link-btn .overlay-dot { display: none; }
 
+/* Busy/loading state for overlay toggles whose load chain includes
+   work that continues AFTER the synchronous toggle handler returns
+   (e.g. the Soil Survey overlay's deferred per-parcel composition
+   stamp). Swap the dot for an animated spinner ring + dim the
+   label to make it visually obvious the layer is still working.
+   Keeps the button's "disabled" cursor so the toggle can't be
+   re-clicked while busy. */
+.overlay-btn.overlay-busy {
+  cursor: progress;
+}
+.overlay-btn.overlay-busy .overlay-dot {
+  background: transparent;
+  border: 2px solid rgba(15, 23, 42, 0.15);
+  border-top-color: var(--dot-color, var(--color-accent-500, #2563eb));
+  animation: overlay-busy-spin 0.8s linear infinite;
+}
+.overlay-btn.overlay-busy .overlay-btn-label {
+  color: var(--color-neutral-600, #52525b);
+  font-style: italic;
+}
+@keyframes overlay-busy-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Subtle "(loading)" hint inside the legend while the Soil Survey
+   parcel-composition stamp is in flight. Sits below the legend's
+   normal subtitle. */
+.map-legend.legend-busy::after {
+  content: 'Composing parcel composition…';
+  display: block;
+  font-size: 10px;
+  color: var(--color-accent-600, #1d4ed8);
+  margin-top: 4px;
+  font-style: italic;
+}
+
 .sidebar .generate-map-btn {
   width: 100%;
   margin-top: 5px;
