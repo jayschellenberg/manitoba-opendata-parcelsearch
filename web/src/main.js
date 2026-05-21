@@ -3547,6 +3547,15 @@ let mascLoadedFor = null;
 let surveyGridLoadedFor = null;
 let cliLoadedFor = null;
 let soilSurveyLoadedFor = null;
+// CLI tri-state cycle: null (off) → 'capability' → 'identity' → null.
+// First click after off → capability paint (the historical CLI view,
+// 1-7 + organic + urban/water specials). Second click → identity
+// paint (top-N soil associations, same palette as Soil Survey but
+// driven off CLI's own fetched FC). Third click → off.
+let cliMode = null;
+// Last loaded CLI FC, kept so cycling between modes can re-rank the
+// palette / re-stamp _paintColor without re-fetching.
+let lastCliFc = EMPTY_FC;
 
 /**
  * Categorical palette used to colour the Manitoba Soil Survey overlay
@@ -3577,25 +3586,46 @@ const SOIL_SURVEY_FALLBACK_COLOR = '#bfbfbf';
  * SOIL_SURVEY_FALLBACK_COLOR for any soil outside the top-N.
  */
 function applySoilSurveyPalette(soilFc) {
-  // 1. Tally area per SOIL_CODE1. We use turfArea (sq metres) for
-  //    sortable weighting; the absolute units don't matter, only the
-  //    ranking does.
+  applyIdentityPalette(soilFc, {
+    fillLayerId: 'soil-survey-fill',
+    legendEl: $soilSurveyLegend,
+    legendTitle: 'Manitoba Soil Survey',
+    legendSub: 'Coloured by dominant soil association',
+  });
+}
+
+/**
+ * Stamp `_paintColor` on every polygon in `fc` based on its
+ * SOIL_CODE1's rank by total area, then update the named map fill
+ * layer's paint expression to read that colour and re-render the
+ * supplied legend element with the top-N soil names.
+ *
+ * Used by:
+ *   - Soil Survey overlay (via applySoilSurveyPalette wrapper)
+ *   - CLI overlay's identity mode (via applyCliIdentityMode)
+ *
+ * Both overlays source from the same Soil_Survey_MB data, just
+ * keyed under separate caches + map sources, so the same palette
+ * logic works for either.
+ */
+function applyIdentityPalette(fc, target) {
+  const {
+    fillLayerId,
+    legendEl,
+    legendTitle,
+    legendSub = 'Coloured by dominant soil association',
+  } = target;
+
+  // 1. Tally area per SOIL_CODE1. Server-precomputed Shape__Area
+  //    (uppercase in GeoJSON output) means we can skip the per-polygon
+  //    turfArea calls that used to block the main thread for several
+  //    seconds on a busy muni. Falls back to turfArea if Shape__Area
+  //    is missing.
   const areaByCode = new Map();
   const nameByCode = new Map();
-  for (const f of soilFc.features || []) {
+  for (const f of fc.features || []) {
     const code = f.properties?.SOIL_CODE1;
     if (!code) continue;
-    // Prefer the server-precomputed area field (source-SR square
-    // metres). ArcGIS returns it as SHAPE__Area (all caps) in GeoJSON
-    // even though the field is requested as Shape__Area in outFields —
-    // so we check both spellings before falling back to client-side
-    // turfArea. Skipping ~3000 turfArea calls is the biggest single
-    // perf win when opening Soil Survey on a busy muni.
-    //
-    // 2026-05-20: an earlier commit only checked the PascalCase
-    // spelling, which meant the fallback was running for every
-    // polygon — the "skip turfArea" optimization wasn't actually
-    // active. Both spellings handled now.
     const p = f.properties || {};
     const serverArea = Number(p.SHAPE__Area ?? p.Shape__Area ?? p.shape__Area);
     let a = Number.isFinite(serverArea) && serverArea > 0 ? serverArea : 0;
@@ -3615,28 +3645,28 @@ function applySoilSurveyPalette(soilFc) {
 
   // 3. Stamp the resolved colour onto every polygon so the popup chip
   //    can match the map without map.js needing a copy of the palette.
-  for (const f of soilFc.features || []) {
+  for (const f of fc.features || []) {
     const code = f.properties?.SOIL_CODE1;
     f.properties._paintColor = colorByCode.get(code) || SOIL_SURVEY_FALLBACK_COLOR;
   }
 
-  // 4. Rebuild the map paint to read the stamped colour directly.
-  //    Switching off the previous AGCAP_CLS1 match expression means
-  //    the user no longer sees a duplicate of the CLI capability
-  //    scale on a layer that's meant to be about soil identity.
-  if (map.getLayer('soil-survey-fill')) {
-    map.setPaintProperty('soil-survey-fill', 'fill-color', [
+  // 4. Rebuild the named fill layer's paint to read the stamped colour.
+  if (map.getLayer(fillLayerId)) {
+    map.setPaintProperty(fillLayerId, 'fill-color', [
       'coalesce', ['get', '_paintColor'], SOIL_SURVEY_FALLBACK_COLOR,
     ]);
   }
 
   // 5. Render the legend (top-N soils + "Other" if anything fell off
   //    the bottom of the palette).
-  renderSoilSurveyLegend(ranked, nameByCode, areaByCode.size > N);
+  renderIdentityLegend(legendEl, ranked, nameByCode, areaByCode.size > N, {
+    title: legendTitle,
+    sub: legendSub,
+  });
 }
 
-function renderSoilSurveyLegend(ranked, nameByCode, hasOther) {
-  if (!$soilSurveyLegend) return;
+function renderIdentityLegend(legendEl, ranked, nameByCode, hasOther, { title, sub }) {
+  if (!legendEl) return;
   const lis = ranked.map(([code], i) => {
     const name  = nameByCode.get(code) || code;
     const color = SOIL_SURVEY_PALETTE[i];
@@ -3648,9 +3678,9 @@ function renderSoilSurveyLegend(ranked, nameByCode, hasOther) {
   if (!lis.length) {
     lis.push('<li><em>No soil associations in this muni.</em></li>');
   }
-  $soilSurveyLegend.innerHTML =
-    '<strong>Manitoba Soil Survey</strong>' +
-    '<div class="legend-sub">Coloured by dominant soil association</div>' +
+  legendEl.innerHTML =
+    `<strong>${escapeHtmlText(title)}</strong>` +
+    `<div class="legend-sub">${escapeHtmlText(sub)}</div>` +
     `<ul>${lis.join('')}</ul>`;
 }
 
@@ -3730,6 +3760,8 @@ function resetMascAndGridToggles() {
   // CLI: same off-on-muni-change logic as MASC.
   if (cliLoadedFor && cliLoadedFor !== desiredOverlayKey) {
     cliLoadedFor = null;
+    cliMode = null;
+    lastCliFc = EMPTY_FC;
     if ($cliToggle && $cliToggle.classList.contains('active')) {
       $cliToggle.classList.remove('active');
       $cliToggle.setAttribute('aria-pressed', 'false');
@@ -3882,40 +3914,127 @@ async function toggleMascOverlay() {
  * Off-state hides the layer; on-state lazy-loads (if the muni
  * changed) and shows the legend.
  */
+// Capability-mode paint expression + label expression for the CLI
+// fill layer. Kept here as constants so the tri-state cycle can
+// swap back to capability after the identity-mode paint mutation.
+// Mirrors the initial paint set in map.js at layer-add time —
+// keep both in sync if the palette changes.
+const CLI_CAPABILITY_FILL_COLOR = [
+  'match',
+  ['slice', ['coalesce', ['get', 'AGCAP_CLS1'], '?'], 0, 1],
+  '1', '#1a6b26',
+  '2', '#4fab57',
+  '3', '#a6e29f',
+  '4', '#f2d640',
+  '5', '#f4a040',
+  '6', '#a8754f',
+  '7', '#9c27b0',
+  'O', '#5e3b1a',
+  '$', '#cfd6dd',
+  '#cccccc',
+];
+const CLI_CAPABILITY_LABEL_FIELD = ['coalesce', ['get', 'AGRI_CAP1'], ''];
+const CLI_IDENTITY_LABEL_FIELD   = ['coalesce', ['get', 'MAPUNITNOM'], ''];
+
+const CLI_CAPABILITY_LEGEND_HTML = (
+  '<strong>CLI Soil Capability</strong>' +
+  '<div class="legend-sub">Manitoba Soil Survey · AGCAP_CLS1</div>' +
+  '<ul>' +
+    '<li><span class="swatch" style="background:#1a6b26"></span>1 — prime</li>' +
+    '<li><span class="swatch" style="background:#4fab57"></span>2</li>' +
+    '<li><span class="swatch" style="background:#a6e29f"></span>3</li>' +
+    '<li><span class="swatch" style="background:#f2d640"></span>4</li>' +
+    '<li><span class="swatch" style="background:#f4a040"></span>5</li>' +
+    '<li><span class="swatch" style="background:#a8754f"></span>6</li>' +
+    '<li><span class="swatch" style="background:#9c27b0"></span>7 — no agric.</li>' +
+    '<li><span class="swatch" style="background:#5e3b1a"></span>O — organic</li>' +
+    '<li><span class="swatch" style="background:#cfd6dd"></span>$ — urban / water</li>' +
+  '</ul>'
+);
+
+function applyCliCapabilityMode() {
+  if (map.getLayer('cli-agr-fill')) {
+    map.setPaintProperty('cli-agr-fill', 'fill-color', CLI_CAPABILITY_FILL_COLOR);
+  }
+  if (map.getLayer('cli-agr-label')) {
+    map.setLayoutProperty('cli-agr-label', 'text-field', CLI_CAPABILITY_LABEL_FIELD);
+  }
+  if ($cliLegend) $cliLegend.innerHTML = CLI_CAPABILITY_LEGEND_HTML;
+}
+
+function applyCliIdentityMode(cliFc) {
+  // Reuse the same top-N-by-area palette as Soil Survey, just targeting
+  // the CLI fill layer + the CLI legend element.
+  applyIdentityPalette(cliFc, {
+    fillLayerId: 'cli-agr-fill',
+    legendEl: $cliLegend,
+    legendTitle: 'Soil productivity (CLI) — by soil',
+    legendSub: 'Coloured by dominant soil association',
+  });
+  // Identity-mode labels show the soil-survey map-unit symbol (e.g.
+  // "ALMv-S2") rather than the capability code ("2W"). MAPUNITNOM is
+  // already on every feature.
+  if (map.getLayer('cli-agr-label')) {
+    map.setLayoutProperty('cli-agr-label', 'text-field', CLI_IDENTITY_LABEL_FIELD);
+  }
+}
+
+function nextCliMode(current) {
+  if (current === null)         return 'capability';
+  if (current === 'capability') return 'identity';
+  return null; // identity → off
+}
+
+function cliButtonLabelFor(mode) {
+  if (mode === 'capability') return 'Soil productivity (CLI)';
+  if (mode === 'identity')   return 'Soil productivity (CLI) — by soil';
+  return 'Soil productivity (CLI)';
+}
+
+/**
+ * Tri-state cycle:
+ *   off  →  capability  →  identity  →  off  →  ...
+ *
+ * The capability mode is the original CLI behaviour (paint by the
+ * AGCAP_CLS1 1-7 + organic + urban/water scale). The identity mode
+ * paints by SOIL_CODE1 using the same top-N palette as the Soil
+ * Survey overlay. Both come from the same fetched FC; switching
+ * between them is a paint-expression + legend swap with no network
+ * traffic, so the second click feels instant.
+ */
 async function toggleCliOverlay() {
   if (!$cliToggle) return;
-  // Sales-CSV mode: load CLI across EVERY matched muni. Otherwise
-  // fall back to the dropdown's single value.
   const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
     ? csvMatchedMunis.slice()
     : ($municipality.value ? [$municipality.value] : []);
   if (munis.length === 0) {
+    cliMode = null;
     $cliToggle.classList.remove('active');
     $cliToggle.setAttribute('aria-pressed', 'false');
     return;
   }
   const loadKey = munis.join('|');
-  const wasActive = $cliToggle.classList.contains('active');
-  const visible = !wasActive;
-  $cliToggle.classList.toggle('active', visible);
-  $cliToggle.setAttribute('aria-pressed', String(visible));
+  const targetMode = nextCliMode(cliMode);
   await mapReady;
 
-  if (!visible) {
-    setOverlayBtnLabel($cliToggle, 'Soil productivity (CLI)');
+  // Off branch: hide layer + legend, clear active state, no fetch.
+  if (targetMode === null) {
+    cliMode = null;
     setCliAgrVisible(map, false);
     if ($cliLegend) $cliLegend.hidden = true;
+    $cliToggle.classList.remove('active');
+    $cliToggle.setAttribute('aria-pressed', 'false');
+    setOverlayBtnLabel($cliToggle, cliButtonLabelFor(null));
     return;
   }
 
+  // First click after off (or after muni change) — make sure data is
+  // loaded. Subsequent capability→identity transition reuses cached
+  // FC, so this branch only runs once per muni.
   if (cliLoadedFor !== loadKey) {
     $cliToggle.disabled = true;
     setOverlayBtnLabel($cliToggle, 'Loading…');
     try {
-      // Resolve every muni's boundary feature up front so we can
-      // fetch CLI for all of them in parallel below. Any missing
-      // boundary is a hard fail for that muni — we surface the names
-      // so the user can act, rather than silently dropping a muni.
       const muniBoundaries = munis.map((m) => ({
         muni: m,
         feat: muniBoundariesFc?.features?.find(
@@ -3924,10 +4043,11 @@ async function toggleCliOverlay() {
       }));
       const missing = muniBoundaries.filter((mb) => !mb.feat).map((mb) => mb.muni);
       if (missing.length > 0) {
+        cliMode = null;
         $cliToggle.classList.remove('active');
         $cliToggle.setAttribute('aria-pressed', 'false');
         $cliToggle.disabled = false;
-        setOverlayBtnLabel($cliToggle, 'Soil productivity (CLI)');
+        setOverlayBtnLabel($cliToggle, cliButtonLabelFor(null));
         setCount(`Couldn't locate boundary for ${missing.join(', ')}; can't load CLI.`);
         return;
       }
@@ -3936,23 +4056,18 @@ async function toggleCliOverlay() {
       );
       const features = fcs.flatMap((fc) => fc?.features || []);
       if (features.length === 0) {
+        cliMode = null;
         $cliToggle.classList.remove('active');
         $cliToggle.setAttribute('aria-pressed', 'false');
         $cliToggle.disabled = false;
-        setOverlayBtnLabel($cliToggle, 'Soil productivity (CLI)');
+        setOverlayBtnLabel($cliToggle, cliButtonLabelFor(null));
         const label = munis.length === 1 ? munis[0] : `${munis.length} matched munis (${munis.join(', ')})`;
         setCount(`No CLI soil-capability polygons in ${label}.`);
         return;
       }
       const cliFc = { type: 'FeatureCollection', features };
       setCliAgrData(map, cliFc);
-      // CLI now sources from the same Soil_Survey_MB polygons as the
-      // Soil Survey overlay (just painted differently — capability vs
-      // soil identity). That means the per-parcel composition stamp
-      // works identically whether the data came from the CLI fetch or
-      // the Soil Survey fetch. Stamping here ensures the parcel popup's
-      // top-3 soil composition section appears even when only CLI is
-      // enabled (user doesn't have to also toggle Soil Survey to see it).
+      lastCliFc = cliFc;
       if (currentRows.length > 0) {
         const parcelFc = { type: 'FeatureCollection', features: currentRows.map((r) => r.parcel) };
         stampSoilCompositionOnParcels(parcelFc, cliFc);
@@ -3961,17 +4076,29 @@ async function toggleCliOverlay() {
       cliLoadedFor = loadKey;
     } catch (err) {
       console.warn('CLI fetch failed', err);
+      cliMode = null;
       $cliToggle.classList.remove('active');
       $cliToggle.setAttribute('aria-pressed', 'false');
       $cliToggle.disabled = false;
-      setOverlayBtnLabel($cliToggle, 'Soil productivity (CLI)');
+      setOverlayBtnLabel($cliToggle, cliButtonLabelFor(null));
       setCount(`Failed to load CLI soil capability: ${err.message}`);
       return;
     }
     $cliToggle.disabled = false;
   }
-  setOverlayBtnLabel($cliToggle, 'Soil productivity (CLI)');
+
+  // Apply the new mode. Paint + legend + label expression all swap
+  // here; no source re-push needed.
+  cliMode = targetMode;
+  if (targetMode === 'capability') {
+    applyCliCapabilityMode();
+  } else {
+    applyCliIdentityMode(lastCliFc);
+  }
   setCliAgrVisible(map, true);
+  $cliToggle.classList.add('active');
+  $cliToggle.setAttribute('aria-pressed', 'true');
+  setOverlayBtnLabel($cliToggle, cliButtonLabelFor(targetMode));
   if ($cliLegend) $cliLegend.hidden = false;
 }
 
