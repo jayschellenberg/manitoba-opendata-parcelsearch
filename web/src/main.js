@@ -3942,11 +3942,41 @@ function applyCliIdentityMode(cliFc) {
   // mutation — we have to re-push the FC for the paint to find the
   // new field. Without this every polygon paints the fallback grey.
   setCliAgrData(map, cliFc);
+  // Re-stamp parcel composition so the popup's per-soil swatches pick
+  // up the freshly-assigned _paintColor. componentsForFeature reads
+  // each polygon's _paintColor at rollup time, so a composition stamp
+  // taken BEFORE the palette ran (e.g. during the first capability-mode
+  // load) carries paintColor:null on every row and renders the popup
+  // swatches grey. Re-stamping here pulls in the new colours so the
+  // popup's left-side swatches match the legend / map polygons.
+  restampSoilCompositionForActiveSources(cliFc);
   // Identity-mode labels show the soil-survey map-unit symbol (e.g.
   // "ALMv-S2") rather than the capability code ("2W"). MAPUNITNOM is
   // already on every feature.
   if (map.getLayer('cli-agr-label')) {
     map.setLayoutProperty('cli-agr-label', 'text-field', CLI_IDENTITY_LABEL_FIELD);
+  }
+}
+
+/**
+ * Re-stamp `_soilComposition` on every parcel source that's currently
+ * loaded (search-result parcels in currentRows, plus the Roll Layer's
+ * muni-parcels FC when it's loaded). Used whenever the CLI overlay's
+ * paint mode swaps so the per-parcel composition rollup picks up the
+ * fresh `_paintColor` that applyIdentityPalette stamped on the soil
+ * polygons. Pushes the updated parcel sources back to the map so the
+ * popup click handler reads the enriched properties.
+ */
+function restampSoilCompositionForActiveSources(soilFc) {
+  if (!soilFc?.features?.length) return;
+  if (currentRows.length > 0) {
+    const parcelFc = { type: 'FeatureCollection', features: currentRows.map((r) => r.parcel) };
+    stampSoilCompositionOnParcels(parcelFc, soilFc);
+    setMapData(parcelFc, lastZoningFc || EMPTY_FC, lastDevPlanFc || EMPTY_FC, { fit: false });
+  }
+  if (auxData.muniParcels?.features?.length) {
+    stampSoilCompositionOnParcels(auxData.muniParcels, soilFc);
+    mapReady.then(() => setMuniParcelsData(map, auxData.muniParcels));
   }
 }
 

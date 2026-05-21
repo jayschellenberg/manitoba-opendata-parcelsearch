@@ -2717,7 +2717,18 @@ export function soilSurveyParcelHtml(composition) {
   // for users who need every descriptor on every soil.)
   const DETAIL_LIMIT = 2;
   const html = rows.map((c, i) => {
-    const swatch = `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${escapeHtml(c.paintColor || '#bfbfbf')};border:1px solid rgba(0,0,0,0.2);margin-right:6px;vertical-align:middle"></span>`;
+    // Swatch colour mirrors the map polygon's paint:
+    //   - identity ("Soil Type") mode: applyIdentityPalette stamps
+    //     `_paintColor` on each soil polygon, the rollup propagates
+    //     it onto this row's `paintColor`, so the swatch matches the
+    //     muni-specific top-20 legend.
+    //   - capability ("Soil Productivity") mode: no `_paintColor` is
+    //     stamped (the map uses a static `match` expression on
+    //     AGCAP_CLS1); fall through to cliCapabilitySwatchColor so
+    //     the swatch picks up the capability-class colour instead of
+    //     bleeding the generic fallback grey.
+    const swatchColor = c.paintColor || cliCapabilitySwatchColor(c.agcapCls);
+    const swatch = `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${escapeHtml(swatchColor)};border:1px solid rgba(0,0,0,0.2);margin-right:6px;vertical-align:middle"></span>`;
     const name = c.soilName || 'Mapped soil';
     const nameLine = c.soilCode
       ? `${swatch}<strong>${escapeHtml(name)}</strong> <span style="color:#888">(${escapeHtml(c.soilCode)})</span>`
