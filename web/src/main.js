@@ -3111,12 +3111,20 @@ async function enrichFcWithLegals(fc) {
 // ---------- Map / overlay helpers ----------
 
 function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
-  stampActiveSoilComposition(parcelFc);
+  // Render map FIRST, then stamp composition. The composition pass
+  // does a joinTopNByArea against every loaded soil polygon (up to
+  // ~3000 on a busy muni like St Clements) — running it synchronously
+  // here used to block the map paint for several seconds and made the
+  // overlay toggle feel like it was hanging. The parcel popup reads
+  // `_soilComposition` lazily on click; deferring the stamp means the
+  // map appears immediately and the composition section fills in
+  // shortly after.
   mapReady.then(() => {
     showResults(map, parcelFc, opts);
     setZoningData(map, zoningFc);
     setDevPlanData(map, devPlanFc);
   });
+  scheduleSoilCompositionStamp(parcelFc);
 }
 
 function stampActiveSoilComposition(parcelFc) {
@@ -3125,9 +3133,48 @@ function stampActiveSoilComposition(parcelFc) {
   stampSoilCompositionOnParcels(parcelFc, lastSoilSurveyFc);
 }
 
+/**
+ * Defer stampSoilCompositionOnParcels off the synchronous map-data
+ * pipeline so the map paints before the join runs. After the stamp
+ * lands, re-push the supplied parcel source so the click handler
+ * reads the enriched `_soilComposition`. Uses requestIdleCallback
+ * when available (browsers' idle slot — runs only when the main
+ * thread is free); falls back to setTimeout(0) otherwise.
+ *
+ * `repush` defaults to re-pushing through showResults (the search-
+ * results parcel source); callers driving a different source (e.g.
+ * the Roll Layer's muni-parcels source) pass their own re-push fn.
+ */
+function scheduleSoilCompositionStamp(parcelFc, { repush } = {}) {
+  if (!$soilSurveyToggle?.classList.contains('active')) return;
+  if (!lastSoilSurveyFc?.features?.length) return;
+  const defaultRepush = () => mapReady.then(() => showResults(map, parcelFc, { fit: false }));
+  const doRepush = repush || defaultRepush;
+  const run = () => {
+    stampSoilCompositionOnParcels(parcelFc, lastSoilSurveyFc);
+    doRepush();
+  };
+  if (typeof window !== 'undefined' && window.requestIdleCallback) {
+    window.requestIdleCallback(run, { timeout: 2000 });
+  } else {
+    setTimeout(run, 0);
+  }
+}
+
 function setMuniParcelsMapData(fc) {
-  stampActiveSoilComposition(fc);
+  // Push to the map source FIRST so the Roll Layer renders without
+  // waiting on the composition join. The join can take 30+ seconds
+  // against a busy muni's full parcel fabric (St Clements has ~8000
+  // parcels × ~3000 soil polygons = up to 24M intersect candidates).
+  // Composition stamps in the background via scheduleSoilCompositionStamp;
+  // the parcel popup picks up `_soilComposition` once the stamp lands.
   setMuniParcelsData(map, fc);
+  scheduleSoilCompositionStamp(fc, {
+    // Roll Layer source push doesn't need a viewport refit, and we
+    // only re-push the muni-parcels source (not the search-results
+    // source) once stamping completes.
+    repush: () => mapReady.then(() => setMuniParcelsData(map, fc)),
+  });
 }
 
 /**
@@ -3500,14 +3547,19 @@ function applySoilSurveyPalette(soilFc) {
   for (const f of soilFc.features || []) {
     const code = f.properties?.SOIL_CODE1;
     if (!code) continue;
-    // Prefer the server-precomputed Shape__Area (source-SR square
-    // metres) — for ranking we only need relative magnitudes so the
-    // unit doesn't matter. Fall back to client-side turfArea() only
-    // when the field is missing (e.g. for muni boundaries fetched
-    // from layers that don't expose it). Skipping ~3000 turfArea
-    // calls is the biggest single perf win when opening Soil Survey
-    // on a busy muni — see commit message.
-    const serverArea = Number(f.properties?.Shape__Area);
+    // Prefer the server-precomputed area field (source-SR square
+    // metres). ArcGIS returns it as SHAPE__Area (all caps) in GeoJSON
+    // even though the field is requested as Shape__Area in outFields —
+    // so we check both spellings before falling back to client-side
+    // turfArea. Skipping ~3000 turfArea calls is the biggest single
+    // perf win when opening Soil Survey on a busy muni.
+    //
+    // 2026-05-20: an earlier commit only checked the PascalCase
+    // spelling, which meant the fallback was running for every
+    // polygon — the "skip turfArea" optimization wasn't actually
+    // active. Both spellings handled now.
+    const p = f.properties || {};
+    const serverArea = Number(p.SHAPE__Area ?? p.Shape__Area ?? p.shape__Area);
     let a = Number.isFinite(serverArea) && serverArea > 0 ? serverArea : 0;
     if (a <= 0) {
       try { a = turfArea(f); } catch { /* skip topology errors */ }
