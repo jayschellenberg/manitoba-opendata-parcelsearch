@@ -559,6 +559,23 @@ header small a {
   padding-left: 12px;
   border-left: 1px solid #e5e7eb;
 }
+/* Hyperlink styling inside parcel popups — the Roll # links to the
+   assessment report and "GPS Coordinates" copies the centroid to
+   the clipboard. Both should READ as hyperlinks (blue, underlined)
+   so users discover them at a glance instead of mistaking them for
+   plain text. MapLibre popups apply some browser-default styling
+   that ends up muted; this rule re-asserts the standard link look
+   inside the popup wrapper. */
+.maplibregl-popup .parcel-popup a,
+.maplibregl-popup .parcel-popup-2col a {
+  color: #1d4ed8;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.maplibregl-popup .parcel-popup a:hover,
+.maplibregl-popup .parcel-popup-2col a:hover {
+  color: #1e3a8a;
+}
 
 .sidebar .generate-map-btn {
   width: 100%;
