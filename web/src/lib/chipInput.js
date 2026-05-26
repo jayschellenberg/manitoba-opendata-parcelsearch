@@ -41,8 +41,15 @@ export function initChipInput(wrapperEl, { onEnterEmpty } = {}) {
   let values = parseList(hidden.value);
 
   function parseList(s) {
+    // Split on commas OR any whitespace (spaces, tabs, newlines).
+    // Lets the user paste a column copied straight out of a
+    // spreadsheet — each cell ends up on its own row separated by
+    // a newline — and have every value land as its own chip without
+    // any pre-formatting. Multiple consecutive delimiters are
+    // collapsed by the `+` quantifier so "  a,, b\n\nc " becomes
+    // ['a', 'b', 'c'].
     return String(s ?? '')
-      .split(',')
+      .split(/[,\s]+/)
       .map((x) => x.trim())
       .filter(Boolean);
   }
@@ -175,7 +182,13 @@ export function initChipInput(wrapperEl, { onEnterEmpty } = {}) {
         e.preventDefault();
         onEnterEmpty();
       }
-    } else if (e.key === ',') {
+    } else if (e.key === ',' || e.key === ' ') {
+      // Comma OR space commits the current token. Roll numbers are
+      // numeric (e.g. "218600.000") so a space typed mid-value isn't
+      // a real use case — but pasting a list copied from a column
+      // produces space- or newline-separated tokens, and matching
+      // the same separator behaviour for typed input keeps the
+      // mental model simple ("any whitespace ends a chip").
       e.preventDefault();
       commit();
     } else if (e.key === 'Backspace' && !textInput.value && values.length) {
@@ -191,12 +204,18 @@ export function initChipInput(wrapperEl, { onEnterEmpty } = {}) {
     setTimeout(() => { commit(); }, 50);
   });
 
-  // Paste of comma-separated text expands immediately. The native
+  // Paste of multi-value text expands immediately. The native
   // paste fires the keydown listener too, but the input value
   // hasn't updated yet at that point — easier to handle here.
+  // Triggered on any delimiter we know about (comma OR any
+  // whitespace including newlines / tabs) so a column copied
+  // straight out of a spreadsheet — one value per row separated
+  // by newlines — explodes into one chip per row. Plain
+  // single-token pastes fall through to the browser's default.
   textInput.addEventListener('paste', (e) => {
     const text = e.clipboardData?.getData('text');
-    if (!text || !text.includes(',')) return; // single token → let default handle
+    if (!text) return;
+    if (!/[,\s]/.test(text)) return; // single token → let default handle
     e.preventDefault();
     const before = textInput.value;
     textInput.value = before + text;
