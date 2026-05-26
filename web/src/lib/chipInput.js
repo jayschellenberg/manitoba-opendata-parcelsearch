@@ -41,15 +41,17 @@ export function initChipInput(wrapperEl, { onEnterEmpty } = {}) {
   let values = parseList(hidden.value);
 
   function parseList(s) {
-    // Split on commas OR any whitespace (spaces, tabs, newlines).
-    // Lets the user paste a column copied straight out of a
-    // spreadsheet — each cell ends up on its own row separated by
-    // a newline — and have every value land as its own chip without
-    // any pre-formatting. Multiple consecutive delimiters are
-    // collapsed by the `+` quantifier so "  a,, b\n\nc " becomes
-    // ['a', 'b', 'c'].
+    // Split on commas, ampersands, OR any whitespace (spaces, tabs,
+    // newlines). Lets the user paste a column copied straight out
+    // of a spreadsheet — each cell ends up on its own row separated
+    // by a newline — and have every value land as its own chip
+    // without any pre-formatting. Ampersand covers the "Roll A &
+    // Roll B" style listing some folks use when typing two roll
+    // numbers from memory. Multiple consecutive delimiters are
+    // collapsed by the `+` quantifier so "  a,, b\n\nc & d " becomes
+    // ['a', 'b', 'c', 'd'].
     return String(s ?? '')
-      .split(/[,\s]+/)
+      .split(/[,&\s]+/)
       .map((x) => x.trim())
       .filter(Boolean);
   }
@@ -182,13 +184,13 @@ export function initChipInput(wrapperEl, { onEnterEmpty } = {}) {
         e.preventDefault();
         onEnterEmpty();
       }
-    } else if (e.key === ',' || e.key === ' ') {
-      // Comma OR space commits the current token. Roll numbers are
-      // numeric (e.g. "218600.000") so a space typed mid-value isn't
-      // a real use case — but pasting a list copied from a column
-      // produces space- or newline-separated tokens, and matching
-      // the same separator behaviour for typed input keeps the
-      // mental model simple ("any whitespace ends a chip").
+    } else if (e.key === ',' || e.key === ' ' || e.key === '&') {
+      // Comma, space, OR ampersand commits the current token. Roll
+      // numbers are numeric (e.g. "218600.000") so none of these
+      // are real characters inside a value — and matching the same
+      // separator set the parser accepts keeps the mental model
+      // simple ("any of those ends a chip"). Ampersand covers the
+      // "Roll A & Roll B" listing style.
       e.preventDefault();
       commit();
     } else if (e.key === 'Backspace' && !textInput.value && values.length) {
@@ -215,7 +217,7 @@ export function initChipInput(wrapperEl, { onEnterEmpty } = {}) {
   textInput.addEventListener('paste', (e) => {
     const text = e.clipboardData?.getData('text');
     if (!text) return;
-    if (!/[,\s]/.test(text)) return; // single token → let default handle
+    if (!/[,&\s]/.test(text)) return; // single token → let default handle
     e.preventDefault();
     const before = textInput.value;
     textInput.value = before + text;
