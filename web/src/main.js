@@ -15,6 +15,7 @@ import { solveRoute, haversineMatrix } from './lib/routeSolver.js';
 import {
   hasToken as hasMapboxToken,
   fetchDrivingMatrix,
+  fetchDrivingMatrixClustered,
   fetchDrivingRoute,
   staticRouteImageUrl,
   MATRIX_MAX_COORDS,
@@ -2544,6 +2545,41 @@ function renderListUnresolvedDrawer() {
 // Route planner
 // ====================================================================
 
+/** Build the cluster-id vector for fetchDrivingMatrixClustered. The
+ *  start point inherits the cluster of its nearest parcel (by
+ *  haversine), so the start-leg can land within a real-matrix block
+ *  instead of always being a cross-cluster haversine pair. Parcels
+ *  cluster by their muni_no. Points without a muni get a unique
+ *  per-index cluster so they fall into the cross-cluster bucket. */
+function buildClusterIds(startLngLat, parcels) {
+  // start = index 0; parcels start at index 1.
+  const haversine = (a, b) => {
+    const R = 6371, toRad = (d) => d * Math.PI / 180;
+    const dLat = toRad(b.lat - a.lat);
+    const dLng = toRad(b.lng - a.lng);
+    const h = Math.sin(dLat / 2) ** 2 +
+              Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+  };
+  // Pick the parcel closest to the start; the start joins that
+  // parcel's muni cluster.
+  let nearest = -1;
+  let best = Infinity;
+  for (let i = 0; i < parcels.length; i++) {
+    const d = haversine(startLngLat, parcels[i]);
+    if (d < best) { best = d; nearest = i; }
+  }
+  const startCluster = nearest >= 0 && parcels[nearest].muniNo != null
+    ? parcels[nearest].muniNo
+    : 'orphan-start';
+  const ids = [startCluster];
+  for (let i = 0; i < parcels.length; i++) {
+    const muni = parcels[i].muniNo;
+    ids.push(muni != null ? muni : `orphan-${i}`);
+  }
+  return ids;
+}
+
 /** Walk currentRows (the post-search table rows) and pull each parcel's
  *  centroid + display info for the route planner. Rows without geometry
  *  drop silently — the resolver shouldn't produce keys without geometry,
@@ -2681,29 +2717,54 @@ async function handleCalculateRoute() {
     const points = [routeStart, ...parcels];
 
     // Build the cost matrix. Mapbox Matrix v1 driving caps at 25
-    // total coords per call; for N > 24 we fall back to a haversine
-    // (great-circle) matrix for the TSP ordering. The route polyline
-    // and total km/time are still real-road from the Directions API.
+    // total coords per call. Two paths:
+    //   ≤ 24 stops: one Matrix call covers the whole matrix.
+    //   > 24 stops: cluster-aware path — group stops by muni, fetch
+    //     real driving costs for within-cluster pairs (where road
+    //     grid matters), use haversine for cross-cluster pairs
+    //     (highway-distance ≈ great-circle distance once the
+    //     clusters are tens of km apart). Real road costs end up
+    //     covering nearly all of the optimisation work.
     let duration = null;
     let distance = null;
-    let usedHaversine = false;
+    let matrixMode = 'real';   // 'real' | 'clustered' | 'haversine'
+    let clusterStats = null;
     try {
       const matrix = await fetchDrivingMatrix(points);
       duration = matrix.duration;
       distance = matrix.distance;
     } catch (err) {
       if (err instanceof MatrixTooManyCoordsError) {
-        usedHaversine = true;
-        // Haversine km → metres; no real time available pre-Directions.
-        const hav = haversineMatrix(points);
-        distance = hav.map((row) => row.map((v) => v * 1000));
-        // Solver only needs ONE matrix; pass distance under both
-        // names so the optimisation still runs.
-        duration = distance;
+        // Cluster by muni — parcels carry their muniNo; the start
+        // joins the cluster of its nearest parcel by haversine.
+        const clusterIds = buildClusterIds(routeStart, parcels);
+        try {
+          const matrix = await fetchDrivingMatrixClustered({
+            points,
+            clusterIds,
+          });
+          duration = matrix.duration;
+          distance = matrix.distance;
+          matrixMode = 'clustered';
+          clusterStats = {
+            clusters: new Set(clusterIds).size,
+            realCalls: matrix.realCalls,
+            crossClusterPairs: matrix.crossClusterCount,
+            anyCallFailed: matrix.anyCallFailed,
+          };
+        } catch (clusterErr) {
+          console.warn('Cluster matrix failed, falling back to haversine:', clusterErr);
+          const hav = haversineMatrix(points);
+          distance = hav.map((row) => row.map((v) => v * 1000));
+          duration = distance;
+          matrixMode = 'haversine';
+        }
       } else {
         throw err;
       }
     }
+    const usedHaversine = matrixMode === 'haversine';
+    const usedClusterMatrix = matrixMode === 'clustered';
 
     // Solver runs on whichever matrix we have. With Mapbox driving it
     // optimises drive time; with haversine it optimises great-circle
@@ -2743,6 +2804,8 @@ async function handleCalculateRoute() {
       totalSeconds: directions.durationSeconds || legSeconds.reduce((a, b) => a + (b || 0), 0),
       roundTrip: routeRoundTrip,
       usedHaversine,
+      usedClusterMatrix,
+      clusterStats,
     };
 
     // Paint stops on the map, in visit order (excluding the start).
@@ -2822,7 +2885,17 @@ function formatRouteSummary(r) {
   const km = (r.totalMeters / 1000);
   const mins = r.totalSeconds / 60;
   const stops = r.parcels.length;
-  const tail = r.usedHaversine ? ' · order via straight-line (>24 stops)' : '';
+  // Append a small honest tail describing how the matrix was built.
+  // - `usedHaversine` is the catastrophic fallback (whole matrix from
+  //   straight-line); always surfaced.
+  // - `usedClusterMatrix` means real road costs WITHIN each muni
+  //   cluster and straight-line BETWEEN clusters — the standard
+  //   high-quality path for multi-muni lists. We don't tail-tag this
+  //   because the within-cluster real data dominates the ordering
+  //   and the cross-cluster haversine is close to road on rural MB
+  //   highways.
+  let tail = '';
+  if (r.usedHaversine) tail = ' · order via straight-line (matrix fallback)';
   return `${stops} stop${stops === 1 ? '' : 's'} · ${formatKm(km)} · ${formatDuration(mins)} · ${r.roundTrip ? 'round trip' : 'one-way'}${tail}`;
 }
 

@@ -26,6 +26,8 @@ import {
 import { resolveParcelList } from '../parcelListResolver.js';
 
 const STORAGE_KEY = 'mbps_parcel_list_mapping_v1';
+const RECENT_STORAGE_KEY = 'mbps_parcel_list_recent_v1';
+const RECENT_CAP = 5;
 const MAX_PREVIEW_ROWS = 5;
 
 const FIELD_LABELS = {
@@ -72,21 +74,29 @@ export function initParcelListImport({
   const $mapTable  = document.getElementById('parcel-list-mapping-table-wrap');
   const $mapWarn   = document.getElementById('parcel-list-mapping-warning');
   const $resolveErr = document.getElementById('parcel-list-resolve-error');
+  const $recentRow    = document.getElementById('parcel-list-import-recent-row');
+  const $recentSelect = document.getElementById('parcel-list-import-recent-select');
+  const $recentClear  = document.getElementById('parcel-list-import-recent-clear');
 
   // Per-session state — re-initialized on every open() so a previous
-  // run doesn't leak across modal sessions.
+  // run doesn't leak across modal sessions. `sourceName` tracks how
+  // the current text was obtained (file name or a synthetic paste
+  // label) so it can be passed to rememberImport() on success.
   let parsed = null;
   let mapping = [];
+  let sourceName = '';
 
   // ---- open / close --------------------------------------------
 
   function open() {
     parsed = null;
     mapping = [];
+    sourceName = '';
     setStep('paste');
     if ($textarea) $textarea.value = '';
     if ($file) $file.value = '';
     if ($resolveErr) $resolveErr.hidden = true;
+    populateRecentDropdown();
     try { $modal.showModal(); } catch { $modal.setAttribute('open', ''); }
     // Pre-warm the legal index in the background while the user
     // pastes. By the time they hit Next the bulk lookup should be
@@ -235,8 +245,11 @@ export function initParcelListImport({
       setStep('map');
       return;
     }
-    // Persist the confirmed mapping for next time.
+    // Persist the confirmed mapping for next time, and cache the
+    // original text under a friendly name so it shows up in the
+    // Recent imports dropdown on next open.
     rememberMapping(parsed.headers, mapping);
+    rememberImport(sourceName || synthesizePasteName($textarea?.value), $textarea?.value);
     close();
     if (typeof onResolved === 'function') onResolved(out);
   }
@@ -248,6 +261,7 @@ export function initParcelListImport({
     try {
       const text = await file.text();
       $textarea.value = text;
+      sourceName = file.name || '';
       $textarea.focus();
     } catch (err) {
       console.warn('File read failed:', err);
@@ -287,6 +301,64 @@ export function initParcelListImport({
     } catch { /* quota or disabled storage — silently skip */ }
   }
 
+  // ---- Recent-imports storage + populator ----------------------
+
+  function loadRecentImports() {
+    try {
+      const raw = localStorage.getItem(RECENT_STORAGE_KEY);
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr.slice(0, RECENT_CAP) : [];
+    } catch { return []; }
+  }
+
+  function saveRecentImports(list) {
+    try {
+      localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(list.slice(0, RECENT_CAP)));
+    } catch { /* quota errors — best-effort */ }
+  }
+
+  function rememberImport(name, text) {
+    if (!name || !text) return;
+    // De-dup by name, keep newest at the front. Re-importing the same
+    // file refreshes its cached text (handy when the spreadsheet was
+    // edited between sessions).
+    const list = loadRecentImports().filter((e) => e.name !== name);
+    list.unshift({ name, text, ts: Date.now() });
+    saveRecentImports(list);
+  }
+
+  function populateRecentDropdown() {
+    if (!$recentSelect || !$recentRow) return;
+    const list = loadRecentImports();
+    $recentSelect.innerHTML = '';
+    const blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = list.length ? 'Pick a recent import…' : '—';
+    $recentSelect.appendChild(blank);
+    for (const e of list) {
+      const opt = document.createElement('option');
+      opt.value = e.name;
+      const dt = new Date(e.ts || 0);
+      const ts = Number.isFinite(dt.valueOf()) ? dt.toISOString().slice(0, 10) : '';
+      opt.textContent = ts ? `${e.name} (${ts})` : e.name;
+      $recentSelect.appendChild(opt);
+    }
+    $recentRow.hidden = list.length === 0;
+  }
+
+  /** Build a friendly label for a pasted (no-file) import — uses the
+   *  first non-empty line's leading chars so users can tell pastes
+   *  apart in the recent dropdown. */
+  function synthesizePasteName(text) {
+    if (!text) return '';
+    const firstLine = String(text).split(/\r\n|\r|\n/).find((l) => l.trim()) || '';
+    const snippet = firstLine.replace(/\s+/g, ' ').trim().slice(0, 30);
+    const dt = new Date();
+    const stamp = `${dt.toISOString().slice(5, 10)} ${dt.toTimeString().slice(0, 5)}`;
+    return snippet ? `Paste: ${snippet}… (${stamp})` : `Paste (${stamp})`;
+  }
+
   // ---- wire events ---------------------------------------------
 
   $next?.addEventListener('click', goToMapping);
@@ -297,6 +369,23 @@ export function initParcelListImport({
   $file?.addEventListener('change', () => {
     const f = $file.files?.[0];
     if (f) handleFile(f);
+  });
+  $recentSelect?.addEventListener('change', () => {
+    const name = $recentSelect.value;
+    if (!name) return;
+    const entry = loadRecentImports().find((e) => e.name === name);
+    if (!entry || !$textarea) return;
+    $textarea.value = entry.text;
+    sourceName = entry.name;
+    // Auto-advance straight to the mapping step — the user explicitly
+    // picked a known-good import, so they don't need to re-confirm
+    // the paste step.
+    $recentSelect.value = '';
+    goToMapping();
+  });
+  $recentClear?.addEventListener('click', () => {
+    saveRecentImports([]);
+    populateRecentDropdown();
   });
   // <dialog> emits 'cancel' on Esc — let it close cleanly.
   $modal.addEventListener('cancel', (e) => { e.preventDefault(); close(); });
