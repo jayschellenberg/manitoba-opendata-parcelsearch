@@ -833,7 +833,7 @@ function applyMapCollapsed(collapsed) {
   }
   $workspaceEl.classList.toggle('map-collapsed', collapsed);
   $mapToggleBtn.setAttribute('aria-pressed', String(collapsed));
-  if ($mapToggleLabel) $mapToggleLabel.textContent = collapsed ? 'Show map' : 'Hide map';
+  if ($mapToggleLabel) $mapToggleLabel.textContent = collapsed ? 'Show Map' : 'Hide Map';
   if (!collapsed) {
     // Restoring the map: MapLibre needs to recompute its canvas
     // size now that the container is back in the layout.
@@ -852,7 +852,7 @@ function applyMapExpanded(expanded, { silent = false } = {}) {
   }
   $workspaceEl.classList.toggle('map-expanded', expanded);
   $mapExpandBtn.setAttribute('aria-pressed', String(expanded));
-  if ($mapExpandLabel) $mapExpandLabel.textContent = expanded ? 'Restore map' : 'Expand map';
+  if ($mapExpandLabel) $mapExpandLabel.textContent = expanded ? 'Restore Map' : 'Expand Map';
   // MapLibre needs to recompute its canvas size now that the
   // container's aspect-ratio + width-cap have changed.
   mapReady.then(() => map.resize());
@@ -2652,10 +2652,10 @@ function refreshRouteStartStatus() {
   if (!$status || !$btn) return;
   if (routeStart) {
     $status.innerHTML = `Start: <strong>${routeStart.lng.toFixed(5)}, ${routeStart.lat.toFixed(5)}</strong>`;
-    $btn.textContent = 'Change start';
+    $btn.textContent = 'Change Start';
   } else {
     $status.innerHTML = 'Start: <em>not set</em>';
-    $btn.textContent = 'Set start (click map)';
+    $btn.textContent = 'Set Start (Click Map)';
   }
 }
 
@@ -2840,7 +2840,7 @@ async function handleCalculateRoute() {
     }
     setCount(`Route calculation failed: ${err.message || err}`);
   } finally {
-    if ($calcBtn) { $calcBtn.disabled = false; $calcBtn.textContent = prevLabel || 'Calculate route'; }
+    if ($calcBtn) { $calcBtn.disabled = false; $calcBtn.textContent = prevLabel || 'Calculate Route'; }
     if ($recBtn)  $recBtn.disabled = false;
     setBusy(false);
     refreshCalculateEnabled();
