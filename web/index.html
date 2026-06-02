@@ -240,6 +240,12 @@
                 aria-label="Clear imported list"
               >×</button>
             </div>
+            <button
+              type="button"
+              id="route-plan-trigger"
+              class="route-plan-trigger"
+              title="Plan a driving route through the imported parcels. Click to open the route planner panel above the table."
+            >Plan route</button>
           </div>
           <!-- Civic-address search: From/To numeric range + street
                substring. Tabbing into "To" after "From" auto-fills
@@ -657,6 +663,84 @@
     ></div>
 
     <div id="results-wrap" class="table-pane">
+      <!-- Route planner panel. Mirrors the parcel-summary card
+           pattern: hidden until the user clicks "Plan route" beside
+           the imported-list pill. Visible only while list mode is
+           active; the Clear button on the pill also clears any
+           route state and hides this panel.
+           Sections inside cycle through the workflow: pick start →
+           calculate → review results. Each section has its own
+           [data-stage] attribute toggled by main.js. -->
+      <aside id="route-panel" class="route-panel" hidden aria-live="polite">
+        <div class="route-panel-header">
+          <h3 class="route-panel-title">Route planner</h3>
+          <button
+            class="route-panel-close"
+            id="route-panel-close"
+            type="button"
+            aria-label="Close route planner"
+          >×</button>
+        </div>
+
+        <!-- Stage 1: set the start point. Available immediately. -->
+        <div class="route-panel-section" data-stage="setup">
+          <div class="route-start-row">
+            <div class="route-start-status" id="route-start-status">
+              Start: <em>not set</em>
+            </div>
+            <button
+              type="button"
+              id="route-start-btn"
+              class="route-panel-btn primary"
+              title="Click the map to drop a starting pin. Esc cancels."
+            >Set start (click map)</button>
+          </div>
+          <label class="route-panel-toggle">
+            <input id="route-roundtrip" type="checkbox" checked />
+            <span>Round trip (return to start)</span>
+          </label>
+          <div class="route-panel-actions">
+            <button
+              type="button"
+              id="route-calculate-btn"
+              class="route-panel-btn primary"
+              disabled
+              title="Set a start point first."
+            >Calculate route</button>
+          </div>
+          <div
+            id="route-panel-error"
+            class="route-panel-error"
+            role="alert"
+            hidden
+          ></div>
+        </div>
+
+        <!-- Stage 2: results. Hidden until calculate succeeds. -->
+        <div class="route-panel-section" data-stage="result" hidden>
+          <div class="route-panel-summary" id="route-panel-summary">
+            <!-- "46 stops · 312 km · 4 h 22 min · round trip" — text built in JS -->
+          </div>
+          <ol class="route-panel-stops" id="route-panel-stops">
+            <!-- ordered list of stops, rendered by main.js -->
+          </ol>
+          <div class="route-panel-actions">
+            <button
+              type="button"
+              id="route-print-btn"
+              class="route-panel-btn primary"
+              title="Open a print-friendly itinerary with a numbered map."
+            >Print itinerary</button>
+            <button
+              type="button"
+              id="route-recalc-btn"
+              class="route-panel-btn"
+              title="Recalculate from the current start + parcels."
+            >Recalculate</button>
+          </div>
+        </div>
+      </aside>
+
       <!-- Phase 5 selected-parcel summary card. Stays hidden until
            the user clicks a row in the table below; populated by
            populateSelectedParcel() in main.js. The action buttons
@@ -871,6 +955,12 @@
     </div>
       </main>
     </div>
+
+    <!-- Print-only itinerary container. Hidden in screen view via
+         CSS; @media print swaps it to block and hides the rest of
+         the app shell. Populated by main.js's buildPrintItinerary()
+         right before window.print() runs. -->
+    <div id="route-itinerary" class="route-itinerary" aria-hidden="true"></div>
 
     <!-- ===================================================
          Parcel list import modal. Opened by the "Import list…"

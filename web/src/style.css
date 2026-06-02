@@ -2954,6 +2954,41 @@ body:not(.has-max-km) #results td.subj-col {
    is loaded and Search will run against it. */
 .parcel-list-pill-row {
   margin: 8px 0 4px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* "Plan route" button — sits beside the pill once a list is loaded.
+   Disabled state covers the no-Mapbox-token case; the title attribute
+   carries the explanation (set in JS so the env-var path is one
+   place). */
+.route-plan-trigger {
+  appearance: none;
+  background: #fff;
+  color: var(--color-accent-600, #1d4ed8);
+  border: 1px solid var(--color-accent-500, #2563eb);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1.2;
+}
+.route-plan-trigger:hover:not(:disabled) {
+  background: #eff6ff;
+}
+.route-plan-trigger:focus-visible {
+  outline: 2px solid var(--color-accent-500, #2563eb);
+  outline-offset: 1px;
+}
+.route-plan-trigger:disabled {
+  border-color: var(--color-neutral-300, #d4d4d8);
+  color: var(--color-neutral-400, #a1a1aa);
+  cursor: not-allowed;
+  background: #fff;
 }
 
 .parcel-list-pill {
@@ -3263,4 +3298,274 @@ body:not(.has-max-km) #results td.subj-col {
 }
 @keyframes parcel-list-spin {
   to { transform: rotate(360deg); }
+}
+
+/* -------------------------------------------------------------
+   Route planner panel + print itinerary.
+   Panel sits above the parcel-summary card in the table-pane.
+   Workflow stages toggle via [data-stage] hidden attributes set
+   in JS.
+   ------------------------------------------------------------- */
+
+.route-panel {
+  margin: 0 0 12px;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid var(--color-neutral-200, #e4e4e7);
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+.route-panel[hidden] { display: none; }
+
+.route-panel-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.route-panel-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-primary-500, #1e293b);
+}
+.route-panel-close {
+  appearance: none;
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--color-neutral-500, #71717a);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.route-panel-close:hover {
+  background: var(--color-neutral-100, #f4f4f5);
+  color: var(--color-primary-500, #1e293b);
+}
+
+.route-panel-section {
+  margin-bottom: 12px;
+}
+.route-panel-section[hidden] { display: none; }
+
+.route-start-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.route-start-status {
+  flex: 1 1 auto;
+  font-size: 13px;
+  color: #475569;
+}
+.route-start-status em {
+  color: #94a3b8;
+  font-style: italic;
+}
+.route-start-status strong {
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+}
+
+.route-panel-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 12px;
+  font-size: 13px;
+  color: #334155;
+  cursor: pointer;
+}
+.route-panel-toggle input { cursor: pointer; }
+
+.route-panel-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.route-panel-btn {
+  appearance: none;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #1f2937;
+  line-height: 1.2;
+}
+.route-panel-btn:hover:not(:disabled) {
+  background: #f4f6fa;
+  border-color: #94a3b8;
+}
+.route-panel-btn.primary {
+  background: var(--color-accent-500, #2563eb);
+  color: #fff;
+  border-color: var(--color-accent-500, #2563eb);
+}
+.route-panel-btn.primary:hover:not(:disabled) {
+  background: var(--color-accent-600, #1d4ed8);
+  border-color: var(--color-accent-600, #1d4ed8);
+}
+.route-panel-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.route-panel-error {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: #fee2e2;
+  color: #7f1d1d;
+  border: 1px solid #fca5a5;
+  border-radius: 4px;
+  font-size: 12.5px;
+}
+
+.route-panel-summary {
+  font-weight: 600;
+  font-size: 14px;
+  color: #0f172a;
+  margin-bottom: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.route-panel-stops {
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid #eef1f5;
+  border-radius: 4px;
+  background: #fafbfc;
+}
+.route-panel-stops li {
+  display: grid;
+  grid-template-columns: 32px 1fr auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid #eef1f5;
+  font-size: 12.5px;
+}
+.route-panel-stops li:last-child { border-bottom: none; }
+.route-panel-stops .rank {
+  font-weight: 700;
+  color: var(--color-accent-600, #1d4ed8);
+  font-variant-numeric: tabular-nums;
+}
+.route-panel-stops .body {
+  color: #1f2937;
+  line-height: 1.4;
+}
+.route-panel-stops .body .roll {
+  font-weight: 600;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+}
+.route-panel-stops .body .addr {
+  color: #475569;
+}
+.route-panel-stops .leg {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: #475569;
+  white-space: nowrap;
+}
+.route-panel-stops .leg .cum {
+  display: block;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+/* -------------------------------------------------------------
+   Print itinerary. Container is invisible in screen view; the
+   @media print block flips everything else off and lets the
+   itinerary fill the page.
+   ------------------------------------------------------------- */
+
+.route-itinerary {
+  display: none;
+}
+
+@media print {
+  body * { visibility: hidden !important; }
+  .route-itinerary, .route-itinerary * { visibility: visible !important; }
+  .route-itinerary {
+    display: block !important;
+    position: absolute;
+    inset: 0;
+    background: #fff;
+    color: #0f172a;
+    font-family: inherit;
+    padding: 18mm 16mm;
+  }
+}
+
+.route-itinerary-header {
+  border-bottom: 2px solid #0f172a;
+  padding-bottom: 8px;
+  margin-bottom: 14px;
+}
+.route-itinerary-title {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 700;
+}
+.route-itinerary-meta {
+  font-size: 12px;
+  color: #475569;
+}
+.route-itinerary-totals {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 14px;
+  font-variant-numeric: tabular-nums;
+}
+.route-itinerary-map {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 0 14px;
+  border: 1px solid #cbd5e1;
+}
+.route-itinerary-stops {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11.5px;
+}
+.route-itinerary-stops li {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid #e2e8f0;
+  page-break-inside: avoid;
+}
+.route-itinerary-stops .rank {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.route-itinerary-stops .body { color: #0f172a; line-height: 1.4; }
+.route-itinerary-stops .body .roll { font-weight: 600; font-variant-numeric: tabular-nums; }
+.route-itinerary-stops .body .addr { color: #475569; }
+.route-itinerary-stops .leg {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: #475569;
+  white-space: nowrap;
+}
+.route-itinerary-stops .leg .cum {
+  display: block;
+  font-size: 10px;
+  color: #94a3b8;
 }
