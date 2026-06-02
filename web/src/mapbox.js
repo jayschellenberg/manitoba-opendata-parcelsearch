@@ -23,11 +23,24 @@ const MAPBOX_ROOT = 'https://api.mapbox.com';
 const MATRIX_PROFILE = 'driving';
 const DIRECTIONS_PROFILE = 'driving';
 
-// Mapbox API caps. The Matrix v1 limit for driving is 25×25; if you
-// upgrade to a paid plan with the v2 endpoint you can go higher — the
-// code below chunks regardless so a higher cap is purely a win.
-const MATRIX_CHUNK = 25;
+// Mapbox API caps.
+// Matrix v1 driving: 25 TOTAL coordinates per call (not 25×25). Past
+// that we throw MatrixTooManyCoordsError; main.js catches it and
+// falls through to the haversine fallback for the TSP ordering, then
+// still hits Directions API on the solved order to get a real km /
+// drive-time / polyline. In Manitoba's mostly-grid road network the
+// haversine ordering is within a few percent of road-optimal.
+export const MATRIX_MAX_COORDS = 25;
 const DIRECTIONS_CHUNK = 25;
+
+export class MatrixTooManyCoordsError extends Error {
+  constructor(count) {
+    super(`Mapbox Matrix v1 driving profile caps at ${MATRIX_MAX_COORDS} coordinates per call (got ${count}).`);
+    this.name = 'MatrixTooManyCoordsError';
+    this.count = count;
+    this.cap = MATRIX_MAX_COORDS;
+  }
+}
 
 function readToken() {
   try {
@@ -55,8 +68,13 @@ function requireToken() {
 
 /**
  * Fetch a full N×N driving matrix of durations (seconds) and
- * distances (metres). Splits into per-destination-block calls when
- * N > MATRIX_CHUNK so we stay within Mapbox's 25×25 per-request cap.
+ * distances (metres) in a single Matrix API call.
+ *
+ * Throws MatrixTooManyCoordsError when N > MATRIX_MAX_COORDS so the
+ * caller can fall back to haversine ordering (see main.js's
+ * handleCalculateRoute). Chunking across multiple Matrix calls would
+ * either miss cross-chunk pairs or burn the free-tier quota — neither
+ * is acceptable, so the fallback is the right shape.
  *
  * @param {Array<{lng:number,lat:number}>} points
  * @returns {Promise<{ duration: number[][], distance: number[][] }>}
@@ -69,55 +87,26 @@ export async function fetchDrivingMatrix(points) {
   const n = points.length;
   if (n === 0) return { duration: [], distance: [] };
   if (n === 1) return { duration: [[0]], distance: [[0]] };
+  if (n > MATRIX_MAX_COORDS) throw new MatrixTooManyCoordsError(n);
 
-  // Build empty NxN matrices we'll fill column-block by column-block.
+  const coords = points.map((p) => `${p.lng},${p.lat}`).join(';');
+  const url = `${MAPBOX_ROOT}/directions-matrix/v1/mapbox/${MATRIX_PROFILE}/${coords}` +
+              `?annotations=duration,distance&access_token=${TOKEN}`;
+  const data = await fetchJson(url);
+  const dur = data?.durations || [];
+  const dis = data?.distances || [];
+
+  // Initialize NxN with Infinity (unreachable) on off-diagonals,
+  // zeros on the diagonal. Then copy whatever Mapbox returned.
   const duration = Array.from({ length: n }, () => new Array(n).fill(Infinity));
   const distance = Array.from({ length: n }, () => new Array(n).fill(Infinity));
-  for (let i = 0; i < n; i++) { duration[i][i] = 0; distance[i][i] = 0; }
-
-  // For N ≤ 25 we can fetch the whole matrix in one call. For larger
-  // N we hold sources = full list and rotate the destinations block
-  // through ceil(N / chunk) sub-calls. Mapbox bills sources × dests,
-  // so this is the minimum-cost shape — N calls of 25xN would cost
-  // many times more.
-  for (let dStart = 0; dStart < n; dStart += MATRIX_CHUNK) {
-    const dEnd = Math.min(dStart + MATRIX_CHUNK, n);
-    // Sources also have to obey the cap. For now we send all sources
-    // when N ≤ 25; otherwise we make a square of chunked sources too.
-    for (let sStart = 0; sStart < n; sStart += MATRIX_CHUNK) {
-      const sEnd = Math.min(sStart + MATRIX_CHUNK, n);
-      const blockIndices = [];
-      const srcRange = range(sStart, sEnd);
-      const dstRange = range(dStart, dEnd);
-      // Mapbox needs all coordinates in one path; sources/destinations
-      // are positional indexes INTO that coordinate list. We
-      // concatenate the source range and the destination range,
-      // dedupe overlaps so the coords list stays minimal.
-      const seen = new Map();
-      const coordList = [];
-      for (const idx of [...srcRange, ...dstRange]) {
-        if (seen.has(idx)) continue;
-        seen.set(idx, coordList.length);
-        coordList.push(points[idx]);
-        blockIndices.push(idx);
-      }
-      const sources      = srcRange.map((idx) => seen.get(idx)).join(';');
-      const destinations = dstRange.map((idx) => seen.get(idx)).join(';');
-      const coords = coordList.map((p) => `${p.lng},${p.lat}`).join(';');
-      const url = `${MAPBOX_ROOT}/directions-matrix/v1/mapbox/${MATRIX_PROFILE}/${coords}` +
-                  `?annotations=duration,distance` +
-                  `&sources=${sources}&destinations=${destinations}` +
-                  `&access_token=${TOKEN}`;
-      const data = await fetchJson(url);
-      // Mapbox shape: { durations: rowsxcols, distances: rowsxcols, ... }
-      const dur = data?.durations || [];
-      const dis = data?.distances || [];
-      srcRange.forEach((srcIdx, r) => {
-        dstRange.forEach((dstIdx, c) => {
-          if (dur[r] && dur[r][c] != null) duration[srcIdx][dstIdx] = dur[r][c];
-          if (dis[r] && dis[r][c] != null) distance[srcIdx][dstIdx] = dis[r][c];
-        });
-      });
+  for (let i = 0; i < n; i++) {
+    duration[i][i] = 0;
+    distance[i][i] = 0;
+    for (let j = 0; j < n; j++) {
+      if (i === j) continue;
+      if (dur[i] && dur[i][j] != null) duration[i][j] = dur[i][j];
+      if (dis[i] && dis[i][j] != null) distance[i][j] = dis[i][j];
     }
   }
   return { duration, distance };
@@ -298,8 +287,3 @@ async function fetchJson(url) {
   return res.json();
 }
 
-function range(a, b) {
-  const out = [];
-  for (let i = a; i < b; i++) out.push(i);
-  return out;
-}
