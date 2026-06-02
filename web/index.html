@@ -504,58 +504,49 @@
           aria-label="Map layers"
         >
           <h2 class="sidebar-section-title">Map layers</h2>
-          <!-- Phase 3 groups overlay toggles by purpose. Each button
-               carries a coloured dot (--dot-color) that roughly matches
-               the map render colour for that layer. Plain-language
-               labels with the legacy technical name in the tooltip.
-               Phase 4 will swap the tooltips to info-icon popovers. -->
-          <!-- Boundaries + Planning are merged into a single group so
-               appraisers see parcel + grid + zoning + dev-plan side
-               by side without scanning two headings. -->
-          <div class="overlay-group">
-            <h3 class="overlay-group-title">Boundaries &amp; Planning</h3>
-            <button id="muni-parcels-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled style="--dot-color:#94a3b8" title="Assessment Parcels — every parcel in the selected municipality (grey fabric under your search results)">
-              <span class="overlay-dot" aria-hidden="true"></span>
+          <!-- Overlay toggles, grouped by purpose. Per-group text
+               colours (set in style.css via data-group selectors)
+               replace the previous coloured-dot scheme — matches the
+               Winnipeg parcel-search visual language. -->
+          <div class="overlay-group" data-group="parcels">
+            <h3 class="overlay-group-title">Parcel layers</h3>
+            <button id="muni-parcels-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled title="Assessment Parcels — every parcel in the selected municipality (grey fabric under your search results)">
               <span class="overlay-btn-label">Assessment Parcels</span>
             </button>
-            <button id="grid-toggle" type="button" class="overlay-btn" aria-pressed="false" style="--dot-color:#64748b" title="Sec-Twp — section/township grid + river lots. Select a municipality for a focused view, or toggle without one for the province-wide overlay.">
-              <span class="overlay-dot" aria-hidden="true"></span>
+            <button id="grid-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Sec-Twp — section/township grid + river lots. Select a municipality for a focused view, or toggle without one for the province-wide overlay.">
               <span class="overlay-btn-label">Section/township grid</span>
             </button>
-            <button id="zoning-toggle" type="button" class="overlay-btn" aria-pressed="false" style="--dot-color:#d97706" title="Zoning By-Laws (ZBL)">
-              <span class="overlay-dot" aria-hidden="true"></span>
+          </div>
+
+          <div class="overlay-group" data-group="planning">
+            <h3 class="overlay-group-title">Planning</h3>
+            <button id="zoning-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Zoning By-Laws (ZBL)">
               <span class="overlay-btn-label">Zoning</span>
             </button>
-            <button id="devplan-toggle" type="button" class="overlay-btn" aria-pressed="false" style="--dot-color:#16a34a" title="Dev Plan — Manitoba Development Plan Designations">
-              <span class="overlay-dot" aria-hidden="true"></span>
+            <button id="devplan-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Dev Plan — Manitoba Development Plan Designations">
               <span class="overlay-btn-label">Development plan</span>
             </button>
           </div>
 
-          <div class="overlay-group">
+          <div class="overlay-group" data-group="reference">
             <h3 class="overlay-group-title">Reference</h3>
-            <button id="contam-toggle" type="button" class="overlay-btn" aria-pressed="false" style="--dot-color:#dc2626" title="Enviro Sites — Manitoba Contaminated Sites Registry">
-              <span class="overlay-dot" aria-hidden="true"></span>
+            <button id="contam-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Enviro Sites — Manitoba Contaminated Sites Registry">
               <span class="overlay-btn-label">Environmental sites</span>
             </button>
-            <button id="flow-toggle" type="button" class="overlay-btn" aria-pressed="false" style="--dot-color:#2563eb" title="MHTIS Traffic Flow 2019 — segments coloured by AADT">
-              <span class="overlay-dot" aria-hidden="true"></span>
+            <button id="flow-toggle" type="button" class="overlay-btn" aria-pressed="false" title="MHTIS Traffic Flow 2019 — segments coloured by AADT">
               <span class="overlay-btn-label">Traffic flow</span>
             </button>
           </div>
 
-          <div class="overlay-group">
+          <div class="overlay-group" data-group="agricultural">
             <h3 class="overlay-group-title">Agricultural</h3>
-            <button id="riskarea-toggle" type="button" class="overlay-btn" aria-pressed="false" style="--dot-color:#f97316" title="MASC Risk Areas — official crop-insurance risk-area boundaries from Manitoba Maps">
-              <span class="overlay-dot" aria-hidden="true"></span>
+            <button id="riskarea-toggle" type="button" class="overlay-btn" aria-pressed="false" title="MASC Risk Areas — official crop-insurance risk-area boundaries from Manitoba Maps">
               <span class="overlay-btn-label">MASC risk areas</span>
             </button>
-            <button id="masc-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled style="--dot-color:#eab308" title="MASC Rating — crop-insurance soil ratings (A best → J worst). Select a municipality first.">
-              <span class="overlay-dot" aria-hidden="true"></span>
+            <button id="masc-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled title="MASC Rating — crop-insurance soil ratings (A best → J worst). Select a municipality first.">
               <span class="overlay-btn-label">MASC rating</span>
             </button>
-            <button id="cli-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled style="--dot-color:#65a30d" title="Soil Productivity and Soil Name from Manitoba Soil Survey (AGCAP_CLS / SOILNAME) — the same dataset Manitoba's AgriMaps treats as authoritative. Click cycles through three states: 1st click → Soil Productivity (capability 1=prime → 7=no agricultural capability; O=organic; $=urban/water); 2nd click → Soil Type (coloured by the top-20 most common soil associations in the selected municipality); 3rd click → off. Select a municipality first.">
-              <span class="overlay-dot" aria-hidden="true"></span>
+            <button id="cli-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled title="Soil Productivity and Soil Name from Manitoba Soil Survey (AGCAP_CLS / SOILNAME) — the same dataset Manitoba's AgriMaps treats as authoritative. Click cycles through three states: 1st click → Soil Productivity (capability 1=prime → 7=no agricultural capability; O=organic; $=urban/water); 2nd click → Soil Type (coloured by the top-20 most common soil associations in the selected municipality); 3rd click → off. Select a municipality first.">
               <span class="overlay-btn-label">Soil Productivity/Soil Name</span>
             </button>
           </div>
@@ -564,7 +555,7 @@
                District site, when one applies. Not overlays; kept
                in the Map layers tab because that's where they used
                to live. -->
-          <div class="overlay-group overlay-links-group">
+          <div class="overlay-group overlay-links-group" data-group="links">
             <h3 class="overlay-group-title">Quick links</h3>
             <button id="muni-website-btn" type="button" class="overlay-btn link-btn" disabled title="Select a municipality to enable">Muni website ↗</button>
             <button id="pd-website-btn" type="button" class="overlay-btn link-btn" disabled title="PD Website — select a municipality to enable. Planning District website.">Planning district website ↗</button>
