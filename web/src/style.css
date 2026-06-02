@@ -408,9 +408,12 @@ header small a {
   fill: var(--color-accent-500, #2563eb);
 }
 
-/* Overlay groups (Phase 3 Map layers tab). Each toggle button is
-   a stacked layout: a small coloured dot (from --dot-color) +
-   plain-language label. Active toggles fill in via aria-pressed. */
+/* Overlay groups (Map layers tab). Buttons share a clean white
+   chip look modelled on the Winnipeg parcel-search UI; per-group
+   text colours below identify the category (Parcel / Planning /
+   Reference / Agricultural / Quick links). The previous coloured-
+   dot system has been removed — dots no longer render even if a
+   stray .overlay-dot element shows up. */
 .overlay-group {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -429,21 +432,19 @@ header small a {
 .sidebar .overlay-btn {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   width: 100%;
-  padding: 6px 8px;
+  padding: 7px 10px;
   background: #fff;
   border: 1px solid var(--color-neutral-300, #d4d4d8);
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 500;
   font-family: inherit;
   color: var(--color-neutral-800, #27272a);
   cursor: pointer;
-  text-align: left;
-  /* Half-width labels often wrap to two lines (e.g.
-     "Section/township grid"); keep the dot centered vertically
-     and the two lines compact. */
+  text-align: center;
   line-height: 1.25;
 }
 .sidebar .overlay-btn:hover:not(:disabled) {
@@ -451,9 +452,9 @@ header small a {
   background: var(--color-neutral-50, #fafafa);
 }
 .sidebar .overlay-btn[aria-pressed="true"] {
-  border-color: var(--color-accent-500, #2563eb);
-  background: #eff6ff;
-  color: var(--color-primary-500, #1e293b);
+  border-color: currentColor;
+  background: var(--color-neutral-50, #fafafa);
+  font-weight: 600;
 }
 .sidebar .overlay-btn:disabled {
   opacity: 0.5;
@@ -463,42 +464,33 @@ header small a {
   outline: 2px solid var(--color-accent-500, #2563eb);
   outline-offset: 1px;
 }
-.overlay-dot {
-  width: 10px;
-  height: 10px;
-  flex: 0 0 10px;
-  border-radius: 50%;
-  background: var(--dot-color, var(--color-neutral-400, #a1a1aa));
-  border: 1px solid rgba(0, 0, 0, 0.12);
-}
 .overlay-btn-label {
   flex: 1 1 auto;
   min-width: 0;
 }
-.overlay-btn.link-btn .overlay-dot { display: none; }
+/* Hidden — kept as a no-op so any leftover .overlay-dot in the DOM
+   (e.g. older cached markup) never renders the legacy dot. */
+.overlay-dot { display: none; }
+
+/* Per-group text colours live at the END of the file (search for
+   "Map-layers category text colours") so they sit after the visual-
+   refresh block at ~line 4045 and win the cascade for idle / hover.
+   The active (pressed) state intentionally keeps the refresh's
+   brand-coloured fill — pressed buttons are a strong signal that
+   doesn't need category colour on top. */
 
 /* Busy/loading state for overlay toggles whose load chain includes
    work that continues AFTER the synchronous toggle handler returns
    (e.g. the Soil Survey overlay's deferred per-parcel composition
-   stamp). Swap the dot for an animated spinner ring + dim the
-   label to make it visually obvious the layer is still working.
-   Keeps the button's "disabled" cursor so the toggle can't be
-   re-clicked while busy. */
+   stamp). Italicise + dim the label to signal work in progress.
+   Spinner used to live on the dot; without it the italic label
+   carries the signal. */
 .overlay-btn.overlay-busy {
   cursor: progress;
-}
-.overlay-btn.overlay-busy .overlay-dot {
-  background: transparent;
-  border: 2px solid rgba(15, 23, 42, 0.15);
-  border-top-color: var(--dot-color, var(--color-accent-500, #2563eb));
-  animation: overlay-busy-spin 0.8s linear infinite;
 }
 .overlay-btn.overlay-busy .overlay-btn-label {
   color: var(--color-neutral-600, #52525b);
   font-style: italic;
-}
-@keyframes overlay-busy-spin {
-  to { transform: rotate(360deg); }
 }
 
 /* Subtle "(loading)" hint inside the legend while the Soil Survey
@@ -4859,4 +4851,53 @@ body {
   .overlay-group {
     grid-template-columns: 1fr;
   }
+}
+
+/* -------------------------------------------------------------
+   Map-layers category text colours.
+
+   Five categories (Parcel layers / Planning / Reference /
+   Agricultural / Quick links), each rendering its overlay-btn
+   label in a distinct colour — modelled on the Winnipeg parcel-
+   search UI. Sits at the end of the file deliberately: the visual-
+   refresh block above re-styles every .overlay-btn with the brand
+   green for hover and active. We let the brand active fill win
+   (it's the strongest pressed-state signal) but the idle / hover
+   states should carry the category colour so the user can scan
+   the panel by colour.
+   ------------------------------------------------------------- */
+
+.sidebar .overlay-group[data-group="parcels"] .overlay-btn,
+.sidebar .overlay-group[data-group="parcels"] .overlay-btn:hover:not(:disabled) {
+  color: var(--color-primary-700, #0f172a);
+}
+.sidebar .overlay-group[data-group="planning"] .overlay-btn,
+.sidebar .overlay-group[data-group="planning"] .overlay-btn:hover:not(:disabled) {
+  color: #166534;        /* dark green */
+}
+.sidebar .overlay-group[data-group="reference"] .overlay-btn,
+.sidebar .overlay-group[data-group="reference"] .overlay-btn:hover:not(:disabled) {
+  color: #1d4ed8;        /* blue */
+}
+.sidebar .overlay-group[data-group="agricultural"] .overlay-btn,
+.sidebar .overlay-group[data-group="agricultural"] .overlay-btn:hover:not(:disabled) {
+  color: #b45309;        /* amber */
+}
+.sidebar .overlay-group[data-group="links"] .overlay-btn,
+.sidebar .overlay-group[data-group="links"] .overlay-btn:hover:not(:disabled) {
+  color: #b91c1c;        /* red */
+}
+
+/* Hover background can stay subtle — the refresh's accent
+   background would clash with five different text colours. */
+.sidebar .overlay-group .overlay-btn:hover:not(:disabled) {
+  background: var(--ui-panel-muted, #f4f6fa);
+  border-color: currentColor;
+}
+
+/* Pressed state: keep the brand fill from the refresh, but force
+   white text so all five categories collapse to the same readable
+   contrast against the dark green. */
+.sidebar .overlay-group .overlay-btn[aria-pressed="true"] {
+  color: #fff;
 }
