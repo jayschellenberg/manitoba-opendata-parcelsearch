@@ -3579,6 +3579,17 @@ body:not(.has-max-km) #results td.subj-col {
   margin: 0 0 14px;
   border: 1px solid #cbd5e1;
 }
+
+.route-itinerary-cluster {
+  margin: 12px 0 14px;
+  page-break-inside: avoid;
+}
+.route-itinerary-cluster-title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+}
 .route-itinerary-stops {
   margin: 0;
   padding: 0;

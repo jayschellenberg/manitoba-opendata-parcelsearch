@@ -274,15 +274,20 @@ function haversineKmInternal(a, b) {
  * Splits into overlapping ≤25-point segments and concatenates the
  * geometry when the list is longer.
  *
- * Returns the geometry both as a GeoJSON LineString (consumed by
- * setRouteData on the map) AND as an encoded polyline string (used
- * by the Static Images URL — far shorter than a GeoJSON literal, so
- * the URL stays under Mapbox's ~8 KB cap even on a 50-stop route).
+ * Returns:
+ *   geometry  – GeoJSON LineString for setRouteData on the map
+ *   polyline  – Google-encoded polyline for static-image URLs
+ *   legs      – per-waypoint-pair { distanceMeters, durationSeconds }
+ *               array. Length === orderedPoints.length - 1. Lets the
+ *               result panel show real road km/time per leg so the
+ *               cumulative sum matches the API-reported total.
+ *   distanceMeters / durationSeconds – API-reported totals
  *
  * @param {Array<{lng:number,lat:number}>} orderedPoints
  * @returns {Promise<{
  *   geometry: { type:'LineString', coordinates: [lng,lat][] },
  *   polyline: string,
+ *   legs: Array<{ distanceMeters: number, durationSeconds: number }>,
  *   distanceMeters: number,
  *   durationSeconds: number,
  * }>}
@@ -290,7 +295,13 @@ function haversineKmInternal(a, b) {
 export async function fetchDrivingRoute(orderedPoints) {
   requireToken();
   if (orderedPoints.length < 2) {
-    return { geometry: { type: 'LineString', coordinates: [] }, polyline: '', distanceMeters: 0, durationSeconds: 0 };
+    return {
+      geometry: { type: 'LineString', coordinates: [] },
+      polyline: '',
+      legs: [],
+      distanceMeters: 0,
+      durationSeconds: 0,
+    };
   }
 
   const segments = [];
@@ -304,6 +315,7 @@ export async function fetchDrivingRoute(orderedPoints) {
   }
 
   let combinedCoords = [];
+  const legs = [];
   let totalDist = 0;
   let totalDur = 0;
   for (let s = 0; s < segments.length; s++) {
@@ -319,9 +331,18 @@ export async function fetchDrivingRoute(orderedPoints) {
       combinedCoords = combinedCoords.concat(segCoords);
     } else {
       // Skip the first coordinate of subsequent segments — it
-      // duplicates the last coord of the prior segment (the overlap
-      // waypoint we asked for).
+      // duplicates the last coord of the prior segment.
       combinedCoords = combinedCoords.concat(segCoords.slice(1));
+    }
+    // Each Directions response carries a `legs` array — one entry
+    // per consecutive waypoint pair in this segment. Concatenating
+    // these across segments rebuilds a per-leg array aligned to the
+    // original orderedPoints.
+    for (const leg of route.legs || []) {
+      legs.push({
+        distanceMeters: leg.distance || 0,
+        durationSeconds: leg.duration || 0,
+      });
     }
     totalDist += route.distance || 0;
     totalDur  += route.duration || 0;
@@ -329,6 +350,7 @@ export async function fetchDrivingRoute(orderedPoints) {
   return {
     geometry: { type: 'LineString', coordinates: combinedCoords },
     polyline: encodePolyline(combinedCoords),
+    legs,
     distanceMeters: totalDist,
     durationSeconds: totalDur,
   };
