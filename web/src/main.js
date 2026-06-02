@@ -11,12 +11,14 @@ import { initChipInput } from './lib/chipInput.js';
 import { initInfoIcons } from './lib/infoIcon.js';
 import { initParcelListImport } from './lib/parcelListImport.js';
 // Route planner — TSP solver + Mapbox client.
-import { solveRoute } from './lib/routeSolver.js';
+import { solveRoute, haversineMatrix } from './lib/routeSolver.js';
 import {
   hasToken as hasMapboxToken,
   fetchDrivingMatrix,
   fetchDrivingRoute,
   staticRouteImageUrl,
+  MATRIX_MAX_COORDS,
+  MatrixTooManyCoordsError,
 } from './mapbox.js';
 
 // Phase 5 column visibility.
@@ -2677,37 +2679,70 @@ async function handleCalculateRoute() {
     // Stop 0 is the start; subsequent indexes are the parcels in
     // input order. The TSP solver returns the index permutation.
     const points = [routeStart, ...parcels];
-    const { duration, distance } = await fetchDrivingMatrix(points);
-    // Optimise on drive time — the appraiser's bottleneck — but we
-    // also surface total km from the distance matrix.
+
+    // Build the cost matrix. Mapbox Matrix v1 driving caps at 25
+    // total coords per call; for N > 24 we fall back to a haversine
+    // (great-circle) matrix for the TSP ordering. The route polyline
+    // and total km/time are still real-road from the Directions API.
+    let duration = null;
+    let distance = null;
+    let usedHaversine = false;
+    try {
+      const matrix = await fetchDrivingMatrix(points);
+      duration = matrix.duration;
+      distance = matrix.distance;
+    } catch (err) {
+      if (err instanceof MatrixTooManyCoordsError) {
+        usedHaversine = true;
+        // Haversine km → metres; no real time available pre-Directions.
+        const hav = haversineMatrix(points);
+        distance = hav.map((row) => row.map((v) => v * 1000));
+        // Solver only needs ONE matrix; pass distance under both
+        // names so the optimisation still runs.
+        duration = distance;
+      } else {
+        throw err;
+      }
+    }
+
+    // Solver runs on whichever matrix we have. With Mapbox driving it
+    // optimises drive time; with haversine it optimises great-circle
+    // distance — close enough to road-optimal in Manitoba's mostly-
+    // grid rural network.
     const solved = solveRoute(duration, { start: 0, roundTrip: routeRoundTrip });
 
-    // Per-leg metrics from the solved order, in metres + seconds.
+    // Per-leg metres from the chosen matrix (consistent with what the
+    // TSP saw). Per-leg seconds only stamped when Mapbox supplied real
+    // durations; haversine has no honest time estimate.
     const legMeters = [];
     const legSeconds = [];
     for (let k = 0; k < solved.order.length - 1; k++) {
       const i = solved.order[k];
       const j = solved.order[k + 1];
       legMeters.push(distance[i][j]);
-      legSeconds.push(duration[i][j]);
+      legSeconds.push(usedHaversine ? null : duration[i][j]);
     }
 
-    // Real driving polyline. Pass the solved ordered points so the
-    // polyline traces the actual route the planner chose.
+    // Real driving polyline + authoritative totals. Pass the solved
+    // ordered points so the polyline traces the route the planner
+    // chose. The Directions totals OVERRIDE the matrix-derived ones
+    // so the user sees real road km / drive time regardless of which
+    // matrix solved the order.
     const orderedPoints = solved.order.map((idx) => points[idx]);
     const directions = await fetchDrivingRoute(orderedPoints);
 
     routeResult = {
-      orderedIndices: solved.order,    // includes start at index 0 (and again at end if round-trip)
-      orderedPoints,                    // [{lng,lat}, …] in visit order
-      parcels,                          // routeable parcels in input order (indices 1..N)
+      orderedIndices: solved.order,
+      orderedPoints,
+      parcels,
       legMeters,
       legSeconds,
       geometry: directions.geometry,
       polyline: directions.polyline,
-      totalMeters: legMeters.reduce((a, b) => a + b, 0),
-      totalSeconds: legSeconds.reduce((a, b) => a + b, 0),
+      totalMeters: directions.distanceMeters || legMeters.reduce((a, b) => a + b, 0),
+      totalSeconds: directions.durationSeconds || legSeconds.reduce((a, b) => a + (b || 0), 0),
       roundTrip: routeRoundTrip,
+      usedHaversine,
     };
 
     // Paint stops on the map, in visit order (excluding the start).
@@ -2787,7 +2822,8 @@ function formatRouteSummary(r) {
   const km = (r.totalMeters / 1000);
   const mins = r.totalSeconds / 60;
   const stops = r.parcels.length;
-  return `${stops} stop${stops === 1 ? '' : 's'} · ${formatKm(km)} · ${formatDuration(mins)} · ${r.roundTrip ? 'round trip' : 'one-way'}`;
+  const tail = r.usedHaversine ? ' · order via straight-line (>24 stops)' : '';
+  return `${stops} stop${stops === 1 ? '' : 's'} · ${formatKm(km)} · ${formatDuration(mins)} · ${r.roundTrip ? 'round trip' : 'one-way'}${tail}`;
 }
 
 function formatKm(km) {
