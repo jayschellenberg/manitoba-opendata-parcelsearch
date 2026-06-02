@@ -1363,6 +1363,77 @@ export function initMap(container, { onFeatureClick } = {}) {
           'line-opacity': 0.75,
         },
       });
+      // Route planner overlays — start-point marker, ordered-stop
+      // pins (with rank label), and the driving-route polyline. All
+      // hidden until the route panel populates them.
+      map.addSource('route-start', { type: 'geojson', data: emptyFc() });
+      map.addLayer({
+        id: 'route-start-pt',
+        type: 'circle',
+        source: 'route-start',
+        paint: {
+          'circle-radius': 8,
+          'circle-color': '#16a34a',
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 2,
+        },
+      });
+      map.addLayer({
+        id: 'route-start-label',
+        type: 'symbol',
+        source: 'route-start',
+        layout: {
+          'text-field': 'Start',
+          'text-font': ['Open Sans Semibold'],
+          'text-size': 12,
+          'text-offset': [0, 1.2],
+          'text-anchor': 'top',
+          'text-allow-overlap': true,
+        },
+        paint: {
+          'text-color': '#0f172a',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.6,
+        },
+      });
+      map.addSource('route-line', { type: 'geojson', data: emptyFc() });
+      map.addLayer({
+        id: 'route-line-stroke',
+        type: 'line',
+        source: 'route-line',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': '#1d4ed8',
+          'line-width': 4,
+          'line-opacity': 0.85,
+        },
+      });
+      map.addSource('route-stops', { type: 'geojson', data: emptyFc() });
+      map.addLayer({
+        id: 'route-stop-pt',
+        type: 'circle',
+        source: 'route-stops',
+        paint: {
+          'circle-radius': 11,
+          'circle-color': '#1d4ed8',
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 2,
+        },
+      });
+      map.addLayer({
+        id: 'route-stop-rank',
+        type: 'symbol',
+        source: 'route-stops',
+        layout: {
+          // `rank` is the 1-based visit order stamped by setRouteData().
+          'text-field': ['to-string', ['get', 'rank']],
+          'text-font': ['Open Sans Bold'],
+          'text-size': 12,
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+        },
+        paint: { 'text-color': '#ffffff' },
+      });
       // MASC label overlay is intentionally above the parcel/roll-fabric
       // layers so the rating letter stays visible when the user turns
       // MASC on after a parcel search.
@@ -3578,4 +3649,118 @@ function escapeHtml(s) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// ---- Route planner: setters + click-to-pick start helper -------
+
+/**
+ * Stamp the start-point marker (single green dot + "Start" label).
+ * Pass null to clear.
+ */
+export function setRouteStart(map, lngLat) {
+  const src = map.getSource('route-start');
+  if (!src) return;
+  if (!lngLat || !Number.isFinite(lngLat.lng) || !Number.isFinite(lngLat.lat)) {
+    src.setData({ type: 'FeatureCollection', features: [] });
+    return;
+  }
+  src.setData({
+    type: 'FeatureCollection',
+    features: [{
+      type: 'Feature',
+      properties: { kind: 'start' },
+      geometry: { type: 'Point', coordinates: [lngLat.lng, lngLat.lat] },
+    }],
+  });
+}
+
+/**
+ * Stamp the ordered route stops + the driving polyline.
+ *
+ * @param {Array<{lng:number, lat:number, label?:string}>} stops — in
+ *   visit order, EXCLUDING the start (the start is rendered by
+ *   setRouteStart). Each gets a numbered pin (rank = i+1).
+ * @param {{type:'LineString', coordinates:[lng,lat][]}|null} geometry
+ *   The driving polyline. Pass null to clear the line without
+ *   clearing the stops.
+ */
+export function setRouteData(map, stops, geometry) {
+  const stopsSrc = map.getSource('route-stops');
+  const lineSrc  = map.getSource('route-line');
+  if (stopsSrc) {
+    const features = (stops || []).map((p, i) => ({
+      type: 'Feature',
+      properties: { rank: i + 1, label: p.label || String(i + 1) },
+      geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
+    }));
+    stopsSrc.setData({ type: 'FeatureCollection', features });
+  }
+  if (lineSrc) {
+    if (geometry?.coordinates?.length > 1) {
+      lineSrc.setData({
+        type: 'FeatureCollection',
+        features: [{ type: 'Feature', properties: {}, geometry }],
+      });
+    } else {
+      lineSrc.setData({ type: 'FeatureCollection', features: [] });
+    }
+  }
+}
+
+/** Hide the route + stops + start without clearing the data. */
+export function setRouteVisible(map, visible) {
+  const v = visible ? 'visible' : 'none';
+  for (const id of [
+    'route-start-pt', 'route-start-label',
+    'route-line-stroke',
+    'route-stop-pt', 'route-stop-rank',
+  ]) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
+  }
+}
+
+// Internal state for the start-pick mode. The handler is one-shot —
+// the next click resolves the promise and the picker auto-disables.
+const _startPickState = new WeakMap();
+
+/**
+ * Enter start-picker mode: the next click on the map captures its
+ * lng/lat as the route start, then resolves. The map cursor turns
+ * to a crosshair while in the mode, and a Esc keypress cancels.
+ *
+ * @returns {Promise<{lng:number, lat:number}|null>} the picked point,
+ *   or null if cancelled.
+ */
+export function pickStartFromMap(map) {
+  // If a previous picker is still pending, cancel it first so the
+  // promises don't pile up.
+  const prior = _startPickState.get(map);
+  if (prior?.cancel) prior.cancel();
+
+  return new Promise((resolve) => {
+    const canvas = map.getCanvas();
+    const prevCursor = canvas.style.cursor;
+    canvas.style.cursor = 'crosshair';
+
+    const onClick = (e) => {
+      cleanup();
+      resolve({ lng: e.lngLat.lng, lat: e.lngLat.lat });
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        cleanup();
+        resolve(null);
+      }
+    };
+    const cleanup = () => {
+      canvas.style.cursor = prevCursor;
+      map.off('click', onClick);
+      window.removeEventListener('keydown', onKey);
+      _startPickState.delete(map);
+    };
+
+    _startPickState.set(map, { cancel: () => { cleanup(); resolve(null); } });
+    map.on('click', onClick);
+    window.addEventListener('keydown', onKey);
+  });
 }

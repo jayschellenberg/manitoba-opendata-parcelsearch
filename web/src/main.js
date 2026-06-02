@@ -10,6 +10,14 @@ import { initSidebarTabs, setActiveTab } from './lib/tabs.js';
 import { initChipInput } from './lib/chipInput.js';
 import { initInfoIcons } from './lib/infoIcon.js';
 import { initParcelListImport } from './lib/parcelListImport.js';
+// Route planner — TSP solver + Mapbox client.
+import { solveRoute } from './lib/routeSolver.js';
+import {
+  hasToken as hasMapboxToken,
+  fetchDrivingMatrix,
+  fetchDrivingRoute,
+  staticRouteImageUrl,
+} from './mapbox.js';
 
 // Phase 5 column visibility.
 import { initColumns, applyVisibility as applyColumnVisibility, setColumnVisible } from './lib/columns.js';
@@ -71,6 +79,10 @@ import {
 import {
   initMap,
   showResults,
+  setRouteStart,
+  setRouteData,
+  setRouteVisible,
+  pickStartFromMap,
   setZoningData,
   setZoningPaint,
   setDevPlanData,
@@ -596,6 +608,15 @@ let listParcelKeys = null;
 // at a glance which input rows didn't resolve and why.
 let listUnresolvedRows = null;
 
+// Route planner state. routeStart is { lng, lat } once the user has
+// clicked the map. routeResult holds the last calculated TSP order +
+// geometry + per-leg metrics for both the on-screen panel and the
+// print itinerary. routeRoundTrip mirrors the panel toggle. All three
+// reset when the import-list pill is cleared.
+let routeStart = null;
+let routeResult = null;
+let routeRoundTrip = true;
+
 // Subject parcel state. setSubjectParcel() / clearSubjectParcel()
 // drive these alongside the map source and re-stamp distances onto
 // the current CSV row set whenever they change.
@@ -906,8 +927,32 @@ document.getElementById('parcel-list-pill-clear')
     listUnresolvedRows = null;
     renderListPill();
     renderListUnresolvedDrawer();
+    clearRoutePlanner();
     setCount('Imported list cleared.');
   });
+
+// Route planner — gated on list mode AND on the Mapbox token being
+// configured. Without a token the trigger stays disabled with a
+// tooltip telling the user how to enable it (matches the import-
+// modal feature-degradation pattern).
+const $routePlanTrigger = document.getElementById('route-plan-trigger');
+if ($routePlanTrigger && !hasMapboxToken()) {
+  $routePlanTrigger.disabled = true;
+  $routePlanTrigger.title = 'Route planning needs a Mapbox token. Add VITE_MAPBOX_TOKEN to web/.env.local (see .env.example) and restart the dev server, or set it in your Vercel project env vars.';
+}
+$routePlanTrigger?.addEventListener('click', openRoutePanel);
+document.getElementById('route-panel-close')
+  ?.addEventListener('click', () => { hideRoutePanel(); });
+document.getElementById('route-start-btn')
+  ?.addEventListener('click', handleSetStart);
+document.getElementById('route-calculate-btn')
+  ?.addEventListener('click', handleCalculateRoute);
+document.getElementById('route-recalc-btn')
+  ?.addEventListener('click', handleCalculateRoute);
+document.getElementById('route-print-btn')
+  ?.addEventListener('click', handlePrintItinerary);
+document.getElementById('route-roundtrip')
+  ?.addEventListener('change', (e) => { routeRoundTrip = !!e.target.checked; });
 
 // Info icons. Walks every .field and inserts an "i" button beside
 // the existing .tip, then wires hover/click/focus to reveal the
@@ -2491,6 +2536,352 @@ function renderListUnresolvedDrawer() {
     reason: u.reason || 'unresolved',
   }));
   renderUnmatchedPanel(adapted);
+}
+
+// ====================================================================
+// Route planner
+// ====================================================================
+
+/** Walk currentRows (the post-search table rows) and pull each parcel's
+ *  centroid + display info for the route planner. Rows without geometry
+ *  drop silently — the resolver shouldn't produce keys without geometry,
+ *  but the guard keeps the planner robust against future shape drift. */
+function collectRouteableParcels() {
+  const out = [];
+  for (const row of currentRows || []) {
+    const f = row?.parcel;
+    if (!f?.geometry) continue;
+    const bb = bboxOfFeature(f);
+    if (!Number.isFinite(bb[0])) continue;
+    const lng = (bb[0] + bb[2]) / 2;
+    const lat = (bb[1] + bb[3]) / 2;
+    const p = f.properties || {};
+    out.push({
+      lng,
+      lat,
+      roll: p._rollDisplay || (typeof p.Roll_No_Txt === 'string'
+        ? (p.Roll_No_Txt.endsWith('.000') ? p.Roll_No_Txt.slice(0, -4) : p.Roll_No_Txt)
+        : ''),
+      muniNo: muniNoFromProps(p),
+      address: p.Property_Address || '',
+    });
+  }
+  return out;
+}
+
+/** Reveal the route-planner panel. If a token is missing, the trigger
+ *  is already disabled — this is defensive. */
+function openRoutePanel() {
+  if (!hasMapboxToken()) return;
+  const $panel = document.getElementById('route-panel');
+  if (!$panel) return;
+  $panel.hidden = false;
+  refreshRouteStartStatus();
+  // Re-evaluate the calculate button gating in case currentRows or
+  // routeStart changed since the last open.
+  refreshCalculateEnabled();
+}
+
+function hideRoutePanel() {
+  const $panel = document.getElementById('route-panel');
+  if ($panel) $panel.hidden = true;
+}
+
+/** Clear all route state + UI. Called by the pill clear button and on
+ *  any "exit list mode" path so route artefacts don't survive into a
+ *  new context. */
+function clearRoutePlanner() {
+  routeStart = null;
+  routeResult = null;
+  setRouteStart(map, null);
+  setRouteData(map, [], null);
+  setRouteVisible(map, true);  // empty data renders nothing, but visibility stays on
+  hideRoutePanel();
+  // Reset the panel back to stage 1 so the next open is fresh.
+  const $setup  = document.querySelector('#route-panel [data-stage="setup"]');
+  const $result = document.querySelector('#route-panel [data-stage="result"]');
+  if ($setup)  $setup.hidden  = false;
+  if ($result) $result.hidden = true;
+  const $err = document.getElementById('route-panel-error');
+  if ($err) { $err.hidden = true; $err.textContent = ''; }
+  refreshRouteStartStatus();
+  refreshCalculateEnabled();
+}
+
+function refreshRouteStartStatus() {
+  const $status = document.getElementById('route-start-status');
+  const $btn = document.getElementById('route-start-btn');
+  if (!$status || !$btn) return;
+  if (routeStart) {
+    $status.innerHTML = `Start: <strong>${routeStart.lng.toFixed(5)}, ${routeStart.lat.toFixed(5)}</strong>`;
+    $btn.textContent = 'Change start';
+  } else {
+    $status.innerHTML = 'Start: <em>not set</em>';
+    $btn.textContent = 'Set start (click map)';
+  }
+}
+
+function refreshCalculateEnabled() {
+  const $btn = document.getElementById('route-calculate-btn');
+  if (!$btn) return;
+  const parcels = collectRouteableParcels();
+  const canCalc = !!routeStart && parcels.length >= 1 && hasMapboxToken();
+  $btn.disabled = !canCalc;
+  if (!routeStart) {
+    $btn.title = 'Set a start point first.';
+  } else if (parcels.length === 0) {
+    $btn.title = 'No parcels with geometry on the map — try a fresh Search.';
+  } else {
+    $btn.title = `Calculate the best route through the ${parcels.length} loaded parcel${parcels.length === 1 ? '' : 's'}.`;
+  }
+}
+
+async function handleSetStart() {
+  // Make sure the panel doesn't intercept the map click — temporarily
+  // hide it so the user can pick anywhere on the map. Re-show on
+  // resolve/cancel.
+  const $panel = document.getElementById('route-panel');
+  const wasHidden = $panel?.hidden;
+  if ($panel) $panel.hidden = true;
+  setCount('Click the map to set the start point (Esc to cancel).');
+  const picked = await pickStartFromMap(map);
+  if ($panel) $panel.hidden = wasHidden ?? false;
+  if (!picked) {
+    setCount('Start-point pick cancelled.');
+    return;
+  }
+  routeStart = picked;
+  setRouteStart(map, routeStart);
+  refreshRouteStartStatus();
+  refreshCalculateEnabled();
+  setCount(`Start set at ${routeStart.lng.toFixed(5)}, ${routeStart.lat.toFixed(5)}.`);
+}
+
+async function handleCalculateRoute() {
+  if (!routeStart) return;
+  const parcels = collectRouteableParcels();
+  if (parcels.length === 0) return;
+
+  const $err = document.getElementById('route-panel-error');
+  if ($err) { $err.hidden = true; $err.textContent = ''; }
+
+  const $calcBtn = document.getElementById('route-calculate-btn');
+  const $recBtn  = document.getElementById('route-recalc-btn');
+  const prevLabel = $calcBtn?.textContent;
+  if ($calcBtn) { $calcBtn.disabled = true; $calcBtn.textContent = 'Calculating…'; }
+  if ($recBtn)  $recBtn.disabled = true;
+  setBusy(true);
+  setCount(`Routing ${parcels.length} stop${parcels.length === 1 ? '' : 's'}…`);
+
+  try {
+    // Stop 0 is the start; subsequent indexes are the parcels in
+    // input order. The TSP solver returns the index permutation.
+    const points = [routeStart, ...parcels];
+    const { duration, distance } = await fetchDrivingMatrix(points);
+    // Optimise on drive time — the appraiser's bottleneck — but we
+    // also surface total km from the distance matrix.
+    const solved = solveRoute(duration, { start: 0, roundTrip: routeRoundTrip });
+
+    // Per-leg metrics from the solved order, in metres + seconds.
+    const legMeters = [];
+    const legSeconds = [];
+    for (let k = 0; k < solved.order.length - 1; k++) {
+      const i = solved.order[k];
+      const j = solved.order[k + 1];
+      legMeters.push(distance[i][j]);
+      legSeconds.push(duration[i][j]);
+    }
+
+    // Real driving polyline. Pass the solved ordered points so the
+    // polyline traces the actual route the planner chose.
+    const orderedPoints = solved.order.map((idx) => points[idx]);
+    const directions = await fetchDrivingRoute(orderedPoints);
+
+    routeResult = {
+      orderedIndices: solved.order,    // includes start at index 0 (and again at end if round-trip)
+      orderedPoints,                    // [{lng,lat}, …] in visit order
+      parcels,                          // routeable parcels in input order (indices 1..N)
+      legMeters,
+      legSeconds,
+      geometry: directions.geometry,
+      polyline: directions.polyline,
+      totalMeters: legMeters.reduce((a, b) => a + b, 0),
+      totalSeconds: legSeconds.reduce((a, b) => a + b, 0),
+      roundTrip: routeRoundTrip,
+    };
+
+    // Paint stops on the map, in visit order (excluding the start).
+    const mapStops = [];
+    solved.order.forEach((idx, k) => {
+      if (idx === 0) return;                            // skip the start
+      if (k === solved.order.length - 1 && idx === 0) return;  // skip the closing-back-to-start dup
+      const p = parcels[idx - 1];
+      mapStops.push({ lng: p.lng, lat: p.lat, label: String(mapStops.length + 1) });
+    });
+    setRouteData(map, mapStops, directions.geometry);
+
+    renderRouteResult();
+    setCount(formatRouteSummary(routeResult));
+  } catch (err) {
+    console.error('Route calculation failed:', err);
+    if ($err) {
+      $err.textContent = `Route calculation failed: ${err.message || err}`;
+      $err.hidden = false;
+    }
+    setCount(`Route calculation failed: ${err.message || err}`);
+  } finally {
+    if ($calcBtn) { $calcBtn.disabled = false; $calcBtn.textContent = prevLabel || 'Calculate route'; }
+    if ($recBtn)  $recBtn.disabled = false;
+    setBusy(false);
+    refreshCalculateEnabled();
+  }
+}
+
+/** Render the result section of the route panel. */
+function renderRouteResult() {
+  if (!routeResult) return;
+  const $setup  = document.querySelector('#route-panel [data-stage="setup"]');
+  const $result = document.querySelector('#route-panel [data-stage="result"]');
+  const $summary = document.getElementById('route-panel-summary');
+  const $stops = document.getElementById('route-panel-stops');
+  if ($setup)  $setup.hidden  = true;
+  if ($result) $result.hidden = false;
+  if ($summary) $summary.textContent = formatRouteSummary(routeResult);
+  if ($stops) {
+    const r = routeResult;
+    let cumM = 0;
+    let html = '';
+    // Stop 0 is the start. Indices 1..N are the visit-order stops;
+    // when round-trip, the final index revisits the start.
+    for (let k = 1; k < r.orderedIndices.length; k++) {
+      const idx = r.orderedIndices[k];
+      const isReturnToStart = (idx === 0);
+      const leg = r.legMeters[k - 1] || 0;
+      cumM += leg;
+      const legText = formatKm(leg / 1000);
+      const cumText = formatKm(cumM / 1000) + ' cum';
+      if (isReturnToStart) {
+        html += `<li>
+          <span class="rank">↩</span>
+          <span class="body"><span class="roll">Return to start</span></span>
+          <span class="leg">${escHtmlSafe(legText)}<span class="cum">${escHtmlSafe(cumText)}</span></span>
+        </li>`;
+      } else {
+        const parcel = r.parcels[idx - 1];
+        const rank = k; // 1-based stop number, return-to-start handled above
+        html += `<li>
+          <span class="rank">${rank}</span>
+          <span class="body">
+            <span class="roll">Roll ${escHtmlSafe(parcel.roll || '—')}</span>
+            ${parcel.address ? `<br><span class="addr">${escHtmlSafe(parcel.address)}</span>` : ''}
+          </span>
+          <span class="leg">${escHtmlSafe(legText)}<span class="cum">${escHtmlSafe(cumText)}</span></span>
+        </li>`;
+      }
+    }
+    $stops.innerHTML = html;
+  }
+}
+
+function formatRouteSummary(r) {
+  const km = (r.totalMeters / 1000);
+  const mins = r.totalSeconds / 60;
+  const stops = r.parcels.length;
+  return `${stops} stop${stops === 1 ? '' : 's'} · ${formatKm(km)} · ${formatDuration(mins)} · ${r.roundTrip ? 'round trip' : 'one-way'}`;
+}
+
+function formatKm(km) {
+  if (!Number.isFinite(km)) return '—';
+  return km >= 100 ? `${km.toFixed(0)} km` : `${km.toFixed(1)} km`;
+}
+
+function formatDuration(minutes) {
+  if (!Number.isFinite(minutes)) return '—';
+  if (minutes < 60) return `${Math.round(minutes)} min`;
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes - h * 60);
+  return `${h} h ${m.toString().padStart(2, '0')} min`;
+}
+
+function escHtmlSafe(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+async function handlePrintItinerary() {
+  if (!routeResult || !routeStart) return;
+  const $it = document.getElementById('route-itinerary');
+  if (!$it) return;
+  // Mapbox static image with the route polyline + numbered pins.
+  const stopsOnly = routeResult.orderedIndices
+    .slice(1)
+    .filter((idx) => idx !== 0)
+    .map((idx) => routeResult.parcels[idx - 1]);
+  const imgUrl = staticRouteImageUrl({
+    start: routeStart,
+    stops: stopsOnly,
+    polyline: routeResult.polyline,
+    width: 1200,
+    height: 800,
+    retina: true,
+  });
+  $it.innerHTML = buildPrintItineraryHtml(routeStart, routeResult, imgUrl);
+  // Give the image a moment to load before the print dialog grabs
+  // the page. If it's slow we still print — most users will Cancel,
+  // tweak, and re-print rather than miss a snappy print on a fast
+  // network.
+  const img = $it.querySelector('img.route-itinerary-map');
+  if (img && !img.complete) {
+    await new Promise((r) => {
+      const done = () => r();
+      img.addEventListener('load', done, { once: true });
+      img.addEventListener('error', done, { once: true });
+      setTimeout(done, 6000);
+    });
+  }
+  window.print();
+}
+
+function buildPrintItineraryHtml(start, r, imgUrl) {
+  const stamp = new Date().toLocaleString();
+  const startTxt = `${start.lng.toFixed(5)}, ${start.lat.toFixed(5)}`;
+  let cumM = 0;
+  let stopsHtml = '';
+  for (let k = 1; k < r.orderedIndices.length; k++) {
+    const idx = r.orderedIndices[k];
+    const leg = r.legMeters[k - 1] || 0;
+    cumM += leg;
+    if (idx === 0) {
+      stopsHtml += `<li>
+        <span class="rank">↩</span>
+        <span class="body"><span class="roll">Return to start</span></span>
+        <span class="leg">${escHtmlSafe(formatKm(leg / 1000))}<span class="cum">${escHtmlSafe(formatKm(cumM / 1000))} cum</span></span>
+      </li>`;
+    } else {
+      const parcel = r.parcels[idx - 1];
+      stopsHtml += `<li>
+        <span class="rank">${k}</span>
+        <span class="body">
+          <span class="roll">Roll ${escHtmlSafe(parcel.roll || '—')}</span>${parcel.muniNo != null ? ` · muni ${parcel.muniNo}` : ''}
+          ${parcel.address ? `<br><span class="addr">${escHtmlSafe(parcel.address)}</span>` : ''}
+        </span>
+        <span class="leg">${escHtmlSafe(formatKm(leg / 1000))}<span class="cum">${escHtmlSafe(formatKm(cumM / 1000))} cum</span></span>
+      </li>`;
+    }
+  }
+  return `
+    <div class="route-itinerary-header">
+      <h1 class="route-itinerary-title">Parcel route itinerary</h1>
+      <div class="route-itinerary-meta">Generated ${escHtmlSafe(stamp)} · Start ${escHtmlSafe(startTxt)}</div>
+    </div>
+    <p class="route-itinerary-totals">${escHtmlSafe(formatRouteSummary(r))}</p>
+    <img class="route-itinerary-map" src="${escHtmlSafe(imgUrl)}" alt="Route map with numbered stops" />
+    <ol class="route-itinerary-stops">${stopsHtml}</ol>
+  `;
 }
 
 /**
