@@ -38,24 +38,87 @@ export function solveRoute(cost, opts = {}) {
   const start = opts.start ?? 0;
   const roundTrip = opts.roundTrip !== false;
   const maxIters = opts.maxIters ?? 400;
+  // Iterated local search: after the first 2-opt+or-opt local optimum,
+  // we kick the tour with a random double-bridge 4-change and re-
+  // optimise; keep the best of K runs. K scales loosely with N — for
+  // small N the first local optimum is usually optimal so 4 restarts
+  // is plenty; for N=50+ more restarts help.
+  const restarts = opts.restarts ?? Math.min(20, Math.max(4, Math.floor(n / 4)));
+  const rng = opts.rng ?? Math.random;
 
   if (n === 0) return { order: [], cost: 0, iterations: 0 };
   if (n === 1) return { order: [start], cost: 0, iterations: 0 };
 
-  // Step 1: nearest-neighbour construction.
+  // Step 1: NN construction + alternating 2-opt / or-opt to first
+  // local optimum.
   const nnOrder = nearestNeighbour(cost, start);
+  let best = refineToLocalOptimum(nnOrder, cost, { roundTrip, maxIters });
+  let totalIters = best.iterations;
 
-  // Step 2: 2-opt refinement.
-  const refined = twoOpt(nnOrder, cost, { roundTrip, maxIters });
+  // Step 2: iterated-local-search restarts. Each iteration perturbs
+  // the current best with a double-bridge move (a 4-opt swap that
+  // 2-opt cannot undo, so it provides genuine escape from local
+  // optima) and re-optimises. Tiny enough to skip when n is too small
+  // for double-bridge cuts (n < 8 has too few segments to swap).
+  if (n >= 8) {
+    for (let r = 0; r < restarts; r++) {
+      const kicked = doubleBridge(best.order, rng);
+      const refined = refineToLocalOptimum(kicked, cost, { roundTrip, maxIters });
+      totalIters += refined.iterations;
+      if (refined.cost + 1e-9 < best.cost) {
+        best = refined;
+      }
+    }
+  }
 
   // Close the loop on output when round-trip; consumers can trust
   // order[0] === order[length-1] in that case.
-  const order = roundTrip ? [...refined.order, start] : refined.order;
-  const totalCost = tourCost(order, cost, roundTrip ? false : false);
-  // ^ roundTrip is already baked into `order` by appending start, so
-  //   tourCost doesn't need to close it again.
+  const order = roundTrip ? [...best.order, start] : best.order;
+  const totalCost = tourCost(order, cost);
 
-  return { order, cost: totalCost, iterations: refined.iterations };
+  return { order, cost: totalCost, iterations: totalIters };
+}
+
+/**
+ * Drive a tour to a 2-opt + or-opt local optimum. Alternates the two
+ * neighbourhoods until both fail to find an improving move — this is
+ * the standard "Lin-Kernighan-lite" pattern. Each neighbourhood is
+ * complementary: 2-opt removes crossings; or-opt relocates stops
+ * that got stranded in the wrong cluster. Either alone leaves
+ * obvious back-and-forth on irregular instances.
+ */
+export function refineToLocalOptimum(order, cost, { roundTrip = true, maxIters = 400 } = {}) {
+  let current = order.slice();
+  let currentCost = tourCost(closeIfRoundTrip(current, roundTrip), cost);
+  let improved = true;
+  let iters = 0;
+  while (improved && iters < maxIters) {
+    iters++;
+    improved = false;
+    // 2-opt pass.
+    const twoR = twoOpt(current, cost, { roundTrip, maxIters: 1 });
+    const twoCost = tourCost(closeIfRoundTrip(twoR.order, roundTrip), cost);
+    if (twoCost + 1e-9 < currentCost) {
+      current = twoR.order;
+      currentCost = twoCost;
+      improved = true;
+    }
+    // or-opt pass.
+    const orR = orOpt(current, cost, { roundTrip });
+    const orCost = tourCost(closeIfRoundTrip(orR.order, roundTrip), cost);
+    if (orCost + 1e-9 < currentCost) {
+      current = orR.order;
+      currentCost = orCost;
+      improved = true;
+    }
+  }
+  return { order: current, cost: currentCost, iterations: iters };
+}
+
+function closeIfRoundTrip(order, roundTrip) {
+  if (!roundTrip || order.length === 0) return order;
+  if (order[0] === order[order.length - 1]) return order;
+  return [...order, order[0]];
 }
 
 /**
@@ -148,6 +211,134 @@ function reverseSegment(arr, i, j) {
     const tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
     i++; j--;
   }
+}
+
+/**
+ * Or-opt: tries removing each contiguous segment of length 1, 2, or 3
+ * from the tour and re-inserting it at every other position. Keeps
+ * any move that shortens the tour. Complements 2-opt — together they
+ * cover both "edge swap" and "relocate stop(s)" moves, which is the
+ * pair that catches the user-reported back-and-forth (a single stop
+ * stranded in the wrong cluster, which 2-opt alone can't extract).
+ *
+ * Start index (position 0) is held fixed throughout.
+ */
+export function orOpt(order, cost, { roundTrip = true } = {}) {
+  const tour = order.slice();
+  const n = tour.length;
+  if (n < 5) return { order: tour, iterations: 0 };
+
+  let improved = true;
+  let iter = 0;
+  while (improved) {
+    improved = false;
+    iter++;
+    // Tour length we treat the cost over — closed loop or open path.
+    for (const segLen of [1, 2, 3]) {
+      // i = start of the segment to relocate. Hold start (index 0)
+      // fixed, so segments must start at i ≥ 1 and end at i+segLen-1
+      // ≤ n-1.
+      for (let i = 1; i + segLen <= n; i++) {
+        // Edges around the segment in the CURRENT tour:
+        //   prev → segHead ... segTail → next
+        const prev = tour[i - 1];
+        const segHead = tour[i];
+        const segTail = tour[i + segLen - 1];
+        // `next` wraps in round-trip; in open mode it's undefined past
+        // the end so we treat its removal/closure as zero cost.
+        let next;
+        if (i + segLen < n) {
+          next = tour[i + segLen];
+        } else if (roundTrip) {
+          next = tour[0];
+        } else {
+          next = null;
+        }
+        const removeCost = (cost[prev][segHead] || 0) +
+                           (next != null ? (cost[segTail][next] || 0) : 0) -
+                           (next != null ? (cost[prev][next] || 0) : 0);
+
+        let bestDelta = 0;
+        let bestJ = -1;
+        // Try inserting the segment after position j. j ranges over
+        // valid insertion gaps EXCLUDING the segment's current
+        // position (which would be a no-op) and the very start
+        // (since start is fixed).
+        for (let j = 0; j < n; j++) {
+          // Skip if the insertion point falls inside the segment
+          // we're about to lift, or right at the boundary (no-op).
+          if (j >= i - 1 && j <= i + segLen - 1) continue;
+          const here = tour[j];
+          let after;
+          if (j + 1 < n) {
+            after = tour[j + 1];
+          } else if (roundTrip) {
+            after = tour[0];
+          } else {
+            after = null;
+          }
+          if (after === null) continue;  // open-mode end gap can't take an insertion
+          const insertCost = (cost[here][segHead] || 0) +
+                             (cost[segTail][after] || 0) -
+                             (cost[here][after] || 0);
+          const delta = insertCost - removeCost;
+          if (delta + 1e-9 < bestDelta) {
+            bestDelta = delta;
+            bestJ = j;
+          }
+        }
+        if (bestJ >= 0) {
+          relocateSegment(tour, i, segLen, bestJ);
+          improved = true;
+        }
+      }
+    }
+  }
+  return { order: tour, iterations: iter };
+}
+
+/**
+ * Lift `segLen` elements starting at index `i` and reinsert them
+ * after index `j`. Treats `j` as the index in the ORIGINAL tour
+ * before removal; adjusts for the shift if `j > i`. Mutates `arr`.
+ */
+function relocateSegment(arr, i, segLen, j) {
+  const seg = arr.splice(i, segLen);
+  // After the splice, indices >= i have shifted left by segLen. If j
+  // was past the lifted segment, it shifts too.
+  const insertAt = j >= i ? j - segLen + 1 : j + 1;
+  arr.splice(insertAt, 0, ...seg);
+}
+
+/**
+ * Double-bridge perturbation. Cuts the tour into 4 non-empty
+ * segments [A | B | C | D] at three random cut positions and
+ * reconnects as [A | D | C | B]. This is a 4-opt move that NO
+ * single 2-opt swap can undo, which is what makes it the standard
+ * iterated-local-search kick — it forces the next 2-opt+or-opt pass
+ * into a different basin of attraction.
+ *
+ * Start (index 0) stays fixed: the first cut is always ≥ 1 so
+ * segment A includes tour[0].
+ *
+ * @param {number[]} tour
+ * @param {() => number} rng - [0,1) random source (injectable for tests).
+ * @returns {number[]}
+ */
+export function doubleBridge(tour, rng = Math.random) {
+  const n = tour.length;
+  if (n < 8) return tour.slice();  // not enough segments to split cleanly
+  // Three cut positions p1 < p2 < p3 with p1 ≥ 1 (preserve start),
+  // p3 ≤ n - 1 (leave at least one element after the last cut), and
+  // every segment ≥ 1 element wide.
+  const p1 = 1 + Math.floor(rng() * (n - 4));
+  const p2 = p1 + 1 + Math.floor(rng() * (n - p1 - 3));
+  const p3 = p2 + 1 + Math.floor(rng() * (n - p2 - 2));
+  const A = tour.slice(0, p1);
+  const B = tour.slice(p1, p2);
+  const C = tour.slice(p2, p3);
+  const D = tour.slice(p3);
+  return [...A, ...D, ...C, ...B];
 }
 
 /**
