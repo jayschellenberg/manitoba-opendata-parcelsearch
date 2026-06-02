@@ -1139,6 +1139,40 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
    and surface the reasons inline without touching the row builder. */
 .unmatched-panel .unmatched-table .reason-col { display: none; }
 
+/* List-import mode flips the unmatched panel to show the reasons
+   inline (the resolver's why-it-didn't-match is the main point of
+   the drawer for list imports) and hide the Sale Date / Sale Price
+   columns that only apply to sales uploads. Toggled by
+   renderListUnresolvedDrawer() in main.js. */
+.unmatched-panel.list-import-mode .unmatched-table .reason-col {
+  display: table-cell;
+}
+.unmatched-panel.list-import-mode .unmatched-table th:nth-child(3),
+.unmatched-panel.list-import-mode .unmatched-table th:nth-child(4),
+.unmatched-panel.list-import-mode .unmatched-table td:nth-child(3),
+.unmatched-panel.list-import-mode .unmatched-table td:nth-child(4) {
+  display: none;
+}
+/* Tweak the summary label for list-import mode — the default text
+   "N unmatched record(s)" doesn't quite fit the import flow. We
+   rewrite it inline via ::before since the markup is shared. */
+.unmatched-panel.list-import-mode .unmatched-summary {
+  color: var(--color-primary-700, #0f172a);
+}
+
+/* Property Search tab muted-look when list mode is active. The pill
+   is the authoritative input; muni dropdown / roll chip are still
+   visually present but de-emphasised so the user understands the
+   list is what Search will use. */
+.sidebar-tab-panel.list-mode-active #municipality,
+.sidebar-tab-panel.list-mode-active .chip-input {
+  opacity: 0.6;
+}
+.sidebar-tab-panel.list-mode-active #municipality:focus,
+.sidebar-tab-panel.list-mode-active .chip-input:focus-within {
+  opacity: 1;
+}
+
 /* Favourites star column — narrow, centered. Cell hidden outside
    sales mode via the existing .sales-only rule. The button itself
    is a giant unicode glyph; active state goes amber. Bubble-stop
@@ -2873,3 +2907,360 @@ body:not(.has-max-km) #results td.subj-col {
 }
 
 .disclaimer strong { color: #3b2d00; }
+
+/* -------------------------------------------------------------
+   Parcel-list import: trigger + resolved-pill (live inside the
+   sidebar Property Search panel), plus the <dialog> modal.
+
+   The trigger button is a thin text-style link that sits in the
+   chip-input-actions row below the Roll # chip input. Tapping it
+   opens the modal; once the modal resolves a list, the pill
+   appears showing "N parcels across M munis · Clear", which is
+   the cue that Search will use the imported parcelKeys instead
+   of the muni dropdown + chip list.
+   ------------------------------------------------------------- */
+
+.chip-input-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.parcel-list-import-trigger {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 2px 4px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-accent-600, #1d4ed8);
+  cursor: pointer;
+  border-radius: 3px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.parcel-list-import-trigger:hover {
+  color: var(--color-accent-700, #1e40af);
+  background: rgba(37, 99, 235, 0.06);
+}
+.parcel-list-import-trigger:focus-visible {
+  outline: 2px solid var(--color-accent-500, #2563eb);
+  outline-offset: 1px;
+}
+
+/* Resolved-list pill — shown above the Search/Clear buttons once
+   the import modal closes successfully. Communicates that a list
+   is loaded and Search will run against it. */
+.parcel-list-pill-row {
+  margin: 8px 0 4px;
+}
+
+.parcel-list-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 12px;
+  background: #e0ecff;
+  border: 1px solid #bcd2fb;
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--color-primary-700, #0f172a);
+  max-width: 100%;
+}
+
+.parcel-list-pill-label {
+  font-weight: 500;
+}
+
+.parcel-list-pill-clear {
+  appearance: none;
+  background: transparent;
+  border: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 16px;
+  line-height: 1;
+  color: #475569;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.parcel-list-pill-clear:hover {
+  background: rgba(37, 99, 235, 0.12);
+  color: #0f172a;
+}
+.parcel-list-pill-clear:focus-visible {
+  outline: 2px solid var(--color-accent-500, #2563eb);
+  outline-offset: 1px;
+}
+
+/* -------------------------------------------------------------
+   Modal dialog. Uses the native <dialog> element so Esc-to-close,
+   focus trap, and backdrop come for free. The .parcel-list-modal-
+   inner wrapper holds the three step <section>s; only one is
+   visible at a time (hidden attribute toggled by the JS driver).
+   ------------------------------------------------------------- */
+
+.parcel-list-modal {
+  border: none;
+  border-radius: 8px;
+  padding: 0;
+  width: min(720px, 92vw);
+  max-height: 88vh;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25),
+              0 4px 12px rgba(15, 23, 42, 0.12);
+  background: #fff;
+  color: #1a1a1a;
+  font-family: inherit;
+}
+
+.parcel-list-modal::backdrop {
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(2px);
+}
+
+.parcel-list-modal-inner {
+  display: flex;
+  flex-direction: column;
+  max-height: 88vh;
+}
+
+.parcel-list-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid #e2e4e9;
+  background: #f8fafc;
+  border-radius: 8px 8px 0 0;
+}
+
+.parcel-list-modal-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-primary-700, #0f172a);
+}
+
+.parcel-list-modal-close {
+  appearance: none;
+  background: transparent;
+  border: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  font-size: 20px;
+  line-height: 1;
+  color: #64748b;
+  cursor: pointer;
+}
+.parcel-list-modal-close:hover {
+  background: #eef1f5;
+  color: #0f172a;
+}
+
+.parcel-list-modal-step {
+  padding: 18px 20px;
+  overflow-y: auto;
+}
+
+.parcel-list-modal-help {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #334155;
+}
+
+.parcel-list-modal-help strong {
+  color: #0f172a;
+}
+
+.parcel-list-modal-textarea {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #fafbfc;
+  resize: vertical;
+  min-height: 160px;
+}
+.parcel-list-modal-textarea:focus {
+  outline: 2px solid var(--color-accent-500, #2563eb);
+  outline-offset: -1px;
+  border-color: var(--color-accent-500, #2563eb);
+}
+
+.parcel-list-modal-or {
+  text-align: center;
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 12px 0;
+  letter-spacing: 0.08em;
+}
+
+.parcel-list-modal-file {
+  display: block;
+  border: 1px dashed #cbd5e1;
+  border-radius: 4px;
+  padding: 10px 12px;
+  text-align: center;
+  cursor: pointer;
+  background: #fafbfc;
+}
+.parcel-list-modal-file:hover {
+  border-color: var(--color-accent-500, #2563eb);
+  background: #eff6ff;
+}
+.parcel-list-modal-file input[type="file"] {
+  display: none;
+}
+.parcel-list-modal-file span {
+  font-size: 13px;
+  color: var(--color-accent-600, #1d4ed8);
+}
+
+.parcel-list-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #eef1f5;
+}
+
+.parcel-list-modal-btn {
+  appearance: none;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #1f2937;
+}
+.parcel-list-modal-btn:hover:not(:disabled) {
+  background: #f4f6fa;
+  border-color: #94a3b8;
+}
+.parcel-list-modal-btn.primary {
+  background: var(--color-accent-500, #2563eb);
+  color: #fff;
+  border-color: var(--color-accent-500, #2563eb);
+}
+.parcel-list-modal-btn.primary:hover:not(:disabled) {
+  background: var(--color-accent-600, #1d4ed8);
+  border-color: var(--color-accent-600, #1d4ed8);
+}
+.parcel-list-modal-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.parcel-list-modal-btn.warn-flash {
+  animation: parcel-list-shake 0.4s;
+  border-color: #d97706;
+}
+@keyframes parcel-list-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+
+/* Mapping-step preview table. Each column has a header cell with
+   the original header text + a dropdown for the user-confirmed
+   field type; body cells show the first few sample values. */
+
+.parcel-list-mapping-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #e2e4e9;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.parcel-list-mapping-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.parcel-list-mapping-table th,
+.parcel-list-mapping-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid #eef1f5;
+  vertical-align: top;
+}
+
+.parcel-list-mapping-table thead th {
+  background: #f8fafc;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.mapping-col-header {
+  font-weight: 600;
+  color: #0f172a;
+  font-size: 12px;
+  margin-bottom: 6px;
+  min-height: 18px;
+  word-break: break-word;
+}
+
+.mapping-col-select {
+  width: 100%;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 3px;
+  background: #fff;
+}
+
+.parcel-list-mapping-meta {
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #64748b;
+  background: #f8fafc;
+}
+
+.parcel-list-modal-warning {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: #fef3c7;
+  color: #78350f;
+  border: 1px solid #fcd34d;
+  border-radius: 4px;
+  font-size: 12.5px;
+}
+
+.parcel-list-modal-error {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: #fee2e2;
+  color: #7f1d1d;
+  border: 1px solid #fca5a5;
+  border-radius: 4px;
+  font-size: 12.5px;
+}
+
+.parcel-list-modal-busy {
+  width: 36px;
+  height: 36px;
+  margin: 24px auto;
+  border-radius: 50%;
+  border: 3px solid #e2e4e9;
+  border-top-color: var(--color-accent-500, #2563eb);
+  animation: parcel-list-spin 0.9s linear infinite;
+}
+@keyframes parcel-list-spin {
+  to { transform: rotate(360deg); }
+}

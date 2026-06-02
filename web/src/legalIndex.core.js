@@ -106,6 +106,31 @@ export function lookupLegalRecordsByParcelKeys(index, keys) {
   return out;
 }
 
+/**
+ * Bulk-lookup variant for parcel-list imports. Takes a set of roll
+ * strings (canonical form, e.g. "218600.000") and returns every
+ * legal-index record whose roll_no_txt matches — across all munis,
+ * since the caller doesn't yet know which muni each roll belongs to.
+ *
+ * One scan of the index regardless of input size; the resolver
+ * filters the per-roll candidate list client-side by title or legal
+ * description to pick the right muni. Returns a Map keyed on the
+ * canonical roll string.
+ */
+export function lookupLegalRecordsByRollSet(index, rollSet) {
+  const want = rollSet instanceof Set ? rollSet : new Set(rollSet || []);
+  const out = new Map();
+  if (want.size === 0) return out;
+  for (const row of index?.rows || []) {
+    const rec = rowToRecord(row);
+    const k = String(rec.roll_no_txt || '').trim();
+    if (!k || !want.has(k)) continue;
+    if (!out.has(k)) out.set(k, []);
+    out.get(k).push(rec);
+  }
+  return out;
+}
+
 // ---------- internals ----------
 
 function rowToRecord(row) {

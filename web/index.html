@@ -213,8 +213,34 @@
                 aria-label="Roll number"
               />
             </div>
-            <span class="tip">Roll # — exact match. Paste a list separated by commas, spaces, ampersands, or newlines (e.g. a column copied straight from a spreadsheet) to highlight many parcels at once within the selected municipality. Press Enter, comma, space, or &amp; to commit; Backspace on an empty input removes the last chip.</span>
+            <div class="chip-input-actions">
+              <button
+                type="button"
+                id="parcel-list-import-trigger"
+                class="parcel-list-import-trigger"
+                title="Paste or upload a multi-municipality parcel list (Roll # + at least one of Muni #, Title #, or Legal Description). Resolves muni for each row and loads them all into Search."
+              >Import list…</button>
+            </div>
+            <span class="tip">Roll # — exact match. Paste a list separated by commas, spaces, ampersands, or newlines (e.g. a column copied straight from a spreadsheet) to highlight many parcels at once within the selected municipality. Press Enter, comma, space, or &amp; to commit; Backspace on an empty input removes the last chip. For a cross-muni list, use Import list… to paste 2–4 columns and have each row's muni resolved automatically.</span>
           </span>
+
+          <!-- Resolved-list pill. Populated by main.js after the
+               import modal succeeds. Holds the parcelKeys produced by
+               parcelListResolver until cleared. Compact so it doesn't
+               crowd the sidebar; the Clear "×" removes the list and
+               drops back to normal Property Search mode. -->
+          <div id="parcel-list-pill-row" class="parcel-list-pill-row" hidden>
+            <div class="parcel-list-pill" id="parcel-list-pill">
+              <span class="parcel-list-pill-label" id="parcel-list-pill-label">—</span>
+              <button
+                type="button"
+                id="parcel-list-pill-clear"
+                class="parcel-list-pill-clear"
+                title="Clear the imported list and return to normal Property Search"
+                aria-label="Clear imported list"
+              >×</button>
+            </div>
+          </div>
           <!-- Civic-address search: From/To numeric range + street
                substring. Tabbing into "To" after "From" auto-fills
                for an exact-number search. -->
@@ -845,6 +871,96 @@
     </div>
       </main>
     </div>
+
+    <!-- ===================================================
+         Parcel list import modal. Opened by the "Import list…"
+         link beside the Roll # chip input. Two-screen flow inside
+         a single <dialog>:
+           data-step="paste"     — textarea + file picker
+           data-step="map"       — column-type confirmation table
+           data-step="resolving" — busy state while resolver runs
+         Closed on Cancel, Esc, or after a successful resolve.
+         JS lives in src/lib/parcelListImport.js; main.js wires
+         the resolved parcelKeys into listParcelKeys + the pill.
+         =================================================== -->
+    <dialog id="parcel-list-import-modal" class="parcel-list-modal" data-step="paste">
+      <div class="parcel-list-modal-inner">
+        <header class="parcel-list-modal-header">
+          <h2 class="parcel-list-modal-title">Import parcel list</h2>
+          <button
+            type="button"
+            id="parcel-list-import-close"
+            class="parcel-list-modal-close"
+            aria-label="Close import dialog"
+          >×</button>
+        </header>
+
+        <!-- Step 1: paste / upload -->
+        <section class="parcel-list-modal-step" data-step="paste">
+          <p class="parcel-list-modal-help">
+            Paste two to four columns from a spreadsheet, or upload a CSV/TSV file.
+            <strong>Roll #</strong> is required, plus at least one of
+            <strong>Muni #</strong>, <strong>Title #</strong>, or <strong>Legal Description</strong>.
+            Supplying a Muni # column skips the legal-index lookup and is the most reliable
+            input when you have it.
+          </p>
+          <textarea
+            id="parcel-list-import-text"
+            class="parcel-list-modal-textarea"
+            rows="10"
+            placeholder="Paste rows here — tabs, commas, or spaces between columns…"
+            spellcheck="false"
+          ></textarea>
+          <div class="parcel-list-modal-or">— or —</div>
+          <label class="parcel-list-modal-file">
+            <input
+              type="file"
+              id="parcel-list-import-file"
+              accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"
+            />
+            <span>Choose CSV/TSV file…</span>
+          </label>
+          <footer class="parcel-list-modal-actions">
+            <button type="button" id="parcel-list-import-cancel" class="parcel-list-modal-btn">Cancel</button>
+            <button type="button" id="parcel-list-import-next" class="parcel-list-modal-btn primary">Next →</button>
+          </footer>
+        </section>
+
+        <!-- Step 2: column mapping -->
+        <section class="parcel-list-modal-step" data-step="map" hidden>
+          <p class="parcel-list-modal-help">
+            Confirm what each column contains. We've auto-detected each column from its header
+            and contents — change any with the dropdown. Same field can only be mapped once.
+          </p>
+          <div id="parcel-list-mapping-table-wrap" class="parcel-list-mapping-table-wrap">
+            <!-- table rendered by parcelListImport.js renderMappingTable() -->
+          </div>
+          <div
+            id="parcel-list-mapping-warning"
+            class="parcel-list-modal-warning"
+            role="status"
+            aria-live="polite"
+            hidden
+          ></div>
+          <div
+            id="parcel-list-resolve-error"
+            class="parcel-list-modal-error"
+            role="alert"
+            hidden
+          ></div>
+          <footer class="parcel-list-modal-actions">
+            <button type="button" id="parcel-list-import-back" class="parcel-list-modal-btn">← Back</button>
+            <button type="button" id="parcel-list-import-resolve" class="parcel-list-modal-btn primary">Resolve</button>
+          </footer>
+        </section>
+
+        <!-- Step 3: resolving (transient busy state) -->
+        <section class="parcel-list-modal-step" data-step="resolving" hidden>
+          <p class="parcel-list-modal-help">Resolving rows against the legal index…</p>
+          <div class="parcel-list-modal-busy" aria-hidden="true"></div>
+        </section>
+      </div>
+    </dialog>
 
     <script type="module" src="./src/main.js"></script>
   </body>
