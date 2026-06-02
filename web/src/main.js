@@ -2772,25 +2772,34 @@ async function handleCalculateRoute() {
     // grid rural network.
     const solved = solveRoute(duration, { start: 0, roundTrip: routeRoundTrip });
 
-    // Per-leg metres from the chosen matrix (consistent with what the
-    // TSP saw). Per-leg seconds only stamped when Mapbox supplied real
-    // durations; haversine has no honest time estimate.
+    // Real driving polyline + authoritative totals. Pass the solved
+    // ordered points so the polyline traces the route the planner
+    // chose. The Directions response also carries per-leg distance +
+    // duration, which we use for the result panel so the cumulative
+    // sum matches the reported total (the matrix-derived per-leg
+    // values can disagree with the Directions total because of
+    // cross-cluster haversine substitution).
+    const orderedPoints = solved.order.map((idx) => points[idx]);
+    const directions = await fetchDrivingRoute(orderedPoints);
+
+    // Per-leg metrics straight from Directions — authoritative road
+    // distance and time per waypoint pair. Fall back to matrix values
+    // only if Directions came back with fewer legs than expected
+    // (defensive; shouldn't happen).
     const legMeters = [];
     const legSeconds = [];
     for (let k = 0; k < solved.order.length - 1; k++) {
-      const i = solved.order[k];
-      const j = solved.order[k + 1];
-      legMeters.push(distance[i][j]);
-      legSeconds.push(usedHaversine ? null : duration[i][j]);
+      const leg = directions.legs?.[k];
+      if (leg) {
+        legMeters.push(leg.distanceMeters);
+        legSeconds.push(leg.durationSeconds);
+      } else {
+        const i = solved.order[k];
+        const j = solved.order[k + 1];
+        legMeters.push(distance[i][j]);
+        legSeconds.push(usedHaversine ? null : duration[i][j]);
+      }
     }
-
-    // Real driving polyline + authoritative totals. Pass the solved
-    // ordered points so the polyline traces the route the planner
-    // chose. The Directions totals OVERRIDE the matrix-derived ones
-    // so the user sees real road km / drive time regardless of which
-    // matrix solved the order.
-    const orderedPoints = solved.order.map((idx) => points[idx]);
-    const directions = await fetchDrivingRoute(orderedPoints);
 
     routeResult = {
       orderedIndices: solved.order,
@@ -2800,8 +2809,11 @@ async function handleCalculateRoute() {
       legSeconds,
       geometry: directions.geometry,
       polyline: directions.polyline,
-      totalMeters: directions.distanceMeters || legMeters.reduce((a, b) => a + b, 0),
-      totalSeconds: directions.durationSeconds || legSeconds.reduce((a, b) => a + (b || 0), 0),
+      // Totals come from the per-leg sums by construction — same
+      // source as the panel's cumulative column, so the two always
+      // agree even when one leg was a cluster boundary.
+      totalMeters: legMeters.reduce((a, b) => a + (b || 0), 0),
+      totalSeconds: legSeconds.reduce((a, b) => a + (b || 0), 0),
       roundTrip: routeRoundTrip,
       usedHaversine,
       usedClusterMatrix,
@@ -2925,39 +2937,115 @@ async function handlePrintItinerary() {
   if (!routeResult || !routeStart) return;
   const $it = document.getElementById('route-itinerary');
   if (!$it) return;
-  // Mapbox static image with the route polyline + numbered pins.
-  const stopsOnly = routeResult.orderedIndices
-    .slice(1)
-    .filter((idx) => idx !== 0)
-    .map((idx) => routeResult.parcels[idx - 1]);
-  const imgUrl = staticRouteImageUrl({
-    start: routeStart,
-    stops: stopsOnly,
-    polyline: routeResult.polyline,
-    width: 1200,
-    height: 800,
-    retina: true,
-  });
-  $it.innerHTML = buildPrintItineraryHtml(routeStart, routeResult, imgUrl);
-  // Give the image a moment to load before the print dialog grabs
-  // the page. If it's slow we still print — most users will Cancel,
-  // tweak, and re-print rather than miss a snappy print on a fast
-  // network.
-  const img = $it.querySelector('img.route-itinerary-map');
-  if (img && !img.complete) {
+
+  // Group the ordered stops by cluster (muni). Each cluster gets its
+  // own static map so neither the URL-length nor the overlay-count
+  // cap on Mapbox Static Images bites. The visit-order rank stays
+  // continuous across clusters so the printed list and the maps use
+  // the same numbering.
+  const clusters = buildPrintClusters(routeStart, routeResult);
+
+  $it.innerHTML = buildPrintItineraryHtml(routeStart, routeResult, clusters);
+
+  // Wait for the cluster maps to load (or 6 s timeout) before
+  // calling print() so the browser embeds the images cleanly.
+  const imgs = [...$it.querySelectorAll('img.route-itinerary-map')];
+  if (imgs.length > 0) {
     await new Promise((r) => {
-      const done = () => r();
-      img.addEventListener('load', done, { once: true });
-      img.addEventListener('error', done, { once: true });
-      setTimeout(done, 6000);
+      let pending = imgs.length;
+      const done = () => { if (--pending <= 0) r(); };
+      for (const img of imgs) {
+        if (img.complete) { done(); continue; }
+        img.addEventListener('load', done, { once: true });
+        img.addEventListener('error', done, { once: true });
+      }
+      setTimeout(r, 6000);
     });
   }
   window.print();
 }
 
-function buildPrintItineraryHtml(start, r, imgUrl) {
+/**
+ * Group the route's ordered stops by cluster for the print itinerary.
+ * Clustering is by parcel.muniNo — Manitoba RMs comfortably fit
+ * inside a ~50 km radius for printable scale, which is the resolution
+ * the appraiser wants on the page. The route's start point is rendered
+ * on the cluster containing its nearest stop (matches the matrix
+ * clustering done at calculate time).
+ *
+ * Returns an array of clusters in visit order, each:
+ *   {
+ *     muniNo,
+ *     stops: [{ parcel, rank }],       // rank = 1-based visit order
+ *     bbox: [west, south, east, north],
+ *     includesStart: boolean,
+ *   }
+ *
+ * @param {{lng,lat}} startLngLat
+ * @param {RouteResult} r
+ */
+function buildPrintClusters(startLngLat, r) {
+  const clusters = new Map();
+  const order = [];
+  let nearestStartRank = -1;
+  let nearestStartDist = Infinity;
+
+  // Step through orderedIndices and bucket by muni in visit order.
+  // Each stop's rank reflects its position in the full visit
+  // sequence (excluding the closing return-to-start when round-trip).
+  for (let k = 1; k < r.orderedIndices.length; k++) {
+    const idx = r.orderedIndices[k];
+    if (idx === 0) continue; // return-to-start handled below
+    const parcel = r.parcels[idx - 1];
+    const muniKey = parcel.muniNo != null ? String(parcel.muniNo) : 'unknown';
+    if (!clusters.has(muniKey)) {
+      clusters.set(muniKey, { muniNo: parcel.muniNo, stops: [], includesStart: false });
+      order.push(muniKey);
+    }
+    clusters.get(muniKey).stops.push({ parcel, rank: k });
+    // Track which cluster the start should appear on (the one with
+    // the parcel geographically closest to the start).
+    const dx = parcel.lng - startLngLat.lng;
+    const dy = parcel.lat - startLngLat.lat;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < nearestStartDist) {
+      nearestStartDist = d2;
+      nearestStartRank = order.length - 1;
+    }
+  }
+  if (nearestStartRank >= 0) {
+    clusters.get(order[nearestStartRank]).includesStart = true;
+  }
+
+  // Compute bbox for each cluster so the Static Images "auto" zoom
+  // levels the pins nicely without too much surrounding empty map.
+  return order.map((k) => {
+    const c = clusters.get(k);
+    let west = Infinity, south = Infinity, east = -Infinity, north = -Infinity;
+    for (const { parcel } of c.stops) {
+      if (parcel.lng < west)  west  = parcel.lng;
+      if (parcel.lng > east)  east  = parcel.lng;
+      if (parcel.lat < south) south = parcel.lat;
+      if (parcel.lat > north) north = parcel.lat;
+    }
+    if (c.includesStart) {
+      if (startLngLat.lng < west)  west  = startLngLat.lng;
+      if (startLngLat.lng > east)  east  = startLngLat.lng;
+      if (startLngLat.lat < south) south = startLngLat.lat;
+      if (startLngLat.lat > north) north = startLngLat.lat;
+    }
+    return { ...c, bbox: [west, south, east, north] };
+  });
+}
+
+function buildPrintItineraryHtml(start, r, clusters) {
   const stamp = new Date().toLocaleString();
   const startTxt = `${start.lng.toFixed(5)}, ${start.lat.toFixed(5)}`;
+
+  // Build the stop list (same layout as before, single chronological
+  // list — the cluster maps are an additional visual aid, not a
+  // restructuring of the itinerary). cumM tracks cumulative distance
+  // across the WHOLE route so each row carries an accurate total.
   let cumM = 0;
   let stopsHtml = '';
   for (let k = 1; k < r.orderedIndices.length; k++) {
@@ -2982,15 +3070,65 @@ function buildPrintItineraryHtml(start, r, imgUrl) {
       </li>`;
     }
   }
+
+  // One map per cluster. Each map only carries its own pins, so the
+  // URL stays well within Mapbox's 8 KB cap and the 100-overlay cap.
+  // Stops are numbered using their global visit-order rank so the
+  // printed list and the maps line up.
+  const clusterMapsHtml = clusters.map((c, idx) => {
+    const pins = c.stops.map(({ parcel, rank }) => ({
+      lng: parcel.lng,
+      lat: parcel.lat,
+      label: String(Math.min(99, rank)),
+    }));
+    const imgUrl = staticClusterImageUrl({
+      start: c.includesStart ? start : null,
+      pins,
+      width: 1100,
+      height: 700,
+    });
+    const head = `Cluster ${idx + 1}${c.muniNo != null ? ` — muni ${c.muniNo}` : ''} · ${c.stops.length} stop${c.stops.length === 1 ? '' : 's'}${c.includesStart ? ' · includes start' : ''}`;
+    return `
+      <section class="route-itinerary-cluster">
+        <h2 class="route-itinerary-cluster-title">${escHtmlSafe(head)}</h2>
+        <img class="route-itinerary-map" src="${escHtmlSafe(imgUrl)}" alt="${escHtmlSafe(head)}" />
+      </section>`;
+  }).join('');
+
   return `
     <div class="route-itinerary-header">
       <h1 class="route-itinerary-title">Parcel route itinerary</h1>
       <div class="route-itinerary-meta">Generated ${escHtmlSafe(stamp)} · Start ${escHtmlSafe(startTxt)}</div>
     </div>
     <p class="route-itinerary-totals">${escHtmlSafe(formatRouteSummary(r))}</p>
-    <img class="route-itinerary-map" src="${escHtmlSafe(imgUrl)}" alt="Route map with numbered stops" />
+    ${clusterMapsHtml}
     <ol class="route-itinerary-stops">${stopsHtml}</ol>
   `;
+}
+
+/** Build a small static-image URL for a single cluster — only pins,
+ *  no polyline. Lets Mapbox auto-fit to the pin set so each cluster
+ *  prints at a sensible zoom. */
+function staticClusterImageUrl({ start, pins, width = 1100, height = 700 }) {
+  const overlays = [];
+  if (start && Number.isFinite(start.lng) && Number.isFinite(start.lat)) {
+    overlays.push(`pin-l-s+16a34a(${start.lng.toFixed(6)},${start.lat.toFixed(6)})`);
+  }
+  for (const p of pins) {
+    overlays.push(`pin-l-${escapeStaticLabel(p.label)}+2563eb(${p.lng.toFixed(6)},${p.lat.toFixed(6)})`);
+  }
+  const overlay = overlays.join(',');
+  const token = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_MAPBOX_TOKEN) || '';
+  return `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/${overlay}/auto/${width}x${height}@2x?access_token=${token}`;
+}
+
+/** Mapbox pin labels can be 1–99 digits, a-z, or maki icon names.
+ *  Numbers are clamped at 99 (the docs limit); everything else is
+ *  URL-escaped. */
+function escapeStaticLabel(label) {
+  const n = Number(label);
+  if (Number.isFinite(n)) return String(Math.min(99, Math.max(1, Math.round(n))));
+  return encodeURIComponent(String(label));
 }
 
 /**
