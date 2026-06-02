@@ -1010,6 +1010,31 @@
             />
             <span>Choose CSV/TSV file…</span>
           </label>
+          <!-- Recent imports row. Mirrors the sales-tab recent-uploads
+               pattern: localStorage caches the last 5 imports (file or
+               paste), so reopening the modal lets the user re-run an
+               earlier list with one click. Hidden until at least one
+               cached entry exists. -->
+          <div
+            class="parcel-list-modal-recent"
+            id="parcel-list-import-recent-row"
+            hidden
+          >
+            <div class="parcel-list-modal-or">— or —</div>
+            <label class="parcel-list-modal-recent-label">
+              <span class="parcel-list-modal-recent-prefix">Recent imports:</span>
+              <select id="parcel-list-import-recent-select">
+                <option value="">—</option>
+              </select>
+              <button
+                type="button"
+                id="parcel-list-import-recent-clear"
+                class="parcel-list-modal-recent-clear"
+                title="Forget all recent imports"
+                aria-label="Clear recent imports"
+              >×</button>
+            </label>
+          </div>
           <footer class="parcel-list-modal-actions">
             <button type="button" id="parcel-list-import-cancel" class="parcel-list-modal-btn">Cancel</button>
             <button type="button" id="parcel-list-import-next" class="parcel-list-modal-btn primary">Next →</button>

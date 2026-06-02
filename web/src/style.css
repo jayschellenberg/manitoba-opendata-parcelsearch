@@ -3160,6 +3160,48 @@ body:not(.has-max-km) #results td.subj-col {
   color: var(--color-accent-600, #1d4ed8);
 }
 
+.parcel-list-modal-recent[hidden] { display: none; }
+.parcel-list-modal-recent-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid #e2e4e9;
+  border-radius: 4px;
+  background: #fafbfc;
+}
+.parcel-list-modal-recent-prefix {
+  font-size: 12.5px;
+  color: #64748b;
+  flex-shrink: 0;
+}
+.parcel-list-modal-recent-label select {
+  flex: 1 1 auto;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 4px 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 3px;
+  background: #fff;
+}
+.parcel-list-modal-recent-clear {
+  appearance: none;
+  background: transparent;
+  border: 1px solid #cbd5e1;
+  width: 24px;
+  height: 24px;
+  border-radius: 3px;
+  font-size: 14px;
+  line-height: 1;
+  color: #475569;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.parcel-list-modal-recent-clear:hover {
+  background: #f4f6fa;
+  color: #0f172a;
+}
+
 .parcel-list-modal-actions {
   display: flex;
   justify-content: flex-end;

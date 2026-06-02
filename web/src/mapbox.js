@@ -112,6 +112,159 @@ export async function fetchDrivingMatrix(points) {
   return { duration, distance };
 }
 
+/**
+ * Cluster-aware variant for lists too big to fit in one Matrix call
+ * (N > MATRIX_MAX_COORDS). The caller groups points into clusters
+ * (typically by muni); we fetch real driving costs for every pair
+ * within a cluster, and fall back to haversine (great-circle ×
+ * average rural speed) for cross-cluster pairs.
+ *
+ * Justification: clusters separated by tens of km (here: by muni)
+ * link via highways where great-circle distance is within ~10–15 %
+ * of real road distance. Within-cluster pairs are where the road
+ * grid matters — that's exactly where we spend real Matrix calls.
+ *
+ * Chunking inside a large cluster: split into 12-point sub-chunks
+ * so any pair of sub-chunks (12 + 12 = 24 coords) fits in a single
+ * Matrix call. For each ordered (chunk_a, chunk_b) pair we issue
+ * one call that fills the rectangular submatrix.
+ *
+ * @param {Object} args
+ * @param {Array<{lng,lat}>} args.points
+ * @param {Array<number|string>} args.clusterIds - same length as
+ *   points; identifies which cluster each point belongs to. The
+ *   start point usually inherits the nearest cluster's id.
+ * @param {number} [args.kmhFallback=75] - average road speed used
+ *   to derive haversine durations for cross-cluster pairs.
+ * @returns {Promise<{
+ *   duration: number[][],
+ *   distance: number[][],
+ *   realCalls: number,
+ *   crossClusterCount: number,
+ *   anyCallFailed: boolean,
+ * }>}
+ */
+export async function fetchDrivingMatrixClustered({ points, clusterIds, kmhFallback = 75 }) {
+  requireToken();
+  const n = points.length;
+  if (n === 0) return { duration: [], distance: [], realCalls: 0, crossClusterCount: 0, anyCallFailed: false };
+  if (n === 1) return { duration: [[0]], distance: [[0]], realCalls: 0, crossClusterCount: 0, anyCallFailed: false };
+
+  // 1. Seed both matrices with haversine values. Anything we don't
+  //    fetch real data for stays at this estimate.
+  const distance = Array.from({ length: n }, () => new Array(n).fill(0));
+  const duration = Array.from({ length: n }, () => new Array(n).fill(0));
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      if (i === j) continue;
+      const km = haversineKmInternal(points[i], points[j]);
+      distance[i][j] = km * 1000;
+      duration[i][j] = km / kmhFallback * 3600;
+    }
+  }
+
+  // 2. Group indices by cluster id, then for each cluster fetch the
+  //    within-cluster submatrix. Sub-chunk into 12-point pieces so
+  //    every Matrix call stays under the 25-coord cap.
+  const clusters = new Map();
+  for (let i = 0; i < n; i++) {
+    const c = clusterIds[i];
+    if (!clusters.has(c)) clusters.set(c, []);
+    clusters.get(c).push(i);
+  }
+
+  // Track per-cluster cross-cluster pair count so the caller can
+  // report how much of the matrix is real vs haversine.
+  let crossClusterCount = 0;
+  let realCalls = 0;
+  let anyCallFailed = false;
+
+  const tasks = [];
+  for (const [, indices] of clusters) {
+    if (indices.length < 2) continue;
+    const SUB_CHUNK = Math.min(12, indices.length);
+    const subChunks = [];
+    for (let i = 0; i < indices.length; i += SUB_CHUNK) {
+      subChunks.push(indices.slice(i, i + SUB_CHUNK));
+    }
+    for (let a = 0; a < subChunks.length; a++) {
+      for (let b = 0; b < subChunks.length; b++) {
+        tasks.push(
+          fillSubmatrixCall(subChunks[a], subChunks[b], points, duration, distance)
+            .then(() => { realCalls++; })
+            .catch((err) => {
+              console.warn('Matrix sub-call failed, falling back to haversine for this submatrix:', err.message || err);
+              anyCallFailed = true;
+            })
+        );
+      }
+    }
+  }
+  // Cross-cluster pair count (for the summary message).
+  const clusterSizes = [...clusters.values()].map((arr) => arr.length);
+  for (let i = 0; i < clusterSizes.length; i++) {
+    for (let j = i + 1; j < clusterSizes.length; j++) {
+      crossClusterCount += clusterSizes[i] * clusterSizes[j] * 2; // both directions
+    }
+  }
+
+  await Promise.all(tasks);
+  return { duration, distance, realCalls, crossClusterCount, anyCallFailed };
+}
+
+/**
+ * Fetch ONE rectangular submatrix: srcIndices × dstIndices, both
+ * referencing positions in the global `points` array. Stamps the
+ * results into the shared duration/distance matrices in place.
+ */
+async function fillSubmatrixCall(srcIndices, dstIndices, points, durationMat, distanceMat) {
+  // Build the coord list as the union of sources and destinations.
+  const positionOf = new Map();
+  const coordList = [];
+  for (const idx of srcIndices) {
+    if (positionOf.has(idx)) continue;
+    positionOf.set(idx, coordList.length);
+    coordList.push(points[idx]);
+  }
+  for (const idx of dstIndices) {
+    if (positionOf.has(idx)) continue;
+    positionOf.set(idx, coordList.length);
+    coordList.push(points[idx]);
+  }
+  if (coordList.length > MATRIX_MAX_COORDS) {
+    // Shouldn't happen — caller chunked too aggressively. Defensive
+    // throw so the bug surfaces immediately.
+    throw new Error(`Submatrix coord count ${coordList.length} exceeds ${MATRIX_MAX_COORDS}`);
+  }
+  const sources = srcIndices.map((idx) => positionOf.get(idx)).join(';');
+  const destinations = dstIndices.map((idx) => positionOf.get(idx)).join(';');
+  const coords = coordList.map((p) => `${p.lng},${p.lat}`).join(';');
+  const url = `${MAPBOX_ROOT}/directions-matrix/v1/mapbox/${MATRIX_PROFILE}/${coords}` +
+              `?annotations=duration,distance&sources=${sources}&destinations=${destinations}` +
+              `&access_token=${TOKEN}`;
+  const data = await fetchJson(url);
+  const dur = data?.durations || [];
+  const dis = data?.distances || [];
+  srcIndices.forEach((srcIdx, r) => {
+    dstIndices.forEach((dstIdx, c) => {
+      if (dur[r] && dur[r][c] != null) durationMat[srcIdx][dstIdx] = dur[r][c];
+      if (dis[r] && dis[r][c] != null) distanceMat[srcIdx][dstIdx] = dis[r][c];
+    });
+  });
+}
+
+/** Inline haversine so this module stays free of routeSolver imports. */
+function haversineKmInternal(a, b) {
+  const R = 6371;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
 // -----------------------------------------------------------------
 // Directions API — driving polyline through an ordered waypoint list.
 // -----------------------------------------------------------------
