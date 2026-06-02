@@ -9,6 +9,7 @@ import { initSidebarTabs, setActiveTab } from './lib/tabs.js';
 // Phase 4 form controls.
 import { initChipInput } from './lib/chipInput.js';
 import { initInfoIcons } from './lib/infoIcon.js';
+import { initParcelListImport } from './lib/parcelListImport.js';
 
 // Phase 5 column visibility.
 import { initColumns, applyVisibility as applyColumnVisibility, setColumnVisible } from './lib/columns.js';
@@ -581,6 +582,20 @@ let csvFullBaseMsg = '';
 // Website, Roll Layer), but the soil overlays cover the full upload.
 let csvMatchedMunis = null;
 
+// Imported parcel list. Populated by the "Import list…" modal once
+// the resolver returns parcelKeys; runSearch reads this in front of
+// the legal-search branch and feeds the keys straight into
+// searchParcels({parcelKeys}). null = not in list mode (normal
+// muni/roll/legal flow); non-null Array<{muni_no, roll_no_txt}> means
+// the next Search will fetch exactly those parcels across whichever
+// munis the resolver identified. Cleared by the pill's × button or by
+// a page reload (clearAll() reloads, so it resets implicitly).
+let listParcelKeys = null;
+// The unresolved rows from the same import — surfaced in the
+// unmatched-records drawer (renderUnmatchedPanel) so the user can see
+// at a glance which input rows didn't resolve and why.
+let listUnresolvedRows = null;
+
 // Subject parcel state. setSubjectParcel() / clearSubjectParcel()
 // drive these alongside the map source and re-stamp distances onto
 // the current CSV row set whenever they change.
@@ -852,6 +867,47 @@ initSidebarTabs();
 // search (mirrors the legacy Enter-runs-search binding).
 const $rollChip = document.querySelector('.chip-input[data-target="roll"]');
 if ($rollChip) initChipInput($rollChip, { onEnterEmpty: () => runSearch() });
+
+// Parcel-list import. The trigger link beside the roll chip opens a
+// modal that lets the user paste / upload a cross-muni parcel list;
+// the resolver returns parcelKeys ready for searchParcels. Stashed
+// in listParcelKeys + surfaced as a pill above the action row so a
+// subsequent Search uses the imported set instead of muni+roll.
+const importModal = initParcelListImport({
+  warmIndex: () => warmLegalIndex(),
+  canonicalRoll,
+  onResolved: ({ parcelKeys, resolved, unresolved, stats }) => {
+    if (!parcelKeys || parcelKeys.length === 0) {
+      // Nothing usable — surface the failure inline and don't enter
+      // list mode (the existing muni/roll inputs stay live).
+      const reason = unresolved?.[0]?.reason
+        || 'No rows could be resolved to a parcel.';
+      setCount(`Import: 0 of ${stats?.total ?? 0} rows resolved — ${reason}`);
+      listParcelKeys = null;
+      listUnresolvedRows = unresolved || [];
+      renderListPill();
+      renderListUnresolvedDrawer();
+      return;
+    }
+    listParcelKeys = parcelKeys;
+    listUnresolvedRows = unresolved || [];
+    renderListPill();
+    renderListUnresolvedDrawer();
+    // Auto-run the search so the imported list lands on the map +
+    // table immediately — matches the sales-upload flow's behaviour.
+    runSearch();
+  },
+});
+document.getElementById('parcel-list-import-trigger')
+  ?.addEventListener('click', () => importModal.open());
+document.getElementById('parcel-list-pill-clear')
+  ?.addEventListener('click', () => {
+    listParcelKeys = null;
+    listUnresolvedRows = null;
+    renderListPill();
+    renderListUnresolvedDrawer();
+    setCount('Imported list cleared.');
+  });
 
 // Info icons. Walks every .field and inserts an "i" button beside
 // the existing .tip, then wires hover/click/focus to reveal the
@@ -1616,8 +1672,12 @@ async function runSearch() {
   clearSubjectParcel();
   // Hide the subject muni picker since it's CSV-only.
   if ($subjectMuniRow) $subjectMuniRow.hidden = true;
-  // Hide the unmatched-records panel — also CSV-upload-specific.
-  renderUnmatchedPanel([]);
+  // Hide the unmatched-records panel — sales-upload-specific. When
+  // we're entering runSearch from list-import mode the panel may
+  // already be holding the resolver's unresolved rows; preserve it.
+  if (!(Array.isArray(listParcelKeys) && listParcelKeys.length > 0)) {
+    renderUnmatchedPanel([]);
+  }
   // Clear the CSV-mode state so the Other Searches filter listeners
   // stop trying to re-filter the previous upload's row set. Also
   // drop the multi-muni overlay scope so MASC/CLI fall back to the
@@ -1646,8 +1706,9 @@ async function runSearch() {
     duMin:           $duMin.value,
   };
   const hasLegalSearch = hasLegalCriteria(legalInputs);
+  const hasList = Array.isArray(listParcelKeys) && listParcelKeys.length > 0;
 
-  if (!Object.values(inputs).some(Boolean) && !hasLegalSearch) {
+  if (!Object.values(inputs).some(Boolean) && !hasLegalSearch && !hasList) {
     setCount('Enter at least one search field.');
     clearTable();
     setMapData(EMPTY_FC, EMPTY_FC, EMPTY_FC);
@@ -1661,7 +1722,15 @@ async function runSearch() {
 
   try {
     let legalResult = null;
-    if (hasLegalSearch) {
+    // List-import takes precedence. The resolved parcelKeys already
+    // identify (muni, roll) for every imported row, so we skip the
+    // legal-search round-trip and feed searchParcels directly. Other
+    // filters (zone category, du, address) still apply on top via
+    // buildParcelClauses inside searchParcels.
+    if (hasList) {
+      inputs.parcelKeys = listParcelKeys;
+      setCount(`Fetching ${listParcelKeys.length} parcel${listParcelKeys.length === 1 ? '' : 's'} from the imported list…`);
+    } else if (hasLegalSearch) {
       setCount('Searching legal index…');
       try {
         legalResult = await searchLegalIndex({
@@ -1742,7 +1811,9 @@ async function runSearch() {
     }
 
     if (n === 0) {
-      if (isBulkRollSearch) {
+      if (hasList) {
+        setCount(`No parcels returned from Roll Entry for any of the ${listParcelKeys.length} imported list rows. Check that the rolls are current in MAO.`);
+      } else if (isBulkRollSearch) {
         setCount(`No parcels found. None of the ${rollList.length} rolls matched in this municipality. Try removing filters or changing municipality.`);
       } else {
         setCount('No parcels found. Try removing filters or changing municipality.');
@@ -1758,9 +1829,22 @@ async function runSearch() {
       const tail = missingRolls.length > 10 ? ` and ${missingRolls.length - 10} others` : '';
       capNotes.push(`${missingRolls.length} of ${rollList.length} not found: ${inline}${tail}`);
     }
-    const countLabel = isBulkRollSearch
-      ? `${n} of ${rollList.length} rolls matched`
-      : `${n} parcels found`;
+    // List-import mode gets its own label that frames N as
+    // "of the imported list", folding the resolver's unresolved
+    // count into the tail so the user sees the full pipeline at a
+    // glance: how many input rows resolved, then plotted.
+    let countLabel;
+    if (hasList) {
+      const importedTotal = listParcelKeys.length + (listUnresolvedRows?.length || 0);
+      const unresolvedTail = listUnresolvedRows?.length
+        ? ` · ${listUnresolvedRows.length} unresolved (see panel)`
+        : '';
+      countLabel = `${n} of ${importedTotal} imported parcels plotted${unresolvedTail}`;
+    } else {
+      countLabel = isBulkRollSearch
+        ? `${n} of ${rollList.length} rolls matched`
+        : `${n} parcels found`;
+    }
     const baseMsg = capNotes.length
       ? `${countLabel} (${capNotes.join('; ')})`
       : countLabel;
@@ -2344,6 +2428,69 @@ function renderUnmatchedPanel(unmatched) {
   // Wire Download CSV — re-bind every render so the latest list is
   // captured. Older bindings get garbage-collected with the closure.
   $download.onclick = () => downloadUnmatchedCsv(unmatched);
+}
+
+/**
+ * Render the resolved-list pill above the action row. Shows the
+ * count + spanning muni count once a list has been imported, plus a
+ * × button that drops back to normal Property Search mode.
+ *
+ * Also flips the .list-mode-active class on the Property Search tab
+ * panel so CSS can mute the muni dropdown + roll chip while the
+ * imported list takes precedence (the panel-level class is a single
+ * point for style adjustments rather than per-element disabled state,
+ * which would be harder to undo on Clear).
+ */
+function renderListPill() {
+  const $row = document.getElementById('parcel-list-pill-row');
+  const $label = document.getElementById('parcel-list-pill-label');
+  const $panel = document.getElementById('tab-panel-property');
+  if (!$row || !$label) return;
+  if (!Array.isArray(listParcelKeys) || listParcelKeys.length === 0) {
+    $row.hidden = true;
+    $label.textContent = '';
+    $panel?.classList.remove('list-mode-active');
+    return;
+  }
+  const munis = new Set(listParcelKeys.map((k) => Number(k.muni_no)));
+  const n = listParcelKeys.length;
+  const m = munis.size;
+  $label.textContent = `Imported list: ${n} parcel${n === 1 ? '' : 's'} across ${m} municipalit${m === 1 ? 'y' : 'ies'}`;
+  $row.hidden = false;
+  $panel?.classList.add('list-mode-active');
+}
+
+/**
+ * Reuse renderUnmatchedPanel for the import flow's unresolved rows.
+ * Maps the resolver's row shape ({lineNo, roll, muniNo, legal, title,
+ * raw, reason}) into the panel's expected shape so the existing
+ * markup stays unchanged. Toggles a list-import-mode class on the
+ * panel so the Sale Date / Sale Price columns hide for imports —
+ * the sales-only column visibility on the unmatched table is per-
+ * panel, not per-row, so the class lives on the panel itself.
+ */
+function renderListUnresolvedDrawer() {
+  const $panel = document.getElementById('unmatched-panel');
+  if (!$panel) return;
+  const rows = listUnresolvedRows || [];
+  if (rows.length === 0) {
+    $panel.classList.remove('list-import-mode');
+    // Defer to the sales path's own panel state — calling
+    // renderUnmatchedPanel([]) hides cleanly. Only safe to do when
+    // the sales path hasn't populated its own unmatched set.
+    if (csvFullRows == null) renderUnmatchedPanel([]);
+    return;
+  }
+  $panel.classList.add('list-import-mode');
+  const adapted = rows.map((u) => ({
+    rollNumber: u.raw?.roll || (typeof u.roll === 'string' ? u.roll : ''),
+    municipality: u.raw?.muni || (u.muniNo != null ? String(u.muniNo) : ''),
+    saleDate: '',
+    consideration: '',
+    legalDescription: u.raw?.legal || (u.legal?.raw || ''),
+    reason: u.reason || 'unresolved',
+  }));
+  renderUnmatchedPanel(adapted);
 }
 
 /**

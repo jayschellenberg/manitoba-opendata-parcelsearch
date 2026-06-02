@@ -17,6 +17,7 @@ import {
   parseLegalIndex,
   searchLegalIndex as searchCore,
   lookupLegalRecordsByParcelKeys as lookupCore,
+  lookupLegalRecordsByRollSet as lookupRollsCore,
 } from './legalIndex.core.js';
 
 // See legalIndex.worker.js for the production hosting story (GitHub
@@ -145,6 +146,28 @@ export async function lookupLegalRecordsByParcelKeys(keys) {
   }
   const index = await loadDirect();
   return lookupCore(index, keys);
+}
+
+/**
+ * Bulk-lookup records across all munis matching the given set of
+ * canonical roll strings. Returns a Map<rollString, Record[]>. Used
+ * by the parcel-list import resolver — one scan covers an entire
+ * imported list regardless of how many rows there are.
+ *
+ * The worker transports the map as an array-of-pairs and we
+ * rehydrate it here, so callers always get a real Map.
+ */
+export async function lookupLegalRecordsByRollSet(rolls) {
+  const rollList = rolls instanceof Set ? [...rolls] : Array.from(rolls || []);
+  if (rollList.length === 0) return new Map();
+  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
+  if (viaWorker) {
+    await viaWorker;
+    const pairs = await postMessage('lookupRolls', { rolls: rollList });
+    return new Map(pairs || []);
+  }
+  const index = await loadDirect();
+  return lookupRollsCore(index, rollList);
 }
 
 export async function getLegalIndexMetadata() {

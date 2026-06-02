@@ -14,6 +14,7 @@ import {
   parseLegalIndex,
   searchLegalIndex,
   lookupLegalRecordsByParcelKeys,
+  lookupLegalRecordsByRollSet,
 } from '../legalIndex.core.js';
 
 let parsed = null;
@@ -26,6 +27,12 @@ self.addEventListener('message', async (ev) => {
     else if (type === 'metadata') result = parsed?.metadata || null;
     else if (type === 'search')   result = searchLegalIndex(parsed, payload);
     else if (type === 'lookup')   result = lookupLegalRecordsByParcelKeys(parsed, payload?.keys || []);
+    else if (type === 'lookupRolls') {
+      // Map → array-of-pairs for postMessage transport. Re-hydrated on
+      // the main thread by the wrapper in legalIndex.js.
+      const map = lookupLegalRecordsByRollSet(parsed, payload?.rolls || []);
+      result = [...map.entries()];
+    }
     else throw new Error(`Unknown message type: ${type}`);
     self.postMessage({ id, ok: true, result });
   } catch (err) {
