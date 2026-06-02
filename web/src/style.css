@@ -417,8 +417,8 @@ header small a {
 .overlay-group {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 3px 4px;
-  margin: 0 0 7px;
+  gap: 8px;
+  margin: 0 0 8px;
 }
 .overlay-group-title {
   grid-column: 1 / -1;
@@ -435,7 +435,8 @@ header small a {
   justify-content: center;
   gap: 6px;
   width: 100%;
-  padding: 7px 10px;
+  min-height: 28px;
+  padding: 4px 7px;
   background: #fff;
   border: 1px solid var(--color-neutral-300, #d4d4d8);
   border-radius: 4px;
@@ -445,7 +446,7 @@ header small a {
   color: var(--color-neutral-800, #27272a);
   cursor: pointer;
   text-align: center;
-  line-height: 1.25;
+  line-height: 1.1;
 }
 .sidebar .overlay-btn:hover:not(:disabled) {
   border-color: var(--color-primary-400, #64748b);
@@ -572,7 +573,8 @@ header small a {
 .sidebar .generate-map-btn {
   width: 100%;
   margin-top: 5px;
-  padding: 9px 12px;
+  min-height: 32px;
+  padding: 6px 12px;
   background: var(--color-accent-500, #2563eb);
   color: #fff;
   border: 1px solid var(--color-accent-600, #1d4ed8);
@@ -4212,11 +4214,11 @@ body {
 
 .overlay-group {
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .overlay-group-title {
-  margin: 2px 0 -1px;
+  margin: 6px 0 0;
   color: var(--ui-ink-soft);
   font-size: 11.5px;
   letter-spacing: 0;
@@ -4224,18 +4226,18 @@ body {
 
 .sidebar .overlay-btn {
   position: relative;
-  min-height: 36px;
+  min-height: 28px;
   justify-content: center;
-  padding: 8px 10px 8px 16px;
+  padding: 4px 7px;
   font-size: 12.5px;
   font-weight: 600;
-  line-height: 1.15;
+  line-height: 1.1;
   text-align: center;
   white-space: normal;
 }
 
 .sidebar .overlay-btn.link-btn {
-  padding-left: 10px;
+  padding-left: 7px;
 }
 
 .sidebar .overlay-btn:hover:not(:disabled) {
