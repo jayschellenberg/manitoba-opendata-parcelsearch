@@ -49,7 +49,7 @@
           <svg viewBox="0 0 16 16" aria-hidden="true">
             <path d="M2 4l4-2 4 2 4-2v10l-4 2-4-2-4 2zm4 0v8m4-6v8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
-          <span class="map-toggle-label">Hide map</span>
+          <span class="map-toggle-label">Hide Map</span>
         </button>
         <button
           type="button"
@@ -61,16 +61,16 @@
           <svg viewBox="0 0 16 16" aria-hidden="true">
             <path d="M3 6V3h3M13 6V3h-3M3 10v3h3M13 10v3h-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
-          <span class="map-expand-label">Expand map</span>
+          <span class="map-expand-label">Expand Map</span>
         </button>
         <a
           class="topbar-link"
           href="https://winnipeg-opendata-parcelsearch.vercel.app/"
           target="_blank"
           rel="noreferrer"
-        >Winnipeg portal</a>
+        >Winnipeg Portal</a>
         <details class="topbar-details" id="data-sources-details">
-          <summary class="topbar-summary">Data sources</summary>
+          <summary class="topbar-summary">Data Sources</summary>
           <div class="topbar-panel" id="data-sources-panel">
             <section class="topbar-panel-section">
               <h2>About this tool</h2>
@@ -219,7 +219,7 @@
                 id="parcel-list-import-trigger"
                 class="parcel-list-import-trigger"
                 title="Paste or upload a multi-municipality parcel list (Roll # + at least one of Muni #, Title #, or Legal Description). Resolves muni for each row and loads them all into Search."
-              >Import list…</button>
+              >Import List…</button>
             </div>
             <span class="tip">Roll # — exact match. Paste a list separated by commas, spaces, ampersands, or newlines (e.g. a column copied straight from a spreadsheet) to highlight many parcels at once within the selected municipality. Press Enter, comma, space, or &amp; to commit; Backspace on an empty input removes the last chip. For a cross-muni list, use Import list… to paste 2–4 columns and have each row's muni resolved automatically.</span>
           </span>
@@ -245,7 +245,7 @@
               id="route-plan-trigger"
               class="route-plan-trigger"
               title="Plan a driving route through the imported parcels. Click to open the route planner panel above the table."
-            >Plan route</button>
+            >Plan Route</button>
           </div>
           <!-- Civic-address search: From/To numeric range + street
                substring. Tabbing into "To" after "From" auto-fills
@@ -514,7 +514,7 @@
               <span class="overlay-btn-label">Assessment Parcels</span>
             </button>
             <button id="grid-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Sec-Twp — section/township grid + river lots. Select a municipality for a focused view, or toggle without one for the province-wide overlay.">
-              <span class="overlay-btn-label">Section/township grid</span>
+              <span class="overlay-btn-label">Section/Township Grid</span>
             </button>
           </div>
 
@@ -524,27 +524,27 @@
               <span class="overlay-btn-label">Zoning</span>
             </button>
             <button id="devplan-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Dev Plan — Manitoba Development Plan Designations">
-              <span class="overlay-btn-label">Development plan</span>
+              <span class="overlay-btn-label">Development Plan</span>
             </button>
           </div>
 
           <div class="overlay-group" data-group="reference">
             <h3 class="overlay-group-title">Reference</h3>
             <button id="contam-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Enviro Sites — Manitoba Contaminated Sites Registry">
-              <span class="overlay-btn-label">Environmental sites</span>
+              <span class="overlay-btn-label">Environmental Sites</span>
             </button>
             <button id="flow-toggle" type="button" class="overlay-btn" aria-pressed="false" title="MHTIS Traffic Flow 2019 — segments coloured by AADT">
-              <span class="overlay-btn-label">Traffic flow</span>
+              <span class="overlay-btn-label">Traffic Flow</span>
             </button>
           </div>
 
           <div class="overlay-group" data-group="agricultural">
             <h3 class="overlay-group-title">Agricultural</h3>
             <button id="riskarea-toggle" type="button" class="overlay-btn" aria-pressed="false" title="MASC Risk Areas — official crop-insurance risk-area boundaries from Manitoba Maps">
-              <span class="overlay-btn-label">MASC risk areas</span>
+              <span class="overlay-btn-label">MASC Risk Areas</span>
             </button>
             <button id="masc-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled title="MASC Rating — crop-insurance soil ratings (A best → J worst). Select a municipality first.">
-              <span class="overlay-btn-label">MASC rating</span>
+              <span class="overlay-btn-label">MASC Rating</span>
             </button>
             <button id="cli-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled title="Soil Productivity and Soil Name from Manitoba Soil Survey (AGCAP_CLS / SOILNAME) — the same dataset Manitoba's AgriMaps treats as authoritative. Click cycles through three states: 1st click → Soil Productivity (capability 1=prime → 7=no agricultural capability; O=organic; $=urban/water); 2nd click → Soil Type (coloured by the top-20 most common soil associations in the selected municipality); 3rd click → off. Select a municipality first.">
               <span class="overlay-btn-label">Soil Productivity/Soil Name</span>
@@ -557,8 +557,8 @@
                to live. -->
           <div class="overlay-group overlay-links-group" data-group="links">
             <h3 class="overlay-group-title">Quick links</h3>
-            <button id="muni-website-btn" type="button" class="overlay-btn link-btn" disabled title="Select a municipality to enable">Muni website ↗</button>
-            <button id="pd-website-btn" type="button" class="overlay-btn link-btn" disabled title="PD Website — select a municipality to enable. Planning District website.">Planning district website ↗</button>
+            <button id="muni-website-btn" type="button" class="overlay-btn link-btn" disabled title="Select a municipality to enable">Muni Website ↗</button>
+            <button id="pd-website-btn" type="button" class="overlay-btn link-btn" disabled title="PD Website — select a municipality to enable. Planning District website.">Planning District Website ↗</button>
           </div>
 
           <button id="static-map-btn" type="button" class="generate-map-btn" title="Capture the current map view as a PNG. Right-click the rendered image below the table and Save Image As… to drop into a report.">Generate Map</button>
@@ -577,7 +577,7 @@
           <details id="unmatched-panel" class="unmatched-panel" hidden>
             <summary class="unmatched-summary"></summary>
             <div class="unmatched-actions">
-              <button id="unmatched-download" type="button" class="secondary">Download unmatched CSV</button>
+              <button id="unmatched-download" type="button" class="secondary">Download Unmatched CSV</button>
             </div>
             <div class="unmatched-table-wrap">
               <table class="unmatched-table">
@@ -684,7 +684,7 @@
               id="route-start-btn"
               class="route-panel-btn primary"
               title="Click the map to drop a starting pin. Esc cancels."
-            >Set start (click map)</button>
+            >Set Start (Click Map)</button>
           </div>
           <label class="route-panel-toggle">
             <input id="route-roundtrip" type="checkbox" checked />
@@ -697,7 +697,7 @@
               class="route-panel-btn primary"
               disabled
               title="Set a start point first."
-            >Calculate route</button>
+            >Calculate Route</button>
           </div>
           <div
             id="route-panel-error"
@@ -721,7 +721,7 @@
               id="route-print-btn"
               class="route-panel-btn primary"
               title="Open a print-friendly itinerary with a numbered map."
-            >Print itinerary</button>
+            >Print Itinerary</button>
             <button
               type="button"
               id="route-recalc-btn"
@@ -754,9 +754,9 @@
         </dl>
         <div class="parcel-summary-actions">
           <a id="ps-open-mao" class="ps-action" href="#" target="_blank" rel="noreferrer">Open MAO</a>
-          <a id="ps-open-muni" class="ps-action" href="#" target="_blank" rel="noreferrer" hidden>Open muni website</a>
-          <button id="ps-copy-source" class="ps-action ps-action-btn" type="button" title="Copy a Manitoba Open Data citation note for this parcel to the clipboard.">Copy source note</button>
-          <button id="ps-export-selected" class="ps-action ps-action-btn" type="button">Export selected</button>
+          <a id="ps-open-muni" class="ps-action" href="#" target="_blank" rel="noreferrer" hidden>Open Muni Website</a>
+          <button id="ps-copy-source" class="ps-action ps-action-btn" type="button" title="Copy a Manitoba Open Data citation note for this parcel to the clipboard.">Copy Source Note</button>
+          <button id="ps-export-selected" class="ps-action ps-action-btn" type="button">Export Selected</button>
         </div>
 
         <!-- Verify-this checklist (Phase 6 item 22). Per-parcel
