@@ -259,6 +259,24 @@ const BASEMAP_STYLE = {
       tileSize: 256,
       attribution: 'Transportation &copy; Esri',
     },
+    // Local static XYZ pyramid of the 2020 Manitoba land-cover raster,
+    // produced by r/build_landcover_tiles.R. Drives the Land Cover
+    // overlay's "Detailed" mode — pixel-level mosaic vs the per-parcel
+    // "Dominant" fill from the JSON shards. Zoom range matches the
+    // pyramid the script generates (z6-z12); MapLibre overzooms beyond
+    // maxzoom by upscaling the z12 tile, which is fine for the 30 m
+    // source raster (z12 already at ~38 m/pixel, so z13+ tiles wouldn't
+    // add real detail). When the pyramid hasn't been built the tiles
+    // 404 silently; the webapp probes manifest.json on init to gate the
+    // Detailed tri-state branch off in that case.
+    'landcover-raster': {
+      type: 'raster',
+      tiles: [`${import.meta.env?.BASE_URL || '/'}data/landcover-tiles/{z}/{x}/{y}.png`],
+      tileSize: 256,
+      minzoom: 6,
+      maxzoom: 12,
+      attribution: 'Land cover &copy; Province of Manitoba (LCR_RCT_2020)',
+    },
   },
   layers: [
     // Carto streets layer is the default basemap. Satellite (Esri
@@ -272,6 +290,12 @@ const BASEMAP_STYLE = {
     { id: 'esri-imagery',        type: 'raster', source: 'esri-imagery',        minzoom: 0, maxzoom: 20, layout: { visibility: 'none' } },
     { id: 'esri-transportation', type: 'raster', source: 'esri-transportation', minzoom: 0, maxzoom: 20, layout: { visibility: 'none' } },
     { id: 'esri-reference',      type: 'raster', source: 'esri-reference',      minzoom: 0, maxzoom: 20, layout: { visibility: 'none' } },
+    // Land-cover raster sits above the basemap tiles but below every
+    // data overlay (zoning, MASC, parcels, etc.) added by initMap, so
+    // those overlays still paint cleanly on top. Default opacity 0.65 —
+    // tunable via setLandCoverRasterOpacity. Hidden until the Land
+    // Cover overlay enters "Detailed" mode.
+    { id: 'landcover-raster',    type: 'raster', source: 'landcover-raster',    minzoom: 0, maxzoom: 20, layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.65 } },
   ],
 };
 
@@ -2404,6 +2428,29 @@ export function setLandCoverVisible(map, on) {
   const vis = on ? 'visible' : 'none';
   for (const id of ['landcover-fill', 'muni-parcels-landcover-fill']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
+  }
+}
+
+/**
+ * Show / hide the pixel-level land-cover raster overlay (Detailed mode).
+ * Source is the local XYZ pyramid produced by r/build_landcover_tiles.R;
+ * MapLibre silently 404s missing tiles, so the webapp gates the Detailed
+ * tri-state branch behind the manifest probe in main.js — once the
+ * pyramid is built and the manifest lands, this setter is fed by the
+ * Land Cover toggle's Detailed state.
+ */
+export function setLandCoverRasterVisible(map, on) {
+  if (map.getLayer('landcover-raster')) {
+    map.setLayoutProperty('landcover-raster', 'visibility', on ? 'visible' : 'none');
+  }
+}
+
+/** Set the land-cover raster opacity (0-1). Drives the legend's opacity
+ *  slider so the user can dial in how strongly the cover paints against
+ *  the basemap underneath. */
+export function setLandCoverRasterOpacity(map, opacity) {
+  if (map.getLayer('landcover-raster')) {
+    map.setPaintProperty('landcover-raster', 'raster-opacity', opacity);
   }
 }
 
