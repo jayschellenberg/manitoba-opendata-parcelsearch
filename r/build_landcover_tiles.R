@@ -156,9 +156,45 @@ configure_osgeo4w_if_present <- function() {
                file.path(root, "share/gdal"))) {
     if (dir.exists(gd)) { Sys.setenv(GDAL_DATA = gd); break }
   }
-  for (pl in c(file.path(root, "share/proj"),
-               file.path(root, "apps/proj/share"))) {
-    if (dir.exists(pl)) { Sys.setenv(PROJ_LIB = pl); break }
+  # PROJ database lookup, in priority order:
+  #   1. PROJ_DATA / PROJ_LIB the user has already set (respect overrides).
+  #   2. The R sf or terra package's bundled proj.db (sf vendors PROJ 9.x
+  #      and ships a current proj.db; refreshed with each CRAN release).
+  #      OSGeo4W users frequently have a stale PROJ-7-era database at
+  #      C:/OSGeo4W/share/proj/ left over from an older install while the
+  #      gdal package is current; GDAL 3.13 then errors with
+  #      "proj.db contains DATABASE.LAYOUT.VERSION.MINOR = 1 whereas a
+  #       number >= 4 is expected". sf's bundled copy is always current.
+  #   3. OSGeo4W's own share/proj or apps/proj/share as a last resort
+  #      (may be stale; the user will see the schema-version error and can
+  #      fall through to re-running the OSGeo4W setup to refresh proj).
+  proj_data <- ""
+  for (v in c("PROJ_DATA", "PROJ_LIB")) {
+    candidate <- Sys.getenv(v, unset = "")
+    if (nzchar(candidate) && file.exists(file.path(candidate, "proj.db"))) {
+      proj_data <- candidate; break
+    }
+  }
+  if (!nzchar(proj_data)) {
+    for (pkg in c("sf", "terra")) {
+      d <- tryCatch(system.file("proj", package = pkg), error = function(e) "")
+      if (nzchar(d) && file.exists(file.path(d, "proj.db"))) {
+        proj_data <- d; break
+      }
+    }
+  }
+  if (!nzchar(proj_data)) {
+    for (pl in c(file.path(root, "share/proj"),
+                 file.path(root, "apps/proj/share"))) {
+      if (dir.exists(pl) && file.exists(file.path(pl, "proj.db"))) {
+        proj_data <- pl; break
+      }
+    }
+  }
+  if (nzchar(proj_data)) {
+    Sys.setenv(PROJ_DATA = proj_data)  # PROJ 7.1+ preferred name
+    Sys.setenv(PROJ_LIB  = proj_data)  # legacy name, still checked
+    cat("Using PROJ data from", proj_data, "\n")
   }
 
   # Bootstrap OSGeo4W's bundled python so gdal2tiles.bat (which delegates
