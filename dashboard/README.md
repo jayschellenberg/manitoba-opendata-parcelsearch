@@ -1,84 +1,91 @@
-# MAO Data Control Panel
+# Data Refresh Control Panel
 
-A small local dashboard for the Manitoba Parcel Search project. Lets you
-see when the MAO data was last scraped, kick off a full or delta refresh,
-watch live progress, and push the rebuilt shards to GitHub when you're
-ready.
+A small local dashboard for maintaining the Winnipeg and Manitoba parcel-search
+data artifacts. It shows when each generated/downloaded dataset was last
+refreshed and exposes buttons for the controlled refresh chains.
 
-## Quick start
+## Quick Start
 
-From a Windows machine with this repo checked out:
+From `D:\Dropbox\ClaudeCode\MBOpenData\WebSearch`:
 
 ```cmd
 start-dashboard.bat
 ```
 
-That opens `http://localhost:5174` in your default browser and tails
-the Node server's console output. Close the window (or hit Ctrl-C) to
-stop the server.
+The launcher opens:
 
-You can also start it manually:
+```text
+http://localhost:5180
+```
+
+You can also run it manually:
 
 ```cmd
+set DASHBOARD_PORT=5180
 node dashboard\server.js
 ```
 
-No `npm install` is needed — the server is implemented on Node built-ins
-(`http`, `fs`, `child_process`, etc.).
+No npm install is needed for the dashboard itself; it uses Node built-ins.
 
-## What the buttons do
+## What It Tracks
 
-- **Run Delta** — calls `..\mao-scrape\run_delta.bat`, then rebuilds the
-  legal + assessment shards and the public-data manifest. Typical run
-  time: a few minutes.
-- **Run Full** — same chain but invokes `run_full.bat` instead. Pulls
-  every MAO record; can take hours. Use this if a delta has been
-  failing repeatedly, or after schema changes.
-- **Push to Git** — stages `web/public/data/`, makes a `Data refresh —
-  YYYY-MM-DD` commit, and pushes to `origin/main`. Vercel deploys
-  automatically once the push lands.
+- Winnipeg quarterly parcel artifacts:
+  - `SurveyParcels_YYYYMMDD.gpkg`
+  - `AssessmentParcels_YYYYMMDD.gpkg`
+  - `ParcelCrossRef_YYYYMMDD.csv`
+  - `web/public/parcels.pmtiles`
+- Winnipeg transit overlays:
+  - `web/public/transit-routes.geojson`
+  - `web/public/transit-stops.geojson`
+- Winnipeg neighbourhood overlays, refreshed only when source boundaries change.
+- Manitoba quarterly snapshots:
+  - `RollEntry_YYYYMMDD.gpkg`
+  - `ManitobaZoning_YYYYMMDD.gpkg`
+  - `ManitobaDevPlan_YYYYMMDD.gpkg`
+- Manitoba MAO legal/assessment artifacts:
+  - `web/public/data/legal-index.json`
+  - `web/public/data/assessment-index.json`
+  - `web/public/data/assessment/*.json`
+  - `web/public/data/manifest.json`
+- Manitoba MASC/soil artifacts:
+  - `web/public/data/masc/*.json`
+  - `web/public/data/parcel-masc/*.json`
+  - `web/public/data/masc-riverlots.json`
+- Manitoba static reference overlays:
+  - `web/public/data/section-grid.json`
+  - `web/public/data/river-lots.json`
 
-The push button is **tight** about what it commits: if there's anything
-dirty *outside* `web/public/data/`, it refuses and tells you to commit
-or stash that work first. This stops a data refresh from accidentally
-bundling unrelated code changes.
+## Buttons
 
-## How live progress works
+- **Winnipeg quarterly parcel refresh** runs Winnipeg parcel download,
+  cross-reference build, PMTiles GeoJSON export, Docker/tippecanoe PMTiles
+  build, tests, and production build.
+- **Winnipeg transit refresh** runs `npm run refresh:transit`, tests, and build.
+- **Winnipeg neighbourhood refresh** runs `npm run refresh:neighbourhoods`.
+- **Manitoba quarterly Open Data snapshots** runs `r/download_parcels.R`.
+- **MAO full scrape + rebuild** runs `..\mao-scrape\run_full.bat`, rebuilds
+  legal/assessment artifacts, rebuilds the manifest, then tests/builds.
+- **MAO delta scrape + rebuild** runs the same chain using
+  `..\mao-scrape\run_delta.bat`.
+- **Manitoba MASC/soil refresh** rebuilds MASC overlay shards, parcel-level
+  soil shards, `masc-riverlots.json`, the manifest, tests, and build.
+- **Manitoba reference overlay refresh** rebuilds section grid and river lots.
 
-Every run streams stdout + stderr over Server-Sent Events. The browser
-EventSource auto-reconnects on flaky networks, and the server keeps a
-heartbeat every 15 seconds. If you close + reopen the browser tab
-mid-run, the page picks the run back up and replays the last 200 log
-lines.
-
-## Files
-
-```
-dashboard/
-  server.js          — Node HTTP server + SSE feed + run orchestration
-  public/
-    index.html       — single-page UI
-    app.js           — client-side glue (fetch + EventSource)
-    styles.css       — visual design
-  README.md          — this file
-start-dashboard.bat  — Windows launcher (at the repo root)
-```
+All runs stream stdout/stderr into the page and write a log file under
+`dashboard/logs/`.
 
 ## Configuration
 
-- **Port**: defaults to `5174`. Override with the `DASHBOARD_PORT` env
-  var.
-- **R location**: hardcoded to `C:\Program Files\R\R-4.5.3\bin\Rscript.exe`
-  in `server.js`. Edit the `Rscript` constant near the top if R is
-  installed elsewhere.
-- **Scrape location**: resolves `..\mao-scrape` relative to the
-  WebSearch repo root. Both projects need to be siblings under
-  `MBOpenData/`.
+- Port: `DASHBOARD_PORT`, default `5180`.
+- Winnipeg repo: `WPG_ROOT`, default
+  `D:\Dropbox\ClaudeCode\WpgOpenData\ParcelSearch`.
+- MAO scrape repo: `MAO_SCRAPE_ROOT`, default sibling `..\mao-scrape`.
+- Rscript: `RSCRIPT`, default
+  `C:\Program Files\R\R-4.5.3\bin\Rscript.exe` when present, otherwise
+  `Rscript` from PATH.
 
-## Relationship to the monthly Task Scheduler job
+## Notes
 
-This dashboard runs the same chain as `monthly-refresh.bat` (the
-unattended job registered by `schedule_monthly.ps1`). Use the dashboard
-for on-demand refreshes; the scheduled job catches you up if you forget.
-Both write to the same `logs/` directories, so the dashboard surfaces
-results from either.
+The dashboard does not auto-delete old snapshots and does not auto-commit or
+push. Review `git status`, tests, and generated logs before committing data
+refreshes.

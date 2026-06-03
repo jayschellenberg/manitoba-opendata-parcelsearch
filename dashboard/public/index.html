@@ -3,98 +3,44 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>MAO Data Control Panel</title>
+    <title>Data Refresh Control Panel</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <header class="topbar">
-      <h1>MAO Data Control Panel</h1>
+      <div>
+        <h1>Data Refresh Control Panel</h1>
+        <p>Winnipeg + Manitoba local data maintenance</p>
+      </div>
       <div class="topbar-right">
-        <span id="active-pill" class="active-pill hidden">idle</span>
+        <span id="active-pill" class="active-pill">idle</span>
         <span id="now" class="now"></span>
       </div>
     </header>
 
     <main class="shell">
-      <section class="card status-card">
-        <h2>Status</h2>
-        <table class="status-table">
-          <tbody>
-            <tr>
-              <th>Last full scrape</th>
-              <td id="status-full">—</td>
-              <td class="action"><button id="btn-full" type="button" class="primary">Run Full</button></td>
-            </tr>
-            <tr>
-              <th>Last delta scrape</th>
-              <td id="status-delta">—</td>
-              <td class="action"><button id="btn-delta" type="button" class="primary">Run Delta</button></td>
-            </tr>
-            <tr>
-              <th>Last shard build (legal)</th>
-              <td id="status-legal">—</td>
-              <td class="action"></td>
-            </tr>
-            <tr>
-              <th>Last shard build (assessment)</th>
-              <td id="status-asmt">—</td>
-              <td class="action"></td>
-            </tr>
-            <tr>
-              <th>Git status</th>
-              <td id="status-git">—</td>
-              <td class="action"><button id="btn-push" type="button" class="primary">Push to Git</button></td>
-            </tr>
-          </tbody>
-        </table>
-        <p class="hint">
-          <strong>Run Full</strong> re-pulls every MAO record; can take hours.
-          <strong>Run Delta</strong> only refreshes records changed since the last run; minutes typically.
-          Each run also rebuilds the legal + assessment shards and the manifest.
-          <strong>Push to Git</strong> requires a clean tree outside <code>web/public/data/</code>; otherwise commit your other work first.
-        </p>
+      <section class="card">
+        <div class="section-head">
+          <h2>Overview</h2>
+          <button id="btn-refresh" class="ghost" type="button">Refresh Status</button>
+        </div>
+        <div id="roots" class="roots"></div>
+        <div id="git-status" class="git-grid"></div>
       </section>
 
-      <section class="card plan-card" id="plan-card" hidden>
-        <h2>Next delta plan</h2>
-        <div id="plan-summary" class="plan-summary"></div>
-        <table class="plan-table">
-          <thead>
-            <tr>
-              <th>Tier</th>
-              <th class="num">Configured</th>
-              <th class="num">Triggers this delta</th>
-              <th class="num">Parcels</th>
-            </tr>
-          </thead>
-          <tbody id="plan-tbody"></tbody>
-          <tfoot>
-            <tr>
-              <th>Total</th>
-              <th class="num" id="plan-total-configured">—</th>
-              <th class="num" id="plan-total-munis">—</th>
-              <th class="num" id="plan-total-parcels">—</th>
-            </tr>
-          </tfoot>
-        </table>
-        <p class="hint">
-          Cadence is set per-muni in <code>mao-scrape/config/municipalities.csv</code>
-          (column <code>rescrape_cadence</code>). 6-month munis are split into 6 cohorts
-          (one fires per delta); annual munis are split into 12 cohorts. Monthly munis fire every delta.
-          Estimate uses PARALLEL_N=<span id="plan-parallel">8</span> and an observed mean of <span id="plan-secs">25</span>s per
-          summary.aspx request — adjust both in <code>scripts/scrape_summaries.R</code>.
-        </p>
+      <section class="section-head standalone">
+        <h2>Refresh Jobs</h2>
+        <p>Each button runs a fixed local script chain and streams the logs below.</p>
       </section>
+      <section id="items" class="items"></section>
 
       <section class="card progress-card">
-        <div class="progress-header">
-          <h2>Live progress</h2>
+        <div class="section-head">
+          <h2>Live Progress</h2>
           <div class="progress-controls">
-            <label class="autoscroll-label">
-              <input type="checkbox" id="autoscroll" checked /> Auto-scroll
-            </label>
+            <label><input type="checkbox" id="autoscroll" checked /> Auto-scroll</label>
             <button id="btn-cancel" type="button" class="danger" disabled>Cancel</button>
-            <button id="btn-clear" type="button" class="ghost">Clear</button>
+            <button id="btn-clear" type="button" class="ghost">Clear Log</button>
           </div>
         </div>
         <pre id="log" class="log"></pre>

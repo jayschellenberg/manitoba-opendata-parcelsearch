@@ -1,247 +1,206 @@
-// MAO Data Control Panel — client-side glue.
-//
-// Polls /api/status on load + after every run-end, holds an EventSource
-// open against /api/stream for live progress lines, and wires the four
-// action buttons (Run Full, Run Delta, Push to Git, Cancel).
-
 const $ = (id) => document.getElementById(id);
 
 const els = {
-  now:           $('now'),
-  pill:          $('active-pill'),
-  full:          $('status-full'),
-  delta:         $('status-delta'),
-  legal:         $('status-legal'),
-  asmt:          $('status-asmt'),
-  git:           $('status-git'),
-  btnFull:       $('btn-full'),
-  btnDelta:      $('btn-delta'),
-  btnPush:       $('btn-push'),
-  btnCancel:     $('btn-cancel'),
-  btnClear:      $('btn-clear'),
-  autoscroll:    $('autoscroll'),
-  log:           $('log'),
-  planCard:      $('plan-card'),
-  planSummary:   $('plan-summary'),
-  planTbody:     $('plan-tbody'),
-  planTotalCfg:  $('plan-total-configured'),
-  planTotalMun:  $('plan-total-munis'),
-  planTotalPar:  $('plan-total-parcels'),
-  planParallel:  $('plan-parallel'),
-  planSecs:      $('plan-secs'),
+  now: $('now'),
+  pill: $('active-pill'),
+  roots: $('roots'),
+  git: $('git-status'),
+  items: $('items'),
+  log: $('log'),
+  autoscroll: $('autoscroll'),
+  cancel: $('btn-cancel'),
+  clear: $('btn-clear'),
+  refresh: $('btn-refresh'),
 };
 
+let statusCache = null;
 let running = false;
 
-// ----- formatting -----------------------------------------------------
-
-function formatAgo(iso) {
-  if (!iso) return 'never';
-  const ms = Date.now() - new Date(iso).getTime();
-  if (Number.isNaN(ms)) return 'never';
-  const sec = Math.floor(ms / 1000);
-  if (sec < 60)    return `${sec}s ago`;
-  if (sec < 3600)  return `${Math.floor(sec / 60)}m ago`;
-  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
-  return `${Math.floor(sec / 86400)}d ago`;
+function pad(n) {
+  return String(n).padStart(2, '0');
 }
 
-function formatStamp(iso) {
-  if (!iso) return '—';
+function formatDate(iso) {
+  if (!iso) return 'Missing';
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  const pad = (n) => String(n).padStart(2, '0');
+  if (Number.isNaN(d.getTime())) return 'Missing';
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function freshnessClass(iso, warnDays, badDays) {
-  if (!iso) return 'error';
-  const days = (Date.now() - new Date(iso).getTime()) / 86400000;
-  if (days >= badDays)  return 'very-stale';
-  if (days >= warnDays) return 'stale';
-  return 'fresh';
-}
-
-function freshnessLabel(iso, warnDays, badDays) {
+function formatAge(iso) {
   if (!iso) return 'never';
-  const cls = freshnessClass(iso, warnDays, badDays);
-  if (cls === 'fresh')      return 'fresh';
-  if (cls === 'stale')      return 'stale';
-  return 'very stale';
+  const ms = Date.now() - new Date(iso).getTime();
+  if (Number.isNaN(ms)) return 'never';
+  const days = Math.floor(ms / 86400000);
+  if (days >= 1) return `${days}d ago`;
+  const hours = Math.floor(ms / 3600000);
+  if (hours >= 1) return `${hours}h ago`;
+  const mins = Math.floor(ms / 60000);
+  return `${mins}m ago`;
 }
 
-// ----- status render --------------------------------------------------
+function formatSize(bytes) {
+  if (bytes == null) return '';
+  if (bytes > 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  if (bytes > 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
 
-function renderStatus(s) {
-  if (!s) return;
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
 
-  const fullIso  = s.lastFullLog?.mtimeISO || null;
-  const deltaIso = s.lastDeltaLog?.mtimeISO || null;
-  const legalIso = s.lastShardBuild?.legal || null;
-  const asmtIso  = s.lastShardBuild?.asmt  || null;
+function renderRoots(roots) {
+  const rows = [
+    ['Winnipeg', roots?.winnipeg],
+    ['Manitoba', roots?.manitoba],
+    ['MAO scrape', roots?.maoScrape],
+  ];
+  els.roots.innerHTML = rows.map(([label, value]) => `
+    <div class="root-row">
+      <span>${label}</span>
+      <code>${escapeHtml(value || 'not found')}</code>
+    </div>
+  `).join('');
+}
 
-  const cell = (iso, warn, bad) => {
-    if (!iso) return `never <span class="pill error">never</span>`;
-    return `${formatStamp(iso)} <span class="muted">(${formatAgo(iso)})</span> ` +
-           `<span class="pill ${freshnessClass(iso, warn, bad)}">${freshnessLabel(iso, warn, bad)}</span>`;
+function renderGit(git) {
+  const one = (label, g) => {
+    if (!g?.available) return `<div class="git-card"><strong>${label}</strong><span class="muted">No git repo detected</span></div>`;
+    const state = g.dirty ? `${g.dirty} dirty` : 'clean';
+    const extra = [
+      g.ahead ? `${g.ahead} ahead` : '',
+      g.behind ? `${g.behind} behind` : '',
+    ].filter(Boolean).join(' · ');
+    return `
+      <div class="git-card">
+        <strong>${label}</strong>
+        <span>branch <code>${escapeHtml(g.branch)}</code></span>
+        <span class="pill ${g.dirty ? 'due' : 'fresh'}">${state}</span>
+        ${extra ? `<span class="muted">${extra}</span>` : ''}
+      </div>
+    `;
   };
+  els.git.innerHTML = one('Winnipeg Git', git?.winnipeg) + one('Manitoba Git', git?.manitoba);
+}
 
-  els.full.innerHTML  = cell(fullIso, 45, 90);
-  els.delta.innerHTML = cell(deltaIso, 35, 60);
-  els.legal.innerHTML = cell(legalIso, 35, 60) +
-    (s.lastShardBuild?.legalRows ? ` <span class="muted">— ${s.lastShardBuild.legalRows.toLocaleString()} rows</span>` : '');
-  els.asmt.innerHTML = cell(asmtIso, 35, 60) +
-    (s.lastShardBuild?.asmtRows ? ` <span class="muted">— ${s.lastShardBuild.asmtRows.toLocaleString()} rows</span>` : '');
+function renderItem(item, jobs) {
+  const fresh = item.freshness || {};
+  const outputs = (item.outputs || []).map((out) => `
+    <li class="${out.exists ? '' : 'missing'}">
+      <code>${escapeHtml(out.path)}</code>
+      <span>${out.exists ? `${formatDate(out.mtime)} · ${formatSize(out.sizeBytes)}` : 'missing'}</span>
+    </li>
+  `).join('');
+  const actions = (item.actions || []).map((id) => {
+    const job = jobs?.[id];
+    if (!job) return '';
+    return `<button class="primary job-button" type="button" data-job="${id}">${escapeHtml(job.label)}</button>`;
+  }).join('');
+  const age = item.lastDone ? `${formatAge(item.lastDone)}` : 'never';
 
-  const g = s.git || {};
-  const gitParts = [];
-  gitParts.push(`branch <code>${g.branch || '?'}</code>`);
-  if (g.dirty === 0) {
-    gitParts.push('<span class="pill clean">clean</span>');
-  } else {
-    gitParts.push(`<span class="pill dirty">${g.dirty} dirty</span>`);
-    if (g.dirtyData) gitParts.push(`<span class="muted">${g.dirtyData} in web/public/data/</span>`);
-    if (g.dirtyNonData?.length) gitParts.push(`<span class="muted">${g.dirtyNonData.length} elsewhere</span>`);
-  }
-  if (g.ahead)  gitParts.push(`<span class="muted">${g.ahead} ahead</span>`);
-  if (g.behind) gitParts.push(`<span class="muted">${g.behind} behind</span>`);
-  els.git.innerHTML = gitParts.join(' · ');
+  return `
+    <article class="item-card">
+      <div class="item-top">
+        <div>
+          <span class="project">${escapeHtml(item.project)}</span>
+          <h3>${escapeHtml(item.title)}</h3>
+        </div>
+        <span class="pill ${fresh.state || 'missing'}">${escapeHtml(fresh.label || 'missing')}</span>
+      </div>
+      <dl class="meta">
+        <div><dt>Cadence</dt><dd>${escapeHtml(item.cadenceLabel || 'Manual')}</dd></div>
+        <div><dt>Last done</dt><dd>${formatDate(item.lastDone)} <span>${age}</span></dd></div>
+      </dl>
+      ${item.note ? `<p class="note">${escapeHtml(item.note)}</p>` : ''}
+      <ul class="outputs">${outputs}</ul>
+      <div class="actions">${actions}</div>
+    </article>
+  `;
+}
 
-  setRunning(!!s.activeRun && !s.activeRun.isFinished, s.activeRun);
-  if (s.activeRun?.logTail?.length && !els.log.textContent) {
-    els.log.textContent = s.activeRun.logTail.join('\n');
+function renderStatus(status) {
+  statusCache = status;
+  renderRoots(status.roots);
+  renderGit(status.git);
+  els.items.innerHTML = (status.items || []).map((item) => renderItem(item, status.jobs)).join('');
+  els.items.querySelectorAll('[data-job]').forEach((btn) => {
+    btn.addEventListener('click', () => runJob(btn.dataset.job));
+  });
+  setRunning(!!status.activeRun && !status.activeRun.isFinished, status.activeRun);
+  if (status.activeRun?.logTail?.length && !els.log.textContent) {
+    els.log.textContent = status.activeRun.logTail.join('\n');
     scrollLog();
   }
-
-  renderCadencePlan(s.cadencePlan);
-}
-
-function renderCadencePlan(plan) {
-  if (!plan) { els.planCard.hidden = true; return; }
-  els.planCard.hidden = false;
-
-  const monthNames = ['January','February','March','April','May','June',
-                      'July','August','September','October','November','December'];
-  const dur = (hours) => hours < 24
-    ? `~${hours.toFixed(1)} h`
-    : `~${(hours/24).toFixed(1)} d  (~${hours.toFixed(0)} h)`;
-
-  els.planSummary.innerHTML = [
-    `<strong>${monthNames[plan.month-1]}</strong> delta will re-scrape `,
-    `<strong>${plan.triggerMunis.toLocaleString()}</strong> munis · `,
-    `<strong>${plan.triggerParcels.toLocaleString()}</strong> parcels — `,
-    `<span class="muted">est. ${dur(plan.estHours)}</span>`
-  ].join('');
-
-  const tiers = [
-    { key: 'monthly',  label: 'Monthly',  trigger: plan.breakdown.monthly,  all: plan.breakdown.monthlyAll,  note: '' },
-    { key: 'sixMonth', label: '6-month',  trigger: plan.breakdown.sixMonth, all: plan.breakdown.sixMonthAll, note: `cohort ${plan.cohortSixNow + 1} of 6` },
-    { key: 'annual',   label: 'Annual',   trigger: plan.breakdown.annual,   all: plan.breakdown.annualAll,   note: `cohort ${plan.cohortAnnualNow + 1} of 12` },
-  ];
-
-  els.planTbody.innerHTML = tiers.map((t) => `
-    <tr>
-      <td>
-        <span class="plan-tier-badge ${t.key}">${t.label}</span>
-        ${t.note ? `<span class="muted">${t.note}</span>` : ''}
-      </td>
-      <td class="num">${t.all.munis.toLocaleString()} munis · ${t.all.parcels.toLocaleString()} parcels</td>
-      <td class="num">${t.trigger.munis.toLocaleString()}</td>
-      <td class="num">${t.trigger.parcels.toLocaleString()}</td>
-    </tr>
-  `).join('');
-
-  const totalAllMunis    = tiers.reduce((a, t) => a + t.all.munis, 0);
-  const totalAllParcels  = tiers.reduce((a, t) => a + t.all.parcels, 0);
-  els.planTotalCfg.textContent = `${totalAllMunis.toLocaleString()} munis · ${totalAllParcels.toLocaleString()} parcels`;
-  els.planTotalMun.textContent = plan.triggerMunis.toLocaleString();
-  els.planTotalPar.textContent = plan.triggerParcels.toLocaleString();
-  if (els.planParallel) els.planParallel.textContent = plan.parallelN;
-  if (els.planSecs)     els.planSecs.textContent     = plan.avgSecondsReq;
 }
 
 function setRunning(isRunning, run) {
   running = isRunning;
-  els.btnFull.disabled   = isRunning;
-  els.btnDelta.disabled  = isRunning;
-  els.btnPush.disabled   = isRunning;
-  els.btnCancel.disabled = !isRunning;
-
+  document.querySelectorAll('.job-button').forEach((btn) => { btn.disabled = isRunning; });
+  els.cancel.disabled = !isRunning;
   if (isRunning) {
     els.pill.className = 'active-pill running';
-    els.pill.textContent = (run?.label || 'running') + '…';
+    els.pill.textContent = `${run?.label || 'running'}...`;
   } else if (run?.exitCode === 0) {
     els.pill.className = 'active-pill success';
-    els.pill.textContent = (run?.label || 'done') + ' — done';
+    els.pill.textContent = 'last run completed';
   } else if (run?.exitCode != null) {
     els.pill.className = 'active-pill failed';
-    els.pill.textContent = (run?.label || 'failed') + ` — exit ${run.exitCode}`;
+    els.pill.textContent = `last run failed (${run.exitCode})`;
   } else {
     els.pill.className = 'active-pill';
     els.pill.textContent = 'idle';
   }
-  els.pill.classList.remove('hidden');
 }
 
-// ----- log handling ---------------------------------------------------
+async function fetchStatus() {
+  const res = await fetch('/api/status', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`status ${res.status}`);
+  renderStatus(await res.json());
+}
 
-function appendLogLine(line) {
-  if (els.log.textContent) els.log.textContent += '\n' + line;
-  else                     els.log.textContent  = line;
+async function runJob(id) {
+  if (running) return;
+  const job = statusCache?.jobs?.[id];
+  const msg = job?.confirm || `Run ${job?.label || id}?`;
+  if (!confirm(msg)) return;
+  els.log.textContent = '';
+  const res = await fetch(`/api/run/${id}`, { method: 'POST' });
+  if (!res.ok && res.status !== 202) {
+    const body = await res.json().catch(() => ({}));
+    alert(body.reason || `Server returned ${res.status}`);
+  }
+  await fetchStatus();
+}
+
+function appendLog(line) {
+  els.log.textContent += (els.log.textContent ? '\n' : '') + line;
   scrollLog();
 }
 
 function scrollLog() {
-  if (els.autoscroll.checked) {
-    els.log.scrollTop = els.log.scrollHeight;
-  }
+  if (els.autoscroll.checked) els.log.scrollTop = els.log.scrollHeight;
 }
-
-// ----- API calls ------------------------------------------------------
-
-async function fetchStatus() {
-  try {
-    const r = await fetch('/api/status', { cache: 'no-store' });
-    if (!r.ok) return;
-    renderStatus(await r.json());
-  } catch (e) { /* ignore transient fetch errors */ }
-}
-
-async function postAction(path) {
-  try {
-    const r = await fetch(path, { method: 'POST' });
-    if (r.status === 409) {
-      const body = await r.json();
-      alert(body.reason || 'Action refused.');
-      return;
-    }
-    if (!r.ok) {
-      alert(`Server returned ${r.status}.`);
-      return;
-    }
-    els.log.textContent = '';
-    fetchStatus();
-  } catch (e) {
-    alert(`Request failed: ${e.message}`);
-  }
-}
-
-// ----- SSE wiring -----------------------------------------------------
 
 function openStream() {
-  const src = new EventSource('/api/stream');
-  src.onmessage = (ev) => {
+  const source = new EventSource('/api/stream');
+  source.onmessage = (event) => {
     let msg;
-    try { msg = JSON.parse(ev.data); } catch { return; }
-    if (msg.type === 'log') {
-      appendLogLine(msg.line);
-    } else if (msg.type === 'run-start') {
+    try { msg = JSON.parse(event.data); } catch { return; }
+    if (msg.type === 'log') appendLog(msg.line);
+    if (msg.type === 'run-start') {
       els.log.textContent = '';
       setRunning(true, msg.run);
-    } else if (msg.type === 'run-end') {
+    }
+    if (msg.type === 'run-end') {
       setRunning(false, msg.run);
-      fetchStatus();
-    } else if (msg.type === 'run-snapshot' && msg.run) {
+      fetchStatus().catch(() => {});
+    }
+    if (msg.type === 'run-snapshot' && msg.run) {
       setRunning(!msg.run.isFinished, msg.run);
       if (msg.run.logTail?.length) {
         els.log.textContent = msg.run.logTail.join('\n');
@@ -249,46 +208,24 @@ function openStream() {
       }
     }
   };
-  src.onerror = () => { /* EventSource auto-reconnects */ };
 }
 
-// ----- button wiring --------------------------------------------------
-
-els.btnFull.addEventListener('click', () => {
-  if (running) return;
-  if (!confirm('Run a FULL MAO scrape? This can take hours.')) return;
-  postAction('/api/run/full');
-});
-els.btnDelta.addEventListener('click', () => {
-  if (running) return;
-  postAction('/api/run/delta');
-});
-els.btnPush.addEventListener('click', () => {
-  if (running) return;
-  if (!confirm('Commit web/public/data and push to origin/main?')) return;
-  postAction('/api/push');
-});
-els.btnCancel.addEventListener('click', () => {
-  if (!running) return;
-  if (!confirm('Cancel the active run?')) return;
-  fetch('/api/cancel', { method: 'POST' });
-});
-els.btnClear.addEventListener('click', () => {
-  els.log.textContent = '';
+els.refresh.addEventListener('click', () => fetchStatus().catch((err) => alert(err.message)));
+els.clear.addEventListener('click', () => { els.log.textContent = ''; });
+els.cancel.addEventListener('click', () => {
+  if (!running || !confirm('Cancel the active run?')) return;
+  fetch('/api/cancel', { method: 'POST' }).catch(() => {});
 });
 
-// ----- tick -----------------------------------------------------------
-
-function updateNow() {
+function tick() {
   const d = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
-  els.now.textContent = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  els.now.textContent = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
-setInterval(updateNow, 1000);
-updateNow();
 
-// Refresh ages every 60s so "5m ago" doesn't go stale on screen.
-setInterval(fetchStatus, 60_000);
-
-fetchStatus();
+tick();
+setInterval(tick, 1000);
+setInterval(() => fetchStatus().catch(() => {}), 60000);
+fetchStatus().catch((err) => {
+  els.items.innerHTML = `<article class="item-card"><h3>Could not load status</h3><p class="note">${escapeHtml(err.message)}</p></article>`;
+});
 openStream();
