@@ -115,6 +115,7 @@ import {
   setSubjectData,
   setSubjectRadius,
 } from './map.js';
+import { generateParcelSnapshotsZip } from './snapshotExport.js';
 import { clearAllCache as clearAllCacheModule } from './cache.js';
 import { getManifest } from './manifest.js';
 import {
@@ -581,6 +582,9 @@ const rowFeatureMap = new Map();
 // or dev-plan layer on doesn't require re-running the spatial enrichment.
 let lastZoningFc = EMPTY_FC;
 let lastDevPlanFc = EMPTY_FC;
+// Most recent parcel result set pushed to the map — drives the Parcel
+// Snapshots (ZIP) export. Updated by every setMapData() call.
+let lastResultFc = EMPTY_FC;
 // CSV-upload mode state. csvFullRows holds the full enriched row set
 // from the last sales-CSV upload (with zoning / dev-plan / risk-area
 // data joined in), so changing the Other Searches filters after upload
@@ -1277,6 +1281,83 @@ const $staticMapBtn     = document.getElementById('static-map-btn');
 const $staticMapOutput  = document.getElementById('static-map-output');
 const $staticMapSection = document.getElementById('static-map-section');
 if ($staticMapBtn) $staticMapBtn.addEventListener('click', generateStaticMap);
+
+// Parcel Snapshots (ZIP) — render a 1920×1080 satellite PNG of each result
+// parcel (highlighted, fit to 16:9) and download them all as one ZIP named
+// muniCode-roll.png. Enabled whenever the current result set is non-empty,
+// so it serves both entry points the user asked for: an imported parcel
+// list, and Sales Analysis after importing a list.
+const $snapshotBtn = document.getElementById('snapshot-zip-btn');
+let snapshotRunning = false;
+let snapshotAbort = null;
+if ($snapshotBtn) $snapshotBtn.addEventListener('click', handleSnapshotExport);
+
+function snapshotResultCount() {
+  return (lastResultFc?.features || []).filter((f) => f?.geometry).length;
+}
+
+function updateSnapshotButton() {
+  if (!$snapshotBtn) return;
+  if (snapshotRunning) return; // mid-run label/handler owns the button
+  const n = snapshotResultCount();
+  $snapshotBtn.disabled = n === 0;
+  $snapshotBtn.textContent = 'Parcel Snapshots (ZIP)';
+  $snapshotBtn.title = n === 0
+    ? 'Import a parcel list or run a search first, then generate one satellite PNG per result parcel.'
+    : `Generate ${n} satellite PNG${n === 1 ? '' : 's'} (1920×1080, highlighted, 16:9) and download as a ZIP named muniCode-roll.png.`;
+}
+
+async function handleSnapshotExport() {
+  if (snapshotRunning) {
+    // Second click acts as Cancel.
+    snapshotAbort?.abort();
+    return;
+  }
+  const n = snapshotResultCount();
+  if (n === 0) return;
+
+  snapshotRunning = true;
+  snapshotAbort = new AbortController();
+  const fcSnapshot = lastResultFc;
+  $snapshotBtn.disabled = false;
+  $snapshotBtn.textContent = `Capturing 0/${n}… (click to cancel)`;
+  setCount(`Generating ${n} parcel snapshot${n === 1 ? '' : 's'}…`);
+
+  try {
+    const { blob, count } = await generateParcelSnapshotsZip(fcSnapshot, {
+      signal: snapshotAbort.signal,
+      onProgress: ({ done, total }) => {
+        $snapshotBtn.textContent = `Capturing ${done}/${total}… (click to cancel)`;
+      },
+    });
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadBlob(blob, `parcel-snapshots-${stamp}.zip`);
+    setCount(`Saved ${count} parcel snapshot${count === 1 ? '' : 's'} to parcel-snapshots-${stamp}.zip.`);
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      setCount('Parcel snapshot export cancelled.');
+    } else {
+      console.error('Parcel snapshot export failed', err);
+      setCount(`Parcel snapshot export failed: ${err?.message || err}`);
+    }
+  } finally {
+    snapshotRunning = false;
+    snapshotAbort = null;
+    updateSnapshotButton();
+  }
+}
+
+/** Trigger a browser download for an in-memory Blob. */
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
 
 /**
  * Draw the WebGL map canvas into a 2D canvas and burn the live
@@ -3956,6 +4037,12 @@ function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
     setDevPlanData(map, devPlanFc);
   });
   scheduleSoilCompositionStamp(parcelFc);
+  // Stash the current result set so the Parcel Snapshots export can render
+  // each parcel without re-querying. Covers both entry points the user
+  // asked for: imported-list searches and sales-CSV uploads both funnel
+  // their parcelFc through here.
+  lastResultFc = parcelFc;
+  updateSnapshotButton();
 }
 
 // Track in-flight CLI/soil work so the toggle button + legend can
