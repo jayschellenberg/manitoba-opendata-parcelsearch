@@ -1053,6 +1053,22 @@ export function initMap(container, { onFeatureClick } = {}) {
         layout: { visibility: 'none' },
         paint: { 'fill-color': '#6b7280', 'fill-opacity': 0.04 },
       });
+      // Land-cover choropleth on the muni-wide fabric — colours every parcel
+      // in the selected municipality by its dominant 2020 land-cover bucket
+      // (driven by `_lcColor`, stamped in main.js from the land-cover shard;
+      // parcels ≤ 20 ac or with no data draw nothing). Hidden until the Land
+      // Cover overlay is on. Added before the lines/labels so boundaries and
+      // roll numbers still read on top of the fill.
+      map.addLayer({
+        id: 'muni-parcels-landcover-fill',
+        type: 'fill',
+        source: 'muni-parcels',
+        layout: { visibility: 'none' },
+        paint: {
+          'fill-color': ['coalesce', ['get', '_lcColor'], 'rgba(0,0,0,0)'],
+          'fill-opacity': ['case', ['has', '_lcColor'], 0.6, 0],
+        },
+      });
       map.addLayer({
         id: 'muni-parcels-line',
         type: 'line',
@@ -2385,8 +2401,9 @@ export function setBasemapSatellite(map, on) {
  * `_lcColor`, stamped in main.js; this only flips the layer's visibility.
  */
 export function setLandCoverVisible(map, on) {
-  if (map.getLayer('landcover-fill')) {
-    map.setLayoutProperty('landcover-fill', 'visibility', on ? 'visible' : 'none');
+  const vis = on ? 'visible' : 'none';
+  for (const id of ['landcover-fill', 'muni-parcels-landcover-fill']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
   }
 }
 
