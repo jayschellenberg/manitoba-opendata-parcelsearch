@@ -147,6 +147,19 @@
       hidden
     ></div>
 
+    <!-- Roll_Entry upstream-data banner. Fires when the provincial
+         ROLL_ENTRY FeatureServer comes back with a suspiciously short
+         muni list (< 100 of the ~180 normal), which has been observed
+         when Manitoba mid-republishes the service. Populated by
+         checkRollEntryCompleteness in main.js. -->
+    <div
+      id="roll-entry-banner"
+      class="data-staleness-banner"
+      role="status"
+      aria-live="polite"
+      hidden
+    ></div>
+
     <!-- App shell. md+ runs a horizontal split: sidebar on the left,
          workspace (map + table with draggable divider) on the right.
          Below md the same elements stack so the same markup serves
