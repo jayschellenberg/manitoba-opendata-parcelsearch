@@ -119,8 +119,12 @@ have_tool <- function(name) nzchar(which_tool(name))
 # CRS dictionaries. No-op on Linux / macOS / conda installs and when GDAL
 # already resolves via PATH; safe to call unconditionally.
 configure_osgeo4w_if_present <- function() {
-  if (have_tool("gdalinfo")) return(invisible(NULL))  # already on PATH — nothing to do
-
+  # No early-return on `have_tool("gdalinfo")`: a common partial setup is
+  # only C:\OSGeo4W\bin on PATH (gdalinfo/gdaldem/gdalwarp work) WITHOUT
+  # the bundled Python's Scripts dir (where gdal2tiles.bat lives). We
+  # always want to add the Python Scripts dir + PYTHONHOME when OSGeo4W
+  # is on disk; the Sys.setenv prepends are idempotent for dirs that
+  # were already on PATH.
   root <- Sys.getenv("OSGEO4W_ROOT", unset = "")
   if (!nzchar(root) || !dir.exists(root)) {
     for (cand in c("C:/OSGeo4W", "C:/OSGeo4W64")) {
