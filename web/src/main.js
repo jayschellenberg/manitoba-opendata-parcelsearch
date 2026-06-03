@@ -55,6 +55,8 @@ import {
   joinTopNByArea,
   bboxOverlapJoin,
   fetchMunicipalityList,
+  setRollEntrySnapshot,
+  getRollEntrySnapshot,
   fetchZoneCategoryList,
   fetchContaminatedSites,
   fetchTrafficFlow,
@@ -1756,13 +1758,33 @@ let muniBoundariesFc = null;
 
 async function populateDropdowns() {
   try {
-    const [munis, zoneCats] = await Promise.all([
+    // Probe live + the local snapshot manifest in parallel. The snapshot
+    // is the static dump produced by r/build_rollentry_snapshot.R; main.js
+    // flips into snapshot mode (parcel queries routed to per-muni shards
+    // by arcgis.js) when live is incomplete AND the snapshot is available.
+    const [liveMunis, zoneCats, snapshotManifest] = await Promise.all([
       fetchMunicipalityList(),
       fetchZoneCategoryList(),
+      probeRollEntrySnapshot(),
     ]);
-    fillSelect($municipality, munis, 'Any municipality');
+    const liveCount = Array.isArray(liveMunis) ? liveMunis.length : 0;
+    const snapshotCount = snapshotManifest ? Object.keys(snapshotManifest.munis || {}).length : 0;
+    const liveIncomplete = liveCount > 0 && liveCount < ROLL_ENTRY_MIN_HEALTHY_MUNIS;
+
+    // Pick the dropdown source. In snapshot mode the snapshot's full muni
+    // list is the right truth source — listing 18 live munis when the
+    // snapshot has all 186 would leave the user unable to even SELECT
+    // most of Manitoba.
+    let dropdownMunis = liveMunis;
+    if (liveIncomplete && snapshotCount > 0) {
+      setRollEntrySnapshot(snapshotManifest);
+      dropdownMunis = Object.keys(snapshotManifest.munis).sort();
+    } else {
+      setRollEntrySnapshot(null);
+    }
+    fillSelect($municipality, dropdownMunis, 'Any municipality');
     fillSelect($zoneCategory, zoneCats, 'Any zoning category');
-    checkRollEntryCompleteness(munis);
+    updateRollEntryBanner({ liveCount, snapshotManifest, snapshotActive: !!getRollEntrySnapshot() });
   } catch (err) {
     console.error('Failed to load filter dropdowns', err);
     fillSelect($municipality, [], 'Failed to load — type to filter parcels another way');
@@ -1777,19 +1799,38 @@ async function populateDropdowns() {
 // noise range for minor amalgamations).
 const ROLL_ENTRY_MIN_HEALTHY_MUNIS = 150;
 const ROLL_ENTRY_NORMAL_MUNIS = 180;
+const ROLL_ENTRY_SNAPSHOT_MANIFEST_URL =
+  `${import.meta.env?.BASE_URL || '/'}data/rollentry-snapshot/_index.json`;
+
+/** Fetch the snapshot manifest; null on any failure (so the call site
+ *  falls through to live-only mode without an error). The manifest is
+ *  tiny (~30 KB) so we don't bother caching it across loads. */
+async function probeRollEntrySnapshot() {
+  try {
+    const res = await fetch(ROLL_ENTRY_SNAPSHOT_MANIFEST_URL, { cache: 'no-cache' });
+    if (!res.ok) return null;
+    const m = await res.json();
+    // Defensive shape check — a busted manifest shouldn't flip the app
+    // into snapshot mode and then immediately fail on every query.
+    if (!m || !m.snapshot_date || !m.munis || typeof m.munis !== 'object') return null;
+    return m;
+  } catch {
+    return null;
+  }
+}
 
 /**
- * Show the Roll_Entry mid-update banner when the upstream FeatureServer
- * returns a suspiciously short muni list. The 18 munis (or whatever count
- * IS present) all work normally end-to-end; the banner just tells the user
- * that other munis are missing because of an upstream provincial event,
- * not a webapp bug.
+ * Render the Roll Entry status banner across three states:
+ *   - healthy (live count >= threshold): hidden.
+ *   - incomplete + snapshot active: amber banner explaining the app has
+ *     swapped to the dated snapshot and will revert when live is back.
+ *   - incomplete + no snapshot available: the legacy "mid-update" banner
+ *     telling the user to wait it out.
  */
-function checkRollEntryCompleteness(munis) {
+function updateRollEntryBanner({ liveCount, snapshotManifest, snapshotActive }) {
   const banner = document.getElementById('roll-entry-banner');
   if (!banner) return;
-  const count = Array.isArray(munis) ? munis.length : 0;
-  if (count === 0 || count >= ROLL_ENTRY_MIN_HEALTHY_MUNIS) {
+  if (!liveCount || liveCount >= ROLL_ENTRY_MIN_HEALTHY_MUNIS) {
     banner.hidden = true;
     banner.textContent = '';
     banner.classList.remove('data-staleness-amber', 'data-staleness-red');
@@ -1797,12 +1838,21 @@ function checkRollEntryCompleteness(munis) {
   }
   banner.classList.remove('data-staleness-red');
   banner.classList.add('data-staleness-amber');
-  banner.innerHTML =
-    `<strong>Manitoba Roll Entry source data appears to be mid-update.</strong> ` +
-    `Only ${count} of the usual ~${ROLL_ENTRY_NORMAL_MUNIS} municipalities ` +
-    `are currently published by the province; the listed municipalities work normally, ` +
-    `but searches in other munis will return no results until the upstream rebuild completes (typically hours to a day). ` +
-    `<a href="https://geoportal.gov.mb.ca/datasets/manitoba::roll-entry/about" target="_blank" rel="noreferrer" style="color:inherit;text-decoration:underline">Check Roll Entry status ↗</a>`;
+  if (snapshotActive && snapshotManifest?.snapshot_date) {
+    banner.innerHTML =
+      `<strong>Manitoba Roll Entry source data appears to be mid-update.</strong> ` +
+      `Only ${liveCount} of the usual ~${ROLL_ENTRY_NORMAL_MUNIS} municipalities are currently published live. ` +
+      `Showing snapshot data from <strong>${snapshotManifest.snapshot_date}</strong> ` +
+      `(reload to revert to live data once the upstream rebuild completes — typically hours to a day). ` +
+      `<a href="https://geoportal.gov.mb.ca/datasets/manitoba::roll-entry/about" target="_blank" rel="noreferrer" style="color:inherit;text-decoration:underline">Check Roll Entry status ↗</a>`;
+  } else {
+    banner.innerHTML =
+      `<strong>Manitoba Roll Entry source data appears to be mid-update.</strong> ` +
+      `Only ${liveCount} of the usual ~${ROLL_ENTRY_NORMAL_MUNIS} municipalities ` +
+      `are currently published by the province; the listed municipalities work normally, ` +
+      `but searches in other munis will return no results until the upstream rebuild completes (typically hours to a day). ` +
+      `<a href="https://geoportal.gov.mb.ca/datasets/manitoba::roll-entry/about" target="_blank" rel="noreferrer" style="color:inherit;text-decoration:underline">Check Roll Entry status ↗</a>`;
+  }
   banner.hidden = false;
 }
 
