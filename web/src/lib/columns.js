@@ -55,6 +55,18 @@ export const PRESETS = {
     'roll', 'address', 'zone1', 'zone1pct', 'zone2', 'zbl',
     'dev1', 'dpbylaw', 'changes', 'acres',
   ]),
+  // Farmland-oriented view. Core identity + the land-cover pair, then
+  // soil/capability, sales comps, and zoning/legal context (Jason's
+  // chosen groups). Mode-gated columns (sales-only, masc-only,
+  // devplan-only) still only render once their mode/overlay is active —
+  // same as the Sales analysis preset — so this set is the superset of
+  // what an ag appraiser reaches for, surfaced as each context turns on.
+  'Agricultural': new Set([
+    'favorite', 'roll', 'address', 'acres', 'landcover', 'cultpct',
+    'soil', 'clicls', 'soiltype', 'riskarea',
+    'grouppriceac', 'saledate', 'saleprice', 'saletoasmt', 'grouppricesf',
+    'zone1', 'zbl', 'dev1', 'legal', 'title',
+  ]),
   'Full detail': null,
 };
 

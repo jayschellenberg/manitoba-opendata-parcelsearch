@@ -1160,6 +1160,70 @@ export async function fetchParcelMascForMuni(muniNameWithTyp) {
   }
 }
 
+/**
+ * Fetch the pre-baked land-cover summary for every farmland parcel
+ * (> 20 acres) in a single municipality. Built by r/build_landcover.R,
+ * which bridges the mao-assembly land-cover Parquet (per-parcel
+ * percentages of the 12 LCR_RCT_2020 raster classes) into the same
+ * per-muni shard format as parcel-masc.
+ *
+ * Per-muni shards live at web/public/data/landcover/<MUNI_KEY>.json.
+ * Shape: a flat dictionary keyed by Roll_No_Txt, each value the five
+ * farmland buckets as fractions (0-1) that sum to ~1:
+ *   { "100.000": { cult: 0.78, past: 0.10, bush: 0.08, wet: 0.03, other: 0.01 }, ... }
+ *     cult = cultivated/cropland · past = pasture/grass · bush = bush/treed
+ *     wet  = wetland/water       · other = built-up/barren/etc.
+ * Manifest at web/public/data/landcover/_index.json maps the original
+ * Muni_Name_With_Typ values to shard filenames + counts.
+ *
+ * Returns a {rollNoTxt → bucketObj} map, or null when the muni isn't in
+ * the index (urban munis with no farmland-scale parcels drop out of the
+ * build). Cached in localStorage with the same 30-day TTL as the MASC
+ * and parcel-masc shards.
+ */
+const LANDCOVER_INDEX_URL = `${import.meta.env?.BASE_URL || '/'}data/landcover/_index.json`;
+
+let landCoverIndexPromise = null;
+
+async function fetchLandCoverIndex() {
+  if (landCoverIndexPromise) return landCoverIndexPromise;
+  landCoverIndexPromise = (async () => {
+    const cacheKey = 'mb_landcover_index_v1';
+    const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+    if (cached) return cached;
+    try {
+      const res = await fetch(LANDCOVER_INDEX_URL);
+      if (!res.ok) return null;
+      const idx = await res.json();
+      await writeCache(cacheKey, idx);
+      return idx;
+    } catch {
+      return null;
+    }
+  })();
+  return landCoverIndexPromise;
+}
+
+export async function fetchLandCoverForMuni(muniNameWithTyp) {
+  if (!muniNameWithTyp) return null;
+  const idx = await fetchLandCoverIndex();
+  const entry = lookupMuniManifestEntry(idx, muniNameWithTyp, { stripType: false });
+  if (!entry) return null;
+  const file = entry.file;
+  const cacheKey = `mb_landcover_${file}_v1`;
+  const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  if (cached) return cached;
+  try {
+    const res = await fetch(`${import.meta.env?.BASE_URL || '/'}data/landcover/${file}`);
+    if (!res.ok) return null;
+    const dict = await res.json();
+    await writeCache(cacheKey, dict);
+    return dict;
+  } catch {
+    return null;
+  }
+}
+
 function lookupMuniManifestEntry(index, muniName, { stripType }) {
   if (!index || !muniName) return null;
 

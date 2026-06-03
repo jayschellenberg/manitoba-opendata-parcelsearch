@@ -20,6 +20,7 @@ import turfArea from '@turf/area';
 import turfLength from '@turf/length';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
+import { landCoverBreakdown } from './lib/landcover.js';
 
 // mapbox-gl-draw was written against the Mapbox GL `mapboxgl-*` DOM
 // class names; MapLibre uses `maplibregl-*`. Patch the lookup table
@@ -2510,12 +2511,21 @@ export function parcelHtml(p) {
   // bottom. When composition is absent, fall back to the legacy
   // single-column layout to keep the popup narrow.
   const soilTable = soilSurveyParcelHtml(p._soilComposition);
+  const landCoverTable = landCoverParcelHtml(p);
 
-  if (soilTable) {
+  // Right column stacks Land cover (farmland parcels > 20 ac) above
+  // Soil composition (when the Soil Survey overlay is loaded). Either
+  // section alone triggers the 2-column layout; with neither, fall
+  // back to the narrow single-column popup.
+  const rightSections = [];
+  if (landCoverTable) rightSections.push(`<strong>Land cover</strong>${landCoverTable}`);
+  if (soilTable)      rightSections.push(`<strong>Soil composition</strong>${soilTable}`);
+
+  if (rightSections.length) {
     return `<div class="parcel-popup parcel-popup-2col">
   <div class="parcel-popup-cols">
     <div class="parcel-popup-main">${lines.join('<br>')}</div>
-    <div class="parcel-popup-soil"><strong>Soil composition</strong>${soilTable}</div>
+    <div class="parcel-popup-soil">${rightSections.join('<br>')}</div>
   </div>
 </div>`;
   }
@@ -2863,6 +2873,34 @@ export function soilSurveyParcelHtml(composition) {
     return `<tr>
       <td style="padding:4px 8px 4px 0;vertical-align:top">${nameLine}${chip}${textureLine}${unitLine}${descBlock}</td>
       <td style="padding:4px 0;vertical-align:top;text-align:right;white-space:nowrap"><strong>${escapeHtml(areaLine)}</strong></td>
+    </tr>`;
+  }).join('');
+  return `<table style="margin-top:4px;font-size:12px;border-collapse:collapse;width:100%">${html}</table>`;
+}
+
+/**
+ * Land-cover breakdown box for the parcel popup. Renders the farmland
+ * buckets (Cultivated / Pasture-Grass / Bush-Treed / Wetland-Water /
+ * Other) stamped onto the parcel as `_landCover` by main.js, each with
+ * a colour swatch, its share of the parcel, and the implied acreage
+ * (parcel acres × share, so the numbers reconcile with the Land Size
+ * line above). Returns null when the parcel is ≤ 20 acres or carries no
+ * land-cover data — matching the > 20-acre gate the build applies.
+ */
+export function landCoverParcelHtml(p) {
+  if (!(Number(p?._acres) > 20)) return null;
+  const rows = landCoverBreakdown(p?._landCover);
+  if (!rows) return null;
+  const acres = Number(p._acres);
+  const html = rows.map((b) => {
+    const swatch = `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${escapeHtml(b.color)};border:1px solid rgba(0,0,0,0.2);margin-right:6px;vertical-align:middle"></span>`;
+    const pctLabel = b.pct < 0.005 ? '<1%' : `${Math.round(b.pct * 100)}%`;
+    const acLabel = Number.isFinite(acres)
+      ? `${(acres * b.pct).toLocaleString('en-US', { maximumFractionDigits: 1 })} ac · `
+      : '';
+    return `<tr>
+      <td style="padding:3px 8px 3px 0;vertical-align:top">${swatch}${escapeHtml(b.label)}</td>
+      <td style="padding:3px 0;vertical-align:top;text-align:right;white-space:nowrap"><strong>${escapeHtml(acLabel + pctLabel)}</strong></td>
     </tr>`;
   }).join('');
   return `<table style="margin-top:4px;font-size:12px;border-collapse:collapse;width:100%">${html}</table>`;
