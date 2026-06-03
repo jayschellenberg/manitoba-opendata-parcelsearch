@@ -157,29 +157,35 @@ configure_osgeo4w_if_present <- function() {
     if (dir.exists(gd)) { Sys.setenv(GDAL_DATA = gd); break }
   }
   # PROJ database lookup, in priority order:
-  #   1. PROJ_DATA / PROJ_LIB the user has already set (respect overrides).
-  #   2. The R sf or terra package's bundled proj.db (sf vendors PROJ 9.x
+  #   1. The R sf or terra package's bundled proj.db (sf vendors PROJ 9.x
   #      and ships a current proj.db; refreshed with each CRAN release).
-  #      OSGeo4W users frequently have a stale PROJ-7-era database at
-  #      C:/OSGeo4W/share/proj/ left over from an older install while the
-  #      gdal package is current; GDAL 3.13 then errors with
-  #      "proj.db contains DATABASE.LAYOUT.VERSION.MINOR = 1 whereas a
-  #       number >= 4 is expected". sf's bundled copy is always current.
-  #   3. OSGeo4W's own share/proj or apps/proj/share as a last resort
-  #      (may be stale; the user will see the schema-version error and can
-  #      fall through to re-running the OSGeo4W setup to refresh proj).
+  #      Preferred unconditionally because:
+  #      - OSGeo4W users frequently have a stale PROJ-7-era database at
+  #        C:/OSGeo4W/share/proj/ left over from an older install while
+  #        the gdal package is current; GDAL 3.13 then errors with
+  #        "proj.db contains DATABASE.LAYOUT.VERSION.MINOR = 1 whereas
+  #         a number >= 4 is expected".
+  #      - When the user runs Rscript from the OSGeo4W Shell, that shell
+  #        sets PROJ_LIB=%OSGEO4W_ROOT%\share\proj (the stale path) via
+  #        OSGeo4W\etc\ini\proj.bat — so checking the existing env var
+  #        first would lock in the broken setting.
+  #      sf's bundled copy is always current and matches recent GDAL.
+  #   2. Existing PROJ_DATA / PROJ_LIB the user has set (only when sf/
+  #      terra aren't installed — explicit user setup deserves respect
+  #      if they've gone out of their way to configure it).
+  #   3. OSGeo4W's own share/proj as a last resort.
   proj_data <- ""
-  for (v in c("PROJ_DATA", "PROJ_LIB")) {
-    candidate <- Sys.getenv(v, unset = "")
-    if (nzchar(candidate) && file.exists(file.path(candidate, "proj.db"))) {
-      proj_data <- candidate; break
+  for (pkg in c("sf", "terra")) {
+    d <- tryCatch(system.file("proj", package = pkg), error = function(e) "")
+    if (nzchar(d) && file.exists(file.path(d, "proj.db"))) {
+      proj_data <- d; break
     }
   }
   if (!nzchar(proj_data)) {
-    for (pkg in c("sf", "terra")) {
-      d <- tryCatch(system.file("proj", package = pkg), error = function(e) "")
-      if (nzchar(d) && file.exists(file.path(d, "proj.db"))) {
-        proj_data <- d; break
+    for (v in c("PROJ_DATA", "PROJ_LIB")) {
+      candidate <- Sys.getenv(v, unset = "")
+      if (nzchar(candidate) && file.exists(file.path(candidate, "proj.db"))) {
+        proj_data <- candidate; break
       }
     }
   }
