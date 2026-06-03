@@ -1960,6 +1960,15 @@ body.workspace-resizing iframe { pointer-events: none; }
   pointer-events: none;
 }
 
+/* The Land Cover (Detailed) legend ships an opacity slider — that needs
+   to actually receive drag/click events that the legend's pointer-events:
+   none default suppresses. Re-enable interaction on the slider row only,
+   so map clicks still pass through the rest of the legend. */
+.map-legend .landcover-opacity,
+.map-legend #landcover-opacity-slider {
+  pointer-events: auto;
+}
+
 /* Custom basemap toggle button (Streets / Satellite). Sits in the
    top-right map gutter under the native zoom control; matches the
    MapLibre control look-and-feel. */
