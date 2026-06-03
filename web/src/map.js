@@ -2343,6 +2343,23 @@ export function setMuniParcelsVisible(map, visible) {
   }
 }
 
+/**
+ * Force the basemap to satellite (Esri imagery + reference/transportation
+ * overlays) or back to streets (CARTO Positron). Same layer-visibility swap
+ * the top-right BasemapToggleControl performs, exposed as a function so the
+ * offscreen snapshot-export map can switch to satellite without a UI control.
+ */
+export function setBasemapSatellite(map, on) {
+  const imgVis = on ? 'visible' : 'none';
+  const cartoVis = on ? 'none' : 'visible';
+  for (const id of ['esri-imagery', 'esri-transportation', 'esri-reference']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', imgVis);
+  }
+  if (map.getLayer('carto-positron')) {
+    map.setLayoutProperty('carto-positron', 'visibility', cartoVis);
+  }
+}
+
 // ---------- popup builders ----------
 
 export function parcelHtml(p) {
