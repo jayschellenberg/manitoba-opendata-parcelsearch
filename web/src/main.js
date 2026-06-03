@@ -5150,49 +5150,121 @@ async function toggleCliOverlay() {
   if ($cliLegend) $cliLegend.hidden = false;
 }
 
-// Land Cover overlay: a simple on/off that paints the result parcels by
-// their dominant land-cover bucket. Unlike CLI it needs no per-muni fetch
-// on toggle — the bucket data (and each parcel's _lcColor) is auto-loaded
-// with every search by enrichOverlays, so this just flips the layer +
-// legend and surfaces the related columns.
+// Land Cover overlay: paints parcels by their dominant 2020 land-cover
+// bucket. Muni-scoped — turning it on loads the whole municipal parcel
+// fabric and stamps every parcel from the land-cover shard, so ALL parcels
+// in the selected muni(s) colour (not just the search results), while still
+// only applying to farmland parcels over 20 acres (the shards' scope). The
+// result-source colouring (landcover-fill) also covers imported lists that
+// have no single-muni scope. The bucket data otherwise rides along with
+// each search via enrichOverlays.
 let landCoverVisible = false;
 async function toggleLandCoverOverlay() {
   if (!$landcoverToggle) return;
   await mapReady;
-  landCoverVisible = !landCoverVisible;
-  setLandCoverVisible(map, landCoverVisible);
-  $landcoverToggle.classList.toggle('active', landCoverVisible);
-  $landcoverToggle.setAttribute('aria-pressed', String(landCoverVisible));
-  if ($landcoverLegend) {
-    if (landCoverVisible) {
-      renderLandCoverLegend();
-      $landcoverLegend.hidden = false;
-    } else {
-      $landcoverLegend.hidden = true;
+
+  // Off branch: hide both fills + legend, clear active state, no fetch.
+  if (landCoverVisible) {
+    landCoverVisible = false;
+    setLandCoverVisible(map, false);
+    $landcoverToggle.classList.remove('active');
+    $landcoverToggle.setAttribute('aria-pressed', 'false');
+    if ($landcoverLegend) $landcoverLegend.hidden = true;
+    return;
+  }
+
+  // Turning on. Load + stamp the muni-wide fabric so every parcel in the
+  // selected muni(s) colours, not just the results.
+  const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
+    ? csvMatchedMunis.slice()
+    : ($municipality.value ? [$municipality.value] : []);
+  let fabricPainted = 0;
+
+  if (munis.length) {
+    $landcoverToggle.disabled = true;
+    setOverlayBtnLabel($landcoverToggle, 'Loading…');
+    try {
+      // Reuse the Roll Layer's fabric if it's already loaded for this
+      // scope; otherwise fetch it (cached) and enrich legals so a later
+      // Assessment Parcels toggle still shows full popups.
+      if (!auxData.muniParcels?.features?.length
+          || muniParcelsLoadedFor !== muniParcelsLoadKey()) {
+        const fc = await fetchMuniParcelsForCurrentScope();
+        await enrichFcWithLegals(fc).catch((err) => {
+          console.warn('Legal enrichment for land-cover fabric failed (non-fatal):', err);
+        });
+        auxData.muniParcels = fc;
+        auxLoaded.muniParcels = true;
+        muniParcelsLoadedFor = muniParcelsLoadKey();
+      }
+      fabricPainted = await stampLandCoverOnFabric(auxData.muniParcels, munis);
+      setMuniParcelsData(map, auxData.muniParcels);
+    } catch (err) {
+      console.warn('Land Cover fabric load failed', err);
+    } finally {
+      $landcoverToggle.disabled = false;
+      setOverlayBtnLabel($landcoverToggle, 'Land Cover');
     }
   }
-  if (landCoverVisible) {
-    // Bring the Land Cover + Cult % grid columns forward (mirrors how the
-    // CLI overlay surfaces its columns).
-    setColumnVisible('landcover', true);
-    setColumnVisible('cultpct', true);
-    // Help the user when the overlay is on but nothing colours — land cover
-    // only covers farmland parcels over 20 acres.
-    const anyPainted = (currentRows || []).some((r) => r.parcel?.properties?._lcColor);
-    if (!anyPainted) {
-      setCount('Land Cover overlay on — no farmland parcels (over 20 acres) in the current results to colour. Run or import a search that includes rural parcels.');
-    }
+
+  landCoverVisible = true;
+  setLandCoverVisible(map, true);
+  $landcoverToggle.classList.add('active');
+  $landcoverToggle.setAttribute('aria-pressed', 'true');
+  // Bring the Land Cover + Cult % grid columns forward (mirrors the CLI
+  // overlay surfacing its columns).
+  setColumnVisible('landcover', true);
+  setColumnVisible('cultpct', true);
+  if ($landcoverLegend) { renderLandCoverLegend(); $landcoverLegend.hidden = false; }
+
+  const resultPainted = (currentRows || []).filter((r) => r.parcel?.properties?._lcColor).length;
+  if (munis.length) {
+    const label = munis.length === 1 ? munis[0] : `${munis.length} municipalities`;
+    setCount(fabricPainted > 0
+      ? `Land Cover on for ${label} — ${fabricPainted} parcel${fabricPainted === 1 ? '' : 's'} over 20 acres coloured.`
+      : `Land Cover on for ${label} — no farmland parcels over 20 acres found to colour.`);
+  } else if (resultPainted === 0) {
+    setCount('Land Cover: select a municipality (or run/import a search with rural parcels) to load land cover.');
   }
 }
 
+/** Stamp `_lcColor` (+ `_landCover`) on every fabric parcel from each muni's
+ *  land-cover shard, matched by Muni_Name_With_Typ + Roll_No_Txt. Returns
+ *  the count of parcels that got a colour (farmland over 20 acres). */
+async function stampLandCoverOnFabric(fabricFc, munis) {
+  if (!fabricFc?.features?.length) return 0;
+  const dicts = await Promise.all(
+    munis.map((m) => fetchLandCoverForMuni(m).catch(() => null)),
+  );
+  const byMuni = new Map();
+  munis.forEach((m, i) => { if (dicts[i]) byMuni.set(m, dicts[i]); });
+  let painted = 0;
+  for (const f of fabricFc.features) {
+    const p = f.properties || (f.properties = {});
+    const dict = p.Muni_Name_With_Typ ? byMuni.get(p.Muni_Name_With_Typ) : null;
+    const hit = (dict && p.Roll_No_Txt) ? dict[p.Roll_No_Txt] : null;
+    const color = hit ? dominantBucket(hit)?.color : null;
+    if (color) {
+      p._landCover = hit;
+      p._lcColor = color;
+      painted += 1;
+    } else if (p._lcColor) {
+      delete p._lcColor; // clear any stale colour from a prior scope
+    }
+  }
+  return painted;
+}
+
 /** Render the Land Cover legend from the shared bucket palette so the map,
- *  popup, and legend colours can never drift. */
+ *  popup, and legend colours can never drift. Notes the > 20-acre scope. */
 function renderLandCoverLegend() {
   if (!$landcoverLegend) return;
   const items = LAND_COVER_BUCKETS
     .map((b) => `<li><span class="swatch" style="background:${b.color}"></span>${b.label}</li>`)
     .join('');
-  $landcoverLegend.innerHTML = `<strong>Land cover (2020)</strong><ul>${items}</ul>`;
+  $landcoverLegend.innerHTML =
+    `<strong>Land cover (2020)</strong><ul>${items}</ul>` +
+    '<small style="display:block;margin-top:4px;color:#6b7280;font-style:italic">Farmland parcels over 20 acres</small>';
 }
 
 /**
