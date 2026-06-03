@@ -1,5 +1,5 @@
 @echo off
-REM start-dashboard.bat — launch the MAO Data Control Panel.
+REM start-dashboard.bat — launch the Data Refresh Control Panel.
 REM
 REM Runs the zero-dependency Node server in dashboard\server.js and
 REM opens the page in your default browser. Leave this window open
@@ -14,12 +14,14 @@ REM Always run from this script's directory (the WebSearch repo root),
 REM not whatever folder the user happened to be in when launching it.
 cd /d "%~dp0"
 
-REM Open the page after a short delay so the server has time to bind.
-start "" /b cmd /c "timeout /t 2 /nobreak > nul & start http://localhost:5174"
+set DASHBOARD_PORT=5180
 
-echo === MAO Data Control Panel ===
+REM Open the page after a short delay so the server has time to bind.
+start "" /b cmd /c "timeout /t 2 /nobreak > nul & start http://localhost:%DASHBOARD_PORT%"
+
+echo === Data Refresh Control Panel ===
 echo Working dir: %CD%
-echo URL:         http://localhost:5174
+echo URL:         http://localhost:%DASHBOARD_PORT%
 echo.
 echo Close this window or press Ctrl-C to stop the server.
 echo.

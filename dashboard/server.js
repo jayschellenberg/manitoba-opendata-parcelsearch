@@ -1,27 +1,9 @@
-// MAO Data Control Panel — local-only Node server.
+// Data Refresh Control Panel - local-only Node server.
 //
-// Launches a small HTTP server on http://localhost:5174 that exposes:
-//   - a one-page dashboard (dashboard/public/)
-//   - status + control endpoints under /api/
-//   - a live Server-Sent Events feed for in-progress runs
-//
-// Zero npm deps — Node built-ins only. Run with:
-//   node dashboard/server.js   (or use start-dashboard.bat)
-//
-// Halts on Ctrl-C; safe to leave running while you work.
-//
-// Expected layout (rooted at the WebSearch repo):
-//   ./dashboard/server.js                  ← this file
-//   ./dashboard/public/                    ← static UI
-//   ./r/build_legal_index.R                ← shard builders
-//   ./r/build_assessment_index.R
-//   ./web/scripts/build-manifest.js
-//   ./web/public/data/manifest.json        ← read for shard-age info
-//   ../mao-scrape/                         ← sibling project (the scrape)
-//   ../mao-scrape/run_full.bat
-//   ../mao-scrape/run_delta.bat
-//   ../mao-scrape/logs/run-*.log
-//   ../mao-scrape/logs/delta-*.log
+// Serves a small dashboard at http://127.0.0.1:5180 that shows freshness
+// for the Winnipeg and Manitoba data artifacts and runs controlled refresh
+// chains. No npm dependencies; all process execution is limited to the
+// job definitions in this file.
 
 import http from 'node:http';
 import fs from 'node:fs';
@@ -29,51 +11,376 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, execFile } from 'node:child_process';
 
-const HERE        = path.dirname(fileURLToPath(import.meta.url));
-const WEB_ROOT    = path.resolve(HERE, '..');                 // WebSearch repo root (or worktree)
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const MB_ROOT = path.resolve(HERE, '..');
+const CLAUDE_ROOT = path.resolve(MB_ROOT, '..', '..');
+const WPG_ROOT = process.env.WPG_ROOT
+  ? path.resolve(process.env.WPG_ROOT)
+  : path.join(CLAUDE_ROOT, 'WpgOpenData', 'ParcelSearch');
+const SCRAPE_ROOT = process.env.MAO_SCRAPE_ROOT
+  ? path.resolve(process.env.MAO_SCRAPE_ROOT)
+  : path.resolve(MB_ROOT, '..', 'mao-scrape');
 
-// mao-scrape is a sibling of the real WebSearch checkout. Under a git worktree
-// (`.claude/worktrees/<branch>/`), `..` doesn't point at the right place, so
-// climb until we hit `MBOpenData/mao-scrape`. Allow MAO_SCRAPE_ROOT to short-
-// circuit the search for dev/test setups.
-function resolveScrapeRoot() {
-  if (process.env.MAO_SCRAPE_ROOT) return path.resolve(process.env.MAO_SCRAPE_ROOT);
-  let dir = WEB_ROOT;
-  for (let i = 0; i < 6; i++) {
-    const candidate = path.resolve(dir, '..', 'mao-scrape');
-    if (fs.existsSync(path.join(candidate, 'mao-scrape.Rproj'))) return candidate;
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  // Last resort: the canonical path, even if missing — we'll log/warn elsewhere.
-  return path.resolve(WEB_ROOT, '..', 'mao-scrape');
+const PUBLIC_DIR = path.join(HERE, 'public');
+const LOG_DIR = path.join(HERE, 'logs');
+const PORT = Number(process.env.DASHBOARD_PORT || 5180);
+
+const R_DEFAULT = 'C:\\Program Files\\R\\R-4.5.3\\bin\\Rscript.exe';
+const RSCRIPT = process.env.RSCRIPT || (fs.existsSync(R_DEFAULT) ? R_DEFAULT : 'Rscript');
+
+const sseClients = new Set();
+let currentRun = null;
+
+function quote(value) {
+  return /[\s"&]/.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value;
 }
 
-const SCRAPE_ROOT = resolveScrapeRoot();
-const PUBLIC_DIR  = path.join(HERE, 'public');
-const MANIFEST    = path.join(WEB_ROOT, 'web', 'public', 'data', 'manifest.json');
-const MUNI_CONFIG = path.join(SCRAPE_ROOT, 'config', 'municipalities.csv');
-const ASMT_SHARDS = path.join(WEB_ROOT, 'web', 'public', 'data', 'assessment');
-const PORT        = Number(process.env.DASHBOARD_PORT || 5174);
+function r(script) {
+  return `${quote(RSCRIPT)} ${script}`;
+}
 
-// Throughput tuning constants — must mirror scripts/scrape_summaries.R.
-// Used only for "this delta will take ~X hours" estimates on the status page.
-const SCRAPER_PARALLEL_N      = 8;     // PARALLEL_N
-const SCRAPER_AVG_SECONDS_REQ = 25;    // observed mean from MAO summary.aspx
+function cmdStep(label, cwd, cmd) {
+  return { label, cwd, cmd };
+}
 
-// --------------------------------------------------------------- run state
-//
-// Only one run is active at a time. Live progress lines accumulate in
-// `currentRun.log` and broadcast over SSE as they arrive.
+function npmStep(label, cwd, args) {
+  return cmdStep(label, cwd, `npm ${args}`);
+}
 
-let currentRun = null;       // { type, label, startedAt, child, log, exitCode }
-const sseClients = new Set();
+function gitFn(root, args) {
+  return new Promise((resolve) => {
+    execFile('git', args, { cwd: root, windowsHide: true }, (err, stdout, stderr) => {
+      resolve({
+        code: err ? (err.code ?? 1) : 0,
+        stdout: stdout?.toString() || '',
+        stderr: stderr?.toString() || '',
+      });
+    });
+  });
+}
+
+async function gitStatus(root) {
+  if (!fs.existsSync(path.join(root, '.git'))) return { available: false };
+  const branch = await gitFn(root, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  const status = await gitFn(root, ['status', '--porcelain']);
+  let ahead = 0;
+  let behind = 0;
+  const branchName = branch.stdout.trim() || 'unknown';
+  const cmp = await gitFn(root, ['rev-list', '--left-right', '--count', `origin/main...${branchName}`]);
+  if (cmp.code === 0 && cmp.stdout.trim()) {
+    const [b, a] = cmp.stdout.trim().split(/\s+/).map((n) => Number(n) || 0);
+    behind = b;
+    ahead = a;
+  }
+  const dirty = status.stdout.split(/\r?\n/).filter(Boolean);
+  return { available: true, branch: branchName, dirty: dirty.length, ahead, behind };
+}
+
+function statFile(root, rel) {
+  const full = path.join(root, rel);
+  try {
+    const st = fs.statSync(full);
+    return {
+      path: rel.replace(/\\/g, '/'),
+      exists: true,
+      mtime: st.mtime.toISOString(),
+      sizeBytes: st.size,
+    };
+  } catch {
+    return { path: rel.replace(/\\/g, '/'), exists: false, mtime: null, sizeBytes: null };
+  }
+}
+
+function newestFile(root, regex) {
+  let best = null;
+  try {
+    for (const name of fs.readdirSync(root)) {
+      if (!regex.test(name)) continue;
+      const info = statFile(root, name);
+      if (info.exists && (!best || new Date(info.mtime) > new Date(best.mtime))) best = info;
+    }
+  } catch {
+    return null;
+  }
+  return best;
+}
+
+function safeJson(root, rel) {
+  try { return JSON.parse(fs.readFileSync(path.join(root, rel), 'utf8')); }
+  catch { return null; }
+}
+
+function minIso(values) {
+  const dates = values.filter(Boolean).map((v) => new Date(v)).filter((d) => !Number.isNaN(d.getTime()));
+  if (!dates.length) return null;
+  return new Date(Math.min(...dates.map((d) => d.getTime()))).toISOString();
+}
+
+function maxIso(values) {
+  const dates = values.filter(Boolean).map((v) => new Date(v)).filter((d) => !Number.isNaN(d.getTime()));
+  if (!dates.length) return null;
+  return new Date(Math.max(...dates.map((d) => d.getTime()))).toISOString();
+}
+
+function freshness(lastDone, cadenceDays) {
+  if (!lastDone) return { state: 'missing', ageDays: null, label: 'missing' };
+  if (!cadenceDays) return { state: 'manual', ageDays: null, label: 'manual' };
+  const ageDays = Math.floor((Date.now() - new Date(lastDone).getTime()) / 86400000);
+  if (ageDays > cadenceDays * 1.25) return { state: 'stale', ageDays, label: 'stale' };
+  if (ageDays > cadenceDays) return { state: 'due', ageDays, label: 'due' };
+  return { state: 'fresh', ageDays, label: 'fresh' };
+}
+
+function item({ id, project, title, cadenceDays, cadenceLabel, lastDone, outputs, actions, note }) {
+  return {
+    id,
+    project,
+    title,
+    cadenceDays,
+    cadenceLabel,
+    lastDone,
+    freshness: freshness(lastDone, cadenceDays),
+    outputs,
+    actions,
+    note,
+  };
+}
+
+function gatherWinnipegItems() {
+  const survey = newestFile(WPG_ROOT, /^SurveyParcels_\d{8}\.gpkg$/);
+  const assess = newestFile(WPG_ROOT, /^AssessmentParcels_\d{8}\.gpkg$/);
+  const xref = newestFile(WPG_ROOT, /^ParcelCrossRef_\d{8}\.csv$/);
+  const pmtiles = statFile(WPG_ROOT, 'web/public/parcels.pmtiles');
+  const parcelsGeojson = statFile(WPG_ROOT, 'web/public/parcels.geojson');
+  const parcelsCentroids = statFile(WPG_ROOT, 'web/public/parcels-centroids.geojson');
+
+  const transitRoutes = statFile(WPG_ROOT, 'web/public/transit-routes.geojson');
+  const transitStops = statFile(WPG_ROOT, 'web/public/transit-stops.geojson');
+  const hoods = statFile(WPG_ROOT, 'web/public/wpg-neighbourhoods.geojson');
+  const hoodClusters = statFile(WPG_ROOT, 'web/public/wpg-neighbourhood-clusters.geojson');
+
+  return [
+    item({
+      id: 'wpg-quarterly',
+      project: 'Winnipeg',
+      title: 'Assessment + survey parcels and all-parcels tiles',
+      cadenceDays: 90,
+      cadenceLabel: 'Quarterly',
+      lastDone: minIso([survey?.mtime, assess?.mtime, xref?.mtime, pmtiles.mtime]),
+      outputs: [survey, assess, xref, pmtiles, parcelsGeojson, parcelsCentroids].filter(Boolean),
+      actions: ['wpg-quarterly'],
+      note: 'Downloads dated GPKGs, builds the survey/assessment cross-reference, exports GeoJSON, then builds parcels.pmtiles with Docker/tippecanoe.',
+    }),
+    item({
+      id: 'wpg-transit',
+      project: 'Winnipeg',
+      title: 'Transit routes and stops',
+      cadenceDays: 90,
+      cadenceLabel: 'Quarterly',
+      lastDone: minIso([transitRoutes.mtime, transitStops.mtime]),
+      outputs: [transitRoutes, transitStops],
+      actions: ['wpg-transit'],
+      note: 'Refreshes the static Winnipeg Transit GTFS overlay files.',
+    }),
+    item({
+      id: 'wpg-neighbourhoods',
+      project: 'Winnipeg',
+      title: 'Neighbourhood boundaries',
+      cadenceDays: null,
+      cadenceLabel: 'Manual / rare',
+      lastDone: minIso([hoods.mtime, hoodClusters.mtime]),
+      outputs: [hoods, hoodClusters],
+      actions: ['wpg-neighbourhoods'],
+      note: 'Re-run only when the source neighbourhood/cluster boundaries change.',
+    }),
+  ];
+}
+
+function gatherManitobaItems() {
+  const roll = newestFile(MB_ROOT, /^RollEntry_\d{8}\.gpkg$/);
+  const zoning = newestFile(MB_ROOT, /^ManitobaZoning_\d{8}\.gpkg$/);
+  const devPlan = newestFile(MB_ROOT, /^ManitobaDevPlan_\d{8}\.gpkg$/);
+
+  const manifest = safeJson(MB_ROOT, 'web/public/data/manifest.json');
+  const legal = manifest?.datasets?.legal_index || null;
+  const asmt = manifest?.datasets?.assessment_index || null;
+  const asmtShards = manifest?.datasets?.assessment_shards || null;
+
+  const mascIndex = statFile(MB_ROOT, 'web/public/data/masc/_index.json');
+  const parcelMascIndex = statFile(MB_ROOT, 'web/public/data/parcel-masc/_index.json');
+  const mascRiverlots = statFile(MB_ROOT, 'web/public/data/masc-riverlots.json');
+  const mascSource = statFile(MB_ROOT, 'masc_soil_ratings_with_latlon.csv');
+  const riverKmz = statFile(MB_ROOT, 'MB-RIVER-LOTS.kmz');
+
+  const sectionGrid = statFile(MB_ROOT, 'web/public/data/section-grid.json');
+  const riverLots = statFile(MB_ROOT, 'web/public/data/river-lots.json');
+
+  return [
+    item({
+      id: 'mb-quarterly',
+      project: 'Manitoba',
+      title: 'Roll Entry, zoning, and development plan snapshots',
+      cadenceDays: 90,
+      cadenceLabel: 'Quarterly',
+      lastDone: minIso([roll?.mtime, zoning?.mtime, devPlan?.mtime]),
+      outputs: [roll, zoning, devPlan].filter(Boolean),
+      actions: ['mb-quarterly'],
+      note: 'Local archive/offline snapshots. The public web app still queries these layers live.',
+    }),
+    item({
+      id: 'mao-refresh',
+      project: 'Manitoba',
+      title: 'MAO legal and assessment data',
+      cadenceDays: 180,
+      cadenceLabel: 'Semiannual',
+      lastDone: minIso([legal?.generated_at, asmt?.generated_at, asmtShards?.generated_at]),
+      outputs: [
+        statFile(MB_ROOT, 'web/public/data/legal-index.json'),
+        statFile(MB_ROOT, 'web/public/data/assessment-index.json'),
+        statFile(MB_ROOT, 'web/public/data/assessment/_index.json'),
+        statFile(MB_ROOT, 'web/public/data/manifest.json'),
+      ],
+      actions: ['mao-full', 'mao-delta'],
+      note: `Manifest rows: legal ${legal?.row_count?.toLocaleString?.() || 'unknown'}, assessment ${asmt?.row_count?.toLocaleString?.() || 'unknown'}.`,
+    }),
+    item({
+      id: 'mb-masc',
+      project: 'Manitoba',
+      title: 'MASC and soil artifacts',
+      cadenceDays: 365,
+      cadenceLabel: 'Annual',
+      lastDone: minIso([mascIndex.mtime, parcelMascIndex.mtime, mascRiverlots.mtime]),
+      outputs: [mascSource, riverKmz, mascIndex, parcelMascIndex, mascRiverlots],
+      actions: ['mb-masc'],
+      note: 'Run after a new MASC CSV, river-lot source, or Roll Entry snapshot.',
+    }),
+    item({
+      id: 'mb-reference',
+      project: 'Manitoba',
+      title: 'Section grid and river-lot reference files',
+      cadenceDays: null,
+      cadenceLabel: 'Manual / rare',
+      lastDone: minIso([sectionGrid.mtime, riverLots.mtime]),
+      outputs: [sectionGrid, riverLots],
+      actions: ['mb-reference'],
+      note: 'Stable reference overlays; refresh only when the source boundaries change.',
+    }),
+  ];
+}
+
+function dockerVolumePath(root) {
+  return root.replace(/\\/g, '/');
+}
+
+const JOBS = {
+  'wpg-quarterly': {
+    label: 'Winnipeg quarterly parcel refresh',
+    project: 'Winnipeg',
+    confirm: 'This downloads Winnipeg parcels and rebuilds parcels.pmtiles. It can take a while and requires Docker for the tile step.',
+    steps: [
+      cmdStep('Download Winnipeg survey + assessment GPKGs', WPG_ROOT, r('r\\download_parcels.R')),
+      cmdStep('Build Winnipeg survey/assessment cross-reference', WPG_ROOT, r('r\\cross_reference_parcels.R')),
+      cmdStep('Export all-parcels GeoJSON for PMTiles', WPG_ROOT, r('r\\build_parcel_tiles.R')),
+      cmdStep('Build/refresh felt-tippecanoe Docker image', WPG_ROOT, 'docker build -f Dockerfile.tippecanoe -t felt-tippecanoe:latest .'),
+      cmdStep('Build Winnipeg parcels.pmtiles', WPG_ROOT, [
+        'docker run --rm',
+        `-v ${quote(`${dockerVolumePath(WPG_ROOT)}:/data`)}`,
+        'felt-tippecanoe',
+        '-o /data/web/public/parcels.pmtiles',
+        '-L parcels:/data/web/public/parcels.geojson',
+        '-L parcels-labels:/data/web/public/parcels-centroids.geojson',
+        '--maximum-zoom=18 --minimum-zoom=13',
+        '--simplification=2 --full-detail=14',
+        '--no-feature-limit --no-tile-size-limit --force',
+      ].join(' ')),
+      npmStep('Winnipeg tests', path.join(WPG_ROOT, 'web'), 'test'),
+      npmStep('Winnipeg production build', path.join(WPG_ROOT, 'web'), 'run build -- --emptyOutDir=false'),
+    ],
+  },
+  'wpg-transit': {
+    label: 'Winnipeg transit refresh',
+    project: 'Winnipeg',
+    confirm: 'Refresh Winnipeg Transit GTFS route and stop overlays?',
+    steps: [
+      npmStep('Refresh Winnipeg Transit GeoJSON', path.join(WPG_ROOT, 'web'), 'run refresh:transit'),
+      npmStep('Winnipeg tests', path.join(WPG_ROOT, 'web'), 'test'),
+      npmStep('Winnipeg production build', path.join(WPG_ROOT, 'web'), 'run build -- --emptyOutDir=false'),
+    ],
+  },
+  'wpg-neighbourhoods': {
+    label: 'Winnipeg neighbourhood refresh',
+    project: 'Winnipeg',
+    confirm: 'Refresh Winnipeg neighbourhood files from the configured BaseFiles folder?',
+    steps: [
+      npmStep('Refresh Winnipeg neighbourhood GeoJSON', path.join(WPG_ROOT, 'web'), 'run refresh:neighbourhoods'),
+      npmStep('Winnipeg tests', path.join(WPG_ROOT, 'web'), 'test'),
+      npmStep('Winnipeg production build', path.join(WPG_ROOT, 'web'), 'run build -- --emptyOutDir=false'),
+    ],
+  },
+  'mb-quarterly': {
+    label: 'Manitoba quarterly Open Data snapshots',
+    project: 'Manitoba',
+    confirm: 'Download Manitoba Roll Entry, zoning, and development plan GPKG snapshots?',
+    steps: [
+      cmdStep('Download Manitoba Roll Entry + zoning + dev plan GPKGs', MB_ROOT, r('r\\download_parcels.R')),
+    ],
+  },
+  'mao-full': {
+    label: 'MAO full scrape + rebuild',
+    project: 'Manitoba',
+    confirm: 'Run a full MAO scrape? This can take hours.',
+    steps: [
+      cmdStep('MAO full scrape', SCRAPE_ROOT, 'run_full.bat'),
+      cmdStep('Build legal index', MB_ROOT, r('r\\build_legal_index.R')),
+      cmdStep('Build assessment index + shards', MB_ROOT, r('r\\build_assessment_index.R')),
+      cmdStep('Build Manitoba data manifest', MB_ROOT, 'node web\\scripts\\build-manifest.js'),
+      npmStep('Manitoba tests', path.join(MB_ROOT, 'web'), 'test'),
+      npmStep('Manitoba production build', path.join(MB_ROOT, 'web'), 'run build'),
+    ],
+  },
+  'mao-delta': {
+    label: 'MAO delta scrape + rebuild',
+    project: 'Manitoba',
+    confirm: 'Run a MAO delta scrape and rebuild legal/assessment artifacts?',
+    steps: [
+      cmdStep('MAO delta scrape', SCRAPE_ROOT, 'run_delta.bat'),
+      cmdStep('Build legal index', MB_ROOT, r('r\\build_legal_index.R')),
+      cmdStep('Build assessment index + shards', MB_ROOT, r('r\\build_assessment_index.R')),
+      cmdStep('Build Manitoba data manifest', MB_ROOT, 'node web\\scripts\\build-manifest.js'),
+      npmStep('Manitoba tests', path.join(MB_ROOT, 'web'), 'test'),
+      npmStep('Manitoba production build', path.join(MB_ROOT, 'web'), 'run build'),
+    ],
+  },
+  'mb-masc': {
+    label: 'Manitoba MASC/soil refresh',
+    project: 'Manitoba',
+    confirm: 'Rebuild MASC/soil shards from the current CSV, river-lot inputs, and latest RollEntry snapshot?',
+    steps: [
+      cmdStep('Build MASC overlay shards', MB_ROOT, r('r\\build_masc_shards.R')),
+      cmdStep('Build parcel-level MASC shards + river-lot overlay', MB_ROOT, r('r\\build_parcel_masc.R')),
+      cmdStep('Build Manitoba data manifest', MB_ROOT, 'node web\\scripts\\build-manifest.js'),
+      npmStep('Manitoba tests', path.join(MB_ROOT, 'web'), 'test'),
+      npmStep('Manitoba production build', path.join(MB_ROOT, 'web'), 'run build'),
+    ],
+  },
+  'mb-reference': {
+    label: 'Manitoba reference overlay refresh',
+    project: 'Manitoba',
+    confirm: 'Rebuild section-grid and river-lot reference files?',
+    steps: [
+      cmdStep('Build section grid', MB_ROOT, r('r\\build_section_grid.R')),
+      cmdStep('Build river lots', MB_ROOT, r('r\\build_river_lots.R')),
+      cmdStep('Build Manitoba data manifest', MB_ROOT, 'node web\\scripts\\build-manifest.js'),
+      npmStep('Manitoba tests', path.join(MB_ROOT, 'web'), 'test'),
+      npmStep('Manitoba production build', path.join(MB_ROOT, 'web'), 'run build'),
+    ],
+  },
+};
 
 function broadcast(event) {
   const payload = `data: ${JSON.stringify(event)}\n\n`;
   for (const res of sseClients) {
-    try { res.write(payload); } catch { /* ignore broken pipes */ }
+    try { res.write(payload); } catch { /* ignore */ }
   }
 }
 
@@ -81,222 +388,50 @@ function appendLog(line) {
   if (!currentRun) return;
   currentRun.log.push(line);
   if (currentRun.log.length > 5000) currentRun.log.splice(0, currentRun.log.length - 5000);
+  if (currentRun.logFile) {
+    try { fs.appendFileSync(currentRun.logFile, `${line}\n`); } catch { /* ignore */ }
+  }
   broadcast({ type: 'log', line });
-}
-
-// --------------------------------------------------------------- helpers
-
-function gitFn(args, opts = {}) {
-  return new Promise((resolve) => {
-    execFile('git', args, { cwd: WEB_ROOT, windowsHide: true, ...opts }, (err, stdout, stderr) => {
-      resolve({ code: err ? (err.code ?? 1) : 0, stdout: stdout?.toString() || '', stderr: stderr?.toString() || '' });
-    });
-  });
-}
-
-async function gatherGitStatus() {
-  const { stdout: porcelain } = await gitFn(['status', '--porcelain']);
-  const dirty = porcelain.split(/\r?\n/).filter(Boolean);
-  // Files that aren't under web/public/data/ — "stuff that isn't the data refresh".
-  const dirtyNonData = dirty.filter((line) => !/^.\s+web\/public\/data\//.test(line));
-  const dirtyData    = dirty.filter((line) =>  /^.\s+web\/public\/data\//.test(line));
-  // ahead/behind — uses local refs (no auto-fetch).
-  const { stdout: branch } = await gitFn(['rev-parse', '--abbrev-ref', 'HEAD']);
-  const branchName = branch.trim();
-  let ahead = 0;
-  let behind = 0;
-  const cmp = await gitFn(['rev-list', '--left-right', '--count', `origin/main...${branchName}`]);
-  if (cmp.code === 0 && cmp.stdout.trim()) {
-    const [b, a] = cmp.stdout.trim().split(/\s+/).map((n) => Number(n) || 0);
-    behind = b; ahead = a;
-  }
-  return { branch: branchName, dirty: dirty.length, dirtyData: dirtyData.length, dirtyNonData, ahead, behind };
-}
-
-function safeReadJSON(file) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
-  catch { return null; }
-}
-
-// Walk the scrape's logs directory for the most recent matching file.
-// Returns { name, mtimeISO } or null.
-function newestLog(prefix) {
-  const dir = path.join(SCRAPE_ROOT, 'logs');
-  if (!fs.existsSync(dir)) return null;
-  let best = null;
-  for (const name of fs.readdirSync(dir)) {
-    if (!name.startsWith(prefix)) continue;
-    const full = path.join(dir, name);
-    const stat = fs.statSync(full);
-    if (!best || stat.mtimeMs > best.mtimeMs) best = { name, mtimeMs: stat.mtimeMs, full };
-  }
-  return best ? { name: best.name, mtimeISO: new Date(best.mtimeMs).toISOString() } : null;
 }
 
 function activeRunSnapshot() {
   if (!currentRun) return null;
   return {
-    type: currentRun.type,
+    id: currentRun.id,
     label: currentRun.label,
+    project: currentRun.project,
     startedAt: currentRun.startedAt,
-    pid: currentRun.child?.pid ?? null,
-    exitCode: currentRun.exitCode ?? null,
+    exitCode: currentRun.exitCode,
     isFinished: currentRun.exitCode != null,
+    logFile: currentRun.logFile,
     logTail: currentRun.log.slice(-200),
   };
 }
 
-// Parcel counts per muni — read from web/public/data/assessment/{muni}.json
-// once and memoised. Used to estimate "this delta will re-scrape N parcels".
-let parcelCountCache = null;
-function parcelCountsByMuni() {
-  if (parcelCountCache) return parcelCountCache;
-  parcelCountCache = new Map();
-  if (!fs.existsSync(ASMT_SHARDS)) return parcelCountCache;
-  for (const f of fs.readdirSync(ASMT_SHARDS)) {
-    if (!f.endsWith('.json')) continue;
-    const muni = parseInt(f.slice(0, -5), 10);
-    if (Number.isNaN(muni)) continue;
-    try {
-      const j = JSON.parse(fs.readFileSync(path.join(ASMT_SHARDS, f), 'utf8'));
-      const rows = Array.isArray(j) ? j.length
-                  : Array.isArray(j.rows)    ? j.rows.length
-                  : Array.isArray(j.records) ? j.records.length
-                  : 0;
-      parcelCountCache.set(muni, rows);
-    } catch { /* skip unreadable shard */ }
-  }
-  return parcelCountCache;
-}
-
-// Naive CSV parser — fine for the munis file, which has no quoted commas.
-function parseCsvSimple(text) {
-  const lines = text.split(/\r?\n/).filter((l) => l.length);
-  if (lines.length < 2) return { header: [], rows: [] };
-  const header = lines[0].split(',').map((s) => s.trim());
-  const rows = lines.slice(1).map((l) => {
-    const parts = l.split(',');
-    const obj = {};
-    for (let i = 0; i < header.length; i++) obj[header[i]] = (parts[i] ?? '').trim();
-    return obj;
-  });
-  return { header, rows };
-}
-
-// Build the same cadence plan that scripts/cadence.R produces, for previewing
-// in the dashboard. Returns null if the config file is missing/malformed.
-function loadCadencePlan(monthNum = new Date().getMonth() + 1) {
-  if (!fs.existsSync(MUNI_CONFIG)) return null;
-  let parsed;
-  try { parsed = parseCsvSimple(fs.readFileSync(MUNI_CONFIG, 'utf8')); }
-  catch { return null; }
-  if (!parsed.header.includes('rescrape_cadence')) return null;
-
-  const truthy = (s) => /^(Y|YES|TRUE|T|1)$/i.test((s || '').trim());
-  const norm   = (s) => {
-    const t = (s || '').trim().toLowerCase();
-    return ['monthly', '6month', 'annual'].includes(t) ? t : 'annual';
-  };
-
-  const rows = parsed.rows
-    .filter((r) => truthy(r.include))
-    .map((r) => ({
-      muni_no:  parseInt(r.muni_no, 10),
-      name:     r.municipality,
-      cadence:  norm(r.rescrape_cadence),
-    }));
-
-  // Cohorts: sort by muni_no within each tier, assign (index mod N).
-  const byTier = { monthly: [], '6month': [], annual: [] };
-  for (const r of rows) byTier[r.cadence].push(r);
-  for (const key of ['6month', 'annual']) byTier[key].sort((a, b) => a.muni_no - b.muni_no);
-
-  const cohortSixNow    = (monthNum - 1) % 6;
-  const cohortAnnualNow = (monthNum - 1) % 12;
-
-  const plan = rows.map((r) => {
-    let cohort = null;
-    let triggers = false;
-    if (r.cadence === 'monthly') {
-      triggers = true;
-    } else if (r.cadence === '6month') {
-      const idx = byTier['6month'].findIndex((x) => x.muni_no === r.muni_no);
-      cohort = idx % 6;
-      triggers = cohort === cohortSixNow;
-    } else if (r.cadence === 'annual') {
-      const idx = byTier.annual.findIndex((x) => x.muni_no === r.muni_no);
-      cohort = idx % 12;
-      triggers = cohort === cohortAnnualNow;
-    }
-    return { ...r, cohort, triggers };
-  });
-
-  const counts = parcelCountsByMuni();
-  const tally = (cad, triggeringOnly) =>
-    plan.filter((r) => r.cadence === cad && (!triggeringOnly || r.triggers))
-        .reduce((acc, r) => {
-          acc.munis += 1;
-          acc.parcels += counts.get(r.muni_no) || 0;
-          return acc;
-        }, { munis: 0, parcels: 0 });
-
-  const breakdown = {
-    monthly:    tally('monthly', true),
-    sixMonth:   tally('6month',  true),
-    annual:     tally('annual',  true),
-    monthlyAll: tally('monthly', false),
-    sixMonthAll: tally('6month', false),
-    annualAll:  tally('annual',  false),
-  };
-  const triggerParcels = breakdown.monthly.parcels + breakdown.sixMonth.parcels + breakdown.annual.parcels;
-  const triggerMunis   = breakdown.monthly.munis   + breakdown.sixMonth.munis   + breakdown.annual.munis;
-  const estHours       = triggerParcels / (SCRAPER_PARALLEL_N / SCRAPER_AVG_SECONDS_REQ) / 3600;
-
-  return {
-    month:            monthNum,
-    cohortSixNow,
-    cohortAnnualNow,
-    breakdown,
-    triggerMunis,
-    triggerParcels,
-    estHours,
-    parallelN:        SCRAPER_PARALLEL_N,
-    avgSecondsReq:    SCRAPER_AVG_SECONDS_REQ,
-  };
-}
-
 async function gatherStatus() {
-  const manifest = safeReadJSON(MANIFEST);
-  const legal = manifest?.datasets?.legal_index || null;
-  const asmt  = manifest?.datasets?.assessment_index || null;
   return {
     now: new Date().toISOString(),
-    lastFullLog: newestLog('run-'),
-    lastDeltaLog: newestLog('delta-'),
-    lastShardBuild: {
-      legal: legal?.generated_at || null,
-      legalSource: legal?.source_modified || null,
-      legalRows: legal?.row_count || null,
-      asmt: asmt?.generated_at || null,
-      asmtSource: asmt?.source_modified || null,
-      asmtRows: asmt?.row_count || null,
+    roots: { winnipeg: WPG_ROOT, manitoba: MB_ROOT, maoScrape: SCRAPE_ROOT },
+    jobs: Object.fromEntries(Object.entries(JOBS).map(([id, job]) => [
+      id,
+      { id, label: job.label, project: job.project, confirm: job.confirm },
+    ])),
+    items: [...gatherWinnipegItems(), ...gatherManitobaItems()],
+    git: {
+      winnipeg: await gitStatus(WPG_ROOT),
+      manitoba: await gitStatus(MB_ROOT),
     },
-    git: await gatherGitStatus(),
     activeRun: activeRunSnapshot(),
-    cadencePlan: loadCadencePlan(),
   };
 }
 
-// --------------------------------------------------------------- spawner
-
 function spawnStep(step) {
-  // step = { label, command, args, cwd }
   return new Promise((resolve) => {
     appendLog(`\n--- ${step.label} ---`);
-    appendLog(`> ${step.command} ${step.args.join(' ')}  (cwd: ${path.relative(WEB_ROOT, step.cwd)})`);
-    const child = spawn(step.command, step.args, {
+    appendLog(`> ${step.cmd}`);
+    appendLog(`  cwd: ${step.cwd}`);
+    const child = spawn('cmd.exe', ['/c', step.cmd], {
       cwd: step.cwd,
-      shell: true,        // lets us spawn .bat files on Windows
       windowsHide: true,
     });
     currentRun.child = child;
@@ -319,80 +454,50 @@ function spawnStep(step) {
   });
 }
 
-async function runChain(type, label, steps) {
+async function runJob(id) {
   if (currentRun && currentRun.exitCode == null) {
-    return { ok: false, reason: 'A run is already in progress.' };
+    return { ok: false, status: 409, reason: 'A run is already in progress.' };
   }
-  currentRun = { type, label, startedAt: new Date().toISOString(), child: null, log: [], exitCode: null };
-  broadcast({ type: 'run-start', run: { type, label, startedAt: currentRun.startedAt } });
-  appendLog(`=== ${label} started at ${currentRun.startedAt}`);
-  for (const step of steps) {
+  const job = JOBS[id];
+  if (!job) return { ok: false, status: 404, reason: 'Unknown job.' };
+
+  fs.mkdirSync(LOG_DIR, { recursive: true });
+  const ts = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  currentRun = {
+    id,
+    label: job.label,
+    project: job.project,
+    startedAt: new Date().toISOString(),
+    child: null,
+    log: [],
+    exitCode: null,
+    logFile: path.join(LOG_DIR, `${id}-${ts}.log`),
+  };
+  broadcast({ type: 'run-start', run: activeRunSnapshot() });
+  appendLog(`=== ${job.label} started at ${currentRun.startedAt}`);
+  appendLog(`=== log file: ${currentRun.logFile}`);
+
+  for (const step of job.steps) {
     const code = await spawnStep(step);
     if (code !== 0) {
       currentRun.exitCode = code;
-      appendLog(`=== ${label} ABORTED at step "${step.label}" (exit code ${code})`);
-      broadcast({ type: 'run-end', run: { type, label, exitCode: code, finishedAt: new Date().toISOString() } });
-      return { ok: false };
+      appendLog(`=== ${job.label} ABORTED at step "${step.label}"`);
+      broadcast({ type: 'run-end', run: activeRunSnapshot() });
+      return { ok: false, status: 500 };
     }
   }
+
   currentRun.exitCode = 0;
-  appendLog(`=== ${label} completed successfully`);
-  broadcast({ type: 'run-end', run: { type, label, exitCode: 0, finishedAt: new Date().toISOString() } });
-  return { ok: true };
+  appendLog(`=== ${job.label} completed successfully`);
+  broadcast({ type: 'run-end', run: activeRunSnapshot() });
+  return { ok: true, status: 202 };
 }
-
-// --------------------------------------------------------------- run chains
-
-const Rscript = `"C:\\Program Files\\R\\R-4.5.3\\bin\\Rscript.exe"`;
-
-function chainFull() {
-  return runChain('full', 'Full scrape + rebuild', [
-    { label: '1/4 mao-scrape full', cwd: SCRAPE_ROOT, command: 'cmd.exe', args: ['/c', 'run_full.bat'] },
-    { label: '2/4 build_legal_index.R', cwd: WEB_ROOT, command: Rscript, args: ['r\\build_legal_index.R'] },
-    { label: '3/4 build_assessment_index.R', cwd: WEB_ROOT, command: Rscript, args: ['r\\build_assessment_index.R'] },
-    { label: '4/4 build-manifest.js', cwd: WEB_ROOT, command: 'node', args: ['web\\scripts\\build-manifest.js'] },
-  ]);
-}
-
-function chainDelta() {
-  return runChain('delta', 'Delta scrape + rebuild', [
-    { label: '1/4 mao-scrape delta', cwd: SCRAPE_ROOT, command: 'cmd.exe', args: ['/c', 'run_delta.bat'] },
-    { label: '2/4 build_legal_index.R', cwd: WEB_ROOT, command: Rscript, args: ['r\\build_legal_index.R'] },
-    { label: '3/4 build_assessment_index.R', cwd: WEB_ROOT, command: Rscript, args: ['r\\build_assessment_index.R'] },
-    { label: '4/4 build-manifest.js', cwd: WEB_ROOT, command: 'node', args: ['web\\scripts\\build-manifest.js'] },
-  ]);
-}
-
-async function chainPush() {
-  // Tight push: refuse if anything outside web/public/data/ is dirty.
-  const status = await gatherGitStatus();
-  if (status.dirtyNonData.length > 0) {
-    return {
-      ok: false,
-      reason: `Working tree has ${status.dirtyNonData.length} change(s) outside web/public/data/. Commit or stash those before pushing the data refresh.`,
-      dirtyNonData: status.dirtyNonData,
-    };
-  }
-  if (status.dirtyData === 0 && status.ahead === 0) {
-    return { ok: false, reason: 'Nothing to push — no data shards changed and you are not ahead of origin/main.' };
-  }
-  const today = new Date().toISOString().slice(0, 10);
-  return runChain('push', 'Push data refresh to GitHub', [
-    { label: 'git add web/public/data', cwd: WEB_ROOT, command: 'git', args: ['add', 'web/public/data/'] },
-    { label: 'git commit', cwd: WEB_ROOT, command: 'git', args: ['commit', '-m', `Data refresh — ${today}`, '--allow-empty'] },
-    { label: 'git push origin main', cwd: WEB_ROOT, command: 'git', args: ['push', 'origin', 'main'] },
-  ]);
-}
-
-// --------------------------------------------------------------- HTTP server
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
-  '.css':  'text/css; charset=utf-8',
-  '.js':   'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
-  '.svg':  'image/svg+xml',
-  '.ico':  'image/x-icon',
 };
 
 function serveStatic(req, res) {
@@ -401,20 +506,19 @@ function serveStatic(req, res) {
   const safe = path.normalize(urlPath).replace(/^[/\\]+/, '');
   const file = path.join(PUBLIC_DIR, safe);
   if (!file.startsWith(PUBLIC_DIR)) {
-    res.writeHead(403); res.end('Forbidden'); return;
+    res.writeHead(403);
+    res.end('Forbidden');
+    return;
   }
   fs.readFile(file, (err, buf) => {
-    if (err) { res.writeHead(404); res.end('Not found'); return; }
+    if (err) {
+      res.writeHead(404);
+      res.end('Not found');
+      return;
+    }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream' });
     res.end(buf);
   });
-}
-
-async function readBody(req) {
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  const raw = Buffer.concat(chunks).toString('utf8') || '{}';
-  try { return JSON.parse(raw); } catch { return {}; }
 }
 
 function jsonRes(res, status, body) {
@@ -430,34 +534,23 @@ async function handleApi(req, res, pathname) {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
-      'Connection': 'keep-alive',
-      'X-Accel-Buffering': 'no',
+      Connection: 'keep-alive',
     });
     res.write('retry: 2000\n\n');
-    if (currentRun) {
-      res.write(`data: ${JSON.stringify({ type: 'run-snapshot', run: activeRunSnapshot() })}\n\n`);
-    }
+    if (currentRun) res.write(`data: ${JSON.stringify({ type: 'run-snapshot', run: activeRunSnapshot() })}\n\n`);
     sseClients.add(res);
-    const heartbeat = setInterval(() => { try { res.write(': hb\n\n'); } catch {} }, 15000);
+    const heartbeat = setInterval(() => { try { res.write(': hb\n\n'); } catch { /* ignore */ } }, 15000);
     req.on('close', () => { clearInterval(heartbeat); sseClients.delete(res); });
     return;
   }
-  if (pathname === '/api/run/full' && req.method === 'POST') {
-    chainFull().catch((e) => appendLog(`*** chainFull threw: ${e.message}`));
-    return jsonRes(res, 202, { ok: true });
-  }
-  if (pathname === '/api/run/delta' && req.method === 'POST') {
-    chainDelta().catch((e) => appendLog(`*** chainDelta threw: ${e.message}`));
-    return jsonRes(res, 202, { ok: true });
-  }
-  if (pathname === '/api/push' && req.method === 'POST') {
-    const result = await chainPush();
-    if (!result.ok) return jsonRes(res, 409, result);
-    return jsonRes(res, 202, { ok: true });
+  const runMatch = pathname.match(/^\/api\/run\/([a-z0-9-]+)$/);
+  if (runMatch && req.method === 'POST') {
+    const result = await runJob(runMatch[1]);
+    return jsonRes(res, result.status || 202, result);
   }
   if (pathname === '/api/cancel' && req.method === 'POST') {
-    if (!currentRun || currentRun.exitCode != null) return jsonRes(res, 200, { ok: false, reason: 'No active run' });
-    try { currentRun.child?.kill(); appendLog('--- cancel requested by user ---'); } catch {}
+    if (!currentRun || currentRun.exitCode != null) return jsonRes(res, 200, { ok: false, reason: 'No active run.' });
+    try { currentRun.child?.kill(); appendLog('--- cancel requested by user ---'); } catch { /* ignore */ }
     return jsonRes(res, 200, { ok: true });
   }
   return jsonRes(res, 404, { error: 'Unknown endpoint' });
@@ -469,13 +562,15 @@ const server = http.createServer(async (req, res) => {
     if (pathname.startsWith('/api/')) return handleApi(req, res, pathname);
     return serveStatic(req, res);
   } catch (err) {
-    res.writeHead(500); res.end(`Internal error: ${err.message}`);
+    res.writeHead(500);
+    res.end(`Internal error: ${err.message}`);
   }
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`MAO Data Control Panel → http://localhost:${PORT}`);
-  console.log(`  WebSearch root: ${WEB_ROOT}`);
-  console.log(`  mao-scrape:     ${SCRAPE_ROOT}`);
+  console.log(`Data Refresh Control Panel -> http://127.0.0.1:${PORT}`);
+  console.log(`  Winnipeg:  ${WPG_ROOT}`);
+  console.log(`  Manitoba:  ${MB_ROOT}`);
+  console.log(`  MAO scrape: ${SCRAPE_ROOT}`);
   console.log('Ctrl-C to stop.');
 });
