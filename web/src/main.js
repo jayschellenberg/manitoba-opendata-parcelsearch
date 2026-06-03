@@ -66,6 +66,7 @@ import {
   fetchProvinceSectionGrid,
   fetchRiverLots,
   fetchParcelMascForMuni,
+  fetchLandCoverForMuni,
   fetchMascRiverlots,
   fetchCliAgrForMuni,
   parseRollList,
@@ -117,6 +118,7 @@ import {
 } from './map.js';
 import { generateParcelSnapshotsZip } from './snapshotExport.js';
 import { OUTPUT_MIME, OUTPUT_QUALITY, MAX_OUTPUT_DIM } from './lib/imageOutput.js';
+import { dominantBucket, cultFraction } from './lib/landcover.js';
 import { clearAllCache as clearAllCacheModule } from './cache.js';
 import { getManifest } from './manifest.js';
 import {
@@ -718,6 +720,12 @@ const SORT_KEYS = {
   // via the ￿ sentinel in strKey.
   clicls:   (r) => strKey(dominantCliLabel(r.parcel.properties)),
   soiltype: (r) => strKey(dominantSoilTypeLabel(r.parcel.properties)),
+  // Land cover sorts by the dominant bucket's label; Cult % sorts on
+  // the numeric cultivated fraction. Both read the per-parcel
+  // `_landCover` stamp (only present on > 20-acre farmland parcels);
+  // parcels without it sort last (strKey sentinel / finiteOrNeg -1).
+  landcover: (r) => strKey(dominantBucket(r.parcel.properties._landCover)?.label),
+  cultpct:   (r) => finiteOrNeg(cultFraction(r.parcel.properties._landCover)),
   changes: (r) => strKey(formatChanges(r)),
   du:      (r) => finiteOrNeg(r.parcel.properties.Dwelling_Units),
   acres:   (r) => finiteOrNeg(parcelAcres(r.parcel)),
@@ -4013,6 +4021,27 @@ async function enrichOverlays(parcelFc, inputs, baseMsg) {
     }
   }
 
+  // Attach the pre-baked land-cover summary (farmland buckets) for each
+  // parcel — per-muni shard built by r/build_landcover.R from the
+  // mao-assembly Parquet. Only > 20-acre parcels are in the shards, so
+  // urban/residential rolls simply find no hit and stay undefined; the
+  // popup + grid suppress the field on small parcels anyway. Same
+  // lazy, non-fatal pattern as the parcel-MASC stamp above.
+  if (inputs.municipality) {
+    try {
+      const dict = await fetchLandCoverForMuni(inputs.municipality);
+      if (dict) {
+        for (const row of rows) {
+          const roll = row.parcel.properties?.Roll_No_Txt;
+          const hit  = roll ? dict[roll] : null;
+          if (hit) row.parcel.properties._landCover = hit;
+        }
+      }
+    } catch (err) {
+      console.warn('land-cover enrichment failed (non-fatal):', err);
+    }
+  }
+
   // Stamp the most-common assessment year into the Total Value column
   // header so users can tell which assessment cycle the dollar figure
   // is anchored to.
@@ -5825,6 +5854,13 @@ function renderTable(rows, { resetPage = true } = {}) {
     // when no overlay has loaded for this muni yet.
     tr.appendChild(td(dominantCliLabel(p)));
     tr.appendChild(td(dominantSoilTypeLabel(p)));
+    // Land Cover (dominant farmland bucket + share) and Cult % — both
+    // populated only for > 20-acre parcels from the pre-baked
+    // _landCover stamp; blank otherwise. Cult % is right-aligned
+    // numeric so it sorts/scans with the other rate columns.
+    tr.appendChild(landCoverCell(p, ac));
+    const cultPct = Number(ac) > 20 ? cultFraction(p._landCover) : null;
+    tr.appendChild(td(cultPct != null ? formatPercent(cultPct) : null, 'num'));
     tr.appendChild(td(badge(formatChanges(row), 'badge-amend')));
     tr.appendChild(td(formatDu(p.Dwelling_Units), 'num'));
     // Basic-mode position for Acres — hidden in sales mode (the
@@ -5996,6 +6032,43 @@ function soilCell(p) {
   if (p._soilQuarter) cell.title = `Source: ${p._soilQuarter}`;
   cell.appendChild(swatch);
   return cell;
+}
+
+/**
+ * "Land Cover" grid cell — a colour-dot + dominant bucket + its share
+ * (e.g. "● Cultivated 78%"). Empty for parcels ≤ 20 acres or with no
+ * `_landCover` stamp (the shards only carry > 20-acre farmland, and
+ * we gate on the webapp's own computed acreage too, per spec).
+ */
+function landCoverCell(p, ac) {
+  const cell = document.createElement('td');
+  const dom = Number(ac) > 20 ? dominantBucket(p?._landCover) : null;
+  if (!dom) {
+    cell.textContent = '';
+    return cell;
+  }
+  const dot = document.createElement('span');
+  dot.className = 'lc-dot';
+  dot.style.backgroundColor = dom.color;
+  cell.appendChild(dot);
+  cell.appendChild(document.createTextNode(`${dom.label} ${Math.round(dom.pct * 100)}%`));
+  return cell;
+}
+
+/**
+ * CSV cells for the land-cover columns: dominant bucket label followed
+ * by each bucket's share as a one-decimal percent. All blank for
+ * parcels ≤ 20 acres or with no `_landCover` stamp, mirroring the grid.
+ */
+function landCoverCsvCells(p, ac) {
+  const lc = Number(ac) > 20 ? p?._landCover : null;
+  if (!lc) return ['', '', '', '', '', ''];
+  const dom = dominantBucket(lc);
+  const pct = (k) => {
+    const v = Number(lc[k]);
+    return Number.isFinite(v) ? (v * 100).toFixed(1) : '';
+  };
+  return [dom ? dom.label : '', pct('cult'), pct('past'), pct('bush'), pct('wet'), pct('other')];
 }
 
 function soilSourceLabel(hit) {
@@ -7331,6 +7404,7 @@ function exportCsv(explicitRows) {
     'Soil Rating', 'Risk Area',
     'CLI', 'Soil Type',
     ...soilCsvHeaders(),
+    'Land Cover', 'Cult %', 'Pasture %', 'Bush %', 'Wetland %', 'Other %',
     'Changes',
     'DU', 'Acres', 'SF',
     csvAssessHeader(currentRows), 'Asmt Report URL',
@@ -7364,6 +7438,7 @@ function exportCsv(explicitRows) {
       p._soilRating ?? '', p._soilRiskArea ?? '',
       dominantCliLabel(p) ?? '', dominantSoilTypeLabel(p) ?? '',
       ...soilCsvCells(p),
+      ...landCoverCsvCells(p, ac),
       formatChanges(row),
       p.Dwelling_Units ?? '',
       formatAcresCsv(ac),

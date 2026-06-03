@@ -2196,6 +2196,18 @@ body.measuring .map-legend {
   line-height: 1.4;
 }
 
+/* Small colour dot prefixing the "Land Cover" grid cell — keyed to the
+   dominant farmland bucket's colour (see lib/landcover.js). */
+.lc-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  margin-right: 6px;
+  vertical-align: middle;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+}
+
 /* On the collapsed (single-column) layout below 900 px, the map's full
    width is the viewport width, not viewport-minus-sidebar. */
 @media (max-width: 900px) {
