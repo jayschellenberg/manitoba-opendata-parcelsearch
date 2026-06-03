@@ -1234,12 +1234,13 @@ export function initMap(container, { onFeatureClick } = {}) {
         },
       });
 
-      // Parcel highlight — primary layer, always on. Red fill so it pops
-      // against any pale-coloured zoning/dev-plan overlay underneath.
-      // Fill opacity is intentionally light (0.18) so the basemap and
-      // any underlying overlay (zoning category, muni parcel fabric)
-      // remain readable beneath the highlight; the line stroke does the
-      // heavy lifting for parcel boundary visibility.
+      // Parcel highlight — primary layer, always on. Yellow fill (exact
+      // colours/opacity in the parcel-fill / parcel-line paint blocks below)
+      // so the selected parcel pops against both the cream street basemap
+      // and the dark satellite imagery. Fill opacity is intentionally light
+      // so the basemap and any underlying overlay (zoning category, muni
+      // parcel fabric) remain readable beneath the highlight; the line
+      // stroke does the heavy lifting for parcel boundary visibility.
       // promoteId tells MapLibre to use the OBJECTID property as the
       // feature id at the source level. setFeatureState({source, id})
       // can then key into each parcel by OBJECTID — required by the
@@ -3424,15 +3425,14 @@ class BasemapToggleControl {
   }
   _toggle() {
     const map = this._map;
-    const imageryVisible = map.getLayoutProperty('esri-imagery', 'visibility') === 'visible';
-    const next = !imageryVisible;
-    const imgVis  = next ? 'visible' : 'none';
-    const refVis  = imgVis;     // Esri reference overlays follow the imagery
-    const cartoVis = next ? 'none' : 'visible';
-    map.setLayoutProperty('esri-imagery',        'visibility', imgVis);
-    map.setLayoutProperty('esri-transportation', 'visibility', refVis);
-    map.setLayoutProperty('esri-reference',      'visibility', refVis);
-    map.setLayoutProperty('carto-positron',      'visibility', cartoVis);
+    // No-op until the basemap layers exist — guards a click that lands
+    // before the style has finished loading (getLayoutProperty would
+    // otherwise throw "Cannot get style of non-existing layer").
+    if (!map.getLayer('esri-imagery')) return;
+    const next = map.getLayoutProperty('esri-imagery', 'visibility') !== 'visible';
+    // Delegate the actual layer flips to the shared, per-layer-guarded
+    // helper so the two stay in sync (it owns the esri/carto layer set).
+    setBasemapSatellite(map, next);
     this._btn.textContent = next ? 'Streets' : 'Satellite';
     this._btn.classList.toggle('active', next);
   }

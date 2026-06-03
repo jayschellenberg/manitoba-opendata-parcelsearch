@@ -1,169 +1,150 @@
-# Parcel Satellite Snapshots — Implementation Plan / Resume Doc
+# Parcel Satellite Snapshots — Feature Notes
 
-## ▶ RESUME FROM ANOTHER PC (read this first)
+## Status
 
-**Where the work lives:** pushed to `origin/main`. Feature commit `edfdb2c`
-("Add parcel satellite-snapshot export …"); the unrelated dashboard refactor is
-the separate commit `685e44e` right after it. On the other PC:
-```
-git pull origin main
-cd web
-npm install                          # node_modules is gitignored
-cp .env.example .env.local           # then paste your Mapbox token (routing only;
-                                     # the snapshot feature itself needs NO token —
-                                     # it uses keyless Esri World Imagery)
-npm test                             # expect "zipStore.test.js: 3 passed" + suite green
-npm run build                        # confirms imports/syntax
-npm run dev                          # manual check (see Verification checklist)
-```
+✅ Implemented and on `origin/main`. Feature commit `edfdb2c` ("Add parcel
+satellite-snapshot export …"), with follow-up tuning on top (section grid on,
+2× roll-number labels, wider frame margin). `npm test` is green (including
+`zipStore.test.js: 3 passed`) and `npm run build` transforms every module
+cleanly. The only thing that can't be checked headless is the manual
+in-browser smoke test (needs a live browser/WebGL session — see Verification).
 
-**What's DONE:** the whole feature is implemented and wired (files list below).
-**What REMAINS:** only verification — `npm test`, `npm run build`, and the manual
-in-browser smoke test in the "Verification checklist" section. I could not run
-node in the authoring shell (not on PATH), so none of those have been executed
-yet. No code work is believed outstanding; if a test/build surfaces an issue,
-fix it then.
+> Resume on another PC: `git pull origin main` → `cd web` → `npm install`
+> (node_modules is gitignored) → `npm test` → `npm run build` → `npm run dev`.
+> A Mapbox token (`.env.local`) is only needed for routing; the snapshot
+> feature itself uses keyless Esri World Imagery.
 
-**Note on unrelated changes:** the working tree also had pre-existing, unrelated
-edits to `dashboard/*`, `.gitignore`, and `start-dashboard.bat` (a dashboard
-control-panel refactor) that are NOT part of this feature. They were committed
-separately (`685e44e`), after the feature commit — confirm their state with
-`git log`/`git status` if you care about them.
+## What it does
 
----
+From any non-empty result set — an imported parcel list, or Sales Analysis
+after importing a list (both flow through `setMapData`, which stashes
+`lastResultFc`) — the **Parcel Snapshots (ZIP)** button renders one
+1600×900 (16:9) satellite **JPEG** per parcel (~250–400 KB each, well under
+1 MB — PNG of the same satellite frame ran ~3 MB) and downloads them as a
+single `parcel-snapshots-YYYY-MM-DD.zip`. Each frame:
 
-**Status:** ✅ IMPLEMENTED (2026-06-02). Pending: `npm test` + `npm run build`
-+ manual in-browser verification (node was not on PATH in the build shell, so
-the suite/build could not be run here — see "Verification checklist" below).
+- the subject parcel in the same **yellow** highlight a normal search produces;
+- surrounding parcel lines + roll-number labels from the muni fabric, with the
+  roll labels rendered at **2×** (these snapshots are mostly larger rural
+  parcels viewed at a further-out zoom, where the base label ramp is too small);
+- the **section/township (DLS) grid** turned on;
+- zoomed to the tightest extent that fits 16:9 with a **96 px** margin.
 
-### Files added / changed
-- **NEW** `src/lib/zipStore.js` — store-only ZIP writer + CRC32 (no new deps).
-- **NEW** `src/snapshotExport.js` — offscreen 1920×1080 map + capture loop;
-  exports `generateParcelSnapshotsZip(parcelFc, { onProgress, signal, fetchMuniFabric })`.
-- **NEW** `test/zipStore.test.js` — CRC32 check value + ZIP round-trip + empty-list.
-- `src/map.js` — added exported `setBasemapSatellite(map, on)`.
-- `index.html` — added `#snapshot-zip-btn` in the export-row.
-- `src/main.js` — import; `lastResultFc` state captured in `setMapData`;
-  `updateSnapshotButton()` / `handleSnapshotExport()` / `downloadBlob()` wiring
-  (~line 1285). Second click on the button cancels the in-flight batch.
-- `package.json` — added `test/zipStore.test.js` to the `test` script.
-
-### Verification checklist (run in user's environment)
-1. `cd web && npm test` — expect `zipStore.test.js: 3 passed` plus the existing suite green.
-2. `npm run build` — expect a clean Vite build (catches import/syntax errors).
-3. `npm run dev`, then: import a parcel list (or run any search) → the
-   **Parcel Snapshots (ZIP)** button enables → click → watch the
-   `Capturing N/total…` label → a `parcel-snapshots-YYYY-MM-DD.zip` downloads
-   with one `muniCode-roll.png` (1920×1080, satellite, yellow-highlighted
-   subject, surrounding parcel lines + roll labels, small margin) per parcel.
-4. Multi-muni list → confirm each muni's fabric loads and filenames carry the
-   right muni code prefix. Click the button again mid-run → confirms Cancel.
-
-### Original plan follows (for reference)
-
-
-**Goal:** From an imported parcel list (or from Sales Analysis after importing a
-list), generate a satellite PNG of each parcel with the subject parcel
-highlighted, zoomed to the maximum extent that fits a 16:9 frame. Each file
-named `{muniCode}-{roll}.png`, all delivered as a **single ZIP download**.
-
-## Confirmed requirements (from user)
-
-- **Delivery:** one ZIP download (fully client-side; works on deployed Vercel site too).
-- **Batch size:** ~25–150 parcels typical → live sequential capture is fine; needs progress UI + Cancel.
-- **Frame content:** reuse the *existing* search-result highlight look (red fill+outline, same opacity), PLUS surrounding parcel lines, PLUS roll-number label, PLUS a small padding margin (not tightest-possible fit).
-- **Dimensions:** 1920×1080 (16:9).
-
-## Decision: integrate into `web/` (do NOT build separate app)
-
-The app already has every primitive. Reuse, don't rebuild.
+Files are named `{muniCode}-{roll}.jpg` (roll trims the canonical trailing
+`.000`; duplicates get `-2`, `-3`, … suffixes). A second click on the button
+cancels the in-flight batch. Everything is client-side, so it works on the
+deployed Vercel site too.
 
 ## Architecture
 
-A **dedicated hidden 1920×1080 MapLibre export map** (detached container at
-`left:-99999px`, `width:1920px; height:1080px`, `preserveDrawingBuffer:true`),
-separate from the visible interactive map. Why a second map:
-- Forces exact 16:9 / 1920×1080 output regardless of the user's window size.
-- Leaves the on-screen view untouched during a multi-minute batch.
-- Loads the same style → Esri satellite basemap + existing highlight/muni-parcel/roll-label layers all available → snapshots look identical to an on-screen search result.
+A dedicated hidden 1920×1080 MapLibre **export map** (detached container at
+`left:-10000px`, `preserveDrawingBuffer:true`), separate from the visible
+interactive map, so output is exactly 16:9 regardless of window size and the
+on-screen view is left untouched during a multi-minute batch. `initMap()`
+builds the full style (Esri satellite basemap + highlight / muni-parcel /
+roll-label / survey-grid layers), so snapshots look identical to an on-screen
+search result with zero re-styling.
 
-Must call `map.resize()` after attaching; wait for `load` then per-muni `idle`.
+Capture loop, grouped by muni for efficiency:
 
-### Capture loop (grouped by muni for efficiency)
+1. Group resolved parcels by `Muni_Name_With_Typ`.
+2. Per muni → fetch its parcel fabric once (`fetchAllParcelsInMunicipality`,
+   cached) → `setMuniParcelsData` (yields surrounding lines + roll labels), and
+   fetch its section grid once → `setSurveyGridData`.
+3. Per subject parcel:
+   - `showResults(map, {…single feature…}, { fit: false })` — the yellow
+     highlight a normal search produces.
+   - `fitParcelTo16by9` (`fitBounds`, `FRAME_PADDING` margin, `EXPORT_MAX_ZOOM`).
+   - wait for `idle` (with an `IDLE_TIMEOUT_MS` safety net).
+   - read the WebGL canvas, downscale to exactly 1600×900, burn in the live
+     Esri attribution → JPEG blob → add to ZIP.
+4. Build the ZIP → single download.
 
-1. Group resolved parcels by `muni_no`.
-2. For each muni → fetch its parcel fabric **once** (reuse `searchParcels` /
-   `fetchAllParcelsInMunicipality`) → set on export map's `muni-parcels` source
-   via `setMuniParcelsData`. This yields **surrounding parcel lines + roll-number
-   labels** for free (existing `muni-parcels-fill/line/label` layers).
-3. For each subject parcel in that muni:
-   - Set the red highlight source (`'parcels'` source, via `showResults` path).
-   - `fitBounds(parcelBbox, { padding, duration: 0 })`. On a 16:9 canvas this
-     already gives "max extent that fits in 16:9"; `padding` = the small margin.
-   - Wait for `map.on('idle')` (mirror `generateStaticMap`).
-   - `composeWithAttribution(exportMap.getCanvas())` → PNG blob.
-   - Add to ZIP as `{muni}-{roll}.png` (sanitize; trim trailing `.000` like `humanRoll`; strip path-illegal chars).
-   - Update progress ("Capturing 37 / 142…"); honor Cancel.
-4. Build ZIP → trigger single download.
+The section-grid fetch lives in **main.js** (`buildSurveyGridForSnapshot`,
+injected as the `fetchSurveyGrid` option) because it needs the loaded
+municipal-boundaries FC to scope the survey-grid query. It resolves the muni's
+boundary polygon (exact match on `MUNI_LIST_NAME_WITH_TYPE`, then a tolerant
+`normalizeMuniKey` match — the parcel FC carries Roll-Entry's
+`Muni_Name_With_Typ`, which can differ in punctuation/accents), fetches the
+grid, and converts it via `surveyFcToRows` → `sectionLinesFromRows` — the same
+per-muni pipeline `toggleSurveyGridOverlay()` uses. If a muni can't be matched,
+that muni's snapshots simply omit the grid (the rest still render). The
+province-wide grid file is far too large (≈41 MB / 215k features) to load into
+the export map, so per-muni scoping is deliberate.
 
 ### ZIP writer
 
-Default: ~50-line **store-only** (no deflate) ZIP writer — PNGs are already
-compressed; keeps the project's zero-runtime-dep convention (they hand-rolled
-polyline/haversine). Needs local file headers + central directory + CRC32 (~15
-lines). Alternative if preferred: add JSZip.
+`src/lib/zipStore.js` — ~50-line **store-only** (no deflate) writer + CRC32,
+no new deps (PNGs are already DEFLATE-compressed internally). Emits a standard
+PKZIP archive (local headers + central directory + EOCD) that Explorer, macOS
+Archive Utility, 7-Zip and `unzip` all open. No ZIP64 / folders / timestamps
+(deterministic output).
 
-## Integration points (two entry points, one shared function)
+## Files added / changed
 
-Add `generateParcelSnapshotsZip(parcelKeysOrFc)` and wire a **"Generate parcel
-snapshots (ZIP)"** button to:
-- (a) the imported-list results view, and
-- (b) the Sales Analysis post-import view.
-Both already converge on a resolved `parcelFc` (FeatureCollection w/ geometry).
+- **NEW** `src/lib/zipStore.js` — store-only ZIP writer + CRC32.
+- **NEW** `src/lib/imageOutput.js` — shared raster-output settings (JPEG,
+  quality, dimensions) used by both the snapshots and Generate Map, so the
+  two stay in sync.
+- **NEW** `src/snapshotExport.js` — offscreen 1600×900 map + capture loop.
+  Exports `generateParcelSnapshotsZip(parcelFc, { onProgress, signal,
+  fetchMuniFabric, fetchSurveyGrid })`, plus `fitParcelTo16by9` / `fileNameFor`
+  (exported for unit testing).
+- **NEW** `test/zipStore.test.js` — CRC32 check value + ZIP round-trip + empty list.
+- `src/map.js` — added `setBasemapSatellite(map, on)`.
+- `index.html` — added `#snapshot-zip-btn` in the export-row.
+- `src/main.js` — import; `lastResultFc` captured in `setMapData`;
+  `updateSnapshotButton()` / `handleSnapshotExport()` / `buildSurveyGridForSnapshot()`
+  wiring (~line 1285). One button serves both entry points. `composeWithAttribution`
+  (the **Generate Map** static image) now downscales to `MAX_OUTPUT_DIM` and
+  encodes JPEG via the same `imageOutput.js` settings.
+- `package.json` — added `test/zipStore.test.js` to the `test` script.
 
-## New code footprint
+Output settings (`src/lib/imageOutput.js`): `OUTPUT_MIME = image/jpeg`,
+`OUTPUT_QUALITY = 0.85`, `SNAPSHOT_W/H = 1600×900`, `MAX_OUTPUT_DIM = 1600`.
+Snapshot framing constants (`snapshotExport.js`): `FRAME_PADDING = 96` (CSS
+px), `ROLL_LABEL_SCALE = 2`, `EXPORT_MAX_ZOOM = 20`, `IDLE_TIMEOUT_MS = 9000`.
 
-- New `src/snapshotExport.js` (offscreen map + capture loop + orchestration).
-- New tiny `src/lib/zipStore.js` (store-only ZIP + CRC32).
-- Button(s) in `index.html` (mirror existing static-map section markup).
-- ~15 lines wiring in `src/main.js`.
+## Key reuse points (file:line)
 
-Everything heavy is reused: capture, highlight, satellite basemap, polygon
-fetch, bbox/fit, attribution compositing.
+- **Map lib:** MapLibre GL JS (`maplibre-gl`); Mapbox APIs only used for routing.
+- **Satellite basemap:** Esri World Imagery raster source/layers in `src/map.js`
+  (`esri-imagery` / `esri-transportation` / `esri-reference`), swapped by the
+  exported `setBasemapSatellite`.
+- **Highlight + fit:** `showResults(map, fc, { fit })` `src/map.js:1968` sets the
+  `'parcels'` source; yellow fill/line `#ffea00` at `src/map.js:1268`+.
+- **Muni fabric:** `muni-parcels-*` layers `src/map.js:1049`+; roll-label
+  text-size ramp (zoom × acreage) at `src/map.js:1111`. Setters
+  `setMuniParcelsData` / `setMuniParcelsVisible`.
+- **Section grid:** `survey-grid*` layers `src/map.js:958`+; setters
+  `setSurveyGridData` / `setSurveyGridVisible`. Data pipeline
+  `fetchSurveyGridForMuni` (`src/arcgis.js:1289`) → `surveyFcToRows` →
+  `sectionLinesFromRows` (`src/masc.js`).
+- **Canvas capture:** `preserveDrawingBuffer:true` (`src/map.js`); `idle` event;
+  attribution composited into the corner (mirrors the on-screen "Generate Map").
 
-## Key reuse points discovered (file:line)
+## Verification checklist
 
-- **Map lib:** MapLibre GL JS (`maplibre-gl`), NOT Mapbox GL JS. Mapbox APIs only used for routing.
-- **Satellite basemap:** Esri World Imagery raster — `src/map.js:232-235` (source), layers `esri-imagery` / `esri-transportation` / `esri-reference` at `src/map.js:270-273` (start hidden, basemap toggle swaps). `carto-positron` is the default street basemap (`src/map.js:220`).
-- **Canvas capture proven path:** `generateStaticMap()` `src/main.js:1375-1417` — `triggerRepaint()` → `map.on('idle')` → `map.getCanvas()` → `composeWithAttribution(canvas)` → dataURL. `preserveDrawingBuffer:true` at `src/map.js:356`.
-- **Highlight + fit:** `showResults(map, parcelFc)` `src/map.js:1968-1985` (sets `'parcels'` source + fitBounds w/ turf `bbox`, padding 60, maxZoom 18). `flyToFeature` at `src/map.js:1987`. Red highlight layer `src/map.js:1237`.
-- **Muni fabric:** `muni-parcels` source `src/map.js:1031`; layers `muni-parcels-fill` (1049), `muni-parcels-line` (1056), `muni-parcels-label` = roll labels (1080), `muni-parcels-civic-label` (1202). Exported setters `setMuniParcelsData`, `setMuniParcelsVisible` (imported in main.js:98-99).
-- **Parcel polygon fetch:** `searchParcels(args)` `src/arcgis.js:98` (ROLL_ENTRY FeatureServer, returns polygon FC). Also `fetchAllParcelsInMunicipality` (imported main.js:61).
-- **List import → parcelKeys:** `src/parcelListResolver.js` `resolveParcelList(rows)` → `{ resolved, unresolved, parcelKeys:[{muni_no, roll_no_txt}], stats }`. UI init `initParcelListImport` from `src/lib/parcelListImport.js` (imported main.js:12). Resolver result stashed in main.js around line ~897 ("resolver returns parcelKeys ready for searchParcels").
-- **Roll display rule:** `humanRoll()` trims trailing `.000` (see `parcelListResolver.js:250`).
-- **Sales upload flow:** `handleSalesUpload` region begins ~`src/main.js:2036`; merges per-muni FCs into one `parcelFc` (~2111).
+1. `cd web && npm test` — `zipStore.test.js: 3 passed` plus the existing suite
+   green. ✅ run, passing.
+2. `npm run build` — all modules transform (catches import/syntax errors). ✅
+   transforms clean. (The build's final output-dir cleanup can `EPERM` if
+   Dropbox holds a lock on `dist/data`; that's environmental, not the feature.)
+3. `npm run dev`, then import a parcel list (or run a search) → the **Parcel
+   Snapshots (ZIP)** button enables → click → watch the `Capturing N/total…`
+   label → a `parcel-snapshots-YYYY-MM-DD.zip` downloads with one
+   `muniCode-roll.jpg` per parcel (1600×900 JPEG ≤1 MB, satellite, yellow-
+   highlighted subject, surrounding parcel lines + 2× roll labels,
+   section/township grid on, 96 px margin). ← **manual, pending** (needs a
+   browser/WebGL session).
+4. Multi-muni list → confirm each muni's fabric **and grid** load and filenames
+   carry the right muni-code prefix. Click the button again mid-run → confirms
+   Cancel.
 
-## STILL TO VERIFY on resume (was mid-lookup when interrupted)
+## Caveats
 
-Run (cwd = `web/`):
-```
-grep -nE "staticMap|composeWithAttribution|initParcelListImport|mapReady|setMapData|EMPTY_FC|generateStaticMap" src/main.js
-```
-1. Exact `composeWithAttribution(canvas)` signature/impl (returns dataURL; need blob — use `canvas.toBlob` or convert dataURL).
-2. Exact `initParcelListImport` callback signature + where resolved `parcelKeys`/`parcelFc` is held in `main.js` (the stash near line ~897) — that's where button (a) hooks in.
-3. `index.html` static-map section markup (`$staticMapBtn`, `$staticMapSection`, `$staticMapOutput`) to mirror for the new button(s).
-4. `setMuniParcelsData` signature + how the live app fetches the muni fabric (to reuse for surrounding lines).
-5. Sales Analysis post-import view DOM hook for button (b).
-
-## Caveats (noted to user, not blockers)
-
-- Esri World Imagery details out ~zoom 19 → very small urban parcels fill the
-  frame but look soft (upscaled). Rural/ag parcels crisp.
-- `composeWithAttribution` burns Esri credit into each PNG → keeps saved-image
-  use compliant with Esri terms.
-
-## Build/test
-
-- Dev server: `npm run dev` (Vite) in `web/`.
-- Tests: `npm test` (node test/*.js). Add a unit test for the ZIP writer + the
-  16:9 bbox-padding math if extracted as pure functions.
+- Esri World Imagery details out around z20 → very small urban parcels fill the
+  frame but look soft (upscaled); rural/ag parcels stay crisp. This feature is
+  aimed at the rural/farmland case.
+- `composeWithAttribution`-style credit is burned into each PNG → keeps saved
+  images compliant with Esri terms.
