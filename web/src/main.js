@@ -1762,10 +1762,47 @@ async function populateDropdowns() {
     ]);
     fillSelect($municipality, munis, 'Any municipality');
     fillSelect($zoneCategory, zoneCats, 'Any zoning category');
+    checkRollEntryCompleteness(munis);
   } catch (err) {
     console.error('Failed to load filter dropdowns', err);
     fillSelect($municipality, [], 'Failed to load — type to filter parcels another way');
   }
+}
+
+// Manitoba normally publishes ~180 munis on the ROLL_ENTRY FeatureServer.
+// When the province is mid-republishing the service (observed 2026-06-03),
+// the list comes back with a small fraction of that. < 100 is the
+// "obviously incomplete" threshold — catches the mid-republish state
+// without false-firing on minor amalgamations.
+const ROLL_ENTRY_MIN_HEALTHY_MUNIS = 100;
+const ROLL_ENTRY_NORMAL_MUNIS = 180;
+
+/**
+ * Show the Roll_Entry mid-update banner when the upstream FeatureServer
+ * returns a suspiciously short muni list. The 18 munis (or whatever count
+ * IS present) all work normally end-to-end; the banner just tells the user
+ * that other munis are missing because of an upstream provincial event,
+ * not a webapp bug.
+ */
+function checkRollEntryCompleteness(munis) {
+  const banner = document.getElementById('roll-entry-banner');
+  if (!banner) return;
+  const count = Array.isArray(munis) ? munis.length : 0;
+  if (count === 0 || count >= ROLL_ENTRY_MIN_HEALTHY_MUNIS) {
+    banner.hidden = true;
+    banner.textContent = '';
+    banner.classList.remove('data-staleness-amber', 'data-staleness-red');
+    return;
+  }
+  banner.classList.remove('data-staleness-red');
+  banner.classList.add('data-staleness-amber');
+  banner.innerHTML =
+    `<strong>Manitoba Roll Entry source data appears to be mid-update.</strong> ` +
+    `Only ${count} of the usual ~${ROLL_ENTRY_NORMAL_MUNIS} municipalities ` +
+    `are currently published by the province; the listed municipalities work normally, ` +
+    `but searches in other munis will return no results until the upstream rebuild completes (typically hours to a day). ` +
+    `<a href="https://geoportal.gov.mb.ca/datasets/manitoba::roll-entry/about" target="_blank" rel="noreferrer" style="color:inherit;text-decoration:underline">Check Roll Entry status ↗</a>`;
+  banner.hidden = false;
 }
 
 /**
