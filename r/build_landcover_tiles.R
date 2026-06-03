@@ -109,6 +109,65 @@ which_tool <- function(name) {
 }
 have_tool <- function(name) nzchar(which_tool(name))
 
+# Auto-configure the OSGeo4W (Windows) environment if it's installed but
+# its tools aren't on the inherited PATH — the typical case when Rscript is
+# launched from a plain cmd / PowerShell / RStudio rather than the OSGeo4W
+# Shell. Replicates what `C:\OSGeo4W\OSGeo4W.bat` does: prepends OSGeo4W's
+# bin + python Scripts to PATH, points PYTHONHOME/PYTHONPATH at the bundled
+# python (so `C:\OSGeo4W\bin\python.exe` doesn't bomb with "No module named
+# 'encodings'"), and sets GDAL_DATA / PROJ_LIB so the warp step finds its
+# CRS dictionaries. No-op on Linux / macOS / conda installs and when GDAL
+# already resolves via PATH; safe to call unconditionally.
+configure_osgeo4w_if_present <- function() {
+  if (have_tool("gdalinfo")) return(invisible(NULL))  # already on PATH — nothing to do
+
+  root <- Sys.getenv("OSGEO4W_ROOT", unset = "")
+  if (!nzchar(root) || !dir.exists(root)) {
+    for (cand in c("C:/OSGeo4W", "C:/OSGeo4W64")) {
+      if (dir.exists(cand)) { root <- cand; break }
+    }
+  }
+  if (!nzchar(root) || !dir.exists(root)) return(invisible(NULL))
+
+  # OSGeo4W ships its own Python under apps/PythonXYZ — pick whichever
+  # version is installed (varies as GDAL upgrades).
+  py_prefix <- ""
+  for (d in list.dirs(file.path(root, "apps"), recursive = FALSE)) {
+    if (grepl("/Python[0-9]+$", gsub("\\\\", "/", d))) { py_prefix <- d; break }
+  }
+
+  # PATH: OSGeo4W's bin first so gdaldem/gdalwarp/gdal_translate resolve;
+  # the python Scripts dir holds gdal2tiles.bat / gdal2tiles.py.
+  path_extras <- c(
+    file.path(root, "bin"),
+    if (nzchar(py_prefix)) file.path(py_prefix, "Scripts")
+  )
+  path_extras <- path_extras[dir.exists(path_extras)]
+  if (length(path_extras) > 0) {
+    Sys.setenv(PATH = paste(c(path_extras, Sys.getenv("PATH")), collapse = .Platform$path.sep))
+  }
+
+  # CRS / driver data — gdalwarp's reprojection needs these.
+  for (gd in c(file.path(root, "apps/gdal/share/gdal"),
+               file.path(root, "share/gdal"))) {
+    if (dir.exists(gd)) { Sys.setenv(GDAL_DATA = gd); break }
+  }
+  for (pl in c(file.path(root, "share/proj"),
+               file.path(root, "apps/proj/share"))) {
+    if (dir.exists(pl)) { Sys.setenv(PROJ_LIB = pl); break }
+  }
+
+  # Bootstrap OSGeo4W's bundled python so gdal2tiles.bat (which delegates
+  # to `python -m osgeo_utils.gdal2tiles`) can import osgeo.
+  if (nzchar(py_prefix)) {
+    Sys.setenv(PYTHONHOME = py_prefix)
+    Sys.setenv(PYTHONPATH = file.path(py_prefix, "Lib", "site-packages"))
+  }
+
+  cat("Configured OSGeo4W environment from", root, "\n")
+}
+configure_osgeo4w_if_present()
+
 run <- function(cmd, args) {
   cat("$", cmd, paste(args, collapse = " "), "\n")
   status <- system2(cmd, args = args)
