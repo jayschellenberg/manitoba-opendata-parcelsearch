@@ -1317,6 +1317,23 @@ export function initMap(container, { onFeatureClick } = {}) {
           'line-dasharray': [3, 2],
         },
       });
+      // Land-cover overlay fill — colours each result parcel by its
+      // dominant 2020 land-cover bucket (Cultivated / Pasture / Bush /
+      // Wetland / Other). Driven by `_lcColor`, stamped per parcel in
+      // main.js from the pre-baked land-cover shards; parcels without a
+      // stamp (≤ 20 ac or no land-cover data) draw nothing. Hidden until
+      // the Land Cover overlay is turned on. Inserted before parcel-line
+      // so the yellow selection outline still reads on top of the colour.
+      map.addLayer({
+        id: 'landcover-fill',
+        type: 'fill',
+        source: 'parcels',
+        layout: { visibility: 'none' },
+        paint: {
+          'fill-color': ['coalesce', ['get', '_lcColor'], 'rgba(0,0,0,0)'],
+          'fill-opacity': ['case', ['has', '_lcColor'], 0.6, 0],
+        },
+      }, 'parcel-line');
       // Subject parcel — separate source/layers from the result set so
       // the blue highlight stands out against the yellow sale parcels.
       // Stacked AFTER parcel-line so the blue outline reads on top
@@ -2359,6 +2376,17 @@ export function setBasemapSatellite(map, on) {
   }
   if (map.getLayer('carto-positron')) {
     map.setLayoutProperty('carto-positron', 'visibility', cartoVis);
+  }
+}
+
+/**
+ * Show / hide the land-cover overlay fill (result parcels coloured by
+ * dominant 2020 land-cover bucket). The colour comes from each parcel's
+ * `_lcColor`, stamped in main.js; this only flips the layer's visibility.
+ */
+export function setLandCoverVisible(map, on) {
+  if (map.getLayer('landcover-fill')) {
+    map.setLayoutProperty('landcover-fill', 'visibility', on ? 'visible' : 'none');
   }
 }
 

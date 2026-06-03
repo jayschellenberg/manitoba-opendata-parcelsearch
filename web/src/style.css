@@ -2423,6 +2423,16 @@ body.measuring .map-legend {
   font-style: italic;
 }
 
+/* Empty cells whose data simply isn't loaded yet (CLI / Soil Type / Land
+   Cover / Cult %). The dotted underline + help cursor signal there's a
+   hover tooltip explaining how to load it, so the em-dash doesn't read as
+   "no data". */
+#results td.empty-hint {
+  cursor: help;
+  text-decoration: underline dotted #c2c7d2;
+  text-underline-offset: 2px;
+}
+
 #results td.num { font-variant-numeric: tabular-nums; }
 
 /* Hide the Dist (km) column unless the user has entered a Max km
