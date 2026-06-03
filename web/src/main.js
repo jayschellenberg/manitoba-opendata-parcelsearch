@@ -110,6 +110,7 @@ import {
   setMascRiskAreasVisible,
   setSurveyGridData,
   setSurveyGridVisible,
+  setLandCoverVisible,
   flyToFeature,
   buildZoneCodePaint,
   parcelHtml,
@@ -118,7 +119,7 @@ import {
 } from './map.js';
 import { generateParcelSnapshotsZip } from './snapshotExport.js';
 import { OUTPUT_MIME, OUTPUT_QUALITY, MAX_OUTPUT_DIM } from './lib/imageOutput.js';
-import { dominantBucket, cultFraction } from './lib/landcover.js';
+import { dominantBucket, cultFraction, LAND_COVER_BUCKETS } from './lib/landcover.js';
 import { clearAllCache as clearAllCacheModule } from './cache.js';
 import { getManifest } from './manifest.js';
 import {
@@ -237,6 +238,8 @@ const $mascToggle    = document.getElementById('masc-toggle');
 const $riskAreaToggle = document.getElementById('riskarea-toggle');
 const $cliToggle     = document.getElementById('cli-toggle');
 const $cliLegend     = document.getElementById('cli-legend');
+const $landcoverToggle = document.getElementById('landcover-toggle');
+const $landcoverLegend = document.getElementById('landcover-legend');
 const $gridToggle    = document.getElementById('grid-toggle');
 const $count         = document.getElementById('count');
 const $tbody         = document.querySelector('#results tbody');
@@ -1284,6 +1287,7 @@ $riskAreaToggle.addEventListener('click', () => toggleAuxOverlay('riskAreas'));
 $muniParcelsToggle.addEventListener('click', () => toggleAuxOverlay('muniParcels'));
 $mascToggle.addEventListener('click', () => toggleMascOverlay());
 $cliToggle.addEventListener('click', () => toggleCliOverlay());
+if ($landcoverToggle) $landcoverToggle.addEventListener('click', () => toggleLandCoverOverlay());
 $gridToggle.addEventListener('click', () => toggleSurveyGridOverlay());
 
 const $staticMapBtn     = document.getElementById('static-map-btn');
@@ -4025,21 +4029,37 @@ async function enrichOverlays(parcelFc, inputs, baseMsg) {
   // parcel — per-muni shard built by r/build_landcover.R from the
   // mao-assembly Parquet. Only > 20-acre parcels are in the shards, so
   // urban/residential rolls simply find no hit and stay undefined; the
-  // popup + grid suppress the field on small parcels anyway. Same
-  // lazy, non-fatal pattern as the parcel-MASC stamp above.
-  if (inputs.municipality) {
-    try {
-      const dict = await fetchLandCoverForMuni(inputs.municipality);
-      if (dict) {
-        for (const row of rows) {
-          const roll = row.parcel.properties?.Roll_No_Txt;
-          const hit  = roll ? dict[roll] : null;
-          if (hit) row.parcel.properties._landCover = hit;
+  // popup + grid suppress the field on small parcels anyway.
+  //
+  // Munis are derived from the RESULT SET itself (each parcel carries
+  // Muni_Name_With_Typ), NOT the single muni dropdown — so land cover
+  // auto-loads for single-muni searches, a selected muni, AND imported
+  // lists spanning several munis. Per-muni shards fetch in parallel and
+  // cache. Each match is stamped with its _landCover fractions plus a
+  // _lcColor for the Land Cover map overlay. Non-fatal throughout.
+  try {
+    const muniNames = [...new Set(
+      rows.map((r) => r.parcel.properties?.Muni_Name_With_Typ).filter(Boolean),
+    )];
+    if (muniNames.length) {
+      const dicts = await Promise.all(
+        muniNames.map((m) => fetchLandCoverForMuni(m).catch(() => null)),
+      );
+      const byMuni = new Map();
+      muniNames.forEach((m, i) => { if (dicts[i]) byMuni.set(m, dicts[i]); });
+      for (const row of rows) {
+        const p = row.parcel.properties;
+        const dict = p?.Muni_Name_With_Typ ? byMuni.get(p.Muni_Name_With_Typ) : null;
+        const hit = (dict && p?.Roll_No_Txt) ? dict[p.Roll_No_Txt] : null;
+        if (hit) {
+          p._landCover = hit;
+          const color = dominantBucket(hit)?.color;
+          if (color) p._lcColor = color;
         }
       }
-    } catch (err) {
-      console.warn('land-cover enrichment failed (non-fatal):', err);
     }
+  } catch (err) {
+    console.warn('land-cover enrichment failed (non-fatal):', err);
   }
 
   // Stamp the most-common assessment year into the Total Value column
@@ -5130,6 +5150,51 @@ async function toggleCliOverlay() {
   if ($cliLegend) $cliLegend.hidden = false;
 }
 
+// Land Cover overlay: a simple on/off that paints the result parcels by
+// their dominant land-cover bucket. Unlike CLI it needs no per-muni fetch
+// on toggle — the bucket data (and each parcel's _lcColor) is auto-loaded
+// with every search by enrichOverlays, so this just flips the layer +
+// legend and surfaces the related columns.
+let landCoverVisible = false;
+async function toggleLandCoverOverlay() {
+  if (!$landcoverToggle) return;
+  await mapReady;
+  landCoverVisible = !landCoverVisible;
+  setLandCoverVisible(map, landCoverVisible);
+  $landcoverToggle.classList.toggle('active', landCoverVisible);
+  $landcoverToggle.setAttribute('aria-pressed', String(landCoverVisible));
+  if ($landcoverLegend) {
+    if (landCoverVisible) {
+      renderLandCoverLegend();
+      $landcoverLegend.hidden = false;
+    } else {
+      $landcoverLegend.hidden = true;
+    }
+  }
+  if (landCoverVisible) {
+    // Bring the Land Cover + Cult % grid columns forward (mirrors how the
+    // CLI overlay surfaces its columns).
+    setColumnVisible('landcover', true);
+    setColumnVisible('cultpct', true);
+    // Help the user when the overlay is on but nothing colours — land cover
+    // only covers farmland parcels over 20 acres.
+    const anyPainted = (currentRows || []).some((r) => r.parcel?.properties?._lcColor);
+    if (!anyPainted) {
+      setCount('Land Cover overlay on — no farmland parcels (over 20 acres) in the current results to colour. Run or import a search that includes rural parcels.');
+    }
+  }
+}
+
+/** Render the Land Cover legend from the shared bucket palette so the map,
+ *  popup, and legend colours can never drift. */
+function renderLandCoverLegend() {
+  if (!$landcoverLegend) return;
+  const items = LAND_COVER_BUCKETS
+    .map((b) => `<li><span class="swatch" style="background:${b.color}"></span>${b.label}</li>`)
+    .join('');
+  $landcoverLegend.innerHTML = `<strong>Land cover (2020)</strong><ul>${items}</ul>`;
+}
+
 /**
  * Toggle the Sec-Twp Grid layer. Lazy-fetches the Manitoba Original
  * Survey FeatureServer scoped to the active muni's boundary polygon,
@@ -5851,16 +5916,20 @@ function renderTable(rows, { resetPage = true } = {}) {
     tr.appendChild(riskAreaCell);
     // CLI capability + Soil Type for the dominant (highest area-share)
     // soil — read directly from the stamped composition array. Empty
-    // when no overlay has loaded for this muni yet.
-    tr.appendChild(td(dominantCliLabel(p)));
-    tr.appendChild(td(dominantSoilTypeLabel(p)));
+    // when no overlay has loaded for this muni yet; the empty-cell hint
+    // tells the user to turn the Soil Productivity overlay on.
+    tr.appendChild(td(dominantCliLabel(p), null, CLI_EMPTY_HINT));
+    tr.appendChild(td(dominantSoilTypeLabel(p), null, SOIL_EMPTY_HINT));
     // Land Cover (dominant farmland bucket + share) and Cult % — both
     // populated only for > 20-acre parcels from the pre-baked
     // _landCover stamp; blank otherwise. Cult % is right-aligned
-    // numeric so it sorts/scans with the other rate columns.
+    // numeric so it sorts/scans with the other rate columns. When the
+    // parcel IS over 20 acres but the stamp is missing, the empty-cell
+    // hint explains how land cover loads.
     tr.appendChild(landCoverCell(p, ac));
     const cultPct = Number(ac) > 20 ? cultFraction(p._landCover) : null;
-    tr.appendChild(td(cultPct != null ? formatPercent(cultPct) : null, 'num'));
+    const cultHint = (cultPct == null && Number(ac) > 20) ? LANDCOVER_EMPTY_HINT : undefined;
+    tr.appendChild(td(cultPct != null ? formatPercent(cultPct) : null, 'num', cultHint));
     tr.appendChild(td(badge(formatChanges(row), 'badge-amend')));
     tr.appendChild(td(formatDu(p.Dwelling_Units), 'num'));
     // Basic-mode position for Acres — hidden in sales mode (the
@@ -6042,9 +6111,18 @@ function soilCell(p) {
  */
 function landCoverCell(p, ac) {
   const cell = document.createElement('td');
-  const dom = Number(ac) > 20 ? dominantBucket(p?._landCover) : null;
+  const eligible = Number(ac) > 20;
+  const dom = eligible ? dominantBucket(p?._landCover) : null;
   if (!dom) {
-    cell.textContent = '';
+    if (eligible) {
+      // Over 20 acres but no land-cover stamp → show the em-dash + hint so
+      // the blank reads as "not loaded" rather than "no data".
+      cell.textContent = '—';
+      cell.classList.add('empty', 'empty-hint');
+      cell.title = LANDCOVER_EMPTY_HINT;
+    } else {
+      cell.textContent = '';
+    }
     return cell;
   }
   const dot = document.createElement('span');
@@ -7681,11 +7759,26 @@ function today() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-function td(value, className) {
+// Hover hints shown on empty (em-dash) cells whose data isn't loaded by a
+// plain search, so "—" reads as "not loaded yet" rather than "no data". CLI
+// and Soil Type need the Soil Productivity overlay on; Land Cover / Cult %
+// load from a muni-scoped search of > 20-acre parcels (no overlay needed).
+const CLI_EMPTY_HINT =
+  'Turn on the Soil Productivity/Soil Name overlay (Agricultural section) to load soil capability for this municipality.';
+const SOIL_EMPTY_HINT =
+  'Turn on the Soil Productivity/Soil Name overlay (Agricultural section) to load the soil association for this municipality.';
+const LANDCOVER_EMPTY_HINT =
+  'Loads automatically on a municipality-scoped search (select the municipality, then search) for parcels over 20 acres.';
+
+function td(value, className, emptyTitle) {
   const el = document.createElement('td');
   if (value == null || value === '') {
     el.textContent = '—';
     el.classList.add('empty');
+    if (emptyTitle) {
+      el.title = emptyTitle;
+      el.classList.add('empty-hint');
+    }
   } else if (value instanceof Element) {
     el.appendChild(value);
   } else {
