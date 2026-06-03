@@ -289,13 +289,20 @@ run("gdaldem", c(
 # 3. gdalwarp — reproject to EPSG:3857 (Web Mercator) for XYZ tiling
 # ----------------------------------------------------------------------
 warped_tif <- file.path(tmp_dir, "rgba_3857.tif")
+# No -srcnodata / -dstnodata: the step-2 output is a proper RGBA raster
+# (4 bands, the 4th carrying alpha set to 0 for nodata via the
+# `nv 0 0 0 0` color-table entry + gdaldem's `-alpha` flag). Modern
+# gdalwarp auto-detects the alpha channel as the validity mask on read
+# and preserves it on write, so the nodata flags are redundant — and
+# their multi-value form (`-srcnodata "0 0 0 0"`) requires shell
+# quoting that R's system2 doesn't add, leading to gdalwarp parsing
+# each "0" as an extra positional source file.
 run("gdalwarp", c(
+  "-overwrite",
   "-t_srs", "EPSG:3857",
   # Nearest-neighbour keeps the 5 bucket colours discrete; any other
   # resampler would blend pixels and pollute the palette.
   "-r", "near",
-  "-srcnodata", "0 0 0 0",
-  "-dstnodata", "0 0 0 0",
   "-of", "GTiff",
   "-co", "COMPRESS=DEFLATE",
   "-co", "TILED=YES",
