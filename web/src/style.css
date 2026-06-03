@@ -4899,7 +4899,7 @@ body {
 }
 .sidebar .overlay-group[data-group="links"] .overlay-btn,
 .sidebar .overlay-group[data-group="links"] .overlay-btn:hover:not(:disabled) {
-  color: #b91c1c;        /* red */
+  color: #111;           /* black */
 }
 
 /* Hover background can stay subtle — the refresh's accent
