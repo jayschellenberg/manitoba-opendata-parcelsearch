@@ -1,0 +1,13 @@
+{
+  "built": "2026-06-03T13:49:04-0500",
+  "source": "LCR_RCT_2020_MB.tif",
+  "minzoom": 6,
+  "maxzoom": 12,
+  "palette": {
+    "cult": "#d8a93b",
+    "past": "#9ab95a",
+    "bush": "#3f7d3f",
+    "wet": "#4a90c2",
+    "other": "#b0b0b0"
+  }
+}
