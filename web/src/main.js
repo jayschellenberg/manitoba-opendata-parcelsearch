@@ -4572,6 +4572,10 @@ function resetMuniParcelsToggle() {
 let mascLoadedFor = null;
 let surveyGridLoadedFor = null;
 let cliLoadedFor = null;
+// Land Cover overlay state: whether it's on, and the muni scope key the
+// fabric was last stamped for (so a muni change can reset it like CLI/MASC).
+let landCoverVisible = false;
+let landCoverLoadedFor = null;
 // CLI tri-state cycle: null (off) → 'capability' → 'identity' → null.
 // Cycle progression and button labels:
 //   null       → "Soil Productivity/Soil Name" (idle invitation label)
@@ -4779,6 +4783,23 @@ function resetMascAndGridToggles() {
       mapReady.then(() => {
         setCliAgrVisible(map, false);
         if ($cliLegend) $cliLegend.hidden = true;
+      });
+    }
+  }
+  // Land Cover: same off-on-muni-change logic as MASC/CLI. The fabric
+  // stamp is muni-scoped, so a dropdown change would otherwise leave the
+  // previous muni's colours on screen and force the user to toggle off
+  // and back on. Clearing here flips the button off and hides the layer;
+  // the next click loads + stamps the new muni cleanly.
+  if (landCoverLoadedFor && landCoverLoadedFor !== desiredOverlayKey) {
+    landCoverLoadedFor = null;
+    landCoverVisible = false;
+    if ($landcoverToggle && $landcoverToggle.classList.contains('active')) {
+      $landcoverToggle.classList.remove('active');
+      $landcoverToggle.setAttribute('aria-pressed', 'false');
+      mapReady.then(() => {
+        setLandCoverVisible(map, false);
+        if ($landcoverLegend) $landcoverLegend.hidden = true;
       });
     }
   }
@@ -5158,7 +5179,6 @@ async function toggleCliOverlay() {
 // result-source colouring (landcover-fill) also covers imported lists that
 // have no single-muni scope. The bucket data otherwise rides along with
 // each search via enrichOverlays.
-let landCoverVisible = false;
 async function toggleLandCoverOverlay() {
   if (!$landcoverToggle) return;
   await mapReady;
@@ -5166,6 +5186,7 @@ async function toggleLandCoverOverlay() {
   // Off branch: hide both fills + legend, clear active state, no fetch.
   if (landCoverVisible) {
     landCoverVisible = false;
+    landCoverLoadedFor = null;
     setLandCoverVisible(map, false);
     $landcoverToggle.classList.remove('active');
     $landcoverToggle.setAttribute('aria-pressed', 'false');
@@ -5199,6 +5220,7 @@ async function toggleLandCoverOverlay() {
       }
       fabricPainted = await stampLandCoverOnFabric(auxData.muniParcels, munis);
       setMuniParcelsData(map, auxData.muniParcels);
+      landCoverLoadedFor = muniParcelsLoadKey();
     } catch (err) {
       console.warn('Land Cover fabric load failed', err);
     } finally {
@@ -5221,7 +5243,7 @@ async function toggleLandCoverOverlay() {
   if (munis.length) {
     const label = munis.length === 1 ? munis[0] : `${munis.length} municipalities`;
     setCount(fabricPainted > 0
-      ? `Land Cover on for ${label} — ${fabricPainted} parcel${fabricPainted === 1 ? '' : 's'} over 20 acres coloured.`
+      ? `Land Cover on for ${label} — ${fabricPainted} parcel${fabricPainted === 1 ? '' : 's'} over 20 acres coloured by dominant land cover (click a parcel for the top-2 breakdown).`
       : `Land Cover on for ${label} — no farmland parcels over 20 acres found to colour.`);
   } else if (resultPainted === 0) {
     setCount('Land Cover: select a municipality (or run/import a search with rural parcels) to load land cover.');
@@ -5263,8 +5285,8 @@ function renderLandCoverLegend() {
     .map((b) => `<li><span class="swatch" style="background:${b.color}"></span>${b.label}</li>`)
     .join('');
   $landcoverLegend.innerHTML =
-    `<strong>Land cover (2020)</strong><ul>${items}</ul>` +
-    '<small style="display:block;margin-top:4px;color:#6b7280;font-style:italic">Farmland parcels over 20 acres</small>';
+    `<strong>Dominant land cover (2020)</strong><ul>${items}</ul>` +
+    '<small style="display:block;margin-top:4px;color:#6b7280;font-style:italic">Farmland parcels over 20 acres · fill shows dominant cover only</small>';
 }
 
 /**

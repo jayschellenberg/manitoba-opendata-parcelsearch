@@ -2934,7 +2934,7 @@ export function soilSurveyParcelHtml(composition) {
  */
 export function landCoverParcelHtml(p) {
   if (!(Number(p?._acres) > 20)) return null;
-  const rows = landCoverBreakdown(p?._landCover);
+  const rows = landCoverBreakdown(readLandCover(p?._landCover));
   if (!rows) return null;
   const acres = Number(p._acres);
   const html = rows.map((b) => {
@@ -2951,6 +2951,26 @@ export function landCoverParcelHtml(p) {
   return `<table style="margin-top:4px;font-size:12px;border-collapse:collapse;width:100%">${html}</table>`;
 }
 
+/**
+ * One-line top-2 land-cover summary for the muni-fabric (Roll Layer) popup
+ * — the two largest buckets with their share (e.g. "Cultivated 61% ·
+ * Wetland 16%"), each with its colour swatch. Null when the parcel is
+ * ≤ 20 ac or carries no land-cover data (same gate as landCoverParcelHtml).
+ * The full breakdown lives on the search-result popup; this is the concise
+ * inline version for the fabric popup.
+ */
+export function landCoverTopTwoLine(p) {
+  if (!(Number(p?._acres) > 20)) return null;
+  const rows = landCoverBreakdown(readLandCover(p?._landCover));
+  if (!rows) return null;
+  const parts = rows.slice(0, 2).map((b) => {
+    const swatch = `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${escapeHtml(b.color)};border:1px solid rgba(0,0,0,0.2);margin-right:4px;vertical-align:middle"></span>`;
+    const pctLabel = b.pct < 0.005 ? '<1%' : `${Math.round(b.pct * 100)}%`;
+    return `${swatch}${escapeHtml(b.label)} ${pctLabel}`;
+  });
+  return `<strong>Land cover</strong> ${parts.join(' &middot; ')}`;
+}
+
 function readSoilComposition(raw) {
   if (Array.isArray(raw)) return raw;
   if (typeof raw === 'string' && raw.trim().startsWith('[')) {
@@ -2962,6 +2982,26 @@ function readSoilComposition(raw) {
     }
   }
   return [];
+}
+
+/**
+ * Coerce a parcel's `_landCover` stamp to an object. MapLibre serializes
+ * nested-object feature properties to JSON strings when read from rendered
+ * features (the popup path), so the stamp can arrive either as the original
+ * object or as a JSON string — same dual shape readSoilComposition handles
+ * for `_soilComposition`. Returns null when there's no usable object.
+ */
+function readLandCover(raw) {
+  if (raw && typeof raw === 'object') return raw;
+  if (typeof raw === 'string' && raw.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(raw);
+      return (parsed && typeof parsed === 'object') ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 function formatSoilExtent(value) {
@@ -3418,6 +3458,11 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
   if (p.Dwelling_Units != null && p.Dwelling_Units !== '') {
     lines.push(`<strong>DU</strong> ${escapeHtml(p.Dwelling_Units)}`);
   }
+  // Top-2 land cover (dominant + runner-up, each with its share) right
+  // after DU, once the Land Cover overlay has stamped this fabric parcel.
+  // The full per-bucket breakdown lives on the search-result popup.
+  const lcLine = landCoverTopTwoLine(p);
+  if (lcLine) lines.push(lcLine);
   // GPS Coordinates link sits right after DU so it's a single click
   // away on the click popup. Only rendered for the sticky/click
   // variant — the hover popup closes on mouse-out before the user
