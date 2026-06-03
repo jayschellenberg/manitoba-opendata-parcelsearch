@@ -1719,7 +1719,14 @@ for (const th of document.querySelectorAll('#results th[data-col]')) {
 
 // Populate the three dropdowns in parallel — the muni list is the slow one
 // (~190 distinct values), the categories are short and quick.
-populateDropdowns();
+populateDropdowns().finally(() => {
+  // Defensive second probe after a few seconds. populateDropdowns's
+  // probeRollEntrySnapshot already retries up to 3x in 2.5s; this catches
+  // the worst case where extension interference persists through every
+  // boot-time attempt. Quiet no-op once snapshot mode is on (or live is
+  // healthy), so it's a free safety net.
+  setTimeout(() => recheckRollEntrySnapshotAfterBoot(), 5000);
+});
 
 // Pre-warm the legal index in the background. The first search (legal-
 // criteria or otherwise) joins the index against the parcel result set
@@ -1803,20 +1810,52 @@ const ROLL_ENTRY_SNAPSHOT_MANIFEST_URL =
   `${import.meta.env?.BASE_URL || '/'}data/rollentry-snapshot/_index.json`;
 
 /** Fetch the snapshot manifest; null on any failure (so the call site
- *  falls through to live-only mode without an error). The manifest is
- *  tiny (~30 KB) so we don't bother caching it across loads. */
-async function probeRollEntrySnapshot() {
-  try {
-    const res = await fetch(ROLL_ENTRY_SNAPSHOT_MANIFEST_URL, { cache: 'no-cache' });
-    if (!res.ok) return null;
-    const m = await res.json();
-    // Defensive shape check — a busted manifest shouldn't flip the app
-    // into snapshot mode and then immediately fail on every query.
-    if (!m || !m.snapshot_date || !m.munis || typeof m.munis !== 'object') return null;
-    return m;
-  } catch {
-    return null;
+ *  falls through to live-only mode without an error).
+ *
+ *  Retries up to `retries` more times on failure, with 500ms/1000ms/1500ms
+ *  backoff. Browser extensions (LastPass, Grammarly, recorders, etc.) can
+ *  inject content scripts mid-load and break concurrent fetches — the
+ *  "A listener indicated an asynchronous response by returning true, but
+ *  the message channel closed before a response was received" error class.
+ *  A single retry after a short wait clears this in the vast majority of
+ *  cases; the user-facing symptom is the snapshot fallback not activating
+ *  despite an incomplete live muni list. */
+async function probeRollEntrySnapshot(retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(ROLL_ENTRY_SNAPSHOT_MANIFEST_URL, { cache: 'no-cache' });
+      if (res.ok) {
+        const m = await res.json();
+        if (m && m.snapshot_date && m.munis && typeof m.munis === 'object') return m;
+      }
+    } catch {
+      // fall through to retry
+    }
+    if (attempt < retries) {
+      await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+    }
   }
+  return null;
+}
+
+/** A few seconds after boot, if we ended up in legacy "live-incomplete" mode
+ *  without snapshot activation despite the snapshot existing, try once more
+ *  and swap in if it works. Catches the case where every boot-time retry
+ *  failed (e.g., aggressive extension interference) but later attempts
+ *  succeed. */
+async function recheckRollEntrySnapshotAfterBoot() {
+  // Already in snapshot mode? Nothing to do.
+  if (getRollEntrySnapshot()) return;
+  // Live looked healthy? Nothing to do.
+  const muniCount = $municipality ? $municipality.options.length - 1 : 0;
+  if (muniCount === 0 || muniCount >= ROLL_ENTRY_MIN_HEALTHY_MUNIS) return;
+  const manifest = await probeRollEntrySnapshot();
+  if (!manifest) return;
+  const snapshotCount = Object.keys(manifest.munis || {}).length;
+  if (snapshotCount === 0) return;
+  setRollEntrySnapshot(manifest);
+  fillSelect($municipality, Object.keys(manifest.munis).sort(), 'Any municipality');
+  updateRollEntryBanner({ liveCount: muniCount, snapshotManifest: manifest, snapshotActive: true });
 }
 
 /**
