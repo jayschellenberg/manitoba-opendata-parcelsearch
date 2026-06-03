@@ -1771,10 +1771,11 @@ async function populateDropdowns() {
 
 // Manitoba normally publishes ~180 munis on the ROLL_ENTRY FeatureServer.
 // When the province is mid-republishing the service (observed 2026-06-03),
-// the list comes back with a small fraction of that. < 100 is the
-// "obviously incomplete" threshold — catches the mid-republish state
-// without false-firing on minor amalgamations.
-const ROLL_ENTRY_MIN_HEALTHY_MUNIS = 100;
+// the list comes back with a small fraction of that. < 150 catches the
+// mid-republish state and also partial-rebuild states where most but not
+// all munis have landed (still ~17% short of normal; well outside the
+// noise range for minor amalgamations).
+const ROLL_ENTRY_MIN_HEALTHY_MUNIS = 150;
 const ROLL_ENTRY_NORMAL_MUNIS = 180;
 
 /**
