@@ -2,11 +2,11 @@
 
 ## ▶ RESUME FROM ANOTHER PC (read this first)
 
-**Where the work lives:** commit `feat/parcel-snapshots` (see commit hash in the
-git log). On the other PC:
+**Where the work lives:** pushed to `origin/main`. Feature commit `edfdb2c`
+("Add parcel satellite-snapshot export …"); the unrelated dashboard refactor is
+the separate commit `685e44e` right after it. On the other PC:
 ```
-git fetch origin
-git checkout feat/parcel-snapshots   # or: git pull, if it was merged to main
+git pull origin main
 cd web
 npm install                          # node_modules is gitignored
 cp .env.example .env.local           # then paste your Mapbox token (routing only;
@@ -26,8 +26,8 @@ fix it then.
 
 **Note on unrelated changes:** the working tree also had pre-existing, unrelated
 edits to `dashboard/*`, `.gitignore`, and `start-dashboard.bat` (a dashboard
-control-panel refactor) that are NOT part of this feature. They were handled
-separately from the `feat/parcel-snapshots` commit — confirm their state with
+control-panel refactor) that are NOT part of this feature. They were committed
+separately (`685e44e`), after the feature commit — confirm their state with
 `git log`/`git status` if you care about them.
 
 ---
