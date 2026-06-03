@@ -99,11 +99,15 @@ colnames(COLOR_TABLE) <- c("value", "r", "g", "b", "a")
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
-have_tool <- function(name) {
-  res <- suppressWarnings(system(paste(shQuote(name), "--version"),
-                                 intern = TRUE, ignore.stderr = TRUE))
-  length(res) > 0
+# Probe for an executable on PATH. Uses Sys.which because system(... intern=TRUE)
+# on Windows THROWS an R error on "not found" (caller can't fall through to
+# the next candidate); Sys.which just returns "" when nothing matches.
+# Returns the absolute path when found, "" when not.
+which_tool <- function(name) {
+  path <- unname(Sys.which(name))
+  if (is.na(path)) "" else path
 }
+have_tool <- function(name) nzchar(which_tool(name))
 
 run <- function(cmd, args) {
   cat("$", cmd, paste(args, collapse = " "), "\n")
@@ -113,14 +117,47 @@ run <- function(cmd, args) {
   }
 }
 
-# Find a usable `gdal2tiles` invocation — on Windows it's typically
-# `gdal2tiles.py`; conda environments often expose it as `gdal2tiles`.
+# Locate a usable gdal2tiles invocation. Returns a list(cmd, prefix_args)
+# the caller prepends to its own args, so a "python -m osgeo_utils.gdal2tiles"
+# fallback composes the same way as a bare "gdal2tiles".
+#
+# Order of attempts (first hit wins):
+#   1. `gdal2tiles`         — modern conda / Linux / macOS console-script
+#   2. `gdal2tiles.bat`     — OSGeo4W on Windows ships this wrapper
+#   3. `gdal2tiles.py`      — direct script invocation (needs .PY in PATHEXT)
+#   4. `python  -m osgeo_utils.gdal2tiles`   — GDAL 3.3+ Python module
+#   5. `python3 -m osgeo_utils.gdal2tiles`
+#   6. `py      -m osgeo_utils.gdal2tiles`   — Windows py launcher
+#
+# Step 4-6 are validated by `python -m osgeo_utils.gdal2tiles --version` so a
+# stray python without GDAL bindings doesn't false-positive.
 find_gdal2tiles <- function() {
-  for (cmd in c("gdal2tiles.py", "gdal2tiles")) {
-    if (have_tool(cmd)) return(cmd)
+  for (cmd in c("gdal2tiles", "gdal2tiles.bat", "gdal2tiles.py")) {
+    if (have_tool(cmd)) {
+      return(list(cmd = cmd, prefix_args = character(0)))
+    }
   }
-  stop("gdal2tiles.py not found on PATH. Install GDAL (OSGeo4W on Windows ",
-       "or `conda install -c conda-forge gdal`) and re-run.")
+  for (py in c("python", "python3", "py")) {
+    if (!have_tool(py)) next
+    res <- tryCatch(
+      suppressWarnings(system2(py, c("-m", "osgeo_utils.gdal2tiles", "--version"),
+                               stdout = TRUE, stderr = TRUE)),
+      error = function(e) NULL
+    )
+    if (length(res) > 0 && !any(grepl("No module|ModuleNotFoundError|Error", res))) {
+      return(list(cmd = py, prefix_args = c("-m", "osgeo_utils.gdal2tiles")))
+    }
+  }
+  stop(
+    "Couldn't find a usable gdal2tiles invocation. Tried: ",
+    "gdal2tiles / gdal2tiles.bat / gdal2tiles.py on PATH, ",
+    "and `python -m osgeo_utils.gdal2tiles` via python/python3/py.\n",
+    "Install GDAL with its Python bindings:\n",
+    "  - Windows: OSGeo4W (https://trac.osgeo.org/osgeo4w/) — choose 'gdal' + 'python3-gdal'\n",
+    "  - conda:   `conda install -c conda-forge gdal`\n",
+    "  - then either run this script from a shell where `gdal2tiles --version` works,\n",
+    "    or ensure the python on PATH has the osgeo bindings."
+  )
 }
 
 # ----------------------------------------------------------------------
@@ -136,12 +173,21 @@ if (length(src_tif_candidates) == 0L) {
 src_tif <- tail(sort(src_tif_candidates), 1L)
 cat("Source raster:", basename(src_tif), "\n")
 
+missing <- character(0)
 for (tool in c("gdaldem", "gdalwarp", "gdal_translate")) {
-  if (!have_tool(tool)) {
-    stop(tool, " not found on PATH. Install GDAL and re-run.")
-  }
+  if (!have_tool(tool)) missing <- c(missing, tool)
 }
-gdal2tiles_cmd <- find_gdal2tiles()
+if (length(missing) > 0L) {
+  stop(
+    "GDAL CLI tool(s) not found on PATH: ", paste(missing, collapse = ", "), ".\n",
+    "Install via OSGeo4W (Windows) or `conda install -c conda-forge gdal`, ",
+    "then re-run this script from a shell where the gdal commands are on PATH."
+  )
+}
+gdal2tiles_call <- find_gdal2tiles()
+cat("Using gdal2tiles:", gdal2tiles_call$cmd,
+    if (length(gdal2tiles_call$prefix_args)) paste(gdal2tiles_call$prefix_args, collapse = " ") else "",
+    "\n")
 
 dir.create(tiles_dir, showWarnings = FALSE, recursive = TRUE)
 tmp_dir <- tempfile("landcover_tiles_")
@@ -200,7 +246,8 @@ run("gdalwarp", c(
 # --xyz emits Slippy-Map (Google/OSM) tile coordinates rather than TMS
 # (Y-flipped). MapLibre defaults to XYZ, so this saves a `scheme: 'tms'`
 # on the source declaration.
-run(gdal2tiles_cmd, c(
+run(gdal2tiles_call$cmd, c(
+  gdal2tiles_call$prefix_args,
   "--xyz",
   "--processes", "4",
   paste0("-z", MIN_ZOOM, "-", MAX_ZOOM),
