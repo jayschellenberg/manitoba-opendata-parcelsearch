@@ -116,6 +116,7 @@ import {
   setSubjectRadius,
 } from './map.js';
 import { generateParcelSnapshotsZip } from './snapshotExport.js';
+import { OUTPUT_MIME, OUTPUT_QUALITY, MAX_OUTPUT_DIM } from './lib/imageOutput.js';
 import { clearAllCache as clearAllCacheModule } from './cache.js';
 import { getManifest } from './manifest.js';
 import {
@@ -1282,9 +1283,9 @@ const $staticMapOutput  = document.getElementById('static-map-output');
 const $staticMapSection = document.getElementById('static-map-section');
 if ($staticMapBtn) $staticMapBtn.addEventListener('click', generateStaticMap);
 
-// Parcel Snapshots (ZIP) — render a 1920×1080 satellite PNG of each result
+// Parcel Snapshots (ZIP) — render a 1600×900 satellite JPEG of each result
 // parcel (highlighted, fit to 16:9) and download them all as one ZIP named
-// muniCode-roll.png. Enabled whenever the current result set is non-empty,
+// muniCode-roll.jpg. Enabled whenever the current result set is non-empty,
 // so it serves both entry points the user asked for: an imported parcel
 // list, and Sales Analysis after importing a list.
 const $snapshotBtn = document.getElementById('snapshot-zip-btn');
@@ -1303,8 +1304,8 @@ function updateSnapshotButton() {
   $snapshotBtn.disabled = n === 0;
   $snapshotBtn.textContent = 'Parcel Snapshots (ZIP)';
   $snapshotBtn.title = n === 0
-    ? 'Import a parcel list or run a search first, then generate one satellite PNG per result parcel.'
-    : `Generate ${n} satellite PNG${n === 1 ? '' : 's'} (1920×1080, highlighted, 16:9) and download as a ZIP named muniCode-roll.png.`;
+    ? 'Import a parcel list or run a search first, then generate one satellite JPEG per result parcel.'
+    : `Generate ${n} satellite JPEG${n === 1 ? '' : 's'} (1600×900, highlighted, 16:9) and download as a ZIP named muniCode-roll.jpg.`;
 }
 
 async function handleSnapshotExport() {
@@ -1326,6 +1327,7 @@ async function handleSnapshotExport() {
   try {
     const { blob, count } = await generateParcelSnapshotsZip(fcSnapshot, {
       signal: snapshotAbort.signal,
+      fetchSurveyGrid: buildSurveyGridForSnapshot,
       onProgress: ({ done, total }) => {
         $snapshotBtn.textContent = `Capturing ${done}/${total}… (click to cancel)`;
       },
@@ -1347,6 +1349,34 @@ async function handleSnapshotExport() {
   }
 }
 
+/**
+ * Build the section/township (DLS) grid FC for one muni, for the snapshot
+ * export. Resolves the muni's boundary polygon from the loaded boundaries
+ * FC (exact match on MUNI_LIST_NAME_WITH_TYPE, then a tolerant normalized
+ * match — the parcel FC carries Roll-Entry's Muni_Name_With_Typ, which can
+ * differ in punctuation/accents from the boundary field), fetches the
+ * survey grid scoped to that polygon, and converts it to section-bbox grid
+ * lines — the same per-muni pipeline toggleSurveyGridOverlay() uses.
+ * Returns null when the boundaries FC hasn't loaded or the muni can't be
+ * matched, in which case that muni's snapshots simply omit the grid.
+ */
+async function buildSurveyGridForSnapshot(muniName) {
+  if (!muniName || !muniBoundariesFc?.features) return null;
+  let feat = muniBoundariesFc.features.find(
+    (f) => f.properties?.MUNI_LIST_NAME_WITH_TYPE === muniName,
+  );
+  if (!feat) {
+    const key = normalizeMuniKey(muniName);
+    feat = muniBoundariesFc.features.find(
+      (f) => normalizeMuniKey(f.properties?.MUNI_LIST_NAME_WITH_TYPE) === key,
+    );
+  }
+  if (!feat) return null;
+  const fc = await fetchSurveyGridForMuni(muniName, feat);
+  const rows = surveyFcToRows(fc || { features: [] });
+  return sectionLinesFromRows(rows);
+}
+
 /** Trigger a browser download for an in-memory Blob. */
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
@@ -1362,19 +1392,32 @@ function downloadBlob(blob, filename) {
 /**
  * Draw the WebGL map canvas into a 2D canvas and burn the live
  * attribution text into the bottom-right corner. Without this the
- * saved PNG would show no basemap / data credit even though the live
+ * saved image would show no basemap / data credit even though the live
  * map does — the WebGL canvas alone doesn't include the
  * AttributionControl DOM overlay. The returned data URL carries the
  * credit with the image so it survives right-click → Save.
+ *
+ * The captured view is downscaled so its longest side is at most
+ * MAX_OUTPUT_DIM and encoded as JPEG (see lib/imageOutput.js) — the same
+ * resolution/format band as the parcel snapshots, which keeps the saved
+ * image small (~a few hundred KB instead of multi-MB PNG) for dropping into
+ * documents. Never upscales a smaller view.
  */
 function composeWithAttribution(srcCanvas) {
-  const w = srcCanvas.width;
-  const h = srcCanvas.height;
+  const sw = srcCanvas.width;
+  const sh = srcCanvas.height;
+  const scale = Math.min(MAX_OUTPUT_DIM / sw, MAX_OUTPUT_DIM / sh, 1);
+  const w = Math.round(sw * scale);
+  const h = Math.round(sh * scale);
   const out = document.createElement('canvas');
   out.width = w;
   out.height = h;
   const ctx = out.getContext('2d');
-  ctx.drawImage(srcCanvas, 0, 0);
+  // White backing: JPEG has no alpha, so any transparent pixel would
+  // otherwise encode as black.
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(srcCanvas, 0, 0, w, h);
 
   // Pull the exact text MapLibre shows in its attribution control. This
   // keeps the static image in sync with whatever sources/overlays are
@@ -1385,11 +1428,10 @@ function composeWithAttribution(srcCanvas) {
   let text = attribEl ? attribEl.innerText.replace(/\s+/g, ' ').trim() : '';
   if (!text) text = '© OpenStreetMap © CARTO';
 
-  // Style the credit similar to the live map's bottom-right overlay:
-  // small text, semi-transparent white pill, dark text. Use the device
-  // pixel ratio so it stays sharp at high-DPI; fall back to 1.
-  const dpr = Math.max(1, window.devicePixelRatio || 1);
-  const fontSize = Math.max(11, Math.round(11 * dpr * 0.9));
+  // Style the credit similar to the live map's bottom-right overlay: small
+  // text, semi-transparent white pill, dark text. Size relative to the
+  // output width so it stays proportional after the downscale.
+  const fontSize = Math.max(11, Math.round(w * 0.011));
   ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
   ctx.textBaseline = 'middle';
   // Wrap the attribution onto multiple lines if it's too long for the
@@ -1416,7 +1458,7 @@ function composeWithAttribution(srcCanvas) {
     const yMid = y0 + padY + i * lineHeight + Math.round(fontSize / 2);
     ctx.fillText(lines[i], x0 + padX, yMid);
   }
-  return out.toDataURL('image/png');
+  return out.toDataURL(OUTPUT_MIME, OUTPUT_QUALITY);
 }
 
 /** Greedy word-wrap: break `text` into lines that each measure ≤ maxWidth

@@ -1,11 +1,14 @@
 /*
  * Parcel satellite-snapshot export.
  *
- * For each parcel in a result set, render a 1920×1080 (16:9) satellite PNG
+ * For each parcel in a result set, render a 1600×900 (16:9) satellite JPEG
  * with the subject parcel highlighted (the same yellow selection styling a
  * normal search produces), surrounding parcel lines + roll-number labels
- * from the muni fabric, zoomed to the tightest extent that fits the 16:9
- * frame with a small margin. The PNGs are bundled into one ZIP.
+ * from the muni fabric, the section/township (DLS) grid turned on, zoomed
+ * to the tightest extent that fits the 16:9 frame with a margin. Roll-number
+ * labels are scaled up (2×) since these snapshots are mostly of larger rural
+ * parcels viewed at a further-out zoom. JPEG keeps each frame well under
+ * 1 MB (see lib/imageOutput.js). The frames are bundled into one ZIP.
  *
  * Why a dedicated OFFSCREEN map instead of the visible one:
  *   - Output is forced to exactly 1920×1080 regardless of the user's
@@ -18,7 +21,8 @@
  *
  * All heavy lifting is reused from the existing app: initMap, showResults
  * (sets the 'parcels' highlight source), setMuniParcelsData / Visible,
- * setBasemapSatellite, and fetchAllParcelsInMunicipality (cached).
+ * setSurveyGridData / Visible, setBasemapSatellite, and
+ * fetchAllParcelsInMunicipality (cached).
  */
 
 import bbox from '@turf/bbox';
@@ -27,22 +31,40 @@ import {
   showResults,
   setMuniParcelsData,
   setMuniParcelsVisible,
+  setSurveyGridData,
+  setSurveyGridVisible,
   setBasemapSatellite,
 } from './map.js';
 import { fetchAllParcelsInMunicipality } from './arcgis.js';
 import { buildStoreZip } from './lib/zipStore.js';
+import {
+  OUTPUT_MIME,
+  OUTPUT_QUALITY,
+  OUTPUT_EXT,
+  SNAPSHOT_W,
+  SNAPSHOT_H,
+} from './lib/imageOutput.js';
 
-const EXPORT_W = 1920;
-const EXPORT_H = 1080;
-// fitBounds padding in CSS px — the "small margin" so the parcel doesn't
-// touch the frame edge.
-const FRAME_PADDING = 48;
+const EXPORT_W = SNAPSHOT_W;
+const EXPORT_H = SNAPSHOT_H;
+// fitBounds padding in CSS px — the margin so the parcel doesn't touch the
+// frame edge. Generous (≈5%/9% of the 1920×1080 frame per side) so the
+// surrounding parcel fabric and section grid stay visible around the
+// subject — these snapshots are mostly larger rural parcels with context.
+const FRAME_PADDING = 96;
+// Roll-number labels (muni-parcels-label) are rendered at 2× their normal
+// size on the export map. The snapshots are mostly 160-acre / larger rural
+// parcels framed at a further-out zoom, where the base label ramp comes out
+// too small to read in a saved image.
+const ROLL_LABEL_SCALE = 2;
 // Esri World Imagery tiles top out around z20; allow overzoom to this so
 // tiny urban parcels still fill the frame (accepting some softness — see
 // PARCEL_SNAPSHOTS_PLAN.md caveat). Rural/ag parcels rarely reach it.
 const EXPORT_MAX_ZOOM = 20;
 // Safety net so a stuck tile fetch can't hang the whole batch.
 const IDLE_TIMEOUT_MS = 9000;
+
+const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
 /**
  * Generate a ZIP of satellite snapshots, one per parcel.
@@ -53,13 +75,18 @@ const IDLE_TIMEOUT_MS = 9000;
  * @param {AbortSignal} [opts.signal] — abort to cancel mid-batch.
  * @param {(muniName:string)=>Promise} [opts.fetchMuniFabric] — injectable
  *   for tests; defaults to fetchAllParcelsInMunicipality.
- * @returns {Promise<{ blob: Blob, count: number, skipped: number }>}
+ * @param {(muniName:string)=>Promise} [opts.fetchSurveyGrid] — returns the
+ *   section/township grid FC for a muni (boundary lookup + survey-grid fetch
+ *   live in main.js, which holds the boundaries FC). When omitted, or when it
+ *   resolves null for a muni, that muni's snapshots simply have no grid.
+ * @returns {Promise<{ blob: Blob, count: number }>}
  */
 export async function generateParcelSnapshotsZip(parcelFc, opts = {}) {
   const {
     onProgress,
     signal,
     fetchMuniFabric = fetchAllParcelsInMunicipality,
+    fetchSurveyGrid,
   } = opts;
 
   const features = (parcelFc?.features || []).filter((f) => f?.geometry);
@@ -84,7 +111,6 @@ export async function generateParcelSnapshotsZip(parcelFc, opts = {}) {
   let map = null;
   const files = [];
   const usedNames = new Map();
-  let skipped = 0;
 
   try {
     const created = initMap(container);
@@ -93,6 +119,8 @@ export async function generateParcelSnapshotsZip(parcelFc, opts = {}) {
     map.resize();
     setBasemapSatellite(map, true);
     setMuniParcelsVisible(map, true);
+    setSurveyGridVisible(map, true);
+    scaleRollLabels(map, ROLL_LABEL_SCALE);
 
     // Group by muni name so each muni's fabric (surrounding parcel lines +
     // roll labels) is fetched and set once, then reused for every subject
@@ -119,6 +147,19 @@ export async function generateParcelSnapshotsZip(parcelFc, opts = {}) {
       }
       setMuniParcelsData(map, fabric);
 
+      // Section/township (DLS) grid for this muni. Replaces the previous
+      // muni's grid each iteration; set empty when unavailable so a prior
+      // muni's lines don't bleed into this one's frames.
+      let grid = EMPTY_FC;
+      if (fetchSurveyGrid && muniName) {
+        try {
+          grid = (await fetchSurveyGrid(muniName)) || EMPTY_FC;
+        } catch (err) {
+          console.warn(`Snapshot: section grid fetch failed for ${muniName} — grid omitted.`, err);
+        }
+      }
+      setSurveyGridData(map, grid);
+
       for (const feature of groupFeatures) {
         throwIfAborted(signal);
         // Push the single subject parcel onto the 'parcels' source — this
@@ -140,12 +181,29 @@ export async function generateParcelSnapshotsZip(parcelFc, opts = {}) {
     if (files.length === 0) {
       throw new Error('No snapshots were captured.');
     }
-    return { blob: buildStoreZip(files), count: files.length, skipped };
+    return { blob: buildStoreZip(files), count: files.length };
   } finally {
     try { map?.remove(); } catch { /* ignore teardown errors */ }
     container.remove();
     window._map = prevDebugMap;
   }
+}
+
+// ---- label sizing ------------------------------------------------------
+
+/**
+ * Render the muni roll-number labels at `scale`× their normal size, on the
+ * export map only. The base `muni-parcels-label` text-size is a zoom×acreage
+ * `interpolate` expression (see map.js); wrapping it in a multiply leaves
+ * that whole ramp intact and just scales the result, so it stays correct if
+ * the base ramp is ever retuned. No-op when the layer or property is absent.
+ */
+function scaleRollLabels(map, scale) {
+  const LAYER = 'muni-parcels-label';
+  if (scale === 1 || !map.getLayer(LAYER)) return;
+  const base = map.getLayoutProperty(LAYER, 'text-size');
+  if (base == null) return;
+  map.setLayoutProperty(LAYER, 'text-size', ['*', scale, base]);
 }
 
 // ---- framing -----------------------------------------------------------
@@ -188,10 +246,11 @@ function waitForIdle(map) {
 }
 
 /**
- * Read the WebGL canvas, downscale to exactly 1920×1080 (the source canvas
- * is CSS-px × devicePixelRatio, so on a HiDPI screen it's larger), and
- * burn the live attribution credit into the corner — same compliance step
- * the on-screen "Generate Map" feature does.
+ * Read the WebGL canvas, downscale to exactly EXPORT_W×EXPORT_H (the source
+ * canvas is CSS-px × devicePixelRatio, so on a HiDPI screen it's larger —
+ * the downscale supersamples for a crisp result), and burn the live
+ * attribution credit into the corner — same compliance step the on-screen
+ * "Generate Map" feature does. Encoded as JPEG (see lib/imageOutput.js).
  */
 async function captureFrame(map, container) {
   const src = map.getCanvas();
@@ -199,9 +258,13 @@ async function captureFrame(map, container) {
   out.width = EXPORT_W;
   out.height = EXPORT_H;
   const ctx = out.getContext('2d');
+  // White backing: JPEG has no alpha, so any transparent edge pixel (e.g. a
+  // tile that didn't load) would otherwise encode as black.
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, EXPORT_W, EXPORT_H);
   ctx.drawImage(src, 0, 0, EXPORT_W, EXPORT_H);
   drawAttribution(ctx, EXPORT_W, EXPORT_H, attributionText(container));
-  return await new Promise((resolve) => out.toBlob(resolve, 'image/png'));
+  return await new Promise((resolve) => out.toBlob(resolve, OUTPUT_MIME, OUTPUT_QUALITY));
 }
 
 function attributionText(container) {
@@ -261,7 +324,7 @@ function wrapToWidth(ctx, text, maxWidth) {
 // ---- file naming -------------------------------------------------------
 
 /**
- * `{muniCode}-{roll}.png`. Muni code is the numeric prefix of the parcel's
+ * `{muniCode}-{roll}.{ext}`. Muni code is the numeric prefix of the parcel's
  * `Municipality` field, which Roll_Entry stores as "187 - DE SALABERRY
  * (RM)". Roll trims the canonical trailing ".000" like the rest of the UI.
  *
@@ -271,7 +334,7 @@ export function fileNameFor(feature) {
   const p = feature?.properties || {};
   const muniCode = muniCodeFromMunicipality(p.Municipality);
   const roll = humanRoll(p.Roll_No_Txt);
-  return `${sanitizeSegment(muniCode)}-${sanitizeSegment(roll)}.png`;
+  return `${sanitizeSegment(muniCode)}-${sanitizeSegment(roll)}.${OUTPUT_EXT}`;
 }
 
 function muniCodeFromMunicipality(municipality) {
