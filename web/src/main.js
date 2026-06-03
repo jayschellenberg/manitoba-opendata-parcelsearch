@@ -123,7 +123,7 @@ import {
 } from './map.js';
 import { generateParcelSnapshotsZip } from './snapshotExport.js';
 import { OUTPUT_MIME, OUTPUT_QUALITY, MAX_OUTPUT_DIM } from './lib/imageOutput.js';
-import { dominantBucket, cultFraction, LAND_COVER_BUCKETS } from './lib/landcover.js';
+import { dominantBucket, cultFraction, LAND_COVER_BUCKETS, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
 import { clearAllCache as clearAllCacheModule } from './cache.js';
 import { getManifest } from './manifest.js';
 import {
@@ -5408,8 +5408,8 @@ async function toggleLandCoverOverlay() {
         ? ' (click again for Detailed pixel view).'
         : '.';
       setCount(fabricPainted > 0
-        ? `Land Cover on for ${label} — ${fabricPainted} parcel${fabricPainted === 1 ? '' : 's'} over 20 acres coloured by dominant land cover${tail}`
-        : `Land Cover on for ${label} — no farmland parcels over 20 acres found to colour.`);
+        ? `Land Cover on for ${label} — ${fabricPainted} parcel${fabricPainted === 1 ? '' : 's'} over ${LAND_COVER_MIN_ACRES} acres coloured by dominant land cover${tail}`
+        : `Land Cover on for ${label} — no farmland parcels over ${LAND_COVER_MIN_ACRES} acres found to colour.`);
     } else if (resultPainted === 0) {
       setCount('Land Cover: select a municipality (or run/import a search with rural parcels) to load land cover.');
     }
@@ -5500,7 +5500,7 @@ function renderLandCoverLegend(mode) {
     : 'Dominant land cover (2020)';
   const footnote = mode === 'detailed'
     ? '' // opacity slider replaces it
-    : '<small style="display:block;margin-top:4px;color:#6b7280;font-style:italic">Farmland parcels over 20 acres · fill shows dominant cover only</small>';
+    : `<small style="display:block;margin-top:4px;color:#6b7280;font-style:italic">Farmland parcels over ${LAND_COVER_MIN_ACRES} acres · fill shows dominant cover only</small>`;
   const opacityCtl = mode === 'detailed'
     ? `<label class="landcover-opacity" style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:#374151">
          <span>Opacity</span>
@@ -6253,11 +6253,11 @@ function renderTable(rows, { resetPage = true } = {}) {
     // populated only for > 20-acre parcels from the pre-baked
     // _landCover stamp; blank otherwise. Cult % is right-aligned
     // numeric so it sorts/scans with the other rate columns. When the
-    // parcel IS over 20 acres but the stamp is missing, the empty-cell
-    // hint explains how land cover loads.
+    // parcel IS over the acreage threshold but the stamp is missing,
+    // the empty-cell hint explains how land cover loads.
     tr.appendChild(landCoverCell(p, ac));
-    const cultPct = Number(ac) > 20 ? cultFraction(p._landCover) : null;
-    const cultHint = (cultPct == null && Number(ac) > 20) ? LANDCOVER_EMPTY_HINT : undefined;
+    const cultPct = Number(ac) > LAND_COVER_MIN_ACRES ? cultFraction(p._landCover) : null;
+    const cultHint = (cultPct == null && Number(ac) > LAND_COVER_MIN_ACRES) ? LANDCOVER_EMPTY_HINT : undefined;
     tr.appendChild(td(cultPct != null ? formatPercent(cultPct) : null, 'num', cultHint));
     tr.appendChild(td(badge(formatChanges(row), 'badge-amend')));
     tr.appendChild(td(formatDu(p.Dwelling_Units), 'num'));
@@ -6434,18 +6434,19 @@ function soilCell(p) {
 
 /**
  * "Land Cover" grid cell — a colour-dot + dominant bucket + its share
- * (e.g. "● Cultivated 78%"). Empty for parcels ≤ 20 acres or with no
- * `_landCover` stamp (the shards only carry > 20-acre farmland, and
- * we gate on the webapp's own computed acreage too, per spec).
+ * (e.g. "● Cultivated 78%"). Empty for parcels ≤ LAND_COVER_MIN_ACRES
+ * or with no `_landCover` stamp (the shards only carry farmland over
+ * the threshold; the webapp gates on its own computed acreage too
+ * for consistency).
  */
 function landCoverCell(p, ac) {
   const cell = document.createElement('td');
-  const eligible = Number(ac) > 20;
+  const eligible = Number(ac) > LAND_COVER_MIN_ACRES;
   const dom = eligible ? dominantBucket(p?._landCover) : null;
   if (!dom) {
     if (eligible) {
-      // Over 20 acres but no land-cover stamp → show the em-dash + hint so
-      // the blank reads as "not loaded" rather than "no data".
+      // Over the threshold but no land-cover stamp → show the em-dash +
+      // hint so the blank reads as "not loaded" rather than "no data".
       cell.textContent = '—';
       cell.classList.add('empty', 'empty-hint');
       cell.title = LANDCOVER_EMPTY_HINT;
@@ -6465,10 +6466,11 @@ function landCoverCell(p, ac) {
 /**
  * CSV cells for the land-cover columns: dominant bucket label followed
  * by each bucket's share as a one-decimal percent. All blank for
- * parcels ≤ 20 acres or with no `_landCover` stamp, mirroring the grid.
+ * parcels ≤ LAND_COVER_MIN_ACRES or with no `_landCover` stamp, mirroring
+ * the grid.
  */
 function landCoverCsvCells(p, ac) {
-  const lc = Number(ac) > 20 ? p?._landCover : null;
+  const lc = Number(ac) > LAND_COVER_MIN_ACRES ? p?._landCover : null;
   if (!lc) return ['', '', '', '', '', ''];
   const dom = dominantBucket(lc);
   const pct = (k) => {
@@ -8091,13 +8093,13 @@ function today() {
 // Hover hints shown on empty (em-dash) cells whose data isn't loaded by a
 // plain search, so "—" reads as "not loaded yet" rather than "no data". CLI
 // and Soil Type need the Soil Productivity overlay on; Land Cover / Cult %
-// load from a muni-scoped search of > 20-acre parcels (no overlay needed).
+// load from a muni-scoped search of > LAND_COVER_MIN_ACRES-acre parcels (no overlay needed).
 const CLI_EMPTY_HINT =
   'Turn on the Soil Productivity/Soil Name overlay (Agricultural section) to load soil capability for this municipality.';
 const SOIL_EMPTY_HINT =
   'Turn on the Soil Productivity/Soil Name overlay (Agricultural section) to load the soil association for this municipality.';
 const LANDCOVER_EMPTY_HINT =
-  'Loads automatically on a municipality-scoped search (select the municipality, then search) for parcels over 20 acres.';
+  `Loads automatically on a municipality-scoped search (select the municipality, then search) for parcels over ${LAND_COVER_MIN_ACRES} acres.`;
 
 function td(value, className, emptyTitle) {
   const el = document.createElement('td');

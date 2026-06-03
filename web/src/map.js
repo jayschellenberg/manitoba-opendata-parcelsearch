@@ -20,7 +20,7 @@ import turfArea from '@turf/area';
 import turfLength from '@turf/length';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
-import { landCoverBreakdown } from './lib/landcover.js';
+import { landCoverBreakdown, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
 
 // mapbox-gl-draw was written against the Mapbox GL `mapboxgl-*` DOM
 // class names; MapLibre uses `maplibregl-*`. Patch the lookup table
@@ -2976,11 +2976,11 @@ export function soilSurveyParcelHtml(composition) {
  * Other) stamped onto the parcel as `_landCover` by main.js, each with
  * a colour swatch, its share of the parcel, and the implied acreage
  * (parcel acres × share, so the numbers reconcile with the Land Size
- * line above). Returns null when the parcel is ≤ 20 acres or carries no
- * land-cover data — matching the > 20-acre gate the build applies.
+ * line above). Returns null when the parcel is ≤ LAND_COVER_MIN_ACRES
+ * or carries no land-cover data — matching the build's acreage gate.
  */
 export function landCoverParcelHtml(p) {
-  if (!(Number(p?._acres) > 20)) return null;
+  if (!(Number(p?._acres) > LAND_COVER_MIN_ACRES)) return null;
   const rows = landCoverBreakdown(readLandCover(p?._landCover));
   if (!rows) return null;
   const acres = Number(p._acres);
@@ -3002,12 +3002,12 @@ export function landCoverParcelHtml(p) {
  * One-line top-2 land-cover summary for the muni-fabric (Roll Layer) popup
  * — the two largest buckets with their share (e.g. "Cultivated 61% ·
  * Wetland 16%"), each with its colour swatch. Null when the parcel is
- * ≤ 20 ac or carries no land-cover data (same gate as landCoverParcelHtml).
- * The full breakdown lives on the search-result popup; this is the concise
- * inline version for the fabric popup.
+ * ≤ LAND_COVER_MIN_ACRES or carries no land-cover data (same gate as
+ * landCoverParcelHtml). The full breakdown lives on the search-result
+ * popup; this is the concise inline version for the fabric popup.
  */
 export function landCoverTopTwoLine(p) {
-  if (!(Number(p?._acres) > 20)) return null;
+  if (!(Number(p?._acres) > LAND_COVER_MIN_ACRES)) return null;
   const rows = landCoverBreakdown(readLandCover(p?._landCover));
   if (!rows) return null;
   const parts = rows.slice(0, 2).map((b) => {

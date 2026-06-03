@@ -9,14 +9,25 @@
  *
  *   { cult: 0.78, past: 0.10, bush: 0.08, wet: 0.03, other: 0.01 }
  *
- * Only parcels over 20 acres are in the shards, so `_landCover` is
- * undefined on urban/residential rolls — callers gate display on the
- * parcel's own computed acreage (> 20 ac) as well, per spec.
+ * Only parcels over MIN_ACRES are in the shards (see r/build_landcover.R's
+ * ACRES_THRESHOLD — kept in sync with the constant below), so `_landCover`
+ * is undefined on urban/residential rolls. Callers gate display on the
+ * parcel's own computed acreage with the same constant so the webapp and
+ * the pipeline stay aligned.
  *
  * This module is the single source of truth for the bucket order,
  * labels, and colours, shared by the results grid (main.js) and the
  * map popup (map.js) so the two never drift.
  */
+
+// Minimum parcel acreage that gets land-cover data. Below this, the
+// pipeline drops the parcel from the per-muni shards (urban/residential
+// lots that the 2020 LCR raster can't usefully resolve at 30m, and that
+// don't carry a meaningful single "headline" cover). KEEP IN SYNC with
+// r/build_landcover.R's ACRES_THRESHOLD — both the pipeline and the
+// webapp's display gates read this constant, so changing it here and
+// re-running the pipeline propagates the new threshold everywhere.
+export const LAND_COVER_MIN_ACRES = 10;
 
 // Bucket order = display order in the popup breakdown. Colours echo the
 // natural reading of each cover type (gold cropland, sage pasture, dark

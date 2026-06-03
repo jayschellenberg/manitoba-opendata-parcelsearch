@@ -84,7 +84,10 @@ assembly_dir <- "D:/Dropbox/Appraisal/RProjects/appraisal-templates/mao-assembly
 output_dir   <- file.path(source_dir, "web/public/data/landcover")
 index_path   <- file.path(output_dir, "_index.json")
 
-ACRES_THRESHOLD <- 20  # only parcels strictly larger than this are sharded
+ACRES_THRESHOLD <- 10  # only parcels strictly larger than this are sharded
+                       # KEEP IN SYNC with LAND_COVER_MIN_ACRES in
+                       # web/src/lib/landcover.js — the webapp gates display
+                       # on the same value so the two never drift.
 
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
