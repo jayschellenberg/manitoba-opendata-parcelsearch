@@ -185,7 +185,19 @@ for (mname in names(muni_groups)) {
     quiet = TRUE,
     layer_options = c("COORDINATE_PRECISION=5", "RFC7946=NO")
   )
-  manifest[[mname]] <- list(file = fname, count = nrow(shard))
+  # Numeric muni code lives at the head of the Municipality field
+  # (e.g. "610 - RM OF PINEY" → 610). The webapp's parcelKeys path
+  # (list imports) keys on muni_no, so emitting it here lets the
+  # snapshot fall back to that flow without re-scanning shards at
+  # runtime. NA when no row carried a parseable code.
+  muni_no_raw <- suppressWarnings(as.integer(
+    sub("\\s*-.*$", "", shard$Municipality[1])
+  ))
+  manifest[[mname]] <- list(
+    file    = fname,
+    count   = nrow(shard),
+    muni_no = if (is.na(muni_no_raw)) NULL else muni_no_raw
+  )
   total_bytes <- total_bytes + file.info(out_path)$size
 }
 cat(sprintf("  Done in %.1fs, total %.1f MB across all shards\n",

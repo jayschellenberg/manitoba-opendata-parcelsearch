@@ -87,6 +87,140 @@ const SPATIAL_CONCURRENCY = 16;
 // outFields:'*' requests pulled in unread.
 const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Muni_Name_With_Typ,Asmt_Roll,Dwelling_Units,Frontage_or_Area,Total_Value,Asmt_Rpt_Url';
 
+// ---------- Roll Entry snapshot fallback ----------
+// When the upstream provincial ROLL_ENTRY FeatureServer is in a partial
+// state (observed 2026-06-03 with only 18 of ~180 munis published mid-
+// rebuild), main.js flips the webapp into snapshot mode via
+// setRollEntrySnapshot(manifest). While that's set, parcel queries route
+// to per-muni GeoJSON shards under web/public/data/rollentry-snapshot/
+// produced by r/build_rollentry_snapshot.R. The shards mirror the live
+// FeatureCollection shape (same 10 fields, EPSG:4326), so the rest of
+// the app is none the wiser.
+//
+// Shard cache is in-memory only (per session) — each muni's shard is
+// ~1-10 MB and gzipped on the wire; a quick reload to pick up live data
+// after the upstream rebuild is the supported recovery path.
+const SNAPSHOT_BASE_URL = `${import.meta.env?.BASE_URL || '/'}data/rollentry-snapshot/`;
+let rollEntrySnapshot = null;
+const snapshotShardCache = new Map();
+
+/** Set (or clear, with null) the active Roll Entry snapshot manifest.
+ *  Once set, searchParcels and fetchAllParcelsInMunicipality route to
+ *  the per-muni shards instead of hitting the live FeatureServer. */
+export function setRollEntrySnapshot(manifest) {
+  rollEntrySnapshot = manifest || null;
+  // Drop the per-muni cache when toggling modes — otherwise switching
+  // back to live mid-session would still serve stale snapshot data
+  // until the cache evicted naturally.
+  snapshotShardCache.clear();
+}
+
+/** Read the active snapshot manifest (or null). main.js reads this for
+ *  the muni dropdown source and the banner's snapshot_date. */
+export function getRollEntrySnapshot() {
+  return rollEntrySnapshot;
+}
+
+async function fetchSnapshotShard(muniName) {
+  if (!muniName) return makeEmptyFc({ truncated: false });
+  if (snapshotShardCache.has(muniName)) return snapshotShardCache.get(muniName);
+  const entry = rollEntrySnapshot?.munis?.[muniName];
+  if (!entry?.file) return makeEmptyFc({ truncated: false });
+  try {
+    const res = await fetch(`${SNAPSHOT_BASE_URL}${entry.file}`);
+    if (!res.ok) {
+      console.warn(`Snapshot shard ${entry.file} returned ${res.status}`);
+      return makeEmptyFc({ truncated: false });
+    }
+    const fc = await res.json();
+    // Ensure the FC has the shape downstream code expects (defensive —
+    // a malformed shard shouldn't break the whole search path).
+    if (!fc || fc.type !== 'FeatureCollection' || !Array.isArray(fc.features)) {
+      return makeEmptyFc({ truncated: false });
+    }
+    snapshotShardCache.set(muniName, fc);
+    return fc;
+  } catch (err) {
+    console.warn(`Snapshot shard ${entry.file} fetch failed`, err);
+    return makeEmptyFc({ truncated: false });
+  }
+}
+
+/** Apply the same attribute filters searchParcels applies SQL-side,
+ *  but to an in-memory FC. Skips zoning/dev-plan category filters
+ *  (those depend on OBJECTID lists from the overlay services, and
+ *  OBJECTIDs don't survive a server republish — so cross-mode
+ *  filtering is unsafe). The other filters mirror buildParcelClauses
+ *  exactly. */
+function filterSnapshotFeatures(features, args) {
+  const { roll, addressStreet, duMode, duMin } = args || {};
+  let out = features;
+  const rollList = canonicalRollList(roll);
+  if (rollList.length > 0) {
+    const rollSet = new Set(rollList);
+    out = out.filter((f) => rollSet.has(f.properties?.Roll_No_Txt));
+  }
+  if (addressStreet) {
+    const term = String(addressStreet).toUpperCase();
+    out = out.filter((f) => (f.properties?.Property_Address || '').toUpperCase().includes(term));
+  }
+  if (duMode === 'zero') {
+    out = out.filter((f) => Number(f.properties?.Dwelling_Units) === 0);
+  } else if (duMode === 'min') {
+    const n = Math.max(1, Math.floor(Number(duMin) || 1));
+    out = out.filter((f) => Number(f.properties?.Dwelling_Units) >= n);
+  }
+  return out;
+}
+
+async function searchParcelsFromSnapshot(args) {
+  const { municipality, parcelKeys } = args || {};
+  // List-import path: parcelKeys is [{muni_no, roll_no_txt}, ...].
+  // Group by muni_no, resolve each muni_no to its shard via the manifest's
+  // muni_no field, then filter each shard for the requested rolls.
+  if (hasParcelKeys(parcelKeys)) {
+    const byMuni = new Map();
+    for (const k of parcelKeys) {
+      const code = Number(k.muni_no);
+      if (!Number.isFinite(code)) continue;
+      const roll = canonicalRoll(k.roll_no_txt);
+      if (!roll) continue;
+      if (!byMuni.has(code)) byMuni.set(code, new Set());
+      byMuni.get(code).add(roll);
+    }
+    const codeToName = new Map();
+    for (const [name, entry] of Object.entries(rollEntrySnapshot?.munis || {})) {
+      if (entry?.muni_no != null) codeToName.set(Number(entry.muni_no), name);
+    }
+    const all = [];
+    for (const [code, rolls] of byMuni) {
+      const muniName = codeToName.get(code);
+      if (!muniName) continue;
+      const shard = await fetchSnapshotShard(muniName);
+      for (const f of shard.features) {
+        if (rolls.has(f.properties?.Roll_No_Txt)) all.push(f);
+      }
+    }
+    return { type: 'FeatureCollection', features: all, _truncated: false };
+  }
+  // Muni-scoped path: load that muni's shard, apply other filters.
+  if (municipality) {
+    const shard = await fetchSnapshotShard(municipality);
+    const features = filterSnapshotFeatures(shard.features, args);
+    return { type: 'FeatureCollection', features, _truncated: false };
+  }
+  // Without a muni (or parcelKeys) the snapshot can't usefully search —
+  // we'd have to load all 186 shards. Return empty rather than burn
+  // hundreds of MB on what's almost certainly an unintended path.
+  return makeEmptyFc({ truncated: false });
+}
+
+async function fetchAllParcelsInMunicipalityFromSnapshot(municipality) {
+  if (!municipality) return makeEmptyFc();
+  const shard = await fetchSnapshotShard(municipality);
+  return { type: 'FeatureCollection', features: shard.features.slice() };
+}
+
 // ---------- Public API ----------
 
 /**
@@ -96,6 +230,14 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
  * collection if the cap was reached).
  */
 export async function searchParcels(args) {
+  // Snapshot fallback — see SNAPSHOT_BASE_URL section above. While the
+  // snapshot manifest is set we route to the per-muni shards instead of
+  // hitting the live FeatureServer; the returned FC has the same shape
+  // so the rest of the search pipeline is unchanged. Zone/dev-plan
+  // category filters are skipped in snapshot mode (the OBJECTID lists
+  // those filters produce don't survive a server republish).
+  if (rollEntrySnapshot) return searchParcelsFromSnapshot(args);
+
   const {
     zoneCategory,
     devPlanCategory,
@@ -1550,6 +1692,7 @@ function civicAddressOrEmpty(raw) {
 }
 
 export async function fetchAllParcelsInMunicipality(municipality) {
+  if (rollEntrySnapshot) return fetchAllParcelsInMunicipalityFromSnapshot(municipality);
   if (!municipality) return makeEmptyFc();
   // v5: dedupe pass by OBJECTID after pagination so the same Roll
   // Layer label can't render multiple times for the same feature when
