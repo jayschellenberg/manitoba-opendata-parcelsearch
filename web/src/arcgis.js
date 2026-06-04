@@ -822,6 +822,32 @@ export async function fetchDevPlanCategoryList(municipality = null) {
   return fetchDistinctValues(DEVPLAN_URL, 'DES_CATEGORY', cacheKey, where);
 }
 
+/**
+ * Total live Roll_Entry record count via returnCountOnly — one cheap
+ * request. Used by the boot health check to detect a partial upstream
+ * state (record count far below the snapshot's total) even when the muni
+ * list looks complete. ALWAYS hits the live FeatureServer (never the
+ * snapshot route) since its whole purpose is judging live health.
+ * Returns null on failure so the caller can fall back to the muni-count
+ * signal alone. Not cached — it's a freshness probe.
+ */
+export async function fetchRollEntryCount() {
+  try {
+    const usp = new URLSearchParams({ where: '1=1', returnCountOnly: 'true', f: 'json' });
+    const res = await fetch(`${ROLL_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: usp.toString(),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (json.error) return null;
+    return Number.isFinite(json.count) ? json.count : null;
+  } catch {
+    return null;
+  }
+}
+
 // ---------- Auxiliary overlays (contaminated sites + traffic stations) ----------
 
 // The upstream CSV at manitoba.ca returns 200 OK but does not send
