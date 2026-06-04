@@ -55,6 +55,7 @@ import {
   joinTopNByArea,
   bboxOverlapJoin,
   fetchMunicipalityList,
+  fetchRollEntryCount,
   setRollEntrySnapshot,
   getRollEntrySnapshot,
   fetchZoneCategoryList,
@@ -1766,25 +1767,27 @@ let muniBoundariesFc = null;
 
 async function populateDropdowns() {
   try {
-    // Probe live + the local snapshot manifest in parallel. The snapshot
-    // is the static dump produced by r/build_rollentry_snapshot.R; main.js
-    // flips into snapshot mode (parcel queries routed to per-muni shards
-    // by arcgis.js) when live is incomplete AND the snapshot is available.
-    const [liveMunis, zoneCats, snapshotManifest] = await Promise.all([
+    // Probe live muni list + live record count + the local snapshot
+    // manifest in parallel. The snapshot is the static dump produced by
+    // r/build_rollentry_snapshot.R; main.js flips into snapshot mode
+    // (parcel queries routed to per-muni shards by arcgis.js) when live
+    // is incomplete AND the snapshot is available.
+    const [liveMunis, zoneCats, snapshotManifest, liveRecordCount] = await Promise.all([
       fetchMunicipalityList(),
       fetchZoneCategoryList(),
       probeRollEntrySnapshot(),
+      fetchRollEntryCount(),
     ]);
     const liveCount = Array.isArray(liveMunis) ? liveMunis.length : 0;
-    const snapshotCount = snapshotManifest ? Object.keys(snapshotManifest.munis || {}).length : 0;
-    const liveIncomplete = liveCount > 0 && liveCount < ROLL_ENTRY_MIN_HEALTHY_MUNIS;
+    const snapshotMuniCount = snapshotManifest ? Object.keys(snapshotManifest.munis || {}).length : 0;
+    const incomplete = liveRollEntryIncomplete(liveCount, liveRecordCount, snapshotManifest);
 
     // Pick the dropdown source. In snapshot mode the snapshot's full muni
     // list is the right truth source — listing 18 live munis when the
     // snapshot has all 186 would leave the user unable to even SELECT
     // most of Manitoba.
     let dropdownMunis = liveMunis;
-    if (liveIncomplete && snapshotCount > 0) {
+    if (incomplete && snapshotMuniCount > 0) {
       setRollEntrySnapshot(snapshotManifest);
       dropdownMunis = Object.keys(snapshotManifest.munis).sort();
     } else {
@@ -1792,21 +1795,56 @@ async function populateDropdowns() {
     }
     fillSelect($municipality, dropdownMunis, 'Any municipality');
     fillSelect($zoneCategory, zoneCats, 'Any zoning category');
-    updateRollEntryBanner({ liveCount, snapshotManifest, snapshotActive: !!getRollEntrySnapshot() });
+    updateRollEntryBanner({
+      liveCount, liveRecordCount, snapshotManifest,
+      snapshotActive: !!getRollEntrySnapshot(),
+    });
   } catch (err) {
     console.error('Failed to load filter dropdowns', err);
     fillSelect($municipality, [], 'Failed to load — type to filter parcels another way');
   }
 }
 
-// Manitoba normally publishes ~180 munis on the ROLL_ENTRY FeatureServer.
-// When the province is mid-republishing the service (observed 2026-06-03),
-// the list comes back with a small fraction of that. < 150 catches the
-// mid-republish state and also partial-rebuild states where most but not
-// all munis have landed (still ~17% short of normal; well outside the
-// noise range for minor amalgamations).
+// Manitoba normally publishes ~180 munis / ~437k parcels on the ROLL_ENTRY
+// FeatureServer. When the province is mid-republishing the service
+// (observed 2026-06-03, which dropped to 18 munis / 50,724 records), the
+// live query returns a small fraction of that.
+//
+// Two independent incompleteness signals — either trips snapshot mode:
+//   - muni count < 150: catches "whole munis missing" (the 18-of-186 case).
+//   - record count < 50% of the snapshot's total: catches "most munis
+//     present but records sparse", which the muni-count signal alone would
+//     miss. The snapshot holds ~431k parcels, healthy live is ~437k, and
+//     the mid-rebuild low was ~51k (12%) — so 50% cleanly separates
+//     healthy from broken with a wide margin either way.
 const ROLL_ENTRY_MIN_HEALTHY_MUNIS = 150;
+const ROLL_ENTRY_MIN_RECORD_RATIO = 0.5;
 const ROLL_ENTRY_NORMAL_MUNIS = 180;
+
+/** Sum of per-muni parcel counts in the snapshot manifest (the snapshot's
+ *  total record count), or 0 when unavailable. */
+function snapshotTotalRecords(manifest) {
+  if (!manifest?.munis) return 0;
+  let total = 0;
+  for (const entry of Object.values(manifest.munis)) {
+    const c = Number(entry?.count);
+    if (Number.isFinite(c)) total += c;
+  }
+  return total;
+}
+
+/** True when the live Roll_Entry service looks partial on EITHER signal:
+ *  too few munis, or a record count far below the snapshot total. Needs a
+ *  snapshot manifest for the record-ratio check; falls back to muni-count
+ *  alone when the snapshot total or live count is unknown. */
+function liveRollEntryIncomplete(liveMuniCount, liveRecordCount, snapshotManifest) {
+  const muniSignal = liveMuniCount > 0 && liveMuniCount < ROLL_ENTRY_MIN_HEALTHY_MUNIS;
+  const snapTotal = snapshotTotalRecords(snapshotManifest);
+  const recordSignal =
+    Number.isFinite(liveRecordCount) && liveRecordCount > 0 && snapTotal > 0 &&
+    liveRecordCount < snapTotal * ROLL_ENTRY_MIN_RECORD_RATIO;
+  return muniSignal || recordSignal;
+}
 const ROLL_ENTRY_SNAPSHOT_MANIFEST_URL =
   `${import.meta.env?.BASE_URL || '/'}data/rollentry-snapshot/_index.json`;
 
@@ -1843,34 +1881,38 @@ async function probeRollEntrySnapshot(retries = 2) {
  *  without snapshot activation despite the snapshot existing, try once more
  *  and swap in if it works. Catches the case where every boot-time retry
  *  failed (e.g., aggressive extension interference) but later attempts
- *  succeed. */
+ *  succeed. Re-evaluates BOTH the muni-count and record-count signals. */
 async function recheckRollEntrySnapshotAfterBoot() {
   // Already in snapshot mode? Nothing to do.
   if (getRollEntrySnapshot()) return;
-  // Live looked healthy? Nothing to do.
-  const muniCount = $municipality ? $municipality.options.length - 1 : 0;
-  if (muniCount === 0 || muniCount >= ROLL_ENTRY_MIN_HEALTHY_MUNIS) return;
-  const manifest = await probeRollEntrySnapshot();
-  if (!manifest) return;
-  const snapshotCount = Object.keys(manifest.munis || {}).length;
-  if (snapshotCount === 0) return;
+  const liveMuniCount = $municipality ? $municipality.options.length - 1 : 0;
+  const [manifest, liveRecordCount] = await Promise.all([
+    probeRollEntrySnapshot(),
+    fetchRollEntryCount(),
+  ]);
+  if (!manifest || Object.keys(manifest.munis || {}).length === 0) return;
+  if (!liveRollEntryIncomplete(liveMuniCount, liveRecordCount, manifest)) return;
   setRollEntrySnapshot(manifest);
   fillSelect($municipality, Object.keys(manifest.munis).sort(), 'Any municipality');
-  updateRollEntryBanner({ liveCount: muniCount, snapshotManifest: manifest, snapshotActive: true });
+  updateRollEntryBanner({
+    liveCount: liveMuniCount, liveRecordCount, snapshotManifest: manifest, snapshotActive: true,
+  });
 }
 
 /**
  * Render the Roll Entry status banner across three states:
- *   - healthy (live count >= threshold): hidden.
+ *   - healthy (neither incompleteness signal trips): hidden.
  *   - incomplete + snapshot active: amber banner explaining the app has
  *     swapped to the dated snapshot and will revert when live is back.
  *   - incomplete + no snapshot available: the legacy "mid-update" banner
  *     telling the user to wait it out.
+ * The shortfall sentence adapts to whichever signal tripped (too few
+ * munis, or too few records).
  */
-function updateRollEntryBanner({ liveCount, snapshotManifest, snapshotActive }) {
+function updateRollEntryBanner({ liveCount, liveRecordCount, snapshotManifest, snapshotActive }) {
   const banner = document.getElementById('roll-entry-banner');
   if (!banner) return;
-  if (!liveCount || liveCount >= ROLL_ENTRY_MIN_HEALTHY_MUNIS) {
+  if (!liveRollEntryIncomplete(liveCount, liveRecordCount, snapshotManifest)) {
     banner.hidden = true;
     banner.textContent = '';
     banner.classList.remove('data-staleness-amber', 'data-staleness-red');
@@ -1878,20 +1920,27 @@ function updateRollEntryBanner({ liveCount, snapshotManifest, snapshotActive }) 
   }
   banner.classList.remove('data-staleness-red');
   banner.classList.add('data-staleness-amber');
+
+  // Describe whichever signal tripped. Muni shortfall is the more legible
+  // headline; fall back to the record shortfall when munis look fine but
+  // the record count is low.
+  const muniSignal = liveCount > 0 && liveCount < ROLL_ENTRY_MIN_HEALTHY_MUNIS;
+  const recFmt = Number.isFinite(liveRecordCount) ? liveRecordCount.toLocaleString('en-US') : liveRecordCount;
+  const shortfall = muniSignal
+    ? `Only ${liveCount} of the usual ~${ROLL_ENTRY_NORMAL_MUNIS} municipalities are currently published live`
+    : `Live data currently holds only ${recFmt} parcels (well below the usual ~437,000)`;
+  const link = '<a href="https://geoportal.gov.mb.ca/datasets/manitoba::roll-entry/about" target="_blank" rel="noreferrer" style="color:inherit;text-decoration:underline">Check Roll Entry status ↗</a>';
+
   if (snapshotActive && snapshotManifest?.snapshot_date) {
     banner.innerHTML =
-      `<strong>Manitoba Roll Entry source data appears to be mid-update.</strong> ` +
-      `Only ${liveCount} of the usual ~${ROLL_ENTRY_NORMAL_MUNIS} municipalities are currently published live. ` +
-      `Showing snapshot data from <strong>${snapshotManifest.snapshot_date}</strong> ` +
-      `(reload to revert to live data once the upstream rebuild completes — typically hours to a day). ` +
-      `<a href="https://geoportal.gov.mb.ca/datasets/manitoba::roll-entry/about" target="_blank" rel="noreferrer" style="color:inherit;text-decoration:underline">Check Roll Entry status ↗</a>`;
+      '<strong>Manitoba Roll Entry source data appears to be mid-update.</strong> ' +
+      `${shortfall}. Showing snapshot data from <strong>${snapshotManifest.snapshot_date}</strong> ` +
+      `(reload to revert to live data once the upstream rebuild completes — typically hours to a day). ${link}`;
   } else {
     banner.innerHTML =
-      `<strong>Manitoba Roll Entry source data appears to be mid-update.</strong> ` +
-      `Only ${liveCount} of the usual ~${ROLL_ENTRY_NORMAL_MUNIS} municipalities ` +
-      `are currently published by the province; the listed municipalities work normally, ` +
-      `but searches in other munis will return no results until the upstream rebuild completes (typically hours to a day). ` +
-      `<a href="https://geoportal.gov.mb.ca/datasets/manitoba::roll-entry/about" target="_blank" rel="noreferrer" style="color:inherit;text-decoration:underline">Check Roll Entry status ↗</a>`;
+      '<strong>Manitoba Roll Entry source data appears to be mid-update.</strong> ' +
+      `${shortfall}; the listed municipalities work normally, but other searches may return ` +
+      `no results until the upstream rebuild completes (typically hours to a day). ${link}`;
   }
   banner.hidden = false;
 }
