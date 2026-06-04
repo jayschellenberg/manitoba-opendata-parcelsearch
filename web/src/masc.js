@@ -140,6 +140,53 @@ export function sectionLinesFromRows(rows) {
 }
 
 /**
+ * Emit one rectangular line feature per quarter section — denser variant
+ * of sectionLinesFromRows. Each quarter is ~800m × 800m centred on its
+ * (lat, lon); the label combines the quarter direction with the section
+ * coords, e.g. "NE 12-3-4W".
+ *
+ * Use this for the Quarter-Section Grid overlay mode; for the broader
+ * Section/Township Grid, sectionLinesFromRows aggregates 4 quarters into
+ * one section bounding box, which is the right zoom-out granularity.
+ */
+export function quarterLinesFromRows(rows) {
+  if (!Array.isArray(rows)) return { type: 'FeatureCollection', features: [] };
+  const normMeridian = (raw) => String(raw || '').replace(/[^EW]/gi, '').toUpperCase();
+  const features = [];
+  for (const row of rows) {
+    const lat = Number(row?.lat);
+    const lon = Number(row?.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    const dLat = QUARTER_HALF_SIDE_M / M_PER_DEG_LAT;
+    const dLon = QUARTER_HALF_SIDE_M / (M_PER_DEG_LAT * Math.cos(lat * Math.PI / 180));
+    const w = lon - dLon, e = lon + dLon;
+    const s = lat - dLat, n = lat + dLat;
+    const direction = normMeridian(row.d);
+    const quarter = String(row.q || '').toUpperCase();
+    features.push({
+      type: 'Feature',
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]],
+      },
+      properties: {
+        quarter,
+        section: row.s,
+        township: row.t,
+        range: row.r,
+        direction,
+        // Short label e.g. "NE 7-5-6E" — matches the convention
+        // quarterPolygon() uses for the MASC overlay popup.
+        label: quarter
+          ? `${quarter} ${row.s}-${row.t}-${row.r}${direction}`
+          : `${row.s}-${row.t}-${row.r}${direction}`,
+      },
+    });
+  }
+  return { type: 'FeatureCollection', features };
+}
+
+/**
  * Convert the Manitoba Original Survey (MB_LegalDesc) FeatureCollection
  * — point features carrying QUARTER / SECTION / TOWNSHIP / RANGE /
  * MERIDIAN / TYPE — into the row shape sectionLinesFromRows() expects.

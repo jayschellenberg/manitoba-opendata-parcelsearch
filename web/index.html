@@ -278,12 +278,12 @@
             </span>
           </div>
 
-          <!-- Phase 3: Advanced filters collapsible. Holds the less-
+          <!-- Phase 3: Advanced searches collapsible. Holds the less-
                frequently-touched controls (legal description, certificate
                of title, zoning category, amendment status, dwelling units).
                Phase 4 will replace the inline tooltips with info icons. -->
           <details class="advanced-filters">
-            <summary>Advanced filters</summary>
+            <summary>Advanced searches</summary>
             <!-- Legal description + Certificate of Title row -->
             <div class="legal-title-row">
               <span class="field legal-title-field">
@@ -526,7 +526,7 @@
             <button id="muni-parcels-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled title="Assessment Parcels — every parcel in the selected municipality (grey fabric under your search results)">
               <span class="overlay-btn-label">Assessment Parcels</span>
             </button>
-            <button id="grid-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Sec-Twp — section/township grid + river lots. Select a municipality for a focused view, or toggle without one for the province-wide overlay.">
+            <button id="grid-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Sec-Twp grid + river lots. Tri-state cycle: 1st click → Section/township grid (one box per 1-mile section); 2nd click → Quarter section grid (four boxes per section, requires a municipality); 3rd click → off. River lots ride along on both grid modes. Without a municipality, only the section grid is available (province-wide).">
               <span class="overlay-btn-label">Section/Township Grid</span>
             </button>
           </div>
@@ -575,6 +575,11 @@
             <h3 class="overlay-group-title">Quick links</h3>
             <button id="muni-website-btn" type="button" class="overlay-btn link-btn" disabled title="Select a municipality to enable">Muni Website ↗</button>
             <button id="pd-website-btn" type="button" class="overlay-btn link-btn" disabled title="PD Website — select a municipality to enable. Planning District website.">Planning District Website ↗</button>
+            <!-- Static external links (no muni-dependency). <a> tags rather
+                 than <button>s — semantically correct for external nav and
+                 keeps middle-click / Ctrl-click open-in-new-tab working. -->
+            <a class="overlay-btn link-btn" href="https://www.gov.mb.ca/mao/subscriber/login.aspx" target="_blank" rel="noreferrer" title="Manitoba Assessment Online (MAO) subscriber login.">MAO Login ↗</a>
+            <a class="overlay-btn link-btn" href="https://www.gov.mb.ca/mr/land_use_dev/index.html" target="_blank" rel="noreferrer" title="Manitoba Land Use & Development resource site (Municipal Relations).">Land Use &amp; Development ↗</a>
           </div>
 
           <button id="static-map-btn" type="button" class="generate-map-btn" title="Capture the current map view as a JPEG. Right-click the rendered image below the table and Save Image As… to drop into a report.">Generate Map</button>
