@@ -79,6 +79,7 @@ import {
 import {
   quartersToFc,
   sectionLinesFromRows,
+  quarterLinesFromRows,
   surveyFcToRows,
   MASC_PALETTE,
 } from './masc.js';
@@ -4950,15 +4951,27 @@ function resetMascAndGridToggles() {
     : ($municipality.value || '__PROVINCE__');
   if (surveyGridLoadedFor && surveyGridLoadedFor !== desiredKey) {
     surveyGridLoadedFor = null;
+    surveyGridDataCache = null;
+    // Reset the tri-state too — nextGridMode(null, …) returns 'section'
+    // on the next click, the canonical "fresh start" entry point. Without
+    // this, the post-muni-change re-toggle below would advance past
+    // section into quarter (or off) and surprise the user.
+    const wasMode = gridMode;
+    gridMode = null;
     if ($gridToggle.classList.contains('active')) {
       // Flip active off, drop the stale layer, then re-toggle which
-      // re-enters the active branch and runs the fetch path.
+      // re-enters the active branch and runs the fetch path. Re-toggling
+      // restores the previous mode (section / quarter) on the new muni
+      // rather than dropping the user back to off.
       $gridToggle.classList.remove('active');
       $gridToggle.setAttribute('aria-pressed', 'false');
-      setOverlayBtnLabel($gridToggle, 'Section/township grid');
+      setOverlayBtnLabel($gridToggle, gridButtonLabelFor(null));
       mapReady.then(() => {
         setSurveyGridVisible(map, false);
         toggleSurveyGridOverlay();
+        // If they were in quarter mode before, advance once more so the
+        // overlay lands in quarter mode for the new scope too.
+        if (wasMode === 'quarter') toggleSurveyGridOverlay();
       });
     }
   }
@@ -5531,6 +5544,32 @@ function renderLandCoverLegend(mode) {
  * expects, and renders the section bounding boxes as a dashed-line
  * grid. Cached 30 days per-muni.
  */
+// Survey-grid tri-state cycle. River lots ride along on both grid modes.
+//   null    → off
+//   section → section/township grid (1 line feature per 1-mile section).
+//             Available with or without a muni — the province-wide fallback
+//             is a pre-baked ~215k section bounding boxes.
+//   quarter → quarter-section grid (4 line features per section — the
+//             ~800m × 800m squares each rated quarter sits in). REQUIRES a
+//             muni scope; the equivalent province-wide pyramid would be
+//             ~860k features, too heavy for a client-side overlay.
+let gridMode = null;
+// Raw fetched data — cached so a mode swap on the same scope is a
+// re-render rather than a re-fetch.
+let surveyGridDataCache = null;
+
+function nextGridMode(current, hasMuniScope) {
+  if (current === null)     return 'section';
+  if (current === 'section') return hasMuniScope ? 'quarter' : null;
+  return null; // quarter → off
+}
+
+function gridButtonLabelFor(mode) {
+  if (mode === 'section') return 'Section/township grid';
+  if (mode === 'quarter') return 'Quarter section grid';
+  return 'Section/township grid';
+}
+
 async function toggleSurveyGridOverlay() {
   // In sales-CSV mode load the grid for EVERY matched muni and merge.
   // Outside sales mode use the dropdown's single value (or the province-
@@ -5540,22 +5579,27 @@ async function toggleSurveyGridOverlay() {
     : null;
   const muni = $municipality.value;
   const munis = munisFromCsv || (muni ? [muni] : []);
-  const wasActive = $gridToggle.classList.contains('active');
-  const visible = !wasActive;
-  $gridToggle.classList.toggle('active', visible);
-  $gridToggle.setAttribute('aria-pressed', String(visible));
+  const hasMuniScope = munis.length > 0;
+  const targetMode = nextGridMode(gridMode, hasMuniScope);
   await mapReady;
 
-  if (!visible) {
-    setOverlayBtnLabel($gridToggle, 'Section/township grid');
+  // Off branch.
+  if (targetMode === null) {
+    gridMode = null;
     setSurveyGridVisible(map, false);
+    $gridToggle.classList.remove('active');
+    $gridToggle.setAttribute('aria-pressed', 'false');
+    setOverlayBtnLabel($gridToggle, gridButtonLabelFor(null));
     return;
   }
 
+  $gridToggle.classList.add('active');
+  $gridToggle.setAttribute('aria-pressed', 'true');
+
   // Cache key: joined muni list (sales-CSV mode), single muni (normal
   // mode with a muni selected), or '__PROVINCE__' (nothing selected,
-  // province-wide fallback). Stable across calls so the cache check
-  // skips refetches.
+  // province-wide fallback). Same shape as before — re-rendering between
+  // section ↔ quarter on the same scope doesn't refetch.
   const loadKey = munis.length > 0 ? munis.join('|') : '__PROVINCE__';
   if (surveyGridLoadedFor !== loadKey) {
     $gridToggle.disabled = true;
@@ -5571,14 +5615,11 @@ async function toggleSurveyGridOverlay() {
           fetchProvinceSectionGrid(),
           fetchRiverLots(),
         ]);
-        const merged = {
-          type: 'FeatureCollection',
-          features: [
-            ...(gridFc?.features || []),
-            ...(riverFc?.features || []),
-          ],
+        surveyGridDataCache = {
+          provinceSectionFc: gridFc,
+          quarterRows: null,
+          riverFeatures: riverFc?.features || [],
         };
-        setSurveyGridData(map, dedupSectionLabels(merged));
       } else {
         // Resolve every muni's boundary feature up front. Any miss is
         // a hard error for that muni (we can't fetch a survey grid
@@ -5592,25 +5633,25 @@ async function toggleSurveyGridOverlay() {
         }));
         const missing = muniBoundaries.filter((mb) => !mb.feat).map((mb) => mb.muni);
         if (missing.length > 0) {
+          gridMode = null;
           $gridToggle.classList.remove('active');
           $gridToggle.setAttribute('aria-pressed', 'false');
           $gridToggle.disabled = false;
-          setOverlayBtnLabel($gridToggle, 'Section/township grid');
+          setOverlayBtnLabel($gridToggle, gridButtonLabelFor(null));
           setCount(`Couldn't locate boundary for ${missing.join(', ')}; can't load the section-township grid.`);
           return;
         }
-        // Per-muni section grid in parallel + a single shared river-lots
-        // fetch (province-wide, browser-cached after first hit). Each
-        // muni's grid lines are built independently; river-lot filtering
-        // happens against the union of every muni's bbox.
+        // Per-muni quarter centroids in parallel + a single shared river-
+        // lots fetch (province-wide, browser-cached after first hit).
+        // Each muni's centroids feed both the section-bounding-box pass
+        // and the quarter-line pass; rendering picks which to use.
         const [perMuniFcs, riverFc] = await Promise.all([
           Promise.all(muniBoundaries.map((mb) => fetchSurveyGridForMuni(mb.muni, mb.feat))),
           fetchRiverLots(),
         ]);
-        const allLines = [];
+        const quarterRows = [];
         for (const fc of perMuniFcs) {
-          const rows = surveyFcToRows(fc || { features: [] });
-          allLines.push(...sectionLinesFromRows(rows).features);
+          quarterRows.push(...surveyFcToRows(fc || { features: [] }));
         }
         // River-lot filtering: keep features whose bbox intersects ANY
         // matched muni's bbox. Bbox checks are cheap; union semantics
@@ -5624,26 +5665,57 @@ async function toggleSurveyGridOverlay() {
             return false;
           }
         });
-        const merged = {
-          type: 'FeatureCollection',
-          features: [...allLines, ...riverInMunis],
+        surveyGridDataCache = {
+          provinceSectionFc: null,
+          quarterRows,
+          riverFeatures: riverInMunis,
         };
-        setSurveyGridData(map, dedupSectionLabels(merged));
       }
       surveyGridLoadedFor = loadKey;
     } catch (err) {
       console.warn('Sec-Twp Grid fetch failed', err);
+      gridMode = null;
       $gridToggle.classList.remove('active');
       $gridToggle.setAttribute('aria-pressed', 'false');
       $gridToggle.disabled = false;
-      setOverlayBtnLabel($gridToggle, 'Section/township grid');
+      setOverlayBtnLabel($gridToggle, gridButtonLabelFor(null));
       setCount(`Failed to load section-township grid: ${err.message}`);
       return;
     }
     $gridToggle.disabled = false;
   }
-  setOverlayBtnLabel($gridToggle, 'Section/township grid');
+
+  // Render lines for the target mode + river lots, both pulled from the
+  // cache so a mode swap is a cheap setData call.
+  renderSurveyGridForMode(targetMode);
+  gridMode = targetMode;
   setSurveyGridVisible(map, true);
+  setOverlayBtnLabel($gridToggle, gridButtonLabelFor(targetMode));
+}
+
+/** Build the merged FC for the active grid mode (section bounding boxes
+ *  vs quarter rectangles) plus river lots, then push it to the map. */
+function renderSurveyGridForMode(mode) {
+  if (!surveyGridDataCache) return;
+  const { provinceSectionFc, quarterRows, riverFeatures } = surveyGridDataCache;
+  let lineFeatures;
+  if (mode === 'quarter' && Array.isArray(quarterRows)) {
+    lineFeatures = quarterLinesFromRows(quarterRows).features;
+  } else if (provinceSectionFc) {
+    // Province-wide fallback: pre-baked section bounding boxes only;
+    // quarter rendering needs the per-muni centroids that aren't fetched
+    // here, so we always show sections in this branch.
+    lineFeatures = provinceSectionFc.features || [];
+  } else if (Array.isArray(quarterRows)) {
+    lineFeatures = sectionLinesFromRows(quarterRows).features;
+  } else {
+    lineFeatures = [];
+  }
+  const merged = {
+    type: 'FeatureCollection',
+    features: [...lineFeatures, ...(riverFeatures || [])],
+  };
+  setSurveyGridData(map, dedupSectionLabels(merged));
 }
 
 /** Convert a MapLibre rendered Feature (which has lazily-evaluated
@@ -6803,7 +6875,11 @@ function dedupSectionLabels(fc) {
     let key;
     if (p.section != null && p.township != null && p.range != null) {
       const dir = String(p.direction || '').toUpperCase().replace(/[^EW]/g, '');
-      key = `S${p.section}|T${p.township}|R${p.range}|${dir}`;
+      // Quarter is part of the dedup key in quarter-grid mode so the four
+      // quarters of a section stay distinct; empty/undefined in section
+      // mode where one feature per section is already the goal.
+      const quarter = String(p.quarter || '').toUpperCase();
+      key = `S${p.section}|T${p.township}|R${p.range}|${dir}|Q${quarter}`;
     } else if (p.label) {
       key = `L:${String(p.label).trim().toUpperCase().replace(/\s+/g, '')}`;
     } else {
