@@ -1,6 +1,7 @@
 {
-  "built": "2026-06-03T13:49:04-0500",
+  "built": "2026-06-05T22:55:14-0500",
   "source": "LCR_RCT_2020_MB.tif",
+  "format": "webp",
   "minzoom": 6,
   "maxzoom": 12,
   "palette": {

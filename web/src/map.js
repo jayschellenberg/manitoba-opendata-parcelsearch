@@ -271,7 +271,7 @@ const BASEMAP_STYLE = {
     // Detailed tri-state branch off in that case.
     'landcover-raster': {
       type: 'raster',
-      tiles: [`${import.meta.env?.BASE_URL || '/'}data/landcover-tiles/{z}/{x}/{y}.png`],
+      tiles: [`${import.meta.env?.BASE_URL || '/'}data/landcover-tiles/{z}/{x}/{y}.webp`],
       tileSize: 256,
       minzoom: 6,
       maxzoom: 12,
