@@ -12,6 +12,10 @@
 const MANIFEST_URL = `${import.meta.env?.BASE_URL || '/'}data/manifest.json`;
 
 let manifestPromise = null;
+// Last successfully-resolved manifest, kept so synchronous callers (e.g. the
+// CSV evidence-export preamble) can read freshness without awaiting. Stays
+// null until the first getManifest() resolves with a usable object.
+let manifestResolved = null;
 
 /**
  * Fetch the manifest. Cached at module scope so multiple callers
@@ -27,12 +31,22 @@ export async function getManifest() {
       if (!res.ok) return null;
       const json = await res.json();
       if (!json || typeof json !== 'object' || !json.datasets) return null;
+      manifestResolved = json;
       return json;
     } catch {
       return null;
     }
   })();
   return manifestPromise;
+}
+
+/**
+ * Synchronously return the last-resolved manifest, or null if getManifest()
+ * hasn't completed (or never succeeded). Lets a sync code path consult
+ * freshness on a best-effort basis after the footer has warmed the cache.
+ */
+export function getManifestSync() {
+  return manifestResolved;
 }
 
 /**
@@ -65,4 +79,4 @@ export async function getOverallFreshness() {
 }
 
 // Test-only reset hook so the cache between tests doesn't carry over.
-export function _resetManifestCache() { manifestPromise = null; }
+export function _resetManifestCache() { manifestPromise = null; manifestResolved = null; }

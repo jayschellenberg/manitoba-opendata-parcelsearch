@@ -11,7 +11,7 @@
     "data:all": "Rscript ../r/build_legal_index.R && Rscript ../r/build_assessment_index.R && Rscript ../r/build_section_grid.R && Rscript ../r/build_river_lots.R && Rscript ../r/build_masc_shards.R && Rscript ../r/build_parcel_masc.R && Rscript ../r/build_landcover.R && node scripts/build-manifest.js",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node test/cache.test.js && node test/manifest.test.js && node test/indexes.test.js && node test/shards.test.js && node test/arcgis-cache.test.js && node test/urlState.test.js && node test/soilSurvey.test.js && node test/parcelListParser.test.js && node test/parcelListResolver.test.js && node test/routeSolver.test.js && node test/zipStore.test.js"
+    "test": "node test/cache.test.js && node test/manifest.test.js && node test/indexes.test.js && node test/shards.test.js && node test/arcgis-cache.test.js && node test/urlState.test.js && node test/soilSurvey.test.js && node test/parcelListParser.test.js && node test/parcelListResolver.test.js && node test/routeSolver.test.js && node test/zipStore.test.js && node test/provenance.test.js"
   },
   "dependencies": {
     "@mapbox/mapbox-gl-draw": "^1.5.1",

@@ -1,18 +1,26 @@
 # build_historical_shards.R
 #
 # Processes the dated provincial snapshots in the MAOSnapshots archive
-# into per-muni GeoJSON shards for the webapp's HISTORICAL ("as-of-year")
-# compare view. For each year it shards three layers — parcels, zoning,
-# dev-plan — keyed by muni number, plus a manifest carrying each layer's
-# own snapshot date.
+# into per-muni GeoJSON shards for the webapp's HISTORICAL ("as-of-date")
+# compare view. Each snapshot = one dated parcel file; its date IS the
+# snapshot_id (YYYY-MM-DD). For each snapshot it shards three layers —
+# parcels, zoning, dev-plan — keyed by muni number, plus a manifest (schema 2)
+# carrying each layer's own source date AND its provenance (source_file,
+# sha256, retrieved_at, source_url, source_crs, license) lifted from the
+# archive .meta.json sidecars.
 #
 #   source : D:/Dropbox/Appraisal/Web/MAOSnapshots/<year>/
 #              MBRollGeoPackage<YYYYMMDD>.gpkg                 (parcels)
 #              Manitoba_Zoning_By_Laws<YYYYMMDD>.geojson       (zoning)
 #              Manitoba_Development_Plan_Designations<YYYYMMDD>.geojson (dev-plan)
-#   output : <OUTPUT_ROOT>/<year>/
+#   output : <OUTPUT_ROOT>/<snapshot_id>/            (snapshot_id = YYYY-MM-DD)
 #              manifest.json
 #              parcels/<muni_no>.json   zoning/<muni_no>.json   devplan/<muni_no>.json
+#            <OUTPUT_ROOT>/index.json                 # discovery: snapshots + per-layer dates
+#
+# Display shards are simplified (~10 m) for VISUALIZATION only — they are NOT
+# survey-accurate. Resolve acreage/boundary evidence back to the archived
+# source-of-record named in each layer's provenance (source_file / sha256).
 #
 # The output tree is destined for a SEPARATE public repo (mb-parcel-history)
 # served via the jsDelivr CDN, so it stays out of the main repo + Vercel
@@ -46,11 +54,12 @@
 # and Douglas-Peucker simplified (~10 m) to keep shards small for the CDN.
 #
 # Usage:
-#   Rscript r/build_historical_shards.R                 # all years in the archive
-#   Rscript r/build_historical_shards.R --year 2026     # one year
+#   Rscript r/build_historical_shards.R                 # every snapshot in the archive
+#   Rscript r/build_historical_shards.R --year 2026     # only snapshots dated 2026
 #   Rscript r/build_historical_shards.R --year 2026 --muni 168   # one muni (fast test)
+#   Rscript r/build_historical_shards.R --index-only    # just rewrite the discovery index
 #
-# Runtime: ~10-15 min/year for the full province (parcels dominate).
+# Runtime: ~10-15 min/snapshot for the full province (parcels dominate).
 
 suppressPackageStartupMessages({
   library(sf)
@@ -168,6 +177,7 @@ layer_meta <- function(src_f, munis, features) {
     source_date           = date_from_name(src_f),
     retrieved_at          = m$retrieved_at %||% NA_character_,
     retrieved_at_inferred = if (is.null(m$retrieved_at_inferred)) NA else m$retrieved_at_inferred,
+    source_crs            = m$source_crs %||% NA_character_,
     sha256                = m$sha256 %||% NA_character_,
     bytes                 = m$bytes %||% NA,
     source_url            = m$source_url %||% NA_character_,

@@ -57,6 +57,16 @@ const ZONING_URL  = `${BASE}/Manitoba_Zoning_By_Laws/FeatureServer/0`;
 const DEVPLAN_URL = `${BASE}/Manitoba_Development_Plan_Designations/FeatureServer/0`;
 const MASC_RISK_AREAS_URL = `${BASE}/MASC_Risk_Areas/FeatureServer/0`;
 
+// Live provincial FeatureServers the results grid is sourced from, as a
+// citable list for evidence-export provenance (lib/provenance.js). These are
+// the authoritative live endpoints queried at search time — keep in lock-step
+// with the consts above. `label` is the column family it feeds in the grid.
+export const SERVICE_SOURCES = [
+  { label: 'Parcels (Roll Entry)',          url: ROLL_URL },
+  { label: 'Zoning By-Laws',                url: ZONING_URL },
+  { label: 'Development Plan Designations', url: DEVPLAN_URL },
+];
+
 // ArcGIS Online hosted services cap any single page at 2000 features.
 const PAGE_SIZE = 2000;
 // Maximum total parcels we'll surface in one search. Beyond this the user
