@@ -26,6 +26,10 @@ export default defineConfig({
   // and emits the generated stylesheet for the `tailwind.css` entry.
   plugins: [tailwindcss()],
   cacheDir: process.env.VITE_CACHE_DIR || 'node_modules/.vite',
+  // Escape hatch: VITE_SKIP_PUBLIC=1 disables the public/ → dist/ asset copy.
+  // Useful for a code-only compile check on Windows/Dropbox, where copying the
+  // large public/data tree into a Dropbox-synced dist/ can EPERM mid-sync.
+  ...(process.env.VITE_SKIP_PUBLIC ? { publicDir: false } : {}),
   // Bake the build identity in for evidence-export provenance. Stringified so
   // they substitute as string literals; lib/provenance.js reads them through a
   // typeof guard so dev/test runs without `define` still work.
