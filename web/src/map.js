@@ -2513,33 +2513,60 @@ export function setLandCoverVisible(map, on) {
 let historicalYear = null;
 // by_roll lineage map for the loaded muni (predecessors/successors per roll).
 let historicalLineage = null;
+// roll → today's MAO assessment-report URL (Map), stamped from the current
+// muni fetch in main.js. Lets popups link a historical roll (and its lineage
+// "→ became" rolls) to the CURRENT MAO page.
+let historicalCurrentUrls = null;
 
 /**
- * Feed the historical (as-of-year) compare layers. `data` carries any of
+ * Feed the historical (as-of-date) compare layers. `data` carries any of
  * { parcels, zoning, devplan } GeoJSON FeatureCollections (or null to clear
- * that layer) plus the `year` they're from. main.js fetches these from the
- * mb-parcel-history CDN for the selected muni.
+ * that layer) plus the `year` they're from, the `lineage` by_roll map, and
+ * `currentUrls` (roll → today's MAO URL). main.js fetches these for the muni.
  */
 export function setHistoricalData(map, data = {}) {
   historicalYear = data.year ?? historicalYear;
   if ('lineage' in data) historicalLineage = data.lineage;
+  if ('currentUrls' in data) historicalCurrentUrls = data.currentUrls;
   const set = (srcId, fc) => { const s = map.getSource(srcId); if (s) s.setData(fc || emptyFc()); };
   set('historical-parcels', data.parcels);
   set('historical-zoning',  data.zoning);
   set('historical-devplan', data.devplan);
 }
 
+// Today's MAO URL for a roll, if that roll still exists in current data.
+function currentMaoUrl(roll) {
+  if (!roll || !historicalCurrentUrls) return null;
+  const u = historicalCurrentUrls.get ? historicalCurrentUrls.get(roll) : historicalCurrentUrls[roll];
+  return safeExternalUrl(u);
+}
+
+// Render a roll as a link to its CURRENT MAO page when one exists, else plain.
+function rollMaoLink(roll, title) {
+  const txt = escapeHtml(String(roll));
+  const safe = currentMaoUrl(roll);
+  return safe
+    ? `<a href="${safe}" target="_blank" rel="noreferrer" title="${escapeHtml(title)}">${txt}</a>`
+    : txt;
+}
+
 // Inferred lineage block for a historical parcel popup (from the by_roll map).
 function lineageHtml(roll) {
   const rec = historicalLineage ? historicalLineage[roll] : null;
   if (!rec) return '';
-  const list = (arr, max = 6) => {
+  // Successors ("→ became") are TODAY's parcels — link each to its current MAO
+  // page. Predecessors ("← from") are older rolls that usually no longer exist,
+  // so they stay plain text.
+  const list = (arr, max = 6, linked = false) => {
     const rolls = (arr || []).map((x) => x.roll);
-    return rolls.length > max ? `${rolls.slice(0, max).join(', ')} +${rolls.length - max} more` : rolls.join(', ');
+    const shown = rolls.slice(0, max).map((r) =>
+      linked ? rollMaoLink(r, `Open roll ${r} on Manitoba Assessment Online (current)`) : escapeHtml(String(r)));
+    const extra = rolls.length > max ? ` +${rolls.length - max} more` : '';
+    return shown.join(', ') + extra;
   };
   const rows = [];
-  if (rec.predecessors?.length) rows.push(`<strong>← from</strong> ${escapeHtml(list(rec.predecessors))}`);
-  if (rec.successors?.length)   rows.push(`<strong>→ became</strong> ${escapeHtml(list(rec.successors))} (${rec.successors.length})`);
+  if (rec.predecessors?.length) rows.push(`<strong>← from</strong> ${list(rec.predecessors)}`);
+  if (rec.successors?.length)   rows.push(`<strong>→ became</strong> ${list(rec.successors, 6, true)} (${rec.successors.length})`);
   if (!rows.length) return '';
   const conf = Number.isFinite(rec.confidence) ? ` · ${Math.round(rec.confidence * 100)}% conf` : '';
   return `<div style="margin-top:5px;border-top:1px solid #eee;padding-top:4px">`
@@ -2558,7 +2585,16 @@ export function setHistoricalVisible(map, on) {
 
 function historicalParcelHtml(p, year) {
   const lines = [`<strong style="color:#b45309">Historical parcel${year ? ` (${escapeHtml(year)})` : ''}</strong>`];
-  if (p.Roll_No_Txt)        lines.push(`<strong>Roll #</strong> ${escapeHtml(p.Roll_No_Txt)}`);
+  if (p.Roll_No_Txt) {
+    // Link the roll to TODAY's MAO page when the parcel still exists (current
+    // URL harvested in main.js); else fall back to the archived report URL the
+    // snapshot carried; else plain text.
+    const safe = currentMaoUrl(p.Roll_No_Txt) || safeExternalUrl(p.Asmt_Rpt_Url);
+    const rollTxt = escapeHtml(p.Roll_No_Txt);
+    lines.push(`<strong>Roll #</strong> ` + (safe
+      ? `<a href="${safe}" target="_blank" rel="noreferrer" title="Open this roll on Manitoba Assessment Online${currentMaoUrl(p.Roll_No_Txt) ? ' (current)' : ' (as-of snapshot)'}">${rollTxt}</a>`
+      : rollTxt));
+  }
   if (p.Property_Address)   lines.push(escapeHtml(p.Property_Address));
   if (p.Muni_Name_With_Typ) lines.push(`<em>${escapeHtml(p.Muni_Name_With_Typ)}</em>`);
   if (p.Frontage_or_Area)   lines.push(`<strong>Area</strong> ${escapeHtml(p.Frontage_or_Area)}`);

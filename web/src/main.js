@@ -4878,10 +4878,19 @@ async function stampHistoricalSizeChanges(parcels, muniName) {
     });
     const curFeatureCount = cur?.features?.length || 0;
     const curByRoll = new Map();
+    // roll → today's MAO assessment-report URL, harvested from the SAME current
+    // fetch. Lets the historical popup link a parcel's roll (and its lineage
+    // "→ became" rolls) to the CURRENT MAO page. The URL is keyed by internal
+    // MAO ids, not the roll, so it can't be synthesized — it must come from
+    // today's parcel record.
+    const curUrlByRoll = new Map();
     for (const f of cur?.features || []) {
       const roll = f.properties?.Roll_No_Txt;
+      if (!roll) continue;
       const a = parcelAcres(f);
-      if (roll && a > 0) curByRoll.set(roll, a);
+      if (a > 0) curByRoll.set(roll, a);
+      const url = f.properties?.Asmt_Rpt_Url;
+      if (url && !curUrlByRoll.has(roll)) curUrlByRoll.set(roll, url);
     }
     // Diagnostic: distinguish "genuinely no current data" from a name/roll-key
     // FORMAT MISMATCH (the failure mode flagged at review). If the muni name
@@ -4915,14 +4924,19 @@ async function stampHistoricalSizeChanges(parcels, muniName) {
       );
     }
     for (const f of parcels.features || []) {
-      const rec = byRoll.get(f.properties?.Roll_No_Txt);
-      if (!rec || !f.properties) continue;
+      if (!f.properties) continue;
+      const roll = f.properties.Roll_No_Txt;
+      // Current MAO page for this parcel's own roll (if it still exists today).
+      const curUrl = roll ? curUrlByRoll.get(roll) : null;
+      if (curUrl) f.properties._curAsmtUrl = curUrl;
+      const rec = byRoll.get(roll);
+      if (!rec) continue;
       f.properties._sizeBand = rec.band;
       if (rec.histAcres != null) f.properties._histAcres = rec.histAcres;
       if (rec.curAcres  != null) f.properties._curAcres  = rec.curAcres;
       if (rec.deltaPct  != null) f.properties._deltaPct  = rec.deltaPct;
     }
-    return summary;
+    return { summary, curUrlByRoll };
   } catch (err) {
     console.warn('historical size-change stamp failed', err);
     return null;
@@ -4942,10 +4956,15 @@ async function loadHistorical(snap, muniName) {
       fetchHistoricalLineage(muniNo),
     ]);
     if (!parcels) { setCount(`Historical: couldn't load ${snap} parcels for ${muniName}.`); deactivateHistorical(); return; }
-    // Stamp size-change bands BEFORE setHistoricalData so the colour expression
-    // sees them on the first render.
-    const sizeSummary = await stampHistoricalSizeChanges(parcels, muniName);
-    setHistoricalData(map, { parcels, zoning, devplan, year: snap, lineage: lineage?.by_roll || null });
+    // Stamp size-change bands + current-MAO links BEFORE setHistoricalData so
+    // the colour expression and popups see them on the first render.
+    const enrich = await stampHistoricalSizeChanges(parcels, muniName);
+    const sizeSummary = enrich?.summary || null;
+    setHistoricalData(map, {
+      parcels, zoning, devplan, year: snap,
+      lineage: lineage?.by_roll || null,
+      currentUrls: enrich?.curUrlByRoll || null,   // roll → today's MAO URL for the popup links
+    });
     setHistoricalVisible(map, true);
     historicalActive = true;
     historicalLoadedMuni = muniName;
