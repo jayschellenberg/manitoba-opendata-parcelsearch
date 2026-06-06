@@ -1456,10 +1456,13 @@ export async function fetchHistoricalManifest(year) {
  */
 export async function fetchHistoricalShard(year, layer, muniNo) {
   if (!year || !layer || muniNo == null || muniNo === '') return null;
-  // v3: shards regenerated with a finer simplify tolerance (0.00003 vs 0.00015)
-  // that no longer collapses small lots into triangles. Bumped to bust the
-  // 30-day cache so clients re-fetch the corrected geometry.
-  const cacheKey = `mb_historical_${year}_${layer}_${muniNo}_v3`;
+  // v4: shards regenerated so SMALL lots (< 1 ha) are no longer simplified at
+  // all — Douglas-Peucker was collapsing narrow rectangles into triangles even
+  // at a fine tolerance (Steinbach/Hanover subdivisions). Bumped to bust the
+  // 30-day client cache so clients re-fetch the corrected geometry; the
+  // republish also purges every parcel shard from jsDelivr so @main serves the
+  // fixed geometry immediately.
+  const cacheKey = `mb_historical_${year}_${layer}_${muniNo}_v4`;
   const cached = await readCache(cacheKey, HISTORICAL_SHARD_TTL_MS);
   if (cached) return cached;
   try {

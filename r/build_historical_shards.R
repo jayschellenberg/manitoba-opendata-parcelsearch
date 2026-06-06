@@ -78,6 +78,15 @@ OUTPUT_ROOT  <- "D:/Dropbox/ClaudeCode/MBOpenData/mb-parcel-history"
 # digitization noise from long rural boundaries.
 SIMPLIFY_TOLERANCE_DEG <- 0.00003
 
+# Parcels BELOW this area are NOT simplified at all (kept exact). A small lot is
+# already near-minimal (a rectangle is 5 points), so Douglas-Peucker can only
+# drop a corner and collapse it into a triangle — even at a small tolerance the
+# narrowest lots still collapse (e.g. 138 m² Steinbach strips). The vertex
+# savings live entirely in large/complex rural boundaries, which are also too
+# big for DP to collapse, so gate simplification on area and leave small lots
+# untouched. 10000 m² = 1 ha (~2.5 ac) — well above any urban lot.
+SIMPLIFY_MIN_AREA_M2 <- 10000
+
 # Fields kept per layer (what the webapp actually displays). Parcels mirror
 # PARCEL_OUTFIELDS minus OBJECTID (MBRollGeoPackage has no OBJECTID — we
 # synthesize a row id). Zoning / dev-plan mirror the fields the live
@@ -113,11 +122,22 @@ latest_match <- function(dir, pattern) {
 
 to_wgs84_simplify <- function(g) {
   if (is.na(sf::st_crs(g)) ) sf::st_crs(g) <- 4326
+  # Real-m² area for the gate, computed in a metric CRS (UTM-14N) — s2 is OFF
+  # (GEOS), so we must NOT area on lon/lat, and the source CRS varies (2025
+  # ships EPSG:3857 whose native area is ~2.4x inflated; 2026 EPSG:26914). A
+  # coarse province-wide UTM area is plenty for a 1-ha threshold.
+  area_m2 <- as.numeric(sf::st_area(sf::st_transform(sf::st_geometry(g), 26914)))
   if (sf::st_crs(g)$epsg %||% 0 != 4326) g <- sf::st_transform(g, 4326)
-  # suppressWarnings: sf nags that DP simplify on lon/lat isn't metric-exact;
-  # fine for visual rendering at webapp zooms (same call build_rollentry_snapshot.R uses).
-  sf::st_geometry(g) <- sf::st_make_valid(suppressWarnings(sf::st_simplify(
-    sf::st_geometry(g), dTolerance = SIMPLIFY_TOLERANCE_DEG, preserveTopology = TRUE)))
+  geom <- sf::st_geometry(g)
+  # Simplify ONLY parcels >= SIMPLIFY_MIN_AREA_M2; leave small lots exact so DP
+  # can't collapse a rectangle into a triangle. suppressWarnings: sf nags that
+  # DP simplify on lon/lat isn't metric-exact; fine for visual rendering.
+  big <- is.finite(area_m2) & area_m2 >= SIMPLIFY_MIN_AREA_M2
+  if (any(big)) {
+    geom[big] <- sf::st_make_valid(suppressWarnings(sf::st_simplify(
+      geom[big], dTolerance = SIMPLIFY_TOLERANCE_DEG, preserveTopology = TRUE)))
+  }
+  sf::st_geometry(g) <- geom
   g <- g[!sf::st_is_empty(g), ]
   g
 }
@@ -326,6 +346,7 @@ process_snapshot <- function(parcel_f) {
       commit = generator_commit(),
       crs    = "EPSG:4326",
       simplify_tolerance_deg = SIMPLIFY_TOLERANCE_DEG,
+      simplify_min_area_m2   = SIMPLIFY_MIN_AREA_M2,   # parcels below this kept EXACT (no triangles)
       geometry_note = paste("Geometry simplified ~2-3 m for display — NOT survey-accurate.",
                             "Resolve acreage/boundary evidence to the archived source-of-record",
                             "(layers[].source_file / sha256).")
