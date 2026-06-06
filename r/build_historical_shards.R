@@ -150,6 +150,19 @@ write_root_index <- function() {
   jsonlite::write_json(idx, file.path(OUTPUT_ROOT, "index.json"),
                        auto_unbox = TRUE, pretty = TRUE)
   cat("Wrote root index.json — years:", paste(yrs, collapse = ", "), "\n")
+
+  # Staleness: warn if the newest archived snapshot is > 12 months old.
+  dates <- character(0)
+  for (y in names(out)) for (l in out[[y]]$layers) if (!is.null(l$date)) dates <- c(dates, l$date)
+  dates <- suppressWarnings(as.Date(dates))
+  dates <- dates[!is.na(dates)]
+  if (length(dates)) {
+    age_days <- as.integer(Sys.Date() - max(dates))
+    if (age_days > 365) {
+      cat(sprintf("  !! STALE: newest historical snapshot is %d days old (> 12 months) — archive a fresh year.\n",
+                  age_days))
+    }
+  }
 }
 
 # ---- per-year processing --------------------------------------------
