@@ -1,7 +1,8 @@
 # build_landcover.R
 #
 # Pre-bakes a farmland-oriented land-cover summary for every large
-# (> 20 acre) Roll_Entry parcel, so the frontend can show "what's on
+# (> ACRES_THRESHOLD acre, 10 by default) Roll_Entry parcel, so the
+# frontend can show "what's on
 # the ground" — cultivated vs pasture vs bush vs wetland — in the
 # parcel popup and results grid without any raster work at render time.
 #
@@ -23,20 +24,24 @@
 #           CalcAcres              (num  UTM-14N calculated parcel area)
 #           LandCoverPct_Class0..11 (num fraction 0-1 of each land class)
 #   * RollEntry_YYYYMMDD.gpkg (layer "roll_entry")
-#       — same parcel snapshot the live site keys off. Supplies the
-#         EXACT Roll_No_Txt ("100.000") and Muni_Name_With_Typ
-#         ("HANOVER (RM)") strings the frontend looks parcels up by.
-#         The Parquet alone can't be sharded directly: its TaxID is the
-#         bare number (100) and its Municipality is title-case, neither
-#         of which match the live ROLL_ENTRY keys.
+#       — used ONLY for a stable MuniCode -> Muni_Name_With_Typ map
+#         (e.g. 135 -> "HANOVER (RM)"), the exact muni string the
+#         frontend keys shards by. Muni names don't drift the way
+#         individual parcels do, so a slightly stale snapshot is fine.
 #
-# Join key: (MuniCode, roll). Roll numbers repeat across munis (every
-# RM has a "100.000"), so muni MUST be part of the key. We match the
-# Parquet's MuniCode against the integer prefix of Roll_Entry's
-# Municipality field ("135 - RM OF HANOVER" -> 135), and the Parquet's
-# numeric TaxID against Roll_Entry's numeric Roll_No, both scaled to
-# integer thousandths to dodge float-formatting drift. ~99.9% of
-# Roll_Entry parcels match.
+# Keying: the per-parcel shard key (Roll_No_Txt) is RECONSTRUCTED from
+# the Parquet's own roll, NOT looked up in the snapshot. Roll_No_Txt is
+# always the roll formatted to exactly 3 decimals ("%.3f") — verified
+# true for 100% of the snapshot (151030 -> "151030.000", 240.25 ->
+# "240.250"). The muni comes from the MuniCode map above.
+#
+# WHY reconstruct instead of inner-joining the snapshot: a parcel can be
+# in the assembly Parquet (and live ArcGIS) but MISSING from the
+# RollEntry snapshot if the snapshot is a slightly different vintage —
+# e.g. Rockwood 151030.000 had land cover in the Parquet but no snapshot
+# row, so the old inner join dropped it and the live site showed no
+# cover. Reconstructing keys every Parquet parcel off its own roll, so
+# snapshot drift can no longer silently drop live parcels.
 #
 # Output:
 #   web/public/data/landcover/<MUNI_KEY>.json
@@ -47,8 +52,9 @@
 #                        "bush": 0.18, "wet": 0.0072, "other": 0.0044 },
 #           ... }
 #       The five buckets are fractions (0-1) of the parcel that sum to
-#       ~1. Only parcels > 20 acres are written — urban/residential
-#       lots drop out, keeping the shards small. The frontend derives
+#       ~1. Only parcels over ACRES_THRESHOLD acres (10 by default) are
+#       written — urban/residential lots drop out, keeping the shards
+#       small. The frontend derives
 #       the dominant bucket + per-bucket acres (parcel acres x fraction)
 #       client-side, so no labels or acreage are duplicated here.
 #
@@ -66,8 +72,8 @@
 #   other Other          = 0  Too small, 1 Built-up, 10 Barren,
 #                          11 Permanent snow & ice
 #
-# Runtime: seconds. Pure tabular join (no spatial ops) over the ~150-200k
-# parcels that clear the 20-acre filter. Re-run whenever a fresh
+# Runtime: seconds. Pure tabular join (no spatial ops) over the parcels
+# that clear the acreage filter. Re-run whenever a fresh
 # mao-assembly Parquet or RollEntry snapshot lands; output is committed
 # to source control (small — a few MB across all shards).
 
@@ -92,8 +98,19 @@ ACRES_THRESHOLD <- 10  # only parcels strictly larger than this are sharded
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 # ----------------------------------------------------------------------
-# 1. Locate the most recent mao-assembly land-cover Parquet
+# 1. Locate the most recent COMPLETE mao-assembly land-cover Parquet
 # ----------------------------------------------------------------------
+# The assembly occasionally leaves a partial/aborted run in this dir —
+# e.g. a job that stopped after processing only the first handful of
+# municipalities (alphabetical), producing a Parquet with ~50k rows
+# instead of the full ~430k. Selecting purely by newest filename would
+# silently pick that partial and collapse the shards to a few munis.
+#
+# So: read each candidate's row count (cheap — Parquet metadata, no
+# data read), treat anything within 80% of the largest as a "complete"
+# province-wide run, and take the newest of those by filename date. A
+# newer-but-partial Parquet is skipped with a loud NOTE so the operator
+# knows to investigate (likely an aborted assembly run to re-run).
 pq_files <- list.files(assembly_dir,
                        pattern = "^MAOParcelOutputAg\\d{8}\\.parquet$",
                        full.names = TRUE)
@@ -101,12 +118,29 @@ if (length(pq_files) == 0L) {
   stop("No MAOParcelOutputAg<YYYYMMDD>.parquet found in ", assembly_dir,
        ". Run the mao-assembly pipeline first.")
 }
-pq_path <- tail(sort(pq_files), 1L)   # date in filename -> lexical sort = chronological
-cat("Reading land-cover Parquet:", basename(pq_path), "\n")
+pq_rows <- vapply(pq_files, function(f) {
+  tryCatch(as.integer(nrow(arrow::open_dataset(f))), error = function(e) NA_integer_)
+}, integer(1))
+ok <- !is.na(pq_rows)
+if (!any(ok)) stop("Could not read row counts from any Parquet in ", assembly_dir)
+pq_files <- pq_files[ok]; pq_rows <- pq_rows[ok]
+COMPLETE_FRAC <- 0.80
+complete <- pq_rows >= COMPLETE_FRAC * max(pq_rows)
+pq_path  <- tail(sort(pq_files[complete]), 1L)   # newest complete run by filename date
+newest   <- tail(sort(pq_files), 1L)
+if (!identical(pq_path, newest)) {
+  message(sprintf(
+    "NOTE: newest Parquet %s has only %s rows (< %.0f%% of the %s-row full run %s) — looks PARTIAL/aborted; using %s instead.",
+    basename(newest), format(pq_rows[pq_files == newest], big.mark = ","),
+    100 * COMPLETE_FRAC, format(max(pq_rows), big.mark = ","),
+    basename(pq_path), basename(pq_path)))
+}
+cat("Reading land-cover Parquet:", basename(pq_path),
+    sprintf("(%s rows)\n", format(pq_rows[pq_files == pq_path], big.mark = ",")))
 
 lc_cols <- paste0("LandCoverPct_Class", 0:11)
 pq <- arrow::open_dataset(pq_path) |>
-  dplyr::select(dplyr::all_of(c("MuniCode", "TaxID", "CalcAcres", lc_cols))) |>
+  dplyr::select(dplyr::all_of(c("MuniCode", "Municipality", "TaxID", "CalcAcres", lc_cols))) |>
   dplyr::collect()
 cat("  parcels in Parquet:", nrow(pq), "\n")
 
@@ -121,6 +155,16 @@ pq <- pq |>
   filter(!is.na(CalcAcres), CalcAcres > ACRES_THRESHOLD)
 cat("  parcels over", ACRES_THRESHOLD, "acres:", nrow(pq), "\n")
 
+# Reconstruct the frontend key directly from the Parquet roll instead of
+# inner-joining to the RollEntry snapshot. Roll_No_Txt is ALWAYS the roll
+# formatted to exactly 3 decimals ("%.3f") — verified true for 100% of
+# the RollEntry snapshot (e.g. 151030 -> "151030.000", 240.25 ->
+# "240.250"). Reconstructing means a parcel present in the Parquet but
+# MISSING from the (sometimes slightly stale) RollEntry snapshot still
+# gets land cover — previously the inner join silently dropped those,
+# which is exactly how live parcels like Rockwood 151030.000 showed no
+# cover despite having data. The snapshot is now used ONLY for the stable
+# MuniCode -> Muni_Name_With_Typ map (section 3), not per-parcel keys.
 pq <- pq |>
   mutate(
     cult  = round(z(LandCoverPct_Class2), 4),
@@ -129,24 +173,29 @@ pq <- pq |>
     wet   = round(z(LandCoverPct_Class3) + z(LandCoverPct_Class8), 4),
     other = round(z(LandCoverPct_Class0) + z(LandCoverPct_Class1) +
                   z(LandCoverPct_Class10) + z(LandCoverPct_Class11), 4),
-    roll_num = suppressWarnings(as.numeric(TaxID))
+    roll_num    = suppressWarnings(as.numeric(TaxID)),
+    Roll_No_Txt = sprintf("%.3f", roll_num),
+    MuniCode    = suppressWarnings(as.integer(MuniCode))
   ) |>
   filter(!is.na(MuniCode), !is.na(roll_num)) |>
-  mutate(join_key = paste0(MuniCode, "|", sprintf("%.0f", round(roll_num * 1000)))) |>
-  select(join_key, cult, past, bush, wet, other)
+  select(MuniCode, Municipality, Roll_No_Txt, cult, past, bush, wet, other)
 
-if (anyDuplicated(pq$join_key)) {
-  warning(sum(duplicated(pq$join_key)),
+# A given (MuniCode, roll) should be unique; guard anyway.
+dup_key <- paste0(pq$MuniCode, "|", pq$Roll_No_Txt)
+if (anyDuplicated(dup_key)) {
+  warning(sum(duplicated(dup_key)),
           " duplicate (MuniCode, roll) keys in Parquet — keeping first of each")
-  pq <- pq[!duplicated(pq$join_key), ]
+  pq <- pq[!duplicated(dup_key), ]
 }
 
 # ----------------------------------------------------------------------
-# 3. Load Roll_Entry attributes for the exact frontend keys
+# 3. MuniCode -> Muni_Name_With_Typ map from the RollEntry snapshot
 # ----------------------------------------------------------------------
-# We only need attributes, not geometry — read with a SQL select that
-# omits the geom column so st_read returns a plain data.frame and skips
-# parsing 430k polygons.
+# This is the ONLY thing we need from the snapshot now — a stable,
+# verified-1:1 lookup from the integer muni code to the exact
+# Muni_Name_With_Typ string the live frontend keys shards by. Muni names
+# don't drift the way individual parcels do, so a slightly stale snapshot
+# is fine here. We only need attributes, so the SQL select omits geometry.
 roll_files <- list.files(source_dir, pattern = "^RollEntry_\\d{8}\\.gpkg$",
                          full.names = TRUE)
 if (length(roll_files) == 0L) {
@@ -154,33 +203,37 @@ if (length(roll_files) == 0L) {
        ". Run r/download_parcels.R first.")
 }
 roll_path <- tail(sort(roll_files), 1L)
-cat("Reading Roll_Entry attributes:", basename(roll_path), "\n")
+cat("Reading Roll_Entry muni map:", basename(roll_path), "\n")
 
 re <- sf::st_read(
   roll_path,
-  query = paste0('SELECT "Roll_No", "Roll_No_Txt", "Municipality", ',
-                 '"Muni_Name_With_Typ" FROM "roll_entry"'),
+  query = 'SELECT DISTINCT "Municipality", "Muni_Name_With_Typ" FROM "roll_entry"',
   quiet = TRUE
 )
-cat("  Roll_Entry parcels:", nrow(re), "\n")
-
-re <- re |>
-  mutate(
-    muni_code = suppressWarnings(as.integer(sub("\\s*-.*$", "", Municipality))),
-    roll_num  = suppressWarnings(as.numeric(Roll_No))
-  ) |>
-  filter(!is.na(muni_code), !is.na(roll_num),
-         !is.na(Muni_Name_With_Typ), nzchar(Muni_Name_With_Typ),
-         !is.na(Roll_No_Txt)) |>
-  mutate(join_key = paste0(muni_code, "|", sprintf("%.0f", round(roll_num * 1000))))
+muni_map <- re |>
+  mutate(MuniCode = suppressWarnings(as.integer(sub("\\s*-.*$", "", Municipality)))) |>
+  filter(!is.na(MuniCode), !is.na(Muni_Name_With_Typ), nzchar(Muni_Name_With_Typ)) |>
+  distinct(MuniCode, Muni_Name_With_Typ)
+cat("  muni codes mapped:", nrow(muni_map), "\n")
 
 # ----------------------------------------------------------------------
-# 4. Join land-cover buckets onto Roll_Entry rows
+# 4. Attach the muni name to every Parquet parcel (left join keeps ALL)
 # ----------------------------------------------------------------------
-joined <- re |>
-  select(join_key, Roll_No_Txt, Muni_Name_With_Typ) |>
-  inner_join(pq, by = "join_key")
-cat("  parcels with land cover (joined):", nrow(joined),
+# Fallback: for any MuniCode missing from the snapshot map (none today,
+# but defensive), derive a name from the Parquet's own Municipality
+# field (uppercased) so the parcel still gets sharded rather than dropped.
+n_fallback <- sum(!pq$MuniCode %in% muni_map$MuniCode)
+if (n_fallback > 0) {
+  cat(sprintf("  NOTE: %d parcels in MuniCodes absent from the snapshot map — named from Parquet Municipality fallback\n",
+              n_fallback))
+}
+joined <- pq |>
+  left_join(muni_map, by = "MuniCode") |>
+  mutate(Muni_Name_With_Typ = dplyr::coalesce(Muni_Name_With_Typ, toupper(Municipality))) |>
+  filter(!is.na(Muni_Name_With_Typ), nzchar(Muni_Name_With_Typ)) |>
+  select(Roll_No_Txt, Muni_Name_With_Typ, cult, past, bush, wet, other)
+
+cat("  parcels with land cover:", nrow(joined),
     sprintf("(%.1f%% of >%dac Parquet rows)\n",
             100 * nrow(joined) / max(1, nrow(pq)), ACRES_THRESHOLD))
 

@@ -1330,7 +1330,7 @@ export async function fetchParcelMascForMuni(muniNameWithTyp) {
 
 /**
  * Fetch the pre-baked land-cover summary for every farmland parcel
- * (> 20 acres) in a single municipality. Built by r/build_landcover.R,
+ * (over LAND_COVER_MIN_ACRES acres) in a single municipality. Built by r/build_landcover.R,
  * which bridges the mao-assembly land-cover Parquet (per-parcel
  * percentages of the 12 LCR_RCT_2020 raster classes) into the same
  * per-muni shard format as parcel-masc.
