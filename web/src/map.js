@@ -2486,6 +2486,8 @@ export function setLandCoverVisible(map, on) {
 // Year the historical layers are currently showing — read by the historical
 // click popups so each tooltip can state its as-of year.
 let historicalYear = null;
+// by_roll lineage map for the loaded muni (predecessors/successors per roll).
+let historicalLineage = null;
 
 /**
  * Feed the historical (as-of-year) compare layers. `data` carries any of
@@ -2495,10 +2497,30 @@ let historicalYear = null;
  */
 export function setHistoricalData(map, data = {}) {
   historicalYear = data.year ?? historicalYear;
+  if ('lineage' in data) historicalLineage = data.lineage;
   const set = (srcId, fc) => { const s = map.getSource(srcId); if (s) s.setData(fc || emptyFc()); };
   set('historical-parcels', data.parcels);
   set('historical-zoning',  data.zoning);
   set('historical-devplan', data.devplan);
+}
+
+// Inferred lineage block for a historical parcel popup (from the by_roll map).
+function lineageHtml(roll) {
+  const rec = historicalLineage ? historicalLineage[roll] : null;
+  if (!rec) return '';
+  const list = (arr, max = 6) => {
+    const rolls = (arr || []).map((x) => x.roll);
+    return rolls.length > max ? `${rolls.slice(0, max).join(', ')} +${rolls.length - max} more` : rolls.join(', ');
+  };
+  const rows = [];
+  if (rec.predecessors?.length) rows.push(`<strong>← from</strong> ${escapeHtml(list(rec.predecessors))}`);
+  if (rec.successors?.length)   rows.push(`<strong>→ became</strong> ${escapeHtml(list(rec.successors))} (${rec.successors.length})`);
+  if (!rows.length) return '';
+  const conf = Number.isFinite(rec.confidence) ? ` · ${Math.round(rec.confidence * 100)}% conf` : '';
+  return `<div style="margin-top:5px;border-top:1px solid #eee;padding-top:4px">`
+    + `<strong style="color:#b45309">Lineage</strong> <span style="color:#888">(${escapeHtml(rec.type || '')}${conf})</span><br>`
+    + rows.join('<br>')
+    + `<br><small style="color:#888">Inferred from geometry — verify against the registered plan / title.</small></div>`;
 }
 
 export function setHistoricalVisible(map, on) {
@@ -2518,7 +2540,7 @@ function historicalParcelHtml(p, year) {
   if (p.Total_Value)        lines.push(`<strong>Assessed</strong> ${escapeHtml(p.Total_Value)}`);
   if (p.Asmt_Roll)          lines.push(`<small style="color:#777">${escapeHtml(p.Asmt_Roll)}</small>`);
   lines.push('<small style="color:#888">Display geometry simplified — verify boundary/area against the archived source-of-record.</small>');
-  return `<div class="parcel-popup">${lines.join('<br>')}</div>`;
+  return `<div class="parcel-popup">${lines.join('<br>')}${lineageHtml(p.Roll_No_Txt || '')}</div>`;
 }
 
 function historicalZoningHtml(p, year) {
