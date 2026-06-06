@@ -1108,6 +1108,41 @@ export function initMap(container, { onFeatureClick } = {}) {
           'line-opacity': 0.8,
         },
       });
+
+      // ----- HISTORICAL (as-of-year) compare overlay -----
+      // Sources fed from the mb-parcel-history CDN shards (setHistoricalData).
+      // Parcels render as DASHED amber boundaries over the current fabric so
+      // you can see a pre-subdivision parcel against today's lots; zoning and
+      // dev-plan render as translucent tinted fills you can click for the
+      // historical zone/designation. All hidden until Historical mode is on.
+      map.addSource('historical-parcels', { type: 'geojson', data: emptyFc() });
+      map.addSource('historical-zoning',  { type: 'geojson', data: emptyFc() });
+      map.addSource('historical-devplan', { type: 'geojson', data: emptyFc() });
+      map.addLayer({
+        id: 'historical-zoning-fill', type: 'fill', source: 'historical-zoning',
+        layout: { visibility: 'none' },
+        paint: { 'fill-color': '#7c3aed', 'fill-opacity': 0.12, 'fill-outline-color': '#7c3aed' },
+      });
+      map.addLayer({
+        id: 'historical-devplan-fill', type: 'fill', source: 'historical-devplan',
+        layout: { visibility: 'none' },
+        paint: { 'fill-color': '#0d9488', 'fill-opacity': 0.10, 'fill-outline-color': '#0d9488' },
+      });
+      map.addLayer({
+        id: 'historical-parcels-fill', type: 'fill', source: 'historical-parcels',
+        layout: { visibility: 'none' },
+        paint: { 'fill-color': '#b45309', 'fill-opacity': 0.06 },
+      });
+      map.addLayer({
+        id: 'historical-parcels-line', type: 'line', source: 'historical-parcels',
+        layout: { visibility: 'none' },
+        paint: {
+          'line-color': '#b45309',          // amber/brown = "historical"
+          'line-width': 1.8,
+          'line-opacity': 0.95,
+          'line-dasharray': [3, 2],
+        },
+      });
       // Roll-number labels at each parcel's centroid. Polygon symbol
       // placement uses the polygon's centroid by default (MapLibre falls
       // back to the largest interior anchor point if the centroid is
@@ -1842,6 +1877,23 @@ export function initMap(container, { onFeatureClick } = {}) {
         wireCoordsCopy(muniClickPopup, center);
       });
 
+      // Historical (as-of-year) overlay click popups — one per layer, each
+      // gated on its own visibility so they only fire in Historical mode.
+      const histClickPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '320px' });
+      const wireHist = (layerId, htmlFn) => {
+        map.on('click', layerId, (e) => {
+          if (map.getLayoutProperty(layerId, 'visibility') !== 'visible') return;
+          const p = e.features?.[0]?.properties;
+          if (!p) return;
+          histClickPopup.setLngLat(e.lngLat).setHTML(htmlFn(p, historicalYear ?? '')).addTo(map);
+        });
+        map.on('mouseenter', layerId, () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; });
+      };
+      wireHist('historical-parcels-fill', historicalParcelHtml);
+      wireHist('historical-zoning-fill',  historicalZoningHtml);
+      wireHist('historical-devplan-fill', historicalDevplanHtml);
+
       // Bare CLI-polygon click — sticky popup for "Parcel Boundaries
       // off, CLI on" workflows where the user wants to click a polygon
       // and keep its soil info on screen. Hover for bare CLI polygons
@@ -2429,6 +2481,59 @@ export function setLandCoverVisible(map, on) {
   for (const id of ['landcover-fill', 'muni-parcels-landcover-fill']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
   }
+}
+
+// Year the historical layers are currently showing — read by the historical
+// click popups so each tooltip can state its as-of year.
+let historicalYear = null;
+
+/**
+ * Feed the historical (as-of-year) compare layers. `data` carries any of
+ * { parcels, zoning, devplan } GeoJSON FeatureCollections (or null to clear
+ * that layer) plus the `year` they're from. main.js fetches these from the
+ * mb-parcel-history CDN for the selected muni.
+ */
+export function setHistoricalData(map, data = {}) {
+  historicalYear = data.year ?? historicalYear;
+  const set = (srcId, fc) => { const s = map.getSource(srcId); if (s) s.setData(fc || emptyFc()); };
+  set('historical-parcels', data.parcels);
+  set('historical-zoning',  data.zoning);
+  set('historical-devplan', data.devplan);
+}
+
+export function setHistoricalVisible(map, on) {
+  const vis = on ? 'visible' : 'none';
+  for (const id of ['historical-zoning-fill', 'historical-devplan-fill',
+                    'historical-parcels-fill', 'historical-parcels-line']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
+  }
+}
+
+function historicalParcelHtml(p, year) {
+  const lines = [`<strong style="color:#b45309">Historical parcel${year ? ` (${escapeHtml(year)})` : ''}</strong>`];
+  if (p.Roll_No_Txt)        lines.push(`<strong>Roll #</strong> ${escapeHtml(p.Roll_No_Txt)}`);
+  if (p.Property_Address)   lines.push(escapeHtml(p.Property_Address));
+  if (p.Muni_Name_With_Typ) lines.push(`<em>${escapeHtml(p.Muni_Name_With_Typ)}</em>`);
+  if (p.Frontage_or_Area)   lines.push(`<strong>Area</strong> ${escapeHtml(p.Frontage_or_Area)}`);
+  if (p.Total_Value)        lines.push(`<strong>Assessed</strong> ${escapeHtml(p.Total_Value)}`);
+  if (p.Asmt_Roll)          lines.push(`<small style="color:#777">${escapeHtml(p.Asmt_Roll)}</small>`);
+  return `<div class="parcel-popup">${lines.join('<br>')}</div>`;
+}
+
+function historicalZoningHtml(p, year) {
+  const lines = [`<strong style="color:#7c3aed">Historical zoning${year ? ` (${escapeHtml(year)})` : ''}</strong>`];
+  if (p.ZONE || p.ZONE_NAME) lines.push(`<strong>${escapeHtml(p.ZONE || '')}</strong>${p.ZONE_NAME ? ' — ' + escapeHtml(p.ZONE_NAME) : ''}`);
+  if (p.ZONE_CATEGORY)       lines.push(`<em>${escapeHtml(p.ZONE_CATEGORY)}</em>`);
+  if (p.ZBL)                 lines.push(`<strong>By-law</strong> ${escapeHtml(p.ZBL)}`);
+  return `<div class="parcel-popup">${lines.join('<br>')}</div>`;
+}
+
+function historicalDevplanHtml(p, year) {
+  const lines = [`<strong style="color:#0d9488">Historical dev-plan${year ? ` (${escapeHtml(year)})` : ''}</strong>`];
+  if (p.DES_NAME)     lines.push(`<strong>${escapeHtml(p.DES_NAME)}</strong>`);
+  if (p.DES_CATEGORY) lines.push(`<em>${escapeHtml(p.DES_CATEGORY)}</em>`);
+  if (p.DP_BYLAW)     lines.push(`<strong>By-law</strong> ${escapeHtml(p.DP_BYLAW)}`);
+  return `<div class="parcel-popup">${lines.join('<br>')}</div>`;
 }
 
 /**

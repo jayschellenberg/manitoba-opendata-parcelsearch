@@ -70,6 +70,9 @@ import {
   fetchRiverLots,
   fetchParcelMascForMuni,
   fetchLandCoverForMuni,
+  fetchHistoricalIndex,
+  fetchHistoricalManifest,
+  fetchHistoricalShard,
   fetchMascRiverlots,
   fetchCliAgrForMuni,
   parseRollList,
@@ -115,6 +118,8 @@ import {
   setSurveyGridData,
   setSurveyGridVisible,
   setLandCoverVisible,
+  setHistoricalData,
+  setHistoricalVisible,
   setLandCoverRasterVisible,
   setLandCoverRasterOpacity,
   flyToFeature,
@@ -247,6 +252,10 @@ const $cliLegend     = document.getElementById('cli-legend');
 const $landcoverToggle = document.getElementById('landcover-toggle');
 const $landcoverLegend = document.getElementById('landcover-legend');
 const $gridToggle    = document.getElementById('grid-toggle');
+const $historicalToggle   = document.getElementById('historical-toggle');
+const $historicalYear     = document.getElementById('historical-year');
+const $historicalYearWrap = document.getElementById('historical-year-wrap');
+const $historicalBanner   = document.getElementById('historical-banner');
 const $count         = document.getElementById('count');
 const $tbody         = document.querySelector('#results tbody');
 const $mapEl         = document.getElementById('map');
@@ -1294,6 +1303,9 @@ $muniParcelsToggle.addEventListener('click', () => toggleAuxOverlay('muniParcels
 $mascToggle.addEventListener('click', () => toggleMascOverlay());
 $cliToggle.addEventListener('click', () => toggleCliOverlay());
 if ($landcoverToggle) $landcoverToggle.addEventListener('click', () => toggleLandCoverOverlay());
+if ($historicalToggle) $historicalToggle.addEventListener('click', () => toggleHistoricalOverlay());
+if ($historicalYear) $historicalYear.addEventListener('change', () => onHistoricalYearChange());
+initHistoricalYears();
 $gridToggle.addEventListener('click', () => toggleSurveyGridOverlay());
 
 const $staticMapBtn     = document.getElementById('static-map-btn');
@@ -4727,6 +4739,14 @@ function resetMuniParcelsToggle() {
   const inScope = !!$municipality.value
     || !!(csvMatchedMunis && csvMatchedMunis.length > 0);
   $muniParcelsToggle.disabled = !inScope;
+  // Historical compare is single-muni: enable only when a muni is picked.
+  // If the muni changed while historical is on, drop it (it's another muni).
+  if ($historicalToggle) {
+    $historicalToggle.disabled = !$municipality.value;
+    if (historicalActive && historicalLoadedMuni && historicalLoadedMuni !== $municipality.value) {
+      deactivateHistorical();
+    }
+  }
   // If the scope changed (different dropdown muni, or sales mode just
   // ended), mark the layer as needing a refetch and turn it off so we
   // don't keep showing another scope's parcels on screen. Inside sales
@@ -4743,6 +4763,128 @@ function resetMuniParcelsToggle() {
       mapReady.then(() => setMuniParcelsVisible(map, false));
     }
   }
+}
+
+// ---------- Historical (as-of-year) compare overlay ----------
+// Overlays an earlier year's parcels (dashed amber), zoning + dev-plan for
+// the selected muni, fetched on demand from the mb-parcel-history CDN. The
+// data is fully self-describing (root index.json → per-year manifest →
+// per-muni shards), so adding a year needs no code change here.
+let historicalActive = false;
+let historicalLoadedMuni = null;
+let historicalIndexCache = null;
+
+async function initHistoricalYears() {
+  if (!$historicalYear) return;
+  const idx = await fetchHistoricalIndex().catch(() => null);
+  historicalIndexCache = idx;
+  const years = idx?.years ? Object.keys(idx.years).filter((y) => /^\d{4}$/.test(y)).sort().reverse() : [];
+  $historicalYear.innerHTML = '';
+  for (const y of years) {
+    const opt = document.createElement('option');
+    opt.value = y; opt.textContent = y;
+    $historicalYear.appendChild(opt);
+  }
+  if (years.length && $historicalYearWrap) $historicalYearWrap.hidden = false;
+}
+
+function historicalLayerDates(year) {
+  const layers = historicalIndexCache?.years?.[year]?.layers || {};
+  return { roll: layers.parcels?.date || null, zoning: layers.zoning?.date || null, devplan: layers.devplan?.date || null };
+}
+
+// Newest snapshot date across the whole index — drives the >12-month flag.
+function historicalIsStale() {
+  const yrs = historicalIndexCache?.years;
+  if (!yrs) return false;
+  let newest = null;
+  for (const y of Object.values(yrs)) for (const l of Object.values(y.layers || {})) {
+    if (l?.date && (!newest || l.date > newest)) newest = l.date;
+  }
+  return newest ? (Date.now() - Date.parse(newest)) > 365 * 24 * 60 * 60 * 1000 : false;
+}
+
+async function resolveHistoricalMuniNo(year, muniName) {
+  const m = await fetchHistoricalManifest(year).catch(() => null);
+  if (!m?.munis) return null;
+  const norm = (s) => String(s || '').toUpperCase().replace(/\s+/g, ' ').trim();
+  const target = norm(muniName);
+  for (const [no, info] of Object.entries(m.munis)) {
+    if (info?.name === muniName || norm(info?.name) === target) return Number(no);
+  }
+  return null;
+}
+
+async function toggleHistoricalOverlay() {
+  if (!$historicalToggle) return;
+  await mapReady;
+  if (historicalActive) { deactivateHistorical(); return; }
+  if (!$municipality.value) { setCount('Historical: select a municipality first.'); return; }
+  const year = $historicalYear?.value;
+  if (!year) { setCount('Historical: no snapshot years available.'); return; }
+  await loadHistorical(year, $municipality.value);
+}
+
+async function onHistoricalYearChange() {
+  if (!historicalActive || !$municipality.value || !$historicalYear?.value) return;
+  await loadHistorical($historicalYear.value, $municipality.value);
+}
+
+async function loadHistorical(year, muniName) {
+  $historicalToggle.disabled = true;
+  setOverlayBtnLabel($historicalToggle, 'Loading…');
+  try {
+    const muniNo = await resolveHistoricalMuniNo(year, muniName);
+    if (muniNo == null) { setCount(`Historical: no ${year} data for ${muniName}.`); deactivateHistorical(); return; }
+    const [parcels, zoning, devplan] = await Promise.all([
+      fetchHistoricalShard(year, 'parcels', muniNo),
+      fetchHistoricalShard(year, 'zoning', muniNo),
+      fetchHistoricalShard(year, 'devplan', muniNo),
+    ]);
+    if (!parcels) { setCount(`Historical: couldn't load ${year} parcels for ${muniName}.`); deactivateHistorical(); return; }
+    setHistoricalData(map, { parcels, zoning, devplan, year });
+    setHistoricalVisible(map, true);
+    historicalActive = true;
+    historicalLoadedMuni = muniName;
+    $historicalToggle.classList.add('active');
+    $historicalToggle.setAttribute('aria-pressed', 'true');
+    updateHistoricalBanner(year);
+    const n = parcels.features?.length || 0;
+    setCount(`Historical (${year}) — ${n} parcel${n === 1 ? '' : 's'} in ${muniName}, dashed amber over today's lots. Click a parcel/zone for as-of-${year} details.`);
+  } catch (err) {
+    console.warn('historical load failed', err);
+    setCount('Historical: load failed.');
+    deactivateHistorical();
+  } finally {
+    $historicalToggle.disabled = !$municipality.value;
+    setOverlayBtnLabel($historicalToggle, 'Historical');
+  }
+}
+
+function deactivateHistorical() {
+  historicalActive = false;
+  historicalLoadedMuni = null;
+  mapReady.then(() => setHistoricalVisible(map, false));
+  if ($historicalToggle) {
+    $historicalToggle.classList.remove('active');
+    $historicalToggle.setAttribute('aria-pressed', 'false');
+    setOverlayBtnLabel($historicalToggle, 'Historical');
+  }
+  if ($historicalBanner) $historicalBanner.hidden = true;
+}
+
+function updateHistoricalBanner(year) {
+  if (!$historicalBanner) return;
+  const d = historicalLayerDates(year);
+  const parts = [];
+  if (d.roll) parts.push(`Roll ${d.roll}`);
+  if (d.zoning) parts.push(`Zoning ${d.zoning}`);
+  if (d.devplan) parts.push(`Dev Plan ${d.devplan}`);
+  const stale = historicalIsStale();
+  $historicalBanner.classList.toggle('is-stale', stale);
+  $historicalBanner.innerHTML = `HISTORICAL — ${year} · ${parts.join(' · ')}`
+    + (stale ? '<span class="hb-stale-tag">archive &gt; 12 mo old</span>' : '');
+  $historicalBanner.hidden = false;
 }
 
 // MASC + Sec-Twp Grid state. Tracks which muni's data is currently
