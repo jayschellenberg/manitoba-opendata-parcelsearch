@@ -731,7 +731,7 @@ const SORT_KEYS = {
   soiltype: (r) => strKey(dominantSoilTypeLabel(r.parcel.properties)),
   // Land cover sorts by the dominant bucket's label; Cult % sorts on
   // the numeric cultivated fraction. Both read the per-parcel
-  // `_landCover` stamp (only present on > 20-acre farmland parcels);
+  // `_landCover` stamp (only present on farmland parcels over the threshold);
   // parcels without it sort last (strKey sentinel / finiteOrNeg -1).
   landcover: (r) => strKey(dominantBucket(r.parcel.properties._landCover)?.label),
   cultpct:   (r) => finiteOrNeg(cultFraction(r.parcel.properties._landCover)),
@@ -4206,7 +4206,7 @@ async function enrichOverlays(parcelFc, inputs, baseMsg) {
 
   // Attach the pre-baked land-cover summary (farmland buckets) for each
   // parcel — per-muni shard built by r/build_landcover.R from the
-  // mao-assembly Parquet. Only > 20-acre parcels are in the shards, so
+  // mao-assembly Parquet. Only parcels over LAND_COVER_MIN_ACRES are in the shards, so
   // urban/residential rolls simply find no hit and stay undefined; the
   // popup + grid suppress the field on small parcels anyway.
   //
@@ -5379,7 +5379,7 @@ async function toggleCliOverlay() {
 //              dominant bucket). Loads the whole municipal parcel fabric
 //              and stamps every parcel from the land-cover shard, so ALL
 //              parcels in the selected muni(s) colour (not just the
-//              search results), gated to > 20-acre farmland. Result-source
+//              search results), gated to farmland over the threshold. Result-source
 //              colouring (landcover-fill) also covers imported lists with
 //              no single-muni scope.
 //   Detailed — pixel-level mosaic from the static XYZ tile pyramid produced
@@ -5523,7 +5523,7 @@ function landCoverButtonLabelFor(mode) {
 
 /** Stamp `_lcColor` (+ `_landCover`) on every fabric parcel from each muni's
  *  land-cover shard, matched by Muni_Name_With_Typ + Roll_No_Txt. Returns
- *  the count of parcels that got a colour (farmland over 20 acres). */
+ *  the count of parcels that got a colour (farmland over the threshold). */
 async function stampLandCoverOnFabric(fabricFc, munis) {
   if (!fabricFc?.features?.length) return 0;
   const dicts = await Promise.all(
@@ -5550,7 +5550,7 @@ async function stampLandCoverOnFabric(fabricFc, munis) {
 
 /** Render the Land Cover legend from the shared bucket palette so the map,
  *  popup, and legend colours can never drift. Mode-aware:
- *    'dominant' — notes the > 20-acre fill scope.
+ *    'dominant' — notes the over-threshold fill scope.
  *    'detailed' — shows an opacity slider for the raster overlay. */
 function renderLandCoverLegend(mode) {
   if (!$landcoverLegend) return;
@@ -6371,7 +6371,7 @@ function renderTable(rows, { resetPage = true } = {}) {
     tr.appendChild(td(dominantCliLabel(p), null, CLI_EMPTY_HINT));
     tr.appendChild(td(dominantSoilTypeLabel(p), null, SOIL_EMPTY_HINT));
     // Land Cover (dominant farmland bucket + share) and Cult % — both
-    // populated only for > 20-acre parcels from the pre-baked
+    // populated only for over-threshold parcels from the pre-baked
     // _landCover stamp; blank otherwise. Cult % is right-aligned
     // numeric so it sorts/scans with the other rate columns. When the
     // parcel IS over the acreage threshold but the stamp is missing,

@@ -1080,7 +1080,7 @@ export function initMap(container, { onFeatureClick } = {}) {
       // Land-cover choropleth on the muni-wide fabric — colours every parcel
       // in the selected municipality by its dominant 2020 land-cover bucket
       // (driven by `_lcColor`, stamped in main.js from the land-cover shard;
-      // parcels ≤ 20 ac or with no data draw nothing). Hidden until the Land
+      // parcels below the threshold or with no data draw nothing). Hidden until the Land
       // Cover overlay is on. Added before the lines/labels so boundaries and
       // roll numbers still read on top of the fill.
       map.addLayer({
@@ -1361,7 +1361,7 @@ export function initMap(container, { onFeatureClick } = {}) {
       // dominant 2020 land-cover bucket (Cultivated / Pasture / Bush /
       // Wetland / Other). Driven by `_lcColor`, stamped per parcel in
       // main.js from the pre-baked land-cover shards; parcels without a
-      // stamp (≤ 20 ac or no land-cover data) draw nothing. Hidden until
+      // stamp (below the threshold or no land-cover data) draw nothing. Hidden until
       // the Land Cover overlay is turned on. Inserted before parcel-line
       // so the yellow selection outline still reads on top of the colour.
       map.addLayer({
@@ -2605,7 +2605,7 @@ export function parcelHtml(p) {
   const soilTable = soilSurveyParcelHtml(p._soilComposition);
   const landCoverTable = landCoverParcelHtml(p);
 
-  // Right column stacks Land cover (farmland parcels > 20 ac) above
+  // Right column stacks Land cover (farmland parcels over the threshold) above
   // Soil composition (when the Soil Survey overlay is loaded). Either
   // section alone triggers the 2-column layout; with neither, fall
   // back to the narrow single-column popup.
