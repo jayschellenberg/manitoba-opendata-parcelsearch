@@ -87,6 +87,21 @@ read_schema_fields <- function(path) {
   }, error = function(e) character(0))
 }
 
+`%||%` <- function(a, b) if (is.null(a) || (length(a) == 1 && is.na(a))) b else a
+
+# Source CRS as shipped — matters for defensibility: e.g. the 2025 Roll Entry
+# GeoPackage ships in EPSG:3857 (Web Mercator), whose NATIVE areas are ~2.4x
+# inflated at MB latitudes, while 2026 ships in EPSG:26914 (UTM-14N). Always
+# treat a reprojected metric CRS as the area-of-record, not the native one.
+file_crs <- function(path) {
+  tryCatch({
+    s <- sf::st_crs(sf::st_layers(path)$crs[[1]])
+    if (!is.null(s$epsg) && !is.na(s$epsg))
+      sprintf("EPSG:%d (%s)", s$epsg, s$Name %||% s$input %||% "")
+    else (s$input %||% NA_character_)
+  }, error = function(e) NA_character_)
+}
+
 # Match an archived filename to its source config (for the backfill path).
 layer_for <- function(fname) {
   lyr <- if (grepl("^MBRollGeoPackage", fname)) "parcels"
@@ -111,6 +126,9 @@ write_meta <- function(dest, layer, dataset, source_url, retrieved_at, inferred)
   unchanged <- !is.null(prior) && isTRUE(prior$bytes == bytes) && !is.null(prior$sha256)
   sha    <- if (unchanged) prior$sha256 else file_sha256(dest)
   fields <- if (unchanged && length(prior$schema_fields)) unlist(prior$schema_fields) else read_schema_fields(dest)
+  # Source CRS as shipped (e.g. EPSG:3857 vs 26914) — reuse prior when the
+  # file is byte-identical so a config-only refresh skips re-opening the layer.
+  src_crs <- if (unchanged && !is.null(prior$source_crs)) prior$source_crs else file_crs(dest)
   if (unchanged && !is.null(prior$retrieved_at)) {
     ra_str   <- prior$retrieved_at
     inferred <- if (is.null(prior$retrieved_at_inferred)) inferred else prior$retrieved_at_inferred
@@ -128,6 +146,7 @@ write_meta <- function(dest, layer, dataset, source_url, retrieved_at, inferred)
     source_date           = source_date,                 # explicit (filename), not mtime
     retrieved_at          = ra_str,
     retrieved_at_inferred = inferred,
+    source_crs            = src_crs,                      # CRS as shipped (area-of-record note below)
     bytes                 = bytes,
     sha256                = sha,
     schema_fields         = fields,

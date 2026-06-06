@@ -133,7 +133,8 @@ import { generateParcelSnapshotsZip } from './snapshotExport.js';
 import { OUTPUT_MIME, OUTPUT_QUALITY, MAX_OUTPUT_DIM } from './lib/imageOutput.js';
 import { dominantBucket, cultFraction, LAND_COVER_BUCKETS, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
 import { clearAllCache as clearAllCacheModule } from './cache.js';
-import { getManifest } from './manifest.js';
+import { getManifest, getManifestSync } from './manifest.js';
+import { buildProvenance, provenanceCsvLines, provenanceText } from './lib/provenance.js';
 import {
   hasLegalCriteria,
   legalRecordKey,
@@ -1355,10 +1356,24 @@ async function handleSnapshotExport() {
   $snapshotBtn.textContent = `Capturing 0/${n}… (click to cancel)`;
   setCount(`Generating ${n} parcel snapshot${n === 1 ? '' : 's'}…`);
 
+  // Warm the manifest so the PROVENANCE.txt freshness line is populated, then
+  // build the evidence record that travels inside the ZIP.
+  await getManifest().catch(() => null);
+  const snapProvText = provenanceText(buildProvenance({
+    rowCount: fcSnapshot?.features?.length ?? n,
+    kind: 'parcel-snapshots',
+    manifest: getManifestSync(),
+    imagery: 'Esri World Imagery (basemap) — credit burned into each frame',
+    historical: historicalActive
+      ? { active: true, snap: $historicalYear?.value, layerDates: historicalLayerDates($historicalYear?.value) }
+      : null,
+  }));
+
   try {
     const { blob, count } = await generateParcelSnapshotsZip(fcSnapshot, {
       signal: snapshotAbort.signal,
       fetchSurveyGrid: buildSurveyGridForSnapshot,
+      provenanceText: snapProvText,
       onProgress: ({ done, total }) => {
         $snapshotBtn.textContent = `Capturing ${done}/${total}… (click to cancel)`;
       },
@@ -8107,7 +8122,23 @@ function exportCsv(explicitRows) {
         ]
       : []),
   ];
-  const lines = [header.map(csvCell).join(',')];
+  // Provenance preamble — a `#`-prefixed comment block at the top of the file
+  // so the export can stand on its own as appraisal evidence (when/which
+  // build/what sources/caveats). Single-column rows, blank-row separated from
+  // the table, trivial to delete in a spreadsheet. Best-effort: reads the
+  // already-warmed manifest synchronously, omits the freshness line if absent.
+  const prov = buildProvenance({
+    rowCount: exportRows.length,
+    kind: 'csv',
+    salesMode: inSalesMode,
+    starredOnly,
+    manifest: getManifestSync(),
+    historical: historicalActive
+      ? { active: true, snap: $historicalYear?.value, layerDates: historicalLayerDates($historicalYear?.value) }
+      : null,
+  });
+  const lines = provenanceCsvLines(prov).map(csvCell);
+  lines.push(header.map(csvCell).join(','));
   for (const row of exportRows) {
     const p = row.parcel.properties || {};
     const z1 = row.zoning[0]?.feature.properties || {};

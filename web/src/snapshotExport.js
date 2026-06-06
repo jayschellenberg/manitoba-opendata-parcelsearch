@@ -79,6 +79,9 @@ const EMPTY_FC = { type: 'FeatureCollection', features: [] };
  *   section/township grid FC for a muni (boundary lookup + survey-grid fetch
  *   live in main.js, which holds the boundaries FC). When omitted, or when it
  *   resolves null for a muni, that muni's snapshots simply have no grid.
+ * @param {string} [opts.provenanceText] — when provided, written into the ZIP
+ *   as PROVENANCE.txt so the image batch carries its own evidence record
+ *   (when/which build/what sources/caveats). Excluded from `count`.
  * @returns {Promise<{ blob: Blob, count: number }>}
  */
 export async function generateParcelSnapshotsZip(parcelFc, opts = {}) {
@@ -87,6 +90,7 @@ export async function generateParcelSnapshotsZip(parcelFc, opts = {}) {
     signal,
     fetchMuniFabric = fetchAllParcelsInMunicipality,
     fetchSurveyGrid,
+    provenanceText,
   } = opts;
 
   const features = (parcelFc?.features || []).filter((f) => f?.geometry);
@@ -181,7 +185,13 @@ export async function generateParcelSnapshotsZip(parcelFc, opts = {}) {
     if (files.length === 0) {
       throw new Error('No snapshots were captured.');
     }
-    return { blob: buildStoreZip(files), count: files.length };
+    const count = files.length;
+    // Prepend the evidence record (not counted as a snapshot). Sorts to the
+    // top of the archive and is the first thing the appraiser sees on unzip.
+    if (provenanceText) {
+      files.unshift({ name: 'PROVENANCE.txt', data: new TextEncoder().encode(provenanceText) });
+    }
+    return { blob: buildStoreZip(files), count };
   } finally {
     try { map?.remove(); } catch { /* ignore teardown errors */ }
     container.remove();

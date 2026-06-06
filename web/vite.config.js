@@ -1,5 +1,24 @@
+import { execSync } from 'node:child_process';
 import { defineConfig } from 'vite';
 import tailwindcss from '@tailwindcss/vite';
+
+// Resolve the build's git commit + timestamp once, baked in at build time so
+// evidence exports (lib/provenance.js) can cite the exact app version that
+// produced them. On Vercel, VERCEL_GIT_COMMIT_SHA is provided; locally we ask
+// git. Either may be absent (shallow CI checkout, no git) — fall back to
+// 'unknown' rather than failing the build.
+function resolveCommit() {
+  const fromEnv = process.env.VERCEL_GIT_COMMIT_SHA;
+  if (fromEnv) return fromEnv.slice(0, 12);
+  try {
+    return execSync('git rev-parse --short=12 HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString().trim() || 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+const APP_COMMIT = resolveCommit();
+const APP_BUILD_TIME = new Date().toISOString();
 
 export default defineConfig({
   // Plain static site. The only framework plugin is Tailwind v4's
@@ -7,6 +26,13 @@ export default defineConfig({
   // and emits the generated stylesheet for the `tailwind.css` entry.
   plugins: [tailwindcss()],
   cacheDir: process.env.VITE_CACHE_DIR || 'node_modules/.vite',
+  // Bake the build identity in for evidence-export provenance. Stringified so
+  // they substitute as string literals; lib/provenance.js reads them through a
+  // typeof guard so dev/test runs without `define` still work.
+  define: {
+    __APP_COMMIT__: JSON.stringify(APP_COMMIT),
+    __APP_BUILD_TIME__: JSON.stringify(APP_BUILD_TIME),
+  },
   build: {
     target: 'es2020',
     // MapLibre is fundamentally ~800 kB minified (~217 kB gzipped) and
