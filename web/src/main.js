@@ -73,6 +73,7 @@ import {
   fetchHistoricalIndex,
   fetchHistoricalManifest,
   fetchHistoricalShard,
+  fetchHistoricalLineage,
   fetchMascRiverlots,
   fetchCliAgrForMuni,
   parseRollList,
@@ -4847,13 +4848,14 @@ async function loadHistorical(snap, muniName) {
   try {
     const muniNo = await resolveHistoricalMuniNo(snap, muniName);
     if (muniNo == null) { setCount(`Historical: no ${snap} data for ${muniName}.`); deactivateHistorical(); return; }
-    const [parcels, zoning, devplan] = await Promise.all([
+    const [parcels, zoning, devplan, lineage] = await Promise.all([
       fetchHistoricalShard(snap, 'parcels', muniNo),
       fetchHistoricalShard(snap, 'zoning', muniNo),
       fetchHistoricalShard(snap, 'devplan', muniNo),
+      fetchHistoricalLineage(muniNo),
     ]);
     if (!parcels) { setCount(`Historical: couldn't load ${snap} parcels for ${muniName}.`); deactivateHistorical(); return; }
-    setHistoricalData(map, { parcels, zoning, devplan, year: snap });
+    setHistoricalData(map, { parcels, zoning, devplan, year: snap, lineage: lineage?.by_roll || null });
     setHistoricalVisible(map, true);
     historicalActive = true;
     historicalLoadedMuni = muniName;

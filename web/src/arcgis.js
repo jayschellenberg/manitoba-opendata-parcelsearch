@@ -1458,6 +1458,26 @@ export async function fetchHistoricalShard(year, layer, muniNo) {
   } catch { return null; }
 }
 
+/**
+ * Inferred parcel lineage for a muni: { by_roll: { "<roll>": { predecessors,
+ * successors, type, confidence } }, events, disclaimer }. Built by
+ * r/build_lineage.R from geometry overlap of consecutive UNSIMPLIFIED
+ * snapshots. Null when the muni has no lineage shard (no detected changes).
+ */
+export async function fetchHistoricalLineage(muniNo) {
+  if (muniNo == null || muniNo === '') return null;
+  const cacheKey = `mb_lineage_${muniNo}_v1`;
+  const cached = await readCache(cacheKey, HISTORICAL_INDEX_TTL_MS);
+  if (cached) return cached;
+  try {
+    const res = await fetch(`${HISTORICAL_CDN}/lineage/${muniNo}.json`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    await writeCache(cacheKey, data);
+    return data;
+  } catch { return null; }
+}
+
 function lookupMuniManifestEntry(index, muniName, { stripType }) {
   if (!index || !muniName) return null;
 
