@@ -1456,7 +1456,10 @@ export async function fetchHistoricalManifest(year) {
  */
 export async function fetchHistoricalShard(year, layer, muniNo) {
   if (!year || !layer || muniNo == null || muniNo === '') return null;
-  const cacheKey = `mb_historical_${year}_${layer}_${muniNo}_v2`;
+  // v3: shards regenerated with a finer simplify tolerance (0.00003 vs 0.00015)
+  // that no longer collapses small lots into triangles. Bumped to bust the
+  // 30-day cache so clients re-fetch the corrected geometry.
+  const cacheKey = `mb_historical_${year}_${layer}_${muniNo}_v3`;
   const cached = await readCache(cacheKey, HISTORICAL_SHARD_TTL_MS);
   if (cached) return cached;
   try {

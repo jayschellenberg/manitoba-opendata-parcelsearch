@@ -8,7 +8,7 @@
  *
  * IMPORTANT (surfaced in the popup): a size change can be a real subdivision /
  * consolidation, OR a re-survey / geometry correction, OR — for frontage-only
- * parcels where we fall back to the simplified (~10 m) historical display
+ * parcels where we fall back to the simplified (~2-3 m) historical display
  * geometry — a simplification artifact. It is a pointer to investigate, not
  * proof. Where both snapshots carry an assessor AREA the delta is roll-vs-roll
  * and immune to simplification; that is the high-confidence case.
