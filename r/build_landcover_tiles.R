@@ -2,8 +2,8 @@
 #
 # Builds a static XYZ raster-tile pyramid of the 2020 Manitoba land-cover
 # raster (LCR_RCT_2020_MB.tif) for the webapp's Land Cover overlay's
-# "Detailed" mode. The result is a directory of paletted PNG tiles served
-# from web/public/data/landcover-tiles/{z}/{x}/{y}.png — MapLibre reads
+# "Detailed" mode. The result is a directory of lossless WebP tiles served
+# from web/public/data/landcover-tiles/{z}/{x}/{y}.webp — MapLibre reads
 # them as a plain raster source, no tile server needed.
 #
 # Pipeline (3 GDAL steps via system()):
@@ -13,8 +13,8 @@
 #                                 emitting an RGBA byte raster.
 #   2. gdalwarp                 — reproject 4-band RGBA → EPSG:3857 (Web
 #                                 Mercator, what XYZ tiles use).
-#   3. gdal2tiles.py            — slice the warped raster into {z}/{x}/{y}.png
-#                                 XYZ tiles for the chosen zoom range.
+#   3. gdal2tiles.py            — slice the warped raster into {z}/{x}/{y}.webp
+#                                 lossless XYZ tiles for the chosen zoom range.
 #
 # Why a separate "Detailed" pyramid in addition to the per-parcel JSON
 # shards (build_landcover.R): the shards give the dominant bucket + per-
@@ -41,8 +41,9 @@
 #         upscale already; z13+ doesn't add real detail and triples disk
 #         usage). Appraisers browsing rural munis live in z10-z12.
 #
-# Output size (estimate): ~150-200 MB total for MB, paletted PNG-8.
-# Output dir: web/public/data/landcover-tiles/{z}/{x}/{y}.png
+# Output size (estimate): ~70-110 MB total for MB as lossless WebP
+# (roughly half the PNG-8 pyramid; the 6-colour source compresses well).
+# Output dir: web/public/data/landcover-tiles/{z}/{x}/{y}.webp
 # Manifest:   web/public/data/landcover-tiles/manifest.json
 #             { built: "<ISO date>", minzoom, maxzoom, palette }
 #             — the webapp probes this on init to know whether the
@@ -295,6 +296,20 @@ cat("Using gdal2tiles:", gdal2tiles_call$cmd,
     "\n")
 
 dir.create(tiles_dir, showWarnings = FALSE, recursive = TRUE)
+
+# Clear any existing tile pyramid first. gdal2tiles writes <z>/<x>/<y>.<ext>
+# but never deletes tiles from a previous run, so a format switch
+# (PNG -> WebP) or a narrower zoom range would otherwise leave orphaned
+# old-format tiles behind that the frontend would still try (and fail) to
+# fetch. Only the numeric {z} subdirs are removed; the manifest is
+# rewritten at the end.
+old_z <- list.dirs(tiles_dir, recursive = FALSE)
+old_z <- old_z[grepl("/[0-9]+$", gsub("\\\\", "/", old_z))]
+if (length(old_z) > 0) {
+  unlink(old_z, recursive = TRUE)
+  cat("Cleared", length(old_z), "existing zoom dir(s) before re-tiling\n")
+}
+
 tmp_dir <- tempfile("landcover_tiles_")
 dir.create(tmp_dir, recursive = TRUE)
 on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)
@@ -362,6 +377,13 @@ run(gdal2tiles_call$cmd, c(
   gdal2tiles_call$prefix_args,
   "--xyz",
   "--processes", "4",
+  # WebP-LOSSLESS tiles instead of PNG. The source is only 6 colours (5
+  # buckets + transparent), so lossless WebP crushes far smaller than
+  # PNG while keeping the bucket colours pixel-exact. Lossy WebP is the
+  # wrong call here — it would ring/bleed colours across the hard
+  # categorical boundaries and mislabel edge pixels.
+  "--tiledriver", "WEBP",
+  "--webp-lossless",
   paste0("-z", MIN_ZOOM, "-", MAX_ZOOM),
   "-r", "near",            # match gdalwarp — preserve bucket colours
   "-w", "none",            # no leaflet/openlayers viewer HTML
@@ -385,6 +407,7 @@ palette <- list(
 jsonlite::write_json(list(
   built   = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
   source  = basename(src_tif),
+  format  = "webp",                 # tile extension the frontend requests
   minzoom = MIN_ZOOM,
   maxzoom = MAX_ZOOM,
   palette = palette
@@ -396,10 +419,10 @@ jsonlite::write_json(list(
 total_bytes <- sum(file.info(list.files(tiles_dir, recursive = TRUE,
                                         full.names = TRUE))$size,
                    na.rm = TRUE)
-n_tiles <- length(list.files(tiles_dir, pattern = "\\.png$",
+n_tiles <- length(list.files(tiles_dir, pattern = "\\.webp$",
                              recursive = TRUE))
 cat("Done.\n")
 cat("  Tiles dir :", tiles_dir, "\n")
 cat("  Manifest  :", manifest, "\n")
-cat(sprintf("  %d PNG tiles, %.1f MB total (z%d-z%d)\n",
+cat(sprintf("  %d WebP tiles, %.1f MB total (z%d-z%d)\n",
             n_tiles, total_bytes / 1024 / 1024, MIN_ZOOM, MAX_ZOOM))

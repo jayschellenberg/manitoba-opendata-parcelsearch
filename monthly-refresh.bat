@@ -12,6 +12,12 @@ REM      this only changes when parcels change).
 REM   5. Rebuild the data manifest so the app's staleness banner picks
 REM      up the new generated-at timestamps.
 REM
+REM NOT part of this refresh: the Land Cover "Detailed" raster tiles
+REM (r/build_landcover_tiles.R -> web/public/data/landcover-tiles/). They
+REM derive from the static 2020 LCR_RCT_*.tif, so they only need
+REM rebuilding when a NEW provincial land-cover raster lands — run that
+REM script by hand then (it needs GDAL on PATH; ~15-45 min).
+REM
 REM No git commit or push happens here — the rebuilt JSON shards are
 REM left in place under web/public/data/. Next time you open the
 REM repo, `git status` will surface the changed files; review the diff
