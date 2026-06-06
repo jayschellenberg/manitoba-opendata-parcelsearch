@@ -59,6 +59,11 @@ archive_one <- function(s) {
   }
   info  <- file.info(src)
   d     <- as.Date(info$mtime)
+  age_days <- as.integer(Sys.Date() - d)
+  if (!is.na(age_days) && age_days > 365) {
+    cat(sprintf("  !! STALE: %s is %d days old (> 12 months) — pull a fresh MB Open Data download.\n",
+                s$file, age_days))
+  }
   ymd   <- format(d, "%Y%m%d")
   year  <- format(d, "%Y")
   ext   <- tools::file_ext(s$file)
