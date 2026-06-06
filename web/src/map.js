@@ -1128,17 +1128,29 @@ export function initMap(container, { onFeatureClick } = {}) {
         layout: { visibility: 'none' },
         paint: { 'fill-color': '#0d9488', 'fill-opacity': 0.10, 'fill-outline-color': '#0d9488' },
       });
+      // _sizeBand is stamped in main.js (stampHistoricalSizeChanges) by matching
+      // each historical parcel to today's parcel of the same roll: 'major'
+      // (|Δ| > 25%) = red, 'minor' (> 5%) = orange, 'gone' (roll no longer
+      // exists) = grey, everything else (incl. unmatched) = the default amber.
+      const SIZE_LINE_COLOR = ['match', ['get', '_sizeBand'],
+        'major', '#dc2626', 'minor', '#ea580c', 'gone', '#6b7280',
+        /* same / unknown / absent */ '#b45309'];
+      const SIZE_FILL_COLOR = SIZE_LINE_COLOR;
       map.addLayer({
         id: 'historical-parcels-fill', type: 'fill', source: 'historical-parcels',
         layout: { visibility: 'none' },
-        paint: { 'fill-color': '#b45309', 'fill-opacity': 0.06 },
+        paint: {
+          'fill-color': SIZE_FILL_COLOR,
+          // Tint changed parcels a touch more so they read at a glance.
+          'fill-opacity': ['match', ['get', '_sizeBand'], 'major', 0.16, 'minor', 0.11, 0.06],
+        },
       });
       map.addLayer({
         id: 'historical-parcels-line', type: 'line', source: 'historical-parcels',
         layout: { visibility: 'none' },
         paint: {
-          'line-color': '#b45309',          // amber/brown = "historical"
-          'line-width': 1.8,
+          'line-color': SIZE_LINE_COLOR,    // amber = historical; red/orange = size-changed
+          'line-width': ['match', ['get', '_sizeBand'], 'major', 2.6, 'minor', 2.2, 1.8],
           'line-opacity': 0.95,
           'line-dasharray': [3, 2],
         },
@@ -2540,7 +2552,30 @@ function historicalParcelHtml(p, year) {
   if (p.Total_Value)        lines.push(`<strong>Assessed</strong> ${escapeHtml(p.Total_Value)}`);
   if (p.Asmt_Roll)          lines.push(`<small style="color:#777">${escapeHtml(p.Asmt_Roll)}</small>`);
   lines.push('<small style="color:#888">Display geometry simplified — verify boundary/area against the archived source-of-record.</small>');
-  return `<div class="parcel-popup">${lines.join('<br>')}${lineageHtml(p.Roll_No_Txt || '')}</div>`;
+  return `<div class="parcel-popup">${lines.join('<br>')}${sizeChangeHtml(p)}${lineageHtml(p.Roll_No_Txt || '')}</div>`;
+}
+
+// Size-change block: this snapshot's acreage vs today's for the same roll
+// (stamped in main.js). Pointer to investigate, NOT proof — a change can be a
+// real subdivision/consolidation, a re-survey/geometry correction, or (for
+// frontage-only parcels) a simplification artifact.
+function sizeChangeHtml(p) {
+  const band = p._sizeBand;
+  if (!band || band === 'same' || band === 'unknown') return '';
+  const color = band === 'major' ? '#dc2626' : band === 'minor' ? '#ea580c' : '#6b7280';
+  const ac = (v) => (Number.isFinite(v) ? v.toFixed(1) : '—');
+  let body;
+  if (band === 'gone') {
+    body = `roll not present in current data (removed / merged away)`;
+  } else {
+    const d = Number(p._deltaPct);
+    const sign = d > 0 ? '+' : '';
+    body = `${ac(Number(p._histAcres))} ac → ${ac(Number(p._curAcres))} ac `
+      + `(<strong>${sign}${Number.isFinite(d) ? d.toFixed(0) : '?'}%</strong>)`;
+  }
+  return `<div style="margin-top:5px;border-top:1px solid #eee;padding-top:4px">`
+    + `<strong style="color:${color}">Size change</strong> ${body}`
+    + `<br><small style="color:#888">Could be subdivision/consolidation, re-survey, or (frontage-only) a simplification artifact — verify against the registered plan / title.</small></div>`;
 }
 
 function historicalZoningHtml(p, year) {
@@ -2648,6 +2683,14 @@ export function parcelHtml(p) {
   // same on the same parcel.
   const landSize = formatLandSize(p._acres);
   if (landSize) lines.push(`<strong>Land Size</strong> ${landSize}`);
+  // Flag the nominal-roll guard: the assessor area looked like a placeholder
+  // (e.g. "0.01 Acres" on a large polygon), so the figure above is the
+  // geometry area, not the roll. Surfaced so the appraiser doesn't mistake it.
+  if (p._acresRollNominal) {
+    const rv = Number(p._rollNominalAcres);
+    lines.push(`<small style="color:#b45309">⚠ roll area looks nominal`
+      + `${Number.isFinite(rv) ? ` (states ${rv} ac)` : ''} — showing geometry area; verify against plan/title.</small>`);
+  }
   // Inline summary line: zoning code + DU. Zoning is stamped onto the
   // parcel feature by main.js after the top-2 area-weighted join lands.
   const summary = [];

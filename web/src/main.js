@@ -132,6 +132,8 @@ import {
 import { generateParcelSnapshotsZip } from './snapshotExport.js';
 import { OUTPUT_MIME, OUTPUT_QUALITY, MAX_OUTPUT_DIM } from './lib/imageOutput.js';
 import { dominantBucket, cultFraction, LAND_COVER_BUCKETS, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
+import { resolveParcelAcres } from './lib/acres.js';
+import { computeSizeChanges } from './lib/sizeChange.js';
 import { clearAllCache as clearAllCacheModule } from './cache.js';
 import { getManifest, getManifestSync } from './manifest.js';
 import { buildProvenance, provenanceCsvLines, provenanceText } from './lib/provenance.js';
@@ -4857,6 +4859,43 @@ async function onHistoricalYearChange() {
   await loadHistorical($historicalYear.value, $municipality.value);
 }
 
+// Match historical-snapshot parcels to today's parcels (same muni, by roll)
+// and stamp each historical feature with its size-change band so the map can
+// colour it and the popup can show old→new acres. Best-effort: returns the
+// change summary, or null when current data can't be loaded. The current muni
+// fabric fetch is cached (also used by the snapshot export).
+async function stampHistoricalSizeChanges(parcels, muniName) {
+  try {
+    const histByRoll = new Map();
+    for (const f of parcels.features || []) {
+      const roll = f.properties?.Roll_No_Txt;
+      const a = parcelAcres(f);
+      if (roll && a > 0) histByRoll.set(roll, a);
+    }
+    const cur = await fetchAllParcelsInMunicipality(muniName).catch(() => null);
+    const curByRoll = new Map();
+    for (const f of cur?.features || []) {
+      const roll = f.properties?.Roll_No_Txt;
+      const a = parcelAcres(f);
+      if (roll && a > 0) curByRoll.set(roll, a);
+    }
+    if (curByRoll.size === 0) return null;   // nothing current to compare against
+    const { byRoll, summary } = computeSizeChanges(histByRoll, curByRoll);
+    for (const f of parcels.features || []) {
+      const rec = byRoll.get(f.properties?.Roll_No_Txt);
+      if (!rec || !f.properties) continue;
+      f.properties._sizeBand = rec.band;
+      if (rec.histAcres != null) f.properties._histAcres = rec.histAcres;
+      if (rec.curAcres  != null) f.properties._curAcres  = rec.curAcres;
+      if (rec.deltaPct  != null) f.properties._deltaPct  = rec.deltaPct;
+    }
+    return summary;
+  } catch (err) {
+    console.warn('historical size-change stamp failed', err);
+    return null;
+  }
+}
+
 async function loadHistorical(snap, muniName) {
   $historicalToggle.disabled = true;
   setOverlayBtnLabel($historicalToggle, 'Loading…');
@@ -4870,6 +4909,9 @@ async function loadHistorical(snap, muniName) {
       fetchHistoricalLineage(muniNo),
     ]);
     if (!parcels) { setCount(`Historical: couldn't load ${snap} parcels for ${muniName}.`); deactivateHistorical(); return; }
+    // Stamp size-change bands BEFORE setHistoricalData so the colour expression
+    // sees them on the first render.
+    const sizeSummary = await stampHistoricalSizeChanges(parcels, muniName);
     setHistoricalData(map, { parcels, zoning, devplan, year: snap, lineage: lineage?.by_roll || null });
     setHistoricalVisible(map, true);
     historicalActive = true;
@@ -4878,7 +4920,15 @@ async function loadHistorical(snap, muniName) {
     $historicalToggle.setAttribute('aria-pressed', 'true');
     updateHistoricalBanner(snap);
     const n = parcels.features?.length || 0;
-    setCount(`Historical as of ${snap} — ${n} parcel${n === 1 ? '' : 's'} in ${muniName}, dashed amber over today's lots. Click a parcel/zone for its as-of details. Verify against by-law/title records.`);
+    let changeNote = '';
+    if (sizeSummary) {
+      const parts = [];
+      if (sizeSummary.major) parts.push(`${sizeSummary.major} major`);
+      if (sizeSummary.minor) parts.push(`${sizeSummary.minor} minor`);
+      if (sizeSummary.gone)  parts.push(`${sizeSummary.gone} gone`);
+      if (parts.length) changeNote = ` Size changes: ${parts.join(', ')} (red >25%, orange >5%, grey = roll gone).`;
+    }
+    setCount(`Historical as of ${snap} — ${n} parcel${n === 1 ? '' : 's'} in ${muniName}, dashed over today's lots. Click a parcel/zone for its as-of details.${changeNote} Verify against by-law/title records.`);
   } catch (err) {
     console.warn('historical load failed', err);
     setCount('Historical: load failed.');
@@ -7475,27 +7525,30 @@ function parcelAcres(feature) {
   if (!feature) return null;
   // Lazy-attach the result so we don't recompute on each sort tick.
   if (feature._acres != null) return feature._acres;
-  // Prefer Roll_Entry's Frontage_or_Area when the assessor recorded
-  // an actual area ('5.000 Acres') — that's the official figure and
-  // beats anything we'd derive from the polygon. Falls back to the
-  // turf-area calc when the field is in frontage feet or missing.
-  const fromField = acresFromFrontageField(feature?.properties?.Frontage_or_Area);
-  if (fromField != null) {
-    feature._acres = fromField;
-    if (feature.properties) feature.properties._acresSource = 'assessor';
-    return fromField;
+  // Two candidate figures:
+  //  - the assessor's recorded area (Frontage_or_Area = '5.000 Acres') — the
+  //    official value, normally trusted over anything we derive; and
+  //  - the geometry area (turf, geodesic on WGS84 — sq m / 4046.8564224 ac;
+  //    authalic-radius spherical-excess, accurate to <0.0001% of ellipsoidal).
+  // resolveParcelAcres() prefers the assessor figure EXCEPT when it's an
+  // implausible nominal placeholder (e.g. '0.01 Acres' on a 357-ac crown/
+  // reserve polygon), where it falls back to geometry and flags the parcel.
+  const rollAcres = acresFromFrontageField(feature?.properties?.Frontage_or_Area);
+  let geomAcres = null;
+  if (feature.geometry) {
+    try { geomAcres = turfArea(feature) / 4046.8564224; } catch { geomAcres = null; }
   }
-  if (!feature.geometry) return null;
-  try {
-    // turf area returns sq metres for GeoJSON in WGS84 (uses geodesic calc).
-    const sqm = turfArea(feature);
-    const ac = sqm / 4046.8564224;
-    feature._acres = ac;
-    if (feature.properties) feature.properties._acresSource = 'geometry';
-    return ac;
-  } catch {
-    return null;
+  const r = resolveParcelAcres(rollAcres, geomAcres);
+  if (r.acres == null) return null;
+  feature._acres = r.acres;
+  if (feature.properties) {
+    feature.properties._acresSource = r.source;
+    if (r.rollNominal) {
+      feature.properties._acresRollNominal = true;
+      feature.properties._rollNominalAcres = r.rollValue;
+    }
   }
+  return r.acres;
 }
 
 function formatAcres(v) {
@@ -8112,7 +8165,7 @@ function exportCsv(explicitRows) {
     ...soilCsvHeaders(),
     'Land Cover', 'Cult %', 'Pasture %', 'Bush %', 'Wetland %', 'Other %',
     'Changes',
-    'DU', 'Acres', 'SF',
+    'DU', 'Acres', 'SF', 'Acres Src',
     csvAssessHeader(currentRows), 'Asmt Report URL',
     'Walkscore URL', 'Flood-Map URL',
     ...(inSalesMode
@@ -8165,6 +8218,7 @@ function exportCsv(explicitRows) {
       p.Dwelling_Units ?? '',
       formatAcresCsv(ac),
       ac != null && Number.isFinite(ac) && ac > 0 ? Math.round(ac * 43560) : '',
+      p._acresRollNominal ? 'geometry (roll nominal)' : (p._acresSource ?? ''),
       parseTotalValue(p.Total_Value) ?? '',
       p.Asmt_Rpt_Url ?? '',
       walkscoreUrl(p),
