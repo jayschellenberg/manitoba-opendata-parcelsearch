@@ -151,7 +151,7 @@ write_meta <- function(dest, layer, dataset, source_url, retrieved_at, inferred)
     sha256                = sha,
     schema_fields         = fields,
     note                  = paste("Authoritative source-of-record for as-of-date measurements.",
-                                  "Display shards derived from this are simplified (~10 m) for visualization",
+                                  "Display shards derived from this are simplified (~2-3 m) for visualization",
                                   "only — resolve acreage/boundary evidence back to this file.")
   )
   jsonlite::write_json(meta, meta_path, auto_unbox = TRUE, pretty = TRUE, null = "null")

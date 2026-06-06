@@ -152,7 +152,7 @@ export function provenanceCsvLines(prov) {
     if (d.devplan) parts.push(`Dev Plan ${d.devplan}`);
     L.push(`# Historical overlay was active on map: as-of ${h.snapshot}${parts.length ? ` (${parts.join(' · ')})` : ''}`);
     L.push('#   NOTE: the EXPORTED ROWS are current/live data, not this snapshot. Historical parcels are a');
-    L.push('#   simplified (~10 m) visualization — resolve measurements to the archived source-of-record.');
+    L.push('#   simplified (~2-3 m) visualization — resolve measurements to the archived source-of-record.');
   }
   L.push(`# Disclaimer: ${prov.disclaimer}`);
   L.push(''); // blank row between preamble and the table header
@@ -197,7 +197,7 @@ export function provenanceText(prov) {
     if (d.roll) out.push(`  Roll source date:     ${d.roll}`);
     if (d.zoning) out.push(`  Zoning source date:   ${d.zoning}`);
     if (d.devplan) out.push(`  Dev Plan source date: ${d.devplan}`);
-    out.push('  NOTE: the exported imagery shows current/live parcels with a simplified (~10 m)');
+    out.push('  NOTE: the exported imagery shows current/live parcels with a simplified (~2-3 m)');
     out.push('  historical overlay — resolve measurements to the archived source-of-record.');
   }
   out.push('');

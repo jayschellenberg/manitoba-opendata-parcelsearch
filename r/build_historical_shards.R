@@ -18,7 +18,7 @@
 #              parcels/<muni_no>.json   zoning/<muni_no>.json   devplan/<muni_no>.json
 #            <OUTPUT_ROOT>/index.json                 # discovery: snapshots + per-layer dates
 #
-# Display shards are simplified (~10 m) for VISUALIZATION only — they are NOT
+# Display shards are simplified (~2-3 m) for VISUALIZATION only — they are NOT
 # survey-accurate. Resolve acreage/boundary evidence back to the archived
 # source-of-record named in each layer's provenance (source_file / sha256).
 #
@@ -51,7 +51,7 @@
 # muni — re-binning is a no-op and the shards are correct as-is.
 #
 # Geometry: reprojected to EPSG:4326 (GeoJSON / what the webapp renders)
-# and Douglas-Peucker simplified (~10 m) to keep shards small for the CDN.
+# and Douglas-Peucker simplified (~2-3 m) to keep shards small for the CDN.
 #
 # Usage:
 #   Rscript r/build_historical_shards.R                 # every snapshot in the archive
@@ -70,7 +70,13 @@ sf::sf_use_s2(FALSE)   # GEOS — permissive simplify, same rationale as build_r
 
 ARCHIVE_ROOT <- "D:/Dropbox/Appraisal/Web/MAOSnapshots"
 OUTPUT_ROOT  <- "D:/Dropbox/ClaudeCode/MBOpenData/mb-parcel-history"
-SIMPLIFY_TOLERANCE_DEG <- 0.00015   # ~10-17 m at MB latitudes
+# ~2-3 m at MB latitudes. The previous 0.00015 (~11-17 m) was larger than half
+# the width of small urban lots, so Douglas-Peucker dropped a corner and
+# collapsed rectangles into TRIANGLES (seen in Hanover's Becki/Ciara Cove
+# subdivisions). A lot survives simplification only when the tolerance is below
+# half its narrowest dimension, so keep this small; it still strips most
+# digitization noise from long rural boundaries.
+SIMPLIFY_TOLERANCE_DEG <- 0.00003
 
 # Fields kept per layer (what the webapp actually displays). Parcels mirror
 # PARCEL_OUTFIELDS minus OBJECTID (MBRollGeoPackage has no OBJECTID — we
@@ -320,7 +326,7 @@ process_snapshot <- function(parcel_f) {
       commit = generator_commit(),
       crs    = "EPSG:4326",
       simplify_tolerance_deg = SIMPLIFY_TOLERANCE_DEG,
-      geometry_note = paste("Geometry simplified ~10 m for display — NOT survey-accurate.",
+      geometry_note = paste("Geometry simplified ~2-3 m for display — NOT survey-accurate.",
                             "Resolve acreage/boundary evidence to the archived source-of-record",
                             "(layers[].source_file / sha256).")
     ),

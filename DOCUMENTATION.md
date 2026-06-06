@@ -13,7 +13,7 @@ short operator checklist, see `MAINTENANCE.md` — it's a subset of §8 here.
 > **Appraisal-defensibility model (read first).** Everything historical is
 > keyed by **snapshot date** (`YYYY-MM-DD`), not by year. The unsimplified
 > archived source files are the **source-of-record**; the CDN display shards
-> are **simplified (~10 m) for visualization only** — resolve any
+> are **simplified (~2-3 m) for visualization only** — resolve any
 > acreage/boundary measurement back to the archived file named in the
 > provenance. Historical zoning/dev-plan are **pointers to verify** against
 > by-law / planning-district / title records, never legal determinations.
@@ -191,7 +191,7 @@ captures in the same calendar year are two distinct snapshots.
 ### 5.1 Pipeline — `r/build_historical_shards.R`
 - One snapshot = **one dated parcel file**; its date is the `snapshot_id`
   (`YYYY-MM-DD`). For each, shards the three layers (parcels + zoning +
-  dev-plan), simplified ~10 m, EPSG:4326, **keyed by muni number**. Zoning /
+  dev-plan), simplified ~2-3 m, EPSG:4326, **keyed by muni number**. Zoning /
   dev-plan are paired to the parcel snapshot by picking the archived layer
   **on-or-before** the parcel date.
 - Writes a per-snapshot **`manifest.json` (schema 2)** carrying each layer's
