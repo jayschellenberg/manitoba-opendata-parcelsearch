@@ -125,67 +125,137 @@ write_shards <- function(g, muni_col, out_dir, keep_fields) {
   counts
 }
 
+# ---- provenance + validation helpers --------------------------------
+# Read the archived source file's provenance sidecar (written by
+# archive_snapshot.R). NULL when absent.
+read_meta <- function(src_path) {
+  mp <- paste0(src_path, ".meta.json")
+  if (!file.exists(mp)) return(NULL)
+  tryCatch(jsonlite::read_json(mp), error = function(e) NULL)
+}
+
+# Short git commit of THIS generator (the main repo), recorded in the
+# manifest so a finding can be traced to the exact build. Best-effort.
+generator_commit <- function() {
+  tryCatch({
+    out <- suppressWarnings(system2("git", c("rev-parse", "--short", "HEAD"),
+                                    stdout = TRUE, stderr = FALSE))
+    if (length(out)) trimws(out[1]) else NA_character_
+  }, error = function(e) NA_character_)
+}
+
+# Pick the layer file whose date is the latest on-or-before `on_or_before`
+# (falls back to the earliest available), so each snapshot pairs the
+# version of zoning/dev-plan current as of the parcel date even when the
+# three downloads land on different days.
+pick_layer <- function(dir, pattern, on_or_before) {
+  f <- list.files(dir, pattern = pattern, full.names = TRUE)
+  if (!length(f)) return(NA_character_)
+  dts <- vapply(f, date_from_name, character(1))
+  keep <- !is.na(dts); f <- f[keep]; dts <- dts[keep]
+  if (!length(f)) return(NA_character_)
+  ok <- dts <= on_or_before                       # ISO strings sort chronologically
+  if (any(ok)) return(tail(f[ok][order(dts[ok])], 1))   # latest on-or-before
+  f[order(dts)][1]                                       # else earliest available
+}
+
+# Per-layer provenance block for the snapshot manifest, sourced from the
+# archived file's .meta.json sidecar (source-of-record hash, dates, etc.).
+layer_meta <- function(src_f, munis, features) {
+  m <- read_meta(src_f)
+  list(
+    source_file           = basename(src_f),
+    source_date           = date_from_name(src_f),
+    retrieved_at          = m$retrieved_at %||% NA_character_,
+    retrieved_at_inferred = if (is.null(m$retrieved_at_inferred)) NA else m$retrieved_at_inferred,
+    sha256                = m$sha256 %||% NA_character_,
+    bytes                 = m$bytes %||% NA,
+    source_url            = m$source_url %||% NA_character_,
+    license               = m$license %||% NA_character_,
+    munis                 = munis,
+    features              = features
+  )
+}
+
+# Loud check that critical fields are present. `hard = TRUE` stops the run
+# (used for parcels — without the roll/muni we can't key or render).
+require_fields <- function(present, critical, label, hard = FALSE) {
+  miss <- setdiff(critical, present)
+  if (length(miss)) {
+    msg <- sprintf("  !! %s %s critical field(s): %s",
+                   label, if (hard) "MISSING" else "missing", paste(miss, collapse = ", "))
+    if (hard) stop(msg) else cat(msg, "\n")
+  }
+  invisible(length(miss) == 0)
+}
+
 # Root discovery index — the SINGLE file the webapp fetches to learn which
-# years exist (and each year's layer dates), so adding a year needs NO app
-# code change: regenerate, push, and the app picks it up. Scans the output
-# tree so it's always consistent with what's actually published.
+# SNAPSHOTS exist (and each layer's source date), so adding a snapshot needs
+# NO app code change. Keyed by snapshot_id = YYYY-MM-DD. Scans the output
+# tree so it's always consistent with what's published.
 write_root_index <- function() {
-  yrs <- sort(basename(list.dirs(OUTPUT_ROOT, recursive = FALSE)))
-  yrs <- yrs[grepl("^\\d{4}$", yrs)]
+  snaps <- sort(basename(list.dirs(OUTPUT_ROOT, recursive = FALSE)), decreasing = TRUE)
+  snaps <- snaps[grepl("^\\d{4}-\\d{2}-\\d{2}$", snaps)]
   out <- list()
-  for (y in yrs) {
-    mf <- file.path(OUTPUT_ROOT, y, "manifest.json")
+  for (s in snaps) {
+    mf <- file.path(OUTPUT_ROOT, s, "manifest.json")
     if (!file.exists(mf)) next
     m <- jsonlite::read_json(mf)
-    out[[y]] <- list(layers = m$layers, muni_count = length(m$munis))
+    # Slim per-layer summary for discovery (source_date only); the full
+    # provenance lives in each snapshot's manifest.json.
+    lyrs <- lapply(m$layers, function(l) list(source_date = l$source_date))
+    out[[s]] <- list(snapshot_id = s, layers = lyrs, muni_count = length(m$munis))
   }
   idx <- list(
-    dataset    = "mb-parcel-history",
-    schema     = 1,
-    generated  = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
-    cdn        = "https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-history@main",
-    years      = out
+    dataset   = "mb-parcel-history",
+    schema    = 2,
+    generated = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
+    cdn       = "https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-history@main",
+    snapshots = out
   )
   dir.create(OUTPUT_ROOT, showWarnings = FALSE, recursive = TRUE)
   jsonlite::write_json(idx, file.path(OUTPUT_ROOT, "index.json"),
-                       auto_unbox = TRUE, pretty = TRUE)
-  cat("Wrote root index.json — years:", paste(yrs, collapse = ", "), "\n")
+                       auto_unbox = TRUE, pretty = TRUE, null = "null")
+  cat("Wrote root index.json — snapshots:", paste(names(out), collapse = ", "), "\n")
 
-  # Staleness: warn if the newest archived snapshot is > 12 months old.
-  dates <- character(0)
-  for (y in names(out)) for (l in out[[y]]$layers) if (!is.null(l$date)) dates <- c(dates, l$date)
-  dates <- suppressWarnings(as.Date(dates))
-  dates <- dates[!is.na(dates)]
-  if (length(dates)) {
-    age_days <- as.integer(Sys.Date() - max(dates))
+  dts <- suppressWarnings(as.Date(names(out)))
+  dts <- dts[!is.na(dts)]
+  if (length(dts)) {
+    age_days <- as.integer(Sys.Date() - max(dts))
     if (age_days > 365) {
-      cat(sprintf("  !! STALE: newest historical snapshot is %d days old (> 12 months) — archive a fresh year.\n",
+      cat(sprintf("  !! STALE: newest snapshot is %d days old (> 12 months) — archive a fresh snapshot.\n",
                   age_days))
     }
   }
 }
 
-# ---- per-year processing --------------------------------------------
-process_year <- function(year) {
-  ydir <- file.path(ARCHIVE_ROOT, year)
-  parcel_f  <- latest_match(ydir, "^MBRollGeoPackage\\d{8}\\.gpkg$")
-  zoning_f  <- latest_match(ydir, "^Manitoba_Zoning_By_?[Ll]aws\\d{8}\\.geojson$")
-  devplan_f <- latest_match(ydir, "^Manitoba_Development_Plan_Designations\\d{8}\\.geojson$")
+# ---- per-snapshot processing ----------------------------------------
+# A snapshot = one parcel file; its date IS the snapshot_id (YYYY-MM-DD).
+# Zoning/dev-plan are paired from the same archive folder (latest version
+# on-or-before the parcel date). Output goes to OUTPUT_ROOT/<snapshot_id>/.
+process_snapshot <- function(parcel_f) {
+  snap <- date_from_name(parcel_f)
+  if (is.na(snap)) { cat("  skip (no date in name):", basename(parcel_f), "\n"); return(invisible()) }
+  if (!is.na(only_year) && substr(snap, 1, 4) != only_year) return(invisible())
 
-  cat("\n=== Year", year, "===\n")
-  cat("  parcels :", if (is.na(parcel_f)) "(none)" else basename(parcel_f), "\n")
+  ydir <- dirname(parcel_f)
+  zoning_f  <- pick_layer(ydir, "^Manitoba_Zoning_By_?[Ll]aws\\d{8}\\.geojson$", snap)
+  devplan_f <- pick_layer(ydir, "^Manitoba_Development_Plan_Designations\\d{8}\\.geojson$", snap)
+
+  cat("\n=== Snapshot", snap, "===\n")
+  cat("  parcels :", basename(parcel_f), "\n")
   cat("  zoning  :", if (is.na(zoning_f)) "(none)" else basename(zoning_f), "\n")
   cat("  devplan :", if (is.na(devplan_f)) "(none)" else basename(devplan_f), "\n")
-  if (is.na(parcel_f)) { cat("  no parcel layer — skipping year\n"); return(invisible()) }
 
-  out_year <- file.path(OUTPUT_ROOT, year)
+  out_dir <- file.path(OUTPUT_ROOT, snap)
   layers <- list()
 
   # --- parcels (MBRollGeoPackage) ---
   lyr <- sf::st_layers(parcel_f)$name[1]
-  cat("  reading parcels (layer", lyr, ") ...\n")
   p <- sf::st_read(parcel_f, layer = lyr, quiet = TRUE)
   names(p)[names(p) == attr(p, "sf_column")] <- "geometry"; sf::st_geometry(p) <- "geometry"
+  require_fields(names(p), c("Roll_No_Txt", "Municipality", "Muni_Name_With_Typ"),
+                 "parcels", hard = TRUE)
   p$muni_no <- suppressWarnings(as.integer(sub("\\s*-.*$", "", p$Municipality)))
   p <- p[!is.na(p$muni_no) & !is.na(p$Muni_Name_With_Typ) & nzchar(p$Muni_Name_With_Typ), ]
   if (!is.na(only_muni)) p <- p[p$muni_no == only_muni, ]   # fast-test path
@@ -193,56 +263,69 @@ process_year <- function(year) {
   p <- p[, c(keepP, "muni_no", "geometry")]
   cat("    simplifying", nrow(p), "parcels ...\n")
   p <- to_wgs84_simplify(p)
-  pc <- write_shards(p, "muni_no", file.path(out_year, "parcels"), keepP)
-  layers$parcels <- list(date = date_from_name(parcel_f), munis = length(pc),
-                         features = sum(unlist(pc)))
-  # muni_no -> name map (for the manifest / frontend selector)
+  pc <- write_shards(p, "muni_no", file.path(out_dir, "parcels"), keepP)
+  layers$parcels <- layer_meta(parcel_f, length(pc), sum(unlist(pc)))
   muni_names <- p |> sf::st_drop_geometry() |> dplyr::distinct(muni_no, Muni_Name_With_Typ)
 
   # --- zoning ---
   if (!is.na(zoning_f)) {
-    cat("  reading zoning ...\n")
     z <- sf::st_read(zoning_f, quiet = TRUE)
+    require_fields(names(z), c("MUNI_NO", "ZONE", "ZBL"), "zoning")
     z$MUNI_NO <- suppressWarnings(as.integer(z$MUNI_NO))
     if (!is.na(only_muni)) z <- z[!is.na(z$MUNI_NO) & z$MUNI_NO == only_muni, ]
     keepZ <- intersect(ZONING_FIELDS, names(z))
     z <- z[, c(keepZ, attr(z, "sf_column"))]
     z <- to_wgs84_simplify(z)
-    zc <- write_shards(z, "MUNI_NO", file.path(out_year, "zoning"), setdiff(keepZ, "MUNI_NO"))
-    layers$zoning <- list(date = date_from_name(zoning_f), munis = length(zc),
-                          features = sum(unlist(zc)))
+    zc <- write_shards(z, "MUNI_NO", file.path(out_dir, "zoning"), setdiff(keepZ, "MUNI_NO"))
+    layers$zoning <- layer_meta(zoning_f, length(zc), sum(unlist(zc)))
   }
 
   # --- dev plan ---
   if (!is.na(devplan_f)) {
-    cat("  reading dev-plan ...\n")
     d <- sf::st_read(devplan_f, quiet = TRUE)
+    require_fields(names(d), c("MUNI_NO", "DES_NAME", "DP_BYLAW"), "dev-plan")
     d$MUNI_NO <- suppressWarnings(as.integer(d$MUNI_NO))
     if (!is.na(only_muni)) d <- d[!is.na(d$MUNI_NO) & d$MUNI_NO == only_muni, ]
     keepD <- intersect(DEVPLAN_FIELDS, names(d))
     d <- d[, c(keepD, attr(d, "sf_column"))]
     d <- to_wgs84_simplify(d)
-    dc <- write_shards(d, "MUNI_NO", file.path(out_year, "devplan"), setdiff(keepD, "MUNI_NO"))
-    layers$devplan <- list(date = date_from_name(devplan_f), munis = length(dc),
-                           features = sum(unlist(dc)))
+    dc <- write_shards(d, "MUNI_NO", file.path(out_dir, "devplan"), setdiff(keepD, "MUNI_NO"))
+    layers$devplan <- layer_meta(devplan_f, length(dc), sum(unlist(dc)))
   }
 
-  # --- manifest ---
+  # --- manifest (with provenance) ---
   munis <- setNames(
     lapply(seq_len(nrow(muni_names)), function(i) {
       mn <- muni_names$muni_no[i]
-      list(name = muni_names$Muni_Name_With_Typ[i],
-           parcels = pc[[as.character(mn)]] %||% 0L)
+      list(name = muni_names$Muni_Name_With_Typ[i], parcels = pc[[as.character(mn)]] %||% 0L)
     }),
     muni_names$muni_no
   )
-  manifest <- list(year = as.integer(year), layers = layers, munis = munis)
-  dir.create(out_year, showWarnings = FALSE, recursive = TRUE)
-  jsonlite::write_json(manifest, file.path(out_year, "manifest.json"),
-                       auto_unbox = TRUE, pretty = TRUE)
+  manifest <- list(
+    schema      = 2,
+    snapshot_id = snap,
+    generated   = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
+    generator   = list(
+      script = "build_historical_shards.R",
+      commit = generator_commit(),
+      crs    = "EPSG:4326",
+      simplify_tolerance_deg = SIMPLIFY_TOLERANCE_DEG,
+      geometry_note = paste("Geometry simplified ~10 m for display — NOT survey-accurate.",
+                            "Resolve acreage/boundary evidence to the archived source-of-record",
+                            "(layers[].source_file / sha256).")
+    ),
+    disclaimer  = paste("Historical zoning/dev-plan are pointers to likely by-law/designation",
+                        "context as of the source date; verify against municipal / planning-district",
+                        "records and registered plans/titles. Not a legal survey or legal determination."),
+    layers      = layers,
+    munis       = munis
+  )
+  dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+  jsonlite::write_json(manifest, file.path(out_dir, "manifest.json"),
+                       auto_unbox = TRUE, pretty = TRUE, null = "null", digits = 12)
 
-  sz <- sum(file.info(list.files(out_year, recursive = TRUE, full.names = TRUE))$size, na.rm = TRUE)
-  cat(sprintf("  -> wrote %s  (%.1f MB)\n", out_year, sz/1024/1024))
+  sz <- sum(file.info(list.files(out_dir, recursive = TRUE, full.names = TRUE))$size, na.rm = TRUE)
+  cat(sprintf("  -> wrote %s  (%.1f MB)\n", out_dir, sz / 1024 / 1024))
 }
 
 # ---- main ------------------------------------------------------------
@@ -251,13 +334,14 @@ if (index_only) {
   write_root_index()
   cat("\nDone.\n")
 } else {
-  years <- if (!is.na(only_year)) only_year else
-    basename(list.dirs(ARCHIVE_ROOT, recursive = FALSE))
-  years <- years[grepl("^\\d{4}$", years)]
+  # One snapshot per parcel file anywhere in the archive (any year folder).
+  parcel_files <- sort(list.files(ARCHIVE_ROOT, pattern = "^MBRollGeoPackage\\d{8}\\.gpkg$",
+                                  recursive = TRUE, full.names = TRUE))
   cat("MAO historical shard build\n  archive:", ARCHIVE_ROOT, "\n  output :", OUTPUT_ROOT, "\n")
-  cat("  years  :", paste(years, collapse = ", "),
-      if (!is.na(only_muni)) paste0("  (muni ", only_muni, " only)") else "", "\n")
-  for (y in years) process_year(y)
+  cat("  parcel snapshots found:", length(parcel_files),
+      if (!is.na(only_year)) paste0(" (year ", only_year, ")") else "",
+      if (!is.na(only_muni)) paste0(" (muni ", only_muni, " only)") else "", "\n")
+  for (pf in parcel_files) process_snapshot(pf)
   write_root_index()   # keep the discovery index in lockstep with the shards
   cat("\nDone.\n")
 }

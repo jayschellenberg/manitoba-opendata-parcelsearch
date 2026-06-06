@@ -2517,6 +2517,7 @@ function historicalParcelHtml(p, year) {
   if (p.Frontage_or_Area)   lines.push(`<strong>Area</strong> ${escapeHtml(p.Frontage_or_Area)}`);
   if (p.Total_Value)        lines.push(`<strong>Assessed</strong> ${escapeHtml(p.Total_Value)}`);
   if (p.Asmt_Roll)          lines.push(`<small style="color:#777">${escapeHtml(p.Asmt_Roll)}</small>`);
+  lines.push('<small style="color:#888">Display geometry simplified — verify boundary/area against the archived source-of-record.</small>');
   return `<div class="parcel-popup">${lines.join('<br>')}</div>`;
 }
 
@@ -2525,6 +2526,7 @@ function historicalZoningHtml(p, year) {
   if (p.ZONE || p.ZONE_NAME) lines.push(`<strong>${escapeHtml(p.ZONE || '')}</strong>${p.ZONE_NAME ? ' — ' + escapeHtml(p.ZONE_NAME) : ''}`);
   if (p.ZONE_CATEGORY)       lines.push(`<em>${escapeHtml(p.ZONE_CATEGORY)}</em>`);
   if (p.ZBL)                 lines.push(`<strong>By-law</strong> ${escapeHtml(p.ZBL)}`);
+  lines.push('<small style="color:#888">Pointer only — verify the by-law as of this date with the municipality / planning district.</small>');
   return `<div class="parcel-popup">${lines.join('<br>')}</div>`;
 }
 
@@ -2533,6 +2535,7 @@ function historicalDevplanHtml(p, year) {
   if (p.DES_NAME)     lines.push(`<strong>${escapeHtml(p.DES_NAME)}</strong>`);
   if (p.DES_CATEGORY) lines.push(`<em>${escapeHtml(p.DES_CATEGORY)}</em>`);
   if (p.DP_BYLAW)     lines.push(`<strong>By-law</strong> ${escapeHtml(p.DP_BYLAW)}`);
+  lines.push('<small style="color:#888">Pointer only — verify the designation as of this date with the planning district.</small>');
   return `<div class="parcel-popup">${lines.join('<br>')}</div>`;
 }
 

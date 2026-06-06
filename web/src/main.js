@@ -1305,7 +1305,7 @@ $cliToggle.addEventListener('click', () => toggleCliOverlay());
 if ($landcoverToggle) $landcoverToggle.addEventListener('click', () => toggleLandCoverOverlay());
 if ($historicalToggle) $historicalToggle.addEventListener('click', () => toggleHistoricalOverlay());
 if ($historicalYear) $historicalYear.addEventListener('change', () => onHistoricalYearChange());
-initHistoricalYears();
+initHistoricalSnapshots();
 $gridToggle.addEventListener('click', () => toggleSurveyGridOverlay());
 
 const $staticMapBtn     = document.getElementById('static-map-btn');
@@ -4774,38 +4774,49 @@ let historicalActive = false;
 let historicalLoadedMuni = null;
 let historicalIndexCache = null;
 
-async function initHistoricalYears() {
+// Populate the "As of" picker from the CDN discovery index — snapshot dates
+// (YYYY-MM-DD), grouped by year via <optgroup>. Self-describing: adding a
+// snapshot needs no code change here.
+async function initHistoricalSnapshots() {
   if (!$historicalYear) return;
   const idx = await fetchHistoricalIndex().catch(() => null);
   historicalIndexCache = idx;
-  const years = idx?.years ? Object.keys(idx.years).filter((y) => /^\d{4}$/.test(y)).sort().reverse() : [];
+  const snaps = idx?.snapshots
+    ? Object.keys(idx.snapshots).filter((s) => /^\d{4}-\d{2}-\d{2}$/.test(s)).sort().reverse()
+    : [];
   $historicalYear.innerHTML = '';
-  for (const y of years) {
+  let curYear = null, grp = null;
+  for (const s of snaps) {
+    const yr = s.slice(0, 4);
+    if (yr !== curYear) { grp = document.createElement('optgroup'); grp.label = yr; $historicalYear.appendChild(grp); curYear = yr; }
     const opt = document.createElement('option');
-    opt.value = y; opt.textContent = y;
-    $historicalYear.appendChild(opt);
+    opt.value = s; opt.textContent = s;   // value = snapshot_id (YYYY-MM-DD)
+    grp.appendChild(opt);
   }
-  if (years.length && $historicalYearWrap) $historicalYearWrap.hidden = false;
+  if (snaps.length && $historicalYearWrap) $historicalYearWrap.hidden = false;
 }
 
-function historicalLayerDates(year) {
-  const layers = historicalIndexCache?.years?.[year]?.layers || {};
-  return { roll: layers.parcels?.date || null, zoning: layers.zoning?.date || null, devplan: layers.devplan?.date || null };
+// Per-layer source dates for a snapshot (from the discovery index).
+function historicalLayerDates(snap) {
+  const layers = historicalIndexCache?.snapshots?.[snap]?.layers || {};
+  return {
+    roll: layers.parcels?.source_date || null,
+    zoning: layers.zoning?.source_date || null,
+    devplan: layers.devplan?.source_date || null,
+  };
 }
 
-// Newest snapshot date across the whole index — drives the >12-month flag.
+// Newest snapshot > 12 months old? snapshot_ids are dates, so take the max.
 function historicalIsStale() {
-  const yrs = historicalIndexCache?.years;
-  if (!yrs) return false;
-  let newest = null;
-  for (const y of Object.values(yrs)) for (const l of Object.values(y.layers || {})) {
-    if (l?.date && (!newest || l.date > newest)) newest = l.date;
-  }
-  return newest ? (Date.now() - Date.parse(newest)) > 365 * 24 * 60 * 60 * 1000 : false;
+  const snaps = historicalIndexCache?.snapshots;
+  const keys = snaps ? Object.keys(snaps).filter((s) => /^\d{4}-\d{2}-\d{2}$/.test(s)) : [];
+  if (!keys.length) return false;
+  const newest = keys.sort().reverse()[0];
+  return (Date.now() - Date.parse(newest)) > 365 * 24 * 60 * 60 * 1000;
 }
 
-async function resolveHistoricalMuniNo(year, muniName) {
-  const m = await fetchHistoricalManifest(year).catch(() => null);
+async function resolveHistoricalMuniNo(snap, muniName) {
+  const m = await fetchHistoricalManifest(snap).catch(() => null);
   if (!m?.munis) return null;
   const norm = (s) => String(s || '').toUpperCase().replace(/\s+/g, ' ').trim();
   const target = norm(muniName);
@@ -4820,9 +4831,9 @@ async function toggleHistoricalOverlay() {
   await mapReady;
   if (historicalActive) { deactivateHistorical(); return; }
   if (!$municipality.value) { setCount('Historical: select a municipality first.'); return; }
-  const year = $historicalYear?.value;
-  if (!year) { setCount('Historical: no snapshot years available.'); return; }
-  await loadHistorical(year, $municipality.value);
+  const snap = $historicalYear?.value;
+  if (!snap) { setCount('Historical: no snapshots available.'); return; }
+  await loadHistorical(snap, $municipality.value);
 }
 
 async function onHistoricalYearChange() {
@@ -4830,27 +4841,27 @@ async function onHistoricalYearChange() {
   await loadHistorical($historicalYear.value, $municipality.value);
 }
 
-async function loadHistorical(year, muniName) {
+async function loadHistorical(snap, muniName) {
   $historicalToggle.disabled = true;
   setOverlayBtnLabel($historicalToggle, 'Loading…');
   try {
-    const muniNo = await resolveHistoricalMuniNo(year, muniName);
-    if (muniNo == null) { setCount(`Historical: no ${year} data for ${muniName}.`); deactivateHistorical(); return; }
+    const muniNo = await resolveHistoricalMuniNo(snap, muniName);
+    if (muniNo == null) { setCount(`Historical: no ${snap} data for ${muniName}.`); deactivateHistorical(); return; }
     const [parcels, zoning, devplan] = await Promise.all([
-      fetchHistoricalShard(year, 'parcels', muniNo),
-      fetchHistoricalShard(year, 'zoning', muniNo),
-      fetchHistoricalShard(year, 'devplan', muniNo),
+      fetchHistoricalShard(snap, 'parcels', muniNo),
+      fetchHistoricalShard(snap, 'zoning', muniNo),
+      fetchHistoricalShard(snap, 'devplan', muniNo),
     ]);
-    if (!parcels) { setCount(`Historical: couldn't load ${year} parcels for ${muniName}.`); deactivateHistorical(); return; }
-    setHistoricalData(map, { parcels, zoning, devplan, year });
+    if (!parcels) { setCount(`Historical: couldn't load ${snap} parcels for ${muniName}.`); deactivateHistorical(); return; }
+    setHistoricalData(map, { parcels, zoning, devplan, year: snap });
     setHistoricalVisible(map, true);
     historicalActive = true;
     historicalLoadedMuni = muniName;
     $historicalToggle.classList.add('active');
     $historicalToggle.setAttribute('aria-pressed', 'true');
-    updateHistoricalBanner(year);
+    updateHistoricalBanner(snap);
     const n = parcels.features?.length || 0;
-    setCount(`Historical (${year}) — ${n} parcel${n === 1 ? '' : 's'} in ${muniName}, dashed amber over today's lots. Click a parcel/zone for as-of-${year} details.`);
+    setCount(`Historical as of ${snap} — ${n} parcel${n === 1 ? '' : 's'} in ${muniName}, dashed amber over today's lots. Click a parcel/zone for its as-of details. Verify against by-law/title records.`);
   } catch (err) {
     console.warn('historical load failed', err);
     setCount('Historical: load failed.');
@@ -4873,16 +4884,18 @@ function deactivateHistorical() {
   if ($historicalBanner) $historicalBanner.hidden = true;
 }
 
-function updateHistoricalBanner(year) {
+function updateHistoricalBanner(snap) {
   if (!$historicalBanner) return;
-  const d = historicalLayerDates(year);
+  const d = historicalLayerDates(snap);
   const parts = [];
   if (d.roll) parts.push(`Roll ${d.roll}`);
   if (d.zoning) parts.push(`Zoning ${d.zoning}`);
   if (d.devplan) parts.push(`Dev Plan ${d.devplan}`);
   const stale = historicalIsStale();
   $historicalBanner.classList.toggle('is-stale', stale);
-  $historicalBanner.innerHTML = `HISTORICAL — ${year} · ${parts.join(' · ')}`
+  $historicalBanner.innerHTML =
+    `HISTORICAL as of ${snap}${parts.length ? ' · ' + parts.join(' · ') : ''}`
+    + ' · <span class="hb-verify">verify vs by-law / title</span>'
     + (stale ? '<span class="hb-stale-tag">archive &gt; 12 mo old</span>' : '');
   $historicalBanner.hidden = false;
 }

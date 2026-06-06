@@ -1410,7 +1410,7 @@ let historicalIndexPromise = null;
 export async function fetchHistoricalIndex() {
   if (historicalIndexPromise) return historicalIndexPromise;
   historicalIndexPromise = (async () => {
-    const cacheKey = 'mb_historical_index_v1';
+    const cacheKey = 'mb_historical_index_v2';   // v2: snapshot-date schema
     const cached = await readCache(cacheKey, HISTORICAL_INDEX_TTL_MS);
     if (cached) return cached;
     try {
@@ -1427,7 +1427,7 @@ export async function fetchHistoricalIndex() {
 /** Per-year manifest: layer dates + munis { "<muni_no>": { name, parcels } }. */
 export async function fetchHistoricalManifest(year) {
   if (!year) return null;
-  const cacheKey = `mb_historical_manifest_${year}_v1`;
+  const cacheKey = `mb_historical_manifest_${year}_v2`;
   const cached = await readCache(cacheKey, HISTORICAL_INDEX_TTL_MS);
   if (cached) return cached;
   try {
@@ -1446,7 +1446,7 @@ export async function fetchHistoricalManifest(year) {
  */
 export async function fetchHistoricalShard(year, layer, muniNo) {
   if (!year || !layer || muniNo == null || muniNo === '') return null;
-  const cacheKey = `mb_historical_${year}_${layer}_${muniNo}_v1`;
+  const cacheKey = `mb_historical_${year}_${layer}_${muniNo}_v2`;
   const cached = await readCache(cacheKey, HISTORICAL_SHARD_TTL_MS);
   if (cached) return cached;
   try {
