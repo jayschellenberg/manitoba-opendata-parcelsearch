@@ -2217,6 +2217,50 @@ body.measuring .map-legend {
   border: 1px solid rgba(0, 0, 0, 0.2);
 }
 
+/* Historical (as-of-year) mode — banner pinned to the top of the map plus
+   the inline year picker under the Historical overlay toggle. Amber/brown
+   = "historical", matching the dashed parcel outline on the map. */
+.historical-banner {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  max-width: calc(100% - 24px);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: #b45309;
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.historical-banner[hidden] { display: none; }
+.historical-banner.is-stale { background: #92400e; }
+.historical-banner .hb-stale-tag {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+  font-weight: 700;
+}
+
+.overlay-subcontrol {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 2px 4px;
+  font-size: 11.5px;
+  color: #4b5563;
+}
+.overlay-subcontrol[hidden] { display: none; }
+.overlay-subcontrol-label { white-space: nowrap; }
+.overlay-subcontrol select { flex: 1; min-width: 0; }
+
 /* On the collapsed (single-column) layout below 900 px, the map's full
    width is the viewport width, not viewport-minus-sidebar. */
 @media (max-width: 900px) {

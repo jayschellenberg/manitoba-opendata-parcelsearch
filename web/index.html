@@ -529,6 +529,13 @@
             <button id="grid-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Sec-Twp grid + river lots. Tri-state cycle: 1st click → Section/township grid (one box per 1-mile section); 2nd click → Quarter section grid (four boxes per section, requires a municipality); 3rd click → off. River lots ride along on both grid modes. Without a municipality, only the section grid is available (province-wide).">
               <span class="overlay-btn-label">Section/Township Grid</span>
             </button>
+            <button id="historical-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled title="Historical (as-of-year) — overlay an earlier year's parcels (dashed amber), zoning, and dev-plan for the selected municipality, to compare against today (e.g. a parcel's size/shape before a subdivision). Select a municipality, then pick a year.">
+              <span class="overlay-btn-label">Historical</span>
+            </button>
+            <label class="overlay-subcontrol" id="historical-year-wrap" hidden>
+              <span class="overlay-subcontrol-label">As of year</span>
+              <select id="historical-year" aria-label="Historical snapshot year"></select>
+            </label>
           </div>
 
           <div class="overlay-group" data-group="planning">
@@ -623,6 +630,7 @@
       <main class="main-pane workspace" id="workspace">
 
     <div id="map" class="map-pane">
+      <div id="historical-banner" class="historical-banner" role="status" aria-live="polite" hidden></div>
       <div id="zoning-legend" class="map-legend zoning-legend" hidden>
         <strong>Zoning category</strong>
         <ul></ul>
