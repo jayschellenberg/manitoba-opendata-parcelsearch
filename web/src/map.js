@@ -1889,12 +1889,25 @@ export function initMap(container, { onFeatureClick } = {}) {
         wireCoordsCopy(muniClickPopup, center);
       });
 
-      // Historical (as-of-year) overlay click popups — one per layer, each
+      // Historical (as-of-date) overlay click popups — one per layer, each
       // gated on its own visibility so they only fire in Historical mode.
+      // PRIORITY: the zoning + dev-plan context fills blanket the whole muni,
+      // so a click on a parcel also lands on them. Each layer defers to the
+      // higher-priority historical layers under the same point (parcel > zoning
+      // > dev-plan), so clicking a parcel shows the PARCEL — not the dev-plan
+      // designation that happens to sit beneath it. Without this, the three
+      // handlers raced on one shared popup and dev-plan (wired last) won.
       const histClickPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '320px' });
-      const wireHist = (layerId, htmlFn) => {
+      const wireHist = (layerId, htmlFn, deferTo = []) => {
         map.on('click', layerId, (e) => {
           if (map.getLayoutProperty(layerId, 'visibility') !== 'visible') return;
+          for (const other of deferTo) {
+            if (map.getLayer(other) &&
+                map.getLayoutProperty(other, 'visibility') === 'visible' &&
+                map.queryRenderedFeatures(e.point, { layers: [other] }).length > 0) {
+              return;   // a higher-priority historical feature owns this click
+            }
+          }
           const p = e.features?.[0]?.properties;
           if (!p) return;
           histClickPopup.setLngLat(e.lngLat).setHTML(htmlFn(p, historicalYear ?? '')).addTo(map);
@@ -1903,8 +1916,8 @@ export function initMap(container, { onFeatureClick } = {}) {
         map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; });
       };
       wireHist('historical-parcels-fill', historicalParcelHtml);
-      wireHist('historical-zoning-fill',  historicalZoningHtml);
-      wireHist('historical-devplan-fill', historicalDevplanHtml);
+      wireHist('historical-zoning-fill',  historicalZoningHtml,  ['historical-parcels-fill']);
+      wireHist('historical-devplan-fill', historicalDevplanHtml, ['historical-parcels-fill', 'historical-zoning-fill']);
 
       // Bare CLI-polygon click — sticky popup for "Parcel Boundaries
       // off, CLI on" workflows where the user wants to click a polygon
