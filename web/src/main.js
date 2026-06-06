@@ -4872,15 +4872,48 @@ async function stampHistoricalSizeChanges(parcels, muniName) {
       const a = parcelAcres(f);
       if (roll && a > 0) histByRoll.set(roll, a);
     }
-    const cur = await fetchAllParcelsInMunicipality(muniName).catch(() => null);
+    const cur = await fetchAllParcelsInMunicipality(muniName).catch((e) => {
+      console.warn(`[historical] size-change: current-parcel fetch threw for muni "${muniName}" — highlight disabled.`, e);
+      return null;
+    });
+    const curFeatureCount = cur?.features?.length || 0;
     const curByRoll = new Map();
     for (const f of cur?.features || []) {
       const roll = f.properties?.Roll_No_Txt;
       const a = parcelAcres(f);
       if (roll && a > 0) curByRoll.set(roll, a);
     }
-    if (curByRoll.size === 0) return null;   // nothing current to compare against
+    // Diagnostic: distinguish "genuinely no current data" from a name/roll-key
+    // FORMAT MISMATCH (the failure mode flagged at review). If the muni name
+    // doesn't resolve to current parcels, or the rolls don't overlap at all
+    // despite both sides having data, the highlight silently no-ops — so say so
+    // loudly in the console with the values needed to diagnose.
+    if (curByRoll.size === 0) {
+      console.warn(
+        `[historical] size-change: no current parcels to compare for muni "${muniName}" `
+        + `(fetch returned ${curFeatureCount} feature(s)). `
+        + (curFeatureCount === 0
+            ? 'Likely a municipality-name format mismatch with fetchAllParcelsInMunicipality — highlight disabled.'
+            : 'Features returned but none had a roll + positive acreage — highlight disabled.'),
+      );
+      return null;
+    }
     const { byRoll, summary } = computeSizeChanges(histByRoll, curByRoll);
+    const matched = histByRoll.size - summary.gone;   // hist rolls that found a current match
+    if (histByRoll.size > 0 && matched === 0) {
+      const sample = (m) => Array.from(m.keys()).slice(0, 3).join(', ') || '(none)';
+      console.warn(
+        `[historical] size-change: ${histByRoll.size} historical and ${curByRoll.size} current parcels, `
+        + `but ZERO roll overlap for muni "${muniName}" — likely a Roll_No_Txt key-format mismatch. `
+        + `hist sample: [${sample(histByRoll)}] · current sample: [${sample(curByRoll)}]`,
+      );
+    } else {
+      console.info(
+        `[historical] size-change "${muniName}": ${histByRoll.size} hist / ${curByRoll.size} current rolls, `
+        + `${matched} matched, ${summary.gone} gone, ${summary.appeared} new · `
+        + `changed: ${summary.major} major, ${summary.minor} minor.`,
+      );
+    }
     for (const f of parcels.features || []) {
       const rec = byRoll.get(f.properties?.Roll_No_Txt);
       if (!rec || !f.properties) continue;
