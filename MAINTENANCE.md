@@ -49,9 +49,14 @@ Rscript r/build_historical_shards.R --year <yyyy>
 cd ..\mb-parcel-history
 git add <snapshot_id> index.json && git commit -m "Add <snapshot_id>" && git push
 ```
-The app auto-discovers the new snapshot from `index.json` (no app code
-change). jsDelivr serves it within ~12 h (past snapshots are immutable); to
-skip the lag, `https://purge.jsdelivr.net/gh/jayschellenberg/mb-parcel-history@main/index.json`.
+**Then update the pinned commit in the app** (REQUIRED): the app fetches
+history from a pinned `mb-parcel-history` commit, not `@main` — jsDelivr's view
+of a branch HEAD lags and is inconsistent per-file, so `@main` served stale
+geometry even after purging. Copy the new commit SHA and set `HISTORICAL_CDN`
+in `web/src/arcgis.js` to `…/mb-parcel-history@<new-sha>`, then commit + push
+the app (Vercel redeploys). The pinned SHA is immutable on jsDelivr → served
+immediately, no lag, no purge. (The shard cache key auto-invalidates off the
+manifest's build timestamp, so clients pick it up on next load.)
 
 ### 4. Rebuild parcel lineage  (cadence: after #3, once ≥ 2 snapshots exist)
 Infer predecessor/successor (subdivision / consolidation / …) across

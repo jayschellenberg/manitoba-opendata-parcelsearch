@@ -200,8 +200,9 @@ captures in the same calendar year are two distinct snapshots.
   sidecars), the generator `commit`, the `simplify_tolerance_deg`, a
   geometry-accuracy note, and a verify **disclaimer**.
 - Writes a root **`index.json` (schema 2)** whose `snapshots` map lists each
-  `snapshot_id` with its per-layer source dates + muni count (discovery —
-  **adding a snapshot needs no app code change**).
+  `snapshot_id` with its per-layer source dates + muni count (discovery). Since
+  the app pins an immutable CDN commit (§5.2), surfacing a new snapshot means
+  bumping that pinned SHA — a one-line app change on republish.
 - **Loud field validation:** missing critical **parcel** fields (roll / muni)
   **hard-fail** the snapshot; missing zoning/dev-plan fields warn (§5.8).
 - Output → `mb-parcel-history` repo (`OUTPUT_ROOT`).
@@ -222,10 +223,13 @@ lineage/<muni_no>.json                  # inferred predecessor/successor (§5.6)
 lineage/_index.json
 ```
 `<snapshot_id>` is the full date, e.g. `2026-06-05/parcels/168.json`.
-URL base: `https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-history@main`.
-Past snapshots are immutable → always fresh; only `index.json` / a new
-snapshot lags ≤ ~12 h (pin to a commit or purge for instant). For citation,
-prefer an **immutable `@<commit>` / `@<tag>` ref** over `@main`.
+URL base: `https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-history@<commit-sha>`
+— the app **pins an immutable commit**, not `@main`. jsDelivr's view of a branch
+HEAD lags and is inconsistent per-file, so `@main` served stale geometry for
+some munis even after purging; a commit SHA is served immediately and never
+goes stale. On every republish, bump the pinned SHA in `web/src/arcgis.js`
+(`HISTORICAL_CDN`) — see MAINTENANCE.md §3. The shard cache key is stamped with
+the manifest's build timestamp, so clients auto-invalidate on the next load.
 
 ### 5.3 Frontend
 - **arcgis.js**: `fetchHistoricalIndex` / `fetchHistoricalManifest` /
@@ -248,8 +252,8 @@ prefer an **immutable `@<commit>` / `@<tag>` ref** over `@main`.
 
 ### 5.4 Sync — how the two projects stay aligned
 - **Generator in the main repo** = one source of truth for the format.
-- **Auto-discovery:** the app reads `index.json`, so **adding a snapshot
-  needs no app code change**.
+- **Discovery:** the app reads `index.json`; adding a snapshot needs only the
+  **pinned CDN SHA bumped** in `arcgis.js` (§5.2) — no other app changes.
 - **Self-describing manifests** map muni_no ↔ name per snapshot.
 - **Field contract:** `PARCEL_FIELDS` / `ZONING_FIELDS` / `DEVPLAN_FIELDS`
   in `build_historical_shards.R` are what the historical renderer reads;
@@ -411,9 +415,11 @@ If any fires, run the matching task in §8.
   line. It auto-skips partials, so this means re-run a complete assembly.
 - **A live parcel shows no land cover** → it's newer than the last assembly
   Parquet; rerun mao-assembly, then `build_landcover.R`.
-- **New snapshot not showing in-app** → jsDelivr `@main` cache lag
-  (≤ ~12 h); pin to a commit or purge `index.json` to force. Also bump the
-  app's browser cache keys if the `index.json`/manifest schema changed.
+- **New snapshot not showing, or stale/triangle geometry after a republish** →
+  the app pins a `mb-parcel-history` **commit SHA** (not `@main`, which lags and
+  serves stale per-file even after a purge). Bump `HISTORICAL_CDN` in
+  `arcgis.js` to the new commit and redeploy (MAINTENANCE.md §3). The shard
+  cache key auto-invalidates off the manifest build timestamp.
 - **Local `npm run build` fails with `EPERM … dist\data`** → Dropbox is
   holding the build copy; harmless. Build with `--emptyOutDir false`, or
   just push (Vercel builds in a clean environment).
