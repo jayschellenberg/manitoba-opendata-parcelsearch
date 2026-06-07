@@ -1412,7 +1412,8 @@ export async function fetchLandCoverForMuni(muniNameWithTyp) {
 const HISTORICAL_CDN =
   'https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-history@main';
 const HISTORICAL_INDEX_TTL_MS = 24 * 60 * 60 * 1000;        // 1 day — so new years surface
-const HISTORICAL_SHARD_TTL_MS = 30 * 24 * 60 * 60 * 1000;   // 30 days — a year's shard is immutable
+const HISTORICAL_MANIFEST_TTL_MS = 6 * 60 * 60 * 1000;     // 6 h — gates the shard version token, keep fresh
+const HISTORICAL_SHARD_TTL_MS = 30 * 24 * 60 * 60 * 1000;   // 30 days — safe: the key is version-stamped, so a rebuild changes it
 
 let historicalIndexPromise = null;
 
@@ -1437,8 +1438,10 @@ export async function fetchHistoricalIndex() {
 /** Per-year manifest: layer dates + munis { "<muni_no>": { name, parcels } }. */
 export async function fetchHistoricalManifest(year) {
   if (!year) return null;
-  const cacheKey = `mb_historical_manifest_${year}_v2`;
-  const cached = await readCache(cacheKey, HISTORICAL_INDEX_TTL_MS);
+  // v3: short TTL + bumped so a republished snapshot's NEW `generated` stamp is
+  // picked up promptly — that stamp version-keys the shard cache below.
+  const cacheKey = `mb_historical_manifest_${year}_v3`;
+  const cached = await readCache(cacheKey, HISTORICAL_MANIFEST_TTL_MS);
   if (cached) return cached;
   try {
     const res = await fetch(`${HISTORICAL_CDN}/${year}/manifest.json`);
@@ -1449,6 +1452,13 @@ export async function fetchHistoricalManifest(year) {
   } catch { return null; }
 }
 
+// Build-version token from a manifest's `generated` timestamp (digits only).
+// Used to version-key the shard cache so a republish auto-invalidates it.
+function manifestVersionToken(manifest) {
+  const g = manifest?.generated;
+  return g ? String(g).replace(/\D/g, '').slice(0, 14) : 'v4';
+}
+
 /**
  * One layer's GeoJSON FeatureCollection for a year + muni number.
  * `layer` is 'parcels' | 'zoning' | 'devplan'. Returns null on a miss
@@ -1456,13 +1466,14 @@ export async function fetchHistoricalManifest(year) {
  */
 export async function fetchHistoricalShard(year, layer, muniNo) {
   if (!year || !layer || muniNo == null || muniNo === '') return null;
-  // v4: shards regenerated so SMALL lots (< 1 ha) are no longer simplified at
-  // all — Douglas-Peucker was collapsing narrow rectangles into triangles even
-  // at a fine tolerance (Steinbach/Hanover subdivisions). Bumped to bust the
-  // 30-day client cache so clients re-fetch the corrected geometry; the
-  // republish also purges every parcel shard from jsDelivr so @main serves the
-  // fixed geometry immediately.
-  const cacheKey = `mb_historical_${year}_${layer}_${muniNo}_v4`;
+  // Self-invalidating cache: the key embeds the snapshot manifest's build
+  // timestamp, so ANY republish (e.g. the geometry-fix rebuild that stopped
+  // small lots collapsing into triangles) changes the key and the client
+  // re-fetches — no manual version bumps, and a stale 30-day entry from an
+  // earlier build is never served.
+  const manifest = await fetchHistoricalManifest(year);
+  const ver = manifestVersionToken(manifest);
+  const cacheKey = `mb_historical_${year}_${layer}_${muniNo}_${ver}`;
   const cached = await readCache(cacheKey, HISTORICAL_SHARD_TTL_MS);
   if (cached) return cached;
   try {
