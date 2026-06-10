@@ -1,0 +1,48 @@
+# CI — runs the web test suite and a production build on every push/PR.
+#
+# The repo carries ~700 MB of generated data shards under web/public/data;
+# neither the tests nor a VITE_SKIP_PUBLIC build reads them, so the checkout
+# uses blob:none + sparse-checkout to keep the CI clone to a few MB.
+#
+# The live-network ArcGIS integration test (web/test/arcgis-cache.test.js)
+# self-skips unless RUN_LIVE_TESTS=1, so this workflow needs no network
+# access beyond npm.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+          sparse-checkout: |
+            /*
+            !web/public/data
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build (code-only, skip public/ asset copy)
+        run: npm run build
+        env:
+          VITE_SKIP_PUBLIC: '1'
