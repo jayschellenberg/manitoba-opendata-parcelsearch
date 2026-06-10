@@ -60,11 +60,13 @@ yarn-debug.log*
 yarn-error.log*
 web/vite-dev.*.log
 dashboard/logs/
+logs/
 
 # Plan files (kept in C:\Users\Jason\.claude\plans, but defensive)
 plan*.md
 *-stonebraker.md
 .Rproj.user
+.Rhistory
 .positai
 
 # RStudio project file — local IDE state, no need to track.
