@@ -65,6 +65,9 @@ logs/
 # Plan files (kept in C:\Users\Jason\.claude\plans, but defensive)
 plan*.md
 *-stonebraker.md
+
+# Local audit reports — working docs, not for the public repo
+AUDIT-REPORT-*.md
 .Rproj.user
 .Rhistory
 .positai
