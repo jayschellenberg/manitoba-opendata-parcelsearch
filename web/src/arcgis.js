@@ -102,7 +102,7 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // state (observed 2026-06-03 with only 18 of ~180 munis published mid-
 // rebuild), main.js flips the webapp into snapshot mode via
 // setRollEntrySnapshot(manifest). While that's set, parcel queries route
-// to per-muni GeoJSON shards under web/public/data/rollentry-snapshot/
+// to per-muni GeoJSON shards from the mb-parcel-data CDN repo
 // produced by r/build_rollentry_snapshot.R. The shards mirror the live
 // FeatureCollection shape (same 10 fields, EPSG:4326), so the rest of
 // the app is none the wiser.
@@ -110,7 +110,17 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // Shard cache is in-memory only (per session) — each muni's shard is
 // ~1-10 MB and gzipped on the wire; a quick reload to pick up live data
 // after the upstream rebuild is the supported recovery path.
-const SNAPSHOT_BASE_URL = `${import.meta.env?.BASE_URL || '/'}data/rollentry-snapshot/`;
+//
+// Shards live in the mb-parcel-data repo on jsDelivr, pinned to an
+// IMMUTABLE commit (same rationale as HISTORICAL_CDN below: jsDelivr's
+// view of @main lags and is inconsistent per-file). They were moved out
+// of web/public/data/ to get 285 MB of generated GeoJSON out of this
+// repo/deploy. MAINTENANCE: after rebuilding the snapshot
+// (r/build_rollentry_snapshot.R writes into the local mb-parcel-data
+// clone), commit+push that repo and update this SHA — see MAINTENANCE.md.
+export const SNAPSHOT_CDN =
+  'https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-data@7246eeb34c46345ec38ae8e6289484b17e6e7cf6';
+const SNAPSHOT_BASE_URL = `${SNAPSHOT_CDN}/rollentry-snapshot/`;
 let rollEntrySnapshot = null;
 const snapshotShardCache = new Map();
 

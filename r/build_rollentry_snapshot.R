@@ -5,9 +5,9 @@
 # can fall back to when the upstream provincial ROLL_ENTRY FeatureServer
 # is unavailable or mid-rebuild (observed 2026-06-03).
 #
-# Output layout:
-#   web/public/data/rollentry-snapshot/<MUNI_KEY>.json    one GeoJSON FC per muni
-#   web/public/data/rollentry-snapshot/_index.json        manifest:
+# Output layout (in the local mb-parcel-data repo clone):
+#   rollentry-snapshot/<MUNI_KEY>.json    one GeoJSON FC per muni
+#   rollentry-snapshot/_index.json        manifest:
 #                                                          { snapshot_date, generated_at,
 #                                                            munis: { <Muni_Name_With_Typ>:
 #                                                              { file, count } } }
@@ -53,7 +53,11 @@ sf::sf_use_s2(FALSE)
 source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "config.R") else "r/config.R")
 
 source_dir   <- websearch_root
-output_dir   <- file.path(source_dir, "web/public/data/rollentry-snapshot")
+# Shards publish into the local mb-parcel-data clone (served to the app
+# via jsDelivr pinned to an immutable commit — see SNAPSHOT_CDN in
+# web/src/arcgis.js), NOT web/public/data/. After a rebuild: commit +
+# push mb-parcel-data, then update the pinned SHA. See MAINTENANCE.md.
+output_dir   <- file.path(mb_parcel_data_root, "rollentry-snapshot")
 manifest_path <- file.path(output_dir, "_index.json")
 
 # Fields the webapp uses. KEEP IN SYNC with PARCEL_OUTFIELDS in

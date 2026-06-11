@@ -43,6 +43,7 @@ mao_snapshots_root     <- .path_default("MAO_SNAPSHOTS_ROOT",     "D:/Dropbox/Ap
 mao_assembly_root      <- .path_default("MAO_ASSEMBLY_ROOT",      "D:/Dropbox/Appraisal/RProjects/appraisal-templates/mao-assembly")
 masc_scrape_root       <- .path_default("MASC_SCRAPE_ROOT",       "D:/Dropbox/ClaudeCode/MASC-SCRAPE")
 mb_parcel_history_root <- .path_default("MB_PARCEL_HISTORY_ROOT", "D:/Dropbox/ClaudeCode/MBOpenData/mb-parcel-history")
+mb_parcel_data_root    <- .path_default("MB_PARCEL_DATA_ROOT",    "D:/Dropbox/ClaudeCode/MBOpenData/mb-parcel-data")
 
 # --- shared constants ------------------------------------------------------
 

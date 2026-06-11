@@ -11,7 +11,7 @@ thumb: nothing should go more than ~12 months stale.**
 |---|---|---|---|
 | Live parcels / zoning / dev-plan | ArcGIS (live) | ArcGIS, live | always current |
 | Legal + assessment index | mao-scrape `parcels.parquet` | `web/public/data/` (in deploy) | monthly |
-| RollEntry snapshot (fallback) | `download_parcels.R` | `web/public/data/rollentry-snapshot/` | monthly-ish |
+| RollEntry snapshot (fallback) | `download_parcels.R` | `mb-parcel-data` repo → jsDelivr (pinned commit) | monthly-ish |
 | Land-cover shards | mao-assembly Parquet | `web/public/data/landcover/` | when assembly reruns |
 | Land-cover **tiles** (Detailed) | `LCR_RCT_2020_MB.tif` (static) | `web/public/data/landcover-tiles/` | only on a new raster (years) |
 | **Cold archive** (provincial source + provenance sidecars) | MB Open Data downloads | `D:\Dropbox\Appraisal\Web\MAOSnapshots\<year>\` | semi-annual / annual |
@@ -37,6 +37,21 @@ rebuilt them; `-DryRun` to preview):
 powershell -ExecutionPolicy Bypass -File release-indexes.ps1 -SkipBuild
 ```
 Then commit + push the `api/` URL bumps it makes.
+
+### 1b. RollEntry fallback snapshot  (cadence: monthly-ish, after a fresh download)
+The per-muni fallback shards live in the **`mb-parcel-data`** repo and reach
+the app via jsDelivr pinned to an immutable commit (same pattern as the
+historical shards — never `@main`):
+```
+Rscript r/download_parcels.R              # fresh RollEntry_YYYYMMDD.gpkg
+Rscript r/build_rollentry_snapshot.R      # writes into ../mb-parcel-data/
+cd ..\mb-parcel-data
+git add -A && git commit -m "rollentry-snapshot <date>" && git push
+```
+**Then update the pinned commit** (REQUIRED): copy the new SHA into
+`SNAPSHOT_CDN` in `web/src/arcgis.js`, commit + push the app. That repo's
+history exists only to mint immutable SHAs — squash it whenever it gets
+heavy, then repoint the app first.
 
 ### 2. Snapshot archive + provenance — historical geometry  (cadence: semi-annual / annual)
 After downloading a fresh provincial **MBRollGeoPackage** (and zoning /
