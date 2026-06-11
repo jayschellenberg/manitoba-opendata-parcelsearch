@@ -91,7 +91,9 @@ source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "confi
 
 source_dir   <- websearch_root
 assembly_dir <- file.path(mao_assembly_root, "results")
-output_dir   <- file.path(source_dir, "web/public/data/landcover")
+# Shards publish into the local mb-parcel-data clone (served via jsDelivr
+# pinned commit — see MB_PARCEL_DATA_CDN in arcgis.js).
+output_dir   <- file.path(mb_parcel_data_root, "landcover")
 index_path   <- file.path(output_dir, "_index.json")
 
 ACRES_THRESHOLD <- 10  # only parcels strictly larger than this are sharded

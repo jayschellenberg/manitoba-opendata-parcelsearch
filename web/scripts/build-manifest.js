@@ -42,15 +42,10 @@ const DATA_DIR = path.resolve(__dirname, '..', 'public', 'data');
 const DATASETS = [
   { name: 'legal_index',      file: 'legal-index.json',      hasMetadata: true,  schema_version: 1 },
   { name: 'assessment_index', file: 'assessment-index.json', hasMetadata: true,  schema_version: 1 },
-  // Per-municipality assessment shards — registry only; the
-  // individual shard files are discovered through assessment/_index.json
-  // at runtime, not enumerated in the manifest (avoids re-listing
-  // 200+ files on every rebuild).
-  { name: 'assessment_shards', file: 'assessment/_index.json', hasMetadata: true, schema_version: 1 },
+  // section-grid stays local — at 41 MB it's over jsDelivr's per-file
+  // cap. river-lots, masc-riverlots, and the masc index all moved to
+  // the mb-parcel-data CDN repo with their shards.
   { name: 'section_grid',     file: 'section-grid.json',     hasMetadata: false, schema_version: 1 },
-  { name: 'river_lots',       file: 'river-lots.json',       hasMetadata: false, schema_version: 1 },
-  { name: 'masc_riverlots',   file: 'masc-riverlots.json',   hasMetadata: false, schema_version: 1 },
-  { name: 'masc_index',       file: 'masc/_index.json',      hasMetadata: false, schema_version: 1 },
 ];
 
 // Shard directories: each holds per-municipality JSON files registered
@@ -58,14 +53,11 @@ const DATASETS = [
 // --validate gate can spot a collapsed rebuild. New shard datasets are
 // one-line additions here.
 const SHARD_DIRS = [
-  { name: 'assessment',         dir: 'assessment' },
-  { name: 'masc',               dir: 'masc' },
-  { name: 'parcel_masc',        dir: 'parcel-masc' },
-  { name: 'landcover',          dir: 'landcover' },
-  // rollentry-snapshot moved to the mb-parcel-data repo (jsDelivr,
-  // pinned commit — SNAPSHOT_CDN in web/src/arcgis.js); no longer a
-  // local shard dir. First rebuild after the move needs
-  // --accept-large-change once.
+  // All per-muni shard sets moved to the mb-parcel-data repo (jsDelivr,
+  // pinned commit — MB_PARCEL_DATA_CDN in web/src/arcgis.js); none are
+  // local any more. The first rebuild after each move needed
+  // --accept-large-change once. Future shard families that ship through
+  // this repo's deploy go back in the list above.
 ];
 
 /**

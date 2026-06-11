@@ -63,7 +63,9 @@ suppressPackageStartupMessages({
 source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "config.R") else "r/config.R")
 
 source_dir <- websearch_root
-output_dir <- file.path(source_dir, "web/public/data/parcel-masc")
+# Shards publish into the local mb-parcel-data clone (served via jsDelivr
+# pinned commit — see MB_PARCEL_DATA_CDN in arcgis.js).
+output_dir <- file.path(mb_parcel_data_root, "parcel-masc")
 index_path <- file.path(output_dir, "_index.json")
 
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
@@ -594,7 +596,7 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
     # the overlay until this file lands. ~6,700 polygons across the
     # province; ~2-4 MB minified, gzipped under 1 MB on the wire.
     masc_riverlots_out <- file.path(
-      source_dir, "web/public/data/masc-riverlots.json"
+      mb_parcel_data_root, "masc-riverlots.json"
     )
     riverlot_overlay <- rl_polys |>
       filter(name %in% rl_join$name) |>

@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "generated_at": "2026-06-11T13:20:57.323Z",
+  "generated_at": "2026-06-11T14:56:20.549Z",
   "datasets": {
     "legal_index": {
       "file": "legal-index.json",
@@ -27,62 +27,12 @@
       "nominal_vacant_count": 198598,
       "zero_buildings_count": 192994
     },
-    "assessment_shards": {
-      "file": "assessment/_index.json",
-      "schema_version": 1,
-      "size_bytes": 9651,
-      "modified_at": "2026-05-14T13:19:19.716Z",
-      "generated_at": "2026-05-14T13:14:36Z",
-      "source": "D:/Dropbox/ClaudeCode/MBOpenData/ParcelSearch/mao-scrape/results/tax_history.parquet",
-      "source_modified": "2026-05-06T03:00:15Z",
-      "shard_count": 186,
-      "row_count": 430366
-    },
     "section_grid": {
       "file": "section-grid.json",
       "schema_version": 1,
       "size_bytes": 42358712,
       "modified_at": "2026-05-07T03:47:43.310Z"
-    },
-    "river_lots": {
-      "file": "river-lots.json",
-      "schema_version": 1,
-      "size_bytes": 5857676,
-      "modified_at": "2026-06-11T13:16:28.941Z"
-    },
-    "masc_riverlots": {
-      "file": "masc-riverlots.json",
-      "schema_version": 1,
-      "size_bytes": 6102800,
-      "modified_at": "2026-05-07T20:03:33.154Z"
-    },
-    "masc_index": {
-      "file": "masc/_index.json",
-      "schema_version": 1,
-      "size_bytes": 5332,
-      "modified_at": "2026-06-11T00:49:46.370Z"
     }
   },
-  "shard_dirs": {
-    "assessment": {
-      "dir": "assessment",
-      "entries": 186,
-      "files": 187
-    },
-    "masc": {
-      "dir": "masc",
-      "entries": 98,
-      "files": 99
-    },
-    "parcel_masc": {
-      "dir": "parcel-masc",
-      "entries": 139,
-      "files": 140
-    },
-    "landcover": {
-      "dir": "landcover",
-      "entries": 182,
-      "files": 183
-    }
-  }
+  "shard_dirs": {}
 }

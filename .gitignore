@@ -49,6 +49,19 @@ web/public/data/assessment-index.json
 # Source CSV the MASC shards are built from. ~8 MB raw.
 masc_soil_ratings_with_latlon.csv
 
+# Datasets served via the mb-parcel-data CDN repo (jsDelivr pinned
+# commit — see MB_PARCEL_DATA_CDN in web/src/arcgis.js). Local copies
+# from before the move should not come back — `git status` would
+# otherwise pick up a re-run that wrote into web/public/data/ by
+# accident.
+web/public/data/parcel-masc/
+web/public/data/assessment/
+web/public/data/masc/
+web/public/data/landcover/
+web/public/data/landcover-tiles/
+web/public/data/river-lots.json
+web/public/data/masc-riverlots.json
+
 # Editor / tooling temp files
 *.tmp.*
 *.timestamp-*.mjs
