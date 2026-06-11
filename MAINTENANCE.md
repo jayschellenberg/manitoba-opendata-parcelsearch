@@ -60,12 +60,19 @@ clone (`mb_parcel_data_root` in `r/config.R`). After any rebuild:
 cd ..\mb-parcel-data
 git add -A && git commit -m "<what changed>" && git push
 ```
-**Then update the pinned commit** (REQUIRED): copy the new SHA into
-`MB_PARCEL_DATA_CDN` in `web/src/arcgis.js`, commit + push the app
-(Vercel redeploys). That repo's history exists only to mint immutable
-SHAs — squash it whenever it gets heavy, then repoint the app first.
-`section-grid.json` does NOT live here (41 MB single file → over
-jsDelivr's per-file cap); it stays in `web/public/data/`.
+**Then update the pinned commit** (REQUIRED): one command commits +
+pushes the data repo and rewrites the SHA in `web/src/arcgis.js`:
+```
+powershell -ExecutionPolicy Bypass -File update-cdn-pin.ps1
+```
+Use `-DryRun` to preview, `-Message "..."` to override the commit
+message. Review `git diff web/src/arcgis.js` and commit + push the app
+(Vercel redeploys; clients pick up the new shards on next load). That
+data repo's history exists only to mint immutable SHAs — squash it
+whenever it gets heavy, then repoint the app first.
+`section-grid.json` is published separately via `api/section-grid.js`
+(GitHub Release + edge function — see §1c below). It does NOT live in
+mb-parcel-data because at 41 MB it's over jsDelivr's per-file cap.
 
 ### 2. Snapshot archive + provenance — historical geometry  (cadence: semi-annual / annual)
 After downloading a fresh provincial **MBRollGeoPackage** (and zoning /
