@@ -25,7 +25,11 @@ suppressPackageStartupMessages({
   library(jsonlite)
 })
 
-source_dir  <- "D:/Dropbox/ClaudeCode/MBOpenData/WebSearch"
+# Shared roots (env-overridable) — see r/config.R.
+.cfg <- grep("^--file=", commandArgs(FALSE), value = TRUE)
+source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "config.R") else "r/config.R")
+
+source_dir  <- websearch_root
 input_kmz   <- file.path(source_dir, "MB-RIVER-LOTS.kmz")
 output_path <- file.path(source_dir, "web/public/data/river-lots.json")
 

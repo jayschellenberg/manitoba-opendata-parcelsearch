@@ -18,8 +18,12 @@ suppressPackageStartupMessages({
   library(httr2)
 })
 
-# Save files in the same folder as this script.
-output_dir <- "D:/Dropbox/ClaudeCode/MBOpenData/WebSearch"
+# Shared roots (env-overridable) — see r/config.R.
+.cfg <- grep("^--file=", commandArgs(FALSE), value = TRUE)
+source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "config.R") else "r/config.R")
+
+# Save snapshots in the repo root.
+output_dir <- websearch_root
 
 # Date stamp for filenames.
 date_stamp <- format(Sys.Date(), "%Y%m%d")

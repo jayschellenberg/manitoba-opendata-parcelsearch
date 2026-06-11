@@ -58,7 +58,11 @@ suppressPackageStartupMessages({
   library(httr2)
 })
 
-source_dir <- "D:/Dropbox/ClaudeCode/MBOpenData/WebSearch"
+# Shared roots (env-overridable) — see r/config.R.
+.cfg <- grep("^--file=", commandArgs(FALSE), value = TRUE)
+source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "config.R") else "r/config.R")
+
+source_dir <- websearch_root
 output_dir <- file.path(source_dir, "web/public/data/parcel-masc")
 index_path <- file.path(output_dir, "_index.json")
 
@@ -174,7 +178,7 @@ utm14 <- 26914
 # parish_name (heuristic + override map) and matching on
 # (muni, prefix, lot_number).
 riverlot_kmz_path <- file.path(source_dir, "MB-RIVER-LOTS.kmz")
-riverlot_csv_path <- "D:/Dropbox/ClaudeCode/MASC-SCRAPE/masc_soil_ratings_riverlots.csv"
+riverlot_csv_path <- file.path(masc_scrape_root, "masc_soil_ratings_riverlots.csv")
 
 riverlot_polys <- NULL
 if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {

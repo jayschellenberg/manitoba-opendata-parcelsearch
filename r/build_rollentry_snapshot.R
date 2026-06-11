@@ -48,7 +48,11 @@ suppressPackageStartupMessages({
 # degenerate polygons that slip through.
 sf::sf_use_s2(FALSE)
 
-source_dir   <- "D:/Dropbox/ClaudeCode/MBOpenData/WebSearch"
+# Shared roots (env-overridable) — see r/config.R.
+.cfg <- grep("^--file=", commandArgs(FALSE), value = TRUE)
+source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "config.R") else "r/config.R")
+
+source_dir   <- websearch_root
 output_dir   <- file.path(source_dir, "web/public/data/rollentry-snapshot")
 manifest_path <- file.path(output_dir, "_index.json")
 

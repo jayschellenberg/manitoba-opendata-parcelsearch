@@ -18,7 +18,12 @@ suppressPackageStartupMessages({
   library(dplyr)
 })
 
-data_dir <- "D:/Dropbox/ClaudeCode/MBOpenData/WebSearch"
+# Shared roots (env-overridable) — see r/config.R. (Under shiny::runApp
+# there's no --file, so this resolves r/config.R from the repo-root cwd.)
+.cfg <- grep("^--file=", commandArgs(FALSE), value = TRUE)
+source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "config.R") else "r/config.R")
+
+data_dir <- websearch_root
 
 # Match RollEntry_YYYYMMDD.gpkg, sorted newest-first.
 roll_files <- sort(
