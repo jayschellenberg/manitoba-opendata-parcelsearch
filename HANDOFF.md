@@ -1,5 +1,12 @@
 # Handoff - Manitoba Open Data Parcel Search
 
+> **Note (2026-06-11):** this document is a frozen snapshot of the
+> MASC implementation state on 2026-05-07. The implementation notes
+> and verification checklist below are still useful as a reference;
+> the monthly-refresh + deploy procedures it describes have moved on
+> — see [MAINTENANCE.md](MAINTENANCE.md) for current operator
+> procedures (alerts, token rotation, CDN repointing, publish gate).
+
 Last updated: 2026-05-07
 
 ## Current verified state
