@@ -9,8 +9,12 @@ REM   4. Re-shard the land-cover buckets from the latest mao-assembly
 REM      Parquet (non-fatal — skipped with a warning if that sister
 REM      project's output isn't present; the 2020 raster is static so
 REM      this only changes when parcels change).
-REM   5. Rebuild the data manifest so the app's staleness banner picks
-REM      up the new generated-at timestamps.
+REM   5. Rebuild + VALIDATE the data manifest (--validate compares the
+REM      fresh shard set against the previously written manifest and
+REM      aborts on collapsed row counts / vanished datasets / corrupt
+REM      sample shards, leaving the prior manifest in place). For a
+REM      legitimate big change, rerun step 5 by hand with
+REM      --accept-large-change.
 REM
 REM NOT part of this refresh: the Land Cover "Detailed" raster tiles
 REM (r/build_landcover_tiles.R -> web/public/data/landcover-tiles/). They
@@ -98,8 +102,8 @@ REM ---------------------------------------------------------------
 REM Step 5 — rebuild the public/data manifest.
 REM ---------------------------------------------------------------
 echo. >> "%LOGFILE%"
-echo --- step 5/5: build-manifest.js --- >> "%LOGFILE%"
-%NODE% web\scripts\build-manifest.js >> "%LOGFILE%" 2>&1
+echo --- step 5/5: build-manifest.js --validate --- >> "%LOGFILE%"
+%NODE% web\scripts\build-manifest.js --validate >> "%LOGFILE%" 2>&1
 if errorlevel 1 (
   echo *** build-manifest.js FAILED (exit code !errorlevel!) >> "%LOGFILE%"
   echo monthly-refresh aborted at step 5. See %LOGFILE% for details.

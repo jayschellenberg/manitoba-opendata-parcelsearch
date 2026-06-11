@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { extractMetadataBlock } from '../scripts/build-manifest.js';
+import { extractMetadataBlock, validateManifest } from '../scripts/build-manifest.js';
 
 const results = [];
 async function test(name, fn) {
@@ -84,6 +84,57 @@ await test('extractMetadataBlock — survives a truly large file (only reads hea
     const got = extractMetadataBlock(p);
     assert.deepEqual(got, meta);
   });
+});
+
+// ---------- Publish-gate tests ----------
+
+console.log('\nvalidateManifest (publish gate) tests');
+
+await test('healthy manifest passes against its predecessor', () => {
+  const prev = { datasets: { legal_index: { row_count: 1000 } }, shard_dirs: { masc: { entries: 99, files: 100 } } };
+  const next = { datasets: { legal_index: { row_count: 1010 } }, shard_dirs: { masc: { entries: 99, files: 100 } } };
+  assert.deepEqual(validateManifest(next, prev).failures, []);
+});
+
+await test('first run with no previous manifest passes', () => {
+  const next = { datasets: { legal_index: { row_count: 10 } }, shard_dirs: { masc: { entries: 5, files: 6 } } };
+  assert.deepEqual(validateManifest(next, null).failures, []);
+});
+
+await test('collapsed row_count fails', () => {
+  const prev = { datasets: { legal_index: { row_count: 430_000 } } };
+  const next = { datasets: { legal_index: { row_count: 31_000 } } };
+  const { failures } = validateManifest(next, prev);
+  assert.equal(failures.length, 1);
+  assert.match(failures[0], /collapsed/);
+});
+
+await test('--accept-large-change downgrades delta failures to notes', () => {
+  const prev = { datasets: { legal_index: { row_count: 430_000 } } };
+  const next = { datasets: { legal_index: { row_count: 31_000 } } };
+  const { failures, notes } = validateManifest(next, prev, { acceptLargeChange: true });
+  assert.deepEqual(failures, []);
+  assert.equal(notes.length, 1);
+});
+
+await test('vanished dataset and empty shard registry fail', () => {
+  const prev = { datasets: { legal_index: { row_count: 10 }, assessment_index: { row_count: 5 } } };
+  const next = { datasets: { legal_index: { row_count: 10 } }, shard_dirs: { masc: { entries: 0, files: 3 } } };
+  const { failures } = validateManifest(next, prev);
+  assert.equal(failures.length, 2);
+});
+
+await test('zero row_count fails even with the accept flag (structural)', () => {
+  const next = { datasets: { legal_index: { row_count: 0 } } };
+  const { failures } = validateManifest(next, null, { acceptLargeChange: true });
+  assert.equal(failures.length, 1);
+});
+
+await test('index listing more shards than files on disk fails', () => {
+  const next = { datasets: {}, shard_dirs: { landcover: { entries: 150, files: 80 } } };
+  const { failures } = validateManifest(next, null);
+  assert.equal(failures.length, 1);
+  assert.match(failures[0], /150 shards but only 80/);
 });
 
 // ---------- Client-side manifest.js tests ----------

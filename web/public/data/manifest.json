@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "generated_at": "2026-05-14T13:23:39.702Z",
+  "generated_at": "2026-06-11T00:49:46.419Z",
   "datasets": {
     "legal_index": {
       "file": "legal-index.json",
@@ -60,7 +60,34 @@
       "file": "masc/_index.json",
       "schema_version": 1,
       "size_bytes": 5332,
-      "modified_at": "2026-05-06T02:52:55.815Z"
+      "modified_at": "2026-06-11T00:49:46.370Z"
+    }
+  },
+  "shard_dirs": {
+    "assessment": {
+      "dir": "assessment",
+      "entries": 186,
+      "files": 187
+    },
+    "masc": {
+      "dir": "masc",
+      "entries": 98,
+      "files": 99
+    },
+    "parcel_masc": {
+      "dir": "parcel-masc",
+      "entries": 139,
+      "files": 140
+    },
+    "landcover": {
+      "dir": "landcover",
+      "entries": 182,
+      "files": 183
+    },
+    "rollentry_snapshot": {
+      "dir": "rollentry-snapshot",
+      "entries": 186,
+      "files": 187
     }
   }
 }
