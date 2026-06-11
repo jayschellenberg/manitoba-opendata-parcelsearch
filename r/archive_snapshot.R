@@ -36,8 +36,12 @@ suppressPackageStartupMessages({
   library(jsonlite)
 })
 
-ARCHIVE_ROOT <- "D:/Dropbox/Appraisal/Web/MAOSnapshots"
-SRC_DIR <- "D:/Dropbox/Appraisal/RProjects/appraisal-templates/mao-assembly/inputs"
+# Shared roots (env-overridable) — see r/config.R.
+.cfg <- grep("^--file=", commandArgs(FALSE), value = TRUE)
+source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "config.R") else "r/config.R")
+
+ARCHIVE_ROOT <- mao_snapshots_root
+SRC_DIR <- file.path(mao_assembly_root, "inputs")
 
 # Provenance constants — VERIFY/record the exact dataset URLs + license
 # terms for your downloads; these are sensible defaults.

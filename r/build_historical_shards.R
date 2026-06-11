@@ -68,8 +68,12 @@ suppressPackageStartupMessages({
 })
 sf::sf_use_s2(FALSE)   # GEOS — permissive simplify, same rationale as build_rollentry_snapshot.R
 
-ARCHIVE_ROOT <- "D:/Dropbox/Appraisal/Web/MAOSnapshots"
-OUTPUT_ROOT  <- "D:/Dropbox/ClaudeCode/MBOpenData/mb-parcel-history"
+# Shared roots (env-overridable) — see r/config.R.
+.cfg <- grep("^--file=", commandArgs(FALSE), value = TRUE)
+source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "config.R") else "r/config.R")
+
+ARCHIVE_ROOT <- mao_snapshots_root
+OUTPUT_ROOT  <- mb_parcel_history_root
 # ~2-3 m at MB latitudes. The previous 0.00015 (~11-17 m) was larger than half
 # the width of small urban lots, so Douglas-Peucker dropped a corner and
 # collapsed rectangles into TRIANGLES (seen in Hanover's Becki/Ciara Cove

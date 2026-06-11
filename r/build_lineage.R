@@ -38,8 +38,12 @@ suppressPackageStartupMessages({
 })
 sf::sf_use_s2(FALSE)   # planar ops in the GeoPackage's native UTM-14N
 
-ARCHIVE_ROOT <- "D:/Dropbox/Appraisal/Web/MAOSnapshots"
-OUTPUT_ROOT  <- "D:/Dropbox/ClaudeCode/MBOpenData/mb-parcel-history"
+# Shared roots (env-overridable) — see r/config.R.
+.cfg <- grep("^--file=", commandArgs(FALSE), value = TRUE)
+source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "config.R") else "r/config.R")
+
+ARCHIVE_ROOT <- mao_snapshots_root
+OUTPUT_ROOT  <- mb_parcel_history_root
 LINEAGE_DIR  <- file.path(OUTPUT_ROOT, "lineage")
 
 EDGE_COVER <- 0.50    # an overlap must cover >= 50% of the new/removed parcel

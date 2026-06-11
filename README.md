@@ -177,7 +177,7 @@ source("r/download_parcels.R")          # snapshots ROLL_ENTRY + zoning + dev pl
 shiny::runApp("r/parcel_search_app.R")  # interactive search on the local snapshot
 ```
 
-The Shiny app reads the most recent `RollEntry_YYYYMMDD.gpkg` in the project directory. The R scripts hardcode `data_dir <- "D:/Dropbox/ClaudeCode/MBOpenData/WebSearch"`; edit the constant at the top of each file to run elsewhere.
+The Shiny app reads the most recent `RollEntry_YYYYMMDD.gpkg` in the project directory. Shared paths resolve through [`r/config.R`](r/config.R) — the repo root is detected from the running script's location, and the external roots (snapshot archive, sister projects) can be overridden on another machine via the environment variables documented there (`MBOPENDATA_WEBSEARCH_ROOT`, `MAO_SNAPSHOTS_ROOT`, `MAO_ASSEMBLY_ROOT`, `MASC_SCRAPE_ROOT`, `MB_PARCEL_HISTORY_ROOT`) instead of editing scripts.
 
 ## Known caveats
 

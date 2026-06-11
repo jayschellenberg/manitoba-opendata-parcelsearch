@@ -63,8 +63,12 @@ suppressPackageStartupMessages({
   library(jsonlite)
 })
 
-source_dir   <- "D:/Dropbox/ClaudeCode/MBOpenData/WebSearch"
-assembly_in  <- "D:/Dropbox/Appraisal/RProjects/appraisal-templates/mao-assembly/inputs"
+# Shared roots (env-overridable) — see r/config.R.
+.cfg <- grep("^--file=", commandArgs(FALSE), value = TRUE)
+source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "config.R") else "r/config.R")
+
+source_dir   <- websearch_root
+assembly_in  <- file.path(mao_assembly_root, "inputs")
 tiles_dir    <- file.path(source_dir, "web/public/data/landcover-tiles")
 manifest     <- file.path(tiles_dir, "manifest.json")
 
