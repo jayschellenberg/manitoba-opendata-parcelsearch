@@ -62,6 +62,13 @@ web/public/data/landcover-tiles/
 web/public/data/river-lots.json
 web/public/data/masc-riverlots.json
 
+# Section grid now ships from a GitHub Release via api/section-grid.js
+# (same pattern as the legal + assessment indexes — file is too large
+# for jsDelivr's per-file cap and was the data diet's last holdout).
+# To regenerate, run `Rscript r/build_section_grid.R` then publish a
+# new release and bump RELEASE_URL in api/section-grid.js.
+web/public/data/section-grid.json
+
 # Editor / tooling temp files
 *.tmp.*
 *.timestamp-*.mjs
