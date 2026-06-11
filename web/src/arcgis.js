@@ -2289,17 +2289,29 @@ async function fetchPage(baseUrl, params) {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body,
+        // Hard ceiling per attempt — without it a stalled upstream holds
+        // the request open for the browser default (~2 min per attempt)
+        // with no signal to the user. A timed-out attempt falls into the
+        // catch below and retries like any other network error.
+        signal: fetchTimeoutSignal(FETCH_TIMEOUT_MS),
       });
     } catch (e) {
-      lastErr = e;
-      // Network/abort error — short backoff then retry.
+      const timedOut = e && (e.name === 'TimeoutError' || e.name === 'AbortError');
+      lastErr = timedOut
+        ? new Error(`ArcGIS request timed out after ${FETCH_TIMEOUT_MS / 1000}s`)
+        : e;
+      // Network/timeout error — short backoff then retry.
       if (attempt < MAX_ATTEMPTS - 1) { await sleep(500 * (attempt + 1)); continue; }
-      throw e;
+      throw lastErr;
     }
     // 429 on the HTTP layer — back off then retry.
     if (res.status === 429) {
       const retryAfter = parseInt(res.headers.get('Retry-After') || '', 10);
-      const waitMs = Number.isFinite(retryAfter) ? retryAfter * 1000 : 2000 * (attempt + 1);
+      // Honour Retry-After but cap it — a malformed or hostile header
+      // shouldn't be able to park the UI for minutes between attempts.
+      const waitMs = Number.isFinite(retryAfter)
+        ? Math.min(Math.max(retryAfter, 0) * 1000, RETRY_AFTER_CAP_MS)
+        : 2000 * (attempt + 1);
       lastErr = new Error(`ArcGIS rate-limited (429); retrying after ${waitMs}ms`);
       if (attempt < MAX_ATTEMPTS - 1) { await sleep(waitMs); continue; }
       throw new Error(`ArcGIS service is rate-limited (HTTP 429). Retried ${MAX_ATTEMPTS}× without success. Wait a minute and re-upload.`);
@@ -2329,6 +2341,18 @@ async function fetchPage(baseUrl, params) {
 
 /** Tiny promise-based sleep helper for the retry/backoff path. */
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+/** Per-attempt fetch timeout (ms) for ArcGIS queries. */
+const FETCH_TIMEOUT_MS = 60_000;
+/** Ceiling on a server-supplied Retry-After wait (ms). */
+const RETRY_AFTER_CAP_MS = 5_000;
+
+// AbortSignal.timeout exists in every browser we target and in Node 18+;
+// guard anyway so an exotic embedder just loses the timeout instead of
+// crashing the whole query path.
+function fetchTimeoutSignal(ms) {
+  try { return AbortSignal.timeout(ms); } catch { return undefined; }
+}
 
 /**
  * Fetch every distinct value of a categorical column. Used for the muni
@@ -2544,3 +2568,15 @@ export function missingRollsFromResults(input, parcelFc) {
 function escapeSql(s) {
   return String(s).replace(/'/g, "''");
 }
+
+// ---------- Test-only exports ----------
+// Internal query-builder helpers exposed for unit tests
+// (web/test/whereClause.test.js). Not part of the public API surface —
+// app code should keep calling searchParcels() and friends.
+export const _internals = {
+  escapeSql,
+  buildParcelClauses,
+  canonicalRollList,
+  rollKeyWhereClause,
+  chunkRollKeys,
+};
