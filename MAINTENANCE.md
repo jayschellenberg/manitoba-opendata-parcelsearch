@@ -13,7 +13,7 @@ thumb: nothing should go more than ~12 months stale.**
 | Legal index, assessment index | mao-scrape `parcels.parquet` | GitHub Release → `api/legal-index.js` / `api/assessment-index.js` edge fns | monthly |
 | Section grid | MB_LegalDesc service | GitHub Release → `api/section-grid.js` edge fn | annual (geometry doesn't change) |
 | RollEntry snapshot (fallback), parcel-masc, assessment shards, masc shards, landcover shards, landcover tiles, river-lots, masc-riverlots | various R build scripts | `mb-parcel-data` repo → jsDelivr (pinned commit) | monthly-ish |
-| **Cold archive** (provincial source + provenance sidecars: roll / zoning / dev-plan) | MB Open Data downloads | `D:\Dropbox\Appraisal\Web\MAOSnapshots\<year>\` | semi-annual (scheduled Jun 15 / Dec 15) |
+| **Cold archive** (provincial source + provenance sidecars: roll / zoning / dev-plan) | MB Open Data downloads | `D:\Dropbox\Appraisal\Web\MAOSnapshots\<year>\` | semi-annual (scheduled Jan 15 / Jul 15) |
 | **Historical shards** (as-of-date view, keyed `YYYY-MM-DD`) | the cold archive | `mb-parcel-history` repo → jsDelivr | when a new snapshot is archived |
 | **Lineage index** (inferred predecessor/successor) | the historical shards | `mb-parcel-history/lineage/` → jsDelivr | when ≥ 2 snapshots exist |
 
@@ -80,7 +80,7 @@ mb-parcel-data because at 41 MB it's over jsDelivr's per-file cap.
 
 ### 2. Snapshot archive + provenance — roll / zoning / dev-plan  (cadence: semi-annual, **scheduled**)
 Permanent dated snapshots of all three provincial layers (roll info, zoning,
-development plan). **Scheduled** twice a year (June 15 / Dec 15, 04:30) via
+development plan). **Scheduled** twice a year (January 15 / July 15, 04:30) via
 `schedule_semiannual.ps1` → `semiannual-archive-wrapper.ps1`. To run by hand:
 ```
 Rscript r/archive_snapshot.R          # all three (roll + zoning + dev-plan)
@@ -148,7 +148,7 @@ Both schedules are idempotent — run each once (re-run after editing a
 wrapper/.bat to repoint the task):
 ```
 powershell -ExecutionPolicy Bypass -File schedule_monthly.ps1      # MAOMonthlyRefresh   — 15th monthly 04:00 (live shards)
-powershell -ExecutionPolicy Bypass -File schedule_semiannual.ps1   # MAOSemiannualArchive — Jun 15 / Dec 15 04:30 (permanent snapshots)
+powershell -ExecutionPolicy Bypass -File schedule_semiannual.ps1   # MAOSemiannualArchive — Jan 15 / Jul 15 04:30 (permanent snapshots)
 ```
 Verify either: `Get-ScheduledTask -TaskName MAOMonthlyRefresh,MAOSemiannualArchive | Format-List *`.
 

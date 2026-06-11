@@ -18,7 +18,7 @@
 # Test the alert path without running the archive:
 #   powershell -ExecutionPolicy Bypass -File semiannual-archive-wrapper.ps1 -TestAlert
 #
-# Scheduled via schedule_semiannual.ps1 (Task Scheduler, June 15 / Dec 15).
+# Scheduled via schedule_semiannual.ps1 (Task Scheduler, Jan 15 / Jul 15).
 
 param([switch]$TestAlert)
 
