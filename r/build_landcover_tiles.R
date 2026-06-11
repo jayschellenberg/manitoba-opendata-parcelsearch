@@ -69,7 +69,9 @@ source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "confi
 
 source_dir   <- websearch_root
 assembly_in  <- file.path(mao_assembly_root, "inputs")
-tiles_dir    <- file.path(source_dir, "web/public/data/landcover-tiles")
+# Tiles publish into the local mb-parcel-data clone (served via jsDelivr
+# pinned commit — see MB_PARCEL_DATA_CDN in arcgis.js).
+tiles_dir    <- file.path(mb_parcel_data_root, "landcover-tiles")
 manifest     <- file.path(tiles_dir, "manifest.json")
 
 MIN_ZOOM <- 6L

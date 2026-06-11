@@ -2,16 +2,18 @@
 // ~30 MB / 430K rows; the typical sales-CSV upload only needs the
 // 5-50 rows for one or two munis. The R build script (after item #4
 // of the architecture review) emits one small JSON file per muni_no
-// at /data/assessment/<muni_no>.json plus a tiny _index.json listing
-// every shard. This module fetches and caches those shards on
-// demand.
+// in the mb-parcel-data repo at assessment/<muni_no>.json plus a
+// tiny _index.json listing every shard. This module fetches and
+// caches those shards on demand.
 //
-// Shard-mode is opt-in and degraded-gracefully: when /data/assessment/
-// _index.json is missing or unreachable, every caller falls back to
-// the legacy full-index path in assessmentIndex.js. So the legacy
-// fetches keep working even when shards haven't been built yet.
+// Shard-mode is opt-in and degraded-gracefully: when the index is
+// missing or unreachable, every caller falls back to the legacy
+// full-index path in assessmentIndex.js. So the legacy fetches keep
+// working even when shards haven't been built yet.
 
-const ASSESSMENT_SHARD_DIR = `${import.meta.env?.BASE_URL || '/'}data/assessment/`;
+import { MB_PARCEL_DATA_CDN } from './arcgis.js';
+
+const ASSESSMENT_SHARD_DIR = `${MB_PARCEL_DATA_CDN}/assessment/`;
 const ASSESSMENT_SHARD_INDEX_URL = `${ASSESSMENT_SHARD_DIR}_index.json`;
 
 // Lazy: created on first call, never created when shards aren't

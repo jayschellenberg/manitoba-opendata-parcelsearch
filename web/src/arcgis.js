@@ -111,16 +111,20 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // ~1-10 MB and gzipped on the wire; a quick reload to pick up live data
 // after the upstream rebuild is the supported recovery path.
 //
-// Shards live in the mb-parcel-data repo on jsDelivr, pinned to an
-// IMMUTABLE commit (same rationale as HISTORICAL_CDN below: jsDelivr's
-// view of @main lags and is inconsistent per-file). They were moved out
-// of web/public/data/ to get 285 MB of generated GeoJSON out of this
-// repo/deploy. MAINTENANCE: after rebuilding the snapshot
-// (r/build_rollentry_snapshot.R writes into the local mb-parcel-data
-// clone), commit+push that repo and update this SHA — see MAINTENANCE.md.
-export const SNAPSHOT_CDN =
-  'https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-data@7246eeb34c46345ec38ae8e6289484b17e6e7cf6';
-const SNAPSHOT_BASE_URL = `${SNAPSHOT_CDN}/rollentry-snapshot/`;
+// Per-muni shards (rollentry-snapshot, parcel-masc, assessment, masc,
+// landcover), the small standalone files (river-lots, masc-riverlots),
+// and the landcover-tiles raster pyramid all live in the mb-parcel-data
+// repo on jsDelivr, pinned to an IMMUTABLE commit (same rationale as
+// HISTORICAL_CDN below: jsDelivr's view of @main lags and is
+// inconsistent per-file). Pulling these out of web/public/data/ trimmed
+// ~430 MB of generated assets from this repo/deploy. MAINTENANCE: after
+// rebuilding any of these datasets (the r/build_*.R scripts write into
+// the local mb-parcel-data clone), commit + push that repo and update
+// this SHA — see MAINTENANCE.md. section-grid.json stays local because
+// at 41 MB it's over jsDelivr's per-file cap.
+export const MB_PARCEL_DATA_CDN =
+  'https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-data@27173b2643a2330e213a1710b8a868fec4e276b3';
+const SNAPSHOT_BASE_URL = `${MB_PARCEL_DATA_CDN}/rollentry-snapshot/`;
 let rollEntrySnapshot = null;
 const snapshotShardCache = new Map();
 
@@ -920,7 +924,7 @@ const MUNICIPALITY_URL      = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcg
  * registered manifest doesn't include it). Caller should treat that
  * as "no MASC data for this area" rather than an error.
  */
-const MASC_INDEX_URL = `${import.meta.env?.BASE_URL || '/'}data/masc/_index.json`;
+const MASC_INDEX_URL = `${MB_PARCEL_DATA_CDN}/masc/_index.json`;
 
 export async function fetchMascIndex() {
   const cacheKey = 'mb_masc_index_v3';
@@ -947,7 +951,7 @@ export async function fetchMascRatingsForMuni(muniNameWithTyp) {
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (Array.isArray(cached) && cached.length > 0) return cached;
   try {
-    const res = await fetch(`${import.meta.env?.BASE_URL || '/'}data/masc/${file}`);
+    const res = await fetch(`${MB_PARCEL_DATA_CDN}/masc/${file}`);
     if (!res.ok) return null;
     const rows = await res.json();
     await writeCache(cacheKey, rows);
@@ -1305,7 +1309,7 @@ export async function fetchProvinceSectionGrid() {
  *
  * Cached in localStorage with the same 30-day TTL as MASC overlay shards.
  */
-const PARCEL_MASC_INDEX_URL = `${import.meta.env?.BASE_URL || '/'}data/parcel-masc/_index.json`;
+const PARCEL_MASC_INDEX_URL = `${MB_PARCEL_DATA_CDN}/parcel-masc/_index.json`;
 
 let parcelMascIndexPromise = null;
 
@@ -1338,7 +1342,7 @@ export async function fetchParcelMascForMuni(muniNameWithTyp) {
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
   try {
-    const res = await fetch(`${import.meta.env?.BASE_URL || '/'}data/parcel-masc/${file}`);
+    const res = await fetch(`${MB_PARCEL_DATA_CDN}/parcel-masc/${file}`);
     if (!res.ok) return null;
     const dict = await res.json();
     await writeCache(cacheKey, dict);
@@ -1369,7 +1373,7 @@ export async function fetchParcelMascForMuni(muniNameWithTyp) {
  * build). Cached in localStorage with the same 30-day TTL as the MASC
  * and parcel-masc shards.
  */
-const LANDCOVER_INDEX_URL = `${import.meta.env?.BASE_URL || '/'}data/landcover/_index.json`;
+const LANDCOVER_INDEX_URL = `${MB_PARCEL_DATA_CDN}/landcover/_index.json`;
 
 let landCoverIndexPromise = null;
 
@@ -1402,7 +1406,7 @@ export async function fetchLandCoverForMuni(muniNameWithTyp) {
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
   try {
-    const res = await fetch(`${import.meta.env?.BASE_URL || '/'}data/landcover/${file}`);
+    const res = await fetch(`${MB_PARCEL_DATA_CDN}/landcover/${file}`);
     if (!res.ok) return null;
     const dict = await res.json();
     await writeCache(cacheKey, dict);
@@ -1619,7 +1623,7 @@ export async function fetchMascRiverlots() {
   const cacheKey = 'mb_masc_riverlots_v3';
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
-  const url = `${import.meta.env?.BASE_URL || '/'}data/masc-riverlots.json`;
+  const url = `${MB_PARCEL_DATA_CDN}/masc-riverlots.json`;
   let res;
   try { res = await fetch(url); } catch { return null; }
   if (!res.ok) return null;
@@ -1635,7 +1639,7 @@ export async function fetchRiverLots() {
   const cacheKey = 'mb_river_lots_v3';
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
-  const url = `${import.meta.env?.BASE_URL || '/'}data/river-lots.json`;
+  const url = `${MB_PARCEL_DATA_CDN}/river-lots.json`;
   let res;
   try {
     res = await fetch(url);

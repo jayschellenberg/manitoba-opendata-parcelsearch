@@ -10,10 +10,8 @@ thumb: nothing should go more than ~12 months stale.**
 | Dataset | Source of truth | Served from | Cadence |
 |---|---|---|---|
 | Live parcels / zoning / dev-plan | ArcGIS (live) | ArcGIS, live | always current |
-| Legal + assessment index | mao-scrape `parcels.parquet` | `web/public/data/` (in deploy) | monthly |
-| RollEntry snapshot (fallback) | `download_parcels.R` | `mb-parcel-data` repo → jsDelivr (pinned commit) | monthly-ish |
-| Land-cover shards | mao-assembly Parquet | `web/public/data/landcover/` | when assembly reruns |
-| Land-cover **tiles** (Detailed) | `LCR_RCT_2020_MB.tif` (static) | `web/public/data/landcover-tiles/` | only on a new raster (years) |
+| Legal index, assessment index, section grid | mao-scrape `parcels.parquet` (legal/assessment), MB_LegalDesc service (grid) | `web/public/data/` (in deploy) | monthly |
+| RollEntry snapshot (fallback), parcel-masc, assessment shards, masc shards, landcover shards, landcover tiles, river-lots, masc-riverlots | various R build scripts | `mb-parcel-data` repo → jsDelivr (pinned commit) | monthly-ish |
 | **Cold archive** (provincial source + provenance sidecars) | MB Open Data downloads | `D:\Dropbox\Appraisal\Web\MAOSnapshots\<year>\` | semi-annual / annual |
 | **Historical shards** (as-of-date view, keyed `YYYY-MM-DD`) | the cold archive | `mb-parcel-history` repo → jsDelivr | when a new snapshot is archived |
 | **Lineage index** (inferred predecessor/successor) | the historical shards | `mb-parcel-history/lineage/` → jsDelivr | when ≥ 2 snapshots exist |
@@ -38,20 +36,24 @@ powershell -ExecutionPolicy Bypass -File release-indexes.ps1 -SkipBuild
 ```
 Then commit + push the `api/` URL bumps it makes.
 
-### 1b. RollEntry fallback snapshot  (cadence: monthly-ish, after a fresh download)
-The per-muni fallback shards live in the **`mb-parcel-data`** repo and reach
-the app via jsDelivr pinned to an immutable commit (same pattern as the
-historical shards — never `@main`):
+### 1b. mb-parcel-data CDN refresh  (cadence: whenever any CDN-hosted dataset rebuilds)
+Most of the app's generated data — RollEntry fallback shards,
+parcel-masc, assessment shards, MASC shards, landcover shards, landcover
+tiles, river-lots, masc-riverlots — lives in the **`mb-parcel-data`**
+repo and reaches the app via jsDelivr pinned to an immutable commit
+(never `@main` — branch HEADs lag and serve inconsistent files). The R
+build scripts already write straight into the local `mb-parcel-data`
+clone (`mb_parcel_data_root` in `r/config.R`). After any rebuild:
 ```
-Rscript r/download_parcels.R              # fresh RollEntry_YYYYMMDD.gpkg
-Rscript r/build_rollentry_snapshot.R      # writes into ../mb-parcel-data/
 cd ..\mb-parcel-data
-git add -A && git commit -m "rollentry-snapshot <date>" && git push
+git add -A && git commit -m "<what changed>" && git push
 ```
 **Then update the pinned commit** (REQUIRED): copy the new SHA into
-`SNAPSHOT_CDN` in `web/src/arcgis.js`, commit + push the app. That repo's
-history exists only to mint immutable SHAs — squash it whenever it gets
-heavy, then repoint the app first.
+`MB_PARCEL_DATA_CDN` in `web/src/arcgis.js`, commit + push the app
+(Vercel redeploys). That repo's history exists only to mint immutable
+SHAs — squash it whenever it gets heavy, then repoint the app first.
+`section-grid.json` does NOT live here (41 MB single file → over
+jsDelivr's per-file cap); it stays in `web/public/data/`.
 
 ### 2. Snapshot archive + provenance — historical geometry  (cadence: semi-annual / annual)
 After downloading a fresh provincial **MBRollGeoPackage** (and zoning /

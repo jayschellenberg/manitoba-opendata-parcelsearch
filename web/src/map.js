@@ -21,6 +21,7 @@ import turfLength from '@turf/length';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import { landCoverBreakdown, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
+import { MB_PARCEL_DATA_CDN } from './arcgis.js';
 
 // mapbox-gl-draw was written against the Mapbox GL `mapboxgl-*` DOM
 // class names; MapLibre uses `maplibregl-*`. Patch the lookup table
@@ -271,7 +272,10 @@ const BASEMAP_STYLE = {
     // Detailed tri-state branch off in that case.
     'landcover-raster': {
       type: 'raster',
-      tiles: [`${import.meta.env?.BASE_URL || '/'}data/landcover-tiles/{z}/{x}/{y}.webp`],
+      // Served from the mb-parcel-data CDN repo (pinned commit — see
+      // MB_PARCEL_DATA_CDN in arcgis.js). MapLibre interpolates the
+      // {z}/{x}/{y} template into per-tile WebP requests.
+      tiles: [`${MB_PARCEL_DATA_CDN}/landcover-tiles/{z}/{x}/{y}.webp`],
       tileSize: 256,
       minzoom: 6,
       maxzoom: 12,

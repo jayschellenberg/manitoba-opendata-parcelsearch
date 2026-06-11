@@ -31,7 +31,9 @@ source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "confi
 
 source_dir  <- websearch_root
 input_kmz   <- file.path(source_dir, "MB-RIVER-LOTS.kmz")
-output_path <- file.path(source_dir, "web/public/data/river-lots.json")
+# Output publishes into the local mb-parcel-data clone (served via
+# jsDelivr pinned commit — see MB_PARCEL_DATA_CDN in arcgis.js).
+output_path <- file.path(mb_parcel_data_root, "river-lots.json")
 
 if (!file.exists(input_kmz)) {
   stop("Cannot find ", input_kmz, ". Drop the KMZ in the project root first.")
