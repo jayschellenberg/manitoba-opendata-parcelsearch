@@ -378,7 +378,7 @@ the app sees the new snapshot without the ≤ ~12 h `@main` cache lag.
 
 | Signal | Where | Threshold |
 |---|---|---|
-| Current data banner | app (top of search) | amber 30 d / red 60 d |
+| Current data banner | app (top of search) | hidden ≤ 180 d · amber 181-365 d · red > 365 d (MAO scrape is semiannual) |
 | Historical archive | app historical banner | `> 12 mo old` tag |
 | Provincial source | `archive_snapshot.R` console | `!! STALE` > 12 mo |
 | Newest snapshot | `build_historical_shards.R` console | `!! STALE` > 12 mo |

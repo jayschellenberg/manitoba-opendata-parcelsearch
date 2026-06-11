@@ -19,14 +19,18 @@ thumb: nothing should go more than ~12 months stale.**
 
 ## Recurring tasks
 
-### 1. Monthly refresh — current data  (cadence: monthly)
+### 1. Shard rebuild — current data  (cadence: as-needed, after a scrape delta)
 Rebuilds the legal/assessment/land-cover shards from the latest scrape.
 ```
 monthly-refresh.bat
 ```
 Then review `git status`, commit the changed `web/public/data/**`, and push
-(Vercel auto-deploys). The app's **staleness banner** turns amber at 30 days
-and red at 60 — that's your nudge.
+(Vercel auto-deploys). **Note:** the underlying MAO scrape is a multi-week,
+deliberately throttled run refreshed roughly **semiannually** — not monthly
+(`monthly-refresh.bat` is named for how often you *may* re-emit shards from a
+scrape delta, not how often the scrape itself runs). The app's **staleness
+banner** reflects the scrape age: hidden up to 180 days, amber past the
+semiannual mark, red past the 12-month rule — that's your nudge.
 
 The two big indexes (`legal-index.json` / `assessment-index.json`) ship via
 GitHub **Releases**, not git. Publish them in one command — rebuild → release
@@ -154,8 +158,9 @@ then delete the old token.
 
 ## Freshness / staleness policy (the 12-month rule)
 
-- **Current data:** the in-app staleness banner (amber 30 d / red 60 d) is
-  the live signal. If it's red, run the monthly refresh.
+- **Current data:** the in-app staleness banner (hidden ≤ 180 d, amber
+  181-365 d, red > 365 d — the MAO scrape is semiannual, not monthly) is the
+  live signal. If it's red, run a fresh scrape + shard rebuild.
 - **Cold archive:** `archive_snapshot.R` prints a **WARNING** when the
   provincial source it's archiving is already > 12 months old — i.e. you
   haven't pulled fresh MB Open Data in over a year.
