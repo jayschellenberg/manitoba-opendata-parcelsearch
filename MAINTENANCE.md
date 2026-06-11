@@ -29,6 +29,15 @@ Then review `git status`, commit the changed `web/public/data/**`, and push
 (Vercel auto-deploys). The app's **staleness banner** turns amber at 30 days
 and red at 60 — that's your nudge.
 
+The two big indexes (`legal-index.json` / `assessment-index.json`) ship via
+GitHub **Releases**, not git. Publish them in one command — rebuild → release
+→ bump the edge-function URLs (`-SkipBuild` right after a refresh already
+rebuilt them; `-DryRun` to preview):
+```
+powershell -ExecutionPolicy Bypass -File release-indexes.ps1 -SkipBuild
+```
+Then commit + push the `api/` URL bumps it makes.
+
 ### 2. Snapshot archive + provenance — historical geometry  (cadence: semi-annual / annual)
 After downloading a fresh provincial **MBRollGeoPackage** (and zoning /
 dev-plan) into `mao-assembly/inputs/`, archive a dated, retained copy:
