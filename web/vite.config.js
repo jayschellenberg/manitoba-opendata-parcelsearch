@@ -48,10 +48,10 @@ export default defineConfig({
     rollupOptions: {
       output: {
         // Split heavy third-party deps into named vendor chunks so a
-        // change in our app code doesn't bust their browser cache, and
-        // the warning ceiling on the main bundle drops back under
-        // 500 kB. maplibre is by far the heaviest (~700 kB minified);
-        // the @turf/* helpers + papaparse together are ~150 kB.
+        // change in our app code doesn't bust their browser cache,
+        // keeping the main bundle warning ceiling under 500 kB.
+        // maplibre is by far the heaviest (~700 kB minified); the
+        // @turf/* helpers add ~50 kB.
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined;
           if (id.includes('maplibre-gl')) return 'maplibre';
@@ -59,7 +59,6 @@ export default defineConfig({
           // co-located in the turf chunk so we don't create a
           // vendor → turf → vendor cycle.
           if (id.includes('@turf/') || id.includes('mapbox-gl-draw')) return 'turf';
-          if (id.includes('papaparse'))   return 'papaparse';
           // Everything else stays in the default vendor chunk.
           return 'vendor';
         },
