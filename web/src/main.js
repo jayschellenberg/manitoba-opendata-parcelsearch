@@ -1047,6 +1047,22 @@ function readCurrentUrlState() {
   if (selectedParcelRow?.parcel?.properties?.Roll_No_Txt) {
     state.selectedRoll = selectedParcelRow.parcel.properties.Roll_No_Txt;
   }
+
+  // View state — only carry these into the URL when they differ from
+  // the defaults so a fresh session produces a clean URL.
+  if (currentSort && currentSort.col && (currentSort.col !== 'roll' || currentSort.dir !== 'asc')) {
+    state.sort = { col: currentSort.col, dir: currentSort.dir };
+  }
+  if (currentPage > 0) state.page = currentPage + 1;  // 1-based in the URL
+  const pressedOverlays = [];
+  for (const btn of document.querySelectorAll('button.overlay-btn[id$="-toggle"]')) {
+    // Binary-toggle only: tri-state secondary modes (aria-pressed="mixed")
+    // are deliberately NOT round-tripped — see SCHEMA.overlays comment.
+    if (btn.getAttribute('aria-pressed') === 'true') {
+      pressedOverlays.push(btn.id.replace(/-toggle$/, ''));
+    }
+  }
+  if (pressedOverlays.length > 0) state.overlays = pressedOverlays;
   return state;
 }
 
@@ -1080,6 +1096,27 @@ function applyUrlStateToInputs(state) {
   }
   if (state.tab && (state.tab === 'property' || state.tab === 'sales')) {
     try { setActiveTab(state.tab, { skipFocus: true }); } catch {}
+  }
+  // Restore sort + page — the next renderTable picks both up from
+  // module state. SORT_KEYS owns the allowed col allowlist; an unknown
+  // col falls through to the default order at render time.
+  if (state.sort && state.sort.col && SORT_KEYS[state.sort.col]) {
+    currentSort = { col: state.sort.col, dir: state.sort.dir === 'desc' ? 'desc' : 'asc' };
+    updateSortIndicators();
+  }
+  if (Number.isInteger(state.page) && state.page >= 1) {
+    currentPage = state.page - 1;  // back to 0-based
+  }
+  // Overlays restored by clicking each requested toggle button once if
+  // it isn't already pressed. The click handlers do all the actual
+  // overlay activation work (fetch shards, mutate map, etc.). Tri-state
+  // secondary modes are intentionally NOT cycled into — see SCHEMA.overlays.
+  if (Array.isArray(state.overlays) && state.overlays.length > 0) {
+    for (const code of state.overlays) {
+      const btn = document.getElementById(`${code}-toggle`);
+      if (!btn || btn.disabled) continue;
+      if (btn.getAttribute('aria-pressed') !== 'true') btn.click();
+    }
   }
 }
 
@@ -1747,8 +1784,20 @@ for (const th of document.querySelectorAll('#results th[data-col]')) {
     }
     updateSortIndicators();
     if (currentRows.length > 0) renderTable(currentRows);
+    queueUrlWrite();
   });
 }
+
+// Overlay toggle clicks — delegate at the document level so all 12
+// buttons + any future ones share one listener that writes the URL on
+// every aria-pressed change.
+document.addEventListener('click', (e) => {
+  const btn = e.target?.closest?.('button.overlay-btn[id$="-toggle"]');
+  if (!btn) return;
+  // Defer one tick so the toggle handler has set aria-pressed by the
+  // time we read it inside queueUrlWrite -> readCurrentUrlState.
+  queueMicrotask(queueUrlWrite);
+});
 
 // Populate the three dropdowns in parallel — the muni list is the slow one
 // (~190 distinct values), the categories are short and quick.
@@ -6721,6 +6770,7 @@ if ($paginator) {
     else if (action === 'prev')  currentPage = Math.max(0, currentPage - 1);
     else if (action === 'next')  currentPage = Math.min(pageCount - 1, currentPage + 1);
     else if (action === 'last')  currentPage = pageCount - 1;
+    queueUrlWrite();
     // resetPage:false so renderTable doesn't bounce back to page 0.
     renderTable(currentRows, { resetPage: false });
     // Scroll the table's top into view so the new page lands where
