@@ -1255,8 +1255,9 @@ const SURVEY_GRID_URL = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/res
 /**
  * Fetch the pre-baked province-wide Sec-Twp grid as a single static
  * GeoJSON file. Built by r/build_section_grid.R — section geometry
- * doesn't change, so the file is committed to source control and
- * served from web/public/data/section-grid.json.
+ * doesn't change, so the file ships through a GitHub Release and
+ * the /api/section-grid edge function streams it with CORS (same
+ * pattern as legal-index / assessment-index).
  *
  * Cached in localStorage with the same 30-day TTL as muni boundaries
  * (ample, since the grid never actually changes — TTL just prevents
@@ -1268,23 +1269,24 @@ const SURVEY_GRID_URL = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/res
  * the survey-grid map source.
  */
 export async function fetchProvinceSectionGrid() {
-  // v2: force a refresh so any stale cache that pre-dated the
-  // sectionLinesFromRows meridian-normalization fix gets dropped.
-  // The static file itself has always been 1 feature per section,
-  // but a v1 entry from a much-earlier iteration could still be in
-  // localStorage with duplicates.
-  const cacheKey = 'mb_section_grid_province_v2';
+  // v3: source URL moved from a local /data/section-grid.json file to
+  // the /api/section-grid edge function (which streams the same
+  // GeoJSON from a GitHub Release — same pattern as legal-index /
+  // assessment-index). Bumping the cache key forces clients off the
+  // old in-localStorage entry on first load.
+  const cacheKey = 'mb_section_grid_province_v3';
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
-  // Cache-bust query param so any stale browser HTTP cache holding a
-  // previous build of section-grid.json gets bypassed. Bump the
-  // version when the file changes shape.
-  const url = `${import.meta.env?.BASE_URL || '/'}data/section-grid.json?v=2026-05-09`;
+  // Edge function URL — no cache-bust query param needed: the edge
+  // function URL is stable and a re-release just changes RELEASE_URL
+  // inside api/section-grid.js, which arrives with the next deploy.
+  const url = `${import.meta.env?.BASE_URL || '/'}api/section-grid`;
   const res = await fetch(url);
   if (!res.ok) {
     throw new Error(
       `Province-wide section grid not found at ${url} (status ${res.status}). ` +
-      `Run \`Rscript r/build_section_grid.R\` to generate it.`
+      `Run \`Rscript r/build_section_grid.R\` to regenerate, then publish ` +
+      `a new GitHub Release and bump RELEASE_URL in api/section-grid.js.`
     );
   }
   const fc = await res.json();

@@ -10,7 +10,8 @@ thumb: nothing should go more than ~12 months stale.**
 | Dataset | Source of truth | Served from | Cadence |
 |---|---|---|---|
 | Live parcels / zoning / dev-plan | ArcGIS (live) | ArcGIS, live | always current |
-| Legal index, assessment index, section grid | mao-scrape `parcels.parquet` (legal/assessment), MB_LegalDesc service (grid) | `web/public/data/` (in deploy) | monthly |
+| Legal index, assessment index | mao-scrape `parcels.parquet` | GitHub Release → `api/legal-index.js` / `api/assessment-index.js` edge fns | monthly |
+| Section grid | MB_LegalDesc service | GitHub Release → `api/section-grid.js` edge fn | annual (geometry doesn't change) |
 | RollEntry snapshot (fallback), parcel-masc, assessment shards, masc shards, landcover shards, landcover tiles, river-lots, masc-riverlots | various R build scripts | `mb-parcel-data` repo → jsDelivr (pinned commit) | monthly-ish |
 | **Cold archive** (provincial source + provenance sidecars) | MB Open Data downloads | `D:\Dropbox\Appraisal\Web\MAOSnapshots\<year>\` | semi-annual / annual |
 | **Historical shards** (as-of-date view, keyed `YYYY-MM-DD`) | the cold archive | `mb-parcel-history` repo → jsDelivr | when a new snapshot is archived |
@@ -35,6 +36,17 @@ rebuilt them; `-DryRun` to preview):
 powershell -ExecutionPolicy Bypass -File release-indexes.ps1 -SkipBuild
 ```
 Then commit + push the `api/` URL bumps it makes.
+
+### 1c. Section grid (cadence: annual or after a build_section_grid.R change)
+The 41 MB province-wide grid ships through `api/section-grid.js` (same Release
++ edge-fn pattern as the indexes above — over jsDelivr's per-file cap, so it
+can't ride the mb-parcel-data CDN). To roll a new build:
+```
+Rscript r/build_section_grid.R
+gh release create data-section-grid-YYYY-MM-DD web/public/data/section-grid.json --title "Section grid YYYY-MM-DD"
+```
+Then bump `RELEASE_URL` in `api/section-grid.js`, commit + push. Geometry
+doesn't change, so this is a rare operation.
 
 ### 1b. mb-parcel-data CDN refresh  (cadence: whenever any CDN-hosted dataset rebuilds)
 Most of the app's generated data — RollEntry fallback shards,

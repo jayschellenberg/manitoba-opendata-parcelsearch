@@ -42,10 +42,12 @@ const DATA_DIR = path.resolve(__dirname, '..', 'public', 'data');
 const DATASETS = [
   { name: 'legal_index',      file: 'legal-index.json',      hasMetadata: true,  schema_version: 1 },
   { name: 'assessment_index', file: 'assessment-index.json', hasMetadata: true,  schema_version: 1 },
-  // section-grid stays local — at 41 MB it's over jsDelivr's per-file
-  // cap. river-lots, masc-riverlots, and the masc index all moved to
-  // the mb-parcel-data CDN repo with their shards.
-  { name: 'section_grid',     file: 'section-grid.json',     hasMetadata: false, schema_version: 1 },
+  // section-grid, river-lots, masc-riverlots, and every per-muni
+  // shard set now ship from outside this repo: the two big indexes
+  // above via GitHub Releases + edge functions; section-grid via the
+  // same Release-fn pattern (api/section-grid.js); everything else
+  // via the mb-parcel-data jsDelivr CDN. Future single-file datasets
+  // that this repo's deploy serves directly go back in this list.
 ];
 
 // Shard directories: each holds per-municipality JSON files registered

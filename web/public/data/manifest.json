@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "generated_at": "2026-06-11T14:56:20.549Z",
+  "generated_at": "2026-06-11T16:32:39.427Z",
   "datasets": {
     "legal_index": {
       "file": "legal-index.json",
@@ -26,12 +26,6 @@
       "vacant_threshold_pct": 2,
       "nominal_vacant_count": 198598,
       "zero_buildings_count": 192994
-    },
-    "section_grid": {
-      "file": "section-grid.json",
-      "schema_version": 1,
-      "size_bytes": 42358712,
-      "modified_at": "2026-05-07T03:47:43.310Z"
     }
   },
   "shard_dirs": {}
