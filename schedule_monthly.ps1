@@ -1,7 +1,10 @@
-# schedule_monthly.ps1 — register monthly-refresh.bat as a recurring
+# schedule_monthly.ps1 — register the monthly refresh as a recurring
 # Windows Task Scheduler entry that fires on the 15th of every month
-# at 04:00 local. Idempotent: re-run to update the schedule or after
-# changing monthly-refresh.bat — the existing task is replaced.
+# at 04:00 local. The task runs monthly-refresh-wrapper.ps1 (NOT the
+# .bat directly) so a failed refresh sends an email alert — see the
+# wrapper's header for how the destination address is configured.
+# Idempotent: re-run to update the schedule or after changing the
+# wrapper/.bat — the existing task is replaced.
 #
 # Usage (run once from a PowerShell prompt with normal user privileges):
 #   powershell -ExecutionPolicy Bypass -File schedule_monthly.ps1
@@ -21,9 +24,14 @@ $ErrorActionPreference = "Stop"
 $TaskName  = "MAOMonthlyRefresh"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $BatFile   = Join-Path $ScriptDir "monthly-refresh.bat"
+$Wrapper   = Join-Path $ScriptDir "monthly-refresh-wrapper.ps1"
 
 if (-not (Test-Path $BatFile)) {
-    Write-Error "Wrapper not found: $BatFile"
+    Write-Error "Refresh script not found: $BatFile"
+    exit 1
+}
+if (-not (Test-Path $Wrapper)) {
+    Write-Error "Alert wrapper not found: $Wrapper"
     exit 1
 }
 
@@ -38,11 +46,11 @@ if ($LASTEXITCODE -eq 0) {
 #   /SC MONTHLY  — recur every month
 #   /D 15        — on the 15th
 #   /ST 04:00    — at 04:00 local
-#   /TR "<cmd>"  — task command (use cmd.exe /c so the .bat resolves
-#                  its own working dir + the env it expects)
+#   /TR "<cmd>"  — task command: the PowerShell wrapper, which runs the
+#                  .bat and emails on a nonzero exit
 #   /RL LIMITED  — run as the current user with normal privileges
 #   /F           — force overwrite if a task exists
-$taskCmd = "cmd.exe /c `"$BatFile`""
+$taskCmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$Wrapper`""
 
 $result = schtasks /Create `
     /SC MONTHLY `
@@ -70,7 +78,8 @@ Set-ScheduledTask -TaskName $TaskName -Settings $settings | Out-Null
 
 Write-Host ""
 Write-Host "Scheduled task '$TaskName' registered:"
-Write-Host "  Wrapper:     $BatFile"
+Write-Host "  Wrapper:     $Wrapper  (emails on failure, then runs:)"
+Write-Host "  Refresh:     $BatFile"
 Write-Host "  Working dir: $ScriptDir"
 Write-Host "  Recurrence:  15th of every month at 04:00 local"
 Write-Host "  StartWhenAvailable enabled (catches up if machine was off)"

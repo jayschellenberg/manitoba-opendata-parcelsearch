@@ -68,6 +68,10 @@ plan*.md
 
 # Local audit reports — working docs, not for the public repo
 AUDIT-REPORT-*.md
+
+# Alert destination for monthly-refresh-wrapper.ps1 — email address
+# stays out of the public repo
+alert-email.local.txt
 .Rproj.user
 .Rhistory
 .positai
