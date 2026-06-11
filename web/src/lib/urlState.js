@@ -62,6 +62,48 @@ function oneOf(allowed) {
   return (v) => (typeof v === 'string' && set.has(v) ? v : undefined);
 }
 
+// Sort state lives as `{ col, dir }` in main.js but rides the URL as
+// `s=col` (asc) or `s=-col` (desc). The column name allowlist isn't
+// known here — main.js owns SORT_KEYS — so we just constrain the
+// shape: a leading letter, letters/digits/underscore after, ≤50 chars.
+// An unknown col reaching main.js falls through to the default sort.
+function parseSortParam(raw) {
+  if (typeof raw !== 'string') return undefined;
+  const s = raw.trim();
+  if (!s || s.length > 51) return undefined;
+  const desc = s.startsWith('-');
+  const col = desc ? s.slice(1) : s;
+  if (!/^[a-zA-Z][a-zA-Z0-9_]{0,49}$/.test(col)) return undefined;
+  return { col, dir: desc ? 'desc' : 'asc' };
+}
+function formatSortParam(v) {
+  if (!v || typeof v !== 'object') return null;
+  const { col, dir } = v;
+  if (typeof col !== 'string' || !col) return null;
+  return dir === 'desc' ? `-${col}` : col;
+}
+
+// Overlays ride as a comma-separated list of stable short codes, e.g.
+// `o=zoning,flow`. Each code: lowercase letter then [a-z0-9-]; cap the
+// list at 20 entries so a malformed URL can't blow up state. Order and
+// duplicates aren't meaningful — we dedupe and keep input order.
+function parseOverlaysParam(raw) {
+  if (typeof raw !== 'string') return undefined;
+  const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
+  if (parts.length === 0) return undefined;
+  const valid = parts.filter((p) => /^[a-z][a-z0-9-]{0,30}$/.test(p));
+  if (valid.length === 0) return undefined;
+  return [...new Set(valid)].slice(0, 20);
+}
+function formatOverlaysParam(v) {
+  if (!Array.isArray(v) || v.length === 0) return null;
+  // Defensive: re-validate each entry in the formatter too, so a
+  // bug in caller state can't smuggle garbage into the URL.
+  const valid = v.filter((p) => typeof p === 'string' && /^[a-z][a-z0-9-]{0,30}$/.test(p));
+  if (valid.length === 0) return null;
+  return [...new Set(valid)].slice(0, 20).join(',');
+}
+
 export const SCHEMA = {
   muni:        { param: 'm',  validate: cleanString,           format: (v) => v },
   roll:        { param: 'r',  validate: cleanString,           format: (v) => v },
@@ -78,6 +120,16 @@ export const SCHEMA = {
   selectedRoll: { param: 'sr', validate: cleanString,          format: (v) => v },
   vacantThreshold: { param: 'vt', validate: cleanNumber(0, 1e9), format: (v) => String(v) },
   vacantMode:  { param: 'vd', validate: oneOf(['pct', 'dollar']), format: (v) => v },
+  // View state — restores what the recipient of a shared URL was
+  // looking at, not just the filters that produced it. sort/page apply
+  // to the results table; overlays carry the set of map overlays that
+  // were ON (binary aria-pressed=true only — tri-state secondary modes
+  // are deliberately NOT round-tripped because restoring them needs
+  // multiple click cycles and some depend on per-deploy assets that
+  // may not be present).
+  sort:        { param: 's',  validate: parseSortParam,        format: formatSortParam },
+  page:        { param: 'p',  validate: cleanInt(1, 10000),    format: (v) => String(v) },
+  overlays:    { param: 'o',  validate: parseOverlaysParam,    format: formatOverlaysParam },
 };
 
 const PARAM_TO_KEY = Object.fromEntries(

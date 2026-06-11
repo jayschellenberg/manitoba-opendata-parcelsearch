@@ -203,6 +203,77 @@ test('decodeState — malformed URL query handled gracefully', () => {
   assert.equal(threw, false);
 });
 
+// ---------- sort / page / overlays (view-state restoration) ----------
+
+test('sort — ascending col round-trips', () => {
+  const out = encodeState({ sort: { col: 'acres', dir: 'asc' } });
+  assert.equal(new URLSearchParams(out).get('s'), 'acres');
+  assert.deepEqual(decodeState(out).sort, { col: 'acres', dir: 'asc' });
+});
+
+test('sort — descending col encodes with leading - and round-trips', () => {
+  const out = encodeState({ sort: { col: 'price', dir: 'desc' } });
+  assert.equal(new URLSearchParams(out).get('s'), '-price');
+  assert.deepEqual(decodeState(out).sort, { col: 'price', dir: 'desc' });
+});
+
+test('sort — junk col rejected', () => {
+  assert.equal(decodeState('s=' + encodeURIComponent("acres'; drop")).sort, undefined);
+  assert.equal(decodeState('s=' + encodeURIComponent('-')).sort, undefined);
+  assert.equal(decodeState('s=' + encodeURIComponent('123abc')).sort, undefined);
+});
+
+test('sort — formatter drops malformed values', () => {
+  assert.equal(encodeState({ sort: { col: '', dir: 'asc' } }), '');
+  assert.equal(encodeState({ sort: 'acres' }), '');
+  assert.equal(encodeState({ sort: null }), '');
+});
+
+test('page — int round-trips', () => {
+  const out = encodeState({ page: 3 });
+  assert.equal(new URLSearchParams(out).get('p'), '3');
+  assert.equal(decodeState(out).page, 3);
+});
+
+test('page — zero rejected (URL uses 1-based page numbers)', () => {
+  assert.equal(decodeState('p=0').page, undefined);
+});
+
+test('page — out of range rejected', () => {
+  assert.equal(decodeState('p=99999').page, undefined);
+  assert.equal(decodeState('p=-1').page, undefined);
+});
+
+test('overlays — single overlay round-trips', () => {
+  const out = encodeState({ overlays: ['zoning'] });
+  assert.equal(new URLSearchParams(out).get('o'), 'zoning');
+  assert.deepEqual(decodeState(out).overlays, ['zoning']);
+});
+
+test('overlays — multiple overlays comma-separated', () => {
+  const out = encodeState({ overlays: ['zoning', 'flow', 'riskarea'] });
+  assert.equal(new URLSearchParams(out).get('o'), 'zoning,flow,riskarea');
+  assert.deepEqual(decodeState(out).overlays, ['zoning', 'flow', 'riskarea']);
+});
+
+test('overlays — invalid codes dropped, dedupe applied', () => {
+  // 'ZONING' (uppercase) fails the [a-z] gate; 'zoning' kept once.
+  const result = decodeState('o=zoning,ZONING,zoning,bad_code,flow');
+  // bad_code has an underscore — rejected by the [a-z0-9-] gate
+  assert.deepEqual(result.overlays, ['zoning', 'flow']);
+});
+
+test('overlays — empty list and empty string omitted from URL', () => {
+  assert.equal(encodeState({ overlays: [] }), '');
+  assert.equal(decodeState('o=').overlays, undefined);
+});
+
+test('overlays — list capped at 20 entries (avoids URL bloat)', () => {
+  const big = Array.from({ length: 30 }, (_, i) => `ov${i}`);
+  const decoded = decodeState(encodeState({ overlays: big }));
+  assert.equal(decoded.overlays.length, 20);
+});
+
 // ---------- round-trip ----------
 
 test('round-trip — full state survives encode + decode', () => {
@@ -222,6 +293,9 @@ test('round-trip — full state survives encode + decode', () => {
     selectedRoll: '4000000',
     vacantThreshold: 2.5,
     vacantMode: 'pct',
+    sort: { col: 'acres', dir: 'desc' },
+    page: 4,
+    overlays: ['zoning', 'flow'],
   };
   const encoded = encodeState(state);
   const decoded = decodeState(encoded);
