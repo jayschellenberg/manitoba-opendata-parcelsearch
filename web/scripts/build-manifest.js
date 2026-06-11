@@ -22,6 +22,15 @@
 // an embedded metadata block; they get size + mtime only. The
 // section-grid + river-lots datasets are stable reference data, so
 // mtime is sufficient.
+//
+// Publish gate: `--validate` compares the freshly-built manifest
+// against the previously written one (the deployed baseline) and
+// refuses to write when something looks like a broken rebuild —
+// vanished datasets, row counts collapsed below 50% of the prior run,
+// empty shard registries, unparseable sample shards, or truncated
+// files. A failing gate exits nonzero so monthly-refresh.bat aborts
+// with the previous data still in place. For the rare legitimate big
+// change, rerun with --accept-large-change.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -43,6 +52,44 @@ const DATASETS = [
   { name: 'masc_riverlots',   file: 'masc-riverlots.json',   hasMetadata: false, schema_version: 1 },
   { name: 'masc_index',       file: 'masc/_index.json',      hasMetadata: false, schema_version: 1 },
 ];
+
+// Shard directories: each holds per-municipality JSON files registered
+// in a _index.json. The manifest records entry/file counts so the
+// --validate gate can spot a collapsed rebuild. New shard datasets are
+// one-line additions here.
+const SHARD_DIRS = [
+  { name: 'assessment',         dir: 'assessment' },
+  { name: 'masc',               dir: 'masc' },
+  { name: 'parcel_masc',        dir: 'parcel-masc' },
+  { name: 'landcover',          dir: 'landcover' },
+  { name: 'rollentry_snapshot', dir: 'rollentry-snapshot' },
+];
+
+/**
+ * Pull the list of shard filenames out of a parsed _index.json. Handles
+ * the three shapes in use: `{shards:[{file}]}` (assessment), a flat
+ * `{NAME:{file}}` map (masc / parcel-masc / landcover), and
+ * rollentry-snapshot's nested `{munis:{NAME:{file}}}`.
+ */
+function shardIndexEntries(parsed) {
+  if (!parsed || typeof parsed !== 'object') return [];
+  if (Array.isArray(parsed.shards)) {
+    return parsed.shards.filter((s) => s && typeof s.file === 'string').map((s) => s.file);
+  }
+  const direct = Object.values(parsed)
+    .filter((v) => v && typeof v === 'object' && typeof v.file === 'string')
+    .map((v) => v.file);
+  if (direct.length) return direct;
+  for (const v of Object.values(parsed)) {
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      const nested = Object.values(v)
+        .filter((x) => x && typeof x === 'object' && typeof x.file === 'string')
+        .map((x) => x.file);
+      if (nested.length) return nested;
+    }
+  }
+  return [];
+}
 
 /**
  * Extract the `metadata` block from the first 4 KB of a JSON file.
@@ -99,21 +146,175 @@ function buildManifest() {
     }
     datasets[ds.name] = entry;
   }
+
+  const shardDirs = {};
+  for (const sd of SHARD_DIRS) {
+    const dirPath = path.join(DATA_DIR, sd.dir);
+    const indexPath = path.join(dirPath, '_index.json');
+    if (!fs.existsSync(indexPath)) {
+      warnings.push(`${sd.dir}/_index.json not found (run the matching r/build_*.R first)`);
+      continue;
+    }
+    let entries = 0;
+    try {
+      entries = shardIndexEntries(JSON.parse(fs.readFileSync(indexPath, 'utf8'))).length;
+    } catch {
+      warnings.push(`${sd.dir}/_index.json failed to parse`);
+    }
+    const files = fs.readdirSync(dirPath).filter((f) => f.endsWith('.json')).length;
+    shardDirs[sd.name] = { dir: sd.dir, entries, files };
+  }
+
   return {
     manifest_version: 1,
     generated_at: new Date().toISOString(),
     datasets,
+    shard_dirs: shardDirs,
     warnings: warnings.length ? warnings : undefined,
   };
 }
 
+/**
+ * Publish gate, pure half: compare a freshly-built manifest against the
+ * previously deployed one and flag anything that looks like a broken
+ * rebuild. No I/O so it's unit-testable. Returns { failures, notes }.
+ * `acceptLargeChange` downgrades the delta checks (collapse / vanished
+ * dataset) to notes for the rare legitimate big change; structural
+ * checks (zero rows, empty registry) always fail.
+ */
+export function validateManifest(manifest, prev, { acceptLargeChange = false } = {}) {
+  const failures = [];
+  const notes = [];
+  const flag = (msg) => (acceptLargeChange ? notes.push(`${msg} (accepted)`) : failures.push(msg));
+
+  const ds = manifest?.datasets || {};
+  const prevDs = prev?.datasets || {};
+  for (const [name, entry] of Object.entries(ds)) {
+    if (entry.row_count != null && !(Number.isFinite(entry.row_count) && entry.row_count > 0)) {
+      failures.push(`${name}: row_count is ${entry.row_count}`);
+    }
+    const prevCount = prevDs[name]?.row_count;
+    if (Number.isFinite(prevCount) && prevCount > 0
+        && Number.isFinite(entry.row_count) && entry.row_count < prevCount * 0.5) {
+      flag(`${name}: row_count collapsed ${prevCount.toLocaleString()} → ${entry.row_count.toLocaleString()}`);
+    }
+  }
+  for (const name of Object.keys(prevDs)) {
+    if (!(name in ds)) flag(`${name}: present in previous manifest, missing now`);
+  }
+
+  const sh = manifest?.shard_dirs || {};
+  const prevSh = prev?.shard_dirs || {};
+  for (const [name, entry] of Object.entries(sh)) {
+    if (!(entry.entries > 0)) failures.push(`${name}: shard index lists no shards`);
+    if (entry.files < entry.entries) {
+      failures.push(`${name}: index lists ${entry.entries} shards but only ${entry.files} .json files on disk`);
+    }
+    const prevEntries = prevSh[name]?.entries;
+    if (Number.isFinite(prevEntries) && prevEntries > 0 && entry.entries < prevEntries * 0.5) {
+      flag(`${name}: shard count collapsed ${prevEntries} → ${entry.entries}`);
+    }
+  }
+  for (const name of Object.keys(prevSh)) {
+    if (!(name in sh)) flag(`${name}: shard dir present in previous manifest, missing now`);
+  }
+
+  return { failures, notes };
+}
+
+/**
+ * Publish gate, I/O half: cheap structural checks on the actual files.
+ * Samples three shards per directory (first / middle / last of the
+ * index) for parseability + non-emptiness, and head/tail-checks every
+ * manifest-tracked single file so a truncated write can't ship — no
+ * full parse of the 40 MB section grid required.
+ */
+function checkFilesOnDisk(manifest) {
+  const failures = [];
+  for (const sd of SHARD_DIRS) {
+    if (!manifest.shard_dirs?.[sd.name]) continue;
+    const dirPath = path.join(DATA_DIR, sd.dir);
+    let files = [];
+    try {
+      files = shardIndexEntries(JSON.parse(fs.readFileSync(path.join(dirPath, '_index.json'), 'utf8')));
+    } catch {
+      failures.push(`${sd.dir}/_index.json failed to parse`);
+      continue;
+    }
+    const picks = [...new Set([0, Math.floor(files.length / 2), files.length - 1])]
+      .map((i) => files[i]).filter(Boolean);
+    for (const f of picks) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(path.join(dirPath, f), 'utf8'));
+        const empty = parsed == null
+          || (Array.isArray(parsed) && parsed.length === 0)
+          || (typeof parsed === 'object' && !Array.isArray(parsed) && Object.keys(parsed).length === 0);
+        if (empty) failures.push(`${sd.dir}/${f}: parsed but empty`);
+      } catch (e) {
+        failures.push(`${sd.dir}/${f}: ${e.code === 'ENOENT' ? 'listed in index but missing on disk' : 'invalid JSON'}`);
+      }
+    }
+  }
+  for (const ds of DATASETS) {
+    if (!manifest.datasets?.[ds.name]) continue;
+    if (!headTailLooksLikeJson(path.join(DATA_DIR, ds.file))) {
+      failures.push(`${ds.file}: head/tail don't look like complete JSON (truncated write?)`);
+    }
+  }
+  return failures;
+}
+
+function headTailLooksLikeJson(filePath) {
+  let fd;
+  try {
+    fd = fs.openSync(filePath, 'r');
+    const size = fs.fstatSync(fd).size;
+    if (size < 2) return false;
+    const head = Buffer.alloc(Math.min(64, size));
+    fs.readSync(fd, head, 0, head.length, 0);
+    const tail = Buffer.alloc(Math.min(64, size));
+    fs.readSync(fd, tail, 0, tail.length, size - tail.length);
+    const first = head.toString('utf8').trimStart()[0];
+    const last = tail.toString('utf8').trimEnd().slice(-1);
+    return (first === '{' || first === '[') && (last === '}' || last === ']');
+  } catch {
+    return false;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
 function main() {
+  const args = process.argv.slice(2);
+  const validate = args.includes('--validate');
+  const acceptLargeChange = args.includes('--accept-large-change');
+
   if (!fs.existsSync(DATA_DIR)) {
     console.error(`Data directory not found: ${DATA_DIR}`);
     process.exit(1);
   }
-  const manifest = buildManifest();
   const outPath = path.join(DATA_DIR, 'manifest.json');
+
+  // The previously written manifest is the validation baseline —
+  // read it before overwriting.
+  let prev = null;
+  try { prev = JSON.parse(fs.readFileSync(outPath, 'utf8')); } catch { /* first run */ }
+
+  const manifest = buildManifest();
+
+  if (validate) {
+    const { failures, notes } = validateManifest(manifest, prev, { acceptLargeChange });
+    failures.push(...checkFilesOnDisk(manifest));
+    for (const n of notes) console.log(`  ~ ${n}`);
+    if (failures.length) {
+      console.error('\nVALIDATION FAILED — manifest NOT written; previous data left in place:');
+      for (const f of failures) console.error(`  ✗ ${f}`);
+      console.error('\nIf a large change is intentional, rerun with --accept-large-change.');
+      process.exit(1);
+    }
+    console.log('Validation passed.');
+  }
+
   fs.writeFileSync(outPath, JSON.stringify(manifest, null, 2) + '\n');
 
   console.log(`Manifest written to ${outPath}`);
