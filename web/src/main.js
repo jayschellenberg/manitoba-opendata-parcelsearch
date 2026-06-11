@@ -58,6 +58,7 @@ import {
   fetchRollEntryCount,
   setRollEntrySnapshot,
   getRollEntrySnapshot,
+  SNAPSHOT_CDN,
   fetchZoneCategoryList,
   fetchContaminatedSites,
   fetchTrafficFlow,
@@ -1875,8 +1876,9 @@ function liveRollEntryIncomplete(liveMuniCount, liveRecordCount, snapshotManifes
     liveRecordCount < snapTotal * ROLL_ENTRY_MIN_RECORD_RATIO;
   return muniSignal || recordSignal;
 }
-const ROLL_ENTRY_SNAPSHOT_MANIFEST_URL =
-  `${import.meta.env?.BASE_URL || '/'}data/rollentry-snapshot/_index.json`;
+// Served from the mb-parcel-data repo via jsDelivr (pinned commit —
+// see SNAPSHOT_CDN in arcgis.js), not from web/public/data/.
+const ROLL_ENTRY_SNAPSHOT_MANIFEST_URL = `${SNAPSHOT_CDN}/rollentry-snapshot/_index.json`;
 
 /** Fetch the snapshot manifest; null on any failure (so the call site
  *  falls through to live-only mode without an error).

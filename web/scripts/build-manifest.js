@@ -62,7 +62,10 @@ const SHARD_DIRS = [
   { name: 'masc',               dir: 'masc' },
   { name: 'parcel_masc',        dir: 'parcel-masc' },
   { name: 'landcover',          dir: 'landcover' },
-  { name: 'rollentry_snapshot', dir: 'rollentry-snapshot' },
+  // rollentry-snapshot moved to the mb-parcel-data repo (jsDelivr,
+  // pinned commit — SNAPSHOT_CDN in web/src/arcgis.js); no longer a
+  // local shard dir. First rebuild after the move needs
+  // --accept-large-change once.
 ];
 
 /**
