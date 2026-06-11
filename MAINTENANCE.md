@@ -80,6 +80,33 @@ Rscript r/build_landcover_tiles.R     # needs GDAL on PATH; ~15-45 min
 ```
 Commit the regenerated `web/public/data/landcover-tiles/`.
 
+## One-time setup & security settings
+
+### Refresh-failure alerts (email + push)
+The scheduled refresh runs through `monthly-refresh-wrapper.ps1`, which
+alerts on any failed step. Push notifications (ntfy.sh topic
+`mbps-monthly-refresh-jks`) work out of the box if you subscribe in the
+ntfy app; **email needs one 5-minute step**: create an app password
+(M365: Security info → App passwords; Gmail: myaccount.google.com/apppasswords)
+and paste it into `smtp_pass=` in `alert-email.local.txt` (gitignored).
+Then verify end-to-end:
+```
+powershell -ExecutionPolicy Bypass -File monthly-refresh-wrapper.ps1 -TestAlert
+```
+If the Task Scheduler entry predates the wrapper, re-run
+`schedule_monthly.ps1` once so the task targets the wrapper instead of
+the .bat.
+
+### Mapbox token (route planner)
+The `pk.` token in `web/.env.local` / Vercel env vars is publishable by
+design — anyone can read it out of the deployed bundle. What protects
+the monthly free tier is a **URL restriction**: at
+<https://account.mapbox.com/access-tokens/> edit the token and allow
+only the production domain and `http://localhost:5173`. To rotate:
+create a new token with the same scopes + restrictions, update
+`web/.env.local` and Vercel → Settings → Environment Variables, redeploy,
+then delete the old token.
+
 ## Freshness / staleness policy (the 12-month rule)
 
 - **Current data:** the in-app staleness banner (amber 30 d / red 60 d) is
