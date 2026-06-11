@@ -42,7 +42,19 @@ for /f "usebackq delims=" %%t in (`powershell -NoProfile -Command "Get-Date -For
 
 if not exist logs mkdir logs
 set LOGFILE=logs\monthly-%TS%.log
-set RSCRIPT="C:\Program Files\R\R-4.5.3\bin\Rscript.exe"
+
+REM Locate Rscript: prefer PATH, else the newest R under Program Files.
+REM (Previously pinned to R-4.5.3, which broke on every R upgrade.)
+set RSCRIPT=
+for /f "usebackq delims=" %%p in (`where Rscript 2^>nul`) do if not defined RSCRIPT set RSCRIPT="%%p"
+if not defined RSCRIPT (
+  for /f "usebackq delims=" %%p in (`powershell -NoProfile -Command "Get-ChildItem 'C:\Program Files\R\R-*\bin\Rscript.exe' -ErrorAction SilentlyContinue | Sort-Object {[version]($_.FullName -replace '.*\\R-([\d.]+)\\.*','$1')} -Descending | Select-Object -First 1 -ExpandProperty FullName"`) do set RSCRIPT="%%p"
+)
+if not defined RSCRIPT (
+  echo *** Rscript.exe not found on PATH or under "C:\Program Files\R" — install R or add it to PATH
+  echo *** Rscript.exe not found on PATH or under "C:\Program Files\R" >> "%LOGFILE%"
+  exit /b 1
+)
 set NODE="node"
 
 echo === monthly-refresh started %DATE% %TIME% > "%LOGFILE%"
