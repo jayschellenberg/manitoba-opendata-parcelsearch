@@ -85,10 +85,12 @@ the Dropbox archive — so the cleanup never costs you historical data.
   provincial source(s) to `MAOSnapshots\<year>\`, append-only; 2026
   geometry captured. Zoning + dev-plan capture is wired and one flag
   away (`--all`).
-- **Phase 1b — when you're ready:** start retaining zoning + dev-plan
-  too (just `--all`, or set their `active` flags). No further planning
-  needed to *capture* them — same mechanism. (The 2026 zoning/dev-plan
-  already sit in the archive folder.)
+- **Phase 1b — DONE:** zoning + dev-plan are now `active` alongside roll,
+  so a plain `archive_snapshot.R` run captures all three. The run is
+  **scheduled semiannually** (June 15 / Dec 15) via `schedule_semiannual.ps1`
+  → `semiannual-archive-wrapper.ps1`, which push/email-reminds when the
+  provincial source is missing or > 12 months stale (the upstream MB Open
+  Data download stays manual).
 - **Phase 2 — optional:** repo slim — Git LFS for the big
   `web/public/data` files + a one-time history purge (after extracting
   any wanted history first).
@@ -102,8 +104,9 @@ the Dropbox archive — so the cleanup never costs you historical data.
 ## Decisions (resolved)
 
 1. **Archive path** — `D:\Dropbox\Appraisal\Web\MAOSnapshots\<year>\`. ✓
-2. **Contents** — geometry now; zoning + dev-plan to follow (wired). ✓
-3. **Cadence** — manual annual run of `archive_snapshot.R` after a fresh
-   provincial download. ✓
+2. **Contents** — roll + zoning + dev-plan, all three `active`. ✓
+3. **Cadence** — **scheduled semiannual** (June 15 / Dec 15) run of
+   `archive_snapshot.R` via Task Scheduler, with a stale/missing-source
+   reminder; the upstream provincial download stays manual. ✓
 4. **Phase 2 (repo slim)** — deferred; revisit when repo size bites.
 5. **Phase 3 (in-app historical view)** — later; cold pull for now.

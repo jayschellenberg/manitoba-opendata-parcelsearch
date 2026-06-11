@@ -13,7 +13,7 @@ thumb: nothing should go more than ~12 months stale.**
 | Legal index, assessment index | mao-scrape `parcels.parquet` | GitHub Release → `api/legal-index.js` / `api/assessment-index.js` edge fns | monthly |
 | Section grid | MB_LegalDesc service | GitHub Release → `api/section-grid.js` edge fn | annual (geometry doesn't change) |
 | RollEntry snapshot (fallback), parcel-masc, assessment shards, masc shards, landcover shards, landcover tiles, river-lots, masc-riverlots | various R build scripts | `mb-parcel-data` repo → jsDelivr (pinned commit) | monthly-ish |
-| **Cold archive** (provincial source + provenance sidecars) | MB Open Data downloads | `D:\Dropbox\Appraisal\Web\MAOSnapshots\<year>\` | semi-annual / annual |
+| **Cold archive** (provincial source + provenance sidecars: roll / zoning / dev-plan) | MB Open Data downloads | `D:\Dropbox\Appraisal\Web\MAOSnapshots\<year>\` | semi-annual (scheduled Jun 15 / Dec 15) |
 | **Historical shards** (as-of-date view, keyed `YYYY-MM-DD`) | the cold archive | `mb-parcel-history` repo → jsDelivr | when a new snapshot is archived |
 | **Lineage index** (inferred predecessor/successor) | the historical shards | `mb-parcel-history/lineage/` → jsDelivr | when ≥ 2 snapshots exist |
 
@@ -78,17 +78,29 @@ whenever it gets heavy, then repoint the app first.
 (GitHub Release + edge function — see §1c below). It does NOT live in
 mb-parcel-data because at 41 MB it's over jsDelivr's per-file cap.
 
-### 2. Snapshot archive + provenance — historical geometry  (cadence: semi-annual / annual)
-After downloading a fresh provincial **MBRollGeoPackage** (and zoning /
-dev-plan) into `mao-assembly/inputs/`, archive a dated, retained copy:
+### 2. Snapshot archive + provenance — roll / zoning / dev-plan  (cadence: semi-annual, **scheduled**)
+Permanent dated snapshots of all three provincial layers (roll info, zoning,
+development plan). **Scheduled** twice a year (June 15 / Dec 15, 04:30) via
+`schedule_semiannual.ps1` → `semiannual-archive-wrapper.ps1`. To run by hand:
 ```
-Rscript r/archive_snapshot.R          # geometry only (parcels)
-Rscript r/archive_snapshot.R --all    # also zoning + dev-plan
+Rscript r/archive_snapshot.R          # all three (roll + zoning + dev-plan)
 ```
-Append-only → `D:\Dropbox\Appraisal\Web\MAOSnapshots\<year>\`, and writes a
-`<file>.meta.json` **provenance sidecar** (sha256, source date, retrieved_at,
-**source_crs**, source_url, license) beside each archived file. Never deletes
-prior captures. Lives in Dropbox, outside git/deploy.
+All three sources are `active` now, so a plain run captures everything (`--all`
+remains a synonym). Append-only → `D:\Dropbox\Appraisal\Web\MAOSnapshots\<year>\`,
+and writes a `<file>.meta.json` **provenance sidecar** (sha256, source date,
+retrieved_at, **source_crs**, source_url, license) beside each archived file.
+Never deletes prior captures. Lives in Dropbox, outside git/deploy.
+
+The catch automation can't close: the scheduled run only archives whatever
+currently sits in `mao-assembly/inputs/`, and the upstream **MB Open Data
+download is manual** (no stable API). So the wrapper scans the run and sends a
+**push/email reminder** when a source is missing or > 12 months stale — that's
+your cue to pull fresh `MBRollGeoPackage.gpkg` / `Manitoba_Zoning_By_Laws.geojson`
+/ `Manitoba_Development_Plan_Designations.geojson` into `inputs/` and let the
+next scheduled run (or a manual run) capture them. Register the schedule once:
+```
+powershell -ExecutionPolicy Bypass -File schedule_semiannual.ps1
+```
 
 ### 3. Publish a new historical snapshot — as-of-date view  (cadence: when #2 adds a snapshot)
 Turn the new dated snapshot into per-muni shards and publish to the CDN
@@ -147,20 +159,33 @@ own; the Vercel gate can stay as defence-in-depth.
 
 ## One-time setup & security settings
 
-### Refresh-failure alerts (email + push)
-The scheduled refresh runs through `monthly-refresh-wrapper.ps1`, which
-alerts on any failed step. Push notifications (ntfy.sh topic
-`mbps-monthly-refresh-jks`) work out of the box if you subscribe in the
-ntfy app; **email needs one 5-minute step**: create an app password
-(M365: Security info → App passwords; Gmail: myaccount.google.com/apppasswords)
-and paste it into `smtp_pass=` in `alert-email.local.txt` (gitignored).
-Then verify end-to-end:
+### Register the two scheduled tasks
+Both schedules are idempotent — run each once (re-run after editing a
+wrapper/.bat to repoint the task):
+```
+powershell -ExecutionPolicy Bypass -File schedule_monthly.ps1      # MAOMonthlyRefresh   — 15th monthly 04:00 (live shards)
+powershell -ExecutionPolicy Bypass -File schedule_semiannual.ps1   # MAOSemiannualArchive — Jun 15 / Dec 15 04:30 (permanent snapshots)
+```
+Verify either: `Get-ScheduledTask -TaskName MAOMonthlyRefresh,MAOSemiannualArchive | Format-List *`.
+
+### Failure / staleness alerts (email + push)
+Both scheduled tasks run through a wrapper that shares one alert path
+(`alert-lib.ps1`): `monthly-refresh-wrapper.ps1` alerts on any failed refresh
+step; `semiannual-archive-wrapper.ps1` alerts on a hard failure **and** when
+the provincial source is missing or > 12 months stale (your nudge to pull a
+fresh MB Open Data download). Push notifications work out of the box if you
+subscribe to both ntfy.sh topics in the ntfy app — `mbps-monthly-refresh-jks`
+and `mbps-semiannual-archive-jks`. **Email needs one 5-minute step**: create an
+app password (M365: Security info → App passwords; Gmail:
+myaccount.google.com/apppasswords) and paste it into `smtp_pass=` in
+`alert-email.local.txt` (gitignored — one file serves both wrappers). Then
+verify each end-to-end:
 ```
 powershell -ExecutionPolicy Bypass -File monthly-refresh-wrapper.ps1 -TestAlert
+powershell -ExecutionPolicy Bypass -File semiannual-archive-wrapper.ps1 -TestAlert
 ```
-If the Task Scheduler entry predates the wrapper, re-run
-`schedule_monthly.ps1` once so the task targets the wrapper instead of
-the .bat.
+If a Task Scheduler entry predates its wrapper, re-run the matching
+`schedule_*.ps1` once so the task targets the wrapper.
 
 ### Mapbox token (route planner)
 The `pk.` token in `web/.env.local` / Vercel env vars is publishable by
@@ -191,5 +216,10 @@ If you see any of these, the fix is the matching task above.
 The cold archive and mao-assembly both start from MB Open Data downloads:
 `MBRollGeoPackage.gpkg`, `Manitoba_Zoning_By_Laws.geojson`,
 `Manitoba_Development_Plan_Designations.geojson` (and the assembly's other
-inputs). Download fresh copies into `mao-assembly/inputs/` at least once a
-year, then run tasks #2/#3/#4 (and rerun mao-assembly for land cover).
+inputs). This is the one step that stays manual (no stable API). The
+semiannual task (#2) archives whatever is in `mao-assembly/inputs/` and
+**reminds you by push/email** when those inputs are missing or stale — so the
+routine is: when that reminder lands (≈ twice a year), download fresh copies
+into `mao-assembly/inputs/`, then let the next scheduled run capture them (or
+run task #2 by hand) and run tasks #3/#4 (and rerun mao-assembly for land
+cover).

@@ -24,8 +24,14 @@
 # file mtime and is flagged `retrieved_at_inferred:true`, since mtime can be
 # altered by copies/Dropbox sync and isn't trustworthy on its own).
 #
-#   Rscript r/archive_snapshot.R          # geometry only (the `active` set)
-#   Rscript r/archive_snapshot.R --all    # also capture zoning + dev-plan
+#   Rscript r/archive_snapshot.R          # the `active` set (roll + zoning + dev-plan)
+#   Rscript r/archive_snapshot.R --all    # all configured sources (same set today)
+#
+# Cadence: all three provincial layers (roll/zoning/dev-plan) are `active`
+# and captured on a plain run. Scheduled semiannually (June 15 / Dec 15) via
+# schedule_semiannual.ps1 → semiannual-archive-wrapper.ps1, which alerts when
+# a source is missing or > 12 months stale (the only step automation can't do
+# is the manual MB Open Data portal download into mao-assembly/inputs/).
 #
 # Storage: archives live in Dropbox, OUTSIDE git and web/public. The
 # unsimplified originals here are the source-of-record; the CDN display
@@ -55,10 +61,10 @@ sources <- list(
   list(active = TRUE,  file = "MBRollGeoPackage.gpkg", layer = "parcels",
        dataset    = "Manitoba Roll Entry (parcels + assessment roll)",
        source_url = "https://geoportal.gov.mb.ca/datasets/manitoba::roll-entry/explore"),
-  list(active = FALSE, file = "Manitoba_Zoning_By_Laws.geojson", layer = "zoning",
+  list(active = TRUE,  file = "Manitoba_Zoning_By_Laws.geojson", layer = "zoning",
        dataset    = "Manitoba Zoning By-Laws",
        source_url = "https://geoportal.gov.mb.ca/datasets/manitoba-zoning-by-laws/"),
-  list(active = FALSE, file = "Manitoba_Development_Plan_Designations.geojson", layer = "devplan",
+  list(active = TRUE,  file = "Manitoba_Development_Plan_Designations.geojson", layer = "devplan",
        dataset    = "Manitoba Development Plan Designations",
        source_url = "https://geoportal.gov.mb.ca/datasets/manitoba::manitoba-development-plan-designations/about")
 )
