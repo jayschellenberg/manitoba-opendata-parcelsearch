@@ -29,6 +29,7 @@ import { initColumns, applyVisibility as applyColumnVisibility, setColumnVisible
 // query string so a session URL is shareable.
 import { encodeState, decodeState } from './lib/urlState.js';
 import { setOverlayPressed } from './lib/overlayToggle.js';
+import { stalenessBannerState } from './lib/staleness.js';
 
 // Entry point. Wires the search inputs, the map, and the results table.
 //
@@ -8109,10 +8110,9 @@ async function populateDataRefreshFooter() {
 /**
  * Decide whether to show the MAO staleness banner and which tone.
  * Reads the manifest entries for legal_index + assessment_index,
- * picks the oldest source_modified, and applies thresholds:
- *   <= 35 days: hide (monthly cadence on track)
- *   36-60 days: amber nudge
- *   > 60 days: red warning
+ * picks the oldest source_modified, and delegates the threshold
+ * decision to lib/staleness.js (semiannual cadence — see there for
+ * why a 1-2 month old scrape is fresh, not a slip).
  */
 function updateStalenessBanner(legalMeta, asmtMeta) {
   const banner = document.getElementById('data-staleness-banner');
@@ -8125,30 +8125,16 @@ function updateStalenessBanner(legalMeta, asmtMeta) {
     const ms = Date.now() - d.valueOf();
     return Math.max(0, Math.floor(ms / 86400000));
   };
-  const legalAge = pickAge(legalMeta);
-  const asmtAge  = pickAge(asmtMeta);
-  const ages = [legalAge, asmtAge].filter((n) => n != null);
-  if (ages.length === 0) {
-    banner.hidden = true;
-    return;
-  }
-  const oldestDays = Math.max(...ages);
+  const ages = [pickAge(legalMeta), pickAge(asmtMeta)].filter((n) => n != null);
   banner.classList.remove('data-staleness-amber', 'data-staleness-red');
-  if (oldestDays <= 35) {
+  const state = stalenessBannerState(ages.length ? Math.max(...ages) : null);
+  if (!state.show) {
     banner.hidden = true;
     banner.textContent = '';
     return;
   }
-  const isRed = oldestDays > 60;
-  const tone  = isRed ? 'data-staleness-red' : 'data-staleness-amber';
-  banner.classList.add(tone);
-  const lead = isRed
-    ? `MAO scrape is ${oldestDays} days old.`
-    : `MAO scrape is ${oldestDays} days old.`;
-  const tail = isRed
-    ? ' Re-run the scrape to refresh legal descriptions and assessment values before relying on this data.'
-    : ' Monthly cadence has slipped — consider re-running the MAO scrape soon.';
-  banner.innerHTML = `<strong>${lead}</strong>${tail}`;
+  banner.classList.add(state.tone);
+  banner.innerHTML = `<strong>${state.lead}</strong>${state.tail}`;
   banner.hidden = false;
 }
 

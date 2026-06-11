@@ -134,11 +134,12 @@
       </nav>
     </header>
 
-    <!-- MAO scrape staleness banner. Hidden when the legal +
-         assessment shards are within the monthly cadence; turns
-         amber when the underlying MAO data is 30-60 days old and
-         red past 60 days. Populated by populateDataRefreshFooter
-         in main.js. -->
+    <!-- MAO scrape staleness banner. The scrape is a multi-week
+         throttled run refreshed ~semiannually (NOT monthly), so the
+         banner stays hidden up to 180 days, turns amber past the
+         semiannual mark (181-365 days), and red past the 12-month
+         rule (> 365). Thresholds live in lib/staleness.js; populated
+         by populateDataRefreshFooter in main.js. -->
     <div
       id="data-staleness-banner"
       class="data-staleness-banner"

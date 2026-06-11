@@ -162,12 +162,13 @@ header small a {
 }
 
 /* MAO scrape staleness banner. Thin strip just below the
-   topbar. Three states keyed by class:
-     .data-staleness-amber — 30-60 days old (nudge, monthly cadence
-                             slipped)
-     .data-staleness-red   — 60+ days old (action needed; sales-CSV
-                             comp assessments may be wrong)
-   Hidden entirely while the data is within the monthly cadence. */
+   topbar. The scrape refreshes ~semiannually (not monthly), so:
+     .data-staleness-amber — 181-365 days old (nudge, past the
+                             semiannual refresh mark)
+     .data-staleness-red   — > 365 days old (action needed; past the
+                             12-month rule, sales-CSV comp assessments
+                             may be stale)
+   Hidden entirely up to 180 days. Thresholds: lib/staleness.js. */
 .data-staleness-banner {
   padding: 6px 20px;
   font-size: 12px;
