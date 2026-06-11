@@ -28,6 +28,7 @@ import { initColumns, applyVisibility as applyColumnVisibility, setColumnVisible
 // Phase 6 URL state — serialises a small set of form values into the
 // query string so a session URL is shareable.
 import { encodeState, decodeState } from './lib/urlState.js';
+import { setOverlayPressed } from './lib/overlayToggle.js';
 
 // Entry point. Wires the search inputs, the map, and the results table.
 //
@@ -4568,8 +4569,7 @@ async function toggleOverlay(which) {
   const label = which === 'zoning' ? 'Zoning' : 'Development plan';
   const wasActive = btn.classList.contains('active');
   const visible = !wasActive;
-  btn.classList.toggle('active', visible);
-  btn.setAttribute('aria-pressed', String(visible));
+  setOverlayPressed(btn, visible);
 
   await mapReady;
 
@@ -5377,8 +5377,7 @@ async function toggleMascOverlay() {
   const loadKey = munis.join('|');
   const wasActive = $mascToggle.classList.contains('active');
   const visible = !wasActive;
-  $mascToggle.classList.toggle('active', visible);
-  $mascToggle.setAttribute('aria-pressed', String(visible));
+  setOverlayPressed($mascToggle, visible);
   await mapReady;
 
   if (!visible) {
@@ -6136,8 +6135,7 @@ if ($vacantModePill) {
     btn.addEventListener('click', () => {
       for (const sib of $vacantModePill.querySelectorAll('.vacant-mode-btn')) {
         const on = sib === btn;
-        sib.classList.toggle('active', on);
-        sib.setAttribute('aria-pressed', String(on));
+        setOverlayPressed(sib, on);
       }
       // Default the input to a sensible starting value when the
       // mode changes from one shape to the other.
@@ -6380,8 +6378,7 @@ async function toggleAuxOverlay(which) {
   const btn = meta.btn();
   const wasActive = btn.classList.contains('active');
   const visible = !wasActive;
-  btn.classList.toggle('active', visible);
-  btn.setAttribute('aria-pressed', String(visible));
+  setOverlayPressed(btn, visible);
   setOverlayBtnLabel(btn, visible ? meta.on : meta.off);
   await mapReady;
   if (visible && !auxLoaded[which]) {
