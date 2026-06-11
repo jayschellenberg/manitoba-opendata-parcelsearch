@@ -8,6 +8,15 @@
 # top-1 of each. (The web app does top-2; this offline app keeps it
 # simpler since the use case is point-lookups, not bulk analysis.)
 #
+# This is a DEV / OFFLINE TOOL — the production app is the Vite site
+# under web/. Use this when you need to search a historical snapshot
+# without internet, or to spot-check the local GeoPackages produced by
+# r/download_parcels.R. Schema drift in a freshly-pulled snapshot is
+# handled defensively: missing search columns warn instead of erroring
+# (the offending filter is silently dropped), and an overlay missing
+# its expected columns warns and skips that enrichment rather than
+# crashing the search.
+#
 # Requires: shiny, sf, leaflet, DT, dplyr
 
 suppressPackageStartupMessages({
@@ -44,6 +53,20 @@ snapshot_choices <- setNames(roll_files, snapshot_labels)
 
 cat("Found", length(roll_files), "RollEntry snapshot(s):",
     paste(snapshot_dates, collapse = ", "), "\n")
+
+# Defensive schema check. Returns TRUE when every expected column is
+# present; otherwise warns once with the missing list and returns FALSE
+# so callers can degrade gracefully (drop a filter, skip an enrichment)
+# rather than failing with an opaque "undefined columns" error.
+require_cols <- function(df, cols, label) {
+  missing <- setdiff(cols, names(df))
+  if (length(missing) == 0) return(TRUE)
+  warning(sprintf(
+    "%s missing expected column(s): %s — degrading the relevant search/enrichment step.",
+    label, paste(missing, collapse = ", ")
+  ), call. = FALSE)
+  FALSE
+}
 
 # Sister-layer file paths for a given RollEntry snapshot date. Returns NULL
 # (with a warning shown in the UI) if the matching layer isn't available
@@ -126,13 +149,15 @@ server <- function(input, output, session) {
   results <- eventReactive(input$search, {
     d <- current_data()
     p <- d$parcels
-    if (nzchar(input$address)) {
+    # Skip any filter whose backing column is missing from the snapshot;
+    # the warning surfaces in the R console so a schema drift is visible.
+    if (nzchar(input$address) && require_cols(p, "Property_Address", "RollEntry snapshot")) {
       p <- p[grepl(toupper(input$address), toupper(p$Property_Address), fixed = TRUE), ]
     }
-    if (nzchar(input$muni)) {
+    if (nzchar(input$muni) && require_cols(p, "Muni_Name_With_Typ", "RollEntry snapshot")) {
       p <- p[!is.na(p$Muni_Name_With_Typ) & p$Muni_Name_With_Typ == input$muni, ]
     }
-    if (nzchar(input$roll)) {
+    if (nzchar(input$roll) && require_cols(p, "Roll_No_Txt", "RollEntry snapshot")) {
       p <- p[grepl(toupper(input$roll), toupper(p$Roll_No_Txt), fixed = TRUE), ]
     }
     if (nrow(p) == 0) return(p)
@@ -148,15 +173,15 @@ server <- function(input, output, session) {
     p$DevPlanCategory <- NA_character_
     p$DevPlanBylaw <- NA_character_
 
-    if (!is.null(d$zoning) && nrow(p) > 0) {
-      p <- enrich_top1(p, d$zoning,
-                      cols = c("ZONE", "ZONE_CATEGORY", "ZBL"),
-                      out  = c("Zoning", "ZoningCategory", "ZoningBylaw"))
+    z_cols <- c("ZONE", "ZONE_CATEGORY", "ZBL")
+    if (!is.null(d$zoning) && nrow(p) > 0 && require_cols(d$zoning, z_cols, "Zoning snapshot")) {
+      p <- enrich_top1(p, d$zoning, cols = z_cols,
+                      out = c("Zoning", "ZoningCategory", "ZoningBylaw"))
     }
-    if (!is.null(d$devplan) && nrow(p) > 0) {
-      p <- enrich_top1(p, d$devplan,
-                      cols = c("DES_NAME", "DES_CATEGORY", "DP_BYLAW"),
-                      out  = c("DevPlan", "DevPlanCategory", "DevPlanBylaw"))
+    dp_cols <- c("DES_NAME", "DES_CATEGORY", "DP_BYLAW")
+    if (!is.null(d$devplan) && nrow(p) > 0 && require_cols(d$devplan, dp_cols, "Dev Plan snapshot")) {
+      p <- enrich_top1(p, d$devplan, cols = dp_cols,
+                      out = c("DevPlan", "DevPlanCategory", "DevPlanBylaw"))
     }
     p
   })
