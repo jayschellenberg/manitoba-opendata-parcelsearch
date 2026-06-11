@@ -129,9 +129,11 @@ Pure static. Vercel serves the Vite-built bundle plus the generated legal-search
 **Dependencies** (`web/package.json`):
 
 - `maplibre-gl` — map (no API key; CARTO Positron + Esri World Imagery raster tiles)
-- `@turf/area`, `@turf/bbox`, `@turf/intersect`, `@turf/boolean-point-in-polygon` — spatial primitives for the area-weighted join
+- `@turf/area`, `@turf/bbox`, `@turf/intersect`, `@turf/boolean-point-in-polygon`, `@turf/length` — spatial primitives for the area-weighted join + route distances
+- `@mapbox/mapbox-gl-draw` — measurement / draw tool on the map
+- `tailwindcss` + `@tailwindcss/vite` — utility-first styles (dev)
 
-No backend, no database, no scheduled jobs. The precomputed browser artifacts are the generated legal-search index, the MASC quarter-section shards, the rated MASC river-lot overlay, the parcel-level MASC soil shards, and static reference overlays such as the province-wide section grid / river-lot files.
+No application database. Two **Vercel Edge Functions** under `api/` stream the legal-index and assessment-index from GitHub Releases (CORS proxy — the indexes are ~130 MB / ~17 MB, past Vercel's static rewrite ceiling). A **Mapbox API token** drives the optional Route Planner; without it the planner cleanly disables. Generated bulk data (RollEntry fallback shards, parcel-MASC, MASC, landcover shards/tiles, river-lots) lives in the sister **[mb-parcel-data](https://github.com/jayschellenberg/mb-parcel-data)** repo and serves via jsDelivr pinned to an immutable commit, not from this repo. The monthly data refresh runs `monthly-refresh.bat` (wrapped by `monthly-refresh-wrapper.ps1` for email alerts on failure) and is the only scheduled job; see [MAINTENANCE.md](MAINTENANCE.md) for the runbook.
 
 ## Running the web app locally
 
@@ -143,6 +145,15 @@ npm install
 npm run legal:index   # refresh after the MAO scrape output changes
 npm run dev
 ```
+
+**Optional — Mapbox token for the Route Planner.** The planner uses Mapbox's Matrix/Directions/Static APIs (free tier ~100k requests/month). Without a token the feature stays disabled and everything else works. To enable it:
+
+```bash
+cp web/.env.example web/.env.local
+# Edit web/.env.local — set VITE_MAPBOX_TOKEN to your pk.* token.
+```
+
+`web/.env.local` is gitignored. For production, set `VITE_MAPBOX_TOKEN` in Vercel → Project Settings → Environment Variables. Always **URL-restrict** the token in the Mapbox dashboard so it can't be used from foreign origins (see [MAINTENANCE.md](MAINTENANCE.md) → Mapbox token).
 
 When MASC inputs change, rebuild the static shards from the repo root before starting or deploying:
 
