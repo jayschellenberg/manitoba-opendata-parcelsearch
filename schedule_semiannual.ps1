@@ -1,5 +1,5 @@
 # schedule_semiannual.ps1 — register the permanent snapshot archive as a
-# recurring Windows Task Scheduler entry that fires twice a year, on the 15th
+# recurring Windows Task Scheduler entry that fires twice a year, on the 1st
 # of January and July at 04:30 local. The task runs
 # semiannual-archive-wrapper.ps1, which archives the provincial roll / zoning /
 # dev-plan layers (r/archive_snapshot.R) and alerts when the source is missing
@@ -17,7 +17,7 @@
 #
 # Why schtasks.exe inside PowerShell: New-ScheduledTaskTrigger has no
 # "monthly on day N of months X,Y" trigger; schtasks /SC MONTHLY /M JAN,JUL
-# /D 15 is the simplest cross-version way to get a twice-a-year schedule.
+# /D 1 is the simplest cross-version way to get a twice-a-year schedule.
 
 $ErrorActionPreference = "Stop"
 $TaskName  = "MAOSemiannualArchive"
@@ -39,7 +39,7 @@ if ($LASTEXITCODE -eq 0) {
 # Create the recurring twice-a-year trigger.
 #   /SC MONTHLY      — month-based schedule
 #   /M JAN,JUL       — only in January and July (i.e. every 6 months)
-#   /D 15            — on the 15th
+#   /D 1             — on the 1st
 #   /ST 04:30        — at 04:30 local (after the monthly refresh's 04:00 slot)
 #   /TR "<cmd>"      — task command: the PowerShell wrapper
 #   /RL LIMITED      — run as the current user with normal privileges
@@ -49,7 +49,7 @@ $taskCmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$Wrapper`"
 $result = schtasks /Create `
     /SC MONTHLY `
     /M JAN,JUL `
-    /D 15 `
+    /D 1 `
     /ST 04:30 `
     /TN $TaskName `
     /TR $taskCmd `
@@ -75,7 +75,7 @@ Write-Host ""
 Write-Host "Scheduled task '$TaskName' registered:"
 Write-Host "  Wrapper:     $Wrapper  (archives roll/zoning/dev-plan, alerts on stale/missing source)"
 Write-Host "  Working dir: $ScriptDir"
-Write-Host "  Recurrence:  15th of January and July at 04:30 local (every 6 months)"
+Write-Host "  Recurrence:  1st of January and July at 04:30 local (every 6 months)"
 Write-Host "  StartWhenAvailable enabled (catches up if machine was off)"
 Write-Host ""
 Write-Host "Useful commands (PowerShell):"
