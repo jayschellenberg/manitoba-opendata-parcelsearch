@@ -28,7 +28,7 @@
 #   Rscript r/archive_snapshot.R --all    # all configured sources (same set today)
 #
 # Cadence: all three provincial layers (roll/zoning/dev-plan) are `active`
-# and captured on a plain run. Scheduled semiannually (Jan 15 / Jul 15) via
+# and captured on a plain run. Scheduled semiannually (Jan 1 / Jul 1) via
 # schedule_semiannual.ps1 → semiannual-archive-wrapper.ps1, which alerts when
 # a source is missing or > 12 months stale (the only step automation can't do
 # is the manual MB Open Data portal download into mao-assembly/inputs/).

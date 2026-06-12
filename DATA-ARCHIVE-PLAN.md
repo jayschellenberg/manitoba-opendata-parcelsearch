@@ -87,7 +87,7 @@ the Dropbox archive — so the cleanup never costs you historical data.
   away (`--all`).
 - **Phase 1b — DONE:** zoning + dev-plan are now `active` alongside roll,
   so a plain `archive_snapshot.R` run captures all three. The run is
-  **scheduled semiannually** (Jan 15 / Jul 15) via `schedule_semiannual.ps1`
+  **scheduled semiannually** (Jan 1 / Jul 1) via `schedule_semiannual.ps1`
   → `semiannual-archive-wrapper.ps1`, which push/email-reminds when the
   provincial source is missing or > 12 months stale (the upstream MB Open
   Data download stays manual).
@@ -105,7 +105,7 @@ the Dropbox archive — so the cleanup never costs you historical data.
 
 1. **Archive path** — `D:\Dropbox\Appraisal\Web\MAOSnapshots\<year>\`. ✓
 2. **Contents** — roll + zoning + dev-plan, all three `active`. ✓
-3. **Cadence** — **scheduled semiannual** (Jan 15 / Jul 15) run of
+3. **Cadence** — **scheduled semiannual** (Jan 1 / Jul 1) run of
    `archive_snapshot.R` via Task Scheduler, with a stale/missing-source
    reminder; the upstream provincial download stays manual. ✓
 4. **Phase 2 (repo slim)** — deferred; revisit when repo size bites.
