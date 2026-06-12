@@ -30,6 +30,7 @@ import { initColumns, applyVisibility as applyColumnVisibility, setColumnVisible
 import { encodeState, decodeState } from './lib/urlState.js';
 import { setOverlayPressed } from './lib/overlayToggle.js';
 import { stalenessBannerState } from './lib/staleness.js';
+import { computeSaleGroups, groupPosition } from './lib/saleGroups.js';
 
 // Entry point. Wires the search inputs, the map, and the results table.
 //
@@ -3570,127 +3571,28 @@ function downloadUnmatchedCsv(unmatched) {
 }
 
 function computeSaleGroupTotals(parcelFc) {
-  const groups = new Map();
+  const features = parcelFc?.features || [];
+  // All the rollup math (acres/assessed sums, $/acre, $/sf, $/lot,
+  // sale-to-assessed ratio, vacancy roll-up) lives in the pure,
+  // tested lib/saleGroups.js; main.js just stamps the result onto
+  // each member feature's properties. The three app-state-dependent
+  // helpers are injected so the lib stays pure.
+  const stamps = computeSaleGroups(features, {
+    parsePrice: parseTotalValue,
+    displayRoll,
+    isVacant: parcelIsVacantDynamic,
+  });
   let stampedCount = 0;
-  // Pass 1: collect group members + accumulate totals.
-  for (const f of parcelFc?.features || []) {
+  for (const f of features) {
     const gid = f.properties?._saleGroupId;
     if (gid == null) continue;
-    if (!groups.has(gid)) {
-      groups.set(gid, {
-        oids: [],
-        rolls: [],
-        totalAcres: 0,
-        // Sum of latest-year assessed total across every parcel in the
-        // sale group — used to compute the "Sale / Assessed" ratio
-        // column. Parcels missing assessment data leave the sum
-        // alone but flip asmtIncomplete so the column renders '—'.
-        asmtTotal: 0,
-        asmtIncomplete: false,
-        priceNum: parseTotalValue(f.properties?._salePrice),
-        acresIncomplete: false,
-        // Strict group-vacancy semantics: every parcel in the group
-        // must have assessment data AND pass the vacancy predicate
-        // for the group to flag as 'all vacant'. Defaults to true
-        // and flips false on the first parcel that fails / lacks
-        // data — short-circuits naturally as we walk parcels.
-        allVacant: true,
-        vacantUnknown: false,
-      });
-    }
-    const g = groups.get(gid);
-    g.oids.push(f.properties?.OBJECTID);
-    // Track the display-form roll number alongside the OID so the
-    // popup can render "Parcels (N) — 123456, 789012, ..." for
-    // multi-parcel sales without each parcel needing to scan its
-    // siblings at popup-render time.
-    g.rolls.push(displayRoll(f.properties?.Roll_No_Txt));
-    const ac = Number(f.properties?._acres);
-    if (Number.isFinite(ac) && ac > 0) g.totalAcres += ac;
-    else g.acresIncomplete = true;
-    // Assessed-total roll-up. Mirrors the acres treatment — any missing
-    // value flips the group to 'incomplete' so the ratio displays '—'
-    // rather than a misleading partial answer.
-    const at = Number(f.properties?._asmtTotal);
-    if (Number.isFinite(at) && at > 0) g.asmtTotal += at;
-    else g.asmtIncomplete = true;
-    // Vacancy roll-up. Phase 6: evaluated dynamically against the
-    // current `vacant-pct` / `vacant-max` inputs instead of the
-    // upload-time `_isVacantLand` flag (which froze at the legacy
-    // 2% threshold). parcelIsVacantDynamic returns null when the
-    // parcel wasn't in the assessment shard.
-    const v = parcelIsVacantDynamic(f.properties);
-    if (v === true) {
-      // pass — keep g.allVacant as is
-    } else if (v === false) {
-      g.allVacant = false;
-    } else {
-      // Missing data — treat the group as 'unknown' so the strict
-      // filter excludes it, matching the reviewer's recommendation
-      // ("missing assessment data should make the group fail or be
-      // treated as unknown, not silently pass").
-      g.allVacant = false;
-      g.vacantUnknown = true;
-    }
-  }
-  // Pass 2: stamp each parcel with its group's rollups.
-  for (const f of parcelFc?.features || []) {
-    const gid = f.properties?._saleGroupId;
-    if (gid == null) continue;
-    const g = groups.get(gid);
-    if (!g) continue;
-    f.properties._saleGroupSize          = g.oids.length;
-    f.properties._saleGroupRollIds       = g.oids;
-    f.properties._saleGroupRolls         = g.rolls;
-    f.properties._saleGroupTotalPriceNum = g.priceNum;
-    f.properties._saleGroupTotalAcres    = g.totalAcres;
-    f.properties._saleGroupAcresIncomplete = g.acresIncomplete;
-    f.properties._saleGroupAsmtTotal     = g.asmtTotal;
-    f.properties._saleGroupAsmtIncomplete = g.asmtIncomplete;
-    // Sale-to-assessed ratio. Null when either side is missing OR when
-    // the asmt is incomplete (one or more parcels missing assessment
-    // data — partial sum would mislead). Useful for spotting non-arms-
-    // length transfers (ratio << 1) and significantly above-assessed
-    // sales (ratio >> 1) that may signal a hot submarket.
-    if (
-      Number.isFinite(g.priceNum) && g.priceNum > 0 &&
-      Number.isFinite(g.asmtTotal) && g.asmtTotal > 0 &&
-      !g.asmtIncomplete
-    ) {
-      f.properties._saleGroupSaleToAsmt = g.priceNum / g.asmtTotal;
-    } else {
-      f.properties._saleGroupSaleToAsmt = null;
-    }
-    f.properties._saleGroupAllVacant     = g.allVacant;
-    f.properties._saleGroupVacantUnknown = g.vacantUnknown;
+    const stamp = stamps.get(gid);
+    if (!stamp) continue;
+    Object.assign(f.properties, stamp);
     stampedCount++;
-    if (
-      g.priceNum != null &&
-      Number.isFinite(g.priceNum) &&
-      g.totalAcres > 0 &&
-      !g.acresIncomplete
-    ) {
-      f.properties._saleGroupPpa  = g.priceNum / g.totalAcres;
-      f.properties._saleGroupPpsf = g.priceNum / (g.totalAcres * 43560);
-    } else {
-      f.properties._saleGroupPpa  = null;
-      f.properties._saleGroupPpsf = null;
-    }
-    // $/lot — total sale price ÷ number of parcels in the group.
-    // Doesn't depend on acres so it works even when one or more
-    // parcels in the group are missing _acres (acresIncomplete=true).
-    if (
-      g.priceNum != null &&
-      Number.isFinite(g.priceNum) &&
-      g.oids.length > 0
-    ) {
-      f.properties._saleGroupPpl = g.priceNum / g.oids.length;
-    } else {
-      f.properties._saleGroupPpl = null;
-    }
   }
   console.info(`Sales upload: stamped group totals on ${stampedCount} parcels `
-             + `across ${groups.size} sale groups.`);
+             + `across ${stamps.size} sale groups.`);
 }
 
 /**
@@ -6527,14 +6429,7 @@ function renderTable(rows, { resetPage = true } = {}) {
     if (gid != null && gsize > 1) {
       const prevGid = pageIdx > 0 ? pageRows[pageIdx - 1].parcel.properties?._saleGroupId : null;
       const nextGid = pageIdx < pageRows.length - 1 ? pageRows[pageIdx + 1].parcel.properties?._saleGroupId : null;
-      const prevSame = prevGid === gid;
-      const nextSame = nextGid === gid;
-      let pos;
-      if (!prevSame && nextSame) pos = 'first';
-      else if (prevSame && nextSame) pos = 'middle';
-      else if (prevSame && !nextSame) pos = 'last';
-      else pos = 'solo';
-      tr.dataset.groupPos = pos;
+      tr.dataset.groupPos = groupPosition(prevGid, gid, nextGid);
       tr.dataset.groupSize = String(gsize);
       // Tooltip hint when the row has unique sibling info.
       if (!tr.title && Array.isArray(p._saleGroupRolls) && p._saleGroupRolls.length > 1) {
