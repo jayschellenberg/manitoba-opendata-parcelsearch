@@ -1,17 +1,17 @@
-# semiannual-archive-wrapper.ps1 — capture the permanent provincial snapshots
+# semiannual-archive-wrapper.ps1 - capture the permanent provincial snapshots
 # (roll / zoning / dev-plan) every six months, and ALERT when there's nothing
 # fresh to capture.
 #
 # Why a wrapper: r/archive_snapshot.R copies whatever currently sits in
 # mao-assembly/inputs/ into the dated Dropbox archive. The ONE step no
 # automation can do is the manual MB Open Data portal download that refreshes
-# those inputs — so a scheduled archive run is only as fresh as your last
+# those inputs - so a scheduled archive run is only as fresh as your last
 # download. archive_snapshot.R prints "!! STALE" (source > 12 months old) and
 # "SKIP ... not found" but still exits 0, so this wrapper scans the run output
 # and turns either condition into a push/email REMINDER to go pull fresh data.
 # It also alerts on a hard failure (nonzero exit).
 #
-# Alerts go through the shared helpers in alert-lib.ps1 (email + ntfy push) —
+# Alerts go through the shared helpers in alert-lib.ps1 (email + ntfy push) -
 # see that file for the alert-email.local.txt config. ntfy topic:
 #   mbps-semiannual-archive-jks
 #
@@ -35,7 +35,7 @@ if ($TestAlert) {
 }
 
 # Locate Rscript: prefer PATH, else the newest R under Program Files
-# (mirrors monthly-refresh.bat — never pin a version, it breaks on upgrade).
+# (mirrors monthly-refresh.bat - never pin a version, it breaks on upgrade).
 function Resolve-Rscript {
   $cmd = Get-Command Rscript.exe -ErrorAction SilentlyContinue
   if ($cmd) { return $cmd.Source }
@@ -47,7 +47,7 @@ function Resolve-Rscript {
 
 $rscript = Resolve-Rscript
 if (-not $rscript) {
-  $msg = "Rscript.exe not found on PATH or under C:\Program Files\R on $env:COMPUTERNAME — install R or add it to PATH."
+  $msg = "Rscript.exe not found on PATH or under C:\Program Files\R on $env:COMPUTERNAME - install R or add it to PATH."
   Write-Warning $msg
   Send-FailureAlert $root $NtfyTopic 'FAILED - MB parcel snapshot archive (no Rscript)' $msg | Out-Null
   exit 1
@@ -66,7 +66,7 @@ $text = $out -join "`n"
 "=== archive run $ts (exit $code) ===`n$text" | Set-Content -Path $log -Encoding UTF8
 $out | ForEach-Object { Write-Host $_ }
 
-# Hard failure → alert and pass the code through.
+# Hard failure -> alert and pass the code through.
 if ($code -ne 0) {
   $tail = ($out | Select-Object -Last 40) -join "`n"
   $body = "archive_snapshot.R exited with code $code on $env:COMPUTERNAME at $(Get-Date -Format s).`n`n" +
@@ -77,7 +77,7 @@ if ($code -ne 0) {
 
 # Soft conditions the script reports but doesn't fail on: a stale source
 # (> 12 months) or a missing input. Either means the manual MB Open Data
-# download is overdue — nudge so the next snapshot isn't a stale re-capture.
+# download is overdue - nudge so the next snapshot isn't a stale re-capture.
 $stale   = $out | Where-Object { $_ -match 'STALE' }
 $missing = $out | Where-Object { $_ -match 'SKIP\s+.*\(not found' }
 if ($stale -or $missing) {
@@ -86,7 +86,7 @@ if ($stale -or $missing) {
           "Download fresh MBRollGeoPackage / Zoning / Development-Plan from MB Open Data into mao-assembly/inputs/, then re-run.`n`n" +
           "$detail`n`nFull log: $log"
   Send-FailureAlert $root $NtfyTopic 'REMINDER - MB parcel snapshot source stale/missing' $body | Out-Null
-  Write-Host 'Archive completed but source is stale/missing — reminder alert sent.'
+  Write-Host 'Archive completed but source is stale/missing - reminder alert sent.'
   exit 0
 }
 

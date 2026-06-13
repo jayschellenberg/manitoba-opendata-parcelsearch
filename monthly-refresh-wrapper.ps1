@@ -1,9 +1,9 @@
-# monthly-refresh-wrapper.ps1 — run monthly-refresh.bat and ALERT on failure.
+# monthly-refresh-wrapper.ps1 - run monthly-refresh.bat and ALERT on failure.
 #
 # Why a wrapper: the .bat logs to logs\monthly-*.log and exits, but a
 # 04:00 scheduled run that dies has nobody watching. On any nonzero
 # exit this wrapper sends the last 40 log lines through two channels
-# (email + ntfy push) — the shared helpers live in alert-lib.ps1; see
+# (email + ntfy push) - the shared helpers live in alert-lib.ps1; see
 # that file for the alert-email.local.txt config and ntfy notes.
 #   ntfy topic: mbps-monthly-refresh-jks
 #
@@ -37,7 +37,7 @@ if ($code -eq 0) {
   exit 0
 }
 
-# Failure — grab the tail of the newest log for the alert body.
+# Failure - grab the tail of the newest log for the alert body.
 $log = Get-ChildItem (Join-Path $root 'logs\monthly-*.log') -ErrorAction SilentlyContinue |
   Sort-Object LastWriteTime -Descending | Select-Object -First 1
 $tail = if ($log) { (Get-Content $log.FullName -Tail 40) -join "`n" } else { '(no log file found)' }

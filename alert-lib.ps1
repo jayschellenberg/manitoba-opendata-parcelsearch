@@ -1,13 +1,13 @@
-# alert-lib.ps1 — shared failure-alert helpers (email + ntfy push).
+# alert-lib.ps1 - shared failure-alert helpers (email + ntfy push).
 #
 # Dot-sourced by the scheduled-task wrappers (monthly-refresh-wrapper.ps1 and
 # semiannual-archive-wrapper.ps1) so they share ONE alert path instead of each
 # carrying its own copy. Two channels:
 #
-#   1. EMAIL via SMTP (Send-MailMessage) — the real alert. Needs a one-time app
+#   1. EMAIL via SMTP (Send-MailMessage) - the real alert. Needs a one-time app
 #      password in alert-email.local.txt (gitignored). See that file's keys in
 #      Get-AlertConfig below.
-#   2. ntfy.sh push to a per-task topic — anonymous publish is free, no account.
+#   2. ntfy.sh push to a per-task topic - anonymous publish is free, no account.
 #      Works even before SMTP is configured, but only reaches you if you
 #      subscribe to the topic in the ntfy app.
 #
@@ -39,23 +39,33 @@ function Get-AlertConfig([string]$root) {
 
 function Send-AlertEmail([hashtable]$cfg, [string]$title, [string]$body) {
   if (-not ($cfg.to -and $cfg.smtp_host -and $cfg.smtp_user -and $cfg.smtp_pass)) {
-    Write-Warning 'Email not configured (need to=/smtp_host=/smtp_user=/smtp_pass= in alert-email.local.txt) — skipping email.'
+    Write-Warning 'Email not configured (need to=/smtp_host=/smtp_user=/smtp_pass= in alert-email.local.txt) - skipping email.'
     return $false
   }
   if ($cfg.smtp_pass -match '^<.*>$') {
-    Write-Warning 'smtp_pass in alert-email.local.txt is still the placeholder — skipping email.'
+    Write-Warning 'smtp_pass in alert-email.local.txt is still the placeholder - skipping email.'
     return $false
   }
   try {
-    $sec  = ConvertTo-SecureString $cfg.smtp_pass -AsPlainText -Force
-    $cred = New-Object System.Management.Automation.PSCredential($cfg.smtp_user, $sec)
+    # Force TLS 1.2 - Windows PowerShell 5.1 (the scheduled-task runtime)
+    # defaults to TLS 1.0/1.1, which Gmail / M365 SMTP submission rejects.
+    try { [Net.ServicePointManager]::SecurityProtocol =
+            [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch {}
     $from = if ($cfg.from) { $cfg.from } else { $cfg.smtp_user }
     $port = if ($cfg.smtp_port) { [int]$cfg.smtp_port } else { 587 }
-    # Send-MailMessage is marked obsolete upstream but remains the only
-    # dependency-free SMTP client in the box; fine for a local alert.
-    Send-MailMessage -To $cfg.to -From $from -Subject $title -Body $body `
-      -SmtpServer $cfg.smtp_host -Port $port -UseSsl -Credential $cred `
-      -WarningAction SilentlyContinue -ErrorAction Stop
+    # Use System.Net.Mail.SmtpClient directly, not Send-MailMessage: under
+    # Windows PowerShell 5.1 the cmdlet hangs on Gmail's STARTTLS, whereas
+    # SmtpClient with an explicit timeout sends in ~3s.
+    $msg = New-Object System.Net.Mail.MailMessage
+    $msg.From = $from
+    $msg.To.Add($cfg.to)
+    $msg.Subject = $title
+    $msg.Body    = $body
+    $smtp = New-Object System.Net.Mail.SmtpClient($cfg.smtp_host, $port)
+    $smtp.EnableSsl   = $true
+    $smtp.Timeout     = 30000   # 30s - fail fast, never hang an unattended job
+    $smtp.Credentials = New-Object System.Net.NetworkCredential($cfg.smtp_user, $cfg.smtp_pass)
+    try { $smtp.Send($msg) } finally { $msg.Dispose(); $smtp.Dispose() }
     Write-Host "Alert email sent to $($cfg.to) via $($cfg.smtp_host)"
     return $true
   } catch {
@@ -66,7 +76,7 @@ function Send-AlertEmail([hashtable]$cfg, [string]$title, [string]$body) {
 
 function Send-AlertPush([string]$topic, [string]$title, [string]$body) {
   try {
-    # NOTE: Title rides in an HTTP header — ASCII only.
+    # NOTE: Title rides in an HTTP header - ASCII only.
     Invoke-RestMethod -Uri "https://ntfy.sh/$topic" -Method Post `
       -Headers @{ Title = $title; Priority = 'high'; Tags = 'rotating_light' } `
       -Body $body -ContentType 'text/plain' -TimeoutSec 30 | Out-Null

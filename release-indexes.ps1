@@ -1,4 +1,4 @@
-# release-indexes.ps1 — one-command refresh of the GitHub-Release-hosted
+# release-indexes.ps1 - one-command refresh of the GitHub-Release-hosted
 # data indexes (legal-index.json ~130 MB, assessment-index.json ~17 MB).
 #
 # Replaces the manual 3-step dance (rebuild -> upload to a GitHub
@@ -13,7 +13,7 @@
 #   4. Rewrites the RELEASE_URL tag segment in api/legal-index.js and
 #      api/assessment-index.js (owner/repo/asset names are preserved
 #      from whatever the files already point at).
-#   5. Stops short of committing — review `git diff api/`, then commit
+#   5. Stops short of committing - review `git diff api/`, then commit
 #      and push; Vercel redeploys the edge functions and the 7-day
 #      edge cache keys off the new URL automatically.
 #
@@ -61,7 +61,7 @@ $gh = Find-Gh
 & $gh auth status *> $null
 if ($LASTEXITCODE -ne 0) { throw 'gh CLI is not authenticated (run: gh auth login)' }
 & $gh release view $Tag *> $null
-if ($LASTEXITCODE -eq 0) { throw "Release '$Tag' already exists — pass -Tag with a new name" }
+if ($LASTEXITCODE -eq 0) { throw "Release '$Tag' already exists - pass -Tag with a new name" }
 
 # --- 1. rebuild --------------------------------------------------------
 if ($SkipBuild) {
@@ -79,10 +79,10 @@ if ($SkipBuild) {
 
 # --- 2. sanity-check sizes ---------------------------------------------
 foreach ($a in $assets) {
-  if (-not (Test-Path $a.file)) { throw "Missing: $($a.file) — run without -SkipBuild" }
+  if (-not (Test-Path $a.file)) { throw "Missing: $($a.file) - run without -SkipBuild" }
   $mb = (Get-Item $a.file).Length / 1MB
   if ($mb -lt $a.minMB) {
-    throw ("{0} is only {1:n1} MB (expected >= {2} MB) — refusing to release a stub" -f `
+    throw ("{0} is only {1:n1} MB (expected >= {2} MB) - refusing to release a stub" -f `
       [IO.Path]::GetFileName($a.file), $mb, $a.minMB)
   }
   Write-Host ("  {0,-24} {1,8:n1} MB" -f [IO.Path]::GetFileName($a.file), $mb)
@@ -117,7 +117,7 @@ foreach ($a in $assets) {
 if ($DryRun) {
   Write-Host "`n[dry-run] no changes made."
 } else {
-  Write-Host "`nDone. Review `git diff api/`, then commit + push — Vercel redeploys the"
+  Write-Host "`nDone. Review `git diff api/`, then commit + push - Vercel redeploys the"
   Write-Host 'edge functions and clients pick up the new index on their next fetch.'
 }
 # Don't let the last native command's exit code (e.g. the expected

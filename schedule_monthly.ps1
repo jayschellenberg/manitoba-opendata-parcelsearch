@@ -1,10 +1,10 @@
-# schedule_monthly.ps1 — register the monthly refresh as a recurring
+# schedule_monthly.ps1 - register the monthly refresh as a recurring
 # Windows Task Scheduler entry that fires on the 15th of every month
 # at 04:00 local. The task runs monthly-refresh-wrapper.ps1 (NOT the
-# .bat directly) so a failed refresh sends an email alert — see the
+# .bat directly) so a failed refresh sends an email alert - see the
 # wrapper's header for how the destination address is configured.
 # Idempotent: re-run to update the schedule or after changing the
-# wrapper/.bat — the existing task is replaced.
+# wrapper/.bat - the existing task is replaced.
 #
 # Usage (run once from a PowerShell prompt with normal user privileges):
 #   powershell -ExecutionPolicy Bypass -File schedule_monthly.ps1
@@ -38,18 +38,18 @@ if (-not (Test-Path $Wrapper)) {
 # Replace any existing task with the same name.
 $existing = schtasks /Query /TN $TaskName 2>$null
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "Existing task '$TaskName' found — replacing it."
+    Write-Host "Existing task '$TaskName' found - replacing it."
     schtasks /Delete /TN $TaskName /F | Out-Null
 }
 
 # Create the recurring monthly trigger.
-#   /SC MONTHLY  — recur every month
-#   /D 15        — on the 15th
-#   /ST 04:00    — at 04:00 local
-#   /TR "<cmd>"  — task command: the PowerShell wrapper, which runs the
+#   /SC MONTHLY  - recur every month
+#   /D 15        - on the 15th
+#   /ST 04:00    - at 04:00 local
+#   /TR "<cmd>"  - task command: the PowerShell wrapper, which runs the
 #                  .bat and emails on a nonzero exit
-#   /RL LIMITED  — run as the current user with normal privileges
-#   /F           — force overwrite if a task exists
+#   /RL LIMITED  - run as the current user with normal privileges
+#   /F           - force overwrite if a task exists
 $taskCmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$Wrapper`""
 
 $result = schtasks /Create `
@@ -67,7 +67,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # Apply battery + start-when-available flags via the PowerShell
-# Scheduled Tasks module — schtasks doesn't expose these directly.
+# Scheduled Tasks module - schtasks doesn't expose these directly.
 $settings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
     -AllowStartIfOnBatteries `

@@ -1,10 +1,10 @@
-# schedule_semiannual.ps1 — register the permanent snapshot archive as a
+# schedule_semiannual.ps1 - register the permanent snapshot archive as a
 # recurring Windows Task Scheduler entry that fires twice a year, on the 1st
 # of January and July at 04:30 local. The task runs
 # semiannual-archive-wrapper.ps1, which archives the provincial roll / zoning /
 # dev-plan layers (r/archive_snapshot.R) and alerts when the source is missing
 # or > 12 months stale (the only step automation can't do is the manual MB Open
-# Data download). Idempotent: re-run to update the schedule — the existing task
+# Data download). Idempotent: re-run to update the schedule - the existing task
 # is replaced.
 #
 # Usage (run once from a PowerShell prompt with normal user privileges):
@@ -32,18 +32,18 @@ if (-not (Test-Path $Wrapper)) {
 # Replace any existing task with the same name.
 $existing = schtasks /Query /TN $TaskName 2>$null
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "Existing task '$TaskName' found — replacing it."
+    Write-Host "Existing task '$TaskName' found - replacing it."
     schtasks /Delete /TN $TaskName /F | Out-Null
 }
 
 # Create the recurring twice-a-year trigger.
-#   /SC MONTHLY      — month-based schedule
-#   /M JAN,JUL       — only in January and July (i.e. every 6 months)
-#   /D 1             — on the 1st
-#   /ST 04:30        — at 04:30 local (after the monthly refresh's 04:00 slot)
-#   /TR "<cmd>"      — task command: the PowerShell wrapper
-#   /RL LIMITED      — run as the current user with normal privileges
-#   /F               — force overwrite if a task exists
+#   /SC MONTHLY      - month-based schedule
+#   /M JAN,JUL       - only in January and July (i.e. every 6 months)
+#   /D 1             - on the 1st
+#   /ST 04:30        - at 04:30 local (after the monthly refresh's 04:00 slot)
+#   /TR "<cmd>"      - task command: the PowerShell wrapper
+#   /RL LIMITED      - run as the current user with normal privileges
+#   /F               - force overwrite if a task exists
 $taskCmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$Wrapper`""
 
 $result = schtasks /Create `
@@ -62,7 +62,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # Apply battery + start-when-available flags via the PowerShell Scheduled
-# Tasks module — schtasks doesn't expose these directly.
+# Tasks module - schtasks doesn't expose these directly.
 $settings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
     -AllowStartIfOnBatteries `

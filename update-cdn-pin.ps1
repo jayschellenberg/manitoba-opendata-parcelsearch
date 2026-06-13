@@ -1,4 +1,4 @@
-# update-cdn-pin.ps1 — publish the local mb-parcel-data clone and
+# update-cdn-pin.ps1 - publish the local mb-parcel-data clone and
 # repoint the app's pinned CDN SHA in one shot.
 #
 # After an R build script rewrites shards into the local
@@ -80,7 +80,7 @@ if (-not $existing) { throw "Could not find MB_PARCEL_DATA_CDN SHA in $arcgisPat
 if ($DryRun) {
   Write-Host "[dry-run] arcgis.js: SHA $existing -> $headSha"
 } elseif ($existing -eq $headSha) {
-  Write-Host 'arcgis.js already points at HEAD — nothing to rewrite.'
+  Write-Host 'arcgis.js already points at HEAD - nothing to rewrite.'
 } else {
   Set-Content -Path $arcgisPath -Value ($content -replace $pattern, $headSha) -NoNewline
   Write-Host "arcgis.js: SHA $existing -> $headSha"
@@ -89,7 +89,7 @@ if ($DryRun) {
 if ($DryRun) {
   Write-Host "`n[dry-run] no changes made."
 } else {
-  Write-Host "`nDone. Review ``git diff web/src/arcgis.js``, then commit + push —"
+  Write-Host "`nDone. Review ``git diff web/src/arcgis.js``, then commit + push -"
   Write-Host 'Vercel redeploys and the app picks up the new shards.'
 }
 # Don't let a benign nonzero from the last native call (e.g. an empty
