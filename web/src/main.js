@@ -97,7 +97,7 @@ import {
   sectionLinesFromRows,
   quarterLinesFromRows,
   surveyFcToRows,
-  MASC_PALETTE,
+  masccolor,
 } from './masc.js';
 import {
   initMap,
@@ -6726,7 +6726,7 @@ function soilCell(p) {
   const swatch = document.createElement('span');
   swatch.className = 'soil-chip';
   swatch.textContent = rating;
-  swatch.style.backgroundColor = soilColor(rating);
+  swatch.style.backgroundColor = masccolor(rating);
   // White text on the visually-dark swatches (C olive, F dark green,
   // H magenta, I red, J purple) so the rating letter stays legible
   // against the chip background.
@@ -6879,14 +6879,6 @@ function stampOfficialRiskAreas(rows, riskAreaFc) {
       // never make an otherwise-good parcel row fail to render.
     }
   }
-}
-
-function soilColor(code) {
-  // Mirrors MASC_PALETTE in masc.js (and the masc-fill paint expression
-  // in map.js). Keep the three lists synced when updating the palette.
-  const map = { A:'#fff8c8', B:'#f2d640', C:'#847b14', D:'#a6e29f', E:'#4fab57',
-                F:'#1a6b26', G:'#f4c2d1', H:'#e6228b', I:'#dc0000', J:'#9c27b0' };
-  return map[code] || '#cccccc';
 }
 
 function legalCell(p) {

@@ -22,6 +22,7 @@ import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import { landCoverBreakdown, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
 import { MB_PARCEL_DATA_CDN } from './arcgis.js';
+import { MASC_PALETTE } from './masc.js';
 
 // mapbox-gl-draw was written against the Mapbox GL `mapboxgl-*` DOM
 // class names; MapLibre uses `maplibregl-*`. Patch the lookup table
@@ -709,16 +710,9 @@ export function initMap(container, { onFeatureClick } = {}) {
         paint: {
           'fill-color': [
             'match', ['get', 'rating'],
-            'A', '#fff8c8',
-            'B', '#f2d640',
-            'C', '#847b14',
-            'D', '#a6e29f',
-            'E', '#4fab57',
-            'F', '#1a6b26',
-            'G', '#f4c2d1',
-            'H', '#e6228b',
-            'I', '#dc0000',
-            'J', '#9c27b0',
+            // A→J palette — single source in masc.js (see mascPalette.test.js
+            // which pins this exact spread byte-for-byte).
+            ...MASC_PALETTE,
             '#cccccc',
           ],
           'fill-opacity': 0.35,
@@ -742,16 +736,9 @@ export function initMap(container, { onFeatureClick } = {}) {
         paint: {
           'fill-color': [
             'match', ['get', 'rating'],
-            'A', '#fff8c8',
-            'B', '#f2d640',
-            'C', '#847b14',
-            'D', '#a6e29f',
-            'E', '#4fab57',
-            'F', '#1a6b26',
-            'G', '#f4c2d1',
-            'H', '#e6228b',
-            'I', '#dc0000',
-            'J', '#9c27b0',
+            // A→J palette — single source in masc.js (see mascPalette.test.js
+            // which pins this exact spread byte-for-byte).
+            ...MASC_PALETTE,
             '#cccccc',
           ],
           'fill-opacity': 0.35,
