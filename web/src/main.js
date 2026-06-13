@@ -4533,8 +4533,7 @@ async function toggleOverlay(which) {
       }
     } catch (err) {
       console.warn(`${label} fetch failed`, err);
-      btn.classList.remove('active');
-      btn.setAttribute('aria-pressed', 'false');
+      setOverlayPressed(btn, false);
       btn.disabled = false;
       setOverlayBtnLabel(btn, label);
       setCount(`Failed to load ${label}: ${err.message}`);
@@ -4544,8 +4543,7 @@ async function toggleOverlay(which) {
   } else if (munis.length === 0 && !haveData) {
     // No muni selected and nothing cached from a previous search —
     // revert the toggle and tell the user what to do.
-    btn.classList.remove('active');
-    btn.setAttribute('aria-pressed', 'false');
+    setOverlayPressed(btn, false);
     setOverlayBtnLabel(btn, label);
     setCount(`Select a municipality to load the ${label}.`);
     return;
@@ -4729,8 +4727,7 @@ function resetMuniParcelsToggle() {
     auxLoaded.muniParcels = false;
     muniParcelsLoadedFor = null;
     if ($muniParcelsToggle.classList.contains('active')) {
-      $muniParcelsToggle.classList.remove('active');
-      $muniParcelsToggle.setAttribute('aria-pressed', 'false');
+      setOverlayPressed($muniParcelsToggle, false);
       setOverlayBtnLabel($muniParcelsToggle, 'Assessment Parcels');
       mapReady.then(() => setMuniParcelsVisible(map, false));
     }
@@ -4922,8 +4919,7 @@ async function loadHistorical(snap, muniName) {
     setHistoricalVisible(map, true);
     historicalActive = true;
     historicalLoadedMuni = muniName;
-    $historicalToggle.classList.add('active');
-    $historicalToggle.setAttribute('aria-pressed', 'true');
+    setOverlayPressed($historicalToggle, true);
     updateHistoricalBanner(snap);
     const n = parcels.features?.length || 0;
     let changeNote = '';
@@ -4950,8 +4946,7 @@ function deactivateHistorical() {
   historicalLoadedMuni = null;
   mapReady.then(() => setHistoricalVisible(map, false));
   if ($historicalToggle) {
-    $historicalToggle.classList.remove('active');
-    $historicalToggle.setAttribute('aria-pressed', 'false');
+    setOverlayPressed($historicalToggle, false);
     setOverlayBtnLabel($historicalToggle, 'Historical');
   }
   if ($historicalBanner) $historicalBanner.hidden = true;
@@ -5173,8 +5168,7 @@ function resetMascAndGridToggles() {
   if (mascLoadedFor && mascLoadedFor !== desiredOverlayKey) {
     mascLoadedFor = null;
     if ($mascToggle.classList.contains('active')) {
-      $mascToggle.classList.remove('active');
-      $mascToggle.setAttribute('aria-pressed', 'false');
+      setOverlayPressed($mascToggle, false);
       setOverlayBtnLabel($mascToggle, 'MASC rating');
       mapReady.then(() => {
         setMascVisible(map, false);
@@ -5191,8 +5185,7 @@ function resetMascAndGridToggles() {
     setCliMode(null);
     lastCliFc = EMPTY_FC;
     if ($cliToggle && $cliToggle.classList.contains('active')) {
-      $cliToggle.classList.remove('active');
-      $cliToggle.setAttribute('aria-pressed', 'false');
+      setOverlayPressed($cliToggle, false);
       setOverlayBtnLabel($cliToggle, cliButtonLabelFor(null));
       mapReady.then(() => {
         setCliAgrVisible(map, false);
@@ -5208,8 +5201,7 @@ function resetMascAndGridToggles() {
     landCoverLoadedFor = null;
     landCoverMode = null;
     if ($landcoverToggle && $landcoverToggle.classList.contains('active')) {
-      $landcoverToggle.classList.remove('active');
-      $landcoverToggle.setAttribute('aria-pressed', 'false');
+      setOverlayPressed($landcoverToggle, false);
       setOverlayBtnLabel($landcoverToggle, landCoverButtonLabelFor(null));
       mapReady.then(() => {
         setLandCoverVisible(map, false);
@@ -5240,8 +5232,7 @@ function resetMascAndGridToggles() {
       // re-enters the active branch and runs the fetch path. Re-toggling
       // restores the previous mode (section / quarter) on the new muni
       // rather than dropping the user back to off.
-      $gridToggle.classList.remove('active');
-      $gridToggle.setAttribute('aria-pressed', 'false');
+      setOverlayPressed($gridToggle, false);
       setOverlayBtnLabel($gridToggle, gridButtonLabelFor(null));
       mapReady.then(() => {
         setSurveyGridVisible(map, false);
@@ -5273,8 +5264,7 @@ async function toggleMascOverlay() {
     ? csvMatchedMunis.slice()
     : ($municipality.value ? [$municipality.value] : []);
   if (munis.length === 0) {
-    $mascToggle.classList.remove('active');
-    $mascToggle.setAttribute('aria-pressed', 'false');
+    setOverlayPressed($mascToggle, false);
     return;
   }
   const loadKey = munis.join('|');
@@ -5321,8 +5311,7 @@ async function toggleMascOverlay() {
         }
       }
       if (allRows.length === 0 && allRiverlots.length === 0) {
-        $mascToggle.classList.remove('active');
-        $mascToggle.setAttribute('aria-pressed', 'false');
+        setOverlayPressed($mascToggle, false);
         $mascToggle.disabled = false;
         setOverlayBtnLabel($mascToggle, 'MASC rating');
         const label = munis.length === 1 ? munis[0] : `${munis.length} matched munis (${munis.join(', ')})`;
@@ -5334,8 +5323,7 @@ async function toggleMascOverlay() {
       mascLoadedFor = loadKey;
     } catch (err) {
       console.warn('MASC fetch failed', err);
-      $mascToggle.classList.remove('active');
-      $mascToggle.setAttribute('aria-pressed', 'false');
+      setOverlayPressed($mascToggle, false);
       $mascToggle.disabled = false;
       setOverlayBtnLabel($mascToggle, 'MASC rating');
       setCount(`Failed to load MASC soil ratings: ${err.message}`);
@@ -5498,8 +5486,7 @@ async function toggleCliOverlay() {
     : ($municipality.value ? [$municipality.value] : []);
   if (munis.length === 0) {
     setCliMode(null);
-    $cliToggle.classList.remove('active');
-    $cliToggle.setAttribute('aria-pressed', 'false');
+    setOverlayPressed($cliToggle, false);
     return;
   }
   const loadKey = munis.join('|');
@@ -5511,8 +5498,7 @@ async function toggleCliOverlay() {
     setCliMode(null);
     setCliAgrVisible(map, false);
     if ($cliLegend) $cliLegend.hidden = true;
-    $cliToggle.classList.remove('active');
-    $cliToggle.setAttribute('aria-pressed', 'false');
+    setOverlayPressed($cliToggle, false);
     setOverlayBtnLabel($cliToggle, cliButtonLabelFor(null));
     return;
   }
@@ -5533,8 +5519,7 @@ async function toggleCliOverlay() {
       const missing = muniBoundaries.filter((mb) => !mb.feat).map((mb) => mb.muni);
       if (missing.length > 0) {
         setCliMode(null);
-        $cliToggle.classList.remove('active');
-        $cliToggle.setAttribute('aria-pressed', 'false');
+        setOverlayPressed($cliToggle, false);
         $cliToggle.disabled = false;
         setOverlayBtnLabel($cliToggle, cliButtonLabelFor(null));
         setCount(`Couldn't locate boundary for ${missing.join(', ')}; can't load CLI.`);
@@ -5546,8 +5531,7 @@ async function toggleCliOverlay() {
       const features = fcs.flatMap((fc) => fc?.features || []);
       if (features.length === 0) {
         setCliMode(null);
-        $cliToggle.classList.remove('active');
-        $cliToggle.setAttribute('aria-pressed', 'false');
+        setOverlayPressed($cliToggle, false);
         $cliToggle.disabled = false;
         setOverlayBtnLabel($cliToggle, cliButtonLabelFor(null));
         const label = munis.length === 1 ? munis[0] : `${munis.length} matched munis (${munis.join(', ')})`;
@@ -5572,8 +5556,7 @@ async function toggleCliOverlay() {
     } catch (err) {
       console.warn('CLI fetch failed', err);
       setCliMode(null);
-      $cliToggle.classList.remove('active');
-      $cliToggle.setAttribute('aria-pressed', 'false');
+      setOverlayPressed($cliToggle, false);
       $cliToggle.disabled = false;
       setOverlayBtnLabel($cliToggle, cliButtonLabelFor(null));
       setCount(`Failed to load CLI soil capability: ${err.message}`);
@@ -5591,8 +5574,7 @@ async function toggleCliOverlay() {
     applyCliIdentityMode(lastCliFc);
   }
   setCliAgrVisible(map, true);
-  $cliToggle.classList.add('active');
-  $cliToggle.setAttribute('aria-pressed', 'true');
+  setOverlayPressed($cliToggle, true);
   setOverlayBtnLabel($cliToggle, cliButtonLabelFor(targetMode));
   if ($cliLegend) $cliLegend.hidden = false;
 }
@@ -5632,8 +5614,7 @@ async function toggleLandCoverOverlay() {
     landCoverLoadedFor = null;
     setLandCoverVisible(map, false);
     setLandCoverRasterVisible(map, false);
-    $landcoverToggle.classList.remove('active');
-    $landcoverToggle.setAttribute('aria-pressed', 'false');
+    setOverlayPressed($landcoverToggle, false);
     setOverlayBtnLabel($landcoverToggle, landCoverButtonLabelFor(null));
     if ($landcoverLegend) $landcoverLegend.hidden = true;
     return;
@@ -5683,8 +5664,7 @@ async function toggleLandCoverOverlay() {
     landCoverMode = 'dominant';
     setLandCoverVisible(map, true);
     setLandCoverRasterVisible(map, false);
-    $landcoverToggle.classList.add('active');
-    $landcoverToggle.setAttribute('aria-pressed', 'true');
+    setOverlayPressed($landcoverToggle, true);
     setOverlayBtnLabel($landcoverToggle, landCoverButtonLabelFor('dominant'));
     setColumnVisible('landcover', true);
     setColumnVisible('cultpct', true);
@@ -5711,8 +5691,7 @@ async function toggleLandCoverOverlay() {
   setLandCoverVisible(map, false);
   setLandCoverRasterVisible(map, true);
   setLandCoverRasterOpacity(map, landCoverOpacity);
-  $landcoverToggle.classList.add('active');
-  $landcoverToggle.setAttribute('aria-pressed', 'true');
+  setOverlayPressed($landcoverToggle, true);
   setOverlayBtnLabel($landcoverToggle, landCoverButtonLabelFor('detailed'));
   if ($landcoverLegend) { renderLandCoverLegend('detailed'); $landcoverLegend.hidden = false; }
   setCount('Land Cover (Detailed) — pixel-level 2020 mosaic. Use the opacity slider in the legend to dial in vs the basemap.');
@@ -5863,14 +5842,12 @@ async function toggleSurveyGridOverlay() {
   if (targetMode === null) {
     gridMode = null;
     setSurveyGridVisible(map, false);
-    $gridToggle.classList.remove('active');
-    $gridToggle.setAttribute('aria-pressed', 'false');
+    setOverlayPressed($gridToggle, false);
     setOverlayBtnLabel($gridToggle, gridButtonLabelFor(null));
     return;
   }
 
-  $gridToggle.classList.add('active');
-  $gridToggle.setAttribute('aria-pressed', 'true');
+  setOverlayPressed($gridToggle, true);
 
   // Cache key: joined muni list (sales-CSV mode), single muni (normal
   // mode with a muni selected), or '__PROVINCE__' (nothing selected,
@@ -5910,8 +5887,7 @@ async function toggleSurveyGridOverlay() {
         const missing = muniBoundaries.filter((mb) => !mb.feat).map((mb) => mb.muni);
         if (missing.length > 0) {
           gridMode = null;
-          $gridToggle.classList.remove('active');
-          $gridToggle.setAttribute('aria-pressed', 'false');
+          setOverlayPressed($gridToggle, false);
           $gridToggle.disabled = false;
           setOverlayBtnLabel($gridToggle, gridButtonLabelFor(null));
           setCount(`Couldn't locate boundary for ${missing.join(', ')}; can't load the section-township grid.`);
@@ -5951,8 +5927,7 @@ async function toggleSurveyGridOverlay() {
     } catch (err) {
       console.warn('Sec-Twp Grid fetch failed', err);
       gridMode = null;
-      $gridToggle.classList.remove('active');
-      $gridToggle.setAttribute('aria-pressed', 'false');
+      setOverlayPressed($gridToggle, false);
       $gridToggle.disabled = false;
       setOverlayBtnLabel($gridToggle, gridButtonLabelFor(null));
       setCount(`Failed to load section-township grid: ${err.message}`);
@@ -6306,8 +6281,7 @@ async function toggleAuxOverlay(which) {
       if (which === 'muniParcels') muniParcelsLoadedFor = muniParcelsLoadKey();
     } catch (err) {
       console.warn(`${which} fetch failed`, err);
-      btn.classList.remove('active');
-      btn.setAttribute('aria-pressed', 'false');
+      setOverlayPressed(btn, false);
       setOverlayBtnLabel(btn, meta.off);
       btn.disabled = false;
       return;
