@@ -38,6 +38,7 @@ import {
   dominantCliLabel,
   dominantSoilTypeLabel,
 } from './lib/cellFormat.js';
+import { filterMascRiverlotsForMuni } from './lib/muniIdentity.js';
 
 // Entry point. Wires the search inputs, the map, and the results table.
 //
@@ -7176,85 +7177,6 @@ function parseCivicBound(raw, kind) {
   // No letter typed: lower bound includes the bare number; upper bound
   // extends across every letter-suffixed variant of that number.
   return kind === 'upper' ? num * 100 + 99 : num * 100;
-}
-
-function filterMascRiverlotsForMuni(features, selectedMuni) {
-  const exact = features.filter((f) => featureMascMunis(f).some((muni) => (
-    muniIdentitiesMatch(muni, selectedMuni, { allowTypeFallback: false })
-  )));
-  if (exact.length > 0) return exact;
-
-  // Some long parish lots are boundary-tagged to an enclave Town while
-  // the MASC source or Roll Entry parcel sits with the surrounding RM.
-  // If there is no exact typed match, fall back to the shared bare
-  // muni name so those rated river lots still surface for parcel users.
-  return features.filter((f) => featureMascMunis(f).some((muni) => (
-    muniIdentitiesMatch(muni, selectedMuni, { allowTypeFallback: true })
-  )));
-}
-
-function featureMascMunis(feature) {
-  const p = feature?.properties || {};
-  return [
-    p.muni,
-    p.rating_muni,
-    p.ratingMuni,
-    p.source_muni,
-  ].filter((value, idx, values) => value && values.indexOf(value) === idx);
-}
-
-function muniIdentitiesMatch(sourceMuni, selectedMuni, { allowTypeFallback = false } = {}) {
-  const source = parseMuniIdentity(sourceMuni);
-  const selected = parseMuniIdentity(selectedMuni);
-  if (!source.name || !selected.name || source.name !== selected.name) return false;
-  if (!source.type || !selected.type || source.type === selected.type) return true;
-  return allowTypeFallback;
-}
-
-function parseMuniIdentity(value) {
-  let s = String(value || '')
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .toUpperCase()
-    .replace(/[\u2010-\u2015\u2212]/g, '-')
-    .replace(/\./g, '')
-    .replace(/_/g, ' ')
-    .replace(/&/g, ' AND ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  let type = null;
-
-  const parenthetical = s.match(/\((RM|RURAL MUNICIPALITY|MUNICIPALITY|TOWN|CITY|VILLAGE)\)\s*$/);
-  if (parenthetical) {
-    type = normalizeMuniType(parenthetical[1]);
-    s = s.replace(/\s*\([^)]*\)\s*$/, '').trim();
-  }
-
-  s = s.replace(
-    /\b(RM|RURAL MUNICIPALITY|MUNICIPALITY|TOWN|CITY|VILLAGE)\s+OF\b/g,
-    (_, t) => {
-      type ||= normalizeMuniType(t);
-      return '';
-    },
-  );
-  s = s.replace(/\s+(RM|RURAL MUNICIPALITY|MUNICIPALITY|TOWN|CITY|VILLAGE)$/g, (_, t) => {
-    type ||= normalizeMuniType(t);
-    return '';
-  });
-  s = s
-    .replace(/\bMTN\b/g, 'MOUNTAIN')
-    .replace(/\bFRANCOIS\b/g, 'FRANCIS')
-    .replace(/\bDESALABERRY\b/g, 'DE SALABERRY')
-    .replace(/\bSAINTE\b/g, 'STE')
-    .replace(/[^A-Z0-9]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return { name: s, type };
-}
-
-function normalizeMuniType(value) {
-  const t = String(value || '').toUpperCase().trim();
-  if (t === 'RURAL MUNICIPALITY') return 'RM';
-  return t;
 }
 
 /**
