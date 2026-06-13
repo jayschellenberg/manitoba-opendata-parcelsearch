@@ -40,6 +40,7 @@ import {
 } from './lib/cellFormat.js';
 import { filterMascRiverlotsForMuni } from './lib/muniIdentity.js';
 import { safeExternalUrl } from './lib/safeUrl.js';
+import { applyCivicNumberRange } from './lib/civicRange.js';
 
 // Entry point. Wires the search inputs, the map, and the results table.
 //
@@ -7093,75 +7094,6 @@ function centroidKey(f) {
   }
   if (n === 0) return null;
   return `${(cx / n).toFixed(4)},${(cy / n).toFixed(4)}`;
-}
-
-/**
- * In-place filter on the parcel FC: keep only features whose
- * Property_Address leads with a civic number in [from, to]. A blank
- * `from` means no lower bound; blank `to` means no upper bound. When
- * both are blank, the FC passes through untouched. Letter suffixes
- * (e.g. "100A") sort between the integer and the next integer, so:
- *   from "100"  to "200"  → matches 100, 100A, 100B, 101, ..., 200, 200A
- *   from "100A" to "100C" → matches only 100A, 100B, 100C
- *   from "100"  to "100"  → matches 100 and any 100x letter variants
- * Records that don't begin with a civic number (legal descriptions
- * stuffed into Property_Address, junk reference codes) get dropped
- * whenever a range is set; if the user hasn't set a range, those
- * records are left alone.
- */
-function applyCivicNumberRange(fc, fromRaw, toRaw) {
-  const from = parseCivicBound(fromRaw, 'lower');
-  const to   = parseCivicBound(toRaw,   'upper');
-  if (from == null && to == null) return;
-  const features = fc?.features || [];
-  const kept = [];
-  for (const f of features) {
-    const k = parseCivicAddressKey(f?.properties?.Property_Address);
-    if (k == null) continue;                   // no civic number → drop when range set
-    if (from != null && k < from) continue;
-    if (to   != null && k > to)   continue;
-    kept.push(f);
-  }
-  fc.features = kept;
-}
-
-/** Parse a civic-address string into a sortable integer key.
- *  "444 1ST ST"   -> 44400
- *  "100A MAIN ST" -> 10001  (A = +1)
- *  "100B MAIN ST" -> 10002
- *  "60158 ROAD 96W" -> 6015800
- *  "DESC NE22-21-3E" -> null
- *  "NE1-1-3E" -> null
- *  Letter index uses A=1..Z=26, leaving 0 for "no suffix" so a bare
- *  number sorts BEFORE any of its letter-suffixed variants. */
-function parseCivicAddressKey(raw) {
-  if (!raw) return null;
-  const m = String(raw).match(/^(\d+)([A-Za-z]?)\s/);
-  if (!m) return null;
-  const num = Number(m[1]);
-  if (!Number.isFinite(num)) return null;
-  const letter = m[2] ? m[2].toUpperCase().charCodeAt(0) - 64 : 0;
-  return num * 100 + letter;
-}
-
-/** Parse a From/To bound into a comparison key. The asymmetry handles
- *  user expectations:
- *    from "100" (no letter) → 100*100 + 0   so 100 itself is included
- *    to   "100" (no letter) → 100*100 + 99  so any 100x suffix included
- *    from "100A" / to "100A" → exact         (100*100 + 1)
- *  Returns null on empty/garbage input. */
-function parseCivicBound(raw, kind) {
-  const s = String(raw || '').trim();
-  if (!s) return null;
-  const m = s.match(/^(\d+)([A-Za-z]?)$/);
-  if (!m) return null;
-  const num = Number(m[1]);
-  if (!Number.isFinite(num)) return null;
-  const letter = m[2] ? m[2].toUpperCase().charCodeAt(0) - 64 : null;
-  if (letter != null) return num * 100 + letter;
-  // No letter typed: lower bound includes the bare number; upper bound
-  // extends across every letter-suffixed variant of that number.
-  return kind === 'upper' ? num * 100 + 99 : num * 100;
 }
 
 /**
