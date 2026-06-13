@@ -23,6 +23,7 @@ import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import { landCoverBreakdown, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
 import { MB_PARCEL_DATA_CDN } from './arcgis.js';
 import { MASC_PALETTE } from './masc.js';
+import { safeExternalUrl } from './lib/safeUrl.js';
 
 // mapbox-gl-draw was written against the Mapbox GL `mapboxgl-*` DOM
 // class names; MapLibre uses `maplibregl-*`. Patch the lookup table
@@ -3998,16 +3999,6 @@ function fmtNum(n, decimals) {
   });
 }
 
-/** Allow only http/https URLs into anchor hrefs that come from external
- *  data (contaminated-sites CSV, ROLL_ENTRY's Asmt_Rpt_Url, etc.). */
-function safeExternalUrl(raw) {
-  if (!raw) return null;
-  try {
-    const u = new URL(String(raw), window.location.origin);
-    if (u.protocol === 'http:' || u.protocol === 'https:') return u.toString();
-  } catch { /* not parseable */ }
-  return null;
-}
 
 /** Read the sale-group sibling OBJECTID array off a parcel feature's
  *  properties. queryRenderedFeatures returns properties as a plain

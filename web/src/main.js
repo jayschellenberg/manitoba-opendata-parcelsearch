@@ -39,6 +39,7 @@ import {
   dominantSoilTypeLabel,
 } from './lib/cellFormat.js';
 import { filterMascRiverlotsForMuni } from './lib/muniIdentity.js';
+import { safeExternalUrl } from './lib/safeUrl.js';
 
 // Entry point. Wires the search inputs, the map, and the results table.
 //
@@ -6954,22 +6955,6 @@ function walkCell(row) {
   a.addEventListener('click', (e) => e.stopPropagation());
   cell.appendChild(a);
   return cell;
-}
-
-/**
- * Validate an external URL and only return it when its protocol is one
- * we trust. Defensive against unsafe javascript: / data: / vbscript:
- * URLs sneaking in from external open-data sources we don't control
- * (Manitoba Assessment Online, contaminated-sites registry, etc.).
- * Returns null for invalid or non-http(s) URLs.
- */
-function safeExternalUrl(raw) {
-  if (!raw) return null;
-  try {
-    const u = new URL(String(raw), window.location.origin);
-    if (u.protocol === 'http:' || u.protocol === 'https:') return u.toString();
-  } catch { /* not a parseable URL */ }
-  return null;
 }
 
 /**
