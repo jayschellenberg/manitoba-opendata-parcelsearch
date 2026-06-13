@@ -31,6 +31,13 @@ import { encodeState, decodeState } from './lib/urlState.js';
 import { setOverlayPressed } from './lib/overlayToggle.js';
 import { stalenessBannerState } from './lib/staleness.js';
 import { computeSaleGroups, groupPosition } from './lib/saleGroups.js';
+import {
+  realStr,
+  legalDisplay,
+  parseTitleNumbers,
+  dominantCliLabel,
+  dominantSoilTypeLabel,
+} from './lib/cellFormat.js';
 
 // Entry point. Wires the search inputs, the map, and the results table.
 //
@@ -6660,23 +6667,6 @@ if ($paginator) {
  * when no Soil Survey / CLI overlay has been loaded for this muni.
  * Falls back to AGCAP_CLS if AGRI_CAP is missing.
  */
-function dominantCliLabel(p) {
-  const top = Array.isArray(p?._soilComposition) ? p._soilComposition[0] : null;
-  if (!top) return null;
-  return top.agriCap || top.agcapCls || null;
-}
-
-/**
- * Dominant soil association name for the parcel — SOILNAME1 of the
- * top-share soil from the stamped composition (e.g. "Red River").
- * Empty when no Soil Survey / CLI overlay has been loaded.
- */
-function dominantSoilTypeLabel(p) {
-  const top = Array.isArray(p?._soilComposition) ? p._soilComposition[0] : null;
-  if (!top) return null;
-  return top.soilName || top.soilCode || null;
-}
-
 /**
  * Build the 33 CSV cells (11 columns × 3 soils) for the per-soil land-
  * feature descriptors. Reads `_soilComposition[0..2]` (rolled-up by
@@ -6941,31 +6931,6 @@ function titleCell(p) {
     cell.title = raw;
   }
   return cell;
-}
-
-/** Split a 'X / CITY; Y / CITY' style certificates_of_title string
- *  into just the number tokens. Robust against extra whitespace and
- *  the alphanumeric prefix-letter forms (D15630, etc.). */
-function parseTitleNumbers(raw) {
-  const out = [];
-  for (const part of String(raw || '').split(/\s*;\s*/)) {
-    const trimmed = part.trim();
-    if (!trimmed) continue;
-    // Take everything up to the first ' / ' (or end of string).
-    const num = trimmed.split(/\s*\/\s*/)[0].trim();
-    if (num) out.push(num);
-  }
-  return out;
-}
-
-function legalDisplay(p = {}) {
-  if (realStr(p._legalDescription)) return realStr(p._legalDescription);
-  const parts = [];
-  if (realStr(p._lot)) parts.push(`L ${realStr(p._lot)}`);
-  if (realStr(p._block)) parts.push(`B ${realStr(p._block)}`);
-  if (realStr(p._plan)) parts.push(`P ${realStr(p._plan)}`);
-  if (parts.length) return parts.join(' · ');
-  return realStr(p._legalDetail);
 }
 
 /**
@@ -7434,13 +7399,6 @@ function formatDes(d) {
  * null sneaks through some service configs as text). Returns the
  * trimmed string when real, otherwise null.
  */
-function realStr(v) {
-  if (v == null) return null;
-  const s = String(v).trim();
-  if (s === '' || s === '<Null>' || s.toLowerCase() === 'null') return null;
-  return s;
-}
-
 function formatChanges(row) {
   const parts = [];
   // Read from the changed-polygons-only join (row.zoningChanges /
