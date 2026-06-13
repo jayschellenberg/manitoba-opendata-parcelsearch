@@ -129,6 +129,22 @@ Rscript r/build_landcover_tiles.R     # needs GDAL on PATH; ~15-45 min
 ```
 Commit the regenerated `web/public/data/landcover-tiles/`.
 
+## Continuous integration
+
+GitHub Actions is currently blocked at the account level (see the note
+in `.github/workflows/ci.yml`), so the test suite runs in two other
+places instead:
+
+- **Remote gate (automatic):** `vercel.json`'s build command runs
+  `npm test` before `npm run build`, so a failing test fails the Vercel
+  deploy — nothing broken reaches production.
+- **Local gate (opt-in, once per clone):** enable the pre-push hook with
+  `git config core.hooksPath .githooks`. It runs the suite before every
+  push (`git push --no-verify` to bypass in an emergency).
+
+When the Actions block is lifted, the `ci.yml` workflow resumes on its
+own; the Vercel gate can stay as defence-in-depth.
+
 ## One-time setup & security settings
 
 ### Refresh-failure alerts (email + push)

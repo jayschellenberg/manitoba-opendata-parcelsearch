@@ -1,0 +1,21 @@
+#!/bin/sh
+# Pre-push gate — runs the web test suite before any push so a broken
+# change is caught locally, not after it reaches Vercel.
+#
+# GitHub Actions is blocked at the account level (see MAINTENANCE.md),
+# so the remote safety net is the Vercel build (which now runs `npm
+# test` before `npm run build` — a failing test fails the deploy). This
+# hook is the fast local complement.
+#
+# Enable once per clone (hooks aren't pushed):
+#   git config core.hooksPath .githooks
+#
+# Bypass for an emergency push:  git push --no-verify
+
+echo "pre-push: running web test suite..."
+if ! ( cd "$(git rev-parse --show-toplevel)/web" && npm test ); then
+  echo "pre-push: tests FAILED — push aborted (use --no-verify to override)."
+  exit 1
+fi
+echo "pre-push: tests passed."
+exit 0
