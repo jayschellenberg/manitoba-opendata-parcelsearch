@@ -8,6 +8,14 @@
       "source": "/proxy/contam-sites.csv",
       "destination": "https://manitoba.ca/sd/waste_management/contaminated_sites/registry/cs-data.csv"
     }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    }
   ]
 }
 
