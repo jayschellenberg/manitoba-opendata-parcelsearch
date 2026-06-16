@@ -26,6 +26,10 @@
 param([switch]$DryRun, [switch]$TestAlert)
 
 $ErrorActionPreference = 'Stop'
+# PowerShell 7 turns native-command stderr/nonzero-exit into a throw under -Stop; this
+# chain calls native tools (Rscript/node/git) that write progress to stderr, and we gate
+# on $LASTEXITCODE explicitly, so opt out of that behavior. No-op on Windows PowerShell 5.1.
+$PSNativeCommandUseErrorActionPreference = $false
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $root
 . (Join-Path $root 'alert-lib.ps1')

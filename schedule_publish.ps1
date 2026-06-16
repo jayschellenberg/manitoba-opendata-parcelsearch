@@ -23,6 +23,9 @@
 param([switch]$Semiannual)
 
 $ErrorActionPreference = 'Stop'
+# PowerShell 7 turns native-command stderr/nonzero-exit into a throw under -Stop; we rely
+# on $LASTEXITCODE checks for native tools (schtasks/git), so opt out. No-op on 5.1.
+$PSNativeCommandUseErrorActionPreference = $false
 $TaskName  = 'MAOPublishIndexes'
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Publisher = Join-Path $ScriptDir 'auto-publish-indexes.ps1'
