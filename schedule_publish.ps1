@@ -32,12 +32,10 @@ $Publisher = Join-Path $ScriptDir 'auto-publish-indexes.ps1'
 
 if (-not (Test-Path $Publisher)) { Write-Error "Publisher not found: $Publisher"; exit 1 }
 
-# Replace any existing task with the same name.
-schtasks /Query /TN $TaskName 2>$null | Out-Null
-if ($LASTEXITCODE -eq 0) {
-  Write-Host "Existing task '$TaskName' found - replacing it."
-  schtasks /Delete /TN $TaskName /F | Out-Null
-}
+# Remove any existing task with the same name (no-op if absent). /Create /F below would
+# overwrite anyway; doing it via the module avoids schtasks /Query erroring on a missing
+# task (which throws under PowerShell 7's native-error handling).
+Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
 
 $taskCmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$Publisher`""
 
