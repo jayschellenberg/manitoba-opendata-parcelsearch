@@ -74,15 +74,17 @@ try {
   & node web\scripts\build-manifest.js --validate *>> $log
   if ($LASTEXITCODE -ne 0) { throw 'build-manifest --validate failed — NOT publishing (previous data stays live)' }
 
+  # release-indexes.ps1 is called IN-PROCESS (not a child powershell) so it inherits the
+  # native-error opt-out above and runs cleanly under both Windows PowerShell 5.1 and 7.
   if ($DryRun) {
     Log '[dry-run] validated OK; would now release-indexes.ps1 -SkipBuild + commit + push.'
-    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'release-indexes.ps1') -SkipBuild -DryRun *>> $log
+    & (Join-Path $root 'release-indexes.ps1') -SkipBuild -DryRun *>> $log
     Log '=== dry-run complete (no changes made) ==='; exit 0
   }
 
   # 3. Publish the rebuilt JSONs to a new GitHub Release and bump the edge-fn RELEASE_URLs.
   Log 'release-indexes.ps1 -SkipBuild'
-  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'release-indexes.ps1') -SkipBuild *>> $log
+  & (Join-Path $root 'release-indexes.ps1') -SkipBuild *>> $log
   if ($LASTEXITCODE -ne 0) { throw "release-indexes.ps1 failed (exit $LASTEXITCODE)" }
 
   # 4. Commit the edge-fn URL bumps + manifest and push -> Vercel auto-deploys.
