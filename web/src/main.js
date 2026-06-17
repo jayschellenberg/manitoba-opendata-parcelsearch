@@ -10,6 +10,7 @@ import { initSidebarTabs, setActiveTab } from './lib/tabs.js';
 import { initChipInput } from './lib/chipInput.js';
 import { initInfoIcons } from './lib/infoIcon.js';
 import { initParcelListImport } from './lib/parcelListImport.js';
+import { initSalesPasteImport } from './lib/salesPasteImport.js';
 // Route planner — TSP solver + Mapbox client.
 import { solveRoute, haversineMatrix } from './lib/routeSolver.js';
 import {
@@ -1287,6 +1288,24 @@ if ($salesDropzone && $salesUploadInput) {
   $salesDropzone.addEventListener('dragover', onDragOver);
   $salesDropzone.addEventListener('drop', onDrop);
 }
+
+// "Paste data…" modal — the copy-paste alternative to the dropzone.
+// onSubmit feeds the pasted/loaded text through the same pipeline as a
+// file upload: handleSalesUpload (which caches it under the synthesized
+// name for the Recent picker) then a hop to the Sales tab on success.
+const salesImportModal = initSalesPasteImport({
+  onSubmit: async ({ name, text }) => {
+    try {
+      await handleSalesUpload({ name, text });
+      setActiveTab('sales', { skipFocus: true });
+    } catch (err) {
+      console.error('Sales paste load failed', err);
+      setCount(`Sales load failed: ${err.message}`);
+    }
+  },
+});
+document.getElementById('sales-import-trigger')
+  ?.addEventListener('click', () => salesImportModal.open());
 
 // Recent uploads — picker + Forget All button. Lazily populated
 // on first page load. Picking an entry replays the cached CSV
@@ -3889,7 +3908,12 @@ function filterFcForChanged(fc, isChanged) {
  * are silently dropped.
  */
 function parseSalesCsv(text) {
-  const rows = parseCsvRows(text);
+  // Sniff the delimiter so a block pasted straight from Excel / the
+  // assessment table (tab-separated, and full of commas inside the
+  // Consideration cells like "$720,000") parses the same as a real
+  // comma CSV file. Tab wins whenever it's present on the first
+  // non-empty line; otherwise fall back to comma.
+  const rows = parseCsvRows(text, detectSalesDelimiter(text));
   if (rows.length < 2) return [];
   const header = rows[0].map((c) => String(c || '').trim().toLowerCase());
   const idx = (...names) => {
@@ -3956,10 +3980,21 @@ function parseSalesCsv(text) {
   return out;
 }
 
-/** Generic CSV row tokenizer — handles quoted fields with embedded
- *  commas, escaped double-quotes (""), and \r\n / \n / \r line
- *  endings. Returns an array of arrays. */
-function parseCsvRows(text) {
+/** Sniff the row delimiter for a sales block. Tab wins when the first
+ *  non-empty line carries one (the Excel/assessment-table copy-paste
+ *  workflow), otherwise comma (a genuine CSV file). Keeping this
+ *  separate from the tokenizer means the paste and file paths share
+ *  exactly one detection rule. */
+function detectSalesDelimiter(text) {
+  const firstLine = String(text || '').split(/\r\n|\r|\n/).find((l) => l.trim()) || '';
+  return firstLine.includes('\t') ? '\t' : ',';
+}
+
+/** Generic delimited-row tokenizer — handles quoted fields with embedded
+ *  delimiters, escaped double-quotes (""), and \r\n / \n / \r line
+ *  endings. `delimiter` is a single character (',' or '\t'). Returns an
+ *  array of arrays. */
+function parseCsvRows(text, delimiter = ',') {
   const rows = [];
   let row = [];
   let field = '';
@@ -3979,7 +4014,7 @@ function parseCsvRows(text) {
       } else { field += c; i++; }
     } else if (c === '"') {
       inQuotes = true; i++;
-    } else if (c === ',') {
+    } else if (c === delimiter) {
       pushField(); i++;
     } else if (c === '\r' || c === '\n') {
       pushField(); pushRow();

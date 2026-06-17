@@ -365,6 +365,20 @@
             <strong>Upload sales CSV</strong>
             <p>Drag and drop a file here, or click to choose.</p>
           </div>
+          <!-- Paste alternative. Opens the sales-import modal (paste a
+               block copied straight from a spreadsheet / the assessment
+               table, or pick a CSV/TSV). Mirrors the property-search
+               "Import List…" affordance; the modal loads immediately
+               with no mapping step since the sales columns are fixed. -->
+          <div class="sales-paste-row">
+            <span>or</span>
+            <button
+              type="button"
+              id="sales-import-trigger"
+              class="parcel-list-import-trigger"
+              title="Paste sales rows copied from a spreadsheet or the assessment table (tab- or comma-separated). Roll Number + Municipality required."
+            >Paste data…</button>
+          </div>
           <!-- Recent uploads (last 3 cached in localStorage). Hidden
                by populateRecentUploads when no cache exists. -->
           <div class="recent-uploads" id="recent-uploads-row" hidden>
@@ -1106,6 +1120,63 @@
         <section class="parcel-list-modal-step" data-step="resolving" hidden>
           <p class="parcel-list-modal-help">Resolving rows against the legal index…</p>
           <div class="parcel-list-modal-busy" aria-hidden="true"></div>
+        </section>
+      </div>
+    </dialog>
+
+    <!-- Sales paste modal. Reuses the .parcel-list-modal* skin but is a
+         single step: paste a sales block (or pick a CSV/TSV) and Load.
+         There's no column-mapping screen because the sales schema is
+         fixed — parseSalesCsv auto-detects the header aliases. On Load
+         the driver hands { name, text } straight to handleSalesUpload,
+         the same pipeline the dropzone uses. -->
+    <dialog id="sales-import-modal" class="parcel-list-modal" data-step="paste">
+      <div class="parcel-list-modal-inner">
+        <header class="parcel-list-modal-header">
+          <h2 class="parcel-list-modal-title">Paste sales data</h2>
+          <button
+            type="button"
+            id="sales-import-close"
+            class="parcel-list-modal-close"
+            aria-label="Close paste dialog"
+          >×</button>
+        </header>
+
+        <section class="parcel-list-modal-step" data-step="paste">
+          <p class="parcel-list-modal-help">
+            Paste rows copied straight from a spreadsheet or the assessment table
+            (tab- or comma-separated). <strong>Include the header row.</strong>
+            <strong>Roll Number</strong> and <strong>Municipality</strong> are required;
+            <strong>Sale Date</strong>, <strong>Consideration</strong>,
+            <strong>Street Address</strong>, <strong>Legal Description</strong>, and
+            <strong>Primary Property</strong> are used when present.
+          </p>
+          <textarea
+            id="sales-import-text"
+            class="parcel-list-modal-textarea"
+            rows="10"
+            placeholder="Sale Date&#9;Consideration&#9;Municipality&#9;Roll Number&#9;Street Address&#9;Legal Description&#9;Primary Property"
+            spellcheck="false"
+          ></textarea>
+          <div class="parcel-list-modal-or">— or —</div>
+          <label class="parcel-list-modal-file">
+            <input
+              type="file"
+              id="sales-import-file"
+              accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"
+            />
+            <span>Choose CSV/TSV file…</span>
+          </label>
+          <div
+            id="sales-import-error"
+            class="parcel-list-modal-error"
+            role="alert"
+            hidden
+          ></div>
+          <footer class="parcel-list-modal-actions">
+            <button type="button" id="sales-import-cancel" class="parcel-list-modal-btn">Cancel</button>
+            <button type="button" id="sales-import-load" class="parcel-list-modal-btn primary">Load sales</button>
+          </footer>
         </section>
       </div>
     </dialog>

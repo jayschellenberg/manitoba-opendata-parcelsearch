@@ -409,6 +409,18 @@ header small a {
   fill: var(--color-accent-500, #2563eb);
 }
 
+/* "or Paste data…" affordance under the dropzone. Keeps the paste
+   entry point visible without competing with the dropzone's box. */
+.sales-paste-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--color-neutral-500, #71717a);
+}
+
 /* Overlay groups (Map layers tab). Buttons share a clean white
    chip look modelled on the Winnipeg parcel-search UI; per-group
    text colours below identify the category (Parcel / Planning /
