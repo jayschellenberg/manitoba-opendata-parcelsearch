@@ -2,10 +2,10 @@
 # Pre-push gate — runs the web test suite before any push so a broken
 # change is caught locally, not after it reaches Vercel.
 #
-# GitHub Actions is blocked at the account level (see MAINTENANCE.md),
-# so the remote safety net is the Vercel build (which now runs `npm
-# test` before `npm run build` — a failing test fails the deploy). This
-# hook is the fast local complement.
+# GitHub Actions is enabled (ci.yml runs the test suite on push/PR), and
+# the Vercel build also runs `npm test` before `npm run build` — a
+# failing test fails the deploy. This hook is the fast local complement
+# to both.
 #
 # Enable once per clone (hooks aren't pushed):
 #   git config core.hooksPath .githooks
