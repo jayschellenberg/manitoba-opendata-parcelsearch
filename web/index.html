@@ -227,15 +227,7 @@
                 aria-label="Roll number"
               />
             </div>
-            <div class="chip-input-actions">
-              <button
-                type="button"
-                id="parcel-list-import-trigger"
-                class="parcel-list-import-trigger"
-                title="Paste or upload a multi-municipality parcel list (Roll # + at least one of Muni #, Title #, or Legal Description). Resolves muni for each row and loads them all into Search."
-              >Import List…</button>
-            </div>
-            <span class="tip">Roll # — exact match. Paste a list separated by commas, spaces, ampersands, or newlines (e.g. a column copied straight from a spreadsheet) to highlight many parcels at once within the selected municipality. Press Enter, comma, space, or &amp; to commit; Backspace on an empty input removes the last chip. For a cross-muni list, use Import list… to paste 2–4 columns and have each row's muni resolved automatically.</span>
+            <span class="tip">Roll # — exact match. Paste a list separated by commas, spaces, ampersands, or newlines (e.g. a column copied straight from a spreadsheet) to highlight many parcels at once within the selected municipality. Press Enter, comma, space, or &amp; to commit; Backspace on an empty input removes the last chip. For a cross-muni list, use Import List… (under Advanced searches) to paste 2–4 columns and have each row's muni resolved automatically.</span>
           </span>
 
           <!-- Resolved-list pill. Populated by main.js after the
@@ -326,6 +318,21 @@
                 <input id="du-min" type="number" min="1" step="1" placeholder="#" disabled />
                 <span class="tip">Minimum dwelling units (DU) — applies when 'Min DU' is selected.</span>
               </span>
+            </div>
+            <!-- Cross-muni Import List… affordance. Relocated here from
+                 the Roll # chip-input actions row so the Roll # field
+                 reads cleanly; importing a multi-muni parcel list is an
+                 advanced workflow that belongs with the other
+                 less-frequent controls. Opens the parcel-list import
+                 modal — wiring is by #id in main.js, so this move is
+                 markup-only. -->
+            <div class="advanced-import-row">
+              <button
+                type="button"
+                id="parcel-list-import-trigger"
+                class="parcel-list-import-trigger"
+                title="Paste or upload a multi-municipality parcel list (Roll # + at least one of Muni #, Title #, or Legal Description). Resolves muni for each row and loads them all into Search."
+              >Import List…</button>
             </div>
           </details>
 

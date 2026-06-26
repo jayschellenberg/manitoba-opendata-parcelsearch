@@ -2999,18 +2999,19 @@ body:not(.has-max-km) #results td.subj-col {
    Parcel-list import: trigger + resolved-pill (live inside the
    sidebar Property Search panel), plus the <dialog> modal.
 
-   The trigger button is a thin text-style link that sits in the
-   chip-input-actions row below the Roll # chip input. Tapping it
-   opens the modal; once the modal resolves a list, the pill
-   appears showing "N parcels across M munis · Clear", which is
-   the cue that Search will use the imported parcelKeys instead
+   The trigger button is a thin text-style link that sits at the
+   foot of the Advanced searches collapsible (relocated there from
+   the Roll # chip-input row to keep the Roll # field uncluttered).
+   Tapping it opens the modal; once the modal resolves a list, the
+   pill appears showing "N parcels across M munis · Clear", which
+   is the cue that Search will use the imported parcelKeys instead
    of the muni dropdown + chip list.
    ------------------------------------------------------------- */
 
-.chip-input-actions {
+.advanced-import-row {
   display: flex;
   justify-content: flex-end;
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
 .parcel-list-import-trigger {
