@@ -66,6 +66,16 @@ export default defineConfig({
     },
   },
   server: {
+    // Honour an externally-assigned port. Tooling that launches the dev
+    // server (e.g. the preview harness, which sets PORT when it needs to
+    // dodge a busy 5173) expects Vite to bind exactly that port; Vite
+    // doesn't read PORT on its own. strictPort makes it fail loudly
+    // rather than silently auto-incrementing (which would desync the
+    // harness's proxy). A plain `npm run dev` leaves PORT unset and keeps
+    // Vite's default 5173 behaviour.
+    ...(process.env.PORT
+      ? { port: Number(process.env.PORT), strictPort: true }
+      : {}),
     // Proxy the Manitoba Contaminated Sites Registry CSV in dev — the
     // origin doesn't send Access-Control-Allow-Origin, so a direct browser
     // fetch fails CORS. Vercel's vercel.json rewrites handle this in
