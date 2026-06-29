@@ -3572,7 +3572,7 @@ function downloadUnmatchedCsv(unmatched) {
     'Street Address', 'Legal Description', 'Primary Property', 'Reason',
   ];
   const cell = (v) => {
-    const s = v == null ? '' : String(v);
+    const s = csvGuardFormula(v == null ? '' : String(v));
     // Quote when the value contains a comma, quote, or newline; double
     // any embedded quotes per RFC 4180.
     return /[,"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -8222,9 +8222,22 @@ function floodMapUrl(row) {
   return have ? url.toString() : '';
 }
 
+// Neutralize spreadsheet formula injection: a cell whose text begins with
+// =, +, -, @ (or a leading tab/CR) is interpreted as a formula by Excel /
+// Google Sheets, so a poisoned upstream value like `=HYPERLINK(...)` would
+// execute on open. Prefix a single quote to force literal-text rendering —
+// but leave genuine numbers (e.g. "-5") untouched so numeric columns still
+// import as numbers. Shared by csvCell and downloadUnmatchedCsv's `cell`.
+function csvGuardFormula(s) {
+  if (s && /^[=+\-@\t\r]/.test(s) && !Number.isFinite(Number(s))) {
+    return `'${s}`;
+  }
+  return s;
+}
+
 function csvCell(value) {
   if (value == null) return '';
-  const s = String(value);
+  const s = csvGuardFormula(String(value));
   if (/[",\r\n]/.test(s)) {
     return `"${s.replace(/"/g, '""')}"`;
   }
