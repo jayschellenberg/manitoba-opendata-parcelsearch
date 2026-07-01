@@ -250,7 +250,8 @@ write_root_index <- function() {
     dataset   = "mb-parcel-history",
     schema    = 2,
     generated = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
-    cdn       = "https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-history@main",
+    # Base only — consumers MUST append an immutable @<commit-sha> (never @main).
+    cdn       = "https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-history",
     snapshots = out
   )
   dir.create(OUTPUT_ROOT, showWarnings = FALSE, recursive = TRUE)
