@@ -125,7 +125,10 @@ $new = [regex]::Replace($content, 'mb-parcel-history@[0-9a-f]{40}', "mb-parcel-h
 if ($new -eq $content) {
   Log "app pin already at $sha — no app change needed"
 } else {
-  Set-Content -Path $ArcgisJs -Value $new -NoNewline -Encoding UTF8
+  # BOM-less UTF-8: Set-Content -Encoding UTF8 adds a BOM under Windows
+  # PowerShell 5.1 (the scheduled-task runtime), which would corrupt the JS
+  # file's first bytes. Write via .NET with an explicit no-BOM encoder.
+  [System.IO.File]::WriteAllText($ArcgisJs, $new, (New-Object System.Text.UTF8Encoding($false)))
   & git -C $AppRepo add 'web/src/arcgis.js' 2>&1 | ForEach-Object { Add-Content -Path $log -Value "$_" }
   & git -C $AppRepo commit -m "Repoint historical CDN to mb-parcel-history@$($sha.Substring(0,7)) ($stamp snapshot)" 2>&1 | ForEach-Object { Add-Content -Path $log -Value "$_" }
   & git -C $AppRepo push 2>&1 | ForEach-Object { Add-Content -Path $log -Value "$_" }
