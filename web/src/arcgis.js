@@ -1433,7 +1433,7 @@ export async function fetchLandCoverForMuni(muniNameWithTyp) {
 // MAINTENANCE: when you republish mb-parcel-history (new snapshot or a data
 // fix), update this SHA to the new commit — see MAINTENANCE.md.
 const HISTORICAL_CDN =
-  'https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-history@494ca9c53a12bc22c238ad124b89284422fb6f55';
+  'https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-history@c8cc4a9ee261217e90e96d32a132d8beddf42ba2';
 const HISTORICAL_INDEX_TTL_MS = 24 * 60 * 60 * 1000;        // 1 day — so new years surface
 const HISTORICAL_MANIFEST_TTL_MS = 6 * 60 * 60 * 1000;     // 6 h — gates the shard version token, keep fresh
 const HISTORICAL_SHARD_TTL_MS = 30 * 24 * 60 * 60 * 1000;   // 30 days — safe: the key is version-stamped, so a rebuild changes it
