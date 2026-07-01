@@ -1,11 +1,16 @@
-# schedule_semiannual.ps1 - register the permanent snapshot archive as a
-# recurring Windows Task Scheduler entry that fires twice a year, on the 1st
+# schedule_semiannual.ps1 - register the permanent snapshot PUBLISH pipeline as
+# a recurring Windows Task Scheduler entry that fires twice a year, on the 1st
 # of January and July at 04:30 local. The task runs
-# semiannual-archive-wrapper.ps1, which archives the provincial roll / zoning /
-# dev-plan layers (r/archive_snapshot.R) and alerts when the source is missing
-# or > 12 months stale (the only step automation can't do is the manual MB Open
-# Data download). Idempotent: re-run to update the schedule - the existing task
-# is replaced.
+# semiannual-publish-wrapper.ps1, which does the whole flow end to end:
+# download the provincial roll / zoning / dev-plan layers fresh from the ArcGIS
+# FeatureServer, archive them (r/archive_snapshot.R), build historical shards +
+# lineage, push the mb-parcel-history data repo, repoint the app's HISTORICAL_CDN
+# pin, and push the app so Vercel redeploys. It alerts on any failure.
+# Idempotent: re-run to update the schedule - the existing task is replaced.
+#
+# (The older semiannual-archive-wrapper.ps1 - archive-only, no download/publish -
+# is kept for manual archive-only use; this schedule now targets the full
+# publish wrapper.)
 #
 # Usage (run once from a PowerShell prompt with normal user privileges):
 #   powershell -ExecutionPolicy Bypass -File schedule_semiannual.ps1
@@ -22,7 +27,7 @@
 $ErrorActionPreference = "Stop"
 $TaskName  = "MAOSemiannualArchive"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Wrapper   = Join-Path $ScriptDir "semiannual-archive-wrapper.ps1"
+$Wrapper   = Join-Path $ScriptDir "semiannual-publish-wrapper.ps1"
 
 if (-not (Test-Path $Wrapper)) {
     Write-Error "Archive wrapper not found: $Wrapper"
@@ -67,13 +72,13 @@ $settings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `
-    -ExecutionTimeLimit (New-TimeSpan -Hours 2)
+    -ExecutionTimeLimit (New-TimeSpan -Hours 4)
 
 Set-ScheduledTask -TaskName $TaskName -Settings $settings | Out-Null
 
 Write-Host ""
 Write-Host "Scheduled task '$TaskName' registered:"
-Write-Host "  Wrapper:     $Wrapper  (archives roll/zoning/dev-plan, alerts on stale/missing source)"
+Write-Host "  Wrapper:     $Wrapper  (download -> archive -> shards+lineage -> push data -> repoint app -> redeploy)"
 Write-Host "  Working dir: $ScriptDir"
 Write-Host "  Recurrence:  1st of January and July at 04:30 local (every 6 months)"
 Write-Host "  StartWhenAvailable enabled (catches up if machine was off)"

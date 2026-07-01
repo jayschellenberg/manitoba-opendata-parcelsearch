@@ -20,6 +20,11 @@ Thumbs.db
 # Companion ETL pipeline — kept locally for reference, not part of this site
 mao-assembly/
 
+# Throwaway staging for the fresh provincial download in the publish pipeline
+# (r/download_provincial_snapshot.R default output; the scheduled wrapper uses
+# %LOCALAPPDATA% instead). Never commit these large source layers.
+.staging/
+
 # R archive output (data files; trivially regenerable, often huge)
 *.gpkg
 *.tif
