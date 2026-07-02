@@ -239,6 +239,10 @@ header small a {
   flex: 0 0 auto;
   max-height: 40vh;
   overflow-y: auto;
+  /* Keep the sidebar's internal scroll from chaining into the page
+     scroll when it hits its top/bottom edge — otherwise scrolling the
+     controls list nudges the whole workspace. */
+  overscroll-behavior: contain;
 }
 
 @media (min-width: 768px) {
@@ -1923,6 +1927,10 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   max-height: min(720px, 75vh);
   border: 1px solid var(--color-neutral-200, #e4e4e7);
   border-radius: 4px;
+  /* Stop the results-list scroll from chaining into the page when it
+     reaches its top/bottom, so paging through a long result set doesn't
+     jump the whole workspace. */
+  overscroll-behavior: contain;
 }
 
 /* Phase 5 follow-up: resize handle removed. The workspace flows
