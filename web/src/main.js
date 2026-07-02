@@ -654,6 +654,13 @@ let listParcelKeys = null;
 // unmatched-records drawer (renderUnmatchedPanel) so the user can see
 // at a glance which input rows didn't resolve and why.
 let listUnresolvedRows = null;
+// Sale-group tagging for an imported sales list: Map("muni_no|roll_no_txt"
+// → groupId) built from the resolver's output for any stacked multi-parcel
+// sale (one Consideration, several rolls). runSearch stamps _saleGroupId
+// from this onto the fetched parcels so computeSaleGroupTotals + the map's
+// group shade / hover-sibling highlight treat them as one sale. null when
+// the import had no multi-parcel groups.
+let listSaleGroupByKey = null;
 
 // Route planner state. routeStart is { lng, lat } once the user has
 // clicked the map. routeResult holds the last calculated TSP order +
@@ -942,6 +949,81 @@ initSidebarTabs();
 const $rollChip = document.querySelector('.chip-input[data-target="roll"]');
 if ($rollChip) initChipInput($rollChip, { onEnterEmpty: () => runSearch() });
 
+// Roll Entry name→muni_no reconciler for the Import-List "Municipality
+// (name)" column (the sales-export shape: "RM OF SPRINGFIELD" + roll).
+// Injected into the import modal's resolver so the parser/resolver stay
+// free of arcgis.js. Groups the requested rolls by normalized muni name,
+// fires one searchParcels({municipality, roll}) per muni (the same path
+// handleSalesUpload uses), then maps each matched feature back to its
+// input line by canonical roll, emitting {muni_no, roll_no_txt}. Misses
+// return a human reason so the unresolved drawer can explain them.
+async function resolveMuniNamesForImport(rows) {
+  const resolvedByLine = new Map();
+  const unresolvedByLine = new Map();
+
+  // Bucket by normalized muni name; drop rows whose name or roll is bad.
+  const byMuni = new Map(); // normName → [{ lineNo, roll }]
+  for (const r of rows || []) {
+    const norm = normalizeMuniFromCsv(r.muniName);
+    if (!norm) {
+      unresolvedByLine.set(r.lineNo, `Municipality not recognised: "${r.muniName}"`);
+      continue;
+    }
+    const roll = canonicalRoll(String(r.roll || ''));
+    if (!roll) {
+      unresolvedByLine.set(r.lineNo, 'Row has no usable roll #');
+      continue;
+    }
+    if (!byMuni.has(norm)) byMuni.set(norm, []);
+    byMuni.get(norm).push({ lineNo: r.lineNo, roll });
+  }
+
+  // One live lookup per muni. A fetch error drops that muni's rows to
+  // unresolved with the reason rather than letting them vanish silently.
+  await Promise.all([...byMuni.entries()].map(async ([muni, recs]) => {
+    const rollList = [...new Set(recs.map((r) => r.roll))].join(',');
+    let fc = { features: [] };
+    try {
+      fc = await searchParcels({ municipality: muni, roll: rollList });
+    } catch (err) {
+      for (const r of recs) unresolvedByLine.set(r.lineNo, `Lookup failed for ${muni}: ${err.message || err}`);
+      return;
+    }
+    // Index returned features by canonical Roll_No_Txt → {muni_no, roll}.
+    const byRoll = new Map();
+    for (const f of fc.features || []) {
+      const key = parcelLegalKey(f.properties || {});
+      const rtxt = f.properties?.Roll_No_Txt;
+      if (!key || !rtxt) continue;
+      byRoll.set(canonicalRoll(String(rtxt)), {
+        muni_no: Number(key.split('|')[0]),
+        roll_no_txt: String(rtxt),
+      });
+    }
+    for (const r of recs) {
+      const hit = byRoll.get(r.roll);
+      if (hit) resolvedByLine.set(r.lineNo, hit);
+      else unresolvedByLine.set(r.lineNo, `Roll ${displayRoll(r.roll)} not found in Roll Entry for ${muni}`);
+    }
+  }));
+
+  return { resolvedByLine, unresolvedByLine };
+}
+
+// Build the "muni_no|roll_no_txt" → groupId map the highlight path reads
+// to shade multi-parcel sale groups. Only entries with a real groupId
+// (the stacked multi-parcel rows) are kept; returns null when the import
+// had no groups so runSearch can skip the stamping pass entirely.
+function buildListGroupKeyMap(resolved) {
+  const map = new Map();
+  for (const r of resolved || []) {
+    if (r.groupId == null) continue;
+    if (!Number.isFinite(Number(r.muniNo)) || !r.roll) continue;
+    map.set(`${Number(r.muniNo)}|${String(r.roll)}`, r.groupId);
+  }
+  return map.size > 0 ? map : null;
+}
+
 // Parcel-list import. The trigger link beside the roll chip opens a
 // modal that lets the user paste / upload a cross-muni parcel list;
 // the resolver returns parcelKeys ready for searchParcels. Stashed
@@ -950,6 +1032,7 @@ if ($rollChip) initChipInput($rollChip, { onEnterEmpty: () => runSearch() });
 const importModal = initParcelListImport({
   warmIndex: () => warmLegalIndex(),
   canonicalRoll,
+  resolveMuniNames: resolveMuniNamesForImport,
   onResolved: ({ parcelKeys, resolved, unresolved, stats }) => {
     if (!parcelKeys || parcelKeys.length === 0) {
       // Nothing usable — surface the failure inline and don't enter
@@ -959,12 +1042,14 @@ const importModal = initParcelListImport({
       setCount(`Import: 0 of ${stats?.total ?? 0} rows resolved — ${reason}`);
       listParcelKeys = null;
       listUnresolvedRows = unresolved || [];
+      listSaleGroupByKey = null;
       renderListPill();
       renderListUnresolvedDrawer();
       return;
     }
     listParcelKeys = parcelKeys;
     listUnresolvedRows = unresolved || [];
+    listSaleGroupByKey = buildListGroupKeyMap(resolved);
     renderListPill();
     renderListUnresolvedDrawer();
     // Auto-run the search so the imported list lands on the map +
@@ -978,6 +1063,7 @@ document.getElementById('parcel-list-pill-clear')
   ?.addEventListener('click', () => {
     listParcelKeys = null;
     listUnresolvedRows = null;
+    listSaleGroupByKey = null;
     renderListPill();
     renderListUnresolvedDrawer();
     clearRoutePlanner();
@@ -2270,6 +2356,20 @@ async function runSearch() {
     // buildParcelClauses, so the post-filter is operating on at most a
     // few hundred rows in the typical case.
     applyCivicNumberRange(parcelFc, inputs.addressFrom, inputs.addressTo);
+
+    // Multi-parcel imported sales: stamp the shared group id resolved at
+    // import time, then reuse the sales-group rollup so the map shades
+    // each group (parcel-fill's _saleGroupSize branch) and the
+    // hover-sibling highlight lights up its members. No-op unless the
+    // import carried a stacked multi-parcel sale.
+    if (hasList && listSaleGroupByKey) {
+      for (const f of parcelFc.features || []) {
+        const key = parcelLegalKey(f.properties || {});
+        const gid = key ? listSaleGroupByKey.get(key) : null;
+        if (gid != null) f.properties._saleGroupId = gid;
+      }
+      computeSaleGroupTotals(parcelFc);
+    }
 
     const n = parcelFc.features.length;
 

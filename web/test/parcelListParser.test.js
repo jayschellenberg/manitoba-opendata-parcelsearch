@@ -265,6 +265,68 @@ await test('empty input yields empty result', () => {
   assert.deepEqual(p.guesses, []);
 });
 
+// ---------- parseParcelList: sales-export shape (muni name) ----------
+
+console.log('\nparseParcelList — municipality name + multi-parcel');
+
+await test('sales-export header auto-maps Municipality (name), Roll #, Legal', () => {
+  const text = [
+    'Sale Date\tConsideration\tMunicipality\tRoll Number\tStreet Address\tLegal Description\tPrimary Property',
+    'Jun 16, 2026\t$325,000\tRM OF SPRINGFIELD\t12800.000\tDESC 3/4--6663\tDESC 3/4--6663\t ',
+    'Jun 16, 2026\t$540,000\tRM OF SPRINGFIELD\t618845.000\t22 CAIRN CRES\t11-3-62061\t ',
+  ].join('\n');
+  const p = parseParcelList(text);
+  assert.equal(p.headers[2], 'Municipality');
+  // Municipality holds NAMES → muniName (not the numeric-code 'muni').
+  assert.equal(p.guesses[2], 'muniName');
+  assert.equal(p.guesses[3], 'roll');
+  assert.equal(p.guesses[5], 'legal');
+});
+
+await test('municipality names detected by content even under a neutral header', () => {
+  const text = 'Roll\tPlace\n12800.000\tRM OF SPRINGFIELD\n618845.000\tSTANLEY (RM)';
+  const p = parseParcelList(text);
+  assert.equal(p.guesses[0], 'roll');
+  assert.equal(p.guesses[1], 'muniName');
+});
+
+await test('a numeric Muni # column still guesses muni, not muniName', () => {
+  const text = 'Legal Desc\tRoll No.\tMuni #\nNW26-2-13E\t218600\t275\nNW27-2-13E\t219000\t275';
+  const p = parseParcelList(text);
+  assert.deepEqual(p.guesses, ['legal', 'roll', 'muni']);
+});
+
+await test('clean rows carry null groupIds (no false grouping)', () => {
+  const text = 'Municipality\tRoll Number\nRM OF SPRINGFIELD\t12800.000\nRM OF SPRINGFIELD\t618845.000';
+  const p = parseParcelList(text);
+  assert.deepEqual(p.groupIds, [null, null]);
+});
+
+await test('stacked multi-parcel sale row expands to one row per roll with a shared group id', () => {
+  // The user's $3,334,633 row: one Consideration, three munis/rolls/legals
+  // stacked with raw (unquoted) newlines inside the cells. The last column
+  // (Primary Property) stays single-line, so the column-count-aware pass
+  // can reconstruct the row.
+  const text =
+    'Sale Date\tConsideration\tMunicipality\tRoll Number\tStreet Address\tLegal Description\tPrimary Property\n' +
+    'Jun 05, 2026\t$3,017,866\tRM OF SPRINGFIELD\t45100.000\t2--48744\t2--48744\t \n' +
+    'Jun 05, 2026\t$3,334,633\tRM OF SPRINGFIELD\nRM OF SPRINGFIELD\nRM OF SPRINGFIELD\t32200.000\n44600.000\n49300.000\t2-RC-433\n20117 JACKSON RD \n1--48744 \t2-RC-433\nDESC 35-RC-433\n1--48744\t \n' +
+    'Jun 04, 2026\t$565,000\tRM OF SPRINGFIELD\t665300.000\t30021 PRAIRIE GROVE RD 54N\tDESC SW6-10-6E\t ';
+  const p = parseParcelList(text);
+  const roll = p.columns[3];
+  // 2 clean rows + the stacked row expanded to 3 = 5 body rows.
+  assert.equal(roll.length, 5);
+  for (const r of ['32200.000', '44600.000', '49300.000']) {
+    assert.ok(roll.includes(r), `expected ${r} on its own row`);
+  }
+  // Exactly one 3-member group; the two singletons carry no group id.
+  const counts = {};
+  for (const g of p.groupIds) if (g != null) counts[g] = (counts[g] || 0) + 1;
+  const threes = Object.values(counts).filter((n) => n === 3);
+  assert.equal(threes.length, 1, 'exactly one 3-member group');
+  assert.equal(p.groupIds.filter((g) => g == null).length, 2);
+});
+
 // ---------- applyMapping ----------
 
 console.log('\napplyMapping');
@@ -319,6 +381,24 @@ await test('lineNo accounts for header offset', () => {
   assert.equal(m.rows[1].lineNo, 3);
 });
 
+await test('captures muniName and the shared groupId for a stacked sale', () => {
+  const text =
+    'Sale Date\tConsideration\tMunicipality\tRoll Number\tStreet Address\tLegal Description\tPrimary Property\n' +
+    'Jun 05, 2026\t$3,334,633\tRM OF SPRINGFIELD\nRM OF SPRINGFIELD\t32200.000\n44600.000\t2-RC-433\n20117 JACKSON RD\t2-RC-433\nDESC 35\t ';
+  const p = parseParcelList(text);
+  const m = applyMapping(
+    p,
+    ['ignore', 'ignore', 'muniName', 'roll', 'ignore', 'legal', 'ignore'],
+    { canonicalRoll },
+  );
+  assert.equal(m.rows.length, 2);
+  assert.equal(m.rows[0].muniName, 'RM OF SPRINGFIELD');
+  assert.equal(m.rows[0].roll, '32200.000');
+  assert.equal(m.rows[1].roll, '44600.000');
+  assert.ok(m.rows[0].groupId != null);
+  assert.equal(m.rows[0].groupId, m.rows[1].groupId);
+});
+
 // ---------- validateMapping ----------
 
 console.log('\nvalidateMapping');
@@ -326,6 +406,7 @@ console.log('\nvalidateMapping');
 await test('passes when at least one identifier mapped', () => {
   assert.equal(validateMapping(['roll', 'legal']), null);
   assert.equal(validateMapping(['roll', 'muni']), null);
+  assert.equal(validateMapping(['roll', 'muniName']), null);
   assert.equal(validateMapping(['roll', 'title']), null);
 });
 

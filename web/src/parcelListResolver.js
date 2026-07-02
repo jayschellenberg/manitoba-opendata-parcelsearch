@@ -4,13 +4,17 @@
  * for the existing searchParcels() path. Resolution priority per row:
  *
  *   1. muniNo supplied — trusted as-is, no lookup
- *   2. title supplied — match against legal-index candidates by roll
- *   3. legal supplied — grid needle or lot/block/plan match
+ *   2. muniName supplied — reconciled to a muni_no via the injected
+ *      resolveMuniNames (Roll Entry name lookup); the sales-export shape
+ *   3. title supplied — match against legal-index candidates by roll
+ *   4. legal supplied — grid needle or lot/block/plan match
  *
  * Title beats legal when both are present (title is exact, legal is
  * substring). A cross-check between supplied muni and legal-resolved
  * muni is intentionally NOT done — the user said the supplied muni is
- * authoritative.
+ * authoritative. Each row's `groupId` (stamped by the parser on the
+ * members of a stacked multi-parcel sale) is carried onto its resolved
+ * entry so the caller can highlight the sale group together.
  *
  * Performance: regardless of row count, the resolver makes ONE bulk
  * call to lookupLegalRecordsByRollSet, scanning the legal index just
@@ -106,13 +110,17 @@ export async function resolveParcelList(rows, opts = {}) {
   // Lookup function is injected so node tests can pass a synthetic
   // legal-index without going through the worker / fetch path.
   const lookupRollSet = opts.lookupRollSet || lookupLegalRecordsByRollSet;
+  const resolveMuniNames = opts.resolveMuniNames || null;
   const resolved = [];
   const unresolved = [];
-  const stats = { total: rows.length, resolved: 0, unresolved: 0, byVia: { muni: 0, title: 0, legal: 0 } };
+  const stats = { total: rows.length, resolved: 0, unresolved: 0, byVia: { muni: 0, muniName: 0, title: 0, legal: 0 } };
 
-  // Bucket rows that need legal-index lookup. Rows with supplied muni
-  // skip the lookup entirely.
+  // Bucket rows by resolution strategy. A supplied numeric muni is
+  // trusted as-is; a municipality NAME resolves via Roll Entry (the
+  // injected resolveMuniNames); everything else falls to the
+  // legal-index lookup.
   const needsLookup = [];
+  const needsMuniName = [];
   for (const row of rows) {
     if (!row.roll) {
       unresolved.push({ ...row, reason: 'Row has no roll # — cannot resolve to a parcel' });
@@ -124,12 +132,63 @@ export async function resolveParcelList(rows, opts = {}) {
         muniNo: row.muniNo,
         roll: row.roll,
         via: 'muni-supplied',
+        groupId: row.groupId ?? null,
         raw: row.raw,
       });
       stats.byVia.muni++;
       continue;
     }
+    if (row.muniName) {
+      needsMuniName.push(row);
+      continue;
+    }
     needsLookup.push(row);
+  }
+
+  // Municipality-name resolution — one bulk call to the injected Roll
+  // Entry helper, which returns per-line {muni_no, roll_no_txt} matches
+  // plus miss reasons. Injected so this module stays network-free and
+  // unit-testable (node tests pass a synthetic resolver).
+  if (needsMuniName.length > 0) {
+    if (typeof resolveMuniNames !== 'function') {
+      for (const row of needsMuniName) {
+        unresolved.push({ ...row, reason: 'Municipality-name resolution is unavailable in this context' });
+      }
+    } else {
+      let nameOut = null;
+      try {
+        nameOut = await resolveMuniNames(
+          needsMuniName.map((r) => ({ lineNo: r.lineNo, muniName: r.muniName, roll: r.roll })),
+        );
+      } catch (err) {
+        for (const row of needsMuniName) {
+          unresolved.push({ ...row, reason: `Municipality lookup failed: ${err.message || err}` });
+        }
+      }
+      if (nameOut) {
+        const hits = nameOut.resolvedByLine instanceof Map ? nameOut.resolvedByLine : new Map();
+        const misses = nameOut.unresolvedByLine instanceof Map ? nameOut.unresolvedByLine : new Map();
+        for (const row of needsMuniName) {
+          const hit = hits.get(row.lineNo);
+          if (hit && Number.isFinite(Number(hit.muni_no))) {
+            resolved.push({
+              lineNo: row.lineNo,
+              muniNo: Number(hit.muni_no),
+              roll: hit.roll_no_txt || row.roll,
+              via: 'muni-name',
+              groupId: row.groupId ?? null,
+              raw: row.raw,
+            });
+            stats.byVia.muniName++;
+          } else {
+            unresolved.push({
+              ...row,
+              reason: misses.get(row.lineNo) || `Roll ${humanRoll(row.roll)} not found in "${row.muniName}"`,
+            });
+          }
+        }
+      }
+    }
   }
 
   // Bulk legal-index scan covering every row that needs resolution.
@@ -162,7 +221,7 @@ export async function resolveParcelList(rows, opts = {}) {
           const munis = new Set(hits.map((h) => Number(h.muni_no)));
           if (munis.size === 1) {
             const muni = [...munis][0];
-            resolved.push({ lineNo: row.lineNo, muniNo: muni, roll: row.roll, via: 'title', raw: row.raw });
+            resolved.push({ lineNo: row.lineNo, muniNo: muni, roll: row.roll, via: 'title', groupId: row.groupId ?? null, raw: row.raw });
             stats.byVia.title++;
             continue;
           }
@@ -191,7 +250,7 @@ export async function resolveParcelList(rows, opts = {}) {
           const munis = new Set(hits.map((h) => Number(h.muni_no)));
           if (munis.size === 1) {
             const muni = [...munis][0];
-            resolved.push({ lineNo: row.lineNo, muniNo: muni, roll: row.roll, via: 'legal', raw: row.raw });
+            resolved.push({ lineNo: row.lineNo, muniNo: muni, roll: row.roll, via: 'legal', groupId: row.groupId ?? null, raw: row.raw });
             stats.byVia.legal++;
             continue;
           }
@@ -217,6 +276,7 @@ export async function resolveParcelList(rows, opts = {}) {
           muniNo: Number(candidates[0].muni_no),
           roll: row.roll,
           via: 'roll-alone',
+          groupId: row.groupId ?? null,
           raw: row.raw,
         });
         stats.byVia.legal++; // bucket under legal for simplicity

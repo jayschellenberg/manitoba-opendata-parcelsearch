@@ -85,14 +85,33 @@ const lookup = (rolls) => lookupLegalRecordsByRollSet(FIXTURE, rolls);
 
 // ---- helpers ----------------------------------------------------
 
-function makeRow({ roll, muniNo = null, legal = null, title = '', lineNo = 1 }) {
+function makeRow({ roll, muniNo = null, muniName = null, legal = null, title = '', groupId = null, lineNo = 1 }) {
   return {
     lineNo,
     roll,
     muniNo,
+    muniName,
     legal: legal ? parseLegalToken(legal) : null,
     title,
-    raw: { roll, muni: muniNo, legal, title },
+    groupId,
+    raw: { roll, muni: muniNo, muniName, legal, title },
+  };
+}
+
+// Stub for the injected muni-name reconciler. `known` maps canonical
+// roll → { muni_no, roll_no_txt }; anything else comes back as a miss.
+// Mirrors the { resolvedByLine, unresolvedByLine } contract that
+// main.js's resolveMuniNamesForImport fulfils against Roll Entry.
+function makeMuniNameStub(known) {
+  return async (rows) => {
+    const resolvedByLine = new Map();
+    const unresolvedByLine = new Map();
+    for (const r of rows) {
+      const hit = known[r.roll];
+      if (hit) resolvedByLine.set(r.lineNo, hit);
+      else unresolvedByLine.set(r.lineNo, `roll ${r.roll} not found in ${r.muniName}`);
+    }
+    return { resolvedByLine, unresolvedByLine };
   };
 }
 
@@ -273,6 +292,76 @@ await test('parcelKeys are sorted in the order they resolved', async () => {
     { muni_no: 275, roll_no_txt: '218600.000' },
     { muni_no: 410, roll_no_txt: '93075.000' },
   ]);
+});
+
+// ---- municipality-name resolution (sales-export shape) ----------
+
+console.log('\nresolveParcelList — municipality name');
+
+await test('municipality name resolves via the injected reconciler', async () => {
+  const resolveMuniNames = makeMuniNameStub({
+    '12800.000': { muni_no: 42, roll_no_txt: '12800.000' },
+  });
+  const out = await resolveParcelList(
+    [makeRow({ roll: '12800.000', muniName: 'RM OF SPRINGFIELD' })],
+    { lookupRollSet: lookup, resolveMuniNames },
+  );
+  assert.equal(out.resolved.length, 1);
+  assert.equal(out.resolved[0].muniNo, 42);
+  assert.equal(out.resolved[0].via, 'muni-name');
+  assert.deepEqual(out.parcelKeys, [{ muni_no: 42, roll_no_txt: '12800.000' }]);
+  assert.equal(out.stats.byVia.muniName, 1);
+});
+
+await test('municipality-name miss lands in unresolved with the reconciler reason', async () => {
+  const resolveMuniNames = makeMuniNameStub({});   // nothing known
+  const out = await resolveParcelList(
+    [makeRow({ roll: '99999.000', muniName: 'RM OF SPRINGFIELD' })],
+    { lookupRollSet: lookup, resolveMuniNames },
+  );
+  assert.equal(out.resolved.length, 0);
+  assert.equal(out.unresolved.length, 1);
+  assert.match(out.unresolved[0].reason, /RM OF SPRINGFIELD/);
+});
+
+await test('muni-name resolution carries the sale groupId onto resolved entries', async () => {
+  const resolveMuniNames = makeMuniNameStub({
+    '32200.000': { muni_no: 42, roll_no_txt: '32200.000' },
+    '44600.000': { muni_no: 42, roll_no_txt: '44600.000' },
+  });
+  const out = await resolveParcelList(
+    [
+      makeRow({ roll: '32200.000', muniName: 'RM OF SPRINGFIELD', groupId: 1, lineNo: 1 }),
+      makeRow({ roll: '44600.000', muniName: 'RM OF SPRINGFIELD', groupId: 1, lineNo: 2 }),
+    ],
+    { lookupRollSet: lookup, resolveMuniNames },
+  );
+  assert.equal(out.resolved.length, 2);
+  assert.equal(out.resolved[0].groupId, 1);
+  assert.equal(out.resolved[1].groupId, 1);
+  assert.equal(out.stats.byVia.muniName, 2);
+});
+
+await test('a supplied numeric muni # still wins over a muni name', async () => {
+  // Both muniNo and muniName present → trust the numeric code, no lookup.
+  const resolveMuniNames = makeMuniNameStub({});   // would miss if consulted
+  const out = await resolveParcelList(
+    [makeRow({ roll: '12800.000', muniNo: 275, muniName: 'RM OF SPRINGFIELD' })],
+    { lookupRollSet: lookup, resolveMuniNames },
+  );
+  assert.equal(out.resolved.length, 1);
+  assert.equal(out.resolved[0].muniNo, 275);
+  assert.equal(out.resolved[0].via, 'muni-supplied');
+});
+
+await test('muniName rows are unresolved (not dropped) when no reconciler is injected', async () => {
+  const out = await resolveParcelList(
+    [makeRow({ roll: '12800.000', muniName: 'RM OF SPRINGFIELD' })],
+    { lookupRollSet: lookup },   // no resolveMuniNames
+  );
+  assert.equal(out.resolved.length, 0);
+  assert.equal(out.unresolved.length, 1);
+  assert.match(out.unresolved[0].reason, /unavailable/);
 });
 
 // ---- summary ----------------------------------------------------

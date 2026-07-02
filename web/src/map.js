@@ -1351,6 +1351,11 @@ export function initMap(container, { onFeatureClick } = {}) {
             'case',
             ['boolean', ['feature-state', 'starred'], false],
             '#8b0000',
+            // Multi-parcel sale group (imported sales list, or a sales
+            // CSV) — a warm amber distinct from the single-parcel yellow
+            // so parcels that sold together read as one group.
+            ['>', ['to-number', ['coalesce', ['get', '_saleGroupSize'], 1]], 1],
+            '#ff9100',
             '#ffea00',
           ],
           'fill-opacity': [
@@ -1381,6 +1386,10 @@ export function initMap(container, { onFeatureClick } = {}) {
             'case',
             ['boolean', ['feature-state', 'starred'], false],
             '#8b0000',
+            // Amber outline for multi-parcel sale groups — matches the
+            // group fill so the grouped parcels read as one selection.
+            ['>', ['to-number', ['coalesce', ['get', '_saleGroupSize'], 1]], 1],
+            '#ff9100',
             '#ffea00',
           ],
           'line-width': [

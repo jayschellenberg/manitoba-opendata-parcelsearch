@@ -1,10 +1,15 @@
 /*
  * Parser for parcel-list imports. Accepts a tab / comma / space
- * separated paste or CSV/TSV upload of 2–4 columns drawn from:
+ * separated paste or CSV/TSV upload of columns drawn from:
  *   - Roll #
- *   - Muni #
+ *   - Muni #  (numeric assessment code)
+ *   - Municipality (name)  (e.g. "RM OF SPRINGFIELD" — sales-export shape)
  *   - Legal description (grid or lot-block-plan form)
  *   - Title # (certificate of title)
+ *
+ * Stacked multi-parcel sales (one row whose Municipality / Roll / Legal
+ * cells hold several newline-separated values) are reconstructed and
+ * expanded into one row per parcel, tagged with a shared group id.
  *
  * Field types are auto-detected from header text + per-cell content
  * shape. Callers (the import modal) confirm the mapping before the
@@ -40,7 +45,23 @@ const HEADER_PATTERNS = {
   title: /^(title|title\s*#|title\s*no\.?|c\.?\s*o\.?\s*f?\s*t\.?|cert(ificate)?\s*of\s*title|ct)$/i,
 };
 
-export const FIELD_TYPES = Object.freeze(['roll', 'muni', 'legal', 'title', 'ignore']);
+export const FIELD_TYPES = Object.freeze(['roll', 'muni', 'muniName', 'legal', 'title', 'ignore']);
+
+/**
+ * True when a cell reads like a municipality NAME (the sales-export
+ * shape), e.g. "RM OF SPRINGFIELD" or "SPRINGFIELD (RM)". Used to tell
+ * a name column apart from a numeric Muni # code so the resolver can
+ * reconcile it via Roll Entry's Muni_Name_With_Typ instead of a code.
+ */
+export function looksLikeMuniName(cell) {
+  const s = String(cell ?? '').toUpperCase();
+  if (!s.trim()) return false;
+  // "... (RM)" / "... (TOWN)" / "... (NORTHERN COMMUNITY)" etc.
+  if (/\((RM|RURAL MUNICIPALITY|MUNICIPALITY|TOWN|CITY|VILLAGE|LGD|NORTHERN [A-Z]+)\)\s*$/.test(s)) return true;
+  // "RM OF ..." / "TOWN OF ..." / "CITY OF ..." etc.
+  if (/\b(RM|RURAL MUNICIPALITY|MUNICIPALITY|TOWN|CITY|VILLAGE|LGD|LOCAL GOVERNMENT DISTRICT|NORTHERN COMMUNITY)\s+OF\b/.test(s)) return true;
+  return false;
+}
 
 // ---- cell helpers -------------------------------------------------
 
@@ -188,6 +209,98 @@ function tokenizeRows(text, delimiter) {
   return rows;
 }
 
+/**
+ * Column-count-aware tokenizer for the unquoted-multi-line-cell case.
+ *
+ * Some spreadsheet/table copies stack a multi-parcel sale into a single
+ * logical row where the Municipality / Roll / Legal cells each carry
+ * several newline-separated values — but the source doesn't quote those
+ * cells, so a naive tokenizer breaks every embedded newline into its own
+ * (ragged) physical row. Knowing the expected column count `N` (from the
+ * header), we can reconstruct the logical rows: a newline is treated as
+ * *intra-cell* until `N-1` delimiters have been seen, then it terminates
+ * the row. Embedded newlines are preserved in the field so the caller's
+ * expansion pass can split them back into one parcel per value.
+ *
+ * Quote handling matches tokenizeRows, so a properly-quoted CSV export
+ * (Excel wraps multi-line cells in quotes) flows through unchanged.
+ * Clean rows (already N fields) come out identical to the naive parse.
+ */
+function tokenizeRowsFixedWidth(text, delimiter, N) {
+  const src = String(text || '');
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  let i = 0;
+  const pushField = () => { row.push(field); field = ''; };
+  const pushRow   = () => {
+    if (row.length > 1 || row[0] !== '') rows.push(row);
+    row = [];
+  };
+  while (i < src.length) {
+    const c = src[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (src[i + 1] === '"') { field += '"'; i += 2; }
+        else { inQuotes = false; i++; }
+      } else { field += c; i++; }
+    } else if (c === '"') {
+      inQuotes = true; i++;
+    } else if (c === delimiter) {
+      pushField(); i++;
+    } else if (c === '\r' || c === '\n') {
+      const nl = (c === '\r' && src[i + 1] === '\n') ? 2 : 1;
+      if (row.length === 0 && field === '') {
+        i += nl;                       // blank line — skip
+      } else if (row.length >= N - 1) {
+        pushField(); pushRow(); i += nl; // last field done → end row
+      } else {
+        field += '\n'; i += nl;        // non-last cell spans physical lines
+      }
+    } else {
+      field += c; i++;
+    }
+  }
+  if (field !== '' || row.length > 0) { pushField(); pushRow(); }
+  return rows;
+}
+
+/**
+ * Expand any row whose cells carry newline-separated values into one row
+ * per value — a stacked multi-parcel sale becomes N single-parcel rows.
+ * `K` = the max line count across the row's cells; single-line cells
+ * repeat their value, multi-line cells take their k-th value (missing
+ * values blank-fill). Rows that produce K>1 members share a `groupId`
+ * (a monotonic counter) so the caller can highlight them as one sale
+ * group; single-parcel rows get `groupId: null`.
+ *
+ * Runs before cleanCell so the embedded newlines are still present.
+ * Returns { rows, groupIds } with groupIds parallel to rows.
+ */
+function expandMultiValueRows(bodyRows) {
+  const outRows = [];
+  const groupIds = [];
+  let groupCounter = 0;
+  for (const row of bodyRows) {
+    const split = row.map((cell) => String(cell ?? '').split(/\r\n|\r|\n/));
+    const K = split.reduce((m, parts) => Math.max(m, parts.length), 1);
+    if (K <= 1) {
+      outRows.push(row);
+      groupIds.push(null);
+      continue;
+    }
+    groupCounter += 1;
+    for (let k = 0; k < K; k++) {
+      const subRow = split.map((parts) => (parts.length === 1 ? parts[0] : (parts[k] ?? '')));
+      if (subRow.every((c) => String(c).trim() === '')) continue;
+      outRows.push(subRow);
+      groupIds.push(groupCounter);
+    }
+  }
+  return { rows: outRows, groupIds };
+}
+
 // ---- header + column-shape detection -----------------------------
 
 function headerToFieldType(cell) {
@@ -220,6 +333,9 @@ function cellShape(cell) {
   // Legal first — its regex is the most specific.
   const tok = parseLegalToken(c);
   if (tok.kind === 'grid' || tok.kind === 'lbp') return 'legal';
+  // Municipality name ("RM OF X" / "X (RM)") — a strong, specific shape
+  // that never collides with the numeric/legal/title buckets below.
+  if (looksLikeMuniName(c)) return 'muniName';
   // Decorated title (has CT prefix or /N suffix).
   if (TITLE_DECORATED_RE.test(c)) return 'title';
   // Pure integer — bucket by digit count.
@@ -240,16 +356,25 @@ function cellShape(cell) {
  */
 function guessColumnType(columnCells, headerCell) {
   const hdrHint = headerToFieldType(headerCell);
-  if (hdrHint) return hdrHint;
 
-  const tally = { empty: 0, legal: 0, title: 0, numSmall: 0, numMed: 0, numOther: 0, other: 0 };
+  const tally = { empty: 0, legal: 0, title: 0, muniName: 0, numSmall: 0, numMed: 0, numOther: 0, other: 0 };
   for (const c of columnCells) {
     const k = cellShape(c);
     tally[k] = (tally[k] || 0) + 1;
   }
   const nonEmpty = columnCells.length - tally.empty;
+
+  // A "Municipality" header is ambiguous — it can front a numeric muni
+  // CODE or a muni NAME (the sales-export shape). Decide from content:
+  // any name-shaped cells mean it's a name column, else a code column.
+  if (hdrHint === 'muni') {
+    return tally.muniName > 0 ? 'muniName' : 'muni';
+  }
+  if (hdrHint) return hdrHint;
+
   if (nonEmpty === 0) return 'ignore';
 
+  if (tally.muniName / nonEmpty >= 0.6) return 'muniName';
   if (tally.legal / nonEmpty >= 0.6) return 'legal';
   if (tally.title / nonEmpty >= 0.6) return 'title';
 
@@ -284,9 +409,24 @@ function guessColumnType(columnCells, headerCell) {
  */
 export function parseParcelList(text) {
   const delim = detectDelimiter(text);
-  const rows = tokenizeRows(text, delim).filter((r) => r.some((c) => String(c).trim() !== ''));
+  let rows = tokenizeRows(text, delim).filter((r) => r.some((c) => String(c).trim() !== ''));
   if (rows.length === 0) {
-    return { headers: null, columns: [], guesses: [], rawLines: [], delimiter: String(delim) };
+    return { headers: null, columns: [], guesses: [], rawLines: [], delimiter: String(delim), groupIds: [] };
+  }
+
+  // Multi-line-cell reconstruction. When the input uses a literal
+  // delimiter and the naive tokenization came out ragged — some rows
+  // narrower than the header row, the signature of unquoted multi-line
+  // cells wrapping across physical lines (a stacked multi-parcel sale) —
+  // re-tokenize with the column-count-aware pass so those cells stay
+  // whole. Clean input (every row already header-width) is left as-is.
+  if (!(delim instanceof RegExp)) {
+    const N = rows[0].length;
+    if (N >= 2 && rows.some((r) => r.length < N)) {
+      const reassembled = tokenizeRowsFixedWidth(text, delim, N)
+        .filter((r) => r.some((c) => String(c).trim() !== ''));
+      if (reassembled.length > 0) rows = reassembled;
+    }
   }
 
   // Pad short rows so column arrays align.
@@ -300,7 +440,12 @@ export function parseParcelList(text) {
     bodyStart = 1;
   }
 
-  const body = rows.slice(bodyStart);
+  // Expand multi-value cells (from either the quoted-CSV path or the
+  // column-count-aware reassembly) into one parcel-row per value, before
+  // cleanCell collapses the embedded newlines. groupIds is parallel to
+  // the expanded body so applyMapping can tag each row's sale group.
+  const { rows: body, groupIds } = expandMultiValueRows(rows.slice(bodyStart));
+
   const columns = Array.from({ length: widest }, (_, c) => body.map((r) => cleanCell(r[c] || '')));
   const guesses = columns.map((cells, c) => guessColumnType(cells, headers?.[c] || ''));
 
@@ -309,7 +454,7 @@ export function parseParcelList(text) {
   // version.
   const rawLines = body.map((r) => r.join(delim instanceof RegExp ? '  ' : String(delim)));
 
-  return { headers, columns, guesses, rawLines, delimiter: String(delim) };
+  return { headers, columns, guesses, rawLines, delimiter: String(delim), groupIds };
 }
 
 /**
@@ -350,6 +495,7 @@ export function applyMapping(parsed, mapping, { canonicalRoll } = {}) {
     };
     const rollRaw = get('roll');
     const muniRaw = get('muni');
+    const muniNameRaw = get('muniName');
     const legalRaw = get('legal');
     const titleRaw = get('title');
 
@@ -357,6 +503,7 @@ export function applyMapping(parsed, mapping, { canonicalRoll } = {}) {
     const roll = cleanRoll && canonicalRoll ? canonicalRoll(cleanRoll) : cleanRoll;
     const muniDigits = cleanCell(muniRaw).replace(/[^\d]/g, '');
     const muniNo = muniDigits ? Number(muniDigits) : null;
+    const muniName = cleanCell(muniNameRaw) || null;
     const legal = legalRaw ? parseLegalToken(legalRaw) : null;
     const title = cleanCell(titleRaw);
 
@@ -364,9 +511,11 @@ export function applyMapping(parsed, mapping, { canonicalRoll } = {}) {
       lineNo: r + 1 + headerOffset,
       roll,
       muniNo: Number.isFinite(muniNo) ? muniNo : null,
+      muniName,
       legal,
       title,
-      raw: { roll: rollRaw, muni: muniRaw, legal: legalRaw, title: titleRaw },
+      groupId: parsed.groupIds?.[r] ?? null,
+      raw: { roll: rollRaw, muni: muniRaw, muniName: muniNameRaw, legal: legalRaw, title: titleRaw },
     });
   }
 
@@ -380,9 +529,9 @@ export function applyMapping(parsed, mapping, { canonicalRoll } = {}) {
  */
 export function validateMapping(mapping) {
   const types = new Set(mapping.filter((t) => t && t !== 'ignore'));
-  const hasIdentifier = types.has('muni') || types.has('legal') || types.has('title');
+  const hasIdentifier = types.has('muni') || types.has('muniName') || types.has('legal') || types.has('title');
   if (!hasIdentifier) {
-    return 'Map at least one of Muni #, Legal Desc, or Title # so each row can be resolved to a parcel.';
+    return 'Map at least one of Muni #, Municipality (name), Legal Desc, or Title # so each row can be resolved to a parcel.';
   }
   if (!types.has('roll') && !types.has('muni')) {
     // Without Roll # we can't intersect candidates; without Muni # we

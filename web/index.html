@@ -331,7 +331,7 @@
                 type="button"
                 id="parcel-list-import-trigger"
                 class="parcel-list-import-trigger"
-                title="Paste or upload a multi-municipality parcel list (Roll # + at least one of Muni #, Title #, or Legal Description). Resolves muni for each row and loads them all into Search."
+                title="Paste or upload a multi-municipality parcel list — Roll # plus at least one of Municipality name, Muni #, Title #, or Legal Description. A sales export works too: map its Municipality column to 'Municipality (name)'. Resolves each row's muni and highlights them all; multi-parcel sales (stacked rolls) import as a shaded group."
               >Import List…</button>
             </div>
           </details>
@@ -1042,11 +1042,15 @@
         <!-- Step 1: paste / upload -->
         <section class="parcel-list-modal-step" data-step="paste">
           <p class="parcel-list-modal-help">
-            Paste two to four columns from a spreadsheet, or upload a CSV/TSV file.
+            Paste columns from a spreadsheet, or upload a CSV/TSV file.
             <strong>Roll #</strong> is required, plus at least one of
-            <strong>Muni #</strong>, <strong>Title #</strong>, or <strong>Legal Description</strong>.
-            Supplying a Muni # column skips the legal-index lookup and is the most reliable
-            input when you have it.
+            <strong>Municipality (name)</strong>, <strong>Muni #</strong>,
+            <strong>Title #</strong>, or <strong>Legal Description</strong>.
+            A sales export (Sale Date, Consideration, Municipality, Roll #, …) works too —
+            map its Municipality column to <strong>Municipality (name)</strong> to reconcile
+            by name. Supplying a Muni # (or a recognised Municipality name) skips the
+            legal-index lookup and is the most reliable input. Multi-parcel sales — one row
+            with several stacked rolls — import as a single shaded group.
           </p>
           <textarea
             id="parcel-list-import-text"

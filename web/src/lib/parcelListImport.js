@@ -6,6 +6,10 @@
  *   Screen 2: column-mapping preview. Confirm → resolve → emit
  *             parcelKeys (and the unresolved rows) to the caller.
  *
+ * A confidently-recognized sales export (header row + Municipality-name
+ * + Roll #) skips Screen 2 and resolves straight from Screen 1 — the
+ * one-paste flow (see isRecognizedSalesExport).
+ *
  * The resolver itself runs in lib/parcelListResolver.js; this file
  * only handles the user-facing flow. main.js wires onResolved into
  * the listParcelKeys state + the resolved-list pill.
@@ -33,6 +37,7 @@ const MAX_PREVIEW_ROWS = 5;
 const FIELD_LABELS = {
   roll: 'Roll #',
   muni: 'Muni #',
+  muniName: 'Municipality (name)',
   legal: 'Legal Desc',
   title: 'Title #',
   ignore: 'Ignore',
@@ -52,11 +57,17 @@ const FIELD_LABELS = {
  * @param {(payload: { parcelKeys, resolved, unresolved, stats }) => void}
  *   opts.onResolved - called when the user clicks Resolve and the
  *   resolver returns. The modal closes itself before invoking this.
+ * @param {(rows: Array<{lineNo, muniName, roll}>) => Promise<{
+ *     resolvedByLine: Map, unresolvedByLine: Map }>} [opts.resolveMuniNames]
+ *   - optional Roll Entry name→muni_no reconciler (used for the
+ *   sales-export "Municipality (name)" column). Injected so the parser/
+ *   resolver stay free of arcgis.js.
  */
 export function initParcelListImport({
   warmIndex,
   canonicalRoll,
   onResolved,
+  resolveMuniNames,
 } = {}) {
   const $modal     = document.getElementById('parcel-list-import-modal');
   if (!$modal) return { open: () => {}, close: () => {} };
@@ -140,7 +151,19 @@ export function initParcelListImport({
     mapping = (remembered && remembered.length === parsed.columns.length)
       ? remembered
       : parsed.guesses.slice();
+    // Render the mapping table up front either way — it doubles as the
+    // fallback screen if an auto-skipped resolve fails, so it must be
+    // populated before we might jump past it.
     renderMappingTable();
+    // Direct path: a confidently-recognized sales export (header row +
+    // Municipality-name + Roll #, an unambiguous valid mapping) skips the
+    // column-confirmation screen and resolves straight away — the
+    // one-paste flow. Any less-certain shape still stops here so the user
+    // can confirm or override the auto-detected columns.
+    if (isRecognizedSalesExport(parsed, mapping)) {
+      await goToResolve();
+      return;
+    }
     setStep('map');
   }
 
@@ -235,7 +258,7 @@ export function initParcelListImport({
     }
     let out;
     try {
-      out = await resolveParcelList(mapped.rows);
+      out = await resolveParcelList(mapped.rows, { resolveMuniNames });
     } catch (err) {
       console.error('Resolver failed:', err);
       if ($resolveErr) {
@@ -394,6 +417,23 @@ export function initParcelListImport({
 }
 
 // ---- small helpers -------------------------------------------
+
+/**
+ * True when a parsed import is a confidently-recognized sales export —
+ * a header row plus an unambiguous auto-mapping that carries exactly one
+ * Municipality (name) column and one Roll # column, with no field mapped
+ * twice and an otherwise-valid mapping. These skip the column-
+ * confirmation screen and resolve immediately (the one-paste flow); any
+ * less-certain shape still stops at the mapping step for confirmation.
+ */
+function isRecognizedSalesExport(parsed, mapping) {
+  if (!parsed?.headers || !Array.isArray(mapping)) return false;
+  const counts = {};
+  for (const t of mapping) if (t && t !== 'ignore') counts[t] = (counts[t] || 0) + 1;
+  if (counts.muniName !== 1 || counts.roll !== 1) return false;   // muni-name + roll signature
+  if (Object.values(counts).some((n) => n > 1)) return false;     // no field mapped twice
+  return validateMapping(mapping) == null;                        // overall mapping valid
+}
 
 function flashWarn(btn, msg) {
   if (!btn) return;
