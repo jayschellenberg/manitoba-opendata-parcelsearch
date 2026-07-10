@@ -1,0 +1,62 @@
+# schedule_history_check.ps1 -- register history-staleness-check.ps1 as a DAILY
+# Windows Task Scheduler entry (09:10 local). Daily is intentional: the check
+# itself is read-only and cheap, its dedupe stamp means at most ONE reminder a
+# month, and a daily cadence catches a stale snapshot even if the machine was
+# off on any given day. This is the dead-man's switch for MAOSemiannualArchive
+# (Jan 1 / Jul 1): that task alerts when a publish STEP fails, but only this
+# external check can notice that the publish never started at all.
+# Idempotent -- re-run to update; the existing task is replaced.
+#
+# Usage (normal user privileges, no admin needed):
+#   powershell -ExecutionPolicy Bypass -File schedule_history_check.ps1
+#
+# Manage:
+#   Get-ScheduledTask -TaskName MBParcelHistoryStaleness | Format-List *
+#   Start-ScheduledTask  -TaskName MBParcelHistoryStaleness                      # run now
+#   Unregister-ScheduledTask -TaskName MBParcelHistoryStaleness -Confirm:$false  # cancel
+
+$ErrorActionPreference = "Continue"   # schtasks writes 'task not found' to stderr; don't let it throw
+$TaskName  = "MBParcelHistoryStaleness"
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$Checker   = Join-Path $ScriptDir "history-staleness-check.ps1"
+
+if (-not (Test-Path $Checker)) { Write-Error "Checker not found: $Checker"; exit 1 }
+
+# Replace any existing task with the same name.
+$existing = schtasks /Query /TN $TaskName 2>$null
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "Existing task '$TaskName' found - replacing it."
+    schtasks /Delete /TN $TaskName /F | Out-Null
+}
+
+$taskCmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$Checker`""
+
+schtasks /Create `
+    /SC DAILY `
+    /ST 09:10 `
+    /TN $TaskName `
+    /TR $taskCmd `
+    /RL LIMITED `
+    /F | Out-Null
+
+if ($LASTEXITCODE -ne 0) { Write-Error "schtasks /Create failed (exit $LASTEXITCODE)"; exit $LASTEXITCODE }
+
+# Battery + catch-up flags (schtasks doesn't expose these).
+$settings = New-ScheduledTaskSettingsSet `
+    -StartWhenAvailable `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -ExecutionTimeLimit (New-TimeSpan -Minutes 15)
+Set-ScheduledTask -TaskName $TaskName -Settings $settings | Out-Null
+
+Write-Host ""
+Write-Host "Scheduled task '$TaskName' registered:"
+Write-Host "  Runs:        history-staleness-check.ps1 daily at 09:10 local"
+Write-Host "  Reminds:     once per month, only when the newest snapshot (built or app-pinned)"
+Write-Host "               is older than 215 days (~1 month past the Jan 1 / Jul 1 cadence)"
+Write-Host "  Channels:    email (alert-email.local.txt) + ntfy push (mbps-semiannual-archive-jks)"
+Write-Host "  StartWhenAvailable enabled (catches up if the machine was off)"
+Write-Host ""
+Write-Host "Test the alert path now:  powershell -ExecutionPolicy Bypass -File history-staleness-check.ps1 -TestAlert"
+Write-Host "Dry-run the decision:     powershell -ExecutionPolicy Bypass -File history-staleness-check.ps1 -DryRun"
+Write-Host "Cancel:                   Unregister-ScheduledTask -TaskName $TaskName -Confirm:`$false"
