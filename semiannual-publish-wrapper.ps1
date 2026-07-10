@@ -4,19 +4,29 @@
 # ENTIRE flow that used to be manual, end to end:
 #
 #   1. Download the three provincial layers fresh from the ArcGIS FeatureServer
-#      into a throwaway staging dir  (r/download_provincial_snapshot.R)
+#      into a throwaway staging dir  (r/download_provincial_snapshot.R --
+#      count-verified pagination + shrink guard vs the published history, so a
+#      truncated layer aborts instead of becoming the source-of-record)
 #   2. Archive them as a new dated MAOSnapshots capture + provenance sidecars
 #      (r/archive_snapshot.R, pointed at staging so mao-assembly is untouched)
 #   3. Build per-muni historical display shards for the current year
-#      (r/build_historical_shards.R --year <yyyy>)
+#      (r/build_historical_shards.R --year <yyyy> --require zoning,devplan --
+#      a snapshot missing either layer hard-fails instead of publishing
+#      parcels-only), then assert the <stamp> snapshot dir actually exists
 #   4. Rebuild parcel lineage across all snapshots  (r/build_lineage.R)
 #   5. Commit + push the mb-parcel-history data repo -> capture new commit SHA
 #   6. Repoint HISTORICAL_CDN in the app (web/src/arcgis.js) to that SHA,
 #      commit + push the app repo -> Vercel redeploys production
 #
 # ANY failed step fires a push + email alert (alert-lib.ps1) and stops. The
-# manual MB geoPortal download is no longer required — this pulls the same
+# manual MB geoPortal download is no longer required -- this pulls the same
 # authoritative layers directly from the FeatureServer.
+#
+# Dead-man's switch: this wrapper can only alert when it RUNS. The daily
+# MBParcelHistoryStaleness task (history-staleness-check.ps1, registered by
+# schedule_history_check.ps1) watches from the outside and alerts when the
+# newest built or app-pinned snapshot goes > ~7 months old -- covering the
+# "task never fired at all" failure mode.
 #
 # ntfy topic: mbps-semiannual-archive-jks  (shared with the old archive job so
 # an existing subscription keeps working).
@@ -86,21 +96,37 @@ function Invoke-R([string]$scriptRel, [string[]]$argv, [hashtable]$envMap, [stri
 }
 
 if (-not $rscript) { Die 'no Rscript' 'Rscript.exe not found on PATH or under C:\Program Files\R.' }
-Log "Publish pipeline start — snapshot $stamp, year $year"
+Log "Publish pipeline start -- snapshot $stamp, year $year"
 
 # 1. fresh download into a clean staging dir
 if (Test-Path $StagingInputs) { Remove-Item $StagingInputs -Recurse -Force -ErrorAction SilentlyContinue }
 New-Item -ItemType Directory -Path $StagingInputs -Force | Out-Null
 Invoke-R 'r\download_provincial_snapshot.R' @() @{ PROVINCIAL_STAGING_DIR = $StagingInputs } 'download provincial layers' | Out-Null
 
-# 2. archive (dated capture + provenance) — point the archiver at staging
+# 2. archive (dated capture + provenance) -- point the archiver at staging
 $arch = Invoke-R 'r\archive_snapshot.R' @() @{ MAO_ASSEMBLY_ROOT = $StagingRoot } 'archive snapshot'
 if ($arch | Where-Object { $_ -match 'STALE|SKIP\s+.*\(not found' }) {
   Die 'archive source stale/missing' (($arch | Where-Object { $_ -match 'STALE|SKIP' }) -join "`n")
 }
 
-# 3. shards + 4. lineage
-Invoke-R 'r\build_historical_shards.R' @('--year', "$year") $null 'build historical shards' | Out-Null
+# 3. shards (zoning + dev-plan REQUIRED on the publish path -- a snapshot must
+#    never quietly publish parcels-only) + 4. lineage
+Invoke-R 'r\build_historical_shards.R' @('--year', "$year", '--require', 'zoning,devplan') $null 'build historical shards' | Out-Null
+
+# Belt-and-braces: prove the snapshot this run set out to publish actually
+# exists before anything is pushed or repinned. Without this, a filename/year
+# mismatch would commit only regenerated lineage timestamps, repin the app,
+# and report success while publishing nothing new.
+$snapManifest = Join-Path $HistRepo (Join-Path $stamp 'manifest.json')
+if (-not (Test-Path $snapManifest)) {
+  $have = (Get-ChildItem $HistRepo -Directory -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match '^\d{4}-\d{2}-\d{2}$' } |
+    Sort-Object Name -Descending | Select-Object -First 5 -ExpandProperty Name) -join ', '
+  Die 'snapshot not built' ("Expected $snapManifest after the shard build (stamp $stamp), but it does not exist. " +
+    "Newest snapshot dirs: $have. Likely a date/year mismatch between the archived file names and --year $year.")
+}
+Log "verified snapshot $stamp built ($snapManifest)"
+
 Invoke-R 'r\build_lineage.R' @() $null 'build lineage' | Out-Null
 
 # 5. commit + push the data repo
@@ -112,7 +138,7 @@ if ($dirty) {
   & git -C $HistRepo push 2>&1 | ForEach-Object { Add-Content -Path $log -Value "$_" }
   if ($LASTEXITCODE -ne 0) { Die 'mb-parcel-history push' 'git push failed for the data repo (see log).' }
 } else {
-  Log 'mb-parcel-history: nothing to commit (data unchanged) — skipping push'
+  Log 'mb-parcel-history: nothing to commit (data unchanged) -- skipping push'
 }
 $sha = (& git -C $HistRepo rev-parse HEAD).Trim()
 if (-not $sha) { Die 'no data SHA' 'could not read mb-parcel-history HEAD sha' }
@@ -123,7 +149,7 @@ Log '== repoint app HISTORICAL_CDN =='
 $content = Get-Content -Raw $ArcgisJs
 $new = [regex]::Replace($content, 'mb-parcel-history@[0-9a-f]{40}', "mb-parcel-history@$sha")
 if ($new -eq $content) {
-  Log "app pin already at $sha — no app change needed"
+  Log "app pin already at $sha -- no app change needed"
 } else {
   # BOM-less UTF-8: Set-Content -Encoding UTF8 adds a BOM under Windows
   # PowerShell 5.1 (the scheduled-task runtime), which would corrupt the JS
@@ -132,11 +158,11 @@ if ($new -eq $content) {
   & git -C $AppRepo add 'web/src/arcgis.js' 2>&1 | ForEach-Object { Add-Content -Path $log -Value "$_" }
   & git -C $AppRepo commit -m "Repoint historical CDN to mb-parcel-history@$($sha.Substring(0,7)) ($stamp snapshot)" 2>&1 | ForEach-Object { Add-Content -Path $log -Value "$_" }
   & git -C $AppRepo push 2>&1 | ForEach-Object { Add-Content -Path $log -Value "$_" }
-  if ($LASTEXITCODE -ne 0) { Die 'app push' 'git push failed for the app repo (arcgis.js pin) — see log.' }
-  Log "app repin pushed — Vercel will redeploy"
+  if ($LASTEXITCODE -ne 0) { Die 'app push' 'git push failed for the app repo (arcgis.js pin) -- see log.' }
+  Log "app repin pushed -- Vercel will redeploy"
 }
 
-Log "Publish pipeline complete — $stamp live at mb-parcel-history@$sha"
+Log "Publish pipeline complete -- $stamp live at mb-parcel-history@$sha"
 Send-AlertPush $NtfyTopic 'OK - MB parcel semiannual publish' `
   "Published $stamp snapshot. mb-parcel-history@$($sha.Substring(0,7)); app repinned + redeploying. Host $env:COMPUTERNAME." | Out-Null
 exit 0

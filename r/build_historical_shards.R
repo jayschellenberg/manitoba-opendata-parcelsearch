@@ -58,6 +58,10 @@
 #   Rscript r/build_historical_shards.R --year 2026     # only snapshots dated 2026
 #   Rscript r/build_historical_shards.R --year 2026 --muni 168   # one muni (fast test)
 #   Rscript r/build_historical_shards.R --index-only    # just rewrite the discovery index
+#   ... --require zoning,devplan                        # HARD-FAIL any processed snapshot
+#                                                       #   missing those layers (used by the
+#                                                       #   semiannual publish wrapper; default
+#                                                       #   keeps them optional for old archives)
 #
 # Runtime: ~10-15 min/snapshot for the full province (parcels dominate).
 
@@ -109,6 +113,21 @@ arg_val   <- function(flag) { i <- match(flag, args); if (is.na(i) || i == lengt
 only_year  <- arg_val("--year")
 only_muni  <- suppressWarnings(as.integer(arg_val("--muni")))
 index_only <- "--index-only" %in% args   # just (re)write the root discovery index
+
+# Layers that MUST be present (and non-empty on full runs) in every processed
+# snapshot, else the run hard-fails. The publish wrapper passes
+# `--require zoning,devplan` so a snapshot can never silently publish
+# parcels-only; plain/manual runs keep the layers optional (historical archives
+# may predate a layer).
+required_layers <- local({
+  v <- arg_val("--require")
+  if (is.na(v)) return(character(0))
+  v <- trimws(strsplit(v, ",", fixed = TRUE)[[1]])
+  bad <- setdiff(v, c("zoning", "devplan"))
+  if (length(bad)) stop("--require: unknown layer(s): ", paste(bad, collapse = ", "),
+                        " (valid: zoning, devplan)")
+  v
+})
 
 # ---- helpers ---------------------------------------------------------
 date_from_name <- function(path) {
@@ -175,9 +194,11 @@ read_meta <- function(src_path) {
 
 # Short git commit of THIS generator (the main repo), recorded in the
 # manifest so a finding can be traced to the exact build. Best-effort.
+# `-C websearch_root` because scheduled-task runs inherit a cwd of System32 —
+# a bare `git rev-parse` there finds no repo and the manifest records null.
 generator_commit <- function() {
   tryCatch({
-    out <- suppressWarnings(system2("git", c("rev-parse", "--short", "HEAD"),
+    out <- suppressWarnings(system2("git", c("-C", websearch_root, "rev-parse", "--short", "HEAD"),
                                     stdout = TRUE, stderr = FALSE))
     if (length(out)) trimws(out[1]) else NA_character_
   }, error = function(e) NA_character_)
@@ -288,6 +309,16 @@ process_snapshot <- function(parcel_f) {
   cat("  zoning  :", if (is.na(zoning_f)) "(none)" else basename(zoning_f), "\n")
   cat("  devplan :", if (is.na(devplan_f)) "(none)" else basename(devplan_f), "\n")
 
+  # Required-layer gate (publish path): a missing zoning/dev-plan must be a
+  # loud stop BEFORE any parcel work — not a "(none)" that quietly publishes a
+  # parcels-only snapshot.
+  if ("zoning" %in% required_layers && is.na(zoning_f)) {
+    stop("snapshot ", snap, ": zoning REQUIRED but no Manitoba_Zoning_By_Laws<YYYYMMDD>.geojson in ", ydir)
+  }
+  if ("devplan" %in% required_layers && is.na(devplan_f)) {
+    stop("snapshot ", snap, ": devplan REQUIRED but no Manitoba_Development_Plan_Designations<YYYYMMDD>.geojson in ", ydir)
+  }
+
   out_dir <- file.path(OUTPUT_ROOT, snap)
   layers <- list()
 
@@ -311,26 +342,38 @@ process_snapshot <- function(parcel_f) {
   # --- zoning ---
   if (!is.na(zoning_f)) {
     z <- sf::st_read(zoning_f, quiet = TRUE)
-    require_fields(names(z), c("MUNI_NO", "ZONE", "ZBL"), "zoning")
+    # Critical-field misses are fatal when the layer is required (a schema
+    # drift would otherwise publish shards missing their display fields).
+    require_fields(names(z), c("MUNI_NO", "ZONE", "ZBL"), "zoning",
+                   hard = "zoning" %in% required_layers)
     z$MUNI_NO <- suppressWarnings(as.integer(z$MUNI_NO))
     if (!is.na(only_muni)) z <- z[!is.na(z$MUNI_NO) & z$MUNI_NO == only_muni, ]
     keepZ <- intersect(ZONING_FIELDS, names(z))
     z <- z[, c(keepZ, attr(z, "sf_column"))]
     z <- to_wgs84_simplify(z)
     zc <- write_shards(z, "MUNI_NO", file.path(out_dir, "zoning"), setdiff(keepZ, "MUNI_NO"))
+    # Zero features on a full run = truncated/empty source, not a real province.
+    # (Skipped under --muni: 48 munis legitimately have no provincial zoning.)
+    if ("zoning" %in% required_layers && is.na(only_muni) && sum(unlist(zc)) == 0) {
+      stop("snapshot ", snap, ": zoning REQUIRED but produced 0 features from ", basename(zoning_f))
+    }
     layers$zoning <- layer_meta(zoning_f, length(zc), sum(unlist(zc)))
   }
 
   # --- dev plan ---
   if (!is.na(devplan_f)) {
     d <- sf::st_read(devplan_f, quiet = TRUE)
-    require_fields(names(d), c("MUNI_NO", "DES_NAME", "DP_BYLAW"), "dev-plan")
+    require_fields(names(d), c("MUNI_NO", "DES_NAME", "DP_BYLAW"), "dev-plan",
+                   hard = "devplan" %in% required_layers)
     d$MUNI_NO <- suppressWarnings(as.integer(d$MUNI_NO))
     if (!is.na(only_muni)) d <- d[!is.na(d$MUNI_NO) & d$MUNI_NO == only_muni, ]
     keepD <- intersect(DEVPLAN_FIELDS, names(d))
     d <- d[, c(keepD, attr(d, "sf_column"))]
     d <- to_wgs84_simplify(d)
     dc <- write_shards(d, "MUNI_NO", file.path(out_dir, "devplan"), setdiff(keepD, "MUNI_NO"))
+    if ("devplan" %in% required_layers && is.na(only_muni) && sum(unlist(dc)) == 0) {
+      stop("snapshot ", snap, ": devplan REQUIRED but produced 0 features from ", basename(devplan_f))
+    }
     layers$devplan <- layer_meta(devplan_f, length(dc), sum(unlist(dc)))
   }
 
