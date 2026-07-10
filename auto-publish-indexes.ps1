@@ -1,11 +1,11 @@
-# auto-publish-indexes.ps1 — Unattended: rebuild the GitHub-Release-hosted legal +
+# auto-publish-indexes.ps1 -- Unattended: rebuild the GitHub-Release-hosted legal +
 # assessment indexes from the CURRENT mao-scrape parquets, then publish + deploy so the
 # live site's "Data refreshed" date tracks the data automatically.
 #
 # This is the missing "deploy" half of the refresh story. monthly-refresh.bat rebuilds
 # the index JSONs LOCALLY and stops; release-indexes.ps1 publishes but is run by hand.
 # This script chains rebuild -> validate -> release -> commit -> push so no human step
-# is needed. It does NOT re-scrape — the nightly mao-scrape delta keeps
+# is needed. It does NOT re-scrape -- the nightly mao-scrape delta keeps
 # ../mao-scrape/results/*.parquet fresh; we just re-emit the indexes from them.
 #
 # Chain (aborts on the FIRST failure, so bad/partial data never reaches the live site):
@@ -72,7 +72,7 @@ try {
   #    so a bad scrape can never propagate to a public Release or the live site.
   Log 'build-manifest.js --validate'
   & node web\scripts\build-manifest.js --validate *>> $log
-  if ($LASTEXITCODE -ne 0) { throw 'build-manifest --validate failed — NOT publishing (previous data stays live)' }
+  if ($LASTEXITCODE -ne 0) { throw 'build-manifest --validate failed -- NOT publishing (previous data stays live)' }
 
   # release-indexes.ps1 is called IN-PROCESS (not a child powershell) so it inherits the
   # native-error opt-out above and runs cleanly under both Windows PowerShell 5.1 and 7.
@@ -90,7 +90,7 @@ try {
   # 4. Commit the edge-fn URL bumps + manifest and push -> Vercel auto-deploys.
   & git add api/legal-index.js api/assessment-index.js web/public/data/manifest.json *>> $log
   $staged = git diff --cached --name-only
-  if (-not $staged) { Log 'nothing changed to commit — already current; no deploy needed'; Log '=== complete ==='; exit 0 }
+  if (-not $staged) { Log 'nothing changed to commit -- already current; no deploy needed'; Log '=== complete ==='; exit 0 }
   Log "committing: $($staged -join ', ')"
   git commit -m "Auto-publish refreshed legal + assessment indexes ($ts)" `
              -m 'Rebuilt from the current mao-scrape parquets; new GitHub Release + manifest. Unattended via auto-publish-indexes.ps1.' `
@@ -98,7 +98,7 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "git commit failed (exit $LASTEXITCODE)" }
   git push origin HEAD *>> $log   # explicit remote+ref: works even when the branch has no upstream set
   if ($LASTEXITCODE -ne 0) { throw "git push failed (exit $LASTEXITCODE)" }
-  Log "pushed — Vercel will redeploy; the Data Sources 'Data refreshed' date updates once the deploy is live."
+  Log "pushed -- Vercel will redeploy; the Data Sources 'Data refreshed' date updates once the deploy is live."
   Log '=== complete ==='
   exit 0
 }
