@@ -78,38 +78,55 @@ whenever it gets heavy, then repoint the app first.
 (GitHub Release + edge function — see §1c below). It does NOT live in
 mb-parcel-data because at 41 MB it's over jsDelivr's per-file cap.
 
-### 2. Snapshot archive + provenance — roll / zoning / dev-plan  (cadence: semi-annual, **scheduled**)
+### 2. Snapshot archive + publish — roll / zoning / dev-plan  (cadence: semi-annual, **scheduled end-to-end**)
 Permanent dated snapshots of all three provincial layers (roll info, zoning,
-development plan). **Scheduled** twice a year (January 1 / July 1, 04:30) via
-`schedule_semiannual.ps1` → `semiannual-archive-wrapper.ps1`. To run by hand:
-```
-Rscript r/archive_snapshot.R          # all three (roll + zoning + dev-plan)
-```
-All three sources are `active` now, so a plain run captures everything (`--all`
-remains a synonym). Append-only → `D:\Dropbox\Appraisal\Web\MAOSnapshots\<year>\`,
-and writes a `<file>.meta.json` **provenance sidecar** (sha256, source date,
-retrieved_at, **source_crs**, source_url, license) beside each archived file.
-Never deletes prior captures. Lives in Dropbox, outside git/deploy.
+development plan), published through to the app. **Scheduled** twice a year
+(January 1 / July 1, 04:30) via `schedule_semiannual.ps1` →
+**`semiannual-publish-wrapper.ps1`**, which does the whole flow unattended:
 
-The catch automation can't close: the scheduled run only archives whatever
-currently sits in `mao-assembly/inputs/`, and the upstream **MB Open Data
-download is manual** (no stable API). So the wrapper scans the run and sends a
-**push/email reminder** when a source is missing or > 12 months stale — that's
-your cue to pull fresh `MBRollGeoPackage.gpkg` / `Manitoba_Zoning_By_Laws.geojson`
-/ `Manitoba_Development_Plan_Designations.geojson` into `inputs/` and let the
-next scheduled run (or a manual run) capture them. Register the schedule once:
+1. **Download** the three layers fresh from the ArcGIS FeatureServer into a
+   throwaway staging dir (`r/download_provincial_snapshot.R`) — no manual MB
+   geoPortal download needed. The download is **count-verified** (server row
+   count first, hard error on any mismatch) and **shrink-guarded** (a layer
+   >2% smaller than the newest published snapshot aborts;
+   `PROVINCIAL_ACCEPT_SHRINK=1` to override), so a truncated layer can never
+   become the archived source-of-record.
+2. **Archive** as a dated capture + `<file>.meta.json` **provenance sidecar**
+   (sha256, source date, retrieved_at, **source_crs**, source_url, license).
+   Append-only → `D:\Dropbox\Appraisal\Web\MAOSnapshots\<year>\`; never
+   deletes prior captures. Lives in Dropbox, outside git/deploy.
+3. **Shards + lineage + publish**: builds the per-muni historical shards with
+   `--require zoning,devplan` (a snapshot missing either layer hard-fails
+   instead of publishing parcels-only), asserts the new snapshot dir exists,
+   rebuilds lineage, pushes `mb-parcel-history`, repins `HISTORICAL_CDN` in
+   the app, pushes → Vercel redeploys.
+
+Any failed step sends a push/email alert and stops. Register the schedule once:
 ```
 powershell -ExecutionPolicy Bypass -File schedule_semiannual.ps1
 ```
+**Dead-man's switch**: the wrapper only alerts when it *runs*, so the daily
+**`MBParcelHistoryStaleness`** task (`history-staleness-check.ps1`, registered
+via `schedule_history_check.ps1`) alerts when the newest built or app-pinned
+snapshot goes > 215 days old (~1 month past cadence) — catching "the task
+never fired at all" (schedule rot, machine reimaged, wrapper moved).
 
-### 3. Publish a new historical snapshot — as-of-date view  (cadence: when #2 adds a snapshot)
-Turn the new dated snapshot into per-muni shards and publish to the CDN
-(output is keyed by **snapshot date**, e.g. `2026-06-05/`):
+Archive-only by hand (no download/publish — captures whatever sits in
+`mao-assembly/inputs/`): `Rscript r/archive_snapshot.R` (all three sources are
+`active`; `--all` remains a synonym), or `semiannual-archive-wrapper.ps1` for
+the alert-wrapped version.
+
+### 3. Publish a historical snapshot manually — as-of-date view  (normally automated by #2)
+The scheduled publish wrapper does all of this; use these steps only for a
+manual/backfill publish. Turn a dated snapshot into per-muni shards keyed by
+**snapshot date** (e.g. `2026-06-05/`):
 ```
-Rscript r/build_historical_shards.R --year <yyyy>
+Rscript r/build_historical_shards.R --year <yyyy> --require zoning,devplan
 cd ..\mb-parcel-history
 git add <snapshot_id> index.json && git commit -m "Add <snapshot_id>" && git push
 ```
+(`--require` hard-fails if zoning/dev-plan is missing for a snapshot — drop it
+only when deliberately processing an old archive that predates a layer.)
 **Then update the pinned commit in the app** (REQUIRED): the app fetches
 history from a pinned `mb-parcel-history` commit, not `@main` — jsDelivr's view
 of a branch HEAD lags and is inconsistent per-file, so `@main` served stale
@@ -157,30 +174,34 @@ defence-in-depth:
 
 ## One-time setup & security settings
 
-### Register the two scheduled tasks
-Both schedules are idempotent — run each once (re-run after editing a
+### Register the scheduled tasks
+All schedules are idempotent — run each once (re-run after editing a
 wrapper/.bat to repoint the task):
 ```
-powershell -ExecutionPolicy Bypass -File schedule_monthly.ps1      # MAOMonthlyRefresh   — 15th monthly 04:00 (live shards)
-powershell -ExecutionPolicy Bypass -File schedule_semiannual.ps1   # MAOSemiannualArchive — Jan 1 / Jul 1 04:30 (permanent snapshots)
+powershell -ExecutionPolicy Bypass -File schedule_monthly.ps1        # MAOMonthlyRefresh        — 15th monthly 04:00 (live shards)
+powershell -ExecutionPolicy Bypass -File schedule_semiannual.ps1     # MAOSemiannualArchive     — Jan 1 / Jul 1 04:30 (snapshot publish)
+powershell -ExecutionPolicy Bypass -File schedule_history_check.ps1  # MBParcelHistoryStaleness — daily 09:10 (snapshot dead-man watchdog)
 ```
-Verify either: `Get-ScheduledTask -TaskName MAOMonthlyRefresh,MAOSemiannualArchive | Format-List *`.
+Verify: `Get-ScheduledTask -TaskName MAOMonthlyRefresh,MAOSemiannualArchive,MBParcelHistoryStaleness | Format-List *`.
 
 ### Failure / staleness alerts (email + push)
-Both scheduled tasks run through a wrapper that shares one alert path
+The scheduled tasks run through wrappers that share one alert path
 (`alert-lib.ps1`): `monthly-refresh-wrapper.ps1` alerts on any failed refresh
-step; `semiannual-archive-wrapper.ps1` alerts on a hard failure **and** when
-the provincial source is missing or > 12 months stale (your nudge to pull a
-fresh MB Open Data download). Push notifications work out of the box if you
-subscribe to both ntfy.sh topics in the ntfy app — `mbps-monthly-refresh-jks`
-and `mbps-semiannual-archive-jks`. **Email needs one 5-minute step**: create an
-app password (M365: Security info → App passwords; Gmail:
-myaccount.google.com/apppasswords) and paste it into `smtp_pass=` in
-`alert-email.local.txt` (gitignored — one file serves both wrappers). Then
+step; `semiannual-publish-wrapper.ps1` alerts on any failed publish step
+(download / archive / shards / lineage / push / repin); and
+`history-staleness-check.ps1` is the dead-man's switch that alerts when the
+newest snapshot is overdue even if the publish task never started. Push
+notifications work out of the box if you subscribe to both ntfy.sh topics in
+the ntfy app — `mbps-monthly-refresh-jks` and `mbps-semiannual-archive-jks`
+(the publish wrapper and the watchdog share the latter). **Email needs one
+5-minute step**: create an app password (M365: Security info → App passwords;
+Gmail: myaccount.google.com/apppasswords) and paste it into `smtp_pass=` in
+`alert-email.local.txt` (gitignored — one file serves all wrappers). Then
 verify each end-to-end:
 ```
 powershell -ExecutionPolicy Bypass -File monthly-refresh-wrapper.ps1 -TestAlert
-powershell -ExecutionPolicy Bypass -File semiannual-archive-wrapper.ps1 -TestAlert
+powershell -ExecutionPolicy Bypass -File semiannual-publish-wrapper.ps1 -TestAlert
+powershell -ExecutionPolicy Bypass -File history-staleness-check.ps1 -TestAlert
 ```
 If a Task Scheduler entry predates its wrapper, re-run the matching
 `schedule_*.ps1` once so the task targets the wrapper.

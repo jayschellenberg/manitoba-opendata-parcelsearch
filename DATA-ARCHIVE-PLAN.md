@@ -1,7 +1,22 @@
-# Data architecture & annual-snapshot plan (DRAFT)
+# Data architecture & annual-snapshot plan (HISTORICAL DRAFT — superseded)
 
-Status: draft for Jason's review. Nothing here is implemented yet except
-Phase 0 (land-cover tiles → WebP, already shipped).
+Status: **superseded 2026-07 — kept for design rationale only.** The snapshot
+system was built out well past this draft; where they disagree, trust
+`MAINTENANCE.md` §2-4 and the scripts. What actually shipped:
+
+- Cadence is **semiannual** (Jan 1 / Jul 1, task `MAOSemiannualArchive`), not
+  annual, and **all three layers** (roll + zoning + dev-plan) are `active` —
+  not "wired but off" as below.
+- The upstream download is **automated** (`r/download_provincial_snapshot.R`
+  pulls the ArcGIS FeatureServer with count-verified pagination + a shrink
+  guard) — no manual geoPortal step remains.
+- The full publish (archive → shards → lineage → `mb-parcel-history` push →
+  app CDN repin) runs end-to-end via `semiannual-publish-wrapper.ps1`, with a
+  daily dead-man watchdog (`MBParcelHistoryStaleness`).
+- Beyond this draft's scope, the shards also feed an in-app historical
+  ("as-of-date") compare view plus inferred parcel lineage.
+
+Original draft follows.
 
 ## Goals
 
