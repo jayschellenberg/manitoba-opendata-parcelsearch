@@ -61,6 +61,16 @@ by R scripts and served either from the deploy or from a CDN:
   jsDelivr. Kept separate so ~300 MB/year of history never bloats the main
   repo or the Vercel deploy.
 
+**Automated snapshot publish (2026-07):** the historical-snapshot path
+(download → archive → shards → lineage → push `mb-parcel-history` → repin the
+app CDN SHA → Vercel) now runs **end-to-end, unattended**, twice a year via
+`semiannual-publish-wrapper.ps1` (Windows task `MAOSemiannualArchive`,
+Jan 1 / Jul 1). It fetches the three provincial layers itself
+(`r/download_provincial_snapshot.R`), so the snapshot path no longer needs the
+manual MB Open Data download shown in the diagram — that manual download now
+feeds only **mao-assembly's** land-cover inputs. A daily dead-man watchdog
+(`MBParcelHistoryStaleness`) alerts if a publish is ever missed. See §8.
+
 ---
 
 ## 2. Data classes (and how each is handled)
@@ -207,9 +217,12 @@ captures in the same calendar year are two distinct snapshots.
   **hard-fail** the snapshot; missing zoning/dev-plan fields warn (§5.8).
 - Output → `mb-parcel-history` repo (`OUTPUT_ROOT`).
 - Prints a **STALE warning** if the newest snapshot is > 12 months old.
-- Usage: `Rscript r/build_historical_shards.R [--year <yyyy>] [--muni <code>] [--index-only]`
+- Usage: `Rscript r/build_historical_shards.R [--year <yyyy>] [--muni <code>] [--index-only] [--require zoning,devplan]`
   (`--year` filters snapshots by calendar year; `--muni` is the fast-test
-  path; `--index-only` just rewrites the discovery index).
+  path; `--index-only` just rewrites the discovery index; **`--require`**
+  hard-fails any processed snapshot missing the named layer(s) — the publish
+  wrapper passes `zoning,devplan` so an automated snapshot can never silently
+  ship parcels-only).
 
 ### 5.2 The data repo + CDN
 `mb-parcel-history` layout (served read-only via jsDelivr, **free**):
@@ -309,7 +322,10 @@ archived source-of-record file.
 silently-degraded data: a **parcel** snapshot missing a critical field
 (roll / muni) **hard-stops** the build (without those the app can't key or
 render); a zoning/dev-plan layer missing a field prints a warning and
-continues (those overlays degrade gracefully).
+continues (those overlays degrade gracefully) — **unless `--require` (§5.1)
+names that layer**, in which case a missing layer, a missing critical field,
+or a 0-feature result also hard-fails. The semiannual publish wrapper passes
+`--require zoning,devplan`, so an automated snapshot is all-or-nothing.
 
 ---
 
@@ -358,19 +374,28 @@ was pulled, by *which build*, from *what sources*, with *what caveats*.
 
 ## 8. Maintenance / recurring tasks
 
+**The snapshot publish is automated** (task `MAOSemiannualArchive` →
+`semiannual-publish-wrapper.ps1`, Jan 1 / Jul 1 04:30): download → archive →
+shards → lineage → push `mb-parcel-history` → repin the app CDN SHA → push app
+→ Vercel. Any failed step emails + ntfy-alerts and stops; the daily
+`MBParcelHistoryStaleness` watchdog covers a run that never fires at all.
+Rows 4-6 below are the **manual fallback** (backfill / off-cycle).
+
 | # | Task | Cadence | Command |
 |---|---|---|---|
 | 1 | Monthly refresh (legal/assessment/land-cover shards) | monthly | `monthly-refresh.bat` → review `git status`, commit, push |
-| 2 | Snapshot archive + provenance sidecars | semi-annual / annual (after a fresh provincial download) | `Rscript r/archive_snapshot.R` (or `--all`) |
-| 3 | Publish a historical snapshot | when #2 adds a snapshot | `Rscript r/build_historical_shards.R --year <yyyy>` → commit/push `<snapshot_id>/` + `index.json` in `mb-parcel-history` |
-| 4 | Rebuild parcel lineage | after #3 (≥ 2 snapshots exist) | `Rscript r/build_lineage.R` → commit/push `lineage/` in `mb-parcel-history` |
-| 5 | Land-cover shards | when mao-assembly reruns | runs inside `monthly-refresh.bat` (non-fatal) |
-| 6 | Land-cover Detailed tiles | rare — new raster only | `Rscript r/build_landcover_tiles.R` (needs GDAL) |
-| 7 | Provincial downloads | ≥ annual | download fresh MB Open Data into `mao-assembly/inputs/`, then #2/#3/#4 + rerun mao-assembly |
+| 2 | **Snapshot publish (end-to-end)** | **semi-annual, scheduled** | `MAOSemiannualArchive` → `semiannual-publish-wrapper.ps1`; by hand: run that script, or `-TestAlert` to check the alert path |
+| 3 | **Staleness watchdog** | **daily, scheduled** | `MBParcelHistoryStaleness` → `history-staleness-check.ps1`; register via `schedule_history_check.ps1`; `-DryRun` / `-TestAlert` |
+| 4 | Snapshot archive only (no publish) | as needed | `Rscript r/archive_snapshot.R` (or `--all`) |
+| 5 | Build a snapshot's shards by hand | backfill | `Rscript r/build_historical_shards.R --year <yyyy> --require zoning,devplan` → commit/push `<snapshot_id>/` + `index.json` in `mb-parcel-history` |
+| 6 | Rebuild parcel lineage by hand | backfill (≥ 2 snapshots) | `Rscript r/build_lineage.R` → commit/push `lineage/` |
+| 7 | Land-cover shards / Detailed tiles | mao-assembly rerun / new raster | inside `monthly-refresh.bat` / `Rscript r/build_landcover_tiles.R` |
+| 8 | Provincial land-cover inputs (mao-assembly) | ≥ annual | manual MB Open Data download into `mao-assembly/inputs/`, rerun mao-assembly (the snapshot path auto-downloads separately) |
 
-After republishing to `mb-parcel-history`, **purge jsDelivr** for the changed
-`index.json` / `lineage/_index.json` (`https://purge.jsdelivr.net/gh/...`) so
-the app sees the new snapshot without the ≤ ~12 h `@main` cache lag.
+The automated wrapper repins an **immutable commit SHA**, so it needs no
+purge. Only after a **manual** republish to `mb-parcel-history` do you purge
+jsDelivr for the changed `index.json` / `lineage/_index.json`
+(`https://purge.jsdelivr.net/gh/...`), to skip the ≤ ~12 h `@main` cache lag.
 
 ---
 
@@ -382,8 +407,12 @@ the app sees the new snapshot without the ≤ ~12 h `@main` cache lag.
 | Historical archive | app historical banner | `> 12 mo old` tag |
 | Provincial source | `archive_snapshot.R` console | `!! STALE` > 12 mo |
 | Newest snapshot | `build_historical_shards.R` console | `!! STALE` > 12 mo |
+| **Snapshot overdue (watchdog)** | `MBParcelHistoryStaleness` (daily) → email + ntfy | newest **built OR app-pinned** snapshot > **215 d** (~1 mo past cadence) |
+| **Layer shrank on download** | `download_provincial_snapshot.R` (in the publish) | **aborts** the publish if a layer is > 2% smaller than the newest published manifest (`PROVINCIAL_ACCEPT_SHRINK=1` to override) |
 
-If any fires, run the matching task in §8.
+If any fires, run the matching task in §8. The watchdog is the backstop for a
+publish that never ran; the shrink guard is the backstop for a truncated
+provincial download becoming the archived source-of-record.
 
 ---
 
@@ -396,6 +425,10 @@ If any fires, run the matching task in §8.
 | `r/archive_snapshot.R` | archive provincial downloads (dated, append-only) + provenance sidecars | `…\MAOSnapshots\<year>\` + `<file>.meta.json` |
 | `r/build_historical_shards.R` | archive → per-snapshot per-muni shards + provenance manifests | `mb-parcel-history\<snapshot_id>\**` |
 | `r/build_lineage.R` | infer predecessor/successor across snapshots | `mb-parcel-history\lineage\**` |
+| `r/download_provincial_snapshot.R` | fetch the 3 provincial layers from ArcGIS (count-verified pagination + shrink guard) into staging for the automated publish | staging `inputs/` |
+| `semiannual-publish-wrapper.ps1` | end-to-end automated publish (download → archive → shards → lineage → push → repin app); task `MAOSemiannualArchive` | data repo + app repin |
+| `history-staleness-check.ps1` / `schedule_history_check.ps1` | dead-man watchdog: alert if the newest built/pinned snapshot is overdue / register the daily `MBParcelHistoryStaleness` task | email + ntfy |
+| `r/build_ortho_tiles.ps1` | tile a downloaded aerial ortho mosaic (ECW/GeoTIFF) → raster PMTiles for the optional "Aerial" basemap (§10.1) | `<name>.pmtiles` (→ R2) |
 | `web/src/lib/landcover.js` | shared bucket defs + display gate (`LAND_COVER_MIN_ACRES`) | — |
 | `web/src/lib/provenance.js` | evidence-export provenance record + CSV/text renderers | — |
 | `web/src/arcgis.js` | `fetchLandCover*`, `fetchHistorical*` / `fetchHistoricalLineage` (CDN) fetchers, `SERVICE_SOURCES` | — |
@@ -405,6 +438,34 @@ If any fires, run the matching task in §8.
 | `web/vite.config.js` | bakes `__APP_COMMIT__` / `__APP_BUILD_TIME__` for export provenance | — |
 | `MAINTENANCE.md` | operator quick-runbook (subset of §8) | — |
 | `DATA-ARCHIVE-PLAN.md` | original design/decision record (now realized) | — |
+
+### 10.1 Basemaps (streets / satellite / aerial ortho)
+`map.js` `BASEMAP_STYLE` stacks the basemaps; the top-right toggle cycles them:
+- **Streets** — CARTO Positron (default; carries its own labels).
+- **Satellite** — **Esri World Imagery** (`server.arcgisonline.com/.../World_Imagery`,
+  keyless, ~30–60 cm, current, province-wide) + transparent Esri
+  transportation/reference label overlays. This is the standing aerial layer.
+- **Aerial `<year>`** — an OPTIONAL self-hosted ortho, higher-res than Esri,
+  served as raster **PMTiles** from Cloudflare R2 (the `pmtiles://` protocol is
+  registered at module load). **Ships INERT:** the layer only exists when
+  `ORTHO_PMTILES_URL` (in `map.js`) is pinned; until then the toggle stays the
+  2-state Streets ⇄ Satellite it always was. When pinned it becomes a 3-state
+  Streets → Satellite → Aerial cycle — the ortho draws above Esri imagery
+  (which shows through beyond the ortho's extent) and below the label overlays.
+  `setBasemapSatellite()` forces the ortho off, so the offscreen snapshot
+  export stays deterministic Esri imagery.
+
+**Whether to use it:** non-Winnipeg Manitoba has **no public ortho that beats
+Esri** — MLI is download-only regional imagery (50 cm Capital Region ~2014;
+1 m Southern MB 2007–2014), GoC national ortho is legacy SPOT (10 m, 2005–2010),
+and the province's own AgriMaps uses Esri World Imagery. The only worthwhile
+source is a downloaded **high-res current city** mosaic (e.g. Winnipeg's 7.5 cm
+annual ECW), out of the non-Winnipeg scope — so the pipeline is ready
+infrastructure, not something to pin today.
+
+**To activate:** `powershell r/build_ortho_tiles.ps1 -SourceUrl|-SourceFile <mosaic> -Name <basename> -Attribution "<credit>" [-TargetResM 0.149]`
+→ upload the `.pmtiles` to R2 (public) → set `ORTHO_PMTILES_URL` / `ORTHO_YEAR` /
+`ORTHO_ATTRIBUTION` in `map.js` → add the R2 host to `vercel.json` `connect-src`.
 
 ---
 
@@ -424,7 +485,15 @@ If any fires, run the matching task in §8.
   holding the build copy; harmless. Build with `--emptyOutDir false`, or
   just push (Vercel builds in a clean environment).
 - **Preview sandbox** can't load the basemap or fetch jsDelivr (no external
-  network) — verify those on the live deploy.
+  network) — verify those on the live deploy. (This is also why an in-app
+  browser can't fully load the map to exercise the basemap toggle live.)
+- **A scheduled `.ps1` fails to parse under Windows PowerShell 5.1** (the Task
+  Scheduler runtime) → an em-dash or other non-ASCII char inside a
+  **double-quoted** string in a BOM-less UTF-8 file mojibakes and terminates
+  the string, failing the whole file before it runs — so no alert fires. Keep
+  the wrapper `.ps1` files **ASCII-only**; verify with
+  `[System.Management.Automation.Language.Parser]::ParseFile` under BOTH `pwsh`
+  and `powershell.exe`.
 
 ---
 
@@ -437,3 +506,7 @@ If any fires, run the matching task in §8.
   this (separate repo / Dropbox).
 - **Historical zoning/dev-plan re-bin** for reorg snapshots (§5.5) — build +
   test when the first cross-reorganization snapshot is archived.
+- **Aerial ortho basemap** is wired but **inert** (§10.1) — pin an
+  `ORTHO_PMTILES_URL` to activate. No non-Winnipeg source is worth it today
+  (all public MB ortho is beaten by the live Esri layer); revisit for Winnipeg
+  work, or if a high-res current municipal ortho becomes available.

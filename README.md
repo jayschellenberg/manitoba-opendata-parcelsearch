@@ -78,7 +78,7 @@ The page splits into a fixed-width left sidebar holding all controls and a fluid
 - **RM Website** — opens the selected muni's official site in a new tab. Auto-detects from a comprehensive lookup of every published municipal website in the province (`MUNI_WEBSITES` in [main.js](web/src/main.js)). Reads "RM N/A" when the muni's directory entry has no website.
 - **PD Website** — data-driven. After every search, the dominant `PLANNINGDISTRICT` value across the dev-plan enrichment FC picks the active PD; `PD_WEBSITES` looks up its URL. Reads "PD N/A" when the PD has no website on file. Stays disabled until a search resolves the PD.
 
-**Sidebar — Streets / Satellite basemap toggle** sits in the map's top-right gutter; flips between CARTO Positron and Esri World Imagery without rebuilding the map.
+**Sidebar — Streets / Satellite basemap toggle** sits in the map's top-right gutter; flips between CARTO Positron and Esri World Imagery without rebuilding the map. (A third **Aerial &lt;year&gt;** state appears only if a self-hosted high-res ortho is configured — see `DOCUMENTATION.md` §10.1; it ships inert, so the toggle is 2-state today.)
 
 ## Results table
 
@@ -129,6 +129,7 @@ Pure static. Vercel serves the Vite-built bundle plus the generated legal-search
 **Dependencies** (`web/package.json`):
 
 - `maplibre-gl` — map (no API key; CARTO Positron + Esri World Imagery raster tiles)
+- `pmtiles` — reads the optional self-hosted aerial-ortho basemap from a single PMTiles archive (inert until `ORTHO_PMTILES_URL` is pinned; see `DOCUMENTATION.md` §10.1)
 - `@turf/area`, `@turf/bbox`, `@turf/intersect`, `@turf/boolean-point-in-polygon`, `@turf/length` — spatial primitives for the area-weighted join + route distances
 - `@mapbox/mapbox-gl-draw` — measurement / draw tool on the map
 - `tailwindcss` + `@tailwindcss/vite` — utility-first styles (dev)
