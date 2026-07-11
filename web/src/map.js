@@ -24,6 +24,7 @@ import { landCoverBreakdown, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
 import { MB_PARCEL_DATA_CDN } from './arcgis.js';
 import { MASC_PALETTE } from './masc.js';
 import { safeExternalUrl } from './lib/safeUrl.js';
+import { Protocol as PMTilesProtocol } from 'pmtiles';
 
 // mapbox-gl-draw was written against the Mapbox GL `mapboxgl-*` DOM
 // class names; MapLibre uses `maplibregl-*`. Patch the lookup table
@@ -34,6 +35,11 @@ MapboxDraw.constants.classes.CONTROL_BASE   = 'maplibregl-ctrl';
 MapboxDraw.constants.classes.CONTROL_PREFIX = 'maplibregl-ctrl-';
 MapboxDraw.constants.classes.CONTROL_GROUP  = 'maplibregl-ctrl-group';
 MapboxDraw.constants.classes.ATTRIBUTION    = 'maplibregl-ctrl-attrib';
+
+// Register the pmtiles:// protocol so MapLibre can read the optional aerial
+// ortho basemap from a single .pmtiles archive on Cloudflare R2 (see
+// ORTHO_PMTILES_URL below). Idempotent, and harmless when no ortho is pinned.
+maplibregl.addProtocol('pmtiles', new PMTilesProtocol().tile);
 
 // Initial view focuses on populated south-central Manitoba — from the
 // US border up to ~Grahamdale and from RM of Pipestone east to the
@@ -304,6 +310,32 @@ const BASEMAP_STYLE = {
     { id: 'landcover-raster',    type: 'raster', source: 'landcover-raster',    minzoom: 0, maxzoom: 20, layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.65 } },
   ],
 };
+
+// Optional THIRD basemap: a self-hosted Manitoba aerial ORTHO, higher-res than
+// the Esri World Imagery above, served as raster PMTiles from Cloudflare R2 and
+// built offline by r/build_ortho_tiles.ps1 from a downloaded ortho mosaic
+// (non-Winnipeg Manitoba has no live ortho tile service, so we tile a source
+// raster ourselves). Ships INERT: until ORTHO_PMTILES_URL is pinned, the
+// basemap toggle stays a 2-state Streets<->Satellite exactly as before. When
+// pinning the URL, also add the R2 host to vercel.json's connect-src.
+export const ORTHO_YEAR = 2024;
+const ORTHO_PMTILES_URL = '';   // e.g. 'https://<public-r2-domain>/mb-ortho-winnipeg-2024.pmtiles'
+const ORTHO_ATTRIBUTION = '';   // e.g. 'Aerial imagery &copy; City of Winnipeg 2024'
+if (ORTHO_PMTILES_URL) {
+  BASEMAP_STYLE.sources['ortho-mb'] = {
+    type: 'raster',
+    url: `pmtiles://${ORTHO_PMTILES_URL}`,
+    tileSize: 256,
+    attribution: ORTHO_ATTRIBUTION || undefined,
+  };
+  // Insert the ortho layer directly ABOVE the Esri imagery (which shows through
+  // beyond the ortho's extent / when overzoomed) and BELOW the transparent Esri
+  // label overlays, so place + road names stay legible over the ortho.
+  const insertAt = BASEMAP_STYLE.layers.findIndex((l) => l.id === 'esri-transportation');
+  BASEMAP_STYLE.layers.splice(insertAt < 0 ? BASEMAP_STYLE.layers.length : insertAt, 0, {
+    id: 'ortho-mb', type: 'raster', source: 'ortho-mb', minzoom: 0, maxzoom: 22, layout: { visibility: 'none' },
+  });
+}
 
 // mapbox-gl-draw style spec for the measurement tool. High-contrast orange
 // (#ff4d00) reads cleanly on both the cream CARTO Positron streets basemap
@@ -2495,6 +2527,12 @@ export function setBasemapSatellite(map, on) {
   if (map.getLayer('carto-positron')) {
     map.setLayoutProperty('carto-positron', 'visibility', cartoVis);
   }
+  // The optional aerial ortho (present only when pinned) is a higher-res
+  // superset of satellite; force it OFF here so callers that just want
+  // "satellite" — notably the offscreen snapshot export — get deterministic
+  // Esri imagery. The basemap toggle re-shows it for its explicit 'aerial'
+  // state.
+  if (map.getLayer('ortho-mb')) map.setLayoutProperty('ortho-mb', 'visibility', 'none');
 }
 
 /**
@@ -3799,11 +3837,14 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
 function emptyFc() { return { type: 'FeatureCollection', features: [] }; }
 
 /**
- * Custom MapLibre control: a single button that flips the basemap between
- * CARTO Positron (streets) and Esri World Imagery (satellite). Sits in the
- * top-right gutter, just under the zoom buttons. Stateless — reads the
- * current visibility off the layers each click so we don't have to track
- * a separate flag.
+ * Custom MapLibre control: one button that cycles the basemap. Sits in the
+ * top-right gutter, just under the zoom buttons. Stateless — reads the current
+ * visibility off the layers each click so we don't track a separate flag.
+ *
+ * Two states by default (Streets ⇄ Satellite); when the optional aerial ortho
+ * is pinned (ORTHO_PMTILES_URL), it becomes a 3-state cycle
+ * Streets → Satellite → Aerial. The button label reads what the NEXT click
+ * swaps to.
  */
 class BasemapToggleControl {
   onAdd(map) {
@@ -3812,27 +3853,49 @@ class BasemapToggleControl {
     this._container.className = 'maplibregl-ctrl maplibregl-ctrl-group basemap-toggle';
     this._btn = document.createElement('button');
     this._btn.type = 'button';
-    this._btn.title = 'Toggle basemap (streets ⇄ satellite)';
+    this._btn.title = 'Toggle basemap';
     this._btn.setAttribute('aria-label', 'Toggle basemap');
-    // Streets is the default basemap; the button label reads
-    // "Satellite" because that's what a click will swap to.
+    // Streets is the default; the label reads what the next click swaps to.
     this._btn.textContent = 'Satellite';
     this._btn.addEventListener('click', () => this._toggle());
     this._container.appendChild(this._btn);
     return this._container;
   }
+  // 3-state cycle only when the aerial ortho layer is present; otherwise the
+  // original 2-state Streets <-> Satellite.
+  _states() {
+    return this._map.getLayer('ortho-mb')
+      ? ['streets', 'satellite', 'aerial']
+      : ['streets', 'satellite'];
+  }
+  _current() {
+    const m = this._map;
+    if (m.getLayer('ortho-mb') && m.getLayoutProperty('ortho-mb', 'visibility') === 'visible') return 'aerial';
+    if (m.getLayer('esri-imagery') && m.getLayoutProperty('esri-imagery', 'visibility') === 'visible') return 'satellite';
+    return 'streets';
+  }
+  _apply(state) {
+    const m = this._map;
+    // setBasemapSatellite owns the carto/esri flips AND forces the ortho off,
+    // so run it first, then re-show the ortho for the explicit 'aerial' state.
+    setBasemapSatellite(m, state !== 'streets');
+    if (state === 'aerial' && m.getLayer('ortho-mb')) {
+      m.setLayoutProperty('ortho-mb', 'visibility', 'visible');
+    }
+    const states = this._states();
+    const next = states[(states.indexOf(state) + 1) % states.length];
+    this._btn.textContent = { streets: 'Streets', satellite: 'Satellite', aerial: `Aerial ${ORTHO_YEAR}` }[next];
+    this._btn.classList.toggle('active', state !== 'streets');
+  }
   _toggle() {
-    const map = this._map;
-    // No-op until the basemap layers exist — guards a click that lands
-    // before the style has finished loading (getLayoutProperty would
-    // otherwise throw "Cannot get style of non-existing layer").
-    if (!map.getLayer('esri-imagery')) return;
-    const next = map.getLayoutProperty('esri-imagery', 'visibility') !== 'visible';
-    // Delegate the actual layer flips to the shared, per-layer-guarded
-    // helper so the two stay in sync (it owns the esri/carto layer set).
-    setBasemapSatellite(map, next);
-    this._btn.textContent = next ? 'Streets' : 'Satellite';
-    this._btn.classList.toggle('active', next);
+    const m = this._map;
+    // No-op until the basemap layers exist — guards a click that lands before
+    // the style has finished loading (getLayoutProperty would otherwise throw
+    // "Cannot get style of non-existing layer").
+    if (!m.getLayer('esri-imagery')) return;
+    const states = this._states();
+    const next = states[(states.indexOf(this._current()) + 1) % states.length];
+    this._apply(next);
   }
   onRemove() {
     this._container.parentNode?.removeChild(this._container);
