@@ -6,7 +6,7 @@ refreshed and exposes buttons for the controlled refresh chains.
 
 ## Quick Start
 
-From `D:\Dropbox\ClaudeCode\MBOpenData\WebSearch`:
+From `D:\Dropbox\ClaudeCode\MBOpenData\mb-parcelsearch`:
 
 ```cmd
 start-dashboard.bat

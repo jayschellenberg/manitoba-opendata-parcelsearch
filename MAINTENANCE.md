@@ -106,7 +106,7 @@ Any failed step sends a push/email alert and stops. Register the schedule once:
 powershell -ExecutionPolicy Bypass -File schedule_semiannual.ps1
 ```
 **Dead-man's switch**: the wrapper only alerts when it *runs*, so the daily
-**`MBParcelHistoryStaleness`** task (`history-staleness-check.ps1`, registered
+**`mb-parcelsearch-history-staleness`** task (`history-staleness-check.ps1`, registered
 via `schedule_history_check.ps1`) alerts when the newest built or app-pinned
 snapshot goes > 215 days old (~1 month past cadence) — catching "the task
 never fired at all" (schedule rot, machine reimaged, wrapper moved).
@@ -190,11 +190,11 @@ defence-in-depth:
 All schedules are idempotent — run each once (re-run after editing a
 wrapper/.bat to repoint the task):
 ```
-powershell -ExecutionPolicy Bypass -File schedule_monthly.ps1        # MAOMonthlyRefresh        — 15th monthly 04:00 (live shards)
-powershell -ExecutionPolicy Bypass -File schedule_semiannual.ps1     # MAOSemiannualArchive     — Jan 1 / Jul 1 04:30 (snapshot publish)
-powershell -ExecutionPolicy Bypass -File schedule_history_check.ps1  # MBParcelHistoryStaleness — daily 09:10 (snapshot dead-man watchdog)
+powershell -ExecutionPolicy Bypass -File schedule_monthly.ps1        # mb-parcelsearch-monthly-refresh        — 15th monthly 04:00 (live shards)
+powershell -ExecutionPolicy Bypass -File schedule_semiannual.ps1     # mb-parcelsearch-semiannual-archive     — Jan 1 / Jul 1 04:30 (snapshot publish)
+powershell -ExecutionPolicy Bypass -File schedule_history_check.ps1  # mb-parcelsearch-history-staleness — daily 09:10 (snapshot dead-man watchdog)
 ```
-Verify: `Get-ScheduledTask -TaskName MAOMonthlyRefresh,MAOSemiannualArchive,MBParcelHistoryStaleness | Format-List *`.
+Verify: `Get-ScheduledTask -TaskName mb-parcelsearch-monthly-refresh,mb-parcelsearch-semiannual-archive,mb-parcelsearch-history-staleness | Format-List *`.
 
 ### Failure / staleness alerts (email + push)
 The scheduled tasks run through wrappers that share one alert path

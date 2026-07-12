@@ -10,9 +10,9 @@
 #   powershell -ExecutionPolicy Bypass -File schedule_monthly.ps1
 #
 # To verify / manage:
-#   Get-ScheduledTask -TaskName MAOMonthlyRefresh | Format-List *
-#   Start-ScheduledTask  -TaskName MAOMonthlyRefresh                  # run immediately
-#   Unregister-ScheduledTask -TaskName MAOMonthlyRefresh -Confirm:$false   # cancel
+#   Get-ScheduledTask -TaskName mb-parcelsearch-monthly-refresh | Format-List *
+#   Start-ScheduledTask  -TaskName mb-parcelsearch-monthly-refresh                  # run immediately
+#   Unregister-ScheduledTask -TaskName mb-parcelsearch-monthly-refresh -Confirm:$false   # cancel
 #
 # Why schtasks.exe inside PowerShell: the PowerShell ScheduledTasks
 # module's New-ScheduledTaskTrigger doesn't support
@@ -21,7 +21,8 @@
 # schedule with a specific day-of-month.
 
 $ErrorActionPreference = "Stop"
-$TaskName  = "MAOMonthlyRefresh"
+$TaskName  = "mb-parcelsearch-monthly-refresh"
+$LegacyTaskNames = @("MAOMonthlyRefresh")
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $BatFile   = Join-Path $ScriptDir "monthly-refresh.bat"
 $Wrapper   = Join-Path $ScriptDir "monthly-refresh-wrapper.ps1"
@@ -35,11 +36,12 @@ if (-not (Test-Path $Wrapper)) {
     exit 1
 }
 
-# Replace any existing task with the same name.
-$existing = schtasks /Query /TN $TaskName 2>$null
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "Existing task '$TaskName' found - replacing it."
-    schtasks /Delete /TN $TaskName /F | Out-Null
+# Replace any existing task with the same name, plus the legacy pre-rename task.
+foreach ($name in @($TaskName) + $LegacyTaskNames) {
+    $existing = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+    if (-not $existing) { continue }
+    Write-Host "Existing task '$name' found - replacing it."
+    Unregister-ScheduledTask -TaskName $name -Confirm:$false
 }
 
 # Create the recurring monthly trigger.

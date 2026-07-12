@@ -2,7 +2,7 @@
 # history publish (email + ntfy push when the newest mb-parcel-history
 # snapshot is overdue).
 #
-# Context: MAOSemiannualArchive fires semiannual-publish-wrapper.ps1 on Jan 1 /
+# Context: mb-parcelsearch-semiannual-archive fires semiannual-publish-wrapper.ps1 on Jan 1 /
 # Jul 1 and alerts if a STEP fails -- but if the task itself never starts
 # (schedule rot, machine reimaged, wrapper moved), nothing runs and nothing
 # alerts. This daily check closes that hole from the outside: it only reads
@@ -147,17 +147,17 @@ The semiannual parcel-history snapshot looks overdue: $($why -join '; ').
   Threshold        : $MaxAgeDays days (cadence is ~182-184: Jan 1 / Jul 1)
   Data repo        : $HistRepo
 
-The MAOSemiannualArchive task (Jan 1 / Jul 1, 04:30) probably did not run,
+The mb-parcelsearch-semiannual-archive task (Jan 1 / Jul 1, 04:30) probably did not run,
 or the publish failed before committing. To investigate:
 
-  1. Get-ScheduledTask -TaskName MAOSemiannualArchive | Get-ScheduledTaskInfo
+  1. Get-ScheduledTask -TaskName mb-parcelsearch-semiannual-archive | Get-ScheduledTaskInfo
      (check LastRunTime / LastTaskResult / NextRunTime)
   2. Check the newest $root\logs\publish-*.log for a failed step.
   3. Run the publish by hand:
      powershell -ExecutionPolicy Bypass -File "$root\semiannual-publish-wrapper.ps1"
 
 Checked $($now.ToString('s')) on $env:COMPUTERNAME by history-staleness-check.ps1.
-Stop these reminders:  Unregister-ScheduledTask -TaskName MBParcelHistoryStaleness -Confirm:`$false
+Stop these reminders:  Unregister-ScheduledTask -TaskName mb-parcelsearch-history-staleness -Confirm:`$false
 "@
 
 if (Send-FailureAlert $root $NtfyTopic $title $body) {

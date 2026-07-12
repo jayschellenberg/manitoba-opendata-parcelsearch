@@ -37,7 +37,7 @@ suppressPackageStartupMessages({
 .cfg <- grep("^--file=", commandArgs(FALSE), value = TRUE)
 source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "config.R") else "r/config.R")
 
-input_path  <- file.path(websearch_root, "masc_soil_ratings_with_latlon.csv")
+input_path  <- file.path(mb_parcelsearch_root, "masc_soil_ratings_with_latlon.csv")
 # Shards publish into the local mb-parcel-data clone (served to the app
 # via jsDelivr pinned commit — see MB_PARCEL_DATA_CDN in arcgis.js).
 output_dir  <- file.path(mb_parcel_data_root, "masc")

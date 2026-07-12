@@ -194,11 +194,11 @@ read_meta <- function(src_path) {
 
 # Short git commit of THIS generator (the main repo), recorded in the
 # manifest so a finding can be traced to the exact build. Best-effort.
-# `-C websearch_root` because scheduled-task runs inherit a cwd of System32 —
+# `-C mb_parcelsearch_root` because scheduled-task runs inherit a cwd of System32 —
 # a bare `git rev-parse` there finds no repo and the manifest records null.
 generator_commit <- function() {
   tryCatch({
-    out <- suppressWarnings(system2("git", c("-C", websearch_root, "rev-parse", "--short", "HEAD"),
+    out <- suppressWarnings(system2("git", c("-C", mb_parcelsearch_root, "rev-parse", "--short", "HEAD"),
                                     stdout = TRUE, stderr = FALSE))
     if (length(out)) trimws(out[1]) else NA_character_
   }, error = function(e) NA_character_)

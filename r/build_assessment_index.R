@@ -63,7 +63,7 @@ parse_arg <- function(name, default = NULL) {
 }
 
 root <- normalizePath(file.path(dirname(script_path()), ".."), winslash = "/", mustWork = TRUE)
-# mao-scrape sits as a sibling of WebSearch under MBOpenData/.
+# mao-scrape sits as a sibling of mb-parcelsearch under MBOpenData/.
 default_input <- file.path(
   dirname(root),
   "mao-scrape", "results", "tax_history.parquet"

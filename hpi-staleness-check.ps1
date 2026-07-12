@@ -108,7 +108,7 @@ To update:
   3. Re-render ResChartsV2.5 -- the loader auto-selects the newest folder.
 
 Checked $($now.ToString('s')) on $env:COMPUTERNAME by hpi-staleness-check.ps1.
-Stop these reminders:  Unregister-ScheduledTask -TaskName HPIStalenessReminder -Confirm:`$false
+Stop these reminders:  Unregister-ScheduledTask -TaskName mb-parcelsearch-hpi-staleness -Confirm:`$false
 "@
 
 if (Send-FailureAlert $root $NtfyTopic $title $body) {

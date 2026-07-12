@@ -10,7 +10,7 @@ REM   Right-click → New → Shortcut → browse to this .bat → Finish.
 
 setlocal
 
-REM Always run from this script's directory (the WebSearch repo root),
+REM Always run from this script's directory (the mb-parcelsearch repo root),
 REM not whatever folder the user happened to be in when launching it.
 cd /d "%~dp0"
 

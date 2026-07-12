@@ -89,7 +89,7 @@ suppressPackageStartupMessages({
 .cfg <- grep("^--file=", commandArgs(FALSE), value = TRUE)
 source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "config.R") else "r/config.R")
 
-source_dir   <- websearch_root
+source_dir   <- mb_parcelsearch_root
 assembly_dir <- file.path(mao_assembly_root, "results")
 # Shards publish into the local mb-parcel-data clone (served via jsDelivr
 # pinned commit — see MB_PARCEL_DATA_CDN in arcgis.js).

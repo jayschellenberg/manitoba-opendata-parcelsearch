@@ -11,7 +11,7 @@ see "Setup" below.)
 ## Setup (do once, outside the session)
 
 ```cmd
-copy "D:\Dropbox\ClaudeCode\MBOpenData\WebSearch\REFACTOR_NOTES.md" ^
+copy "D:\Dropbox\ClaudeCode\MBOpenData\mb-parcelsearch\REFACTOR_NOTES.md" ^
      "D:\Dropbox\ClaudeCode\WpgOpenData\ParcelSearch\REFACTOR_NOTES.md"
 ```
 

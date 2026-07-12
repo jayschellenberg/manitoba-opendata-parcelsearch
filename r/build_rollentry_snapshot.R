@@ -52,7 +52,7 @@ sf::sf_use_s2(FALSE)
 .cfg <- grep("^--file=", commandArgs(FALSE), value = TRUE)
 source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "config.R") else "r/config.R")
 
-source_dir   <- websearch_root
+source_dir   <- mb_parcelsearch_root
 # Shards publish into the local mb-parcel-data clone (served to the app
 # via jsDelivr pinned to an immutable commit — see SNAPSHOT_CDN in
 # web/src/arcgis.js), NOT web/public/data/. After a rebuild: commit +

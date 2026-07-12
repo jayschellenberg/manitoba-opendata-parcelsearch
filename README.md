@@ -168,7 +168,7 @@ Open <http://localhost:5173>. The contaminated-sites CSV proxies through Vite's 
 If the project is running from a synced folder and Vite reports `Outdated Optimize Dep` or an `EBUSY` rename under `node_modules/.vite`, start dev with a temp cache:
 
 ```powershell
-$env:VITE_CACHE_DIR = Join-Path $env:TEMP 'mbopendata-websearch-vite'
+$env:VITE_CACHE_DIR = Join-Path $env:TEMP 'mbopendata-mb-parcelsearch-vite'
 npm run dev -- --host 127.0.0.1 --force
 ```
 
@@ -189,7 +189,7 @@ source("r/download_parcels.R")          # snapshots ROLL_ENTRY + zoning + dev pl
 shiny::runApp("r/parcel_search_app.R")  # interactive search on the local snapshot
 ```
 
-The Shiny app reads the most recent `RollEntry_YYYYMMDD.gpkg` in the project directory. Shared paths resolve through [`r/config.R`](r/config.R) — the repo root is detected from the running script's location, and the external roots (snapshot archive, sister projects) can be overridden on another machine via the environment variables documented there (`MBOPENDATA_WEBSEARCH_ROOT`, `MAO_SNAPSHOTS_ROOT`, `MAO_ASSEMBLY_ROOT`, `MASC_SCRAPE_ROOT`, `MB_PARCEL_HISTORY_ROOT`) instead of editing scripts.
+The Shiny app reads the most recent `RollEntry_YYYYMMDD.gpkg` in the project directory. Shared paths resolve through [`r/config.R`](r/config.R) — the repo root is detected from the running script's location, and the external roots (snapshot archive, sister projects) can be overridden on another machine via the environment variables documented there (`MB_PARCELSEARCH_ROOT`, `MAO_SNAPSHOTS_ROOT`, `MAO_ASSEMBLY_ROOT`, `MASC_SCRAPE_ROOT`, `MB_PARCEL_HISTORY_ROOT`) instead of editing scripts.
 
 ## Known caveats
 

@@ -16,9 +16,9 @@
 #   powershell -ExecutionPolicy Bypass -File schedule_publish.ps1 -Semiannual    # Jan/Jul
 #
 # Manage:
-#   Get-ScheduledTask -TaskName MAOPublishIndexes | Format-List *
-#   Start-ScheduledTask  -TaskName MAOPublishIndexes                 # run immediately
-#   Unregister-ScheduledTask -TaskName MAOPublishIndexes -Confirm:$false   # cancel
+#   Get-ScheduledTask -TaskName mb-parcelsearch-publish-indexes | Format-List *
+#   Start-ScheduledTask  -TaskName mb-parcelsearch-publish-indexes                 # run immediately
+#   Unregister-ScheduledTask -TaskName mb-parcelsearch-publish-indexes -Confirm:$false   # cancel
 
 param([switch]$Semiannual)
 
@@ -26,16 +26,19 @@ $ErrorActionPreference = 'Stop'
 # PowerShell 7 turns native-command stderr/nonzero-exit into a throw under -Stop; we rely
 # on $LASTEXITCODE checks for native tools (schtasks/git), so opt out. No-op on 5.1.
 $PSNativeCommandUseErrorActionPreference = $false
-$TaskName  = 'MAOPublishIndexes'
+$TaskName  = 'mb-parcelsearch-publish-indexes'
+$LegacyTaskNames = @('MAOPublishIndexes')
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Publisher = Join-Path $ScriptDir 'auto-publish-indexes.ps1'
 
 if (-not (Test-Path $Publisher)) { Write-Error "Publisher not found: $Publisher"; exit 1 }
 
-# Remove any existing task with the same name (no-op if absent). /Create /F below would
-# overwrite anyway; doing it via the module avoids schtasks /Query erroring on a missing
-# task (which throws under PowerShell 7's native-error handling).
-Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+# Remove any existing task with the same name, plus the legacy pre-rename task.
+# /Create /F below would overwrite the new name anyway, but this also prevents
+# the old name from continuing to fire after the project folder rename.
+foreach ($name in @($TaskName) + $LegacyTaskNames) {
+  Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
+}
 
 $taskCmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$Publisher`""
 

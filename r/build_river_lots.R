@@ -29,7 +29,7 @@ suppressPackageStartupMessages({
 .cfg <- grep("^--file=", commandArgs(FALSE), value = TRUE)
 source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "config.R") else "r/config.R")
 
-source_dir  <- websearch_root
+source_dir  <- mb_parcelsearch_root
 input_kmz   <- file.path(source_dir, "MB-RIVER-LOTS.kmz")
 # Output publishes into the local mb-parcel-data clone (served via
 # jsDelivr pinned commit — see MB_PARCEL_DATA_CDN in arcgis.js).

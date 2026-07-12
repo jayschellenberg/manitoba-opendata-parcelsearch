@@ -4,7 +4,7 @@ Status: **superseded 2026-07 — kept for design rationale only.** The snapshot
 system was built out well past this draft; where they disagree, trust
 `MAINTENANCE.md` §2-4 and the scripts. What actually shipped:
 
-- Cadence is **semiannual** (Jan 1 / Jul 1, task `MAOSemiannualArchive`), not
+- Cadence is **semiannual** (Jan 1 / Jul 1, task `mb-parcelsearch-semiannual-archive`), not
   annual, and **all three layers** (roll + zoning + dev-plan) are `active` —
   not "wired but off" as below.
 - The upstream download is **automated** (`r/download_provincial_snapshot.R`
@@ -12,7 +12,7 @@ system was built out well past this draft; where they disagree, trust
   guard) — no manual geoPortal step remains.
 - The full publish (archive → shards → lineage → `mb-parcel-history` push →
   app CDN repin) runs end-to-end via `semiannual-publish-wrapper.ps1`, with a
-  daily dead-man watchdog (`MBParcelHistoryStaleness`).
+  daily dead-man watchdog (`mb-parcelsearch-history-staleness`).
 - Beyond this draft's scope, the shards also feed an in-app historical
   ("as-of-date") compare view plus inferred parcel lineage.
 

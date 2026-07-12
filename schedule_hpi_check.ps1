@@ -8,22 +8,25 @@
 #   powershell -ExecutionPolicy Bypass -File schedule_hpi_check.ps1
 #
 # Manage:
-#   Get-ScheduledTask -TaskName HPIStalenessReminder | Format-List *
-#   Start-ScheduledTask  -TaskName HPIStalenessReminder                      # run now
-#   Unregister-ScheduledTask -TaskName HPIStalenessReminder -Confirm:$false  # cancel
+#   Get-ScheduledTask -TaskName mb-parcelsearch-hpi-staleness | Format-List *
+#   Start-ScheduledTask  -TaskName mb-parcelsearch-hpi-staleness                      # run now
+#   Unregister-ScheduledTask -TaskName mb-parcelsearch-hpi-staleness -Confirm:$false  # cancel
 
 $ErrorActionPreference = "Continue"   # schtasks writes 'task not found' to stderr; don't let it throw
-$TaskName  = "HPIStalenessReminder"
+$TaskName  = "mb-parcelsearch-hpi-staleness"
+$LegacyTaskNames = @("HPIStalenessReminder")
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Checker   = Join-Path $ScriptDir "hpi-staleness-check.ps1"
 
 if (-not (Test-Path $Checker)) { Write-Error "Checker not found: $Checker"; exit 1 }
 
-# Replace any existing task with the same name.
-$existing = schtasks /Query /TN $TaskName 2>$null
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "Existing task '$TaskName' found - replacing it."
-    schtasks /Delete /TN $TaskName /F | Out-Null
+# Replace any existing task with the same name, plus the legacy pre-rename task.
+foreach ($name in @($TaskName) + $LegacyTaskNames) {
+    $existing = schtasks /Query /TN $name 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Existing task '$name' found - replacing it."
+        schtasks /Delete /TN $name /F | Out-Null
+    }
 }
 
 $taskCmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$Checker`""

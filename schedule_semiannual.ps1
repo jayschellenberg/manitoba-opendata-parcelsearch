@@ -16,16 +16,17 @@
 #   powershell -ExecutionPolicy Bypass -File schedule_semiannual.ps1
 #
 # To verify / manage:
-#   Get-ScheduledTask -TaskName MAOSemiannualArchive | Format-List *
-#   Start-ScheduledTask  -TaskName MAOSemiannualArchive               # run immediately
-#   Unregister-ScheduledTask -TaskName MAOSemiannualArchive -Confirm:$false   # cancel
+#   Get-ScheduledTask -TaskName mb-parcelsearch-semiannual-archive | Format-List *
+#   Start-ScheduledTask  -TaskName mb-parcelsearch-semiannual-archive               # run immediately
+#   Unregister-ScheduledTask -TaskName mb-parcelsearch-semiannual-archive -Confirm:$false   # cancel
 #
 # Why schtasks.exe inside PowerShell: New-ScheduledTaskTrigger has no
 # "monthly on day N of months X,Y" trigger; schtasks /SC MONTHLY /M JAN,JUL
 # /D 1 is the simplest cross-version way to get a twice-a-year schedule.
 
 $ErrorActionPreference = "Stop"
-$TaskName  = "MAOSemiannualArchive"
+$TaskName  = "mb-parcelsearch-semiannual-archive"
+$LegacyTaskNames = @("MAOSemiannualArchive")
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Wrapper   = Join-Path $ScriptDir "semiannual-publish-wrapper.ps1"
 
@@ -34,11 +35,12 @@ if (-not (Test-Path $Wrapper)) {
     exit 1
 }
 
-# Replace any existing task with the same name.
-$existing = schtasks /Query /TN $TaskName 2>$null
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "Existing task '$TaskName' found - replacing it."
-    schtasks /Delete /TN $TaskName /F | Out-Null
+# Replace any existing task with the same name, plus the legacy pre-rename task.
+foreach ($name in @($TaskName) + $LegacyTaskNames) {
+    $existing = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+    if (-not $existing) { continue }
+    Write-Host "Existing task '$name' found - replacing it."
+    Unregister-ScheduledTask -TaskName $name -Confirm:$false
 }
 
 # Create the recurring twice-a-year trigger.

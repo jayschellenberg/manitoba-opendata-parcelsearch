@@ -10,7 +10,7 @@
 #   Zone -> Manitoba_Zoning_By_Laws.geojson                 (EPSG:4326, as archived)
 #   Dev  -> Manitoba_Development_Plan_Designations.geojson  (EPSG:4326, as archived)
 #
-# Output dir: $PROVINCIAL_STAGING_DIR (default: <websearch_root>/.staging/inputs).
+# Output dir: $PROVINCIAL_STAGING_DIR (default: <mb_parcelsearch_root>/.staging/inputs).
 # A layer that fails mid-stream writes NOTHING, so a partial file never looks
 # complete to the archiver.
 #
@@ -50,7 +50,7 @@ suppressPackageStartupMessages({ library(sf); library(httr2); library(jsonlite) 
 source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "config.R") else "r/config.R")
 
 OUT <- Sys.getenv("PROVINCIAL_STAGING_DIR")
-if (!nzchar(OUT)) OUT <- file.path(websearch_root, ".staging", "inputs")
+if (!nzchar(OUT)) OUT <- file.path(mb_parcelsearch_root, ".staging", "inputs")
 dir.create(OUT, showWarnings = FALSE, recursive = TRUE)
 options(timeout = 3600)
 

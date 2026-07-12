@@ -32,7 +32,7 @@ suppressPackageStartupMessages({
 .cfg <- grep("^--file=", commandArgs(FALSE), value = TRUE)
 source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "config.R") else "r/config.R")
 
-data_dir <- websearch_root
+data_dir <- mb_parcelsearch_root
 
 # Match RollEntry_YYYYMMDD.gpkg, sorted newest-first.
 roll_files <- sort(

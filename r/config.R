@@ -4,7 +4,8 @@
 # them in one place so another machine (or a moved Dropbox) overrides
 # via environment variables instead of editing each script:
 #
-#   MBOPENDATA_WEBSEARCH_ROOT   this repo's root      (default: parent of r/)
+#   MB_PARCELSEARCH_ROOT        this repo's root      (default: parent of r/)
+#   MBOPENDATA_WEBSEARCH_ROOT   legacy alias for this repo's root
 #   MAO_SNAPSHOTS_ROOT          cold archive of dated provincial snapshots
 #   MAO_ASSEMBLY_ROOT           sister mao-assembly project root
 #   MASC_SCRAPE_ROOT            sister MASC-SCRAPE project root
@@ -20,10 +21,11 @@
 
 # --- roots ---------------------------------------------------------------
 
-# This repo (WebSearch). Resolved from the running script's location
+# This repo (mb-parcelsearch). Resolved from the running script's location
 # (r/<script>.R → parent dir) so a clone works wherever it lands.
-websearch_root <- local({
-  override <- Sys.getenv("MBOPENDATA_WEBSEARCH_ROOT")
+mb_parcelsearch_root <- local({
+  override <- Sys.getenv("MB_PARCELSEARCH_ROOT")
+  if (!nzchar(override)) override <- Sys.getenv("MBOPENDATA_WEBSEARCH_ROOT")
   if (nzchar(override)) return(normalizePath(override, winslash = "/", mustWork = FALSE))
   f <- grep("^--file=", commandArgs(FALSE), value = TRUE)
   if (length(f)) {

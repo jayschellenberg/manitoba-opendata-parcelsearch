@@ -34,7 +34,7 @@ REM failure so Task Scheduler records the failure code.
 
 setlocal EnableDelayedExpansion
 
-REM Always run from this script's directory (the WebSearch repo root).
+REM Always run from this script's directory (the mb-parcelsearch repo root).
 cd /d "%~dp0"
 
 REM Build a YYYYMMDD-HHMM timestamp.

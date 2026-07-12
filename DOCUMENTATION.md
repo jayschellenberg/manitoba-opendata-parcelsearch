@@ -64,12 +64,12 @@ by R scripts and served either from the deploy or from a CDN:
 **Automated snapshot publish (2026-07):** the historical-snapshot path
 (download → archive → shards → lineage → push `mb-parcel-history` → repin the
 app CDN SHA → Vercel) now runs **end-to-end, unattended**, twice a year via
-`semiannual-publish-wrapper.ps1` (Windows task `MAOSemiannualArchive`,
+`semiannual-publish-wrapper.ps1` (Windows task `mb-parcelsearch-semiannual-archive`,
 Jan 1 / Jul 1). It fetches the three provincial layers itself
 (`r/download_provincial_snapshot.R`), so the snapshot path no longer needs the
 manual MB Open Data download shown in the diagram — that manual download now
 feeds only **mao-assembly's** land-cover inputs. A daily dead-man watchdog
-(`MBParcelHistoryStaleness`) alerts if a publish is ever missed. See §8.
+(`mb-parcelsearch-history-staleness`) alerts if a publish is ever missed. See §8.
 
 ---
 
@@ -374,18 +374,18 @@ was pulled, by *which build*, from *what sources*, with *what caveats*.
 
 ## 8. Maintenance / recurring tasks
 
-**The snapshot publish is automated** (task `MAOSemiannualArchive` →
+**The snapshot publish is automated** (task `mb-parcelsearch-semiannual-archive` →
 `semiannual-publish-wrapper.ps1`, Jan 1 / Jul 1 04:30): download → archive →
 shards → lineage → push `mb-parcel-history` → repin the app CDN SHA → push app
 → Vercel. Any failed step emails + ntfy-alerts and stops; the daily
-`MBParcelHistoryStaleness` watchdog covers a run that never fires at all.
+`mb-parcelsearch-history-staleness` watchdog covers a run that never fires at all.
 Rows 4-6 below are the **manual fallback** (backfill / off-cycle).
 
 | # | Task | Cadence | Command |
 |---|---|---|---|
 | 1 | Monthly refresh (legal/assessment/land-cover shards) | monthly | `monthly-refresh.bat` → review `git status`, commit, push |
-| 2 | **Snapshot publish (end-to-end)** | **semi-annual, scheduled** | `MAOSemiannualArchive` → `semiannual-publish-wrapper.ps1`; by hand: run that script, or `-TestAlert` to check the alert path |
-| 3 | **Staleness watchdog** | **daily, scheduled** | `MBParcelHistoryStaleness` → `history-staleness-check.ps1`; register via `schedule_history_check.ps1`; `-DryRun` / `-TestAlert` |
+| 2 | **Snapshot publish (end-to-end)** | **semi-annual, scheduled** | `mb-parcelsearch-semiannual-archive` → `semiannual-publish-wrapper.ps1`; by hand: run that script, or `-TestAlert` to check the alert path |
+| 3 | **Staleness watchdog** | **daily, scheduled** | `mb-parcelsearch-history-staleness` → `history-staleness-check.ps1`; register via `schedule_history_check.ps1`; `-DryRun` / `-TestAlert` |
 | 4 | Snapshot archive only (no publish) | as needed | `Rscript r/archive_snapshot.R` (or `--all`) |
 | 5 | Build a snapshot's shards by hand | backfill | `Rscript r/build_historical_shards.R --year <yyyy> --require zoning,devplan` → commit/push `<snapshot_id>/` + `index.json` in `mb-parcel-history` |
 | 6 | Rebuild parcel lineage by hand | backfill (≥ 2 snapshots) | `Rscript r/build_lineage.R` → commit/push `lineage/` |
@@ -407,7 +407,7 @@ jsDelivr for the changed `index.json` / `lineage/_index.json`
 | Historical archive | app historical banner | `> 12 mo old` tag |
 | Provincial source | `archive_snapshot.R` console | `!! STALE` > 12 mo |
 | Newest snapshot | `build_historical_shards.R` console | `!! STALE` > 12 mo |
-| **Snapshot overdue (watchdog)** | `MBParcelHistoryStaleness` (daily) → email + ntfy | newest **built OR app-pinned** snapshot > **215 d** (~1 mo past cadence) |
+| **Snapshot overdue (watchdog)** | `mb-parcelsearch-history-staleness` (daily) → email + ntfy | newest **built OR app-pinned** snapshot > **215 d** (~1 mo past cadence) |
 | **Layer shrank on download** | `download_provincial_snapshot.R` (in the publish) | **aborts** the publish if a layer is > 2% smaller than the newest published manifest (`PROVINCIAL_ACCEPT_SHRINK=1` to override) |
 
 If any fires, run the matching task in §8. The watchdog is the backstop for a
@@ -426,8 +426,8 @@ provincial download becoming the archived source-of-record.
 | `r/build_historical_shards.R` | archive → per-snapshot per-muni shards + provenance manifests | `mb-parcel-history\<snapshot_id>\**` |
 | `r/build_lineage.R` | infer predecessor/successor across snapshots | `mb-parcel-history\lineage\**` |
 | `r/download_provincial_snapshot.R` | fetch the 3 provincial layers from ArcGIS (count-verified pagination + shrink guard) into staging for the automated publish | staging `inputs/` |
-| `semiannual-publish-wrapper.ps1` | end-to-end automated publish (download → archive → shards → lineage → push → repin app); task `MAOSemiannualArchive` | data repo + app repin |
-| `history-staleness-check.ps1` / `schedule_history_check.ps1` | dead-man watchdog: alert if the newest built/pinned snapshot is overdue / register the daily `MBParcelHistoryStaleness` task | email + ntfy |
+| `semiannual-publish-wrapper.ps1` | end-to-end automated publish (download → archive → shards → lineage → push → repin app); task `mb-parcelsearch-semiannual-archive` | data repo + app repin |
+| `history-staleness-check.ps1` / `schedule_history_check.ps1` | dead-man watchdog: alert if the newest built/pinned snapshot is overdue / register the daily `mb-parcelsearch-history-staleness` task | email + ntfy |
 | `r/build_ortho_tiles.ps1` | tile a downloaded aerial ortho mosaic (ECW/GeoTIFF) → raster PMTiles for the optional "Aerial" basemap (§10.1) | `<name>.pmtiles` (→ R2) |
 | `web/src/lib/landcover.js` | shared bucket defs + display gate (`LAND_COVER_MIN_ACRES`) | — |
 | `web/src/lib/provenance.js` | evidence-export provenance record + CSV/text renderers | — |

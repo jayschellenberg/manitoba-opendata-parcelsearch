@@ -991,7 +991,7 @@ The zoning legend's max-height is `calc(0.85 * (100vw - 280px) * 9 / 16)` — i.
 
 ### 14.13 R archive scripts
 
-`r/download_parcels.R` snapshots all three primary FeatureServer layers via paginated GeoJSON to dated GeoPackages, and `r/parcel_search_app.R` is a Shiny app that runs the same search workflow against the local snapshot — useful for searching against an older snapshot when a parcel has been split or consolidated since. Both files hardcode `data_dir <- "D:/Dropbox/ClaudeCode/MBOpenData/WebSearch"`; edit at the top of each file to run elsewhere.
+`r/download_parcels.R` snapshots all three primary FeatureServer layers via paginated GeoJSON to dated GeoPackages, and `r/parcel_search_app.R` is a Shiny app that runs the same search workflow against the local snapshot — useful for searching against an older snapshot when a parcel has been split or consolidated since. Both files hardcode `data_dir <- "D:/Dropbox/ClaudeCode/MBOpenData/mb-parcelsearch"`; edit at the top of each file to run elsewhere.
 
 ### 14.14 Polygon-geometry filter resolution (not bbox envelopes)
 

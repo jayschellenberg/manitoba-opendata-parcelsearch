@@ -2,7 +2,7 @@
 # Windows Task Scheduler entry (09:10 local). Daily is intentional: the check
 # itself is read-only and cheap, its dedupe stamp means at most ONE reminder a
 # month, and a daily cadence catches a stale snapshot even if the machine was
-# off on any given day. This is the dead-man's switch for MAOSemiannualArchive
+# off on any given day. This is the dead-man's switch for mb-parcelsearch-semiannual-archive
 # (Jan 1 / Jul 1): that task alerts when a publish STEP fails, but only this
 # external check can notice that the publish never started at all.
 # Idempotent -- re-run to update; the existing task is replaced.
@@ -11,22 +11,25 @@
 #   powershell -ExecutionPolicy Bypass -File schedule_history_check.ps1
 #
 # Manage:
-#   Get-ScheduledTask -TaskName MBParcelHistoryStaleness | Format-List *
-#   Start-ScheduledTask  -TaskName MBParcelHistoryStaleness                      # run now
-#   Unregister-ScheduledTask -TaskName MBParcelHistoryStaleness -Confirm:$false  # cancel
+#   Get-ScheduledTask -TaskName mb-parcelsearch-history-staleness | Format-List *
+#   Start-ScheduledTask  -TaskName mb-parcelsearch-history-staleness                      # run now
+#   Unregister-ScheduledTask -TaskName mb-parcelsearch-history-staleness -Confirm:$false  # cancel
 
 $ErrorActionPreference = "Continue"   # schtasks writes 'task not found' to stderr; don't let it throw
-$TaskName  = "MBParcelHistoryStaleness"
+$TaskName  = "mb-parcelsearch-history-staleness"
+$LegacyTaskNames = @("MBParcelHistoryStaleness")
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Checker   = Join-Path $ScriptDir "history-staleness-check.ps1"
 
 if (-not (Test-Path $Checker)) { Write-Error "Checker not found: $Checker"; exit 1 }
 
-# Replace any existing task with the same name.
-$existing = schtasks /Query /TN $TaskName 2>$null
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "Existing task '$TaskName' found - replacing it."
-    schtasks /Delete /TN $TaskName /F | Out-Null
+# Replace any existing task with the same name, plus the legacy pre-rename task.
+foreach ($name in @($TaskName) + $LegacyTaskNames) {
+    $existing = schtasks /Query /TN $name 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Existing task '$name' found - replacing it."
+        schtasks /Delete /TN $name /F | Out-Null
+    }
 }
 
 $taskCmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$Checker`""

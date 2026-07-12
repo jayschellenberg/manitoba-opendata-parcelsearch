@@ -9,7 +9,7 @@ repo. It is written so the agent does **not** need to read the Manitoba repo —
 but the authoritative reference implementations live there if you want them:
 
 ```
-D:\Dropbox\ClaudeCode\MBOpenData\WebSearch\
+D:\Dropbox\ClaudeCode\MBOpenData\mb-parcelsearch\
   r\archive_snapshot.R          # snapshot archive + provenance sidecars
   r\build_historical_shards.R   # per-area shards + manifest (THE area-gate fix)
   r\build_lineage.R             # inferred predecessor/successor

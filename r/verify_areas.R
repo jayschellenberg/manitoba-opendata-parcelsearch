@@ -35,7 +35,7 @@ ARCHIVE <- mao_snapshots_root
 CURRENT_GPKG    <- file.path(ARCHIVE, "2026", "MBRollGeoPackage20260605.gpkg")
 HISTORICAL_GPKG <- file.path(ARCHIVE, "2025", "MBRollGeoPackage20250212.gpkg")
 SQM_PER_ACRE <- 4046.8564224
-OUT_DIR <- file.path(websearch_root, "logs")
+OUT_DIR <- file.path(mb_parcelsearch_root, "logs")
 dir.create(OUT_DIR, showWarnings = FALSE, recursive = TRUE)
 
 args     <- commandArgs(trailingOnly = TRUE)

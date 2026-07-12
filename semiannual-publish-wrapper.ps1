@@ -23,7 +23,7 @@
 # authoritative layers directly from the FeatureServer.
 #
 # Dead-man's switch: this wrapper can only alert when it RUNS. The daily
-# MBParcelHistoryStaleness task (history-staleness-check.ps1, registered by
+# mb-parcelsearch-history-staleness task (history-staleness-check.ps1, registered by
 # schedule_history_check.ps1) watches from the outside and alerts when the
 # newest built or app-pinned snapshot goes > ~7 months old -- covering the
 # "task never fired at all" failure mode.
