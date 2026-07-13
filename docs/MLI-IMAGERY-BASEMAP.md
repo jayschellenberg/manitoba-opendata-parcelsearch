@@ -4,11 +4,11 @@
 
 The full southern Manitoba historical aerial basemap is built locally from the
 Manitoba Land Initiative (MLI) Ortho Refresh collection and uploaded to the
-existing Cloudflare R2 `wpg-ortho` bucket. It is not enabled in production until
-the Manitoba Vercel origin is added to that bucket's CORS policy.
+dedicated Cloudflare R2 `mb-ortho` bucket. The bucket CORS policy allows the
+Manitoba Vercel origin, and production uses the public archive URL below.
 
 - Local archive: `D:\MBOrtho\mb-mli-ortho-2007-2013.pmtiles`
-- Public archive: <https://pub-f351b204f73e4b2287acad946d79681c.r2.dev/mb-mli-ortho-2007-2013.pmtiles>
+- Public archive: <https://pub-091058079bf6458da1681945177e1682.r2.dev/mb-mli-ortho-2007-2013.pmtiles>
 - Web configuration: `VITE_MLI_ORTHO_PMTILES_URL`
 - Acquisition-year coverage: `web/public/mli-imagery-years.geojson`
 - Build scripts: `r/build_mli_ortho.ps1` and `r/build_mli_imagery_years.R`
@@ -115,14 +115,13 @@ practical local storage.
 
 ## Production activation
 
-The archive is hosted on R2. Add
-`https://manitoba-opendata-parcelsearch.vercel.app` to the `wpg-ortho`
-bucket's existing CORS allowed origins, preserving the Winnipeg origin and the
-current exposed range headers. Then set this build-time variable locally and
-in Vercel:
+The archive is hosted on R2. The `mb-ortho` bucket CORS policy allows
+`https://manitoba-opendata-parcelsearch.vercel.app` and exposes the headers
+needed for byte-range reads. Production sets this build-time variable in
+Vercel:
 
 ```text
-VITE_MLI_ORTHO_PMTILES_URL=https://pub-f351b204f73e4b2287acad946d79681c.r2.dev/mb-mli-ortho-2007-2013.pmtiles
+VITE_MLI_ORTHO_PMTILES_URL=https://pub-091058079bf6458da1681945177e1682.r2.dev/mb-mli-ortho-2007-2013.pmtiles
 ```
 
 The R2 origin is allowed in `connect-src` in `vercel.json`. The basemap menu

@@ -103,3 +103,4 @@ alert-email.local.txt
 
 # RStudio project file — local IDE state, no need to track.
 *.Rproj
+.vercel

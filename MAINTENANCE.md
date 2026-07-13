@@ -166,9 +166,10 @@ uploaded. Full provenance and year-coverage notes are in
 .\r\build_mli_ortho.ps1
 Rscript r\build_mli_imagery_years.R
 ```
-The MLI archive is hosted in Cloudflare R2; after its bucket CORS policy allows
-the Manitoba Vercel origin, set `VITE_MLI_ORTHO_PMTILES_URL` locally and in
-Vercel. See `docs/MLI-IMAGERY-BASEMAP.md` for the URL and verification details.
+The MLI archive is hosted in the Cloudflare R2 `mb-ortho` bucket. Its CORS
+policy allows the Manitoba Vercel origin, and production's
+`VITE_MLI_ORTHO_PMTILES_URL` points to the public archive. See
+`docs/MLI-IMAGERY-BASEMAP.md` for the URL and verification details.
 Add a new archive host to `vercel.json` `connect-src` if it is not already
 allowed. Review the current MLI terms before publishing.
 
