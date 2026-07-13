@@ -922,7 +922,10 @@ The Manitoba site exposes the following map overlays not present in the Winnipeg
 - **MASC Risk Areas** — official MASC crop-insurance risk-area polygons from the Manitoba Maps `MASC_Risk_Areas` FeatureServer. The app fetches `Risk_Area` polygons with `f=geojson`, filters blank values (`Risk_Area IS NOT NULL AND Risk_Area <> '' AND Risk_Area <> ' '`), labels the separate overlay as `Risk <Risk_Area>`, and stamps the table's Risk Area column from the containing polygon.
 - **Sec-Twp Grid** — section-township grid plus river lots. With a municipality selected, it fetches the Manitoba Original Survey Legal Descriptions point layer scoped to the muni boundary; without a municipality, it uses the prebuilt province-wide static grid. The grid shares the MASC helper's DLS section-shape logic but is a separate overlay.
 - **RM Website / PD Website** — not overlays in the spatial sense; they sit at the bottom of the overlay grid as link-out buttons (§14.19).
-- **Streets / Satellite** basemap toggle in the map's top-right (Esri World Imagery alongside CARTO Positron). Custom `BasemapToggleControl` registered via `map.addControl(..., 'top-right')`; flips both raster sources' `visibility`.
+- **Basemap menu** in the map's top-right: CARTO Streets, Esri Satellite,
+  NRCan elevation, and an optional hosted MLI historical aerial PMTiles row.
+  Custom `BasemapMenuControl` flips the raster layers' `visibility` without
+  rebuilding the map.
 
 ### 14.9 CORS proxy for the contaminated-sites CSV
 

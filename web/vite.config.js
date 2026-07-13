@@ -86,6 +86,14 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/proxy\/contam-sites\.csv$/, '/sd/waste_management/contaminated_sites/registry/cs-data.csv'),
       },
+      '/proxy/nrcan-elevation': {
+        target: 'https://maps-cartes.services.geo.ca',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(
+          /^\/proxy\/nrcan-elevation/,
+          '/server2_serveur2/rest/services/BaseMaps/CBME_CBCE_HS_RO_3978/MapServer/export'
+        ),
+      },
       // Production reaches the legal-index via a Vercel Edge Function
       // at /api/legal-index (api/legal-index.js). Vite doesn't run
       // Vercel functions — instead, dev relies on the in-tree copy at

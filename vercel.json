@@ -7,6 +7,10 @@
     {
       "source": "/proxy/contam-sites.csv",
       "destination": "https://manitoba.ca/sd/waste_management/contaminated_sites/registry/cs-data.csv"
+    },
+    {
+      "source": "/proxy/nrcan-elevation",
+      "destination": "https://maps-cartes.services.geo.ca/server2_serveur2/rest/services/BaseMaps/CBME_CBCE_HS_RO_3978/MapServer/export"
     }
   ],
   "headers": [

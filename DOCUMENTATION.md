@@ -429,6 +429,8 @@ provincial download becoming the archived source-of-record.
 | `semiannual-publish-wrapper.ps1` | end-to-end automated publish (download → archive → shards → lineage → push → repin app); task `mb-parcelsearch-semiannual-archive` | data repo + app repin |
 | `history-staleness-check.ps1` / `schedule_history_check.ps1` | dead-man watchdog: alert if the newest built/pinned snapshot is overdue / register the daily `mb-parcelsearch-history-staleness` task | email + ntfy |
 | `r/build_ortho_tiles.ps1` | tile a downloaded aerial ortho mosaic (ECW/GeoTIFF) → raster PMTiles for the optional "Aerial" basemap (§10.1) | `<name>.pmtiles` (→ R2) |
+| `r/build_mli_ortho.ps1` | acquire and mosaic the complete MLI southern-Manitoba Ortho Refresh source set | `D:\MBOrtho\mb-mli-ortho-2007-2013.pmtiles` |
+| `r/build_mli_imagery_years.R` | combine the MLI ortho grid + flight records into local acquisition-year polygons | `web/public/mli-imagery-years.geojson` |
 | `web/src/lib/landcover.js` | shared bucket defs + display gate (`LAND_COVER_MIN_ACRES`) | — |
 | `web/src/lib/provenance.js` | evidence-export provenance record + CSV/text renderers | — |
 | `web/src/arcgis.js` | `fetchLandCover*`, `fetchHistorical*` / `fetchHistoricalLineage` (CDN) fetchers, `SERVICE_SOURCES` | — |
@@ -439,33 +441,25 @@ provincial download becoming the archived source-of-record.
 | `MAINTENANCE.md` | operator quick-runbook (subset of §8) | — |
 | `DATA-ARCHIVE-PLAN.md` | original design/decision record (now realized) | — |
 
-### 10.1 Basemaps (streets / satellite / aerial ortho)
-`map.js` `BASEMAP_STYLE` stacks the basemaps; the top-right toggle cycles them:
+### 10.1 Basemaps
+`map.js` `BASEMAP_STYLE` stacks the basemaps; the top-right menu selects them:
 - **Streets** — CARTO Positron (default; carries its own labels).
 - **Satellite** — **Esri World Imagery** (`server.arcgisonline.com/.../World_Imagery`,
   keyless, ~30–60 cm, current, province-wide) + transparent Esri
   transportation/reference label overlays. This is the standing aerial layer.
-- **Aerial `<year>`** — an OPTIONAL self-hosted ortho, higher-res than Esri,
-  served as raster **PMTiles** from Cloudflare R2 (the `pmtiles://` protocol is
-  registered at module load). **Ships INERT:** the layer only exists when
-  `ORTHO_PMTILES_URL` (in `map.js`) is pinned; until then the toggle stays the
-  2-state Streets ⇄ Satellite it always was. When pinned it becomes a 3-state
-  Streets → Satellite → Aerial cycle — the ortho draws above Esri imagery
-  (which shows through beyond the ortho's extent) and below the label overlays.
-  `setBasemapSatellite()` forces the ortho off, so the offscreen snapshot
-  export stays deterministic Esri imagery.
+- **NRCan elevation** — the federal Canada Basemap Elevation light hillshade.
+  MapLibre requests Web Mercator tile bounding boxes through the same-origin
+  `/proxy/nrcan-elevation` rewrite; the ArcGIS service reprojects its native
+  EPSG:3978 output to EPSG:3857. Esri reference labels remain above it.
+- **MLI aerial 2007-2013** — the complete historical southern-Manitoba MLI
+  Ortho Refresh mosaic, built at Web Mercator zoom 16 as raster PMTiles. The catalogue
+  calls it 2007-2014, while its flight metadata records acquisition years
+  2007-2013. The menu trigger reports the local year at map centre from
+  `mli-imagery-years.geojson`. This row remains absent until
+  `VITE_MLI_ORTHO_PMTILES_URL` is configured after hosting.
 
-**Whether to use it:** non-Winnipeg Manitoba has **no public ortho that beats
-Esri** — MLI is download-only regional imagery (50 cm Capital Region ~2014;
-1 m Southern MB 2007–2014), GoC national ortho is legacy SPOT (10 m, 2005–2010),
-and the province's own AgriMaps uses Esri World Imagery. The only worthwhile
-source is a downloaded **high-res current city** mosaic (e.g. Winnipeg's 7.5 cm
-annual ECW), out of the non-Winnipeg scope — so the pipeline is ready
-infrastructure, not something to pin today.
-
-**To activate:** `powershell r/build_ortho_tiles.ps1 -SourceUrl|-SourceFile <mosaic> -Name <basename> -Attribution "<credit>" [-TargetResM 0.149]`
-→ upload the `.pmtiles` to R2 (public) → set `ORTHO_PMTILES_URL` / `ORTHO_YEAR` /
-`ORTHO_ATTRIBUTION` in `map.js` → add the R2 host to `vercel.json` `connect-src`.
+Build and provenance details, including the per-year grid-cell summary and MLI
+licence attribution, are in `docs/MLI-IMAGERY-BASEMAP.md`.
 
 ---
 
@@ -506,7 +500,7 @@ infrastructure, not something to pin today.
   this (separate repo / Dropbox).
 - **Historical zoning/dev-plan re-bin** for reorg snapshots (§5.5) — build +
   test when the first cross-reorganization snapshot is archived.
-- **Aerial ortho basemap** is wired but **inert** (§10.1) — pin an
-  `ORTHO_PMTILES_URL` to activate. No non-Winnipeg source is worth it today
-  (all public MB ortho is beaten by the live Esri layer); revisit for Winnipeg
-  work, or if a high-res current municipal ortho becomes available.
+- **Newer open aerial imagery** — the MLI historical layer is complete, but a
+  newer province-wide government orthophoto source has not been identified.
+  Add a separately dated menu row if one becomes available; do not replace the
+  historical MLI layer because its value is temporal comparison.

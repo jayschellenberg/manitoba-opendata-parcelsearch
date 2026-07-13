@@ -175,15 +175,12 @@ The tileset is built: $pm
    Enable public access (R2 dashboard -> Settings -> Public access, or a custom
    domain). Public URL will be e.g. https://<public-r2-domain>/$Name.pmtiles
 
-2. Pin it in web/src/map.js:
-     ORTHO_YEAR        = $OrthoYear
-     ORTHO_PMTILES_URL = 'https://<public-r2-domain>/$Name.pmtiles'
-     ORTHO_ATTRIBUTION = '$Attribution'
+2. Configure the built app locally and in Vercel:
+     VITE_MLI_ORTHO_PMTILES_URL=https://<public-r2-domain>/$Name.pmtiles
 
 3. Allow the R2 host in vercel.json (JSON has no comments, so edit directly):
    add  https://<public-r2-domain>  to the Content-Security-Policy connect-src
    directive (next to the existing arcgis / cartocdn hosts).
 
-Then the basemap toggle becomes a 3-state Streets -> Satellite -> Aerial cycle;
-until the URL is pinned it stays the current 2-state Streets <-> Satellite.
+The basemap menu adds the MLI aerial row on the next build.
 "@ | Write-Host

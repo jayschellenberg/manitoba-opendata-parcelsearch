@@ -158,17 +158,17 @@ Rscript r/build_landcover_tiles.R     # needs GDAL on PATH; ~15-45 min
 ```
 Commit the regenerated `web/public/data/landcover-tiles/`.
 
-### 7. Aerial ortho basemap  (cadence: on-demand — currently UNUSED)
-The optional "Aerial <year>" basemap is wired but **inert** — no non-Winnipeg
-Manitoba ortho beats the live Esri World Imagery, so there's nothing worth
-pinning today (full rationale + activation steps: `DOCUMENTATION.md` §10.1).
-To activate for a covered area (e.g. a downloaded Winnipeg 7.5 cm ECW):
+### 7. MLI historical aerial basemap  (cadence: on-demand)
+The complete MLI Ortho Refresh source is built locally and deliberately not
+uploaded. Full provenance and year-coverage notes are in
+`docs/MLI-IMAGERY-BASEMAP.md`. Rebuild from the repo root with:
 ```
-powershell r/build_ortho_tiles.ps1 -SourceUrl|-SourceFile <mosaic> -Name <basename> -Attribution "<credit>"
+.\r\build_mli_ortho.ps1
+Rscript r\build_mli_imagery_years.R
 ```
-then upload the `.pmtiles` to R2, set `ORTHO_PMTILES_URL`/`ORTHO_YEAR`/
-`ORTHO_ATTRIBUTION` in `web/src/map.js`, and add the R2 host to `vercel.json`
-`connect-src`.
+After a future upload, set `VITE_MLI_ORTHO_PMTILES_URL` locally and in Vercel.
+Add a new archive host to `vercel.json` `connect-src` if it is not already
+allowed. Review the current MLI terms before publishing.
 
 ## Continuous integration
 

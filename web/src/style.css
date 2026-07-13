@@ -1990,7 +1990,7 @@ body.workspace-resizing iframe { pointer-events: none; }
   pointer-events: auto;
 }
 
-/* Custom basemap toggle button (Streets / Satellite). Sits in the
+/* Custom basemap menu. Sits in the
    top-right map gutter under the native zoom control; matches the
    MapLibre control look-and-feel. */
 .maplibregl-ctrl.basemap-toggle button {
@@ -2015,6 +2015,82 @@ body.workspace-resizing iframe { pointer-events: none; }
 .maplibregl-ctrl.basemap-toggle button.active {
   background: #1a3a4a;
   color: #fff;
+}
+
+/* Basemap picker: current view in the trigger, full list on hover, focus, or
+   tap. The width is stable for the longest dynamic MLI year label. */
+.maplibregl-ctrl.basemap-menu {
+  position: relative;
+  z-index: 3;
+  overflow: visible;
+}
+
+.maplibregl-ctrl.basemap-menu .basemap-menu-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 126px;
+}
+
+.maplibregl-ctrl.basemap-menu .basemap-menu-trigger::after {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-right: 1px;
+  border-right: 1.6px solid currentColor;
+  border-bottom: 1.6px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  opacity: 0.55;
+  transition: transform 140ms ease;
+}
+
+.maplibregl-ctrl.basemap-menu.open .basemap-menu-trigger::after {
+  transform: translateY(1px) rotate(-135deg);
+}
+
+.maplibregl-ctrl.basemap-menu .basemap-menu-list {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 5;
+  min-width: 100%;
+  display: none;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 3px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid var(--ui-line-strong, #b8c3ba);
+  border-radius: var(--ui-radius, 6px);
+  box-shadow: var(--ui-shadow-popover, 0 18px 42px rgba(18, 22, 19, 0.18));
+}
+
+.maplibregl-ctrl.basemap-menu.open .basemap-menu-list {
+  display: flex;
+}
+
+.maplibregl-ctrl.basemap-menu .basemap-menu-item {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  justify-content: flex-start;
+  text-align: left;
+  white-space: nowrap;
+  padding: 7px 10px;
+  color: var(--ui-ink-soft, #4d5752);
+  background: transparent;
+}
+
+.maplibregl-ctrl.basemap-menu .basemap-menu-item:hover {
+  color: var(--ui-ink, #151916);
+  background: var(--ui-panel-muted, #f8f9f6);
+}
+
+.maplibregl-ctrl.basemap-menu .basemap-menu-item.active {
+  color: #fff;
+  background: var(--ui-brand, #121613);
 }
 
 /* Distance / area measurement control. Shares the .basemap-toggle visual

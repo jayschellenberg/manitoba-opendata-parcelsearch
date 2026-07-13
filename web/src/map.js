@@ -16,6 +16,7 @@
 
 import maplibregl from 'maplibre-gl';
 import bbox from '@turf/bbox';
+import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
 import turfArea from '@turf/area';
 import turfLength from '@turf/length';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
@@ -249,8 +250,8 @@ const BASEMAP_STYLE = {
     },
     // Transparent reference overlay (place names, road names,
     // boundaries) designed by Esri to layer on top of aerial imagery.
-    // Visible only when the Esri imagery basemap is active — the
-    // BasemapToggleControl flips it in lockstep. Keeps the Streets
+    // Visible only when a labelled raster basemap is active; the basemap
+    // menu flips it in lockstep. Keeps the Streets
     // basemap clean (CARTO Positron already carries its own labels).
     'esri-reference': {
       type: 'raster',
@@ -267,6 +268,17 @@ const BASEMAP_STYLE = {
       ],
       tileSize: 256,
       attribution: 'Transportation &copy; Esri',
+    },
+    'nrcan-elevation': {
+      type: 'raster',
+      tiles: [
+        '/proxy/nrcan-elevation?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png32&transparent=false&f=image',
+      ],
+      tileSize: 256,
+      minzoom: 0,
+      maxzoom: 19,
+      attribution:
+        'Elevation basemap &copy; Natural Resources Canada, Open Government Licence - Canada',
     },
     // Local static XYZ pyramid of the 2020 Manitoba land-cover raster,
     // produced by r/build_landcover_tiles.R. Drives the Land Cover
@@ -300,6 +312,7 @@ const BASEMAP_STYLE = {
     // bug because the initial undefined read inverted the swap.
     { id: 'carto-positron',      type: 'raster', source: 'carto-positron',      minzoom: 0, maxzoom: 20, layout: { visibility: 'visible' } },
     { id: 'esri-imagery',        type: 'raster', source: 'esri-imagery',        minzoom: 0, maxzoom: 20, layout: { visibility: 'none' } },
+    { id: 'nrcan-elevation',     type: 'raster', source: 'nrcan-elevation',     minzoom: 0, maxzoom: 19, layout: { visibility: 'none' } },
     { id: 'esri-transportation', type: 'raster', source: 'esri-transportation', minzoom: 0, maxzoom: 20, layout: { visibility: 'none' } },
     { id: 'esri-reference',      type: 'raster', source: 'esri-reference',      minzoom: 0, maxzoom: 20, layout: { visibility: 'none' } },
     // Land-cover raster sits above the basemap tiles but below every
@@ -311,22 +324,20 @@ const BASEMAP_STYLE = {
   ],
 };
 
-// Optional THIRD basemap: a self-hosted Manitoba aerial ORTHO, higher-res than
-// the Esri World Imagery above, served as raster PMTiles from Cloudflare R2 and
-// built offline by r/build_ortho_tiles.ps1 from a downloaded ortho mosaic
-// (non-Winnipeg Manitoba has no live ortho tile service, so we tile a source
-// raster ourselves). Ships INERT: until ORTHO_PMTILES_URL is pinned, the
-// basemap toggle stays a 2-state Streets<->Satellite exactly as before. When
-// pinning the URL, also add the R2 host to vercel.json's connect-src.
-export const ORTHO_YEAR = 2024;
-const ORTHO_PMTILES_URL = '';   // e.g. 'https://<public-r2-domain>/mb-ortho-winnipeg-2024.pmtiles'
-const ORTHO_ATTRIBUTION = '';   // e.g. 'Aerial imagery &copy; City of Winnipeg 2024'
-if (ORTHO_PMTILES_URL) {
+// Optional MLI historical aerial basemap. r/build_mli_ortho.ps1 produces the
+// full southern-Manitoba archive locally; set VITE_MLI_ORTHO_PMTILES_URL after
+// that archive is hosted. Until then, the built app omits only this menu row.
+// The committed year polygons remain available for provenance and future UI.
+export const MLI_ORTHO_YEAR_RANGE = '2007-2013';
+const MLI_ORTHO_PMTILES_URL = import.meta.env?.VITE_MLI_ORTHO_PMTILES_URL || '';
+const MLI_ORTHO_ATTRIBUTION =
+  '&copy; 2001 Her Majesty the Queen in Right of Manitoba, as represented by the Minister of Conservation. All rights reserved. MLI imagery acquired 2007-2013.';
+if (MLI_ORTHO_PMTILES_URL) {
   BASEMAP_STYLE.sources['ortho-mb'] = {
     type: 'raster',
-    url: `pmtiles://${ORTHO_PMTILES_URL}`,
+    url: `pmtiles://${MLI_ORTHO_PMTILES_URL}`,
     tileSize: 256,
-    attribution: ORTHO_ATTRIBUTION || undefined,
+    attribution: MLI_ORTHO_ATTRIBUTION,
   };
   // Insert the ortho layer directly ABOVE the Esri imagery (which shows through
   // beyond the ortho's extent / when overzoomed) and BELOW the transparent Esri
@@ -423,7 +434,7 @@ export function initMap(container, { onFeatureClick } = {}) {
 
   map.on('error', (e) => console.error('[map error]', e?.error?.message || e, e));
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
-  map.addControl(new BasemapToggleControl(), 'top-right');
+  map.addControl(new BasemapMenuControl(), 'top-right');
   // Distance / area measurement tool. mapbox-gl-draw owns the drawing
   // state and renders the in-progress line/polygon; MeasureControl wraps
   // it in a small panel that exposes the mode switch and live readout.
@@ -2515,7 +2526,7 @@ export function setMuniParcelsVisible(map, visible) {
 /**
  * Force the basemap to satellite (Esri imagery + reference/transportation
  * overlays) or back to streets (CARTO Positron). Same layer-visibility swap
- * the top-right BasemapToggleControl performs, exposed as a function so the
+ * the top-right basemap menu performs, exposed as a function so the
  * offscreen snapshot-export map can switch to satellite without a UI control.
  */
 export function setBasemapSatellite(map, on) {
@@ -2527,11 +2538,13 @@ export function setBasemapSatellite(map, on) {
   if (map.getLayer('carto-positron')) {
     map.setLayoutProperty('carto-positron', 'visibility', cartoVis);
   }
-  // The optional aerial ortho (present only when pinned) is a higher-res
-  // superset of satellite; force it OFF here so callers that just want
-  // "satellite" — notably the offscreen snapshot export — get deterministic
-  // Esri imagery. The basemap toggle re-shows it for its explicit 'aerial'
-  // state.
+  if (map.getLayer('nrcan-elevation')) {
+    map.setLayoutProperty('nrcan-elevation', 'visibility', 'none');
+  }
+  // The optional aerial ortho (present only when configured) underlays Esri
+  // outside MLI coverage. Force it off here so callers that request satellite,
+  // notably snapshot export, get deterministic Esri imagery. The menu re-shows
+  // it only for the explicit MLI state.
   if (map.getLayer('ortho-mb')) map.setLayoutProperty('ortho-mb', 'visibility', 'none');
 }
 
@@ -3837,67 +3850,128 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
 function emptyFc() { return { type: 'FeatureCollection', features: [] }; }
 
 /**
- * Custom MapLibre control: one button that cycles the basemap. Sits in the
- * top-right gutter, just under the zoom buttons. Stateless — reads the current
- * visibility off the layers each click so we don't track a separate flag.
- *
- * Two states by default (Streets ⇄ Satellite); when the optional aerial ortho
- * is pinned (ORTHO_PMTILES_URL), it becomes a 3-state cycle
- * Streets → Satellite → Aerial. The button label reads what the NEXT click
- * swaps to.
+ * Basemap menu ported from the Winnipeg parcel app. The trigger shows the
+ * current view; hover, focus, or tap opens all available basemaps. The MLI row
+ * appears once VITE_MLI_ORTHO_PMTILES_URL is configured. While MLI is active,
+ * the trigger adds the acquisition year at the map centre from the committed
+ * MLI coverage polygons.
  */
-class BasemapToggleControl {
+class BasemapMenuControl {
   onAdd(map) {
     this._map = map;
     this._container = document.createElement('div');
-    this._container.className = 'maplibregl-ctrl maplibregl-ctrl-group basemap-toggle';
+    this._container.className = 'maplibregl-ctrl maplibregl-ctrl-group basemap-toggle basemap-menu';
+    this._views = [
+      { key: 'streets', label: 'Streets' },
+      { key: 'satellite', label: 'Satellite' },
+      { key: 'elevation', label: 'NRCan elevation' },
+      ...(MLI_ORTHO_PMTILES_URL
+        ? [{ key: 'mli', label: `MLI aerial ${MLI_ORTHO_YEAR_RANGE}` }]
+        : []),
+    ];
+
     this._btn = document.createElement('button');
     this._btn.type = 'button';
-    this._btn.title = 'Toggle basemap';
-    this._btn.setAttribute('aria-label', 'Toggle basemap');
-    // Streets is the default; the label reads what the next click swaps to.
-    this._btn.textContent = 'Satellite';
-    this._btn.addEventListener('click', () => this._toggle());
+    this._btn.className = 'basemap-menu-trigger';
+    this._btn.setAttribute('aria-haspopup', 'true');
+    this._btn.setAttribute('aria-expanded', 'false');
+    this._labelEl = document.createElement('span');
+    this._labelEl.className = 'basemap-menu-label';
+    this._btn.appendChild(this._labelEl);
+    this._btn.addEventListener('click', (event) => { event.stopPropagation(); this._toggle(); });
     this._container.appendChild(this._btn);
+
+    this._list = document.createElement('div');
+    this._list.className = 'basemap-menu-list';
+    this._list.setAttribute('role', 'menu');
+    for (const view of this._views) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'basemap-menu-item';
+      item.setAttribute('role', 'menuitem');
+      item.textContent = view.label;
+      item.dataset.key = view.key;
+      item.addEventListener('click', (event) => {
+        event.stopPropagation();
+        this._set(view.key);
+        this._close();
+      });
+      this._list.appendChild(item);
+    }
+    this._container.appendChild(this._list);
+
+    this._container.addEventListener('mouseenter', () => this._open());
+    this._container.addEventListener('mouseleave', () => this._scheduleClose());
+    this._container.addEventListener('focusout', (event) => {
+      if (!this._container.contains(event.relatedTarget)) this._close();
+    });
+    this._container.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') { this._close(); this._btn.focus(); }
+    });
+    this._onDocClick = (event) => { if (!this._container.contains(event.target)) this._close(); };
+    document.addEventListener('click', this._onDocClick);
+
+    this._yearFeatures = [];
+    fetch('/mli-imagery-years.geojson')
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => { this._yearFeatures = data?.features || []; this._render(); })
+      .catch(() => {});
+    this._onMoveEnd = () => this._render();
+    map.on('moveend', this._onMoveEnd);
+    this._render();
     return this._container;
   }
-  // 3-state cycle only when the aerial ortho layer is present; otherwise the
-  // original 2-state Streets <-> Satellite.
-  _states() {
-    return this._map.getLayer('ortho-mb')
-      ? ['streets', 'satellite', 'aerial']
-      : ['streets', 'satellite'];
-  }
-  _current() {
+  _open() { clearTimeout(this._closeTimer); this._container.classList.add('open'); this._btn.setAttribute('aria-expanded', 'true'); }
+  _close() { clearTimeout(this._closeTimer); this._container.classList.remove('open'); this._btn.setAttribute('aria-expanded', 'false'); }
+  _scheduleClose() { clearTimeout(this._closeTimer); this._closeTimer = setTimeout(() => this._close(), 140); }
+  _toggle() { this._container.classList.contains('open') ? this._close() : this._open(); }
+  _currentKey() {
     const m = this._map;
-    if (m.getLayer('ortho-mb') && m.getLayoutProperty('ortho-mb', 'visibility') === 'visible') return 'aerial';
+    if (m.getLayer('ortho-mb') && m.getLayoutProperty('ortho-mb', 'visibility') === 'visible') return 'mli';
+    if (m.getLayer('nrcan-elevation') && m.getLayoutProperty('nrcan-elevation', 'visibility') === 'visible') return 'elevation';
     if (m.getLayer('esri-imagery') && m.getLayoutProperty('esri-imagery', 'visibility') === 'visible') return 'satellite';
     return 'streets';
   }
-  _apply(state) {
+  _set(state) {
     const m = this._map;
-    // setBasemapSatellite owns the carto/esri flips AND forces the ortho off,
-    // so run it first, then re-show the ortho for the explicit 'aerial' state.
-    setBasemapSatellite(m, state !== 'streets');
-    if (state === 'aerial' && m.getLayer('ortho-mb')) {
-      m.setLayoutProperty('ortho-mb', 'visibility', 'visible');
-    }
-    const states = this._states();
-    const next = states[(states.indexOf(state) + 1) % states.length];
-    this._btn.textContent = { streets: 'Streets', satellite: 'Satellite', aerial: `Aerial ${ORTHO_YEAR}` }[next];
-    this._btn.classList.toggle('active', state !== 'streets');
+    const labels = state !== 'streets';
+    m.setLayoutProperty('carto-positron', 'visibility', state === 'streets' ? 'visible' : 'none');
+    m.setLayoutProperty('esri-imagery', 'visibility', (state === 'satellite' || state === 'mli') ? 'visible' : 'none');
+    m.setLayoutProperty('nrcan-elevation', 'visibility', state === 'elevation' ? 'visible' : 'none');
+    m.setLayoutProperty('esri-transportation', 'visibility', labels ? 'visible' : 'none');
+    m.setLayoutProperty('esri-reference', 'visibility', labels ? 'visible' : 'none');
+    if (m.getLayer('ortho-mb')) m.setLayoutProperty('ortho-mb', 'visibility', state === 'mli' ? 'visible' : 'none');
+    this._render();
   }
-  _toggle() {
-    const m = this._map;
-    // No-op until the basemap layers exist — guards a click that lands before
-    // the style has finished loading (getLayoutProperty would otherwise throw
-    // "Cannot get style of non-existing layer").
-    if (!m.getLayer('esri-imagery')) return;
-    const states = this._states();
-    const next = states[(states.indexOf(this._current()) + 1) % states.length];
-    this._apply(next);
+  _yearAtCenter() {
+    if (!this._yearFeatures.length) return null;
+    const center = this._map.getCenter();
+    const point = { type: 'Point', coordinates: [center.lng, center.lat] };
+    const feature = this._yearFeatures.find((candidate) => booleanPointInPolygon(point, candidate));
+    return feature?.properties?.year || null;
+  }
+  _render() {
+    if (!this._map || !this._labelEl) return;
+    const key = this._currentKey();
+    const view = this._views.find((candidate) => candidate.key === key) || this._views[0];
+    const localYear = key === 'mli' ? this._yearAtCenter() : null;
+    const label = localYear ? `MLI aerial - ${localYear}` : view.label;
+    this._labelEl.textContent = label;
+    this._btn.classList.toggle('active', key !== 'streets');
+    this._btn.title = localYear
+      ? `Basemap: MLI aerial. Imagery at map centre was acquired in ${localYear}.`
+      : `Basemap: ${view.label}`;
+    this._btn.setAttribute('aria-label', `${this._btn.title} Open to choose another basemap.`);
+    for (const item of this._list.querySelectorAll('.basemap-menu-item')) {
+      const active = item.dataset.key === key;
+      item.classList.toggle('active', active);
+      item.setAttribute('aria-current', active ? 'true' : 'false');
+    }
   }
   onRemove() {
+    clearTimeout(this._closeTimer);
+    if (this._onDocClick) document.removeEventListener('click', this._onDocClick);
+    if (this._onMoveEnd) this._map?.off('moveend', this._onMoveEnd);
     this._container.parentNode?.removeChild(this._container);
     this._map = null;
   }
