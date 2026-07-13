@@ -23,7 +23,7 @@
         { "key": "Permissions-Policy", "value": "geolocation=(), microphone=(), camera=(), payment=()" },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://*.arcgis.com https://server.arcgisonline.com https://*.basemaps.cartocdn.com https://cdn.jsdelivr.net https://api.mapbox.com; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'"
+          "value": "default-src 'self'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://*.arcgis.com https://server.arcgisonline.com https://*.basemaps.cartocdn.com https://cdn.jsdelivr.net https://api.mapbox.com https://pub-f351b204f73e4b2287acad946d79681c.r2.dev; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'"
         }
       ]
     }

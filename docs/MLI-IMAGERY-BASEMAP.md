@@ -3,10 +3,12 @@
 ## Status
 
 The full southern Manitoba historical aerial basemap is built locally from the
-Manitoba Land Initiative (MLI) Ortho Refresh collection. It is deliberately not
-uploaded or enabled in production yet.
+Manitoba Land Initiative (MLI) Ortho Refresh collection and uploaded to the
+existing Cloudflare R2 `wpg-ortho` bucket. It is not enabled in production until
+the Manitoba Vercel origin is added to that bucket's CORS policy.
 
 - Local archive: `D:\MBOrtho\mb-mli-ortho-2007-2013.pmtiles`
+- Public archive: <https://pub-f351b204f73e4b2287acad946d79681c.r2.dev/mb-mli-ortho-2007-2013.pmtiles>
 - Web configuration: `VITE_MLI_ORTHO_PMTILES_URL`
 - Acquisition-year coverage: `web/public/mli-imagery-years.geojson`
 - Build scripts: `r/build_mli_ortho.ps1` and `r/build_mli_imagery_years.R`
@@ -26,8 +28,9 @@ Completed build (2026-07-13):
 
 `pmtiles verify` completed successfully. A zoom-16 tile over Brandon was also
 decoded and inspected to confirm that the archive contains valid aerial JPEG
-pixels. The archive remains only at `D:\MBOrtho`; it is excluded from Git and
-has not been uploaded to a public tile host.
+pixels. The archive is excluded from Git. After upload, the R2 object reported
+the same 16,172,106,521-byte length, returned HTTP 206 for a seven-byte range,
+and returned the expected `PMTiles` magic header.
 
 The MLI catalogue calls this the **2007-2014** collection. Its published flight
 records contain actual acquisition years **2007 through 2013**; 2014 is the
@@ -110,18 +113,20 @@ metres/pixel in southern Manitoba). This stays close to the nominal 1 m source
 while keeping both the intermediate MBTiles and PMTiles conversion copy within
 practical local storage.
 
-## Hosting later
+## Production activation
 
-After uploading the archive to a public host that supports HTTP byte-range
-requests, set this build-time variable locally and in Vercel:
+The archive is hosted on R2. Add
+`https://manitoba-opendata-parcelsearch.vercel.app` to the `wpg-ortho`
+bucket's existing CORS allowed origins, preserving the Winnipeg origin and the
+current exposed range headers. Then set this build-time variable locally and
+in Vercel:
 
 ```text
-VITE_MLI_ORTHO_PMTILES_URL=https://example.invalid/mb-mli-ortho-2007-2013.pmtiles
+VITE_MLI_ORTHO_PMTILES_URL=https://pub-f351b204f73e4b2287acad946d79681c.r2.dev/mb-mli-ortho-2007-2013.pmtiles
 ```
 
-If the archive uses a new host, add that origin to `connect-src` in
-`vercel.json`. The basemap menu detects the variable and adds the MLI row; no
-source edit is needed.
+The R2 origin is allowed in `connect-src` in `vercel.json`. The basemap menu
+detects the variable and adds the MLI row; no source edit is needed.
 
 ## Licence and attribution
 
