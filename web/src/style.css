@@ -2115,6 +2115,7 @@ body.workspace-resizing iframe { pointer-events: none; }
 }
 .maplibregl-ctrl.measure-control {
   position: relative;
+  overflow: visible;
 }
 
 /* While the Measure panel is open the bottom-right map legends (Zoning,
