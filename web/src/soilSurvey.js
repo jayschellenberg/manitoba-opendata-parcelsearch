@@ -4,6 +4,14 @@
 // parcel/map-unit intersection by EXTENT1/2/3 rather than treating the
 // dominant component as 100 percent of the overlapped polygon.
 
+// Soil boundaries are used for parcel-area composition. Preserve every
+// vertex delivered by Manitoba instead of applying MapLibre's display
+// simplification a second time.
+export const SOIL_SURVEY_MAP_SOURCE_OPTIONS = Object.freeze({
+  maxzoom: 24,
+  tolerance: 0,
+});
+
 function clean(value) {
   if (value == null) return '';
   return String(value).trim();

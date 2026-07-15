@@ -1,5 +1,19 @@
 import assert from 'node:assert/strict';
-import { soilSurveyComponentsFromMatches } from '../src/soilSurvey.js';
+import {
+  SOIL_SURVEY_MAP_SOURCE_OPTIONS,
+  soilSurveyComponentsFromMatches,
+} from '../src/soilSurvey.js';
+import { SOIL_SURVEY_GEOMETRY_QUERY } from '../src/arcgis.js';
+
+assert.deepEqual(SOIL_SURVEY_GEOMETRY_QUERY, {
+  returnGeometry: 'true',
+  outSR: '4326',
+});
+assert.equal('maxAllowableOffset' in SOIL_SURVEY_GEOMETRY_QUERY, false);
+assert.deepEqual(SOIL_SURVEY_MAP_SOURCE_OPTIONS, {
+  maxzoom: 24,
+  tolerance: 0,
+});
 
 function soilFeature(props) {
   return {

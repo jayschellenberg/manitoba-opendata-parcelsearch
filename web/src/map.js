@@ -28,6 +28,7 @@ import {
   MASC_RATING_LABEL_MIN_ZOOM,
   MASC_RISK_SOURCE_OPTIONS,
 } from './masc.js';
+import { SOIL_SURVEY_MAP_SOURCE_OPTIONS } from './soilSurvey.js';
 import { safeExternalUrl } from './lib/safeUrl.js';
 import { Protocol as PMTilesProtocol } from 'pmtiles';
 
@@ -988,7 +989,11 @@ export function initMap(container, { onFeatureClick } = {}) {
       // Manitoba's Soil_Survey_MB on 2026-05-20 (per AgriMaps'
       // authoritative source). See arcgis.js fetchCliAgrForMuni for
       // the source-switch context.
-      map.addSource('cli-agr', { type: 'geojson', data: emptyFc() });
+      map.addSource('cli-agr', {
+        type: 'geojson',
+        data: emptyFc(),
+        ...SOIL_SURVEY_MAP_SOURCE_OPTIONS,
+      });
       map.addLayer({
         id: 'cli-agr-fill',
         type: 'fill',
@@ -1059,7 +1064,11 @@ export function initMap(container, { onFeatureClick } = {}) {
       // Companion 'soil-survey-labels' source carries point centroids
       // for the MAPUNITNOM symbol layer, rendered alongside the fill
       // so the user can read the soil-unit symbol without clicking.
-      map.addSource('soil-survey', { type: 'geojson', data: emptyFc() });
+      map.addSource('soil-survey', {
+        type: 'geojson',
+        data: emptyFc(),
+        ...SOIL_SURVEY_MAP_SOURCE_OPTIONS,
+      });
       map.addLayer({
         id: 'soil-survey-fill',
         type: 'fill',

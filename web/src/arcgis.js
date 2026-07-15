@@ -1029,6 +1029,14 @@ export async function fetchMascRiskAreas() {
 const CLI_AGR_CAP_URL =
   'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/Soil_Survey_MB/FeatureServer/0';
 
+// Parcel composition needs Manitoba's original survey boundaries. Keeping
+// the geometry settings in one object prevents either soil fetch path from
+// quietly reintroducing maxAllowableOffset server-side generalization.
+export const SOIL_SURVEY_GEOMETRY_QUERY = Object.freeze({
+  returnGeometry: 'true',
+  outSR: '4326',
+});
+
 const CLI_AGR_CAP_OUTFIELDS = [
   'OBJECTID', 'MAPUNITNOM',
   // Same SOIL_{1-3} composition shape the Soil Survey overlay reads, so
@@ -1072,19 +1080,18 @@ const CLI_AGR_CAP_OUTFIELDS = [
 
 export async function fetchCliAgrForMuni(muniNameWithTyp, muniBoundaryFeature) {
   if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
-  // v6 (2026-05-21): added per-slot Manitoba Soil Survey descriptors
+  // v7 (2026-07-15): restored Manitoba's full source geometry for
+  //   parcel-scale area composition. v6 (2026-05-21): added per-slot
+  //   Manitoba Soil Survey descriptors
   //   (TOPO, STONE, SALINITY, EROSION, DRAINAGE, SURFTEXTM, MANCON,
   //   GEN_RATIN, SPUD_RTNG × 3 slots) so the soil popups can render
   //   "Land features" lines and the CSV can carry dominant-soil
   //   descriptor columns. v5 (2026-05-21): added Shape__Area to
   //   outFields so the Soil Type palette can rank by server-
   //   precomputed area instead of the slow turfArea fallback.
-  //   v4 (2026-05-20): added maxAllowableOffset matching the Soil
-  //   Survey fetch so CLI payloads also shrink by 60-80% on busy
-  //   munis. CLI sources from the same Soil_Survey_MB layer; the
-  //   offset is fine for capability-class viewing at muni-wide zoom
-  //   (10-12).
-  const cacheKey = `mb_cli_agr_${muniNameWithTyp}_v6`;
+  //   v4 (2026-05-20): added maxAllowableOffset for smaller payloads;
+  //   v7 removes it because it materially altered some small polygons.
+  const cacheKey = `mb_cli_agr_${muniNameWithTyp}_v7`;
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
 
@@ -1098,9 +1105,7 @@ export async function fetchCliAgrForMuni(muniNameWithTyp, muniBoundaryFeature) {
     inSR: '4326',
     spatialRel: 'esriSpatialRelIntersects',
     outFields: CLI_AGR_CAP_OUTFIELDS,
-    returnGeometry: 'true',
-    outSR: '4326',
-    maxAllowableOffset: SOIL_SURVEY_MAX_ALLOWABLE_OFFSET,
+    ...SOIL_SURVEY_GEOMETRY_QUERY,
     f: 'geojson',
   }, 2000);
   await writeCache(cacheKey, fc);
@@ -1167,24 +1172,11 @@ const SOIL_SURVEY_OUTFIELDS = [
   'REPORT_NAM', 'SCALE', 'DATE',
 ].join(',');
 
-// Server-side geometry simplification. Output SR is 4326 so this is
-// degrees — 0.001 ≈ 71 m at 50°N latitude, well below the visible
-// resolution at muni-wide zoom (10-12) where a screen pixel is ~30-
-// 100 m. Cuts the polygon payload by 60-80% (3-12 MB → 1-3 MB) and
-// reduces both the JSON parse cost and the MapLibre setData
-// structured-clone cost proportionally. The trade-off is barely-
-// perceptible boundary edges at high zoom; toggle the offset to 0
-// if you ever need pixel-perfect detail.
-const SOIL_SURVEY_MAX_ALLOWABLE_OFFSET = '0.0005';
-
 export async function fetchSoilSurveyForMuni(muniNameWithTyp, muniBoundaryFeature) {
   if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
-  // v5 (2026-05-20): added maxAllowableOffset server-side simplification
-  // + dropped CLASS{1-3}. v4 payloads carry full-precision geometry
-  // and the CLASS fields, both of which the new code path ignores —
-  // bumping the cache key so any old cached payload refreshes to the
-  // smaller, faster shape.
-  const cacheKey = `mb_soil_survey_${muniNameWithTyp}_v5`;
+  // v6 (2026-07-15): restored full source geometry. The cache bump
+  // ensures previously generalized v5 polygons are not reused.
+  const cacheKey = `mb_soil_survey_${muniNameWithTyp}_v6`;
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
 
@@ -1198,9 +1190,7 @@ export async function fetchSoilSurveyForMuni(muniNameWithTyp, muniBoundaryFeatur
     inSR: '4326',
     spatialRel: 'esriSpatialRelIntersects',
     outFields: SOIL_SURVEY_OUTFIELDS,
-    returnGeometry: 'true',
-    outSR: '4326',
-    maxAllowableOffset: SOIL_SURVEY_MAX_ALLOWABLE_OFFSET,
+    ...SOIL_SURVEY_GEOMETRY_QUERY,
     f: 'geojson',
   }, SOIL_SURVEY_FETCH_CAP);
   await writeCache(cacheKey, fc);

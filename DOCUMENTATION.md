@@ -83,6 +83,21 @@ feeds only **mao-assembly's** land-cover inputs. A daily dead-man watchdog
 | **Historical shards** | per-muni parcels/zoning/dev-plan **per snapshot date** (`YYYY-MM-DD`) + per-snapshot provenance manifest | `mb-parcel-history` → jsDelivr | when a snapshot is archived |
 | **Lineage index** | inferred predecessor/successor per parcel, per muni | `mb-parcel-history/lineage/**` → jsDelivr | when ≥ 2 snapshots exist |
 
+### 2.1 Soil-productivity geometry and scale
+
+The **Soil Productivity / Soil Name** overlay reads Manitoba's live
+`Soil_Survey_MB` FeatureServer. Both soil fetch paths request the original
+source geometry (no ArcGIS `maxAllowableOffset`), and their MapLibre GeoJSON
+sources use `tolerance: 0`, so the app does not simplify the survey vertices.
+Municipality-scoped results remain cached for 30 days.
+
+This preserves the best geometry published by Manitoba, but it does not make
+the survey more precise than its source mapping. The Hanover records identify
+the underlying survey as **1:50,000**. Approximately 20-acre soil patterns are
+therefore retained when present in the source, but parcel-level decisions and
+area measurements should still be verified against the authoritative survey
+and field evidence.
+
 ---
 
 ## 3. Land-cover layer
