@@ -40,21 +40,38 @@ foreach ($name in @($TaskName) + $LegacyTaskNames) {
   Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
 }
 
-$taskCmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$Publisher`""
+# auto-publish-indexes.ps1 MUST run under PowerShell 7 (pwsh.exe), NOT Windows PowerShell
+# 5.1. It sets $ErrorActionPreference='Stop' and merges R's stderr into the log; only pwsh
+# 7's $PSNativeCommandUseErrorActionPreference=$false keeps R's benign stderr progress
+# ("[legal-index] reading ...", "done") from being promoted to a fatal error. Under 5.1
+# that guard is a no-op, so every run dies on R's first message. Resolve pwsh 7 explicitly.
+$pwshExe = (Get-Command pwsh.exe -ErrorAction SilentlyContinue).Source
+if (-not $pwshExe) { $pwshExe = 'C:\Program Files\PowerShell\7\pwsh.exe' }
+if (-not (Test-Path $pwshExe)) {
+  Write-Error "PowerShell 7 (pwsh.exe) not found. auto-publish-indexes.ps1 requires pwsh 7 (5.1 mishandles R's stderr). Install PowerShell 7 or edit `$pwshExe in this script."
+  exit 1
+}
 
+# schtasks builds the day-of-month MONTHLY trigger cleanly (the *ScheduledTask cmdlets have
+# no simple day-of-month trigger). It registers a placeholder action here; we overwrite the
+# action just below with a cmdlet-built pwsh invocation so the space in the pwsh.exe path is
+# quoted correctly (a raw schtasks /TR string mangles it).
 if ($Semiannual) {
-  schtasks /Create /SC MONTHLY /M JAN,JUL /D 15 /ST 04:30 /TN $TaskName /TR $taskCmd /RL LIMITED /F
+  schtasks /Create /SC MONTHLY /M JAN,JUL /D 15 /ST 04:30 /TN $TaskName /TR $pwshExe /RL LIMITED /F
   $recur = 'Jan + Jul on the 15th at 04:30 (every 6 months)'
 } else {
-  schtasks /Create /SC MONTHLY /D 15 /ST 04:30 /TN $TaskName /TR $taskCmd /RL LIMITED /F
+  schtasks /Create /SC MONTHLY /D 15 /ST 04:30 /TN $TaskName /TR $pwshExe /RL LIMITED /F
   $recur = '15th of every month at 04:30'
 }
 if ($LASTEXITCODE -ne 0) { Write-Error "schtasks /Create failed (exit $LASTEXITCODE)"; exit $LASTEXITCODE }
 
-# Battery + start-when-available flags (schtasks doesn't expose these).
+# Overwrite the action with the properly-quoted pwsh 7 invocation, and add the battery +
+# start-when-available flags schtasks doesn't expose -- in one Set-ScheduledTask call.
+$action = New-ScheduledTaskAction -Execute $pwshExe `
+  -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$Publisher`""
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries `
   -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 2)
-Set-ScheduledTask -TaskName $TaskName -Settings $settings | Out-Null
+Set-ScheduledTask -TaskName $TaskName -Action $action -Settings $settings | Out-Null
 
 Write-Host ""
 Write-Host "Scheduled task '$TaskName' registered:"
