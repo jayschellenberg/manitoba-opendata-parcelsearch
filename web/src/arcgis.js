@@ -882,6 +882,7 @@ export async function fetchRollEntryCount() {
 const CONTAM_CSV_URL = '/proxy/contam-sites.csv';
 const TRAFFIC_STATIONS_URL  = 'https://services6.arcgis.com/HQUud09zgy3Asw9X/arcgis/rest/services/All_Stations_C_Only/FeatureServer/0';
 const TRAFFIC_FLOW_URL      = 'https://services6.arcgis.com/HQUud09zgy3Asw9X/arcgis/rest/services/MHTIS_Traffic_Flow_2019/FeatureServer/0';
+const MB_ROAD_NETWORK_URL   = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/Manitoba_Road_Network_2023/FeatureServer/0';
 const MUNICIPALITY_URL      = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/MUNICIPALITY/FeatureServer/0';
 
 /**
@@ -1806,6 +1807,29 @@ export async function fetchTrafficFlow() {
     f: 'geojson',
     orderByFields: 'FID ASC',
   }, 20000);
+  await writeCache(cacheKey, fc);
+  return fc;
+}
+
+/**
+ * Fetch the complete Manitoba Road Network 2023. The provincial service has
+ * fewer than 2,000 features, but this still uses the shared paginator so a
+ * future republish can grow without silently truncating the overlay.
+ */
+export async function fetchManitobaHighways() {
+  const cacheKey = 'mb_road_network_2023_v1';
+  const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  if (cached) return cached;
+  const fc = await fetchAllPages(MB_ROAD_NETWORK_URL, {
+    where: '1=1',
+    outFields: 'RteType,RteName,RteDesignation,CommonRoadName_003,CommonRoadName_004',
+    returnGeometry: 'true',
+    outSR: '4326',
+    geometryPrecision: '5',
+    returnZ: 'false',
+    returnM: 'false',
+    f: 'geojson',
+  }, 10000);
   await writeCache(cacheKey, fc);
   return fc;
 }

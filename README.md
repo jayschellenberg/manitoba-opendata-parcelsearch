@@ -47,6 +47,7 @@ Rscript r/build_parcel_masc.R
 | [Manitoba Zoning By-Laws](https://geoportal.gov.mb.ca/datasets/manitoba::manitoba-zoning-by-laws/about) | `…/Manitoba_Zoning_By_Laws/FeatureServer/0` | Zone code, zone name, category, governing zoning bylaw (`ZBL`), amendment bylaw (`ZBL_A`), amendment description |
 | [Development Plan Designations](https://geoportal.gov.mb.ca/datasets/manitoba::manitoba-development-plan-designations/about) | `…/Manitoba_Development_Plan_Designations/FeatureServer/0` | Designation name, category, dev-plan bylaw (`DP_BYLAW`), amendment bylaw (`DPA_BYLAW`), planning district |
 | [MHTIS Traffic Flow 2019](https://www.gov.mb.ca/mti/traffic/counts.html) | `…/MHTIS_Traffic_Flow_2019/FeatureServer/0` | AADT polylines for the colour-coded Traffic overlay |
+| Manitoba Road Network 2023 | `…/Manitoba_Road_Network_2023/FeatureServer/0` | Province-wide PTH, PR, access, service, ramp, and winter-road overlay |
 | [Manitoba Contaminated Sites Registry](https://www.gov.mb.ca/sd/waste_management/contaminated_sites/registry/index.html) | CSV at `manitoba.ca/.../cs-data.csv` (proxied via `vercel.json` because the upstream lacks `Access-Control-Allow-Origin`) | Designated Contaminated, Designated Impacted, and Not Designated sites for the Enviro overlay |
 | MAO scrape legal index | `web/public/data/legal-index.json` generated from `../mao-scrape/results/parcels.parquet` | Legal description text, Lot, Block, Plan, certificates of title, and `(muni_no, roll_no_txt)` lookup keys |
 | MASC soil ratings | `masc_soil_ratings_with_latlon.csv` + river-lot scrape/KMZ → `web/public/data/masc/`, `web/public/data/masc-riverlots.json`, and `web/public/data/parcel-masc/` | Quarter-section and river-lot MASC layer, A-J rating colours, visible rating-letter labels, parcel-level Soil table field, and split-boundary river lots such as De Salaberry / St-Pierre-Jolys |
@@ -70,6 +71,7 @@ The page splits into a fixed-width left sidebar holding all controls and a fluid
 **Sidebar — Map overlays section** (2-column grid):
 - **Muni Parcels** — every parcel in the selected muni rendered as a light-blue grey fabric beneath the search results. Roll numbers render at each parcel's centroid at zoom ≥ 14. Hover/click popups show roll #, address, DU, land size (ac/sf), total value; if Show Zoning is also active, the underlying zone code, name, and ZBL are appended to the popup. Click adds the assessment-report link.
 - **Traffic** — MHTIS Traffic Flow 2019 polylines coloured by AADT in 6 step-function bins. AADT label rendered along each segment at zoom ≥ 8. Click a segment for full attributes. Floating colour legend appears bottom-right while active.
+- **Manitoba Highways** — complete Government of Manitoba Road Network 2023, lazy-loaded and cached for 30 days. PTH and PR routes are labelled; click any segment for its route type and number. Can be combined with Satellite or MLI imagery.
 - **Zoning** — coloured per-search by `ZONE` code with a stable hash-derived HSL palette. Floating legend in the bottom-right lists every code on screen with its `ZONE_NAME`. Zoning code labels render above each polygon centroid (offset to clear the muni-parcels roll number when both layers are on).
 - **Dev Plan** — coloured by `DES_CATEGORY`.
 - **Enviro** — Manitoba Contaminated Sites Registry as red / orange / grey points by designation, with a registry-page link in each popup.
@@ -80,7 +82,8 @@ The page splits into a fixed-width left sidebar holding all controls and a fluid
 - **PD Website** — data-driven. After every search, the dominant `PLANNINGDISTRICT` value across the dev-plan enrichment FC picks the active PD; `PD_WEBSITES` looks up its URL. Reads "PD N/A" when the PD has no website on file. Stays disabled until a search resolves the PD.
 
 **Basemap menu** sits in the map's top-right gutter and offers CARTO Streets,
-Esri Satellite, and the Natural Resources Canada elevation hillshade. A fourth
+Esri Satellite, the Natural Resources Canada transportation map, and the NRCan
+elevation hillshade. A fifth
 **MLI aerial 2007-2013** row appears when the locally built historical PMTiles
 archive is hosted and `VITE_MLI_ORTHO_PMTILES_URL` is set. While it is active,
 the trigger reports the acquisition year at the map centre. See
@@ -134,7 +137,7 @@ Pure static. Vercel serves the Vite-built bundle plus the generated legal-search
 
 **Dependencies** (`web/package.json`):
 
-- `maplibre-gl` — map (CARTO Streets, Esri Satellite, and NRCan elevation)
+- `maplibre-gl` — map (CARTO Streets, Esri Satellite, NRCan Transportation, and NRCan Elevation)
 - `pmtiles` — reads the optional MLI historical aerial archive (inert until `VITE_MLI_ORTHO_PMTILES_URL` is set)
 - `@turf/area`, `@turf/bbox`, `@turf/intersect`, `@turf/boolean-point-in-polygon`, `@turf/length` — spatial primitives for the area-weighted join + route distances
 - `@mapbox/mapbox-gl-draw` — measurement / draw tool on the map

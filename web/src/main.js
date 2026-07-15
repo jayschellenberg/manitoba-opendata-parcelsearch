@@ -76,6 +76,7 @@ import {
   fetchZoneCategoryList,
   fetchContaminatedSites,
   fetchTrafficFlow,
+  fetchManitobaHighways,
   fetchAllParcelsInMunicipality,
   fetchMunicipalBoundaries,
   fetchMascRatingsForMuni,
@@ -119,6 +120,8 @@ import {
   setContamVisible,
   setTrafficFlowData,
   setTrafficFlowVisible,
+  setMbHighwaysData,
+  setMbHighwaysVisible,
   setMuniParcelsData,
   setMuniParcelsVisible,
   setMuniBoundariesData,
@@ -263,6 +266,7 @@ const $muniWebsiteBtn = document.getElementById('muni-website-btn');
 const $pdWebsiteBtn   = document.getElementById('pd-website-btn');
 const $contamToggle  = document.getElementById('contam-toggle');
 const $flowToggle    = document.getElementById('flow-toggle');
+const $highwaysToggle = document.getElementById('highways-toggle');
 const $muniParcelsToggle = document.getElementById('muni-parcels-toggle');
 const $mascToggle    = document.getElementById('masc-toggle');
 const $riskAreaToggle = document.getElementById('riskarea-toggle');
@@ -1207,10 +1211,12 @@ function applyUrlStateToInputs(state) {
   if (Number.isInteger(state.page) && state.page >= 1) {
     currentPage = state.page - 1;  // back to 0-based
   }
-  // Overlays restored by clicking each requested toggle button once if
-  // it isn't already pressed. The click handlers do all the actual
-  // overlay activation work (fetch shards, mutate map, etc.). Tri-state
-  // secondary modes are intentionally NOT cycled into — see SCHEMA.overlays.
+}
+
+// Restore overlays only after their click handlers are registered. Keeping
+// this separate from applyUrlStateToInputs avoids silently dropping every
+// overlay from a shared URL during initial module setup.
+function restoreUrlOverlays(state) {
   if (Array.isArray(state.overlays) && state.overlays.length > 0) {
     for (const code of state.overlays) {
       const btn = document.getElementById(`${code}-toggle`);
@@ -1288,6 +1294,10 @@ if (initialUrlState.muni) {
       clearInterval(pollId);
       $municipality.value = targetMuni;
       $municipality.dispatchEvent(new Event('change', { bubbles: true }));
+      // Municipality-scoped overlays start disabled. The change handler
+      // enables them synchronously, then this retry activates any that the
+      // initial province-wide restoration correctly skipped.
+      setTimeout(() => restoreUrlOverlays(initialUrlState), 0);
     } else if (attempts > 80) {
       // ~16 s; the muni list is finite and cached, so this is
       // generous. Stop polling if it never arrives.
@@ -1458,6 +1468,7 @@ $zoningToggle.addEventListener('click', () => toggleOverlay('zoning'));
 $devplanToggle.addEventListener('click', () => toggleOverlay('devplan'));
 $contamToggle.addEventListener('click', () => toggleAuxOverlay('contam'));
 $flowToggle.addEventListener('click', () => toggleAuxOverlay('flow'));
+$highwaysToggle.addEventListener('click', () => toggleAuxOverlay('highways'));
 $riskAreaToggle.addEventListener('click', () => toggleAuxOverlay('riskAreas'));
 $muniParcelsToggle.addEventListener('click', () => toggleAuxOverlay('muniParcels'));
 $mascToggle.addEventListener('click', () => toggleMascOverlay());
@@ -1467,6 +1478,7 @@ if ($historicalToggle) $historicalToggle.addEventListener('click', () => toggleH
 if ($historicalYear) $historicalYear.addEventListener('change', () => onHistoricalYearChange());
 initHistoricalSnapshots();
 $gridToggle.addEventListener('click', () => toggleSurveyGridOverlay());
+setTimeout(() => restoreUrlOverlays(initialUrlState), 0);
 
 const $staticMapBtn     = document.getElementById('static-map-btn');
 const $staticMapOutput  = document.getElementById('static-map-output');
@@ -4787,6 +4799,7 @@ async function refreshOverlayLayersForMuniChange() {
  * Toggle one of the province-wide auxiliary overlays:
  *   contam  — Manitoba Contaminated Sites Registry (CSV → coloured points)
  *   flow    — MHTIS Traffic Flow 2019 (FeatureServer polylines, AADT-coloured)
+ *   highways — Manitoba Road Network 2023 (FeatureServer polylines)
  *   riskAreas — official MASC crop-insurance risk-area polygons
  *
  * These are lazily fetched on first activation and cached through the
@@ -4795,8 +4808,8 @@ async function refreshOverlayLayersForMuniChange() {
  * the segment AADT inline (and vice-versa: loading stations after flow
  * triggers the same join). Failures are non-fatal — the button reverts.
  */
-const auxLoaded = { contam: false, flow: false, riskAreas: false, muniParcels: false };
-const auxData   = { contam: null, flow: null, riskAreas: null, muniParcels: null };
+const auxLoaded = { contam: false, flow: false, highways: false, riskAreas: false, muniParcels: false };
+const auxData   = { contam: null, flow: null, highways: null, riskAreas: null, muniParcels: null };
 // Tracks which muni's parcels are currently in the muni-parcels source so
 // we know whether to refetch when the user switches munis.
 let muniParcelsLoadedFor = null;
@@ -4806,6 +4819,8 @@ const AUX_META = {
                  fetch: () => fetchContaminatedSites(),       setData: (m, fc) => setContamData(m, fc),      setVis: setContamVisible },
   flow:        { btn: () => $flowToggle,        on: 'Traffic flow', off: 'Traffic flow', busy: 'Loading…',
                  fetch: () => fetchTrafficFlow(),             setData: (m, fc) => setTrafficFlowData(m, fc), setVis: setTrafficFlowVisible },
+  highways:    { btn: () => $highwaysToggle,    on: 'Manitoba Highways', off: 'Manitoba Highways', busy: 'Loading…',
+                 fetch: () => fetchManitobaHighways(),         setData: (m, fc) => setMbHighwaysData(m, fc), setVis: setMbHighwaysVisible },
   riskAreas:   { btn: () => $riskAreaToggle,    on: 'MASC risk areas', off: 'MASC risk areas', busy: 'Loading…',
                  fetch: () => fetchMascRiskAreas(),            setData: (m, fc) => setMascRiskAreasData(m, fc), setVis: setMascRiskAreasVisible },
   muniParcels: { btn: () => $muniParcelsToggle, on: 'Assessment Parcels', off: 'Assessment Parcels', busy: 'Loading…',

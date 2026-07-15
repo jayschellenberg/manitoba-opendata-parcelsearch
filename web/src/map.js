@@ -280,6 +280,26 @@ const BASEMAP_STYLE = {
       attribution:
         'Elevation basemap &copy; Natural Resources Canada, Open Government Licence - Canada',
     },
+    'nrcan-transportation-geometry': {
+      type: 'raster',
+      tiles: [
+        'https://maps-cartes.services.geo.ca/server2_serveur2/rest/services/BaseMaps/CBMT_CBCT_GEOM_3857/MapServer/tile/{z}/{y}/{x}',
+      ],
+      tileSize: 256,
+      minzoom: 0,
+      maxzoom: 15,
+      attribution:
+        'Canada Base Map &copy; Natural Resources Canada, <a href="https://open.canada.ca/en/open-government-licence-canada">Open Government Licence - Canada</a>',
+    },
+    'nrcan-transportation-labels': {
+      type: 'raster',
+      tiles: [
+        'https://maps-cartes.services.geo.ca/server2_serveur2/rest/services/BaseMaps/CBMT_TXT_3857/MapServer/tile/{z}/{y}/{x}',
+      ],
+      tileSize: 256,
+      minzoom: 0,
+      maxzoom: 15,
+    },
     // Local static XYZ pyramid of the 2020 Manitoba land-cover raster,
     // produced by r/build_landcover_tiles.R. Drives the Land Cover
     // overlay's "Detailed" mode — pixel-level mosaic vs the per-parcel
@@ -312,9 +332,11 @@ const BASEMAP_STYLE = {
     // bug because the initial undefined read inverted the swap.
     { id: 'carto-positron',      type: 'raster', source: 'carto-positron',      minzoom: 0, maxzoom: 20, layout: { visibility: 'visible' } },
     { id: 'esri-imagery',        type: 'raster', source: 'esri-imagery',        minzoom: 0, maxzoom: 20, layout: { visibility: 'none' } },
+    { id: 'nrcan-transportation-geometry', type: 'raster', source: 'nrcan-transportation-geometry', minzoom: 0, maxzoom: 24, layout: { visibility: 'none' } },
     { id: 'nrcan-elevation',     type: 'raster', source: 'nrcan-elevation',     minzoom: 0, maxzoom: 19, layout: { visibility: 'none' } },
     { id: 'esri-transportation', type: 'raster', source: 'esri-transportation', minzoom: 0, maxzoom: 20, layout: { visibility: 'none' } },
     { id: 'esri-reference',      type: 'raster', source: 'esri-reference',      minzoom: 0, maxzoom: 20, layout: { visibility: 'none' } },
+    { id: 'nrcan-transportation-labels', type: 'raster', source: 'nrcan-transportation-labels', minzoom: 0, maxzoom: 24, layout: { visibility: 'none' } },
     // Land-cover raster sits above the basemap tiles but below every
     // data overlay (zoning, MASC, parcels, etc.) added by initMap, so
     // those overlays still paint cleanly on top. Default opacity 0.65 —
@@ -718,6 +740,86 @@ export function initMap(container, { onFeatureClick } = {}) {
           'text-color': '#1a1a1a',
           'text-halo-color': '#ffffff',
           'text-halo-width': 1.6,
+        },
+      });
+
+      // Complete provincial road network, current to 2023. This remains a
+      // separate overlay so Manitoba route geometry can be combined with
+      // Satellite or MLI imagery as well as any other basemap.
+      map.addSource('mb-highways', {
+        type: 'geojson',
+        data: emptyFc(),
+        attribution: 'Road network &copy; Government of Manitoba (2023)',
+      });
+      map.addLayer({
+        id: 'mb-highways-casing',
+        type: 'line',
+        source: 'mb-highways',
+        layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': 'rgba(255,255,255,0.92)',
+          'line-width': [
+            'interpolate', ['linear'], ['zoom'],
+            5, ['match', ['get', 'RteType'], '-PTH', 2.4, '-PR', 1.9, 1.2],
+            11, ['match', ['get', 'RteType'], '-PTH', 6.5, '-PR', 5, 3.2],
+            15, ['match', ['get', 'RteType'], '-PTH', 10, '-PR', 8, 5],
+          ],
+          'line-opacity': 0.9,
+        },
+      });
+      map.addLayer({
+        id: 'mb-highways-line',
+        type: 'line',
+        source: 'mb-highways',
+        layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': [
+            'match', ['get', 'RteType'],
+            '-PTH', '#c83e32',
+            '-PR', '#d18a00',
+            '-ACCESS', '#476b87',
+            '-WR', '#1684a5',
+            '-SVCRD', '#66737c',
+            '-RAMP', '#8f5e42',
+            '-LOOP', '#8f5e42',
+            '-RTCO', '#8f5e42',
+            '#7a858d',
+          ],
+          'line-width': [
+            'interpolate', ['linear'], ['zoom'],
+            5, ['match', ['get', 'RteType'], '-PTH', 1.4, '-PR', 1.1, 0.7],
+            11, ['match', ['get', 'RteType'], '-PTH', 4.5, '-PR', 3.4, 2],
+            15, ['match', ['get', 'RteType'], '-PTH', 7, '-PR', 5.5, 3.2],
+          ],
+          'line-opacity': 0.94,
+        },
+      });
+      map.addLayer({
+        id: 'mb-highways-label',
+        type: 'symbol',
+        source: 'mb-highways',
+        minzoom: 7,
+        filter: ['in', ['get', 'RteType'], ['literal', ['-PTH', '-PR']]],
+        layout: {
+          visibility: 'none',
+          'symbol-placement': 'line',
+          'symbol-spacing': 300,
+          'text-field': [
+            'concat',
+            ['match', ['get', 'RteType'], '-PTH', 'PTH ', '-PR', 'PR ', ''],
+            ['to-string', ['coalesce', ['get', 'CommonRoadName_004'], '']],
+          ],
+          'text-font': ['Open Sans Semibold'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 7, 10, 12, 12, 15, 14],
+          'text-allow-overlap': false,
+          'text-ignore-placement': false,
+          'text-pitch-alignment': 'viewport',
+          'text-rotation-alignment': 'map',
+        },
+        paint: {
+          'text-color': '#23282c',
+          'text-halo-color': 'rgba(255,255,255,0.96)',
+          'text-halo-width': 1.8,
         },
       });
 
@@ -1656,6 +1758,7 @@ export function initMap(container, { onFeatureClick } = {}) {
       // (with their halos / dashed strokes, those still read cleanly).
       if (map.getLayer('esri-transportation'))       map.moveLayer('esri-transportation');
       if (map.getLayer('esri-reference'))            map.moveLayer('esri-reference');
+      if (map.getLayer('nrcan-transportation-labels')) map.moveLayer('nrcan-transportation-labels');
       if (map.getLayer('subject-radius-fill'))       map.moveLayer('subject-radius-fill');
       if (map.getLayer('subject-radius-line'))       map.moveLayer('subject-radius-line');
       if (map.getLayer('survey-grid-label'))         map.moveLayer('survey-grid-label');
@@ -2093,6 +2196,19 @@ export function initMap(container, { onFeatureClick } = {}) {
       });
       map.on('mouseleave', 'traffic-flow-line', () => { map.getCanvas().style.cursor = ''; });
 
+      const highwaysPopup = new maplibregl.Popup({ closeButton: true });
+      map.on('click', 'mb-highways-line', (e) => {
+        const p = e.features?.[0]?.properties;
+        if (!p) return;
+        highwaysPopup.setLngLat(e.lngLat).setHTML(mbHighwayHtml(p)).addTo(map);
+      });
+      map.on('mouseenter', 'mb-highways-line', () => {
+        if (map.getLayoutProperty('mb-highways-line', 'visibility') === 'visible') {
+          map.getCanvas().style.cursor = 'pointer';
+        }
+      });
+      map.on('mouseleave', 'mb-highways-line', () => { map.getCanvas().style.cursor = ''; });
+
       } catch (err) {
         // Setup ran before the style was ready — back off and let
         // the next trigger try again. We re-arm setupDone here.
@@ -2243,6 +2359,17 @@ export function setTrafficFlowData(map, fc) {
 export function setTrafficFlowVisible(map, visible) {
   const v = visible ? 'visible' : 'none';
   for (const id of ['traffic-flow-line', 'traffic-flow-label']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
+  }
+}
+
+export function setMbHighwaysData(map, fc) {
+  const src = map.getSource('mb-highways');
+  if (src) src.setData(fc);
+}
+export function setMbHighwaysVisible(map, visible) {
+  const v = visible ? 'visible' : 'none';
+  for (const id of ['mb-highways-casing', 'mb-highways-line', 'mb-highways-label']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
   }
 }
@@ -2540,6 +2667,9 @@ export function setBasemapSatellite(map, on) {
   }
   if (map.getLayer('nrcan-elevation')) {
     map.setLayoutProperty('nrcan-elevation', 'visibility', 'none');
+  }
+  for (const id of ['nrcan-transportation-geometry', 'nrcan-transportation-labels']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'none');
   }
   // The optional aerial ortho (present only when configured) underlays Esri
   // outside MLI coverage. Force it off here so callers that request satellite,
@@ -3397,6 +3527,27 @@ function trafficFlowHtml(p) {
   return `<div style="max-width:260px;line-height:1.4">${lines.join('<br>')}</div>`;
 }
 
+function mbHighwayHtml(p) {
+  const typeNames = {
+    '-PTH': 'Provincial Trunk Highway',
+    '-PR': 'Provincial Road',
+    '-ACCESS': 'Access Road',
+    '-WR': 'Winter Road',
+    '-SVCRD': 'Service Road',
+    '-RAMP': 'Ramp',
+    '-LOOP': 'Loop',
+    '-RTCO': 'Route Connector',
+  };
+  const type = typeNames[p.RteType] || 'Manitoba Road';
+  const number = String(p.CommonRoadName_004 ?? '').trim();
+  const commonName = String(p.CommonRoadName_003 ?? '').trim();
+  const title = number ? `${type} ${number}` : (commonName || type);
+  const lines = [`<strong>${escapeHtml(title)}</strong>`];
+  if (commonName && commonName !== title) lines.push(escapeHtml(commonName));
+  lines.push('<em>Government of Manitoba road network, current to 2023</em>');
+  return `<div style="max-width:280px;line-height:1.4">${lines.join('<br>')}</div>`;
+}
+
 /** Read whichever overlay polygons sit under a screen point, restricted
  *  to layers that are currently visible. Used by the parcel/muni-parcels
  *  hover/click popups so they can show zoning, dev-plan, and soil info
@@ -3867,6 +4018,7 @@ class BasemapMenuControl {
       ...(MLI_ORTHO_PMTILES_URL
         ? [{ key: 'mli', label: `MLI Aerial ${MLI_ORTHO_YEAR_RANGE}` }]
         : []),
+      { key: 'transportation', label: 'NRCan Transportation' },
       { key: 'elevation', label: 'NRCan Elevation' },
     ];
 
@@ -3928,18 +4080,21 @@ class BasemapMenuControl {
   _currentKey() {
     const m = this._map;
     if (m.getLayer('ortho-mb') && m.getLayoutProperty('ortho-mb', 'visibility') === 'visible') return 'mli';
+    if (m.getLayer('nrcan-transportation-geometry') && m.getLayoutProperty('nrcan-transportation-geometry', 'visibility') === 'visible') return 'transportation';
     if (m.getLayer('nrcan-elevation') && m.getLayoutProperty('nrcan-elevation', 'visibility') === 'visible') return 'elevation';
     if (m.getLayer('esri-imagery') && m.getLayoutProperty('esri-imagery', 'visibility') === 'visible') return 'satellite';
     return 'streets';
   }
   _set(state) {
     const m = this._map;
-    const labels = state !== 'streets';
+    const esriLabels = state !== 'streets' && state !== 'transportation';
     m.setLayoutProperty('carto-positron', 'visibility', state === 'streets' ? 'visible' : 'none');
     m.setLayoutProperty('esri-imagery', 'visibility', (state === 'satellite' || state === 'mli') ? 'visible' : 'none');
+    m.setLayoutProperty('nrcan-transportation-geometry', 'visibility', state === 'transportation' ? 'visible' : 'none');
+    m.setLayoutProperty('nrcan-transportation-labels', 'visibility', state === 'transportation' ? 'visible' : 'none');
     m.setLayoutProperty('nrcan-elevation', 'visibility', state === 'elevation' ? 'visible' : 'none');
-    m.setLayoutProperty('esri-transportation', 'visibility', labels ? 'visible' : 'none');
-    m.setLayoutProperty('esri-reference', 'visibility', labels ? 'visible' : 'none');
+    m.setLayoutProperty('esri-transportation', 'visibility', esriLabels ? 'visible' : 'none');
+    m.setLayoutProperty('esri-reference', 'visibility', esriLabels ? 'visible' : 'none');
     if (m.getLayer('ortho-mb')) m.setLayoutProperty('ortho-mb', 'visibility', state === 'mli' ? 'visible' : 'none');
     this._render();
   }
