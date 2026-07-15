@@ -23,7 +23,11 @@ import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import { landCoverBreakdown, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
 import { MB_PARCEL_DATA_CDN } from './arcgis.js';
-import { MASC_PALETTE } from './masc.js';
+import {
+  MASC_PALETTE,
+  MASC_RATING_LABEL_MIN_ZOOM,
+  MASC_RISK_SOURCE_OPTIONS,
+} from './masc.js';
 import { safeExternalUrl } from './lib/safeUrl.js';
 import { Protocol as PMTilesProtocol } from 'pmtiles';
 
@@ -895,7 +899,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         id: 'masc-riverlots-label',
         type: 'symbol',
         source: 'masc-riverlots',
-        minzoom: 13,
+        minzoom: MASC_RATING_LABEL_MIN_ZOOM,
         layout: {
           visibility: 'none',
           'text-field': ['get', 'rating'],
@@ -918,7 +922,11 @@ export function initMap(container, { onFeatureClick } = {}) {
       // Official MASC Risk Areas. Separate from the soil-rating quarters:
       // Risk_Area comes from the Manitoba Maps MASC_Risk_Areas polygon
       // layer, not from the compact `ra` field in the soil CSV shard.
-      map.addSource('masc-risk-areas', { type: 'geojson', data: emptyFc() });
+      map.addSource('masc-risk-areas', {
+        type: 'geojson',
+        data: emptyFc(),
+        ...MASC_RISK_SOURCE_OPTIONS,
+      });
       map.addLayer({
         id: 'masc-risk-area-fill',
         type: 'fill',
@@ -1693,7 +1701,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         id: 'masc-label',
         type: 'symbol',
         source: 'masc',
-        minzoom: 13,
+        minzoom: MASC_RATING_LABEL_MIN_ZOOM,
         layout: {
           visibility: 'none',
           'text-field': ['coalesce', ['get', 'rating'], ''],

@@ -9,7 +9,12 @@
 // Run: cd web && node test/mascPalette.test.js
 
 import assert from 'node:assert/strict';
-import { MASC_PALETTE, masccolor } from '../src/masc.js';
+import {
+  MASC_PALETTE,
+  MASC_RATING_LABEL_MIN_ZOOM,
+  MASC_RISK_SOURCE_OPTIONS,
+  masccolor,
+} from '../src/masc.js';
 
 const results = [];
 function test(name, fn) {
@@ -74,6 +79,19 @@ test('palette is flat [code, hex, code, hex, …] with 10 ratings', () => {
     assert.equal(MASC_PALETTE[i], 'ABCDEFGHIJ'[i / 2]);
     assert.equal(MASC_PALETTE[i + 1], EXPECTED[MASC_PALETTE[i]]);
   }
+});
+
+console.log('\nMASC map display configuration');
+
+test('rating letters appear at a readable municipality scale', () => {
+  assert.equal(MASC_RATING_LABEL_MIN_ZOOM, 11);
+});
+
+test('risk-area GeoJSON keeps the authoritative source vertices', () => {
+  assert.deepEqual(MASC_RISK_SOURCE_OPTIONS, {
+    maxzoom: 24,
+    tolerance: 0,
+  });
 });
 
 const failed = results.filter((r) => r.status === 'fail');

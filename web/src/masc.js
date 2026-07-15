@@ -228,6 +228,17 @@ export function surveyFcToRows(fc) {
  * through yellow to red for the lowest. Returned as a flat
  * [code, color, ...] palette ready for MapLibre's `match` expression.
  */
+// Quarter sections are about 800 m wide, which leaves enough room for a
+// compact rating letter at zoom 11 without cluttering province-wide views.
+export const MASC_RATING_LABEL_MIN_ZOOM = 11;
+
+// The official Risk Areas layer has only 17 features. Preserve its source
+// vertices instead of letting MapLibre simplify administrative boundaries.
+export const MASC_RISK_SOURCE_OPTIONS = Object.freeze({
+  maxzoom: 24,
+  tolerance: 0,
+});
+
 // MASC's published "Soil Zones" palette: yellows for A/B (best), olive
 // for C, greens D→F (mid range), pinks/red G→I, purple for J (worst).
 // Mirrors the legend in MASC's own crop-insurance maps so the colours
