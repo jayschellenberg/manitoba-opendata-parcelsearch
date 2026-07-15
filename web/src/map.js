@@ -3864,10 +3864,10 @@ class BasemapMenuControl {
     this._views = [
       { key: 'streets', label: 'Streets' },
       { key: 'satellite', label: 'Satellite' },
-      { key: 'elevation', label: 'NRCan elevation' },
       ...(MLI_ORTHO_PMTILES_URL
-        ? [{ key: 'mli', label: `MLI aerial ${MLI_ORTHO_YEAR_RANGE}` }]
+        ? [{ key: 'mli', label: `MLI Aerial ${MLI_ORTHO_YEAR_RANGE}` }]
         : []),
+      { key: 'elevation', label: 'NRCan Elevation' },
     ];
 
     this._btn = document.createElement('button');
@@ -3955,11 +3955,11 @@ class BasemapMenuControl {
     const key = this._currentKey();
     const view = this._views.find((candidate) => candidate.key === key) || this._views[0];
     const localYear = key === 'mli' ? this._yearAtCenter() : null;
-    const label = localYear ? `MLI aerial - ${localYear}` : view.label;
+    const label = localYear ? `MLI Aerial - ${localYear}` : view.label;
     this._labelEl.textContent = label;
     this._btn.classList.toggle('active', key !== 'streets');
     this._btn.title = localYear
-      ? `Basemap: MLI aerial. Imagery at map centre was acquired in ${localYear}.`
+      ? `Basemap: MLI Aerial. Imagery at map centre was acquired in ${localYear}.`
       : `Basemap: ${view.label}`;
     this._btn.setAttribute('aria-label', `${this._btn.title} Open to choose another basemap.`);
     for (const item of this._list.querySelectorAll('.basemap-menu-item')) {
