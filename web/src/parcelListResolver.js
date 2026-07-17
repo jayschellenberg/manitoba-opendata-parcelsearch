@@ -132,7 +132,7 @@ export async function resolveParcelList(rows, opts = {}) {
         muniNo: row.muniNo,
         roll: row.roll,
         via: 'muni-supplied',
-        groupId: row.groupId ?? null,
+        groupId: row.groupId ?? null, site: row.site ?? null,
         raw: row.raw,
       });
       stats.byVia.muni++;
@@ -176,7 +176,7 @@ export async function resolveParcelList(rows, opts = {}) {
               muniNo: Number(hit.muni_no),
               roll: hit.roll_no_txt || row.roll,
               via: 'muni-name',
-              groupId: row.groupId ?? null,
+              groupId: row.groupId ?? null, site: row.site ?? null,
               raw: row.raw,
             });
             stats.byVia.muniName++;
@@ -221,7 +221,7 @@ export async function resolveParcelList(rows, opts = {}) {
           const munis = new Set(hits.map((h) => Number(h.muni_no)));
           if (munis.size === 1) {
             const muni = [...munis][0];
-            resolved.push({ lineNo: row.lineNo, muniNo: muni, roll: row.roll, via: 'title', groupId: row.groupId ?? null, raw: row.raw });
+            resolved.push({ lineNo: row.lineNo, muniNo: muni, roll: row.roll, via: 'title', groupId: row.groupId ?? null, site: row.site ?? null, raw: row.raw });
             stats.byVia.title++;
             continue;
           }
@@ -250,7 +250,7 @@ export async function resolveParcelList(rows, opts = {}) {
           const munis = new Set(hits.map((h) => Number(h.muni_no)));
           if (munis.size === 1) {
             const muni = [...munis][0];
-            resolved.push({ lineNo: row.lineNo, muniNo: muni, roll: row.roll, via: 'legal', groupId: row.groupId ?? null, raw: row.raw });
+            resolved.push({ lineNo: row.lineNo, muniNo: muni, roll: row.roll, via: 'legal', groupId: row.groupId ?? null, site: row.site ?? null, raw: row.raw });
             stats.byVia.legal++;
             continue;
           }
@@ -276,7 +276,7 @@ export async function resolveParcelList(rows, opts = {}) {
           muniNo: Number(candidates[0].muni_no),
           roll: row.roll,
           via: 'roll-alone',
-          groupId: row.groupId ?? null,
+          groupId: row.groupId ?? null, site: row.site ?? null,
           raw: row.raw,
         });
         stats.byVia.legal++; // bucket under legal for simplicity

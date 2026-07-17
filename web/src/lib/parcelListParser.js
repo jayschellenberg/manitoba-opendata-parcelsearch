@@ -43,9 +43,12 @@ const HEADER_PATTERNS = {
   muni:  /^(muni|muni\s*#|muni\s*no\.?|municipality|municipality\s*#|municipality\s*no\.?)$/i,
   legal: /^(legal|legal\s*desc|legal\s*description|description|leg\s*desc|qq|qs)$/i,
   title: /^(title|title\s*#|title\s*no\.?|c\.?\s*o\.?\s*f?\s*t\.?|cert(ificate)?\s*of\s*title|ct)$/i,
+  // Site / Comp #: a caller-supplied label used as the map/grid number
+  // instead of the auto 1..N sequence.
+  site:  /^(site|site\s*#|site\s*no\.?|site\s*number|comp|comp\s*#|comp\s*no\.?)$/i,
 };
 
-export const FIELD_TYPES = Object.freeze(['roll', 'muni', 'muniName', 'legal', 'title', 'ignore']);
+export const FIELD_TYPES = Object.freeze(['roll', 'muni', 'muniName', 'legal', 'title', 'site', 'ignore']);
 
 /**
  * True when a cell reads like a municipality NAME (the sales-export
@@ -498,6 +501,7 @@ export function applyMapping(parsed, mapping, { canonicalRoll } = {}) {
     const muniNameRaw = get('muniName');
     const legalRaw = get('legal');
     const titleRaw = get('title');
+    const siteRaw = get('site');
 
     const cleanRoll = cleanCell(rollRaw);
     const roll = cleanRoll && canonicalRoll ? canonicalRoll(cleanRoll) : cleanRoll;
@@ -506,6 +510,7 @@ export function applyMapping(parsed, mapping, { canonicalRoll } = {}) {
     const muniName = cleanCell(muniNameRaw) || null;
     const legal = legalRaw ? parseLegalToken(legalRaw) : null;
     const title = cleanCell(titleRaw);
+    const site = cleanCell(siteRaw) || null;
 
     rows.push({
       lineNo: r + 1 + headerOffset,
@@ -514,8 +519,9 @@ export function applyMapping(parsed, mapping, { canonicalRoll } = {}) {
       muniName,
       legal,
       title,
+      site,
       groupId: parsed.groupIds?.[r] ?? null,
-      raw: { roll: rollRaw, muni: muniRaw, muniName: muniNameRaw, legal: legalRaw, title: titleRaw },
+      raw: { roll: rollRaw, muni: muniRaw, muniName: muniNameRaw, legal: legalRaw, title: titleRaw, site: siteRaw },
     });
   }
 

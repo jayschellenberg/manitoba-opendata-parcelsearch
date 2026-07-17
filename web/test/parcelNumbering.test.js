@@ -12,6 +12,7 @@ import {
   orderForNumbering,
   assignParcelSeq,
   clearParcelSeq,
+  siteValue,
 } from '../src/lib/parcelNumbering.js';
 
 function feat(municipality, roll, extra = {}) {
@@ -83,6 +84,33 @@ assert.equal(rollNumericValue({}), Infinity);
   // array order — re-sorting the array later must not change _seq.
   const reversed = [a, c, b];
   assert.deepEqual(reversed.map((f) => f.properties._seq), [3, 2, 1]);
+}
+
+// ---- Site field wins over the computed sequence --------------------
+{
+  // Two parcels with imported Site labels (stamped as _siteNo). The
+  // computed sequence would number them by muni+roll; Site must override
+  // so _seq is the caller's site value verbatim (numeric → a number).
+  const a = { properties: { Municipality: '600 - RM OF HEADINGLEY', Roll_No_Txt: '90.000', _siteNo: '7' } };
+  const b = { properties: { Municipality: '187 - DE SALABERRY (RM)', Roll_No_Txt: '5.000', _siteNo: '3' } };
+  assignParcelSeq([a, b]);
+  assert.equal(a.properties._seq, 7);   // Site 7, not sequence position
+  assert.equal(b.properties._seq, 3);   // Site 3
+}
+
+// ---- siteValue + a non-numeric label + a missing site --------------
+{
+  assert.equal(siteValue({ _siteNo: ' 4 ' }), '4');
+  assert.equal(siteValue({ _siteNo: '' }), null);
+  assert.equal(siteValue({}), null);
+
+  // Mixed: one parcel has a Site, the other doesn't. Site mode is active
+  // (any site present), so the site-less parcel gets no number.
+  const withSite = { properties: { Municipality: '600 - X', Roll_No_Txt: '1.000', _siteNo: 'A' } };
+  const without  = { properties: { Municipality: '600 - X', Roll_No_Txt: '2.000' } };
+  assignParcelSeq([withSite, without]);
+  assert.equal(withSite.properties._seq, 'A'); // non-numeric label kept as string
+  assert.equal(without.properties._seq, null); // no site → no number
 }
 
 // ---- clearParcelSeq -------------------------------------------------

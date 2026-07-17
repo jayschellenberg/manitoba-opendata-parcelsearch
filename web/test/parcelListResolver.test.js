@@ -85,7 +85,7 @@ const lookup = (rolls) => lookupLegalRecordsByRollSet(FIXTURE, rolls);
 
 // ---- helpers ----------------------------------------------------
 
-function makeRow({ roll, muniNo = null, muniName = null, legal = null, title = '', groupId = null, lineNo = 1 }) {
+function makeRow({ roll, muniNo = null, muniName = null, legal = null, title = '', site = null, groupId = null, lineNo = 1 }) {
   return {
     lineNo,
     roll,
@@ -93,8 +93,9 @@ function makeRow({ roll, muniNo = null, muniName = null, legal = null, title = '
     muniName,
     legal: legal ? parseLegalToken(legal) : null,
     title,
+    site,
     groupId,
-    raw: { roll, muni: muniNo, muniName, legal, title },
+    raw: { roll, muni: muniNo, muniName, legal, title, site },
   };
 }
 
@@ -130,6 +131,15 @@ await test('supplied muni # short-circuits the lookup', async () => {
   assert.equal(out.resolved[0].via, 'muni-supplied');
   assert.deepEqual(out.parcelKeys, [{ muni_no: 275, roll_no_txt: '218600.000' }]);
   assert.equal(out.stats.byVia.muni, 1);
+});
+
+await test('Site label is carried onto the resolved entry', async () => {
+  const out = await resolveParcelList(
+    [makeRow({ roll: '218600.000', muniNo: 275, site: '4' })],
+    { lookupRollSet: lookup }
+  );
+  assert.equal(out.resolved.length, 1);
+  assert.equal(out.resolved[0].site, '4');
 });
 
 await test('legal grid resolves muni when roll alone would be ambiguous', async () => {

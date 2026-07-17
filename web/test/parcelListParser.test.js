@@ -435,6 +435,18 @@ await test('collapses internal whitespace', () => {
   assert.equal(cleanCell('NW   26'), 'NW 26');
 });
 
+await test('Site header is detected and applyMapping extracts row.site', () => {
+  const parsed = parseParcelList('Site\tMuni #\tRoll #\n3\t275\t218600\n9\t275\t219000');
+  // The "Site" column is guessed as the 'site' field type.
+  assert.equal(parsed.guesses[0], 'site');
+  const { rows } = applyMapping(parsed, parsed.guesses, { canonicalRoll });
+  assert.equal(rows[0].site, '3');
+  assert.equal(rows[1].site, '9');
+  // "Comp #" is accepted as an alias for the same field.
+  const parsed2 = parseParcelList('Comp #\tRoll #\n7\t218600');
+  assert.equal(parsed2.guesses[0], 'site');
+});
+
 // ---------- summary ----------
 
 const fails = results.filter((r) => r.status === 'fail');

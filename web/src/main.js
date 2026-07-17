@@ -677,6 +677,12 @@ let listUnresolvedRows = null;
 // group shade / hover-sibling highlight treat them as one sale. null when
 // the import had no multi-parcel groups.
 let listSaleGroupByKey = null;
+// Site/Comp # tagging for a parcel-list import: Map("muni_no|roll_no_txt"
+// → site label) built from the resolver's output when the import mapped a
+// Site column. runSearch stamps _siteNo from this onto the fetched
+// parcels so the numbering uses the caller's site labels instead of the
+// auto 1..N sequence. null when the import had no Site column.
+let listSiteByKey = null;
 
 // Route planner state. routeStart is { lng, lat } once the user has
 // clicked the map. routeResult holds the last calculated TSP order +
@@ -1051,6 +1057,20 @@ function buildListGroupKeyMap(resolved) {
   return map.size > 0 ? map : null;
 }
 
+// Build the "muni_no|roll_no_txt" → Site-label map from the resolver's
+// output. Only entries whose import row carried a Site value are kept;
+// returns null when the import had no Site column so runSearch skips the
+// stamping pass and the numbering falls back to the auto 1..N sequence.
+function buildListSiteKeyMap(resolved) {
+  const map = new Map();
+  for (const r of resolved || []) {
+    if (r.site == null || String(r.site).trim() === '') continue;
+    if (!Number.isFinite(Number(r.muniNo)) || !r.roll) continue;
+    map.set(`${Number(r.muniNo)}|${String(r.roll)}`, String(r.site).trim());
+  }
+  return map.size > 0 ? map : null;
+}
+
 // Parcel-list import. The trigger link beside the roll chip opens a
 // modal that lets the user paste / upload a cross-muni parcel list;
 // the resolver returns parcelKeys ready for searchParcels. Stashed
@@ -1070,6 +1090,7 @@ const importModal = initParcelListImport({
       listParcelKeys = null;
       listUnresolvedRows = unresolved || [];
       listSaleGroupByKey = null;
+      listSiteByKey = null;
       renderListPill();
       renderListUnresolvedDrawer();
       return;
@@ -1077,6 +1098,7 @@ const importModal = initParcelListImport({
     listParcelKeys = parcelKeys;
     listUnresolvedRows = unresolved || [];
     listSaleGroupByKey = buildListGroupKeyMap(resolved);
+    listSiteByKey = buildListSiteKeyMap(resolved);
     renderListPill();
     renderListUnresolvedDrawer();
     // Auto-run the search so the imported list lands on the map +
@@ -1091,6 +1113,7 @@ document.getElementById('parcel-list-pill-clear')
     listParcelKeys = null;
     listUnresolvedRows = null;
     listSaleGroupByKey = null;
+    listSiteByKey = null;
     renderListPill();
     renderListUnresolvedDrawer();
     clearRoutePlanner();
@@ -2442,6 +2465,18 @@ async function runSearch() {
         if (gid != null) f.properties._saleGroupId = gid;
       }
       computeSaleGroupTotals(parcelFc);
+    }
+
+    // Site/Comp # from a parcel-list import: stamp the caller's label onto
+    // each fetched parcel so assignParcelSeq uses it as the map/grid
+    // number instead of the auto 1..N sequence. No-op unless the import
+    // mapped a Site column.
+    if (hasList && listSiteByKey) {
+      for (const f of parcelFc.features || []) {
+        const key = parcelLegalKey(f.properties || {});
+        const site = key ? listSiteByKey.get(key) : null;
+        if (site != null) f.properties._siteNo = site;
+      }
     }
 
     const n = parcelFc.features.length;

@@ -69,12 +69,46 @@ export function orderForNumbering(features) {
 }
 
 /**
- * Assign a 1-based `_seq` to each feature's properties, in
- * municipality-then-roll order. Mutates the features (stamps
- * `properties._seq`) and returns them in assigned order.
+ * A caller-supplied Site / Comp label carried in from a parcel-list
+ * import (stamped as `_siteNo` on the feature). Trimmed; empty → null.
+ */
+export function siteValue(props) {
+  const raw = props?._siteNo;
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  return s === '' ? null : s;
+}
+
+/**
+ * Assign each feature's `_seq` — the number shown on the map badge and
+ * in the grid "#" column.
+ *
+ * If ANY feature carries a Site value (a "Site"/"Comp #" column from a
+ * parcel-list import), Site wins: each parcel's `_seq` is its own Site
+ * value verbatim (parsed to a number when it's numeric, so the grid
+ * sorts and the badge sizes correctly; kept as a string otherwise).
+ * Parcels in the set without a Site value get no number.
+ *
+ * Otherwise it falls back to the computed sequence: 1..N in
+ * municipality-code-then-Roll# order.
+ *
+ * Mutates the features and returns them (in assigned order for the
+ * computed case; input order for the Site case).
  */
 export function assignParcelSeq(features) {
-  const ordered = orderForNumbering(features);
+  const list = (features || []).filter((f) => f && f.properties);
+  const anySite = list.some((f) => siteValue(f.properties) != null);
+  if (anySite) {
+    for (const f of list) {
+      const s = siteValue(f.properties);
+      if (s == null) { f.properties._seq = null; continue; }
+      // Numeric Site → a number (so it sorts and sizes like the auto
+      // sequence). Non-numeric label (e.g. "A") → keep the string.
+      f.properties._seq = /^\d+(\.\d+)?$/.test(s) ? Number(s) : s;
+    }
+    return list;
+  }
+  const ordered = orderForNumbering(list);
   ordered.forEach((f, i) => { f.properties._seq = i + 1; });
   return ordered;
 }

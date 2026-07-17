@@ -61,6 +61,11 @@ const MB_ZOOM = 7;
 // parcel's number never sits on top of the shape.
 const PARCEL_NUM_OFFSET = [20, -26];
 
+// Callout colour — RGB 149,18,30 (#95121e), a deep red. White number on a
+// red badge, with the leader line + anchor dot in the same red so the
+// whole callout reads as one mark.
+const PARCEL_NUM_COLOR = '#95121e';
+
 /** Build a legend descriptor [{ label, color }] from a flat MapLibre
  *  match-expression palette ([key, color, key, color, ...]). De-dupes
  *  aliases (the source data has typos like "Residental"/"Residential"
@@ -341,7 +346,12 @@ const BASEMAP_STYLE = {
     // getLayoutProperty returns a real string on first click —
     // skipping the explicit default tripped a two-click toggle
     // bug because the initial undefined read inverted the swap.
-    { id: 'carto-positron',      type: 'raster', source: 'carto-positron',      minzoom: 0, maxzoom: 20, layout: { visibility: 'visible' } },
+    // CARTO Positron is deliberately pale, which washes out roads and
+    // place-name labels. A modest raster contrast bump darkens the greys
+    // (roads, labels) while a small saturation lift gives roads/water a
+    // touch more colour — without changing the basemap style. Tune these
+    // two values if it reads too heavy or too flat.
+    { id: 'carto-positron',      type: 'raster', source: 'carto-positron',      minzoom: 0, maxzoom: 20, layout: { visibility: 'visible' }, paint: { 'raster-contrast': 0.18, 'raster-saturation': 0.12 } },
     { id: 'esri-imagery',        type: 'raster', source: 'esri-imagery',        minzoom: 0, maxzoom: 20, layout: { visibility: 'none' } },
     { id: 'nrcan-transportation-geometry', type: 'raster', source: 'nrcan-transportation-geometry', minzoom: 0, maxzoom: 24, layout: { visibility: 'none' } },
     { id: 'nrcan-elevation',     type: 'raster', source: 'nrcan-elevation',     minzoom: 0, maxzoom: 19, layout: { visibility: 'none' } },
@@ -1641,7 +1651,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         type: 'line',
         source: 'parcel-num-leaders',
         layout: { visibility: 'none', 'line-cap': 'round' },
-        paint: { 'line-color': '#1f2937', 'line-width': 1.4 },
+        paint: { 'line-color': PARCEL_NUM_COLOR, 'line-width': 1.4 },
       });
       // Small dot on the parcel itself — the leader's anchor end, so a
       // tiny parcel is unmistakably tagged even when its badge is offset
@@ -1653,15 +1663,15 @@ export function initMap(container, { onFeatureClick } = {}) {
         layout: { visibility: 'none' },
         paint: {
           'circle-radius': 3,
-          'circle-color': '#1f2937',
+          'circle-color': PARCEL_NUM_COLOR,
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': 1.25,
         },
       });
-      // Numbered badge — a filled charcoal disc (neutral, so it never
-      // collides with the yellow result / amber sale-group / blue
-      // subject / dark-red starred semantics) that grows a little for
-      // 2- and 3-digit numbers.
+      // Numbered badge — a filled red disc (RGB 149,18,30) with a white
+      // number, ringed white so it reads on both the light streets
+      // basemap and the dark satellite imagery. Grows a little for 2-
+      // and 3-digit numbers.
       map.addLayer({
         id: 'parcel-num-badge',
         type: 'circle',
@@ -1669,7 +1679,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         layout: { visibility: 'none' },
         paint: {
           'circle-radius': ['step', ['length', ['to-string', ['get', '_seq']]], 10, 2, 11.5, 3, 13.5],
-          'circle-color': '#1f2937',
+          'circle-color': PARCEL_NUM_COLOR,
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': 2,
         },
@@ -1690,7 +1700,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         },
         paint: {
           'text-color': '#ffffff',
-          'text-halo-color': '#1f2937',
+          'text-halo-color': PARCEL_NUM_COLOR,
           'text-halo-width': 0.6,
         },
       });
