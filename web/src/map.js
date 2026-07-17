@@ -1,4 +1,4 @@
-// MapLibre GL JS map setup with a free CartoDB Positron basemap.
+// MapLibre GL JS map setup with a free CARTO Voyager basemap.
 // No API key required.
 //
 // Three GeoJSON sources, three matched layer pairs (fill + outline):
@@ -244,13 +244,13 @@ const BASEMAP_STYLE = {
   version: 8,
   glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
   sources: {
-    'carto-positron': {
+    'carto-voyager': {
       type: 'raster',
       tiles: [
-        'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-        'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-        'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-        'https://d.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+        'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
+        'https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
+        'https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
+        'https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
       ],
       tileSize: 256,
       attribution:
@@ -268,7 +268,7 @@ const BASEMAP_STYLE = {
     // boundaries) designed by Esri to layer on top of aerial imagery.
     // Visible only when a labelled raster basemap is active; the basemap
     // menu flips it in lockstep. Keeps the Streets
-    // basemap clean (CARTO Positron already carries its own labels).
+    // basemap clean (CARTO Voyager already carries its own labels).
     'esri-reference': {
       type: 'raster',
       tiles: [
@@ -346,12 +346,12 @@ const BASEMAP_STYLE = {
     // getLayoutProperty returns a real string on first click —
     // skipping the explicit default tripped a two-click toggle
     // bug because the initial undefined read inverted the swap.
-    // CARTO Positron is deliberately pale, which washes out roads and
-    // place-name labels. A modest raster contrast bump darkens the greys
-    // (roads, labels) while a small saturation lift gives roads/water a
-    // touch more colour — without changing the basemap style. Tune these
-    // two values if it reads too heavy or too flat.
-    { id: 'carto-positron',      type: 'raster', source: 'carto-positron',      minzoom: 0, maxzoom: 20, layout: { visibility: 'visible' }, paint: { 'raster-contrast': 0.18, 'raster-saturation': 0.12 } },
+    // CARTO Voyager is the streets basemap: roads are drawn with real
+    // casings + colour (major roads stand out) and place-name labels stay
+    // crisp — unlike Positron, whose pale roads washed out and couldn't be
+    // recovered with a raster tweak (that adjusts roads and background
+    // together). No raster paint needed; Voyager reads well as-is.
+    { id: 'carto-voyager',      type: 'raster', source: 'carto-voyager',      minzoom: 0, maxzoom: 20, layout: { visibility: 'visible' } },
     { id: 'esri-imagery',        type: 'raster', source: 'esri-imagery',        minzoom: 0, maxzoom: 20, layout: { visibility: 'none' } },
     { id: 'nrcan-transportation-geometry', type: 'raster', source: 'nrcan-transportation-geometry', minzoom: 0, maxzoom: 24, layout: { visibility: 'none' } },
     { id: 'nrcan-elevation',     type: 'raster', source: 'nrcan-elevation',     minzoom: 0, maxzoom: 19, layout: { visibility: 'none' } },
@@ -392,7 +392,7 @@ if (MLI_ORTHO_PMTILES_URL) {
 }
 
 // mapbox-gl-draw style spec for the measurement tool. High-contrast orange
-// (#ff4d00) reads cleanly on both the cream CARTO Positron streets basemap
+// (#ff4d00) reads cleanly on both the cream CARTO Voyager streets basemap
 // and the dark Esri imagery; white halo around each vertex keeps the
 // click-targets visible on busy basemaps. Filters intentionally do NOT
 // split active/inactive — keeping a single style per geometry kind
@@ -2907,7 +2907,7 @@ export function setMuniParcelsVisible(map, visible) {
 
 /**
  * Force the basemap to satellite (Esri imagery + reference/transportation
- * overlays) or back to streets (CARTO Positron). Same layer-visibility swap
+ * overlays) or back to streets (CARTO Voyager). Same layer-visibility swap
  * the top-right basemap menu performs, exposed as a function so the
  * offscreen snapshot-export map can switch to satellite without a UI control.
  */
@@ -2917,8 +2917,8 @@ export function setBasemapSatellite(map, on) {
   for (const id of ['esri-imagery', 'esri-transportation', 'esri-reference']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', imgVis);
   }
-  if (map.getLayer('carto-positron')) {
-    map.setLayoutProperty('carto-positron', 'visibility', cartoVis);
+  if (map.getLayer('carto-voyager')) {
+    map.setLayoutProperty('carto-voyager', 'visibility', cartoVis);
   }
   if (map.getLayer('nrcan-elevation')) {
     map.setLayoutProperty('nrcan-elevation', 'visibility', 'none');
@@ -4343,7 +4343,7 @@ class BasemapMenuControl {
   _set(state) {
     const m = this._map;
     const esriLabels = state !== 'streets' && state !== 'transportation';
-    m.setLayoutProperty('carto-positron', 'visibility', state === 'streets' ? 'visible' : 'none');
+    m.setLayoutProperty('carto-voyager', 'visibility', state === 'streets' ? 'visible' : 'none');
     m.setLayoutProperty('esri-imagery', 'visibility', (state === 'satellite' || state === 'mli') ? 'visible' : 'none');
     m.setLayoutProperty('nrcan-transportation-geometry', 'visibility', state === 'transportation' ? 'visible' : 'none');
     m.setLayoutProperty('nrcan-transportation-labels', 'visibility', state === 'transportation' ? 'visible' : 'none');

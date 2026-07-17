@@ -1683,7 +1683,7 @@ function composeWithAttribution(srcCanvas) {
 
   // Pull the exact text MapLibre shows in its attribution control. This
   // keeps the static image in sync with whatever sources/overlays are
-  // currently visible — basemap (CARTO Positron or Esri Imagery), zoning,
+  // currently visible — basemap (CARTO Voyager or Esri Imagery), zoning,
   // dev-plan, contam, traffic, etc. — without us having to enumerate them.
   const attribEl = $mapEl.querySelector('.maplibregl-ctrl-attrib-inner') ||
                    $mapEl.querySelector('.maplibregl-ctrl-attrib');
