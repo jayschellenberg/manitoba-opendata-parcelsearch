@@ -1578,11 +1578,38 @@ export function initMap(container, { onFeatureClick } = {}) {
           ],
           // Dashed outline so the highlight reads as a "selection"
           // rather than competing visually with solid parcel-fabric
-          // lines (Roll Layer, zoning boundaries, etc.). Values are
-          // in line-widths: [3, 2] = 3-width dash, 2-width gap.
-          'line-dasharray': [3, 2],
+          // lines (Roll Layer, zoning boundaries, etc.). Equal dash/gap
+          // ([3,3], in line-widths) so the solid black parcel-line-underlay
+          // beneath shows through the gaps as equal-length black dashes —
+          // an alternating black/yellow "caution-tape" border that stays
+          // legible on the pale Voyager basemap where a plain yellow
+          // outline washed out.
+          'line-dasharray': [3, 3],
         },
       });
+      // Solid black under-stroke for the selection outline. Sits directly
+      // beneath parcel-line (same width) so the dashed colour on top
+      // alternates with black in its gaps. Kept color-agnostic — it backs
+      // the yellow result outline, the amber sale-group outline, and the
+      // dark-red starred outline alike, giving every highlight a
+      // high-contrast black component against washed-out basemap tiles.
+      map.addLayer({
+        id: 'parcel-line-underlay',
+        type: 'line',
+        source: 'parcels',
+        layout: { 'line-cap': 'butt', 'line-join': 'round' },
+        paint: {
+          'line-color': '#000000',
+          // Match parcel-line's width (incl. the groupHover bump) exactly
+          // so the black never peeks out as a casing around the colour.
+          'line-width': [
+            'case',
+            ['boolean', ['feature-state', 'groupHover'], false],
+            3.25,
+            2.5,
+          ],
+        },
+      }, 'parcel-line');
       // Land-cover overlay fill — colours each result parcel by its
       // dominant 2020 land-cover bucket (Cultivated / Pasture / Bush /
       // Wetland / Other). Driven by `_lcColor`, stamped per parcel in
