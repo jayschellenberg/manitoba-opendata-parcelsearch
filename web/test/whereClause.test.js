@@ -71,6 +71,45 @@ test('address becomes an upper-cased, escaped LIKE clause', () => {
   assert.deepEqual(clauses, [`UPPER(Property_Address) LIKE '%O''HARA%'`]);
 });
 
+test('a civic number ORs across its spacing variants', () => {
+  // "1106" has to reach Rosser's "1 106 E ROAD 71 N" — see
+  // lib/civicRange.js. Parenthesized so the OR can't leak past the AND
+  // joining it to the muni / DU clauses.
+  assert.deepEqual(buildParcelClauses({ addressStreet: '1106' }), [
+    `(UPPER(Property_Address) LIKE '%1106%' OR UPPER(Property_Address) LIKE '%1 106%')`,
+  ]);
+  assert.deepEqual(buildParcelClauses({ addressStreet: '1 106' }), [
+    `(UPPER(Property_Address) LIKE '%1 106%' OR UPPER(Property_Address) LIKE '%1106%')`,
+  ]);
+});
+
+test('an exact civic number narrows server-side with an anchored prefix', () => {
+  // From == To. Anchored (no leading %) because a civic address always
+  // leads with its number. Both spacings, so Rosser's "1 106 …" is
+  // reachable without relying on the 1000-row cap.
+  assert.deepEqual(buildParcelClauses({ addressFrom: '1106', addressTo: '1106' }), [
+    `(UPPER(Property_Address) LIKE '1106%' OR UPPER(Property_Address) LIKE '1 106%')`,
+  ]);
+  // Same bound typed with the split spacing — canonically equal, so it
+  // still counts as exact.
+  assert.deepEqual(buildParcelClauses({ addressFrom: '1 106', addressTo: '1106' }), [
+    `(UPPER(Property_Address) LIKE '1 106%' OR UPPER(Property_Address) LIKE '1106%')`,
+  ]);
+});
+
+test('a range or one-sided bound emits no prefix clause', () => {
+  // A prefix can't express these; the client-side post-filter still does.
+  assert.deepEqual(buildParcelClauses({ addressFrom: '100', addressTo: '200' }), []);
+  assert.deepEqual(buildParcelClauses({ addressFrom: '100', addressTo: '' }), []);
+  assert.deepEqual(buildParcelClauses({ addressFrom: '', addressTo: '200' }), []);
+  assert.deepEqual(buildParcelClauses({ addressFrom: 'abc', addressTo: 'abc' }), []);
+});
+
+test('the prefix clause escapes quotes like every other clause', () => {
+  const [clause] = buildParcelClauses({ addressFrom: "1'", addressTo: "1'" });
+  assert.equal(clause, undefined); // not a civic bound at all → no clause
+});
+
 test('municipality becomes an exact-equality clause with escaping', () => {
   const clauses = buildParcelClauses({ municipality: "ST. O'NEIL (RM)" });
   assert.deepEqual(clauses, [`Muni_Name_With_Typ = 'ST. O''NEIL (RM)'`]);

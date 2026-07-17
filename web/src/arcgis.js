@@ -50,6 +50,14 @@ import intersect from '@turf/intersect';
 // touching every call site. readCache + writeCache are async — every
 // caller in this file already runs inside an async function.
 import { readCache, writeCache } from './cache.js';
+// Owns the "MAO splits the rural grid number at the thousands mark"
+// convention — see lib/civicRange.js. The street clause below and the
+// snapshot filter both expand the search term through it so they agree.
+import {
+  addressSearchVariants,
+  addressMatchesVariants,
+  parseCivicBound,
+} from './lib/civicRange.js';
 
 const BASE = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services';
 const ROLL_URL    = `${BASE}/ROLL_ENTRY/FeatureServer/0`;
@@ -174,8 +182,11 @@ async function fetchSnapshotShard(muniName) {
  *  but to an in-memory FC. Skips zoning/dev-plan category filters
  *  (those depend on OBJECTID lists from the overlay services, and
  *  OBJECTIDs don't survive a server republish — so cross-mode
- *  filtering is unsafe). The other filters mirror buildParcelClauses
- *  exactly. */
+ *  filtering is unsafe). Also skips buildParcelClauses' civic-number
+ *  prefix: that clause only exists to beat the live query's row cap,
+ *  and a snapshot shard is already the whole muni — main.js's
+ *  applyCivicNumberRange post-filter decides the number either way.
+ *  The remaining filters mirror buildParcelClauses. */
 function filterSnapshotFeatures(features, args) {
   const { roll, addressStreet, duMode, duMin } = args || {};
   let out = features;
@@ -185,8 +196,8 @@ function filterSnapshotFeatures(features, args) {
     out = out.filter((f) => rollSet.has(f.properties?.Roll_No_Txt));
   }
   if (addressStreet) {
-    const term = String(addressStreet).toUpperCase();
-    out = out.filter((f) => (f.properties?.Property_Address || '').toUpperCase().includes(term));
+    const variants = addressSearchVariants(addressStreet);
+    out = out.filter((f) => addressMatchesVariants(f.properties?.Property_Address, variants));
   }
   if (duMode === 'zero') {
     out = out.filter((f) => Number(f.properties?.Dwelling_Units) === 0);
@@ -326,14 +337,62 @@ export async function searchParcels(args) {
   return fetchRollEntryWhere(where, MAX_RESULTS);
 }
 
-function buildParcelClauses({ addressStreet, municipality, duMode, duMin }) {
+/**
+ * Server-side narrowing for an EXACT civic-number search (From == To).
+ * Returns null for a range, a one-sided bound, or unparseable input —
+ * those keep relying on applyCivicNumberRange's post-filter alone.
+ *
+ * Why it exists: From/To are otherwise pure post-filters, so the number
+ * only ever sees the first MAX_RESULTS rows the muni query returned. 122
+ * of Manitoba's 186 munis hold more parcels than that cap (Macdonald has
+ * ~6200), which silently put most of a muni out of reach of a number
+ * search. A civic address always leads with its number, so an anchored
+ * prefix LIKE is a sound narrowing — and a cheap one.
+ *
+ * Deliberately a SUPERSET of the real predicate: '100%' also drags in
+ * "1000 MAIN", and the prefix can't express the letter-suffix span. That
+ * is fine — applyCivicNumberRange still runs client-side and makes the
+ * exact call. This clause exists to beat the row cap, not to decide.
+ */
+function civicNumberPrefixClause(addressFrom, addressTo) {
+  const from = String(addressFrom || '').trim();
+  const to   = String(addressTo   || '').trim();
+  if (!from || !to) return null;
+  // Compare canonically so "1 106" and "1106" count as the same bound.
+  const a = parseCivicBound(from, 'lower');
+  const b = parseCivicBound(to,   'lower');
+  if (a == null || b == null || a !== b) return null;
+  const likes = addressSearchVariants(from)
+    .map((v) => `UPPER(Property_Address) LIKE '${escapeSql(v)}%'`);
+  if (likes.length === 0) return null;
+  return likes.length === 1 ? likes[0] : `(${likes.join(' OR ')})`;
+}
+
+function buildParcelClauses({ addressStreet, addressFrom, addressTo, municipality, duMode, duMin }) {
   const clauses = [];
-  // Street-name substring match against Property_Address. Civic-number
-  // range filtering happens client-side in main.js's
-  // applyCivicNumberRange — ArcGIS SQL can't cleanly cast the leading
-  // digits, and post-filtering on a per-street result set is plenty
-  // fast at our scale.
-  if (addressStreet)   clauses.push(`UPPER(Property_Address) LIKE '%${escapeSql(addressStreet.toUpperCase())}%'`);
+  // Street-name substring match against Property_Address. Deciding the
+  // civic number stays client-side in main.js's applyCivicNumberRange —
+  // ArcGIS SQL can't cleanly cast the leading digits, and post-filtering
+  // a per-street result set is plenty fast at our scale. (An exact
+  // number does add a coarse prefix clause below, but only to narrow the
+  // fetch; the post-filter still makes the call.)
+  //
+  // ORs across the term's spacing variants so "1106" still finds
+  // Rosser's "1 106 E ROAD 71 N" (and "1 106" finds a muni that writes
+  // it closed up). Single-variant terms — anything without a 4-digit
+  // run or an internal digit space, i.e. nearly every street name —
+  // emit exactly the one clause they always have.
+  if (addressStreet) {
+    const likes = addressSearchVariants(addressStreet)
+      .map((v) => `UPPER(Property_Address) LIKE '%${escapeSql(v)}%'`);
+    if (likes.length === 1) clauses.push(likes[0]);
+    else if (likes.length > 1) clauses.push(`(${likes.join(' OR ')})`);
+  }
+  // Exact-number searches narrow server-side so the row cap can't hide
+  // the match — see civicNumberPrefixClause. Ranges fall through to the
+  // client-side post-filter as before.
+  const civicPrefix = civicNumberPrefixClause(addressFrom, addressTo);
+  if (civicPrefix) clauses.push(civicPrefix);
   // Muni dropdown delivers the exact stored form, e.g. "STONEWALL (TOWN)";
   // exact equality is faster than LIKE and avoids surprise partial-matches.
   if (municipality)    clauses.push(`Muni_Name_With_Typ = '${escapeSql(municipality)}'`);

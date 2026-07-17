@@ -7,7 +7,10 @@
 import assert from 'node:assert/strict';
 import {
   parseCivicAddressKey,
+  parseCivicAddressKeys,
   parseCivicBound,
+  addressSearchVariants,
+  addressMatchesVariants,
   applyCivicNumberRange,
 } from '../src/lib/civicRange.js';
 
@@ -44,6 +47,46 @@ test('non-civic / quarter-section descriptions return null', () => {
   assert.equal(parseCivicAddressKey('100'), null);  // needs trailing whitespace
 });
 
+console.log('\nparseCivicAddressKeys');
+
+// Every address below is a real Property_Address value pulled from the
+// live ROLL_ENTRY service.
+test('a plain address yields the one reading', () => {
+  assert.deepEqual(parseCivicAddressKeys('444 1ST ST'), [44400]);
+  assert.deepEqual(parseCivicAddressKeys('60158 ROAD 96W'), [6015800]);
+  assert.deepEqual(parseCivicAddressKeys('100A MAIN ST'), [10001]);
+});
+
+test('a split number yields both readings, closed-up first', () => {
+  // Rosser roll 76250 — civic 1106E, the case this filter used to drop.
+  assert.deepEqual(parseCivicAddressKeys('1 106 E ROAD 71 N'), [100, 110605]);
+  assert.deepEqual(parseCivicAddressKeys('64 158 ROAD 2 W'), [6400, 6415800]);
+  // Direction letter closed up against the number (Rockwood's style).
+  assert.deepEqual(parseCivicAddressKeys('9 089E ROAD 78 N'), [900, 908905]);
+  // Leading zero: "0 107" is civic 107, W the direction suffix (+23).
+  assert.deepEqual(parseCivicAddressKeys('0 107 W ROAD 65 N'), [0, 10723]);
+});
+
+test('a trailing road number is not a thousands group', () => {
+  // "68 016 1 RD W" is civic 68016 on 1 RD W — the "1" is one digit, so
+  // it can't be a group; the road survives as street text.
+  assert.deepEqual(parseCivicAddressKeys('68 016 1 RD W'), [6800, 6801600]);
+});
+
+test('civic-on-numeric-road keeps its literal reading first', () => {
+  // Lac du Bonnet / Morden: same shape as Rosser, opposite meaning. The
+  // correct key (32, 146) leads; the joined reading rides along.
+  assert.deepEqual(parseCivicAddressKeys('32 502 RD'), [3200, 3250200]);
+  assert.deepEqual(parseCivicAddressKeys('146 100 RTE'), [14600, 14610000]);
+});
+
+test('non-civic descriptions yield no keys', () => {
+  assert.deepEqual(parseCivicAddressKeys('DESC NE22-21-3E'), []);
+  assert.deepEqual(parseCivicAddressKeys('NE1-1-3E'), []);
+  assert.deepEqual(parseCivicAddressKeys(''), []);
+  assert.deepEqual(parseCivicAddressKeys(null), []);
+});
+
 console.log('\nparseCivicBound');
 
 test('bare number: lower includes the integer, upper spans its suffixes', () => {
@@ -59,7 +102,40 @@ test('a typed letter is exact on both ends', () => {
 test('empty / garbage returns null', () => {
   assert.equal(parseCivicBound('', 'lower'), null);
   assert.equal(parseCivicBound('abc', 'lower'), null);
-  assert.equal(parseCivicBound('100 MAIN', 'lower'), null);  // anchored, no spaces
+  assert.equal(parseCivicBound('100 MAIN', 'lower'), null);  // street text is not a bound
+});
+
+test('a bound may be typed with the internal space', () => {
+  // Pasted straight out of a Property_Address: "1 106" == 1106.
+  assert.equal(parseCivicBound('1 106', 'lower'), parseCivicBound('1106', 'lower'));
+  assert.equal(parseCivicBound('1 106', 'upper'), 110699);
+  assert.equal(parseCivicBound('64 158', 'lower'), 6415800);
+});
+
+console.log('\naddressSearchVariants');
+
+test('a plain street name has one variant (the SQL clause stays single)', () => {
+  assert.deepEqual(addressSearchVariants('main st'), ['MAIN ST']);
+  assert.deepEqual(addressSearchVariants('ROAD 71 N'), ['ROAD 71 N']);
+});
+
+test('a closed-up number also tries the split form, and vice versa', () => {
+  assert.deepEqual(addressSearchVariants('1106'), ['1106', '1 106']);
+  assert.deepEqual(addressSearchVariants('1 106'), ['1 106', '1106']);
+  assert.deepEqual(addressSearchVariants('64158'), ['64158', '64 158']);
+});
+
+test('either form finds Rosser roll 76250', () => {
+  const addr = '1 106 E ROAD 71 N';
+  assert.ok(addressMatchesVariants(addr, addressSearchVariants('1106')));
+  assert.ok(addressMatchesVariants(addr, addressSearchVariants('1 106')));
+  assert.ok(addressMatchesVariants(addr, addressSearchVariants('road 71')));
+  assert.ok(!addressMatchesVariants(addr, addressSearchVariants('1107')));
+});
+
+test('empty term matches everything (filter disabled)', () => {
+  assert.deepEqual(addressSearchVariants('  '), []);
+  assert.ok(addressMatchesVariants('anything', []));
 });
 
 console.log('\napplyCivicNumberRange');
@@ -96,6 +172,42 @@ test('both bounds blank leaves the FC untouched (non-civic rows kept)', () => {
   const c = fc('100 MAIN', 'NE1-1-3E');
   applyCivicNumberRange(c, '', '');
   assert.deepEqual(addrs(c), ['100 MAIN', 'NE1-1-3E']);
+});
+
+test('an exact search on a split number finds it (Rosser roll 76250)', () => {
+  // The reported bug: From/To 1106 + muni ROSSER (RM) returned nothing
+  // because "1 106 E ROAD 71 N" keyed as civic 1.
+  const c = fc('1 106 E ROAD 71 N', '1 122 W ROAD 66 N', 'DESC NE13-11-1W');
+  applyCivicNumberRange(c, '1106', '1106');
+  assert.deepEqual(addrs(c), ['1 106 E ROAD 71 N']);
+});
+
+test('the split number is also reachable as typed', () => {
+  const c = fc('1 106 E ROAD 71 N', '1 122 W ROAD 66 N');
+  applyCivicNumberRange(c, '1 106', '1 106');
+  assert.deepEqual(addrs(c), ['1 106 E ROAD 71 N']);
+});
+
+test('an exact search still finds civic-on-numeric-road addresses', () => {
+  // The other reading of the same shape has to keep working: 32 is the
+  // civic number here, not 32502.
+  const c = fc('32 502 RD', '74 502 RD', '146 100 RTE');
+  applyCivicNumberRange(c, '32', '32');
+  assert.deepEqual(addrs(c), ['32 502 RD']);
+});
+
+test('a direction suffix stays inside the exact-search span', () => {
+  // The suffix encoding is what makes From=To=<number> work on these:
+  // 1106E keys as 110605, inside "1106"'s 110600..110699 span.
+  const c = fc('1 106 E ROAD 71 N', '0 107 W ROAD 65 N');
+  applyCivicNumberRange(c, '107', '107');
+  assert.deepEqual(addrs(c), ['0 107 W ROAD 65 N']);
+});
+
+test('a range spanning both readings keeps the parcel once', () => {
+  const c = fc('1 106 E ROAD 71 N');
+  applyCivicNumberRange(c, '1', '2000');
+  assert.equal(c.features.length, 1);
 });
 
 const failed = results.filter((r) => r.status === 'fail');

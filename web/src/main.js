@@ -41,7 +41,11 @@ import {
 } from './lib/cellFormat.js';
 import { filterMascRiverlotsForMuni } from './lib/muniIdentity.js';
 import { safeExternalUrl } from './lib/safeUrl.js';
-import { applyCivicNumberRange } from './lib/civicRange.js';
+import {
+  applyCivicNumberRange,
+  addressSearchVariants,
+  addressMatchesVariants,
+} from './lib/civicRange.js';
 
 // Entry point. Wires the search inputs, the map, and the results table.
 //
@@ -2364,9 +2368,12 @@ async function runSearch() {
     // Civic-number range is a JS post-filter (ArcGIS SQL can't cleanly
     // CAST the leading digits of Property_Address). Applies only when
     // From or To is filled; if both blank the FC passes through. The
-    // street-name substring already narrowed the SQL fetch via
+    // street-name substring — and, for an exact From == To search, the
+    // civic prefix clause — already narrowed the SQL fetch via
     // buildParcelClauses, so the post-filter is operating on at most a
-    // few hundred rows in the typical case.
+    // few hundred rows in the typical case. A bare RANGE with no street
+    // name is the exception: it post-filters whatever the muni query
+    // returned, which MAX_RESULTS caps at 1000 rows.
     applyCivicNumberRange(parcelFc, inputs.addressFrom, inputs.addressTo);
 
     // Multi-parcel imported sales: stamp the shared group id resolved at
@@ -3832,8 +3839,9 @@ function filterCsvRowsByOtherSearches(rows) {
   const planFilter = ($salesPlan?.value || '').trim().toUpperCase();
   // Street Name substring filter — case-insensitive match against
   // Property_Address. Same semantics as Plan #: missing addresses
-  // fail when the filter is active.
-  const streetFilter = ($salesStreetName?.value || '').trim().toUpperCase();
+  // fail when the filter is active. Expanded through the civic-number
+  // spacing variants so it agrees with the regular search's clause.
+  const streetVariants = addressSearchVariants($salesStreetName?.value || '');
   // $/Acre filter — Min / Max bounds against _saleGroupPpa.
   // Either bound is optional; empty = unbounded on that side. Rows
   // missing _saleGroupPpa (no acres data on the group, or single-
@@ -3863,9 +3871,8 @@ function filterCsvRowsByOtherSearches(rows) {
     }
 
     // Street Name filter — same shape as the Plan # filter above.
-    if (streetFilter) {
-      const addr = String(p.Property_Address || '').toUpperCase();
-      if (!addr.includes(streetFilter)) return false;
+    if (streetVariants.length > 0) {
+      if (!addressMatchesVariants(p.Property_Address, streetVariants)) return false;
     }
 
     // $/Acre filter — bounds against the sale-group rate. Rows
