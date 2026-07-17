@@ -1585,6 +1585,10 @@ export function initMap(container, { onFeatureClick } = {}) {
           // legible on the pale Voyager basemap where a plain yellow
           // outline washed out.
           'line-dasharray': [3, 3],
+          // Border eased to 75% opacity (−25%) so the black/yellow dashes
+          // read clearly without dominating the map. Matched on the
+          // underlay below so the whole border softens together.
+          'line-opacity': 0.75,
         },
       });
       // Solid black under-stroke for the selection outline. Sits directly
@@ -1608,6 +1612,9 @@ export function initMap(container, { onFeatureClick } = {}) {
             3.25,
             2.5,
           ],
+          // Same 75% opacity as parcel-line so the black backing eases
+          // in step with the colour on top.
+          'line-opacity': 0.75,
         },
       }, 'parcel-line');
       // Land-cover overlay fill — colours each result parcel by its
