@@ -1,6 +1,8 @@
-// Characterization tests for lib/civicRange.js — the civic-number range
-// filter behind the address search. The expected key values come
-// straight from the functions' documented examples.
+// Characterization tests for lib/civicRange.js — the civic-number
+// filter behind the address search (contains / exact / range, plus the
+// spaced-number handling those all rely on). The expected key values
+// come straight from the functions' documented examples; the addresses
+// are real Property_Address values from the live ROLL_ENTRY service.
 //
 // Run: cd web && node test/civicRange.test.js
 
@@ -11,7 +13,8 @@ import {
   parseCivicBound,
   addressSearchVariants,
   addressMatchesVariants,
-  applyCivicNumberRange,
+  civicSearchMode,
+  applyCivicNumberFilter,
 } from '../src/lib/civicRange.js';
 
 const results = [];
@@ -138,7 +141,26 @@ test('empty term matches everything (filter disabled)', () => {
   assert.ok(addressMatchesVariants('anything', []));
 });
 
-console.log('\napplyCivicNumberRange');
+console.log('\ncivicSearchMode');
+
+test('how many boxes are filled picks the mode', () => {
+  assert.deepEqual(civicSearchMode('', ''),          { mode: 'none',     term: '' });
+  assert.deepEqual(civicSearchMode('1106', ''),      { mode: 'contains', term: '1106' });
+  assert.deepEqual(civicSearchMode('', '1106'),      { mode: 'contains', term: '1106' });
+  assert.deepEqual(civicSearchMode('1106', '1106'),  { mode: 'exact',    term: '1106' });
+  assert.deepEqual(civicSearchMode('100', '200'),    { mode: 'range',    term: '' });
+});
+
+test('exact is judged canonically, so spacing does not matter', () => {
+  assert.equal(civicSearchMode('1 106', '1106').mode, 'exact');
+  assert.equal(civicSearchMode('1106', '1 106').mode, 'exact');
+});
+
+test('junk in both boxes falls to range, which no-ops downstream', () => {
+  assert.equal(civicSearchMode('abc', 'abc').mode, 'range');
+});
+
+console.log('\napplyCivicNumberFilter');
 
 function fc(...addresses) {
   return { type: 'FeatureCollection', features: addresses.map((a) => ({ properties: { Property_Address: a } })) };
@@ -147,30 +169,49 @@ const addrs = (collection) => collection.features.map((f) => f.properties.Proper
 
 test('filters to the numeric range and drops non-civic rows', () => {
   const c = fc('100 MAIN', '150 MAIN', '200A MAIN', '250 MAIN', 'NE1-1-3E');
-  applyCivicNumberRange(c, '100', '200');
+  applyCivicNumberFilter(c, '100', '200');
   // 200A kept (upper "200" spans suffixes); 250 dropped; NE… dropped.
   assert.deepEqual(addrs(c), ['100 MAIN', '150 MAIN', '200A MAIN']);
 });
 
 test('letter-bounded range is inclusive and exact', () => {
   const c = fc('100 MAIN', '100A MAIN', '100B MAIN', '100C MAIN', '100D MAIN');
-  applyCivicNumberRange(c, '100A', '100C');
+  applyCivicNumberFilter(c, '100A', '100C');
   assert.deepEqual(addrs(c), ['100A MAIN', '100B MAIN', '100C MAIN']);
 });
 
-test('open-ended bounds (blank from or to)', () => {
-  const lower = fc('50 X', '100 X', '300 X');
-  applyCivicNumberRange(lower, '100', '');     // no upper
-  assert.deepEqual(addrs(lower), ['100 X', '300 X']);
+test('a lone box is a contains, not an open-ended bound', () => {
+  // Was ">= 100" (which kept 300 X); now "contains 100".
+  const from = fc('50 X', '100 X', '300 X', '1100 X');
+  applyCivicNumberFilter(from, '100', '');     // To blank
+  assert.deepEqual(addrs(from), ['100 X', '1100 X']);
 
-  const upper = fc('50 X', '100 X', '300 X');
-  applyCivicNumberRange(upper, '', '100');     // no lower
-  assert.deepEqual(addrs(upper), ['50 X', '100 X']);
+  // Either box alone reads the same way.
+  const to = fc('50 X', '100 X', '300 X');
+  applyCivicNumberFilter(to, '', '100');       // From blank
+  assert.deepEqual(addrs(to), ['100 X']);
+});
+
+test('a lone box finds a split number however it is spaced', () => {
+  const c = fc('1 106 E ROAD 71 N', '1 122 W ROAD 66 N', 'DESC NE13-11-1W');
+  applyCivicNumberFilter(c, '1106', '');
+  assert.deepEqual(addrs(c), ['1 106 E ROAD 71 N']);
+});
+
+test('contains matches mid-number, unlike exact', () => {
+  // "contains 1106" legitimately catches 21106; the exact search does not.
+  const loose = fc('1106 MAIN', '21106 MAIN');
+  applyCivicNumberFilter(loose, '1106', '');
+  assert.deepEqual(addrs(loose), ['1106 MAIN', '21106 MAIN']);
+
+  const exact = fc('1106 MAIN', '21106 MAIN');
+  applyCivicNumberFilter(exact, '1106', '1106');
+  assert.deepEqual(addrs(exact), ['1106 MAIN']);
 });
 
 test('both bounds blank leaves the FC untouched (non-civic rows kept)', () => {
   const c = fc('100 MAIN', 'NE1-1-3E');
-  applyCivicNumberRange(c, '', '');
+  applyCivicNumberFilter(c, '', '');
   assert.deepEqual(addrs(c), ['100 MAIN', 'NE1-1-3E']);
 });
 
@@ -178,13 +219,13 @@ test('an exact search on a split number finds it (Rosser roll 76250)', () => {
   // The reported bug: From/To 1106 + muni ROSSER (RM) returned nothing
   // because "1 106 E ROAD 71 N" keyed as civic 1.
   const c = fc('1 106 E ROAD 71 N', '1 122 W ROAD 66 N', 'DESC NE13-11-1W');
-  applyCivicNumberRange(c, '1106', '1106');
+  applyCivicNumberFilter(c, '1106', '1106');
   assert.deepEqual(addrs(c), ['1 106 E ROAD 71 N']);
 });
 
 test('the split number is also reachable as typed', () => {
   const c = fc('1 106 E ROAD 71 N', '1 122 W ROAD 66 N');
-  applyCivicNumberRange(c, '1 106', '1 106');
+  applyCivicNumberFilter(c, '1 106', '1 106');
   assert.deepEqual(addrs(c), ['1 106 E ROAD 71 N']);
 });
 
@@ -192,7 +233,7 @@ test('an exact search still finds civic-on-numeric-road addresses', () => {
   // The other reading of the same shape has to keep working: 32 is the
   // civic number here, not 32502.
   const c = fc('32 502 RD', '74 502 RD', '146 100 RTE');
-  applyCivicNumberRange(c, '32', '32');
+  applyCivicNumberFilter(c, '32', '32');
   assert.deepEqual(addrs(c), ['32 502 RD']);
 });
 
@@ -200,13 +241,13 @@ test('a direction suffix stays inside the exact-search span', () => {
   // The suffix encoding is what makes From=To=<number> work on these:
   // 1106E keys as 110605, inside "1106"'s 110600..110699 span.
   const c = fc('1 106 E ROAD 71 N', '0 107 W ROAD 65 N');
-  applyCivicNumberRange(c, '107', '107');
+  applyCivicNumberFilter(c, '107', '107');
   assert.deepEqual(addrs(c), ['0 107 W ROAD 65 N']);
 });
 
 test('a range spanning both readings keeps the parcel once', () => {
   const c = fc('1 106 E ROAD 71 N');
-  applyCivicNumberRange(c, '1', '2000');
+  applyCivicNumberFilter(c, '1', '2000');
   assert.equal(c.features.length, 1);
 });
 

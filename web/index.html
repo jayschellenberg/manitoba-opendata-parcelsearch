@@ -253,17 +253,18 @@
               title="Plan a driving route through the imported parcels. Click to open the route planner panel above the table."
             >Plan Route</button>
           </div>
-          <!-- Civic-address search: From/To numeric range + street
-               substring. Tabbing into "To" after "From" auto-fills
-               for an exact-number search. -->
+          <!-- Civic-address search: From/To number + street substring.
+               How many number boxes are filled picks the mode — one is a
+               contains, both is exact (same) or a range (different).
+               Tabbing into "To" after "From" auto-fills for exact. -->
           <div class="address-row">
             <span class="field address-from-field">
               <input id="address-from" type="text" placeholder="From #" autocomplete="off" />
-              <span class="tip">Street number lower bound (inclusive). Leave blank for no lower limit.</span>
+              <span class="tip">Street number. On its own it's a "contains" match, so 1106 finds "1 106 E ROAD 71 N" however the number is spaced. Fill To as well for an exact number (same value) or a range (different).</span>
             </span>
             <span class="field address-to-field">
               <input id="address-to" type="text" placeholder="To #" autocomplete="off" />
-              <span class="tip">Street number upper bound (inclusive). Tab here after From and it auto-fills with the same value (highlighted) for an exact-number search; overwrite for a range or clear it for an open upper bound.</span>
+              <span class="tip">Street number upper bound (inclusive). Tab here after From and it auto-fills with the same value (highlighted) for an exact-number search; overwrite for a range. Clear it and From becomes a "contains" match instead.</span>
             </span>
             <span class="field address-street-field">
               <input id="address-street" type="text" placeholder="Street Name (contains)" />

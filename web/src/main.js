@@ -42,7 +42,7 @@ import {
 import { filterMascRiverlotsForMuni } from './lib/muniIdentity.js';
 import { safeExternalUrl } from './lib/safeUrl.js';
 import {
-  applyCivicNumberRange,
+  applyCivicNumberFilter,
   addressSearchVariants,
   addressMatchesVariants,
 } from './lib/civicRange.js';
@@ -2365,16 +2365,16 @@ async function runSearch() {
       attachLegalMetadata(parcelFc, combinedLegalRecs);
     }
 
-    // Civic-number range is a JS post-filter (ArcGIS SQL can't cleanly
-    // CAST the leading digits of Property_Address). Applies only when
-    // From or To is filled; if both blank the FC passes through. The
-    // street-name substring — and, for an exact From == To search, the
-    // civic prefix clause — already narrowed the SQL fetch via
-    // buildParcelClauses, so the post-filter is operating on at most a
-    // few hundred rows in the typical case. A bare RANGE with no street
-    // name is the exception: it post-filters whatever the muni query
-    // returned, which MAX_RESULTS caps at 1000 rows.
-    applyCivicNumberRange(parcelFc, inputs.addressFrom, inputs.addressTo);
+    // The civic-number boxes decide client-side (ArcGIS SQL can't
+    // cleanly CAST the leading digits of Property_Address) — contains
+    // for a lone box, exact for From == To, range for two different
+    // numbers. Both blank and the FC passes through. The street-name
+    // substring, and every civic mode except a true range, already
+    // narrowed the SQL fetch via buildParcelClauses, so this is
+    // operating on at most a few hundred rows in the typical case. A
+    // bare RANGE with no street name is the exception: it post-filters
+    // whatever the muni query returned, which MAX_RESULTS caps at 1000.
+    applyCivicNumberFilter(parcelFc, inputs.addressFrom, inputs.addressTo);
 
     // Multi-parcel imported sales: stamp the shared group id resolved at
     // import time, then reuse the sales-group rollup so the map shades

@@ -1,11 +1,13 @@
 // Civic-number handling for the address search. Manitoba has no
 // province-wide civic-address dataset, so the app works off the live
-// Property_Address text: the street name narrows the SQL fetch, the
-// From/To bounds post-filter the result client-side. Two jobs live here.
+// Property_Address text: the street name narrows the SQL fetch, and the
+// From/To boxes decide client-side. Two jobs live here.
 //
-// 1. Range keys. Map an address (and the user's From/To bounds) to a
-//    sortable integer key where a letter suffix sorts between
-//    consecutive integers (100 < 100A < 100B < 101).
+// 1. What the boxes mean. civicSearchMode reads the pair — one box is a
+//    contains, two equal ones are exact, two different ones are a range
+//    — and the range/exact modes key an address to a sortable integer
+//    where a letter suffix sorts between consecutive integers
+//    (100 < 100A < 100B < 101).
 //
 // 2. The internal space. Several RMs store the rural grid number split
 //    at the thousands mark — Rosser roll 76250 is "1 106 E ROAD 71 N",
@@ -160,23 +162,70 @@ export function addressMatchesVariants(address, variants) {
 }
 
 /**
- * Filter a FeatureCollection in place to features whose Property_Address
- * leads with a civic number in [from, to]. A blank `from` means no lower
- * bound; blank `to` means no upper bound; both blank passes the FC
- * through untouched. When a range IS set, records that don't begin with
- * a civic number (legal descriptions stuffed into Property_Address, junk
- * reference codes) are dropped.
+ * Classify what a From/To pair is asking for. The two boxes are one
+ * control, and how many of them are filled says which question the user
+ * means:
+ *   both blank          -> 'none'      no civic filter at all
+ *   one box filled      -> 'contains'  substring, e.g. 1106 finds
+ *                                      "1 106 E ROAD 71 N"
+ *   both filled, equal  -> 'exact'     that number only (To auto-fills
+ *                                      from From, so this is the common
+ *                                      path)
+ *   both filled, differ -> 'range'     From..To inclusive
+ *
+ * A lone box is a contains rather than an open-ended bound: "everything
+ * numbered 1106 and up" is not a question anyone asks of an address,
+ * while "find me 1106, however it's written" is the whole point.
+ * `term` carries the typed text for the two text-matching modes.
+ */
+export function civicSearchMode(fromRaw, toRaw) {
+  const from = String(fromRaw || '').trim();
+  const to   = String(toRaw   || '').trim();
+  if (!from && !to)  return { mode: 'none',     term: '' };
+  if (!from || !to)  return { mode: 'contains', term: from || to };
+  const a = parseCivicBound(from, 'lower');
+  const b = parseCivicBound(to,   'lower');
+  // Compared canonically, so "1 106" and "1106" are the same bound.
+  // Unparseable on either side falls to 'range', which no-ops below —
+  // the same nothing-happens the boxes have always done with junk.
+  if (a != null && a === b) return { mode: 'exact', term: from };
+  return { mode: 'range', term: '' };
+}
+
+/**
+ * Filter a FeatureCollection in place by the civic-number boxes, per
+ * civicSearchMode:
+ *   'contains' — plain substring against Property_Address, across the
+ *                spacing variants. No civic number required, so it reads
+ *                the same as the Street Name box.
+ *   'exact' /
+ *   'range'    — key the address and keep it when it lands in
+ *                [from, to]. Records that don't begin with a civic
+ *                number (legal descriptions stuffed into
+ *                Property_Address, junk reference codes) are dropped.
+ *   'none'     — the FC passes through untouched.
  *
  * A split-number address is kept when EITHER reading lands in range (see
- * parseCivicAddressKeys). An exact-number search — the common case,
- * since To auto-fills from From — stays precise either way; a wide range
- * errs toward showing the parcel rather than hiding it.
+ * parseCivicAddressKeys). An exact search stays precise either way; a
+ * wide range errs toward showing the parcel rather than hiding it.
  */
-export function applyCivicNumberRange(fc, fromRaw, toRaw) {
+export function applyCivicNumberFilter(fc, fromRaw, toRaw) {
+  const { mode, term } = civicSearchMode(fromRaw, toRaw);
+  if (mode === 'none') return;
+  const features = fc?.features || [];
+
+  if (mode === 'contains') {
+    const variants = addressSearchVariants(term);
+    if (variants.length === 0) return;
+    fc.features = features.filter(
+      (f) => addressMatchesVariants(f?.properties?.Property_Address, variants),
+    );
+    return;
+  }
+
   const from = parseCivicBound(fromRaw, 'lower');
   const to   = parseCivicBound(toRaw,   'upper');
   if (from == null && to == null) return;
-  const features = fc?.features || [];
   const kept = [];
   for (const f of features) {
     const keys = parseCivicAddressKeys(f?.properties?.Property_Address);

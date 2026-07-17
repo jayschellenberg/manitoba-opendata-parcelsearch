@@ -56,7 +56,7 @@ import { readCache, writeCache } from './cache.js';
 import {
   addressSearchVariants,
   addressMatchesVariants,
-  parseCivicBound,
+  civicSearchMode,
 } from './lib/civicRange.js';
 
 const BASE = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services';
@@ -183,9 +183,9 @@ async function fetchSnapshotShard(muniName) {
  *  (those depend on OBJECTID lists from the overlay services, and
  *  OBJECTIDs don't survive a server republish — so cross-mode
  *  filtering is unsafe). Also skips buildParcelClauses' civic-number
- *  prefix: that clause only exists to beat the live query's row cap,
- *  and a snapshot shard is already the whole muni — main.js's
- *  applyCivicNumberRange post-filter decides the number either way.
+ *  clause: that one only exists to beat the live query's row cap, and a
+ *  snapshot shard is already the whole muni — main.js's
+ *  applyCivicNumberFilter decides the number either way.
  *  The remaining filters mirror buildParcelClauses. */
 function filterSnapshotFeatures(features, args) {
   const { roll, addressStreet, duMode, duMin } = args || {};
@@ -338,61 +338,63 @@ export async function searchParcels(args) {
 }
 
 /**
- * Server-side narrowing for an EXACT civic-number search (From == To).
- * Returns null for a range, a one-sided bound, or unparseable input —
- * those keep relying on applyCivicNumberRange's post-filter alone.
+ * OR a term's civic-number spacing variants into one LIKE clause, so
+ * "1106" still reaches Rosser's "1 106 E ROAD 71 N" (and "1 106" reaches
+ * a muni that writes it closed up). `anchored` drops the leading % for a
+ * civic number, which an address always starts with.
  *
- * Why it exists: From/To are otherwise pure post-filters, so the number
- * only ever sees the first MAX_RESULTS rows the muni query returned. 122
- * of Manitoba's 186 munis hold more parcels than that cap (Macdonald has
- * ~6200), which silently put most of a muni out of reach of a number
- * search. A civic address always leads with its number, so an anchored
- * prefix LIKE is a sound narrowing — and a cheap one.
- *
- * Deliberately a SUPERSET of the real predicate: '100%' also drags in
- * "1000 MAIN", and the prefix can't express the letter-suffix span. That
- * is fine — applyCivicNumberRange still runs client-side and makes the
- * exact call. This clause exists to beat the row cap, not to decide.
+ * Single-variant terms — anything without a 4-digit run or an internal
+ * digit space, i.e. nearly every street name — emit exactly the one
+ * clause they always have. Multiple variants are parenthesized so the OR
+ * can't leak past the AND joining it to the muni / DU clauses.
  */
-function civicNumberPrefixClause(addressFrom, addressTo) {
-  const from = String(addressFrom || '').trim();
-  const to   = String(addressTo   || '').trim();
-  if (!from || !to) return null;
-  // Compare canonically so "1 106" and "1106" count as the same bound.
-  const a = parseCivicBound(from, 'lower');
-  const b = parseCivicBound(to,   'lower');
-  if (a == null || b == null || a !== b) return null;
-  const likes = addressSearchVariants(from)
-    .map((v) => `UPPER(Property_Address) LIKE '${escapeSql(v)}%'`);
+function addressLikeClause(term, { anchored = false } = {}) {
+  const lead = anchored ? '' : '%';
+  const likes = addressSearchVariants(term)
+    .map((v) => `UPPER(Property_Address) LIKE '${lead}${escapeSql(v)}%'`);
   if (likes.length === 0) return null;
   return likes.length === 1 ? likes[0] : `(${likes.join(' OR ')})`;
 }
 
+/**
+ * Server-side narrowing for the From/To civic-number boxes. Mirrors
+ * civicSearchMode: a lone box is a contains, From == To is an anchored
+ * prefix, and a true range returns null — a prefix LIKE can't express
+ * one, so ranges still lean on applyCivicNumberFilter's post-filter.
+ *
+ * Why it exists: From/To were otherwise pure post-filters, so the number
+ * only ever saw the first MAX_RESULTS rows the muni query returned. 122
+ * of Manitoba's 186 munis hold more parcels than that cap (Macdonald has
+ * ~6200), which silently put most of a muni out of reach of a number
+ * search.
+ *
+ * The exact form is deliberately a SUPERSET of the real predicate:
+ * '100%' also drags in "1000 MAIN", and a prefix can't express the
+ * letter-suffix span. That is fine — applyCivicNumberFilter still runs
+ * client-side and makes the exact call. This clause exists to beat the
+ * row cap, not to decide.
+ */
+function civicNumberClause(addressFrom, addressTo) {
+  const { mode, term } = civicSearchMode(addressFrom, addressTo);
+  if (mode === 'exact')    return addressLikeClause(term, { anchored: true });
+  if (mode === 'contains') return addressLikeClause(term);
+  return null;  // 'range' | 'none'
+}
+
 function buildParcelClauses({ addressStreet, addressFrom, addressTo, municipality, duMode, duMin }) {
   const clauses = [];
-  // Street-name substring match against Property_Address. Deciding the
-  // civic number stays client-side in main.js's applyCivicNumberRange —
-  // ArcGIS SQL can't cleanly cast the leading digits, and post-filtering
-  // a per-street result set is plenty fast at our scale. (An exact
-  // number does add a coarse prefix clause below, but only to narrow the
-  // fetch; the post-filter still makes the call.)
-  //
-  // ORs across the term's spacing variants so "1106" still finds
-  // Rosser's "1 106 E ROAD 71 N" (and "1 106" finds a muni that writes
-  // it closed up). Single-variant terms — anything without a 4-digit
-  // run or an internal digit space, i.e. nearly every street name —
-  // emit exactly the one clause they always have.
+  // Street-name substring match against Property_Address.
   if (addressStreet) {
-    const likes = addressSearchVariants(addressStreet)
-      .map((v) => `UPPER(Property_Address) LIKE '%${escapeSql(v)}%'`);
-    if (likes.length === 1) clauses.push(likes[0]);
-    else if (likes.length > 1) clauses.push(`(${likes.join(' OR ')})`);
+    const streetClause = addressLikeClause(addressStreet);
+    if (streetClause) clauses.push(streetClause);
   }
-  // Exact-number searches narrow server-side so the row cap can't hide
-  // the match — see civicNumberPrefixClause. Ranges fall through to the
-  // client-side post-filter as before.
-  const civicPrefix = civicNumberPrefixClause(addressFrom, addressTo);
-  if (civicPrefix) clauses.push(civicPrefix);
+  // From/To narrow server-side where they can, so the row cap can't hide
+  // the match — see civicNumberClause. Deciding the number still happens
+  // client-side in main.js's applyCivicNumberFilter (ArcGIS SQL can't
+  // cleanly cast the leading digits), and a true range narrows there
+  // alone.
+  const civicClause = civicNumberClause(addressFrom, addressTo);
+  if (civicClause) clauses.push(civicClause);
   // Muni dropdown delivers the exact stored form, e.g. "STONEWALL (TOWN)";
   // exact equality is faster than LIKE and avoids surprise partial-matches.
   if (municipality)    clauses.push(`Muni_Name_With_Typ = '${escapeSql(municipality)}'`);

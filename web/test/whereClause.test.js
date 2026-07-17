@@ -97,17 +97,26 @@ test('an exact civic number narrows server-side with an anchored prefix', () => 
   ]);
 });
 
-test('a range or one-sided bound emits no prefix clause', () => {
-  // A prefix can't express these; the client-side post-filter still does.
+test('a lone civic box becomes an unanchored contains clause', () => {
+  // One box filled = "find 1106 however it's written", so the same
+  // %…% shape the Street Name box emits — not an anchored prefix.
+  const expected = [
+    `(UPPER(Property_Address) LIKE '%1106%' OR UPPER(Property_Address) LIKE '%1 106%')`,
+  ];
+  assert.deepEqual(buildParcelClauses({ addressFrom: '1106', addressTo: '' }), expected);
+  assert.deepEqual(buildParcelClauses({ addressFrom: '', addressTo: '1106' }), expected);
+});
+
+test('a true range emits no civic clause', () => {
+  // A LIKE can't express a range; applyCivicNumberFilter still does.
   assert.deepEqual(buildParcelClauses({ addressFrom: '100', addressTo: '200' }), []);
-  assert.deepEqual(buildParcelClauses({ addressFrom: '100', addressTo: '' }), []);
-  assert.deepEqual(buildParcelClauses({ addressFrom: '', addressTo: '200' }), []);
+  // Junk in both boxes reads as a range, so it also emits nothing.
   assert.deepEqual(buildParcelClauses({ addressFrom: 'abc', addressTo: 'abc' }), []);
 });
 
-test('the prefix clause escapes quotes like every other clause', () => {
-  const [clause] = buildParcelClauses({ addressFrom: "1'", addressTo: "1'" });
-  assert.equal(clause, undefined); // not a civic bound at all → no clause
+test('the civic clause escapes quotes like every other clause', () => {
+  const [clause] = buildParcelClauses({ addressFrom: "1'", addressTo: '' });
+  assert.equal(clause, `UPPER(Property_Address) LIKE '%1''%'`);
 });
 
 test('municipality becomes an exact-equality clause with escaping', () => {

@@ -111,16 +111,19 @@ Manitoba's 186 munis hold more parcels than that (Macdonald ~6200,
 Rosser 1802), so a number search could silently miss most of a muni —
 the parcel simply never reached the browser.
 
-An **exact** search (From == To) no longer has this problem:
-`civicNumberPrefixClause` in `arcgis.js` narrows server-side with an
-anchored `Property_Address LIKE '1106%'` (both spacings — see
-`lib/civicRange.js`), so the cap never binds. That covers the common
-path, since To auto-fills from From.
+Three of the four modes no longer have this problem — `civicNumberClause`
+in `arcgis.js` narrows server-side, so the cap never binds:
+
+- **contains** (one box filled) → `LIKE '%1106%'`
+- **exact** (From == To) → anchored `LIKE '1106%'`
+- both across either spacing, see `lib/civicRange.js`
+
+That covers the common paths, since To auto-fills from From.
 
 Still open: a genuine **range** (From=100, To=200) with no street name
-typed. A prefix LIKE can't express a range, so it post-filters the
-capped 1000 rows and the "server cap reached" warning is the only hint.
-Options if it ever bites:
+typed. A LIKE can't express a range, so it post-filters the capped 1000
+rows and the "server cap reached" warning is the only hint. Options if
+it ever bites:
 
 - Expand a narrow range (say ≤50 numbers) into per-number prefix LIKEs
   and keep the post-filter for wider ones.
