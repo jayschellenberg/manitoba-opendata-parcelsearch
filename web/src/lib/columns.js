@@ -102,6 +102,10 @@ function emit() {
 export function listAllColumns() {
   const seen = new Map();
   for (const th of document.querySelectorAll('#results thead th[data-col]')) {
+    // Columns tagged data-no-gear (e.g. the parcel-numbering "#" column)
+    // manage their own visibility via a mode class and must not appear
+    // in the gear checklist or be swept by presets.
+    if (th.hasAttribute('data-no-gear')) continue;
     const key = th.dataset.col;
     if (!seen.has(key)) {
       seen.set(key, {
@@ -148,6 +152,9 @@ export function applyVisibility() {
   const hiddenAt = heads.map((th) => {
     const key = th.dataset.col;
     if (!key) return false; // no data-col -> never hidden
+    // data-no-gear columns (parcel-numbering "#") are governed by their
+    // own mode class, never by the gear's visible-set.
+    if (th.hasAttribute('data-no-gear')) return false;
     return !isColumnVisible(key);
   });
   // Apply to thead.

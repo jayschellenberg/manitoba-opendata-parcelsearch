@@ -644,6 +644,21 @@ header small a {
   margin-top: 0;
 }
 
+/* "Number parcels" toggle — sits in the persistent status block below
+   the export buttons, revealed only for multi-parcel result sets. Reads
+   as an inline option, not a primary action. */
+.numbering-row { margin: 2px 0; }
+.numbering-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--color-neutral-700, #3f3f46);
+  cursor: pointer;
+  user-select: none;
+}
+.numbering-toggle input { cursor: pointer; margin: 0; }
+
 /* Hairline divider between logical groups in the search sidebar
    (after Roll #, after Certificate of Title). Soft slate-grey to
    match the sidebar's other borders without competing with the
@@ -1756,6 +1771,17 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
    cells share the .sales-only class so they show/hide together. */
 #results .sales-only { display: none; }
 #results.sales-mode .sales-only { display: table-cell; }
+
+/* Parcel-numbering "#" column — the leader-line callout number for each
+   parcel. Hidden until #results carries .numbering-on (main.js sets it
+   when the "Number parcels" toggle is on AND there's more than one
+   parcel). data-no-gear keeps columns.js from touching it, so this mode
+   class is the sole gate. Narrow, centred, and tinted so the callout
+   number reads as an index rather than data. */
+#results .seq-col { display: none; }
+#results.numbering-on .seq-col { display: table-cell; }
+#results .seq-col { width: 30px; text-align: center; color: var(--muted, #555); font-variant-numeric: tabular-nums; }
+#results thead th.seq-col { text-align: center; }
 
 /* Basic-mode only — the Acres column moves position between basic
    search and sales-CSV mode (in sales mode it sits right after $/Lot;

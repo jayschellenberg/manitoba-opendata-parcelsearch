@@ -32,6 +32,7 @@ import { encodeState, decodeState } from './lib/urlState.js';
 import { setOverlayPressed } from './lib/overlayToggle.js';
 import { stalenessBannerState } from './lib/staleness.js';
 import { computeSaleGroups, groupPosition } from './lib/saleGroups.js';
+import { assignParcelSeq, clearParcelSeq } from './lib/parcelNumbering.js';
 import {
   realStr,
   legalDisplay,
@@ -150,6 +151,8 @@ import {
   parcelHtml,
   setSubjectData,
   setSubjectRadius,
+  setParcelNumberData,
+  setParcelNumbersVisible,
 } from './map.js';
 import { generateParcelSnapshotsZip } from './snapshotExport.js';
 import { OUTPUT_MIME, OUTPUT_QUALITY, MAX_OUTPUT_DIM } from './lib/imageOutput.js';
@@ -264,6 +267,11 @@ const $salesPpaHigh  = document.getElementById('sales-ppa-high');
 const $search        = document.getElementById('search');
 const $clear         = document.getElementById('clear');
 const $export        = document.getElementById('export');
+// Parcel numbering — the "Number parcels" toggle (leader-line callouts
+// on the map + the "#" column in the grid). Off by default; the row is
+// revealed only for multi-parcel result sets.
+const $numberingRow    = document.getElementById('numbering-row');
+const $numberingToggle = document.getElementById('numbering-toggle');
 const $zoningToggle  = document.getElementById('zoning-toggle');
 const $devplanToggle = document.getElementById('devplan-toggle');
 const $muniWebsiteBtn = document.getElementById('muni-website-btn');
@@ -748,7 +756,18 @@ let devPlanLayerLoadedFor = null;
 
 let currentSort = { col: 'roll', dir: 'asc' };
 
+// Parcel numbering on/off (the "Number parcels" toggle). Off by default
+// per the user's choice. Persists across searches within a session so a
+// user who wants numbered comp maps keeps them for every subsequent
+// multi-parcel search; the "#" values themselves are fixed to each
+// parcel at search time (lib/parcelNumbering.js), so re-sorting or
+// filtering the grid never renumbers them.
+let numberingOn = false;
+
 const SORT_KEYS = {
+  // Map # — the stable 1..N callout number (muni then Roll #). Sorting
+  // this column returns the grid to the map's numbering order.
+  seq:     (r) => finiteOrNeg(r.parcel.properties._seq),
   roll:    (r) => strKey(r.parcel.properties.Roll_No_Txt),
   // Muni # is the MAO authority code (e.g. 600 for RM of Headingley).
   // Numeric sort so 600 lines up between 500 and 700, not between 6
@@ -1922,6 +1941,41 @@ for (const th of document.querySelectorAll('#results th[data-col]')) {
   });
 }
 
+// ---------- Parcel numbering toggle ----------
+
+/**
+ * Reveal the "Number parcels" control only when there's more than one
+ * parcel to number, and keep the checkbox in sync with numberingOn.
+ * DOM-only — the map-callout visibility is driven by setMapData (on a
+ * result-set change) and by the toggle's own change handler.
+ */
+function updateNumberingAvailability() {
+  const avail = currentRows.length > 1;
+  if ($numberingRow) $numberingRow.hidden = !avail;
+  if ($numberingToggle) $numberingToggle.checked = numberingOn;
+}
+
+if ($numberingToggle) {
+  $numberingToggle.addEventListener('change', () => {
+    numberingOn = $numberingToggle.checked;
+    if (numberingOn && currentRows.length > 1) {
+      // Order the grid 1..N so it reads the same as the map. Numbers are
+      // glued to each parcel, so the user can re-sort afterwards without
+      // the callouts renumbering.
+      currentSort = { col: 'seq', dir: 'asc' };
+    } else if (!numberingOn && currentSort.col === 'seq') {
+      // Turning it off while sorted by the (now-hidden) # column — fall
+      // back to the default roll sort.
+      currentSort = { col: 'roll', dir: 'asc' };
+    }
+    updateSortIndicators();
+    const active = numberingOn && currentRows.length > 1;
+    mapReady.then(() => setParcelNumbersVisible(map, active));
+    if (currentRows.length > 0) renderTable(currentRows);
+    queueUrlWrite();
+  });
+}
+
 // Overlay toggle clicks — delegate at the document level so all 12
 // buttons + any future ones share one listener that writes the URL on
 // every aria-pressed change.
@@ -2465,6 +2519,13 @@ async function runSearch() {
       if (Number.isFinite(ac) && ac > 0) f.properties._acres = ac;
     }
 
+    // Assign the stable map-numbering sequence for this fresh result set
+    // (muni then Roll #). Done once, here — re-sorting / filtering the
+    // grid later never renumbers, because the number is stamped on the
+    // feature. Single-parcel results carry no number.
+    if (parcelFc.features.length > 1) assignParcelSeq(parcelFc.features);
+    else clearParcelSeq(parcelFc.features);
+
     // Show parcels-only rows immediately so the user sees something.
     renderTable(parcelFc.features.map((p) => ({ parcel: p, zoning: [], devPlan: [] })));
     setMapData(parcelFc, EMPTY_FC, EMPTY_FC);
@@ -2771,6 +2832,12 @@ async function handleSalesUpload(file) {
     // alone keeps the rule shape simple and lets future sales-only
     // affordances anywhere in the layout share the same gate.
     document.body.classList.add('sales-mode');
+
+    // Assign the stable map-numbering sequence (muni then Roll #) for
+    // this uploaded sales set, so the "Number parcels" toggle works on
+    // comp maps the same way it does for a roll-list search.
+    if (parcelFc.features.length > 1) assignParcelSeq(parcelFc.features);
+    else clearParcelSeq(parcelFc.features);
 
     // Render parcels-only rows immediately, then run the same
     // overlay enrichment pipeline runSearch uses (respecting the same
@@ -4454,6 +4521,14 @@ function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
     showResults(map, parcelFc, opts);
     setZoningData(map, zoningFc);
     setDevPlanData(map, devPlanFc);
+    // Parcel-number callouts. The `_seq` values are assigned once per
+    // new result set (runSearch / sales upload); here we just push the
+    // current features' anchors and toggle visibility to match. Passing
+    // a filtered subset shows only those parcels' (fixed) numbers, with
+    // gaps — the number stays glued to the parcel, never renumbers.
+    const numberable = (parcelFc.features?.length || 0) > 1;
+    setParcelNumberData(map, parcelFc.features || []);
+    setParcelNumbersVisible(map, numberingOn && numberable);
   });
   scheduleSoilCompositionStamp(parcelFc);
   // Stash the current result set so the Parcel Snapshots export can render
@@ -6631,6 +6706,13 @@ function renderTable(rows, { resetPage = true } = {}) {
     // .sales-only class hides it outside sales-mode. Click toggles
     // the in-memory Set + persists to localStorage; the cell's
     // appearance flips immediately via the class swap.
+    // Map # — the leftmost callout number, hidden by CSS unless
+    // #results carries .numbering-on. Must stay the FIRST cell so it
+    // lines up with the first <th> (columns.js matches columns by
+    // position).
+    const seqCellEl = td(p._seq != null ? String(p._seq) : null, 'num');
+    seqCellEl.classList.add('seq-col');
+    tr.appendChild(seqCellEl);
     tr.appendChild(favoriteCell(row));
     tr.appendChild(rollNumberCell(p));
     // Muni code (the integer authority prefix in Municipality, e.g.
@@ -6764,6 +6846,13 @@ function renderTable(rows, { resetPage = true } = {}) {
   if ($resultsEmpty) $resultsEmpty.hidden = sorted.length > 0;
   renderPaginator(sorted.length);
   setExportEnabled(rows.length > 0);
+  // Parcel numbering: gate the "#" column on numbering being on AND
+  // there being more than one parcel, and reveal the toggle when it's
+  // applicable. The map callouts are driven separately (setMapData /
+  // toggle handler); this just keeps the grid column + control in sync
+  // on every re-render.
+  $resultsTable?.classList.toggle('numbering-on', numberingOn && rows.length > 1);
+  updateNumberingAvailability();
 }
 
 /**
@@ -8055,7 +8144,12 @@ function exportCsv(explicitRows) {
       starredOnly = true;
     }
   }
+  // Map # is the leftmost column when numbering is on, so the exported
+  // spreadsheet's numbers line up with the numbered map the user just
+  // generated. Omitted entirely when numbering is off.
+  const withSeq = numberingOn;
   const header = [
+    ...(withSeq ? ['Map #'] : []),
     'Roll #', 'Muni #', 'Address',
     'Legal Description', 'Legal Detail', 'Lot', 'Block', 'Plan',
     'Certificates of Title', 'MAO Legal Source URL',
@@ -8101,6 +8195,7 @@ function exportCsv(explicitRows) {
     const d1 = row.devPlan[0]?.feature.properties || {};
     const ac = parcelAcres(row.parcel);
     lines.push([
+      ...(withSeq ? [p._seq ?? ''] : []),
       p.Roll_No_Txt, muniNoFromProps(p) ?? '', p.Property_Address,
       p._legalDescription ?? '',
       p._legalDetail ?? '',

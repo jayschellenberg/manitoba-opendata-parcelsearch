@@ -628,6 +628,17 @@
             <button id="export" type="button" class="secondary">Export CSV</button>
             <button id="snapshot-zip-btn" type="button" class="secondary" disabled title="Generate a 1600×900 satellite JPEG of each result parcel (highlighted, zoomed to fit 16:9) and download them all as a single ZIP, named muniCode-roll.jpg. Import a parcel list or run a search first.">Parcel Snapshots (ZIP)</button>
           </div>
+          <!-- Parcel numbering — off by default, shown only for a
+               multi-parcel result set (main.js unhides #numbering-row
+               when there's more than one parcel to number). Numbers the
+               parcels 1..N on the map (leader-line callouts) and reveals
+               the matching "#" column in the grid. -->
+          <div id="numbering-row" class="numbering-row" hidden>
+            <label class="numbering-toggle" title="Number the result parcels 1..N on the map (leader-line callouts) and show a matching # column in the grid. Sorted by municipality, then Roll #. The number stays fixed to each parcel and carries into the Generate Map image and the CSV export.">
+              <input type="checkbox" id="numbering-toggle">
+              <span>Number parcels on map &amp; grid</span>
+            </label>
+          </div>
           <span id="count" class="count"></span>
           <details id="unmatched-panel" class="unmatched-panel" hidden>
             <summary class="unmatched-summary"></summary>
@@ -897,6 +908,14 @@
                  main 'Export CSV' button exports just the starred
                  sales when at least one is set; otherwise the full
                  result set as before. -->
+            <!-- Map # — the leader-line callout number for each parcel,
+                 revealed only when "Number parcels" is on (main.js
+                 toggles the .numbering-on class on #results). data-no-gear
+                 keeps it out of the column-visibility gear/presets; the
+                 mode class governs its display. Still data-col="seq" so
+                 clicking the header sorts by the number (back to the map's
+                 1..N order). -->
+            <th data-col="seq" data-no-gear class="seq-col num" title="Map # — the on-map callout number for this parcel (municipality, then Roll #). Turn on 'Number parcels' beside the results. Sort this column to return the grid to the map's 1..N order.">#</th>
             <th data-col="favorite" class="sales-only fav-col" title="Mark this sale as a comparable. Click to star/unstar — choices persist in this browser via localStorage. Starred-only export: hit Export CSV when at least one row is starred.">★</th>
             <th data-col="roll">Roll #</th>
             <th data-col="municode" title="MAO municipality code (the integer prefix on each parcel's Municipality field). Identifies the assessing authority that owns the roll.">Muni #</th>
