@@ -15,8 +15,12 @@
 #      parcels-only), then assert the <stamp> snapshot dir actually exists
 #   4. Rebuild parcel lineage across all snapshots  (r/build_lineage.R)
 #   5. Commit + push the mb-parcel-history data repo -> capture new commit SHA
-#   6. Repoint HISTORICAL_CDN in the app (web/src/arcgis.js) to that SHA,
-#      commit + push the app repo -> Vercel redeploys production
+#   6. App-repo updates -> commit + push -> Vercel redeploys production:
+#      (a) refresh the curated Esri Wayback historical-imagery date list for
+#          Manitoba (web/scripts/refresh-wayback.mjs, best-effort -- a
+#          Wayback service outage warns but does not abort the publish),
+#      (b) repoint HISTORICAL_CDN (web/src/arcgis.js) to the new data SHA,
+#      then push whichever of the two changed.
 #
 # ANY failed step fires a push + email alert (alert-lib.ps1) and stops. The
 # manual MB geoPortal download is no longer required -- this pulls the same
@@ -144,22 +148,63 @@ $sha = (& git -C $HistRepo rev-parse HEAD).Trim()
 if (-not $sha) { Die 'no data SHA' 'could not read mb-parcel-history HEAD sha' }
 Log "mb-parcel-history HEAD = $sha"
 
-# 6. repoint the app CDN pin -> commit + push -> Vercel deploy
+# 6. app-repo updates -> commit + push -> Vercel deploy
+#    (a) refresh the Esri Wayback historical-imagery date list, (b) repoint
+#    the historical CDN pin, then (c) push whichever of the two changed.
+
+# 6a. Refresh the curated Manitoba Wayback dates (web/src/lib/wayback.js).
+#     Best-effort: it hits Esri's live service, so a Wayback/service outage
+#     must NOT abort the parcel-history publish (the critical path). A
+#     failure warns via the alert channel and the pipeline continues.
+Log '== refresh Esri Wayback MB dates =='
+$WaybackScript = Join-Path $root 'web\scripts\refresh-wayback.mjs'
+$node = Get-Command node.exe -ErrorAction SilentlyContinue
+if (-not $node) {
+  Log 'WARN: node.exe not found -- skipping Wayback refresh'
+} elseif (-not (Test-Path $WaybackScript)) {
+  Log "WARN: $WaybackScript not found -- skipping Wayback refresh"
+} else {
+  # The script resolves wayback.js via its own path, so cwd is irrelevant.
+  $wbOut  = & $node.Source $WaybackScript 2>&1 | ForEach-Object { "$_" }
+  $wbCode = $LASTEXITCODE
+  $wbOut | ForEach-Object { Add-Content -Path $log -Value $_ }
+  if ($wbCode -ne 0) {
+    Log "WARN: Wayback refresh exited $wbCode (non-fatal -- continuing)"
+    Send-FailureAlert $root $NtfyTopic 'WARN - MB Wayback date refresh failed' `
+      (($wbOut | Select-Object -Last 20) -join "`n") | Out-Null
+  }
+}
+$WaybackJsRel = 'web/src/lib/wayback.js'
+$wbChanged = [bool](& git -C $AppRepo status --porcelain -- $WaybackJsRel)
+if ($wbChanged) { Log 'Wayback date list changed -- will ship with this run' }
+
+# 6b. repoint the app CDN pin.
 Log '== repoint app HISTORICAL_CDN =='
 $content = Get-Content -Raw $ArcgisJs
 $new = [regex]::Replace($content, 'mb-parcel-history@[0-9a-f]{40}', "mb-parcel-history@$sha")
-if ($new -eq $content) {
-  Log "app pin already at $sha -- no app change needed"
+$pinChanged = ($new -ne $content)
+if (-not $pinChanged) {
+  Log "app pin already at $sha -- no pin change needed"
 } else {
   # BOM-less UTF-8: Set-Content -Encoding UTF8 adds a BOM under Windows
   # PowerShell 5.1 (the scheduled-task runtime), which would corrupt the JS
   # file's first bytes. Write via .NET with an explicit no-BOM encoder.
   [System.IO.File]::WriteAllText($ArcgisJs, $new, (New-Object System.Text.UTF8Encoding($false)))
-  & git -C $AppRepo add 'web/src/arcgis.js' 2>&1 | ForEach-Object { Add-Content -Path $log -Value "$_" }
-  & git -C $AppRepo commit -m "Repoint historical CDN to mb-parcel-history@$($sha.Substring(0,7)) ($stamp snapshot)" 2>&1 | ForEach-Object { Add-Content -Path $log -Value "$_" }
+}
+
+# 6c. commit + push the app repo if EITHER the pin or the Wayback list changed.
+if ($pinChanged -or $wbChanged) {
+  Log '== commit + push app repo =='
+  & git -C $AppRepo add 'web/src/arcgis.js' $WaybackJsRel 2>&1 | ForEach-Object { Add-Content -Path $log -Value "$_" }
+  $parts = @()
+  if ($pinChanged) { $parts += "repoint historical CDN to mb-parcel-history@$($sha.Substring(0,7)) ($stamp snapshot)" }
+  if ($wbChanged)  { $parts += 'refresh Esri Wayback MB imagery dates' }
+  & git -C $AppRepo commit -m ("Semiannual: " + ($parts -join '; ')) 2>&1 | ForEach-Object { Add-Content -Path $log -Value "$_" }
   & git -C $AppRepo push 2>&1 | ForEach-Object { Add-Content -Path $log -Value "$_" }
-  if ($LASTEXITCODE -ne 0) { Die 'app push' 'git push failed for the app repo (arcgis.js pin) -- see log.' }
-  Log "app repin pushed -- Vercel will redeploy"
+  if ($LASTEXITCODE -ne 0) { Die 'app push' 'git push failed for the app repo (pin / Wayback) -- see log.' }
+  Log "app changes pushed -- Vercel will redeploy"
+} else {
+  Log 'app: no pin or Wayback changes -- nothing to push'
 }
 
 Log "Publish pipeline complete -- $stamp live at mb-parcel-history@$sha"

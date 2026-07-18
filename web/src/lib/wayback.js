@@ -23,6 +23,7 @@ export const WAYBACK_VERSIONS = [
   { date: '2022-11-02', release: 7110 },
   { date: '2020-05-20', release: 32645 },
   { date: '2019-06-26', release: 645 },
+  { date: '2018-01-18', release: 13045 },
   { date: '2015-12-16', release: 28163 },
   { date: '2014-06-11', release: 31144 },
   { date: '2014-02-20', release: 10 },
