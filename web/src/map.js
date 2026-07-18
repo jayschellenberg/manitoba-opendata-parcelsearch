@@ -1553,7 +1553,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         // Bright yellow outline that matches the fill — reads as a
         // single, vivid highlight against both the cream CARTO Streets
         // basemap and the dark Esri Satellite imagery. Width jumps
-        // 1.75 → 2.75 px on the groupHover feature-state so a hovered
+        // 2.0 → 3.0 px on the groupHover feature-state so a hovered
         // sale-group's parcels still pop visually without changing
         // colour. Starred parcels (favourites) override the yellow
         // with dark-red so chosen comps still stand apart from the
@@ -1573,8 +1573,8 @@ export function initMap(container, { onFeatureClick } = {}) {
           'line-width': [
             'case',
             ['boolean', ['feature-state', 'groupHover'], false],
-            3.25,
-            2.5,
+            3.0,
+            2.0,
           ],
           // Dashed outline so the highlight reads as a "selection"
           // rather than competing visually with solid parcel-fabric
@@ -1609,8 +1609,8 @@ export function initMap(container, { onFeatureClick } = {}) {
           'line-width': [
             'case',
             ['boolean', ['feature-state', 'groupHover'], false],
-            3.25,
-            2.5,
+            3.0,
+            2.0,
           ],
           // Same 75% opacity as parcel-line so the black backing eases
           // in step with the colour on top.
