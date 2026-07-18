@@ -2119,6 +2119,34 @@ body.workspace-resizing iframe { pointer-events: none; }
   background: var(--ui-brand, #121613);
 }
 
+/* Wayback date picker — a small labelled dropdown at the bottom of the
+   basemap popup, shown only while the Historical (Esri Wayback) basemap
+   is active. Separated from the basemap list by a hairline. */
+.maplibregl-ctrl.basemap-menu .basemap-wayback {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 4px;
+  padding: 7px 10px 4px;
+  border-top: 1px solid var(--ui-line, #e0e5e1);
+}
+.maplibregl-ctrl.basemap-menu .basemap-wayback[hidden] { display: none; }
+.maplibregl-ctrl.basemap-menu .basemap-wayback-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ui-ink-soft, #4d5752);
+}
+.maplibregl-ctrl.basemap-menu .basemap-wayback-select {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 6px;
+  border: 1px solid var(--ui-line, #d6ddd8);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--ui-ink, #151916);
+  cursor: pointer;
+}
+
 /* Distance / area measurement control. Shares the .basemap-toggle visual
    language so all our custom top-right controls look consistent. The
    `.measure-panel` is the dropdown that appears under the button when

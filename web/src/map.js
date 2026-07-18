@@ -22,6 +22,7 @@ import turfLength from '@turf/length';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import { landCoverBreakdown, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
+import { WAYBACK_VERSIONS, waybackTileUrl } from './lib/wayback.js';
 import { MB_PARCEL_DATA_CDN } from './arcgis.js';
 import {
   MASC_PALETTE,
@@ -264,6 +265,16 @@ const BASEMAP_STYLE = {
       tileSize: 256,
       attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community',
     },
+    // Esri Wayback historical imagery. Same imagery archive as
+    // esri-imagery, but a specific dated snapshot. Tiles are swapped in
+    // place (RasterTileSource.setTiles) when the user picks a date, so
+    // the source stays put. Starts on the newest curated MB release.
+    'wayback': {
+      type: 'raster',
+      tiles: [waybackTileUrl(WAYBACK_VERSIONS[0].release)],
+      tileSize: 256,
+      attribution: 'Historical imagery &copy; Esri, Maxar, Earthstar Geographics (Esri Wayback)',
+    },
     // Transparent reference overlay (place names, road names,
     // boundaries) designed by Esri to layer on top of aerial imagery.
     // Visible only when a labelled raster basemap is active; the basemap
@@ -353,6 +364,10 @@ const BASEMAP_STYLE = {
     // together). No raster paint needed; Voyager reads well as-is.
     { id: 'carto-voyager',      type: 'raster', source: 'carto-voyager',      minzoom: 0, maxzoom: 20, layout: { visibility: 'visible' } },
     { id: 'esri-imagery',        type: 'raster', source: 'esri-imagery',        minzoom: 0, maxzoom: 20, layout: { visibility: 'none' } },
+    // Wayback historical imagery — sits directly above esri-imagery and
+    // below the reference/transportation overlays so place names + roads
+    // still draw on top of the dated aerial.
+    { id: 'wayback-imagery',     type: 'raster', source: 'wayback',            minzoom: 0, maxzoom: 20, layout: { visibility: 'none' } },
     { id: 'nrcan-transportation-geometry', type: 'raster', source: 'nrcan-transportation-geometry', minzoom: 0, maxzoom: 24, layout: { visibility: 'none' } },
     { id: 'nrcan-elevation',     type: 'raster', source: 'nrcan-elevation',     minzoom: 0, maxzoom: 19, layout: { visibility: 'none' } },
     { id: 'esri-transportation', type: 'raster', source: 'esri-transportation', minzoom: 0, maxzoom: 20, layout: { visibility: 'none' } },
@@ -2967,6 +2982,23 @@ export function setBasemapSatellite(map, on) {
   if (map.getLayer('ortho-mb')) map.setLayoutProperty('ortho-mb', 'visibility', 'none');
 }
 
+/** Show / hide the Wayback historical-imagery basemap layer. */
+export function setWaybackVisible(map, on) {
+  if (map.getLayer('wayback-imagery')) {
+    map.setLayoutProperty('wayback-imagery', 'visibility', on ? 'visible' : 'none');
+  }
+}
+
+/** Swap the Wayback source to a specific release's tiles in place. Uses
+ *  RasterTileSource.setTiles so the source (and its place in the layer
+ *  stack) stays put — no remove/re-add flicker. */
+export function setWaybackRelease(map, release) {
+  const src = map.getSource('wayback');
+  if (src && typeof src.setTiles === 'function') {
+    src.setTiles([waybackTileUrl(release)]);
+  }
+}
+
 /**
  * Show / hide the land-cover overlay fill (result parcels coloured by
  * dominant 2020 land-cover bucket). The colour comes from each parcel's
@@ -4304,12 +4336,16 @@ class BasemapMenuControl {
     this._views = [
       { key: 'streets', label: 'Streets' },
       { key: 'satellite', label: 'Satellite' },
+      { key: 'wayback', label: 'Historical (Esri Wayback)' },
       ...(MLI_ORTHO_PMTILES_URL
         ? [{ key: 'mli', label: `MLI Aerial ${MLI_ORTHO_YEAR_RANGE}` }]
         : []),
       { key: 'transportation', label: 'NRCan Transportation' },
       { key: 'elevation', label: 'NRCan Elevation' },
     ];
+    // Default Wayback release = newest curated MB date. Swapped by the
+    // date dropdown built below.
+    this._waybackRelease = WAYBACK_VERSIONS[0].release;
 
     this._btn = document.createElement('button');
     this._btn.type = 'button';
@@ -4341,6 +4377,39 @@ class BasemapMenuControl {
     }
     this._container.appendChild(this._list);
 
+    // Wayback date picker — shown only while the Historical (Wayback)
+    // basemap is active. A plain dropdown of the curated MB change-dates;
+    // picking one swaps the imagery tiles in place.
+    this._waybackWrap = document.createElement('div');
+    this._waybackWrap.className = 'basemap-wayback';
+    this._waybackWrap.hidden = true;
+    const wbLabel = document.createElement('span');
+    wbLabel.className = 'basemap-wayback-label';
+    wbLabel.textContent = 'Imagery date';
+    this._waybackSelect = document.createElement('select');
+    this._waybackSelect.className = 'basemap-wayback-select';
+    this._waybackSelect.setAttribute('aria-label', 'Wayback imagery date');
+    for (const v of WAYBACK_VERSIONS) {
+      const opt = document.createElement('option');
+      opt.value = String(v.release);
+      opt.textContent = v.date;
+      this._waybackSelect.appendChild(opt);
+    }
+    this._waybackSelect.value = String(this._waybackRelease);
+    this._waybackSelect.addEventListener('click', (event) => event.stopPropagation());
+    this._waybackSelect.addEventListener('change', (event) => {
+      event.stopPropagation();
+      this._waybackRelease = Number(this._waybackSelect.value);
+      setWaybackRelease(this._map, this._waybackRelease);
+      this._render();
+    });
+    this._waybackWrap.appendChild(wbLabel);
+    this._waybackWrap.appendChild(this._waybackSelect);
+    // Lives inside the menu popup (which opens on hover) so it can't be
+    // covered by the menu. The active date is always visible on the
+    // trigger label; changing it happens here.
+    this._list.appendChild(this._waybackWrap);
+
     this._container.addEventListener('mouseenter', () => this._open());
     this._container.addEventListener('mouseleave', () => this._scheduleClose());
     this._container.addEventListener('focusout', (event) => {
@@ -4368,6 +4437,7 @@ class BasemapMenuControl {
   _toggle() { this._container.classList.contains('open') ? this._close() : this._open(); }
   _currentKey() {
     const m = this._map;
+    if (m.getLayer('wayback-imagery') && m.getLayoutProperty('wayback-imagery', 'visibility') === 'visible') return 'wayback';
     if (m.getLayer('ortho-mb') && m.getLayoutProperty('ortho-mb', 'visibility') === 'visible') return 'mli';
     if (m.getLayer('nrcan-transportation-geometry') && m.getLayoutProperty('nrcan-transportation-geometry', 'visibility') === 'visible') return 'transportation';
     if (m.getLayer('nrcan-elevation') && m.getLayoutProperty('nrcan-elevation', 'visibility') === 'visible') return 'elevation';
@@ -4376,15 +4446,22 @@ class BasemapMenuControl {
   }
   _set(state) {
     const m = this._map;
+    // Wayback and the elevation/MLI aerials all want Esri's place-name +
+    // road overlays on top; only Streets (Voyager carries its own) and
+    // the NRCan Transportation map opt out.
     const esriLabels = state !== 'streets' && state !== 'transportation';
     m.setLayoutProperty('carto-voyager', 'visibility', state === 'streets' ? 'visible' : 'none');
     m.setLayoutProperty('esri-imagery', 'visibility', (state === 'satellite' || state === 'mli') ? 'visible' : 'none');
+    m.setLayoutProperty('wayback-imagery', 'visibility', state === 'wayback' ? 'visible' : 'none');
     m.setLayoutProperty('nrcan-transportation-geometry', 'visibility', state === 'transportation' ? 'visible' : 'none');
     m.setLayoutProperty('nrcan-transportation-labels', 'visibility', state === 'transportation' ? 'visible' : 'none');
     m.setLayoutProperty('nrcan-elevation', 'visibility', state === 'elevation' ? 'visible' : 'none');
     m.setLayoutProperty('esri-transportation', 'visibility', esriLabels ? 'visible' : 'none');
     m.setLayoutProperty('esri-reference', 'visibility', esriLabels ? 'visible' : 'none');
     if (m.getLayer('ortho-mb')) m.setLayoutProperty('ortho-mb', 'visibility', state === 'mli' ? 'visible' : 'none');
+    // Apply the selected Wayback release when entering that mode so the
+    // tiles match the dropdown (the source defaults to the newest date).
+    if (state === 'wayback') setWaybackRelease(m, this._waybackRelease);
     this._render();
   }
   _yearAtCenter() {
@@ -4394,18 +4471,27 @@ class BasemapMenuControl {
     const feature = this._yearFeatures.find((candidate) => booleanPointInPolygon(point, candidate));
     return feature?.properties?.year || null;
   }
+  _waybackDate() {
+    const v = WAYBACK_VERSIONS.find((x) => x.release === this._waybackRelease);
+    return v ? v.date : '';
+  }
   _render() {
     if (!this._map || !this._labelEl) return;
     const key = this._currentKey();
     const view = this._views.find((candidate) => candidate.key === key) || this._views[0];
     const localYear = key === 'mli' ? this._yearAtCenter() : null;
-    const label = localYear ? `MLI Aerial - ${localYear}` : view.label;
+    let label = localYear ? `MLI Aerial - ${localYear}` : view.label;
+    if (key === 'wayback') label = `Wayback ${this._waybackDate()}`;
     this._labelEl.textContent = label;
     this._btn.classList.toggle('active', key !== 'streets');
     this._btn.title = localYear
       ? `Basemap: MLI Aerial. Imagery at map centre was acquired in ${localYear}.`
-      : `Basemap: ${view.label}`;
+      : key === 'wayback'
+        ? `Basemap: Esri Wayback historical imagery (${this._waybackDate()}).`
+        : `Basemap: ${view.label}`;
     this._btn.setAttribute('aria-label', `${this._btn.title} Open to choose another basemap.`);
+    // Reveal the Wayback date picker only while that basemap is active.
+    if (this._waybackWrap) this._waybackWrap.hidden = key !== 'wayback';
     for (const item of this._list.querySelectorAll('.basemap-menu-item')) {
       const active = item.dataset.key === key;
       item.classList.toggle('active', active);
