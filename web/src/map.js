@@ -355,7 +355,12 @@ const BASEMAP_STYLE = {
     { id: 'esri-imagery',        type: 'raster', source: 'esri-imagery',        minzoom: 0, maxzoom: 20, layout: { visibility: 'none' } },
     { id: 'nrcan-transportation-geometry', type: 'raster', source: 'nrcan-transportation-geometry', minzoom: 0, maxzoom: 24, layout: { visibility: 'none' } },
     { id: 'nrcan-elevation',     type: 'raster', source: 'nrcan-elevation',     minzoom: 0, maxzoom: 19, layout: { visibility: 'none' } },
-    { id: 'esri-transportation', type: 'raster', source: 'esri-transportation', minzoom: 0, maxzoom: 20, layout: { visibility: 'none' } },
+    // Roads on the Satellite basemap come from Esri's World Transportation
+    // raster overlay. Its default (near-white roads) reads harsh on the
+    // imagery, so fade it to 60% — roads stay legible but sit back into
+    // the aerial rather than dominating it. Place-name labels
+    // (esri-reference) stay at full strength. Tune raster-opacity to taste.
+    { id: 'esri-transportation', type: 'raster', source: 'esri-transportation', minzoom: 0, maxzoom: 20, layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.6 } },
     { id: 'esri-reference',      type: 'raster', source: 'esri-reference',      minzoom: 0, maxzoom: 20, layout: { visibility: 'none' } },
     { id: 'nrcan-transportation-labels', type: 'raster', source: 'nrcan-transportation-labels', minzoom: 0, maxzoom: 24, layout: { visibility: 'none' } },
     // Land-cover raster sits above the basemap tiles but below every
