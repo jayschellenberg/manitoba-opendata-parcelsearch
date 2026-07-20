@@ -3257,13 +3257,17 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
     lines.push(`<small style="color:#b45309">⚠ roll area looks nominal`
       + `${Number.isFinite(rv) ? ` (states ${rv} ac)` : ''} — showing geometry area; verify against plan/title.</small>`);
   }
-  // Inline summary line: zoning code + DU. Zoning is stamped onto the
-  // parcel feature by main.js after the top-2 area-weighted join lands.
-  const summary = [];
-  if (p._zoneCode)            summary.push(`<strong>Zoning</strong> ${escapeHtml(p._zoneCode)}`);
-  if (p.Dwelling_Units != null) summary.push(`<strong>DU</strong> ${escapeHtml(p.Dwelling_Units)}`);
-  if (summary.length)         lines.push(summary.join(' &nbsp;·&nbsp; '));
-  // GPS Coordinates link sits right under the Zoning/DU summary so
+  // Current zoning and DU get separate lines so both regular-search and
+  // Sales Analysis popups present zoning immediately before DU. Zoning is
+  // stamped by main.js after its area-weighted join; Sales Analysis runs
+  // the same full enrichment before enabling export.
+  if (p._zoneCode) {
+    lines.push(`<strong>Zoning</strong> ${escapeHtml(p._zoneCode)}`);
+  }
+  if (p.Dwelling_Units != null) {
+    lines.push(`<strong>DU</strong> ${escapeHtml(p.Dwelling_Units)}`);
+  }
+  // GPS Coordinates link sits right under Zoning/DU so
   // it's discoverable without scrolling to the bottom of the popup.
   // .parcel-coords-copy is wired by the click handler in initMap to
   // copy the parcel centroid to the clipboard; the hover popup

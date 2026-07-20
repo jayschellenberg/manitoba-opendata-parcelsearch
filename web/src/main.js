@@ -649,6 +649,9 @@ let lastResultFc = EMPTY_FC;
 // nothing in that state, matching the old runSearch-only behaviour.
 let csvFullRows = null;
 let csvFullBaseMsg = '';
+// Invalidates in-flight sales enrichment when a newer upload or a regular
+// property search replaces the displayed parcel set.
+let salesEnrichmentGeneration = 0;
 // Full list of munis matched by the last sales-CSV upload — populated
 // in handleSalesUpload, cleared on runSearch. When non-null, the
 // MASC and CLI overlay toggles fetch+merge across every muni in this
@@ -2045,14 +2048,16 @@ populateDataRefreshFooter();
 // clipped to the current viewport tiles, which truncated large RMs
 // like Hanover.
 let muniBoundariesFc = null;
-(async () => {
+const muniBoundariesPromise = (async () => {
   try {
     const fc = await fetchMunicipalBoundaries();
     muniBoundariesFc = fc;
     await mapReady;
     setMuniBoundariesData(map, fc);
+    return fc;
   } catch (err) {
     console.warn('muni boundaries fetch failed (non-fatal)', err);
+    return null;
   }
 })();
 
@@ -2300,6 +2305,7 @@ function fillSelect(sel, values, blankLabel) {
 // ---------- Search ----------
 
 async function runSearch() {
+  salesEnrichmentGeneration += 1;
   // Drop the sales-mode column reveal if a previous run came from a
   // sales CSV upload — a normal search shouldn't carry those columns.
   if ($resultsTable) $resultsTable.classList.remove('sales-mode');
@@ -2617,6 +2623,7 @@ const $resultsTable = document.getElementById('results');
  * so the user sees what was lost.
  */
 async function handleSalesUpload(file) {
+  const uploadGeneration = ++salesEnrichmentGeneration;
   setBusy(true);
   try {
     setCount('Reading CSV…');
@@ -2878,6 +2885,10 @@ async function handleSalesUpload(file) {
     // overlay enrichment pipeline runSearch uses (respecting the same
     // ENRICHMENT_THRESHOLD threshold).
     renderTable(parcelFc.features.map((p) => ({ parcel: p, zoning: [], devPlan: [] })));
+    // A sales export must never race ahead of the full parcel enrichment.
+    // It is re-enabled by the final render after every requested dataset
+    // has either loaded or reported that no coverage is available.
+    setExportEnabled(false);
     setMapData(parcelFc, EMPTY_FC, EMPTY_FC);
 
     // Single combined "N unmatched" suffix that pairs with the panel
@@ -2938,17 +2949,6 @@ async function handleSalesUpload(file) {
       ? { municipality: inputsMuni }
       : { municipalities: csvMatchedMunis.slice() };
 
-    // Phase 7 follow-up: zoning + dev-plan enrichment is now deferred
-    // until the user toggles those overlays in Map Layers. The
-    // upload-time fetch was the dominant cost of a sales CSV import
-    // — for a multi-muni upload it could take 10+ seconds on a cold
-    // cache. Skipping it makes the upload feel instantaneous; the
-    // table zoning columns are blank until the user clicks Zoning,
-    // and the Zoning toggle handler runs the enrichment lazily then.
-    // Kept the inputsMuni / fakeInputs object built above so the
-    // enrichment can be triggered on demand without re-deriving.
-    pendingOverlayEnrichInputs = fakeInputs;
-
     // Mirror runSearch's auto-toggle of the Roll Layer when a single
     // muni is in scope — gives the user the surrounding parcel
     // fabric for context without an extra click. Skipped for multi-
@@ -2958,6 +2958,16 @@ async function handleSalesUpload(file) {
         && !$muniParcelsToggle.classList.contains('active')) {
       toggleAuxOverlay('muniParcels');
     }
+
+    // Sales Analysis is an appraisal-data workflow, so a completed import
+    // means the parcel rows are fully enriched—not merely plotted. Load the
+    // same zoning, development-plan, risk-area, MASC-rating, and land-cover
+    // data as Property Search, then load and compose the Manitoba Soil
+    // Survey polygons for every municipality represented in the import.
+    await enrichOverlays(parcelFc, fakeInputs, baseMsg);
+    setExportEnabled(false);
+    setCount(`${baseMsg} · Loading soil survey data…`);
+    await enrichSalesSoilComposition(parcelFc, csvMatchedMunis, uploadGeneration);
 
     // Compute multi-parcel sale group totals AFTER the enrichment
     // pipeline has stamped _acres on every parcel. Each parcel in a
@@ -3059,6 +3069,7 @@ async function handleSalesUpload(file) {
     // in so any pre-set filters apply immediately instead of needing
     // the user to bump the input again to retrigger the listener.
     refilterCsvIfActive();
+    setCount(`${baseMsg} · all available parcel data loaded`);
   } finally {
     setBusy(false);
   }
@@ -4367,13 +4378,12 @@ async function enrichOverlays(parcelFc, inputs, baseMsg) {
   // so the overlay FCs already cover the entire muni. Stamp the
   // loaded-for state so the Zoning Layer / Dev Plan Layer toggles
   // can short-circuit when the user clicks them next.
-  if (inputs.municipality) {
-    zoningLayerLoadedFor = inputs.municipality;
-    devPlanLayerLoadedFor = inputs.municipality;
-  } else {
-    zoningLayerLoadedFor = null;
-    devPlanLayerLoadedFor = null;
-  }
+  const overlayLoadKey = inputs.municipality
+    || (Array.isArray(inputs.municipalities)
+      ? inputs.municipalities.slice().filter(Boolean).sort().join('|')
+      : '');
+  zoningLayerLoadedFor = overlayLoadKey || null;
+  devPlanLayerLoadedFor = overlayLoadKey || null;
   rebuildZoningLegend(zoningFc);
   updatePdWebsiteButton(devPlanFc);
 
@@ -4433,26 +4443,30 @@ async function enrichOverlays(parcelFc, inputs, baseMsg) {
   stampOfficialRiskAreas(rows, riskAreaFc);
 
   // Attach the pre-baked dominant MASC soil rating for each parcel
-  // (per-muni shard built by r/build_parcel_masc.R). Lazy: skipped
-  // when the muni isn't in the index (urban-only munis don't get a
-  // shard). Falls through silently on network or parse errors so a
-  // missing shard never blocks the search.
-  if (inputs.municipality) {
-    try {
-      const dict = await fetchParcelMascForMuni(inputs.municipality);
-      if (dict) {
-        for (const row of rows) {
-          const roll = row.parcel.properties?.Roll_No_Txt;
-          const hit  = roll ? dict[roll] : null;
-          if (hit) {
-            row.parcel.properties._soilRating = hit.rating || null;
-            row.parcel.properties._soilQuarter = soilSourceLabel(hit);
-          }
-        }
+  // (per-muni shard built by r/build_parcel_masc.R). Derive munis from
+  // the result rows so multi-municipality sales imports receive the same
+  // data as single-muni Property Searches. Urban-only munis may have no
+  // shard; those rows remain blank without blocking the import.
+  try {
+    const mascMunis = [...new Set(
+      rows.map((row) => row.parcel.properties?.Muni_Name_With_Typ).filter(Boolean),
+    )];
+    const dicts = await Promise.all(
+      mascMunis.map((muni) => fetchParcelMascForMuni(muni).catch(() => null)),
+    );
+    const byMuni = new Map();
+    mascMunis.forEach((muni, i) => { if (dicts[i]) byMuni.set(muni, dicts[i]); });
+    for (const row of rows) {
+      const p = row.parcel.properties;
+      const dict = p?.Muni_Name_With_Typ ? byMuni.get(p.Muni_Name_With_Typ) : null;
+      const hit = (dict && p?.Roll_No_Txt) ? dict[p.Roll_No_Txt] : null;
+      if (hit) {
+        p._soilRating = hit.rating || null;
+        p._soilQuarter = soilSourceLabel(hit);
       }
-    } catch (err) {
-      console.warn('parcel-MASC enrichment failed (non-fatal):', err);
     }
+  } catch (err) {
+    console.warn('parcel-MASC enrichment failed (non-fatal):', err);
   }
 
   // Attach the pre-baked land-cover summary (farmland buckets) for each
@@ -4500,6 +4514,7 @@ async function enrichOverlays(parcelFc, inputs, baseMsg) {
   renderTable(rows);
   setMapData(parcelFc, zoningFc, devPlanFc);
   setCount(baseMsg);
+  return rows;
 }
 
 function attachLegalMetadata(parcelFc, legalMatches) {
@@ -4694,51 +4709,56 @@ function setMuniParcelsMapData(fc) {
  * search loaded; if there's nothing cached, it gently reverts and
  * nudges the user to pick a muni.
  */
-// Phase 7 follow-up: stored CSV-upload enrichment inputs so the
-// Zoning / Dev plan toggle handlers can lazily enrich the loaded
-// CSV's parcels on first activation. Cleared on Clear / refresh.
-let pendingOverlayEnrichInputs = null;
-let csvOverlayEnriched = false;
-
 /**
- * Lazy enrichment after a CSV upload. Fires once when the user
- * first toggles Zoning or Development plan — stamps each parcel's
- * top-2 zoning + dominant dev-plan + coverage % onto the feature
- * so the table's zoning columns populate.
+ * Load Manitoba Soil Survey/CLI polygons for every municipality in a sales
+ * import and stamp the area-weighted top soil components onto each parcel.
+ * The polygons are cached and pushed to the hidden CLI source so turning the
+ * visual layer on later is instant; loading data does not force the overlay
+ * to become visible.
  */
-async function ensureCsvOverlayEnrichment() {
-  if (csvOverlayEnriched) return;
-  if (!pendingOverlayEnrichInputs) return;
-  if (!csvFullRows || csvFullRows.length === 0) return;
-  const fc = { type: 'FeatureCollection', features: csvFullRows.map((r) => r.parcel) };
-  setCount('Loading zoning + dev-plan for uploaded sales…');
-  try {
-    // enrichOverlays builds and returns a fresh `rows` array with
-    // .zoning / .devPlan / .zoningChanges / .devPlanChanges
-    // populated per parcel; merge those fields back onto our
-    // csvFullRows entries so renderTable sees them.
-    const enrichedRows = await enrichOverlays(fc, pendingOverlayEnrichInputs, 'Sales loaded');
-    if (Array.isArray(enrichedRows)) {
-      const byOid = new Map();
-      for (const er of enrichedRows) {
-        const oid = er?.parcel?.properties?.OBJECTID;
-        if (oid != null) byOid.set(oid, er);
-      }
-      for (const row of csvFullRows) {
-        const oid = row?.parcel?.properties?.OBJECTID;
-        const er = oid != null ? byOid.get(oid) : null;
-        if (!er) continue;
-        row.zoning         = er.zoning || [];
-        row.devPlan        = er.devPlan || [];
-        row.zoningChanges  = er.zoningChanges || [];
-        row.devPlanChanges = er.devPlanChanges || [];
-      }
-    }
-    csvOverlayEnriched = true;
-    refilterCsvIfActive();
-  } catch (err) {
-    console.warn('Lazy overlay enrichment failed (non-fatal):', err);
+async function enrichSalesSoilComposition(parcelFc, munis, generation) {
+  if (!parcelFc?.features?.length || !Array.isArray(munis) || munis.length === 0) return;
+  const boundaries = muniBoundariesFc || await muniBoundariesPromise;
+  if (!boundaries?.features?.length) return;
+
+  const scoped = munis.map((muni) => {
+    const exact = boundaries.features.find(
+      (f) => f.properties?.MUNI_LIST_NAME_WITH_TYPE === muni,
+    );
+    const normalized = exact || boundaries.features.find(
+      (f) => normalizeMuniKey(f.properties?.MUNI_LIST_NAME_WITH_TYPE) === normalizeMuniKey(muni),
+    );
+    return { muni, boundary: normalized || null };
+  });
+  const missing = scoped.filter((entry) => !entry.boundary).map((entry) => entry.muni);
+  if (missing.length) {
+    console.warn(`Sales soil enrichment: no municipal boundary for ${missing.join(', ')}`);
   }
+
+  const fcs = await Promise.all(scoped
+    .filter((entry) => entry.boundary)
+    .map(({ muni, boundary }) => fetchCliAgrForMuni(muni, boundary).catch((err) => {
+      console.warn(`Sales soil enrichment failed for ${muni}:`, err);
+      return EMPTY_FC;
+    })));
+  if (generation !== salesEnrichmentGeneration
+      || !document.body.classList.contains('sales-mode')) return;
+
+  const cliFc = {
+    type: 'FeatureCollection',
+    features: fcs.flatMap((fc) => fc?.features || []),
+  };
+  stampSoilCompositionOnParcels(parcelFc, cliFc);
+  lastCliFc = cliFc;
+  // Mark the visual overlay cache complete only when every requested muni
+  // resolved and at least one soil polygon loaded. Otherwise a later manual
+  // toggle is allowed to retry the missing/failed coverage.
+  cliLoadedFor = missing.length === 0 && cliFc.features.length > 0
+    ? munis.slice().sort().join('|')
+    : null;
+  await mapReady;
+  if (generation !== salesEnrichmentGeneration) return;
+  setCliAgrData(map, cliFc);
 }
 
 async function toggleOverlay(which) {
@@ -4754,14 +4774,6 @@ async function toggleOverlay(which) {
     setOverlayBtnLabel(btn, label);
     applyOverlayVisibility(which, false);
     return;
-  }
-
-  // Phase 7 follow-up: lazy CSV-overlay enrichment. First time the
-  // user toggles Zoning or Dev plan after a CSV upload, stamp the
-  // top-2 zoning + dev-plan onto each parcel so the table's zoning
-  // columns populate. Fires once per upload.
-  if (pendingOverlayEnrichInputs && !csvOverlayEnriched) {
-    ensureCsvOverlayEnrichment().catch(() => {});
   }
 
   // Determine the muni scope for the layer fetch. Sales-CSV mode
@@ -6952,8 +6964,8 @@ if ($paginator) {
  * Falls back to AGCAP_CLS if AGRI_CAP is missing.
  */
 /**
- * Build the 33 CSV cells (11 columns × 3 soils) for the per-soil land-
- * feature descriptors. Reads `_soilComposition[0..2]` (rolled-up by
+ * Build the detailed CSV cells for the top three mapped soils. Reads
+ * `_soilComposition[0..2]` (rolled-up by
  * soil association, each entry already carries the largest-contributing
  * polygon's descriptor codes per soilSurveyComponentsFromMatches),
  * decodes each code to its human-readable label via map.js's domain
@@ -6976,7 +6988,13 @@ function soilCsvHeaders() {
   const cols = [];
   for (const idx of ['1', '2', '3']) {
     cols.push(`Soil ${idx} Name`);
+    cols.push(`Soil ${idx} Code`);
     cols.push(`Soil ${idx} % of Parcel`);
+    cols.push(`Soil ${idx} Acres`);
+    cols.push(`Soil ${idx} CLI Capability`);
+    cols.push(`Soil ${idx} CLI Class`);
+    cols.push(`Soil ${idx} Surface Texture`);
+    cols.push(`Soil ${idx} Map Units`);
     for (const [, label] of SOIL_CSV_DOMAINS_PER_SOIL) cols.push(`Soil ${idx} ${label}`);
   }
   return cols;
@@ -6987,12 +7005,18 @@ function soilCsvCells(p) {
   for (let i = 0; i < 3; i++) {
     const c = comp[i];
     if (!c) {
-      out.push('', '');
+      out.push('', '', '', '', '', '', '', '');
       for (let j = 0; j < SOIL_CSV_DOMAINS_PER_SOIL.length; j++) out.push('');
       continue;
     }
-    out.push(c.soilName || c.soilCode || '');
+    out.push(c.soilName || '');
+    out.push(c.soilCode || '');
     out.push(Number.isFinite(c.parcelPct) ? c.parcelPct.toFixed(1) : '');
+    out.push(Number.isFinite(c.areaAcres) ? c.areaAcres.toFixed(3) : '');
+    out.push(c.agriCap || '');
+    out.push(c.agcapCls || '');
+    out.push(c.surfaceText || '');
+    out.push(Array.isArray(c.mapUnits) ? c.mapUnits.join(' | ') : (c.mapUnit || ''));
     for (const [field] of SOIL_CSV_DOMAINS_PER_SOIL) {
       out.push(decodeSoilDescriptor(field, c[field]));
     }
@@ -8188,10 +8212,10 @@ function exportCsv(explicitRows) {
     'Roll #', 'Muni #', 'Address',
     'Legal Description', 'Legal Detail', 'Lot', 'Block', 'Plan',
     'Certificates of Title', 'MAO Legal Source URL',
-    'Zoning', 'Zoning %',
-    'Zoning 2', 'ZBL',
-    'Dev-Plan Designation', 'DP By-law',
-    'Soil Rating', 'Risk Area',
+    'Zoning 1 Code', 'Zoning 1 Name', 'Zoning 1 Category', 'Zoning 1 %', 'Zoning 1 By-law',
+    'Zoning 2 Code', 'Zoning 2 Name', 'Zoning 2 Category', 'Zoning 2 %', 'Zoning 2 By-law',
+    'Dev-Plan Designation', 'Dev-Plan Category', 'Dev-Plan %', 'DP By-law', 'Planning District',
+    'MASC Rating', 'MASC Source', 'Risk Area',
     'CLI', 'Soil Type',
     ...soilCsvHeaders(),
     'Land Cover', 'Cult %', 'Pasture %', 'Bush %', 'Wetland %', 'Other %',
@@ -8201,7 +8225,10 @@ function exportCsv(explicitRows) {
     'Walkscore URL', 'Flood-Map URL',
     ...(inSalesMode
       ? [
-          'Sale Date', 'Sale Price', 'Group #', 'Group $/Lot', 'Group $/SF', 'Group $/Acre', 'Sale/Asmt',
+          'Sale Date', 'Sale Price', 'Sale Group ID', 'Parcels in Sale', 'Group Rolls',
+          'Group Total Sale Price', 'Group Total Acres', 'Group Acres Complete',
+          'Group $/Lot', 'Group $/SF', 'Group $/Acre',
+          'Group Assessment Total', 'Group Assessment Complete', 'Sale/Asmt',
           'Dist (km)', 'Asmt Land', 'Asmt Buildings', 'Asmt Bldg %', 'Asmt Year', 'Asmt Class', 'Asmt Status',
         ]
       : []),
@@ -8239,10 +8266,10 @@ function exportCsv(explicitRows) {
       p._plan ?? '',
       p._certificatesOfTitle ?? '',
       p._legalSourceUrl ?? '',
-      formatZoneCode(z1), ratioPct(row.zoning[0]?.ratio),
-      formatZoneCode(z2), z1.ZBL,
-      formatDes(d1), d1.DP_BYLAW,
-      p._soilRating ?? '', p._soilRiskArea ?? '',
+      formatZoneCode(z1), z1.ZONE_NAME ?? '', z1.ZONE_CATEGORY ?? '', ratioPct(row.zoning[0]?.ratio), z1.ZBL ?? '',
+      formatZoneCode(z2), z2.ZONE_NAME ?? '', z2.ZONE_CATEGORY ?? '', ratioPct(row.zoning[1]?.ratio), z2.ZBL ?? '',
+      formatDes(d1), d1.DES_CATEGORY ?? '', ratioPct(row.devPlan[0]?.ratio), d1.DP_BYLAW ?? '', d1.PLANNINGDISTRICT ?? '',
+      p._soilRating ?? '', p._soilQuarter ?? '', p._soilRiskArea ?? '',
       dominantCliLabel(p) ?? '', dominantSoilTypeLabel(p) ?? '',
       ...soilCsvCells(p),
       ...landCoverCsvCells(p, ac),
@@ -8259,10 +8286,17 @@ function exportCsv(explicitRows) {
         ? [
             p._saleDate ?? '',
             p._salePrice ?? '',
+            p._saleGroupId ?? '',
             p._saleGroupSize ?? '',
+            Array.isArray(p._saleGroupRolls) ? p._saleGroupRolls.join(' | ') : '',
+            Number.isFinite(p._saleGroupTotalPriceNum) ? Math.round(p._saleGroupTotalPriceNum) : '',
+            Number.isFinite(p._saleGroupTotalAcres) ? p._saleGroupTotalAcres.toFixed(3) : '',
+            p._saleGroupSize != null ? (p._saleGroupAcresIncomplete ? 'No' : 'Yes') : '',
             p._saleGroupPpl != null ? Math.round(p._saleGroupPpl) : '',
             p._saleGroupAcresIncomplete ? '' : (p._saleGroupPpsf != null ? p._saleGroupPpsf.toFixed(2) : ''),
             p._saleGroupAcresIncomplete ? '' : (p._saleGroupPpa  != null ? Math.round(p._saleGroupPpa)   : ''),
+            Number.isFinite(p._saleGroupAsmtTotal) ? Math.round(p._saleGroupAsmtTotal) : '',
+            p._saleGroupSize != null ? (p._saleGroupAsmtIncomplete ? 'No' : 'Yes') : '',
             p._saleGroupAsmtIncomplete ? '' : (Number.isFinite(p._saleGroupSaleToAsmt) ? p._saleGroupSaleToAsmt.toFixed(2) : ''),
             Number.isFinite(p._distanceKm) ? p._distanceKm.toFixed(2) : '',
             Number.isFinite(p._asmtLand) ? Math.round(p._asmtLand) : '',
