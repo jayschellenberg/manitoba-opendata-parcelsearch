@@ -33,6 +33,7 @@ globalThis.localStorage = makeFakeStorage();
 globalThis.sessionStorage = makeFakeStorage();
 
 const arcgis = await import('../src/arcgis.js');
+const { soilSurveyComponentsFromMatches } = await import('../src/soilSurvey.js');
 
 const results = [];
 async function test(name, fn) {
@@ -118,6 +119,43 @@ await test('Cache survives a roundtrip through the localStorage envelope', async
   const parsed = JSON.parse(raw);
   assert.equal(typeof parsed, 'object');
   assert.ok('v' in parsed && 't' in parsed, 'cache envelope must carry v + t');
+});
+
+await test('Rockwood Soil Survey fetch is complete beyond the old 2,000 cap', async () => {
+  const boundaries = await arcgis.fetchMunicipalBoundaries();
+  const rockwood = boundaries.features.find(
+    (feature) => feature.properties?.MUNI_LIST_NAME_WITH_TYPE === 'ROCKWOOD (RM)',
+  );
+  assert.ok(rockwood, 'expected the ROCKWOOD (RM) municipal boundary');
+  const soil = await arcgis.fetchCliAgrForMuni('ROCKWOOD (RM)', rockwood);
+  assert.ok(soil.features.length > 2000,
+    `expected Rockwood to exceed the former cap; received ${soil.features.length}`);
+  assert.equal(soil.features.length, soil._expectedCount,
+    'every OBJECTID from the complete snapshot must be present');
+
+  // These source polygons overlap the originally reported rolls 112900,
+  // 113100, and 129300. Keeping them as opt-in live sentinels catches a
+  // future pagination regression while allowing an intentional provincial
+  // layer republish to be diagnosed separately from the offline unit suite.
+  const ids = new Set(soil.features.map((feature) => feature.properties?.OBJECTID));
+  for (const oid of [102742, 103739, 102837, 103775]) {
+    assert.ok(ids.has(oid), `expected Rockwood Soil Survey OBJECTID ${oid}`);
+  }
+
+  const parcels = await arcgis.searchParcels({
+    municipality: 'ROCKWOOD (RM)',
+    roll: '112900,113100,129300',
+  });
+  assert.equal(parcels.features.length, 3, 'expected all three reported Rockwood rolls');
+  const matches = arcgis.joinTopNByArea(parcels, soil, Infinity);
+  for (const parcel of parcels.features) {
+    const oid = parcel.properties?.OBJECTID;
+    const composition = soilSurveyComponentsFromMatches(matches.get(oid), { maxRows: 3 });
+    assert.ok(composition.some((row) => row.soilName),
+      `expected soil type for Rockwood roll ${parcel.properties?.Roll_No_Txt}`);
+    assert.ok(composition.some((row) => row.agriCap || row.agcapCls),
+      `expected CLI rating for Rockwood roll ${parcel.properties?.Roll_No_Txt}`);
+  }
 });
 
 const failed = results.filter((r) => r.status === 'fail');

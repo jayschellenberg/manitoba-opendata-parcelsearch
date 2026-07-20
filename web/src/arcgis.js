@@ -1141,7 +1141,10 @@ const CLI_AGR_CAP_OUTFIELDS = [
 
 export async function fetchCliAgrForMuni(muniNameWithTyp, muniBoundaryFeature) {
   if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
-  // v7 (2026-07-15): restored Manitoba's full source geometry for
+  // v8 (2026-07-20): fetches the complete matching OBJECTID set before
+  //   loading polygons in batches. This invalidates incomplete v7 payloads
+  //   cached for municipalities such as Rockwood that exceed 2,000 polygons.
+  //   v7 (2026-07-15): restored Manitoba's full source geometry for
   //   parcel-scale area composition. v6 (2026-05-21): added per-slot
   //   Manitoba Soil Survey descriptors
   //   (TOPO, STONE, SALINITY, EROSION, DRAINAGE, SURFTEXTM, MANCON,
@@ -1152,14 +1155,14 @@ export async function fetchCliAgrForMuni(muniNameWithTyp, muniBoundaryFeature) {
   //   precomputed area instead of the slow turfArea fallback.
   //   v4 (2026-05-20): added maxAllowableOffset for smaller payloads;
   //   v7 removes it because it materially altered some small polygons.
-  const cacheKey = `mb_cli_agr_${muniNameWithTyp}_v7`;
+  const cacheKey = `mb_cli_agr_${muniNameWithTyp}_v8`;
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
 
   const esriGeom = polygonToEsriGeometry(muniBoundaryFeature);
   if (!esriGeom) return null;
 
-  const fc = await fetchAllPages(CLI_AGR_CAP_URL, {
+  const fc = await fetchCompleteFeatureSet(CLI_AGR_CAP_URL, {
     where: '1=1',
     geometry: JSON.stringify(esriGeom),
     geometryType: 'esriGeometryPolygon',
@@ -1168,7 +1171,7 @@ export async function fetchCliAgrForMuni(muniNameWithTyp, muniBoundaryFeature) {
     outFields: CLI_AGR_CAP_OUTFIELDS,
     ...SOIL_SURVEY_GEOMETRY_QUERY,
     f: 'geojson',
-  }, 2000);
+  }, `Soil Survey for ${muniNameWithTyp}`);
   await writeCache(cacheKey, fc);
   return fc;
 }
@@ -1200,8 +1203,6 @@ const SOIL_SURVEY_URL =
   'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/Soil_Survey_MB/FeatureServer/0';
 const SOIL_SURVEY_LABELS_URL =
   'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/Soil_Survey_Data_MB_Labels/FeatureServer/0';
-const SOIL_SURVEY_FETCH_CAP = 50000;
-
 // The Esri layer schema truncates several field names to 10 characters
 // (a legacy of the Shapefile origin). The metadata lists each truncated
 // name plus an `alias` like "REPORT_NAME" — but outFields= only accepts
@@ -1235,16 +1236,16 @@ const SOIL_SURVEY_OUTFIELDS = [
 
 export async function fetchSoilSurveyForMuni(muniNameWithTyp, muniBoundaryFeature) {
   if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
-  // v6 (2026-07-15): restored full source geometry. The cache bump
-  // ensures previously generalized v5 polygons are not reused.
-  const cacheKey = `mb_soil_survey_${muniNameWithTyp}_v6`;
+  // v7 (2026-07-20): complete OBJECTID-first retrieval. v6 restored full
+  // source geometry; this bump also clears any legacy partial payload.
+  const cacheKey = `mb_soil_survey_${muniNameWithTyp}_v7`;
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
 
   const esriGeom = polygonToEsriGeometry(muniBoundaryFeature);
   if (!esriGeom) return null;
 
-  const fc = await fetchAllPages(SOIL_SURVEY_URL, {
+  const fc = await fetchCompleteFeatureSet(SOIL_SURVEY_URL, {
     where: '1=1',
     geometry: JSON.stringify(esriGeom),
     geometryType: 'esriGeometryPolygon',
@@ -1253,7 +1254,7 @@ export async function fetchSoilSurveyForMuni(muniNameWithTyp, muniBoundaryFeatur
     outFields: SOIL_SURVEY_OUTFIELDS,
     ...SOIL_SURVEY_GEOMETRY_QUERY,
     f: 'geojson',
-  }, SOIL_SURVEY_FETCH_CAP);
+  }, `Soil Survey for ${muniNameWithTyp}`);
   await writeCache(cacheKey, fc);
   return fc;
 }
@@ -1267,15 +1268,16 @@ export async function fetchSoilSurveyForMuni(muniNameWithTyp, muniBoundaryFeatur
  */
 export async function fetchSoilSurveyLabelsForMuni(muniNameWithTyp, muniBoundaryFeature) {
   if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
-  // v2 (2026-05-19): labels also exceed 2000 in several large RMs.
-  const cacheKey = `mb_soil_survey_labels_${muniNameWithTyp}_v2`;
+  // v3 (2026-07-20): complete OBJECTID-first retrieval. v2 raised the old
+  // fixed cap, but could still have cached a partial future municipality.
+  const cacheKey = `mb_soil_survey_labels_${muniNameWithTyp}_v3`;
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
 
   const esriGeom = polygonToEsriGeometry(muniBoundaryFeature);
   if (!esriGeom) return null;
 
-  const fc = await fetchAllPages(SOIL_SURVEY_LABELS_URL, {
+  const fc = await fetchCompleteFeatureSet(SOIL_SURVEY_LABELS_URL, {
     where: '1=1',
     geometry: JSON.stringify(esriGeom),
     geometryType: 'esriGeometryPolygon',
@@ -1285,7 +1287,7 @@ export async function fetchSoilSurveyLabelsForMuni(muniNameWithTyp, muniBoundary
     returnGeometry: 'true',
     outSR: '4326',
     f: 'geojson',
-  }, SOIL_SURVEY_FETCH_CAP);
+  }, `Soil Survey labels for ${muniNameWithTyp}`);
   await writeCache(cacheKey, fc);
   return fc;
 }
@@ -2296,6 +2298,114 @@ async function runParallelBatched(items, concurrency, fn) {
   const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => worker());
   await Promise.all(workers);
   return results;
+}
+
+/**
+ * Fetch a provably complete FeatureServer result set.
+ *
+ * ArcGIS caps normal feature responses at maxRecordCount, but its ID-only
+ * query returns the full matching OBJECTID set. Capture that set first, fetch
+ * those exact IDs in server-sized batches, then verify that every requested
+ * ID arrived exactly once. Callers may safely cache the result only after this
+ * function returns; any partial or inconsistent response throws instead of
+ * becoming plausible-looking missing data.
+ */
+export async function fetchCompleteFeatureSet(baseUrl, params, label = 'ArcGIS dataset') {
+  const idParams = {
+    ...params,
+    returnIdsOnly: 'true',
+    returnGeometry: 'false',
+    f: 'json',
+  };
+  delete idParams.outFields;
+  delete idParams.outSR;
+  delete idParams.orderByFields;
+  delete idParams.resultOffset;
+  delete idParams.resultRecordCount;
+  delete idParams.objectIds;
+
+  const idResponse = await fetchPage(baseUrl, idParams);
+  if (!Array.isArray(idResponse?.objectIds)) {
+    throw new Error(`${label} did not return an OBJECTID list; refusing an unverifiable load.`);
+  }
+
+  const objectIdFieldName = idResponse.objectIdFieldName || 'OBJECTID';
+  const ids = idResponse.objectIds.slice().sort((a, b) => {
+    const na = Number(a);
+    const nb = Number(b);
+    return Number.isFinite(na) && Number.isFinite(nb)
+      ? na - nb
+      : String(a).localeCompare(String(b));
+  });
+  const expected = new Set(ids.map((id) => String(id)));
+  if (expected.size !== ids.length) {
+    throw new Error(`${label} returned duplicate OBJECTIDs; refusing an unverifiable load.`);
+  }
+  if (ids.length === 0) {
+    return {
+      type: 'FeatureCollection',
+      features: [],
+      _truncated: false,
+      _expectedCount: 0,
+    };
+  }
+
+  const features = [];
+  for (let i = 0; i < ids.length; i += PAGE_SIZE) {
+    const chunk = ids.slice(i, i + PAGE_SIZE);
+    const batchParams = {
+      ...params,
+      where: '1=1',
+      objectIds: chunk.join(','),
+      orderByFields: `${objectIdFieldName} ASC`,
+    };
+    // The ID snapshot already expresses the spatial filter. Omitting the
+    // municipal boundary from each batch keeps POST bodies smaller and avoids
+    // a layer edit between requests changing which features qualify.
+    delete batchParams.geometry;
+    delete batchParams.geometryType;
+    delete batchParams.inSR;
+    delete batchParams.spatialRel;
+    delete batchParams.returnIdsOnly;
+    delete batchParams.resultOffset;
+    delete batchParams.resultRecordCount;
+    const fc = await fetchPage(baseUrl, batchParams);
+    features.push(...(fc?.features || []));
+  }
+
+  const received = new Set();
+  const unexpected = [];
+  for (const feature of features) {
+    const properties = feature?.properties || feature?.attributes || {};
+    let oid = properties[objectIdFieldName];
+    if (oid == null) {
+      const actualKey = Object.keys(properties).find(
+        (key) => key.toLowerCase() === objectIdFieldName.toLowerCase(),
+      );
+      if (actualKey) oid = properties[actualKey];
+    }
+    const key = oid == null ? '' : String(oid);
+    if (!key || !expected.has(key) || received.has(key)) unexpected.push(key || '(missing)');
+    else received.add(key);
+  }
+  const missing = ids.filter((id) => !received.has(String(id)));
+  if (missing.length > 0 || unexpected.length > 0 || features.length !== ids.length) {
+    const detail = [
+      missing.length ? `${missing.length} missing` : '',
+      unexpected.length ? `${unexpected.length} unexpected/duplicate` : '',
+    ].filter(Boolean).join(', ');
+    throw new Error(
+      `${label} was incomplete (${features.length}/${ids.length} polygons; ${detail || 'count mismatch'}). `
+      + 'Nothing was cached; retry the load.',
+    );
+  }
+
+  return {
+    type: 'FeatureCollection',
+    features,
+    _truncated: false,
+    _expectedCount: ids.length,
+  };
 }
 
 /**

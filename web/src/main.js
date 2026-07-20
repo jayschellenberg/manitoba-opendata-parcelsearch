@@ -652,6 +652,10 @@ let csvFullBaseMsg = '';
 // Invalidates in-flight sales enrichment when a newer upload or a regular
 // property search replaces the displayed parcel set.
 let salesEnrichmentGeneration = 0;
+// Sales exports are enabled only after Soil Survey enrichment has finished.
+// A timeout/partial response must not turn into authoritative-looking blank
+// CLI and soil columns in the export.
+let salesExportEnrichmentComplete = true;
 // Full list of munis matched by the last sales-CSV upload — populated
 // in handleSalesUpload, cleared on runSearch. When non-null, the
 // MASC and CLI overlay toggles fetch+merge across every muni in this
@@ -2327,6 +2331,7 @@ function fillSelect(sel, values, blankLabel) {
 
 async function runSearch() {
   const searchGeneration = ++salesEnrichmentGeneration;
+  salesExportEnrichmentComplete = true;
   // Drop the sales-mode column reveal if a previous run came from a
   // sales CSV upload — a normal search shouldn't carry those columns.
   if ($resultsTable) $resultsTable.classList.remove('sales-mode');
@@ -2641,17 +2646,23 @@ async function runSearch() {
       // so either CLI map mode turns on immediately when requested.
       if (hasList && listMatchedMunis?.length) {
         setCount(`${baseMsg} · Loading soil survey data…`);
-        const soilLoaded = await enrichImportedSoilComposition(
+        const soilResult = await enrichImportedSoilComposition(
           parcelFc,
           listMatchedMunis,
           searchGeneration,
           'list',
         );
-        if (soilLoaded) {
+        if (soilResult.superseded) return;
+        if (soilResult.featureCount > 0) {
           refreshResultsTableAfterCompositionStamp();
           setMapData(parcelFc, lastZoningFc, lastDevPlanFc, { fit: false });
         }
-        setCount(baseMsg);
+        if (soilResult.complete) {
+          setCount(baseMsg);
+        } else {
+          const failedMunis = soilResult.failures.map((failure) => failure.muni).join(', ');
+          setCount(`${baseMsg} · Soil data failed for ${failedMunis}; run Search again to retry.`);
+        }
       }
     }
   } finally {
@@ -2680,6 +2691,8 @@ const $resultsTable = document.getElementById('results');
  */
 async function handleSalesUpload(file) {
   const uploadGeneration = ++salesEnrichmentGeneration;
+  salesExportEnrichmentComplete = false;
+  setExportEnabled(false);
   setBusy(true);
   try {
     setCount('Reading CSV…');
@@ -3023,7 +3036,14 @@ async function handleSalesUpload(file) {
     await enrichOverlays(parcelFc, fakeInputs, baseMsg);
     setExportEnabled(false);
     setCount(`${baseMsg} · Loading soil survey data…`);
-    await enrichImportedSoilComposition(parcelFc, csvMatchedMunis, uploadGeneration, 'sales');
+    const soilResult = await enrichImportedSoilComposition(
+      parcelFc,
+      csvMatchedMunis,
+      uploadGeneration,
+      'sales',
+    );
+    if (soilResult.superseded) return;
+    salesExportEnrichmentComplete = soilResult.complete;
 
     // Compute multi-parcel sale group totals AFTER the enrichment
     // pipeline has stamped _acres on every parcel. Each parcel in a
@@ -3125,7 +3145,15 @@ async function handleSalesUpload(file) {
     // in so any pre-set filters apply immediately instead of needing
     // the user to bump the input again to retrigger the listener.
     refilterCsvIfActive();
-    setCount(`${baseMsg} · all available parcel data loaded`);
+    setExportEnabled(salesExportEnrichmentComplete && currentRows.length > 0);
+    if (soilResult.complete) {
+      setCount(`${baseMsg} · all available parcel data loaded`);
+    } else {
+      const failedMunis = soilResult.failures.map((failure) => failure.muni).join(', ');
+      setCount(
+        `${baseMsg} · Soil data failed for ${failedMunis}; export disabled. Retry the import.`,
+      );
+    }
   } finally {
     setBusy(false);
   }
@@ -4772,13 +4800,26 @@ function setMuniParcelsMapData(fc) {
  * source so turning the visual layer on later is instant; loading data does
  * not force the overlay to become visible.
  *
- * Returns true when the imported result set is still current and the stamp
- * completed, false when a newer search/import superseded this async work.
+ * Returns a structured completion result so callers can distinguish valid
+ * zero-coverage from a failed municipality and avoid exporting silent blanks.
  */
 async function enrichImportedSoilComposition(parcelFc, munis, generation, mode) {
-  if (!parcelFc?.features?.length || !Array.isArray(munis) || munis.length === 0) return false;
+  const emptyResult = {
+    complete: false,
+    superseded: false,
+    failures: [],
+    featureCount: 0,
+  };
+  if (!parcelFc?.features?.length || !Array.isArray(munis) || munis.length === 0) {
+    return emptyResult;
+  }
   const boundaries = muniBoundariesFc || await muniBoundariesPromise;
-  if (!boundaries?.features?.length) return false;
+  if (!boundaries?.features?.length) {
+    return {
+      ...emptyResult,
+      failures: munis.map((muni) => ({ muni, message: 'Municipal boundaries unavailable' })),
+    };
+  }
 
   const scoped = munis.map((muni) => {
     const exact = boundaries.features.find(
@@ -4794,16 +4835,40 @@ async function enrichImportedSoilComposition(parcelFc, munis, generation, mode) 
     console.warn(`Imported soil enrichment: no municipal boundary for ${missing.join(', ')}`);
   }
 
-  const fcs = await Promise.all(scoped
-    .filter((entry) => entry.boundary)
-    .map(({ muni, boundary }) => fetchCliAgrForMuni(muni, boundary).catch((err) => {
-      console.warn(`Imported soil enrichment failed for ${muni}:`, err);
-      return EMPTY_FC;
-    })));
+  // Bound concurrency so a long multi-municipality import does not burst
+  // dozens of ID + feature requests at ArcGIS simultaneously. Each failure
+  // remains associated with its municipality instead of becoming EMPTY_FC.
+  const failures = missing.map((muni) => ({ muni, message: 'Municipal boundary unavailable' }));
+  const fcs = [];
+  const loadable = scoped.filter((entry) => entry.boundary);
+  const SOIL_IMPORT_CONCURRENCY = 4;
+  for (let i = 0; i < loadable.length; i += SOIL_IMPORT_CONCURRENCY) {
+    const batch = await Promise.all(loadable.slice(i, i + SOIL_IMPORT_CONCURRENCY)
+      .map(async ({ muni, boundary }) => {
+        try {
+          return { muni, fc: await fetchCliAgrForMuni(muni, boundary), error: null };
+        } catch (err) {
+          console.warn(`Imported soil enrichment failed for ${muni}:`, err);
+          return { muni, fc: null, error: err };
+        }
+      }));
+    for (const result of batch) {
+      if (result.error) {
+        failures.push({
+          muni: result.muni,
+          message: result.error.message || String(result.error),
+        });
+      } else if (result.fc) {
+        fcs.push(result.fc);
+      }
+    }
+  }
   const modeStillActive = () => mode === 'sales'
     ? document.body.classList.contains('sales-mode')
     : Array.isArray(listParcelKeys) && listParcelKeys.length > 0;
-  if (generation !== salesEnrichmentGeneration || !modeStillActive()) return false;
+  if (generation !== salesEnrichmentGeneration || !modeStillActive()) {
+    return { ...emptyResult, superseded: true };
+  }
 
   const cliFc = {
     type: 'FeatureCollection',
@@ -4811,16 +4876,23 @@ async function enrichImportedSoilComposition(parcelFc, munis, generation, mode) 
   };
   stampSoilCompositionOnParcels(parcelFc, cliFc);
   lastCliFc = cliFc;
-  // Mark the visual overlay cache complete only when every requested muni
-  // resolved and at least one soil polygon loaded. Otherwise a later manual
-  // toggle is allowed to retry the missing/failed coverage.
-  cliLoadedFor = missing.length === 0 && cliFc.features.length > 0
+  // Mark the visual overlay cache complete when every requested municipality
+  // resolved, including valid zero-coverage results. A failed municipality
+  // leaves the key unset so a later manual toggle can retry it.
+  cliLoadedFor = failures.length === 0
     ? munis.slice().sort().join('|')
     : null;
   await mapReady;
-  if (generation !== salesEnrichmentGeneration || !modeStillActive()) return false;
+  if (generation !== salesEnrichmentGeneration || !modeStillActive()) {
+    return { ...emptyResult, superseded: true };
+  }
   setCliAgrData(map, cliFc);
-  return true;
+  return {
+    complete: failures.length === 0,
+    superseded: false,
+    failures,
+    featureCount: cliFc.features.length,
+  };
 }
 
 async function toggleOverlay(which) {
@@ -6953,7 +7025,9 @@ function renderTable(rows, { resetPage = true } = {}) {
   const $resultsEmpty = document.getElementById('results-empty');
   if ($resultsEmpty) $resultsEmpty.hidden = sorted.length > 0;
   renderPaginator(sorted.length);
-  setExportEnabled(rows.length > 0);
+  const salesExportAllowed = !document.body.classList.contains('sales-mode')
+    || salesExportEnrichmentComplete;
+  setExportEnabled(rows.length > 0 && salesExportAllowed);
   // Parcel numbering: gate the "#" column on numbering being on AND
   // there being more than one parcel, and reveal the toggle when it's
   // applicable. The map callouts are driven separately (setMapData /
@@ -8227,6 +8301,10 @@ function exportCsv(explicitRows) {
   // currently in sales-mode — otherwise they'd just be empty trailing
   // cells on every row of a regular search export.
   const inSalesMode = $resultsTable?.classList.contains('sales-mode');
+  if (inSalesMode && !salesExportEnrichmentComplete) {
+    setCount('Export blocked: soil enrichment did not complete. Retry the sales import.');
+    return;
+  }
   // Starred-only mode — if any row's parcel is in the favourites
   // set, export only those rows AND every sibling parcel in the
   // same sale group. Starring one half of a 2-parcel sale should
