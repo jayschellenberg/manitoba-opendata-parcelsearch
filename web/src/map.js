@@ -2147,33 +2147,32 @@ export function initMap(container, { onFeatureClick } = {}) {
         clearGroupHover();
       });
 
-      // Click on a parcel → scroll the table to its row AND open a sticky
-      // popup with the parcel detail. The sticky popup is needed because
+      // Click on a search-result parcel → open a sticky popup with the
+      // parcel detail. The popup includes an explicit action for scrolling
+      // the results table to this parcel; opening the popup itself must not
+      // move the page away from the map.
+      //
+      // The sticky popup is needed because
       // the global hover popup disappears on mouseout, so the user could
       // never reach the Assessment-report link sitting at the bottom of
       // it. Reuses parcelHtml so hover and click show identical content.
-      //
-      // focusAfterOpen:false is critical — MapLibre's default behavior is
-      // to call .focus() on the popup container when it's added to the
-      // map, which the browser handles by scrolling the popup into view.
-      // That overrides the smooth scrollIntoView() in scrollToRow and
-      // leaves the user staring at the map instead of the table row they
-      // just clicked. With focus disabled, scrollToRow wins.
+      // focusAfterOpen:false also prevents MapLibre from changing the page's
+      // scroll position while it focuses the newly opened popup.
       const parcelClickPopup = new maplibregl.Popup({ closeButton: true, focusAfterOpen: false, maxWidth: '760px' });
       map.on('click', 'parcel-fill', (e) => {
         const f = e.features?.[0];
         if (!f) return;
-        if (onFeatureClick) {
-          const key = f.properties?._rowKey;
-          if (key != null) onFeatureClick(key);
-        }
+        const key = f.properties?._rowKey;
         // Hide the hover popup so the sticky popup doesn't render on top
         // of itself when the user hovers back over the same parcel.
         popup.remove();
         parcelClickPopup
           .setLngLat(e.lngLat)
-          .setHTML(parcelHtml(f.properties))
+          .setHTML(parcelHtml(f.properties, {
+            showJumpToList: key != null && typeof onFeatureClick === 'function',
+          }))
           .addTo(map);
+        wireJumpToList(parcelClickPopup, key, onFeatureClick);
         // Wire the Coordinates copy link. e.features only carries
         // properties from the symbol/fill layer hit; for the geometry
         // we need the rendered feature. Fall back to the click point
@@ -2947,6 +2946,17 @@ function wireCoordsCopy(popup, lngLat) {
   });
 }
 
+/** Wire the click-popup action that reveals this parcel's results-table row. */
+function wireJumpToList(popup, rowKey, onFeatureClick) {
+  if (rowKey == null || typeof onFeatureClick !== 'function') return;
+  const anchor = popup.getElement?.()?.querySelector('.parcel-jump-to-list');
+  if (!anchor) return;
+  anchor.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    onFeatureClick(rowKey);
+  });
+}
+
 export function setMuniParcelsVisible(map, visible) {
   const v = visible ? 'visible' : 'none';
   for (const id of ['muni-parcels-fill', 'muni-parcels-line', 'muni-parcels-label', 'muni-parcels-civic-label']) {
@@ -3173,7 +3183,7 @@ export function setLandCoverRasterOpacity(map, opacity) {
 
 // ---------- popup builders ----------
 
-export function parcelHtml(p) {
+export function parcelHtml(p, { showJumpToList = false } = {}) {
   const lines = [];
   // Subject parcel gets a distinctive blue header above the standard
   // identity block. _isSubject is stamped onto the subject feature by
@@ -3257,6 +3267,9 @@ export function parcelHtml(p) {
   // user can click, so it's effectively click-only — same UX as the
   // previous bottom-of-popup placement.
   lines.push(`<a href="#" class="parcel-coords-copy" role="button" title="Copy parcel centroid (lat, lng) to clipboard">GPS Coordinates</a>`);
+  if (showJumpToList) {
+    lines.push(`<a href="#" class="parcel-jump-to-list" role="button" title="Scroll to this parcel in the results table">Jump to parcel in list</a>`);
+  }
   // Pending amendment text — same shape as the Changes column in the
   // table (stamped onto the parcel feature by enrichOverlays via
   // formatChanges(row)). Only emit when there's actually a change to
