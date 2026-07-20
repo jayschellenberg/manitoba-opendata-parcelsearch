@@ -1083,6 +1083,17 @@ const importModal = initParcelListImport({
   warmIndex: () => warmLegalIndex(),
   canonicalRoll,
   resolveMuniNames: resolveMuniNamesForImport,
+  // A municipality selected for an earlier property search would be
+  // ANDed with the resolved parcel keys by the live Roll Entry query,
+  // silently dropping imported rows from every other municipality.
+  // Clear it as soon as the import input is accepted (Next or Recent)
+  // and use the normal change event so all municipality-dependent UI
+  // state is reset exactly as if the user chose "Any municipality".
+  onInputAccepted: () => {
+    if (!$municipality.value) return;
+    $municipality.value = '';
+    $municipality.dispatchEvent(new Event('change', { bubbles: true }));
+  },
   onResolved: ({ parcelKeys, resolved, unresolved, stats }) => {
     if (!parcelKeys || parcelKeys.length === 0) {
       // Nothing usable — surface the failure inline and don't enter

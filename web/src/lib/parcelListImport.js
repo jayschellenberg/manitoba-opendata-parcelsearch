@@ -58,6 +58,10 @@ const FIELD_LABELS = {
  * @param {(payload: { parcelKeys, resolved, unresolved, stats }) => void}
  *   opts.onResolved - called when the user clicks Resolve and the
  *   resolver returns. The modal closes itself before invoking this.
+ * @param {() => void} [opts.onInputAccepted] - called as soon as a
+ *   pasted, uploaded, or recent import has parsed successfully. This runs
+ *   before the mapping/resolution step so callers can clear filters that
+ *   must not constrain the imported parcel keys.
  * @param {(rows: Array<{lineNo, muniName, roll}>) => Promise<{
  *     resolvedByLine: Map, unresolvedByLine: Map }>} [opts.resolveMuniNames]
  *   - optional Roll Entry name→muni_no reconciler (used for the
@@ -68,6 +72,7 @@ export function initParcelListImport({
   warmIndex,
   canonicalRoll,
   onResolved,
+  onInputAccepted,
   resolveMuniNames,
 } = {}) {
   const $modal     = document.getElementById('parcel-list-import-modal');
@@ -146,6 +151,7 @@ export function initParcelListImport({
       flashWarn($next, "Couldn't read any rows from that input.");
       return;
     }
+    if (typeof onInputAccepted === 'function') onInputAccepted();
     // Apply remembered mapping if the header signature matches a
     // prior run; otherwise use the heuristic guesses.
     const remembered = recallMapping(parsed.headers);
