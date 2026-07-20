@@ -3138,9 +3138,9 @@ body:not(.has-max-km) #results td.subj-col {
    Parcel-list import: trigger + resolved-pill (live inside the
    sidebar Property Search panel), plus the <dialog> modal.
 
-   The trigger button is a thin text-style link that sits at the
-   foot of the Advanced searches collapsible (relocated there from
-   the Roll # chip-input row to keep the Roll # field uncluttered).
+   The trigger button sits at the left edge of the Advanced searches
+   collapsible (relocated there from the Roll # chip-input row to keep
+   the Roll # field uncluttered).
    Tapping it opens the modal; once the modal resolves a list, the
    pill appears showing "N parcels across M munis · Clear", which
    is the cue that Search will use the imported parcelKeys instead
@@ -3149,8 +3149,8 @@ body:not(.has-max-km) #results td.subj-col {
 
 .advanced-import-row {
   display: flex;
-  justify-content: flex-end;
-  margin-top: 6px;
+  justify-content: flex-start;
+  margin-top: 10px;
 }
 
 .parcel-list-import-trigger {
@@ -3174,6 +3174,33 @@ body:not(.has-max-km) #results td.subj-col {
 .parcel-list-import-trigger:focus-visible {
   outline: 2px solid var(--color-accent-500, #2563eb);
   outline-offset: 1px;
+}
+
+/* The property-search import is a primary advanced-search action, so it
+   gets a full button treatment. Scope this to its row so the compact
+   "Paste data…" action in Sales analysis keeps its link-like styling. */
+.advanced-import-row .parcel-list-import-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-width: 166px;
+  min-height: 38px;
+  padding: 8px 14px;
+  border: 1px solid var(--color-accent-600, #1d4ed8);
+  background: var(--color-accent-600, #1d4ed8);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.advanced-import-row .parcel-list-import-trigger:hover {
+  border-color: var(--color-accent-700, #1e40af);
+  background: var(--color-accent-700, #1e40af);
+  color: #fff;
 }
 
 /* Resolved-list pill — shown above the Search/Clear buttons once

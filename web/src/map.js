@@ -2953,6 +2953,10 @@ function wireJumpToList(popup, rowKey, onFeatureClick) {
   if (!anchor) return;
   anchor.addEventListener('click', (ev) => {
     ev.preventDefault();
+    // Keep this popup-only action from bubbling back through the map's
+    // parcel click handlers. The table callback must have exactly one
+    // invocation path: this explicit link.
+    ev.stopPropagation();
     onFeatureClick(rowKey);
   });
 }
