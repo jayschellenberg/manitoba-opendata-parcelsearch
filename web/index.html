@@ -1018,6 +1018,19 @@
            (≤ PAGE_SIZE rows). Export CSV ignores pagination and
            always exports the full filtered set (currentRows). -->
       <div id="results-paginator" class="results-paginator" hidden></div>
+      <!-- Sales-row colour key. Kept directly below pagination so it stays
+           close to the grid without taking space from the map or filters;
+           CSS reveals it only while Sales Analysis results are active. -->
+      <div class="sales-row-legend" role="note" aria-label="Sales table row colour meanings">
+        <span class="sales-row-legend-item">
+          <span class="sales-row-legend-swatch outlier" aria-hidden="true"></span>
+          <span><strong>Orange:</strong> $/Acre is more than 2 standard deviations from the filtered mean</span>
+        </span>
+        <span class="sales-row-legend-item">
+          <span class="sales-row-legend-swatch group" aria-hidden="true"></span>
+          <span><strong>Green:</strong> parcel belongs to a multi-parcel sale; matching shaded rows share one transaction</span>
+        </span>
+      </div>
 
       <!--
         Generate Map output. Stays inside the table pane so the

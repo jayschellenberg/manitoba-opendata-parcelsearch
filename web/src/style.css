@@ -2519,6 +2519,48 @@ body.measuring .map-legend {
   font-weight: 500;
 }
 
+/* Compact Sales Analysis row-colour key, positioned immediately below the
+   paginator/table. Hidden outside sales mode so regular parcel searches do
+   not carry an irrelevant legend. */
+.sales-row-legend {
+  display: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 18px;
+  margin: 6px 0 2px;
+  color: var(--ui-muted, #68717d);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+body.sales-mode .sales-row-legend {
+  display: flex;
+}
+
+.sales-row-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sales-row-legend-swatch {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 13px;
+  border: 1px solid rgba(31, 41, 35, 0.12);
+  border-radius: 2px;
+}
+
+.sales-row-legend-swatch.outlier {
+  background: #f7ecd8;
+  box-shadow: inset 3px 0 0 #f0a500;
+}
+
+.sales-row-legend-swatch.group {
+  background: var(--ui-accent-soft, #e4f1ef);
+  box-shadow: inset 3px 0 0 var(--ui-accent-dark, #1f5752);
+}
+
 #results {
   width: 100%;
   border-collapse: collapse;
