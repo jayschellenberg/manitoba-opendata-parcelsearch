@@ -669,6 +669,11 @@ let csvMatchedMunis = null;
 // munis the resolver identified. Cleared by the pill's × button or by
 // a page reload (clearAll() reloads, so it resets implicitly).
 let listParcelKeys = null;
+// Municipality names represented by the parcels returned for the active
+// property-list import. The main municipality picker intentionally stays at
+// "Any municipality", so this separate scope lets the MASC and CLI loaders
+// cover every municipality in the list without reintroducing a search filter.
+let listMatchedMunis = null;
 // The unresolved rows from the same import — surfaced in the
 // unmatched-records drawer (renderUnmatchedPanel) so the user can see
 // at a glance which input rows didn't resolve and why.
@@ -1102,14 +1107,17 @@ const importModal = initParcelListImport({
         || 'No rows could be resolved to a parcel.';
       setCount(`Import: 0 of ${stats?.total ?? 0} rows resolved — ${reason}`);
       listParcelKeys = null;
+      listMatchedMunis = null;
       listUnresolvedRows = unresolved || [];
       listSaleGroupByKey = null;
       listSiteByKey = null;
       renderListPill();
       renderListUnresolvedDrawer();
+      resetMascAndGridToggles();
       return;
     }
     listParcelKeys = parcelKeys;
+    listMatchedMunis = null;
     listUnresolvedRows = unresolved || [];
     listSaleGroupByKey = buildListGroupKeyMap(resolved);
     listSiteByKey = buildListSiteKeyMap(resolved);
@@ -1125,11 +1133,13 @@ document.getElementById('parcel-list-import-trigger')
 document.getElementById('parcel-list-pill-clear')
   ?.addEventListener('click', () => {
     listParcelKeys = null;
+    listMatchedMunis = null;
     listUnresolvedRows = null;
     listSaleGroupByKey = null;
     listSiteByKey = null;
     renderListPill();
     renderListUnresolvedDrawer();
+    resetMascAndGridToggles();
     clearRoutePlanner();
     setCount('Imported list cleared.');
   });
@@ -2316,7 +2326,7 @@ function fillSelect(sel, values, blankLabel) {
 // ---------- Search ----------
 
 async function runSearch() {
-  salesEnrichmentGeneration += 1;
+  const searchGeneration = ++salesEnrichmentGeneration;
   // Drop the sales-mode column reveal if a previous run came from a
   // sales CSV upload — a normal search shouldn't carry those columns.
   if ($resultsTable) $resultsTable.classList.remove('sales-mode');
@@ -2498,6 +2508,22 @@ async function runSearch() {
 
     const n = parcelFc.features.length;
 
+    // Preserve the municipality scope resolved by a property-list import
+    // without putting it back into the main picker (which would filter a
+    // multi-municipality list). Agricultural datasets use these names to
+    // fetch every relevant MASC/CLI shard in parallel.
+    if (hasList) {
+      listMatchedMunis = [...new Set(
+        (parcelFc.features || [])
+          .map((f) => f.properties?.Muni_Name_With_Typ)
+          .filter(Boolean),
+      )].sort();
+      if (listMatchedMunis.length > 0) {
+        inputs.municipalities = listMatchedMunis.slice();
+      }
+      resetMascAndGridToggles();
+    }
+
     // Bulk roll-list diagnostics. When the user pasted a comma-separated
     // list of rolls, compare what came back against what they asked for
     // and surface any rolls that didn't match. List up to 10 inline; the
@@ -2608,6 +2634,25 @@ async function runSearch() {
       renderEnrichButton(parcelFc, inputs, baseMsg);
     } else {
       await enrichOverlays(parcelFc, inputs, baseMsg);
+      // Property-list imports should arrive with the same agricultural
+      // analysis fields as Sales Analysis. Load Manitoba Soil Survey/CLI
+      // polygons for every represented municipality, stamp the dominant
+      // CLI capability + soil type onto each parcel, and cache the polygons
+      // so either CLI map mode turns on immediately when requested.
+      if (hasList && listMatchedMunis?.length) {
+        setCount(`${baseMsg} · Loading soil survey data…`);
+        const soilLoaded = await enrichImportedSoilComposition(
+          parcelFc,
+          listMatchedMunis,
+          searchGeneration,
+          'list',
+        );
+        if (soilLoaded) {
+          refreshResultsTableAfterCompositionStamp();
+          setMapData(parcelFc, lastZoningFc, lastDevPlanFc, { fit: false });
+        }
+        setCount(baseMsg);
+      }
     }
   } finally {
     setBusy(false);
@@ -2978,7 +3023,7 @@ async function handleSalesUpload(file) {
     await enrichOverlays(parcelFc, fakeInputs, baseMsg);
     setExportEnabled(false);
     setCount(`${baseMsg} · Loading soil survey data…`);
-    await enrichSalesSoilComposition(parcelFc, csvMatchedMunis, uploadGeneration);
+    await enrichImportedSoilComposition(parcelFc, csvMatchedMunis, uploadGeneration, 'sales');
 
     // Compute multi-parcel sale group totals AFTER the enrichment
     // pipeline has stamped _acres on every parcel. Each parcel in a
@@ -4722,15 +4767,18 @@ function setMuniParcelsMapData(fc) {
  */
 /**
  * Load Manitoba Soil Survey/CLI polygons for every municipality in a sales
- * import and stamp the area-weighted top soil components onto each parcel.
- * The polygons are cached and pushed to the hidden CLI source so turning the
- * visual layer on later is instant; loading data does not force the overlay
- * to become visible.
+ * or property-list import and stamp the area-weighted top soil components
+ * onto each parcel. The polygons are cached and pushed to the hidden CLI
+ * source so turning the visual layer on later is instant; loading data does
+ * not force the overlay to become visible.
+ *
+ * Returns true when the imported result set is still current and the stamp
+ * completed, false when a newer search/import superseded this async work.
  */
-async function enrichSalesSoilComposition(parcelFc, munis, generation) {
-  if (!parcelFc?.features?.length || !Array.isArray(munis) || munis.length === 0) return;
+async function enrichImportedSoilComposition(parcelFc, munis, generation, mode) {
+  if (!parcelFc?.features?.length || !Array.isArray(munis) || munis.length === 0) return false;
   const boundaries = muniBoundariesFc || await muniBoundariesPromise;
-  if (!boundaries?.features?.length) return;
+  if (!boundaries?.features?.length) return false;
 
   const scoped = munis.map((muni) => {
     const exact = boundaries.features.find(
@@ -4743,17 +4791,19 @@ async function enrichSalesSoilComposition(parcelFc, munis, generation) {
   });
   const missing = scoped.filter((entry) => !entry.boundary).map((entry) => entry.muni);
   if (missing.length) {
-    console.warn(`Sales soil enrichment: no municipal boundary for ${missing.join(', ')}`);
+    console.warn(`Imported soil enrichment: no municipal boundary for ${missing.join(', ')}`);
   }
 
   const fcs = await Promise.all(scoped
     .filter((entry) => entry.boundary)
     .map(({ muni, boundary }) => fetchCliAgrForMuni(muni, boundary).catch((err) => {
-      console.warn(`Sales soil enrichment failed for ${muni}:`, err);
+      console.warn(`Imported soil enrichment failed for ${muni}:`, err);
       return EMPTY_FC;
     })));
-  if (generation !== salesEnrichmentGeneration
-      || !document.body.classList.contains('sales-mode')) return;
+  const modeStillActive = () => mode === 'sales'
+    ? document.body.classList.contains('sales-mode')
+    : Array.isArray(listParcelKeys) && listParcelKeys.length > 0;
+  if (generation !== salesEnrichmentGeneration || !modeStillActive()) return false;
 
   const cliFc = {
     type: 'FeatureCollection',
@@ -4768,8 +4818,9 @@ async function enrichSalesSoilComposition(parcelFc, munis, generation) {
     ? munis.slice().sort().join('|')
     : null;
   await mapReady;
-  if (generation !== salesEnrichmentGeneration) return;
+  if (generation !== salesEnrichmentGeneration || !modeStillActive()) return false;
   setCliAgrData(map, cliFc);
+  return true;
 }
 
 async function toggleOverlay(which) {
@@ -5439,18 +5490,25 @@ function escapeHtmlText(s) {
   })[c]);
 }
 
+/** Municipality scope for agricultural overlays. Sales imports and
+ * property-list imports both span arbitrary municipalities while the main
+ * picker may be blank; ordinary searches continue to use the picker. */
+function agriculturalOverlayMunis() {
+  const imported = (csvMatchedMunis && csvMatchedMunis.length > 0)
+    ? csvMatchedMunis
+    : (listMatchedMunis && listMatchedMunis.length > 0 ? listMatchedMunis : null);
+  return imported ? imported.slice() : ($municipality.value ? [$municipality.value] : []);
+}
+
 /** Enable/disable MASC and Sec-Twp Grid toggles based on whether a
  *  muni is selected, and clear stale data + active state if the muni
  *  changed since the layers were last loaded. Mirrors the
  *  resetMuniParcelsToggle pattern. */
 function resetMascAndGridToggles() {
-  // Enabled when EITHER a dropdown muni is selected OR a sales-CSV
-  // upload has populated csvMatchedMunis — covers the rare case where
-  // sales-mode is active but the dropdown is empty (shouldn't happen
-  // with the current dominant-muni auto-set, but cheap belt-and-
-  // braces for future flows that might disable the auto-set).
-  const inScope = !!$municipality.value
-    || !!(csvMatchedMunis && csvMatchedMunis.length > 0);
+  // Enabled when the picker has a municipality or either import workflow
+  // has retained the municipalities represented by its matched parcels.
+  const scopedMunis = agriculturalOverlayMunis();
+  const inScope = scopedMunis.length > 0;
   $mascToggle.disabled = !inScope;
   if ($cliToggle) $cliToggle.disabled = !inScope;
   // Sec-Twp Grid stays enabled with or without a muni — without a muni
@@ -5462,9 +5520,7 @@ function resetMascAndGridToggles() {
   // So a dropdown change inside sales-CSV mode is a no-op for the
   // cache check (the multi-muni overlay stays loaded). Outside sales
   // mode, the dropdown value drives the key as before.
-  const desiredOverlayKey = (csvMatchedMunis && csvMatchedMunis.length > 0)
-    ? csvMatchedMunis.join('|')
-    : $municipality.value;
+  const desiredOverlayKey = scopedMunis.join('|');
   if (mascLoadedFor && mascLoadedFor !== desiredOverlayKey) {
     mascLoadedFor = null;
     if ($mascToggle.classList.contains('active')) {
@@ -5555,14 +5611,10 @@ function resetMascAndGridToggles() {
  * message so the failure mode is informative, not silent.
  */
 async function toggleMascOverlay() {
-  // Sales-CSV mode: load MASC across EVERY matched muni. Otherwise
-  // fall back to the dropdown's single value (matches the original
-  // non-upload search flow exactly). csvMatchedMunis is already
-  // sorted (handleSalesUpload sorts before stashing) so the joined
-  // loadKey is stable across calls and the cache check below works.
-  const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
-    ? csvMatchedMunis.slice()
-    : ($municipality.value ? [$municipality.value] : []);
+  // Import modes load MASC across every matched municipality. Ordinary
+  // searches fall back to the picker. Import scopes are sorted when stored,
+  // so the joined loadKey remains stable across repeated toggles.
+  const munis = agriculturalOverlayMunis();
   if (munis.length === 0) {
     setOverlayPressed($mascToggle, false);
     return;
@@ -5781,9 +5833,7 @@ function cliButtonLabelFor(mode) {
  */
 async function toggleCliOverlay() {
   if (!$cliToggle) return;
-  const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
-    ? csvMatchedMunis.slice()
-    : ($municipality.value ? [$municipality.value] : []);
+  const munis = agriculturalOverlayMunis();
   if (munis.length === 0) {
     setCliMode(null);
     setOverlayPressed($cliToggle, false);
