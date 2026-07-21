@@ -38,6 +38,12 @@ import {
 import { fetchAllParcelsInMunicipality } from './arcgis.js';
 import { buildStoreZip } from './lib/zipStore.js';
 import {
+  StaleSnapshotFrameError,
+  captureSnapshotWithRetry,
+  findStaleSnapshotFrame,
+  waitForMapIdle,
+} from './lib/snapshotCapture.js';
+import {
   OUTPUT_MIME,
   OUTPUT_QUALITY,
   OUTPUT_EXT,
@@ -63,6 +69,10 @@ const ROLL_LABEL_SCALE = 2;
 const EXPORT_MAX_ZOOM = 20;
 // Safety net so a stuck tile fetch can't hang the whole batch.
 const IDLE_TIMEOUT_MS = 9000;
+// Slow imagery is retried, but never silently accepted. Three attempts cap a
+// persistently stalled parcel at 27 seconds before the whole export fails
+// closed instead of putting a wrongly labelled image in the evidence ZIP.
+const CAPTURE_ATTEMPTS = 3;
 
 const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
@@ -114,6 +124,7 @@ export async function generateParcelSnapshotsZip(parcelFc, opts = {}) {
 
   let map = null;
   const files = [];
+  const capturedFrames = [];
   const usedNames = new Map();
 
   try {
@@ -166,15 +177,46 @@ export async function generateParcelSnapshotsZip(parcelFc, opts = {}) {
 
       for (const feature of groupFeatures) {
         throwIfAborted(signal);
-        // Push the single subject parcel onto the 'parcels' source — this
-        // is the exact yellow selection styling a normal search produces.
-        showResults(map, { type: 'FeatureCollection', features: [feature] }, { fit: false });
-        fitParcelTo16by9(map, feature);
-        await waitForIdle(map);
+        const baseName = fileNameFor(feature);
+        const bounds = bbox(feature);
+        let data;
+        try {
+          data = await captureSnapshotWithRetry({
+            attempts: CAPTURE_ATTEMPTS,
+            prepare: async () => {
+              // Push the single subject parcel onto the 'parcels' source —
+              // this is the exact yellow selection styling a normal search
+              // produces. Repeat on retries so MapLibre gets a fresh source
+              // update and repaint request.
+              showResults(map, { type: 'FeatureCollection', features: [feature] }, { fit: false });
+              fitParcelTo16by9(map, feature);
+            },
+            waitUntilReady: () => waitForMapIdle(map, IDLE_TIMEOUT_MS),
+            capture: async () => {
+              const blob = await captureFrame(map, container);
+              return new Uint8Array(await blob.arrayBuffer());
+            },
+            validate: (candidateData) => {
+              const prior = findStaleSnapshotFrame(capturedFrames, {
+                name: baseName,
+                bounds,
+                data: candidateData,
+              });
+              if (prior) throw new StaleSnapshotFrameError(baseName, prior.name);
+            },
+            onRetry: ({ attempt, error }) => {
+              console.warn(
+                `Snapshot: ${baseName} attempt ${attempt}/${CAPTURE_ATTEMPTS} failed; retrying.`,
+                error,
+              );
+            },
+          });
+        } catch (err) {
+          throw new Error(`Could not capture ${baseName}: ${err?.message || err}`, { cause: err });
+        }
 
-        const blob = await captureFrame(map, container);
-        const data = new Uint8Array(await blob.arrayBuffer());
-        const name = uniqueName(usedNames, fileNameFor(feature));
+        capturedFrames.push({ name: baseName, bounds, data });
+        const name = uniqueName(usedNames, baseName);
         files.push({ name, data });
 
         done += 1;
@@ -232,27 +274,6 @@ export function fitParcelTo16by9(map, feature, padding = FRAME_PADDING) {
     [[minX, minY], [maxX, maxY]],
     { padding, maxZoom: EXPORT_MAX_ZOOM, duration: 0 },
   );
-}
-
-// ---- capture -----------------------------------------------------------
-
-function waitForIdle(map) {
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      map.off('idle', onIdle);
-      clearTimeout(timer);
-      resolve();
-    };
-    const onIdle = () => finish();
-    const timer = setTimeout(finish, IDLE_TIMEOUT_MS);
-    map.on('idle', onIdle);
-    // Force a render cycle so 'idle' fires even when the camera change was
-    // a no-op (e.g. two same-muni parcels at the same scale).
-    map.triggerRepaint();
-  });
 }
 
 /**
