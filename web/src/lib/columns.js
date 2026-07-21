@@ -26,7 +26,7 @@
 const STORAGE_KEY = 'mbps_table_columns_v1';
 
 // Phase 5 default-visible set: ★, Roll #, Address, Sale Date,
-// Sale Price, $/Acre, Acres, Zoning, Distance (when subject set).
+// Sale Price, $/Acre, Acres, Zoning, MASC Rating, Distance (when subject set).
 // The favourite (★) column is in here so sales-mode keeps its
 // star column without the user having to toggle it on.
 export const DEFAULT_VISIBLE = new Set([
@@ -38,6 +38,7 @@ export const DEFAULT_VISIBLE = new Set([
   'grouppriceac',
   'acres',
   'zone1',
+  'soil',
   'subjdist',
   'clicls',
   'soiltype',
@@ -65,7 +66,7 @@ export const PRESETS = {
     'favorite', 'roll', 'address', 'acres', 'landcover', 'cultpct',
     'soil', 'clicls', 'soiltype', 'riskarea',
     'grouppriceac', 'saledate', 'saleprice', 'saletoasmt', 'grouppricesf',
-    'zone1', 'zbl', 'dev1', 'legal', 'title',
+    'zone1', 'dev1', 'legal', 'title',
   ]),
   'Full detail': null,
 };
@@ -126,6 +127,22 @@ export function setColumnVisible(key, on) {
   if (visible == null) visible = new Set();
   if (on) visible.add(key);
   else visible.delete(key);
+  writeStored();
+  applyVisibility();
+  emit();
+}
+
+/**
+ * Imported parcel lists arrive with a pre-baked MASC rating on each matched
+ * parcel. Surface that rating in the normal grid without making the user turn
+ * on the MASC map overlay, and trade out ZBL to keep the default width stable.
+ * Full detail (`visible === null`) remains untouched because it intentionally
+ * shows every available column.
+ */
+export function applyParcelImportDefaults() {
+  if (visible == null) return;
+  visible.add('soil');
+  visible.delete('zbl');
   writeStored();
   applyVisibility();
   emit();

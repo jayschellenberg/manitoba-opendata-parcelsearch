@@ -24,7 +24,12 @@ import {
 } from './mapbox.js';
 
 // Phase 5 column visibility.
-import { initColumns, applyVisibility as applyColumnVisibility, setColumnVisible } from './lib/columns.js';
+import {
+  initColumns,
+  applyVisibility as applyColumnVisibility,
+  setColumnVisible,
+  applyParcelImportDefaults,
+} from './lib/columns.js';
 
 // Phase 6 URL state — serialises a small set of form values into the
 // query string so a session URL is shareable.
@@ -3241,6 +3246,8 @@ function renderListPill() {
     $row.hidden = true;
     $label.textContent = '';
     $panel?.classList.remove('list-mode-active');
+    $resultsTable?.classList.remove('list-import-mode');
+    applyColumnVisibility();
     return;
   }
   const munis = new Set(listParcelKeys.map((k) => Number(k.muni_no)));
@@ -3249,6 +3256,8 @@ function renderListPill() {
   $label.textContent = `Imported list: ${n} parcel${n === 1 ? '' : 's'} across ${m} municipalit${m === 1 ? 'y' : 'ies'}`;
   $row.hidden = false;
   $panel?.classList.add('list-mode-active');
+  $resultsTable?.classList.add('list-import-mode');
+  applyParcelImportDefaults();
 }
 
 /**
@@ -6980,7 +6989,7 @@ function renderTable(rows, { resetPage = true } = {}) {
     // Soil + Risk Area cells get .masc-only so they follow the
     // MASC Rating overlay toggle.
     const soilCellEl = soilCell(p);
-    soilCellEl.classList.add('masc-only');
+    soilCellEl.classList.add('masc-only', 'masc-import-default');
     tr.appendChild(soilCellEl);
     const riskAreaCell = td(p._soilRiskArea != null ? String(p._soilRiskArea) : null, 'num');
     riskAreaCell.classList.add('masc-only');

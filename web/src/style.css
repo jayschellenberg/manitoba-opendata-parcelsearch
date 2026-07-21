@@ -1801,6 +1801,11 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
    overlay is active. */
 #results .masc-only { display: none; }
 #results.masc-mode .masc-only { display: table-cell; }
+/* Parcel-list imports already carry a pre-baked per-parcel MASC rating.
+   Reveal that one column without forcing the MASC map overlay on; Risk Area
+   remains overlay-gated. col-hidden still wins when Full detail/user choices
+   intentionally suppress the column. */
+#results.list-import-mode .masc-import-default:not(.col-hidden) { display: table-cell; }
 
 /* Compact inline button shown next to the count text — used for the
    "Load zoning + dev-plan" opt-in when a search returns more parcels
