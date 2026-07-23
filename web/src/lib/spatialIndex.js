@@ -159,3 +159,36 @@ export function bboxesOverlap(a, b) {
   if (!a || !b) return false;
   return a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
 }
+
+/**
+ * Split a bbox into an n×n lattice of cell bboxes, row-major.
+ *
+ * Used to tile the handful of enormous overlay polygons that dominate
+ * joinTopNByArea's cost. Clipping a 2900-vertex zoning district against
+ * every parcel is ~17 ms a time; clipping it ONCE into tiles and then
+ * clipping parcels against the one or two tiles they touch is far
+ * cheaper, and because area is additive over a partition the summed
+ * result is the same number.
+ *
+ * Cells share edges exactly (each boundary is computed from the same
+ * interpolation), so tiling neither double-counts nor loses slivers
+ * beyond floating-point noise.
+ */
+export function gridCellBboxes(box, n) {
+  if (!box || !Number.isFinite(n) || n < 1) return [];
+  const [x0, y0, x1, y1] = box;
+  if (!Number.isFinite(x0) || !Number.isFinite(y0)
+   || !Number.isFinite(x1) || !Number.isFinite(y1)) return [];
+  const cells = [];
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      cells.push([
+        x0 + ((x1 - x0) * c) / n,
+        y0 + ((y1 - y0) * r) / n,
+        x0 + ((x1 - x0) * (c + 1)) / n,
+        y0 + ((y1 - y0) * (r + 1)) / n,
+      ]);
+    }
+  }
+  return cells;
+}

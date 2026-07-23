@@ -6,7 +6,9 @@
 // Run: cd web && node test/spatialIndex.test.js
 
 import assert from 'node:assert/strict';
-import { buildBboxIndex, queryBboxIndex, bboxesOverlap } from '../src/lib/spatialIndex.js';
+import {
+  buildBboxIndex, queryBboxIndex, bboxesOverlap, gridCellBboxes,
+} from '../src/lib/spatialIndex.js';
 
 const results = [];
 function test(name, fn) {
@@ -177,6 +179,46 @@ test('prunes hard enough to be worth having', () => {
   const perQuery = candidates / QUERIES;
   // Linear scan would test all 5000 every time.
   assert.ok(perQuery < 100, `expected heavy pruning, got ${perQuery.toFixed(1)} candidates/query`);
+});
+
+console.log('\ngridCellBboxes');
+
+test('splits into n×n cells covering the whole box exactly', () => {
+  const cells = gridCellBboxes(bx(0, 0, 6, 6), 3);
+  assert.equal(cells.length, 9);
+  // Union of cell areas equals the parent area — no gaps, no overlaps.
+  const total = cells.reduce((s, c) => s + (c[2] - c[0]) * (c[3] - c[1]), 0);
+  assert.ok(Math.abs(total - 36) < 1e-9, `cells covered ${total}, expected 36`);
+});
+
+test('adjacent cells share an exact edge (no slivers, no double-count)', () => {
+  // Tiling sums areas across pieces, so a boundary computed two
+  // different ways would silently lose or duplicate a strip.
+  const cells = gridCellBboxes(bx(0, 0, 1, 1), 4);
+  for (let r = 0; r < 4; r++) {
+    for (let c = 0; c < 3; c++) {
+      const left = cells[r * 4 + c];
+      const right = cells[r * 4 + c + 1];
+      assert.equal(left[2], right[0], `row ${r} cols ${c}/${c + 1} edges differ`);
+    }
+  }
+});
+
+test('n = 1 returns the original box', () => {
+  assert.deepEqual(gridCellBboxes(bx(2, 3, 5, 7), 1), [[2, 3, 5, 7]]);
+});
+
+test('degenerate and invalid inputs return no cells', () => {
+  assert.deepEqual(gridCellBboxes(null, 4), []);
+  assert.deepEqual(gridCellBboxes(bx(0, 0, 1, 1), 0), []);
+  assert.deepEqual(gridCellBboxes(bx(0, 0, 1, 1), NaN), []);
+  assert.deepEqual(gridCellBboxes(bx(NaN, 0, 1, 1), 4), []);
+});
+
+test('a zero-area box still yields cells rather than throwing', () => {
+  const cells = gridCellBboxes(bx(5, 5, 5, 5), 2);
+  assert.equal(cells.length, 4);
+  for (const c of cells) assert.deepEqual(c, [5, 5, 5, 5]);
 });
 
 const failed = results.filter((r) => r.status === 'fail');

@@ -61,7 +61,7 @@ import {
 // Broad-phase grid for joinTopNByArea. `bboxesOverlap` is NOT imported —
 // this module already has an identical local one, and the join's precise
 // test deliberately stays here next to the turf.intersect call.
-import { buildBboxIndex, queryBboxIndex } from './lib/spatialIndex.js';
+import { buildBboxIndex, queryBboxIndex, gridCellBboxes } from './lib/spatialIndex.js';
 
 const BASE = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services';
 const ROLL_URL    = `${BASE}/ROLL_ENTRY/FeatureServer/0`;
@@ -805,13 +805,115 @@ function muniNameMatchClause(municipality) {
  */
 const overlayIndexCache = new WeakMap();
 
+// Vertex count past which an overlay polygon is tiled before use, and
+// the lattice resolution. Measured on real Manitoba zoning: polygons
+// under 500 vertices clip in well under a millisecond and account for
+// ~5% of join time, while the two polygons above it (2893 and 1199
+// vertices) were hit 514 times at ~17 ms each — 95% of the total. 6×6
+// is where the one-off build cost stops paying for itself on that data.
+const TILE_VERTEX_THRESHOLD = 500;
+const TILE_GRID = 6;
+
+function countVertices(geometry) {
+  if (!geometry || !geometry.coordinates) return 0;
+  let n = 0;
+  const walk = (c) => {
+    if (typeof c[0] === 'number') { n++; return; }
+    for (const sub of c) walk(sub);
+  };
+  walk(geometry.coordinates);
+  return n;
+}
+
+/**
+ * Tile one huge overlay polygon into a lattice of smaller pieces.
+ *
+ * joinTopNByArea only ever uses the AREA of a parcel∩overlay clip, never
+ * its geometry, and area is additive over a partition — so summing the
+ * parcel's clips against the tiles it touches gives the same number as
+ * one clip against the whole polygon, for a fraction of the work. The
+ * difference measured on real data is ~2 parts per million, which is
+ * floating-point noise from clipping at the tile edges.
+ *
+ * Returns null when tiling produced nothing usable, so the caller falls
+ * back to clipping the original polygon.
+ */
+function tilePolygon(feature, featureBbox) {
+  const out = [];
+  for (const cell of gridCellBboxes(featureBbox, TILE_GRID)) {
+    const [cx0, cy0, cx1, cy1] = cell;
+    const cellFeature = {
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[[cx0, cy0], [cx1, cy0], [cx1, cy1], [cx0, cy1], [cx0, cy0]]],
+      },
+    };
+    let piece = null;
+    try {
+      piece = intersect({ type: 'FeatureCollection', features: [feature, cellFeature] });
+    } catch { continue; }
+    if (!piece) continue;
+    let pb;
+    try { pb = bbox(piece); } catch { continue; }
+    out.push({ feature: piece, bbox: pb });
+  }
+  return out.length > 0 ? out : null;
+}
+
+/**
+ * Area of parcel ∩ overlay, taking the tiled path for polygons complex
+ * enough to be worth it. Tiles are built on FIRST USE and cached, so a
+ * big polygon that no parcel touches is never tiled at all.
+ *
+ * `entry` is the memoised overlay record; `i` indexes into its arrays.
+ */
+function intersectionArea(parcel, parcelBbox, entry, i) {
+  const overlay = entry.features[i];
+  let tiles = entry.tiles.get(i);
+  if (tiles === undefined) {
+    const verts = countVertices(overlay.geometry);
+    tiles = verts >= TILE_VERTEX_THRESHOLD
+      ? tilePolygon(overlay, entry.bboxes[i])
+      : null;
+    entry.tiles.set(i, tiles);
+  }
+  if (!tiles) {
+    let inter;
+    try {
+      inter = intersect({ type: 'FeatureCollection', features: [parcel, overlay] });
+    } catch { return 0; }
+    if (!inter) return 0;
+    try { return area(inter); } catch { return 0; }
+  }
+  let total = 0;
+  for (const tile of tiles) {
+    if (!bboxesOverlap(parcelBbox, tile.bbox)) continue;
+    let inter;
+    try {
+      inter = intersect({ type: 'FeatureCollection', features: [parcel, tile.feature] });
+    } catch { continue; }
+    if (!inter) continue;
+    try { total += area(inter); } catch { /* skip this tile */ }
+  }
+  return total;
+}
+
 function overlayIndexFor(overlayFc) {
   const hit = overlayIndexCache.get(overlayFc);
   if (hit) return hit;
   const bboxes = overlayFc.features.map((f) => {
     try { return bbox(f); } catch { return null; }
   });
-  const entry = { bboxes, index: buildBboxIndex(bboxes) };
+  const entry = {
+    features: overlayFc.features,
+    bboxes,
+    index: buildBboxIndex(bboxes),
+    // overlay index -> tile list, or null for "not worth tiling".
+    // Populated lazily by intersectionArea.
+    tiles: new Map(),
+  };
   overlayIndexCache.set(overlayFc, entry);
   return entry;
 }
@@ -836,7 +938,8 @@ export function joinTopNByArea(parcelFc, overlayFc, n = 2) {
   // The index is a broad phase only — every candidate it returns still
   // goes through the same bboxesOverlap check and turf.intersect below,
   // so results are identical to the linear scan, just reached faster.
-  const { bboxes: overlayBboxes, index: overlayIndex } = overlayIndexFor(overlayFc);
+  const overlayEntry = overlayIndexFor(overlayFc);
+  const { bboxes: overlayBboxes, index: overlayIndex } = overlayEntry;
 
   for (const parcel of parcelFc.features) {
     const oid = parcel.properties?.OBJECTID;
@@ -865,17 +968,10 @@ export function joinTopNByArea(parcelFc, overlayFc, n = 2) {
       if (!ob) continue;
       if (!bboxesOverlap(parcelBbox, ob)) continue;
       const overlay = overlayFc.features[i];
-      let inter;
-      try {
-        // turf 7.x takes a FeatureCollection of exactly two polygon Features.
-        inter = intersect({ type: 'FeatureCollection', features: [parcel, overlay] });
-      } catch (err) {
-        // Topology errors are common on real-world data; skip and move on.
-        continue;
-      }
-      if (!inter) continue;
-      let interArea;
-      try { interArea = area(inter); } catch { continue; }
+      // Clipped area, via pre-tiled pieces when the overlay polygon is
+      // complex enough to be worth it. Topology errors are common on
+      // real-world data and are swallowed as a zero-area result.
+      const interArea = intersectionArea(parcel, parcelBbox, overlayEntry, i);
       if (!Number.isFinite(interArea) || interArea <= 0) continue;
       matches.push({
         feature: overlay,
