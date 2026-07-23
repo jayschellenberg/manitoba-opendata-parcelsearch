@@ -490,6 +490,10 @@
               <span class="far-flung-unit">km</span>
               <span class="tip">Marks multi-parcel sales whose parcels lie farther apart than this, measured between parcel centroids. Portfolio and estate sales sweep up land across a wide area, so their blended $/Acre is not a local comparable. Blank or 0 turns the marking off. Nothing is removed from the results — this only flags.</span>
             </span>
+            <label class="far-flung-exclude" title="Remove the flagged sales from the results table, the map and the CSV export. Off by default — nothing is hidden until you ask for it. Sales whose spread can't be measured (a parcel with no geometry) are never excluded.">
+              <input type="checkbox" id="far-flung-exclude" />
+              <span>Exclude</span>
+            </label>
             <span id="far-flung-count" class="far-flung-count"></span>
           </div>
           <!-- Sale Date hidden range. Driven by the preset buttons. -->

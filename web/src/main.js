@@ -277,8 +277,9 @@ const $salesStreetName = document.getElementById('sales-street-name');
 // rate per acre than rural / farm comps.
 const $salesPpaLow   = document.getElementById('sales-ppa-low');
 const $salesPpaHigh  = document.getElementById('sales-ppa-high');
-const $farFlungKm    = document.getElementById('far-flung-km');
-const $farFlungCount = document.getElementById('far-flung-count');
+const $farFlungKm      = document.getElementById('far-flung-km');
+const $farFlungCount   = document.getElementById('far-flung-count');
+const $farFlungExclude = document.getElementById('far-flung-exclude');
 const $search        = document.getElementById('search');
 const $clear         = document.getElementById('clear');
 const $export        = document.getElementById('export');
@@ -1893,6 +1894,13 @@ $duMode.addEventListener('change', () => {
 // the same reasoning as the column presets. Phase 2 only MARKS these
 // sales; nothing is removed from the table, map or export.
 const FAR_FLUNG_STORAGE_KEY = 'mbps_far_flung_km_v1';
+const FAR_FLUNG_EXCLUDE_KEY = 'mbps_far_flung_exclude_v1';
+
+/** Is the exclude toggle on? Off unless explicitly enabled — an upload
+ *  never hides sales until the user asks it to. */
+function farFlungExcludeOn() {
+  return !!($farFlungExclude?.checked) && farFlungThresholdKm() != null;
+}
 
 /** Current threshold in km, or null when flagging is off (blank / 0 /
  *  junk input). Read fresh on every use so the grid and the popup can
@@ -1916,6 +1924,21 @@ function saveFarFlungThreshold() {
   try { localStorage.setItem(FAR_FLUNG_STORAGE_KEY, $farFlungKm?.value ?? ''); } catch {}
 }
 
+function loadFarFlungExclude() {
+  if (!$farFlungExclude) return;
+  let stored = null;
+  try { stored = localStorage.getItem(FAR_FLUNG_EXCLUDE_KEY); } catch {}
+  // Defaults OFF. Only an explicit '1' turns it on, so a corrupt or
+  // absent value can never start a session hiding sales.
+  $farFlungExclude.checked = stored === '1';
+}
+
+function saveFarFlungExclude() {
+  try {
+    localStorage.setItem(FAR_FLUNG_EXCLUDE_KEY, $farFlungExclude?.checked ? '1' : '0');
+  } catch {}
+}
+
 /**
  * Stamp `_farFlungReason` onto every row's parcel and update the
  * "N sales flagged" label beside the threshold input.
@@ -1934,41 +1957,63 @@ function saveFarFlungThreshold() {
  */
 function applyFarFlungFlags(rows) {
   const threshold = farFlungThresholdKm();
-  const sales = new Set();
-  let parcels = 0;
   for (const row of rows || []) {
     const p = row?.parcel?.properties;
     if (!p) continue;
     const why = threshold == null ? '' : farFlungReason(p, threshold);
     p._farFlungReason = why || null;
-    if (!why) continue;
-    parcels++;
-    if (p._saleGroupId != null) sales.add(p._saleGroupId);
   }
+  // The tally counts against the UNFILTERED upload, not the rows being
+  // rendered. Once Exclude is ticked the flagged rows are gone from
+  // `rows`, and counting those would report "none flagged" at the exact
+  // moment six sales are being hidden — the opposite of the truth.
+  const tally = countFarFlung(csvFullRows ?? rows, threshold);
   if ($farFlungCount) {
-    if (threshold == null || !rows || rows.length === 0) {
+    const source = csvFullRows ?? rows;
+    if (threshold == null || !source || source.length === 0) {
       $farFlungCount.textContent = '';
       $farFlungCount.classList.remove('has-flagged');
-    } else if (sales.size === 0) {
+    } else if (tally.sales === 0) {
       $farFlungCount.textContent = 'none flagged';
       $farFlungCount.classList.remove('has-flagged');
     } else {
+      const verb = farFlungExcludeOn() ? 'excluded' : 'flagged';
       $farFlungCount.textContent =
-        `⚠ ${sales.size} sale${sales.size === 1 ? '' : 's'} · ${parcels} parcels`;
+        `⚠ ${tally.sales} sale${tally.sales === 1 ? '' : 's'} · ${tally.parcels} parcels ${verb}`;
       $farFlungCount.classList.add('has-flagged');
     }
+  }
+  return tally;
+}
+
+/** Distinct far-flung SALES and their parcel count across `rows`. Sales
+ *  rather than rows because a 14-parcel portfolio sale is one sale, and
+ *  reporting 14 would badly overstate how much is being set aside. */
+function countFarFlung(rows, threshold) {
+  const sales = new Set();
+  let parcels = 0;
+  if (threshold == null) return { sales: 0, parcels: 0 };
+  for (const row of rows || []) {
+    const p = row?.parcel?.properties;
+    if (!p || !isFarFlungSale(p, threshold)) continue;
+    parcels++;
+    if (p._saleGroupId != null) sales.add(p._saleGroupId);
   }
   return { sales: sales.size, parcels };
 }
 
 if ($farFlungKm) {
   loadFarFlungThreshold();
+  loadFarFlungExclude();
   const onFarFlungChange = () => {
     saveFarFlungThreshold();
+    saveFarFlungExclude();
+    // In CSV mode the threshold is a real filter input, so route through
+    // the same path every other sales filter uses — it re-filters,
+    // re-renders, re-pushes the map source and rewrites the count line.
+    if (csvFullRows != null) { refilterCsvIfActive(); return; }
     if (currentRows.length === 0) { applyFarFlungFlags(currentRows); return; }
-    // Re-render in place so the badges track the new threshold. Phase 2
-    // doesn't filter, so the row set is unchanged and the page shouldn't
-    // jump back to the top.
+    // Outside CSV mode there's nothing to filter; just refresh badges.
     renderTable(currentRows, { resetPage: false });
     // renderTable re-stamps _farFlungReason on the feature properties,
     // but MapLibre holds its own copy of the GeoJSON — without pushing
@@ -1983,6 +2028,7 @@ if ($farFlungKm) {
   };
   $farFlungKm.addEventListener('input', onFarFlungChange);
   $farFlungKm.addEventListener('change', onFarFlungChange);
+  $farFlungExclude?.addEventListener('change', onFarFlungChange);
 }
 
 // Other Searches filters re-filters the displayed table + map subset
@@ -4151,9 +4197,19 @@ function refilterCsvIfActive() {
   if (csvFullRows == null) return;
   const filtered = filterCsvRowsByOtherSearches(csvFullRows);
   const total = csvFullRows.length;
+  // Name the far-flung exclusion explicitly. A bare "(filtered)" would
+  // leave the user guessing which control removed the rows, and this is
+  // the one filter that fires without them touching it on this upload
+  // (the toggle persists between sessions).
+  const ff = farFlungExcludeOn()
+    ? countFarFlung(csvFullRows, farFlungThresholdKm())
+    : { sales: 0, parcels: 0 };
+  const ffNote = ff.sales > 0
+    ? ` · ${ff.sales} far-flung sale${ff.sales === 1 ? '' : 's'} excluded`
+    : '';
   const msg = filtered.length === total
-    ? csvFullBaseMsg
-    : `${filtered.length} of ${total} sales shown (filtered)`;
+    ? `${csvFullBaseMsg}${ffNote}`
+    : `${filtered.length} of ${total} sales shown (filtered)${ffNote}`;
   setCount(msg);
   renderTable(filtered);
   // Re-narrow the map's parcel highlight to the filtered subset.
@@ -4250,8 +4306,20 @@ function filterCsvRowsByOtherSearches(rows) {
   const ppaLo = Number.isFinite(ppaLoRaw) ? ppaLoRaw : 0;
   const ppaHi = Number.isFinite(ppaHiRaw) ? ppaHiRaw : Infinity;
 
+  // Far-flung exclusion. Off unless the user ticked the box AND a
+  // threshold is set. Because the span is a GROUP property stamped on
+  // every member, dropping flagged rows removes the whole sale — never
+  // part of one, which would silently corrupt its $/Acre.
+  const farFlungThreshold = farFlungExcludeOn() ? farFlungThresholdKm() : null;
+
   return rows.filter((row) => {
     const p = row.parcel?.properties || {};
+
+    // Far-flung sales — a portfolio or estate transaction whose blended
+    // rate isn't a local comparable. isFarFlungSale fails open on an
+    // unmeasurable span, so a parcel whose geometry didn't load is
+    // never dropped by this filter.
+    if (farFlungThreshold != null && isFarFlungSale(p, farFlungThreshold)) return false;
 
     // Plan # filter — runs before the other CSV-mode checks because
     // it's the cheapest predicate. Substring-matches against both
