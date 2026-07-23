@@ -42,6 +42,7 @@ import {
   uniqueParcelFeatures, dedupeParcelFeaturesForMap,
 } from './lib/salesDedupe.js';
 import { assignParcelSeq, clearParcelSeq } from './lib/parcelNumbering.js';
+import { parcelLat, parcelLon, featureToWkt } from './lib/geometryText.js';
 import {
   realStr,
   legalDisplay,
@@ -8408,6 +8409,10 @@ function formatCurrency(s) {
 
 function setExportEnabled(enabled) { $export.disabled = !enabled; }
 
+// One warning per session is enough to surface a header/row drift in
+// exportCsv without spamming the console once per exported parcel.
+let exportColumnMismatchWarned = false;
+
 function exportCsv(explicitRows) {
   // Phase 5: callers can pass an explicit subset (the parcel-summary
   // card's "Export selected" button does this with a one-element
@@ -8493,6 +8498,12 @@ function exportCsv(explicitRows) {
           'Dist (km)', 'Asmt Land', 'Asmt Buildings', 'Asmt Bldg %', 'Asmt Year', 'Asmt Class', 'Asmt Status',
         ]
       : []),
+    // Geometry, last in every mode and export-only — there are no
+    // matching grid columns. Lat/Lon are the parcel's bounding-box
+    // midpoint, the same point the popup's GPS Coordinates link copies
+    // and the subject-distance is measured from. WKT is the full
+    // polygon, which QGIS/ArcGIS load directly as a geometry field.
+    'Lat', 'Lon', 'Geometry (WKT)',
   ];
   // Provenance preamble — a `#`-prefixed comment block at the top of the file
   // so the export can stand on its own as appraisal evidence (when/which
@@ -8517,7 +8528,7 @@ function exportCsv(explicitRows) {
     const z2 = row.zoning[1]?.feature.properties || {};
     const d1 = row.devPlan[0]?.feature.properties || {};
     const ac = parcelAcres(row.parcel);
-    lines.push([
+    const cells = [
       ...(withSeq ? [p._seq ?? ''] : []),
       p.Roll_No_Txt, muniNoFromProps(p) ?? '', p.Property_Address,
       p._legalDescription ?? '',
@@ -8570,7 +8581,25 @@ function exportCsv(explicitRows) {
             p._asmtStatus ?? '',
           ]
         : []),
-    ].map(csvCell).join(','));
+      // Geometry columns — must stay last, matching the header above.
+      parcelLat(row.parcel),
+      parcelLon(row.parcel),
+      featureToWkt(row.parcel),
+    ];
+    // The header and the row are two hand-maintained lists that have to
+    // stay in lockstep through several mode-conditional spreads. A drift
+    // between them silently shifts every later column under the wrong
+    // heading — which reads as plausible data, not as a bug. Warn once
+    // rather than per row, and still emit the file: a shifted export the
+    // user is told about beats no export at all.
+    if (cells.length !== header.length && !exportColumnMismatchWarned) {
+      exportColumnMismatchWarned = true;
+      console.warn(
+        `CSV export column mismatch: ${cells.length} cells vs ${header.length} headers. `
+        + 'A column was added to one list and not the other — later columns are misaligned.',
+      );
+    }
+    lines.push(cells.map(csvCell).join(','));
   }
   const blob = new Blob(['﻿' + lines.join('\r\n')], {
     type: 'text/csv;charset=utf-8;',
