@@ -58,6 +58,10 @@ import {
   addressMatchesVariants,
   civicSearchMode,
 } from './lib/civicRange.js';
+// Broad-phase grid for joinTopNByArea. `bboxesOverlap` is NOT imported —
+// this module already has an identical local one, and the join's precise
+// test deliberately stays here next to the turf.intersect call.
+import { buildBboxIndex, queryBboxIndex } from './lib/spatialIndex.js';
 
 const BASE = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services';
 const ROLL_URL    = `${BASE}/ROLL_ENTRY/FeatureServer/0`;
@@ -783,18 +787,56 @@ function muniNameMatchClause(municipality) {
  * Failures on individual parcels are logged and skipped — one bad geometry
  * never kills the whole join.
  */
+/**
+ * Overlay bboxes + grid, memoised per FeatureCollection object.
+ *
+ * enrichOverlays calls joinTopNByArea four times per search, and the
+ * zoning FC it passes twice (full, then again inside the changed-polygon
+ * pass when nothing was filtered out) is the same object. Computing
+ * turf.bbox over tens of thousands of overlay polygons more than once
+ * for the same collection is pure waste.
+ *
+ * Keyed weakly on the FC, so the entry disappears when the collection
+ * does — no cache invalidation to get wrong, and no retention of a
+ * province-worth of geometry after a new search replaces it. Mutating
+ * an FC's features in place after a join would serve a stale index, but
+ * nothing in this codebase does that: overlay FCs are built by a fetch
+ * and then only read.
+ */
+const overlayIndexCache = new WeakMap();
+
+function overlayIndexFor(overlayFc) {
+  const hit = overlayIndexCache.get(overlayFc);
+  if (hit) return hit;
+  const bboxes = overlayFc.features.map((f) => {
+    try { return bbox(f); } catch { return null; }
+  });
+  const entry = { bboxes, index: buildBboxIndex(bboxes) };
+  overlayIndexCache.set(overlayFc, entry);
+  return entry;
+}
+
 export function joinTopNByArea(parcelFc, overlayFc, n = 2) {
   const result = new Map();
   if (!parcelFc.features.length || !overlayFc.features.length) return result;
 
-  // Pre-compute parcel bboxes for a cheap reject step before turf.intersect
-  // (which is comparatively expensive). Same idea as the inner loop of
-  // get_multiple_by_area but without an explicit spatial index — at our
-  // result-set sizes (≤1000 parcels × ~10-50 overlays each) the O(P×O)
-  // bbox check is fast enough.
-  const overlayBboxes = overlayFc.features.map((f) => {
-    try { return bbox(f); } catch { return null; }
-  });
+  // Pre-compute overlay bboxes for a cheap reject step before
+  // turf.intersect (which is comparatively expensive), then index them.
+  //
+  // This used to be a flat O(parcels × overlays) scan, on the stated
+  // assumption of "≤1000 parcels × ~10-50 overlays each". That holds for
+  // a single-municipality search but breaks badly on a multi-muni sales
+  // upload: ~500 parcels against every zoning polygon across 15 whole
+  // municipalities is millions of bbox tests, and enrichOverlays runs
+  // this four times (zoning, dev-plan, and the two changed passes) on
+  // the main thread. The grid narrows each parcel to the overlays in
+  // the cells it actually touches, which is a handful regardless of how
+  // many municipalities were loaded.
+  //
+  // The index is a broad phase only — every candidate it returns still
+  // goes through the same bboxesOverlap check and turf.intersect below,
+  // so results are identical to the linear scan, just reached faster.
+  const { bboxes: overlayBboxes, index: overlayIndex } = overlayIndexFor(overlayFc);
 
   for (const parcel of parcelFc.features) {
     const oid = parcel.properties?.OBJECTID;
@@ -811,7 +853,14 @@ export function joinTopNByArea(parcelFc, overlayFc, n = 2) {
     if (!Number.isFinite(parcelArea) || parcelArea <= 0) continue;
 
     const matches = [];
-    for (let i = 0; i < overlayFc.features.length; i++) {
+    // Candidates from the grid when we have one; otherwise fall back to
+    // the full scan so a degenerate overlay set still joins correctly.
+    const candidates = overlayIndex
+      ? queryBboxIndex(overlayIndex, parcelBbox)
+      : null;
+    const candidateCount = candidates ? candidates.length : overlayFc.features.length;
+    for (let ci = 0; ci < candidateCount; ci++) {
+      const i = candidates ? candidates[ci] : ci;
       const ob = overlayBboxes[i];
       if (!ob) continue;
       if (!bboxesOverlap(parcelBbox, ob)) continue;
