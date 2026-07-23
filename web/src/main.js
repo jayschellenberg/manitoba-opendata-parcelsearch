@@ -84,7 +84,7 @@ import {
   searchParcels,
   fetchZoningOverlap,
   fetchDevPlanOverlap,
-  joinTopNByArea,
+  joinTopNByAreaAsync,
   bboxOverlapJoin,
   fetchMunicipalityList,
   fetchRollEntryCount,
@@ -4739,8 +4739,16 @@ async function enrichOverlays(parcelFc, inputs, baseMsg) {
   rebuildZoningLegend(zoningFc);
   updatePdWebsiteButton(devPlanFc);
 
-  const zoningTop2  = joinTopNByArea(parcelFc, zoningFc, 2);
-  const devPlanTop2 = joinTopNByArea(parcelFc, devPlanFc, 2);
+  // Off the main thread. These four joins are the heaviest synchronous
+  // work in the app — on a multi-muni sales import they used to freeze
+  // the tab outright, so the results table wouldn't scroll and the map
+  // wouldn't pan while zoning loaded. The worker doesn't make them
+  // cheaper (tiling did that); it stops them blocking the UI. Each pair
+  // runs concurrently since they're independent.
+  const [zoningTop2, devPlanTop2] = await Promise.all([
+    joinTopNByAreaAsync(parcelFc, zoningFc, 2),
+    joinTopNByAreaAsync(parcelFc, devPlanFc, 2),
+  ]);
   // Per-parcel "changed-polygons" join, computed against a filtered
   // overlay FC containing only polygons that actually carry an
   // amendment (ZBL_A != ZBL, AMENDMENT_DESCRIPTION set, etc.). The
@@ -4752,8 +4760,10 @@ async function enrichOverlays(parcelFc, inputs, baseMsg) {
   // though they ARE the changed ones the filter surfaced.
   const zoningChangedFc = filterFcForChanged(zoningFc, isZoningChanged);
   const devPlanChangedFc = filterFcForChanged(devPlanFc, isDevPlanChanged);
-  const zoningChanges  = joinTopNByArea(parcelFc, zoningChangedFc, 3);
-  const devPlanChanges = joinTopNByArea(parcelFc, devPlanChangedFc, 3);
+  const [zoningChanges, devPlanChanges] = await Promise.all([
+    joinTopNByAreaAsync(parcelFc, zoningChangedFc, 3),
+    joinTopNByAreaAsync(parcelFc, devPlanChangedFc, 3),
+  ]);
   // Bbox-overlap fallback: ArcGIS's server-side intersect counts
   // edge-touching polygons as a match, so a parcel can land in the
   // Zoning-Changed result on a sliver overlap that @turf/intersect
@@ -5002,9 +5012,9 @@ function scheduleSoilCompositionStamp(parcelFc, { repush } = {}) {
   const defaultRepush = () => mapReady.then(() => showResults(map, parcelFc, { fit: false }));
   const doRepush = repush || defaultRepush;
   beginCliOp('Composing…');
-  const run = () => {
+  const run = async () => {
     try {
-      stampSoilCompositionOnParcels(parcelFc, lastCliFc);
+      await stampSoilCompositionOnParcels(parcelFc, lastCliFc);
       doRepush();
       // Re-render the results table so the CLI / Soil Type columns
       // pick up the freshly-stamped _soilComposition[0]. The cells
@@ -7576,9 +7586,15 @@ function riverLotHitLabel(hit) {
  * with mixed source extents, renders as true area-weighted component
  * percentages instead of treating SOIL_1 as the whole map unit.
  */
-function stampSoilCompositionOnParcels(parcelFc, soilFc) {
+async function stampSoilCompositionOnParcels(parcelFc, soilFc) {
   if (!parcelFc?.features?.length || !soilFc?.features?.length) return;
-  const join = joinTopNByArea(parcelFc, soilFc, Infinity);
+  // Off the main thread like the zoning/dev-plan joins. This one is the
+  // heaviest of the lot — every soil polygon that touches a parcel is
+  // kept (n = Infinity, since the composition needs the full breakdown,
+  // not a top-2) against up to ~3000 polygons on a busy municipality.
+  // requestIdleCallback only defers when it STARTS; without the worker
+  // the work still froze the tab once it began.
+  const join = await joinTopNByAreaAsync(parcelFc, soilFc, Infinity);
   for (const parcel of parcelFc.features) {
     const oid = parcel.properties?.OBJECTID;
     const matches = (oid != null) ? join.get(oid) : null;

@@ -44,7 +44,7 @@
 
 import area from '@turf/area';
 import bbox from '@turf/bbox';
-import intersect from '@turf/intersect';
+// @turf/intersect moved to lib/overlayJoinCore.js with the area join.
 // Persistent cache lives in its own module so the storage backend
 // (IndexedDB primary, localStorage fallback) can evolve without
 // touching every call site. readCache + writeCache are async — every
@@ -58,10 +58,9 @@ import {
   addressMatchesVariants,
   civicSearchMode,
 } from './lib/civicRange.js';
-// Broad-phase grid for joinTopNByArea. `bboxesOverlap` is NOT imported —
-// this module already has an identical local one, and the join's precise
-// test deliberately stays here next to the turf.intersect call.
-import { buildBboxIndex, queryBboxIndex, gridCellBboxes } from './lib/spatialIndex.js';
+// The area join's compute lives in its own module so this file and the
+// Web Worker in overlayJoin.worker.js share one implementation.
+import { computeTopNMatches } from './lib/overlayJoinCore.js';
 
 const BASE = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services';
 const ROLL_URL    = `${BASE}/ROLL_ENTRY/FeatureServer/0`;
@@ -805,185 +804,122 @@ function muniNameMatchClause(municipality) {
  */
 const overlayIndexCache = new WeakMap();
 
-// Vertex count past which an overlay polygon is tiled before use, and
-// the lattice resolution. Measured on real Manitoba zoning: polygons
-// under 500 vertices clip in well under a millisecond and account for
-// ~5% of join time, while the two polygons above it (2893 and 1199
-// vertices) were hit 514 times at ~17 ms each — 95% of the total. 6×6
-// is where the one-off build cost stops paying for itself on that data.
-const TILE_VERTEX_THRESHOLD = 500;
-const TILE_GRID = 6;
-
-function countVertices(geometry) {
-  if (!geometry || !geometry.coordinates) return 0;
-  let n = 0;
-  const walk = (c) => {
-    if (typeof c[0] === 'number') { n++; return; }
-    for (const sub of c) walk(sub);
-  };
-  walk(geometry.coordinates);
-  return n;
-}
-
 /**
- * Tile one huge overlay polygon into a lattice of smaller pieces.
- *
- * joinTopNByArea only ever uses the AREA of a parcel∩overlay clip, never
- * its geometry, and area is additive over a partition — so summing the
- * parcel's clips against the tiles it touches gives the same number as
- * one clip against the whole polygon, for a fraction of the work. The
- * difference measured on real data is ~2 parts per million, which is
- * floating-point noise from clipping at the tile edges.
- *
- * Returns null when tiling produced nothing usable, so the caller falls
- * back to clipping the original polygon.
+ * Turn the core's index-based result into the {feature, ratio} shape
+ * every caller expects. The core deals in indices so its output can
+ * cross a worker boundary cheaply; the features are re-attached here,
+ * on whichever side holds the real objects.
  */
-function tilePolygon(feature, featureBbox) {
-  const out = [];
-  for (const cell of gridCellBboxes(featureBbox, TILE_GRID)) {
-    const [cx0, cy0, cx1, cy1] = cell;
-    const cellFeature = {
-      type: 'Feature',
-      properties: {},
-      geometry: {
-        type: 'Polygon',
-        coordinates: [[[cx0, cy0], [cx1, cy0], [cx1, cy1], [cx0, cy1], [cx0, cy0]]],
-      },
-    };
-    let piece = null;
-    try {
-      piece = intersect({ type: 'FeatureCollection', features: [feature, cellFeature] });
-    } catch { continue; }
-    if (!piece) continue;
-    let pb;
-    try { pb = bbox(piece); } catch { continue; }
-    out.push({ feature: piece, bbox: pb });
-  }
-  return out.length > 0 ? out : null;
-}
-
-/**
- * Area of parcel ∩ overlay, taking the tiled path for polygons complex
- * enough to be worth it. Tiles are built on FIRST USE and cached, so a
- * big polygon that no parcel touches is never tiled at all.
- *
- * `entry` is the memoised overlay record; `i` indexes into its arrays.
- */
-function intersectionArea(parcel, parcelBbox, entry, i) {
-  const overlay = entry.features[i];
-  let tiles = entry.tiles.get(i);
-  if (tiles === undefined) {
-    const verts = countVertices(overlay.geometry);
-    tiles = verts >= TILE_VERTEX_THRESHOLD
-      ? tilePolygon(overlay, entry.bboxes[i])
-      : null;
-    entry.tiles.set(i, tiles);
-  }
-  if (!tiles) {
-    let inter;
-    try {
-      inter = intersect({ type: 'FeatureCollection', features: [parcel, overlay] });
-    } catch { return 0; }
-    if (!inter) return 0;
-    try { return area(inter); } catch { return 0; }
-  }
-  let total = 0;
-  for (const tile of tiles) {
-    if (!bboxesOverlap(parcelBbox, tile.bbox)) continue;
-    let inter;
-    try {
-      inter = intersect({ type: 'FeatureCollection', features: [parcel, tile.feature] });
-    } catch { continue; }
-    if (!inter) continue;
-    try { total += area(inter); } catch { /* skip this tile */ }
-  }
-  return total;
-}
-
-function overlayIndexFor(overlayFc) {
-  const hit = overlayIndexCache.get(overlayFc);
-  if (hit) return hit;
-  const bboxes = overlayFc.features.map((f) => {
-    try { return bbox(f); } catch { return null; }
-  });
-  const entry = {
-    features: overlayFc.features,
-    bboxes,
-    index: buildBboxIndex(bboxes),
-    // overlay index -> tile list, or null for "not worth tiling".
-    // Populated lazily by intersectionArea.
-    tiles: new Map(),
-  };
-  overlayIndexCache.set(overlayFc, entry);
-  return entry;
-}
-
-export function joinTopNByArea(parcelFc, overlayFc, n = 2) {
+function attachOverlayFeatures(pairs, overlayFeatures) {
   const result = new Map();
-  if (!parcelFc.features.length || !overlayFc.features.length) return result;
-
-  // Pre-compute overlay bboxes for a cheap reject step before
-  // turf.intersect (which is comparatively expensive), then index them.
-  //
-  // This used to be a flat O(parcels × overlays) scan, on the stated
-  // assumption of "≤1000 parcels × ~10-50 overlays each". That holds for
-  // a single-municipality search but breaks badly on a multi-muni sales
-  // upload: ~500 parcels against every zoning polygon across 15 whole
-  // municipalities is millions of bbox tests, and enrichOverlays runs
-  // this four times (zoning, dev-plan, and the two changed passes) on
-  // the main thread. The grid narrows each parcel to the overlays in
-  // the cells it actually touches, which is a handful regardless of how
-  // many municipalities were loaded.
-  //
-  // The index is a broad phase only — every candidate it returns still
-  // goes through the same bboxesOverlap check and turf.intersect below,
-  // so results are identical to the linear scan, just reached faster.
-  const overlayEntry = overlayIndexFor(overlayFc);
-  const { bboxes: overlayBboxes, index: overlayIndex } = overlayEntry;
-
-  for (const parcel of parcelFc.features) {
-    const oid = parcel.properties?.OBJECTID;
-    if (oid == null) continue;
-    let parcelBbox;
-    let parcelArea;
-    try {
-      parcelBbox = bbox(parcel);
-      parcelArea = area(parcel);
-    } catch (err) {
-      console.warn('parcel bbox/area failed', oid, err);
-      continue;
-    }
-    if (!Number.isFinite(parcelArea) || parcelArea <= 0) continue;
-
-    const matches = [];
-    // Candidates from the grid when we have one; otherwise fall back to
-    // the full scan so a degenerate overlay set still joins correctly.
-    const candidates = overlayIndex
-      ? queryBboxIndex(overlayIndex, parcelBbox)
-      : null;
-    const candidateCount = candidates ? candidates.length : overlayFc.features.length;
-    for (let ci = 0; ci < candidateCount; ci++) {
-      const i = candidates ? candidates[ci] : ci;
-      const ob = overlayBboxes[i];
-      if (!ob) continue;
-      if (!bboxesOverlap(parcelBbox, ob)) continue;
-      const overlay = overlayFc.features[i];
-      // Clipped area, via pre-tiled pieces when the overlay polygon is
-      // complex enough to be worth it. Topology errors are common on
-      // real-world data and are swallowed as a zero-area result.
-      const interArea = intersectionArea(parcel, parcelBbox, overlayEntry, i);
-      if (!Number.isFinite(interArea) || interArea <= 0) continue;
-      matches.push({
-        feature: overlay,
-        ratio: Math.min(1, interArea / parcelArea),
-      });
-    }
-
-    matches.sort((a, b) => b.ratio - a.ratio);
-    if (matches.length > n) matches.length = n;
-    result.set(oid, matches);
+  for (const [oid, matches] of pairs) {
+    result.set(oid, matches.map((m) => ({
+      feature: overlayFeatures[m.i],
+      ratio: m.ratio,
+    })));
   }
   return result;
+}
+
+/**
+ * For each parcel, clip every candidate overlay polygon to it and keep
+ * the top `n` by share of parcel area. Synchronous — blocks until done.
+ *
+ * The compute lives in lib/overlayJoinCore.js so this and the worker
+ * path below run the exact same code. Prefer joinTopNByAreaAsync for
+ * anything large enough to be felt; this remains for small joins and as
+ * the fallback when a worker isn't available.
+ */
+export function joinTopNByArea(parcelFc, overlayFc, n = 2) {
+  if (!parcelFc.features.length || !overlayFc.features.length) return new Map();
+  const pairs = computeTopNMatches(parcelFc.features, overlayFc.features, n);
+  return attachOverlayFeatures(pairs, overlayFc.features);
+}
+
+// ---- Worker-backed join -------------------------------------------
+//
+// The join is the app's heaviest synchronous block; on a multi-muni
+// sales import it froze the tab for tens of seconds. Running it in a
+// worker doesn't reduce total CPU — tiling did that — it just stops the
+// UI from locking up while the work happens.
+
+let joinWorker = null;
+let joinWorkerBroken = false;
+let joinSeq = 0;
+const joinPending = new Map();
+
+/** Lazily start the worker. Returns null when workers aren't usable, so
+ *  every caller degrades to the synchronous path rather than failing. */
+function getJoinWorker() {
+  if (joinWorkerBroken) return null;
+  if (joinWorker) return joinWorker;
+  try {
+    joinWorker = new Worker(
+      new URL('./overlayJoin.worker.js', import.meta.url),
+      { type: 'module' },
+    );
+    joinWorker.onmessage = (event) => {
+      const { id, ok, result, error } = event.data || {};
+      const entry = joinPending.get(id);
+      if (!entry) return;
+      joinPending.delete(id);
+      if (ok) entry.resolve(result);
+      else entry.reject(new Error(error || 'overlay join failed in worker'));
+    };
+    joinWorker.onerror = (err) => {
+      // A worker-level failure (module load, out of memory) can't be
+      // attributed to one request, so fail them all and stop using it.
+      console.warn('overlay join worker failed; falling back to main thread', err);
+      joinWorkerBroken = true;
+      for (const [, entry] of joinPending) entry.reject(new Error('worker error'));
+      joinPending.clear();
+      try { joinWorker.terminate(); } catch { /* already gone */ }
+      joinWorker = null;
+    };
+  } catch (err) {
+    console.warn('overlay join worker unavailable; using main thread', err);
+    joinWorkerBroken = true;
+    joinWorker = null;
+  }
+  return joinWorker;
+}
+
+/**
+ * Same contract as joinTopNByArea, computed off the main thread when a
+ * worker is available. Falls back to the synchronous path — same code,
+ * same results — if the worker can't start, errors, or the payload
+ * can't be cloned.
+ *
+ * Only geometry is sent, and only indices come back, so the transfer
+ * stays small relative to the work it displaces.
+ */
+export async function joinTopNByAreaAsync(parcelFc, overlayFc, n = 2) {
+  if (!parcelFc.features.length || !overlayFc.features.length) return new Map();
+  const worker = getJoinWorker();
+  if (!worker) return joinTopNByArea(parcelFc, overlayFc, n);
+
+  const id = ++joinSeq;
+  try {
+    const pairs = await new Promise((resolve, reject) => {
+      joinPending.set(id, { resolve, reject });
+      worker.postMessage({
+        id,
+        n,
+        // Strip properties: the core only reads OBJECTID, and parcel
+        // property bags carry the full enrichment payload by this point.
+        parcels: parcelFc.features.map((f) => ({
+          oid: f.properties?.OBJECTID,
+          geometry: f.geometry,
+        })),
+        overlays: overlayFc.features.map((f) => f.geometry),
+      });
+    });
+    return attachOverlayFeatures(pairs, overlayFc.features);
+  } catch (err) {
+    joinPending.delete(id);
+    console.warn('overlay join worker failed; recomputing on main thread', err);
+    return joinTopNByArea(parcelFc, overlayFc, n);
+  }
 }
 
 /**
