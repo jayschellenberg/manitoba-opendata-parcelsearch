@@ -763,6 +763,7 @@ body:not(.sales-mode) .sidebar .subject-row,
 body:not(.sales-mode) .sidebar .subject-muni-row,
 body:not(.sales-mode) .sidebar .distance-row,
 body:not(.sales-mode) .sidebar .uom-vacant-row,
+body:not(.sales-mode) .sidebar .far-flung-row,
 body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 
 /* "More filters" collapsible — wraps the regular-search filter
@@ -1799,6 +1800,56 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   font-variant-numeric: tabular-nums;
   vertical-align: baseline;
   cursor: help;
+}
+
+/* Far-flung sale marker, shown on the $/Acre cell — the rate a
+   portfolio or estate sale distorts, so the warning sits on the figure
+   it invalidates. Deliberately NOT a row tint: .starred (red) and
+   .outlier (amber) already colour rows, and a third would turn the
+   grid into a traffic light. Red-brown reads as a warning without
+   competing with either. */
+#results .far-flung-badge {
+  display: inline-block;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--far-flung-bg, #fbe3de);
+  color: var(--far-flung-fg, #8a2f1a);
+  font-size: 0.78em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  vertical-align: baseline;
+  cursor: help;
+}
+
+/* Far-flung threshold row in the sales sidebar. The live tally to the
+   right is the whole point of the control — it turns picking a number
+   into watching what the number does, rather than guessing. */
+.sidebar .far-flung-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sidebar .far-flung-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sidebar .far-flung-field label {
+  white-space: nowrap;
+  font-size: 0.92em;
+  color: var(--muted, #555);
+}
+.sidebar .far-flung-field input { width: 5em; }
+.sidebar .far-flung-unit { font-size: 0.92em; color: var(--muted, #555); }
+.sidebar .far-flung-count {
+  font-size: 0.85em;
+  color: var(--muted, #777);
+  font-variant-numeric: tabular-nums;
+}
+.sidebar .far-flung-count.has-flagged {
+  color: var(--far-flung-fg, #8a2f1a);
+  font-weight: 600;
 }
 
 /* Basic-mode only — the Acres column moves position between basic

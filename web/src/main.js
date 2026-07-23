@@ -36,7 +36,10 @@ import {
 import { encodeState, decodeState } from './lib/urlState.js';
 import { setOverlayPressed } from './lib/overlayToggle.js';
 import { stalenessBannerState } from './lib/staleness.js';
-import { computeSaleGroups, groupPosition } from './lib/saleGroups.js';
+import {
+  computeSaleGroups, groupPosition,
+  isFarFlungSale, farFlungReason, DEFAULT_FAR_FLUNG_KM,
+} from './lib/saleGroups.js';
 import {
   dedupeSalesByRoll, expandFeaturesBySale, unmatchedSales,
   uniqueParcelFeatures, dedupeParcelFeaturesForMap,
@@ -274,6 +277,8 @@ const $salesStreetName = document.getElementById('sales-street-name');
 // rate per acre than rural / farm comps.
 const $salesPpaLow   = document.getElementById('sales-ppa-low');
 const $salesPpaHigh  = document.getElementById('sales-ppa-high');
+const $farFlungKm    = document.getElementById('far-flung-km');
+const $farFlungCount = document.getElementById('far-flung-count');
 const $search        = document.getElementById('search');
 const $clear         = document.getElementById('clear');
 const $export        = document.getElementById('export');
@@ -1882,6 +1887,104 @@ $duMode.addEventListener('change', () => {
 });
 
 // CSV-upload mode: when csvFullRows is populated, changing any of the
+// ---------- Far-flung sale flagging (phase 2: flag only) ----------
+
+// Persisted so a threshold tuned for one job carries into the next —
+// the same reasoning as the column presets. Phase 2 only MARKS these
+// sales; nothing is removed from the table, map or export.
+const FAR_FLUNG_STORAGE_KEY = 'mbps_far_flung_km_v1';
+
+/** Current threshold in km, or null when flagging is off (blank / 0 /
+ *  junk input). Read fresh on every use so the grid and the popup can
+ *  never disagree about what counts as far-flung. */
+function farFlungThresholdKm() {
+  const raw = parseFloat($farFlungKm?.value);
+  return Number.isFinite(raw) && raw > 0 ? raw : null;
+}
+
+function loadFarFlungThreshold() {
+  if (!$farFlungKm) return;
+  let stored = null;
+  try { stored = localStorage.getItem(FAR_FLUNG_STORAGE_KEY); } catch {}
+  // A stored empty string is a deliberate "flagging off" and must
+  // survive a reload; only a genuinely absent key falls back to the
+  // calibrated default.
+  $farFlungKm.value = stored == null ? String(DEFAULT_FAR_FLUNG_KM) : stored;
+}
+
+function saveFarFlungThreshold() {
+  try { localStorage.setItem(FAR_FLUNG_STORAGE_KEY, $farFlungKm?.value ?? ''); } catch {}
+}
+
+/**
+ * Stamp `_farFlungReason` onto every row's parcel and update the
+ * "N sales flagged" label beside the threshold input.
+ *
+ * Stamping happens across the WHOLE row set, not the rendered page:
+ * the map source holds every parcel, and its popup reads the same
+ * property the grid badge does, so a page-scoped pass would leave most
+ * parcels with a stale or missing reason. The reason depends on the
+ * user's current threshold rather than on anything intrinsic to the
+ * parcel, which is why it's derived per render instead of at upload.
+ *
+ * Counts distinct SALES, not rows — a 14-parcel portfolio sale is one
+ * flagged sale, and reporting 14 would badly overstate the problem.
+ * Parcels are reported alongside so the eventual exclude toggle's
+ * impact is legible before it exists.
+ */
+function applyFarFlungFlags(rows) {
+  const threshold = farFlungThresholdKm();
+  const sales = new Set();
+  let parcels = 0;
+  for (const row of rows || []) {
+    const p = row?.parcel?.properties;
+    if (!p) continue;
+    const why = threshold == null ? '' : farFlungReason(p, threshold);
+    p._farFlungReason = why || null;
+    if (!why) continue;
+    parcels++;
+    if (p._saleGroupId != null) sales.add(p._saleGroupId);
+  }
+  if ($farFlungCount) {
+    if (threshold == null || !rows || rows.length === 0) {
+      $farFlungCount.textContent = '';
+      $farFlungCount.classList.remove('has-flagged');
+    } else if (sales.size === 0) {
+      $farFlungCount.textContent = 'none flagged';
+      $farFlungCount.classList.remove('has-flagged');
+    } else {
+      $farFlungCount.textContent =
+        `⚠ ${sales.size} sale${sales.size === 1 ? '' : 's'} · ${parcels} parcels`;
+      $farFlungCount.classList.add('has-flagged');
+    }
+  }
+  return { sales: sales.size, parcels };
+}
+
+if ($farFlungKm) {
+  loadFarFlungThreshold();
+  const onFarFlungChange = () => {
+    saveFarFlungThreshold();
+    if (currentRows.length === 0) { applyFarFlungFlags(currentRows); return; }
+    // Re-render in place so the badges track the new threshold. Phase 2
+    // doesn't filter, so the row set is unchanged and the page shouldn't
+    // jump back to the top.
+    renderTable(currentRows, { resetPage: false });
+    // renderTable re-stamps _farFlungReason on the feature properties,
+    // but MapLibre holds its own copy of the GeoJSON — without pushing
+    // the source again the popup would keep quoting the old threshold.
+    // `fit: false` so tuning the number doesn't move the camera.
+    setMapData(
+      { type: 'FeatureCollection', features: currentRows.map((r) => r.parcel) },
+      lastZoningFc || EMPTY_FC,
+      lastDevPlanFc || EMPTY_FC,
+      { fit: false },
+    );
+  };
+  $farFlungKm.addEventListener('input', onFarFlungChange);
+  $farFlungKm.addEventListener('change', onFarFlungChange);
+}
+
 // Other Searches filters re-filters the displayed table + map subset
 // against the loaded sales without re-fetching. Outside CSV mode
 // these listeners are no-ops (Search button still drives the SQL).
@@ -6903,6 +7006,10 @@ function renderTable(rows, { resetPage = true } = {}) {
   const pageStart = currentPage * PAGE_SIZE;
   const pageEnd   = Math.min(pageStart + PAGE_SIZE, sorted.length);
   const pageRows  = sorted.slice(pageStart, pageEnd);
+  // Stamp far-flung reasons across the FULL sorted set (not the page
+  // slice) so the map popups match the grid and the sidebar tally
+  // doesn't change as the user pages.
+  applyFarFlungFlags(sorted);
   // Outlier detection on $/Acre — compute mean + σ across the FULL
   // sorted set (not the page slice) so thresholds don't shift as the
   // user pages. Quietly skips when fewer than 3 rows have a real
@@ -7057,6 +7164,18 @@ function renderTable(rows, { resetPage = true } = {}) {
     tr.appendChild(acresSalesCell);
     const ppaCell = td(formatGroupPpa(p), 'num');
     ppaCell.classList.add('sales-only');
+    // Far-flung marker rides on $/Acre deliberately: that's the number a
+    // portfolio or estate sale distorts, so the warning belongs on the
+    // figure it invalidates rather than on a group-size column the
+    // Agricultural preset doesn't even show. Flag only — the row stays.
+    if (p._farFlungReason) {
+      const badge = document.createElement('span');
+      badge.className = 'far-flung-badge';
+      badge.textContent = `⚠ ${Math.round(p._saleGroupSpanKm)} km`;
+      badge.title = p._farFlungReason;
+      ppaCell.appendChild(document.createTextNode(' '));
+      ppaCell.appendChild(badge);
+    }
     tr.appendChild(ppaCell);
     const ppsfCell = td(formatGroupPpsf(p), 'num');
     ppsfCell.classList.add('sales-only');

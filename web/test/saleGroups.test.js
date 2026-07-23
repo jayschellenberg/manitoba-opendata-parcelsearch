@@ -6,7 +6,10 @@
 // Run: cd web && node test/saleGroups.test.js
 
 import assert from 'node:assert/strict';
-import { computeSaleGroups, groupPosition, maxPairwiseKm } from '../src/lib/saleGroups.js';
+import {
+  computeSaleGroups, groupPosition, maxPairwiseKm,
+  isFarFlungSale, farFlungReason, DEFAULT_FAR_FLUNG_KM,
+} from '../src/lib/saleGroups.js';
 import { parcelCentrePoint } from '../src/lib/geometryText.js';
 
 // Stand-in helpers matching main.js's real ones closely enough for the
@@ -295,6 +298,87 @@ test('spread stamps are absent-safe when helpers are not injected', () => {
   ).get('g1');
   assert.equal(stamp._saleGroupSpanKm, null);
   assert.equal(stamp._saleGroupMuniCount, 0);
+});
+
+console.log('\nisFarFlungSale');
+
+test('flags a sale wider than the threshold', () => {
+  assert.equal(isFarFlungSale({ _saleGroupSpanKm: 48.4 }, 30), true);
+});
+
+test('spares an assembly inside the threshold', () => {
+  // The real calibration boundary: ordinary assemblies topped out at
+  // 8.4 km, portfolio sales started at 48.4 km.
+  assert.equal(isFarFlungSale({ _saleGroupSpanKm: 8.4 }, 30), false);
+});
+
+test('is a strict comparison at the boundary', () => {
+  assert.equal(isFarFlungSale({ _saleGroupSpanKm: 30 }, 30), false);
+  assert.equal(isFarFlungSale({ _saleGroupSpanKm: 30.1 }, 30), true);
+});
+
+test('a single-parcel sale (span 0) is never far-flung', () => {
+  assert.equal(isFarFlungSale({ _saleGroupSpanKm: 0 }, 30), false);
+});
+
+test('FAILS OPEN on unknown spread', () => {
+  // The safety property: this predicate will drive removal of comps in
+  // phase 3, so missing geometry must never cause an exclusion.
+  assert.equal(isFarFlungSale({ _saleGroupSpanKm: null }, 30), false);
+  assert.equal(isFarFlungSale({}, 30), false);
+  assert.equal(isFarFlungSale(null, 30), false);
+  assert.equal(isFarFlungSale({ _saleGroupSpanKm: NaN }, 30), false);
+});
+
+test('still judges an incomplete span that already exceeds the threshold', () => {
+  // An incomplete span can only UNDERSTATE the true spread, so if the
+  // measurable part is already over the line, the whole sale is too.
+  assert.equal(
+    isFarFlungSale({ _saleGroupSpanKm: 245, _saleGroupSpanIncomplete: true }, 30),
+    true,
+  );
+});
+
+test('a blank / zero / negative threshold turns flagging off', () => {
+  assert.equal(isFarFlungSale({ _saleGroupSpanKm: 500 }, null), false);
+  assert.equal(isFarFlungSale({ _saleGroupSpanKm: 500 }, 0), false);
+  assert.equal(isFarFlungSale({ _saleGroupSpanKm: 500 }, -5), false);
+  assert.equal(isFarFlungSale({ _saleGroupSpanKm: 500 }, NaN), false);
+});
+
+test('the shipped default sits in the calibrated gap', () => {
+  // Between the widest ordinary assembly and the tightest portfolio
+  // sale seen in the source export.
+  assert.ok(DEFAULT_FAR_FLUNG_KM > 8.4 && DEFAULT_FAR_FLUNG_KM < 48.4);
+});
+
+console.log('\nfarFlungReason');
+
+test('names the span, the muni count and the threshold', () => {
+  const why = farFlungReason(
+    { _saleGroupSpanKm: 245.6, _saleGroupMuniCount: 5 }, 30,
+  );
+  assert.match(why, /246 km/);
+  assert.match(why, /5 municipalities/);
+  assert.match(why, /30 km/);
+});
+
+test('omits the muni clause for a single-muni sale', () => {
+  const why = farFlungReason({ _saleGroupSpanKm: 60, _saleGroupMuniCount: 1 }, 30);
+  assert.ok(!/municipalit/.test(why), why);
+});
+
+test('discloses when the span is only a lower bound', () => {
+  const why = farFlungReason(
+    { _saleGroupSpanKm: 60, _saleGroupMuniCount: 2, _saleGroupSpanIncomplete: true }, 30,
+  );
+  assert.match(why, /at least/);
+});
+
+test('is empty for a sale that is not flagged', () => {
+  assert.equal(farFlungReason({ _saleGroupSpanKm: 5 }, 30), '');
+  assert.equal(farFlungReason({ _saleGroupSpanKm: null }, 30), '');
+  assert.equal(farFlungReason({ _saleGroupSpanKm: 500 }, null), '');
 });
 
 const failed = results.filter((r) => r.status === 'fail');

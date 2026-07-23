@@ -3231,6 +3231,13 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
       `<strong>${saleCount} sales in this upload</strong> ${escapeHtml(p._saleHistoryText)}`,
     );
   }
+  // Far-flung warning. main.js stamps `_farFlungReason` at render time
+  // (it depends on the user's current threshold, not on anything
+  // intrinsic to the parcel), so the popup shows exactly what the grid
+  // badge shows. Absent when the sale isn't flagged.
+  if (p._farFlungReason) {
+    lines.push(`<strong>⚠ ${escapeHtml(p._farFlungReason)}</strong>`);
+  }
   if (p._primaryProperty) {
     lines.push(`<strong>Primary Property</strong> ${escapeHtml(p._primaryProperty)}`);
   }

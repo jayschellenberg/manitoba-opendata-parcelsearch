@@ -478,6 +478,20 @@
               <span class="tip">Maximum $/Acre (group rate). Empty = no upper limit. Use a high Min on its own to surface development-land sales.</span>
             </span>
           </div>
+          <!-- Far-flung sale threshold. A multi-parcel sale whose
+               parcels are spread wider than this is marked in the grid
+               and popup with a ⚠ on its $/Acre — the rate a portfolio
+               or estate transaction most distorts. Flag only for now;
+               nothing is filtered out. -->
+          <div class="far-flung-row sales-only">
+            <span class="field far-flung-field">
+              <label for="far-flung-km">Far-flung over</label>
+              <input id="far-flung-km" type="number" min="0" step="1" />
+              <span class="far-flung-unit">km</span>
+              <span class="tip">Marks multi-parcel sales whose parcels lie farther apart than this, measured between parcel centroids. Portfolio and estate sales sweep up land across a wide area, so their blended $/Acre is not a local comparable. Blank or 0 turns the marking off. Nothing is removed from the results — this only flags.</span>
+            </span>
+            <span id="far-flung-count" class="far-flung-count"></span>
+          </div>
           <!-- Sale Date hidden range. Driven by the preset buttons. -->
           <input id="sale-date-from" type="hidden" />
           <input id="sale-date-to" type="hidden" />

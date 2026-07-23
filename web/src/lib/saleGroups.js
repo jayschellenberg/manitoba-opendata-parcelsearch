@@ -50,6 +50,52 @@ export function maxPairwiseKm(points, distanceKm) {
   return max;
 }
 
+/** Default far-flung cutoff, in km. Calibrated against a 556-row MAO
+ *  export: ordinary multi-parcel farm assemblies topped out at 8.4 km
+ *  and the portfolio sales started at 48.4 km, with nothing in between,
+ *  so anything from 10 to 40 selects the same sales. 30 sits mid-gap.
+ *  The user can override it; this is only where the input starts. */
+export const DEFAULT_FAR_FLUNG_KM = 30;
+
+/**
+ * Is this sale's parcel spread wide enough to treat it as a portfolio
+ * or estate transaction rather than a local comp?
+ *
+ * Fails OPEN on unknown spread (null span — a multi-parcel sale whose
+ * members' geometry didn't resolve). This filter's job is to REMOVE
+ * comps, so treating "we couldn't measure it" as "it's far-flung" would
+ * silently discard good evidence. An incomplete-but-computable span is
+ * still judged, since it can only understate the true spread — if the
+ * part we CAN see already exceeds the threshold, the whole certainly
+ * does.
+ */
+export function isFarFlungSale(props, thresholdKm) {
+  const span = props?._saleGroupSpanKm;
+  if (span == null || !Number.isFinite(span)) return false;
+  if (!Number.isFinite(thresholdKm) || thresholdKm <= 0) return false;
+  return span > thresholdKm;
+}
+
+/**
+ * Human-readable reason string for the grid badge's tooltip and the map
+ * popup, or '' when the sale isn't far-flung. Names the threshold that
+ * produced the verdict so the user isn't left guessing why this sale
+ * was singled out.
+ */
+export function farFlungReason(props, thresholdKm) {
+  if (!isFarFlungSale(props, thresholdKm)) return '';
+  const span = Math.round(props._saleGroupSpanKm);
+  const munis = Number(props?._saleGroupMuniCount);
+  const muniPart = Number.isFinite(munis) && munis > 1
+    ? ` across ${munis} municipalities`
+    : '';
+  const caveat = props?._saleGroupSpanIncomplete
+    ? ' (at least — some parcels had no geometry)'
+    : '';
+  return `Far-flung sale: parcels span ${span} km${muniPart}${caveat}. `
+       + `Threshold ${thresholdKm} km.`;
+}
+
 /**
  * Compute per-group rollups for an array of GeoJSON-ish features.
  * Returns Map<saleGroupId, stamp>, where `stamp` is an object of the
