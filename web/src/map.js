@@ -3220,6 +3220,17 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
   // lines so the price reads cleanly when it's a long figure.
   if (p._saleDate)  lines.push(`<strong>Sold</strong> ${escapeHtml(p._saleDate)}`);
   if (p._salePrice) lines.push(`<strong>Price</strong> ${escapeHtml(p._salePrice)}`);
+  // Repeat sale — the upload holds more than one transaction for this
+  // parcel, but only the most recent one's feature is drawn (the map
+  // shows each parcel once). Listing the full history here keeps the
+  // popup from implying the parcel sold only once; every sale also has
+  // its own row in the results table.
+  const saleCount = Number(p._saleCount);
+  if (Number.isFinite(saleCount) && saleCount > 1 && p._saleHistoryText) {
+    lines.push(
+      `<strong>${saleCount} sales in this upload</strong> ${escapeHtml(p._saleHistoryText)}`,
+    );
+  }
   if (p._primaryProperty) {
     lines.push(`<strong>Primary Property</strong> ${escapeHtml(p._primaryProperty)}`);
   }

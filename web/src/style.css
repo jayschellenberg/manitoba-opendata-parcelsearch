@@ -1783,6 +1783,24 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 #results .seq-col { width: 30px; text-align: center; color: var(--muted, #555); font-variant-numeric: tabular-nums; }
 #results thead th.seq-col { text-align: center; }
 
+/* Repeat-sale marker in the Sale Date cell — "2/3" means this is the
+   second-most-recent of three sales of the same parcel in the upload.
+   A parcel sold more than once occupies one row per sale, so without
+   this the rows look like a duplicated record instead of a genuine
+   sale history. Tinted and small so it reads as an annotation on the
+   date, never as part of it. */
+#results .repeat-sale-badge {
+  display: inline-block;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--repeat-sale-bg, #e8e2f5);
+  color: var(--repeat-sale-fg, #4b3b7a);
+  font-size: 0.78em;
+  font-variant-numeric: tabular-nums;
+  vertical-align: baseline;
+  cursor: help;
+}
+
 /* Basic-mode only — the Acres column moves position between basic
    search and sales-CSV mode (in sales mode it sits right after $/Lot;
    in basic mode it stays near DU). Both <th>/<td> are emitted; this

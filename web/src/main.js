@@ -37,6 +37,10 @@ import { encodeState, decodeState } from './lib/urlState.js';
 import { setOverlayPressed } from './lib/overlayToggle.js';
 import { stalenessBannerState } from './lib/staleness.js';
 import { computeSaleGroups, groupPosition } from './lib/saleGroups.js';
+import {
+  dedupeSalesByRoll, expandFeaturesBySale, unmatchedSales,
+  uniqueParcelFeatures, dedupeParcelFeaturesForMap,
+} from './lib/salesDedupe.js';
 import { assignParcelSeq, clearParcelSeq } from './lib/parcelNumbering.js';
 import {
   realStr,
@@ -2773,27 +2777,33 @@ async function handleSalesUpload(file) {
         console.warn(`searchParcels failed for ${muni}`, err);
         fetchErrors.push({ muni, message: err.message || String(err) });
       }
-      // Stamp sale info onto each matched feature, keyed by canonical
-      // Roll_No_Txt.
-      const saleByRoll = new Map();
-      for (const r of recs) {
-        const k = canonicalRoll(r.rollNumber);
-        if (k) saleByRoll.set(k, r);
-      }
-      const matchedRollSet = new Set();
-      let matched = 0;
-      for (const f of fc.features || []) {
-        const roll = f.properties?.Roll_No_Txt;
-        const sale = roll ? saleByRoll.get(roll) : null;
-        if (sale) {
-          matchedRollSet.add(roll);
+      // Reconcile this muni's CSV rows down to distinct SALES before
+      // stamping. A MAO export repeats a portfolio sale's block once
+      // per member, so the same (roll, date, price) can appear several
+      // times — those collapse. A roll sold twice on different dates
+      // is two comps and both survive; each becomes its own feature
+      // below. See lib/salesDedupe.js for the identity rules (muni is
+      // part of the key: roll 300.000 exists in most RMs).
+      const { salesByRoll, duplicateRows } = dedupeSalesByRoll(recs, {
+        canonicalRoll,
+        saleDateValue: parseSaleDate,
+      });
+
+      // Expand to one feature per SALE (see lib/salesDedupe.js), so a
+      // repeat-sold parcel gets its own table row, sale-group rollup and
+      // export line per transaction. Only the _saleSeq 0 feature is
+      // drawn on the map — see dedupeParcelFeaturesForMap().
+      const { features, matchedRolls, matchedSales } = expandFeaturesBySale(
+        fc.features,
+        salesByRoll,
+        (p, sale, saleSeq, sales) => {
           // Group date/price: parseSalesCsv already copied the
           // primary's saleDate + consideration onto every member of
           // the group, so reading them here works regardless of
           // whether this row was the primary or a continuation.
-          f.properties._saleDate        = sale.saleDate || null;
-          f.properties._salePrice       = sale.consideration || null;
-          f.properties._primaryProperty = sale.primaryProperty || null;
+          p._saleDate        = sale.saleDate || null;
+          p._salePrice       = sale.consideration || null;
+          p._primaryProperty = sale.primaryProperty || null;
           // CSV's raw "Legal Description" cell. Lives alongside the
           // legal-index-derived _plan/_legalDescription so the Plan #
           // filter can fall back to substring-matching against the
@@ -2801,29 +2811,43 @@ async function handleSalesUpload(file) {
           // this roll (e.g. Headingley sales 6163 / 6165 carry
           // "6--66600" / "4--66600" in the CSV but no legal-index hit
           // → _plan is null and the filter would otherwise miss them).
-          f.properties._csvLegal        = sale.legalDescription || null;
+          p._csvLegal        = sale.legalDescription || null;
           // Group identity for the on-hover sibling-highlight + the
           // group price-per-acre / price-per-sf table columns. Used
           // by handleSalesUpload's group-totals pass below.
-          f.properties._saleGroupId  = sale.groupId;
-          f.properties._saleIsPrimary = sale.isPrimary;
-          matched++;
-        }
-      }
-      // Identify the records the API didn't return — Roll_No_Txt
-      // simply not in Roll_Entry for this muni (most common cause:
-      // typo / old roll / wrong muni assignment in the source CSV).
-      const unmatchedHere = [];
-      for (const r of recs) {
-        const k = canonicalRoll(r.rollNumber);
-        if (k && !matchedRollSet.has(k)) {
-          unmatchedHere.push({
-            ...r,
-            reason: `Roll # not found in Roll_Entry for ${muni}`,
-          });
-        }
-      }
-      return { muni, fc, total: recs.length, matched, unmatched: unmatchedHere };
+          p._saleGroupId  = sale.groupId;
+          p._saleIsPrimary = sale.isPrimary;
+          // Pre-formatted history for the map popup. Only the most
+          // recent sale's feature reaches the map source, so without
+          // this the popup would present a repeat-sold parcel as if it
+          // had transacted once. A plain string (not an array) because
+          // MapLibre stringifies non-scalar feature properties on the
+          // way through the GeoJSON source.
+          if (sales.length > 1) {
+            p._saleHistoryText = sales
+              .map((s) => [s.saleDate || 'undated', s.consideration || ''].join(' ').trim())
+              .join(' · ');
+          }
+        },
+      );
+      fc = { ...fc, features };
+
+      return {
+        muni,
+        fc,
+        total: recs.length,
+        matched: matchedSales,
+        parcels: matchedRolls.size,
+        duplicateRows,
+        // Roll_No_Txt simply not in Roll_Entry for this muni (most
+        // common cause: typo / old roll / wrong muni assignment in the
+        // source CSV).
+        unmatched: unmatchedSales(
+          salesByRoll,
+          matchedRolls,
+          `Roll # not found in Roll_Entry for ${muni}`,
+        ),
+      };
     });
     const results = await Promise.all(fetches);
 
@@ -2833,13 +2857,25 @@ async function handleSalesUpload(file) {
     // a single place.
     const parcelFc = { type: 'FeatureCollection', features: [] };
     let totalMatched = 0;
-    let totalRequested = 0;
+    // Counts for the summary line. `totalMatched` is now distinct SALES
+    // plotted (a parcel sold twice contributes 2), so it needs its own
+    // parcel count alongside it — the two differ whenever the upload
+    // holds a repeat sale, and reporting only one of them against a
+    // raw CSV row count is what made the old line unreadable.
+    let totalParcels = 0;
+    let totalDuplicateRows = 0;
     for (const r of results) {
       parcelFc.features.push(...(r.fc.features || []));
       totalMatched += r.matched;
-      totalRequested += r.total;
+      totalParcels += r.parcels || 0;
+      totalDuplicateRows += (r.duplicateRows || []).length;
       unmatchedRecords.push(...(r.unmatched || []));
     }
+    // Distinct sales the CSV actually described, after collapsing exact
+    // re-listings: everything that plotted plus everything whose roll
+    // wasn't in Roll_Entry. This is the honest denominator — `records`
+    // counts rows, and rows are not sales.
+    const totalSales = totalMatched + unmatchedRecords.length;
 
     if (parcelFc.features.length === 0) {
       // Distinguish a clean "no matches" (CSV rows don't exist in
@@ -2870,7 +2906,13 @@ async function handleSalesUpload(file) {
     for (const f of parcelFc.features) {
       const oid = f.properties?.OBJECTID;
       if (oid != null) {
-        f.properties._rowKey = `p:${oid}`;
+        // _rowKey addresses a TABLE ROW, so it must be unique per sale —
+        // a repeat-sold parcel has one row per sale. The most recent
+        // sale (_saleSeq 0) keeps the bare `p:<oid>` key so a map click,
+        // which can only resolve to the one drawn polygon, still scrolls
+        // to that parcel's primary row exactly as before.
+        const seq = f.properties._saleSeq;
+        f.properties._rowKey = seq ? `p:${oid}#${seq}` : `p:${oid}`;
         f.id = oid;
       }
       const r = f.properties?.Roll_No_Txt;
@@ -2952,8 +2994,23 @@ async function handleSalesUpload(file) {
     // Assign the stable map-numbering sequence (muni then Roll #) for
     // this uploaded sales set, so the "Number parcels" toggle works on
     // comp maps the same way it does for a roll-list search.
-    if (parcelFc.features.length > 1) assignParcelSeq(parcelFc.features);
+    //
+    // Numbering is per PARCEL, not per sale row: a parcel that sold
+    // twice is one polygon and must carry one badge, so the number is
+    // assigned on the deduped list and then copied onto that parcel's
+    // other sale rows. Both of its table rows therefore show the same
+    // "#", which reads correctly — they are the same parcel on the map.
+    const uniqueParcels = uniqueParcelFeatures(parcelFc.features);
+    if (uniqueParcels.length > 1) assignParcelSeq(uniqueParcels);
     else clearParcelSeq(parcelFc.features);
+    if (uniqueParcels.length !== parcelFc.features.length) {
+      const seqByOid = new Map();
+      for (const f of uniqueParcels) seqByOid.set(f.properties?.OBJECTID, f.properties?._seq);
+      for (const f of parcelFc.features) {
+        const s = seqByOid.get(f.properties?.OBJECTID);
+        if (s != null) f.properties._seq = s;
+      }
+    }
 
     // Render parcels-only rows immediately, then run the same
     // overlay enrichment pipeline runSearch uses (respecting the same
@@ -2972,7 +3029,28 @@ async function handleSalesUpload(file) {
     const unmatchedNote = unmatchedRecords.length > 0
       ? ` · ${unmatchedRecords.length} unmatched (see panel)`
       : '';
-    const baseMsg = `${totalMatched} of ${records.length} sales plotted${unmatchedNote}`;
+    // Sales, parcels and CSV rows are three different numbers and the
+    // line now says so. The old text read "459 of 556 sales plotted",
+    // comparing parcels found against rows read — which looked like ~90
+    // missing sales when nothing was missing at all.
+    //
+    //   sales   distinct (parcel, date, price) events after collapsing
+    //           the export's repeated portfolio blocks
+    //   parcels distinct rolls those sales touched — fewer than sales
+    //           whenever something sold more than once
+    //
+    // The merged-duplicates note is what lets the user reconcile back to
+    // the raw CSV: sales + duplicates merged = rows they uploaded. Each
+    // note is omitted when it would be a no-op, so a plain upload with
+    // no repeats and no duplicates reads exactly as it always did.
+    const parcelNote = totalParcels !== totalMatched
+      ? ` across ${totalParcels} parcels`
+      : '';
+    const dupeNote = totalDuplicateRows > 0
+      ? ` · ${totalDuplicateRows} duplicate row${totalDuplicateRows === 1 ? '' : 's'} merged`
+      : '';
+    const baseMsg = `${totalMatched} of ${totalSales} sales plotted${parcelNote}`
+                  + `${dupeNote}${unmatchedNote}`;
     renderUnmatchedPanel(unmatchedRecords);
 
     // Auto-set the muni dropdown to a "dominant" muni — the one with
@@ -2993,10 +3071,13 @@ async function handleSalesUpload(file) {
     // dominant's; (b) the Roll Layer auto-toggle — Roll Layer renders
     // one muni's parcel fabric at a time, and surfacing only the
     // dominant's would mislead in a multi-muni context.
+    // Ranked by PARCEL count, not sale count — "dominant muni" means the
+    // one holding most of the upload's geography, and a single parcel
+    // that sold three times shouldn't outweigh three separate parcels.
     const matchedByMuni = results
-      .filter((r) => r.matched > 0)
+      .filter((r) => r.parcels > 0)
       .slice()
-      .sort((a, b) => b.matched - a.matched || a.muni.localeCompare(b.muni));
+      .sort((a, b) => b.parcels - a.parcels || a.muni.localeCompare(b.muni));
     const matchedMuniSet = new Set(matchedByMuni.map((r) => r.muni));
     const matchedMuniCount = matchedMuniSet.size;
     const isSingleMuni = matchedMuniCount === 1;
@@ -4660,8 +4741,11 @@ function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
   // `_soilComposition` lazily on click; deferring the stamp means the
   // map appears immediately and the composition section fills in
   // shortly after.
+  // Geometry is drawn once per parcel even when the result set carries
+  // one feature per sale — see dedupeParcelFeaturesForMap().
+  const mapFc = dedupeParcelFeaturesForMap(parcelFc);
   mapReady.then(() => {
-    showResults(map, parcelFc, opts);
+    showResults(map, mapFc, opts);
     setZoningData(map, zoningFc);
     setDevPlanData(map, devPlanFc);
     // Parcel-number callouts. The `_seq` values are assigned once per
@@ -4669,16 +4753,21 @@ function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
     // current features' anchors and toggle visibility to match. Passing
     // a filtered subset shows only those parcels' (fixed) numbers, with
     // gaps — the number stays glued to the parcel, never renumbers.
-    const numberable = (parcelFc.features?.length || 0) > 1;
-    setParcelNumberData(map, parcelFc.features || []);
+    const numberable = (mapFc.features?.length || 0) > 1;
+    setParcelNumberData(map, mapFc.features || []);
     setParcelNumbersVisible(map, numberingOn && numberable);
   });
+  // Stamps run on the FULL set (every sale row), not the deduped map
+  // set, so a repeat sale's extra rows carry soil data into the table
+  // and the CSV export too.
   scheduleSoilCompositionStamp(parcelFc);
   // Stash the current result set so the Parcel Snapshots export can render
   // each parcel without re-querying. Covers both entry points the user
   // asked for: imported-list searches and sales-CSV uploads both funnel
   // their parcelFc through here.
-  lastResultFc = parcelFc;
+  // Deduped: Parcel Snapshots renders one image per parcel, so a
+  // repeat-sold parcel must not produce two identical captures.
+  lastResultFc = mapFc;
   updateSnapshotButton();
 }
 
@@ -6916,6 +7005,20 @@ function renderTable(rows, { resetPage = true } = {}) {
     // re-renders when the user uploads a CSV.
     const saleDateCell = td(p._saleDate || null);
     saleDateCell.classList.add('sales-only');
+    // Repeat sale — this parcel transacted more than once in the upload
+    // and so occupies more than one row. Without a marker the rows read
+    // as an accidental duplicate rather than a second transaction of the
+    // same land, which is exactly the comparison an appraiser wants.
+    const saleCount = Number(p._saleCount);
+    if (Number.isFinite(saleCount) && saleCount > 1) {
+      const badge = document.createElement('span');
+      badge.className = 'repeat-sale-badge';
+      badge.textContent = `${Number(p._saleSeq ?? 0) + 1}/${saleCount}`;
+      badge.title = `Sale ${Number(p._saleSeq ?? 0) + 1} of ${saleCount} for this parcel `
+                  + '(most recent first)';
+      saleDateCell.appendChild(document.createTextNode(' '));
+      saleDateCell.appendChild(badge);
+    }
     tr.appendChild(saleDateCell);
     const salePriceCell = td(p._salePrice || null);
     salePriceCell.classList.add('sales-only', 'num');
@@ -7815,6 +7918,8 @@ function favoriteCell(row) {
   btn.textContent = isFav ? '★' : '☆';
   btn.title = isFav ? 'Unstar — remove from comparables' : 'Star — mark as comparable';
   btn.setAttribute('aria-pressed', String(isFav));
+  // Lets the click handler find every row showing this same parcel.
+  btn.dataset.favKey = key;
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
     if (favoriteKeys.has(key)) favoriteKeys.delete(key);
@@ -7823,15 +7928,18 @@ function favoriteCell(row) {
     // Local DOM swap rather than a full re-render — keeps the rest
     // of the table stable and avoids losing scroll position.
     const nowFav = favoriteKeys.has(key);
-    btn.className = nowFav ? 'fav-star active' : 'fav-star';
-    btn.textContent = nowFav ? '★' : '☆';
-    btn.title = nowFav ? 'Unstar — remove from comparables' : 'Star — mark as comparable';
-    btn.setAttribute('aria-pressed', String(nowFav));
-    // Row shading + map fill flip in lockstep. The closest <tr> for
-    // the click target is the row we want to restyle; the parcel
-    // feature is captured by row at render-time (no DOM walk).
-    const tr = cell.closest('tr');
-    if (tr) tr.classList.toggle('starred', nowFav);
+    // A favourite is a PARCEL, keyed by muni+roll, so a repeat-sold
+    // parcel's other sale rows carry the same key and must flip with
+    // this one — otherwise the sibling row keeps showing ☆ for a
+    // parcel that is now starred, until the next full re-render.
+    for (const el of document.querySelectorAll('#results td.fav-col button.fav-star')) {
+      if (el.dataset.favKey !== key) continue;
+      el.className = nowFav ? 'fav-star active' : 'fav-star';
+      el.textContent = nowFav ? '★' : '☆';
+      el.title = nowFav ? 'Unstar — remove from comparables' : 'Star — mark as comparable';
+      el.setAttribute('aria-pressed', String(nowFav));
+      el.closest('tr')?.classList.toggle('starred', nowFav);
+    }
     setStarredOnMap(row?.parcel, nowFav);
   });
   cell.appendChild(btn);
@@ -8373,7 +8481,12 @@ function exportCsv(explicitRows) {
     'Walkscore URL', 'Flood-Map URL',
     ...(inSalesMode
       ? [
-          'Sale Date', 'Sale Price', 'Sale Group ID', 'Parcels in Sale', 'Group Rolls',
+          'Sale Date', 'Sale Price',
+          // Repeat sales: 'Sale # for Parcel' is 1-based, most recent
+          // first, so a spreadsheet can filter to first sales only or
+          // pair a parcel's transactions without regrouping by roll.
+          'Sale # for Parcel', 'Sales for Parcel',
+          'Sale Group ID', 'Parcels in Sale', 'Group Rolls',
           'Group Total Sale Price', 'Group Total Acres', 'Group Acres Complete',
           'Group $/Lot', 'Group $/SF', 'Group $/Acre',
           'Group Assessment Total', 'Group Assessment Complete', 'Sale/Asmt',
@@ -8434,6 +8547,8 @@ function exportCsv(explicitRows) {
         ? [
             p._saleDate ?? '',
             p._salePrice ?? '',
+            p._saleSeq != null ? Number(p._saleSeq) + 1 : '',
+            p._saleCount ?? '',
             p._saleGroupId ?? '',
             p._saleGroupSize ?? '',
             Array.isArray(p._saleGroupRolls) ? p._saleGroupRolls.join(' | ') : '',
