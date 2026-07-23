@@ -665,13 +665,53 @@ async function fetchOverlayByMunicipalities(baseUrl, municipalities, outFields) 
  * ("Niverville") — strip the suffix and ignore case.
  */
 async function fetchOverlayByMunicipality(baseUrl, municipality, outFields) {
-  return fetchAllPages(baseUrl, {
+  const cacheKey = overlayCacheKey(baseUrl, municipality);
+  if (cacheKey) {
+    const cached = await readCache(cacheKey, CACHE_TTL_MS);
+    if (cached?.features?.length) return cached;
+  }
+  const fc = await fetchAllPages(baseUrl, {
     where: muniNameMatchClause(municipality),
     outFields,
     returnGeometry: 'true',
     outSR: '4326',
     f: 'geojson',
   }, 20000);
+  // Only a non-empty result is worth remembering. An empty one is
+  // ambiguous — a municipality with genuinely no coverage looks exactly
+  // like a name that failed to match or a request that came back short —
+  // and caching that for a week would pin a parcel set to blank zoning
+  // with no obvious way for the user to tell why. Re-fetching the
+  // genuinely-empty munis costs one request each.
+  if (cacheKey && fc?.features?.length) {
+    await writeCache(cacheKey, fc);
+  }
+  return fc;
+}
+
+/**
+ * Cache key for one municipality's overlay polygons.
+ *
+ * Municipal zoning and development-plan layers change on a by-law
+ * cadence — months to years — while a multi-municipality sales import
+ * re-fetches all of them every single time. On a 15-muni upload that
+ * was 46 paged requests before a single polygon could be clipped, and
+ * it dominated the wall-clock the user actually waits through.
+ *
+ * Keyed by layer AND municipality so the two overlays never collide.
+ * The `v1` suffix is tied to the outFields lists: widening those means
+ * bumping it, or a cached entry would be silently missing a column.
+ */
+function overlayCacheKey(baseUrl, municipality) {
+  const layer = baseUrl === ZONING_URL ? 'zoning'
+    : baseUrl === DEVPLAN_URL ? 'devplan'
+      : null;
+  if (!layer) return null;
+  const muni = String(municipality || '').trim().toUpperCase();
+  if (!muni) return null;
+  // Non-alphanumerics collapsed so "STE. ANNE (TOWN)" can't produce a
+  // key that collides with a differently-punctuated spelling of itself.
+  return `mb_overlay_${layer}_${muni.replace(/[^A-Z0-9]+/g, '_')}_v1`;
 }
 
 /**
@@ -2861,4 +2901,7 @@ export const _internals = {
   canonicalRollList,
   rollKeyWhereClause,
   chunkRollKeys,
+  overlayCacheKey,
+  ZONING_URL,
+  DEVPLAN_URL,
 };

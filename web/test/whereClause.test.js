@@ -28,7 +28,10 @@ globalThis.localStorage = makeFakeStorage();
 globalThis.sessionStorage = makeFakeStorage();
 
 const { _internals, canonicalRoll } = await import('../src/arcgis.js');
-const { escapeSql, buildParcelClauses, canonicalRollList, rollKeyWhereClause, chunkRollKeys } = _internals;
+const {
+  escapeSql, buildParcelClauses, canonicalRollList, rollKeyWhereClause, chunkRollKeys,
+  overlayCacheKey, ZONING_URL, DEVPLAN_URL,
+} = _internals;
 
 const results = [];
 function test(name, fn) {
@@ -233,6 +236,43 @@ test('rollKeyWhereClause escapes quotes inside roll text', () => {
 
 test('rollKeyWhereClause returns null for an empty chunk', () => {
   assert.equal(rollKeyWhereClause([]), null);
+});
+
+console.log('overlayCacheKey');
+
+test('zoning and dev-plan never share a key for the same muni', () => {
+  assert.notEqual(
+    overlayCacheKey(ZONING_URL, 'PINEY (RM)'),
+    overlayCacheKey(DEVPLAN_URL, 'PINEY (RM)'),
+  );
+});
+
+test('different munis never share a key', () => {
+  assert.notEqual(
+    overlayCacheKey(ZONING_URL, 'PINEY (RM)'),
+    overlayCacheKey(ZONING_URL, 'HANOVER (RM)'),
+  );
+});
+
+test('punctuation and case variants of one muni collapse to one key', () => {
+  // "STE. ANNE (TOWN)" vs "Ste Anne (Town)" must not cache twice, and
+  // must not collide with a genuinely different muni.
+  const a = overlayCacheKey(ZONING_URL, 'STE. ANNE (TOWN)');
+  const b = overlayCacheKey(ZONING_URL, 'Ste Anne (Town)');
+  assert.equal(a, b);
+  assert.notEqual(a, overlayCacheKey(ZONING_URL, 'STE ANNE (RM)'));
+});
+
+test('key is storage-safe: no spaces, dots or parentheses', () => {
+  const k = overlayCacheKey(ZONING_URL, 'PORTAGE LA PRAIRIE (RM)');
+  assert.match(k, /^mb_overlay_zoning_[A-Z0-9_]+_v1$/);
+});
+
+test('unknown layer or blank muni yields no key (caching skipped)', () => {
+  assert.equal(overlayCacheKey('https://example.com/Other/FeatureServer/0', 'PINEY (RM)'), null);
+  assert.equal(overlayCacheKey(ZONING_URL, ''), null);
+  assert.equal(overlayCacheKey(ZONING_URL, '   '), null);
+  assert.equal(overlayCacheKey(ZONING_URL, null), null);
 });
 
 const failed = results.filter((r) => r.status === 'fail');
