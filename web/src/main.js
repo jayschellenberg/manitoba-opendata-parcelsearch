@@ -42,7 +42,7 @@ import {
   uniqueParcelFeatures, dedupeParcelFeaturesForMap,
 } from './lib/salesDedupe.js';
 import { assignParcelSeq, clearParcelSeq } from './lib/parcelNumbering.js';
-import { parcelLat, parcelLon, featureToWkt } from './lib/geometryText.js';
+import { parcelLat, parcelLon, featureToWkt, parcelCentrePoint } from './lib/geometryText.js';
 import {
   realStr,
   legalDisplay,
@@ -4017,6 +4017,12 @@ function computeSaleGroupTotals(parcelFc) {
     parsePrice: parseTotalValue,
     displayRoll,
     isVacant: parcelIsVacantDynamic,
+    // Same centre point the export's Lat/Lon and the popup's GPS
+    // Coordinates link use, so a sale's reported spread is measured
+    // between the exact points the user can read off each parcel.
+    centroid: parcelCentrePoint,
+    // haversineKm takes {lat, lng} — parcelCentrePoint's shape.
+    distanceKm: haversineKm,
   });
   let stampedCount = 0;
   for (const f of features) {
@@ -8495,6 +8501,11 @@ function exportCsv(explicitRows) {
           'Group Total Sale Price', 'Group Total Acres', 'Group Acres Complete',
           'Group $/Lot', 'Group $/SF', 'Group $/Acre',
           'Group Assessment Total', 'Group Assessment Complete', 'Sale/Asmt',
+          // Far-flung diagnostics: how spread out the sale's parcels
+          // actually are, and how many munis they touch. Spread Complete
+          // is No when a member had no usable geometry, meaning the km
+          // figure understates the true spread.
+          'Sale Spread (km)', 'Munis in Sale', 'Spread Complete',
           'Dist (km)', 'Asmt Land', 'Asmt Buildings', 'Asmt Bldg %', 'Asmt Year', 'Asmt Class', 'Asmt Status',
         ]
       : []),
@@ -8572,6 +8583,9 @@ function exportCsv(explicitRows) {
             Number.isFinite(p._saleGroupAsmtTotal) ? Math.round(p._saleGroupAsmtTotal) : '',
             p._saleGroupSize != null ? (p._saleGroupAsmtIncomplete ? 'No' : 'Yes') : '',
             p._saleGroupAsmtIncomplete ? '' : (Number.isFinite(p._saleGroupSaleToAsmt) ? p._saleGroupSaleToAsmt.toFixed(2) : ''),
+            Number.isFinite(p._saleGroupSpanKm) ? p._saleGroupSpanKm.toFixed(1) : '',
+            p._saleGroupMuniCount ?? '',
+            p._saleGroupSpanKm == null ? '' : (p._saleGroupSpanIncomplete ? 'No' : 'Yes'),
             Number.isFinite(p._distanceKm) ? p._distanceKm.toFixed(2) : '',
             Number.isFinite(p._asmtLand) ? Math.round(p._asmtLand) : '',
             Number.isFinite(p._asmtBuildings) ? Math.round(p._asmtBuildings) : '',

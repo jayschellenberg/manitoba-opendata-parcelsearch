@@ -6,7 +6,8 @@
 // Run: cd web && node test/saleGroups.test.js
 
 import assert from 'node:assert/strict';
-import { computeSaleGroups, groupPosition } from '../src/lib/saleGroups.js';
+import { computeSaleGroups, groupPosition, maxPairwiseKm } from '../src/lib/saleGroups.js';
+import { parcelCentrePoint } from '../src/lib/geometryText.js';
 
 // Stand-in helpers matching main.js's real ones closely enough for the
 // math under test.
@@ -34,7 +35,23 @@ const isVacant = (p) => {
   return bld === 0;
 };
 
-const helpers = { parsePrice, displayRoll, isVacant };
+// Faithful copy of main.js's haversineKm, which takes {lat, lng}.
+const distanceKm = (a, b) => {
+  const R = 6371;
+  const rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad;
+  const dLon = (b.lng - a.lng) * rad;
+  const sa = Math.sin(dLat / 2);
+  const sb = Math.sin(dLon / 2);
+  const c = sa * sa + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * sb * sb;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(c)));
+};
+
+const helpers = {
+  parsePrice, displayRoll, isVacant,
+  centroid: parcelCentrePoint,
+  distanceKm,
+};
 
 function feat(props) {
   return { properties: props };
@@ -163,6 +180,121 @@ test('solo when neither neighbour shares the group', () => {
 test('a different adjacent group does not count as a sibling', () => {
   assert.equal(groupPosition('other', 'g', 'g'), 'first');
   assert.equal(groupPosition('g', 'g', 'other'), 'last');
+});
+
+console.log('\nmaxPairwiseKm');
+
+// ~1 degree of latitude ≈ 111 km; used to keep the expected values
+// easy to reason about.
+const at = (lat, lng) => ({ lat, lng });
+
+test('returns the widest gap, not the first or last one', () => {
+  // Deliberately ordered so a naive first-to-last or consecutive-pairs
+  // implementation would return the wrong answer.
+  const pts = [at(49, -97), at(50, -97), at(49.5, -97)];
+  const d = maxPairwiseKm(pts, distanceKm);
+  assert.ok(Math.abs(d - 111.19) < 1, `expected ~111 km, got ${d}`);
+});
+
+test('needs two points to mean anything', () => {
+  assert.equal(maxPairwiseKm([], distanceKm), null);
+  assert.equal(maxPairwiseKm([at(49, -97)], distanceKm), null);
+  assert.equal(maxPairwiseKm(null, distanceKm), null);
+});
+
+test('two coincident parcels span zero', () => {
+  assert.equal(maxPairwiseKm([at(49, -97), at(49, -97)], distanceKm), 0);
+});
+
+console.log('\nsale-group spread');
+
+// A tiny square polygon centred on the given point, so parcelCentrePoint
+// returns that point back.
+function parcelAt(props, lat, lng) {
+  const d = 0.001;
+  return {
+    properties: props,
+    geometry: {
+      type: 'Polygon',
+      coordinates: [[
+        [lng - d, lat - d], [lng + d, lat - d],
+        [lng + d, lat + d], [lng - d, lat + d], [lng - d, lat - d],
+      ]],
+    },
+  };
+}
+
+test('a single-parcel sale spans 0 km', () => {
+  const stamp = computeSaleGroups(
+    [parcelAt({ _saleGroupId: 'g1', OBJECTID: 1, Municipality: '600 - RM OF PINEY' }, 49, -97)],
+    helpers,
+  ).get('g1');
+  assert.equal(stamp._saleGroupSpanKm, 0);
+  assert.equal(stamp._saleGroupSpanIncomplete, false);
+  assert.equal(stamp._saleGroupMuniCount, 1);
+});
+
+test('a tight assembly spans a small distance', () => {
+  const stamp = computeSaleGroups([
+    parcelAt({ _saleGroupId: 'g1', OBJECTID: 1, Municipality: '600 - RM OF PINEY' }, 49.00, -97),
+    parcelAt({ _saleGroupId: 'g1', OBJECTID: 2, Municipality: '600 - RM OF PINEY' }, 49.02, -97),
+  ], helpers).get('g1');
+  assert.ok(stamp._saleGroupSpanKm > 1 && stamp._saleGroupSpanKm < 4,
+    `expected ~2 km, got ${stamp._saleGroupSpanKm}`);
+});
+
+test('a far-flung portfolio sale spans a large distance', () => {
+  const stamp = computeSaleGroups([
+    parcelAt({ _saleGroupId: 'g1', OBJECTID: 1, Municipality: '600 - RM OF PINEY' }, 49.0, -97.0),
+    parcelAt({ _saleGroupId: 'g1', OBJECTID: 2, Municipality: '601 - RM OF ARMSTRONG' }, 50.5, -97.0),
+  ], helpers).get('g1');
+  assert.ok(stamp._saleGroupSpanKm > 150, `expected >150 km, got ${stamp._saleGroupSpanKm}`);
+  assert.equal(stamp._saleGroupMuniCount, 2);
+});
+
+test('a member without geometry marks the span incomplete, not wrong', () => {
+  // The span is computed from the parcels that DO have geometry, but
+  // flagged so it is never treated as a trustworthy cutoff.
+  const stamp = computeSaleGroups([
+    parcelAt({ _saleGroupId: 'g1', OBJECTID: 1, Municipality: '600 - RM OF PINEY' }, 49.0, -97.0),
+    parcelAt({ _saleGroupId: 'g1', OBJECTID: 2, Municipality: '600 - RM OF PINEY' }, 49.1, -97.0),
+    { properties: { _saleGroupId: 'g1', OBJECTID: 3, Municipality: '600 - RM OF PINEY' } },
+  ], helpers).get('g1');
+  assert.equal(stamp._saleGroupSpanIncomplete, true);
+  assert.ok(Number.isFinite(stamp._saleGroupSpanKm));
+});
+
+test('a MULTI-parcel sale with only one usable centroid spans null, not 0', () => {
+  // The distinction that matters: "not spread out" and "we cannot tell"
+  // must never collapse, or the eventual filter would keep a portfolio
+  // sale on the strength of missing data.
+  const stamp = computeSaleGroups([
+    parcelAt({ _saleGroupId: 'g1', OBJECTID: 1, Municipality: '600 - RM OF PINEY' }, 49, -97),
+    { properties: { _saleGroupId: 'g1', OBJECTID: 2, Municipality: '600 - RM OF PINEY' } },
+  ], helpers).get('g1');
+  assert.equal(stamp._saleGroupSpanKm, null);
+  assert.equal(stamp._saleGroupSpanIncomplete, true);
+});
+
+test('municipality count is distinct, not a member count', () => {
+  const stamp = computeSaleGroups([
+    parcelAt({ _saleGroupId: 'g1', OBJECTID: 1, Municipality: '600 - RM OF PINEY' }, 49.0, -97),
+    parcelAt({ _saleGroupId: 'g1', OBJECTID: 2, Municipality: '600 - RM OF PINEY' }, 49.1, -97),
+    parcelAt({ _saleGroupId: 'g1', OBJECTID: 3, Municipality: '601 - RM OF HANOVER' }, 49.2, -97),
+  ], helpers).get('g1');
+  assert.equal(stamp._saleGroupSize, 3);
+  assert.equal(stamp._saleGroupMuniCount, 2);
+});
+
+test('spread stamps are absent-safe when helpers are not injected', () => {
+  // computeSaleGroups is called from one place today, but the older
+  // three-helper call shape must not throw if it resurfaces.
+  const stamp = computeSaleGroups(
+    [parcelAt({ _saleGroupId: 'g1', OBJECTID: 1 }, 49, -97), parcelAt({ _saleGroupId: 'g1', OBJECTID: 2 }, 50, -97)],
+    { parsePrice, displayRoll, isVacant },
+  ).get('g1');
+  assert.equal(stamp._saleGroupSpanKm, null);
+  assert.equal(stamp._saleGroupMuniCount, 0);
 });
 
 const failed = results.filter((r) => r.status === 'fail');

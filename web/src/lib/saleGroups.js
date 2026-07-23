@@ -9,6 +9,8 @@
 //   parsePrice(raw)   → number|null   (main.js: parseTotalValue)
 //   displayRoll(raw)  → string        (main.js: displayRoll)
 //   isVacant(props)   → true|false|null (main.js: parcelIsVacantDynamic)
+//   centroid(feature) → {lng,lat}|null (lib/geometryText: parcelCentrePoint)
+//   distanceKm(a, b)  → number         (main.js: haversineKm)
 //
 // Parcels are grouped by `properties._saleGroupId`. The sale price is a
 // group-level consideration shared by every member, so it's read once
@@ -17,12 +19,47 @@
 const SQFT_PER_ACRE = 43560;
 
 /**
+ * How far apart the parcels in one sale actually are: the greatest
+ * distance between any two member centroids, in km.
+ *
+ * This is the signal behind flagging "far-flung" sales — a portfolio or
+ * estate transaction that sweeps up land across half the province, whose
+ * blended $/acre is meaningless as a local comp. Measuring the widest
+ * internal gap (rather than counting municipalities) is what separates
+ * those from a legitimate farm assembly that merely straddles one RM
+ * boundary: adjacent-RM assemblies stay small, portfolio deals don't.
+ *
+ * O(n²) in group size, which is fine — sale groups run to ~18 parcels at
+ * the very top end, so worst case is ~150 distance calculations.
+ *
+ * Purely the spread of the points handed in: null with fewer than two of
+ * them, because one centroid says nothing about how far apart a group's
+ * parcels are. Deciding that a SINGLE-PARCEL sale spans 0 km is the
+ * caller's job — it's the only one that knows whether one usable
+ * centroid means "one parcel" or "three parcels, two missing geometry".
+ */
+export function maxPairwiseKm(points, distanceKm) {
+  if (!Array.isArray(points) || points.length < 2) return null;
+  let max = 0;
+  for (let i = 0; i < points.length; i++) {
+    for (let j = i + 1; j < points.length; j++) {
+      const d = distanceKm(points[i], points[j]);
+      if (Number.isFinite(d) && d > max) max = d;
+    }
+  }
+  return max;
+}
+
+/**
  * Compute per-group rollups for an array of GeoJSON-ish features.
  * Returns Map<saleGroupId, stamp>, where `stamp` is an object of the
  * `_saleGroup*` properties to copy onto every member feature. Features
  * with no `_saleGroupId` are skipped.
  */
-export function computeSaleGroups(features, { parsePrice, displayRoll, isVacant }) {
+export function computeSaleGroups(
+  features,
+  { parsePrice, displayRoll, isVacant, centroid, distanceKm },
+) {
   const groups = new Map();
 
   // Pass 1: accumulate members + running totals.
@@ -42,11 +79,27 @@ export function computeSaleGroups(features, { parsePrice, displayRoll, isVacant 
         // passes the vacancy predicate with data present.
         allVacant: true,
         vacantUnknown: false,
+        // Geographic spread — member centroids, and the distinct
+        // municipalities they fall in. See maxPairwiseKm().
+        points: [],
+        munis: new Set(),
+        geomMissing: false,
       });
     }
     const g = groups.get(gid);
     g.oids.push(f.properties?.OBJECTID);
     g.rolls.push(displayRoll(f.properties?.Roll_No_Txt));
+
+    // Spread inputs. A member without usable geometry can't contribute a
+    // point, so the group's span is flagged incomplete rather than being
+    // quietly computed from whichever parcels happen to have coordinates.
+    const pt = centroid ? centroid(f) : null;
+    if (pt && Number.isFinite(pt.lat) && Number.isFinite(pt.lng)) g.points.push(pt);
+    else g.geomMissing = true;
+    // Municipality is reported alongside the span for context in the
+    // export — the span is the signal, the muni list explains it.
+    const muni = f.properties?.Municipality;
+    if (muni) g.munis.add(String(muni).trim());
 
     const ac = Number(f.properties?._acres);
     if (Number.isFinite(ac) && ac > 0) g.totalAcres += ac;
@@ -72,6 +125,16 @@ export function computeSaleGroups(features, { parsePrice, displayRoll, isVacant 
   const stamps = new Map();
   for (const [gid, g] of groups) {
     const priceFinite = g.priceNum != null && Number.isFinite(g.priceNum) && g.priceNum > 0;
+    // Span, with the single-parcel case resolved here rather than in
+    // maxPairwiseKm: a one-parcel sale spans 0 km by definition, but a
+    // multi-parcel sale that yielded only one usable centroid spans an
+    // UNKNOWN distance, and the two must not collapse to the same value.
+    // Unknown stays null so the eventual far-flung filter can fail open
+    // — dropping a comp because its geometry didn't load would silently
+    // lose good evidence.
+    const spanKm = g.oids.length === 1
+      ? 0
+      : (distanceKm ? maxPairwiseKm(g.points, distanceKm) : null);
     stamps.set(gid, {
       _saleGroupSize: g.oids.length,
       _saleGroupRollIds: g.oids,
@@ -97,6 +160,12 @@ export function computeSaleGroups(features, { parsePrice, displayRoll, isVacant 
           : null,
       _saleGroupPpl:
         priceFinite && g.oids.length > 0 ? g.priceNum / g.oids.length : null,
+      // Geographic spread of the sale. `SpanIncomplete` means at least
+      // one member had no usable geometry, so the span understates the
+      // true spread and shouldn't be trusted as a hard cutoff.
+      _saleGroupSpanKm: spanKm,
+      _saleGroupSpanIncomplete: g.geomMissing,
+      _saleGroupMuniCount: g.munis.size,
     });
   }
   return stamps;
