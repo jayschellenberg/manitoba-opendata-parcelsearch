@@ -491,7 +491,10 @@ export function initMap(container, { onFeatureClick } = {}) {
   window._map = map;
 
   map.on('error', (e) => console.error('[map error]', e?.error?.message || e, e));
-  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+  // Custom zoom buttons with a finer step than NavigationControl's fixed
+  // ±1 (see FineZoomControl). Compass was already disabled, so nothing
+  // from the stock control is lost by replacing it outright.
+  map.addControl(new FineZoomControl(), 'top-right');
   map.addControl(new BasemapMenuControl(), 'top-right');
   // Distance / area measurement tool. mapbox-gl-draw owns the drawing
   // state and renders the in-progress line/polygon; MeasureControl wraps
@@ -4359,6 +4362,84 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
 }
 
 function emptyFc() { return { type: 'FeatureCollection', features: [] }; }
+
+// Zoom applied per click of the fine-zoom + / - buttons. A MapLibre zoom
+// level doubles or halves the map scale, so the stock NavigationControl's
+// hardcoded ±1 step is a big jump; 0.5 (~41% scale change) gives finer
+// framing while still moving meaningfully in a click or two.
+const FINE_ZOOM_STEP = 0.5;
+
+/**
+ * Zoom + / - buttons with a configurable step, replacing MapLibre's
+ * NavigationControl (whose zoom step is fixed at ±1 and not exposed as
+ * an option). Reuses the stock control's class names so it inherits the
+ * native +/- icon styling and sits identically in the control stack;
+ * only the per-click increment differs.
+ *
+ * Buttons disable at the map's min / max zoom, mirroring NavigationControl,
+ * so a click at the limit isn't a silent no-op.
+ */
+class FineZoomControl {
+  constructor({ step = FINE_ZOOM_STEP } = {}) {
+    this._step = step;
+    this._onZoom = () => this._updateDisabled();
+  }
+
+  onAdd(map) {
+    this._map = map;
+    this._container = document.createElement('div');
+    this._container.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+
+    this._zoomIn = this._button('maplibregl-ctrl-zoom-in', 'Zoom in', () => this._zoomBy(this._step));
+    this._zoomOut = this._button('maplibregl-ctrl-zoom-out', 'Zoom out', () => this._zoomBy(-this._step));
+    this._container.appendChild(this._zoomIn);
+    this._container.appendChild(this._zoomOut);
+
+    map.on('zoom', this._onZoom);
+    this._updateDisabled();
+    return this._container;
+  }
+
+  onRemove() {
+    this._map?.off('zoom', this._onZoom);
+    this._container?.remove();
+    this._map = undefined;
+  }
+
+  _button(cls, label, onClick) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    // Stock control class name (maplibregl-ctrl-zoom-in / -zoom-out) so
+    // the glyph and hover styling come from MapLibre's own stylesheet.
+    btn.className = cls;
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+    // The stock control renders its glyph via this inner span's
+    // background-image; reusing the class gives us the same + / - icon.
+    const icon = document.createElement('span');
+    icon.className = 'maplibregl-ctrl-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    btn.appendChild(icon);
+    btn.addEventListener('click', onClick);
+    return btn;
+  }
+
+  _zoomBy(delta) {
+    if (!this._map) return;
+    // easeTo clamps to the map's min/max zoom on its own; the short
+    // duration keeps the step feeling like a button press, not a fly-to.
+    this._map.easeTo({ zoom: this._map.getZoom() + delta, duration: 200 });
+  }
+
+  _updateDisabled() {
+    if (!this._map) return;
+    const z = this._map.getZoom();
+    // A tiny epsilon so floating-point drift at the exact limit doesn't
+    // leave a button enabled that can't actually move.
+    this._zoomIn.disabled = z >= this._map.getMaxZoom() - 1e-6;
+    this._zoomOut.disabled = z <= this._map.getMinZoom() + 1e-6;
+  }
+}
 
 /**
  * Basemap menu ported from the Winnipeg parcel app. The trigger shows the
