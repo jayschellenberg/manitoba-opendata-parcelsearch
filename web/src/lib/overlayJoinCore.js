@@ -24,13 +24,19 @@ import intersect from '@turf/intersect';
 import { buildBboxIndex, queryBboxIndex, bboxesOverlap, gridCellBboxes } from './spatialIndex.js';
 
 // Vertex count past which an overlay polygon is tiled before use, and
-// the lattice resolution. Measured on real Manitoba zoning: polygons
-// under 500 vertices clip in well under a millisecond and account for
-// ~5% of join time, while the two polygons above it (2893 and 1199
-// vertices) were hit 514 times at ~17 ms each — 95% of the total. 6×6
-// is where the one-off build cost stops paying for itself on that data.
+// the size a tile is subdivided down to. Polygons under the threshold
+// clip in well under a millisecond; the ones above it dominated the
+// join entirely (on Manitoba zoning, two polygons of 2893 and 1199
+// vertices took 95% of the time across 514 clips).
 const TILE_VERTEX_THRESHOLD = 500;
-const TILE_GRID = 6;
+// Subdivide until a piece is at or under this, or MAX_TILE_DEPTH is
+// reached. 800 measured marginally better than 400 — smaller tiles cost
+// more to build than they save at query time.
+const TILE_TARGET_VERTICES = 800;
+// Quadtree depth cap: 4 levels is up to 256 tiles, far past what any
+// real polygon needs, and stops a pathological geometry (one that never
+// simplifies as it's cut) from subdividing forever.
+const MAX_TILE_DEPTH = 4;
 
 /**
  * Overlay bboxes, grid and tile cache, memoised per overlay FEATURES
@@ -55,38 +61,59 @@ function countVertices(geometry) {
   return n;
 }
 
+/** A bbox as a rectangular clip Feature. */
+function bboxFeature([x0, y0, x1, y1]) {
+  return {
+    type: 'Feature',
+    properties: {},
+    geometry: {
+      type: 'Polygon',
+      coordinates: [[[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]],
+    },
+  };
+}
+
 /**
- * Tile one huge overlay polygon into a lattice of smaller pieces.
+ * Tile one huge overlay polygon into smaller pieces, by RECURSIVE
+ * QUADRANT SUBDIVISION.
  *
  * The join uses only the AREA of each parcel∩overlay clip, never its
  * geometry, and area is additive over a partition — so summing a
  * parcel's clips against the tiles it touches is the same quantity as
- * one clip against the whole polygon, for a fraction of the work. The
- * difference measured on real data is ~3e-7 relative, floating-point
- * noise from clipping at the tile edges.
+ * one clip against the whole polygon, for a fraction of the work.
+ * Measured difference on real data is ~3e-7 relative, floating-point
+ * noise from clipping at tile edges.
  *
- * Returns null when tiling produced nothing usable, so the caller falls
- * back to clipping the original polygon.
+ * Why recursive rather than a flat N×N lattice, which is what this did
+ * first: a flat grid clips the FULL polygon once per cell, so build cost
+ * is cells × full-complexity. On Manitoba's development-plan layer,
+ * whose largest polygon carries 35,729 vertices, a 6×6 grid meant 36
+ * clips of that monster — and measured SLOWER than not tiling at all
+ * (39.0 s vs 34.1 s across 984 candidate pairs; a 16×16 grid took
+ * 263 s). Subdividing instead clips 4 quadrants of the whole, then 4 of
+ * each surviving quarter, so every level works on geometry a quarter the
+ * size. Same data, hierarchical: 12.6 s, with identical areas.
+ *
+ * Recursion stops when a piece is simple enough to clip directly, or at
+ * MAX_TILE_DEPTH. Returns null when tiling produced nothing usable, so
+ * the caller falls back to clipping the original polygon.
  */
-function tilePolygon(feature, featureBbox) {
+function tilePolygon(feature, featureBbox, depth = 0) {
   const out = [];
-  for (const cell of gridCellBboxes(featureBbox, TILE_GRID)) {
-    const [cx0, cy0, cx1, cy1] = cell;
-    const cellFeature = {
-      type: 'Feature',
-      properties: {},
-      geometry: {
-        type: 'Polygon',
-        coordinates: [[[cx0, cy0], [cx1, cy0], [cx1, cy1], [cx0, cy1], [cx0, cy0]]],
-      },
-    };
+  for (const cell of gridCellBboxes(featureBbox, 2)) {
     let piece = null;
     try {
-      piece = intersect({ type: 'FeatureCollection', features: [feature, cellFeature] });
+      piece = intersect({ type: 'FeatureCollection', features: [feature, bboxFeature(cell)] });
     } catch { continue; }
     if (!piece) continue;
     let pb;
     try { pb = bbox(piece); } catch { continue; }
+    // Only keep descending while a quadrant is still complex enough to
+    // be worth another round of clipping.
+    if (depth + 1 < MAX_TILE_DEPTH && countVertices(piece.geometry) > TILE_TARGET_VERTICES) {
+      const sub = tilePolygon(piece, pb, depth + 1);
+      if (sub) { out.push(...sub); continue; }
+    }
     out.push({ feature: piece, bbox: pb });
   }
   return out.length > 0 ? out : null;

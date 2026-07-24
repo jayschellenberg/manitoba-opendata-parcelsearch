@@ -785,6 +785,10 @@ function saveFavorites() {
 // trigger a refresh when those layers are visible.
 let zoningLayerLoadedFor = null;
 let devPlanLayerLoadedFor = null;
+// True while the current result set was built WITHOUT dev-plan data, so
+// its Dev Plan column, popup line and export cells are blank pending an
+// explicit load. Set by handleSalesUpload, cleared once backfilled.
+let devPlanDeferred = false;
 
 // ---------- Column sort ----------
 
@@ -3269,7 +3273,14 @@ async function handleSalesUpload(file) {
     // same zoning, development-plan, risk-area, MASC-rating, and land-cover
     // data as Property Search, then load and compose the Manitoba Soil
     // Survey polygons for every municipality represented in the import.
-    await enrichOverlays(parcelFc, fakeInputs, baseMsg);
+    // Development-plan designations are NOT loaded here. Joining them was
+  // ~70 s of a ~100 s import — the single largest cost — because the
+  // layer carries polygons an order of magnitude more complex than
+  // zoning (35,729 vertices at the top end vs 2,893). They aren't part
+  // of the sales workflow, so the Dev Plan Layer toggle loads them on
+  // demand and backfills the grid, popup and export columns.
+  devPlanDeferred = true;
+  await enrichOverlays(parcelFc, fakeInputs, baseMsg, { skipDevPlan: true });
     setExportEnabled(false);
     setCount(`${baseMsg} · Loading soil survey data…`);
     const soilResult = await enrichImportedSoilComposition(
@@ -4689,7 +4700,7 @@ function renderEnrichButton(parcelFc, inputs, baseMsg) {
  * stamp risk areas + soil rating, refresh the assessment-year header,
  * then re-render table + map.
  */
-async function enrichOverlays(parcelFc, inputs, baseMsg) {
+async function enrichOverlays(parcelFc, inputs, baseMsg, { skipDevPlan = false } = {}) {
   setCount(`${baseMsg} · Loading zoning overlay…`);
 
   let zoningFc = EMPTY_FC;
@@ -4713,9 +4724,13 @@ async function enrichOverlays(parcelFc, inputs, baseMsg) {
         ? { municipalities: inputs.municipalities }
         : {});
   try {
+    // Development-plan designations are deferred on sales imports — see
+    // handleSalesUpload. Fetching and joining them was ~70 s of a ~100 s
+    // import, on a layer that isn't part of the sales workflow. The Dev
+    // Plan Layer toggle loads it on demand and backfills the columns.
     [zoningFc, devPlanFc, riskAreaFc] = await Promise.all([
       fetchZoningOverlap(parcelFc, overlayOpts),
-      fetchDevPlanOverlap(parcelFc, overlayOpts),
+      skipDevPlan ? Promise.resolve(EMPTY_FC) : fetchDevPlanOverlap(parcelFc, overlayOpts),
       riskAreaPromise,
     ]);
   } catch (err) {
@@ -4735,7 +4750,9 @@ async function enrichOverlays(parcelFc, inputs, baseMsg) {
       ? inputs.municipalities.slice().filter(Boolean).sort().join('|')
       : '');
   zoningLayerLoadedFor = overlayLoadKey || null;
-  devPlanLayerLoadedFor = overlayLoadKey || null;
+  // Leaving this null when skipped is what makes the Dev Plan Layer
+  // toggle actually fetch rather than assume it already has the data.
+  devPlanLayerLoadedFor = skipDevPlan ? null : (overlayLoadKey || null);
   rebuildZoningLegend(zoningFc);
   updatePdWebsiteButton(devPlanFc);
 
@@ -4745,6 +4762,7 @@ async function enrichOverlays(parcelFc, inputs, baseMsg) {
   // wouldn't pan while zoning loaded. The worker doesn't make them
   // cheaper (tiling did that); it stops them blocking the UI. Each pair
   // runs concurrently since they're independent.
+  if (!skipDevPlan) devPlanDeferred = false;
   const [zoningTop2, devPlanTop2] = await Promise.all([
     joinTopNByAreaAsync(parcelFc, zoningFc, 2),
     joinTopNByAreaAsync(parcelFc, devPlanFc, 2),
@@ -5042,6 +5060,53 @@ function scheduleSoilCompositionStamp(parcelFc, { repush } = {}) {
  * obvious; both stamping paths (CLI overlay load and CLI mode swap)
  * funnel through this helper.
  */
+/**
+ * Fill in the dev-plan data a sales import deliberately skipped.
+ *
+ * handleSalesUpload defers the development-plan join because it cost
+ * ~70 s of a ~100 s import — the layer's polygons are an order of
+ * magnitude more complex than zoning's — and it isn't part of the sales
+ * workflow. Turning on the Dev Plan Layer is the user asking for it, so
+ * this runs the same joins enrichOverlays would have, stamps the rows,
+ * and re-renders so the Dev Plan column, the Changes text, the popup
+ * line and the CSV export all populate.
+ *
+ * Operates on csvFullRows (the unfiltered set) so rows currently hidden
+ * by a filter are backfilled too — otherwise clearing a filter would
+ * reveal rows that are still blank.
+ */
+async function backfillDevPlanColumns(devPlanFc) {
+  const rows = csvFullRows || currentRows;
+  if (!rows?.length || !devPlanFc?.features?.length) { devPlanDeferred = false; return; }
+  const parcelFc = { type: 'FeatureCollection', features: rows.map((r) => r.parcel) };
+  setCount(`${csvFullBaseMsg || ''} · Loading development plan…`.trim());
+  try {
+    const changedFc = filterFcForChanged(devPlanFc, isDevPlanChanged);
+    const [top2, changes] = await Promise.all([
+      joinTopNByAreaAsync(parcelFc, devPlanFc, 2),
+      joinTopNByAreaAsync(parcelFc, changedFc, 3),
+    ]);
+    const changesBbox = bboxOverlapJoin(parcelFc, changedFc, 3);
+    for (const row of rows) {
+      const oid = row.parcel?.properties?.OBJECTID;
+      if (oid == null) continue;
+      const dc = changes.get(oid);
+      row.devPlan = top2.get(oid) || [];
+      row.devPlanChanges = (dc && dc.length) ? dc : (changesBbox.get(oid) || []);
+      // Changes text mixes zoning and dev-plan amendments, so it has to
+      // be recomputed now that the dev-plan half exists.
+      row.parcel.properties._changesText = formatChanges(row);
+    }
+    updatePdWebsiteButton(devPlanFc);
+    devPlanDeferred = false;
+    renderTable(currentRows, { resetPage: false });
+    setCount(csvFullBaseMsg || '');
+  } catch (err) {
+    console.warn('dev-plan backfill failed', err);
+    setCount(`${csvFullBaseMsg || ''} · Development plan failed to load: ${err.message}`.trim());
+  }
+}
+
 function refreshResultsTableAfterCompositionStamp() {
   if (!currentRows || currentRows.length === 0) return;
   try { renderTable(currentRows, { resetPage: false }); }
@@ -5236,6 +5301,10 @@ async function toggleOverlay(which) {
         setDevPlanData(map, merged);
         lastDevPlanFc = merged;
         devPlanLayerLoadedFor = loadKey;
+        // Sales imports skip the dev-plan join entirely (see
+        // handleSalesUpload). Turning the layer on is the user asking
+        // for that data, so fill in the columns they were missing.
+        if (devPlanDeferred) await backfillDevPlanColumns(merged);
       }
     } catch (err) {
       console.warn(`${label} fetch failed`, err);
