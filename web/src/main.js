@@ -7362,11 +7362,12 @@ function renderTable(rows, { resetPage = true } = {}) {
     const devBylawCell = td(d1.DP_BYLAW);
     devBylawCell.classList.add('devplan-only');
     tr.appendChild(devBylawCell);
-    // Soil + Risk Area cells get .masc-only so they follow the
-    // MASC Rating overlay toggle.
-    const soilCellEl = soilCell(p);
-    soilCellEl.classList.add('masc-only', 'masc-import-default');
-    tr.appendChild(soilCellEl);
+    // MASC Rating is a default-visible column like Soil Type — the
+    // per-parcel rating is stamped during enrichment whether or not the
+    // MASC map overlay is on, so there's no reason to hide it behind the
+    // overlay toggle. Risk Area stays .masc-only: it has no per-parcel
+    // grid value of its own and only reads alongside the overlay.
+    tr.appendChild(soilCell(p));
     const riskAreaCell = td(p._soilRiskArea != null ? String(p._soilRiskArea) : null, 'num');
     riskAreaCell.classList.add('masc-only');
     tr.appendChild(riskAreaCell);

@@ -1875,15 +1875,12 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 #results .devplan-only { display: none; }
 #results.devplan-mode .devplan-only { display: table-cell; }
 
-/* Soil + Risk Area columns are revealed only while the MASC Rating
-   overlay is active. */
+/* Risk Area is revealed only while the MASC Rating overlay is active.
+   (MASC Rating itself is now an ordinary default-visible column, like
+   Soil Type — the per-parcel rating loads with the search regardless of
+   the map overlay, so it is no longer .masc-only.) */
 #results .masc-only { display: none; }
 #results.masc-mode .masc-only { display: table-cell; }
-/* Parcel-list imports already carry a pre-baked per-parcel MASC rating.
-   Reveal that one column without forcing the MASC map overlay on; Risk Area
-   remains overlay-gated. col-hidden still wins when Full detail/user choices
-   intentionally suppress the column. */
-#results.list-import-mode .masc-import-default:not(.col-hidden) { display: table-cell; }
 
 /* Compact inline button shown next to the count text — used for the
    "Load zoning + dev-plan" opt-in when a search returns more parcels
