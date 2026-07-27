@@ -5232,7 +5232,10 @@ body {
     flex-basis: 100%;
   }
 
-  .overlay-group {
+  /* The grid moved to .overlay-group-body when the groups became
+     collapsible <details> (see the comment there) — the narrow-viewport
+     single-column rule has to follow it. */
+  .overlay-group-body {
     grid-template-columns: 1fr;
   }
 }
@@ -5267,10 +5270,6 @@ body {
 .sidebar .overlay-group[data-group="agricultural"] .overlay-btn:hover:not(:disabled) {
   color: #b45309;        /* amber */
 }
-.sidebar .overlay-group[data-group="water"] .overlay-btn,
-.sidebar .overlay-group[data-group="water"] .overlay-btn:hover:not(:disabled) {
-  color: #0e7490;        /* cyan — matches the WALLAS map layers */
-}
 .sidebar .overlay-group[data-group="links"] .overlay-btn,
 .sidebar .overlay-group[data-group="links"] .overlay-btn:hover:not(:disabled) {
   color: #111;           /* black */
@@ -5290,17 +5289,31 @@ body {
    anything.
    ------------------------------------------------------------- */
 
-/* A <details> only hides its non-summary children when it is a BLOCK
-   container. The pre-existing `.overlay-group { display: grid }` (which
-   lays the toggles out two-up) therefore defeated collapsing entirely —
-   every button stayed rendered with the group closed. Grid applies only
-   while open; closed falls back to block so the browser's own hiding
-   works. */
+/* The two-column button grid lives on an inner wrapper, NOT on the
+   <details> itself.
+
+   Putting it on the <details> looks like it should work and doesn't: a
+   <details> renders its non-summary content inside an anonymous box, so
+   the buttons are children in the DOM but are not grid items of the
+   details box. The whole content block became ONE grid item in column 1,
+   and the buttons stacked inside it at half width — two columns declared,
+   one column used. The wrapper gives the grid a real element to apply to.
+
+   The <details> itself stays a block container, which is also what lets
+   the browser's own collapse behaviour work. */
 .sidebar .overlay-group {
   display: block;
 }
-.sidebar .overlay-group[open] {
+.sidebar .overlay-group-body {
   display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  align-content: start;
+}
+/* Full-width members of the grid: the historical "As of" year picker,
+   and anything that would read badly at half width. */
+.sidebar .overlay-group-body > .overlay-subcontrol {
+  grid-column: 1 / -1;
 }
 /* Belt and braces: hide the contents outright when closed rather than
    leaning on the UA's own <details> handling. Browsers implement that
@@ -5366,7 +5379,6 @@ body {
 .sidebar .overlay-group[data-group="planning"] .overlay-group-count    { background: #166534; }
 .sidebar .overlay-group[data-group="reference"] .overlay-group-count   { background: #1d4ed8; }
 .sidebar .overlay-group[data-group="agricultural"] .overlay-group-count { background: #b45309; }
-.sidebar .overlay-group[data-group="water"] .overlay-group-count       { background: #0e7490; }
 .overlay-group-count:empty,
 .sidebar .overlay-group[open] > .overlay-group-title > .overlay-group-count {
   display: none;

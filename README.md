@@ -69,14 +69,19 @@ The page splits into a fixed-width left sidebar holding all controls and a fluid
 - Search · Clear · Export CSV
 - Result count badge
 
-**Sidebar — Map overlays section** (2-column grid). Each category is a
-collapsible `<details>` group. All six ship open, so a first visit looks
-exactly as it did before; whatever you collapse is remembered per group in
-`localStorage` under `mbps_overlay_groups_v1`. A collapsed group that still
-has layers switched on shows an "N on" badge tinted to that group's colour,
-so an active overlay is never hidden without a trace, and its contents are
+**Sidebar — Map overlays section**. Each category is a collapsible
+`<details>` group, with the toggles laid out two-up inside an inner
+`.overlay-group-body` grid. The grid has to live on that wrapper: a
+`<details>` renders its non-summary content inside an anonymous box, so a
+grid declared on the `<details>` itself would treat that whole block as a
+single grid item and stack the buttons in one column.
+
+All five groups ship open, so a first visit looks as it did before;
+whatever you collapse is remembered per group in `localStorage` under
+`mbps_overlay_groups_v1`. A collapsed group that still has layers switched
+on shows an "N on" badge tinted to that group's colour, so an active
+overlay is never hidden without a trace, and its contents are
 `display: none` while closed — out of layout and out of the tab order.
-Collapsing all six takes the panel from ~1160 px to ~400 px.
 - **Muni Parcels** — every parcel in the selected muni rendered as a light-blue grey fabric beneath the search results. Roll numbers render at each parcel's centroid at zoom ≥ 14. Hover/click popups show roll #, address, DU, land size (ac/sf), total value; if Show Zoning is also active, the underlying zone code, name, and ZBL are appended to the popup. Click adds the assessment-report link.
 - **Traffic** — MHTIS Traffic Flow 2019 polylines coloured by AADT in 6 step-function bins. AADT label rendered along each segment at zoom ≥ 8. Click a segment for full attributes. Floating colour legend appears bottom-right while active.
 - **Manitoba Highways** — complete Government of Manitoba Road Network 2023, lazy-loaded and cached for 30 days. PTH and PR routes are labelled; click any segment for its route type and number. Can be combined with Satellite or MLI imagery.
@@ -85,6 +90,11 @@ Collapsing all six takes the panel from ~1160 px to ~400 px.
 - **Enviro** — Manitoba Contaminated Sites Registry as red / orange / grey points by designation, with a registry-page link in each popup.
 - **MASC Rating** — per-municipality MASC crop-insurance soil ratings. Disabled until a municipality is selected; on first activation it lazy-loads that muni's shard from `web/public/data/masc/` plus rated river-lot polygons from `web/public/data/masc-riverlots.json`, draws approximate quarter-section polygons from MASC centroids and actual long/narrow river-lot polygons, colours them A (best) through J (worst), and labels each feature at zoom >= 13 with the rating letter only. River-lot filtering checks both the polygon municipality and the MASC rating-source municipality, so split-boundary lots still appear for the RM that owns the MASC rating. The label layer sits above the parcel and roll-fabric layers so the text remains legible when MASC is combined with parcel overlays. A floating A-J legend appears while active.
 - **MASC Risk Areas** — official MASC crop-insurance risk-area polygons from the Manitoba Maps `MASC_Risk_Areas` FeatureServer published through Open Canada. Lazy-loaded province-wide, cached for 30 days, and labelled from `Risk_Area`.
+The three WALLAS water-rights layers below sit in the **Agricultural**
+group alongside soil and land cover — tile drainage and irrigation are
+farmland attributes an ag appraiser reads together, not a category of
+their own.
+
 - **Tile Drainage** — licensed tiled-area footprints from Manitoba Water Rights Licensing (WALLAS). ~1,580 polygons province-wide, lazy-loaded and cached for 7 days, labelled with the licence number from zoom 11. Also populates the **Tile Drainage** table column (coverage % of parcel area + licence number, via the same area-weighted clip the Zoning and Dev-Plan columns use) and the four `Tile *` CSV columns. Every query filters `APPLICATION_STATUS` to the four licensed values, so rejected and abandoned applications never render.
 - **Tile Lines & Outlets** — the lateral/header pipe runs and outlet structures inside a licensed tile area. 85,000 lines exist province-wide, so this layer holds the current viewport only: it refetches on map idle and stays empty below zoom 11 (mirroring the upstream service's own scale thresholds).
 - **Irrigation Licences** — licensed water-use points of diversion (blue, where water is taken) and points of use (violet, where it is applied), filtered to `USAGE_CATEGORY = 'Irrigation'`. Popups carry licensee, groundwater-vs-surface source, works type, and aquifer or water-source name. Also populates the **Irrigation** table column — `Use`/`Diversion`, coverage % of parcel area, and the licence number — plus the five `Irrigation *` CSV columns. The column reports the point of **use** when a parcel has both, because water being *applied* to land is the irrigated-land signal being priced; a point of diversion alone only means the intake or well sits there. The tooltip names the other half of the licence when both are present. Sorting ranks every point of use above every point of diversion, coverage ordering within each band.

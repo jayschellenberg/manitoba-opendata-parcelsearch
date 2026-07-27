@@ -591,6 +591,7 @@
                Winnipeg parcel-search visual language. -->
           <details class="overlay-group" data-group="parcels" open>
             <summary class="overlay-group-title">Parcel layers<span class="overlay-group-count"></span></summary>
+            <div class="overlay-group-body">
             <button id="muni-parcels-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled title="Assessment Parcels — every parcel in the selected municipality (grey fabric under your search results)">
               <span class="overlay-btn-label">Assessment Parcels</span>
             </button>
@@ -604,20 +605,24 @@
               <span class="overlay-subcontrol-label">As of</span>
               <select id="historical-year" aria-label="Historical snapshot date"></select>
             </label>
+            </div>
           </details>
 
           <details class="overlay-group" data-group="planning" open>
             <summary class="overlay-group-title">Planning<span class="overlay-group-count"></span></summary>
+            <div class="overlay-group-body">
             <button id="zoning-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Zoning By-Laws (ZBL)">
               <span class="overlay-btn-label">Zoning</span>
             </button>
             <button id="devplan-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Dev Plan — Manitoba Development Plan Designations">
               <span class="overlay-btn-label">Development Plan</span>
             </button>
+            </div>
           </details>
 
           <details class="overlay-group" data-group="reference" open>
             <summary class="overlay-group-title">Reference<span class="overlay-group-count"></span></summary>
+            <div class="overlay-group-body">
             <button id="contam-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Enviro Sites — Manitoba Contaminated Sites Registry">
               <span class="overlay-btn-label">Environmental Sites</span>
             </button>
@@ -627,10 +632,19 @@
             <button id="highways-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Manitoba Road Network 2023 — official PTH, PR, access, service, and winter-road geometry">
               <span class="overlay-btn-label">Manitoba Highways</span>
             </button>
+            </div>
           </details>
 
+          <!-- Agricultural, including the WALLAS water-rights layers.
+               Tile drainage and irrigation are farmland attributes an ag
+               appraiser reads alongside soil and land cover, so they live
+               in this section rather than a group of their own. Licensed
+               records only — rejected and abandoned applications are
+               filtered out server-side so the map can't imply a field is
+               tiled when the application was refused. See src/wallas.js. -->
           <details class="overlay-group" data-group="agricultural" open>
             <summary class="overlay-group-title">Agricultural<span class="overlay-group-count"></span></summary>
+            <div class="overlay-group-body">
             <button id="riskarea-toggle" type="button" class="overlay-btn" aria-pressed="false" title="MASC Risk Areas — official crop-insurance risk-area boundaries from Manitoba Maps">
               <span class="overlay-btn-label">MASC Risk Areas</span>
             </button>
@@ -643,14 +657,6 @@
             <button id="landcover-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Land Cover — tri-state cycle. 1st click → Dominant (per-parcel headline colour, every parcel in the selected municipality > 20 acres). 2nd click → Detailed (pixel-level 2020 mosaic from the static tile pyramid, when built). 3rd click → off. Populates the Land Cover and Cult % columns. The Detailed branch is skipped when the tile pyramid hasn't been built (build via Rscript r/build_landcover_tiles.R).">
               <span class="overlay-btn-label">Land Cover</span>
             </button>
-          </details>
-
-          <!-- Manitoba Water Rights (WALLAS). Licensed records only —
-               rejected and abandoned applications are filtered out
-               server-side so the map can't imply a field is tiled when
-               the application was refused. See src/wallas.js. -->
-          <details class="overlay-group" data-group="water" open>
-            <summary class="overlay-group-title">Water rights<span class="overlay-group-count"></span></summary>
             <button id="tile-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Tile Drainage — licensed tiled-area footprints from Manitoba's Water Allocation Licensing (WALLAS) Water Control Works layer. Populates the Tile Drainage column. Caveat: the polygon layer's newest record is from Aug 2024 and only licensed works appear, so a parcel with no polygon is not proof the land is untiled.">
               <span class="overlay-btn-label">Tile Drainage</span>
             </button>
@@ -660,6 +666,7 @@
             <button id="irrigation-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Irrigation Licences — licensed water-use points of diversion (blue, where water is taken) and points of use (violet, where it's applied), from WALLAS. Click for licensee, groundwater vs surface source, and works type.">
               <span class="overlay-btn-label">Irrigation Licences</span>
             </button>
+            </div>
           </details>
 
           <!-- Quick links to the muni's website and its Planning
@@ -668,6 +675,7 @@
                to live. -->
           <details class="overlay-group overlay-links-group" data-group="links" open>
             <summary class="overlay-group-title">Quick links<span class="overlay-group-count"></span></summary>
+            <div class="overlay-group-body">
             <button id="muni-website-btn" type="button" class="overlay-btn link-btn" disabled title="Select a municipality to enable">Muni Website ↗</button>
             <button id="pd-website-btn" type="button" class="overlay-btn link-btn" disabled title="PD Website — select a municipality to enable. Planning District website.">Planning District Website ↗</button>
             <!-- Static external links (no muni-dependency). <a> tags rather
@@ -675,6 +683,7 @@
                  keeps middle-click / Ctrl-click open-in-new-tab working. -->
             <a class="overlay-btn link-btn" href="https://www.gov.mb.ca/mao/subscriber/login.aspx" target="_blank" rel="noreferrer" title="Manitoba Assessment Online (MAO) subscriber login.">MAO Login ↗</a>
             <a class="overlay-btn link-btn" href="https://www.gov.mb.ca/mr/land_use_dev/index.html" target="_blank" rel="noreferrer" title="Manitoba Land Use & Development resource site (Municipal Relations).">Land Use &amp; Development ↗</a>
+            </div>
           </details>
 
           <button id="static-map-btn" type="button" class="generate-map-btn" title="Capture the current map view as a JPEG. Right-click the rendered image below the table and Save Image As… to drop into a report.">Generate Map</button>

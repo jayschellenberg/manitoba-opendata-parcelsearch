@@ -9672,9 +9672,9 @@ const SOIL_EMPTY_HINT =
 const LANDCOVER_EMPTY_HINT =
   `Loads automatically on a municipality-scoped search (select the municipality, then search) for parcels over ${LAND_COVER_MIN_ACRES} acres.`;
 const TILE_EMPTY_HINT =
-  'Turn on the Tile Drainage overlay (Water rights section) to check these parcels against Manitoba’s licensed tile-drainage areas.';
+  'Turn on the Tile Drainage overlay (Agricultural section) to check these parcels against Manitoba’s licensed tile-drainage areas.';
 const IRRIGATION_EMPTY_HINT =
-  'Turn on the Irrigation Licences overlay (Water rights section) to check these parcels against Manitoba’s licensed irrigation points of use and diversion.';
+  'Turn on the Irrigation Licences overlay (Agricultural section) to check these parcels against Manitoba’s licensed irrigation points of use and diversion.';
 
 function td(value, className, emptyTitle) {
   const el = document.createElement('td');
