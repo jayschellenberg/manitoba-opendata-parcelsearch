@@ -9,6 +9,7 @@ import {
   provenanceCsvLines,
   provenanceText,
   EXPORT_DISCLAIMER,
+  WATER_RIGHTS_CAVEAT,
 } from '../src/lib/provenance.js';
 
 const results = [];
@@ -47,6 +48,40 @@ await test('buildProvenance — core fields populated', () => {
   assert.ok(p.live_sources.every((s) => /^https:\/\//.test(s.url)), 'sources are https URLs');
   assert.equal(p.disclaimer, EXPORT_DISCLAIMER);
   assert.equal(p.data_refreshed, '2026-06-04T00:00:00Z'); // newest dataset date
+});
+
+await test('waterRights off — WALLAS is neither cited nor caveated', () => {
+  const p = buildProvenance({ rowCount: 7, now: NOW });
+  assert.equal(p.water_rights_caveat, null);
+  assert.ok(
+    p.live_sources.every((s) => !s.url.includes('web43.gov.mb.ca')),
+    'an export that never read WALLAS must not cite it',
+  );
+  const csv = provenanceCsvLines(p).join('\n');
+  assert.ok(!csv.includes('Water rights:'));
+  assert.ok(!provenanceText(p).includes('Water rights (WALLAS)'));
+});
+
+await test('waterRights on — WALLAS endpoints cited and the lag caveat carried', () => {
+  const p = buildProvenance({ rowCount: 7, now: NOW, waterRights: true });
+  assert.equal(p.water_rights_caveat, WATER_RIGHTS_CAVEAT);
+  // The standing disclaimer must stay byte-identical — the water-rights
+  // text is additive, not a rewrite of it.
+  assert.equal(p.disclaimer, EXPORT_DISCLAIMER);
+  const wallas = p.live_sources.filter((s) => s.url.includes('web43.gov.mb.ca'));
+  assert.ok(wallas.length >= 3, 'tile + both water-use layers cited');
+  assert.ok(p.live_sources.some((s) => s.url.includes('services.arcgis.com')), 'base sources kept');
+
+  // The lag is the caveat that actually protects a reader, so assert on
+  // its substance rather than just its presence.
+  assert.match(WATER_RIGHTS_CAVEAT, /LICENSED works only/);
+  assert.match(WATER_RIGHTS_CAVEAT, /NOT evidence that\s+land is undrained/);
+
+  const csv = provenanceCsvLines(p).join('\n');
+  assert.ok(csv.includes('# Water rights: '));
+  for (const s of wallas) assert.ok(csv.includes(s.url), `missing ${s.url}`);
+  const txt = provenanceText(p);
+  assert.ok(txt.includes('Water rights (WALLAS):'));
 });
 
 await test('buildProvenance — no manifest leaves freshness null + datasets empty', () => {

@@ -64,7 +64,7 @@ export const PRESETS = {
   // what an ag appraiser reaches for, surfaced as each context turns on.
   'Agricultural': new Set([
     'favorite', 'roll', 'address', 'acres', 'landcover', 'cultpct',
-    'soil', 'clicls', 'soiltype', 'riskarea',
+    'soil', 'clicls', 'soiltype', 'riskarea', 'tile', 'irrigation',
     'grouppriceac', 'saledate', 'saleprice', 'saletoasmt', 'grouppricesf',
     'zone1', 'dev1', 'legal', 'title',
   ]),

@@ -61,6 +61,12 @@ import {
 // The area join's compute lives in its own module so this file and the
 // Web Worker in overlayJoin.worker.js share one implementation.
 import { computeTopNMatches } from './lib/overlayJoinCore.js';
+// Manitoba Water Rights Licensing (WALLAS) lives on a different host and
+// a different ArcGIS flavour (a 10.51 MapServer, not an AGOL hosted
+// FeatureServer), so its client is its own module. What this file needs
+// from it is the licensed tile-drainage and irrigation footprints, which
+// back the two water-rights search filters below.
+import { fetchTileDrainageAreas, fetchIrrigationLicences } from './wallas.js';
 
 const BASE = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services';
 const ROLL_URL    = `${BASE}/ROLL_ENTRY/FeatureServer/0`;
@@ -103,6 +109,13 @@ const ROLL_LIST_CONCURRENCY = 4;
 // services tolerate this comfortably; staying conservative keeps us off
 // any rate-limit radar.
 const SPATIAL_CONCURRENCY = 16;
+// Licensed WALLAS footprints per spatial query in the water-rights search
+// filters. Each batch becomes one multi-ring polygon, so this is the
+// divisor on request count: RM of Portage la Prairie's several hundred
+// irrigation footprints drop from hundreds of requests to a handful.
+// Kept at 25 so the POST body stays small (~15 KB worst case) and one
+// slow batch can't stall the whole filter.
+const WALLAS_FILTER_BATCH_SIZE = 25;
 // Only the fields the table/map/popup actually use. Drops Shape__Area,
 // Shape__Length, FID, and a couple of internal fields that older
 // outFields:'*' requests pulled in unread.
@@ -281,6 +294,8 @@ export async function searchParcels(args) {
     devPlanCategory,
     zoningChanged,
     devPlanChanged,
+    tileDrainageOnly,
+    irrigationOnly,
     municipality,
     parcelKeys,
   } = args || {};
@@ -293,10 +308,11 @@ export async function searchParcels(args) {
   // clause to the parcel query. Done up front so the result row cap respects
   // the category filter.
   let oidFilter = null;
-  if (zoneCategory || devPlanCategory || zoningChanged || devPlanChanged) {
+  if (zoneCategory || devPlanCategory || zoningChanged || devPlanChanged
+      || tileDrainageOnly || irrigationOnly) {
     oidFilter = await resolveOverlayFilter({
       zoneCategory, devPlanCategory, zoningChanged, devPlanChanged,
-      municipality,
+      tileDrainageOnly, irrigationOnly, municipality,
     });
     // Empty result set on the overlay side → empty parcel result.
     if (oidFilter !== null && oidFilter.length === 0) {
@@ -2249,8 +2265,25 @@ function municipalityToWhere(muni, valueField) {
  * Returns null if no overlay filters are set; an array of OBJECTIDs
  * otherwise (which may be empty).
  */
-async function resolveOverlayFilter({ zoneCategory, devPlanCategory, zoningChanged, devPlanChanged, municipality }) {
+async function resolveOverlayFilter({ zoneCategory, devPlanCategory, zoningChanged, devPlanChanged, tileDrainageOnly, irrigationOnly, municipality }) {
   const overlayQueries = [];
+  // The water-rights filters resolve to their own OBJECTID sets rather
+  // than joining `overlayQueries`: their polygons come from a different
+  // service (WALLAS, see wallas.js) that shares no WHERE-clause
+  // vocabulary with the zoning / dev-plan layers, and they're already in
+  // hand as GeoJSON rather than fetched here.
+  //
+  // Run in parallel — with both ticked these are two independent walks of
+  // Roll_Entry, and sequencing them would double the wait for no reason.
+  const [tileOidSet, irrigationOidSet] = await Promise.all([
+    tileDrainageOnly ? resolveTileDrainageOids(municipality) : null,
+    irrigationOnly ? resolveIrrigationOids(municipality) : null,
+  ]);
+  // An explicit empty set is a real answer — "nothing licensed in scope" —
+  // and must short-circuit to zero results rather than fall through to an
+  // unfiltered query.
+  if (tileOidSet !== null && tileOidSet.size === 0) return [];
+  if (irrigationOidSet !== null && irrigationOidSet.size === 0) return [];
 
   // Zoning-side queries — category and "changed" can both fire and they
   // narrow the same overlay layer, so they AND together within one query.
@@ -2282,7 +2315,13 @@ async function resolveOverlayFilter({ zoneCategory, devPlanCategory, zoningChang
     overlayQueries.push({ url: DEVPLAN_URL, clauses: devClauses });
   }
 
-  if (overlayQueries.length === 0) return null;
+  // Water-rights filters only, with no zoning / dev-plan narrowing
+  // alongside them. Both ticked means both must hold.
+  if (overlayQueries.length === 0) {
+    const sets = [tileOidSet, irrigationOidSet].filter((s) => s !== null);
+    if (sets.length === 0) return null;
+    return [...intersectSets(sets)];
+  }
 
   // Add the muni narrowing to each overlay query when set. Roll Entry's
   // Muni_Name_With_Typ ("STONEWALL (TOWN)") differs from the overlay
@@ -2343,18 +2382,159 @@ async function resolveOverlayFilter({ zoneCategory, devPlanCategory, zoningChang
   );
 
   // AND the sets together — a parcel only qualifies if it intersects every
-  // category filter the user set.
-  let intersectionSet = null;
-  for (const set of oidSets) {
-    if (intersectionSet === null) {
-      intersectionSet = set;
-    } else {
-      const next = new Set();
-      for (const v of intersectionSet) if (set.has(v)) next.add(v);
-      intersectionSet = next;
+  // category filter the user set. The water-rights filters join the same
+  // AND: a parcel has to satisfy them *and* the zoning / dev-plan
+  // narrowing.
+  if (tileOidSet !== null) oidSets.push(tileOidSet);
+  if (irrigationOidSet !== null) oidSets.push(irrigationOidSet);
+  return [...intersectSets(oidSets)];
+}
+
+/** Intersection of an array of Sets. Empty array → empty Set, so callers
+ *  never have to special-case "no filters resolved". */
+function intersectSets(sets) {
+  let out = null;
+  for (const set of sets) {
+    if (out === null) {
+      out = set;
+      continue;
+    }
+    const next = new Set();
+    for (const v of out) if (set.has(v)) next.add(v);
+    out = next;
+  }
+  return out ?? new Set();
+}
+
+/** Roll_Entry OBJECTIDs covered by a licensed tile-drainage area. */
+async function resolveTileDrainageOids(municipality) {
+  return resolveWallasOids(fetchTileDrainageAreas, municipality, 'tile-drainage');
+}
+
+/**
+ * Roll_Entry OBJECTIDs covered by a licensed irrigation footprint —
+ * points of diversion AND points of use together.
+ *
+ * Deliberately both sides, so the filter returns exactly the parcels the
+ * Irrigation column populates for. Restricting it to points of use would
+ * read as "irrigated land only", which is defensible, but it would then
+ * disagree with the column sitting next to it — and the column already
+ * labels each hit Use or Diversion and sorts Use first, so the user can
+ * triage in one glance without the filter pre-deciding for them.
+ */
+async function resolveIrrigationOids(municipality) {
+  return resolveWallasOids(fetchIrrigationLicences, municipality, 'irrigation');
+}
+
+/**
+ * Roll_Entry OBJECTIDs intersecting a set of WALLAS footprints, as a Set.
+ *
+ * Why this isn't a client-side post-filter: 122 of Manitoba's 186 munis
+ * hold more parcels than MAX_RESULTS, so filtering the returned page
+ * would hide matches behind the row cap — the same trap civicNumberClause
+ * exists to avoid. Resolving to OBJECTIDs first means the cap applies to
+ * the already-filtered set.
+ *
+ * The cost driver is one spatial query per footprint, so the polygon set
+ * gets narrowed first. With a municipality selected we ask Roll_Entry for
+ * that muni's extent (one cheap returnExtentOnly request) and drop every
+ * footprint outside it — taking ~1,580 tile / ~6,000 irrigation polygons
+ * province-wide down to tens or low hundreds. Without a municipality
+ * there's nothing to narrow by and all of them run; that's slow but
+ * correct, and both tips steer the user to pick a muni first.
+ *
+ * @param {Function} fetchFc   the wallas.js fetcher for this layer
+ * @param {string} municipality  Muni_Name_With_Typ, or '' for province-wide
+ * @param {string} label       used in the unreachable-service message
+ */
+async function resolveWallasOids(fetchFc, municipality, label) {
+  const fc = await fetchFc();
+  // A failed WALLAS fetch is not the same as "nothing licensed anywhere".
+  // Returning an empty set would silently produce zero results and read as
+  // a confident answer, so surface it instead.
+  if (fc?._failed) {
+    throw new Error(`Water Rights Licensing (WALLAS) is unreachable — ${label} filter unavailable.`);
+  }
+  let footprints = fc?.features || [];
+  if (footprints.length === 0) return new Set();
+
+  if (municipality) {
+    const extent = await fetchMuniExtent(municipality);
+    if (extent) {
+      footprints = footprints.filter((f) => {
+        let b;
+        try { b = bbox(f); } catch { return false; }
+        return bboxesOverlap(b, extent);
+      });
     }
   }
-  return [...(intersectionSet ?? new Set())];
+  if (footprints.length === 0) return new Set();
+
+  const muniClause = municipality
+    ? `Muni_Name_With_Typ = '${escapeSql(municipality)}'`
+    : '1=1';
+  // Footprints go out in batches as one multi-ring polygon each — see
+  // polygonsToEsriGeometry. One request per footprint is what made this
+  // filter slow enough to feel broken on an irrigation-heavy muni.
+  const batches = [];
+  for (let i = 0; i < footprints.length; i += WALLAS_FILTER_BATCH_SIZE) {
+    batches.push(footprints.slice(i, i + WALLAS_FILTER_BATCH_SIZE));
+  }
+  const results = await runParallelBatched(batches, SPATIAL_CONCURRENCY, async (batch) => {
+    const esriGeom = polygonsToEsriGeometry(batch);
+    if (!esriGeom) return [];
+    const oidFc = await fetchAllPages(ROLL_URL, {
+      where: muniClause,
+      geometry: JSON.stringify(esriGeom),
+      geometryType: 'esriGeometryPolygon',
+      inSR: '4326',
+      spatialRel: 'esriSpatialRelIntersects',
+      outFields: 'OBJECTID',
+      returnGeometry: 'false',
+      f: 'json',
+    }, 100000);
+    return (oidFc.features || [])
+      .map((f) => f.attributes?.OBJECTID ?? f.properties?.OBJECTID)
+      .filter((v) => v != null);
+  });
+  return new Set(results.flat());
+}
+
+/**
+ * Bounding box of every Roll_Entry parcel in one municipality, as
+ * [minLon, minLat, maxLon, maxLat]. One returnExtentOnly request — the
+ * service computes it server-side, so nothing but the box comes back.
+ * Cached for a week: a municipality's footprint only changes on
+ * amalgamation. Returns null on failure so callers degrade to "no
+ * narrowing" rather than to "no results".
+ */
+async function fetchMuniExtent(municipality) {
+  const cacheKey = `mb_muni_extent_${String(municipality).toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_v1`;
+  const cached = await readCache(cacheKey, CACHE_TTL_MS);
+  if (Array.isArray(cached) && cached.length === 4) return cached;
+  try {
+    const usp = new URLSearchParams({
+      where: `Muni_Name_With_Typ = '${escapeSql(municipality)}'`,
+      returnExtentOnly: 'true',
+      outSR: '4326',
+      f: 'json',
+    });
+    const res = await fetch(`${ROLL_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: usp.toString(),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const e = json?.extent;
+    if (!e) return null;
+    const box = [e.xmin, e.ymin, e.xmax, e.ymax];
+    if (!box.every(Number.isFinite)) return null;
+    await writeCache(cacheKey, box);
+    return box;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -2772,6 +2952,57 @@ function polygonToEsriGeometry(feature) {
   return { rings, spatialReference: { wkid: 4326 } };
 }
 
+/**
+ * Merge many GeoJSON polygon Features into ONE Esri polygon whose rings
+ * are all the inputs' rings. Lets a single spatialRel query stand in for
+ * N separate ones — the water-rights filters would otherwise fire one
+ * request per licensed footprint (RM of Portage la Prairie alone has
+ * hundreds of irrigation footprints, which took ~48 s end to end).
+ *
+ * Winding order is the catch, and it's why this can't just concatenate
+ * what polygonToEsriGeometry produces. A single-polygon query tolerates
+ * either direction, but Esri disambiguates a MULTI-ring polygon by
+ * winding: clockwise rings are outer, counter-clockwise are holes. Merge
+ * naively and some footprints silently become holes punched in their
+ * neighbours. So every exterior ring is forced clockwise and every
+ * interior ring counter-clockwise before merging.
+ *
+ * Verified against the live service: batching 20 irrigation footprints
+ * returned exactly the OBJECTID set that the 20 individual queries
+ * produced between them — no misses, no extras.
+ */
+function polygonsToEsriGeometry(features) {
+  const rings = [];
+  for (const feature of features) {
+    const g = feature?.geometry;
+    if (!g) continue;
+    const polygons = g.type === 'Polygon' ? [g.coordinates]
+      : g.type === 'MultiPolygon' ? g.coordinates
+        : null;
+    if (!polygons) continue;
+    for (const poly of polygons) {
+      poly.forEach((ring, i) => {
+        if (!Array.isArray(ring) || ring.length < 4) return;
+        const wantClockwise = i === 0;      // ring 0 is the exterior in GeoJSON
+        rings.push(orientRing(ring, wantClockwise));
+      });
+    }
+  }
+  if (rings.length === 0) return null;
+  return { rings, spatialReference: { wkid: 4326 } };
+}
+
+/** Return `ring` wound the requested way, reversing only when needed.
+ *  Shoelace sign in lon/lat order: positive is counter-clockwise. */
+function orientRing(ring, clockwise) {
+  let twiceArea = 0;
+  for (let i = 0; i < ring.length - 1; i++) {
+    twiceArea += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1];
+  }
+  const isClockwise = twiceArea < 0;
+  return isClockwise === clockwise ? ring : [...ring].reverse();
+}
+
 function makeEmptyFc({ truncated = false } = {}) {
   return { type: 'FeatureCollection', features: [], _truncated: truncated };
 }
@@ -2902,6 +3133,9 @@ export const _internals = {
   rollKeyWhereClause,
   chunkRollKeys,
   overlayCacheKey,
+  polygonsToEsriGeometry,
+  orientRing,
+  intersectSets,
   ZONING_URL,
   DEVPLAN_URL,
 };

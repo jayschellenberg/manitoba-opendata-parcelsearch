@@ -18,6 +18,7 @@
  */
 
 import { SERVICE_SOURCES } from '../arcgis.js';
+import { WALLAS_SOURCES } from '../wallas.js';
 
 // Build identity, baked in by Vite `define` (see vite.config.js). The typeof
 // guards keep dev/test runs — where `define` hasn't substituted them — working
@@ -39,6 +40,19 @@ export const EXPORT_DISCLAIMER =
   'determinations. Land-cover percentages derive from the 2020 provincial land-cover raster and are ' +
   'visualization estimates. Verify every figure before relying on it.';
 
+// Appended only when the export actually carries water-rights data. The
+// lag is the part that matters: WALLAS's tile-drainage polygon layer runs
+// roughly a year or more behind its own application tracker, and only
+// licensed works are ever in it. A blank Tile column is therefore weak
+// evidence of anything, and saying so on the face of the export is the
+// only way that survives being pasted into a report.
+export const WATER_RIGHTS_CAVEAT =
+  'Tile-drainage and irrigation figures come from Manitoba Water Rights Licensing (WALLAS) and cover ' +
+  'LICENSED works only — unlicensed or older installations do not appear. The tile-drainage polygon ' +
+  'layer lags its own application tracker by a year or more, and its area/depth/spacing detail fields ' +
+  'are populated on a small minority of records. Absence of a tile-drainage record is NOT evidence that ' +
+  'land is undrained; confirm with the landowner, the municipality, or Manitoba Water Rights Licensing.';
+
 /**
  * Assemble the structured provenance record for one export.
  *
@@ -52,6 +66,10 @@ export const EXPORT_DISCLAIMER =
  *        { active:true, snap:'YYYY-MM-DD', layerDates:{roll,zoning,devplan} }.
  * @param {Date} [opts.now]              export timestamp (injectable for tests).
  * @param {string} [opts.imagery]        basemap/imagery credit (snapshot exports).
+ * @param {boolean} [opts.waterRights]   true when the export carries WALLAS
+ *        tile-drainage / irrigation data — adds those endpoints to the cited
+ *        sources and appends WATER_RIGHTS_CAVEAT. Left off otherwise so an
+ *        export never cites a service it didn't read.
  * @returns {Object} the provenance record.
  */
 export function buildProvenance(opts = {}) {
@@ -64,7 +82,12 @@ export function buildProvenance(opts = {}) {
     historical = null,
     now = new Date(),
     imagery = null,
+    waterRights = false,
   } = opts;
+
+  const liveSources = waterRights
+    ? [...SERVICE_SOURCES, ...WALLAS_SOURCES]
+    : SERVICE_SOURCES;
 
   return {
     tool: 'Manitoba Parcel Search',
@@ -75,12 +98,15 @@ export function buildProvenance(opts = {}) {
     row_count: Number.isFinite(rowCount) ? rowCount : null,
     sales_mode: !!salesMode,
     starred_only: !!starredOnly,
-    live_sources: SERVICE_SOURCES.map((s) => ({ label: s.label, url: s.url })),
+    live_sources: liveSources.map((s) => ({ label: s.label, url: s.url })),
     data_refreshed: manifestFreshness(manifest),
     datasets: manifestDatasets(manifest),
     historical: normalizeHistorical(historical),
     imagery: imagery || null,
     disclaimer: EXPORT_DISCLAIMER,
+    // Kept separate from `disclaimer` rather than concatenated so the
+    // standing caveat stays byte-identical across every export.
+    water_rights_caveat: waterRights ? WATER_RIGHTS_CAVEAT : null,
   };
 }
 
@@ -155,6 +181,7 @@ export function provenanceCsvLines(prov) {
     L.push('#   simplified (~2-3 m) visualization — resolve measurements to the archived source-of-record.');
   }
   L.push(`# Disclaimer: ${prov.disclaimer}`);
+  if (prov.water_rights_caveat) L.push(`# Water rights: ${prov.water_rights_caveat}`);
   L.push(''); // blank row between preamble and the table header
   return L;
 }
@@ -203,6 +230,11 @@ export function provenanceText(prov) {
   out.push('');
   out.push('Disclaimer:');
   for (const line of wrap(prov.disclaimer, 72)) out.push(`  ${line}`);
+  if (prov.water_rights_caveat) {
+    out.push('');
+    out.push('Water rights (WALLAS):');
+    for (const line of wrap(prov.water_rights_caveat, 72)) out.push(`  ${line}`);
+  }
   out.push('');
   return out.join('\n');
 }

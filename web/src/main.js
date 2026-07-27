@@ -152,6 +152,12 @@ import {
   decodeSoilDescriptor,
   setMascRiskAreasData,
   setMascRiskAreasVisible,
+  setTileDrainageData,
+  setTileDrainageVisible,
+  setTileNetworkData,
+  setTileNetworkVisible,
+  setIrrigationData,
+  setIrrigationVisible,
   setSurveyGridData,
   setSurveyGridVisible,
   setLandCoverVisible,
@@ -167,6 +173,11 @@ import {
   setParcelNumberData,
   setParcelNumbersVisible,
 } from './map.js';
+import {
+  fetchTileDrainageAreas,
+  fetchIrrigationLicences,
+  fetchTileNetwork,
+} from './wallas.js';
 import { generateParcelSnapshotsZip } from './snapshotExport.js';
 import { OUTPUT_MIME, OUTPUT_QUALITY, MAX_OUTPUT_DIM } from './lib/imageOutput.js';
 import { dominantBucket, cultFraction, LAND_COVER_BUCKETS, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
@@ -298,6 +309,12 @@ const $highwaysToggle = document.getElementById('highways-toggle');
 const $muniParcelsToggle = document.getElementById('muni-parcels-toggle');
 const $mascToggle    = document.getElementById('masc-toggle');
 const $riskAreaToggle = document.getElementById('riskarea-toggle');
+// WALLAS water-rights overlays (src/wallas.js).
+const $tileToggle        = document.getElementById('tile-toggle');
+const $tileNetworkToggle = document.getElementById('tile-network-toggle');
+const $irrigationToggle  = document.getElementById('irrigation-toggle');
+const $tileOnly          = document.getElementById('tile-only');
+const $irrigationOnly    = document.getElementById('irrigation-only');
 const $cliToggle     = document.getElementById('cli-toggle');
 const $cliLegend     = document.getElementById('cli-legend');
 const $landcoverToggle = document.getElementById('landcover-toggle');
@@ -823,6 +840,27 @@ const SORT_KEYS = {
   // Sort by MASC rating (A best → J worst). Empty cells go last.
   soil:     (r) => strKey(r.parcel.properties._soilRating),
   riskarea: (r) => finiteOrNeg(r.parcel.properties._soilRiskArea),
+  // Tile drainage sorts by coverage share, so the most heavily tiled
+  // parcels group at one end. Parcels with a licensed area but no usable
+  // ratio still beat parcels with none; both beat "never checked".
+  tile:     (r) => {
+    const hit = r.parcel.properties._tileDrainage;
+    if (!hit) return -1;
+    return Number.isFinite(hit.ratio) ? hit.ratio : 0;
+  },
+  // Irrigation ranks points of USE above points of diversion regardless
+  // of coverage: land that water is applied to is the thing being
+  // priced, while a diversion only means the intake sits here. Offsetting
+  // 'use' by +1 keeps every use ahead of every diversion, with coverage
+  // ordering within each band.
+  irrigation: (r) => {
+    const hit = r.parcel.properties._irrigation;
+    if (!hit) return -1;
+    const side = hit.use || hit.diversion;
+    if (!side) return -1;
+    const ratio = Number.isFinite(side.ratio) ? side.ratio : 0;
+    return hit.use ? 1 + ratio : ratio;
+  },
   // CLI capability + Soil Type sort by the dominant soil's
   // AGRI_CAP / SOILNAME from the stamped composition. Empty
   // composition (no Soil Survey / CLI overlay loaded) sorts last
@@ -1565,6 +1603,110 @@ $flowToggle.addEventListener('click', () => toggleAuxOverlay('flow'));
 $highwaysToggle.addEventListener('click', () => toggleAuxOverlay('highways'));
 $riskAreaToggle.addEventListener('click', () => toggleAuxOverlay('riskAreas'));
 $muniParcelsToggle.addEventListener('click', () => toggleAuxOverlay('muniParcels'));
+$tileToggle?.addEventListener('click', async () => {
+  await toggleAuxOverlay('tileDrainage');
+  // Turning the overlay on populates the Tile Drainage column for rows
+  // already on screen, so the user doesn't have to re-run the search to
+  // see it — same contract the MASC and CLI overlays have.
+  restampTileDrainage();
+});
+$tileNetworkToggle?.addEventListener('click', async () => {
+  await toggleAuxOverlay('tileNetwork');
+  // This layer holds only what's on screen, so toggleAuxOverlay's
+  // "fetched once, keep forever" caching is wrong for it — the user may
+  // have panned a county away while it was off. Clear the loaded flag so
+  // the next activation re-reads the viewport, and record the key we just
+  // fetched so the idle handler doesn't immediately repeat the work.
+  auxLoaded.tileNetwork = false;
+  tileNetworkLastKey = $tileNetworkToggle.classList.contains('active')
+    ? tileNetworkViewportKey()
+    : null;
+});
+$irrigationToggle?.addEventListener('click', async () => {
+  await toggleAuxOverlay('irrigation');
+  // Same contract as the tile toggle: switching the overlay on fills the
+  // Irrigation column for rows already on screen.
+  restampIrrigation();
+});
+// The tile network only ever holds the current viewport, so it has to
+// follow the map. `idle` rather than `moveend`: it also covers the
+// zoom-driven case where a fetch was skipped below the zoom threshold.
+mapReady.then(() => {
+  map.on('idle', refreshTileNetworkForViewport);
+});
+
+// ---------- Collapsible overlay groups ----------
+//
+// The Map layers panel holds six groups and ~20 controls; most sessions
+// use two of them. Each group is a native <details>, so the collapse
+// behaviour, keyboard handling, and screen-reader semantics are the
+// browser's. This adds the two things it can't do for itself: remember
+// which groups the user closed, and keep an active-layer count visible
+// on a group that's closed — otherwise a layer could be on with no
+// on-screen trace, which is the one way this could mislead.
+const OVERLAY_GROUP_STATE_KEY = 'mbps_overlay_groups_v1';
+
+function overlayGroupEls() {
+  return document.querySelectorAll('#map-layers-section .overlay-group[data-group]');
+}
+
+function readOverlayGroupState() {
+  try {
+    const raw = localStorage.getItem(OVERLAY_GROUP_STATE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return (parsed && typeof parsed === 'object') ? parsed : null;
+  } catch { return null; }
+}
+
+function writeOverlayGroupState() {
+  const state = {};
+  for (const el of overlayGroupEls()) state[el.dataset.group] = el.open;
+  try { localStorage.setItem(OVERLAY_GROUP_STATE_KEY, JSON.stringify(state)); } catch {}
+}
+
+/**
+ * Refresh every collapsed group's "N on" badge. Counts pressed toggles,
+ * which includes the tri-state overlays' aria-pressed="mixed" secondary
+ * modes — those are still ON, just in their second mode.
+ *
+ * Quick links are excluded: they're navigation, never "active".
+ */
+function refreshOverlayGroupCounts() {
+  for (const el of overlayGroupEls()) {
+    const badge = el.querySelector('.overlay-group-count');
+    if (!badge) continue;
+    if (el.dataset.group === 'links') { badge.textContent = ''; continue; }
+    const on = el.querySelectorAll('.overlay-btn[aria-pressed="true"], .overlay-btn[aria-pressed="mixed"]').length;
+    badge.textContent = on > 0 ? `${on} on` : '';
+    badge.title = on > 0 ? `${on} layer${on === 1 ? '' : 's'} active in this group` : '';
+  }
+}
+
+(function initOverlayGroups() {
+  const groups = overlayGroupEls();
+  if (groups.length === 0) return;
+  const saved = readOverlayGroupState();
+  for (const el of groups) {
+    // No saved state → leave the markup's default (open), so a first
+    // visit looks exactly like it did before groups became collapsible.
+    if (saved && typeof saved[el.dataset.group] === 'boolean') {
+      el.open = saved[el.dataset.group];
+    }
+    el.addEventListener('toggle', () => {
+      writeOverlayGroupState();
+      refreshOverlayGroupCounts();
+    });
+  }
+  // Toggle buttons flip aria-pressed from a dozen call sites (and some
+  // defensive resets bypass setOverlayPressed entirely), so observe the
+  // attribute rather than trying to hook every one of them.
+  const observer = new MutationObserver(refreshOverlayGroupCounts);
+  for (const el of groups) {
+    observer.observe(el, { subtree: true, attributes: true, attributeFilter: ['aria-pressed'] });
+  }
+  refreshOverlayGroupCounts();
+})();
 $mascToggle.addEventListener('click', () => toggleMascOverlay());
 $cliToggle.addEventListener('click', () => toggleCliOverlay());
 if ($landcoverToggle) $landcoverToggle.addEventListener('click', () => toggleLandCoverOverlay());
@@ -2551,6 +2693,8 @@ async function runSearch() {
     zoneCategory:    $zoneCategory.value.trim(),
     zoningChanged:   status === 'zoning'  || status === 'both',
     devPlanChanged:  status === 'devplan' || status === 'both',
+    tileDrainageOnly: !!$tileOnly?.checked,
+    irrigationOnly:   !!$irrigationOnly?.checked,
     duMode:          $duMode.value,
     duMin:           $duMin.value,
   };
@@ -4822,6 +4966,18 @@ async function enrichOverlays(parcelFc, inputs, baseMsg, { skipDevPlan = false }
 
   stampOfficialRiskAreas(rows, riskAreaFc);
 
+  // Licensed tile drainage + irrigation (WALLAS). Both self-gate on
+  // their overlay being on (tile also on its search filter), so they
+  // cost nothing on a search that doesn't care about water rights.
+  // Both self-gate on their overlay being on (or their search filter), so
+  // they cost nothing on a search that doesn't care about water rights.
+  // Run concurrently: they're independent, and the clip is the slowest
+  // thing left in enrichment on an irrigation-heavy municipality.
+  if (wantsWaterRightsEnrichment()) {
+    setCount(`${baseMsg} · Checking water-rights licences…`);
+    await Promise.all([stampTileDrainage(rows), stampIrrigation(rows)]);
+  }
+
   // Attach the pre-baked dominant MASC soil rating for each parcel
   // (per-muni shard built by r/build_parcel_masc.R). Derive munis from
   // the result rows so multi-municipality sales imports receive the same
@@ -5426,8 +5582,8 @@ async function refreshOverlayLayersForMuniChange() {
  * the segment AADT inline (and vice-versa: loading stations after flow
  * triggers the same join). Failures are non-fatal — the button reverts.
  */
-const auxLoaded = { contam: false, flow: false, highways: false, riskAreas: false, muniParcels: false };
-const auxData   = { contam: null, flow: null, highways: null, riskAreas: null, muniParcels: null };
+const auxLoaded = { contam: false, flow: false, highways: false, riskAreas: false, muniParcels: false, tileDrainage: false, tileNetwork: false, irrigation: false };
+const auxData   = { contam: null, flow: null, highways: null, riskAreas: null, muniParcels: null, tileDrainage: null, tileNetwork: null, irrigation: null };
 // Tracks which muni's parcels are currently in the muni-parcels source so
 // we know whether to refetch when the user switches munis.
 let muniParcelsLoadedFor = null;
@@ -5444,7 +5600,78 @@ const AUX_META = {
   muniParcels: { btn: () => $muniParcelsToggle, on: 'Assessment Parcels', off: 'Assessment Parcels', busy: 'Loading…',
                  fetch: () => fetchMuniParcelsForCurrentScope(),
                  setData: (m, fc) => setMuniParcelsMapData(fc), setVis: setMuniParcelsVisible },
+  // WALLAS. Tile drainage is province-wide and cached, so it loads once
+  // and stays; the tile network is viewport-scoped and refetches on map
+  // idle (see refreshTileNetworkForViewport).
+  tileDrainage: { btn: () => $tileToggle, on: 'Tile Drainage', off: 'Tile Drainage', busy: 'Loading…',
+                 fetch: () => fetchTileDrainageAreas(),
+                 setData: (m, fc) => setTileDrainageData(m, fc), setVis: setTileDrainageVisible },
+  tileNetwork: { btn: () => $tileNetworkToggle, on: 'Tile Lines & Outlets', off: 'Tile Lines & Outlets', busy: 'Loading…',
+                 fetch: () => fetchTileNetworkForViewport(),
+                 setData: (m, data) => setTileNetworkData(m, data), setVis: setTileNetworkVisible },
+  irrigation:  { btn: () => $irrigationToggle, on: 'Irrigation Licences', off: 'Irrigation Licences', busy: 'Loading…',
+                 fetch: () => fetchIrrigationLicences(),
+                 setData: (m, fc) => setIrrigationData(m, fc), setVis: setIrrigationVisible },
 };
+
+// ---------- Tile network (viewport-scoped) ----------
+// 85,000 tile lines exist province-wide, so this layer only ever holds
+// what's on screen. The upstream service draws these from ~1:100,000 in;
+// below that zoom a fetch would return thousands of features that render
+// as an unreadable smear, so we skip it and leave the source empty.
+const TILE_NETWORK_MIN_ZOOM = 11;
+
+function fetchTileNetworkForViewport() {
+  if (!map || map.getZoom() < TILE_NETWORK_MIN_ZOOM) {
+    return Promise.resolve({
+      lines: { type: 'FeatureCollection', features: [] },
+      outlets: { type: 'FeatureCollection', features: [] },
+    });
+  }
+  const b = map.getBounds();
+  return fetchTileNetwork([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]);
+}
+
+/**
+ * Refetch the tile network for the current viewport. Wired to map idle,
+ * so it fires after a pan/zoom settles rather than during it.
+ *
+ * `tileNetworkSeq` guards against out-of-order responses: a slow fetch
+ * for a view the user has already panned away from must not overwrite a
+ * newer one that landed first.
+ */
+let tileNetworkSeq = 0;
+let tileNetworkLastKey = null;
+
+/** Identity of the current view for tile-network purposes. `idle` fires
+ *  on plenty of things that aren't a viewport change — a source finishing
+ *  its load, a style repaint, a popup opening — so rounding the bounds to
+ *  ~100 m collapses those into one key and we only hit the service when
+ *  the user has actually moved. */
+function tileNetworkViewportKey() {
+  const b = map.getBounds();
+  const zoomBand = map.getZoom() < TILE_NETWORK_MIN_ZOOM ? 'out' : 'in';
+  return `${[b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map((v) => v.toFixed(3)).join(',')}@${zoomBand}`;
+}
+
+async function refreshTileNetworkForViewport() {
+  if (!$tileNetworkToggle?.classList.contains('active')) return;
+  const key = tileNetworkViewportKey();
+  if (key === tileNetworkLastKey) return;
+  tileNetworkLastKey = key;
+  const seq = ++tileNetworkSeq;
+  try {
+    const data = await fetchTileNetworkForViewport();
+    if (seq !== tileNetworkSeq) return;
+    auxData.tileNetwork = data;
+    setTileNetworkData(map, data);
+  } catch (err) {
+    console.warn('tile network viewport refresh failed', err);
+    // Clear the key so the next idle retries rather than treating the
+    // failed view as already fetched.
+    tileNetworkLastKey = null;
+  }
+}
 
 /** Fetch the Roll Layer's parcel fabric, scoped to either the
  *  sales-CSV mode's matched-muni list or the dropdown's single muni.
@@ -7387,6 +7614,8 @@ function renderTable(rows, { resetPage = true } = {}) {
     const cultPct = Number(ac) > LAND_COVER_MIN_ACRES ? cultFraction(p._landCover) : null;
     const cultHint = (cultPct == null && Number(ac) > LAND_COVER_MIN_ACRES) ? LANDCOVER_EMPTY_HINT : undefined;
     tr.appendChild(td(cultPct != null ? formatPercent(cultPct) : null, 'num', cultHint));
+    tr.appendChild(tileDrainageCell(p));
+    tr.appendChild(irrigationCell(p));
     tr.appendChild(td(badge(formatChanges(row), 'badge-amend')));
     tr.appendChild(td(formatDu(p.Dwelling_Units), 'num'));
     // Basic-mode position for Acres — hidden in sales mode (the
@@ -7597,6 +7826,280 @@ function landCoverCell(p, ac) {
 }
 
 /**
+ * Tile Drainage cell — coverage share plus the licence number.
+ *
+ * Three distinct states, and the difference matters enough to an
+ * appraiser to be worth the extra branch:
+ *   - not loaded  → em-dash + hint pointing at the overlay toggle
+ *   - loaded, no overlap → blank (a real "nothing licensed here")
+ *   - overlap → "78% · 17-WCW-0078"
+ */
+function tileDrainageCell(p) {
+  const hit = p?._tileDrainage;
+  if (hit === undefined) return td(null, null, TILE_EMPTY_HINT);
+  if (hit === null) return td(null);
+  const parts = [];
+  if (Number.isFinite(hit.ratio)) parts.push(formatPercent(hit.ratio));
+  if (hit.licence) parts.push(hit.licence);
+  const cell = td(parts.join(' · ') || 'Yes');
+  // The detail fields are populated on well under 10% of records, so the
+  // tooltip carries whatever exists rather than a fixed layout.
+  const detail = [
+    hit.client,
+    hit.status,
+    hit.date ? `Applied ${hit.date}` : null,
+    hit.area ? `${hit.area} ac licensed` : null,
+    hit.depth ? `${hit.depth}″ deep` : null,
+    hit.spacing ? `${hit.spacing}′ lateral spacing` : null,
+    hit.count > 1 ? `${hit.count} licensed areas overlap this parcel` : null,
+  ].filter(Boolean);
+  if (detail.length) cell.title = detail.join('\n');
+  return cell;
+}
+
+/**
+ * Clip licensed tile-drainage footprints to each parcel and stamp the
+ * best match onto the parcel's properties.
+ *
+ * Uses the same area-weighted join as the zoning / dev-plan columns, so a
+ * percentage in the Tile column means what it means everywhere else:
+ * share of THIS parcel's area, not of the tiled area.
+ *
+ * Only runs when the data is already warranted — the overlay is on, or
+ * the tile-only filter is checked. Otherwise an ordinary search would
+ * pull 1.3 MB nobody asked for. fetchTileDrainageAreas is IDB-cached for
+ * a week, so repeat calls inside a session are local.
+ *
+ * `undefined` (never touched) and `null` (checked, nothing found) are
+ * deliberately different — see tileDrainageCell.
+ */
+async function stampTileDrainage(rows) {
+  const wanted = $tileToggle?.classList.contains('active') || !!$tileOnly?.checked;
+  if (!wanted || !rows?.length) return;
+  let tileFc;
+  try {
+    tileFc = auxData.tileDrainage || await fetchTileDrainageAreas();
+  } catch (err) {
+    console.warn('tile-drainage enrichment failed (non-fatal):', err);
+    return;
+  }
+  if (!tileFc?.features?.length) return;
+  const parcelFc = { type: 'FeatureCollection', features: rows.map((r) => r.parcel) };
+  const scoped = clipWallasToParcels(tileFc, parcelFc);
+  let join;
+  try {
+    join = await joinTopNByAreaAsync(parcelFc, scoped, 2);
+  } catch (err) {
+    console.warn('tile-drainage join failed (non-fatal):', err);
+    return;
+  }
+  for (const row of rows) {
+    const parcel = row.parcel;
+    const oid = parcel?.properties?.OBJECTID;
+    const matches = (oid != null) ? join.get(oid) : null;
+    if (!matches || matches.length === 0) {
+      parcel.properties._tileDrainage = null;
+      continue;
+    }
+    const top = matches[0].feature.properties || {};
+    parcel.properties._tileDrainage = {
+      licence: top.LICENCE_NO || top.FILE_NO || null,
+      status:  top.APPLICATION_STATUS || null,
+      date:    top.APPLICATION_DATE || null,
+      client:  top.CLIENT_NAME || null,
+      area:    top.TILE_AREA || null,
+      depth:   top.TILE_DEPTH || null,
+      spacing: top.TILE_SPACING_OF_LATERAL_PIPE || null,
+      ratio:   Number.isFinite(matches[0].ratio) ? matches[0].ratio : null,
+      count:   matches.length,
+    };
+  }
+}
+
+/**
+ * Re-run the tile join against the rows already on screen and repaint,
+ * so flipping the overlay on fills the column without a fresh search.
+ * No-op when there's nothing rendered.
+ */
+async function restampTileDrainage() {
+  if (!currentRows || currentRows.length === 0) return;
+  await stampTileDrainage(currentRows);
+  renderTable(currentRows, { resetPage: false });
+}
+
+/**
+ * Irrigation cell — which side of the licence touches this parcel, the
+ * coverage share, and the licence number.
+ *
+ * Point of Use leads when both are present: "water is applied here" is
+ * the irrigated-land signal an appraiser is actually pricing, while a
+ * point of diversion only says the parcel holds the intake or well.
+ * States mirror tileDrainageCell — undefined is "never checked", null is
+ * a real "nothing licensed here".
+ */
+function irrigationCell(p) {
+  const hit = p?._irrigation;
+  if (hit === undefined) return td(null, null, IRRIGATION_EMPTY_HINT);
+  if (hit === null) return td(null);
+  const primary = hit.use || hit.diversion;
+  if (!primary) return td(null);
+  const label = hit.use ? 'Use' : 'Diversion';
+  const parts = [label];
+  if (Number.isFinite(primary.ratio)) parts.push(formatPercent(primary.ratio));
+  const cell = td(`${parts.join(' ')}${primary.licence ? ` · ${primary.licence}` : ''}`);
+  const detail = [
+    primary.client,
+    primary.status,
+    // Groundwater vs surface, and the works type, are what decide how
+    // secure the supply behind an irrigated valuation actually is.
+    [primary.subProgram, primary.projectType].filter(Boolean).join(' · ') || null,
+    primary.source ? `Source: ${primary.source}` : null,
+    primary.date ? `Applied ${primary.date}` : null,
+    // Call out the other half of the licence explicitly — a parcel that
+    // both diverts and uses is a different proposition from one that
+    // only hosts the intake.
+    hit.use && hit.diversion
+      ? `Also a point of diversion${hit.diversion.licence ? ` (${hit.diversion.licence})` : ''}`
+      : null,
+    hit.count > 1 ? `${hit.count} licensed irrigation areas overlap this parcel` : null,
+  ].filter(Boolean);
+  if (detail.length) cell.title = detail.join('\n');
+  return cell;
+}
+
+/** True when either water-rights column should be populated for this
+ *  search — the overlay is on, or its search filter is ticked. Lets the
+ *  caller skip the status message (and the await) entirely otherwise. */
+function wantsWaterRightsEnrichment() {
+  return !!($tileToggle?.classList.contains('active')
+    || $tileOnly?.checked
+    || $irrigationToggle?.classList.contains('active')
+    || $irrigationOnly?.checked);
+}
+
+/**
+ * Narrow a province-wide WALLAS collection to the footprints whose bbox
+ * could touch the current result set, before handing it to the join.
+ *
+ * The join is bbox-indexed and would reach the same answer either way —
+ * this is purely about not paying to structured-clone ~5,300 irrigation
+ * polygons into the worker and index them, when a search in one corner of
+ * the province is only near a handful. A bbox test is conservative, so
+ * nothing that could intersect is ever dropped.
+ *
+ * Returns the original collection untouched when nothing can be pruned,
+ * so the join core's WeakMap-cached bbox index still gets reused across
+ * repeat searches in that case.
+ */
+function clipWallasToParcels(fc, parcelFc) {
+  const features = fc?.features || [];
+  const parcels = parcelFc?.features || [];
+  if (features.length === 0 || parcels.length === 0) return fc;
+
+  // bboxOfFeature takes a single Feature, so fold the parcels into one
+  // extent rather than handing it the collection.
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of parcels) {
+    let b;
+    try { b = bboxOfFeature(p); } catch { continue; }
+    if (b[0] < minX) minX = b[0];
+    if (b[1] < minY) minY = b[1];
+    if (b[2] > maxX) maxX = b[2];
+    if (b[3] > maxY) maxY = b[3];
+  }
+  const extent = [minX, minY, maxX, maxY];
+  if (!extent.every(Number.isFinite)) return fc;
+
+  const kept = features.filter((f) => {
+    let b;
+    // A footprint we can't measure is kept — the join will bbox-test it
+    // properly. Dropping it here would be the one way this pre-filter
+    // could change an answer.
+    try { b = bboxOfFeature(f); } catch { return true; }
+    return bboxesIntersect(b, extent);
+  });
+  if (kept.length === features.length) return fc;
+  return { type: 'FeatureCollection', features: kept };
+}
+
+/** Flatten one WALLAS irrigation feature into the fields the cell, the
+ *  tooltip, and the CSV all read. */
+function irrigationMatch(match) {
+  const q = match.feature.properties || {};
+  return {
+    licence: q.LICENCE_NO || null,
+    client: q.CLIENT_NAME || null,
+    status: q.APPLICATION_STATUS || null,
+    date: q.APPLICATION_DATE || null,
+    subProgram: q.SUB_PROGRAM || null,
+    projectType: q.PROJECT_TYPE || null,
+    // WATER_SOURCE_NAME names the river/lake for surface licences;
+    // ACQUIFER_NAME (the service's spelling) fills in for groundwater.
+    source: q.WATER_SOURCE_NAME || q.ACQUIFER_NAME || null,
+    ratio: Number.isFinite(match.ratio) ? match.ratio : null,
+  };
+}
+
+/**
+ * Clip licensed irrigation footprints to each parcel and stamp the best
+ * match of each kind. Same area-weighted join as the tile, zoning, and
+ * dev-plan columns, so the percentage is comparable across all of them.
+ *
+ * The join keeps every overlap rather than a top-N: points of diversion
+ * and points of use share one collection, and a top-N by ratio could
+ * drop the parcel's only point of use behind several larger diversion
+ * footprints. Overlap counts here are small (these are legal-location
+ * footprints), so keeping them all is cheap and removes the failure mode.
+ */
+async function stampIrrigation(rows) {
+  const wanted = $irrigationToggle?.classList.contains('active') || !!$irrigationOnly?.checked;
+  if (!wanted || !rows?.length) return;
+  let irrFc;
+  try {
+    irrFc = auxData.irrigation || await fetchIrrigationLicences();
+  } catch (err) {
+    console.warn('irrigation enrichment failed (non-fatal):', err);
+    return;
+  }
+  if (!irrFc?.features?.length) return;
+  const parcelFc = { type: 'FeatureCollection', features: rows.map((r) => r.parcel) };
+  const scoped = clipWallasToParcels(irrFc, parcelFc);
+  let join;
+  try {
+    join = await joinTopNByAreaAsync(parcelFc, scoped, Infinity);
+  } catch (err) {
+    console.warn('irrigation join failed (non-fatal):', err);
+    return;
+  }
+  for (const row of rows) {
+    const parcel = row.parcel;
+    const oid = parcel?.properties?.OBJECTID;
+    const matches = (oid != null) ? join.get(oid) : null;
+    if (!matches || matches.length === 0) {
+      parcel.properties._irrigation = null;
+      continue;
+    }
+    // joinTopNByArea returns matches already sorted by ratio desc, so the
+    // first of each kind is that kind's best.
+    const use = matches.find((m) => m.feature.properties?._wallasKind === 'use');
+    const diversion = matches.find((m) => m.feature.properties?._wallasKind === 'diversion');
+    parcel.properties._irrigation = {
+      use: use ? irrigationMatch(use) : null,
+      diversion: diversion ? irrigationMatch(diversion) : null,
+      count: matches.length,
+    };
+  }
+}
+
+/** Fill the Irrigation column for rows already on screen when the
+ *  overlay is switched on, so it doesn't take a fresh search. */
+async function restampIrrigation() {
+  if (!currentRows || currentRows.length === 0) return;
+  await stampIrrigation(currentRows);
+  renderTable(currentRows, { resetPage: false });
+}
+
+/**
  * CSV cells for the land-cover columns: dominant bucket label followed
  * by each bucket's share as a one-decimal percent. All blank for
  * parcels ≤ LAND_COVER_MIN_ACRES or with no `_landCover` stamp, mirroring
@@ -7611,6 +8114,38 @@ function landCoverCsvCells(p, ac) {
     return Number.isFinite(v) ? (v * 100).toFixed(1) : '';
   };
   return [dom ? dom.label : '', pct('cult'), pct('past'), pct('bush'), pct('wet'), pct('other')];
+}
+
+/** Licence / % / status / applied-date for the tile-drainage columns.
+ *  Blank for both "never checked" and "checked, none found" — a CSV has
+ *  no room for that distinction, and the empty cell is honest either
+ *  way given the source layer's known gaps. */
+function tileDrainageCsvCells(p) {
+  const hit = p?._tileDrainage;
+  if (!hit) return ['', '', '', ''];
+  return [
+    hit.licence ?? '',
+    Number.isFinite(hit.ratio) ? (hit.ratio * 100).toFixed(1) : '',
+    hit.status ?? '',
+    hit.date ?? '',
+  ];
+}
+
+/** Licence / type / % / supply / source for the irrigation columns.
+ *  Reports the point of USE when there is one — the irrigated-land
+ *  signal — and falls back to the point of diversion, matching what the
+ *  grid cell shows so the CSV and the screen never disagree. */
+function irrigationCsvCells(p) {
+  const hit = p?._irrigation;
+  const side = hit && (hit.use || hit.diversion);
+  if (!side) return ['', '', '', '', ''];
+  return [
+    side.licence ?? '',
+    hit.use ? 'Use' : 'Diversion',
+    Number.isFinite(side.ratio) ? (side.ratio * 100).toFixed(1) : '',
+    side.subProgram ?? '',
+    side.source ?? '',
+  ];
 }
 
 function soilSourceLabel(hit) {
@@ -8759,6 +9294,8 @@ function exportCsv(explicitRows) {
     'CLI', 'Soil Type',
     ...soilCsvHeaders(),
     'Land Cover', 'Cult %', 'Pasture %', 'Bush %', 'Wetland %', 'Other %',
+    'Tile Licence', 'Tile %', 'Tile Status', 'Tile Applied',
+    'Irrigation Licence', 'Irrigation Type', 'Irrigation %', 'Irrigation Supply', 'Irrigation Source',
     'Changes',
     'DU', 'Acres', 'SF', 'Acres Src',
     csvAssessHeader(currentRows), 'Asmt Report URL',
@@ -8803,6 +9340,13 @@ function exportCsv(explicitRows) {
     historical: historicalActive
       ? { active: true, snap: $historicalYear?.value, layerDates: historicalLayerDates($historicalYear?.value) }
       : null,
+    // Cite WALLAS only when a row was actually checked against it — both
+    // stamps stay undefined until their enrichment runs, so this is false
+    // on an export that never touched water rights.
+    waterRights: exportRows.some((r) => {
+      const q = r.parcel?.properties;
+      return q?._tileDrainage !== undefined || q?._irrigation !== undefined;
+    }),
   });
   const lines = provenanceCsvLines(prov).map(csvCell);
   lines.push(header.map(csvCell).join(','));
@@ -8829,6 +9373,8 @@ function exportCsv(explicitRows) {
       dominantCliLabel(p) ?? '', dominantSoilTypeLabel(p) ?? '',
       ...soilCsvCells(p),
       ...landCoverCsvCells(p, ac),
+      ...tileDrainageCsvCells(p),
+      ...irrigationCsvCells(p),
       formatChanges(row),
       p.Dwelling_Units ?? '',
       formatAcresCsv(ac),
@@ -9125,6 +9671,10 @@ const SOIL_EMPTY_HINT =
   'Turn on the Soil Productivity/Soil Name overlay (Agricultural section) to load the soil association for this municipality.';
 const LANDCOVER_EMPTY_HINT =
   `Loads automatically on a municipality-scoped search (select the municipality, then search) for parcels over ${LAND_COVER_MIN_ACRES} acres.`;
+const TILE_EMPTY_HINT =
+  'Turn on the Tile Drainage overlay (Water rights section) to check these parcels against Manitoba’s licensed tile-drainage areas.';
+const IRRIGATION_EMPTY_HINT =
+  'Turn on the Irrigation Licences overlay (Water rights section) to check these parcels against Manitoba’s licensed irrigation points of use and diversion.';
 
 function td(value, className, emptyTitle) {
   const el = document.createElement('td');

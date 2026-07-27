@@ -327,6 +327,26 @@
                 <span class="tip">Minimum dwelling units (DU) — applies when 'Min DU' is selected.</span>
               </span>
             </div>
+            <!-- Water-rights narrowing. Both resolve server-side (licensed
+                 WALLAS footprints → intersecting parcel OBJECTIDs → an
+                 OBJECTID IN (...) clause) rather than as post-filters, so
+                 the result cap can't hide matches. Ticking both ANDs them. -->
+            <div class="filter-row">
+              <span class="field">
+                <label class="inline-check">
+                  <input type="checkbox" id="tile-only" />
+                  <span>Licensed tile drainage only</span>
+                </label>
+                <span class="tip">Return only parcels overlapped by a licensed tile-drainage area from Manitoba's Water Rights Licensing (WALLAS). Narrow by municipality first — a province-wide run has to test every licensed tile footprint. Licensed works only, and the source polygons run to Aug 2024, so this finds known-tiled land rather than proving the rest is untiled.</span>
+              </span>
+              <span class="field">
+                <label class="inline-check">
+                  <input type="checkbox" id="irrigation-only" />
+                  <span>Licensed irrigation only</span>
+                </label>
+                <span class="tip">Return only parcels overlapped by a licensed irrigation footprint (point of use OR point of diversion) — exactly the parcels the Irrigation column fills in. Sort that column to put points of use, the irrigated-land signal, at the top. Narrow by municipality first: irrigation has ~6,000 licensed footprints province-wide, so an unscoped run is slow.</span>
+              </span>
+            </div>
             <!-- Cross-muni Import List… affordance. Relocated here from
                  the Roll # chip-input actions row so the Roll # field
                  reads cleanly; importing a multi-muni parcel list is an
@@ -569,8 +589,8 @@
                colours (set in style.css via data-group selectors)
                replace the previous coloured-dot scheme — matches the
                Winnipeg parcel-search visual language. -->
-          <div class="overlay-group" data-group="parcels">
-            <h3 class="overlay-group-title">Parcel layers</h3>
+          <details class="overlay-group" data-group="parcels" open>
+            <summary class="overlay-group-title">Parcel layers<span class="overlay-group-count"></span></summary>
             <button id="muni-parcels-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled title="Assessment Parcels — every parcel in the selected municipality (grey fabric under your search results)">
               <span class="overlay-btn-label">Assessment Parcels</span>
             </button>
@@ -584,20 +604,20 @@
               <span class="overlay-subcontrol-label">As of</span>
               <select id="historical-year" aria-label="Historical snapshot date"></select>
             </label>
-          </div>
+          </details>
 
-          <div class="overlay-group" data-group="planning">
-            <h3 class="overlay-group-title">Planning</h3>
+          <details class="overlay-group" data-group="planning" open>
+            <summary class="overlay-group-title">Planning<span class="overlay-group-count"></span></summary>
             <button id="zoning-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Zoning By-Laws (ZBL)">
               <span class="overlay-btn-label">Zoning</span>
             </button>
             <button id="devplan-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Dev Plan — Manitoba Development Plan Designations">
               <span class="overlay-btn-label">Development Plan</span>
             </button>
-          </div>
+          </details>
 
-          <div class="overlay-group" data-group="reference">
-            <h3 class="overlay-group-title">Reference</h3>
+          <details class="overlay-group" data-group="reference" open>
+            <summary class="overlay-group-title">Reference<span class="overlay-group-count"></span></summary>
             <button id="contam-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Enviro Sites — Manitoba Contaminated Sites Registry">
               <span class="overlay-btn-label">Environmental Sites</span>
             </button>
@@ -607,10 +627,10 @@
             <button id="highways-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Manitoba Road Network 2023 — official PTH, PR, access, service, and winter-road geometry">
               <span class="overlay-btn-label">Manitoba Highways</span>
             </button>
-          </div>
+          </details>
 
-          <div class="overlay-group" data-group="agricultural">
-            <h3 class="overlay-group-title">Agricultural</h3>
+          <details class="overlay-group" data-group="agricultural" open>
+            <summary class="overlay-group-title">Agricultural<span class="overlay-group-count"></span></summary>
             <button id="riskarea-toggle" type="button" class="overlay-btn" aria-pressed="false" title="MASC Risk Areas — official crop-insurance risk-area boundaries from Manitoba Maps">
               <span class="overlay-btn-label">MASC Risk Areas</span>
             </button>
@@ -623,14 +643,31 @@
             <button id="landcover-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Land Cover — tri-state cycle. 1st click → Dominant (per-parcel headline colour, every parcel in the selected municipality > 20 acres). 2nd click → Detailed (pixel-level 2020 mosaic from the static tile pyramid, when built). 3rd click → off. Populates the Land Cover and Cult % columns. The Detailed branch is skipped when the tile pyramid hasn't been built (build via Rscript r/build_landcover_tiles.R).">
               <span class="overlay-btn-label">Land Cover</span>
             </button>
-          </div>
+          </details>
+
+          <!-- Manitoba Water Rights (WALLAS). Licensed records only —
+               rejected and abandoned applications are filtered out
+               server-side so the map can't imply a field is tiled when
+               the application was refused. See src/wallas.js. -->
+          <details class="overlay-group" data-group="water" open>
+            <summary class="overlay-group-title">Water rights<span class="overlay-group-count"></span></summary>
+            <button id="tile-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Tile Drainage — licensed tiled-area footprints from Manitoba's Water Allocation Licensing (WALLAS) Water Control Works layer. Populates the Tile Drainage column. Caveat: the polygon layer's newest record is from Aug 2024 and only licensed works appear, so a parcel with no polygon is not proof the land is untiled.">
+              <span class="overlay-btn-label">Tile Drainage</span>
+            </button>
+            <button id="tile-network-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Tile Lines &amp; Outlets — the actual lateral/header pipe runs and outlet structures inside a licensed tile area. Loaded for the visible map area only (85,000 lines province-wide), and drawn from zoom 11 in — zoom to a field to see them.">
+              <span class="overlay-btn-label">Tile Lines &amp; Outlets</span>
+            </button>
+            <button id="irrigation-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Irrigation Licences — licensed water-use points of diversion (blue, where water is taken) and points of use (violet, where it's applied), from WALLAS. Click for licensee, groundwater vs surface source, and works type.">
+              <span class="overlay-btn-label">Irrigation Licences</span>
+            </button>
+          </details>
 
           <!-- Quick links to the muni's website and its Planning
                District site, when one applies. Not overlays; kept
                in the Map layers tab because that's where they used
                to live. -->
-          <div class="overlay-group overlay-links-group" data-group="links">
-            <h3 class="overlay-group-title">Quick links</h3>
+          <details class="overlay-group overlay-links-group" data-group="links" open>
+            <summary class="overlay-group-title">Quick links<span class="overlay-group-count"></span></summary>
             <button id="muni-website-btn" type="button" class="overlay-btn link-btn" disabled title="Select a municipality to enable">Muni Website ↗</button>
             <button id="pd-website-btn" type="button" class="overlay-btn link-btn" disabled title="PD Website — select a municipality to enable. Planning District website.">Planning District Website ↗</button>
             <!-- Static external links (no muni-dependency). <a> tags rather
@@ -638,7 +675,7 @@
                  keeps middle-click / Ctrl-click open-in-new-tab working. -->
             <a class="overlay-btn link-btn" href="https://www.gov.mb.ca/mao/subscriber/login.aspx" target="_blank" rel="noreferrer" title="Manitoba Assessment Online (MAO) subscriber login.">MAO Login ↗</a>
             <a class="overlay-btn link-btn" href="https://www.gov.mb.ca/mr/land_use_dev/index.html" target="_blank" rel="noreferrer" title="Manitoba Land Use & Development resource site (Municipal Relations).">Land Use &amp; Development ↗</a>
-          </div>
+          </details>
 
           <button id="static-map-btn" type="button" class="generate-map-btn" title="Capture the current map view as a JPEG. Right-click the rendered image below the table and Save Image As… to drop into a report.">Generate Map</button>
         </section><!-- /map-layers-section -->
@@ -1018,6 +1055,12 @@
                  the Agricultural column preset. -->
             <th data-col="landcover" title="Dominant 2020 land-cover bucket for this parcel and its share — Cultivated / Pasture-Grass / Bush-Treed / Wetland-Water / Other. Derived from the LCR_RCT_2020 raster via the mao-assembly pipeline. Shown only for parcels over 10 acres.">Land Cover</th>
             <th data-col="cultpct" title="Cultivated (cropland) share of the parcel from the 2020 land-cover raster. Shown only for parcels over 10 acres.">Cult %</th>
+            <!-- Tile Drainage — populated when the Tile Drainage overlay
+                 has loaded, by clipping the licensed tile footprints to
+                 each parcel (same area-weighted join the zoning and
+                 dev-plan columns use). -->
+            <th data-col="tile" title="Licensed tile drainage covering this parcel, as a share of parcel area, with the WALLAS licence number. Turn on the Tile Drainage overlay to populate. Caveat: licensed works only, and the source polygon layer's newest record is Aug 2024 — blank is not proof the land is untiled.">Tile Drainage</th>
+            <th data-col="irrigation" title="Licensed irrigation covering this parcel, from WALLAS. 'Use' means water is applied here (the irrigated-land signal); 'Diversion' means water is taken from here. Shows the share of parcel area and the licence number. Turn on the Irrigation Licences overlay to populate. Licensed works only — blank is not proof the land is unirrigated.">Irrigation</th>
             <th data-col="changes">Changes</th>
             <th data-col="du">DU</th>
             <th data-col="acres" class="basic-only">Acres</th>

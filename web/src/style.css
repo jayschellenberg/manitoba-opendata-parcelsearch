@@ -5267,9 +5267,128 @@ body {
 .sidebar .overlay-group[data-group="agricultural"] .overlay-btn:hover:not(:disabled) {
   color: #b45309;        /* amber */
 }
+.sidebar .overlay-group[data-group="water"] .overlay-btn,
+.sidebar .overlay-group[data-group="water"] .overlay-btn:hover:not(:disabled) {
+  color: #0e7490;        /* cyan — matches the WALLAS map layers */
+}
 .sidebar .overlay-group[data-group="links"] .overlay-btn,
 .sidebar .overlay-group[data-group="links"] .overlay-btn:hover:not(:disabled) {
   color: #111;           /* black */
+}
+
+/* -------------------------------------------------------------
+   Collapsible overlay groups.
+
+   The Map layers panel carries six groups and ~20 controls, which
+   is a lot of vertical sidebar for a workflow that usually touches
+   two of them. Each group is a <details>, so collapsing is native
+   (keyboard, screen readers, find-in-page all come free) and main.js
+   only has to persist the open/closed state.
+
+   Groups ship open, so nothing moves for anyone who liked the old
+   layout; the state is remembered per group once the user collapses
+   anything.
+   ------------------------------------------------------------- */
+
+/* A <details> only hides its non-summary children when it is a BLOCK
+   container. The pre-existing `.overlay-group { display: grid }` (which
+   lays the toggles out two-up) therefore defeated collapsing entirely —
+   every button stayed rendered with the group closed. Grid applies only
+   while open; closed falls back to block so the browser's own hiding
+   works. */
+.sidebar .overlay-group {
+  display: block;
+}
+.sidebar .overlay-group[open] {
+  display: grid;
+}
+/* Belt and braces: hide the contents outright when closed rather than
+   leaning on the UA's own <details> handling. Browsers implement that
+   with content-visibility, which still left the buttons with a layout
+   box and reachable by .focus() here — an explicit `display: none`
+   takes them out of layout AND the tab order, so a collapsed group
+   can't hand keyboard focus to a control nobody can see. */
+.sidebar .overlay-group:not([open]) > *:not(.overlay-group-title) {
+  display: none;
+}
+
+.sidebar .overlay-group > .overlay-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  /* The default disclosure triangle sits awkwardly against the
+     all-caps group labels; a rotating chevron is drawn below. */
+  list-style: none;
+  padding: 2px 0;
+}
+.sidebar .overlay-group > .overlay-group-title::-webkit-details-marker {
+  display: none;
+}
+.sidebar .overlay-group > .overlay-group-title::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  /* Points right when closed, down when open. */
+  transform: rotate(-45deg);
+  transition: transform 120ms ease;
+  opacity: 0.75;
+}
+.sidebar .overlay-group[open] > .overlay-group-title::before {
+  transform: rotate(45deg);
+}
+.sidebar .overlay-group > .overlay-group-title:hover {
+  color: var(--ui-ink, #111);
+}
+
+/* "2 on" badge. Only rendered while the group is COLLAPSED — an
+   active layer the user can't see is the one real hazard this
+   change introduces, so the count has to survive the collapse.
+   main.js fills the text; empty content collapses the pill away. */
+.overlay-group-count {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 999px;
+  /* Neutral default; the per-group rules below tint it to match that
+     group's button colour so the panel still scans by colour when
+     everything is collapsed. */
+  background: var(--ui-ink-soft, #64748b);
+  color: #fff;
+}
+.sidebar .overlay-group[data-group="parcels"] .overlay-group-count     { background: #0f172a; }
+.sidebar .overlay-group[data-group="planning"] .overlay-group-count    { background: #166534; }
+.sidebar .overlay-group[data-group="reference"] .overlay-group-count   { background: #1d4ed8; }
+.sidebar .overlay-group[data-group="agricultural"] .overlay-group-count { background: #b45309; }
+.sidebar .overlay-group[data-group="water"] .overlay-group-count       { background: #0e7490; }
+.overlay-group-count:empty,
+.sidebar .overlay-group[open] > .overlay-group-title > .overlay-group-count {
+  display: none;
+}
+
+/* Checkbox + label pairs inside a .filter-row (currently the
+   tile-drainage narrowing). The row is a flex container sized for
+   selects and inputs, so the label needs to opt back into inline
+   alignment and normal-weight text. */
+.sidebar .filter-row .inline-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.sidebar .filter-row .inline-check input[type="checkbox"] {
+  margin: 0;
+  flex: 0 0 auto;
+  cursor: pointer;
 }
 
 /* Hover background can stay subtle — the refresh's accent

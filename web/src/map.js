@@ -1006,6 +1006,125 @@ export function initMap(container, { onFeatureClick } = {}) {
           'line-opacity': 0.75,
         },
       });
+
+      // ---- WALLAS water rights (see src/wallas.js) ----
+      // Three independently-toggled layers, all licensed records only.
+      // Cyan family throughout so they read as one group against the
+      // greens/browns the agricultural overlays own.
+
+      // Licensed tile-drainage areas — the field footprint applied for.
+      // Fill sits low-opacity so the parcel fabric, MASC rating, and land
+      // cover underneath all stay legible through it; the outline carries
+      // the actual boundary.
+      map.addSource('wallas-tile', { type: 'geojson', data: emptyFc() });
+      map.addLayer({
+        id: 'wallas-tile-fill',
+        type: 'fill',
+        source: 'wallas-tile',
+        layout: { visibility: 'none' },
+        paint: { 'fill-color': '#06b6d4', 'fill-opacity': 0.22 },
+      });
+      map.addLayer({
+        id: 'wallas-tile-line',
+        type: 'line',
+        source: 'wallas-tile',
+        layout: { visibility: 'none', 'line-join': 'round' },
+        paint: {
+          'line-color': '#0e7490',
+          'line-width': [
+            'interpolate', ['linear'], ['zoom'],
+            6, 0.8,
+            11, 1.8,
+            15, 2.6,
+          ],
+        },
+      });
+      map.addLayer({
+        id: 'wallas-tile-label',
+        type: 'symbol',
+        source: 'wallas-tile',
+        // Below this the footprints are too small to hang a licence
+        // number off without the labels colliding into noise.
+        minzoom: 11,
+        layout: {
+          visibility: 'none',
+          'text-field': ['coalesce', ['get', 'LICENCE_NO'], 'Tile drainage'],
+          'text-font': ['Open Sans Semibold'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 11, 10, 15, 13],
+          'text-allow-overlap': false,
+        },
+        paint: {
+          'text-color': '#155e75',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.8,
+        },
+      });
+
+      // The tile network itself — lateral/header runs and their outlets.
+      // Viewport-scoped (85k lines province-wide), so main.js refetches
+      // these on map idle while the layer is on.
+      map.addSource('wallas-tile-network', { type: 'geojson', data: emptyFc() });
+      map.addLayer({
+        id: 'wallas-tile-network-line',
+        type: 'line',
+        source: 'wallas-tile-network',
+        layout: { visibility: 'none', 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': '#0891b2',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 11, 0.5, 14, 1.2, 17, 2],
+          'line-opacity': 0.85,
+        },
+      });
+      map.addSource('wallas-tile-outlets', { type: 'geojson', data: emptyFc() });
+      map.addLayer({
+        id: 'wallas-tile-outlet-point',
+        type: 'circle',
+        source: 'wallas-tile-outlets',
+        layout: { visibility: 'none' },
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 2.5, 15, 5],
+          'circle-color': '#164e63',
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 1,
+        },
+      });
+
+      // Licensed irrigation. Point of Diversion (where water is taken)
+      // and Point of Use (where it's applied) share one source and split
+      // on _wallasKind, stamped in wallas.js — they're two halves of the
+      // same licence and the user reads them together.
+      map.addSource('wallas-irrigation', { type: 'geojson', data: emptyFc() });
+      map.addLayer({
+        id: 'wallas-irrigation-fill',
+        type: 'fill',
+        source: 'wallas-irrigation',
+        layout: { visibility: 'none' },
+        paint: {
+          'fill-color': [
+            'match', ['get', '_wallasKind'],
+            'diversion', '#2563eb',
+            'use', '#7c3aed',
+            '#2563eb',
+          ],
+          'fill-opacity': 0.25,
+        },
+      });
+      map.addLayer({
+        id: 'wallas-irrigation-line',
+        type: 'line',
+        source: 'wallas-irrigation',
+        layout: { visibility: 'none', 'line-join': 'round' },
+        paint: {
+          'line-color': [
+            'match', ['get', '_wallasKind'],
+            'diversion', '#1d4ed8',
+            'use', '#6d28d9',
+            '#1d4ed8',
+          ],
+          'line-width': ['interpolate', ['linear'], ['zoom'], 8, 0.6, 13, 1.6],
+        },
+      });
+
       // Canada Land Inventory — Soil Capability for Agriculture.
       // Federal AAFC dataset rated 1 (best) to 7 (worst). Painted by
       // CLASS_A (the dominant class for the polygon). Subclass codes
@@ -2341,6 +2460,35 @@ export function initMap(container, { onFeatureClick } = {}) {
           map.getCanvas().style.cursor = 'pointer';
         }
       });
+
+      // WALLAS water-rights popups. One shared popup across all four
+      // clickable layers so opening a second closes the first — these
+      // overlap constantly (an outlet sits inside its own tile area,
+      // which can sit inside an irrigation footprint) and stacking
+      // popups would bury the map.
+      const wallasPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '320px' });
+      const wireWallas = (layerId, htmlFn) => {
+        map.on('click', layerId, (e) => {
+          if (map.getLayoutProperty(layerId, 'visibility') !== 'visible') return;
+          const p = e.features?.[0]?.properties;
+          if (!p) return;
+          wallasPopup.setLngLat(e.lngLat).setHTML(htmlFn(p)).addTo(map);
+        });
+        map.on('mouseenter', layerId, () => {
+          if (map.getLayoutProperty(layerId, 'visibility') === 'visible') {
+            map.getCanvas().style.cursor = 'pointer';
+          }
+        });
+        map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; });
+      };
+      // Outlets and network lines wire before the area fill so a click on
+      // the small features wins over the large polygon beneath them —
+      // MapLibre dispatches to the most recently added handler last, and
+      // the popup is shared, so the last writer wins.
+      wireWallas('wallas-tile-fill', tileDrainageHtml);
+      wireWallas('wallas-irrigation-fill', irrigationHtml);
+      wireWallas('wallas-tile-network-line', tileNetworkHtml);
+      wireWallas('wallas-tile-outlet-point', tileOutletHtml);
       map.on('mouseleave', 'masc-risk-area-fill', () => { map.getCanvas().style.cursor = ''; });
 
       // Click a CLI polygon → popup listing every class slot the
@@ -2754,6 +2902,46 @@ export function setMascRiskAreasData(map, fc) {
 export function setMascRiskAreasVisible(map, visible) {
   const v = visible ? 'visible' : 'none';
   for (const id of ['masc-risk-area-fill', 'masc-risk-area-line', 'masc-risk-area-label']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
+  }
+}
+
+// ---- WALLAS water rights ----
+
+export function setTileDrainageData(map, fc) {
+  const src = map.getSource('wallas-tile');
+  if (src) src.setData(fc);
+}
+export function setTileDrainageVisible(map, visible) {
+  const v = visible ? 'visible' : 'none';
+  for (const id of ['wallas-tile-fill', 'wallas-tile-line', 'wallas-tile-label']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
+  }
+}
+
+/** Lines and outlets arrive together from one viewport fetch, so they
+ *  set and hide together — a tile run with no outlet (or the reverse)
+ *  would just look like missing data. */
+export function setTileNetworkData(map, { lines, outlets }) {
+  const lineSrc = map.getSource('wallas-tile-network');
+  if (lineSrc) lineSrc.setData(lines || { type: 'FeatureCollection', features: [] });
+  const outletSrc = map.getSource('wallas-tile-outlets');
+  if (outletSrc) outletSrc.setData(outlets || { type: 'FeatureCollection', features: [] });
+}
+export function setTileNetworkVisible(map, visible) {
+  const v = visible ? 'visible' : 'none';
+  for (const id of ['wallas-tile-network-line', 'wallas-tile-outlet-point']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
+  }
+}
+
+export function setIrrigationData(map, fc) {
+  const src = map.getSource('wallas-irrigation');
+  if (src) src.setData(fc);
+}
+export function setIrrigationVisible(map, visible) {
+  const v = visible ? 'visible' : 'none';
+  for (const id of ['wallas-irrigation-fill', 'wallas-irrigation-line']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
   }
 }
@@ -3444,6 +3632,76 @@ function contamHtml(p) {
 function riskAreaHtml(p) {
   const risk = String(p.Risk_Area ?? '').trim();
   return `<div style="max-width:220px;line-height:1.4"><strong>MASC Risk Area ${escapeHtml(risk || 'N/A')}</strong><br><em>Official Manitoba Maps boundary</em></div>`;
+}
+
+// ---- WALLAS water-rights popups ----
+// Attribute names come straight off the MapServer; wallas.js has already
+// trimmed the fixed-width padding and turned epoch dates into YYYY-MM-DD.
+
+function wallasWrap(lines) {
+  return `<div style="max-width:300px;line-height:1.45;font-size:12px">${lines.filter(Boolean).join('<br>')}</div>`;
+}
+
+/** Label a WALLAS licence line, falling back when LICENCE_NO is absent
+ *  (a handful of licensed rows carry only a FILE_NO). */
+function licenceLine(p, label) {
+  const id = p.LICENCE_NO || p.FILE_NO;
+  return `<strong>${escapeHtml(label)}${id ? ` — ${escapeHtml(id)}` : ''}</strong>`;
+}
+
+function tileDrainageHtml(p) {
+  const lines = [licenceLine(p, 'Licensed tile drainage')];
+  if (p.CLIENT_NAME)        lines.push(escapeHtml(p.CLIENT_NAME));
+  if (p.APPLICATION_STATUS) lines.push(`<em>${escapeHtml(p.APPLICATION_STATUS)}</em>`);
+  if (p.APPLICATION_DATE)   lines.push(`Applied ${escapeHtml(p.APPLICATION_DATE)}`);
+  // The TILE_* detail fields are populated on well under 10% of rows, so
+  // every one of these is conditional rather than a dash-filled table.
+  const specs = [];
+  if (p.TILE_AREA)  specs.push(`${escapeHtml(p.TILE_AREA)} ac`);
+  if (p.TILE_DEPTH) specs.push(`${escapeHtml(p.TILE_DEPTH)}″ deep`);
+  if (p.TILE_SPACING_OF_LATERAL_PIPE) specs.push(`${escapeHtml(p.TILE_SPACING_OF_LATERAL_PIPE)}′ spacing`);
+  if (p.TILE_OUTLET_TYPE) specs.push(`${escapeHtml(p.TILE_OUTLET_TYPE)} outlet`);
+  if (specs.length) lines.push(specs.join(' · '));
+  if (p.ENGINEERING_CONSULTANT_NAME) lines.push(`Consultant: ${escapeHtml(p.ENGINEERING_CONSULTANT_NAME)}`);
+  // LEGACY_LABEL is how the province distinguishes a proposed network
+  // from an installed one. Surfaced verbatim — it's the only signal in
+  // the layer for that difference, and it's frequently null.
+  if (p.LEGACY_LABEL) lines.push(`<em style="color:#64748b">${escapeHtml(p.LEGACY_LABEL)}</em>`);
+  return wallasWrap(lines);
+}
+
+function tileNetworkHtml(p) {
+  return wallasWrap([
+    licenceLine(p, 'Tile line'),
+    p.CLIENT_NAME ? escapeHtml(p.CLIENT_NAME) : null,
+    p.APPLICATION_STATUS ? `<em>${escapeHtml(p.APPLICATION_STATUS)}</em>` : null,
+  ]);
+}
+
+function tileOutletHtml(p) {
+  return wallasWrap([
+    licenceLine(p, 'Tile outlet / structure'),
+    p.CLIENT_NAME ? escapeHtml(p.CLIENT_NAME) : null,
+    p.APPLICATION_STATUS ? `<em>${escapeHtml(p.APPLICATION_STATUS)}</em>` : null,
+  ]);
+}
+
+function irrigationHtml(p) {
+  const kind = p._wallasKind === 'use' ? 'Irrigation — point of use'
+    : 'Irrigation — point of diversion';
+  const lines = [licenceLine(p, kind)];
+  if (p.CLIENT_NAME)        lines.push(escapeHtml(p.CLIENT_NAME));
+  if (p.APPLICATION_STATUS) lines.push(`<em>${escapeHtml(p.APPLICATION_STATUS)}</em>`);
+  // SUB_PROGRAM is the groundwater-vs-surface split; PROJECT_TYPE is the
+  // works (Withdrawal, In Channel Dugout, ...). Both matter for judging
+  // how secure the water supply behind an irrigated valuation is.
+  const source = [p.SUB_PROGRAM, p.PROJECT_TYPE].filter(Boolean).map(escapeHtml).join(' · ');
+  if (source) lines.push(source);
+  if (p.WATER_SOURCE_NAME) lines.push(`Source: ${escapeHtml(p.WATER_SOURCE_NAME)}`);
+  if (p.ACQUIFER_NAME)     lines.push(`Aquifer: ${escapeHtml(p.ACQUIFER_NAME)}`);
+  if (p.FULL_LOCATION)     lines.push(escapeHtml(p.FULL_LOCATION));
+  if (p.APPLICATION_DATE)  lines.push(`Applied ${escapeHtml(p.APPLICATION_DATE)}`);
+  return wallasWrap(lines);
 }
 
 // CLI subclass codes — surface the human-readable limitation so the
