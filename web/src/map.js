@@ -31,6 +31,11 @@ import {
 } from './masc.js';
 import { SOIL_SURVEY_MAP_SOURCE_OPTIONS } from './soilSurvey.js';
 import { safeExternalUrl } from './lib/safeUrl.js';
+import {
+  badgeRadius,
+  calloutOffset,
+  solveCalloutSlots,
+} from './lib/calloutPlacement.js';
 import { Protocol as PMTilesProtocol } from 'pmtiles';
 
 // mapbox-gl-draw was written against the Mapbox GL `mapboxgl-*` DOM
@@ -55,12 +60,6 @@ maplibregl.addProtocol('pmtiles', new PMTilesProtocol().tile);
 // northern LGDs when needed.
 const MB_CENTER = [-98.0, 50.3];
 const MB_ZOOM = 7;
-
-// Screen-space offset (pixels) of a parcel-number badge from its
-// centroid: up and to the right. Constant across zoom (the leader is
-// re-projected on every move — see repositionParcelNumbers) so a tiny
-// parcel's number never sits on top of the shape.
-const PARCEL_NUM_OFFSET = [20, -26];
 
 // Callout colour — RGB 149,18,30 (#95121e), a deep red. White number on a
 // red badge, with the leader line + anchor dot in the same red so the
@@ -1785,10 +1784,13 @@ export function initMap(container, { onFeatureClick } = {}) {
       // "Generate Map" / snapshot exports read the WebGL canvas
       // (map.getCanvas()), and DOM markers wouldn't be captured — GL
       // layers are. The leader geometry is screen-space: the badge sits
-      // a fixed pixel offset from the centroid, re-projected on every
-      // camera move (see the 'move' handler + repositionParcelNumbers)
-      // so the offset stays constant in pixels rather than growing with
-      // zoom.
+      // a pixel offset from the centroid, re-projected on every camera
+      // move (see the 'move' handler + repositionParcelNumbers) so the
+      // offset stays constant in pixels rather than growing with zoom.
+      // That offset is per-badge, not shared — parcels close together on
+      // screen would otherwise stack their badges on the same spot, so
+      // lib/calloutPlacement.js bumps the crowded ones outward to clear
+      // space and the leader lines keep each number tied to its parcel.
       //
       //   parcel-num-anchors — Point per numbered parcel at its centroid
       //                        (static; drives the on-parcel dot).
@@ -1802,10 +1804,13 @@ export function initMap(container, { onFeatureClick } = {}) {
       // export map never calls setParcelNumberData, so its state stays
       // empty and the 'move' handler no-ops there.
       map._parcelNumbers = {
-        anchors: [],       // [{ lng, lat, seq, seqStr }]
+        anchors: [],       // [{ key, lng, lat, seq, seqStr, radius }]
         visible: false,
         rafPending: false,
-        offset: PARCEL_NUM_OFFSET,
+        // key -> candidate slot chosen by the last de-confliction pass.
+        // Carried across frames so a bumped badge stays put while its
+        // slot holds up, instead of re-shuffling on every camera nudge.
+        slots: new Map(),
       };
       // Leader casing (white, wider) under a dark hairline so the line
       // reads on both the cream streets basemap and the dark satellite
@@ -1843,16 +1848,21 @@ export function initMap(container, { onFeatureClick } = {}) {
       // number, ringed white so it reads on both the light streets
       // basemap and the dark satellite imagery. Grows a little for 2-
       // and 3-digit numbers.
+      //
+      // These radii and the stroke width are mirrored by badgeRadius() in
+      // lib/calloutPlacement.js, which decides whether two callouts are
+      // judged to collide — resize the badge here and you MUST resize it
+      // there, or the de-confliction pass will measure the wrong disc.
       map.addLayer({
         id: 'parcel-num-badge',
         type: 'circle',
         source: 'parcel-num-labels',
         layout: { visibility: 'none' },
         paint: {
-          'circle-radius': ['step', ['length', ['to-string', ['get', '_seq']]], 10, 2, 11.5, 3, 13.5],
+          'circle-radius': ['step', ['length', ['to-string', ['get', '_seq']]], 15, 2, 17.25, 3, 20.25],
           'circle-color': PARCEL_NUM_COLOR,
           'circle-stroke-color': '#ffffff',
-          'circle-stroke-width': 2,
+          'circle-stroke-width': 3,
         },
       });
       map.addLayer({
@@ -1863,7 +1873,7 @@ export function initMap(container, { onFeatureClick } = {}) {
           visibility: 'none',
           'text-field': ['get', '_seqStr'],
           'text-font': ['Open Sans Semibold'],
-          'text-size': 13,
+          'text-size': 19.5,
           // Numbers must always draw — never cull a callout as a
           // colliding label. The leader lines disambiguate any overlap.
           'text-allow-overlap': true,
@@ -2683,16 +2693,24 @@ export function setParcelNumberData(map, features) {
     if (seq == null) continue;
     const c = polygonBboxMidpoint(f.geometry);
     if (!c) continue;
-    anchors.push({ lng: c[0], lat: c[1], seq, seqStr: String(seq) });
+    const seqStr = String(seq);
+    anchors.push({ lng: c[0], lat: c[1], seq, seqStr, radius: badgeRadius(seqStr) });
     anchorFeatures.push({
       type: 'Feature',
       properties: { _seq: seq },
       geometry: { type: 'Point', coordinates: c },
     });
   }
-  // Draw order low→high so overlapping badges stack predictably.
+  // Placement order low→high: the de-confliction pass hands out slots
+  // first-come, so the lowest numbers keep the canonical up-right
+  // position and later ones give way.
   anchors.sort((a, b) => a.seq - b.seq);
+  // Key by position in that order — stable for the life of a result set,
+  // and unique even when two parcels share a Site # override.
+  anchors.forEach((a, i) => { a.key = String(i); });
   st.anchors = anchors;
+  // A new result set is a new placement problem; don't carry slots over.
+  st.slots = new Map();
   const anchorSrc = map.getSource('parcel-num-anchors');
   if (anchorSrc) anchorSrc.setData({ type: 'FeatureCollection', features: anchorFeatures });
   repositionParcelNumbers(map);
@@ -2717,10 +2735,17 @@ export function setParcelNumbersVisible(map, on) {
 
 /**
  * Recompute the leader lines and badge points from the stored anchors.
- * The badge sits `st.offset` pixels from the centroid IN SCREEN SPACE:
+ * Each badge sits a pixel offset from its centroid IN SCREEN SPACE:
  * project the centroid to pixels, add the offset, un-project back to a
  * lng/lat for the badge, and draw the leader between the two. Doing this
- * per-move keeps the callout a constant size/offset at every zoom. No-op
+ * per-move keeps the callout a constant size/offset at every zoom.
+ *
+ * The offset is per-badge, not shared: since the whole set is in pixel
+ * space here, this is where the callouts get de-conflicted. Badges that
+ * fit at the canonical up-right offset keep it; the rest are bumped
+ * outward to a clear slot by lib/calloutPlacement.js. Feeding the last
+ * pass's slots back in gives the solve hysteresis, so a bumped badge
+ * holds position through a pan rather than hopping every frame. No-op
  * (and clears the sources) when hidden or empty.
  */
 function repositionParcelNumbers(map) {
@@ -2734,12 +2759,21 @@ function repositionParcelNumbers(map) {
     labelSrc.setData(emptyFc());
     return;
   }
-  const [dx, dy] = st.offset;
+  const projected = st.anchors.map((a) => {
+    const pt = map.project([a.lng, a.lat]);
+    return { key: a.key, x: pt.x, y: pt.y, r: a.radius };
+  });
+  const canvas = map.getCanvas();
+  st.slots = solveCalloutSlots(projected, st.slots, {
+    width: canvas.clientWidth || canvas.width,
+    height: canvas.clientHeight || canvas.height,
+  });
   const leaders = [];
   const labels = [];
-  for (const a of st.anchors) {
-    const pt = map.project([a.lng, a.lat]);
-    const lp = map.unproject([pt.x + dx, pt.y + dy]);
+  st.anchors.forEach((a, i) => {
+    const [dx, dy] = calloutOffset(st.slots.get(a.key));
+    const p = projected[i];
+    const lp = map.unproject([p.x + dx, p.y + dy]);
     leaders.push({
       type: 'Feature',
       properties: { _seq: a.seq },
@@ -2750,7 +2784,7 @@ function repositionParcelNumbers(map) {
       properties: { _seq: a.seq, _seqStr: a.seqStr },
       geometry: { type: 'Point', coordinates: [lp.lng, lp.lat] },
     });
-  }
+  });
   leaderSrc.setData({ type: 'FeatureCollection', features: leaders });
   labelSrc.setData({ type: 'FeatureCollection', features: labels });
 }
