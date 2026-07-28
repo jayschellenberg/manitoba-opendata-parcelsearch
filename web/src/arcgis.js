@@ -2412,18 +2412,32 @@ async function resolveTileDrainageOids(municipality) {
 }
 
 /**
- * Roll_Entry OBJECTIDs covered by a licensed irrigation footprint —
- * points of diversion AND points of use together.
+ * Roll_Entry OBJECTIDs covered by a licensed irrigation POINT OF USE.
  *
- * Deliberately both sides, so the filter returns exactly the parcels the
- * Irrigation column populates for. Restricting it to points of use would
- * read as "irrigated land only", which is defensible, but it would then
- * disagree with the column sitting next to it — and the column already
- * labels each hit Use or Diversion and sorts Use first, so the user can
- * triage in one glance without the filter pre-deciding for them.
+ * Points of diversion are excluded on purpose. A diversion is an intake
+ * or a well — water is taken from there, not applied to it — so it says
+ * nothing about whether a parcel is irrigated, and the Irrigation column
+ * doesn't report it either. Including them here would hand back parcels
+ * that the column then labels "No record", which is precisely the
+ * filter/column disagreement worth avoiding.
+ *
+ * It also halves the work: ~2,500 points of use province-wide instead of
+ * ~5,300 footprints across both kinds.
  */
 async function resolveIrrigationOids(municipality) {
-  return resolveWallasOids(fetchIrrigationLicences, municipality, 'irrigation');
+  return resolveWallasOids(fetchIrrigationPointsOfUse, municipality, 'irrigation');
+}
+
+/** The point-of-use half of the cached irrigation collection. Shares the
+ *  single cached fetch — wallas.js tags each feature with `_wallasKind`
+ *  precisely so the two can be separated without a second round-trip. */
+async function fetchIrrigationPointsOfUse() {
+  const fc = await fetchIrrigationLicences();
+  if (!fc || fc._failed) return fc;
+  return {
+    type: 'FeatureCollection',
+    features: (fc.features || []).filter((f) => f.properties?._wallasKind === 'use'),
+  };
 }
 
 /**

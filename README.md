@@ -96,9 +96,19 @@ farmland attributes an ag appraiser reads together, not a category of
 their own.
 
 Their two grid columns read as a scannable yes/no — Tile Drainage as
-`Yes · 88%` or `No record`, Irrigation as `Yes`, `Diversion`, or
-`No record` — with the licence number, licensee, status, legal location
-and specs on hover.
+`Yes · 88%` or `No record`, Irrigation as `Yes` or `No record` — with the
+licence number, licensee, status, legal location and specs on hover.
+
+The Irrigation column, its CSV columns, and its search filter all key on
+licensed **points of use** only. A point of diversion is an intake or a
+well: water is taken from there, not applied to it, so it says nothing
+about whether a parcel is irrigated. Diversions still draw on the map
+overlay (blue, against violet for points of use); they are simply not
+reported per parcel. Excluding them also halves the filter's work — about
+2,500 points of use province-wide rather than 5,300 footprints across
+both kinds — which is why an irrigation-filtered RM of Portage la Prairie
+search now returns a complete 691 parcels instead of truncating at the
+1,000-row cap.
 
 **Only Tile Drainage carries a percentage, and that is deliberate.** The
 two layers are different kinds of geometry:
@@ -121,10 +131,8 @@ two layers are different kinds of geometry:
   so the column answers the only question the data supports — is this
   parcel within a licensed irrigation location, yes or no.
 
-`Diversion` is kept distinct from `Yes` because a point of diversion is
-an intake or well, not irrigated land. The CSV still carries
-`Irrigation Location` (the survey quarter the licence names) for evidence
-work. **`No record` is not `No`**: WALLAS holds
+The CSV carries `Irrigation Location` (the survey quarter the licence
+names) for evidence work. **`No record` is not `No`**: WALLAS holds
 licensed works only and its tile polygons lag, so the honest claim is
 "Manitoba has no licensed record here", not "this land is undrained".
 Blank means the overlay hasn't been switched on yet, which is a third
@@ -138,7 +146,7 @@ status per comp, and the CSV export leads each group with a filterable
 
 - **Tile Drainage** — licensed tiled-area footprints from Manitoba Water Rights Licensing (WALLAS). ~1,580 polygons province-wide, lazy-loaded and cached for 7 days, labelled with the licence number from zoom 11. Also populates the **Tile Drainage** table column (coverage % of parcel area + licence number, via the same area-weighted clip the Zoning and Dev-Plan columns use) and the four `Tile *` CSV columns. Every query filters `APPLICATION_STATUS` to the four licensed values, so rejected and abandoned applications never render.
 - **Tile Lines & Outlets** — the lateral/header pipe runs and outlet structures inside a licensed tile area. 85,000 lines exist province-wide, so this layer holds the current viewport only: it refetches on map idle and stays empty below zoom 11 (mirroring the upstream service's own scale thresholds).
-- **Irrigation Licences** — licensed water-use points of diversion (blue, where water is taken) and points of use (violet, where it is applied), filtered to `USAGE_CATEGORY = 'Irrigation'`. Popups carry licensee, groundwater-vs-surface source, works type, and aquifer or water-source name. Also populates the **Irrigation** table column — `Use`/`Diversion`, coverage % of parcel area, and the licence number — plus the six `Irrigation *` CSV columns (led by a filterable `Irrigated` yes/no). The column reports the point of **use** when a parcel has both, because water being *applied* to land is the irrigated-land signal being priced; a point of diversion alone only means the intake or well sits there. The tooltip names the other half of the licence when both are present. Sorting ranks every point of use above every point of diversion, coverage ordering within each band.
+- **Irrigation Licences** — licensed water-use points of diversion (blue, where water is taken) and points of use (violet, where it is applied), filtered to `USAGE_CATEGORY = 'Irrigation'`. Popups carry licensee, groundwater-vs-surface source, works type, and aquifer or water-source name. Also populates the **Irrigation** table column — a plain `Yes` / `No record` — plus the five `Irrigation *` CSV columns (led by a filterable `Irrigated` yes/no). Only licensed points of **use** are reported per parcel; points of diversion are intakes and wells, so they draw on the map but say nothing about whether land is irrigated.
 - **Sec-Twp Grid** — section-township grid plus river lots. With a municipality selected, it fetches the Manitoba Original Survey Legal Descriptions layer scoped to the muni boundary; without a muni, it uses the prebuilt province-wide static grid.
 - **RM Website** — opens the selected muni's official site in a new tab. Auto-detects from a comprehensive lookup of every published municipal website in the province (`MUNI_WEBSITES` in [main.js](web/src/main.js)). Reads "RM N/A" when the muni's directory entry has no website.
 - **PD Website** — data-driven. After every search, the dominant `PLANNINGDISTRICT` value across the dev-plan enrichment FC picks the active PD; `PD_WEBSITES` looks up its URL. Reads "PD N/A" when the PD has no website on file. Stays disabled until a search resolves the PD.
@@ -281,7 +289,7 @@ The Shiny app reads the most recent `RollEntry_YYYYMMDD.gpkg` in the project dir
 - Footprints are sent to Roll_Entry in batches of 25 as a single multi-ring polygon rather than one request per footprint (`WALLAS_FILTER_BATCH_SIZE` in [arcgis.js](web/src/arcgis.js)). Ring winding is normalized first — Esri reads clockwise rings as outer and counter-clockwise as holes, so a naive merge would punch footprints out of their neighbours. Verified against the live service and unit-tested in [wallasFilterGeometry.test.js](web/test/wallasFilterGeometry.test.js).
 - Expect the water-rights columns to take a while on a large, irrigation-dense result set: the exact area clip is the cost, not the queries. RM of Portage la Prairie with **Licensed irrigation only** (1,000 parcels, every one overlapping a licence) runs ~40 s end to end, of which ~15 s is the clip and ~2 s the spatial queries; a plain muni search there is ~10 s. The clip runs in a Web Worker so the UI stays responsive, and the status line reads "Checking water-rights licences…" while it works. Ordinary searches are a few seconds.
 - Irrigation is licensed works only, with the same "blank is not proof" caveat as tile drainage. `WATER_SOURCE_NAME` and `ACQUIFER_NAME` are frequently null even on current licences, so the Irrigation Source CSV column is often empty — `Irrigation Supply` (Groundwater Use / Surface Water Use) is the reliable field.
-- WALLAS's "Point of Diversion" and "Point of Use" layers are **polygons**, not points, despite the naming — the geometry is the legal-location footprint the licence attaches to. Coverage percentages in the Irrigation column are the share of the *parcel* covered by that footprint, the same basis as the Zoning, Dev-Plan, and Tile Drainage columns.
+- WALLAS's "Point of Diversion" and "Point of Use" layers are **polygons**, not points, despite the naming — the geometry is the legal-location footprint the licence attaches to, at survey-quarter granularity. That is why the Irrigation column carries no coverage percentage: see the Map overlays section above. The Tile Drainage percentage is the share of the *parcel* covered by the licensed footprint, the same basis as the Zoning and Dev-Plan columns.
 - WALLAS layer 7 carries no `LOCAL_GOVERNMENT` column (layer 8 does), so municipal narrowing is spatial. The tile-only filter fetches the muni's extent via one `returnExtentOnly` request and clips the polygon set before running per-polygon parcel queries; without a municipality selected it has to test every licensed footprint in the province, which is slow but correct.
 - `MUNI_WEBSITES` and `PD_WEBSITES` (in [main.js](web/src/main.js)) are hand-curated from the province's official Municipal and Planning District contact directories. Munis whose only published contact is a generic email render as "RM N/A" — adding an entry to the constant promotes them to a working button.
 

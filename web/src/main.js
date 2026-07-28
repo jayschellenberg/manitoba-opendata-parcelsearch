@@ -848,18 +848,14 @@ const SORT_KEYS = {
     if (!hit) return -1;
     return Number.isFinite(hit.ratio) ? hit.ratio : 0;
   },
-  // Irrigation ranks points of USE above points of diversion: land that
-  // water is applied to is the thing being priced, while a diversion
-  // only means the intake sits here. Coverage share is a stable tiebreak
-  // within each band and nothing more — it is deliberately not shown,
+  // Irrigation is a yes/no — the column only reports licensed points of
+  // use — so this just groups the Yes rows together. Coverage share is a
+  // stable tiebreak and nothing more; it is deliberately never shown,
   // because the polygon is a survey quarter (see irrigationCell).
   irrigation: (r) => {
     const hit = r.parcel.properties._irrigation;
     if (!hit) return -1;
-    const side = hit.use || hit.diversion;
-    if (!side) return -1;
-    const ratio = Number.isFinite(side.ratio) ? side.ratio : 0;
-    return hit.use ? 1 + ratio : ratio;
+    return Number.isFinite(hit.ratio) ? hit.ratio : 0;
   },
   // CLI capability + Soil Type sort by the dominant soil's
   // AGRI_CAP / SOILNAME from the stamped composition. Empty
@@ -7956,39 +7952,29 @@ function irrigationCell(p) {
   const hit = p?._irrigation;
   if (hit === undefined) return td(null, null, IRRIGATION_EMPTY_HINT);
   if (hit === null) return noLicenceCell(NO_IRRIGATION_HINT);
-  const primary = hit.use || hit.diversion;
-  if (!primary) return noLicenceCell(NO_IRRIGATION_HINT);
-  // A bare "Yes", deliberately — no percentage and no location.
+  // A bare "Yes", deliberately — no percentage, no location, no
+  // diversion.
   //
-  // WALLAS's Point of Use / Point of Diversion polygons are DLS quarter
-  // sections, not watered areas: 92% are four-corner quadrilaterals with
-  // a median footprint of 803 × 804 m and 158 acres, against a quarter
-  // section's 805 × 805 m and 160 acres. Once the quarter contains the
-  // parcel, everything that geometry can tell you is "this parcel falls
-  // under a licensed irrigation location" — so that is the whole answer,
-  // and any number beside it would only invite a false reading. The
-  // location, licence, and supply live in the tooltip and the CSV.
-  //
-  // A point of DIVERSION alone still isn't irrigated land — it means the
-  // intake or well sits here — so it keeps its own label rather than
-  // being flattened into the same "Yes".
-  const cell = td(hit.use ? 'Yes' : 'Diversion');
+  // WALLAS's Point of Use polygons are DLS quarter sections, not watered
+  // areas: 92% are four-corner quadrilaterals with a median footprint of
+  // 803 × 804 m and 158 acres, against a quarter section's 805 × 805 m
+  // and 160 acres. Once the quarter covers the parcel, everything that
+  // geometry can tell you is "this parcel falls under a licensed
+  // irrigation location" — so that is the whole answer, and any number
+  // beside it would only invite a false reading. Licence, licensee,
+  // supply and location live in the tooltip and the CSV.
+  const cell = td('Yes');
   const detail = [
-    primary.licence ? `Licence ${primary.licence}` : null,
-    primary.client,
-    primary.status,
+    hit.licence ? `Licence ${hit.licence}` : null,
+    hit.client,
+    hit.status,
     // Groundwater vs surface, and the works type, are what decide how
     // secure the supply behind an irrigated valuation actually is.
-    [primary.subProgram, primary.projectType].filter(Boolean).join(' · ') || null,
-    primary.source ? `Source: ${primary.source}` : null,
-    primary.date ? `Applied ${primary.date}` : null,
-    // Call out the other half of the licence explicitly — a parcel that
-    // both diverts and uses is a different proposition from one that
-    // only hosts the intake.
-    hit.use && hit.diversion
-      ? `Also a point of diversion${hit.diversion.licence ? ` (${hit.diversion.licence})` : ''}`
-      : null,
-    hit.count > 1 ? `${hit.count} licensed irrigation areas overlap this parcel` : null,
+    [hit.subProgram, hit.projectType].filter(Boolean).join(' · ') || null,
+    hit.source ? `Source: ${hit.source}` : null,
+    hit.location ? `Location ${hit.location}` : null,
+    hit.date ? `Applied ${hit.date}` : null,
+    hit.count > 1 ? `${hit.count} licensed points of use overlap this parcel` : null,
     'Location is the survey quarter the licence names, not a mapped watered area.',
   ].filter(Boolean);
   if (detail.length) cell.title = detail.join('\n');
@@ -8177,14 +8163,19 @@ async function stampIrrigation(rows) {
       parcel.properties._irrigation = null;
       continue;
     }
-    // joinTopNByArea returns matches already sorted by ratio desc, so the
-    // first of each kind is that kind's best.
-    const use = matches.find((m) => m.feature.properties?._wallasKind === 'use');
-    const diversion = matches.find((m) => m.feature.properties?._wallasKind === 'diversion');
+    // Points of USE only. A point of diversion is an intake or a well —
+    // it says water is taken from here, not that this land is watered —
+    // so it has no bearing on whether a parcel is irrigated and is not
+    // reported. joinTopNByArea returns matches sorted by ratio desc, so
+    // the first one is the best.
+    const uses = matches.filter((m) => m.feature.properties?._wallasKind === 'use');
+    if (uses.length === 0) {
+      parcel.properties._irrigation = null;
+      continue;
+    }
     parcel.properties._irrigation = {
-      use: use ? irrigationMatch(use) : null,
-      diversion: diversion ? irrigationMatch(diversion) : null,
-      count: matches.length,
+      ...irrigationMatch(uses[0]),
+      count: uses.length,
     };
   }
 }
@@ -8241,18 +8232,16 @@ function tileDrainageCsvCells(p) {
  *  grid cell shows so the CSV and the screen never disagree. */
 function irrigationCsvCells(p) {
   const hit = p?._irrigation;
-  if (hit === undefined) return ['', '', '', '', '', ''];
-  const side = hit && (hit.use || hit.diversion);
-  if (!side) return ['No record', '', '', '', '', ''];
+  if (hit === undefined) return ['', '', '', '', ''];
+  if (hit === null) return ['No record', '', '', '', ''];
   return [
     'Yes',
-    side.licence ?? '',
-    hit.use ? 'Use' : 'Diversion',
+    hit.licence ?? '',
     // The survey quarter the licence names — reported instead of a
     // coverage share, which would misrepresent what the polygon is.
-    side.location ?? '',
-    side.subProgram ?? '',
-    side.source ?? '',
+    hit.location ?? '',
+    hit.subProgram ?? '',
+    hit.source ?? '',
   ];
 }
 
@@ -9406,7 +9395,9 @@ function exportCsv(explicitRows) {
     // filter or pivot on one column instead of testing whether a licence
     // string is blank.
     'Tiled', 'Tile Licence', 'Tile %', 'Tile Status', 'Tile Applied',
-    'Irrigated', 'Irrigation Licence', 'Irrigation Type', 'Irrigation Location', 'Irrigation Supply', 'Irrigation Source',
+    // No "Irrigation Type" column: only points of use are reported, so
+    // it would be the constant "Use" on every populated row.
+    'Irrigated', 'Irrigation Licence', 'Irrigation Location', 'Irrigation Supply', 'Irrigation Source',
     'Changes',
     'DU', 'Acres', 'SF', 'Acres Src',
     csvAssessHeader(currentRows), 'Asmt Report URL',
