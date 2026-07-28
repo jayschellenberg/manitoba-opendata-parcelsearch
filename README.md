@@ -76,24 +76,31 @@ The page splits into a fixed-width left sidebar holding all controls and a fluid
 grid declared on the `<details>` itself would treat that whole block as a
 single grid item and stack the buttons in one column.
 
-All five groups ship open, so a first visit looks as it did before;
-whatever you collapse is remembered per group in `localStorage` under
-`mbps_overlay_groups_v1`. A collapsed group that still has layers switched
-on shows an "N on" badge tinted to that group's colour, so an active
-overlay is never hidden without a trace, and its contents are
-`display: none` while closed — out of layout and out of the tab order.
-- **Muni Parcels** — every parcel in the selected muni rendered as a light-blue grey fabric beneath the search results. Roll numbers render at each parcel's centroid at zoom ≥ 14. Hover/click popups show roll #, address, DU, land size (ac/sf), total value; if Show Zoning is also active, the underlying zone code, name, and ZBL are appended to the popup. Click adds the assessment-report link.
-- **Traffic** — MHTIS Traffic Flow 2019 polylines coloured by AADT in 6 step-function bins. AADT label rendered along each segment at zoom ≥ 8. Click a segment for full attributes. Floating colour legend appears bottom-right while active.
-- **Manitoba Highways** — complete Government of Manitoba Road Network 2023, lazy-loaded and cached for 30 days. PTH and PR routes are labelled; click any segment for its route type and number. Can be combined with Satellite or MLI imagery.
-- **Zoning** — coloured per-search by `ZONE` code with a stable hash-derived HSL palette. Floating legend in the bottom-right lists every code on screen with its `ZONE_NAME`. Zoning code labels render above each polygon centroid (offset to clear the muni-parcels roll number when both layers are on).
-- **Dev Plan** — coloured by `DES_CATEGORY`.
-- **Enviro** — Manitoba Contaminated Sites Registry as red / orange / grey points by designation, with a registry-page link in each popup.
-- **MASC Rating** — per-municipality MASC crop-insurance soil ratings. Disabled until a municipality is selected; on first activation it lazy-loads that muni's shard from `web/public/data/masc/` plus rated river-lot polygons from `web/public/data/masc-riverlots.json`, draws approximate quarter-section polygons from MASC centroids and actual long/narrow river-lot polygons, colours them A (best) through J (worst), and labels each feature at zoom >= 13 with the rating letter only. River-lot filtering checks both the polygon municipality and the MASC rating-source municipality, so split-boundary lots still appear for the RM that owns the MASC rating. The label layer sits above the parcel and roll-fabric layers so the text remains legible when MASC is combined with parcel overlays. A floating A-J legend appears while active.
-- **MASC Risk Areas** — official MASC crop-insurance risk-area polygons from the Manitoba Maps `MASC_Risk_Areas` FeatureServer published through Open Canada. Lazy-loaded province-wide, cached for 30 days, and labelled from `Risk_Area`.
-The three WALLAS water-rights layers below sit in the **Agricultural**
-group alongside soil and land cover — tile drainage and irrigation are
-farmland attributes an ag appraiser reads together, not a category of
-their own.
+Six groups: Parcel layers, Historical, Planning, Reference, Agricultural
+and Quick links. **Reference, Agricultural and Historical ship collapsed**;
+the rest open. Open/closed state is *not* persisted — what you expand
+stays expanded for the life of the page (the panel is never re-rendered,
+so it survives tab switches and searches on its own) and a reload returns
+to those defaults. Persisting it was worse in practice: opening
+Agricultural once to reach a layer meant it stayed open on every future
+visit, so "collapsed by default" quietly stopped being true.
+
+A collapsed group with active settings shows an "N on" badge tinted to
+that group's colour — counting ticked search filters as well as pressed
+layer toggles, since a filter silently narrowing every search is exactly
+what must not go invisible. Collapsed contents are `display: none`, so
+they're out of layout and out of the tab order.
+
+The **Historical** group pairs its Show button with the As of date picker
+on one line, so the date reads as belonging to the toggle. The two
+water-rights search filters sit at the foot of **Agricultural**, beside
+the overlays they filter on. Because the Map layers panel renders under
+whichever tab is active, that single pair of checkboxes serves both
+Property Search and Sales Analysis with no duplicated control to keep in
+sync — and they work on an imported sales CSV too, narrowing the comps to
+tiled or irrigated parcels, with the count line naming how many it hid
+(e.g. *5 of 5 sales plotted · 2 hidden by the licensed tile drainage
+filter*).
 
 Their two grid columns read as a scannable yes/no — Tile Drainage as
 `Yes · 88%` or `No record`, Irrigation as `Yes` or `No record` — with the
@@ -285,9 +292,9 @@ The Shiny app reads the most recent `RollEntry_YYYYMMDD.gpkg` in the project dir
 - The `TILE_*` detail fields (area, depth, lateral spacing, outlet type) are populated on well under 10% of records — 129 of 1,633 tile polygons carry `TILE_AREA`. The overlay popup and column tooltip show whichever fields exist rather than a fixed layout.
 - WALLAS tile polygons describe the area *applied for*. `LEGACY_LABEL` distinguishes "Area of Proposed Tile Drainage Network" from "Area of Tile Drainage Network", but it is frequently null, so treat every footprint as approximate.
 - ArcGIS's `esriSpatialRelIntersects` counts edge contact as an intersection, and neighbouring survey polygons share edges by construction, so the server-side filters return parcels a licensed area merely grazes. A match covering under 1% of a parcel (`MIN_WATER_COVERAGE` in [main.js](web/src/main.js)) is discarded rather than reported — a clipped rim says nothing true about whether land is drained or watered. The filters then drop those parcels outright once the exact clip has run, and the count line says how many went (e.g. *26 parcels found · 10 dropped (edge overlap only)*), so a filtered result never contains a row the column can't vouch for.
-- Both water-rights filters (**Licensed tile drainage only**, **Licensed irrigation only**) resolve server-side to a parcel OBJECTID set, so the 1,000-row result cap applies to the already-filtered set rather than hiding matches behind it. Ticking both ANDs them. The irrigation filter matches either side of a licence (point of use OR point of diversion), so it returns exactly the parcels the Irrigation column fills in.
+- Both water-rights filters (**Licensed tile drainage only**, **Licensed irrigation only**) resolve server-side to a parcel OBJECTID set, so the 1,000-row result cap applies to the already-filtered set rather than hiding matches behind it. Ticking both ANDs them. The irrigation filter matches licensed points of **use** only, matching what the Irrigation column reports, so the filter and the column can never disagree. Both live at the foot of the Agricultural group in Map layers and apply to an imported sales CSV as well as a Property Search.
 - Footprints are sent to Roll_Entry in batches of 25 as a single multi-ring polygon rather than one request per footprint (`WALLAS_FILTER_BATCH_SIZE` in [arcgis.js](web/src/arcgis.js)). Ring winding is normalized first — Esri reads clockwise rings as outer and counter-clockwise as holes, so a naive merge would punch footprints out of their neighbours. Verified against the live service and unit-tested in [wallasFilterGeometry.test.js](web/test/wallasFilterGeometry.test.js).
-- Expect the water-rights columns to take a while on a large, irrigation-dense result set: the exact area clip is the cost, not the queries. RM of Portage la Prairie with **Licensed irrigation only** (1,000 parcels, every one overlapping a licence) runs ~40 s end to end, of which ~15 s is the clip and ~2 s the spatial queries; a plain muni search there is ~10 s. The clip runs in a Web Worker so the UI stays responsive, and the status line reads "Checking water-rights licences…" while it works. Ordinary searches are a few seconds.
+- Expect the water-rights columns to take a while on a large, irrigation-dense result set: the exact area clip is the cost, not the queries. RM of Portage la Prairie with **Licensed irrigation only** returns a complete 691 parcels in ~26 s, of which the exact clip is the bulk and the spatial queries ~2 s; a plain muni search there is ~10 s. The clip runs in a Web Worker so the UI stays responsive, and the status line reads "Checking water-rights licences…" while it works. Ordinary searches are a few seconds.
 - Irrigation is licensed works only, with the same "blank is not proof" caveat as tile drainage. `WATER_SOURCE_NAME` and `ACQUIFER_NAME` are frequently null even on current licences, so the Irrigation Source CSV column is often empty — `Irrigation Supply` (Groundwater Use / Surface Water Use) is the reliable field.
 - WALLAS's "Point of Diversion" and "Point of Use" layers are **polygons**, not points, despite the naming — the geometry is the legal-location footprint the licence attaches to, at survey-quarter granularity. That is why the Irrigation column carries no coverage percentage: see the Map overlays section above. The Tile Drainage percentage is the share of the *parcel* covered by the licensed footprint, the same basis as the Zoning and Dev-Plan columns.
 - WALLAS layer 7 carries no `LOCAL_GOVERNMENT` column (layer 8 does), so municipal narrowing is spatial. The tile-only filter fetches the muni's extent via one `returnExtentOnly` request and clips the polygon set before running per-polygon parcel queries; without a municipality selected it has to test every licensed footprint in the province, which is slow but correct.

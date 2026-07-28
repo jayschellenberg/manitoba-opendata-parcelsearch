@@ -1640,29 +1640,19 @@ mapReady.then(() => {
 // which groups the user closed, and keep an active-layer count visible
 // on a group that's closed — otherwise a layer could be on with no
 // on-screen trace, which is the one way this could mislead.
-// v2: Agricultural now ships collapsed. The key is versioned with the
-// defaults because saved state wins over the markup — without a bump,
-// anyone who had already used the panel would keep the old open/closed
-// set and never see the new default.
-const OVERLAY_GROUP_STATE_KEY = 'mbps_overlay_groups_v2';
+// Open/closed state is NOT persisted. What you expand stays expanded for
+// as long as the page is alive — the panel is never re-rendered, so the
+// DOM holds it across tab switches and searches by itself — and a reload
+// returns to the defaults in the markup.
+//
+// Persisting it was worse in practice: opening Agricultural once to reach
+// a layer meant it was still open on every future visit, so "collapsed by
+// default" quietly stopped being true. Any stale keys from that version
+// are cleared below.
+const LEGACY_OVERLAY_GROUP_KEYS = ['mbps_overlay_groups_v1', 'mbps_overlay_groups_v2'];
 
 function overlayGroupEls() {
   return document.querySelectorAll('#map-layers-section .overlay-group[data-group]');
-}
-
-function readOverlayGroupState() {
-  try {
-    const raw = localStorage.getItem(OVERLAY_GROUP_STATE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return (parsed && typeof parsed === 'object') ? parsed : null;
-  } catch { return null; }
-}
-
-function writeOverlayGroupState() {
-  const state = {};
-  for (const el of overlayGroupEls()) state[el.dataset.group] = el.open;
-  try { localStorage.setItem(OVERLAY_GROUP_STATE_KEY, JSON.stringify(state)); } catch {}
 }
 
 /**
@@ -1677,32 +1667,35 @@ function refreshOverlayGroupCounts() {
     const badge = el.querySelector('.overlay-group-count');
     if (!badge) continue;
     if (el.dataset.group === 'links') { badge.textContent = ''; continue; }
-    const on = el.querySelectorAll('.overlay-btn[aria-pressed="true"], .overlay-btn[aria-pressed="mixed"]').length;
+    // Pressed layer toggles plus ticked search filters. The filters count
+    // because they are exactly the kind of setting that must not go
+    // invisible: a collapsed Agricultural group with "Licensed tile
+    // drainage only" ticked would otherwise silently narrow every search.
+    // 'mixed' is the tri-state overlays' second mode — still on.
+    const on = el.querySelectorAll(
+      '.overlay-btn[aria-pressed="true"], .overlay-btn[aria-pressed="mixed"], .overlay-check input:checked',
+    ).length;
     badge.textContent = on > 0 ? `${on} on` : '';
-    badge.title = on > 0 ? `${on} layer${on === 1 ? '' : 's'} active in this group` : '';
+    badge.title = on > 0 ? `${on} active setting${on === 1 ? '' : 's'} in this group` : '';
   }
 }
 
 (function initOverlayGroups() {
   const groups = overlayGroupEls();
   if (groups.length === 0) return;
-  const saved = readOverlayGroupState();
-  for (const el of groups) {
-    // No saved state → leave the markup's default (open), so a first
-    // visit looks exactly like it did before groups became collapsible.
-    if (saved && typeof saved[el.dataset.group] === 'boolean') {
-      el.open = saved[el.dataset.group];
-    }
-    el.addEventListener('toggle', () => {
-      writeOverlayGroupState();
-      refreshOverlayGroupCounts();
-    });
+  // Drop state written by the versions that persisted this, so a browser
+  // that used them doesn't keep a key around forever.
+  for (const key of LEGACY_OVERLAY_GROUP_KEYS) {
+    try { localStorage.removeItem(key); } catch { /* storage unavailable */ }
   }
   // Toggle buttons flip aria-pressed from a dozen call sites (and some
   // defensive resets bypass setOverlayPressed entirely), so observe the
-  // attribute rather than trying to hook every one of them.
+  // attribute rather than trying to hook every one of them. The filter
+  // checkboxes fire change instead, which no attribute reflects.
   const observer = new MutationObserver(refreshOverlayGroupCounts);
   for (const el of groups) {
+    el.addEventListener('toggle', refreshOverlayGroupCounts);
+    el.addEventListener('change', refreshOverlayGroupCounts);
     observer.observe(el, { subtree: true, attributes: true, attributeFilter: ['aria-pressed'] });
   }
   refreshOverlayGroupCounts();
@@ -3538,7 +3531,10 @@ async function handleSalesUpload(file) {
     refilterCsvIfActive();
     setExportEnabled(salesExportEnrichmentComplete && currentRows.length > 0);
     if (soilResult.complete) {
-      setCount(`${baseMsg} · all available parcel data loaded`);
+      // Carry the water-rights filter note through — enrichOverlays folded
+      // it into its own copy of baseMsg, which this line replaces.
+      const filtered = lastWaterFilterDropped > 0 ? ` · ${waterFilterDropNote()}` : '';
+      setCount(`${baseMsg}${filtered} · all available parcel data loaded`);
     } else {
       const failedMunis = soilResult.failures.map((failure) => failure.muni).join(', ');
       setCount(
@@ -4973,11 +4969,18 @@ async function enrichOverlays(parcelFc, inputs, baseMsg, { skipDevPlan = false }
   // they cost nothing on a search that doesn't care about water rights.
   // Run concurrently: they're independent, and the clip is the slowest
   // thing left in enrichment on an irrigation-heavy municipality.
+  // Cleared every pass, not just when the filters run — otherwise a
+  // count from an earlier filtered search would be appended to a later
+  // unfiltered one.
+  lastWaterFilterDropped = 0;
   if (wantsWaterRightsEnrichment()) {
     setCount(`${baseMsg} · Checking water-rights licences…`);
     await Promise.all([stampTileDrainage(rows), stampIrrigation(rows)]);
-    const shed = dropSliverOnlyMatches(rows, parcelFc);
-    if (shed > 0) baseMsg = `${baseMsg} · ${shed} dropped (edge overlap only)`;
+    // Record it rather than only folding it into baseMsg: the sales-CSV
+    // path overwrites the count line after enrichment returns, which
+    // otherwise left "5 of 5 sales plotted" above a grid showing 3.
+    lastWaterFilterDropped = dropSliverOnlyMatches(rows, parcelFc);
+    if (lastWaterFilterDropped > 0) baseMsg = `${baseMsg} · ${waterFilterDropNote()}`;
   }
 
   // Attach the pre-baked dominant MASC soil rating for each parcel
@@ -5944,7 +5947,7 @@ async function loadHistorical(snap, muniName) {
     deactivateHistorical();
   } finally {
     $historicalToggle.disabled = !$municipality.value;
-    setOverlayBtnLabel($historicalToggle, 'Historical');
+    setOverlayBtnLabel($historicalToggle, 'Show');
   }
 }
 
@@ -5954,7 +5957,7 @@ function deactivateHistorical() {
   mapReady.then(() => setHistoricalVisible(map, false));
   if ($historicalToggle) {
     setOverlayPressed($historicalToggle, false);
-    setOverlayBtnLabel($historicalToggle, 'Historical');
+    setOverlayBtnLabel($historicalToggle, 'Show');
   }
   if ($historicalBanner) $historicalBanner.hidden = true;
 }
@@ -8072,6 +8075,21 @@ function clipWallasToParcels(fc, parcelFc) {
  * Mutates `rows` and `parcelFc.features` in place and in step, so the
  * grid, the map, and the caller's own reference can't drift apart.
  */
+// How many rows the water-rights filters removed on the last enrichment
+// pass. Read by the sales-CSV path, which writes its own count line after
+// enrichOverlays has returned.
+let lastWaterFilterDropped = 0;
+
+/** Phrase for the count line, naming which filter did the removing so
+ *  "3 of 5" never looks like rows went missing on their own. */
+function waterFilterDropNote() {
+  const which = [
+    $tileOnly?.checked ? 'tile drainage' : null,
+    $irrigationOnly?.checked ? 'irrigation' : null,
+  ].filter(Boolean).join(' + ');
+  return `${lastWaterFilterDropped} hidden by the licensed ${which || 'water-rights'} filter`;
+}
+
 function dropSliverOnlyMatches(rows, parcelFc) {
   const tileOn = !!$tileOnly?.checked;
   const irrOn = !!$irrigationOnly?.checked;

@@ -327,26 +327,12 @@
                 <span class="tip">Minimum dwelling units (DU) — applies when 'Min DU' is selected.</span>
               </span>
             </div>
-            <!-- Water-rights narrowing. Both resolve server-side (licensed
-                 WALLAS footprints → intersecting parcel OBJECTIDs → an
-                 OBJECTID IN (...) clause) rather than as post-filters, so
-                 the result cap can't hide matches. Ticking both ANDs them. -->
-            <div class="filter-row">
-              <span class="field">
-                <label class="inline-check">
-                  <input type="checkbox" id="tile-only" />
-                  <span>Licensed tile drainage only</span>
-                </label>
-                <span class="tip">Return only parcels overlapped by a licensed tile-drainage area from Manitoba's Water Rights Licensing (WALLAS). Narrow by municipality first — a province-wide run has to test every licensed tile footprint. Licensed works only, and the source polygons run to Aug 2024, so this finds known-tiled land rather than proving the rest is untiled.</span>
-              </span>
-              <span class="field">
-                <label class="inline-check">
-                  <input type="checkbox" id="irrigation-only" />
-                  <span>Licensed irrigation only</span>
-                </label>
-                <span class="tip">Return only parcels overlapped by a licensed irrigation footprint (point of use OR point of diversion) — exactly the parcels the Irrigation column fills in. Sort that column to put points of use, the irrigated-land signal, at the top. Narrow by municipality first: irrigation has ~6,000 licensed footprints province-wide, so an unscoped run is slow.</span>
-              </span>
-            </div>
+            <!-- The two water-rights narrowing checkboxes used to live
+                 here. They now sit at the foot of the Agricultural group
+                 in Map layers, beside the overlays they filter on — and
+                 because that panel renders under whichever tab is active,
+                 one copy serves both Property Search and Sales Analysis
+                 with no second control to keep in sync. -->
             <!-- Cross-muni Import List… affordance. Relocated here from
                  the Roll # chip-input actions row so the Roll # field
                  reads cleanly; importing a multi-muni parcel list is an
@@ -598,8 +584,18 @@
             <button id="grid-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Sec-Twp grid + river lots. Tri-state cycle: 1st click → Section/township grid (one box per 1-mile section); 2nd click → Quarter section grid (four boxes per section, requires a municipality); 3rd click → off. River lots ride along on both grid modes. Without a municipality, only the section grid is available (province-wide).">
               <span class="overlay-btn-label">Section/Township Grid</span>
             </button>
-            <button id="historical-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled title="Historical (as-of-year) — overlay an earlier year's parcels (dashed amber), zoning, and dev-plan for the selected municipality, to compare against today (e.g. a parcel's size/shape before a subdivision). Select a municipality, then pick a year.">
-              <span class="overlay-btn-label">Historical</span>
+            </div>
+          </details>
+
+          <!-- Historical (as-of-date) compare. Its own collapsed group:
+               it is a two-control feature (enable + pick a date) that
+               most sessions never touch, and pairing the button with the
+               date picker on one line makes the relationship obvious. -->
+          <details class="overlay-group" data-group="historical">
+            <summary class="overlay-group-title">Historical<span class="overlay-group-count"></span></summary>
+            <div class="overlay-group-body">
+            <button id="historical-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled title="Historical (as-of-date) — overlay an earlier year's parcels (dashed amber), zoning, and dev-plan for the selected municipality, to compare against today (e.g. a parcel's size/shape before a subdivision). Select a municipality, then pick a date.">
+              <span class="overlay-btn-label">Show</span>
             </button>
             <label class="overlay-subcontrol" id="historical-year-wrap" hidden>
               <span class="overlay-subcontrol-label">As of</span>
@@ -620,7 +616,7 @@
             </div>
           </details>
 
-          <details class="overlay-group" data-group="reference" open>
+          <details class="overlay-group" data-group="reference">
             <summary class="overlay-group-title">Reference<span class="overlay-group-count"></span></summary>
             <div class="overlay-group-body">
             <button id="contam-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Enviro Sites — Manitoba Contaminated Sites Registry">
@@ -668,6 +664,21 @@
             <button id="irrigation-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Irrigation Licences — licensed water-use points of diversion (blue, where water is taken) and points of use (violet, where it's applied), from WALLAS. Click for licensee, groundwater vs surface source, and works type.">
               <span class="overlay-btn-label">Irrigation Licences</span>
             </button>
+            <!-- Search narrowing, at the foot of the group so it reads as
+                 "these layers, and optionally only parcels that have
+                 them". Both resolve server-side (licensed WALLAS
+                 footprints → intersecting parcel OBJECTIDs → an
+                 OBJECTID IN (...) clause) rather than as post-filters, so
+                 the result cap can't hide matches. Ticking both ANDs them.
+                 Full-width rows: the labels don't fit a half column. -->
+            <label class="overlay-check" title="Return only parcels overlapped by a licensed tile-drainage area from Manitoba's Water Rights Licensing (WALLAS). Narrow by municipality first — a province-wide run has to test every licensed tile footprint. Licensed works only, and the source polygons run to Aug 2024, so this finds known-tiled land rather than proving the rest is undrained.">
+              <input type="checkbox" id="tile-only" />
+              <span>Licensed tile drainage only</span>
+            </label>
+            <label class="overlay-check" title="Return only parcels overlapped by a licensed irrigation point of use — the location where water is applied. Points of diversion are excluded, matching the Irrigation column. Narrow by municipality first: there are ~2,500 licensed points of use province-wide, so an unscoped run is slow.">
+              <input type="checkbox" id="irrigation-only" />
+              <span>Licensed irrigation only</span>
+            </label>
             </div>
           </details>
 
