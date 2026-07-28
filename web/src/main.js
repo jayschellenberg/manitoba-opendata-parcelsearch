@@ -7368,6 +7368,11 @@ function clearTable() {
 
 function renderTable(rows, { resetPage = true } = {}) {
   $tbody.innerHTML = '';
+  // Reveal the two water-rights columns exactly while a WALLAS overlay
+  // (or one of its search filters) is active — same mode-class pattern
+  // the MASC Risk Area column uses. Re-evaluated on every render so the
+  // columns appear and disappear with the toggles.
+  if ($resultsTable) $resultsTable.classList.toggle('water-mode', wantsWaterRightsEnrichment());
   currentRows = rows;
   rowFeatureMap.clear();
   if (resetPage) currentPage = 0;
@@ -7614,8 +7619,12 @@ function renderTable(rows, { resetPage = true } = {}) {
     const cultPct = Number(ac) > LAND_COVER_MIN_ACRES ? cultFraction(p._landCover) : null;
     const cultHint = (cultPct == null && Number(ac) > LAND_COVER_MIN_ACRES) ? LANDCOVER_EMPTY_HINT : undefined;
     tr.appendChild(td(cultPct != null ? formatPercent(cultPct) : null, 'num', cultHint));
-    tr.appendChild(tileDrainageCell(p));
-    tr.appendChild(irrigationCell(p));
+    const tileCell = tileDrainageCell(p);
+    tileCell.classList.add('water-only');
+    tr.appendChild(tileCell);
+    const irrCell = irrigationCell(p);
+    irrCell.classList.add('water-only');
+    tr.appendChild(irrCell);
     tr.appendChild(td(badge(formatChanges(row), 'badge-amend')));
     tr.appendChild(td(formatDu(p.Dwelling_Units), 'num'));
     // Basic-mode position for Acres — hidden in sales mode (the
@@ -7837,14 +7846,18 @@ function landCoverCell(p, ac) {
 function tileDrainageCell(p) {
   const hit = p?._tileDrainage;
   if (hit === undefined) return td(null, null, TILE_EMPTY_HINT);
-  if (hit === null) return td(null);
-  const parts = [];
+  if (hit === null) return noLicenceCell(NO_TILE_HINT);
+  // Leads with "Yes" so a column of sales comps scans at a glance; the
+  // licence number moves to the tooltip, since it's the coverage share
+  // that matters when comparing parcels and the licence that matters
+  // when chasing one down.
+  const parts = ['Yes'];
   if (Number.isFinite(hit.ratio)) parts.push(formatPercent(hit.ratio));
-  if (hit.licence) parts.push(hit.licence);
-  const cell = td(parts.join(' · ') || 'Yes');
+  const cell = td(parts.join(' · '));
   // The detail fields are populated on well under 10% of records, so the
   // tooltip carries whatever exists rather than a fixed layout.
   const detail = [
+    hit.licence ? `Licence ${hit.licence}` : null,
     hit.client,
     hit.status,
     hit.date ? `Applied ${hit.date}` : null,
@@ -7940,14 +7953,17 @@ async function restampTileDrainage() {
 function irrigationCell(p) {
   const hit = p?._irrigation;
   if (hit === undefined) return td(null, null, IRRIGATION_EMPTY_HINT);
-  if (hit === null) return td(null);
+  if (hit === null) return noLicenceCell(NO_IRRIGATION_HINT);
   const primary = hit.use || hit.diversion;
-  if (!primary) return td(null);
-  const label = hit.use ? 'Use' : 'Diversion';
-  const parts = [label];
+  if (!primary) return noLicenceCell(NO_IRRIGATION_HINT);
+  // "Yes" first for the same scannability reason as the Tile column,
+  // then which side of the licence — a point of use and a point of
+  // diversion are very different facts about a parcel.
+  const parts = ['Yes', hit.use ? 'Use' : 'Diversion'];
   if (Number.isFinite(primary.ratio)) parts.push(formatPercent(primary.ratio));
-  const cell = td(`${parts.join(' ')}${primary.licence ? ` · ${primary.licence}` : ''}`);
+  const cell = td(parts.join(' · '));
   const detail = [
+    primary.licence ? `Licence ${primary.licence}` : null,
     primary.client,
     primary.status,
     // Groundwater vs surface, and the works type, are what decide how
@@ -7964,6 +7980,24 @@ function irrigationCell(p) {
     hit.count > 1 ? `${hit.count} licensed irrigation areas overlap this parcel` : null,
   ].filter(Boolean);
   if (detail.length) cell.title = detail.join('\n');
+  return cell;
+}
+
+/**
+ * Cell for "we checked, and Manitoba has no licensed record here".
+ *
+ * Deliberately "No record" rather than a bare "No". WALLAS holds LICENSED
+ * works only, and its tile-drainage polygons lag their own application
+ * tracker by a year or more, so the absence of a record is genuinely not
+ * the same claim as "this land is not tiled" — and a Yes/No column gets
+ * pasted into reports, where that distinction stops being academic. The
+ * cell says what we actually know; the tooltip says why.
+ */
+function noLicenceCell(hintText) {
+  const cell = document.createElement('td');
+  cell.textContent = 'No record';
+  cell.classList.add('empty', 'empty-hint');
+  cell.title = hintText;
   return cell;
 }
 
@@ -8122,8 +8156,14 @@ function landCoverCsvCells(p, ac) {
  *  way given the source layer's known gaps. */
 function tileDrainageCsvCells(p) {
   const hit = p?._tileDrainage;
-  if (!hit) return ['', '', '', ''];
+  // Three states, and the spreadsheet needs to tell them apart: never
+  // checked (blank), checked with nothing found ("No record"), and a hit
+  // ("Yes"). A bare "No" would assert more than WALLAS can support — see
+  // noLicenceCell.
+  if (hit === undefined) return ['', '', '', '', ''];
+  if (hit === null) return ['No record', '', '', '', ''];
   return [
+    'Yes',
     hit.licence ?? '',
     Number.isFinite(hit.ratio) ? (hit.ratio * 100).toFixed(1) : '',
     hit.status ?? '',
@@ -8137,9 +8177,11 @@ function tileDrainageCsvCells(p) {
  *  grid cell shows so the CSV and the screen never disagree. */
 function irrigationCsvCells(p) {
   const hit = p?._irrigation;
+  if (hit === undefined) return ['', '', '', '', '', ''];
   const side = hit && (hit.use || hit.diversion);
-  if (!side) return ['', '', '', '', ''];
+  if (!side) return ['No record', '', '', '', '', ''];
   return [
+    'Yes',
     side.licence ?? '',
     hit.use ? 'Use' : 'Diversion',
     Number.isFinite(side.ratio) ? (side.ratio * 100).toFixed(1) : '',
@@ -9294,8 +9336,11 @@ function exportCsv(explicitRows) {
     'CLI', 'Soil Type',
     ...soilCsvHeaders(),
     'Land Cover', 'Cult %', 'Pasture %', 'Bush %', 'Wetland %', 'Other %',
-    'Tile Licence', 'Tile %', 'Tile Status', 'Tile Applied',
-    'Irrigation Licence', 'Irrigation Type', 'Irrigation %', 'Irrigation Supply', 'Irrigation Source',
+    // Tiled / Irrigated lead their groups so a sales spreadsheet can
+    // filter or pivot on one column instead of testing whether a licence
+    // string is blank.
+    'Tiled', 'Tile Licence', 'Tile %', 'Tile Status', 'Tile Applied',
+    'Irrigated', 'Irrigation Licence', 'Irrigation Type', 'Irrigation %', 'Irrigation Supply', 'Irrigation Source',
     'Changes',
     'DU', 'Acres', 'SF', 'Acres Src',
     csvAssessHeader(currentRows), 'Asmt Report URL',
@@ -9675,6 +9720,15 @@ const TILE_EMPTY_HINT =
   'Turn on the Tile Drainage overlay (Agricultural section) to check these parcels against Manitoba’s licensed tile-drainage areas.';
 const IRRIGATION_EMPTY_HINT =
   'Turn on the Irrigation Licences overlay (Agricultural section) to check these parcels against Manitoba’s licensed irrigation points of use and diversion.';
+// Shown on a "No record" cell. The point is to stop the cell being read
+// as a confident "this land is not tiled / not irrigated" — see
+// noLicenceCell.
+const NO_TILE_HINT =
+  'No licensed tile-drainage area from Manitoba Water Rights Licensing (WALLAS) overlaps this parcel. '
+  + 'Licensed works only, and the source polygons run to Aug 2024 — this is not proof the land is undrained.';
+const NO_IRRIGATION_HINT =
+  'No licensed irrigation point of use or diversion from Manitoba Water Rights Licensing (WALLAS) overlaps this parcel. '
+  + 'Licensed works only — this is not proof the land is unirrigated.';
 
 function td(value, className, emptyTitle) {
   const el = document.createElement('td');

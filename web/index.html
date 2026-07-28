@@ -1068,8 +1068,8 @@
                  has loaded, by clipping the licensed tile footprints to
                  each parcel (same area-weighted join the zoning and
                  dev-plan columns use). -->
-            <th data-col="tile" title="Licensed tile drainage covering this parcel, as a share of parcel area, with the WALLAS licence number. Turn on the Tile Drainage overlay to populate. Caveat: licensed works only, and the source polygon layer's newest record is Aug 2024 — blank is not proof the land is untiled.">Tile Drainage</th>
-            <th data-col="irrigation" title="Licensed irrigation covering this parcel, from WALLAS. 'Use' means water is applied here (the irrigated-land signal); 'Diversion' means water is taken from here. Shows the share of parcel area and the licence number. Turn on the Irrigation Licences overlay to populate. Licensed works only — blank is not proof the land is unirrigated.">Irrigation</th>
+            <th data-col="tile" class="water-only" title="Is this parcel covered by a licensed tile-drainage area (WALLAS)? Reads 'Yes' plus the share of parcel area covered; hover for the licence number and specs. 'No record' means we checked and found none — licensed works only, and the source polygons run to Aug 2024, so that is NOT proof the land is undrained. Blank means the Tile Drainage overlay (Agricultural section) hasn't been turned on yet.">Tile Drainage</th>
+            <th data-col="irrigation" class="water-only" title="Is this parcel covered by a licensed irrigation footprint (WALLAS)? Reads 'Yes · Use' when water is applied here (the irrigated-land signal) or 'Yes · Diversion' when water is taken from here, plus the share of parcel area; hover for licensee, supply and licence number. 'No record' means we checked and found none — licensed works only, so that is NOT proof the land is unirrigated. Blank means the Irrigation Licences overlay (Agricultural section) hasn't been turned on yet.">Irrigation</th>
             <th data-col="changes">Changes</th>
             <th data-col="du">DU</th>
             <th data-col="acres" class="basic-only">Acres</th>

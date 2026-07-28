@@ -42,6 +42,13 @@ export const DEFAULT_VISIBLE = new Set([
   'subjdist',
   'clicls',
   'soiltype',
+  // Tile Drainage + Irrigation are mode-gated by .water-only, so they
+  // stay invisible until a WALLAS overlay or filter is active. Being in
+  // the default set just means the gear isn't independently suppressing
+  // them — otherwise switching the overlay on would appear to do nothing
+  // to the grid.
+  'tile',
+  'irrigation',
 ]);
 
 // Column presets — `null` value means "everything that the current

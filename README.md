@@ -95,9 +95,23 @@ group alongside soil and land cover — tile drainage and irrigation are
 farmland attributes an ag appraiser reads together, not a category of
 their own.
 
+Their two grid columns read as a scannable yes/no — `Yes · 88%`,
+`Yes · Use · 100%`, or `No record` — with the licence number, licensee,
+status and specs on hover. **`No record` is not `No`**: WALLAS holds
+licensed works only and its tile polygons lag, so the honest claim is
+"Manitoba has no licensed record here", not "this land is undrained".
+Blank means the overlay hasn't been switched on yet, which is a third
+state again. Both columns are `.water-only`, so they reveal themselves
+whenever a WALLAS overlay or search filter is active and hide again when
+it isn't — the same mode-class pattern the MASC Risk Area column uses.
+That applies in **sales-analysis mode and parcel-list imports too**: both
+run the same enrichment, so an imported sales CSV gets tiled/irrigated
+status per comp, and the CSV export leads each group with a filterable
+`Tiled` / `Irrigated` column.
+
 - **Tile Drainage** — licensed tiled-area footprints from Manitoba Water Rights Licensing (WALLAS). ~1,580 polygons province-wide, lazy-loaded and cached for 7 days, labelled with the licence number from zoom 11. Also populates the **Tile Drainage** table column (coverage % of parcel area + licence number, via the same area-weighted clip the Zoning and Dev-Plan columns use) and the four `Tile *` CSV columns. Every query filters `APPLICATION_STATUS` to the four licensed values, so rejected and abandoned applications never render.
 - **Tile Lines & Outlets** — the lateral/header pipe runs and outlet structures inside a licensed tile area. 85,000 lines exist province-wide, so this layer holds the current viewport only: it refetches on map idle and stays empty below zoom 11 (mirroring the upstream service's own scale thresholds).
-- **Irrigation Licences** — licensed water-use points of diversion (blue, where water is taken) and points of use (violet, where it is applied), filtered to `USAGE_CATEGORY = 'Irrigation'`. Popups carry licensee, groundwater-vs-surface source, works type, and aquifer or water-source name. Also populates the **Irrigation** table column — `Use`/`Diversion`, coverage % of parcel area, and the licence number — plus the five `Irrigation *` CSV columns. The column reports the point of **use** when a parcel has both, because water being *applied* to land is the irrigated-land signal being priced; a point of diversion alone only means the intake or well sits there. The tooltip names the other half of the licence when both are present. Sorting ranks every point of use above every point of diversion, coverage ordering within each band.
+- **Irrigation Licences** — licensed water-use points of diversion (blue, where water is taken) and points of use (violet, where it is applied), filtered to `USAGE_CATEGORY = 'Irrigation'`. Popups carry licensee, groundwater-vs-surface source, works type, and aquifer or water-source name. Also populates the **Irrigation** table column — `Use`/`Diversion`, coverage % of parcel area, and the licence number — plus the six `Irrigation *` CSV columns (led by a filterable `Irrigated` yes/no). The column reports the point of **use** when a parcel has both, because water being *applied* to land is the irrigated-land signal being priced; a point of diversion alone only means the intake or well sits there. The tooltip names the other half of the licence when both are present. Sorting ranks every point of use above every point of diversion, coverage ordering within each band.
 - **Sec-Twp Grid** — section-township grid plus river lots. With a municipality selected, it fetches the Manitoba Original Survey Legal Descriptions layer scoped to the muni boundary; without a muni, it uses the prebuilt province-wide static grid.
 - **RM Website** — opens the selected muni's official site in a new tab. Auto-detects from a comprehensive lookup of every published municipal website in the province (`MUNI_WEBSITES` in [main.js](web/src/main.js)). Reads "RM N/A" when the muni's directory entry has no website.
 - **PD Website** — data-driven. After every search, the dominant `PLANNINGDISTRICT` value across the dev-plan enrichment FC picks the active PD; `PD_WEBSITES` looks up its URL. Reads "PD N/A" when the PD has no website on file. Stays disabled until a search resolves the PD.

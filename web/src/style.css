@@ -1882,6 +1882,16 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 #results .masc-only { display: none; }
 #results.masc-mode .masc-only { display: table-cell; }
 
+/* Tile Drainage + Irrigation reveal themselves when a WALLAS overlay (or
+   one of the water-rights search filters) is active, on the same
+   mode-class pattern as .masc-only above. They're in the default column
+   set so the gear doesn't suppress them, which means switching an
+   overlay on is all it takes to see the column — including in sales
+   mode, where the whole point is scanning comps for tiled or irrigated
+   land. Turning the column off in the gear still wins. */
+#results .water-only { display: none; }
+#results.water-mode .water-only { display: table-cell; }
+
 /* Compact inline button shown next to the count text — used for the
    "Load zoning + dev-plan" opt-in when a search returns more parcels
    than the auto-enrichment threshold. Sized to read as part of the
