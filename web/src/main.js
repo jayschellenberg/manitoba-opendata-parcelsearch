@@ -1640,7 +1640,11 @@ mapReady.then(() => {
 // which groups the user closed, and keep an active-layer count visible
 // on a group that's closed — otherwise a layer could be on with no
 // on-screen trace, which is the one way this could mislead.
-const OVERLAY_GROUP_STATE_KEY = 'mbps_overlay_groups_v1';
+// v2: Agricultural now ships collapsed. The key is versioned with the
+// defaults because saved state wins over the markup — without a bump,
+// anyone who had already used the panel would keep the old open/closed
+// set and never see the new default.
+const OVERLAY_GROUP_STATE_KEY = 'mbps_overlay_groups_v2';
 
 function overlayGroupEls() {
   return document.querySelectorAll('#map-layers-section .overlay-group[data-group]');

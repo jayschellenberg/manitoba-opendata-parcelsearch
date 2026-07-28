@@ -2078,6 +2078,27 @@ export function initMap(container, { onFeatureClick } = {}) {
       // fills so road names stay visible in Satellite mode, then the
       // subject-radius and label layers below land on top of them
       // (with their halos / dashed strokes, those still read cleanly).
+      // WALLAS water-rights layers were registered next to the MASC
+      // overlays, which put them underneath the Roll Layer fabric, the
+      // soil/CLI fills and the search-result parcels — everything added
+      // after them. Since a muni-scoped search auto-enables the parcel
+      // fabric, the layer you just switched on could end up buried under
+      // things you didn't. Re-anchor them directly beneath 'parcel-fill'
+      // so they sit above every other overlay but still below the yellow
+      // search highlight and the parcel-number callouts, which have to
+      // stay readable. Moving each one before the same reference layer
+      // preserves the order they're listed in here.
+      for (const id of [
+        'wallas-irrigation-fill', 'wallas-irrigation-line',
+        'wallas-tile-fill', 'wallas-tile-line',
+        'wallas-tile-network-line', 'wallas-tile-outlet-point',
+        'wallas-tile-label',
+      ]) {
+        if (map.getLayer(id) && map.getLayer('parcel-fill')) {
+          map.moveLayer(id, 'parcel-fill');
+        }
+      }
+
       if (map.getLayer('esri-transportation'))       map.moveLayer('esri-transportation');
       if (map.getLayer('esri-reference'))            map.moveLayer('esri-reference');
       if (map.getLayer('nrcan-transportation-labels')) map.moveLayer('nrcan-transportation-labels');

@@ -642,7 +642,9 @@
                records only — rejected and abandoned applications are
                filtered out server-side so the map can't imply a field is
                tiled when the application was refused. See src/wallas.js. -->
-          <details class="overlay-group" data-group="agricultural" open>
+          <!-- Collapsed by default: the largest group (seven toggles, soil
+               through water rights) and the one most sessions never open. -->
+          <details class="overlay-group" data-group="agricultural">
             <summary class="overlay-group-title">Agricultural<span class="overlay-group-count"></span></summary>
             <div class="overlay-group-body">
             <button id="riskarea-toggle" type="button" class="overlay-btn" aria-pressed="false" title="MASC Risk Areas — official crop-insurance risk-area boundaries from Manitoba Maps">
