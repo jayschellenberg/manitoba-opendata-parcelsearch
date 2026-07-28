@@ -7958,22 +7958,21 @@ function irrigationCell(p) {
   if (hit === null) return noLicenceCell(NO_IRRIGATION_HINT);
   const primary = hit.use || hit.diversion;
   if (!primary) return noLicenceCell(NO_IRRIGATION_HINT);
-  // "Yes" first for the same scannability reason as the Tile column,
-  // then which side of the licence — a point of use and a point of
-  // diversion are very different facts about a parcel.
+  // A bare "Yes", deliberately — no percentage and no location.
   //
-  // NO PERCENTAGE HERE, unlike the Tile column. WALLAS's Point of
-  // Use / Point of Diversion polygons are DLS quarter sections, not
-  // watered areas: 92% of them are four-corner quadrilaterals with a
-  // median footprint of 803 × 804 m and 158 acres — a quarter section
-  // is 805 × 805 m and 160 acres. So a coverage share would report how
-  // much of the parcel sits inside the quarter the licence NAMES, which
-  // reads as "how much of this field is irrigated" and is not that. The
-  // legal location is what the geometry genuinely carries, so that is
-  // what gets reported.
-  const parts = ['Yes', hit.use ? 'Use' : 'Diversion'];
-  if (primary.location) parts.push(primary.location);
-  const cell = td(parts.join(' · '));
+  // WALLAS's Point of Use / Point of Diversion polygons are DLS quarter
+  // sections, not watered areas: 92% are four-corner quadrilaterals with
+  // a median footprint of 803 × 804 m and 158 acres, against a quarter
+  // section's 805 × 805 m and 160 acres. Once the quarter contains the
+  // parcel, everything that geometry can tell you is "this parcel falls
+  // under a licensed irrigation location" — so that is the whole answer,
+  // and any number beside it would only invite a false reading. The
+  // location, licence, and supply live in the tooltip and the CSV.
+  //
+  // A point of DIVERSION alone still isn't irrigated land — it means the
+  // intake or well sits here — so it keeps its own label rather than
+  // being flattened into the same "Yes".
+  const cell = td(hit.use ? 'Yes' : 'Diversion');
   const detail = [
     primary.licence ? `Licence ${primary.licence}` : null,
     primary.client,

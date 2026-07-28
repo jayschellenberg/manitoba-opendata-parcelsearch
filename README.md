@@ -95,24 +95,36 @@ group alongside soil and land cover — tile drainage and irrigation are
 farmland attributes an ag appraiser reads together, not a category of
 their own.
 
-Their two grid columns read as a scannable yes/no — `Yes · 88%`,
-`Yes · Use · SW 19 012 06 W1`, or `No record` — with the licence number,
-licensee, status and specs on hover.
+Their two grid columns read as a scannable yes/no — Tile Drainage as
+`Yes · 88%` or `No record`, Irrigation as `Yes`, `Diversion`, or
+`No record` — with the licence number, licensee, status, legal location
+and specs on hover.
 
 **Only Tile Drainage carries a percentage, and that is deliberate.** The
-two layers are different kinds of geometry. Tile polygons are drawn works
-footprints: median 99 acres but spanning 8 to 309, median 10 vertices,
-only 32% simple quadrilaterals — so "88% of this parcel lies inside the
-licensed tiled area" is a real measurement, and it is not usually 100%
-because applications cover the wet ground rather than the whole quarter,
-and one licence often spans several parcels. Irrigation Point of
-Use / Point of Diversion polygons are **DLS quarter sections**: 92% are
-four-corner quadrilaterals with a median footprint of 803 × 804 m and 158
-acres, against a quarter section's 805 × 805 m and 160 acres. A coverage
-share there would report how much of the parcel sits inside the quarter
-the licence *names*, which reads as "how much of this field is irrigated"
-and is not that — so the Irrigation column reports the legal location
-instead, which is what the geometry genuinely carries. **`No record` is not `No`**: WALLAS holds
+two layers are different kinds of geometry:
+
+- **Tile** polygons are drawn works footprints — median 99 acres but
+  spanning 8 to 309, median 10 vertices, only 32% simple quadrilaterals.
+  So "88% of this parcel lies inside the licensed tiled area" is a real
+  measurement. It is not usually 100% because applications cover the wet
+  ground rather than a whole quarter, and one licence often spans several
+  parcels.
+- **Irrigation** Point of Use / Point of Diversion polygons are **DLS
+  quarter sections** — 92% are four-corner quadrilaterals with a median
+  footprint of 803 × 804 m and 158 acres, against a quarter section's
+  805 × 805 m and 160 acres. A coverage share there would describe where
+  survey lines happen to fall relative to the parcel, not where water
+  goes: on RM of Portage la Prairie, 64% of matched parcels sit ≥90%
+  inside their licensed quarter and the rest straddle a boundary (median
+  27 acres), and a parcel 40% inside a licensed quarter could be fully
+  irrigated or not at all. Nothing in the geometry distinguishes those,
+  so the column answers the only question the data supports — is this
+  parcel within a licensed irrigation location, yes or no.
+
+`Diversion` is kept distinct from `Yes` because a point of diversion is
+an intake or well, not irrigated land. The CSV still carries
+`Irrigation Location` (the survey quarter the licence names) for evidence
+work. **`No record` is not `No`**: WALLAS holds
 licensed works only and its tile polygons lag, so the honest claim is
 "Manitoba has no licensed record here", not "this land is undrained".
 Blank means the overlay hasn't been switched on yet, which is a third
