@@ -848,11 +848,11 @@ const SORT_KEYS = {
     if (!hit) return -1;
     return Number.isFinite(hit.ratio) ? hit.ratio : 0;
   },
-  // Irrigation ranks points of USE above points of diversion regardless
-  // of coverage: land that water is applied to is the thing being
-  // priced, while a diversion only means the intake sits here. Offsetting
-  // 'use' by +1 keeps every use ahead of every diversion, with coverage
-  // ordering within each band.
+  // Irrigation ranks points of USE above points of diversion: land that
+  // water is applied to is the thing being priced, while a diversion
+  // only means the intake sits here. Coverage share is a stable tiebreak
+  // within each band and nothing more — it is deliberately not shown,
+  // because the polygon is a survey quarter (see irrigationCell).
   irrigation: (r) => {
     const hit = r.parcel.properties._irrigation;
     if (!hit) return -1;
@@ -4976,6 +4976,8 @@ async function enrichOverlays(parcelFc, inputs, baseMsg, { skipDevPlan = false }
   if (wantsWaterRightsEnrichment()) {
     setCount(`${baseMsg} · Checking water-rights licences…`);
     await Promise.all([stampTileDrainage(rows), stampIrrigation(rows)]);
+    const shed = dropSliverOnlyMatches(rows, parcelFc);
+    if (shed > 0) baseMsg = `${baseMsg} · ${shed} dropped (edge overlap only)`;
   }
 
   // Attach the pre-baked dominant MASC soil rating for each parcel
@@ -7909,8 +7911,8 @@ async function stampTileDrainage(rows) {
   for (const row of rows) {
     const parcel = row.parcel;
     const oid = parcel?.properties?.OBJECTID;
-    const matches = (oid != null) ? join.get(oid) : null;
-    if (!matches || matches.length === 0) {
+    const matches = significantMatches(join.get(oid), oid);
+    if (matches.length === 0) {
       parcel.properties._tileDrainage = null;
       continue;
     }
@@ -7959,8 +7961,18 @@ function irrigationCell(p) {
   // "Yes" first for the same scannability reason as the Tile column,
   // then which side of the licence — a point of use and a point of
   // diversion are very different facts about a parcel.
+  //
+  // NO PERCENTAGE HERE, unlike the Tile column. WALLAS's Point of
+  // Use / Point of Diversion polygons are DLS quarter sections, not
+  // watered areas: 92% of them are four-corner quadrilaterals with a
+  // median footprint of 803 × 804 m and 158 acres — a quarter section
+  // is 805 × 805 m and 160 acres. So a coverage share would report how
+  // much of the parcel sits inside the quarter the licence NAMES, which
+  // reads as "how much of this field is irrigated" and is not that. The
+  // legal location is what the geometry genuinely carries, so that is
+  // what gets reported.
   const parts = ['Yes', hit.use ? 'Use' : 'Diversion'];
-  if (Number.isFinite(primary.ratio)) parts.push(formatPercent(primary.ratio));
+  if (primary.location) parts.push(primary.location);
   const cell = td(parts.join(' · '));
   const detail = [
     primary.licence ? `Licence ${primary.licence}` : null,
@@ -7978,6 +7990,7 @@ function irrigationCell(p) {
       ? `Also a point of diversion${hit.diversion.licence ? ` (${hit.diversion.licence})` : ''}`
       : null,
     hit.count > 1 ? `${hit.count} licensed irrigation areas overlap this parcel` : null,
+    'Location is the survey quarter the licence names, not a mapped watered area.',
   ].filter(Boolean);
   if (detail.length) cell.title = detail.join('\n');
   return cell;
@@ -8056,6 +8069,52 @@ function clipWallasToParcels(fc, parcelFc) {
   return { type: 'FeatureCollection', features: kept };
 }
 
+/**
+ * When a water-rights SEARCH FILTER is on, drop the parcels whose only
+ * overlap turned out to be a sliver. Returns how many were removed.
+ *
+ * The filter resolves server-side through esriSpatialRelIntersects, which
+ * has no notion of "how much" — it counts a shared edge. On a filtered RM
+ * of Rockwood search roughly half the hits were of that kind. The exact
+ * clip that runs a moment later is the only place that can tell, so it
+ * gets the final say and the filter keeps its promise: every row it
+ * returns is a row the column can actually vouch for.
+ *
+ * Mutates `rows` and `parcelFc.features` in place and in step, so the
+ * grid, the map, and the caller's own reference can't drift apart.
+ */
+function dropSliverOnlyMatches(rows, parcelFc) {
+  const tileOn = !!$tileOnly?.checked;
+  const irrOn = !!$irrigationOnly?.checked;
+  if (!tileOn && !irrOn) return 0;
+  const keep = (row) => {
+    const q = row?.parcel?.properties || {};
+    // Both filters ticked means both must still hold, matching how
+    // resolveOverlayFilter ANDs them server-side.
+    if (tileOn && !q._tileDrainage) return false;
+    if (irrOn && !q._irrigation) return false;
+    return true;
+  };
+  const kept = rows.filter(keep);
+  const shed = rows.length - kept.length;
+  if (shed === 0) return 0;
+  rows.length = 0;
+  rows.push(...kept);
+  if (Array.isArray(parcelFc?.features)) {
+    const survivors = new Set(kept.map((r) => r.parcel));
+    parcelFc.features = parcelFc.features.filter((f) => survivors.has(f));
+  }
+  return shed;
+}
+
+/** Drop overlaps too small to mean anything — see MIN_WATER_COVERAGE.
+ *  Returns [] for a missing OBJECTID or an unjoined parcel, so callers
+ *  can treat "no significant match" uniformly. */
+function significantMatches(matches, oid) {
+  if (oid == null || !Array.isArray(matches)) return [];
+  return matches.filter((m) => Number.isFinite(m.ratio) && m.ratio >= MIN_WATER_COVERAGE);
+}
+
 /** Flatten one WALLAS irrigation feature into the fields the cell, the
  *  tooltip, and the CSV all read. */
 function irrigationMatch(match) {
@@ -8070,6 +8129,12 @@ function irrigationMatch(match) {
     // WATER_SOURCE_NAME names the river/lake for surface licences;
     // ACQUIFER_NAME (the service's spelling) fills in for groundwater.
     source: q.WATER_SOURCE_NAME || q.ACQUIFER_NAME || null,
+    // The legal land description the licence names. This is what the
+    // geometry actually IS — see the note on irrigationCell — so it is
+    // reported in place of a coverage percentage.
+    location: q.FULL_LOCATION || null,
+    // Kept for ordering only, never displayed: the polygon is a survey
+    // quarter, so its overlap share is not a fact about irrigation.
     ratio: Number.isFinite(match.ratio) ? match.ratio : null,
   };
 }
@@ -8108,8 +8173,8 @@ async function stampIrrigation(rows) {
   for (const row of rows) {
     const parcel = row.parcel;
     const oid = parcel?.properties?.OBJECTID;
-    const matches = (oid != null) ? join.get(oid) : null;
-    if (!matches || matches.length === 0) {
+    const matches = significantMatches(join.get(oid), oid);
+    if (matches.length === 0) {
       parcel.properties._irrigation = null;
       continue;
     }
@@ -8184,7 +8249,9 @@ function irrigationCsvCells(p) {
     'Yes',
     side.licence ?? '',
     hit.use ? 'Use' : 'Diversion',
-    Number.isFinite(side.ratio) ? (side.ratio * 100).toFixed(1) : '',
+    // The survey quarter the licence names — reported instead of a
+    // coverage share, which would misrepresent what the polygon is.
+    side.location ?? '',
     side.subProgram ?? '',
     side.source ?? '',
   ];
@@ -9340,7 +9407,7 @@ function exportCsv(explicitRows) {
     // filter or pivot on one column instead of testing whether a licence
     // string is blank.
     'Tiled', 'Tile Licence', 'Tile %', 'Tile Status', 'Tile Applied',
-    'Irrigated', 'Irrigation Licence', 'Irrigation Type', 'Irrigation %', 'Irrigation Supply', 'Irrigation Source',
+    'Irrigated', 'Irrigation Licence', 'Irrigation Type', 'Irrigation Location', 'Irrigation Supply', 'Irrigation Source',
     'Changes',
     'DU', 'Acres', 'SF', 'Acres Src',
     csvAssessHeader(currentRows), 'Asmt Report URL',
@@ -9726,6 +9793,20 @@ const IRRIGATION_EMPTY_HINT =
 const NO_TILE_HINT =
   'No licensed tile-drainage area from Manitoba Water Rights Licensing (WALLAS) overlaps this parcel. '
   + 'Licensed works only, and the source polygons run to Aug 2024 — this is not proof the land is undrained.';
+/**
+ * Minimum share of a parcel a licensed footprint must cover to count as
+ * a match at all.
+ *
+ * ArcGIS's esriSpatialRelIntersects treats edge contact as an
+ * intersection, and neighbouring survey polygons share edges by
+ * construction, so a licensed area routinely clips the rim of parcels it
+ * has nothing to do with. Those produced "<1%" cells, which say nothing
+ * true about whether land is drained or watered — roughly half the hits
+ * on a filtered RM of Rockwood search were of that kind. Below this
+ * threshold the match is discarded outright rather than reported.
+ */
+const MIN_WATER_COVERAGE = 0.01;   // 1% of parcel area
+
 const NO_IRRIGATION_HINT =
   'No licensed irrigation point of use or diversion from Manitoba Water Rights Licensing (WALLAS) overlaps this parcel. '
   + 'Licensed works only — this is not proof the land is unirrigated.';

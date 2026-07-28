@@ -96,8 +96,23 @@ farmland attributes an ag appraiser reads together, not a category of
 their own.
 
 Their two grid columns read as a scannable yes/no — `Yes · 88%`,
-`Yes · Use · 100%`, or `No record` — with the licence number, licensee,
-status and specs on hover. **`No record` is not `No`**: WALLAS holds
+`Yes · Use · SW 19 012 06 W1`, or `No record` — with the licence number,
+licensee, status and specs on hover.
+
+**Only Tile Drainage carries a percentage, and that is deliberate.** The
+two layers are different kinds of geometry. Tile polygons are drawn works
+footprints: median 99 acres but spanning 8 to 309, median 10 vertices,
+only 32% simple quadrilaterals — so "88% of this parcel lies inside the
+licensed tiled area" is a real measurement, and it is not usually 100%
+because applications cover the wet ground rather than the whole quarter,
+and one licence often spans several parcels. Irrigation Point of
+Use / Point of Diversion polygons are **DLS quarter sections**: 92% are
+four-corner quadrilaterals with a median footprint of 803 × 804 m and 158
+acres, against a quarter section's 805 × 805 m and 160 acres. A coverage
+share there would report how much of the parcel sits inside the quarter
+the licence *names*, which reads as "how much of this field is irrigated"
+and is not that — so the Irrigation column reports the legal location
+instead, which is what the geometry genuinely carries. **`No record` is not `No`**: WALLAS holds
 licensed works only and its tile polygons lag, so the honest claim is
 "Manitoba has no licensed record here", not "this land is undrained".
 Blank means the overlay hasn't been switched on yet, which is a third
@@ -249,7 +264,7 @@ The Shiny app reads the most recent `RollEntry_YYYYMMDD.gpkg` in the project dir
 - **Tile drainage is licensed works only, and the polygon layer lags.** WALLAS layer 7's newest `APPLICATION_DATE` is 2024-08-29 while its own application tracker (layer 8) runs to the present, so recently-licensed tile may have no polygon yet. Unlicensed and older installations never appear at all. A blank Tile Drainage column is therefore **not** evidence that land is undrained — the CSV export carries this caveat on its face whenever water-rights data is included.
 - The `TILE_*` detail fields (area, depth, lateral spacing, outlet type) are populated on well under 10% of records — 129 of 1,633 tile polygons carry `TILE_AREA`. The overlay popup and column tooltip show whichever fields exist rather than a fixed layout.
 - WALLAS tile polygons describe the area *applied for*. `LEGACY_LABEL` distinguishes "Area of Proposed Tile Drainage Network" from "Area of Tile Drainage Network", but it is frequently null, so treat every footprint as approximate.
-- ArcGIS's `esriSpatialRelIntersects` counts edge contact as an intersection, so the water-rights search filters return parcels a licensed area merely touches. These show as `<1%` in the Tile Drainage / Irrigation columns — sort by that column to push the slivers to one end.
+- ArcGIS's `esriSpatialRelIntersects` counts edge contact as an intersection, and neighbouring survey polygons share edges by construction, so the server-side filters return parcels a licensed area merely grazes. A match covering under 1% of a parcel (`MIN_WATER_COVERAGE` in [main.js](web/src/main.js)) is discarded rather than reported — a clipped rim says nothing true about whether land is drained or watered. The filters then drop those parcels outright once the exact clip has run, and the count line says how many went (e.g. *26 parcels found · 10 dropped (edge overlap only)*), so a filtered result never contains a row the column can't vouch for.
 - Both water-rights filters (**Licensed tile drainage only**, **Licensed irrigation only**) resolve server-side to a parcel OBJECTID set, so the 1,000-row result cap applies to the already-filtered set rather than hiding matches behind it. Ticking both ANDs them. The irrigation filter matches either side of a licence (point of use OR point of diversion), so it returns exactly the parcels the Irrigation column fills in.
 - Footprints are sent to Roll_Entry in batches of 25 as a single multi-ring polygon rather than one request per footprint (`WALLAS_FILTER_BATCH_SIZE` in [arcgis.js](web/src/arcgis.js)). Ring winding is normalized first — Esri reads clockwise rings as outer and counter-clockwise as holes, so a naive merge would punch footprints out of their neighbours. Verified against the live service and unit-tested in [wallasFilterGeometry.test.js](web/test/wallasFilterGeometry.test.js).
 - Expect the water-rights columns to take a while on a large, irrigation-dense result set: the exact area clip is the cost, not the queries. RM of Portage la Prairie with **Licensed irrigation only** (1,000 parcels, every one overlapping a licence) runs ~40 s end to end, of which ~15 s is the clip and ~2 s the spatial queries; a plain muni search there is ~10 s. The clip runs in a Web Worker so the UI stays responsive, and the status line reads "Checking water-rights licences…" while it works. Ordinary searches are a few seconds.
