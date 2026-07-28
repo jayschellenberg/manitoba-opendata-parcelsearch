@@ -16,7 +16,7 @@
  *  the way — up and to the right of the centroid, the long-standing look.
  *  Scaled with the badge (see badgeRadius) so the leader stays visible
  *  instead of disappearing under a disc that outgrew it. */
-export const BASE_OFFSET = [30, -39];
+export const BASE_OFFSET = [22, -29];
 
 const BASE_ANGLE = Math.atan2(BASE_OFFSET[1], BASE_OFFSET[0]);
 const BASE_RADIUS = Math.hypot(BASE_OFFSET[0], BASE_OFFSET[1]);
@@ -28,9 +28,9 @@ const BASE_RADIUS = Math.hypot(BASE_OFFSET[0], BASE_OFFSET[1]);
 // diameter, so most slots on a ring are usable rather than mutually
 // exclusive. RING_COUNT caps how far a leader can stretch: a badge in a
 // hopeless cluster reaches out rather than sitting on its neighbour.
-const RING_STEP = 39;
+const RING_STEP = 29;
 const RING_COUNT = 14;
-const SLOT_ARC = 51;
+const SLOT_ARC = 37;
 const MIN_SLOTS_PER_RING = 8;
 
 /** Longest a leader line can get (px) — the outermost ring's radius. */
@@ -50,7 +50,7 @@ const PAD_KEEP = 2;
 const ANCHOR_DOT_RADIUS = 4.25;
 
 /** Outer radius of the largest badge — the 3-digit case. */
-export const MAX_BADGE_RADIUS = 23.25;
+export const MAX_BADGE_RADIUS = 17.05;
 
 // Grid cell for the collision hash. Must be >= the largest clearance any
 // single test can need, so scanning the 3x3 neighbourhood is guaranteed
@@ -66,9 +66,9 @@ const CELL = Math.ceil(MAX_BADGE_RADIUS * 2 + PAD_TAKE);
  */
 export function badgeRadius(seqStr) {
   const len = String(seqStr ?? '').length;
-  if (len >= 3) return MAX_BADGE_RADIUS;   // 20.25 + 3 stroke
-  if (len === 2) return 20.25;             // 17.25 + 3
-  return 18;                               // 15 + 3
+  if (len >= 3) return MAX_BADGE_RADIUS;   // 14.85 + 2.2 stroke
+  if (len === 2) return 14.85;             // 12.65 + 2.2
+  return 13.2;                             // 11 + 2.2
 }
 
 let CANDIDATES = null;

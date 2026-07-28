@@ -53,15 +53,15 @@ function assertNoOverlap(items, slots) {
   }
 }
 
-// ---- badgeRadius: mirrors the circle-radius step expr + 3px stroke ----
-assert.equal(badgeRadius('7'), 18);
-assert.equal(badgeRadius('42'), 20.25);
-assert.equal(badgeRadius('123'), 23.25);
-assert.equal(badgeRadius('1234'), 23.25);
+// ---- badgeRadius: mirrors the circle-radius step expr + 2.2px stroke --
+assert.equal(badgeRadius('7'), 13.2);
+assert.equal(badgeRadius('42'), 14.85);
+assert.equal(badgeRadius('123'), 17.05);
+assert.equal(badgeRadius('1234'), 17.05);
 // Site # overrides can be non-numeric strings.
-assert.equal(badgeRadius('A'), 18);
-assert.equal(badgeRadius(''), 18);
-assert.equal(badgeRadius(null), 18);
+assert.equal(badgeRadius('A'), 13.2);
+assert.equal(badgeRadius(''), 13.2);
+assert.equal(badgeRadius(null), 13.2);
 
 // ---- a callout is never pushed off its OWN parcel --------------------
 {
@@ -157,22 +157,22 @@ assert.equal(badgeRadius(null), 18);
 
 // ---- hysteresis: a bumped badge holds through the marginal zone ------
 {
-  // Badge discs are r=18, so they need 36 px to touch, 44 to be taken
-  // (pad 8) and 38 to be kept (pad 2).
+  // Badge discs are r=13.2, so they need 26.4 px to touch, 34.4 to be
+  // taken (pad 8) and 28.4 to be kept (pad 2).
   const tight = [item(1, 100, 100), item(2, 120, 100)];
   const bumped = solveCalloutSlots(tight, null);
   const held = bumped.get('2');
   assert.notEqual(held, 0, 'badge 2 should be bumped when 20px apart');
 
-  // Ease apart into the hysteresis band (41 px): slot 0 is free of an
+  // Ease apart into the hysteresis band (31 px): slot 0 is free of an
   // actual overlap but not by the margin required to move in, so the
   // badge should stay exactly where it is rather than snap back.
-  const marginal = [item(1, 100, 100), item(2, 141, 100)];
+  const marginal = [item(1, 100, 100), item(2, 131, 100)];
   const stillHeld = solveCalloutSlots(marginal, bumped);
   assert.equal(stillHeld.get('2'), held, 'badge 2 should hold its slot in the band');
 
   // Past the band, it reclaims the canonical position.
-  const roomy = [item(1, 100, 100), item(2, 150, 100)];
+  const roomy = [item(1, 100, 100), item(2, 140, 100)];
   assert.equal(solveCalloutSlots(roomy, stillHeld).get('2'), 0);
 
   // ...and with no memory of the bumped slot, the same marginal geometry

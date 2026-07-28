@@ -1859,10 +1859,10 @@ export function initMap(container, { onFeatureClick } = {}) {
         source: 'parcel-num-labels',
         layout: { visibility: 'none' },
         paint: {
-          'circle-radius': ['step', ['length', ['to-string', ['get', '_seq']]], 15, 2, 17.25, 3, 20.25],
+          'circle-radius': ['step', ['length', ['to-string', ['get', '_seq']]], 11, 2, 12.65, 3, 14.85],
           'circle-color': PARCEL_NUM_COLOR,
           'circle-stroke-color': '#ffffff',
-          'circle-stroke-width': 3,
+          'circle-stroke-width': 2.2,
         },
       });
       map.addLayer({
@@ -1873,7 +1873,7 @@ export function initMap(container, { onFeatureClick } = {}) {
           visibility: 'none',
           'text-field': ['get', '_seqStr'],
           'text-font': ['Open Sans Semibold'],
-          'text-size': 19.5,
+          'text-size': 14.3,
           // Numbers must always draw — never cull a callout as a
           // colliding label. The leader lines disambiguate any overlap.
           'text-allow-overlap': true,
