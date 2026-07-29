@@ -405,6 +405,16 @@ if (MLI_ORTHO_PMTILES_URL) {
   });
 }
 
+/**
+ * True while the measurement panel is open. MeasureControl owns the
+ * `measuring` class on <body> — the bottom-right map legends already
+ * hide off it in CSS — so reading it back here keeps the hover tooltips
+ * in step with the panel without a second flag to keep synchronised.
+ */
+function isMeasuring() {
+  return document.body.classList.contains('measuring');
+}
+
 // mapbox-gl-draw style spec for the measurement tool. High-contrast orange
 // (#ff4d00) reads cleanly on both the cream CARTO Voyager streets basemap
 // and the dark Esri imagery; white halo around each vertex keeps the
@@ -2187,8 +2197,40 @@ export function initMap(container, { onFeatureClick } = {}) {
       window.__setGroupHover = setGroupHover;
       window.__clearGroupHover = clearGroupHover;
 
+      // Single funnel for the hover cursor, used by every layer that
+      // turns the pointer into a hand. While the measurement panel is
+      // open the request is dropped: mapbox-gl-draw sets its crosshair
+      // through a CSS class on the canvas, and an inline style — which
+      // is what these handlers write — beats a class every time, so a
+      // hover over any clickable overlay would otherwise steal the
+      // crosshair mid-measurement.
+      const setHoverCursor = (cursor) => {
+        map.getCanvas().style.cursor = isMeasuring() ? '' : cursor;
+      };
+
+      // Everything a hover leaves behind, undone in one place: both
+      // tooltips, the pointer cursor and the sale-group highlight. Three
+      // callers need exactly this — an empty hit-test, the pointer
+      // leaving the canvas, and the measurement tool taking over.
+      const clearHover = () => {
+        popup.remove();
+        cliHoverPopup.remove();
+        setHoverCursor('');
+        clearGroupHover();
+      };
+
       map.on('mousemove', (e) => {
         if (!map.isStyleLoaded()) return;
+        // The measurement tool owns the pointer while its panel is open:
+        // every click is placing a vertex, and a tooltip tracking the
+        // cursor sits over the very point being aimed at. Stand the hover
+        // down for the duration — this also clears a popup left showing
+        // when the panel opened, on the first move after it opens, and
+        // keeps the pointer cursor out of draw's crosshair.
+        if (isMeasuring()) {
+          clearHover();
+          return;
+        }
         const visibleLayers = ['parcel-fill'];
         // Subject parcel is on a separate source/layer — include its
         // fill in the hit-test so hovering the subject also pops a
@@ -2206,10 +2248,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         }
         const hits = map.queryRenderedFeatures(e.point, { layers: visibleLayers });
         if (!hits.length) {
-          popup.remove();
-          cliHoverPopup.remove();
-          map.getCanvas().style.cursor = '';
-          clearGroupHover();
+          clearHover();
           return;
         }
         // Light up parcels that are part of a sale group on hover —
@@ -2238,7 +2277,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         if (window.__hoverDebug) console.log('[hover]', window.__lastHover);
         if (oids && oids.length >= 1) setGroupHover(oids);
         else clearGroupHover();
-        map.getCanvas().style.cursor = 'pointer';
+        setHoverCursor('pointer');
         // Parcel info, then a separator line per overlay hit (deduped by layer).
         // Subject takes precedence over parcel-fill — when the subject
         // overlaps a sale parcel (legitimate when the subject is also
@@ -2293,12 +2332,7 @@ export function initMap(container, { onFeatureClick } = {}) {
           cliHoverPopup.remove();
         }
       });
-      map.on('mouseout', () => {
-        popup.remove();
-        cliHoverPopup.remove();
-        map.getCanvas().style.cursor = '';
-        clearGroupHover();
-      });
+      map.on('mouseout', () => clearHover());
 
       // Click on a search-result parcel → open a sticky popup with the
       // parcel detail. The popup includes an explicit action for scrolling
@@ -2351,6 +2385,13 @@ export function initMap(container, { onFeatureClick } = {}) {
       });
       map.on('mousemove', 'muni-parcels-fill', (e) => {
         if (map.getLayoutProperty('muni-parcels-fill', 'visibility') !== 'visible') return;
+        // Stands down with the rest of the hover while measuring — this
+        // popup has its own handler, so the global guard doesn't cover it.
+        if (isMeasuring()) {
+          muniHoverPopup.remove();
+          setHoverCursor('');
+          return;
+        }
         // If a search-result parcel is also under the cursor, defer to its
         // popup (handled by the global mousemove above) and hide ours.
         const overSearchResult = map.queryRenderedFeatures(e.point, { layers: ['parcel-fill'] }).length > 0;
@@ -2366,11 +2407,11 @@ export function initMap(container, { onFeatureClick } = {}) {
           .setLngLat(e.lngLat)
           .setHTML(muniParcelHtml(p, { overlay }))
           .addTo(map);
-        map.getCanvas().style.cursor = 'pointer';
+        setHoverCursor('pointer');
       });
       map.on('mouseleave', 'muni-parcels-fill', () => {
         muniHoverPopup.remove();
-        map.getCanvas().style.cursor = '';
+        setHoverCursor('');
       });
 
       // Click on a muni-parcel polygon → sticky popup (so the user can
@@ -2422,8 +2463,8 @@ export function initMap(container, { onFeatureClick } = {}) {
           if (!p) return;
           histClickPopup.setLngLat(e.lngLat).setHTML(htmlFn(p, historicalYear ?? '')).addTo(map);
         });
-        map.on('mouseenter', layerId, () => { map.getCanvas().style.cursor = 'pointer'; });
-        map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; });
+        map.on('mouseenter', layerId, () => { setHoverCursor('pointer'); });
+        map.on('mouseleave', layerId, () => { setHoverCursor(''); });
       };
       wireHist('historical-parcels-fill', historicalParcelHtml);
       wireHist('historical-zoning-fill',  historicalZoningHtml,  ['historical-parcels-fill']);
@@ -2473,10 +2514,10 @@ export function initMap(container, { onFeatureClick } = {}) {
       });
       map.on('mouseenter', 'contam-circle', () => {
         if (map.getLayoutProperty('contam-circle', 'visibility') === 'visible') {
-          map.getCanvas().style.cursor = 'pointer';
+          setHoverCursor('pointer');
         }
       });
-      map.on('mouseleave', 'contam-circle', () => { map.getCanvas().style.cursor = ''; });
+      map.on('mouseleave', 'contam-circle', () => { setHoverCursor(''); });
 
       // Click an official MASC risk-area polygon → small popup with the
       // Risk_Area number from Manitoba Maps.
@@ -2488,7 +2529,7 @@ export function initMap(container, { onFeatureClick } = {}) {
       });
       map.on('mouseenter', 'masc-risk-area-fill', () => {
         if (map.getLayoutProperty('masc-risk-area-fill', 'visibility') === 'visible') {
-          map.getCanvas().style.cursor = 'pointer';
+          setHoverCursor('pointer');
         }
       });
 
@@ -2507,10 +2548,10 @@ export function initMap(container, { onFeatureClick } = {}) {
         });
         map.on('mouseenter', layerId, () => {
           if (map.getLayoutProperty(layerId, 'visibility') === 'visible') {
-            map.getCanvas().style.cursor = 'pointer';
+            setHoverCursor('pointer');
           }
         });
-        map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; });
+        map.on('mouseleave', layerId, () => { setHoverCursor(''); });
       };
       // Outlets and network lines wire before the area fill so a click on
       // the small features wins over the large polygon beneath them —
@@ -2520,7 +2561,7 @@ export function initMap(container, { onFeatureClick } = {}) {
       wireWallas('wallas-irrigation-fill', irrigationHtml);
       wireWallas('wallas-tile-network-line', tileNetworkHtml);
       wireWallas('wallas-tile-outlet-point', tileOutletHtml);
-      map.on('mouseleave', 'masc-risk-area-fill', () => { map.getCanvas().style.cursor = ''; });
+      map.on('mouseleave', 'masc-risk-area-fill', () => { setHoverCursor(''); });
 
       // Click a CLI polygon → popup listing every class slot the
       // polygon carries (A through F) with class number, percentage,
@@ -2551,10 +2592,10 @@ export function initMap(container, { onFeatureClick } = {}) {
       });
       map.on('mouseenter', 'soil-survey-fill', () => {
         if (map.getLayoutProperty('soil-survey-fill', 'visibility') === 'visible') {
-          map.getCanvas().style.cursor = 'pointer';
+          setHoverCursor('pointer');
         }
       });
-      map.on('mouseleave', 'soil-survey-fill', () => { map.getCanvas().style.cursor = ''; });
+      map.on('mouseleave', 'soil-survey-fill', () => { setHoverCursor(''); });
 
       // Click a traffic-count station → popup with station / highway /
       // location and the AADT (when the Traffic Flow layer has been loaded
@@ -2568,10 +2609,10 @@ export function initMap(container, { onFeatureClick } = {}) {
       });
       map.on('mouseenter', 'traffic-circle', () => {
         if (map.getLayoutProperty('traffic-circle', 'visibility') === 'visible') {
-          map.getCanvas().style.cursor = 'pointer';
+          setHoverCursor('pointer');
         }
       });
-      map.on('mouseleave', 'traffic-circle', () => { map.getCanvas().style.cursor = ''; });
+      map.on('mouseleave', 'traffic-circle', () => { setHoverCursor(''); });
 
       // Click an AADT flow segment → popup with the road / highway, the
       // segment kilometre range, and the AADT estimate for that segment.
@@ -2583,10 +2624,10 @@ export function initMap(container, { onFeatureClick } = {}) {
       });
       map.on('mouseenter', 'traffic-flow-line', () => {
         if (map.getLayoutProperty('traffic-flow-line', 'visibility') === 'visible') {
-          map.getCanvas().style.cursor = 'pointer';
+          setHoverCursor('pointer');
         }
       });
-      map.on('mouseleave', 'traffic-flow-line', () => { map.getCanvas().style.cursor = ''; });
+      map.on('mouseleave', 'traffic-flow-line', () => { setHoverCursor(''); });
 
       const highwaysPopup = new maplibregl.Popup({ closeButton: true });
       map.on('click', 'mb-highways-line', (e) => {
@@ -2596,10 +2637,10 @@ export function initMap(container, { onFeatureClick } = {}) {
       });
       map.on('mouseenter', 'mb-highways-line', () => {
         if (map.getLayoutProperty('mb-highways-line', 'visibility') === 'visible') {
-          map.getCanvas().style.cursor = 'pointer';
+          setHoverCursor('pointer');
         }
       });
-      map.on('mouseleave', 'mb-highways-line', () => { map.getCanvas().style.cursor = ''; });
+      map.on('mouseleave', 'mb-highways-line', () => { setHoverCursor(''); });
 
       } catch (err) {
         // Setup ran before the style was ready — back off and let
@@ -4953,6 +4994,9 @@ class BasemapMenuControl {
  *     vertex, double-click finishes the line.
  *   - Click "Area" → same flow but draws a closed polygon.
  *   - Switching modes or clicking "Clear" wipes the current shape.
+ *   - Hover tooltips stand down for as long as the panel is open (see
+ *     isMeasuring) — they otherwise track the cursor straight over the
+ *     point being clicked, and their pointer cursor fights the crosshair.
  *   - Closing the panel deletes the in-progress shape and returns the map
  *     to its normal click handlers.
  *
@@ -5029,6 +5073,10 @@ class MeasureControl {
       // collide with the Distance/Area readout that drops down from
       // the Measure button. Adding `body.measuring` lets a CSS rule
       // hide every `.map-legend` until the user closes the panel.
+      //
+      // The same class is the signal the hover tooltips read through
+      // isMeasuring() to suppress themselves — keep the two `classList`
+      // calls here and in _close() paired, or the tooltips stay off.
       document.body.classList.add('measuring');
     } else {
       this._close();
