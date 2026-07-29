@@ -1875,16 +1875,13 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 #results .devplan-only { display: none; }
 #results.devplan-mode .devplan-only { display: table-cell; }
 
-/* Risk Area is revealed only while the MASC Rating overlay is active.
-   (MASC Rating itself is now an ordinary default-visible column, like
-   Soil Type — the per-parcel rating loads with the search regardless of
-   the map overlay, so it is no longer .masc-only.) */
-#results .masc-only { display: none; }
-#results.masc-mode .masc-only { display: table-cell; }
+/* MASC Rating and Risk Area are both ordinary gear-governed columns —
+   each is stamped per-parcel during search/import enrichment regardless
+   of the map overlay, so there is no .masc-only mode class any more. */
 
 /* Tile Drainage + Irrigation reveal themselves when a WALLAS overlay (or
    one of the water-rights search filters) is active, on the same
-   mode-class pattern as .masc-only above. They're in the default column
+   mode-class pattern the old .masc-only used. They're in the default column
    set so the gear doesn't suppress them, which means switching an
    overlay on is all it takes to see the column — including in sales
    mode, where the whole point is scanning comps for tiled or irrigated
@@ -2821,7 +2818,7 @@ body:not(.has-max-km) #results td.subj-col {
    .col-hidden on a th and every td in that column; the rule below
    collapses them out of the table without affecting the rest of
    the layout. Existing .sales-only / .basic-only / .devplan-only /
-   .masc-only / .subj-col rules continue to handle mode-based
+   .water-only / .subj-col rules continue to handle mode-based
    suppression independently. */
 #results th.col-hidden,
 #results td.col-hidden {

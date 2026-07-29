@@ -15,6 +15,7 @@ const {
   applyParcelImportDefaults,
   applyPreset,
   isColumnVisible,
+  onPresetApply,
   setColumnVisible,
 } = await import('../src/lib/columns.js');
 
@@ -33,5 +34,32 @@ applyPreset('Full detail');
 applyParcelImportDefaults();
 assert.equal(isColumnVisible('soil'), true, 'Full detail should retain MASC Rating');
 assert.equal(isColumnVisible('zbl'), true, 'Full detail should remain complete');
+
+// Risk Area is stamped by ordinary enrichment (no overlay needed), so the
+// ag view is expected to carry it.
+assert.ok(PRESETS.Agricultural.has('riskarea'), 'Agricultural preset should include Risk Area');
+
+// applyPreset notifies preset listeners — that hook is how main.js knows to
+// run the soil-survey join behind the Agricultural preset's CLI / Soil Type
+// columns, which no search stamps on its own.
+const seenPresets = [];
+const stopListening = onPresetApply((name) => seenPresets.push(name));
+// The throwing listener is deliberate — silence the warning it logs so the
+// suite output stays clean.
+const realWarn = console.warn;
+console.warn = () => {};
+const stopThrower = onPresetApply(() => { throw new Error('listener blew up'); });
+applyPreset('Agricultural');
+console.warn = realWarn;
+stopThrower();
+assert.deepEqual(seenPresets, ['Agricultural'], 'applyPreset should notify listeners by name');
+assert.equal(isColumnVisible('clicls'), true, 'a throwing listener must not abort the preset');
+
+applyPreset('Nope, not a preset');
+assert.deepEqual(seenPresets, ['Agricultural'], 'an unknown preset should notify nobody');
+
+stopListening();
+applyPreset('Sales analysis');
+assert.deepEqual(seenPresets, ['Agricultural'], 'unsubscribing should stop notifications');
 
 console.log('column preset tests passed');

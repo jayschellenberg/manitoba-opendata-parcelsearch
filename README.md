@@ -145,7 +145,7 @@ licensed works only and its tile polygons lag, so the honest claim is
 Blank means the overlay hasn't been switched on yet, which is a third
 state again. Both columns are `.water-only`, so they reveal themselves
 whenever a WALLAS overlay or search filter is active and hide again when
-it isn't — the same mode-class pattern the MASC Risk Area column uses.
+it isn't — the same mode-class pattern the Dev-Plan columns use.
 That applies in **sales-analysis mode and parcel-list imports too**: both
 run the same enrichment, so an imported sales CSV gets tiled/irrigated
 status per comp, and the CSV export leads each group with a filterable

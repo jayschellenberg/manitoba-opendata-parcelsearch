@@ -7,7 +7,7 @@
  * carry their own data-col attribute).
  *
  * The mode classes (.sales-only, .basic-only, .devplan-only,
- * .masc-only, .subj-col) keep doing their job — they hide
+ * .water-only, .subj-col) keep doing their job — they hide
  * columns that aren't relevant to the current mode. .col-hidden
  * stacks on top: a column needs both to clear (mode-class OR
  * the column not being mode-suppressed) AND to be in the user's
@@ -65,10 +65,15 @@ export const PRESETS = {
   ]),
   // Farmland-oriented view. Core identity + the land-cover pair, then
   // soil/capability, sales comps, and zoning/legal context (Jason's
-  // chosen groups). Mode-gated columns (sales-only, masc-only,
-  // devplan-only) still only render once their mode/overlay is active —
+  // chosen groups). Mode-gated columns (sales-only, devplan-only,
+  // water-only) still only render once their mode/overlay is active —
   // same as the Sales analysis preset — so this set is the superset of
   // what an ag appraiser reaches for, surfaced as each context turns on.
+  //
+  // Picking this preset also LOADS the soil-survey join that fills CLI +
+  // Soil Type — see onPresetApply below and ensureAgriculturalGridData in
+  // main.js. MASC Rating, Risk Area and Land Cover need no such trigger:
+  // they're stamped during every search/import enrichment.
   'Agricultural': new Set([
     'favorite', 'roll', 'address', 'acres', 'landcover', 'cultpct',
     'soil', 'clicls', 'soiltype', 'riskarea', 'tile', 'irrigation',
@@ -80,6 +85,7 @@ export const PRESETS = {
 
 let visible = new Set(DEFAULT_VISIBLE);
 const listeners = new Set();
+const presetListeners = new Set();
 
 function readStored() {
   try {
@@ -100,6 +106,12 @@ function writeStored() {
 function emit() {
   for (const fn of listeners) {
     try { fn(visible); } catch (err) { console.warn('columns listener failed', err); }
+  }
+}
+
+function emitPreset(name) {
+  for (const fn of presetListeners) {
+    try { fn(name); } catch (err) { console.warn('preset listener failed', err); }
   }
 }
 
@@ -162,6 +174,23 @@ export function applyPreset(name) {
   writeStored();
   applyVisibility();
   emit();
+  emitPreset(name);
+}
+
+/**
+ * Subscribe to preset application. Fires with the preset's name AFTER the
+ * visible-set has been swapped and applied to the DOM.
+ *
+ * Exists because a preset is a statement of intent, not just a display
+ * choice: "Agricultural" means the user wants the ag data, and some of
+ * those columns (CLI, Soil Type) only populate once the soil-survey join
+ * has run. main.js hangs that load off this hook so picking the preset
+ * fills the columns instead of revealing empty ones. Kept as a listener
+ * rather than an import so this module stays free of app/network deps.
+ */
+export function onPresetApply(fn) {
+  if (typeof fn === 'function') presetListeners.add(fn);
+  return () => presetListeners.delete(fn);
 }
 
 /**

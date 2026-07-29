@@ -1057,19 +1057,22 @@
                  sales-only Sale Date / Sale Price columns. -->
             <th data-col="dev1"    class="devplan-only">Dev-Plan Designation</th>
             <th data-col="dpbylaw" class="devplan-only">DP By-law</th>
-            <!-- Soil + Risk Area columns are revealed when #results
-                 carries the .masc-mode class (toggled by main.js
-                 whenever the MASC Rating overlay is on). -->
+            <!-- MASC Rating + Risk Area are both stamped during ordinary
+                 search/import enrichment, whether or not the MASC map
+                 overlay is on, so neither is gated on it — they follow
+                 the Columns gear like any other column. -->
             <th data-col="soil"     title="Dominant MASC soil-rating (A best → J worst), area-weighted across the parcel. Built per-muni from MASC's quarter-section ratings.">MASC Rating</th>
-            <th data-col="riskarea" class="masc-only" title="Official MASC Risk_Area polygon from Manitoba Maps / Open Canada. Drives crop-insurance premium tiers.">Risk Area</th>
+            <th data-col="riskarea" title="Official MASC Risk_Area polygon from Manitoba Maps / Open Canada. Drives crop-insurance premium tiers.">Risk Area</th>
             <!-- CLI capability + Soil Type for the dominant (highest
-                 area-share) soil on each parcel. Populated whenever the
-                 Soil Survey or Soil Productivity (CLI) overlay has
-                 loaded for the muni; left blank otherwise. Both columns
-                 read directly off the parcel's stamped _soilComposition
-                 array — see stampSoilCompositionOnParcels in main.js. -->
-            <th data-col="clicls" title="CLI capability class (with subclass) of the parcel's dominant soil, by area. Example: 2W = Class 2 with excess-water limitation. Populates when the Soil Survey or Soil Productivity (CLI) overlay has loaded.">CLI</th>
-            <th data-col="soiltype" title="Soil association name of the parcel's dominant soil, by area within the parcel polygon. Example: Red River, Osborne. Populates when the Soil Survey or Soil Productivity (CLI) overlay has loaded.">Soil Type</th>
+                 area-share) soil on each parcel. Populated once the
+                 soil-survey join has run for the muni — either the Soil
+                 Productivity/Soil Name overlay, or the Agricultural
+                 column preset, which loads the same data without
+                 painting the map. Both columns read directly off the
+                 parcel's stamped _soilComposition array — see
+                 stampSoilCompositionOnParcels in main.js. -->
+            <th data-col="clicls" title="CLI capability class (with subclass) of the parcel's dominant soil, by area. Example: 2W = Class 2 with excess-water limitation. Populates with the Agricultural column preset or the Soil Productivity/Soil Name overlay.">CLI</th>
+            <th data-col="soiltype" title="Soil association name of the parcel's dominant soil, by area within the parcel polygon. Example: Red River, Osborne. Populates with the Agricultural column preset or the Soil Productivity/Soil Name overlay.">Soil Type</th>
             <!-- Land Cover + Cult % — farmland land-cover summary from the
                  2020 Land Cover raster (via the mao-assembly pipeline),
                  pre-baked per-muni by r/build_landcover.R. Only populated

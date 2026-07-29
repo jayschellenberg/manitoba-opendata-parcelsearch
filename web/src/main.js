@@ -29,6 +29,7 @@ import {
   applyVisibility as applyColumnVisibility,
   setColumnVisible,
   applyParcelImportDefaults,
+  onPresetApply,
 } from './lib/columns.js';
 
 // Phase 6 URL state — serialises a small set of form values into the
@@ -697,6 +698,13 @@ let salesExportEnrichmentComplete = true;
 // Website, Roll Layer), but the soil overlays cover the full upload.
 let csvMatchedMunis = null;
 
+// Latched by the Agricultural column preset — see wantsTileData(). It
+// lives up here with the other module state rather than beside its
+// readers because renderTable() reads it (via wantsWaterRightsEnrichment)
+// on paths that can run during module init, and a `let` declared further
+// down would be in its temporal dead zone at that point.
+let waterRightsWantedForGrid = false;
+
 // Imported parcel list. Populated by the "Import list…" modal once
 // the resolver returns parcelKeys; runSearch reads this in front of
 // the legal-search branch and feeds the keys straight into
@@ -1239,6 +1247,24 @@ initInfoIcons();
 // Phase 5 column-visibility gear + presets. Reads stored visibility
 // from localStorage; falls back to the spec's default-visible set.
 initColumns();
+
+// Picking the Agricultural preset is a request for the ag DATA, not just
+// the ag columns: CLI, Soil Type, Tile Drainage and Irrigation all need a
+// load an ordinary search skips, so kick it off here rather than revealing
+// four empty columns. Any other preset drops the water-rights latch again
+// so later searches stop paying the WALLAS fetch — that's its off-switch.
+// No-op when there's nothing to load or nothing in scope.
+onPresetApply((name) => {
+  const wasLatched = waterRightsWantedForGrid;
+  waterRightsWantedForGrid = name === 'Agricultural';
+  if (name === 'Agricultural') {
+    ensureAgriculturalGridData();
+  } else if (wasLatched && currentRows.length > 0) {
+    // Re-render so the .water-mode class drops with the latch. The data
+    // stays stamped on the rows, so re-picking Agricultural is instant.
+    renderTable(currentRows, { resetPage: false });
+  }
+});
 
 // Phase 6 URL state — apply on boot, then re-encode the current
 // form values on each input change so a copied URL reproduces the
@@ -5187,16 +5213,19 @@ function refreshCliLoadingIndicator(busyLabel = 'Loading…') {
  * when available (browsers' idle slot — runs only when the main
  * thread is free); falls back to setTimeout(0) otherwise.
  *
- * Driven off the CLI overlay's loaded FC — composition stamps when
- * the CLI overlay is on (either capability OR identity mode) and the
- * fetched soil polygons are available.
+ * Driven off the loaded soil FC, not the overlay's paint mode: the
+ * polygons arrive either from the CLI overlay or from the Agricultural
+ * column preset, and once we hold them for the current scope every
+ * subsequent search should stamp too — otherwise the CLI / Soil Type
+ * columns would go blank again on the next search for the same muni.
+ * `lastCliFc` is cleared on a muni change, so this can't stamp a parcel
+ * against some other municipality's soils.
  *
  * `repush` defaults to re-pushing through showResults (the search-
  * results parcel source); callers driving a different source (e.g.
  * the Roll Layer's muni-parcels source) pass their own re-push fn.
  */
 function scheduleSoilCompositionStamp(parcelFc, { repush } = {}) {
-  if (cliMode === null) return;
   if (!lastCliFc?.features?.length) return;
   const defaultRepush = () => mapReady.then(() => showResults(map, parcelFc, { fit: false }));
   const doRepush = repush || defaultRepush;
@@ -6199,9 +6228,6 @@ function resetMascAndGridToggles() {
         setMascVisible(map, false);
         if ($mascLegend) $mascLegend.hidden = true;
       });
-      // Drop the Soil + Risk Area columns when MASC turns off on
-      // a muni change.
-      if ($resultsTable) $resultsTable.classList.remove('masc-mode');
     }
   }
   // CLI: same off-on-muni-change logic as MASC.
@@ -6298,7 +6324,6 @@ async function toggleMascOverlay() {
     setOverlayBtnLabel($mascToggle, 'MASC rating');
     setMascVisible(map, false);
     if ($mascLegend) $mascLegend.hidden = true;
-    if ($resultsTable) $resultsTable.classList.remove('masc-mode');
     return;
   }
 
@@ -6355,8 +6380,8 @@ async function toggleMascOverlay() {
   setOverlayBtnLabel($mascToggle, 'MASC rating');
   setMascVisible(map, true);
   if ($mascLegend) $mascLegend.hidden = false;
-  // Reveal the Soil + Risk Area columns alongside the overlay.
-  if ($resultsTable) $resultsTable.classList.add('masc-mode');
+  // No column plumbing here: MASC Rating and Risk Area are both stamped
+  // during enrichment, so the gear alone decides whether they show.
 }
 
 /**
@@ -6490,6 +6515,162 @@ function cliButtonLabelFor(mode) {
 }
 
 /**
+ * Fetch the soil-survey polygons that back BOTH the CLI overlay's paint
+ * and the grid's CLI / Soil Type columns, for every municipality
+ * currently in scope, and push them onto the map's CLI source.
+ *
+ * Returns the FC, or null when the load can't proceed — a missing muni
+ * boundary, no polygons in scope, or a network failure. `onProblem`
+ * receives a user-facing sentence in that case so each caller decides
+ * where to put it (the toggle reverts its button; the preset just
+ * annotates the count line).
+ *
+ * Cached against `cliLoadedFor`, so whichever entry point runs first
+ * pays the fetch and the other is instant. It does NOT make the layer
+ * visible — that's the toggle's business.
+ */
+async function loadSoilSurveyFcForScope(munis, { onProblem } = {}) {
+  if (!munis?.length) return null;
+  const loadKey = munis.join('|');
+  if (cliLoadedFor === loadKey && lastCliFc?.features?.length) return lastCliFc;
+  const report = (msg) => { if (onProblem) onProblem(msg); };
+
+  const muniBoundaries = munis.map((m) => ({
+    muni: m,
+    feat: muniBoundariesFc?.features?.find(
+      (f) => f.properties?.MUNI_LIST_NAME_WITH_TYPE === m,
+    ) || null,
+  }));
+  const missing = muniBoundaries.filter((mb) => !mb.feat).map((mb) => mb.muni);
+  if (missing.length > 0) {
+    report(`Couldn't locate boundary for ${missing.join(', ')}; can't load CLI.`);
+    return null;
+  }
+
+  let features;
+  try {
+    const fcs = await Promise.all(
+      muniBoundaries.map((mb) => fetchCliAgrForMuni(mb.muni, mb.feat)),
+    );
+    features = fcs.flatMap((fc) => fc?.features || []);
+  } catch (err) {
+    console.warn('CLI fetch failed', err);
+    report(`Failed to load CLI soil capability: ${err.message}`);
+    return null;
+  }
+  if (features.length === 0) {
+    const label = munis.length === 1
+      ? munis[0]
+      : `${munis.length} matched munis (${munis.join(', ')})`;
+    report(`No CLI soil-capability polygons in ${label}.`);
+    return null;
+  }
+
+  const cliFc = { type: 'FeatureCollection', features };
+  await mapReady;
+  setCliAgrData(map, cliFc);
+  lastCliFc = cliFc;
+  cliLoadedFor = loadKey;
+  return cliFc;
+}
+
+/**
+ * Run the parcel × soil-polygon join over `rows`, then re-push the map
+ * source and re-render the grid so the CLI / Soil Type columns (and the
+ * parcel popup) read the freshly-stamped `_soilComposition`.
+ *
+ * Awaits the join before re-rendering — the join runs in a worker, so
+ * refreshing the table synchronously after kicking it off would re-render
+ * the same empty cells and leave the columns looking broken until the
+ * user happened to sort or page.
+ *
+ * Stamps the FULL row set (csvFullRows when a sales CSV is loaded) rather
+ * than what's on screen, so clearing a filter later doesn't reveal blank
+ * rows — same reasoning as backfillDevPlanColumns.
+ */
+async function stampSoilCompositionForRows(rows) {
+  if (!rows?.length || !lastCliFc?.features?.length) return;
+  const parcelFc = { type: 'FeatureCollection', features: rows.map((r) => r.parcel) };
+  await stampSoilCompositionOnParcels(parcelFc, lastCliFc);
+  if (currentRows.length > 0) {
+    // Only the visible rows go back to the map source; the stamp above
+    // covered the superset and both share the same parcel objects.
+    const visibleFc = { type: 'FeatureCollection', features: currentRows.map((r) => r.parcel) };
+    setMapData(visibleFc, lastZoningFc || EMPTY_FC, lastDevPlanFc || EMPTY_FC, { fit: false });
+  }
+  refreshResultsTableAfterCompositionStamp();
+}
+
+/**
+ * Load whatever the Agricultural column preset shows but an ordinary
+ * search doesn't already stamp. Two gaps, both between "the preset
+ * revealed the columns" and "the columns have data in them":
+ *
+ *   1. CLI + Soil Type — need the soil-survey fetch + parcel join.
+ *   2. Tile Drainage + Irrigation — need the WALLAS fetch + clip, which
+ *      an ordinary search skips because it's 1.3 MB nobody asked for.
+ *
+ * MASC Rating, Risk Area and Land Cover need nothing here: all three are
+ * stamped by normal enrichment.
+ *
+ * Deliberately does NOT paint the map: picking a column preset is a
+ * request about the grid, not the map. The soil polygons still land in
+ * the CLI source and cache under `cliLoadedFor`, and the WALLAS
+ * collections are IDB-cached for a week, so later clicks on either
+ * overlay render with no second fetch.
+ *
+ * The two halves are independent — a muni with no CLI coverage still
+ * gets its water-rights columns, and vice versa.
+ */
+async function ensureAgriculturalGridData() {
+  const rows = csvFullRows || currentRows;
+  if (!rows?.length) return;
+  const stamped = (key) => rows.every((r) => r?.parcel?.properties?.[key] !== undefined);
+  // A stamped value of null still counts as done — it means "checked,
+  // nothing here", which is exactly what the cells render.
+  const munis = scopedOverlayMunis();
+  // Soil needs a muni or import scope to fetch against; the overlay
+  // button is disabled in that state too.
+  const needsSoil = munis.length > 0 && !stamped('_soilComposition');
+  const needsWater = !stamped('_tileDrainage') || !stamped('_irrigation');
+  if (!needsSoil && !needsWater) return;
+
+  // Restore whatever the count line said rather than assuming the sales
+  // base message — this runs after plain searches and list imports too.
+  const priorCount = $count.textContent;
+  const withNote = (note) => setCount(`${priorCount || ''} · ${note}`.trim().replace(/^· /, ''));
+  beginCliOp('Loading ag data…');
+  try {
+    if (needsSoil) {
+      withNote('Loading soil survey…');
+      const soilFc = await loadSoilSurveyFcForScope(munis, { onProblem: withNote });
+      // A soil problem is already on the count line and mustn't abort the
+      // water-rights half — the two datasets are unrelated.
+      if (soilFc) {
+        withNote('Matching soils to parcels…');
+        await stampSoilCompositionForRows(rows);
+      }
+    }
+    if (needsWater) {
+      withNote('Checking water-rights licences…');
+      // Both self-gate on waterRightsWantedForGrid, latched by the caller
+      // before we got here. Concurrent: independent fetches + joins.
+      await Promise.all([stampTileDrainage(rows), stampIrrigation(rows)]);
+      // No dropSliverOnlyMatches here — that belongs to the tile-only /
+      // irrigation-only search FILTERS. A column preset reveals data; it
+      // must never silently remove comps from the grid.
+      renderTable(currentRows, { resetPage: false });
+    }
+    setCount(priorCount);
+  } catch (err) {
+    console.warn('Agricultural preset data load failed', err);
+    withNote(`Agricultural data failed to load: ${err.message}`);
+  } finally {
+    endCliOp();
+  }
+}
+
+/**
  * Tri-state cycle:
  *   off  →  capability  →  identity  →  off  →  ...
  *
@@ -6524,64 +6705,33 @@ async function toggleCliOverlay() {
 
   // First click after off (or after muni change) — make sure data is
   // loaded. Subsequent capability→identity transition reuses cached
-  // FC, so this branch only runs once per muni.
+  // FC, so this branch only runs once per muni. The Agricultural column
+  // preset warms the same cache, so this is often already a no-op.
   if (cliLoadedFor !== loadKey) {
     $cliToggle.disabled = true;
     setOverlayBtnLabel($cliToggle, 'Loading…');
-    try {
-      const muniBoundaries = munis.map((m) => ({
-        muni: m,
-        feat: muniBoundariesFc?.features?.find(
-          (f) => f.properties?.MUNI_LIST_NAME_WITH_TYPE === m,
-        ) || null,
-      }));
-      const missing = muniBoundaries.filter((mb) => !mb.feat).map((mb) => mb.muni);
-      if (missing.length > 0) {
-        setCliMode(null);
-        setOverlayPressed($cliToggle, false);
-        $cliToggle.disabled = false;
-        setOverlayBtnLabel($cliToggle, cliButtonLabelFor(null));
-        setCount(`Couldn't locate boundary for ${missing.join(', ')}; can't load CLI.`);
-        return;
-      }
-      const fcs = await Promise.all(
-        muniBoundaries.map((mb) => fetchCliAgrForMuni(mb.muni, mb.feat)),
-      );
-      const features = fcs.flatMap((fc) => fc?.features || []);
-      if (features.length === 0) {
-        setCliMode(null);
-        setOverlayPressed($cliToggle, false);
-        $cliToggle.disabled = false;
-        setOverlayBtnLabel($cliToggle, cliButtonLabelFor(null));
-        const label = munis.length === 1 ? munis[0] : `${munis.length} matched munis (${munis.join(', ')})`;
-        setCount(`No CLI soil-capability polygons in ${label}.`);
-        return;
-      }
-      const cliFc = { type: 'FeatureCollection', features };
-      setCliAgrData(map, cliFc);
-      lastCliFc = cliFc;
-      if (currentRows.length > 0) {
-        const parcelFc = { type: 'FeatureCollection', features: currentRows.map((r) => r.parcel) };
-        stampSoilCompositionOnParcels(parcelFc, cliFc);
-        setMapData(parcelFc, lastZoningFc || EMPTY_FC, lastDevPlanFc || EMPTY_FC, { fit: false });
-        // Re-render the table so CLI / Soil Type columns populate
-        // from the freshly-stamped composition. Without this, the
-        // columns stay visually empty (showing their initial blank
-        // state) until the user runs another search, even though
-        // the data is on each parcel feature.
-        refreshResultsTableAfterCompositionStamp();
-      }
-      cliLoadedFor = loadKey;
-    } catch (err) {
-      console.warn('CLI fetch failed', err);
+    let problem = null;
+    const cliFc = await loadSoilSurveyFcForScope(munis, {
+      onProblem: (msg) => { problem = msg; },
+    });
+    $cliToggle.disabled = false;
+    if (!cliFc) {
       setCliMode(null);
       setOverlayPressed($cliToggle, false);
-      $cliToggle.disabled = false;
       setOverlayBtnLabel($cliToggle, cliButtonLabelFor(null));
-      setCount(`Failed to load CLI soil capability: ${err.message}`);
+      if (problem) setCount(problem);
       return;
     }
-    $cliToggle.disabled = false;
+    const rows = csvFullRows || currentRows;
+    if (rows.length > 0) {
+      // Composition join stays off the paint path — the helper awaits the
+      // worker, then re-pushes the source and re-renders the grid so the
+      // CLI / Soil Type columns fill in when the join actually lands.
+      beginCliOp('Composing…');
+      stampSoilCompositionForRows(rows)
+        .catch((err) => console.warn('soil composition stamp failed', err))
+        .finally(endCliOp);
+    }
   }
 
   // Apply the new mode. Paint + legend + label expression all swap
@@ -7609,19 +7759,16 @@ function renderTable(rows, { resetPage = true } = {}) {
     const devBylawCell = td(d1.DP_BYLAW);
     devBylawCell.classList.add('devplan-only');
     tr.appendChild(devBylawCell);
-    // MASC Rating is a default-visible column like Soil Type — the
-    // per-parcel rating is stamped during enrichment whether or not the
-    // MASC map overlay is on, so there's no reason to hide it behind the
-    // overlay toggle. Risk Area stays .masc-only: it has no per-parcel
-    // grid value of its own and only reads alongside the overlay.
+    // MASC Rating and Risk Area are both stamped during enrichment
+    // whether or not the MASC map overlay is on, so neither hides behind
+    // the overlay toggle — the Columns gear governs them like any other
+    // column.
     tr.appendChild(soilCell(p));
-    const riskAreaCell = td(p._soilRiskArea != null ? String(p._soilRiskArea) : null, 'num');
-    riskAreaCell.classList.add('masc-only');
-    tr.appendChild(riskAreaCell);
+    tr.appendChild(td(p._soilRiskArea != null ? String(p._soilRiskArea) : null, 'num'));
     // CLI capability + Soil Type for the dominant (highest area-share)
     // soil — read directly from the stamped composition array. Empty
-    // when no overlay has loaded for this muni yet; the empty-cell hint
-    // tells the user to turn the Soil Productivity overlay on.
+    // until the soil-survey join has run for this muni; the empty-cell
+    // hint tells the user how to load it.
     tr.appendChild(td(dominantCliLabel(p), null, CLI_EMPTY_HINT));
     tr.appendChild(td(dominantSoilTypeLabel(p), null, SOIL_EMPTY_HINT));
     // Land Cover (dominant farmland bucket + share) and Cult % — both
@@ -7893,17 +8040,16 @@ function tileDrainageCell(p) {
  * percentage in the Tile column means what it means everywhere else:
  * share of THIS parcel's area, not of the tiled area.
  *
- * Only runs when the data is already warranted — the overlay is on, or
- * the tile-only filter is checked. Otherwise an ordinary search would
- * pull 1.3 MB nobody asked for. fetchTileDrainageAreas is IDB-cached for
- * a week, so repeat calls inside a session are local.
+ * Only runs when the data is already warranted — see wantsTileData().
+ * Otherwise an ordinary search would pull 1.3 MB nobody asked for.
+ * fetchTileDrainageAreas is IDB-cached for a week, so repeat calls
+ * inside a session are local.
  *
  * `undefined` (never touched) and `null` (checked, nothing found) are
  * deliberately different — see tileDrainageCell.
  */
 async function stampTileDrainage(rows) {
-  const wanted = $tileToggle?.classList.contains('active') || !!$tileOnly?.checked;
-  if (!wanted || !rows?.length) return;
+  if (!wantsTileData() || !rows?.length) return;
   let tileFc;
   try {
     tileFc = auxData.tileDrainage || await fetchTileDrainageAreas();
@@ -8016,14 +8162,34 @@ function noLicenceCell(hintText) {
   return cell;
 }
 
-/** True when either water-rights column should be populated for this
- *  search — the overlay is on, or its search filter is ticked. Lets the
- *  caller skip the status message (and the await) entirely otherwise. */
-function wantsWaterRightsEnrichment() {
+/**
+ * True when the tile / irrigation column should be populated for this
+ * search — its overlay is on, its search filter is ticked, or the
+ * Agricultural preset asked for the whole ag picture.
+ *
+ * `waterRightsWantedForGrid` (declared with the module state up top) is
+ * that preset's latch: the preset lists Tile Drainage + Irrigation, so
+ * picking it is the user asking for the data, the same way ticking a
+ * filter or lighting the overlay is. Session-only and cleared by any
+ * other preset — otherwise every later search would keep paying the
+ * WALLAS fetch for columns the user has moved on from.
+ */
+function wantsTileData() {
   return !!($tileToggle?.classList.contains('active')
     || $tileOnly?.checked
-    || $irrigationToggle?.classList.contains('active')
-    || $irrigationOnly?.checked);
+    || waterRightsWantedForGrid);
+}
+function wantsIrrigationData() {
+  return !!($irrigationToggle?.classList.contains('active')
+    || $irrigationOnly?.checked
+    || waterRightsWantedForGrid);
+}
+
+/** True when EITHER water-rights column should be populated. Lets the
+ *  caller skip the status message (and the await) entirely otherwise,
+ *  and drives the .water-mode class that reveals both columns. */
+function wantsWaterRightsEnrichment() {
+  return wantsTileData() || wantsIrrigationData();
 }
 
 /**
@@ -8168,8 +8334,7 @@ function irrigationMatch(match) {
  * footprints), so keeping them all is cheap and removes the failure mode.
  */
 async function stampIrrigation(rows) {
-  const wanted = $irrigationToggle?.classList.contains('active') || !!$irrigationOnly?.checked;
-  if (!wanted || !rows?.length) return;
+  if (!wantsIrrigationData() || !rows?.length) return;
   let irrFc;
   try {
     irrFc = auxData.irrigation || await fetchIrrigationLicences();
@@ -9797,18 +9962,18 @@ function today() {
 
 // Hover hints shown on empty (em-dash) cells whose data isn't loaded by a
 // plain search, so "—" reads as "not loaded yet" rather than "no data". CLI
-// and Soil Type need the Soil Productivity overlay on; Land Cover / Cult %
-// load from a muni-scoped search of > LAND_COVER_MIN_ACRES-acre parcels (no overlay needed).
+// and Soil Type need the soil-survey join, from either entry point; Land Cover
+// / Cult % load from a muni-scoped search of > LAND_COVER_MIN_ACRES-acre parcels (no overlay needed).
 const CLI_EMPTY_HINT =
-  'Turn on the Soil Productivity/Soil Name overlay (Agricultural section) to load soil capability for this municipality.';
+  'Pick the Agricultural column preset, or turn on the Soil Productivity/Soil Name overlay, to load soil capability for this municipality.';
 const SOIL_EMPTY_HINT =
-  'Turn on the Soil Productivity/Soil Name overlay (Agricultural section) to load the soil association for this municipality.';
+  'Pick the Agricultural column preset, or turn on the Soil Productivity/Soil Name overlay, to load the soil association for this municipality.';
 const LANDCOVER_EMPTY_HINT =
   `Loads automatically on a municipality-scoped search (select the municipality, then search) for parcels over ${LAND_COVER_MIN_ACRES} acres.`;
 const TILE_EMPTY_HINT =
-  'Turn on the Tile Drainage overlay (Agricultural section) to check these parcels against Manitoba’s licensed tile-drainage areas.';
+  'Pick the Agricultural column preset, or turn on the Tile Drainage overlay, to check these parcels against Manitoba’s licensed tile-drainage areas.';
 const IRRIGATION_EMPTY_HINT =
-  'Turn on the Irrigation Licences overlay (Agricultural section) to check these parcels against Manitoba’s licensed irrigation points of use and diversion.';
+  'Pick the Agricultural column preset, or turn on the Irrigation Licences overlay, to check these parcels against Manitoba’s licensed irrigation points of use and diversion.';
 // Shown on a "No record" cell. The point is to stop the cell being read
 // as a confident "this land is not tiled / not irrigated" — see
 // noLicenceCell.
