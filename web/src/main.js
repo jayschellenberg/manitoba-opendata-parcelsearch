@@ -1172,6 +1172,7 @@ const importModal = initParcelListImport({
       renderListPill();
       renderListUnresolvedDrawer();
       resetMascAndGridToggles();
+      resetMuniParcelsToggle();
       return;
     }
     listParcelKeys = parcelKeys;
@@ -1198,6 +1199,10 @@ document.getElementById('parcel-list-pill-clear')
     renderListPill();
     renderListUnresolvedDrawer();
     resetMascAndGridToggles();
+    // Drops the button back to disabled (the picker is still blank from
+    // the import) and turns the fabric off, since its loadKey no longer
+    // matches the now-empty scope.
+    resetMuniParcelsToggle();
     clearRoutePlanner();
     setCount('Imported list cleared.');
   });
@@ -2827,6 +2832,11 @@ async function runSearch() {
         inputs.municipalities = listMatchedMunis.slice();
       }
       resetMascAndGridToggles();
+      // Same re-evaluation for the Assessment Parcels fabric — the
+      // import cleared the picker, so this is the only point where the
+      // button learns the list's municipality scope. Enables the button
+      // only; the auto-toggle below stays gated on a picked muni.
+      resetMuniParcelsToggle();
     }
 
     // Bulk roll-list diagnostics. When the user pasted a comma-separated
@@ -5678,16 +5688,14 @@ async function refreshTileNetworkForViewport() {
   }
 }
 
-/** Fetch the Roll Layer's parcel fabric, scoped to either the
- *  sales-CSV mode's matched-muni list or the dropdown's single muni.
+/** Fetch the Roll Layer's parcel fabric, scoped to either import
+ *  workflow's matched-muni list or the dropdown's single muni.
  *  Per-muni fetches run in parallel and merge into one FC — same
  *  pattern as the MASC/CLI/Grid/Zoning/DevPlan overlays. Returns an
  *  empty FC when nothing is in scope (toggleAuxOverlay catches that
  *  upstream via the disabled-button gate). */
 async function fetchMuniParcelsForCurrentScope() {
-  const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
-    ? csvMatchedMunis.slice()
-    : ($municipality.value ? [$municipality.value] : []);
+  const munis = scopedOverlayMunis();
   if (munis.length === 0) {
     return { type: 'FeatureCollection', features: [] };
   }
@@ -5700,11 +5708,11 @@ async function fetchMuniParcelsForCurrentScope() {
 
 /** Resolve the muni-parcels loadKey for the current scope. Mirrors
  *  the joined-list pattern the other overlay toggles use so a
- *  dropdown change inside sales mode doesn't trigger a refetch. */
+ *  dropdown change inside either import mode doesn't trigger a
+ *  refetch. Empty scope collapses to '' — the falsy "never loaded"
+ *  sentinel the reset below compares against. */
 function muniParcelsLoadKey() {
-  return (csvMatchedMunis && csvMatchedMunis.length > 0)
-    ? csvMatchedMunis.join('|')
-    : ($municipality.value || '');
+  return scopedOverlayMunis().join('|');
 }
 
 /**
@@ -5714,10 +5722,11 @@ function muniParcelsLoadKey() {
  * map source until then so a no-op change doesn't blank the overlay).
  */
 function resetMuniParcelsToggle() {
-  // Button enabled when either a muni is selected OR a sales-CSV upload
-  // has loaded a multi-muni scope.
-  const inScope = !!$municipality.value
-    || !!(csvMatchedMunis && csvMatchedMunis.length > 0);
+  // Button enabled when a muni is selected OR either import workflow
+  // (sales CSV, property list) has resolved a multi-muni scope. The
+  // fabric fetch is one request per muni, so a wide import stays a
+  // deliberate click — nothing here auto-toggles the layer on.
+  const inScope = scopedOverlayMunis().length > 0;
   $muniParcelsToggle.disabled = !inScope;
   // Historical compare is single-muni: enable only when a muni is picked.
   // If the muni changed while historical is on, drop it (it's another muni).
@@ -6149,10 +6158,11 @@ function escapeHtmlText(s) {
   })[c]);
 }
 
-/** Municipality scope for agricultural overlays. Sales imports and
- * property-list imports both span arbitrary municipalities while the main
- * picker may be blank; ordinary searches continue to use the picker. */
-function agriculturalOverlayMunis() {
+/** Municipality scope for muni-wide overlays (the Assessment Parcels
+ * fabric plus the agricultural layers). Sales imports and property-list
+ * imports both span arbitrary municipalities while the main picker may be
+ * blank; ordinary searches continue to use the picker. */
+function scopedOverlayMunis() {
   const imported = (csvMatchedMunis && csvMatchedMunis.length > 0)
     ? csvMatchedMunis
     : (listMatchedMunis && listMatchedMunis.length > 0 ? listMatchedMunis : null);
@@ -6166,7 +6176,7 @@ function agriculturalOverlayMunis() {
 function resetMascAndGridToggles() {
   // Enabled when the picker has a municipality or either import workflow
   // has retained the municipalities represented by its matched parcels.
-  const scopedMunis = agriculturalOverlayMunis();
+  const scopedMunis = scopedOverlayMunis();
   const inScope = scopedMunis.length > 0;
   $mascToggle.disabled = !inScope;
   if ($cliToggle) $cliToggle.disabled = !inScope;
@@ -6273,7 +6283,7 @@ async function toggleMascOverlay() {
   // Import modes load MASC across every matched municipality. Ordinary
   // searches fall back to the picker. Import scopes are sorted when stored,
   // so the joined loadKey remains stable across repeated toggles.
-  const munis = agriculturalOverlayMunis();
+  const munis = scopedOverlayMunis();
   if (munis.length === 0) {
     setOverlayPressed($mascToggle, false);
     return;
@@ -6492,7 +6502,7 @@ function cliButtonLabelFor(mode) {
  */
 async function toggleCliOverlay() {
   if (!$cliToggle) return;
-  const munis = agriculturalOverlayMunis();
+  const munis = scopedOverlayMunis();
   if (munis.length === 0) {
     setCliMode(null);
     setOverlayPressed($cliToggle, false);
