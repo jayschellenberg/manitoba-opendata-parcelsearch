@@ -252,7 +252,15 @@ async function searchParcelsFromSnapshot(args) {
         if (rolls.has(f.properties?.Roll_No_Txt)) all.push(f);
       }
     }
-    return { type: 'FeatureCollection', features: all, _truncated: false };
+    // Apply the same attribute filters the live path ANDs onto a
+    // parcelKeys query. searchParcels hands fetchRollEntryByKeyChunks the
+    // buildParcelClauses output alongside the key clause, so address and
+    // dwelling-units narrow an imported list in live mode; skipping them
+    // here quietly broke that promise in snapshot mode. `roll` is left
+    // out on purpose — buildParcelClauses excludes it too (the key match
+    // above already identifies each row).
+    const filtered = filterSnapshotFeatures(all, { ...args, roll: null });
+    return { type: 'FeatureCollection', features: filtered, _truncated: false };
   }
   // Muni-scoped path: load that muni's shard, apply other filters.
   if (municipality) {

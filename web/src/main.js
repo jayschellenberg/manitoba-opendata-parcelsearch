@@ -2971,7 +2971,30 @@ async function runSearch() {
     // ~1000 parcels × ~500 overlay polygons takes a few seconds,
     // which the busy spinner already covers.
     if (parcelFc.features.length > ENRICHMENT_THRESHOLD) {
-      renderEnrichButton(parcelFc, inputs, baseMsg);
+      // A ticked water-rights filter must still be honoured when the
+      // zoning / dev-plan enrichment is deferred, or the grid renders
+      // unfiltered and the checkbox reads as inert. Only the WALLAS half
+      // runs here: it is what the filter depends on, and it is far
+      // cheaper than the overlay joins this branch exists to skip.
+      //
+      // This is the real snapshot-mode exposure. searchParcelsFromSnapshot
+      // has no server-side OBJECTID pre-filter to lean on (live OBJECTIDs
+      // don't map onto shard features) and returns the whole muni
+      // uncapped, so a big muni lands here far more often than it does
+      // against the live service.
+      let deferredMsg = baseMsg;
+      if (waterFilterActive()) {
+        setCount(`${baseMsg} · Checking water-rights licences…`);
+        const rows = parcelFc.features.map((p) => ({ parcel: p, zoning: [], devPlan: [] }));
+        await Promise.all([stampTileDrainage(rows), stampIrrigation(rows)]);
+        lastWaterFilterDropped = dropSliverOnlyMatches(rows, parcelFc);
+        renderTable(rows);
+        setMapData(parcelFc, EMPTY_FC, EMPTY_FC);
+        deferredMsg = hasList
+          ? listImportCountLabel(parcelFc.features.length)
+          : (lastWaterFilterDropped > 0 ? `${baseMsg} · ${waterFilterDropNote()}` : baseMsg);
+      }
+      renderEnrichButton(parcelFc, inputs, deferredMsg);
     } else {
       await enrichOverlays(parcelFc, inputs, baseMsg);
       // Property-list imports should arrive with the same agricultural
