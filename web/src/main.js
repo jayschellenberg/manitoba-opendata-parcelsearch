@@ -2700,6 +2700,9 @@ async function runSearch() {
   csvFullRows = null;
   csvFullBaseMsg = '';
   csvMatchedMunis = null;
+  // A new result set is landing — the stashed pre-filter rows belong to
+  // the old one, and unticking must not resurrect them.
+  resetWaterFilterBase();
   const status = $changedStatus.value;
   const legalInputs = {
     legalText:      $legalText?.value.trim() ?? '',
@@ -2902,11 +2905,7 @@ async function runSearch() {
     // glance: how many input rows resolved, then plotted.
     let countLabel;
     if (hasList) {
-      const importedTotal = listParcelKeys.length + (listUnresolvedRows?.length || 0);
-      const unresolvedTail = listUnresolvedRows?.length
-        ? ` · ${listUnresolvedRows.length} unresolved (see panel)`
-        : '';
-      countLabel = `${n} of ${importedTotal} imported parcels plotted${unresolvedTail}`;
+      countLabel = listImportCountLabel(n);
     } else {
       countLabel = isBulkRollSearch
         ? `${n} of ${rollList.length} rolls matched`
@@ -2993,17 +2992,52 @@ async function runSearch() {
           refreshResultsTableAfterCompositionStamp();
           setMapData(parcelFc, lastZoningFc, lastDevPlanFc, { fit: false });
         }
+        // Recompute against what actually survived. enrichOverlays runs
+        // dropSliverOnlyMatches after baseMsg was built, so the original
+        // string can claim more parcels than the grid is showing — the
+        // same trap the sales path sidesteps via lastWaterFilterDropped.
+        const finalMsg = hasList
+          ? listImportCountLabel(parcelFc.features.length)
+          : baseMsg;
         if (soilResult.complete) {
-          setCount(baseMsg);
+          setCount(finalMsg);
         } else {
           const failedMunis = soilResult.failures.map((failure) => failure.muni).join(', ');
-          setCount(`${baseMsg} · Soil data failed for ${failedMunis}; run Search again to retry.`);
+          setCount(`${finalMsg} · Soil data failed for ${failedMunis}; run Search again to retry.`);
         }
       }
     }
   } finally {
     setBusy(false);
   }
+}
+
+/**
+ * Count line for a property-list import.
+ *
+ * `plotted` must be how many parcels are actually on the grid, so the
+ * line can never claim more than the user can see — the licensed
+ * tile/irrigation filters remove parcels in two separate places (the
+ * server-side OBJECTID clause before the fetch, then dropSliverOnlyMatches
+ * after enrichment), and both shrink the visible set.
+ *
+ * Everything those filters removed is reported as ONE figure. Split into
+ * two notes it reads like two unrelated problems; folded into `plotted`
+ * with no note at all it's indistinguishable from rolls that failed to
+ * resolve, which is the ambiguity this exists to kill.
+ */
+function listImportCountLabel(plotted) {
+  const importedTotal = (listParcelKeys?.length || 0) + (listUnresolvedRows?.length || 0);
+  const unresolvedTail = listUnresolvedRows?.length
+    ? ` · ${listUnresolvedRows.length} unresolved (see panel)`
+    : '';
+  const excluded = waterFilterActive()
+    ? (listParcelKeys?.length || 0) - plotted
+    : 0;
+  const filterTail = excluded > 0
+    ? ` · ${excluded} excluded by the licensed ${waterFilterNames()} filter`
+    : '';
+  return `${plotted} of ${importedTotal} imported parcels plotted${filterTail}${unresolvedTail}`;
 }
 
 const ENRICHMENT_THRESHOLD = 1000;
@@ -3553,6 +3587,9 @@ async function handleSalesUpload(file) {
     // than recomputing — that way zoning/dev-plan joins aren't lost.
     csvFullRows = currentRows.slice();
     csvFullBaseMsg = baseMsg;
+    // csvFullRows is the live filter's base from here on; drop any stash
+    // captured against the pre-upload rows.
+    resetWaterFilterBase();
     // Render once more so the new group columns / popup data show
     // up immediately. A no-op for the table if already rendered, but
     // updates the Group Size / $/ac / $/sf cells that depend on the
@@ -8256,15 +8293,162 @@ function clipWallasToParcels(fc, parcelFc) {
 // enrichOverlays has returned.
 let lastWaterFilterDropped = 0;
 
+/** Which water-rights filters are ticked, as a phrase. Shared by the
+ *  post-search drop note and the live view filter so both name the
+ *  cause the same way. */
+function waterFilterNames() {
+  return [
+    $tileOnly?.checked ? 'tile drainage' : null,
+    $irrigationOnly?.checked ? 'irrigation' : null,
+  ].filter(Boolean).join(' + ') || 'water-rights';
+}
+
 /** Phrase for the count line, naming which filter did the removing so
  *  "3 of 5" never looks like rows went missing on their own. */
 function waterFilterDropNote() {
-  const which = [
-    $tileOnly?.checked ? 'tile drainage' : null,
-    $irrigationOnly?.checked ? 'irrigation' : null,
-  ].filter(Boolean).join(' + ');
-  return `${lastWaterFilterDropped} hidden by the licensed ${which || 'water-rights'} filter`;
+  return `${lastWaterFilterDropped} hidden by the licensed ${waterFilterNames()} filter`;
 }
+
+// ---------- Live water-rights view filter ----------
+//
+// Ticking "Licensed tile drainage only" / "Licensed irrigation only"
+// filters what is already on screen, immediately, instead of waiting for
+// the next Search. The unfiltered set is stashed on the first tick so
+// unticking restores it with no round-trip; runSearch and the sales
+// upload clear the stash when they replace the result set.
+//
+// This is purely a VIEW filter — it never touches listParcelKeys or the
+// search inputs, so the server-side OBJECTID pre-filter still runs on the
+// next Search exactly as before. That pre-filter is what keeps a capped
+// muni-wide search honest (122 of 186 munis hold more parcels than
+// MAX_RESULTS), and filtering a returned page can't replace it.
+//
+// Numbering survives: _seq is stamped on the feature, so hiding rows
+// leaves the survivors' numbers glued to their parcels — see setMapData.
+let waterFilterBaseRows = null;
+let waterFilterBaseMsg = '';
+
+function waterFilterActive() {
+  return !!($tileOnly?.checked || $irrigationOnly?.checked);
+}
+
+/** Forget the stashed unfiltered set. Called wherever a new result set
+ *  replaces the old one, so an untick can't resurrect a previous
+ *  search's rows. */
+function resetWaterFilterBase() {
+  waterFilterBaseRows = null;
+  waterFilterBaseMsg = '';
+}
+
+/** True when the row satisfies every ticked box. Same predicate
+ *  dropSliverOnlyMatches applies after a search, so the live filter and
+ *  the post-search drop can never disagree about what qualifies. */
+function rowPassesWaterFilter(row) {
+  const q = row?.parcel?.properties || {};
+  if ($tileOnly?.checked && !q._tileDrainage) return false;
+  if ($irrigationOnly?.checked && !q._irrigation) return false;
+  return true;
+}
+
+/**
+ * Load + stamp whatever the ticked boxes need, when the rows in hand
+ * don't carry it yet. Mirrors the water half of
+ * ensureAgriculturalGridData; both stamps self-gate on wantsTileData /
+ * wantsIrrigationData, which a ticked checkbox already satisfies.
+ *
+ * Returns false if the load failed — the caller must not filter on
+ * absent stamps, or an unreachable WALLAS would read as "nothing
+ * qualifies" and empty the grid.
+ */
+async function ensureWaterDataForRows(rows) {
+  const stamped = (key) => rows.every((r) => r?.parcel?.properties?.[key] !== undefined);
+  const needTile = !!$tileOnly?.checked && !stamped('_tileDrainage');
+  const needIrr  = !!$irrigationOnly?.checked && !stamped('_irrigation');
+  if (!needTile && !needIrr) return true;
+  const prior = $count.textContent || '';
+  setCount(`${prior} · Checking water-rights licences…`.replace(/^ · /, ''));
+  beginCliOp('Checking water rights…');
+  try {
+    await Promise.all([
+      needTile ? stampTileDrainage(rows) : Promise.resolve(),
+      needIrr  ? stampIrrigation(rows)   : Promise.resolve(),
+    ]);
+    // stampTileDrainage / stampIrrigation swallow their own fetch and
+    // join failures and simply return without writing anything, so a
+    // rejected promise is NOT the only way this comes back empty.
+    // Re-check that the stamps actually landed: filtering on absent data
+    // would fail every row and read as a confident "nothing qualifies".
+    const landed = (!$tileOnly?.checked || stamped('_tileDrainage'))
+      && (!$irrigationOnly?.checked || stamped('_irrigation'));
+    if (!landed) {
+      setCount(`${prior} · Water-rights data unavailable — filter not applied`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Water-rights filter data load failed', err);
+    setCount(`${prior} · Water-rights data unavailable: ${err.message} — filter not applied`);
+    return false;
+  } finally {
+    endCliOp();
+  }
+}
+
+/**
+ * Re-render grid + map from `rows`, naming how many of `base` the filter
+ * removed. Same shape as refilterCsvIfActive: the zoning / dev-plan
+ * sources keep their full data so the surrounding context stays on the
+ * map, and a filter that narrows to zero doesn't re-fit (an empty FC
+ * flies to province-wide, which reads as a bug).
+ */
+function renderWaterFilteredView(rows, base, baseMsg) {
+  const hidden = base.length - rows.length;
+  // Unticking restores what is IN HAND, which is less than the imported
+  // list whenever the last Search pre-filtered server-side — those rows
+  // were never fetched. Say so rather than leaving a bare count that
+  // looks like the rest went missing.
+  const shortOfList = !baseMsg
+    && listParcelKeys?.length
+    && rows.length < listParcelKeys.length;
+  setCount(hidden > 0
+    ? `${rows.length} of ${base.length} shown · ${hidden} hidden by the licensed ${waterFilterNames()} filter`
+    : shortOfList
+      ? `${rows.length} of ${listParcelKeys.length} imported parcels in hand — press Search to refetch the full list`
+      : (baseMsg || `${rows.length} parcel${rows.length === 1 ? '' : 's'} shown`));
+  renderTable(rows);
+  const fc = { type: 'FeatureCollection', features: rows.map((r) => r.parcel) };
+  setMapData(fc, lastZoningFc, lastDevPlanFc, { fit: rows.length > 0 });
+  applyStarredFromFavorites(fc);
+}
+
+/** Tick / untick handler for both boxes. */
+async function onWaterFilterToggle() {
+  const base = waterFilterBaseRows
+    || (csvFullRows?.length ? csvFullRows : currentRows);
+  // Nothing on screen yet — the box still counts for the next Search,
+  // which is where the server-side pre-filter picks it up.
+  if (!base?.length) return;
+
+  if (!waterFilterActive()) {
+    const restore = waterFilterBaseRows || base;
+    const msg = waterFilterBaseMsg;
+    resetWaterFilterBase();
+    renderWaterFilteredView(restore, restore, msg);
+    return;
+  }
+
+  if (!waterFilterBaseRows) {
+    waterFilterBaseRows = base;
+    waterFilterBaseMsg = $count.textContent || '';
+  }
+  const ok = await ensureWaterDataForRows(waterFilterBaseRows);
+  if (!ok) return;   // message already explains why nothing changed
+  const kept = waterFilterBaseRows.filter(rowPassesWaterFilter);
+  renderWaterFilteredView(kept, waterFilterBaseRows, waterFilterBaseMsg);
+}
+
+$tileOnly?.addEventListener('change', onWaterFilterToggle);
+$irrigationOnly?.addEventListener('change', onWaterFilterToggle);
 
 function dropSliverOnlyMatches(rows, parcelFc) {
   const tileOn = !!$tileOnly?.checked;
