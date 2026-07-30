@@ -1824,7 +1824,7 @@ async function handleSnapshotExport() {
   }));
 
   try {
-    const { blob, count } = await generateParcelSnapshotsZip(fcSnapshot, {
+    const { blob, count, skipped } = await generateParcelSnapshotsZip(fcSnapshot, {
       signal: snapshotAbort.signal,
       fetchSurveyGrid: buildSurveyGridForSnapshot,
       provenanceText: snapProvText,
@@ -1834,7 +1834,13 @@ async function handleSnapshotExport() {
     });
     const stamp = new Date().toISOString().slice(0, 10);
     downloadBlob(blob, `parcel-snapshots-${stamp}.zip`);
-    setCount(`Saved ${count} parcel snapshot${count === 1 ? '' : 's'} to parcel-snapshots-${stamp}.zip.`);
+    // Skipped subjects are named rather than merely counted — the whole point
+    // is that the user can re-run and know which images they're still missing.
+    // They're listed in PROVENANCE.txt too, in case this line scrolls away.
+    const missed = skipped?.length
+      ? ` ${skipped.length} skipped (imagery didn't load in time): ${skipped.join(', ')} — re-run to fill the gaps.`
+      : '';
+    setCount(`Saved ${count} parcel snapshot${count === 1 ? '' : 's'} to parcel-snapshots-${stamp}.zip.${missed}`);
   } catch (err) {
     if (err?.name === 'AbortError') {
       setCount('Parcel snapshot export cancelled.');

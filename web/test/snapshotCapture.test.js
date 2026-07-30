@@ -51,6 +51,108 @@ await test('idle resolves readiness and removes its listener', async () => {
   assert.strictEqual(map.repaintCount, 1);
 });
 
+// ---- page-visibility handling ----
+//
+// A hidden tab throttles requestAnimationFrame, so MapLibre never renders and
+// never fires 'idle'. The readiness budget must therefore count VISIBLE time
+// only, or an export left running in a background tab fails on a healthy map.
+
+/** Controllable stand-in for document.visibilityState. */
+class FakeVisibility {
+  constructor(hidden = false) {
+    this.hidden = hidden;
+    this.subscribers = new Set();
+  }
+
+  isHidden() { return this.hidden; }
+  subscribe(fn) { this.subscribers.add(fn); return () => this.subscribers.delete(fn); }
+  set(hidden) {
+    this.hidden = hidden;
+    for (const fn of [...this.subscribers]) fn();
+  }
+}
+
+/** Manual clock so the tests don't have to sleep in real time. */
+function fakeClock(start = 0) {
+  let t = start;
+  const now = () => t;
+  now.advance = (ms) => { t += ms; };
+  return now;
+}
+
+await test('time spent hidden does not count against the readiness budget', async () => {
+  const map = new FakeMap();
+  const visibility = new FakeVisibility(false);
+  const now = fakeClock();
+  let rejected = null;
+  const ready = waitForMapIdle(map, 50, { visibility, now }).catch((err) => { rejected = err; });
+
+  // Hide almost immediately, then stay hidden well past the 50 ms budget.
+  now.advance(10);
+  visibility.set(true);
+  await new Promise((r) => setTimeout(r, 120));
+  assert.strictEqual(rejected, null, 'clock must be stopped while hidden');
+
+  // On return the swallowed repaint is requested again, and the map can still
+  // report idle against the 40 ms it has left.
+  visibility.set(false);
+  assert.strictEqual(map.repaintCount, 2, 'repaint re-requested on becoming visible');
+  map.emit('idle');
+  await ready;
+  assert.strictEqual(rejected, null);
+  assert.strictEqual(map.listeners.has('idle'), false);
+});
+
+await test('the budget resumes rather than restarts when the tab comes back', async () => {
+  const map = new FakeMap();
+  const visibility = new FakeVisibility(false);
+  const now = fakeClock();
+  const ready = waitForMapIdle(map, 40, { visibility, now });
+
+  now.advance(35);            // 5 ms of budget left
+  visibility.set(true);
+  now.advance(10_000);        // a long stint in the background
+  visibility.set(false);
+
+  await assert.rejects(ready, /did not become idle/i, 'the remaining 5 ms still expires');
+  assert.strictEqual(map.listeners.has('idle'), false);
+});
+
+await test('starting while already hidden does not burn the budget', async () => {
+  const map = new FakeMap();
+  const visibility = new FakeVisibility(true);
+  const now = fakeClock();
+  let rejected = null;
+  const ready = waitForMapIdle(map, 30, { visibility, now }).catch((err) => { rejected = err; });
+
+  await new Promise((r) => setTimeout(r, 90));
+  assert.strictEqual(rejected, null);
+
+  visibility.set(false);
+  map.emit('idle');
+  await ready;
+  assert.strictEqual(rejected, null);
+});
+
+await test('the visibility subscription is released when readiness settles', async () => {
+  const map = new FakeMap();
+  const visibility = new FakeVisibility(false);
+  const ready = waitForMapIdle(map, 100, { visibility });
+  assert.strictEqual(visibility.subscribers.size, 1);
+  map.emit('idle');
+  await ready;
+  assert.strictEqual(visibility.subscribers.size, 0, 'no listener left on the document');
+});
+
+await test('without a visibility source the plain timeout still governs', async () => {
+  const map = new FakeMap();
+  await assert.rejects(
+    waitForMapIdle(map, 5, { visibility: null }),
+    /did not become idle/i,
+  );
+  assert.strictEqual(map.listeners.has('idle'), false);
+});
+
 await test('capture retries readiness failures and returns the first valid frame', async () => {
   let prepared = 0;
   let waited = 0;

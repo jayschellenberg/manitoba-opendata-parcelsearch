@@ -239,6 +239,36 @@ export function provenanceText(prov) {
   return out.join('\n');
 }
 
+/**
+ * Append the "not captured" roll-call to a rendered provenance block.
+ *
+ * A snapshot batch can come up short when satellite imagery doesn't finish
+ * loading for a subject — the export keeps every frame it did capture rather
+ * than throwing the batch away. Someone counting images against a comp list
+ * then needs to know whether a missing parcel was left out deliberately or
+ * lost to a slow tile server, so the gap is recorded on the face of the
+ * evidence record instead of being inferable only from the file listing.
+ *
+ * Returns the text unchanged when nothing was skipped.
+ */
+export function provenanceWithSkipped(text, skipped) {
+  if (!skipped?.length) return text;
+  const out = [
+    text,
+    `Not captured (${skipped.length}):`,
+    ...wrap(
+      'Satellite imagery for these subjects did not finish loading before the per-frame '
+      + 'time limit, so no image was written. This is a transient network/imagery '
+      + 'condition, not a data problem — re-run the export to fill the gaps.',
+      72,
+    ).map((line) => `  ${line}`),
+    '',
+  ];
+  for (const name of skipped) out.push(`  - ${name}`);
+  out.push('');
+  return out.join('\n');
+}
+
 // Minimal greedy word-wrap for the text block's disclaimer paragraph.
 function wrap(text, width) {
   const words = String(text).split(/\s+/);

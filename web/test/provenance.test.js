@@ -8,6 +8,7 @@ import {
   buildProvenance,
   provenanceCsvLines,
   provenanceText,
+  provenanceWithSkipped,
   EXPORT_DISCLAIMER,
   WATER_RIGHTS_CAVEAT,
 } from '../src/lib/provenance.js';
@@ -151,6 +152,33 @@ await test('provenanceText — readable block with datasets + imagery + disclaim
   assert.ok(txt.includes('Disclaimer:'));
   // Disclaimer text body wrapped into the block.
   assert.ok(txt.includes('Research-grade data'));
+});
+
+// ---------- provenanceWithSkipped ----------
+
+console.log('\nprovenanceWithSkipped');
+
+await test('nothing skipped leaves the record untouched', () => {
+  assert.equal(provenanceWithSkipped('BASE', []), 'BASE');
+  assert.equal(provenanceWithSkipped('BASE', undefined), 'BASE');
+});
+
+await test('skipped subjects are named, counted, and explained', () => {
+  const txt = provenanceWithSkipped('BASE', ['10-610-225600.jpg', '24-610-83100_83200_85200-6p.jpg']);
+  assert.ok(txt.startsWith('BASE'), 'the original record is preserved verbatim');
+  assert.ok(txt.includes('Not captured (2):'));
+  assert.ok(txt.includes('  - 10-610-225600.jpg'));
+  assert.ok(txt.includes('  - 24-610-83100_83200_85200-6p.jpg'));
+  // The reason matters as much as the list: a reader must be able to tell a
+  // transient imagery gap from a parcel deliberately left out.
+  assert.ok(/did not finish loading/.test(txt));
+  assert.ok(/re-run the export/.test(txt));
+});
+
+await test('the explanation is wrapped, not one long line', () => {
+  const txt = provenanceWithSkipped('BASE', ['610-1.jpg']);
+  const longest = Math.max(...txt.split('\n').map((l) => l.length));
+  assert.ok(longest <= 76, `expected wrapped lines, longest was ${longest}`);
 });
 
 const failed = results.filter((r) => r.status === 'fail');

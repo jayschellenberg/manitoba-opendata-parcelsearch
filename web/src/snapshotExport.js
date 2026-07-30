@@ -39,6 +39,7 @@ import {
 import { fetchAllParcelsInMunicipality } from './arcgis.js';
 import { buildStoreZip } from './lib/zipStore.js';
 import {
+  MapRenderTimeoutError,
   StaleSnapshotFrameError,
   captureSnapshotWithRetry,
   findStaleSnapshotFrame,
@@ -52,6 +53,7 @@ import {
   SNAPSHOT_H,
 } from './lib/imageOutput.js';
 import { groupParcelsForSnapshots, snapshotBaseName } from './lib/snapshotGroups.js';
+import { provenanceWithSkipped } from './lib/provenance.js';
 
 const EXPORT_W = SNAPSHOT_W;
 const EXPORT_H = SNAPSHOT_H;
@@ -129,6 +131,9 @@ export async function generateParcelSnapshotsZip(parcelFc, opts = {}) {
   const files = [];
   const capturedFrames = [];
   const usedNames = new Map();
+  // Subjects whose imagery never finished loading. Reported to the caller and
+  // written into PROVENANCE.txt rather than silently missing from the ZIP.
+  const skipped = [];
 
   try {
     const created = initMap(container);
@@ -201,6 +206,19 @@ export async function generateParcelSnapshotsZip(parcelFc, opts = {}) {
           },
         });
       } catch (err) {
+        // Imagery that never finished loading is a gap, not a corrupt frame:
+        // skip this subject, keep everything already captured, and report it
+        // so the appraiser knows exactly what to re-run. A StaleSnapshotFrame
+        // still fails the whole batch — that one means a frame would carry the
+        // WRONG parcel's imagery under this parcel's name, and a silently
+        // mislabelled image in an evidence ZIP is worse than no ZIP.
+        if (err instanceof MapRenderTimeoutError) {
+          console.warn(`Snapshot: ${baseName} skipped — ${err.message}`);
+          skipped.push(baseName);
+          done += 1;
+          onProgress?.({ done, total, name: baseName, skipped: true });
+          continue;
+        }
         throw new Error(`Could not capture ${baseName}: ${err?.message || err}`, { cause: err });
       }
 
@@ -219,9 +237,12 @@ export async function generateParcelSnapshotsZip(parcelFc, opts = {}) {
     // Prepend the evidence record (not counted as a snapshot). Sorts to the
     // top of the archive and is the first thing the appraiser sees on unzip.
     if (provenanceText) {
-      files.unshift({ name: 'PROVENANCE.txt', data: new TextEncoder().encode(provenanceText) });
+      files.unshift({
+        name: 'PROVENANCE.txt',
+        data: new TextEncoder().encode(provenanceWithSkipped(provenanceText, skipped)),
+      });
     }
-    return { blob: buildStoreZip(files), count };
+    return { blob: buildStoreZip(files), count, skipped };
   } finally {
     try { map?.remove(); } catch { /* ignore teardown errors */ }
     container.remove();
