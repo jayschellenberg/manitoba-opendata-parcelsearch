@@ -146,8 +146,10 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // the local mb-parcel-data clone), commit + push that repo and update
 // this SHA — see MAINTENANCE.md. section-grid.json stays local because
 // at 41 MB it's over jsDelivr's per-file cap.
+export const MB_PARCEL_DATA_REVISION =
+  'a59a15ae2907ec51cc615a377edd23be441bc30b';
 export const MB_PARCEL_DATA_CDN =
-  'https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-data@27173b2643a2330e213a1710b8a868fec4e276b3';
+  `https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-data@${MB_PARCEL_DATA_REVISION}`;
 const SNAPSHOT_BASE_URL = `${MB_PARCEL_DATA_CDN}/rollentry-snapshot/`;
 let rollEntrySnapshot = null;
 const snapshotShardCache = new Map();
@@ -1134,7 +1136,7 @@ const MUNICIPALITY_URL      = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcg
 const MASC_INDEX_URL = `${MB_PARCEL_DATA_CDN}/masc/_index.json`;
 
 export async function fetchMascIndex() {
-  const cacheKey = 'mb_masc_index_v3';
+  const cacheKey = `mb_masc_index_v4_${MB_PARCEL_DATA_REVISION}`;
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
   try {
@@ -1154,7 +1156,7 @@ export async function fetchMascRatingsForMuni(muniNameWithTyp) {
   const entry = lookupMuniManifestEntry(idx, muniNameWithTyp, { stripType: true });
   if (!entry) return null;
   const file = entry.file;
-  const cacheKey = `mb_masc_${file}_v3`;
+  const cacheKey = `mb_masc_${file}_v4_${MB_PARCEL_DATA_REVISION}`;
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (Array.isArray(cached) && cached.length > 0) return cached;
   try {
@@ -1498,10 +1500,10 @@ export async function fetchProvinceSectionGrid() {
  * single municipality. Built by r/build_parcel_masc.R from a spatial
  * intersection of ROLL_ENTRY parcels × MASC quarter-section polygons.
  *
- * Per-muni shards live at web/public/data/parcel-masc/<MUNI_KEY>.json.
+ * Per-muni shards live in mb-parcel-data/parcel-masc/<MUNI_KEY>.json.
  * Shape: a flat dictionary keyed by Roll_No_Txt:
  *   { "3600.000": { rating: "C", ra: 32, q: "NE", s: 1, t: 12, r: 5, d: "E" }, ... }
- * Manifest at web/public/data/parcel-masc/_index.json maps the original
+ * Manifest at mb-parcel-data/parcel-masc/_index.json maps the original
  * Muni_Name_With_Typ values to shard filenames + counts.
  *
  * Returns a {rollNoTxt → ratingObj} map, or null when the muni isn't
@@ -1517,7 +1519,7 @@ let parcelMascIndexPromise = null;
 async function fetchParcelMascIndex() {
   if (parcelMascIndexPromise) return parcelMascIndexPromise;
   parcelMascIndexPromise = (async () => {
-    const cacheKey = 'mb_parcel_masc_index_v4';
+    const cacheKey = `mb_parcel_masc_index_v5_${MB_PARCEL_DATA_REVISION}`;
     const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
     if (cached) return cached;
     try {
@@ -1539,7 +1541,7 @@ export async function fetchParcelMascForMuni(muniNameWithTyp) {
   const entry = lookupMuniManifestEntry(idx, muniNameWithTyp, { stripType: false });
   if (!entry) return null;
   const file = entry.file;
-  const cacheKey = `mb_parcel_masc_${file}_v4`;
+  const cacheKey = `mb_parcel_masc_${file}_v5_${MB_PARCEL_DATA_REVISION}`;
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
   try {
@@ -1821,7 +1823,7 @@ function normalizeMuniLookupType(value) {
  * just renders the quarter-section overlay alone.
  */
 export async function fetchMascRiverlots() {
-  const cacheKey = 'mb_masc_riverlots_v3';
+  const cacheKey = `mb_masc_riverlots_v4_${MB_PARCEL_DATA_REVISION}`;
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
   const url = `${MB_PARCEL_DATA_CDN}/masc-riverlots.json`;

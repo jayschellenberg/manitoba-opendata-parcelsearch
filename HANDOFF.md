@@ -58,7 +58,7 @@ Some parcel-MASC table ratings appear inside these blank polygons because parcel
 
 ## Generated artifacts
 
-- `web/public/data/masc/` is built by `Rscript r/build_masc_shards.R` from `masc_soil_ratings_with_latlon.csv`. Current workspace includes a `RITCHOT.json` shard with 240 rows and a `_index.json` manifest entry for `RITCHOT`.
+- `mb-parcel-data/masc/` is built by `Rscript r/build_masc_shards.R` from `MASC_SQUARE_CSV` (or the legacy root CSV). Text ranges such as `29A` are preserved and multi-rated quarters carry both `rating` (conservative map colour) and `ratings` (complete label such as `C/H`).
 - `web/public/data/parcel-masc/` is built by `Rscript r/build_parcel_masc.R` from the latest `RollEntry_YYYYMMDD.gpkg` plus the MASC quarter CSV and optional river-lot scrape/KMZ. It supplies the table's dominant Soil column only; Risk Area is now official live/reference data. Current regenerated shards include `source` and `label` fields so river-lot tooltips can use explicit labels.
 - `web/public/data/masc-riverlots.json` is also built by `r/build_parcel_masc.R`; it paints the MASC layer for long/narrow rated river-lot polygons that the quarter-section CSV does not cover. Features carry `muni` and `rating_muni` where those differ.
 - `masc_soil_ratings_with_latlon.csv`, dated GeoPackages, and other large inputs are local/generated inputs and are ignored by git.
@@ -84,6 +84,6 @@ Some parcel-MASC table ratings appear inside these blank polygons because parcel
 
 - MASC quarter polygons are visual approximations from centroids, not legal survey boundaries.
 - Some municipalities and parcels legitimately have no MASC soil coverage, especially urban-only areas or parcels outside rated farmland.
-- MASC cache keys are versioned. Bump the relevant version in `arcgis.js` after changing shard lookup semantics or generated shard shapes.
+- MASC cache keys include `MB_PARCEL_DATA_REVISION`; changing the pinned data commit automatically invalidates the 30-day browser cache. Only bump the schema-version prefix when lookup semantics or generated shard shapes change.
 - The De Salaberry audit has one residual missing river-lot-touching parcel, roll `52000.000`, because it overlaps rated `RR-RL-M` by only about 0.355 m2. Treat that as a boundary sliver unless the source parcel geometry changes.
 - If Vite reports `Outdated Optimize Dep` / `EBUSY` in this Dropbox workspace after adding a dependency, use `VITE_CACHE_DIR` to move the optimize cache to `%TEMP%` before `npm run dev -- --force`.

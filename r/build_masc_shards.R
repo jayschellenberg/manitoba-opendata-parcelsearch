@@ -1,15 +1,15 @@
 # build_masc_shards.R
 #
 # Splits the MASC soil-ratings CSV (~150k rows, ~8 MB) into per-municipality
-# JSON shards under web/public/data/masc/ so the parcel-search frontend can
+# JSON shards under mb-parcel-data/masc/ so the parcel-search frontend can
 # fetch only the active muni's ratings on toggle. Same shard pattern the
 # legal-search index uses; gitignored generated artifacts.
 #
-# Input  : masc_soil_ratings_with_latlon.csv (CSV with quarter, section,
-#          township, range_num, direction, soil_rating, risk_area,
-#          municipality, lat, lon)
-# Output : web/public/data/masc/<MUNI_KEY>.json, plus
-#          web/public/data/masc/_index.json — a manifest of muni keys with
+# Input  : MASC_SQUARE_CSV, or masc_soil_ratings_with_latlon.csv by
+#          default. V2's text `range` column is retained so special
+#          ranges such as 29A are not collapsed into numeric Range 29.
+# Output : mb-parcel-data/masc/<MUNI_KEY>.json, plus
+#          mb-parcel-data/masc/_index.json — a manifest of muni keys with
 #          row counts so the frontend can show "no MASC data" without a
 #          404. Muni keys are normalized for matching against
 #          Roll_Entry's Muni_Name_With_Typ values: uppercase, dashes
@@ -18,8 +18,9 @@
 #
 # Shard structure: a flat array of compact records to keep payload small.
 #   [
-#     { "q": "NE", "s": 1,  "t": 1,  "r": 1,  "d": "W", "rating": "D",
-#       "ra": 32, "lat": 49.01159924, "lon": -97.46536894 },
+#     { "q": "NE", "s": 1,  "t": 1,  "r": "1", "d": "W",
+#       "rating": "D", "ratings": "D", "ra": 32,
+#       "lat": 49.01159924, "lon": -97.46536894 },
 #     ...
 #   ]
 #
@@ -35,9 +36,16 @@ suppressPackageStartupMessages({
 
 # Shared roots (env-overridable) — see r/config.R.
 .cfg <- grep("^--file=", commandArgs(FALSE), value = TRUE)
-source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "config.R") else "r/config.R")
+.r_dir <- if (length(.cfg)) dirname(sub("^--file=", "", .cfg[1])) else "r"
+source(file.path(.r_dir, "config.R"))
+source(file.path(.r_dir, "masc_utils.R"))
 
-input_path  <- file.path(mb_parcelsearch_root, "masc_soil_ratings_with_latlon.csv")
+input_override <- Sys.getenv("MASC_SQUARE_CSV")
+input_path <- if (nzchar(input_override)) {
+  normalizePath(input_override, winslash = "/", mustWork = FALSE)
+} else {
+  file.path(mb_parcelsearch_root, "masc_soil_ratings_with_latlon.csv")
+}
 # Shards publish into the local mb-parcel-data clone (served to the app
 # via jsDelivr pinned commit — see MB_PARCEL_DATA_CDN in arcgis.js).
 output_dir  <- file.path(mb_parcel_data_root, "masc")
@@ -50,8 +58,12 @@ if (!file.exists(input_path)) {
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
 cat("Reading", input_path, "...\n")
-masc <- readr::read_csv(input_path, show_col_types = FALSE)
-cat("  rows:", nrow(masc), "; munis:", length(unique(masc$municipality)), "\n")
+masc_raw <- read_masc_square_csv(input_path)
+cat("  raw rows:", nrow(masc_raw), "\n")
+masc <- normalize_masc_square(masc_raw)
+cat("  legal quarters:", nrow(masc),
+    "; multi-rated:", sum(grepl("/", masc$soil_ratings, fixed = TRUE)),
+    "; munis:", length(unique(masc$municipality)), "\n")
 
 # Normalize muni key the same way the frontend's normalizeMuniKey() does:
 # uppercase, strip diacritics, collapse whitespace, normalize dashes.
@@ -93,9 +105,10 @@ for (key in muni_keys) {
       q      = quarter,
       s      = as.integer(section),
       t      = as.integer(township),
-      r      = as.integer(range_num),
+      r      = range,
       d      = direction,
       rating = soil_rating,
+      ratings = soil_ratings,
       ra     = as.integer(risk_area),
       lat    = round(lat, 6),
       lon    = round(lon, 6)

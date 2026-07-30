@@ -14,6 +14,9 @@ import {
   MASC_RATING_LABEL_MIN_ZOOM,
   MASC_RISK_SOURCE_OPTIONS,
   masccolor,
+  mascDisplayRating,
+  mascRatingLabel,
+  quarterPolygon,
 } from '../src/masc.js';
 
 const results = [];
@@ -92,6 +95,35 @@ test('risk-area GeoJSON keeps the authoritative source vertices', () => {
     maxzoom: 24,
     tolerance: 0,
   });
+});
+
+console.log('\nMASC refreshed-data compatibility');
+
+test('preserves a Range 29A legal label as text', () => {
+  const f = quarterPolygon({
+    q: 'NE', s: 11, t: 27, r: '29A', d: 'W',
+    rating: 'D', ratings: 'D', lat: 51.303065, lon: -101.426435,
+  });
+  assert.equal(f.properties.r, '29A');
+  assert.equal(f.properties.label, 'NE 11-27-29AW');
+});
+
+test('keeps all official ratings while using one conservative colour code', () => {
+  const row = { rating: 'H', ratings: 'C/H' };
+  assert.equal(mascRatingLabel(row), 'C/H');
+  assert.equal(mascDisplayRating(row), 'H');
+  assert.equal(mascDisplayRating({ ratings: 'H/C' }), 'H');
+  const f = quarterPolygon({
+    q: 'NE', s: 33, t: 27, r: '1', d: 'W',
+    ...row, lat: 51.358876, lon: -97.538291,
+  });
+  assert.equal(f.properties.rating, 'H');
+  assert.equal(f.properties.ratings, 'C/H');
+});
+
+test('old single-rating shards remain compatible', () => {
+  assert.equal(mascRatingLabel({ rating: 'D' }), 'D');
+  assert.equal(mascDisplayRating({ rating: 'D' }), 'D');
 });
 
 const failed = results.filter((r) => r.status === 'fail');

@@ -9,6 +9,8 @@
 #   MAO_SNAPSHOTS_ROOT          cold archive of dated provincial snapshots
 #   MAO_ASSEMBLY_ROOT           sister mao-assembly project root
 #   MASC_SCRAPE_ROOT            sister MASC-SCRAPE project root
+#   MASC_SQUARE_CSV             refreshed square-section CSV (optional)
+#   MASC_RIVERLOT_CSV           refreshed river/parish-lot CSV (optional)
 #   MB_PARCEL_HISTORY_ROOT      local clone of the mb-parcel-history repo
 #
 # Scripts source this with a two-line bootstrap that finds config.R

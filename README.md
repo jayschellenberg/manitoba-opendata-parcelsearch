@@ -244,10 +244,18 @@ cp web/.env.example web/.env.local
 
 When MASC inputs change, rebuild the static shards from the repo root before starting or deploying:
 
-```bash
+```powershell
+$env:MASC_SQUARE_CSV = 'D:\path\to\masc_soil_ratings_square_with_latlon_v2.csv'
+$env:MASC_RIVERLOT_CSV = 'D:\path\to\masc_soil_ratings_riverlots_v2.csv'
+Rscript r/test_masc_utils.R
 Rscript r/build_masc_shards.R
 Rscript r/build_parcel_masc.R
 ```
+
+The square builder keeps special text ranges such as `29A`, collapses
+exact duplicates, and retains multiple official ratings as a slash-separated
+label such as `C/H`. The conservative/worst code supplies the map colour;
+the complete label appears in the map and parcel table.
 
 Open <http://localhost:5173>. The contaminated-sites CSV proxies through Vite's dev server so Show Enviro works in dev too.
 

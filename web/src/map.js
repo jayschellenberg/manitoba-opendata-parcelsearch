@@ -946,7 +946,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         minzoom: MASC_RATING_LABEL_MIN_ZOOM,
         layout: {
           visibility: 'none',
-          'text-field': ['get', 'rating'],
+          'text-field': ['coalesce', ['get', 'ratings'], ['get', 'rating'], ''],
           'text-font': ['Open Sans Semibold'],
           'text-size': [
             'interpolate', ['linear'], ['zoom'],
@@ -2038,7 +2038,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         minzoom: MASC_RATING_LABEL_MIN_ZOOM,
         layout: {
           visibility: 'none',
-          'text-field': ['coalesce', ['get', 'rating'], ''],
+          'text-field': ['coalesce', ['get', 'ratings'], ['get', 'rating'], ''],
           'text-font': ['Open Sans Semibold'],
           'text-size': [
             'interpolate', ['linear'], ['zoom'],

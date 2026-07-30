@@ -23,6 +23,26 @@ const QUARTER_HALF_SIDE_M = 400;
 const M_PER_DEG_LAT = 111320;
 
 /**
+ * Complete published MASC rating label. Refreshed square-section data
+ * can attach more than one official rating to the same legal quarter;
+ * generated shards store those codes as "C/F" while `rating` remains
+ * the conservative single code used for map colouring.
+ */
+export function mascRatingLabel(row) {
+  const raw = row?.ratings ?? row?.rating ?? '';
+  if (Array.isArray(raw)) return raw.filter(Boolean).join('/');
+  return String(raw).trim();
+}
+
+/** Single A-J code used for colour, with a safe fallback for old data. */
+export function mascDisplayRating(row) {
+  const direct = String(row?.rating ?? '').trim().toUpperCase();
+  if (/^[A-J]$/.test(direct)) return direct;
+  const codes = mascRatingLabel(row).toUpperCase().match(/[A-J]/g) || [];
+  return codes.length ? codes.reduce((worst, code) => (code > worst ? code : worst), 'A') : '';
+}
+
+/**
  * Build a Polygon GeoJSON Feature for a quarter-section, given its
  * centroid lat/lon and the rating attributes to carry along. Returns
  * null for nullish or out-of-range coordinates.
@@ -50,7 +70,8 @@ export function quarterPolygon(row) {
       t: row.t,
       r: row.r,
       d: row.d,
-      rating: row.rating,
+      rating: mascDisplayRating(row),
+      ratings: mascRatingLabel(row),
       ra: row.ra,
       lat, lon,
       // Pre-formatted human-readable label for the popup, e.g.

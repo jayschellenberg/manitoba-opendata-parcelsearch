@@ -7,27 +7,27 @@
 # Inputs:
 #   * RollEntry_YYYYMMDD.gpkg                 — most-recent parcel snapshot
 #                                               from r/download_parcels.R
-#   * masc_soil_ratings_with_latlon.csv       — quarter-section centroids
+#   * MASC_SQUARE_CSV (or legacy default)     — quarter-section centroids
 #                                               with rating + risk-area cols
 #   * MB-RIVER-LOTS.kmz (optional)             — historic parish/river lot
 #                                               polygon geometry
-#   * D:/Dropbox/ClaudeCode/MASC-SCRAPE/masc_soil_ratings_riverlots.csv
+#   * MASC_RIVERLOT_CSV (or legacy default)
 #                                              (optional) — per-lot ratings
 #                                              for parish/river lots; joined
 #                                              to the KMZ via parish-prefix
 #                                              + lot-number heuristic
 #
 # Output:
-#   web/public/data/parcel-masc/<MUNI_KEY>.json
+#   mb-parcel-data/parcel-masc/<MUNI_KEY>.json
 #       Per-municipality JSON shards keyed on Muni_Name_With_Typ (the same
 #       value Roll_Entry stamps on each parcel). Inside each shard:
-#         { "<roll_no_txt>": { "rating": "C", "ra": 32,
-#                              "q": "NE", "s": 1, "t": 12, "r": 5, "d": "E" },
+#         { "<roll_no_txt>": { "rating": "C", "ratings": "C/F", "ra": 32,
+#                              "q": "NE", "s": 1, "t": 12, "r": "5", "d": "E" },
 #           ... }
 #       Only parcels with ≥1 quarter-section overlap are written; urban
 #       parcels (city lots, cottage subdivisions) typically drop out.
 #
-#   web/public/data/parcel-masc/_index.json
+#   mb-parcel-data/parcel-masc/_index.json
 #       Manifest of muni keys with rated-parcel counts; same shape as the
 #       MASC overlay's _index.json.
 #
@@ -41,7 +41,9 @@
 #      overlapping quarter, with the intersection area weighted by
 #      quarter so we know which rating covers the most ground.
 #   4. For each parcel, pick the dominant rating (largest summed
-#      intersection area). If ties, pick alphabetically (A wins over B).
+#      intersection area). If areas tie, use the conservative/worst
+#      A-to-J rating. `ratings` preserves every official rating attached
+#      to the selected source area (for example "C/F").
 #   5. Group by Muni_Name_With_Typ and write per-muni shards.
 #
 # Runtime: ~5-15 minutes depending on machine. Re-run after a fresh
@@ -60,7 +62,9 @@ suppressPackageStartupMessages({
 
 # Shared roots (env-overridable) — see r/config.R.
 .cfg <- grep("^--file=", commandArgs(FALSE), value = TRUE)
-source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "config.R") else "r/config.R")
+.r_dir <- if (length(.cfg)) dirname(sub("^--file=", "", .cfg[1])) else "r"
+source(file.path(.r_dir, "config.R"))
+source(file.path(.r_dir, "masc_utils.R"))
 
 source_dir <- mb_parcelsearch_root
 # Shards publish into the local mb-parcel-data clone (served via jsDelivr
@@ -107,13 +111,21 @@ if (geom_col != "geometry") {
 # ----------------------------------------------------------------------
 # 2. Read MASC ratings; build quarter-section polygons (~800m squares)
 # ----------------------------------------------------------------------
-masc_csv <- file.path(source_dir, "masc_soil_ratings_with_latlon.csv")
+masc_override <- Sys.getenv("MASC_SQUARE_CSV")
+masc_csv <- if (nzchar(masc_override)) {
+  normalizePath(masc_override, winslash = "/", mustWork = FALSE)
+} else {
+  file.path(source_dir, "masc_soil_ratings_with_latlon.csv")
+}
 if (!file.exists(masc_csv)) {
   stop("Cannot find masc_soil_ratings_with_latlon.csv at ", masc_csv)
 }
 cat("Reading MASC ratings ...\n")
-masc <- readr::read_csv(masc_csv, show_col_types = FALSE)
-cat("  rows:", nrow(masc), "\n")
+masc_raw <- read_masc_square_csv(masc_csv)
+cat("  raw rows:", nrow(masc_raw), "\n")
+masc <- normalize_masc_square(masc_raw)
+cat("  legal quarters:", nrow(masc),
+    "; multi-rated:", sum(grepl("/", masc$soil_ratings, fixed = TRUE)), "\n")
 
 masc <- masc |> filter(!is.na(lat), !is.na(lon))
 
@@ -141,9 +153,10 @@ masc_sf <- sf::st_sf(
   q      = masc$quarter,
   s      = as.integer(masc$section),
   t      = as.integer(masc$township),
-  r      = as.integer(masc$range_num),
+  r      = masc$range,
   d      = masc$direction,
   rating = masc$soil_rating,
+  ratings = masc$soil_ratings,
   ra     = as.integer(masc$risk_area),
   source = "quarter",
   label  = NA_character_,
@@ -180,13 +193,39 @@ utm14 <- 26914
 # parish_name (heuristic + override map) and matching on
 # (muni, prefix, lot_number).
 riverlot_kmz_path <- file.path(source_dir, "MB-RIVER-LOTS.kmz")
-riverlot_csv_path <- file.path(masc_scrape_root, "masc_soil_ratings_riverlots.csv")
+riverlot_override <- Sys.getenv("MASC_RIVERLOT_CSV")
+riverlot_csv_path <- if (nzchar(riverlot_override)) {
+  normalizePath(riverlot_override, winslash = "/", mustWork = FALSE)
+} else {
+  file.path(masc_scrape_root, "masc_soil_ratings_riverlots.csv")
+}
 
 riverlot_polys <- NULL
 if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
 
   cat("Reading river-lot MASC scrape ...\n")
   rl_csv <- readr::read_csv(riverlot_csv_path, show_col_types = FALSE)
+  # Legacy exports call the selected municipality `muni_name`; V2 keeps
+  # it as `input_municipality` and also returns the result municipality.
+  # The input value is the correct scope for the parish dropdown/query.
+  if (!"muni_name" %in% names(rl_csv)) {
+    if ("input_municipality" %in% names(rl_csv)) {
+      rl_csv <- rl_csv |> mutate(muni_name = input_municipality)
+    } else if ("municipality" %in% names(rl_csv)) {
+      rl_csv <- rl_csv |> mutate(muni_name = municipality)
+    } else {
+      stop("River-lot CSV needs muni_name, input_municipality, or municipality.")
+    }
+  }
+  river_required <- c(
+    "land_parcel", "lot_type", "portion", "parish_name", "parish_code",
+    "muni_name", "soil_rating", "risk_area"
+  )
+  river_missing <- setdiff(river_required, names(rl_csv))
+  if (length(river_missing)) {
+    stop("River-lot CSV is missing required columns: ",
+         paste(river_missing, collapse = ", "))
+  }
   cat("  rows:", nrow(rl_csv), "\n")
 
   # Hardcoded overrides for parish names whose KMZ prefix doesn't
@@ -578,9 +617,12 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
         q      = paste0(prefix, "RL"),                    # mimic the quarter "q" column
         s      = NA_integer_,
         t      = NA_integer_,
-        r      = suppressWarnings(as.integer(lot_id)),
+        # Keep lot identifiers as text: river/parish lots can be
+        # lettered or suffixed (for example A or 94A).
+        r      = as.character(lot_id),
         d      = parish_code,
         rating = rating,
+        ratings = rating,
         ra     = as.integer(ra),
         source = "riverlot",
         label  = paste0(prefix, "-", lot_type, "-", lot_id),
@@ -606,6 +648,7 @@ if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {
       transmute(
         label  = paste0(prefix, "-", lot_type, "-", lot_id),
         rating = rating,
+        ratings = rating,
         ra     = as.integer(ra),
         muni   = muni_with_typ,
         rating_muni = coalesce(rating_muni_with_typ, muni_with_typ),
@@ -683,6 +726,7 @@ dominant <- inter |>
   group_by(Roll_No_Txt, Muni_Name_With_Typ, rating) |>
   summarise(
     area_m2 = sum(area_m2),
+    ratings = collapse_masc_ratings(ratings),
     q  = first(q),
     s  = first(s),
     t  = first(t),
@@ -693,8 +737,10 @@ dominant <- inter |>
     label  = first(label),
     .groups = "drop_last"
   ) |>
-  arrange(desc(area_m2), rating) |>
+  mutate(.rating_rank = match(rating, masc_rating_codes)) |>
+  arrange(desc(area_m2), desc(.rating_rank)) |>
   slice_head(n = 1) |>
+  select(-.rating_rank) |>
   ungroup()
 
 cat("  parcels with a rating from intersection:", nrow(dominant), "\n")
@@ -721,11 +767,12 @@ if (nrow(unmatched) > 0) {
   # lot just outside the box still pulls the closest rating.
   masc_pts <- sf::st_sf(
     rating = masc$soil_rating,
+    ratings = masc$soil_ratings,
     ra     = as.integer(masc$risk_area),
     q      = masc$quarter,
     s      = as.integer(masc$section),
     t      = as.integer(masc$township),
-    r      = as.integer(masc$range_num),
+    r      = masc$range,
     d      = masc$direction,
     geometry = sf::st_sfc(
       mapply(function(lon, lat) sf::st_point(c(lon, lat)),
@@ -748,6 +795,7 @@ if (nrow(unmatched) > 0) {
     Roll_No_Txt        = unmatched$Roll_No_Txt,
     Muni_Name_With_Typ = unmatched$Muni_Name_With_Typ,
     rating             = masc_pts$rating[near_idx],
+    ratings            = masc_pts$ratings[near_idx],
     q                  = masc_pts$q[near_idx],
     s                  = masc_pts$s[near_idx],
     t                  = masc_pts$t[near_idx],
@@ -797,6 +845,7 @@ for (key in muni_keys) {
     lapply(seq_len(nrow(rows)), function(i) {
       list(
         rating = rows$rating[i],
+        ratings = rows$ratings[i],
         ra     = rows$ra[i],
         q      = rows$q[i],
         s      = rows$s[i],

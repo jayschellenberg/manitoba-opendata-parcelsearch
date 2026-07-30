@@ -64,14 +64,24 @@ clone (`mb_parcel_data_root` in `r/config.R`). After any rebuild:
 cd ..\mb-parcel-data
 git add -A && git commit -m "<what changed>" && git push
 ```
+When publishing only MASC data from a worktree that also contains other
+generated changes, scope the publication so unrelated shards stay unstaged:
+```
+powershell -ExecutionPolicy Bypass -File update-cdn-pin.ps1 `
+  -IncludePaths masc,parcel-masc,masc-riverlots.json `
+  -Message "Refresh MASC ratings"
+```
 **Then update the pinned commit** (REQUIRED): one command commits +
 pushes the data repo and rewrites the SHA in `web/src/arcgis.js`:
 ```
 powershell -ExecutionPolicy Bypass -File update-cdn-pin.ps1
 ```
 Use `-DryRun` to preview, `-Message "..."` to override the commit
-message. Review `git diff web/src/arcgis.js` and commit + push the app
-(Vercel redeploys; clients pick up the new shards on next load). That
+message, and `-IncludePaths` to stage only named generated products.
+Review `git diff web/src/arcgis.js` and commit + push the app
+(Vercel redeploys; clients pick up the new shards on next load). The
+data revision is part of each MASC cache key, so changing the pin
+automatically invalidates stale 30-day browser entries. That
 data repo's history exists only to mint immutable SHAs — squash it
 whenever it gets heavy, then repoint the app first.
 `section-grid.json` is published separately via `api/section-grid.js`

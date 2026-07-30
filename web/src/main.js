@@ -126,6 +126,8 @@ import {
   quarterLinesFromRows,
   surveyFcToRows,
   masccolor,
+  mascRatingLabel,
+  mascDisplayRating,
 } from './masc.js';
 import {
   initMap,
@@ -5128,7 +5130,8 @@ async function enrichOverlays(parcelFc, inputs, baseMsg, { skipDevPlan = false }
       const dict = p?.Muni_Name_With_Typ ? byMuni.get(p.Muni_Name_With_Typ) : null;
       const hit = (dict && p?.Roll_No_Txt) ? dict[p.Roll_No_Txt] : null;
       if (hit) {
-        p._soilRating = hit.rating || null;
+        p._soilRating = mascRatingLabel(hit) || null;
+        p._soilRatingCode = mascDisplayRating(hit) || null;
         p._soilQuarter = soilSourceLabel(hit);
       }
     }
@@ -8107,12 +8110,16 @@ function soilCell(p) {
   const swatch = document.createElement('span');
   swatch.className = 'soil-chip';
   swatch.textContent = rating;
-  swatch.style.backgroundColor = masccolor(rating);
+  const displayCode = p?._soilRatingCode || mascDisplayRating({ ratings: rating });
+  swatch.style.backgroundColor = masccolor(displayCode);
   // White text on the visually-dark swatches (C olive, F dark green,
   // H magenta, I red, J purple) so the rating letter stays legible
   // against the chip background.
-  swatch.style.color = ['C', 'F', 'H', 'I', 'J'].includes(rating) ? '#fff' : '#1a1a1a';
-  if (p._soilQuarter) cell.title = `Source: ${p._soilQuarter}`;
+  swatch.style.color = ['C', 'F', 'H', 'I', 'J'].includes(displayCode) ? '#fff' : '#1a1a1a';
+  const titleParts = [];
+  if (rating.includes('/')) titleParts.push(`Multiple MASC ratings: ${rating}`);
+  if (p._soilQuarter) titleParts.push(`Source: ${p._soilQuarter}`);
+  if (titleParts.length) cell.title = titleParts.join('\n');
   cell.appendChild(swatch);
   return cell;
 }

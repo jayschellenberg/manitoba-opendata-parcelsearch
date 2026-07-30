@@ -21,10 +21,17 @@
 param(
   [string]$Message = ("Refresh generated data shards {0}" -f (Get-Date -Format 'yyyy-MM-dd')),
   [string]$DataRepo,
+  [string[]]$IncludePaths,
   [switch]$DryRun
 )
 
 $ErrorActionPreference = 'Stop'
+$IncludePaths = @(
+  $IncludePaths |
+    ForEach-Object { $_ -split ',' } |
+    ForEach-Object { $_.Trim() } |
+    Where-Object { $_ }
+)
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $arcgisPath = Join-Path $root 'web\src\arcgis.js'
 if (-not (Test-Path $arcgisPath)) { throw "Cannot find $arcgisPath" }
@@ -49,13 +56,35 @@ try {
     Write-Host "Nothing to commit. Using current HEAD $headSha for the pin update."
   } elseif ($DryRun) {
     Write-Host "[dry-run] would commit + push these changes:"
-    Write-Host (($dirty | Select-Object -First 10) -join "`n")
-    if (($dirty | Measure-Object).Count -gt 10) { Write-Host "  ... and more" }
+    if ($IncludePaths) {
+      & git status --short -- @IncludePaths
+    } else {
+      Write-Host (($dirty | Select-Object -First 10) -join "`n")
+      if (($dirty | Measure-Object).Count -gt 10) { Write-Host "  ... and more" }
+    }
     $headSha = '<new-sha-after-push>'
   } else {
-    & git add -A
+    if ($IncludePaths) {
+      & git add -- @IncludePaths
+    } else {
+      & git add -A
+    }
     if ($LASTEXITCODE -ne 0) { throw 'git add failed' }
-    & git commit -m $Message
+    if ($IncludePaths) {
+      & git diff --cached --quiet -- @IncludePaths
+    } else {
+      & git diff --cached --quiet
+    }
+    if ($LASTEXITCODE -eq 0) {
+      throw 'Selected paths have no changes to commit.'
+    }
+    if ($IncludePaths) {
+      # --only commits the named generated products even if the caller
+      # already had unrelated changes staged in this shared worktree.
+      & git commit -m $Message --only -- @IncludePaths
+    } else {
+      & git commit -m $Message
+    }
     if ($LASTEXITCODE -ne 0) { throw 'git commit failed' }
     Write-Host 'Pushing to origin ...'
     & git push origin HEAD
@@ -68,21 +97,25 @@ finally {
   Pop-Location
 }
 
-# Rewrite the pinned SHA in arcgis.js. The constant is one of:
-#   export const MB_PARCEL_DATA_CDN =
-#     'https://cdn.jsdelivr.net/gh/<owner>/<repo>@<40-hex-sha>';
-# Match the @<sha>' tail so a wholesale rename of owner/repo doesn't
-# break the pattern; only the SHA changes.
+# Rewrite the pinned SHA in arcgis.js. MASC/browser cache keys include
+# this revision, so changing it also invalidates stale 30-day entries.
 $content = Get-Content $arcgisPath -Raw
-$pattern = "(?<=mb-parcel-data@)[0-9a-f]{7,40}(?=')"
-$existing = [regex]::Match($content, $pattern).Value
+$pattern = "(?m)(export const MB_PARCEL_DATA_REVISION\s*=\s*\r?\n?\s*')([0-9a-f]{7,40})(')"
+$match = [regex]::Match($content, $pattern)
+$existing = if ($match.Success) { $match.Groups[2].Value } else { '' }
 if (-not $existing) { throw "Could not find MB_PARCEL_DATA_CDN SHA in $arcgisPath" }
 if ($DryRun) {
   Write-Host "[dry-run] arcgis.js: SHA $existing -> $headSha"
 } elseif ($existing -eq $headSha) {
   Write-Host 'arcgis.js already points at HEAD - nothing to rewrite.'
 } else {
-  Set-Content -Path $arcgisPath -Value ($content -replace $pattern, $headSha) -NoNewline
+  $updated = [regex]::Replace(
+    $content,
+    $pattern,
+    { param($m) $m.Groups[1].Value + $headSha + $m.Groups[3].Value },
+    1
+  )
+  Set-Content -Path $arcgisPath -Value $updated -NoNewline
   Write-Host "arcgis.js: SHA $existing -> $headSha"
 }
 
