@@ -7,8 +7,8 @@
  *   - Legal description (grid or lot-block-plan form)
  *   - Title # (certificate of title)
  *
- * Stacked multi-parcel sales (one row whose Municipality / Roll / Legal
- * cells hold several newline-separated values) are reconstructed and
+ * Multi-parcel sales (one row whose Municipality / Roll / Legal cells
+ * hold several newline- or pipe-separated values) are reconstructed and
  * expanded into one row per parcel, tagged with a shared group id.
  *
  * Field types are auto-detected from header text + per-cell content
@@ -37,15 +37,28 @@ const LBP_RE = /^(\d{1,5})-(\d{1,5})-(\d{1,7})$/;
 /** Title with explicit prefix/suffix shape ("CT 123456", "123456/1"). */
 const TITLE_DECORATED_RE = /^(CT\s*\d+(\/\d+)?|\d+\/\d+)$/i;
 
-/** Header text variants per field type. */
+/**
+ * Header text variants per field type.
+ *
+ * Deliberately generous about the no-space / plural / underscore forms a
+ * script-generated export produces ("Rolls", "MuniNum", "Roll_No_Txt"),
+ * because with a header row present the guesser trusts these patterns and
+ * nothing else — see guessColumns().
+ *
+ * `muniName` is checked before `muni` so "Municipality Name" doesn't fall
+ * into the code bucket; a bare "Municipality" still lands on `muni`, where
+ * cell content decides between a numeric code and a name.
+ */
 const HEADER_PATTERNS = {
-  roll:  /^(roll|roll\s*#|roll\s*no\.?|roll\s*number)$/i,
-  muni:  /^(muni|muni\s*#|muni\s*no\.?|municipality|municipality\s*#|municipality\s*no\.?)$/i,
-  legal: /^(legal|legal\s*desc|legal\s*description|description|leg\s*desc|qq|qs)$/i,
+  roll:  /^(rolls?|roll\s*#s?|roll\s*nos?\.?|roll\s*num(ber)?s?|roll_no(_txt)?)$/i,
+  muniName: /^(muni(cipality)?\s*name)$/i,
+  muni:  /^(munis?|muni\s*#|muni\s*nos?\.?|muni\s*num(ber)?|muni\s*code|muni_no|municipality|municipality\s*#|municipality\s*nos?\.?|municipality\s*num(ber)?|municipality\s*code)$/i,
+  legal: /^(legal|legal_?\s*desc|legal_?\s*description|description|leg\s*desc|qq|qs)$/i,
   title: /^(title|title\s*#|title\s*no\.?|c\.?\s*o\.?\s*f?\s*t\.?|cert(ificate)?\s*of\s*title|ct)$/i,
   // Site / Comp #: a caller-supplied label used as the map/grid number
-  // instead of the auto 1..N sequence.
-  site:  /^(site|site\s*#|site\s*no\.?|site\s*number|comp|comp\s*#|comp\s*no\.?)$/i,
+  // instead of the auto 1..N sequence. "N1 ID" is the comp number an
+  // R-side comparable-sales export carries.
+  site:  /^(site|site\s*#|site\s*no\.?|site\s*number|comp|comp\s*#|comp\s*no\.?|n1\s*id)$/i,
 };
 
 export const FIELD_TYPES = Object.freeze(['roll', 'muni', 'muniName', 'legal', 'title', 'site', 'ignore']);
@@ -270,15 +283,38 @@ function tokenizeRowsFixedWidth(text, delimiter, N) {
 }
 
 /**
- * Expand any row whose cells carry newline-separated values into one row
- * per value — a stacked multi-parcel sale becomes N single-parcel rows.
- * `K` = the max line count across the row's cells; single-line cells
- * repeat their value, multi-line cells take their k-th value (missing
- * values blank-fill). Rows that produce K>1 members share a `groupId`
- * (a monotonic counter) so the caller can highlight them as one sale
- * group; single-parcel rows get `groupId: null`.
+ * Split one cell into the values it carries.
  *
- * Runs before cleanCell so the embedded newlines are still present.
+ * Two in-cell separators are recognized:
+ *   - newlines, the stacked-spreadsheet-copy shape (a multi-parcel sale
+ *     whose Roll / Legal cells wrap across several physical lines);
+ *   - pipes, the script-generated shape ("83100 | 83200 | 85200"), which
+ *     an R/CMS comparable-sales export writes when one comp spans several
+ *     rolls.
+ *
+ * A pipe only counts as a separator when it actually sits between two
+ * non-empty values, so a stray "|" inside a legal description or an
+ * address never fractures the cell.
+ */
+export function splitCellValues(cell) {
+  const out = [];
+  for (const line of String(cell ?? '').split(/\r\n|\r|\n/)) {
+    if (/[^\s|]\s*\|\s*[^\s|]/.test(line)) out.push(...line.split(/\s*\|\s*/));
+    else out.push(line);
+  }
+  return out;
+}
+
+/**
+ * Expand any row whose cells carry several values into one row per value
+ * — a multi-parcel sale becomes N single-parcel rows. `K` = the max value
+ * count across the row's cells; single-value cells repeat their value,
+ * multi-value cells take their k-th value (missing values blank-fill).
+ * Rows that produce K>1 members share a `groupId` (a monotonic counter)
+ * so the caller can highlight them as one sale group; single-parcel rows
+ * get `groupId: null`.
+ *
+ * Runs before cleanCell so the embedded separators are still present.
  * Returns { rows, groupIds } with groupIds parallel to rows.
  */
 function expandMultiValueRows(bodyRows) {
@@ -286,7 +322,7 @@ function expandMultiValueRows(bodyRows) {
   const groupIds = [];
   let groupCounter = 0;
   for (const row of bodyRows) {
-    const split = row.map((cell) => String(cell ?? '').split(/\r\n|\r|\n/));
+    const split = row.map((cell) => splitCellValues(cell));
     const K = split.reduce((m, parts) => Math.max(m, parts.length), 1);
     if (K <= 1) {
       outRows.push(row);
@@ -395,6 +431,68 @@ function guessColumnType(columnCells, headerCell) {
   return 'ignore';
 }
 
+/**
+ * Content shapes specific enough to trust under an unrecognized header.
+ * A municipality NAME ("RM OF X" / "X (RM)") and a legal description have
+ * regexes no price, acreage or distance column can imitate. The ambiguity
+ * that forces header-strict guessing below is entirely among the NUMERIC
+ * fields — roll, muni code, title #, site # — which are indistinguishable
+ * from any other integer column by content alone.
+ */
+const SHAPE_SPECIFIC_TYPES = new Set(['muniName', 'legal']);
+
+/**
+ * Field-type guess for every column.
+ *
+ * With a header row present, numeric fields come from the HEADERS ALONE: a
+ * column whose header isn't a recognized field name stays Ignore even when
+ * its contents look like a roll or a muni code. A wide analytical export —
+ * the R/CMS comparable-sales shape, 70+ columns of prices, acreages, IDs
+ * and distances — otherwise collects two dozen content-based guesses, and
+ * every duplicate among them blocks the modal's Resolve button until the
+ * user clears it by hand. Header text is the one signal that actually
+ * distinguishes a Roll # column from a Sale Price column.
+ *
+ * Recognized headers claim their field first, so a shape-specific column
+ * can never steal a field from the header that names it (a "DateSold" cell
+ * like "11-28-2025" parses as a lot-block-plan legal, but a real
+ * "LegalDesc" column has already taken `legal` by then).
+ *
+ * The full content voter still runs for headerless input (a bare paste),
+ * and as a fallback when nothing names a Roll # — without a roll nothing
+ * resolves, so a set of guesses beats a screen of Ignores.
+ */
+function guessColumns(columns, headers) {
+  if (!headers) return columns.map((cells) => guessColumnType(cells, ''));
+  const claimed = new Set();
+  const guesses = columns.map(() => 'ignore');
+
+  // Pass 1 — recognized headers. First column to claim a field keeps it,
+  // so an export carrying both "Rolls" and "Roll #" can't trip the
+  // duplicate-field validator.
+  columns.forEach((cells, c) => {
+    if (!headerToFieldType(headers[c])) return;
+    const t = guessColumnType(cells, headers[c]);
+    if (t === 'ignore' || claimed.has(t)) return;
+    claimed.add(t);
+    guesses[c] = t;
+  });
+
+  // Pass 2 — a column under an unrecognized header may still claim a
+  // shape-specific field it obviously holds (a "Place" column full of
+  // "RM OF SPRINGFIELD").
+  columns.forEach((cells, c) => {
+    if (guesses[c] !== 'ignore' || headerToFieldType(headers[c])) return;
+    const t = guessColumnType(cells, '');
+    if (!SHAPE_SPECIFIC_TYPES.has(t) || claimed.has(t)) return;
+    claimed.add(t);
+    guesses[c] = t;
+  });
+
+  if (claimed.has('roll')) return guesses;
+  return columns.map((cells, c) => guessColumnType(cells, headers[c] || ''));
+}
+
 // ---- top-level parse + mapping ----------------------------------
 
 /**
@@ -450,7 +548,7 @@ export function parseParcelList(text) {
   const { rows: body, groupIds } = expandMultiValueRows(rows.slice(bodyStart));
 
   const columns = Array.from({ length: widest }, (_, c) => body.map((r) => cleanCell(r[c] || '')));
-  const guesses = columns.map((cells, c) => guessColumnType(cells, headers?.[c] || ''));
+  const guesses = guessColumns(columns, headers);
 
   // Reconstruct rawLines for the body — used by the unresolved drawer
   // so the user sees what they actually pasted, not the post-cleanCell

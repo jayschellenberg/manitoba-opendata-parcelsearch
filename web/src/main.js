@@ -184,6 +184,7 @@ import {
   fetchTileNetwork,
 } from './wallas.js';
 import { generateParcelSnapshotsZip } from './snapshotExport.js';
+import { countSnapshotFrames } from './lib/snapshotGroups.js';
 import { OUTPUT_MIME, OUTPUT_QUALITY, MAX_OUTPUT_DIM } from './lib/imageOutput.js';
 import { dominantBucket, cultFraction, LAND_COVER_BUCKETS, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
 import { resolveParcelAcres } from './lib/acres.js';
@@ -1765,17 +1766,19 @@ const $staticMapSection = document.getElementById('static-map-section');
 if ($staticMapBtn) $staticMapBtn.addEventListener('click', generateStaticMap);
 
 // Parcel Snapshots (ZIP) — render a 1600×900 satellite JPEG of each result
-// parcel (highlighted, fit to 16:9) and download them all as one ZIP named
-// muniCode-roll.jpg. Enabled whenever the current result set is non-empty,
-// so it serves both entry points the user asked for: an imported parcel
-// list, and Sales Analysis after importing a list.
+// subject (highlighted, fit to 16:9) and download them all as one ZIP named
+// muniCode-roll.jpg. A multi-parcel comp is one subject: all its parcels
+// highlighted in a single frame (see lib/snapshotGroups.js), so the count
+// here is frames, not parcels. Enabled whenever the current result set is
+// non-empty, so it serves both entry points the user asked for: an imported
+// parcel list, and Sales Analysis after importing a list.
 const $snapshotBtn = document.getElementById('snapshot-zip-btn');
 let snapshotRunning = false;
 let snapshotAbort = null;
 if ($snapshotBtn) $snapshotBtn.addEventListener('click', handleSnapshotExport);
 
 function snapshotResultCount() {
-  return (lastResultFc?.features || []).filter((f) => f?.geometry).length;
+  return countSnapshotFrames(lastResultFc);
 }
 
 function updateSnapshotButton() {
@@ -1786,7 +1789,9 @@ function updateSnapshotButton() {
   $snapshotBtn.textContent = 'Parcel Snapshots (ZIP)';
   $snapshotBtn.title = n === 0
     ? 'Import a parcel list or run a search first, then generate one satellite JPEG per result parcel.'
-    : `Generate ${n} satellite JPEG${n === 1 ? '' : 's'} (1600×900, highlighted, 16:9) and download as a ZIP named muniCode-roll.jpg.`;
+    : `Generate ${n} satellite JPEG${n === 1 ? '' : 's'} (1600×900, highlighted, 16:9) and download as a ZIP, `
+      + 'each named muniCode-roll.jpg. A multi-parcel sale is captured as one image of the whole holding, '
+      + 'named for its first 3 rolls plus a parcel count.';
 }
 
 async function handleSnapshotExport() {

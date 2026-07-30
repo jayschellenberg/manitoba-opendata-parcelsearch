@@ -447,6 +447,127 @@ await test('Site header is detected and applyMapping extracts row.site', () => {
   assert.equal(parsed2.guesses[0], 'site');
 });
 
+// ---------- pipe-separated multi-parcel rows ----------
+
+console.log('\nparseParcelList — pipe-separated multi-roll cells');
+
+await test('a pipe-separated Rolls cell expands to one row per parcel', () => {
+  const text = [
+    'Rolls,MuniNum,Municipality,LegalDesc',
+    '225600,610,Piney (RM),NW6-2-14E',
+    '83100 | 83200 | 85200,610,Piney (RM),DESC NW15-1-14E',
+  ].join('\n');
+  const p = parseParcelList(text);
+  // 1 single-parcel row + 3 expanded members.
+  assert.equal(p.columns[0].length, 4);
+  assert.deepEqual(p.columns[0], ['225600', '83100', '83200', '85200']);
+  // Single-value cells repeat across the expanded members.
+  assert.deepEqual(p.columns[1], ['610', '610', '610', '610']);
+  // The three members share a group id; the single-parcel row has none.
+  assert.equal(p.groupIds[0], null);
+  assert.equal(p.groupIds[1], p.groupIds[2]);
+  assert.equal(p.groupIds[2], p.groupIds[3]);
+  assert.ok(p.groupIds[1] != null);
+});
+
+await test('applyMapping carries the group id onto every member', () => {
+  const text = [
+    'Rolls,MuniNum',
+    '196550 | 196800,612',
+  ].join('\n');
+  const p = parseParcelList(text);
+  const { rows } = applyMapping(p, p.guesses, { canonicalRoll });
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows.map((r) => r.roll), ['196550.000', '196800.000']);
+  assert.deepEqual(rows.map((r) => r.muniNo), [612, 612]);
+  assert.equal(rows[0].groupId, rows[1].groupId);
+});
+
+await test('a lone pipe with no value beside it is not a separator', () => {
+  // Legal text can carry a stray pipe; splitting on it would fabricate
+  // a phantom parcel with a blank roll.
+  const text = [
+    'Legal Desc,Roll #',
+    'NW26-2-13E |,218600',
+  ].join('\n');
+  const p = parseParcelList(text);
+  assert.equal(p.columns[0].length, 1);
+  assert.equal(p.columns[1][0], '218600');
+});
+
+// ---------- header-strict column guessing ----------
+
+console.log('\nparseParcelList — header-strict guessing');
+
+await test('wide export: only recognized headers get a field type', () => {
+  // The R/CMS comparable-sales shape. Every numeric column here would win
+  // a content-based vote (prices and acreages read as rolls, small counts
+  // read as muni codes); the header row is what tells them apart.
+  const text = [
+    'SaleID,GroupID,DateSold,PriceSold,Acres,NParcels,Rolls,RollFirst,LegalDesc,MuniSpan,MuniNum,N1ID,Municipality',
+    '225600@2025-11-28,10,11-28-2025,149150,157,1,225600,225600,NW6-2-14E,1,610,10,Piney (RM)',
+    '18000@2025-05-08,16,05-08-2025,185000,184,1,18000,18000,SW1-1-11E,1,610,16,Piney (RM)',
+  ].join('\n');
+  const p = parseParcelList(text);
+  const byHeader = Object.fromEntries(p.headers.map((h, i) => [h, p.guesses[i]]));
+  assert.equal(byHeader.Rolls, 'roll');
+  assert.equal(byHeader.MuniNum, 'muni');
+  assert.equal(byHeader.Municipality, 'muniName');
+  assert.equal(byHeader.LegalDesc, 'legal');
+  assert.equal(byHeader.N1ID, 'site');
+  // Everything else stays Ignore — no duplicate fields to clear by hand.
+  for (const h of ['SaleID', 'GroupID', 'DateSold', 'PriceSold', 'Acres', 'NParcels', 'RollFirst', 'MuniSpan']) {
+    assert.equal(byHeader[h], 'ignore', `${h} should be ignored`);
+  }
+  // The result is a mapping the modal will accept as-is.
+  assert.equal(validateMapping(p.guesses), null);
+});
+
+await test('a second column claiming the same field is left Ignore', () => {
+  const text = [
+    'Roll #,Rolls,Muni #',
+    '218600,218600,275',
+  ].join('\n');
+  const p = parseParcelList(text);
+  assert.deepEqual(p.guesses, ['roll', 'ignore', 'muni']);
+});
+
+await test('content voting still runs when there is no header row', () => {
+  const p = parseParcelList('NW26-2-13E\t218600\nNW27-2-13E\t219000');
+  assert.equal(p.headers, null);
+  assert.deepEqual(p.guesses, ['legal', 'roll']);
+});
+
+await test('content voting falls back in when no header names a Roll #', () => {
+  // Headers present but none recognized — strict mode would leave the user
+  // with a screen of Ignores and a blocked Resolve button, so the content
+  // voter takes over.
+  const text = [
+    'Parcel Identifier,Assessment Area',
+    '218600,NW26-2-13E',
+    '219000,NW27-2-13E',
+  ].join('\n');
+  const p = parseParcelList(text);
+  assert.deepEqual(p.guesses, ['roll', 'legal']);
+});
+
+await test('header aliases: plural / no-space / underscore export forms', () => {
+  const shapes = [
+    ['Rolls', 'roll'],
+    ['Roll Numbers', 'roll'],
+    ['RollNumber', 'roll'],
+    ['Roll_No_Txt', 'roll'],
+    ['MuniNum', 'muni'],
+    ['Muni Code', 'muni'],
+    ['Municipality Name', 'muniName'],
+    ['N1 ID', 'site'],
+  ];
+  for (const [header, expected] of shapes) {
+    const p = parseParcelList(`${header}\tRoll #\n610\t218600`);
+    assert.equal(p.guesses[0], expected, `${header} → ${expected}`);
+  }
+});
+
 // ---------- summary ----------
 
 const fails = results.filter((r) => r.status === 'fail');

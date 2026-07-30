@@ -1,10 +1,11 @@
 /*
  * Parcel satellite-snapshot export.
  *
- * For each parcel in a result set, render a 1600×900 (16:9) satellite JPEG
- * with the subject parcel highlighted (the same yellow selection styling a
- * normal search produces), surrounding parcel lines + roll-number labels
- * from the muni fabric, the section/township (DLS) grid turned on, zoomed
+ * For each subject in a result set — one parcel, or all the parcels of a
+ * multi-parcel comp (see lib/snapshotGroups.js) — render a 1600×900 (16:9)
+ * satellite JPEG with the subject highlighted (the same yellow selection
+ * styling a normal search produces), surrounding parcel lines + roll-number
+ * labels from the muni fabric, the section/township (DLS) grid turned on, zoomed
  * to the tightest extent that fits the 16:9 frame with a margin. Roll-number
  * labels are scaled up (2×) since these snapshots are mostly of larger rural
  * parcels viewed at a further-out zoom. JPEG keeps each frame well under
@@ -50,6 +51,7 @@ import {
   SNAPSHOT_W,
   SNAPSHOT_H,
 } from './lib/imageOutput.js';
+import { groupParcelsForSnapshots, snapshotBaseName } from './lib/snapshotGroups.js';
 
 const EXPORT_W = SNAPSHOT_W;
 const EXPORT_H = SNAPSHOT_H;
@@ -77,7 +79,8 @@ const CAPTURE_ATTEMPTS = 3;
 const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
 /**
- * Generate a ZIP of satellite snapshots, one per parcel.
+ * Generate a ZIP of satellite snapshots — one per subject, where a subject
+ * is a single parcel or the whole of a multi-parcel comp.
  *
  * @param {{ type:'FeatureCollection', features: Array }} parcelFc
  * @param {Object} [opts]
@@ -137,91 +140,76 @@ export async function generateParcelSnapshotsZip(parcelFc, opts = {}) {
     setSurveyGridVisible(map, true);
     scaleRollLabels(map, ROLL_LABEL_SCALE);
 
-    // Group by muni name so each muni's fabric (surrounding parcel lines +
-    // roll labels) is fetched and set once, then reused for every subject
-    // parcel in that muni.
-    const groups = new Map();
-    for (const f of features) {
-      const muniName = f.properties?.Muni_Name_With_Typ || '';
-      if (!groups.has(muniName)) groups.set(muniName, []);
-      groups.get(muniName).push(f);
-    }
-
-    const total = features.length;
+    // One frame per comp (see lib/snapshotGroups.js) — a multi-parcel sale
+    // is captured once with every member highlighted, not once per roll.
+    // The grouping comes back in muni-then-roll order, so each muni's
+    // fabric (surrounding parcel lines + roll labels) and section grid are
+    // fetched and set once and reused across that muni's frames.
+    const groups = groupParcelsForSnapshots(features);
+    const total = groups.length;
     let done = 0;
+    let loadedMuniKey = null;
 
-    for (const [muniName, groupFeatures] of groups) {
+    for (const group of groups) {
       throwIfAborted(signal);
-      let fabric = { type: 'FeatureCollection', features: [] };
-      if (muniName) {
-        try {
-          fabric = (await fetchMuniFabric(muniName)) || fabric;
-        } catch (err) {
-          console.warn(`Snapshot: muni fabric fetch failed for ${muniName} — surrounding lines omitted.`, err);
-        }
+
+      // Nearly always one muni; a comp straddling a municipal boundary
+      // needs both fabrics loaded at once, or half its parcels would be
+      // drawn with no surrounding lines.
+      const muniKey = group.muniNames.join('|');
+      if (muniKey !== loadedMuniKey) {
+        loadedMuniKey = muniKey;
+        setMuniParcelsData(map, await loadMuniFabric(group.muniNames, fetchMuniFabric));
+        // Set empty when unavailable so a prior muni's lines don't bleed
+        // into this one's frames.
+        setSurveyGridData(map, await loadSurveyGrid(group.muniNames, fetchSurveyGrid));
       }
-      setMuniParcelsData(map, fabric);
 
-      // Section/township (DLS) grid for this muni. Replaces the previous
-      // muni's grid each iteration; set empty when unavailable so a prior
-      // muni's lines don't bleed into this one's frames.
-      let grid = EMPTY_FC;
-      if (fetchSurveyGrid && muniName) {
-        try {
-          grid = (await fetchSurveyGrid(muniName)) || EMPTY_FC;
-        } catch (err) {
-          console.warn(`Snapshot: section grid fetch failed for ${muniName} — grid omitted.`, err);
-        }
+      const baseName = snapshotBaseName(group.members, OUTPUT_EXT);
+      const subjectFc = { type: 'FeatureCollection', features: group.members };
+      const bounds = bbox(subjectFc);
+      let data;
+      try {
+        data = await captureSnapshotWithRetry({
+          attempts: CAPTURE_ATTEMPTS,
+          prepare: async () => {
+            // Push the subject parcel(s) onto the 'parcels' source — this
+            // is the exact yellow selection styling a normal search
+            // produces. Repeat on retries so MapLibre gets a fresh source
+            // update and repaint request.
+            showResults(map, subjectFc, { fit: false });
+            fitParcelTo16by9(map, subjectFc);
+          },
+          waitUntilReady: () => waitForMapIdle(map, IDLE_TIMEOUT_MS),
+          capture: async () => {
+            const blob = await captureFrame(map, container);
+            return new Uint8Array(await blob.arrayBuffer());
+          },
+          validate: (candidateData) => {
+            const prior = findStaleSnapshotFrame(capturedFrames, {
+              name: baseName,
+              bounds,
+              data: candidateData,
+            });
+            if (prior) throw new StaleSnapshotFrameError(baseName, prior.name);
+          },
+          onRetry: ({ attempt, error }) => {
+            console.warn(
+              `Snapshot: ${baseName} attempt ${attempt}/${CAPTURE_ATTEMPTS} failed; retrying.`,
+              error,
+            );
+          },
+        });
+      } catch (err) {
+        throw new Error(`Could not capture ${baseName}: ${err?.message || err}`, { cause: err });
       }
-      setSurveyGridData(map, grid);
 
-      for (const feature of groupFeatures) {
-        throwIfAborted(signal);
-        const baseName = fileNameFor(feature);
-        const bounds = bbox(feature);
-        let data;
-        try {
-          data = await captureSnapshotWithRetry({
-            attempts: CAPTURE_ATTEMPTS,
-            prepare: async () => {
-              // Push the single subject parcel onto the 'parcels' source —
-              // this is the exact yellow selection styling a normal search
-              // produces. Repeat on retries so MapLibre gets a fresh source
-              // update and repaint request.
-              showResults(map, { type: 'FeatureCollection', features: [feature] }, { fit: false });
-              fitParcelTo16by9(map, feature);
-            },
-            waitUntilReady: () => waitForMapIdle(map, IDLE_TIMEOUT_MS),
-            capture: async () => {
-              const blob = await captureFrame(map, container);
-              return new Uint8Array(await blob.arrayBuffer());
-            },
-            validate: (candidateData) => {
-              const prior = findStaleSnapshotFrame(capturedFrames, {
-                name: baseName,
-                bounds,
-                data: candidateData,
-              });
-              if (prior) throw new StaleSnapshotFrameError(baseName, prior.name);
-            },
-            onRetry: ({ attempt, error }) => {
-              console.warn(
-                `Snapshot: ${baseName} attempt ${attempt}/${CAPTURE_ATTEMPTS} failed; retrying.`,
-                error,
-              );
-            },
-          });
-        } catch (err) {
-          throw new Error(`Could not capture ${baseName}: ${err?.message || err}`, { cause: err });
-        }
+      capturedFrames.push({ name: baseName, bounds, data });
+      const name = uniqueName(usedNames, baseName);
+      files.push({ name, data });
 
-        capturedFrames.push({ name: baseName, bounds, data });
-        const name = uniqueName(usedNames, baseName);
-        files.push({ name, data });
-
-        done += 1;
-        onProgress?.({ done, total, name });
-      }
+      done += 1;
+      onProgress?.({ done, total, name });
     }
 
     if (files.length === 0) {
@@ -239,6 +227,46 @@ export async function generateParcelSnapshotsZip(parcelFc, opts = {}) {
     container.remove();
     window._map = prevDebugMap;
   }
+}
+
+// ---- per-muni context layers -------------------------------------------
+
+/**
+ * Surrounding parcel lines + roll labels for the munis a frame spans.
+ * Merged when a comp straddles a boundary; the underlying fetch is cached,
+ * so re-reading a muni across frames costs nothing. A failure degrades to
+ * "no surrounding lines" rather than failing the batch — the subject
+ * parcel and the imagery are the evidence, the fabric is context.
+ */
+async function loadMuniFabric(muniNames, fetchMuniFabric) {
+  const features = [];
+  for (const muniName of muniNames) {
+    if (!muniName) continue;
+    try {
+      const fc = await fetchMuniFabric(muniName);
+      if (fc?.features?.length) features.push(...fc.features);
+    } catch (err) {
+      console.warn(`Snapshot: muni fabric fetch failed for ${muniName} — surrounding lines omitted.`, err);
+    }
+  }
+  return { type: 'FeatureCollection', features };
+}
+
+/** Section/township (DLS) grid for the munis a frame spans. Same
+ *  merge-and-degrade rules as loadMuniFabric. */
+async function loadSurveyGrid(muniNames, fetchSurveyGrid) {
+  if (!fetchSurveyGrid) return EMPTY_FC;
+  const features = [];
+  for (const muniName of muniNames) {
+    if (!muniName) continue;
+    try {
+      const fc = await fetchSurveyGrid(muniName);
+      if (fc?.features?.length) features.push(...fc.features);
+    } catch (err) {
+      console.warn(`Snapshot: section grid fetch failed for ${muniName} — grid omitted.`, err);
+    }
+  }
+  return { type: 'FeatureCollection', features };
 }
 
 // ---- label sizing ------------------------------------------------------
@@ -261,15 +289,17 @@ function scaleRollLabels(map, scale) {
 // ---- framing -----------------------------------------------------------
 
 /**
- * Fit the camera to a single parcel's bbox. On a 16:9 canvas, fitBounds
- * already yields "the maximum extent that fits in a 16:9 window" — it
- * scales to whichever of width/height is the binding constraint and
- * centres the rest. FRAME_PADDING supplies the small margin.
+ * Fit the camera to the subject's bbox — a single parcel feature, or a
+ * FeatureCollection of a multi-parcel comp's members, in which case turf's
+ * bbox returns the union and the whole holding lands in frame. On a 16:9
+ * canvas, fitBounds already yields "the maximum extent that fits in a 16:9
+ * window" — it scales to whichever of width/height is the binding
+ * constraint and centres the rest. FRAME_PADDING supplies the small margin.
  *
  * Exported for unit testing of the bbox/aspect math.
  */
-export function fitParcelTo16by9(map, feature, padding = FRAME_PADDING) {
-  const [minX, minY, maxX, maxY] = bbox(feature);
+export function fitParcelTo16by9(map, subject, padding = FRAME_PADDING) {
+  const [minX, minY, maxX, maxY] = bbox(subject);
   map.fitBounds(
     [[minX, minY], [maxX, maxY]],
     { padding, maxZoom: EXPORT_MAX_ZOOM, duration: 0 },
@@ -353,36 +383,6 @@ function wrapToWidth(ctx, text, maxWidth) {
 }
 
 // ---- file naming -------------------------------------------------------
-
-/**
- * `{muniCode}-{roll}.{ext}`. Muni code is the numeric prefix of the parcel's
- * `Municipality` field, which Roll_Entry stores as "187 - DE SALABERRY
- * (RM)". Roll trims the canonical trailing ".000" like the rest of the UI.
- *
- * Exported for unit testing.
- */
-export function fileNameFor(feature) {
-  const p = feature?.properties || {};
-  const muniCode = muniCodeFromMunicipality(p.Municipality);
-  const roll = humanRoll(p.Roll_No_Txt);
-  return `${sanitizeSegment(muniCode)}-${sanitizeSegment(roll)}.${OUTPUT_EXT}`;
-}
-
-function muniCodeFromMunicipality(municipality) {
-  if (!municipality) return 'NA';
-  const code = String(municipality).split(' - ')[0].trim();
-  return code || 'NA';
-}
-
-function humanRoll(roll) {
-  const s = String(roll ?? '').trim();
-  if (!s) return 'NA';
-  return s.endsWith('.000') ? s.slice(0, -4) : s;
-}
-
-function sanitizeSegment(s) {
-  return String(s).replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '') || 'NA';
-}
 
 /** Disambiguate duplicate filenames by appending -2, -3, … before .png. */
 function uniqueName(usedNames, name) {
