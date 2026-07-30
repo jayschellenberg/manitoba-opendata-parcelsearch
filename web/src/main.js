@@ -53,6 +53,10 @@ import {
   parseTitleNumbers,
   dominantCliLabel,
   dominantSoilTypeLabel,
+  dominantSlopeCode,
+  slopeSortRank,
+  parcelSlopeRange,
+  slopeRangeText,
 } from './lib/cellFormat.js';
 import { filterMascRiverlotsForMuni } from './lib/muniIdentity.js';
 import { safeExternalUrl } from './lib/safeUrl.js';
@@ -871,6 +875,21 @@ const SORT_KEYS = {
   // via the ￿ sentinel in strKey.
   clicls:   (r) => strKey(dominantCliLabel(r.parcel.properties)),
   soiltype: (r) => strKey(dominantSoilTypeLabel(r.parcel.properties)),
+  // Slope sorts by steepness rank, not by its label or raw code — see
+  // slopeSortRank. The cell shows a RANGE, so the key is its steepest
+  // class: that's the limiting factor for farmability and it's a bound
+  // the user can actually see in the cell. Ascending is flattest-first,
+  // with the unloaded cells last. Falls back to the dominant soil's
+  // class when no component carries a real slope.
+  slope:    (r) => {
+    const range = parcelSlopeRange(r.parcel.properties);
+    if (!range) return slopeSortRank(dominantSlopeCode(r.parcel.properties));
+    // Flattest bound breaks ties on the steepest class, so two parcels
+    // that both top out at 45% order by how much gentler ground they
+    // have rather than by whatever the previous sort left behind. min
+    // tops out at 100, so /1000 always stays inside one rank step.
+    return slopeSortRank(range.steepestCode) + range.min / 1000;
+  },
   // Land cover sorts by the dominant bucket's label; Cult % sorts on
   // the numeric cultivated fraction. Both read the per-parcel
   // `_landCover` stamp (only present on farmland parcels over the threshold);
@@ -6118,6 +6137,10 @@ function setCliMode(value) {
   if (value !== null) {
     setColumnVisible('clicls', true);
     setColumnVisible('soiltype', true);
+    // Slope comes from the same stamped composition, so the overlay that
+    // fills the other two fills this one — reveal it in step rather than
+    // leaving a column the user has to hunt for in the gear.
+    setColumnVisible('slope', true);
   }
 }
 // Last loaded CLI FC, kept so cycling between modes can re-rank the
@@ -7831,6 +7854,17 @@ function renderTable(rows, { resetPage = true } = {}) {
     // hint tells the user how to load it.
     tr.appendChild(td(dominantCliLabel(p), null, CLI_EMPTY_HINT));
     tr.appendChild(td(dominantSoilTypeLabel(p), null, SOIL_EMPTY_HINT));
+    // Slope, as the numeric span across every soil class on the parcel
+    // ("0 – 15%") rather than only the dominant soil's class — a quarter
+    // that is half level and half moderately sloping should not read as
+    // uniformly level. The per-soil breakdown goes on the title so the
+    // cell stays narrow; td() only titles EMPTY cells, hence setting it
+    // here. Empty string from slopeRangeText becomes null so td() renders
+    // the em-dash + not-loaded hint.
+    const slopeRange = parcelSlopeRange(p);
+    const slopeCell = td(slopeRangeText(slopeRange) || null, null, SLOPE_EMPTY_HINT);
+    if (slopeRange) slopeCell.title = slopeSummaryText(p, '\n');
+    tr.appendChild(slopeCell);
     // Land Cover (dominant farmland bucket + share) and Cult % — both
     // populated only for over-threshold parcels from the pre-baked
     // _landCover stamp; blank otherwise. Cult % is right-aligned
@@ -7954,6 +7988,53 @@ if ($paginator) {
  * entries (parcel has fewer than 3 soil associations) emit empty cells
  * so the column count stays fixed across rows.
  */
+/**
+ * Report-ready sentence for the parcel's slope — every class present with
+ * its share, plus the unclassified remainder when there is one:
+ *
+ *   "0 – 0.5% (level to nearly level) — 62%; >9 – 15% (moderately
+ *    sloping) — 31%; not classified — 7%"
+ *
+ * Ordered primary-first (parcelSlopeRange sorts parts by descending
+ * share), so it reads the way an appraiser would write it. Lives in
+ * main.js rather than cellFormat.js because the class labels come from
+ * map.js's domain tables; `sep` lets the grid tooltip break on newlines
+ * while the CSV keeps it to one line.
+ *
+ * The unclassified tail is deliberately stated rather than dropped: the
+ * composition is capped at three soil associations, so a mixed parcel can
+ * legitimately have a share this range says nothing about.
+ */
+/**
+ * The four Slope CSV cells, in the header order above: Range, Min %,
+ * Max % and Summary. Min/Max stay unformatted numbers so a spreadsheet
+ * reads them as numeric — no "%" suffix, that's in the header. Max is
+ * blank for the open-ended top class rather than a fake ceiling.
+ */
+function slopeCsvCells(p) {
+  const range = parcelSlopeRange(p);
+  if (!range) return ['', '', '', ''];
+  return [
+    slopeRangeText(range),
+    range.min,
+    range.max ?? '',
+    slopeSummaryText(p),
+  ];
+}
+
+function slopeSummaryText(p, sep = '; ') {
+  const range = parcelSlopeRange(p);
+  if (!range) return '';
+  const bits = range.parts.map(
+    (part) => `${decodeSoilDescriptor('topo', part.code)} — ${Math.round(part.pct)}%`,
+  );
+  // Sub-1% remainders are rounding noise, not a real gap in coverage.
+  if (range.unclassifiedPct >= 1) {
+    bits.push(`not classified — ${Math.round(range.unclassifiedPct)}%`);
+  }
+  return bits.join(sep);
+}
+
 const SOIL_CSV_DOMAINS_PER_SOIL = [
   ['topo',      'Slope'],
   ['stone',     'Stones'],
@@ -9792,7 +9873,14 @@ function exportCsv(explicitRows) {
     'Zoning 2 Code', 'Zoning 2 Name', 'Zoning 2 Category', 'Zoning 2 %', 'Zoning 2 By-law',
     'Dev-Plan Designation', 'Dev-Plan Category', 'Dev-Plan %', 'DP By-law', 'Planning District',
     'MASC Rating', 'MASC Source', 'Risk Area',
+    // Dominant-soil pair, mirroring the grid columns.
     'CLI', 'Soil Type',
+    // Slope, split so one export serves both jobs: Min/Max are bare
+    // numbers to filter and pivot on, Range matches the grid cell, and
+    // Summary is the paste-into-the-report sentence. The per-soil
+    // backing detail (Soil 1/2/3 Slope + % of Parcel) follows in
+    // soilCsvHeaders.
+    'Slope Range', 'Slope Min %', 'Slope Max %', 'Slope Summary',
     ...soilCsvHeaders(),
     'Land Cover', 'Cult %', 'Pasture %', 'Bush %', 'Wetland %', 'Other %',
     // Tiled / Irrigated lead their groups so a sales spreadsheet can
@@ -9877,6 +9965,7 @@ function exportCsv(explicitRows) {
       formatDes(d1), d1.DES_CATEGORY ?? '', ratioPct(row.devPlan[0]?.ratio), d1.DP_BYLAW ?? '', d1.PLANNINGDISTRICT ?? '',
       p._soilRating ?? '', p._soilQuarter ?? '', p._soilRiskArea ?? '',
       dominantCliLabel(p) ?? '', dominantSoilTypeLabel(p) ?? '',
+      ...slopeCsvCells(p),
       ...soilCsvCells(p),
       ...landCoverCsvCells(p, ac),
       ...tileDrainageCsvCells(p),
@@ -10175,6 +10264,8 @@ const CLI_EMPTY_HINT =
   'Pick the Agricultural column preset, or turn on the Soil Productivity/Soil Name overlay, to load soil capability for this municipality.';
 const SOIL_EMPTY_HINT =
   'Pick the Agricultural column preset, or turn on the Soil Productivity/Soil Name overlay, to load the soil association for this municipality.';
+const SLOPE_EMPTY_HINT =
+  'Pick the Agricultural column preset, or turn on the Soil Productivity/Soil Name overlay, to load the soil survey’s slope class for this municipality.';
 const LANDCOVER_EMPTY_HINT =
   `Loads automatically on a municipality-scoped search (select the municipality, then search) for parcels over ${LAND_COVER_MIN_ACRES} acres.`;
 const TILE_EMPTY_HINT =

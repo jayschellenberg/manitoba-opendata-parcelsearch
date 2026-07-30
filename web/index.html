@@ -1073,6 +1073,7 @@
                  stampSoilCompositionOnParcels in main.js. -->
             <th data-col="clicls" title="CLI capability class (with subclass) of the parcel's dominant soil, by area. Example: 2W = Class 2 with excess-water limitation. Populates with the Agricultural column preset or the Soil Productivity/Soil Name overlay.">CLI</th>
             <th data-col="soiltype" title="Soil association name of the parcel's dominant soil, by area within the parcel polygon. Example: Red River, Osborne. Populates with the Agricultural column preset or the Soil Productivity/Soil Name overlay.">Soil Type</th>
+            <th data-col="slope" title="Slope range across every soil mapped on the parcel, from the Manitoba Soil Survey TOPO field — e.g. 0 – 15% for a parcel that is part level and part moderately sloping. Hover a cell for the per-soil breakdown with each soil's share. Sorts by the steepest class present. Caveat: these are the mapped soil polygons' slope classes, NOT a measured slope — the composition is capped at three soil associations, so a mixed parcel can have an unclassified remainder (the hover names it). Full detail is in the CSV (Slope Range / Min / Max / Summary, plus Soil 1-3 Slope) and the parcel popup. Populates with the Agricultural column preset or the Soil Productivity/Soil Name overlay.">Slope</th>
             <!-- Land Cover + Cult % — farmland land-cover summary from the
                  2020 Land Cover raster (via the mao-assembly pipeline),
                  pre-baked per-muni by r/build_landcover.R. Only populated

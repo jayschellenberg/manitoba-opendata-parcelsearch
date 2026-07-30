@@ -42,6 +42,7 @@ export const DEFAULT_VISIBLE = new Set([
   'subjdist',
   'clicls',
   'soiltype',
+  'slope',
   // Tile Drainage + Irrigation are mode-gated by .water-only, so they
   // stay invisible until a WALLAS overlay or filter is active. Being in
   // the default set just means the gear isn't independently suppressing
@@ -76,7 +77,7 @@ export const PRESETS = {
   // they're stamped during every search/import enrichment.
   'Agricultural': new Set([
     'favorite', 'roll', 'address', 'acres', 'landcover', 'cultpct',
-    'soil', 'clicls', 'soiltype', 'riskarea', 'tile', 'irrigation',
+    'soil', 'clicls', 'soiltype', 'slope', 'riskarea', 'tile', 'irrigation',
     'grouppriceac', 'saledate', 'saleprice', 'saletoasmt', 'grouppricesf',
     'zone1', 'dev1', 'legal', 'title',
   ]),
