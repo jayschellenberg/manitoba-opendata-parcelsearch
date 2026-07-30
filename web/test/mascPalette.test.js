@@ -16,6 +16,7 @@ import {
   masccolor,
   mascDisplayRating,
   mascRatingLabel,
+  mascTextColor,
   quarterPolygon,
 } from '../src/masc.js';
 
@@ -124,6 +125,30 @@ test('keeps all official ratings while using one conservative colour code', () =
 test('old single-rating shards remain compatible', () => {
   assert.equal(mascRatingLabel({ rating: 'D' }), 'D');
   assert.equal(mascDisplayRating({ rating: 'D' }), 'D');
+});
+
+// The grid's MASC cell and the map popup's MASC box both fill a chip with
+// masccolor() and need the same legibility rule, which used to be an inline
+// array in main.js only.
+test('mascTextColor pins the dark swatches to white text', () => {
+  for (const code of ['C', 'F', 'H', 'I', 'J']) {
+    assert.equal(mascTextColor(code), '#fff', `${code} is a dark swatch`);
+  }
+});
+
+test('mascTextColor keeps light swatches dark-on-light', () => {
+  for (const code of ['A', 'B', 'D', 'E', 'G']) {
+    assert.equal(mascTextColor(code), '#1a1a1a', `${code} is a light swatch`);
+  }
+});
+
+test('mascTextColor tolerates case, padding and no rating at all', () => {
+  assert.equal(mascTextColor('j'), '#fff');
+  assert.equal(mascTextColor(' I '), '#fff');
+  // Unrated falls back to the grey masccolor() default, which takes dark text.
+  assert.equal(mascTextColor(''), '#1a1a1a');
+  assert.equal(mascTextColor(null), '#1a1a1a');
+  assert.equal(mascTextColor(undefined), '#1a1a1a');
 });
 
 const failed = results.filter((r) => r.status === 'fail');

@@ -28,6 +28,9 @@ import {
   MASC_PALETTE,
   MASC_RATING_LABEL_MIN_ZOOM,
   MASC_RISK_SOURCE_OPTIONS,
+  masccolor,
+  mascDisplayRating,
+  mascTextColor,
 } from './masc.js';
 import { SOIL_SURVEY_MAP_SOURCE_OPTIONS } from './soilSurvey.js';
 import { safeExternalUrl } from './lib/safeUrl.js';
@@ -3655,13 +3658,18 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
   // single-column layout to keep the popup narrow.
   const soilTable = soilSurveyParcelHtml(p._soilComposition);
   const landCoverTable = landCoverParcelHtml(p);
+  const mascBox = mascRatingParcelHtml(p);
 
-  // Right column stacks Land cover (farmland parcels over the threshold) above
-  // Soil composition (when the Soil Survey overlay is loaded). Either
-  // section alone triggers the 2-column layout; with neither, fall
-  // back to the narrow single-column popup.
+  // Right column stacks Land cover (farmland parcels over the threshold),
+  // then the MASC rating, then Soil composition (when the Soil Survey
+  // overlay is loaded) — coarsest to finest. ANY one section alone triggers
+  // the 2-column layout; with none, fall back to the narrow single-column
+  // popup. MASC is stamped by ordinary enrichment rather than gated on an
+  // acreage threshold or an overlay being on, so it can well be the only
+  // section present on a small rural parcel.
   const rightSections = [];
   if (landCoverTable) rightSections.push(`<strong>Land cover</strong>${landCoverTable}`);
+  if (mascBox)        rightSections.push(`<strong>MASC rating</strong>${mascBox}`);
   if (soilTable)      rightSections.push(`<strong>Soil composition</strong>${soilTable}`);
 
   if (rightSections.length) {
@@ -4117,6 +4125,46 @@ export function landCoverParcelHtml(p) {
     </tr>`;
   }).join('');
   return `<table style="margin-top:4px;font-size:12px;border-collapse:collapse;width:100%">${html}</table>`;
+}
+
+/**
+ * MASC soil-rating box for the parcel popup — the dominant crop-insurance
+ * rating for this parcel, the quarter section it was read from, and the
+ * MASC risk area. All three are stamped onto the parcel during search
+ * enrichment (see main.js's parcel-MASC pass), so this is display only.
+ *
+ * The source quarter is worth showing rather than just the letter: a parcel
+ * can span more than one rated quarter, and `_soilRating` is the dominant
+ * one by area overlap — being able to see WHICH quarter produced it is the
+ * difference between a number you can cite and a number you have to go
+ * check. A parcel carrying more than one official rating renders the full
+ * label ("C/F") with the chip coloured by the conservative code.
+ *
+ * Returns null when the parcel has no rating — urban parcels, and munis
+ * with no MASC shard, simply don't get the section.
+ */
+export function mascRatingParcelHtml(p) {
+  const rating = p?._soilRating;
+  if (!rating) return null;
+  const code = p?._soilRatingCode || mascDisplayRating({ ratings: rating });
+  const chipTitle = String(rating).includes('/')
+    ? ` title="Multiple MASC ratings: ${escapeHtml(rating)}"`
+    : '';
+  const chip = `<span${chipTitle} style="display:inline-block;min-width:1.6em;padding:1px 6px;`
+    + `border-radius:4px;font-weight:600;text-align:center;`
+    + `background:${escapeHtml(masccolor(code))};color:${escapeHtml(mascTextColor(code))};`
+    + `border:1px solid rgba(0,0,0,0.2)">${escapeHtml(rating)}</span>`;
+
+  const lines = [];
+  const source = p._soilQuarter
+    ? ` <span style="color:#555">from ${escapeHtml(p._soilQuarter)}</span>`
+    : '';
+  lines.push(`${chip}${source}`);
+  const risk = p._soilRiskArea;
+  if (risk != null && String(risk).trim() !== '') {
+    lines.push(`<span style="color:#555">Risk Area ${escapeHtml(risk)}</span>`);
+  }
+  return `<div style="margin-top:4px;font-size:12px;line-height:1.7">${lines.join('<br>')}</div>`;
 }
 
 /**

@@ -128,6 +128,7 @@ import {
   masccolor,
   mascRatingLabel,
   mascDisplayRating,
+  mascTextColor,
 } from './masc.js';
 import {
   initMap,
@@ -8112,10 +8113,9 @@ function soilCell(p) {
   swatch.textContent = rating;
   const displayCode = p?._soilRatingCode || mascDisplayRating({ ratings: rating });
   swatch.style.backgroundColor = masccolor(displayCode);
-  // White text on the visually-dark swatches (C olive, F dark green,
-  // H magenta, I red, J purple) so the rating letter stays legible
-  // against the chip background.
-  swatch.style.color = ['C', 'F', 'H', 'I', 'J'].includes(displayCode) ? '#fff' : '#1a1a1a';
+  // Legibility rule lives beside the palette in masc.js so this cell and the
+  // map popup's MASC box can't drift apart.
+  swatch.style.color = mascTextColor(displayCode);
   const titleParts = [];
   if (rating.includes('/')) titleParts.push(`Multiple MASC ratings: ${rating}`);
   if (p._soilQuarter) titleParts.push(`Source: ${p._soilQuarter}`);

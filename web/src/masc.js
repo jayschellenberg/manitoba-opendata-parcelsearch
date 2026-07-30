@@ -284,3 +284,20 @@ export function masccolor(code) {
   }
   return '#cccccc';
 }
+
+// Ratings whose swatch is dark enough that near-black text stops being
+// legible on it: C (olive), F (dark green), H (magenta), I (red), J
+// (purple). Everything else — the pale yellows, light green, light pink and
+// the grey no-rating fallback — reads better dark-on-light.
+const MASC_DARK_SWATCHES = new Set(['C', 'F', 'H', 'I', 'J']);
+
+/**
+ * Legible text colour for a chip filled with masccolor(code). Lives here
+ * beside the palette so the grid cell and the map popup can't drift apart
+ * the way the colours themselves once did.
+ */
+export function mascTextColor(code) {
+  return MASC_DARK_SWATCHES.has(String(code ?? '').trim().toUpperCase())
+    ? '#fff'
+    : '#1a1a1a';
+}
