@@ -117,6 +117,7 @@ import {
   fetchMascRiverlots,
   fetchCliAgrForMuni,
   parseRollList,
+  parseRollGroups,
   missingRollsFromResults,
   canonicalRoll,
   acresFromFrontageField,
@@ -2882,6 +2883,35 @@ async function runSearch() {
         if (gid != null) f.properties._saleGroupId = gid;
       }
       computeSaleGroupTotals(parcelFc);
+    }
+
+    // Joined Roll # entries — "83100+83200" typed into the Roll # field —
+    // mean "treat these as ONE subject". Stamp them with a shared group id,
+    // which is the same signal the import path uses: the map shades the set
+    // together, the hover-sibling highlight lights up its members, and
+    // Parcel Snapshots captures one framed image of the whole holding
+    // instead of one image per roll.
+    //
+    // Single-roll groups are deliberately left unstamped. A group id on
+    // every parcel would shade the entire result set as if it were all one
+    // sale, which is the opposite of the signal.
+    //
+    // Rolls are matched on the canonical form alone, not muni+roll: the
+    // Roll # field is normally used with a municipality selected, and a
+    // cross-muni roll collision would already have returned both parcels.
+    if (!hasList && inputs.roll) {
+      const joined = parseRollGroups(inputs.roll).filter((g) => g.rolls.length > 1);
+      if (joined.length > 0) {
+        const groupByRoll = new Map();
+        joined.forEach((g, i) => {
+          for (const r of g.rolls) groupByRoll.set(canonicalRoll(r), i + 1);
+        });
+        for (const f of parcelFc.features || []) {
+          const gid = groupByRoll.get(String(f.properties?.Roll_No_Txt || ''));
+          if (gid != null) f.properties._saleGroupId = gid;
+        }
+        computeSaleGroupTotals(parcelFc);
+      }
     }
 
     // Site/Comp # from a parcel-list import: stamp the caller's label onto

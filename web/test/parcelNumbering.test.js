@@ -13,6 +13,7 @@ import {
   assignParcelSeq,
   clearParcelSeq,
   siteValue,
+  groupValue,
 } from '../src/lib/parcelNumbering.js';
 
 function feat(municipality, roll, extra = {}) {
@@ -129,5 +130,72 @@ assert.equal(rollNumericValue({}), Infinity);
   assert.equal(ordered.length, 1);
   assert.equal(ordered[0], good);
 }
+
+// ---- grouped parcels count as ONE subject ---------------------------
+// A multi-roll holding — rolls joined with + / | in the Roll # field, a
+// multi-parcel sale in a CSV, or a multi-roll row in a list import — is one
+// comp on the map and carries one badge, not one per roll.
+{
+  const g = (roll, gid) => feat('610 - PINEY (RM)', roll, { _saleGroupId: gid });
+  const feats = [
+    feat('610 - PINEY (RM)', '18000.000'),          // ungrouped, lowest roll
+    g('83100.000', 7),
+    g('83200.000', 7),
+    g('85200.000', 7),
+    feat('610 - PINEY (RM)', '225600.000'),         // ungrouped, highest roll
+  ];
+  assignParcelSeq(feats);
+  const seqOf = (roll) => feats.find((f) => f.properties.Roll_No_Txt === roll).properties._seq;
+  assert.equal(seqOf('18000.000'), 1);
+  assert.equal(seqOf('83100.000'), 2);
+  assert.equal(seqOf('83200.000'), 2, 'group members share one number');
+  assert.equal(seqOf('85200.000'), 2);
+  assert.equal(seqOf('225600.000'), 3, 'the count advances once per group, not per parcel');
+}
+
+// Two groups plus singles — each group consumes exactly one number.
+{
+  const feats = [
+    feat('610 - PINEY (RM)', '100.000', { _saleGroupId: 1 }),
+    feat('610 - PINEY (RM)', '200.000', { _saleGroupId: 1 }),
+    feat('610 - PINEY (RM)', '300.000'),
+    feat('610 - PINEY (RM)', '400.000', { _saleGroupId: 2 }),
+    feat('610 - PINEY (RM)', '500.000', { _saleGroupId: 2 }),
+  ];
+  assignParcelSeq(feats);
+  assert.deepEqual(feats.map((f) => f.properties._seq), [1, 1, 2, 3, 3]);
+}
+
+// A group id unique to one parcel behaves exactly like an ungrouped one —
+// this is the ordinary sales-CSV shape, where every single-parcel sale gets
+// its own id.
+{
+  const feats = [
+    feat('610 - PINEY (RM)', '100.000', { _saleGroupId: 11 }),
+    feat('610 - PINEY (RM)', '200.000', { _saleGroupId: 12 }),
+    feat('610 - PINEY (RM)', '300.000', { _saleGroupId: 13 }),
+  ];
+  assignParcelSeq(feats);
+  assert.deepEqual(feats.map((f) => f.properties._seq), [1, 2, 3]);
+}
+
+// Site labels still win outright — a caller-supplied comp number beats the
+// computed sequence whether or not the parcels are grouped.
+{
+  const feats = [
+    feat('610 - PINEY (RM)', '100.000', { _saleGroupId: 1, _siteNo: '24' }),
+    feat('610 - PINEY (RM)', '200.000', { _saleGroupId: 1, _siteNo: '24' }),
+  ];
+  assignParcelSeq(feats);
+  assert.deepEqual(feats.map((f) => f.properties._seq), [24, 24]);
+}
+
+// ---- groupValue -----------------------------------------------------
+assert.equal(groupValue({ _saleGroupId: 3 }), '3');
+assert.equal(groupValue({ _saleGroupId: '3' }), '3', 'number and string ids are the same group');
+assert.equal(groupValue({ _saleGroupId: '' }), null);
+assert.equal(groupValue({ _saleGroupId: null }), null);
+assert.equal(groupValue({}), null);
+assert.equal(groupValue(undefined), null);
 
 console.log('parcelNumbering.test.js: all assertions passed');

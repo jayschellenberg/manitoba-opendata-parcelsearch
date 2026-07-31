@@ -80,6 +80,19 @@ export function siteValue(props) {
 }
 
 /**
+ * Group identity — parcels that are one subject rather than several.
+ * Stamped as `_saleGroupId` by all three paths that can produce one: a
+ * multi-parcel sale in a CSV upload, a multi-roll row in a parcel-list
+ * import, and rolls joined with `+` / `|` in the Roll # field.
+ */
+export function groupValue(props) {
+  const raw = props?._saleGroupId;
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  return s === '' ? null : s;
+}
+
+/**
  * Assign each feature's `_seq` — the number shown on the map badge and
  * in the grid "#" column.
  *
@@ -90,7 +103,10 @@ export function siteValue(props) {
  * Parcels in the set without a Site value get no number.
  *
  * Otherwise it falls back to the computed sequence: 1..N in
- * municipality-code-then-Roll# order.
+ * municipality-code-then-Roll# order, counting by SUBJECT rather than by
+ * parcel — every member of a group (see groupValue) shares one number, and
+ * the count advances once for the group. A six-roll holding is one comp on
+ * the map and should carry one badge, not six consecutive ones.
  *
  * Mutates the features and returns them (in assigned order for the
  * computed case; input order for the Site case).
@@ -109,7 +125,17 @@ export function assignParcelSeq(features) {
     return list;
   }
   const ordered = orderForNumbering(list);
-  ordered.forEach((f, i) => { f.properties._seq = i + 1; });
+  const numberByGroup = new Map();
+  let next = 1;
+  for (const f of ordered) {
+    const gid = groupValue(f.properties);
+    if (gid == null) {
+      f.properties._seq = next++;
+      continue;
+    }
+    if (!numberByGroup.has(gid)) numberByGroup.set(gid, next++);
+    f.properties._seq = numberByGroup.get(gid);
+  }
   return ordered;
 }
 

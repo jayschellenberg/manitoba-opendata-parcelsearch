@@ -3043,22 +3043,71 @@ function makeEmptyFc({ truncated = false } = {}) {
  * actually got queried.
  */
 export function parseRollList(input) {
-  if (!input) return [];
-  const seen = new Set();
   const out = [];
-  // Accepted separators: whitespace, comma, semicolon, ampersand.
-  // `&` is included to match the format some external tools emit
-  // (e.g. "84900&85000.1&85900"); comma stays the preferred form in
-  // tooltips. None of these characters appear in a valid roll number
-  // (\d+(\.\d{3})?), so the cross-product is unambiguous.
-  for (const raw of String(input).split(/[\s,;&]+/)) {
-    const v = raw.trim();
-    if (!v) continue;
-    if (seen.has(v)) continue;
-    seen.add(v);
-    out.push(v);
+  const seen = new Set();
+  for (const group of parseRollGroups(input)) {
+    for (const v of group.rolls) {
+      if (seen.has(v)) continue;
+      seen.add(v);
+      out.push(v);
+    }
   }
   return out;
+}
+
+/**
+ * Roll entries are SEPARATED by whitespace, comma, semicolon or ampersand.
+ * `&` is included to match the format some external tools emit (e.g.
+ * "84900&85000.1&85900"); comma stays the preferred form in tooltips. None
+ * of these appear in a valid roll number (\d+(\.\d{3})?), so the
+ * cross-product is unambiguous.
+ */
+const ROLL_SEPARATORS = /[\s,;&]+/;
+
+/**
+ * Rolls are JOINED — "treat these as one subject" — by `+` or `|`. Both are
+ * outside the separator set above and outside a valid roll number, and the
+ * Roll # chip input splits on neither, so "83100+83200" stays a single chip
+ * and the grouping is visible before the search runs. `|` doubles as the
+ * multi-parcel-comp joiner in the parcel-list import (see
+ * lib/parcelListParser.js), so a roll list pasted out of that data groups
+ * the same way here.
+ */
+const ROLL_JOINERS = /[+|]+/;
+
+/**
+ * Parse a Roll # input into GROUPS of rolls: separated entries become their
+ * own group, joined entries share one.
+ *
+ *   "179800, 83100+83200, 225600"
+ *     → [{rolls:['179800']}, {rolls:['83100','83200']}, {rolls:['225600']}]
+ *
+ * Rolls are returned in input form (not canonicalized) to match
+ * parseRollList; callers that need the stored ".000" form run them through
+ * canonicalRoll. Duplicates WITHIN a group collapse; a roll repeated across
+ * groups is kept in the first group that claims it, so a stray repeat can't
+ * silently move a parcel from one snapshot frame to another.
+ *
+ * Exported so main.js can stamp the group identity onto fetched parcels —
+ * that's what makes a joined set shade together on the map and land in one
+ * Parcel Snapshot frame instead of one frame per roll.
+ */
+export function parseRollGroups(input) {
+  if (!input) return [];
+  const groups = [];
+  const claimed = new Set();
+  for (const chunk of String(input).split(ROLL_SEPARATORS)) {
+    if (!chunk.trim()) continue;
+    const rolls = [];
+    for (const raw of chunk.split(ROLL_JOINERS)) {
+      const v = raw.trim();
+      if (!v || claimed.has(v)) continue;
+      claimed.add(v);
+      rolls.push(v);
+    }
+    if (rolls.length > 0) groups.push({ rolls });
+  }
+  return groups;
 }
 
 /**
