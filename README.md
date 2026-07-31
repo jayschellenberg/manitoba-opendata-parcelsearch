@@ -61,7 +61,18 @@ The page splits into a fixed-width left sidebar holding all controls and a fluid
 **Sidebar — Search section:**
 - Municipality dropdown (preloaded with every distinct `Muni_Name_With_Typ` value; narrows the Zoning Category dropdown to the codes actually present in the muni)
 - Civic Address (case-insensitive `LIKE`)
-- Roll # — single value or comma-separated list. One roll runs as before; pasting many runs them all in one query and the count badge calls out any rolls that didn't match (e.g. `23 of 25 rolls matched · 2 of 25 not found: 1234, 5678`). Accepts both `3600` and `3600.000`. Cross-muni bulk via LINC is documented as future work in REPLICATION_GUIDE §15.5.
+- Roll # — single value or a list. One roll runs as before; pasting many runs them all in one query and the count badge calls out any rolls that didn't match (e.g. `23 of 25 rolls matched · 2 of 25 not found: 1234, 5678`). Accepts both `3600` and `3600.000`. Cross-muni bulk via LINC is documented as future work in REPLICATION_GUIDE §15.5.
+
+  Two punctuation rules, meaning opposite things:
+
+  | | Characters | Meaning | Example |
+  |---|---|---|---|
+  | **Separate** | `,` space newline `;` | different properties | `83100, 85200` → 2 chips, 2 snapshots |
+  | **Join** | `+` `&` `|` | one property, several rolls | `83100+83200` → 1 chip, 1 snapshot |
+
+  A joined set stays a **single chip**, so the grouping is visible before the search runs. Its members shade together on the map, highlight as siblings on hover, share one badge number, and land in one combined Parcel Snapshot named for the first three rolls plus a parcel count (`610-83100_83200_85200-6p.jpg`). Each roll still gets its own grid row and assessment — joining is a statement about the subject, not the data. `|` is also the multi-parcel-comp joiner in the parcel-list import, so a roll list pasted out of that data groups the same way here.
+
+  > `&` **joins** — it used to separate. If you have saved links or notes using `&` between unrelated rolls, they now produce one combined image instead of one per roll; swap those to commas.
 - Legal Description (contains), Lot / Block / Plan (exact), and Certificate of Title (contains) from the generated MAO scrape index
 - Zoning Category dropdown (per-muni narrowed)
 - Status dropdown — `Any` / `Zoning Changed` / `Dev Plan Changed` / `Both Changed`

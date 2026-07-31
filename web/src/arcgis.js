@@ -3056,24 +3056,31 @@ export function parseRollList(input) {
 }
 
 /**
- * Roll entries are SEPARATED by whitespace, comma, semicolon or ampersand.
- * `&` is included to match the format some external tools emit (e.g.
- * "84900&85000.1&85900"); comma stays the preferred form in tooltips. None
- * of these appear in a valid roll number (\d+(\.\d{3})?), so the
- * cross-product is unambiguous.
+ * Roll entries are SEPARATED — "these are different properties" — by
+ * whitespace, comma or semicolon. Comma is the preferred form in tooltips;
+ * whitespace covers a column pasted straight out of a spreadsheet. Neither
+ * appears in a valid roll number (\d+(\.\d{3})?), so the cross-product with
+ * the joiners below is unambiguous.
  */
-const ROLL_SEPARATORS = /[\s,;&]+/;
+const ROLL_SEPARATORS = /[\s,;]+/;
 
 /**
- * Rolls are JOINED — "treat these as one subject" — by `+` or `|`. Both are
- * outside the separator set above and outside a valid roll number, and the
- * Roll # chip input splits on neither, so "83100+83200" stays a single chip
- * and the grouping is visible before the search runs. `|` doubles as the
- * multi-parcel-comp joiner in the parcel-list import (see
- * lib/parcelListParser.js), so a roll list pasted out of that data groups
- * the same way here.
+ * Rolls are JOINED — "these are one property" — by `+`, `&` or `|`.
+ *
+ * `&` used to separate, matching the "Roll A & Roll B" style some people
+ * type from memory. It moved here because that reading is genuinely
+ * ambiguous in English — "83100 & 83200" is as easily one holding as two
+ * properties — and joining is the meaning this app can act on. Anyone still
+ * pasting `&`-separated lists gets one combined snapshot instead of two, so
+ * the tooltip and README now spell out separators vs joiners.
+ *
+ * `|` doubles as the multi-parcel-comp joiner in the parcel-list import
+ * (see lib/parcelListParser.js), so a roll list pasted out of that data
+ * groups the same way here. None of the three appears in a roll number, and
+ * the Roll # chip input splits on none of them, so a joined set stays a
+ * SINGLE chip and the grouping is visible before the search runs.
  */
-const ROLL_JOINERS = /[+|]+/;
+const ROLL_JOINERS = /[+|&]+/;
 
 /**
  * Parse a Roll # input into GROUPS of rolls: separated entries become their

@@ -174,7 +174,10 @@ test('canonicalRollList dedupes across input forms', () => {
   assert.deepEqual(canonicalRollList('3600, 3600.000'), ['3600.000']);
 });
 
-test('canonicalRollList accepts comma / ampersand / whitespace separators', () => {
+test('canonicalRollList returns every roll regardless of punctuation', () => {
+  // The SQL path is grouping-blind: separated or joined, all four rolls
+  // have to be fetched. `&` moved from separator to joiner without changing
+  // this list — only which parcels end up sharing a snapshot frame.
   assert.deepEqual(canonicalRollList('28410&970 966,1000.5'),
     ['28410.000', '970.000', '966.000', '1000.500']);
 });
@@ -293,19 +296,31 @@ test('pipe joins the same way plus does — the CSV-import convention', () => {
     parseRollGroups('83100|83200, 225600').map((g) => g.rolls),
     [['83100', '83200'], ['225600']],
   );
+});
+
+test('ampersand joins — "83100 & 83200" is ONE property', () => {
+  // `&` was a separator until users confirmed they never paste the
+  // "Roll A & Roll B" listing style it was added for. Reading it as "these
+  // two together" is the meaning the app can act on.
   assert.deepEqual(
-    parseRollGroups('83100+83200|85200').map((g) => g.rolls),
-    [['83100', '83200', '85200']],
-    'the two joiners mix freely',
+    parseRollGroups('83100&83200, 225600').map((g) => g.rolls),
+    [['83100', '83200'], ['225600']],
   );
 });
 
-test('every existing separator still separates', () => {
-  // Whitespace, comma, semicolon and ampersand predate the joiners and
-  // must keep splitting rolls into their own groups.
+test('the three joiners mix freely inside one group', () => {
   assert.deepEqual(
-    parseRollGroups('100 200,300;400&500').map((g) => g.rolls),
-    [['100'], ['200'], ['300'], ['400'], ['500']],
+    parseRollGroups('83100+83200|85200&86400').map((g) => g.rolls),
+    [['83100', '83200', '85200', '86400']],
+  );
+});
+
+test('the remaining separators still separate', () => {
+  // Whitespace, comma and semicolon keep splitting rolls into their own
+  // groups. Ampersand is deliberately absent — it joins now.
+  assert.deepEqual(
+    parseRollGroups('100 200,300;400').map((g) => g.rolls),
+    [['100'], ['200'], ['300'], ['400']],
   );
 });
 
