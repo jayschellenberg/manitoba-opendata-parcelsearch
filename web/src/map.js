@@ -1678,11 +1678,16 @@ export function initMap(container, { onFeatureClick } = {}) {
             'case',
             ['boolean', ['feature-state', 'starred'], false],
             '#8b0000',
-            // Multi-parcel sale group (imported sales list, or a sales
-            // CSV) — a warm amber distinct from the single-parcel yellow
-            // so parcels that sold together read as one group.
+            // Multi-parcel sale group (imported sales list, a sales CSV, or
+            // rolls joined with + & | in the Roll # field) — a deeper yellow,
+            // 9° of hue warmer than the single-parcel #ffea00. Deliberately
+            // a near-miss rather than a contrast: a group is a variation on
+            // a selected parcel, not a different kind of thing, and the old
+            // #ff9100 amber (21° away) read as its own category. At 30% fill
+            // opacity the difference is carried mostly by the 75%-opacity
+            // outline below, which uses the same pair.
             ['>', ['to-number', ['coalesce', ['get', '_saleGroupSize'], 1]], 1],
-            '#ff9100',
+            '#ffc400',
             '#ffea00',
           ],
           'fill-opacity': [
@@ -1713,10 +1718,12 @@ export function initMap(container, { onFeatureClick } = {}) {
             'case',
             ['boolean', ['feature-state', 'starred'], false],
             '#8b0000',
-            // Amber outline for multi-parcel sale groups — matches the
-            // group fill so the grouped parcels read as one selection.
+            // Deeper-yellow outline for multi-parcel sale groups — matches
+            // the group fill so the grouped parcels read as one selection.
+            // This is where the 9° shift actually registers: the outline
+            // draws at 75% opacity against the fill's 30%.
             ['>', ['to-number', ['coalesce', ['get', '_saleGroupSize'], 1]], 1],
-            '#ff9100',
+            '#ffc400',
             '#ffea00',
           ],
           'line-width': [
