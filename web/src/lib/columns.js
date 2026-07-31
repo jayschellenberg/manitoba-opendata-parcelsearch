@@ -18,17 +18,35 @@
  * Toggling "acres" affects both physical columns; that's the right
  * thing because the user conceptually only knows of one Acres column.
  *
- * Default-visible set follows the Phase 5 spec (Phase 5 item 12).
- * "Full detail" preset clears every column-hide so everything that
- * the mode allows renders.
+ * One visible-set serves both tabs — the mode classes, not this set,
+ * decide which of its columns a given tab can render. See the notes on
+ * DEFAULT_VISIBLE below. "Full detail" preset clears every column-hide
+ * so everything that the mode allows renders.
  */
 
-const STORAGE_KEY = 'mbps_table_columns_v1';
+// Bumped to v2 when the parcel-identity columns below joined the default.
+// A stored set always wins over DEFAULT_VISIBLE, so anyone who had already
+// used the app would never have seen the new default without a new key.
+const STORAGE_KEY = 'mbps_table_columns_v2';
 
-// Phase 5 default-visible set: ★, Roll #, Address, Sale Date,
-// Sale Price, $/Acre, Acres, Zoning, MASC Rating, Distance (when subject set).
-// The favourite (★) column is in here so sales-mode keeps its
-// star column without the user having to toggle it on.
+// Default-visible set, in two groups.
+//
+// Sales context — ★, Sale Date, Sale Price, $/Acre, Distance. All carry
+// .sales-only (Distance also .subj-col), so they render on the Sales
+// Analysis tab and stay hidden in Property Search regardless of this set.
+// The favourite (★) column is in here so sales-mode keeps its star column
+// without the user having to toggle it on.
+//
+// Parcel context — Roll #, Address, Zoning, Legal, Title, DU, Acres, SF,
+// Assess-2027, plus the soil group (MASC Rating, CLI, Soil Type, Slope).
+// These are unclassed, so they show on BOTH tabs; the identity/size/legal
+// half is what a Property Search is usually for, and having to re-tick
+// Legal, Title, DU, SF and the assessment total on every visit was busywork.
+// CLI / Soil Type / Slope stay in the set even though they render as
+// em-dashes until the soil-survey join runs — same reasoning as Tile and
+// Irrigation below: being in the set means the gear isn't independently
+// suppressing them, so loading the data fills columns that are already
+// there instead of appearing to do nothing.
 export const DEFAULT_VISIBLE = new Set([
   'favorite',
   'roll',
@@ -38,6 +56,11 @@ export const DEFAULT_VISIBLE = new Set([
   'grouppriceac',
   'acres',
   'zone1',
+  'legal',
+  'title',
+  'du',
+  'sf',
+  'value',
   'soil',
   'subjdist',
   'clicls',

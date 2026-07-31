@@ -21,6 +21,14 @@ const {
 
 assert.ok(DEFAULT_VISIBLE.has('soil'), 'regular default should include MASC Rating');
 assert.ok(!DEFAULT_VISIBLE.has('zbl'), 'regular default should make room by hiding ZBL');
+
+// Parcel identity / size / legal. These are unclassed columns, so they are
+// what a fresh Property Search actually renders — the tab has no sales
+// context to fall back on. Pinned because they were re-ticked by hand on
+// every visit before they joined the default.
+for (const key of ['roll', 'address', 'zone1', 'legal', 'title', 'du', 'acres', 'sf', 'value']) {
+  assert.ok(DEFAULT_VISIBLE.has(key), `Property Search default should include ${key}`);
+}
 assert.ok(PRESETS.Agricultural.has('soil'), 'Agricultural preset should include MASC Rating');
 assert.ok(!PRESETS.Agricultural.has('zbl'), 'Agricultural preset should hide ZBL');
 
