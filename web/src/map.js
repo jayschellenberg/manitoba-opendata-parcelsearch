@@ -1674,20 +1674,18 @@ export function initMap(container, { onFeatureClick } = {}) {
         // feature-state is set by main.js after each render (walks
         // favoriteKeys + setFeatureState per matched OBJECTID).
         paint: {
+          // The fill does NOT distinguish sale groups — every selected
+          // parcel gets the same yellow body. A 30% fill is the worst
+          // possible carrier for a subtle colour cue: it dilutes toward
+          // whatever is beneath it, so the same hex reads differently over
+          // cream basemap, dark tree cover and bare soil, and the group
+          // shift ended up looking like an artefact of the imagery rather
+          // than a signal. The group cue lives entirely on the outline
+          // below, which draws at 75% and stays true.
           'fill-color': [
             'case',
             ['boolean', ['feature-state', 'starred'], false],
             '#8b0000',
-            // Multi-parcel sale group (imported sales list, a sales CSV, or
-            // rolls joined with + & | in the Roll # field) — a deeper yellow,
-            // 9° of hue warmer than the single-parcel #ffea00. Deliberately
-            // a near-miss rather than a contrast: a group is a variation on
-            // a selected parcel, not a different kind of thing, and the old
-            // #ff9100 amber (21° away) read as its own category. At 30% fill
-            // opacity the difference is carried mostly by the 75%-opacity
-            // outline below, which uses the same pair.
-            ['>', ['to-number', ['coalesce', ['get', '_saleGroupSize'], 1]], 1],
-            '#ffc400',
             '#ffea00',
           ],
           'fill-opacity': [
@@ -1712,18 +1710,31 @@ export function initMap(container, { onFeatureClick } = {}) {
         // colour. Starred parcels (favourites) override the yellow
         // with dark-red so chosen comps still stand apart from the
         // rest of the result set.
+        //
+        // This outline is also the sole marker of a multi-parcel sale
+        // group — see the line-color case below. The fill is deliberately
+        // identical for grouped and single parcels.
         layout: { 'line-cap': 'butt', 'line-join': 'round' },
         paint: {
           'line-color': [
             'case',
             ['boolean', ['feature-state', 'starred'], false],
             '#8b0000',
-            // Deeper-yellow outline for multi-parcel sale groups — matches
-            // the group fill so the grouped parcels read as one selection.
-            // This is where the 9° shift actually registers: the outline
-            // draws at 75% opacity against the fill's 30%.
+            // Multi-parcel sale group (imported sales list, a sales CSV, or
+            // rolls joined with + & | in the Roll # field). The ONLY thing
+            // that marks a group: same hue as the single-parcel yellow to
+            // within 0.1°, just ~17% less bright. Not a second colour — the
+            // same colour, a shade down.
+            //
+            // Darker rather than warmer because the fill above no longer
+            // carries the cue, so this thin dashed line is the whole signal,
+            // and brightness survives on a 2 px stroke where a small hue
+            // shift does not. The border alternates with the black underlay,
+            // which gives the eye a fixed reference to read the yellow
+            // against — a dimmer yellow reads as dimmer there regardless of
+            // what the parcel is sitting on.
             ['>', ['to-number', ['coalesce', ['get', '_saleGroupSize'], 1]], 1],
-            '#ffc400',
+            '#e6d300',
             '#ffea00',
           ],
           'line-width': [
