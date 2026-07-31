@@ -37,6 +37,7 @@ import {
 import { encodeState, decodeState } from './lib/urlState.js';
 import { setOverlayPressed } from './lib/overlayToggle.js';
 import { stalenessBannerState } from './lib/staleness.js';
+import { resolveDropdownSources } from './lib/dropdownSources.js';
 import {
   computeSaleGroups, groupPosition,
   isFarFlungSale, farFlungReason, DEFAULT_FAR_FLUNG_KM,
@@ -2455,34 +2456,51 @@ async function populateDropdowns() {
     // r/build_rollentry_snapshot.R; main.js flips into snapshot mode
     // (parcel queries routed to per-muni shards by arcgis.js) when live
     // is incomplete AND the snapshot is available.
+    //
+    // The four probes settle INDEPENDENTLY. They span two provincial
+    // FeatureServers plus the CDN, and a plain Promise.all rejects on the
+    // first failure — so a blip on the ZONING service, which feeds nothing
+    // but the zone-category dropdown, used to blank the municipality picker
+    // with "Failed to load" and leave it that way for the session. Each
+    // probe now degrades to null on its own and is handled below.
+    // (probeRollEntrySnapshot and fetchRollEntryCount already self-catch.)
     const [liveMunis, zoneCats, snapshotManifest, liveRecordCount] = await Promise.all([
-      fetchMunicipalityList(),
-      fetchZoneCategoryList(),
+      fetchMunicipalityList().catch((err) => {
+        console.warn('Live municipality list unavailable', err);
+        return null;
+      }),
+      fetchZoneCategoryList().catch((err) => {
+        console.warn('Zone-category list unavailable (affects the zoning dropdown only)', err);
+        return null;
+      }),
       probeRollEntrySnapshot(),
       fetchRollEntryCount(),
     ]);
     const liveCount = Array.isArray(liveMunis) ? liveMunis.length : 0;
-    const snapshotMuniCount = snapshotManifest ? Object.keys(snapshotManifest.munis || {}).length : 0;
+    const snapshotMunis = snapshotManifest?.munis
+      ? Object.keys(snapshotManifest.munis).sort()
+      : [];
     const incomplete = liveRollEntryIncomplete(liveCount, liveRecordCount, snapshotManifest);
 
-    // Pick the dropdown source. In snapshot mode the snapshot's full muni
-    // list is the right truth source — listing 18 live munis when the
-    // snapshot has all 186 would leave the user unable to even SELECT
-    // most of Manitoba.
-    let dropdownMunis = liveMunis;
-    if (incomplete && snapshotMuniCount > 0) {
-      setRollEntrySnapshot(snapshotManifest);
-      dropdownMunis = Object.keys(snapshotManifest.munis).sort();
-    } else {
-      setRollEntrySnapshot(null);
+    // Degradation rules live in lib/dropdownSources.js, where node can pin
+    // them — which of the two lists each dropdown ends up with, and whether
+    // this is a real partial-republish (flip to snapshot mode) or just a
+    // failed probe (borrow the snapshot's muni names, leave parcel querying
+    // alone).
+    const sources = resolveDropdownSources({ liveMunis, zoneCats, snapshotMunis, incomplete });
+    setRollEntrySnapshot(sources.useSnapshot ? snapshotManifest : null);
+    if (sources.muniSource === 'snapshot-fallback') {
+      console.warn('Municipality list served from the snapshot manifest — the live probe failed.');
     }
-    fillSelect($municipality, dropdownMunis, 'Any municipality');
-    fillSelect($zoneCategory, zoneCats, 'Any zoning category');
+    fillSelect($municipality, sources.munis, sources.muniPlaceholder);
+    fillSelect($zoneCategory, sources.zoneCats, sources.zonePlaceholder);
     updateRollEntryBanner({
       liveCount, liveRecordCount, snapshotManifest,
       snapshotActive: !!getRollEntrySnapshot(),
     });
   } catch (err) {
+    // Backstop for a genuine programming error — every network path above
+    // degrades on its own, so reaching here is not an upstream problem.
     console.error('Failed to load filter dropdowns', err);
     fillSelect($municipality, [], 'Failed to load — type to filter parcels another way');
   }

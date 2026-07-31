@@ -2890,7 +2890,15 @@ async function fetchDistinctValues(baseUrl, field, cacheKey, where = null) {
     const cached = await readCache(cacheKey);
     if (cached) return cached;
   }
-  const usp = new URLSearchParams({
+  // Routed through fetchPage so these inherit its retry / backoff / timeout
+  // handling. This used to be a bare fetch that threw on the FIRST non-200,
+  // which made it the most fragile request in the app despite being one of
+  // the most important: the municipality and zone-category dropdowns both
+  // come through here, they fire at boot against two different provincial
+  // services, and there is no cache to fall back on for a first-time
+  // visitor. A single transient 429 or 502 was enough to leave the
+  // municipality picker reading "Failed to load" for the whole session.
+  const json = await fetchPage(baseUrl, {
     where: where || `${field} IS NOT NULL`,
     returnDistinctValues: 'true',
     outFields: field,
@@ -2898,14 +2906,6 @@ async function fetchDistinctValues(baseUrl, field, cacheKey, where = null) {
     orderByFields: field,
     f: 'json',
   });
-  const res = await fetch(`${baseUrl}/query`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: usp.toString(),
-  });
-  if (!res.ok) throw new Error(`ArcGIS ${res.status}`);
-  const json = await res.json();
-  if (json.error) throw new Error(`ArcGIS error ${json.error.code}: ${json.error.message}`);
   const values = (json.features || [])
     .map((f) => f.attributes?.[field])
     .filter((v) => v != null && String(v).trim() !== '');
