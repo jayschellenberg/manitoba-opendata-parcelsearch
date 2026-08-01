@@ -720,15 +720,26 @@
             <button id="export" type="button" class="secondary">Export CSV</button>
             <button id="snapshot-zip-btn" type="button" class="secondary" disabled title="Generate a 1600×900 satellite JPEG of each result parcel (highlighted, zoomed to fit 16:9) and download them all as a single ZIP, named muniCode-roll.jpg. Import a parcel list or run a search first.">Parcel Snapshots (ZIP)</button>
           </div>
-          <!-- Parcel numbering — off by default, shown only for a
-               multi-parcel result set (main.js unhides #numbering-row
-               when there's more than one parcel to number). Numbers the
-               parcels 1..N on the map (leader-line callouts) and reveals
-               the matching "#" column in the grid. -->
+          <!-- Map options. Two independent toggles, each hidden until it
+               can do anything:
+                 - Number parcels: needs more than one parcel to number
+                   (main.js unhides #numbering-toggle-label). Numbers them
+                   1..N on the map as leader-line callouts and reveals the
+                   matching "#" column in the grid.
+                 - Include legend: needs at least one .map-legend visible,
+                   i.e. an overlay that has one (main.js unhides
+                   #legend-toggle-label). Affects the Generate Map image
+                   only — the on-screen legends are already governed by
+                   their own overlay buttons.
+               The row itself shows whenever either toggle does. -->
           <div id="numbering-row" class="numbering-row" hidden>
-            <label class="numbering-toggle" title="Number the result parcels 1..N on the map (leader-line callouts) and show a matching # column in the grid. Sorted by municipality, then Roll #. The number stays fixed to each parcel and carries into the Generate Map image and the CSV export.">
+            <label id="numbering-toggle-label" class="numbering-toggle" hidden title="Number the result parcels 1..N on the map (leader-line callouts) and show a matching # column in the grid. Sorted by municipality, then Roll #. The number stays fixed to each parcel and carries into the Generate Map image and the CSV export.">
               <input type="checkbox" id="numbering-toggle">
-              <span>Number parcels on map &amp; grid</span>
+              <span>Number parcels</span>
+            </label>
+            <label id="legend-toggle-label" class="numbering-toggle" hidden title="Draw the map's legend into the Generate Map image, in the bottom-right corner just above the credit line — the same corner it occupies on screen. Every legend currently showing is included, stacked. The image keeps its normal dimensions, so the legend sits over the map rather than beside it.">
+              <input type="checkbox" id="legend-toggle">
+              <span>Include legend in map image</span>
             </label>
           </div>
           <span id="count" class="count"></span>

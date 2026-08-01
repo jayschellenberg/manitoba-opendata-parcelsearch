@@ -38,6 +38,7 @@ import { encodeState, decodeState } from './lib/urlState.js';
 import { setOverlayPressed } from './lib/overlayToggle.js';
 import { stalenessBannerState } from './lib/staleness.js';
 import { resolveDropdownSources } from './lib/dropdownSources.js';
+import { readMapLegends, layoutMapLegends, paintMapLegends } from './lib/mapLegend.js';
 import {
   computeSaleGroups, groupPosition,
   isFarFlungSale, farFlungReason, DEFAULT_FAR_FLUNG_KM,
@@ -310,6 +311,11 @@ const $export        = document.getElementById('export');
 // revealed only for multi-parcel result sets.
 const $numberingRow    = document.getElementById('numbering-row');
 const $numberingToggle = document.getElementById('numbering-toggle');
+const $numberingLabel  = document.getElementById('numbering-toggle-label');
+// "Include legend in map image" — sits beside the numbering toggle and is
+// read by composeWithAttribution. Shown only while a legend is on screen.
+const $legendToggle    = document.getElementById('legend-toggle');
+const $legendLabel     = document.getElementById('legend-toggle-label');
 const $zoningToggle  = document.getElementById('zoning-toggle');
 const $devplanToggle = document.getElementById('devplan-toggle');
 const $muniWebsiteBtn = document.getElementById('muni-website-btn');
@@ -1969,7 +1975,46 @@ function composeWithAttribution(srcCanvas) {
     const yMid = y0 + padY + i * lineHeight + Math.round(fontSize / 2);
     ctx.fillText(lines[i], x0 + padX, yMid);
   }
+
+  // Legend, when the user asked for it — stacked upward from just above
+  // the credit pill, in the same bottom-right corner it occupies on
+  // screen. Drawn last so it sits over the map; the image keeps its
+  // normal dimensions.
+  if ($legendToggle?.checked) drawMapLegends(ctx, w, h, y0 - 6, fontSize);
+
   return out.toDataURL(OUTPUT_MIME, OUTPUT_QUALITY);
+}
+
+/** Legends currently on screen, as plain data. Wraps the lib reader with
+ *  this app's map pane. */
+function visibleMapLegends() {
+  return readMapLegends($mapEl);
+}
+
+/**
+ * Draw the visible legends onto the export canvas, stacking upward from
+ * `bottomY` so the first ends up nearest the credit pill. Sizes derive from
+ * the attribution's font size, so the legend stays proportional to the rest
+ * of the overlay after the output downscale.
+ */
+function drawMapLegends(ctx, w, h, bottomY, baseFont) {
+  const legends = visibleMapLegends();
+  if (legends.length === 0) return;
+  const font = Math.max(11, Math.round(baseFont * 0.95));
+  const family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+  const bodyFont = `${font}px ${family}`;
+  const titleFont = `600 ${font + 1}px ${family}`;
+  const boxes = layoutMapLegends(legends, {
+    width: w,
+    height: h,
+    bottomY,
+    font,
+    measure: (text, weight) => {
+      ctx.font = weight === 'title' ? titleFont : bodyFont;
+      return ctx.measureText(text).width;
+    },
+  });
+  paintMapLegends(ctx, boxes, { font, bodyFont, titleFont });
 }
 
 /** Greedy word-wrap: break `text` into lines that each measure ≤ maxWidth
@@ -2366,8 +2411,38 @@ for (const th of document.querySelectorAll('#results th[data-col]')) {
  */
 function updateNumberingAvailability() {
   const avail = currentRows.length > 1;
-  if ($numberingRow) $numberingRow.hidden = !avail;
+  if ($numberingLabel) $numberingLabel.hidden = !avail;
   if ($numberingToggle) $numberingToggle.checked = numberingOn;
+  updateMapOptionsRow();
+}
+
+/**
+ * Reveal "Include legend in map image" only while there's a legend to
+ * include. Nothing to include means an unexplained no-op, so the control
+ * stays out of the way until an overlay that has a legend is switched on.
+ */
+function updateLegendAvailability() {
+  if ($legendLabel) $legendLabel.hidden = visibleMapLegends().length === 0;
+  updateMapOptionsRow();
+}
+
+/** The shared row shows whenever either of its toggles does. */
+function updateMapOptionsRow() {
+  if (!$numberingRow) return;
+  const anyVisible = ($numberingLabel && !$numberingLabel.hidden)
+                  || ($legendLabel && !$legendLabel.hidden);
+  $numberingRow.hidden = !anyVisible;
+}
+
+// Legends appear and disappear from a dozen different overlay handlers
+// (zoning, MASC, CLI's tri-state cycle, land cover, traffic flow). Rather
+// than call updateLegendAvailability from each one — and miss the next one
+// somebody adds — watch the map pane for the `hidden` flips that reveal
+// them. Attribute-only, so it costs nothing until a legend actually toggles.
+if ($mapEl) {
+  new MutationObserver(() => updateLegendAvailability())
+    .observe($mapEl, { attributes: true, attributeFilter: ['hidden', 'style'], subtree: true });
+  updateLegendAvailability();
 }
 
 if ($numberingToggle) {
