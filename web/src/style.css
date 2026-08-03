@@ -647,7 +647,20 @@ header small a {
 /* "Number parcels" toggle — sits in the persistent status block below
    the export buttons, revealed only for multi-parcel result sets. Reads
    as an inline option, not a primary action. */
+/* Map-options toggles. main.js moves this row into the active tab's
+   action row (placeMapOptionsRow), so it sits to the right of that
+   tab's Clear button rather than below Export CSV. margin-left:auto
+   pushes it past the buttons to the row's right edge; the row wraps
+   underneath them when the sidebar is too narrow to hold both, which
+   is why the toggles stack rather than sitting side by side. */
 .numbering-row { margin: 2px 0; }
+.sidebar .action-row > .numbering-row {
+  margin: 0 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
 .numbering-toggle {
   display: flex;
   align-items: center;
@@ -1101,7 +1114,7 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   gap: 6px;
   margin-top: 4px;
 }
-.sidebar .class-row > .field { flex: 1 1 auto; min-width: 0; }
+.sidebar .class-row > .field { flex: 1 1 50%; min-width: 0; }
 .sidebar .class-row .multiselect { width: 100%; }
 
 /* Compact multi-select (lib/multiSelect.js). Closed, it's a single
@@ -1156,12 +1169,21 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The menu sizes to its longest option, not to its trigger. Two
+   pickers share the class row, so a trigger is ~110px — narrow enough
+   to wrap "INSTITUTIONAL PROPERTY" onto two lines if the menu
+   inherited that width. min-width keeps it at least as wide as the
+   control it drops from; max-width keeps it inside the 288px sidebar
+   column, which is the real constraint. */
 .sidebar .multiselect-menu {
   position: absolute;
   z-index: 20;
   top: calc(100% + 4px);
   left: 0;
-  right: 0;
+  right: auto;
+  min-width: 100%;
+  width: max-content;
+  max-width: 250px;
   max-height: 260px;
   overflow-y: auto;
   padding: 6px 4px;
@@ -1198,6 +1220,13 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   margin: 4px 8px;
   font-size: 11px;
   color: var(--ui-muted, #6d7771);
+}
+/* The right-hand picker of a two-up row grows leftward instead, so a
+   menu wider than its trigger opens into the sidebar rather than off
+   its right edge. */
+.sidebar .class-row > .field:last-child .multiselect-menu {
+  left: auto;
+  right: 0;
 }
 
 /* Sales-CSV unmatched-records panel — sits below the search count.

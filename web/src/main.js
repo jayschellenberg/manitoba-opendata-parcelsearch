@@ -4,7 +4,7 @@
 import './lib/tailwind.css';
 
 // Phase 3 sidebar tabs.
-import { initSidebarTabs, setActiveTab } from './lib/tabs.js';
+import { initSidebarTabs, setActiveTab, getActiveTab, onTabChange } from './lib/tabs.js';
 
 // Phase 4 form controls.
 import { initChipInput } from './lib/chipInput.js';
@@ -279,6 +279,19 @@ const $asmtClass     = document.getElementById('asmt-class');
 const asmtClassFilter = initMultiSelect($asmtClass, {
   placeholder: 'Any class',
   noun: 'classes',
+  emptyLabel: 'No values yet — upload sales first.',
+});
+// Zoning filter. Unlike the Property tab's Zoning Category dropdown —
+// which lists every category in the municipality's by-law — this lists
+// only the zone codes the current result set actually contains, so
+// ticking one always leaves rows behind. Needs the zoning overlay join
+// to have run; on a result set past the enrichment threshold that only
+// happens once the user presses "Load zoning + dev-plan".
+const $zoningFilterEl = document.getElementById('zoning-filter');
+const zoningFilter = initMultiSelect($zoningFilterEl, {
+  placeholder: 'Any zoning',
+  noun: 'zones',
+  emptyLabel: 'No zoning loaded for these results yet.',
 });
 // Total-consideration bounds. Distinct from the $/Ac pair: this is the
 // whole transaction, so a multi-parcel sale passes or fails as one.
@@ -1094,6 +1107,29 @@ if ($mapExpandBtn) {
 // Sidebar tabs. Restores the last-active tab from localStorage so a
 // refresh keeps the user where they left off.
 initSidebarTabs();
+
+/**
+ * Park the map-options toggles (Number parcels, Include legend) at the
+ * right-hand end of the active tab's action row, beside its Clear
+ * button.
+ *
+ * Both toggles apply to either kind of result, but there are two
+ * action rows — Search + Clear on Property, Clear on Sales — and only
+ * one of each toggle can exist, since a duplicated id is a broken
+ * checkbox. So the row MOVES with the active tab rather than being
+ * copied into both. That keeps a single source of truth for the
+ * checked state: switching tabs mid-session carries the toggle's
+ * state across with the element itself, no syncing required.
+ */
+function placeMapOptionsRow(tab) {
+  const row = document.getElementById('numbering-row');
+  if (!row) return;
+  const panel = document.querySelector(`.sidebar-tab-panel[data-tab="${tab}"]`);
+  const actionRow = panel?.querySelector(':scope > .action-row');
+  if (actionRow && row.parentElement !== actionRow) actionRow.appendChild(row);
+}
+onTabChange(placeMapOptionsRow);
+placeMapOptionsRow(getActiveTab());
 
 // Roll # chip input. The hidden #roll input keeps holding the
 // canonical comma-separated string, so existing $roll.value
@@ -2301,7 +2337,7 @@ if ($farFlungKm) {
 // these listeners are no-ops (Search button still drives the SQL).
 for (const el of [
   $zoneCategory, $changedStatus, $duMode, $duMin, $sizeLow, $sizeHigh, $vacantOnly,
-  $saleDateFrom, $saleDateTo, $asmtClass, $distanceMax, $salesPlan,
+  $saleDateFrom, $saleDateTo, $asmtClass, $zoningFilterEl, $distanceMax, $salesPlan,
   $salesStreetName, $salesPpaLow, $salesPpaHigh, $saleAsmtMax,
   $salesPriceLow, $salesPriceHigh,
 ].filter(Boolean)) {
@@ -2823,9 +2859,11 @@ async function runSearch() {
   if ($salesPpaHigh)  $salesPpaHigh.value = '';
   if ($salesPriceLow)  $salesPriceLow.value = '';
   if ($salesPriceHigh) $salesPriceHigh.value = '';
-  // Multi-select: untick everything so the filter goes back to "any"
-  // rather than carrying over the last upload's picks.
+  // Multi-selects: untick everything so the filters go back to "any"
+  // rather than carrying over the last upload's picks. Zoning also
+  // drops its options — they described the previous result set.
   asmtClassFilter.clear();
+  zoningFilter.setOptions([]);
   // Drop the subject parcel — a fresh Search shouldn't inherit a
   // previous upload's subject highlight on the map.
   clearSubjectParcel();
@@ -3784,6 +3822,9 @@ async function handleSalesUpload(file) {
     // than recomputing — that way zoning/dev-plan joins aren't lost.
     csvFullRows = currentRows.slice();
     csvFullBaseMsg = baseMsg;
+    // The zoning join is in by now (enrichOverlays ran above), so the
+    // Zoning picker can offer exactly the codes these results carry.
+    syncZoningFilterOptions();
     // csvFullRows is the live filter's base from here on; drop any stash
     // captured against the pre-upload rows.
     resetWaterFilterBase();
@@ -4608,6 +4649,37 @@ function computeSaleGroupTotals(parcelFc) {
 }
 
 /**
+ * Every zone code present in a row set, sorted, for the Zoning
+ * filter's option list.
+ *
+ * Reads both of a parcel's zoning matches rather than just the
+ * dominant one, so a code is listed whenever it appears in either the
+ * Zoning or Zoning 2 column — the filter matches on either too, and a
+ * tickable value that can never match anything visible would be worse
+ * than a slightly longer list.
+ *
+ * Built from the FULL row set, never the filtered one: a list that
+ * shrank as you ticked boxes would strand you with no way back.
+ */
+function zoningCodesInRows(rows) {
+  const codes = new Set();
+  for (const row of rows || []) {
+    for (const z of row.zoning || []) {
+      const code = formatZoneCode(z.feature?.properties);
+      if (code) codes.add(String(code).trim());
+    }
+  }
+  return [...codes].filter(Boolean).sort();
+}
+
+/** Refresh the Zoning filter's options from the current upload. Safe
+ *  to call repeatedly — setOptions keeps any ticked code that still
+ *  exists, so a re-render mid-session doesn't reset the filter. */
+function syncZoningFilterOptions() {
+  zoningFilter.setOptions(zoningCodesInRows(csvFullRows));
+}
+
+/**
  * Re-apply the Other Searches filters (Zone Category, Status, DU)
  * to the currently-loaded CSV row set. Called whenever the filter
  * inputs change while csvFullRows is set. No-op outside CSV mode —
@@ -4691,6 +4763,11 @@ function filterCsvRowsByOtherSearches(rows) {
   // data is excluded when at least one class is ticked, matching the
   // original single-select behaviour.
   const classFilterSet = new Set(asmtClassFilter.getSelected());
+  // Zoning codes ticked in the sales-tab picker. Separate from the
+  // Property tab's zoneCat below: that one filters on ZONE_CATEGORY
+  // chosen from the by-law, this one on the ZONE codes present in
+  // these results.
+  const zoneCodeFilterSet = new Set(zoningFilter.getSelected());
 
   // Max distance from subject. Only fires when (a) a subject is set
   // and (b) the input parses to a positive number. Sales without a
@@ -4856,6 +4933,19 @@ function filterCsvRowsByOtherSearches(rows) {
     // when at least one class is selected.
     if (classFilterSet.size > 0) {
       if (!p._asmtClass || !classFilterSet.has(p._asmtClass)) return false;
+    }
+
+    // Zoning-code filter (multi-select). Matches on EITHER of the
+    // parcel's zoning matches, so a sale whose second zone is the one
+    // you're after still shows. A row with no zoning join at all fails
+    // while the filter is active — same "missing = exclude" rule the
+    // other filters use, and here it also means the enrichment simply
+    // hasn't run, which is worth seeing rather than silently passing.
+    if (zoneCodeFilterSet.size > 0) {
+      const codes = (row.zoning || [])
+        .map((z) => formatZoneCode(z.feature?.properties))
+        .filter(Boolean);
+      if (!codes.some((c) => zoneCodeFilterSet.has(String(c).trim()))) return false;
     }
 
     // Distance-from-subject filter. Sales without a computed

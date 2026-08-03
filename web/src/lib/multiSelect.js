@@ -66,7 +66,11 @@ export function retainSelection(previousSelected, nextOptions) {
  *   A no-op stub when `root` is missing, so callers don't need to
  *   null-check every method.
  */
-export function initMultiSelect(root, { placeholder = 'Any', noun = 'selected' } = {}) {
+export function initMultiSelect(root, {
+  placeholder = 'Any',
+  noun = 'selected',
+  emptyLabel = 'No values yet.',
+} = {}) {
   if (!root) {
     return {
       setOptions: () => {},
@@ -99,7 +103,7 @@ export function initMultiSelect(root, { placeholder = 'Any', noun = 'selected' }
     if (options.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'multiselect-empty';
-      empty.textContent = 'No values yet — upload sales first.';
+      empty.textContent = emptyLabel;
       $menu.appendChild(empty);
       return;
     }
