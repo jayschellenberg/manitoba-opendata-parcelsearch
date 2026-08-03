@@ -1465,6 +1465,20 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   border-bottom: 5px solid var(--color-primary-500, #1e293b);
 }
 
+/* Sidebar popovers are widened to the sidebar's content column at
+   open time (widenTipToSidebar in lib/infoIcon.js) — a tip that
+   shrink-to-fits its own field is a 15-character ribbon under a
+   checkbox. The inline width can now exceed the 320px cap above, and
+   the arrow is aimed at the icon rather than assuming the tip's right
+   edge sits beside it. */
+.controls .field .tip.tip-wide {
+  max-width: none;
+}
+.controls .field .tip.tip-wide::before {
+  left: var(--tip-arrow-left, 10px);
+  right: auto;
+}
+
 .controls .field.popover-hover > .tip,
 .controls .field.popover-pinned > .tip {
   display: block;
@@ -1957,32 +1971,31 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   cursor: help;
 }
 
-/* The sale-level exclusion row: Vacant Land Only at the left edge,
-   the far-flung threshold pushed to the right. Exclude and the live
-   tally take the second line — the tally is the whole point of the
-   control, since it turns picking a number into watching what the
-   number does rather than guessing.
+/* The sale-level exclusion row. Vacant Land Only is given a line of
+   its own via a 100% basis; the far-flung threshold, its Exclude
+   toggle and the live tally follow on the line below and wrap only
+   when they must. The tally is the whole point of the control — it
+   turns picking a number into watching what the number does rather
+   than guessing — so it stays adjacent rather than being tucked away.
 
-   Widths are tight by necessity: the column is 288px and the four
-   controls want ~379px. The km input is half its old 5em, the label
-   is "Far-Flung >" rather than "Far-flung over", and the gaps are
-   trimmed, which brings the first line to ~266px. */
+   Widths are tight by necessity: the column is 288px. The km input is
+   half its old 5em, the label is "Far-Flung >" rather than "Far-flung
+   over", and the gaps are trimmed, which leaves the threshold +
+   Exclude + info icon at ~230px and the rest for the tally. */
 .sidebar .far-flung-row {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
 }
-.sidebar .far-flung-row .vacant-only-label { gap: 5px; }
-/* margin-left:auto rather than a 50% basis: the two controls have
-   very different natural widths, so pushing the threshold to the
-   right edge reads as "right half" while letting each keep the width
-   it actually needs. */
+.sidebar .far-flung-row .vacant-only-label {
+  flex: 0 0 100%;
+  gap: 5px;
+}
 .sidebar .far-flung-field {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-left: auto;
 }
 .sidebar .far-flung-field label {
   white-space: nowrap;
@@ -1991,15 +2004,6 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 }
 .sidebar .far-flung-field input { width: 2.5em; }
 .sidebar .far-flung-unit { font-size: 0.85em; color: var(--muted, #555); }
-/* flex-basis 100% forces Exclude + the tally onto their own line
-   regardless of how much slack line one happens to have, so the
-   layout doesn't reshuffle as the tally text grows and shrinks. */
-.sidebar .far-flung-secondary {
-  flex: 1 0 100%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 .sidebar .far-flung-exclude {
   display: flex;
   align-items: center;

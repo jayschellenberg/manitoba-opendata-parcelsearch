@@ -451,22 +451,24 @@
               <span class="tip">Filter to one or more MAO assessment classes. Click to open the list and tick each class you want; leave everything unticked for no class filter.</span>
             </span>
           </div>
-          <!-- The two sale-level exclusions, on one line: Vacant Land
-               Only at the left edge, the far-flung threshold at the
-               right. A multi-parcel sale whose parcels are spread
-               wider than the threshold is marked in the grid and popup
-               with a ⚠ on its $/Acre — the rate a portfolio or estate
+          <!-- The two sale-level exclusions. Vacant Land Only takes a
+               line of its own; the far-flung threshold, its Exclude
+               toggle and the live tally share the line below, so the
+               three parts of one control read as one control.
+
+               A multi-parcel sale whose parcels are spread wider than
+               the threshold is marked in the grid and popup with a ⚠
+               on its $/Acre — the rate a portfolio or estate
                transaction most distorts.
 
-               The Exclude toggle and the flagged tally sit on their
-               own line below. All four controls come to ~379px and the
-               sidebar column is 288px, so something had to wrap;
-               Exclude is the one that reads fine a line down, directly
-               under the threshold it acts on. The far-flung field
-               deliberately carries no `field` class — its info icon
-               would cost the 22px that lets the first line fit, so the
-               tip moved down to the Exclude control, where one popover
-               now explains the whole far-flung idea. -->
+               The tally wraps to a third line whenever its text is too
+               long to fit beside the controls, which is most of the
+               time: the threshold, Exclude and its info icon take
+               ~230px of the 288px column, and "⚠ 4 sales · 9 parcels
+               flagged" needs about 150. Short states like "none
+               flagged" stay inline. The far-flung field carries no
+               `field` class of its own — one info icon for the whole
+               control is enough, and it lives on Exclude. -->
           <div class="far-flung-row sales-only">
             <label class="vacant-only-label" title="Vacant land proxy. Marks a sale as vacant when every parcel in the group has Buildings below the threshold set under Additional filters. Heuristic based on MAO assessment ratios — not a legal vacancy determination. Verify with the municipality.">
               <input id="vacant-only" type="checkbox" />
@@ -477,16 +479,14 @@
               <input id="far-flung-km" type="number" min="0" step="1" />
               <span class="far-flung-unit">km</span>
             </span>
-            <div class="far-flung-secondary">
-              <span class="field far-flung-exclude-field">
-                <label class="far-flung-exclude" title="Remove the flagged sales from the results table, the map and the CSV export. Off by default — nothing is hidden until you ask for it. Sales whose spread can't be measured (a parcel with no geometry) are never excluded.">
-                  <input type="checkbox" id="far-flung-exclude" />
-                  <span>Exclude</span>
-                </label>
-                <span class="tip">Far-Flung marks multi-parcel sales whose parcels lie farther apart than the km threshold, measured between parcel centroids. Portfolio and estate sales sweep up land across a wide area, so their blended $/Acre is not a local comparable. Blank or 0 turns the marking off, and marking alone removes nothing — tick Exclude to drop the flagged sales from the table, the map and the CSV export. Sales whose spread can't be measured (a parcel with no geometry) are never excluded.</span>
-              </span>
-              <span id="far-flung-count" class="far-flung-count"></span>
-            </div>
+            <span class="field far-flung-exclude-field">
+              <label class="far-flung-exclude" title="Remove the flagged sales from the results table, the map and the CSV export. Off by default — nothing is hidden until you ask for it. Sales whose spread can't be measured (a parcel with no geometry) are never excluded.">
+                <input type="checkbox" id="far-flung-exclude" />
+                <span>Exclude</span>
+              </label>
+              <span class="tip">Far-Flung marks multi-parcel sales whose parcels lie farther apart than the km threshold, measured between parcel centroids. Portfolio and estate sales sweep up land across a wide area, so their blended $/Acre is not a local comparable. Blank or 0 turns the marking off, and marking alone removes nothing — tick Exclude to drop the flagged sales from the table, the map and the CSV export. Sales whose spread can't be measured (a parcel with no geometry) are never excluded.</span>
+            </span>
+            <span id="far-flung-count" class="far-flung-count"></span>
           </div>
 
           <!-- The occasional filters. Collapsed by default so the
