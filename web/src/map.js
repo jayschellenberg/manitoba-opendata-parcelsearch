@@ -1802,6 +1802,52 @@ export function initMap(container, { onFeatureClick } = {}) {
         },
       }, 'parcel-line');
 
+      // Water-influence overlay fill — colours each result parcel by its
+      // waterfront classification. Driven by `_waterColor`, stamped per parcel
+      // in main.js from the pre-baked water shards (lib/water.js owns the
+      // palette). All blue-family, split by HUE: true blues for genuine frontage
+      // (Direct / Waterfront / Reserve separated), teals for
+      // near-water-without-frontage (Road separated / Corridor blocked). A lot fronting the Red River and a lot across the
+      // road from it are not comparable, and the map has to show that at a
+      // glance — keep the two groups visibly apart if the palette is retuned.
+      //
+      // Higher opacity than the land-cover fill (0.7 vs 0.6): this paints a
+      // sparse subset — 12% of parcels province-wide — rather than a
+      // wall-to-wall choropleth, so individual parcels need to carry.
+      map.addLayer({
+        id: 'water-fill',
+        type: 'fill',
+        source: 'parcels',
+        layout: { visibility: 'none' },
+        paint: {
+          'fill-color': ['coalesce', ['get', '_waterColor'], 'rgba(0,0,0,0)'],
+          'fill-opacity': ['case', ['has', '_waterColor'], 0.7, 0],
+        },
+      }, 'parcel-line');
+      // Outline in the same colour. Added with NO beforeId, so it sits ABOVE
+      // `parcel-line` rather than beneath it — deliberately, and this is what
+      // makes the overlay legible.
+      //
+      // `parcel-line` is a bright yellow (#ffea00 at 0.75) selection outline.
+      // On the narrow lakefront lots this feature is most useful for, that
+      // outline covers nearly the whole parcel at town-wide zoom, so the water
+      // fill underneath was invisible and the map still read as yellow. Drawing
+      // the water colour on top means a waterfront parcel reads as waterfront
+      // at the zoom people actually browse at; the yellow returns as soon as
+      // the overlay is switched off. Still below the numbering callouts, which
+      // are added after this point and must stay on top.
+      map.addLayer({
+        id: 'water-outline',
+        type: 'line',
+        source: 'parcels',
+        layout: { visibility: 'none' },
+        paint: {
+          'line-color': ['coalesce', ['get', '_waterColor'], 'rgba(0,0,0,0)'],
+          'line-width': ['case', ['has', '_waterColor'], 2.2, 0],
+          'line-opacity': 0.95,
+        },
+      });
+
       // ---- Parcel numbering (leader-line callouts) -------------------
       // When a multi-parcel result set is numbered (main.js stamps a
       // stable 1..N `_seq` per parcel, sorted by municipality then
@@ -3329,6 +3375,24 @@ export function setWaybackRelease(map, release) {
 export function setLandCoverVisible(map, on) {
   const vis = on ? 'visible' : 'none';
   for (const id of ['landcover-fill', 'muni-parcels-landcover-fill']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
+  }
+}
+
+/**
+ * Show / hide the water-influence overlay (result parcels coloured by
+ * waterfront classification, plus a same-colour outline so the parcel still
+ * reads under a zoning or dev-plan fill). Colour comes from each parcel's
+ * `_waterColor`, stamped in main.js from the water shards; this only flips
+ * visibility.
+ *
+ * Unlike the land-cover toggle there is no muni-wide fabric twin — the water
+ * shards are stamped onto the RESULT SET only, so painting the whole fabric
+ * would show a mostly-empty layer that silently disagrees with the grid.
+ */
+export function setWaterInfluenceVisible(map, on) {
+  const vis = on ? 'visible' : 'none';
+  for (const id of ['water-fill', 'water-outline']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
   }
 }

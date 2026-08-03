@@ -147,7 +147,7 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // this SHA — see MAINTENANCE.md. section-grid.json stays local because
 // at 41 MB it's over jsDelivr's per-file cap.
 export const MB_PARCEL_DATA_REVISION =
-  'a59a15ae2907ec51cc615a377edd23be441bc30b';
+  'f5804d70d472a13c92fc4ed6408f1b824fc99e30';
 export const MB_PARCEL_DATA_CDN =
   `https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-data@${MB_PARCEL_DATA_REVISION}`;
 const SNAPSHOT_BASE_URL = `${MB_PARCEL_DATA_CDN}/rollentry-snapshot/`;
@@ -1610,6 +1610,69 @@ export async function fetchLandCoverForMuni(muniNameWithTyp) {
   if (cached) return cached;
   try {
     const res = await fetch(`${MB_PARCEL_DATA_CDN}/landcover/${file}`);
+    if (!res.ok) return null;
+    const dict = await res.json();
+    await writeCache(cacheKey, dict);
+    return dict;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch the pre-baked water-influence classification for every parcel in one
+ * municipality. Built by r/build_water.R from the V6.1 waterfront detection.
+ *
+ * Per-muni shards live at mb-parcel-data/water/<MUNI_KEY>.json. Shape: a flat
+ * dictionary keyed by Roll_No_Txt, each value a compact stamp:
+ *   { "3600.000": { "i":"Yes", "c":"Direct", "t":"Lake", "b":"Lake Winnipeg" } }
+ * Manifest at mb-parcel-data/water/_index.json maps Muni_Name_With_Typ to
+ * shard filenames plus counts.
+ *
+ * ONLY parcels with a non-"None" classification are in the shards — 370k of
+ * 437k parcels have no water within 50 m, and shipping them would inflate the
+ * payload sixfold to say nothing. So a roll ABSENT from a shard that loaded
+ * means "no water", which is a different state from "shard never loaded".
+ * Callers must track which munis actually resolved (see `_waterLoaded` in
+ * main.js) rather than treating a missing stamp as "No".
+ *
+ * Returns null when the muni isn't in the index. Cached in localStorage with
+ * the same 30-day TTL as the MASC and land-cover shards.
+ */
+const WATER_INDEX_URL = `${MB_PARCEL_DATA_CDN}/water/_index.json`;
+
+let waterIndexPromise = null;
+
+async function fetchWaterIndex() {
+  if (waterIndexPromise) return waterIndexPromise;
+  waterIndexPromise = (async () => {
+    const cacheKey = 'mb_water_index_v1';
+    const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+    if (cached) return cached;
+    try {
+      const res = await fetch(WATER_INDEX_URL);
+      if (!res.ok) return null;
+      const idx = await res.json();
+      await writeCache(cacheKey, idx);
+      return idx;
+    } catch {
+      return null;
+    }
+  })();
+  return waterIndexPromise;
+}
+
+export async function fetchWaterForMuni(muniNameWithTyp) {
+  if (!muniNameWithTyp) return null;
+  const idx = await fetchWaterIndex();
+  const entry = lookupMuniManifestEntry(idx, muniNameWithTyp, { stripType: false });
+  if (!entry) return null;
+  const file = entry.file;
+  const cacheKey = `mb_water_${file}_v1`;
+  const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  if (cached) return cached;
+  try {
+    const res = await fetch(`${MB_PARCEL_DATA_CDN}/water/${file}`);
     if (!res.ok) return null;
     const dict = await res.json();
     await writeCache(cacheKey, dict);

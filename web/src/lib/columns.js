@@ -66,6 +66,10 @@ export const DEFAULT_VISIBLE = new Set([
   'clicls',
   'soiltype',
   'slope',
+  // Water influence ships as a pre-baked per-muni shard (like Land Cover), so
+  // it is NOT mode-gated the way Tile/Irrigation are — it fills in as soon as
+  // the shard loads and is useful on residential searches, not just farmland.
+  'water',
   // Tile Drainage + Irrigation are mode-gated by .water-only, so they
   // stay invisible until a WALLAS overlay or filter is active. Being in
   // the default set just means the gear isn't independently suppressing
@@ -99,7 +103,7 @@ export const PRESETS = {
   // main.js. MASC Rating, Risk Area and Land Cover need no such trigger:
   // they're stamped during every search/import enrichment.
   'Agricultural': new Set([
-    'favorite', 'roll', 'address', 'acres', 'landcover', 'cultpct',
+    'favorite', 'roll', 'address', 'acres', 'landcover', 'cultpct', 'water',
     'soil', 'clicls', 'soiltype', 'slope', 'riskarea', 'tile', 'irrigation',
     'grouppriceac', 'saledate', 'saleprice', 'saletoasmt', 'grouppricesf',
     'zone1', 'dev1', 'legal', 'title',

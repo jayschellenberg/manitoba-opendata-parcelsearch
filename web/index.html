@@ -713,6 +713,9 @@
             <button id="landcover-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Land Cover — tri-state cycle. 1st click → Dominant (per-parcel headline colour, every parcel in the selected municipality > 20 acres). 2nd click → Detailed (pixel-level 2020 mosaic from the static tile pyramid, when built). 3rd click → off. Populates the Land Cover and Cult % columns. The Detailed branch is skipped when the tile pyramid hasn't been built (build via Rscript r/build_landcover_tiles.R).">
               <span class="overlay-btn-label">Land Cover</span>
             </button>
+            <button id="water-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Water Influence — colours the result parcels by waterfront classification. BLUE = actual frontage (Direct / Waterfront / Reserve separated); TEAL = near water but no frontage, because a road or another parcel lies between (the 'second row', often a view). Reads the same pre-baked data as the Water column, so no extra fetch. Screening aid from provincial/federal mapping — not a survey.">
+              <span class="overlay-btn-label">Water Influence</span>
+            </button>
             <button id="tile-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Tile Drainage — licensed tiled-area footprints from Manitoba's Water Allocation Licensing (WALLAS) Water Control Works layer. Populates the Tile Drainage column. Caveat: the polygon layer's newest record is from Aug 2024 and only licensed works appear, so a parcel with no polygon is not proof the land is untiled.">
               <span class="overlay-btn-label">Tile Drainage</span>
             </button>
@@ -736,6 +739,18 @@
             <label class="overlay-check" title="Return only parcels overlapped by a licensed irrigation point of use — the location where water is applied. Points of diversion are excluded, matching the Irrigation column. Narrow by municipality first: there are ~2,500 licensed points of use province-wide, so an unscoped run is slow.">
               <input type="checkbox" id="irrigation-only" />
               <span>Licensed irrigation only</span>
+            </label>
+            <!-- Waterfront / near-water narrowing. Unlike the two WALLAS boxes
+                 above these are pure post-filters on the pre-baked water
+                 shards, so they need no municipality scoping and cost nothing
+                 to tick. Ticking both gives "any water influence". -->
+            <label class="overlay-check" title="Return only parcels with actual water FRONTAGE — the detection's Direct, Waterfront and Reserve-separated classes. Reserve-separated means a narrow public reserve strip sits between the lot and the water, which is normal in Manitoba lake communities and still counts as waterfront. Works on an imported sales list too.">
+              <input type="checkbox" id="waterfront-only" />
+              <span>Waterfront only</span>
+            </label>
+            <label class="overlay-check" title="Return only parcels NEAR water but WITHOUT frontage — across a developed road, or with another parcel between them and the water. The 'second row': often a view, but not comparable to true waterfront. Tick alongside Waterfront only to get every parcel with any water influence.">
+              <input type="checkbox" id="near-water-only" />
+              <span>Near water (no frontage)</span>
             </label>
             </div>
           </details>
@@ -1150,6 +1165,7 @@
                  the Agricultural column preset. -->
             <th data-col="landcover" title="Dominant 2020 land-cover bucket for this parcel and its share — Cultivated / Pasture-Grass / Bush-Treed / Wetland-Water / Other. Derived from the LCR_RCT_2020 raster via the mao-assembly pipeline. Shown only for parcels over 10 acres.">Land Cover</th>
             <th data-col="cultpct" title="Cultivated (cropland) share of the parcel from the 2020 land-cover raster. Shown only for parcels over 10 acres.">Cult %</th>
+            <th data-col="water" title="Water influence — is this parcel on or near a lake, river, stream or retention pond? Shows the water body name with a colour dot: BLUE = actual frontage (Direct / Waterfront / Reserve separated), TEAL = near water but no frontage, because a road or another parcel lies between (the 'second row', often a view). 'No water' means the check ran and found nothing within 50 m. Blank means the data hasn't loaded for this municipality yet. Screening aid from provincial/federal mapping — not a survey.">Water</th>
             <!-- Tile Drainage — populated when the Tile Drainage overlay
                  has loaded, by clipping the licensed tile footprints to
                  each parcel (same area-weighted join the zoning and

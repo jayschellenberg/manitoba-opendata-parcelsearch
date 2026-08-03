@@ -113,6 +113,7 @@ import {
   fetchRiverLots,
   fetchParcelMascForMuni,
   fetchLandCoverForMuni,
+  fetchWaterForMuni,
   fetchHistoricalIndex,
   fetchHistoricalManifest,
   fetchHistoricalShard,
@@ -174,6 +175,7 @@ import {
   setSurveyGridData,
   setSurveyGridVisible,
   setLandCoverVisible,
+  setWaterInfluenceVisible,
   setHistoricalData,
   setHistoricalVisible,
   setLandCoverRasterVisible,
@@ -195,6 +197,10 @@ import { generateParcelSnapshotsZip } from './snapshotExport.js';
 import { countSnapshotFrames } from './lib/snapshotGroups.js';
 import { OUTPUT_MIME, OUTPUT_QUALITY, MAX_OUTPUT_DIM } from './lib/imageOutput.js';
 import { dominantBucket, cultFraction, LAND_COVER_BUCKETS, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
+import {
+  waterColor, waterCellText, waterTooltip, waterSortRank,
+  isWaterfront, isNearWater, WATER_CLASSES,
+} from './lib/water.js';
 import { resolveParcelAcres } from './lib/acres.js';
 import { computeSizeChanges } from './lib/sizeChange.js';
 import { clearAllCache as clearAllCacheModule } from './cache.js';
@@ -360,9 +366,12 @@ const $tileNetworkToggle = document.getElementById('tile-network-toggle');
 const $irrigationToggle  = document.getElementById('irrigation-toggle');
 const $tileOnly          = document.getElementById('tile-only');
 const $irrigationOnly    = document.getElementById('irrigation-only');
+const $waterfrontOnly    = document.getElementById('waterfront-only');
+const $nearWaterOnly     = document.getElementById('near-water-only');
 const $cliToggle     = document.getElementById('cli-toggle');
 const $cliLegend     = document.getElementById('cli-legend');
 const $landcoverToggle = document.getElementById('landcover-toggle');
+const $waterToggle     = document.getElementById('water-toggle');
 const $landcoverLegend = document.getElementById('landcover-legend');
 const $gridToggle    = document.getElementById('grid-toggle');
 const $historicalToggle   = document.getElementById('historical-toggle');
@@ -936,6 +945,11 @@ const SORT_KEYS = {
   // parcels without it sort last (strKey sentinel / finiteOrNeg -1).
   landcover: (r) => strKey(dominantBucket(r.parcel.properties._landCover)?.label),
   cultpct:   (r) => finiteOrNeg(cultFraction(r.parcel.properties._landCover)),
+  // Water sorts by class severity (Direct first, then Waterfront, Reserve,
+  // Road Separated, Corridor Blocked, Unconfirmed), so the frontage parcels
+  // group together at the top rather than being scattered alphabetically by
+  // water-body name. Unstamped parcels rank last.
+  water:     (r) => waterSortRank(r.parcel.properties._water),
   changes: (r) => strKey(formatChanges(r)),
   du:      (r) => finiteOrNeg(r.parcel.properties.Dwelling_Units),
   acres:   (r) => finiteOrNeg(parcelAcres(r.parcel)),
@@ -1816,6 +1830,7 @@ function refreshOverlayGroupCounts() {
 $mascToggle.addEventListener('click', () => toggleMascOverlay());
 $cliToggle.addEventListener('click', () => toggleCliOverlay());
 if ($landcoverToggle) $landcoverToggle.addEventListener('click', () => toggleLandCoverOverlay());
+if ($waterToggle) $waterToggle.addEventListener('click', () => toggleWaterInfluenceOverlay());
 if ($historicalToggle) $historicalToggle.addEventListener('click', () => toggleHistoricalOverlay());
 if ($historicalYear) $historicalYear.addEventListener('change', () => onHistoricalYearChange());
 initHistoricalSnapshots();
@@ -2922,6 +2937,33 @@ async function runSearch() {
   clearTable();
   setMapData(EMPTY_FC, EMPTY_FC, EMPTY_FC);
 
+  // Resolve a ticked water-influence box into a roll list BEFORE the query
+  // runs, so it constrains the search rather than trimming its results.
+  //
+  // As a post-filter this was actively misleading: a muni-wide search caps at
+  // MAX_RESULTS (1,000), and Niverville's 378 waterfront parcels sit mostly
+  // above that cut — so "Waterfront only" returned 1 and looked authoritative.
+  // The shard already names exactly which rolls have water, so feeding them in
+  // as a roll list reuses the existing chunked roll-search path (which the
+  // sales-CSV import already leans on) and the cap then applies to waterfront
+  // parcels rather than to the muni at large.
+  const waterPre = await resolveWaterRollPrefilter(inputs);
+  if (waterPre?.applied) {
+    if (waterPre.rolls.length === 0) {
+      setBusy(false);
+      // Distinguish "this muni has none" from "the roll you asked for isn't
+      // one" — saying Niverville has no waterfront parcels when it has 378
+      // and the typed roll simply isn't among them would be plainly wrong.
+      setCount(waterPre.narrowedByRoll
+        ? `That roll is not ${waterFilterNames()} — ${inputs.municipality} has ${waterPre.muniTotal} such parcel${waterPre.muniTotal === 1 ? '' : 's'}. Clear the roll to see them.`
+        : `No ${waterFilterNames()} parcels in ${inputs.municipality}.`);
+      clearTable();
+      setMapData(EMPTY_FC, EMPTY_FC, EMPTY_FC);
+      return;
+    }
+    inputs.roll = waterPre.rolls.join(',');
+  }
+
   try {
     let legalResult = null;
     // List-import takes precedence. The resolved parcelKeys already
@@ -3194,9 +3236,16 @@ async function runSearch() {
       // uncapped, so a big muni lands here far more often than it does
       // against the live service.
       let deferredMsg = baseMsg;
+      // Water influence always runs, filter ticked or not — a muni-wide search
+      // caps at exactly ENRICHMENT_THRESHOLD and so ALWAYS lands in this
+      // branch, and leaving it out rendered an empty Water column for every
+      // such search. It is a pre-baked per-muni JSON, not an overlay join, so
+      // it costs a fraction of what this branch exists to defer.
+      const waterRows = parcelFc.features.map((p) => ({ parcel: p, zoning: [], devPlan: [] }));
+      await stampWaterInfluence(waterRows);
       if (waterFilterActive()) {
         setCount(`${baseMsg} · Checking water-rights licences…`);
-        const rows = parcelFc.features.map((p) => ({ parcel: p, zoning: [], devPlan: [] }));
+        const rows = waterRows;
         await Promise.all([stampTileDrainage(rows), stampIrrigation(rows)]);
         lastWaterFilterDropped = dropSliverOnlyMatches(rows, parcelFc);
         renderTable(rows);
@@ -3204,6 +3253,11 @@ async function runSearch() {
         deferredMsg = hasList
           ? listImportCountLabel(parcelFc.features.length)
           : (lastWaterFilterDropped > 0 ? `${baseMsg} · ${waterFilterDropNote()}` : baseMsg);
+      } else {
+        // Re-render so the freshly stamped Water column is visible without
+        // the user having to click "Load zoning + dev-plan".
+        renderTable(waterRows);
+        setMapData(parcelFc, EMPTY_FC, EMPTY_FC);
       }
       renderEnrichButton(parcelFc, inputs, deferredMsg);
     } else {
@@ -3269,7 +3323,7 @@ function listImportCountLabel(plotted) {
     ? (listParcelKeys?.length || 0) - plotted
     : 0;
   const filterTail = excluded > 0
-    ? ` · ${excluded} excluded by the licensed ${waterFilterNames()} filter`
+    ? ` · ${excluded} excluded by the ${waterFilterNames()} filter`
     : '';
   return `${plotted} of ${importedTotal} imported parcels plotted${filterTail}${unresolvedTail}`;
 }
@@ -5079,6 +5133,150 @@ function renderEnrichButton(parcelFc, inputs, baseMsg) {
  * stamp risk areas + soil rating, refresh the assessment-year header,
  * then re-render table + map.
  */
+/**
+ * Stamp `_water` / `_waterLoaded` on every row from the per-muni water shards.
+ *
+ * DELIBERATELY NOT INSIDE enrichOverlays. That function is skipped above
+ * ENRICHMENT_THRESHOLD (1,000 parcels) in favour of a "Load zoning + dev-plan"
+ * button, because the zoning/dev-plan work is an expensive polygon fetch plus
+ * an area-weighted join. Water influence is nothing of the sort — one
+ * pre-baked ~33 KB JSON per municipality and an O(1) dictionary hit per
+ * parcel. Leaving it behind that gate meant a muni-wide search (which caps at
+ * exactly 1,000 and so always trips the threshold) showed an empty Water
+ * column, which is precisely the case where filtering to waterfront matters
+ * most. Observed on Niverville: 1,000 rows, every Water cell blank.
+ *
+ * Munis come from the RESULT SET, not the dropdown, so this covers a
+ * single-muni search, a selected muni, and an imported list spanning several
+ * munis (sales analysis included).
+ *
+ * `_waterLoaded` marks every parcel whose muni shard RESOLVED, even when that
+ * parcel has no water. It separates "checked, nothing within 50 m" from "never
+ * looked" — the shards only carry non-"None" parcels, so a missing stamp alone
+ * cannot distinguish the two, and the waterfront filter gates on it so an
+ * unreachable CDN can't silently empty the grid.
+ *
+ * Non-fatal throughout: water is supplementary and must never break a search.
+ */
+/**
+ * Resolve a ticked water-influence box to the roll numbers that satisfy it, so
+ * the constraint can be pushed into the Roll_Entry query instead of trimming
+ * the capped result set afterwards.
+ *
+ * Returns `{ applied: false }` — leaving the search untouched — in every case
+ * where a roll list would be wrong or unobtainable:
+ *
+ *   - no water box ticked
+ *   - a list import is active: `parcelKeys` already pins the exact parcels and
+ *     takes precedence over `roll`, so the post-filter handles those rows
+ *   - NO municipality selected: a province-wide sweep would mean fetching all
+ *     180 shards and emitting ~54,000 rolls, which is far worse than letting
+ *     the cap bite. The user is told to pick a municipality.
+ *   - the shard is unreachable: filtering on data we failed to load would read
+ *     as "nothing qualifies". `_waterLoaded` gating in rowPassesWaterFilter
+ *     then keeps the grid honest.
+ *
+ * A roll the user typed themselves is INTERSECTED with, never replaced — a
+ * search for one roll plus "Waterfront only" must answer "is this parcel
+ * waterfront", not silently widen to every waterfront parcel in the muni.
+ */
+// Whether the Water Influence map overlay is currently on.
+let waterOverlayOn = false;
+
+/**
+ * Toggle the Water Influence map overlay — result parcels painted by
+ * waterfront class (blue = frontage, teal = near water without frontage).
+ *
+ * No fetch and no municipality dependency, unlike MASC / CLI / Land Cover:
+ * `_waterColor` is already stamped on every row by stampWaterInfluence during
+ * the search, so this is a pure visibility flip. That also means it works
+ * identically on an imported sales list.
+ *
+ * The status line reports how many parcels actually took colour, so an empty
+ * map reads as "none of these are near water" rather than as a broken layer.
+ */
+function toggleWaterInfluenceOverlay() {
+  waterOverlayOn = !waterOverlayOn;
+  setWaterInfluenceVisible(map, waterOverlayOn);
+  setOverlayPressed($waterToggle, waterOverlayOn);
+  if (!waterOverlayOn) return;
+
+  setColumnVisible('water', true);
+  const rows = currentRows || [];
+  const painted = rows.filter((r) => r.parcel?.properties?._waterColor).length;
+  const loaded  = rows.filter((r) => r.parcel?.properties?._waterLoaded).length;
+  if (!rows.length) {
+    setCount('Water Influence on — run a search or import a list to colour parcels.');
+  } else if (!loaded) {
+    setCount('Water Influence on — water data has not loaded for these municipalities yet.');
+  } else {
+    setCount(painted > 0
+      ? `Water Influence on — ${painted} of ${rows.length} parcel${rows.length === 1 ? '' : 's'} coloured (blue = frontage, teal = near water without frontage).`
+      : `Water Influence on — none of these ${rows.length} parcels are within 50 m of mapped water.`);
+  }
+}
+
+async function resolveWaterRollPrefilter(inputs) {
+  const wantFront = !!$waterfrontOnly?.checked;
+  const wantNear  = !!$nearWaterOnly?.checked;
+  if (!wantFront && !wantNear) return { applied: false };
+  if (Array.isArray(listParcelKeys) && listParcelKeys.length) return { applied: false };
+
+  const muni = inputs?.municipality?.trim();
+  if (!muni) {
+    setCount('Select a municipality to use the waterfront filter — a province-wide waterfront search is too large to resolve.');
+    return { applied: false };
+  }
+
+  const dict = await fetchWaterForMuni(muni).catch(() => null);
+  if (!dict) return { applied: false };
+
+  let rolls = [];
+  for (const [roll, w] of Object.entries(dict)) {
+    if ((wantFront && isWaterfront(w)) || (wantNear && isNearWater(w))) rolls.push(roll);
+  }
+
+  // Intersect with a typed roll rather than overriding it.
+  const typed = (inputs?.roll || '').trim();
+  const muniTotal = rolls.length;
+  if (typed) {
+    const wanted = new Set(
+      typed.split(/[\s,;|+&]+/).map((s) => s.trim()).filter(Boolean)
+        .map((s) => (Number.isFinite(Number(s)) ? Number(s).toFixed(3) : s)),
+    );
+    rolls = rolls.filter((r) => wanted.has(r) || wanted.has(String(Number(r))));
+  }
+  return { applied: true, rolls, narrowedByRoll: !!typed, muniTotal };
+}
+
+async function stampWaterInfluence(rows) {
+  try {
+    const muniNames = [...new Set(
+      (rows || []).map((r) => r?.parcel?.properties?.Muni_Name_With_Typ).filter(Boolean),
+    )];
+    if (!muniNames.length) return;
+    const dicts = await Promise.all(
+      muniNames.map((m) => fetchWaterForMuni(m).catch(() => null)),
+    );
+    const byMuni = new Map();
+    muniNames.forEach((m, i) => { if (dicts[i]) byMuni.set(m, dicts[i]); });
+    for (const row of rows) {
+      const p = row?.parcel?.properties;
+      const dict = p?.Muni_Name_With_Typ ? byMuni.get(p.Muni_Name_With_Typ) : null;
+      if (!dict) continue;
+      p._waterLoaded = true;
+      const hit = p?.Roll_No_Txt ? dict[p.Roll_No_Txt] : null;
+      if (hit) {
+        p._water = hit;
+        const color = waterColor(hit);
+        if (color) p._waterColor = color;
+      }
+    }
+  } catch (err) {
+    console.warn('water-influence enrichment failed (non-fatal):', err);
+  }
+}
+
 async function enrichOverlays(parcelFc, inputs, baseMsg, { skipDevPlan = false } = {}) {
   setCount(`${baseMsg} · Loading zoning overlay…`);
 
@@ -5287,6 +5485,8 @@ async function enrichOverlays(parcelFc, inputs, baseMsg, { skipDevPlan = false }
     console.warn('land-cover enrichment failed (non-fatal):', err);
   }
 
+  await stampWaterInfluence(rows);
+
   // Stamp the most-common assessment year into the Total Value column
   // header so users can tell which assessment cycle the dollar figure
   // is anchored to.
@@ -5363,6 +5563,14 @@ function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
     const numberable = (mapFc.features?.length || 0) > 1;
     setParcelNumberData(map, mapFc.features || []);
     setParcelNumbersVisible(map, numberingOn && numberable);
+    // Re-assert the water overlay. Its layers are declared with
+    // `visibility: 'none'` at style-build time, so any path that rebuilds the
+    // style (a basemap switch, a re-run of the setup) silently resets them
+    // while the button and `waterOverlayOn` still say the overlay is on —
+    // observed as a status line reading "Water Influence on — 151 of 151
+    // parcels coloured" over a map showing none of them. Re-applying on every
+    // data push keeps the layer state and the UI state agreeing.
+    setWaterInfluenceVisible(map, waterOverlayOn);
   });
   // Stamps run on the FULL set (every sale row), not the deduped map
   // set, so a repeat sale's extra rows carry soil data into the table
@@ -8000,6 +8208,11 @@ function renderTable(rows, { resetPage = true } = {}) {
     const cultPct = Number(ac) > LAND_COVER_MIN_ACRES ? cultFraction(p._landCover) : null;
     const cultHint = (cultPct == null && Number(ac) > LAND_COVER_MIN_ACRES) ? LANDCOVER_EMPTY_HINT : undefined;
     tr.appendChild(td(cultPct != null ? formatPercent(cultPct) : null, 'num', cultHint));
+    // Water influence is a pre-baked per-muni shard like land cover, NOT an
+    // overlay-gated live fetch — so no .water-only class here. That class
+    // belongs to the WALLAS tile/irrigation pair below, which really is gated
+    // on their overlays being switched on.
+    tr.appendChild(waterCell(p));
     const tileCell = tileDrainageCell(p);
     tileCell.classList.add('water-only');
     tr.appendChild(tileCell);
@@ -8262,6 +8475,46 @@ function landCoverCell(p, ac) {
   dot.style.backgroundColor = dom.color;
   cell.appendChild(dot);
   cell.appendChild(document.createTextNode(`${dom.label} ${Math.round(dom.pct * 100)}%`));
+  return cell;
+}
+
+/**
+ * "Water" grid cell — a colour dot plus the water body name, e.g.
+ * "● Red River" or "● Retention pond".
+ *
+ * Three states, and the difference is the whole point (same reasoning as the
+ * Tile Drainage cell below):
+ *   - shard never loaded (`_waterLoaded` falsy) → blank. We genuinely do not
+ *     know; rendering "No water" here would be a confident lie.
+ *   - shard loaded, no stamp                    → "No water" in the empty
+ *     style. The detection ran and found nothing within 50 m.
+ *   - stamp present                             → dot + body name, class and
+ *     caveats on hover.
+ *
+ * The dot colour carries the frontage-vs-near-water distinction (blues vs
+ * ambers, see lib/water.js), so a scan down the column separates parcels
+ * WITH frontage from parcels merely near water without reading a word.
+ */
+function waterCell(p) {
+  const cell = document.createElement('td');
+  const w = p?._water;
+  if (!w) {
+    if (p?._waterLoaded) {
+      cell.textContent = 'No water';
+      cell.classList.add('empty');
+      cell.title = 'No mapped water feature within 50 m of this parcel.';
+    } else {
+      cell.textContent = '';
+    }
+    return cell;
+  }
+  const dot = document.createElement('span');
+  dot.className = 'lc-dot';
+  dot.style.backgroundColor = waterColor(w) || '#9aa0a6';
+  cell.appendChild(dot);
+  cell.appendChild(document.createTextNode(waterCellText(w)));
+  const tip = waterTooltip(w);
+  if (tip) cell.title = tip;
   return cell;
 }
 
@@ -8530,15 +8783,20 @@ let lastWaterFilterDropped = 0;
  *  cause the same way. */
 function waterFilterNames() {
   return [
-    $tileOnly?.checked ? 'tile drainage' : null,
-    $irrigationOnly?.checked ? 'irrigation' : null,
-  ].filter(Boolean).join(' + ') || 'water-rights';
+    $tileOnly?.checked ? 'licensed tile drainage' : null,
+    $irrigationOnly?.checked ? 'licensed irrigation' : null,
+    $waterfrontOnly?.checked ? 'waterfront' : null,
+    $nearWaterOnly?.checked ? 'near-water' : null,
+  ].filter(Boolean).join(' + ') || 'water';
 }
 
 /** Phrase for the count line, naming which filter did the removing so
  *  "3 of 5" never looks like rows went missing on their own. */
 function waterFilterDropNote() {
-  return `${lastWaterFilterDropped} hidden by the licensed ${waterFilterNames()} filter`;
+  // "licensed" now lives inside waterFilterNames() per-filter — waterfront and
+  // near-water aren't licensed anything, and hardcoding it here made the note
+  // read "hidden by the licensed waterfront filter".
+  return `${lastWaterFilterDropped} hidden by the ${waterFilterNames()} filter`;
 }
 
 // ---------- Live water-rights view filter ----------
@@ -8561,7 +8819,8 @@ let waterFilterBaseRows = null;
 let waterFilterBaseMsg = '';
 
 function waterFilterActive() {
-  return !!($tileOnly?.checked || $irrigationOnly?.checked);
+  return !!($tileOnly?.checked || $irrigationOnly?.checked
+    || $waterfrontOnly?.checked || $nearWaterOnly?.checked);
 }
 
 /** Forget the stashed unfiltered set. Called wherever a new result set
@@ -8579,7 +8838,34 @@ function rowPassesWaterFilter(row) {
   const q = row?.parcel?.properties || {};
   if ($tileOnly?.checked && !q._tileDrainage) return false;
   if ($irrigationOnly?.checked && !q._irrigation) return false;
+  // Waterfront / near-water are OR'd with each other and AND'd with
+  // everything else — ticking both gives "any water influence", which is a
+  // question an appraiser actually asks when assembling comps.
+  //
+  // GATED ON `_waterLoaded`, for the same reason the WALLAS boxes gate on a
+  // successful load: filtering on a stamp that never arrived reads as
+  // "nothing qualifies" and silently empties the grid. Observed for real —
+  // a Niverville search with the shards unpublished hid all 100 rows, which
+  // would have been read as "no waterfront in Niverville" when the town in
+  // fact has 378 such parcels. A row whose muni shard didn't resolve is
+  // UNKNOWN, not excluded, so it passes through and the count line says the
+  // filter couldn't be applied (see waterFilterUnavailable).
+  const wantFront = !!$waterfrontOnly?.checked;
+  const wantNear  = !!$nearWaterOnly?.checked;
+  if ((wantFront || wantNear) && q._waterLoaded) {
+    const ok = (wantFront && isWaterfront(q._water))
+            || (wantNear  && isNearWater(q._water));
+    if (!ok) return false;
+  }
   return true;
+}
+
+/** True when a water-influence box is ticked but NO row in the current set
+ *  carries a resolved shard — i.e. the filter is inert. Drives the honest
+ *  count-line note instead of showing an unexplained full result set. */
+function waterInfluenceFilterInert(rows) {
+  if (!($waterfrontOnly?.checked || $nearWaterOnly?.checked)) return false;
+  return !rows?.some((r) => r?.parcel?.properties?._waterLoaded);
 }
 
 /**
@@ -8642,11 +8928,17 @@ function renderWaterFilteredView(rows, base, baseMsg) {
   const shortOfList = !baseMsg
     && listParcelKeys?.length
     && rows.length < listParcelKeys.length;
+  // An inert water-influence filter must announce itself. Otherwise the user
+  // ticks "Waterfront only", sees the untouched result set, and reasonably
+  // concludes every parcel is waterfront.
+  const waterInert = waterInfluenceFilterInert(rows);
   setCount(hidden > 0
-    ? `${rows.length} of ${base.length} shown · ${hidden} hidden by the licensed ${waterFilterNames()} filter`
-    : shortOfList
-      ? `${rows.length} of ${listParcelKeys.length} imported parcels in hand — press Search to refetch the full list`
-      : (baseMsg || `${rows.length} parcel${rows.length === 1 ? '' : 's'} shown`));
+    ? `${rows.length} of ${base.length} shown · ${hidden} hidden by the ${waterFilterNames()} filter`
+    : waterInert
+      ? `${rows.length} parcel${rows.length === 1 ? '' : 's'} shown · water-influence data hasn't loaded for these municipalities, so that filter was not applied`
+      : shortOfList
+        ? `${rows.length} of ${listParcelKeys.length} imported parcels in hand — press Search to refetch the full list`
+        : (baseMsg || `${rows.length} parcel${rows.length === 1 ? '' : 's'} shown`));
   renderTable(rows);
   const fc = { type: 'FeatureCollection', features: rows.map((r) => r.parcel) };
   setMapData(fc, lastZoningFc, lastDevPlanFc, { fit: rows.length > 0 });
@@ -8681,6 +8973,8 @@ async function onWaterFilterToggle() {
 
 $tileOnly?.addEventListener('change', onWaterFilterToggle);
 $irrigationOnly?.addEventListener('change', onWaterFilterToggle);
+$waterfrontOnly?.addEventListener('change', onWaterFilterToggle);
+$nearWaterOnly?.addEventListener('change', onWaterFilterToggle);
 
 function dropSliverOnlyMatches(rows, parcelFc) {
   const tileOn = !!$tileOnly?.checked;
