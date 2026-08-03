@@ -48,6 +48,7 @@ import {
   uniqueParcelFeatures, dedupeParcelFeaturesForMap,
 } from './lib/salesDedupe.js';
 import { parseSalesCsv } from './lib/salesCsvParse.js';
+import { initMultiSelect } from './lib/multiSelect.js';
 import { assignParcelSeq, clearParcelSeq } from './lib/parcelNumbering.js';
 import { parcelLat, parcelLon, featureToWkt, parcelCentrePoint } from './lib/geometryText.js';
 import {
@@ -265,11 +266,24 @@ const $saleAsmtMax   = document.getElementById('sale-asmt-max');
 // parseSaleDate() to be compared apples-to-apples.
 const $saleDateFrom  = document.getElementById('sale-date-from');
 const $saleDateTo    = document.getElementById('sale-date-to');
-// Sales-CSV class + status filters. Options populated post-upload from
-// the matched parcels' dominant class/status (assessmentIndex.js
-// uniqueClassesAndStatuses helper). Empty = no filter.
+// Sales-CSV assessment-class filter. Options are populated post-upload
+// from the matched parcels' dominant class (assessmentIndex.js's
+// uniqueClassesAndStatuses helper). Nothing ticked = no filter.
+//
+// The tax-status twin that used to sit beside this one is gone: the
+// EXEMPT / SCHOOL TAX EXEMPT / TAXABLE split never narrowed a comp
+// search in practice, and it cost a four-row list box to say so. Tax
+// status is still stamped on every parcel (_asmtStatus), still shown
+// in the map popup and still exported — it just isn't a filter.
 const $asmtClass     = document.getElementById('asmt-class');
-const $asmtStatus    = document.getElementById('asmt-status');
+const asmtClassFilter = initMultiSelect($asmtClass, {
+  placeholder: 'Any class',
+  noun: 'classes',
+});
+// Total-consideration bounds. Distinct from the $/Ac pair: this is the
+// whole transaction, so a multi-parcel sale passes or fails as one.
+const $salesPriceLow  = document.getElementById('sales-price-low');
+const $salesPriceHigh = document.getElementById('sales-price-high');
 // Subject parcel comparison — paste a roll # to highlight a subject
 // property on the map and compute centroid-to-centroid distance from
 // every sale parcel. The current subject Feature lives on
@@ -2287,8 +2301,9 @@ if ($farFlungKm) {
 // these listeners are no-ops (Search button still drives the SQL).
 for (const el of [
   $zoneCategory, $changedStatus, $duMode, $duMin, $sizeLow, $sizeHigh, $vacantOnly,
-  $saleDateFrom, $saleDateTo, $asmtClass, $asmtStatus, $distanceMax, $salesPlan,
+  $saleDateFrom, $saleDateTo, $asmtClass, $distanceMax, $salesPlan,
   $salesStreetName, $salesPpaLow, $salesPpaHigh, $saleAsmtMax,
+  $salesPriceLow, $salesPriceHigh,
 ].filter(Boolean)) {
   el.addEventListener('change', refilterCsvIfActive);
   el.addEventListener('input',  refilterCsvIfActive);
@@ -2806,10 +2821,11 @@ async function runSearch() {
   if ($salesStreetName) $salesStreetName.value = '';
   if ($salesPpaLow)   $salesPpaLow.value = '';
   if ($salesPpaHigh)  $salesPpaHigh.value = '';
-  // Multi-select: clear all selected options so the filter goes back
-  // to "any" rather than carrying over the last upload's picks.
-  if ($asmtClass)     [...$asmtClass.options].forEach((o) => { o.selected = false; });
-  if ($asmtStatus)    [...$asmtStatus.options].forEach((o) => { o.selected = false; });
+  if ($salesPriceLow)  $salesPriceLow.value = '';
+  if ($salesPriceHigh) $salesPriceHigh.value = '';
+  // Multi-select: untick everything so the filter goes back to "any"
+  // rather than carrying over the last upload's picks.
+  asmtClassFilter.clear();
   // Drop the subject parcel — a fresh Search shouldn't inherit a
   // previous upload's subject highlight on the map.
   clearSubjectParcel();
@@ -3700,14 +3716,15 @@ async function handleSalesUpload(file) {
       }
     }
 
-    // Populate the Class + Tax-Status filter dropdowns from the
-    // upload's matched parcels. Reuses the existing fillSelect helper
-    // so the 'Any …' placeholder + sorted-unique options behave the
-    // same as the Zoning category dropdown. Re-run on every upload
-    // since the available values depend on which parcels matched.
-    const { classes, statuses } = uniqueClassesAndStatuses(parcelFc);
-    if ($asmtClass)  fillSelect($asmtClass,  classes,  'Any class');
-    if ($asmtStatus) fillSelect($asmtStatus, statuses, 'Any status');
+    // Populate the Class filter from the upload's matched parcels.
+    // Re-run on every upload since the available values depend on
+    // which parcels matched; setOptions keeps any ticked class that
+    // still exists in the new list, so refiltering across uploads
+    // doesn't silently reset. (`statuses` is still returned by the
+    // helper and still feeds the popup / export — there's just no
+    // status filter control to fill any more.)
+    const { classes } = uniqueClassesAndStatuses(parcelFc);
+    asmtClassFilter.setOptions(classes);
 
     // Subject muni picker. Visible only when the upload spans 2+ munis
     // — single-muni uploads use that muni implicitly so the picker
@@ -4669,17 +4686,11 @@ function filterCsvRowsByOtherSearches(rows) {
   // Inclusive 'to' — bump by 24h - 1ms so a sale on the 'to' day passes.
   const dateToMs   = dateTo   ? dateTo.getTime() + 86399999 : Infinity;
 
-  // Class + status filters — multi-select. Read the selected <option>
-  // values into a Set for O(1) lookup. Empty set = no filter on that
-  // axis. Any parcel missing assessment data is excluded when at
-  // least one option is selected, matching the original single-select
-  // behaviour.
-  const classFilterSet = $asmtClass
-    ? new Set([...$asmtClass.selectedOptions].map((o) => o.value).filter(Boolean))
-    : new Set();
-  const statusFilterSet = $asmtStatus
-    ? new Set([...$asmtStatus.selectedOptions].map((o) => o.value).filter(Boolean))
-    : new Set();
+  // Class filter — multi-select. Read the ticked values into a Set for
+  // O(1) lookup. Empty set = no filter. A parcel missing assessment
+  // data is excluded when at least one class is ticked, matching the
+  // original single-select behaviour.
+  const classFilterSet = new Set(asmtClassFilter.getSelected());
 
   // Max distance from subject. Only fires when (a) a subject is set
   // and (b) the input parses to a positive number. Sales without a
@@ -4709,6 +4720,18 @@ function filterCsvRowsByOtherSearches(rows) {
   const ppaActive = Number.isFinite(ppaLoRaw) || Number.isFinite(ppaHiRaw);
   const ppaLo = Number.isFinite(ppaLoRaw) ? ppaLoRaw : 0;
   const ppaHi = Number.isFinite(ppaHiRaw) ? ppaHiRaw : Infinity;
+
+  // Total sale price filter — bounds against the sale's whole
+  // consideration, not a per-parcel share. _saleGroupTotalPriceNum is
+  // the parsed Consideration stamped on every member of the group by
+  // computeSaleGroupTotals, so a multi-parcel sale passes or fails as
+  // one transaction — the same reasoning as the size filter using
+  // group acres rather than per-parcel acres.
+  const priceLoRaw = parseFloat($salesPriceLow?.value);
+  const priceHiRaw = parseFloat($salesPriceHigh?.value);
+  const priceActive = Number.isFinite(priceLoRaw) || Number.isFinite(priceHiRaw);
+  const priceLo = Number.isFinite(priceLoRaw) ? priceLoRaw : 0;
+  const priceHi = Number.isFinite(priceHiRaw) ? priceHiRaw : Infinity;
 
   // Far-flung exclusion. Off unless the user ticked the box AND a
   // threshold is set. Because the span is a GROUP property stamped on
@@ -4751,6 +4774,16 @@ function filterCsvRowsByOtherSearches(rows) {
     if (ppaActive) {
       const ppa = Number(p._saleGroupPpa);
       if (!Number.isFinite(ppa) || ppa < ppaLo || ppa > ppaHi) return false;
+    }
+
+    // Total sale price filter. A sale whose Consideration didn't parse
+    // to a number (blank cell, "$1", "SEE DOCUMENT") drops out while
+    // either bound is set — same "missing = exclude" rule the size,
+    // date and $/Acre filters use, and the honest answer when the
+    // user has asked for a price range.
+    if (priceActive) {
+      const price = Number(p._saleGroupTotalPriceNum);
+      if (!Number.isFinite(price) || price < priceLo || price > priceHi) return false;
     }
 
     // DU filter — directly on the parcel field, no enrichment needed.
@@ -4823,12 +4856,6 @@ function filterCsvRowsByOtherSearches(rows) {
     // when at least one class is selected.
     if (classFilterSet.size > 0) {
       if (!p._asmtClass || !classFilterSet.has(p._asmtClass)) return false;
-    }
-
-    // Tax-status filter (multi-select). Same shape as the class
-    // filter above.
-    if (statusFilterSet.size > 0) {
-      if (!p._asmtStatus || !statusFilterSet.has(p._asmtStatus)) return false;
     }
 
     // Distance-from-subject filter. Sales without a computed

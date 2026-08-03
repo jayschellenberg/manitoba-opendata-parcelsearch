@@ -416,107 +416,13 @@
             <button id="recent-uploads-clear" type="button" class="secondary" title="Forget all recent uploads">×</button>
           </div>
 
-          <!-- Plan + size + vacant + street filters. Each .sales-only
-               row is hidden by body:not(.sales-mode) CSS until a CSV
-               upload completes; then the tab shows the active filter
-               set. -->
-          <div class="size-vacant-row sales-only">
-            <span class="field sales-plan-field">
-              <input id="sales-plan" type="text" placeholder="Plan #" autocomplete="off" />
-              <span class="tip">Filter uploaded sales to rows whose plan number contains this string. Case-insensitive substring match against both the legal-index Plan field AND the raw "Legal Description" cell from the uploaded CSV.</span>
-            </span>
-            <span class="field size-low-field">
-              <input id="size-low" type="number" min="0" step="0.01" placeholder="Lo Ac" />
-              <span class="tip">Minimum acres (empty = 0)</span>
-            </span>
-            <span class="field size-high-field">
-              <input id="size-high" type="number" min="0" step="0.01" placeholder="Hi Ac" />
-              <span class="tip">Maximum acres (empty = no max)</span>
-            </span>
-            <span class="field vacant-only-field">
-              <label class="vacant-only-label">
-                <input id="vacant-only" type="checkbox" />
-                <span>Vacant Only</span>
-              </label>
-              <span class="tip">Vacant land proxy. Marks a sale as vacant when every parcel in the group has Buildings &lt; the % threshold below, OR a Buildings $ value under the dollar threshold below. Heuristic based on MAO assessment ratios. Not a legal vacancy determination. Verify with municipality.</span>
-            </span>
-          </div>
-          <!-- Phase 6 vacant-land threshold (item 19). Single input
-               + a %/$ pill toggle decides how to interpret the
-               number: building-percentage cap (% mode) or
-               building-dollar cap ($ mode). Default 2 % matches
-               the legacy hard-coded behaviour. -->
-          <div class="vacant-threshold-row sales-only">
-            <span class="vacant-threshold-prefix">Bldg Threshold:</span>
-            <span class="field vacant-threshold-field">
-              <input id="vacant-threshold" type="number" min="0" step="0.1" placeholder="5" value="5" />
-              <span class="tip">Vacant land proxy threshold. In % mode (default), a parcel reads as vacant when Buildings ÷ Total &lt; this percent. In $ mode, when Buildings $ is below this dollar value. Heuristic only — verify with the municipality.</span>
-            </span>
-            <div class="vacant-mode-pill" role="radiogroup" aria-label="Vacant threshold mode">
-              <button type="button" class="vacant-mode-btn active" data-mode="pct" aria-pressed="true">%</button>
-              <button type="button" class="vacant-mode-btn" data-mode="dollar" aria-pressed="false">$</button>
-            </div>
-            <!-- Sale/Asmt ratio cap as a small dropdown. Empty value
-                 (default) reads "Max Sale/Asmt" and applies no
-                 filter. Picking a numeric option caps Sale ÷
-                 Assessed Total at that value — surfaces quirky
-                 sales where the assessment hadn't caught up to a
-                 newly built improvement. -->
-            <span class="field sale-asmt-max-field">
-              <select id="sale-asmt-max" aria-label="Max Sale/Asmt ratio cap">
-                <option value="">Max Sale/Asmt</option>
-                <option value="0.5">≤ 0.5</option>
-                <option value="0.75">≤ 0.75</option>
-                <option value="1">≤ 1</option>
-                <option value="1.25">≤ 1.25</option>
-                <option value="1.5">≤ 1.5</option>
-                <option value="1.75">≤ 1.75</option>
-                <option value="2">≤ 2</option>
-                <option value="3">≤ 3</option>
-                <option value="4">≤ 4</option>
-                <option value="5">≤ 5</option>
-              </select>
-              <span class="tip">Exclude sales whose Sale ÷ Assessed Total ratio exceeds the chosen cap. Useful when buildings sold before the assessment caught up (Sale/Asmt &gt;&gt; 1). Leave on "Max Sale/Asmt" for no cap.</span>
-            </span>
-          </div>
-          <!-- Street Name + Min $/Ac + Max $/Ac on a single row.
-               Street Name takes the left half; the two PPA inputs
-               split the right half evenly. The .ppa-row class is
-               kept on the PPA inputs so any existing JS/CSS that
-               targets it still works, but they're no longer in a
-               separate <div>. -->
-          <div class="street-name-row sales-only">
-            <span class="field street-name-field">
-              <input id="sales-street-name" type="text" placeholder="Street name" autocomplete="off" />
-              <span class="tip">Filter uploaded sales to rows whose Property Address contains this string. Case-insensitive substring match.</span>
-            </span>
-            <span class="field ppa-low-field">
-              <input id="sales-ppa-low" type="number" min="0" step="1" placeholder="Min $/Ac" />
-              <span class="tip">Minimum $/Acre (group rate). Empty = no lower limit.</span>
-            </span>
-            <span class="field ppa-high-field">
-              <input id="sales-ppa-high" type="number" min="0" step="1" placeholder="Max $/Ac" />
-              <span class="tip">Maximum $/Acre (group rate). Empty = no upper limit. Use a high Min on its own to surface development-land sales.</span>
-            </span>
-          </div>
-          <!-- Far-flung sale threshold. A multi-parcel sale whose
-               parcels are spread wider than this is marked in the grid
-               and popup with a ⚠ on its $/Acre — the rate a portfolio
-               or estate transaction most distorts. Flag only for now;
-               nothing is filtered out. -->
-          <div class="far-flung-row sales-only">
-            <span class="field far-flung-field">
-              <label for="far-flung-km">Far-flung over</label>
-              <input id="far-flung-km" type="number" min="0" step="1" />
-              <span class="far-flung-unit">km</span>
-              <span class="tip">Marks multi-parcel sales whose parcels lie farther apart than this, measured between parcel centroids. Portfolio and estate sales sweep up land across a wide area, so their blended $/Acre is not a local comparable. Blank or 0 turns the marking off. Nothing is removed from the results — this only flags.</span>
-            </span>
-            <label class="far-flung-exclude" title="Remove the flagged sales from the results table, the map and the CSV export. Off by default — nothing is hidden until you ask for it. Sales whose spread can't be measured (a parcel with no geometry) are never excluded.">
-              <input type="checkbox" id="far-flung-exclude" />
-              <span>Exclude</span>
-            </label>
-            <span id="far-flung-count" class="far-flung-count"></span>
-          </div>
+          <!-- Sales filters. Each .sales-only row is hidden by
+               body:not(.sales-mode) CSS until a CSV upload completes.
+               Order is by how often the filter gets touched: date
+               range, assessment class and the far-flung/vacant line
+               stay out in the open; everything else lives one click
+               away in the "Filters" disclosure below them. -->
+
           <!-- Sale Date hidden range. Driven by the preset buttons. -->
           <input id="sale-date-from" type="hidden" />
           <input id="sale-date-to" type="hidden" />
@@ -529,16 +435,137 @@
             <button type="button" class="date-preset-btn" data-months="48">48 mo</button>
             <button type="button" class="date-preset-btn date-preset-clear" data-clear="1" title="Clear date range">×</button>
           </div>
+          <!-- Assessment class. A compact <details> multi-select (see
+               lib/multiSelect.js) rather than an always-open list box:
+               the closed control is one line and states the current
+               selection in words, and the menu overlays the rows below
+               instead of pushing them down the panel. -->
           <div class="class-row sales-only">
             <span class="field class-field">
-              <select id="asmt-class" multiple size="4"></select>
-              <span class="tip">Filter to one or more MAO assessment classes. Ctrl/Cmd-click to select multiple.</span>
-            </span>
-            <span class="field status-field">
-              <select id="asmt-status" multiple size="4"></select>
-              <span class="tip">Filter to one or more tax statuses (TAXABLE / EXEMPT / GRANT-IN-LIEU / etc.).</span>
+              <details class="multiselect" id="asmt-class">
+                <summary aria-label="Assessment class filter">
+                  <span class="multiselect-label">Any class</span>
+                </summary>
+                <div class="multiselect-menu"></div>
+              </details>
+              <span class="tip">Filter to one or more MAO assessment classes. Click to open the list and tick each class you want; leave everything unticked for no class filter.</span>
             </span>
           </div>
+          <!-- Far-flung sale threshold. A multi-parcel sale whose
+               parcels are spread wider than this is marked in the grid
+               and popup with a ⚠ on its $/Acre — the rate a portfolio
+               or estate transaction most distorts. Vacant Only rides
+               along on this row: both are one-click sale-level
+               exclusions, so they read as a pair. -->
+          <div class="far-flung-row sales-only">
+            <span class="field far-flung-field">
+              <label for="far-flung-km">Far-flung over</label>
+              <input id="far-flung-km" type="number" min="0" step="1" />
+              <span class="far-flung-unit">km</span>
+              <span class="tip">Marks multi-parcel sales whose parcels lie farther apart than this, measured between parcel centroids. Portfolio and estate sales sweep up land across a wide area, so their blended $/Acre is not a local comparable. Blank or 0 turns the marking off. Nothing is removed from the results — this only flags.</span>
+            </span>
+            <label class="far-flung-exclude" title="Remove the flagged sales from the results table, the map and the CSV export. Off by default — nothing is hidden until you ask for it. Sales whose spread can't be measured (a parcel with no geometry) are never excluded.">
+              <input type="checkbox" id="far-flung-exclude" />
+              <span>Exclude</span>
+            </label>
+            <label class="vacant-only-label" title="Vacant land proxy. Marks a sale as vacant when every parcel in the group has Buildings below the threshold set under Filters. Heuristic based on MAO assessment ratios — not a legal vacancy determination. Verify with the municipality.">
+              <input id="vacant-only" type="checkbox" />
+              <span>Vacant Only</span>
+            </label>
+            <span id="far-flung-count" class="far-flung-count"></span>
+          </div>
+
+          <!-- The occasional filters. Collapsed by default so the
+               sales panel opens at a readable length; the controls
+               inside are the ones reached for on particular jobs
+               rather than on every upload. -->
+          <details class="more-filters sales-filters sales-only">
+            <summary>Filters</summary>
+            <div class="size-vacant-row">
+              <span class="field sales-plan-field">
+                <input id="sales-plan" type="text" placeholder="Plan #" autocomplete="off" />
+                <span class="tip">Filter uploaded sales to rows whose plan number contains this string. Case-insensitive substring match against both the legal-index Plan field AND the raw "Legal Description" cell from the uploaded CSV.</span>
+              </span>
+              <span class="field size-low-field">
+                <input id="size-low" type="number" min="0" step="0.01" placeholder="Lo Ac" />
+                <span class="tip">Minimum acres (empty = 0)</span>
+              </span>
+              <span class="field size-high-field">
+                <input id="size-high" type="number" min="0" step="0.01" placeholder="Hi Ac" />
+                <span class="tip">Maximum acres (empty = no max)</span>
+              </span>
+            </div>
+            <!-- Street Name + Min $/Ac + Max $/Ac on a single row.
+                 Street Name takes the left half; the two PPA inputs
+                 split the right half evenly. -->
+            <div class="street-name-row">
+              <span class="field street-name-field">
+                <input id="sales-street-name" type="text" placeholder="Street name" autocomplete="off" />
+                <span class="tip">Filter uploaded sales to rows whose Property Address contains this string. Case-insensitive substring match.</span>
+              </span>
+              <span class="field ppa-low-field">
+                <input id="sales-ppa-low" type="number" min="0" step="1" placeholder="Min $/Ac" />
+                <span class="tip">Minimum $/Acre (group rate). Empty = no lower limit.</span>
+              </span>
+              <span class="field ppa-high-field">
+                <input id="sales-ppa-high" type="number" min="0" step="1" placeholder="Max $/Ac" />
+                <span class="tip">Maximum $/Acre (group rate). Empty = no upper limit. Use a high Min on its own to surface development-land sales.</span>
+              </span>
+            </div>
+            <!-- Total consideration bounds. Deliberately a separate
+                 pair from $/Ac rather than a shared box with a unit
+                 toggle: the two express different things and combining
+                 them ("$3k-$6k an acre, under $2M all in") is a real
+                 screen. -->
+            <div class="sale-price-row">
+              <span class="sale-price-prefix">Sale Price:</span>
+              <span class="field sale-price-low-field">
+                <input id="sales-price-low" type="number" min="0" step="1000" placeholder="Min $" />
+                <span class="tip">Minimum total sale price (the Consideration from the uploaded CSV). For a multi-parcel sale this is the whole transaction, so the entire sale passes or fails together. Empty = no lower limit.</span>
+              </span>
+              <span class="field sale-price-high-field">
+                <input id="sales-price-high" type="number" min="0" step="1000" placeholder="Max $" />
+                <span class="tip">Maximum total sale price (the Consideration from the uploaded CSV). Sales with no readable price drop out while either bound is set. Empty = no upper limit.</span>
+              </span>
+            </div>
+            <!-- Vacant-land threshold. Single input + a %/$ pill
+                 toggle decides how to interpret the number:
+                 building-percentage cap (% mode) or building-dollar
+                 cap ($ mode). Tunes the Vacant Only checkbox above. -->
+            <div class="vacant-threshold-row">
+              <span class="vacant-threshold-prefix">Bldg Threshold:</span>
+              <span class="field vacant-threshold-field">
+                <input id="vacant-threshold" type="number" min="0" step="0.1" placeholder="5" value="5" />
+                <span class="tip">Vacant land proxy threshold, applied by the Vacant Only checkbox above. In % mode (default), a parcel reads as vacant when Buildings ÷ Total &lt; this percent. In $ mode, when Buildings $ is below this dollar value. Heuristic only — verify with the municipality.</span>
+              </span>
+              <div class="vacant-mode-pill" role="radiogroup" aria-label="Vacant threshold mode">
+                <button type="button" class="vacant-mode-btn active" data-mode="pct" aria-pressed="true">%</button>
+                <button type="button" class="vacant-mode-btn" data-mode="dollar" aria-pressed="false">$</button>
+              </div>
+              <!-- Sale/Asmt ratio cap as a small dropdown. Empty value
+                   (default) reads "Max Sale/Asmt" and applies no
+                   filter. Picking a numeric option caps Sale ÷
+                   Assessed Total at that value — surfaces quirky
+                   sales where the assessment hadn't caught up to a
+                   newly built improvement. -->
+              <span class="field sale-asmt-max-field">
+                <select id="sale-asmt-max" aria-label="Max Sale/Asmt ratio cap">
+                  <option value="">Max Sale/Asmt</option>
+                  <option value="0.5">≤ 0.5</option>
+                  <option value="0.75">≤ 0.75</option>
+                  <option value="1">≤ 1</option>
+                  <option value="1.25">≤ 1.25</option>
+                  <option value="1.5">≤ 1.5</option>
+                  <option value="1.75">≤ 1.75</option>
+                  <option value="2">≤ 2</option>
+                  <option value="3">≤ 3</option>
+                  <option value="4">≤ 4</option>
+                  <option value="5">≤ 5</option>
+                </select>
+                <span class="tip">Exclude sales whose Sale ÷ Assessed Total ratio exceeds the chosen cap. Useful when buildings sold before the assessment caught up (Sale/Asmt &gt;&gt; 1). Leave on "Max Sale/Asmt" for no cap. Applies alongside Vacant Only.</span>
+              </span>
+            </div>
+          </details>
           <!-- Subject parcel + max-distance combo row. Sits just
                above the Clear button so it reads as the final
                step before kicking off the search. -->

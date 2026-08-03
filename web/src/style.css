@@ -764,6 +764,8 @@ body:not(.sales-mode) .sidebar .subject-muni-row,
 body:not(.sales-mode) .sidebar .distance-row,
 body:not(.sales-mode) .sidebar .uom-vacant-row,
 body:not(.sales-mode) .sidebar .far-flung-row,
+body:not(.sales-mode) .sidebar .sale-price-row,
+body:not(.sales-mode) .sidebar .sales-filters,
 body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 
 /* "More filters" collapsible — wraps the regular-search filter
@@ -803,19 +805,19 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 .sidebar .more-filters .du-row .du-mode-field { flex: 1 1 50%; min-width: 0; }
 .sidebar .more-filters .du-row .du-min-field  { flex: 0 0 64px; min-width: 0; }
 
-/* Size + Vacant Land Only row — all three on one line.
-   Lo Ac / Hi Ac inputs are equal-width; Vacant Land Only takes
-   the remaining space. */
+/* Plan # + size row — all three on one line. Lo Ac / Hi Ac inputs are
+   equal-width; Plan # absorbs the rest. (Vacant Only used to end this
+   row; it now rides with the far-flung exclusion, which is the other
+   one-click sale-level filter.) */
 .sidebar .size-vacant-row {
   display: flex;
   gap: 6px;
   align-items: center;
   margin-top: 4px;
 }
-.sidebar .size-vacant-row .sales-plan-field { flex: 0 0 120px; min-width: 0; }
+.sidebar .size-vacant-row .sales-plan-field { flex: 1 1 auto; min-width: 0; }
 .sidebar .size-vacant-row .size-low-field,
 .sidebar .size-vacant-row .size-high-field { flex: 0 0 85px; min-width: 0; }
-.sidebar .size-vacant-row .vacant-only-field { flex: 1 1 auto; min-width: 0; }
 .sidebar .size-vacant-row input[type="number"],
 .sidebar .size-vacant-row input[type="text"] {
   width: 100%;
@@ -1090,14 +1092,113 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 .sidebar .date-row > .field { flex: 1 1 0; min-width: 0; }
 .sidebar .date-row input[type="date"] { width: 100%; }
 
-/* Sales-CSV class + status filter row — two selects side by side. */
+/* Sales-CSV assessment-class filter row. Was two list boxes side by
+   side (class + tax status); the status filter is gone and the class
+   picker is now a one-line disclosure, so the row is a single
+   full-width field. */
 .sidebar .class-row {
   display: flex;
   gap: 6px;
   margin-top: 4px;
 }
-.sidebar .class-row > .field { flex: 1 1 50%; min-width: 0; }
-.sidebar .class-row select { width: 100%; }
+.sidebar .class-row > .field { flex: 1 1 auto; min-width: 0; }
+.sidebar .class-row .multiselect { width: 100%; }
+
+/* Compact multi-select (lib/multiSelect.js). Closed, it's a single
+   line reading "Any class" / "RESIDENTIAL 1" / "3 classes". Open, the
+   checkbox list is absolutely positioned so it floats over the rows
+   below rather than pushing the whole panel down — the menu styling
+   deliberately mirrors .columns-popover, the app's other
+   checkbox-list-in-a-popover. */
+.sidebar .multiselect {
+  position: relative;
+  min-width: 0;
+}
+.sidebar .multiselect > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--ui-muted, #6d7771);
+  background: #fff;
+  border: 1px solid var(--color-neutral-300, #d4d4d8);
+  border-radius: var(--ui-radius, 6px);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.sidebar .multiselect > summary::-webkit-details-marker { display: none; }
+/* Selected state reads like a filled-in input rather than a
+   placeholder, so a glance down the panel shows which filters are
+   actually doing something. */
+.sidebar .multiselect.has-selection > summary {
+  color: var(--ui-ink, #151916);
+  font-weight: 600;
+  border-color: var(--ui-line-strong, #b9c4b9);
+}
+.sidebar .multiselect > summary:hover { border-color: var(--ui-line-strong, #b9c4b9); }
+.sidebar .multiselect > summary:focus-visible {
+  outline: 2px solid var(--color-accent-500, #2563eb);
+  outline-offset: 1px;
+}
+.sidebar .multiselect > summary::after {
+  content: "▾";
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: var(--ui-muted, #6d7771);
+  transition: transform 140ms ease;
+}
+.sidebar .multiselect[open] > summary::after { transform: rotate(180deg); }
+.sidebar .multiselect-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar .multiselect-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 6px 4px;
+  background: #fff;
+  border: 1px solid var(--color-neutral-300, #d4d4d8);
+  border-radius: 6px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
+}
+.sidebar .multiselect-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  font-size: 12px;
+  color: var(--color-primary-500, #1e293b);
+  cursor: pointer;
+  border-radius: 3px;
+}
+.sidebar .multiselect-option:hover { background: var(--color-neutral-100, #f4f4f5); }
+.sidebar .multiselect-option input[type="checkbox"] { margin: 0; cursor: pointer; }
+.sidebar .multiselect-clear {
+  display: block;
+  margin: 0 0 4px auto;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--ui-muted, #6d7771);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.sidebar .multiselect-clear:hover { color: var(--ui-ink, #151916); }
+.sidebar .multiselect-empty {
+  margin: 4px 8px;
+  font-size: 11px;
+  color: var(--ui-muted, #6d7771);
+}
 
 /* Sales-CSV unmatched-records panel — sits below the search count.
    Collapsed by default; click the summary to expand the table of
@@ -1598,6 +1699,41 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   cursor: default;
 }
 
+/* Total sale-price bounds. Same shape as the vacant-threshold row —
+   a nowrap prefix label then the inputs — so the two labelled rows
+   inside the Filters disclosure line up with each other. */
+.sidebar .sale-price-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.sidebar .sale-price-prefix {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--color-neutral-600, #52525b);
+  white-space: nowrap;
+}
+.sidebar .sale-price-row > .field { flex: 1 1 0; min-width: 0; }
+.sidebar .sale-price-row input[type="number"] {
+  width: 100%;
+  padding: 6px 6px;
+  font-size: 12px;
+}
+/* Appraisers type these values; the spinners only stole width. */
+#sales-price-low::-webkit-outer-spin-button,
+#sales-price-low::-webkit-inner-spin-button,
+#sales-price-high::-webkit-outer-spin-button,
+#sales-price-high::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+#sales-price-low,
+#sales-price-high {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 /* Phase 6 vacant land proxy threshold. Single number input + a
    %/$ pill toggle that selects how the number is interpreted,
    plus the Sale/Asmt ratio dropdown to the right of the pill.
@@ -1850,6 +1986,14 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   font-size: 0.92em;
   color: var(--muted, #555);
   cursor: pointer;
+}
+/* Vacant Only shares the far-flung row, so it takes that row's small
+   muted treatment rather than the 13px label it wore when it sat at
+   the end of the Plan #/acres line. */
+.sidebar .far-flung-row .vacant-only-label {
+  font-size: 0.92em;
+  color: var(--muted, #555);
+  white-space: nowrap;
 }
 .sidebar .far-flung-count {
   font-size: 0.85em;
