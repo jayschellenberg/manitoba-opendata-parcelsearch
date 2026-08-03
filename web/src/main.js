@@ -47,6 +47,7 @@ import {
   dedupeSalesByRoll, expandFeaturesBySale, unmatchedSales,
   uniqueParcelFeatures, dedupeParcelFeaturesForMap,
 } from './lib/salesDedupe.js';
+import { parseSalesCsv } from './lib/salesCsvParse.js';
 import { assignParcelSeq, clearParcelSeq } from './lib/parcelNumbering.js';
 import { parcelLat, parcelLon, featureToWkt, parcelCentrePoint } from './lib/geometryText.js';
 import {
@@ -4881,137 +4882,6 @@ function filterFcForChanged(fc, isChanged) {
     type: 'FeatureCollection',
     features: fc.features.filter((f) => isChanged(f.properties || {})),
   };
-}
-
-/**
- * Tiny CSV parser tuned for the sales-export format Jason sends:
- *   Sale Date, Consideration, Municipality, Roll Number,
- *   Street Address, Legal Description, Primary Property
- *
- * Returns an array of `{saleDate, consideration, municipality,
- * rollNumber, streetAddress, legalDescription, primaryProperty}`
- * objects. Quoted fields with embedded commas (e.g. "$425,000") are
- * handled correctly. Rows missing both Roll Number AND Municipality
- * are silently dropped.
- */
-function parseSalesCsv(text) {
-  // Sniff the delimiter so a block pasted straight from Excel / the
-  // assessment table (tab-separated, and full of commas inside the
-  // Consideration cells like "$720,000") parses the same as a real
-  // comma CSV file. Tab wins whenever it's present on the first
-  // non-empty line; otherwise fall back to comma.
-  const rows = parseCsvRows(text, detectSalesDelimiter(text));
-  if (rows.length < 2) return [];
-  const header = rows[0].map((c) => String(c || '').trim().toLowerCase());
-  const idx = (...names) => {
-    for (const n of names) {
-      const i = header.indexOf(n.toLowerCase());
-      if (i >= 0) return i;
-    }
-    return -1;
-  };
-  // Header aliases — both human-readable ("Sale Date") and no-space
-  // ("SaleDate") variants accepted, plus a few common short forms.
-  // Headers are lowercased before comparison so the matching is
-  // case-insensitive across all variants.
-  const i = {
-    saleDate:        idx('sale date', 'saledate', 'date'),
-    consideration:   idx('consideration', 'sale price', 'saleprice', 'price'),
-    municipality:    idx('municipality', 'muni'),
-    rollNumber:      idx('roll number', 'rollnumber', 'roll #', 'roll'),
-    streetAddress:   idx('street address', 'streetaddress', 'address'),
-    legalDescription: idx('legal description', 'legaldesc', 'legaldescription', 'legal'),
-    primaryProperty: idx('primary property', 'primaryprop', 'primaryproperty'),
-  };
-  if (i.rollNumber < 0 || i.municipality < 0) return [];
-
-  // Multi-parcel sales: a row with a Sale Date or Consideration starts
-  // a new sale group; rows that follow it with BOTH fields blank are
-  // continuation parcels in the same sale (the date/price applies to
-  // the whole group). Each record gets a sequential `groupId`, an
-  // `isPrimary` flag (true on the row that carried the date+price),
-  // and the group's date+price copied onto every member so downstream
-  // code doesn't need to hunt the primary.
-  const out = [];
-  let groupCounter = 0;
-  let currentGroup = null;
-  for (let r = 1; r < rows.length; r++) {
-    const row = rows[r];
-    if (!row || row.length === 0) continue;
-    const rollRaw      = (row[i.rollNumber]      || '').trim();
-    const muni         = (row[i.municipality]    || '').trim();
-    const saleDate     = i.saleDate      >= 0 ? (row[i.saleDate]      || '').trim() : '';
-    const consideration= i.consideration >= 0 ? (row[i.consideration] || '').trim() : '';
-    if (!rollRaw || !muni) continue;
-    const hasSaleData = saleDate !== '' || consideration !== '';
-    if (hasSaleData || currentGroup == null) {
-      groupCounter++;
-      currentGroup = {
-        id: groupCounter,
-        saleDate,
-        consideration,
-      };
-    }
-    out.push({
-      saleDate:         currentGroup.saleDate,
-      consideration:    currentGroup.consideration,
-      municipality:     muni,
-      rollNumber:       rollRaw,
-      streetAddress:    i.streetAddress    >= 0 ? (row[i.streetAddress]    || '').trim() : '',
-      legalDescription: i.legalDescription >= 0 ? (row[i.legalDescription] || '').trim() : '',
-      primaryProperty:  i.primaryProperty  >= 0 ? (row[i.primaryProperty]  || '').trim() : '',
-      groupId:          currentGroup.id,
-      isPrimary:        hasSaleData,
-    });
-  }
-  return out;
-}
-
-/** Sniff the row delimiter for a sales block. Tab wins when the first
- *  non-empty line carries one (the Excel/assessment-table copy-paste
- *  workflow), otherwise comma (a genuine CSV file). Keeping this
- *  separate from the tokenizer means the paste and file paths share
- *  exactly one detection rule. */
-function detectSalesDelimiter(text) {
-  const firstLine = String(text || '').split(/\r\n|\r|\n/).find((l) => l.trim()) || '';
-  return firstLine.includes('\t') ? '\t' : ',';
-}
-
-/** Generic delimited-row tokenizer — handles quoted fields with embedded
- *  delimiters, escaped double-quotes (""), and \r\n / \n / \r line
- *  endings. `delimiter` is a single character (',' or '\t'). Returns an
- *  array of arrays. */
-function parseCsvRows(text, delimiter = ',') {
-  const rows = [];
-  let row = [];
-  let field = '';
-  let inQuotes = false;
-  let i = 0;
-  const pushField = () => { row.push(field); field = ''; };
-  const pushRow   = () => {
-    if (row.length > 1 || row[0] !== '') rows.push(row);
-    row = [];
-  };
-  while (i < text.length) {
-    const c = text[i];
-    if (inQuotes) {
-      if (c === '"') {
-        if (text[i + 1] === '"') { field += '"'; i += 2; }
-        else { inQuotes = false; i++; }
-      } else { field += c; i++; }
-    } else if (c === '"') {
-      inQuotes = true; i++;
-    } else if (c === delimiter) {
-      pushField(); i++;
-    } else if (c === '\r' || c === '\n') {
-      pushField(); pushRow();
-      if (c === '\r' && text[i + 1] === '\n') i += 2; else i++;
-    } else {
-      field += c; i++;
-    }
-  }
-  if (field !== '' || row.length > 0) { pushField(); pushRow(); }
-  return rows;
 }
 
 /** Convert a CSV-style muni string ('CITY OF WINKLER', 'RM OF
