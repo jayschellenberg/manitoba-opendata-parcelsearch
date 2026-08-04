@@ -908,9 +908,18 @@ export function initMap(container, { onFeatureClick } = {}) {
         source: 'traffic',
         layout: { visibility: 'none' },
         paint: {
-          'circle-radius': 5,
+          // Same zoom-graduated sizing as contam-circle (slightly
+          // smaller so the two stay tellable-apart when both are on):
+          // a fixed 5 px station dot disappeared against satellite
+          // imagery at municipal zooms.
+          'circle-radius': [
+            'interpolate', ['linear'], ['zoom'],
+            8,  7,
+            12, 10,
+            16, 13,
+          ],
           'circle-color': '#1a3a4a',
-          'circle-stroke-width': 1.5,
+          'circle-stroke-width': 2,
           'circle-stroke-color': '#ffd166',
           'circle-opacity': 0.95,
         },
