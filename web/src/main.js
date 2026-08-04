@@ -5151,7 +5151,7 @@ function renderEnrichButton(parcelFc, inputs, baseMsg) {
  * munis (sales analysis included).
  *
  * `_waterLoaded` marks every parcel whose muni shard RESOLVED, even when that
- * parcel has no water. It separates "checked, nothing within 50 m" from "never
+ * parcel has no water. It separates "checked, nothing within 164 ft" from "never
  * looked" — the shards only carry non-"None" parcels, so a missing stamp alone
  * cannot distinguish the two, and the waterfront filter gates on it so an
  * unreachable CDN can't silently empty the grid.
@@ -5212,7 +5212,7 @@ function toggleWaterInfluenceOverlay() {
   } else {
     setCount(painted > 0
       ? `Water Influence on — ${painted} of ${rows.length} parcel${rows.length === 1 ? '' : 's'} coloured (dark blue = frontage, pale blue = near water without frontage).`
-      : `Water Influence on — none of these ${rows.length} parcels are within 50 m of mapped water.`);
+      : `Water Influence on — none of these ${rows.length} parcels are within 164 ft of mapped water.`);
   }
 }
 
@@ -5275,36 +5275,21 @@ async function stampWaterInfluence(rows) {
   } catch (err) {
     console.warn('water-influence enrichment failed (non-fatal):', err);
   }
-  autoEnableWaterOverlay();
 }
 
-/**
- * Turn the Water Influence map overlay on automatically whenever a waterfront
- * / near-water filter is active.
- *
- * Filtering to "Waterfront only" and then seeing the map render those parcels
- * in the app's ordinary yellow highlight is not what anyone means by "show me
- * the waterfront parcels" — and expecting the toggle to be found first was
- * unrealistic while it sat inside a group that is collapsed by default. The
- * filter and the colouring answer the same question, so ticking one arms the
- * other.
- *
- * Only ever turns it ON. An explicit toggle-off stays off for the current
- * result set; the next filtered search re-arms it, which is the behaviour that
- * surprises least.
- *
- * setMapData re-asserts visibility from `waterOverlayOn` on every data push,
- * so flipping the flag here is enough — no ordering dependency on when the map
- * layers were (re)built.
- */
-function autoEnableWaterOverlay() {
-  if (!($waterfrontOnly?.checked || $nearWaterOnly?.checked)) return;
-  if (waterOverlayOn) return;
-  waterOverlayOn = true;
-  setWaterInfluenceVisible(map, true);
-  setOverlayPressed($waterToggle, true);
-  setColumnVisible('water', true);
-}
+// The Water Influence overlay is OFF until the user turns it on, like every
+// other map layer. An earlier version auto-armed it whenever a waterfront /
+// near-water filter was ticked, because the toggle was then buried in the
+// collapsed Agricultural group and filtering appeared to do nothing to the
+// map. That was solved better by moving the button into Parcel layers with the
+// two filters directly beneath it — the control is now visible at the moment
+// you would want it, so arming it on the user's behalf just takes away a
+// choice.
+//
+// If the "filtered but the map is still yellow" complaint ever returns, the
+// fix is discoverability, not re-arming: setMapData already re-asserts
+// visibility from `waterOverlayOn`, so a one-line flag flip would bring the
+// old behaviour back, and it would take the same choice away again.
 
 async function enrichOverlays(parcelFc, inputs, baseMsg, { skipDevPlan = false } = {}) {
   setCount(`${baseMsg} · Loading zoning overlay…`);
@@ -8516,7 +8501,7 @@ function landCoverCell(p, ac) {
  *   - shard never loaded (`_waterLoaded` falsy) → blank. We genuinely do not
  *     know; rendering "No water" here would be a confident lie.
  *   - shard loaded, no stamp                    → "No water" in the empty
- *     style. The detection ran and found nothing within 50 m.
+ *     style. The detection ran and found nothing within 164 ft.
  *   - stamp present                             → dot + body name, class and
  *     caveats on hover.
  *
@@ -8531,7 +8516,7 @@ function waterCell(p) {
     if (p?._waterLoaded) {
       cell.textContent = 'No water';
       cell.classList.add('empty');
-      cell.title = 'No mapped water feature within 50 m of this parcel.';
+      cell.title = 'No mapped water feature within 164 ft of this parcel.';
     } else {
       cell.textContent = '';
     }
@@ -8998,17 +8983,8 @@ async function onWaterFilterToggle() {
   if (!ok) return;   // message already explains why nothing changed
   const kept = waterFilterBaseRows.filter(rowPassesWaterFilter);
   renderWaterFilteredView(kept, waterFilterBaseRows, waterFilterBaseMsg);
-  // Arm the overlay here too, not just in stampWaterInfluence. Ticking the box
-  // against rows ALREADY on screen — an imported sales set, or a search whose
-  // results are in hand — takes this live-filter path and never re-enriches,
-  // so without this the grid filters correctly while the map keeps rendering
-  // the survivors in the ordinary yellow highlight.
-  //
-  // MUST run after renderWaterFilteredView, not before: it calls
-  // setColumnVisible, whose listeners re-render the table and reset the count
-  // line back to the unfiltered base message — leaving "7 of 7 sales plotted"
-  // above a grid showing 3.
-  autoEnableWaterOverlay();
+  // Deliberately does NOT arm the Water Influence overlay — see the note above
+  // autoEnable's removal. The map colouring is the user's choice to make.
 }
 
 $tileOnly?.addEventListener('change', onWaterFilterToggle);

@@ -5561,6 +5561,20 @@ body {
 .sidebar .overlay-group-body > .overlay-check:hover {
   color: var(--ui-ink, #111);
 }
+/* Paired half-width variant — two related filters sharing one row rather
+   than stacking. Used by Waterfront only / Near water, which are the two
+   halves of one question ("what kind of water influence?") and read better
+   side by side than as two separate lines.
+   `align-items: flex-start` because the right-hand label wraps to two lines
+   in a narrow sidebar; without it the checkbox would centre against the
+   wrapped block and sit visibly lower than its partner. */
+.sidebar .overlay-group-body > .overlay-check.overlay-check-half {
+  grid-column: auto;
+  align-items: flex-start;
+}
+.sidebar .overlay-group-body > .overlay-check.overlay-check-half input[type="checkbox"] {
+  margin-top: 1px;
+}
 /* Belt and braces: hide the contents outright when closed rather than
    leaning on the UA's own <details> handling. Browsers implement that
    with content-visibility, which still left the buttons with a layout

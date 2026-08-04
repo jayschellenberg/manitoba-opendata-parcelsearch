@@ -653,11 +653,11 @@
                  matches) — no municipality scoping needed and no extra fetch.
                  Ticking both gives "any water influence".
                  Full-width rows: the labels don't fit a half column. -->
-            <label class="overlay-check" title="Return only parcels with actual water FRONTAGE — the detection's Direct, Waterfront and Reserve-separated classes. Reserve-separated means a narrow public reserve strip sits between the lot and the water, which is normal in Manitoba lake communities and still counts as waterfront. Works on an imported sales list too.">
+            <label class="overlay-check overlay-check-half" title="Return only parcels with actual water FRONTAGE — the detection's Direct, Waterfront and Reserve-separated classes. Reserve-separated means a narrow public reserve strip sits between the lot and the water, which is normal in Manitoba lake communities and still counts as waterfront. Works on an imported sales list too.">
               <input type="checkbox" id="waterfront-only" />
               <span>Waterfront only</span>
             </label>
-            <label class="overlay-check" title="Return only parcels NEAR water but WITHOUT frontage — across a developed road, or with another parcel between them and the water. The 'second row': often a view, but not comparable to true waterfront. Tick alongside Waterfront only to get every parcel with any water influence.">
+            <label class="overlay-check overlay-check-half" title="Return only parcels NEAR water but WITHOUT frontage — across a developed road, or with another parcel between them and the water. The 'second row': often a view, but not comparable to true waterfront. Tick alongside Waterfront only to get every parcel with any water influence.">
               <input type="checkbox" id="near-water-only" />
               <span>Near water (no frontage)</span>
             </label>
@@ -1174,7 +1174,7 @@
                  the Agricultural column preset. -->
             <th data-col="landcover" title="Dominant 2020 land-cover bucket for this parcel and its share — Cultivated / Pasture-Grass / Bush-Treed / Wetland-Water / Other. Derived from the LCR_RCT_2020 raster via the mao-assembly pipeline. Shown only for parcels over 10 acres.">Land Cover</th>
             <th data-col="cultpct" title="Cultivated (cropland) share of the parcel from the 2020 land-cover raster. Shown only for parcels over 10 acres.">Cult %</th>
-            <th data-col="water" title="Water influence — is this parcel on or near a lake, river, stream or retention pond? Shows the water body name with a colour dot: DARK BLUE = actual frontage (Direct / Waterfront / Reserve separated), PALE BLUE = near water but no frontage, because a road or another parcel lies between (the 'second row', often a view). 'No water' means the check ran and found nothing within 50 m. Blank means the data hasn't loaded for this municipality yet. Screening aid from provincial/federal mapping — not a survey.">Water</th>
+            <th data-col="water" title="Water influence — is this parcel on or near a lake, river, stream or retention pond? Shows the water body name with a colour dot: DARK BLUE = actual frontage (Direct / Waterfront / Reserve separated), PALE BLUE = near water but no frontage, because a road or another parcel lies between (the 'second row', often a view). 'No water' means the check ran and found nothing within 164 ft. Blank means the data hasn't loaded for this municipality yet. Screening aid from provincial/federal mapping — not a survey.">Water</th>
             <!-- Tile Drainage — populated when the Tile Drainage overlay
                  has loaded, by clipping the licensed tile footprints to
                  each parcel (same area-weighted join the zoning and
