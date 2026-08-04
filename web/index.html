@@ -686,6 +686,27 @@
             <button id="highways-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Manitoba Road Network 2023 — official PTH, PR, access, service, and winter-road geometry">
               <span class="overlay-btn-label">Manitoba Highways</span>
             </button>
+            <!-- Water influence lives in Reference, not Agricultural. It reads
+                 on every property type — lakefront cottages, riverfront lots
+                 and subdivision retention ponds are residential concerns — so
+                 grouping it with soil and tile drainage buried it for the
+                 searches that need it most. The WALLAS tile/irrigation pair
+                 stays in Agricultural: those really are farmland attributes. -->
+            <button id="water-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Water Influence — colours the result parcels by waterfront classification. BLUE = actual frontage (Direct / Waterfront / Reserve separated); TEAL = near water but no frontage, because a road or another parcel lies between (the 'second row', often a view). Reads the same pre-baked data as the Water column, so no extra fetch. Screening aid from provincial/federal mapping — not a survey.">
+              <span class="overlay-btn-label">Water Influence</span>
+            </button>
+            <!-- Pure post-filters on the pre-baked water shards (or, with a
+                 municipality selected, a roll-list pre-filter so the result cap
+                 can't hide matches). No municipality scoping needed and no
+                 extra fetch. Ticking both gives "any water influence". -->
+            <label class="overlay-check" title="Return only parcels with actual water FRONTAGE — the detection's Direct, Waterfront and Reserve-separated classes. Reserve-separated means a narrow public reserve strip sits between the lot and the water, which is normal in Manitoba lake communities and still counts as waterfront. Works on an imported sales list too.">
+              <input type="checkbox" id="waterfront-only" />
+              <span>Waterfront only</span>
+            </label>
+            <label class="overlay-check" title="Return only parcels NEAR water but WITHOUT frontage — across a developed road, or with another parcel between them and the water. The 'second row': often a view, but not comparable to true waterfront. Tick alongside Waterfront only to get every parcel with any water influence.">
+              <input type="checkbox" id="near-water-only" />
+              <span>Near water (no frontage)</span>
+            </label>
             </div>
           </details>
 
@@ -713,9 +734,6 @@
             <button id="landcover-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Land Cover — tri-state cycle. 1st click → Dominant (per-parcel headline colour, every parcel in the selected municipality > 20 acres). 2nd click → Detailed (pixel-level 2020 mosaic from the static tile pyramid, when built). 3rd click → off. Populates the Land Cover and Cult % columns. The Detailed branch is skipped when the tile pyramid hasn't been built (build via Rscript r/build_landcover_tiles.R).">
               <span class="overlay-btn-label">Land Cover</span>
             </button>
-            <button id="water-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Water Influence — colours the result parcels by waterfront classification. BLUE = actual frontage (Direct / Waterfront / Reserve separated); TEAL = near water but no frontage, because a road or another parcel lies between (the 'second row', often a view). Reads the same pre-baked data as the Water column, so no extra fetch. Screening aid from provincial/federal mapping — not a survey.">
-              <span class="overlay-btn-label">Water Influence</span>
-            </button>
             <button id="tile-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Tile Drainage — licensed tiled-area footprints from Manitoba's Water Allocation Licensing (WALLAS) Water Control Works layer. Populates the Tile Drainage column. Caveat: the polygon layer's newest record is from Aug 2024 and only licensed works appear, so a parcel with no polygon is not proof the land is untiled.">
               <span class="overlay-btn-label">Tile Drainage</span>
             </button>
@@ -739,18 +757,6 @@
             <label class="overlay-check" title="Return only parcels overlapped by a licensed irrigation point of use — the location where water is applied. Points of diversion are excluded, matching the Irrigation column. Narrow by municipality first: there are ~2,500 licensed points of use province-wide, so an unscoped run is slow.">
               <input type="checkbox" id="irrigation-only" />
               <span>Licensed irrigation only</span>
-            </label>
-            <!-- Waterfront / near-water narrowing. Unlike the two WALLAS boxes
-                 above these are pure post-filters on the pre-baked water
-                 shards, so they need no municipality scoping and cost nothing
-                 to tick. Ticking both gives "any water influence". -->
-            <label class="overlay-check" title="Return only parcels with actual water FRONTAGE — the detection's Direct, Waterfront and Reserve-separated classes. Reserve-separated means a narrow public reserve strip sits between the lot and the water, which is normal in Manitoba lake communities and still counts as waterfront. Works on an imported sales list too.">
-              <input type="checkbox" id="waterfront-only" />
-              <span>Waterfront only</span>
-            </label>
-            <label class="overlay-check" title="Return only parcels NEAR water but WITHOUT frontage — across a developed road, or with another parcel between them and the water. The 'second row': often a view, but not comparable to true waterfront. Tick alongside Waterfront only to get every parcel with any water influence.">
-              <input type="checkbox" id="near-water-only" />
-              <span>Near water (no frontage)</span>
             </label>
             </div>
           </details>
@@ -1035,6 +1041,7 @@
             <option value="Sales analysis">Sales analysis</option>
             <option value="Zoning check">Zoning check</option>
             <option value="Agricultural">Agricultural</option>
+            <option value="Residential">Residential</option>
             <option value="Full detail">Full detail</option>
           </select>
         </label>

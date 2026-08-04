@@ -108,6 +108,34 @@ export const PRESETS = {
     'grouppriceac', 'saledate', 'saleprice', 'saletoasmt', 'grouppricesf',
     'zone1', 'dev1', 'legal', 'title',
   ]),
+  // Residential-oriented view — the mirror of Agricultural. Deliberately
+  // excludes EVERY farmland field: soil, riskarea, clicls, soiltype, slope,
+  // landcover, cultpct, tile, irrigation. On a town or subdivision search
+  // those columns are permanently empty (MASC and land cover are farmland-only
+  // by construction, and the land-cover shards skip anything under 10 acres),
+  // so they cost horizontal space to say nothing.
+  //
+  // What replaces them is what actually moves residential value: the
+  // assessment split (land vs building, and the building share), dwelling
+  // units, lot size in both acres and SF, zoning, and Water — waterfront and
+  // retention-pond frontage are residential concerns first, which is why the
+  // water column earns a place here and the ag columns don't.
+  //
+  // Unlike Agricultural this triggers NO soil-survey load (see onPresetApply):
+  // there is nothing here that needs it, so picking it stays instant.
+  //
+  // The assessment split and the sale-price fields are `.sales-only`, so in
+  // plain Property Search they stay hidden and fill in once Sales Analysis is
+  // active — the same mode-gating the Agricultural preset relies on. Being in
+  // the set only means the gear isn't independently suppressing them.
+  'Residential': new Set([
+    'favorite', 'roll', 'address', 'acres', 'sf', 'du',
+    'water',
+    'value', 'asmtland', 'asmtbldg', 'asmtpct', 'asmtyear',
+    'zone1', 'zbl', 'dev1', 'changes',
+    'saledate', 'saleprice', 'saletoasmt', 'grouppricelot', 'grouppricesf',
+    'legal', 'title',
+  ]),
   'Full detail': null,
 };
 

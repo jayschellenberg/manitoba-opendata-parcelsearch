@@ -5275,6 +5275,35 @@ async function stampWaterInfluence(rows) {
   } catch (err) {
     console.warn('water-influence enrichment failed (non-fatal):', err);
   }
+  autoEnableWaterOverlay();
+}
+
+/**
+ * Turn the Water Influence map overlay on automatically whenever a waterfront
+ * / near-water filter is active.
+ *
+ * Filtering to "Waterfront only" and then seeing the map render those parcels
+ * in the app's ordinary yellow highlight is not what anyone means by "show me
+ * the waterfront parcels" — and expecting the toggle to be found first was
+ * unrealistic while it sat inside a group that is collapsed by default. The
+ * filter and the colouring answer the same question, so ticking one arms the
+ * other.
+ *
+ * Only ever turns it ON. An explicit toggle-off stays off for the current
+ * result set; the next filtered search re-arms it, which is the behaviour that
+ * surprises least.
+ *
+ * setMapData re-asserts visibility from `waterOverlayOn` on every data push,
+ * so flipping the flag here is enough — no ordering dependency on when the map
+ * layers were (re)built.
+ */
+function autoEnableWaterOverlay() {
+  if (!($waterfrontOnly?.checked || $nearWaterOnly?.checked)) return;
+  if (waterOverlayOn) return;
+  waterOverlayOn = true;
+  setWaterInfluenceVisible(map, true);
+  setOverlayPressed($waterToggle, true);
+  setColumnVisible('water', true);
 }
 
 async function enrichOverlays(parcelFc, inputs, baseMsg, { skipDevPlan = false } = {}) {
