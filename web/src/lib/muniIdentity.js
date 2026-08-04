@@ -4,8 +4,8 @@
 // — "DE SALABERRY (RM)", "RM OF DE SALABERRY", "De Salaberry", dotted
 // "ST." vs "STE", accented "St-Francois" — and split-boundary parish
 // river lots are often tagged to an enclave Town while the MASC source
-// or Roll Entry parcel sits with the surrounding RM (see HANDOFF.md:
-// De Salaberry / St-Pierre-Jolys). This module normalizes both sides to
+// or Roll Entry parcel sits with the surrounding RM (the De Salaberry /
+// St-Pierre-Jolys case). This module normalizes both sides to
 // a comparable {name, type} identity and decides whether two refer to
 // the same municipality, with an optional type-agnostic fallback for
 // those enclave cases. Pure string logic — extracted from main.js for

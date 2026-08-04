@@ -18,7 +18,7 @@ Source: <https://github.com/jayschellenberg/manitoba-opendata-parcelsearch>. Dep
 | `r/build_parcel_masc.R` | Pre-bakes the dominant MASC soil rating per Roll Entry parcel for the Soil table column and writes the rated river-lot MASC overlay when river-lot inputs are present. | Web deploy prep |
 | `r/build_mli_ortho.ps1` | Downloads and builds the full southern-Manitoba MLI historical aerial mosaic as local PMTiles. | Basemap build |
 | `vercel.json` | Build config + production CORS rewrite for the contaminated-sites CSV. | — |
-| [`HANDOFF.md`](HANDOFF.md) | Current implementation notes, verification steps, generated artifacts, and open follow-ups. | Maintainers |
+| [`HANDOFF-WATER-INFLUENCE.md`](HANDOFF-WATER-INFLUENCE.md) | Water-influence feature notes: repo map, algorithm history, UI decisions, verification steps, and open follow-ups. | Maintainers |
 | [`REPLICATION_GUIDE.md`](REPLICATION_GUIDE.md) | Step-by-step guide for adapting this tool to another jurisdiction. Originally written for the Winnipeg sister site (Socrata); §14 captures every Manitoba-specific decision and lesson. | Anyone replicating |
 
 ## Data sources

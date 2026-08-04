@@ -1,6 +1,6 @@
 // Characterization tests for lib/muniIdentity.js — the municipality
 // matching behind the split-boundary MASC river-lot filtering
-// (De Salaberry / St-Pierre-Jolys, per HANDOFF.md). Previously untested.
+// (the De Salaberry / St-Pierre-Jolys case). Previously untested.
 //
 // Inputs that exercise the Unicode character classes use \u escapes so
 // the test source is unambiguous: if the accent-strip class were wrong,
