@@ -125,6 +125,11 @@ export function computeSaleGroups(
         // passes the vacancy predicate with data present.
         allVacant: true,
         vacantUnknown: false,
+        // Improved is NOT !allVacant: a group of [vacant, unknown]
+        // members is neither known-vacant nor known-improved. One
+        // member KNOWN to fail the vacancy predicate is decisive —
+        // the sale includes a building — regardless of the rest.
+        anyImproved: false,
         // Geographic spread — member centroids, and the distinct
         // municipalities they fall in. See maxPairwiseKm().
         points: [],
@@ -160,6 +165,7 @@ export function computeSaleGroups(
       // pass — keep allVacant as-is
     } else if (v === false) {
       g.allVacant = false;
+      g.anyImproved = true;
     } else {
       // Missing data → group is 'unknown' so the strict filter excludes it.
       g.allVacant = false;
@@ -196,6 +202,7 @@ export function computeSaleGroups(
           : null,
       _saleGroupAllVacant: g.allVacant,
       _saleGroupVacantUnknown: g.vacantUnknown,
+      _saleGroupAnyImproved: g.anyImproved,
       _saleGroupPpa:
         priceFinite && g.totalAcres > 0 && !g.acresIncomplete
           ? g.priceNum / g.totalAcres

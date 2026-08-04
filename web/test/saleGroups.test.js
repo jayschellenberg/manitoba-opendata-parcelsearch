@@ -131,6 +131,8 @@ test('vacancy roll-up: all-vacant true only when every member is vacant', () => 
   ], helpers).get('g');
   assert.equal(oneImproved._saleGroupAllVacant, false);
   assert.equal(oneImproved._saleGroupVacantUnknown, false);
+  // One member KNOWN to carry buildings makes the sale improved.
+  assert.equal(oneImproved._saleGroupAnyImproved, true);
 });
 
 test('vacancy unknown when a member lacks assessment data', () => {
@@ -140,6 +142,29 @@ test('vacancy unknown when a member lacks assessment data', () => {
   ], helpers).get('g');
   assert.equal(stamp._saleGroupAllVacant, false);
   assert.equal(stamp._saleGroupVacantUnknown, true);
+  // [vacant, unknown] is neither known-vacant nor known-improved:
+  // the improved flag must NOT be the complement of all-vacant, or
+  // unknown-data sales would leak into "Improved only".
+  assert.equal(stamp._saleGroupAnyImproved, false);
+});
+
+test('all-vacant group is not improved', () => {
+  const stamp = computeSaleGroups([
+    feat({ _saleGroupId: 'g', OBJECTID: 1, _salePrice: '1', _acres: 1, _asmtTotal: 100, _asmtBuildings: 0 }),
+  ], helpers).get('g');
+  assert.equal(stamp._saleGroupAllVacant, true);
+  assert.equal(stamp._saleGroupAnyImproved, false);
+});
+
+test('improved + unknown member still reads improved', () => {
+  // The unknown member cannot un-know the building on the other one.
+  const stamp = computeSaleGroups([
+    feat({ _saleGroupId: 'g', OBJECTID: 1, _salePrice: '1', _acres: 1, _asmtTotal: 100, _asmtBuildings: 60 }),
+    feat({ _saleGroupId: 'g', OBJECTID: 2, _salePrice: '1', _acres: 1, _asmtTotal: null, _asmtBuildings: null }),
+  ], helpers).get('g');
+  assert.equal(stamp._saleGroupAllVacant, false);
+  assert.equal(stamp._saleGroupVacantUnknown, true);
+  assert.equal(stamp._saleGroupAnyImproved, true);
 });
 
 test('unparseable / zero price nulls every price-derived field', () => {

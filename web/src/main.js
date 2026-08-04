@@ -261,10 +261,15 @@ const $duMin         = document.getElementById('du-min');
 const $sizeLow       = document.getElementById('size-low');
 const $sizeHigh      = document.getElementById('size-high');
 // (Acres/Sq Ft pill removed — size filter is permanently acres.)
-// Sales-CSV "Vacant land only" filter — strict group semantics. Reads
-// _saleGroupAllVacant which computeSaleGroupTotals stamps after the
-// per-parcel assessment-index lookup runs in handleSalesUpload.
-const $vacantOnly    = document.getElementById('vacant-only');
+// Sales-CSV vacant/improved selector (All Sales / Vacant Land Only /
+// Improved Only) — strict group semantics. Vacant reads
+// _saleGroupAllVacant (every member known vacant), Improved reads
+// _saleGroupAnyImproved (at least one member KNOWN to carry buildings);
+// both stamped by computeSaleGroupTotals after the per-parcel
+// assessment-index lookup runs in handleSalesUpload. Groups with
+// missing assessment data satisfy neither, so they drop out of both
+// narrowed modes rather than being guessed into one.
+const $vacantImproved = document.getElementById('vacant-improved');
 const $saleAsmtMax   = document.getElementById('sale-asmt-max');
 // Sales-CSV sale-date range. Both inputs accept HTML5 date strings
 // (YYYY-MM-DD); empty values are interpreted as "no minimum"/"no
@@ -2377,7 +2382,7 @@ if ($farFlungKm) {
 // against the loaded sales without re-fetching. Outside CSV mode
 // these listeners are no-ops (Search button still drives the SQL).
 for (const el of [
-  $zoneCategory, $changedStatus, $duMode, $duMin, $sizeLow, $sizeHigh, $vacantOnly,
+  $zoneCategory, $changedStatus, $duMode, $duMin, $sizeLow, $sizeHigh, $vacantImproved,
   $saleDateFrom, $saleDateTo, $asmtClass, $zoningFilterEl, $distanceMax, $salesPlan,
   $salesStreetName, $salesPpaLow, $salesPpaHigh, $saleAsmtMax,
   $salesPriceLow, $salesPriceHigh,
@@ -2890,7 +2895,7 @@ async function runSearch() {
   // unfiltered. clearAll already does a full page reload, but a
   // regular Search reuses the page — explicit reset matches existing
   // pattern.
-  if ($vacantOnly)    $vacantOnly.checked = false;
+  if ($vacantImproved) $vacantImproved.value = 'all';
   if ($saleDateFrom)  $saleDateFrom.value = '';
   if ($saleDateTo)    $saleDateTo.value = '';
   if ($distanceMax)   $distanceMax.value = '';
@@ -5039,17 +5044,19 @@ function filterCsvRowsByOtherSearches(rows) {
       if (!(Number.isFinite(du) && du >= duMin)) return false;
     }
 
-    // Vacant-land filter (sales-CSV mode only — checkbox is hidden
-    // outside sales-mode but the predicate works regardless). Strict
-    // group semantics: the entire sale group must be flagged
-    // _saleGroupAllVacant, which is true only when every parcel in
-    // the group has assessment data AND passes the vacancy predicate
-    // (Buildings < 2% of Total). Sales with one or more parcels
-    // missing assessment data fall through `_saleGroupVacantUnknown`
-    // and get treated as 'not known to be vacant' — they drop out.
-    if ($vacantOnly?.checked) {
+    // Vacant/improved selector (sales-CSV mode only — the control is
+    // hidden outside sales-mode but the predicate works regardless).
+    // Strict group semantics, and the two narrowed modes are NOT
+    // complements: Vacant requires _saleGroupAllVacant (every parcel
+    // has assessment data AND passes the vacancy predicate); Improved
+    // requires _saleGroupAnyImproved (at least one parcel KNOWN to
+    // fail it — one building in the sale is decisive). A sale with
+    // missing assessment data satisfies neither and drops out of both,
+    // rather than being guessed into one side.
+    const vacantMode = $vacantImproved?.value || 'all';
+    if (vacantMode === 'vacant') {
       if (p._saleGroupAllVacant !== true) return false;
-      // Max Sale/Asmt ratio cap. Gated by Vacant Only because
+      // Max Sale/Asmt ratio cap. Gated by Vacant Land Only because
       // the use-case is "buildings sold before the assessment
       // caught up", which is part of the vacant-proxy workflow.
       const saleAsmtMaxRaw = $saleAsmtMax?.value;
@@ -5060,6 +5067,8 @@ function filterCsvRowsByOtherSearches(rows) {
         const ratio = Number(p._saleGroupSaleToAsmt);
         if (Number.isFinite(ratio) && ratio > saleAsmtMax) return false;
       }
+    } else if (vacantMode === 'improved') {
+      if (p._saleGroupAnyImproved !== true) return false;
     }
 
     // Size range filter (sales-CSV mode only — the row is hidden by

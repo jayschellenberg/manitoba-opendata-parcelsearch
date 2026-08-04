@@ -1095,6 +1095,11 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   margin: 0;
   cursor: pointer;
 }
+.sidebar .vacant-only-label select {
+  font-size: 12px;
+  cursor: pointer;
+  max-width: 150px;
+}
 
 /* Sales-CSV sale-date range row — two native date pickers side by side. */
 .sidebar .date-row {
@@ -1790,7 +1795,10 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   gap: 6px;
   margin-top: 4px;
 }
-.sidebar:not(:has(#vacant-only:checked)) .vacant-threshold-row {
+/* The Bldg Threshold row tunes the vacancy predicate, which BOTH
+   narrowed modes read (Improved = fails it), so it shows for either
+   and hides only on All Sales. */
+.sidebar:has(#vacant-improved option[value="all"]:checked) .vacant-threshold-row {
   display: none;
 }
 .sidebar .vacant-threshold-prefix {

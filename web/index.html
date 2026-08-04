@@ -479,9 +479,12 @@
                `field` class of its own — one info icon for the whole
                control is enough, and it lives on Exclude. -->
           <div class="far-flung-row sales-only">
-            <label class="vacant-only-label" title="Vacant land proxy. Marks a sale as vacant when every parcel in the group has Buildings below the threshold set under Additional filters. Heuristic based on MAO assessment ratios — not a legal vacancy determination. Verify with the municipality.">
-              <input id="vacant-only" type="checkbox" />
-              <span>Vacant Land Only</span>
+            <label class="vacant-only-label" for="vacant-improved" title="Vacant/improved proxy from the MAO assessment split. Vacant Land Only keeps sales where EVERY parcel in the group has Buildings below the threshold set under Additional filters; Improved Only keeps sales where at least one parcel has Buildings at or above it. Sales missing assessment data drop out of both. Heuristic — not a legal vacancy determination; verify with the municipality.">
+              <select id="vacant-improved">
+                <option value="all" selected>All Sales</option>
+                <option value="vacant">Vacant Land Only</option>
+                <option value="improved">Improved Only</option>
+              </select>
             </label>
             <span class="far-flung-field">
               <label for="far-flung-km">Far-Flung &gt;</label>
