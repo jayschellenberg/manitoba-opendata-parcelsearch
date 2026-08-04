@@ -716,6 +716,14 @@ function lookupPdWebsite(pdName) {
 // Most recent table rows, kept around for CSV export.
 let currentRows = [];
 
+// Minimum coverage share for a parcel's SECONDARY zoning to count as
+// real rather than boundary-digitization slop. Read by BOTH the grid's
+// Zoning 2 cell and the sales zoning-code filter — one constant so the
+// screen and the filter can never disagree about whether a sliver zone
+// exists (they once did: the filter matched a sub-1% commercial sliver
+// the grid correctly hid, and the row looked like a filter bug).
+const ZONE2_MIN_RATIO = 0.01;
+
 // Page size + current pagination index for the results grid. Big
 // result sets (200+ comp uploads, muni-wide overlay searches) are
 // paginated client-side so the DOM stays light. Declared at module
@@ -5184,8 +5192,17 @@ function filterCsvRowsByOtherSearches(rows) {
     // while the filter is active — same "missing = exclude" rule the
     // other filters use, and here it also means the enrichment simply
     // hasn't run, which is worth seeing rather than silently passing.
+    //
+    // Secondary zones only count at >= ZONE2_MIN_RATIO coverage — the
+    // SAME gate the grid's Zoning 2 cell renders with. Without it the
+    // filter matched sub-1% digitization slivers the grid deliberately
+    // hides, so a row could pass a "C1/C2/C3 only" filter while
+    // showing RMD and a blank Zoning 2 — a filter the screen cannot
+    // explain (found via Steinbach roll 32560, 11B Ellice Ave).
     if (zoneCodeFilterSet.size > 0) {
       const codes = (row.zoning || [])
+        .filter((z, i) => i === 0
+          || (Number.isFinite(z.ratio) && z.ratio >= ZONE2_MIN_RATIO))
         .map((z) => formatZoneCode(z.feature?.properties))
         .filter(Boolean);
       if (!codes.some((c) => zoneCodeFilterSet.has(String(c).trim()))) return false;
@@ -8251,10 +8268,13 @@ function renderTable(rows, { resetPage = true } = {}) {
     const d1 = row.devPlan[0]?.feature.properties || {};
     const ac = parcelAcres(row.parcel);
 
-    // Zoning 2 only shown when its coverage is ≥1% — sub-1% slivers are
-    // usually GIS noise (boundary digitization slop) and clutter the table.
+    // Zoning 2 only shown when its coverage is ≥ ZONE2_MIN_RATIO —
+    // sub-1% slivers are usually GIS noise (boundary digitization
+    // slop) and clutter the table. The zoning-code FILTER applies the
+    // same gate; if either side changes threshold, change the shared
+    // constant so the screen and the filter can never disagree.
     const z2ratio = row.zoning[1]?.ratio;
-    const z2Show = Number.isFinite(z2ratio) && z2ratio >= 0.01;
+    const z2Show = Number.isFinite(z2ratio) && z2ratio >= ZONE2_MIN_RATIO;
 
     // Favourites star — sales-only column. The cell is always emitted
     // (so the table column count stays stable across modes); the CSS
