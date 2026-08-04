@@ -9013,8 +9013,47 @@ async function onWaterFilterToggle() {
 
 $tileOnly?.addEventListener('change', onWaterFilterToggle);
 $irrigationOnly?.addEventListener('change', onWaterFilterToggle);
-$waterfrontOnly?.addEventListener('change', onWaterFilterToggle);
-$nearWaterOnly?.addEventListener('change', onWaterFilterToggle);
+$waterfrontOnly?.addEventListener('change', onWaterInfluenceFilterToggle);
+$nearWaterOnly?.addEventListener('change', onWaterInfluenceFilterToggle);
+
+/**
+ * Waterfront / near-water boxes need a RE-SEARCH, not a view filter, whenever
+ * the roll pre-filter is in play.
+ *
+ * resolveWaterRollPrefilter constrains the Roll_Entry query itself, so after a
+ * "Waterfront only" search the rows in hand ARE the waterfront parcels and
+ * nothing else. Unticking that and ticking "Near water" then filters those 69
+ * rows for near-water and finds none — the grid empties and reads
+ * "0 of 69 shown · 69 hidden by the near-water filter", which looks exactly
+ * like the filter being broken. A view filter can only ever narrow what was
+ * fetched; it cannot recover parcels the pre-filter excluded.
+ *
+ * So: with a municipality selected and no list import — the conditions
+ * resolveWaterRollPrefilter itself requires — re-run the search. Otherwise
+ * (imported list, or province-wide where no pre-filter ran) the rows in hand
+ * are the full set and the cheap live view filter is still correct.
+ */
+let waterInfluenceRerunTimer = null;
+
+async function onWaterInfluenceFilterToggle() {
+  const usedPrefilter = !!$municipality?.value.trim()
+    && !(Array.isArray(listParcelKeys) && listParcelKeys.length);
+  if (!usedPrefilter) return onWaterFilterToggle();
+
+  // Debounced, because switching filters is TWO change events — untick
+  // "Waterfront only", tick "Near water" — and firing a search on each would
+  // put two of them in flight at once with no ordering guarantee. Observed:
+  // the unfiltered search (1,000 rows) resolved after the near-water one and
+  // overwrote it, so the grid showed everything instead of the 82 near-water
+  // parcels. Collapsing to one search on the settled checkbox state also means
+  // a user toggling quickly doesn't queue up a run per click.
+  if (waterInfluenceRerunTimer) clearTimeout(waterInfluenceRerunTimer);
+  waterInfluenceRerunTimer = setTimeout(() => {
+    waterInfluenceRerunTimer = null;
+    resetWaterFilterBase();   // the stashed set belongs to the old filter state
+    runSearch();
+  }, 250);
+}
 
 function dropSliverOnlyMatches(rows, parcelFc) {
   const tileOn = !!$tileOnly?.checked;
