@@ -186,9 +186,28 @@ success.
 ## 7. TODO
 
 ### Immediate — finish the current cycle
-1. **Validate the V6.2 parquet against Kingsley Gate.** Script:
-   `scratchpad/validate_kingsley.R` (compares old vs new, prints PASS/FAIL
-   against ground truth). All ten lots should now match §5.
+1. ~~Validate against Kingsley Gate.~~ **DONE 2026-08-04 — 10 of 10 correct.**
+   `MAOParcelOutput20260804.parquet` (69.3 min run, 438,041 parcels).
+   Waterfront: 14, 16, 17, 18, 19, 20, 21. Near water: 11, 12, 15. Matches the
+   ground truth in §5 exactly. Province-wide effect:
+
+   | | V6.1 (08-03) | V6.2 (08-04) |
+   |---|---|---|
+   | WaterInfluence = Yes | 54,216 | **54,427** |
+   | Retention Pond parcels | 699 | **1,224** |
+   | Changed verdict | — | 457 (311 No→Yes, 146 Yes→No) of 437,671 matched |
+
+   Flips concentrate in subdivision municipalities — Tache 34, West St Paul 32,
+   Niverville 29, Macdonald 22, Steinbach 16 — which is where the
+   pond-in-a-common-parcel layout occurs. Nothing anomalous.
+
+   **Watch the Retention Pond jump.** 699 → 772 at a 52 ft threshold →
+   **1,224** at 64 ft. That is +452 for 12 ft of widening, far from linear:
+   ponds sit in dense subdivisions, so each extra foot picks up whole
+   additional rings of lots. It is the expected shape, but it means the
+   threshold is a high-leverage number and a second community's calibration
+   could move the province-wide count a lot. Re-check the total after any
+   retune.
 2. **Rebuild shards**: `Rscript r/build_water.R`
 3. **Publish**: commit + push `mb-parcel-data`, then bump
    `MB_PARCEL_DATA_REVISION` in `web/src/arcgis.js` to the new SHA.
