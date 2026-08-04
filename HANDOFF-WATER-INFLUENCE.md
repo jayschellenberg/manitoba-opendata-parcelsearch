@@ -56,24 +56,44 @@ mb-parcelsearch  r/build_water.R     -> mb-parcel-data/water/<MUNI>.json + _inde
 
 ---
 
-## 3. Current state (2026-08-04)
+## 3. Current state (2026-08-04, end of day)
 
 **Published and live:**
-- `mb-parcel-data` @ `c390d65e` — 180 water shards rebuilt from
-  `MAOParcelOutput20260804.parquet` (**V6.2**, per-parcel `d` distances), on
-  the CDN and verified fetched by the app.
-- `mb-parcelsearch` — app pinned to that revision. Water cache keys now
-  include `MB_PARCEL_DATA_REVISION` (they previously did not, so a revision
-  bump would NOT have invalidated cached shards for up to the 30-day TTL).
+- `mb-parcel-data` @ `627ac00a` — 180 water shards (V6.2, per-parcel `d`
+  distances, from `MAOParcelOutput20260804.parquet`) **and** 182 landcover
+  shards (from the regenerated `MAOParcelOutputAg20260804.parquet`). Both
+  verified fetched from that revision in-app.
+- `mb-parcelsearch` — app pinned to that revision. Water AND landcover cache
+  keys now include `MB_PARCEL_DATA_REVISION` (they previously did not, so a
+  revision bump would NOT have invalidated cached shards for up to the
+  30-day TTL).
+
+**Repo move COMPLETE (2026-08-04).** mao-assembly physically moved from
+`D:\Dropbox\Appraisal\RProjects\appraisal-templates\mao-assembly` to
+`D:\Dropbox\ClaudeCode\MBOpenData\mao-assembly`; the old location is deleted.
+Same git repo throughout (github.com/jayschellenberg/mao-assembly). Done with
+the move:
+- `cache/` (3.3 GB of NHN/StatCan/OSM downloads) deliberately discarded —
+  the scheduled refreshes re-download it. First post-move
+  `prepare_water_data.R` run will be slow; that is expected, not a bug.
+- The three scheduled tasks re-registered against the new wrappers
+  (verified via their task actions), see §6.
+- Path references updated everywhere: `r/config.R` `mao_assembly_root`
+  (mb-parcelsearch `fa9f4e5`), the four mao-assembly `.ps1` wrappers
+  (`3ec52a3`), and the two live consumers in the appraisal-templates repo —
+  `base-files/build-civic-addresses.R`, `mao-land/MAOLandV2_1.R` (`348445c`).
 
 **Committed and pushed** (mb-parcelsearch main): water column, both filters,
 roll pre-filter, map overlay, blue ramp, sidebar regrouping, `water.test.js`,
-and the `WaterDistanceFt` surfacing (cell text "body · N ft", tooltip line,
-distance tie-break in sorting).
+the `WaterDistanceFt` surfacing (cell text "body · N ft", tooltip line,
+distance tie-break in sorting), the Water columns in the CSV export
+(`468040f`), and Route Starred (`68c23b5` — one-click driving route through
+starred comps, auto-started at the most outlying one).
 
 **Committed and pushed** (mao-assembly main): `2df49c6` V6.1 retention ponds,
 `191daf1` V6.2 containing-parcel fallback + WaterDistanceFt, `8e3a4bb`
-scheduled input refresh + staleness watchdog + OSM cache TTL.
+scheduled input refresh + staleness watchdog + OSM cache TTL, `3ec52a3`
+new-location paths.
 
 ---
 
@@ -164,8 +184,17 @@ two months stale while the pipeline was being run as though current. Now:
 | `mao-assembly-annual-refresh` | 52-weekly, Sun 04:30 | `refresh-annual-wrapper.ps1` |
 | `mao-assembly-input-staleness` | daily 07:15 | `input-staleness-check.ps1` |
 
-Registered by `schedule_refresh.ps1`. The watchdog reuses mb-parcelsearch's
-`alert-lib.ps1` + `alert-email.local.txt` rather than duplicating SMTP creds.
+Registered by `schedule_refresh.ps1`. Re-registered 2026-08-04 after the repo
+move — all three task actions verified pointing at the wrappers in
+`D:\Dropbox\ClaudeCode\MBOpenData\mao-assembly`. The watchdog reuses
+mb-parcelsearch's `alert-lib.ps1` + `alert-email.local.txt` rather than
+duplicating SMTP creds.
+
+**R upgrades can silently break the pipeline.** The 2026-08-04 ag run died at
+step 3's `library(FNN)` — the package was lost in the R 4.6.1 upgrade. A
+scheduled run would have failed the same way. After upgrading R, check the
+pipeline's packages load before the next scheduled window (FNN, arrow, dplyr,
+sf, stringr, terra, tidyr for step 3 alone).
 
 It checks input ages against cadence **and** whether the parquet is older than
 the inputs feeding it — the case where the refresh worked and the rebuild never
