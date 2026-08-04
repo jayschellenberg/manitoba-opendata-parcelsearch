@@ -44,7 +44,7 @@ mb_parcelsearch_root <- local({
 # External roots. The defaults are this machine's layout; scripts that
 # need one fail with their own "not found" message when it's absent.
 mao_snapshots_root     <- .path_default("MAO_SNAPSHOTS_ROOT",     "D:/Dropbox/Appraisal/Web/MAOSnapshots")
-mao_assembly_root      <- .path_default("MAO_ASSEMBLY_ROOT",      "D:/Dropbox/Appraisal/RProjects/appraisal-templates/mao-assembly")
+mao_assembly_root      <- .path_default("MAO_ASSEMBLY_ROOT",      "D:/Dropbox/ClaudeCode/MBOpenData/mao-assembly")
 masc_scrape_root       <- .path_default("MASC_SCRAPE_ROOT",       "D:/Dropbox/ClaudeCode/MASC-SCRAPE")
 mb_parcel_history_root <- .path_default("MB_PARCEL_HISTORY_ROOT", "D:/Dropbox/ClaudeCode/MBOpenData/mb-parcel-history")
 mb_parcel_data_root    <- .path_default("MB_PARCEL_DATA_ROOT",    "D:/Dropbox/ClaudeCode/MBOpenData/mb-parcel-data")

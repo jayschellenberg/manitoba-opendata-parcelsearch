@@ -37,7 +37,7 @@ a Yes/No.
 
 | Repo | Role |
 |---|---|
-| `D:\Dropbox\Appraisal\RProjects\appraisal-templates\mao-assembly` | **Detection.** Builds the water layer and classifies every parcel. |
+| `D:\Dropbox\ClaudeCode\MBOpenData\mao-assembly` | **Detection.** Builds the water layer and classifies every parcel. (Moved 2026-08-04 from `D:\Dropbox\Appraisal\RProjects\appraisal-templates\mao-assembly`.) |
 | `D:\Dropbox\ClaudeCode\MBOpenData\mb-parcel-data` | **Published shards.** Data only, served via jsDelivr pinned to a commit SHA. |
 | `D:\Dropbox\ClaudeCode\MBOpenData\mb-parcelsearch` | **The app** + the bridge script that turns the parquet into shards. |
 
@@ -218,9 +218,12 @@ success.
    — `191daf1` (V6.2) and `8e3a4bb` (scheduling), pushed.
 
 ### Known gaps
-- **Ag parquet not regenerated.** `build_landcover.R` reads
-  `MAOParcelOutputAg<date>`, still the 06-13 one. Run `$2run_ag.R` when
-  convenient; `results/MAOParcelsStep2.gpkg` is its input, so don't delete it.
+- ~~Ag parquet not regenerated.~~ **DONE 2026-08-04** —
+  `MAOParcelOutputAg20260804.parquet` (steps 1–2 in 40.5 min, step 3 in
+  12.4 min after installing the missing `FNN` package, lost in the
+  R 4.6.1 upgrade). Landcover shards rebuilt and published @ `627ac00a`.
+  The water shards rebuilt byte-identical from the rerun parquet —
+  pipeline confirmed deterministic.
 - **Duplicate pond geometry.** Kingsley's pond appears twice — NHN "Unnamed
   Lake" (6.83 ac) and OSM "Retention Pond" (6.23 ac). Centroid dedupe missed it
   because the outlines are offset. Consider an overlap-area dedupe.

@@ -11,7 +11,7 @@
 # Idempotent — re-running adds only new files and backfills any missing
 # sidecars.
 #
-#   source : D:/Dropbox/Appraisal/RProjects/appraisal-templates/mao-assembly/inputs
+#   source : D:/Dropbox/ClaudeCode/MBOpenData/mao-assembly/inputs
 #   archive: D:/Dropbox/Appraisal/Web/MAOSnapshots/<year>/
 #
 # Naming: <sourcebasename><YYYYMMDD>.<ext>. The YYYYMMDD is the source

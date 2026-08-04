@@ -147,7 +147,7 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // this SHA — see MAINTENANCE.md. section-grid.json stays local because
 // at 41 MB it's over jsDelivr's per-file cap.
 export const MB_PARCEL_DATA_REVISION =
-  'c390d65eb28050cd5b02294d61c2aa7db161f0a6';
+  '627ac00a0570726c5b001ec6d843116be58d32df';
 export const MB_PARCEL_DATA_CDN =
   `https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-data@${MB_PARCEL_DATA_REVISION}`;
 const SNAPSHOT_BASE_URL = `${MB_PARCEL_DATA_CDN}/rollentry-snapshot/`;
@@ -1583,7 +1583,10 @@ let landCoverIndexPromise = null;
 async function fetchLandCoverIndex() {
   if (landCoverIndexPromise) return landCoverIndexPromise;
   landCoverIndexPromise = (async () => {
-    const cacheKey = 'mb_landcover_index_v1';
+    // Revision in the key (same fix as the water keys): bumping the pinned
+    // data commit must invalidate cached shards, or a browser keeps serving
+    // old land cover for up to the 30-day TTL after a publish.
+    const cacheKey = `mb_landcover_index_v1_${MB_PARCEL_DATA_REVISION}`;
     const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
     if (cached) return cached;
     try {
@@ -1605,7 +1608,7 @@ export async function fetchLandCoverForMuni(muniNameWithTyp) {
   const entry = lookupMuniManifestEntry(idx, muniNameWithTyp, { stripType: false });
   if (!entry) return null;
   const file = entry.file;
-  const cacheKey = `mb_landcover_${file}_v1`;
+  const cacheKey = `mb_landcover_${file}_v1_${MB_PARCEL_DATA_REVISION}`;
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
   try {
