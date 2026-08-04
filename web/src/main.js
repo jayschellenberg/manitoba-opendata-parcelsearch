@@ -8998,6 +8998,17 @@ async function onWaterFilterToggle() {
   if (!ok) return;   // message already explains why nothing changed
   const kept = waterFilterBaseRows.filter(rowPassesWaterFilter);
   renderWaterFilteredView(kept, waterFilterBaseRows, waterFilterBaseMsg);
+  // Arm the overlay here too, not just in stampWaterInfluence. Ticking the box
+  // against rows ALREADY on screen — an imported sales set, or a search whose
+  // results are in hand — takes this live-filter path and never re-enriches,
+  // so without this the grid filters correctly while the map keeps rendering
+  // the survivors in the ordinary yellow highlight.
+  //
+  // MUST run after renderWaterFilteredView, not before: it calls
+  // setColumnVisible, whose listeners re-render the table and reset the count
+  // line back to the unfiltered base message — leaving "7 of 7 sales plotted"
+  // above a grid showing 3.
+  autoEnableWaterOverlay();
 }
 
 $tileOnly?.addEventListener('change', onWaterFilterToggle);
