@@ -2532,6 +2532,22 @@ body.measuring .map-legend {
 body.shape-drawing .maplibregl-canvas {
   cursor: crosshair !important;
 }
+/* Live radius readout riding beside the cursor while sizing a circle. */
+.shape-radius-readout {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 5;
+  pointer-events: none;
+  padding: 2px 7px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #2e7d32;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1d5a22;
+  white-space: nowrap;
+}
 .maplibregl-ctrl.measure-control > button.active {
   background: #1a3a4a;
   color: #fff;

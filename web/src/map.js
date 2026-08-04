@@ -2458,7 +2458,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         // Shape tools own the click while armed (placing geometry) or
         // when a committed shape sits under the cursor (mode toggle) —
         // either way the parcel popup stands down.
-        if (shapeClickHandled(map, e.point)) return;
+        if (shapeClickHandled(map, e)) return;
         const f = e.features?.[0];
         if (!f) return;
         const key = f.properties?._rowKey;
@@ -2531,7 +2531,7 @@ export function initMap(container, { onFeatureClick } = {}) {
       // Same content as the hover popup but with a close button.
       const muniClickPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '760px' });
       map.on('click', 'muni-parcels-fill', (e) => {
-        if (shapeClickHandled(map, e.point)) return;
+        if (shapeClickHandled(map, e)) return;
         if (map.getLayoutProperty('muni-parcels-fill', 'visibility') !== 'visible') return;
         // Defer to the search-result click handler when both layers
         // overlap — keeps the table-scroll behaviour intact.

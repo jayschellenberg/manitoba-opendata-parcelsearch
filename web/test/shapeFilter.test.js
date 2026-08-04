@@ -11,6 +11,7 @@ import {
   circleRing,
   rectRing,
   shapesToFc,
+  formatKm,
 } from '../src/lib/shapeFilter.js';
 
 // A ~10 km square around Niverville-ish coordinates.
@@ -93,17 +94,38 @@ assert.equal(RECT.length, 5);
 assert.deepEqual(RECT[0], RECT[4]);
 assert.equal(pointInRing({ lng: 1, lat: 0.5 }, RECT), true);
 
+// ---- formatKm -------------------------------------------------------------
+assert.equal(formatKm(0.65), '650 m');
+assert.equal(formatKm(2.345), '2.35 km');
+assert.equal(formatKm(12), '12.00 km');
+assert.equal(formatKm(NaN), '');
+assert.equal(formatKm(-1), '');
+
 // ---- shapesToFc -----------------------------------------------------------
+// Every shape renders as a Polygon (the fill/outline) PLUS a Point
+// (the clickable centre dot + mode badge).
 const fc = shapesToFc([
   { id: 1, ...CIRCLE },
   { id: 2, kind: 'polygon', mode: 'exclude', ring: SQUARE },
 ]);
-assert.equal(fc.features.length, 2);
-assert.equal(fc.features[0].properties.mode, 'include');
-assert.equal(fc.features[1].properties.mode, 'exclude');
+assert.equal(fc.features.length, 4);
+const polys  = fc.features.filter((f) => f.geometry.type === 'Polygon');
+const points = fc.features.filter((f) => f.geometry.type === 'Point');
+assert.equal(polys.length, 2);
+assert.equal(points.length, 2);
+assert.equal(polys[0].properties.mode, 'include');
+assert.equal(polys[1].properties.mode, 'exclude');
+// The circle's badge carries its radius; the polygon's is the mode word.
+assert.equal(points[0].properties.label, 'Include · 5.00 km');
+assert.equal(points[1].properties.label, 'Exclude');
+// The circle's dot sits at its true centre.
+assert.deepEqual(points[0].geometry.coordinates, [CIRCLE.center.lng, CIRCLE.center.lat]);
+// The polygon's dot sits at the ring's bbox midpoint (float tolerance).
+assert.ok(Math.abs(points[1].geometry.coordinates[0] - (-97.03)) < 1e-9);
+assert.ok(Math.abs(points[1].geometry.coordinates[1] - 49.6) < 1e-9);
 // Polygon coordinates are closed for rendering even when the source
 // ring was open.
-const polyCoords = fc.features[1].geometry.coordinates[0];
+const polyCoords = polys[1].geometry.coordinates[0];
 assert.deepEqual(polyCoords[0], polyCoords[polyCoords.length - 1]);
 
 console.log('shapeFilter.test.js: all assertions passed');

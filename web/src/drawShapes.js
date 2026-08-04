@@ -25,6 +25,7 @@ import {
   circleRing,
   rectRing,
   shapesToFc,
+  formatKm,
 } from './lib/shapeFilter.js';
 import { haversineKm } from './lib/routeSolver.js';
 
@@ -85,6 +86,7 @@ export function addShapeLayers(map) {
     id: 'shape-filter-fill',
     type: 'fill',
     source: 'shape-filter',
+    filter: ['==', '$type', 'Polygon'],
     paint: {
       'fill-color': [
         'match', ['get', 'mode'],
@@ -98,6 +100,7 @@ export function addShapeLayers(map) {
     id: 'shape-filter-line',
     type: 'line',
     source: 'shape-filter',
+    filter: ['==', '$type', 'Polygon'],
     paint: {
       'line-color': [
         'match', ['get', 'mode'],
@@ -107,20 +110,39 @@ export function addShapeLayers(map) {
       'line-width': 2,
     },
   });
-  // Mode badge at each shape's label point so include/exclude is
-  // legible without memorising the colours.
+  // Matrix-style centre dot — the obvious click target for flipping
+  // Include/Exclude (the whole fill also toggles, but a dot says
+  // "click me" the way a translucent wash never will).
+  map.addLayer({
+    id: 'shape-filter-dot',
+    type: 'circle',
+    source: 'shape-filter',
+    filter: ['==', '$type', 'Point'],
+    paint: {
+      'circle-radius': 7,
+      'circle-color': '#fff',
+      'circle-stroke-width': 2.5,
+      'circle-stroke-color': [
+        'match', ['get', 'mode'],
+        'exclude', '#c62828',
+        '#2e7d32',
+      ],
+    },
+  });
+  // Mode badge under the dot ("Include · 2.35 km" for circles, the
+  // mode word otherwise). Point features, not polygon symbols — see
+  // shapesToFc for the per-tile duplicate-label reason.
   map.addLayer({
     id: 'shape-filter-label',
     type: 'symbol',
     source: 'shape-filter',
+    filter: ['==', '$type', 'Point'],
     layout: {
-      'text-field': [
-        'match', ['get', 'mode'],
-        'exclude', 'Exclude',
-        'Include',
-      ],
+      'text-field': ['get', 'label'],
       'text-font': ['Open Sans Semibold'],
       'text-size': 12,
+      'text-offset': [0, 1.0],
+      'text-anchor': 'top',
       'text-allow-overlap': true,
     },
     paint: {
@@ -169,16 +191,21 @@ function renderPreview(ring) {
 // Click routing for committed shapes
 // ---------------------------------------------------------------------------
 
-/**
- * Called by map.js's parcel click handler BEFORE opening a popup.
- * Returns true when the click belongs to this feature: either a tool
- * is armed (every click is placing geometry) or a committed shape sits
- * under the cursor, in which case its include/exclude mode flips.
- */
-export function shapeClickHandled(map, point) {
-  if (armed) return true;
-  if (!map.getLayer('shape-filter-fill')) return false;
-  const feats = map.queryRenderedFeatures(point, { layers: ['shape-filter-fill'] });
+// The DOM event of the last click a shape toggle consumed. The
+// module's own general map click handler does the toggling (it fires
+// for clicks anywhere, including shapes drawn over empty map — the
+// original wiring only toggled via the parcel click handlers, so a
+// shape not covering a parcel could never be flipped). The parcel
+// handlers still ask shapeClickHandled() before opening a popup and
+// recognise an already-consumed event by identity, so one click never
+// both toggles and pops.
+let consumedClickEvent = null;
+
+function tryToggleAt(map, point) {
+  const layers = ['shape-filter-dot', 'shape-filter-fill']
+    .filter((id) => map.getLayer(id));
+  if (layers.length === 0) return false;
+  const feats = map.queryRenderedFeatures(point, { layers });
   if (feats.length === 0) return false;
   const id = feats[0].properties?.id;
   const s = shapes.find((x) => x.id === id);
@@ -187,6 +214,24 @@ export function shapeClickHandled(map, point) {
   render();
   emit();
   return true;
+}
+
+/**
+ * Called by map.js's parcel click handlers BEFORE opening a popup.
+ * True when the click belongs to this feature: a tool is armed (every
+ * click is placing geometry), the module's map handler already
+ * consumed this exact event as a toggle, or — defensively, in case
+ * handler registration order ever changes — a shape sits under the
+ * click and gets toggled here.
+ */
+export function shapeClickHandled(map, e) {
+  if (armed) return true;
+  if (e?.originalEvent && e.originalEvent === consumedClickEvent) return true;
+  if (tryToggleAt(map, e.point)) {
+    consumedClickEvent = e?.originalEvent ?? null;
+    return true;
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -206,9 +251,27 @@ function setArmed(tool) {
   controlRef?.syncActive();
 }
 
+// Live radius readout — a small DOM pill that rides beside the cursor
+// while a circle is being sized, showing the current radius ("650 m" /
+// "2.35 km"). DOM rather than a map symbol so it can hug the pointer
+// without symbol-placement latency.
+let radiusReadoutEl = null;
+
+function showRadiusReadout(point, km) {
+  if (!radiusReadoutEl) return;
+  radiusReadoutEl.textContent = formatKm(km);
+  radiusReadoutEl.style.transform = `translate(${point.x + 14}px, ${point.y + 14}px)`;
+  radiusReadoutEl.hidden = false;
+}
+
+function hideRadiusReadout() {
+  if (radiusReadoutEl) radiusReadoutEl.hidden = true;
+}
+
 function cancelPending() {
   pending = null;
   renderPreview(null);
+  hideRadiusReadout();
 }
 
 function commit(shape) {
@@ -220,7 +283,13 @@ function commit(shape) {
 }
 
 function onMapClick(e) {
-  if (!armed) return;
+  if (!armed) {
+    // Not drawing: a click on a committed shape (dot or fill) flips
+    // its Include/Exclude. Consume the event so the parcel click
+    // handlers — which fire after this one — skip their popups.
+    if (tryToggleAt(mapRef, e.point)) consumedClickEvent = e.originalEvent ?? null;
+    return;
+  }
   const pt = { lng: e.lngLat.lng, lat: e.lngLat.lat };
   if (armed === 'circle') {
     if (!pending) {
@@ -265,7 +334,9 @@ function onMapMove(e) {
   if (!armed || !pending) return;
   const pt = { lng: e.lngLat.lng, lat: e.lngLat.lat };
   if (armed === 'circle' && pending.center) {
-    renderPreview(circleRing(pending.center, Math.max(haversineKm(pending.center, pt), 0.005)));
+    const km = Math.max(haversineKm(pending.center, pt), 0.005);
+    renderPreview(circleRing(pending.center, km));
+    showRadiusReadout(e.point, km);
   } else if (armed === 'rectangle' && pending.corner) {
     renderPreview(rectRing(pending.corner, pt));
   } else if (armed === 'polygon' && pending.verts.length > 0) {
@@ -313,6 +384,10 @@ export function initShapeDraw(map) {
   }
   document.getElementById('shape-tool-clear')
     ?.addEventListener('click', () => clearShapes());
+  radiusReadoutEl = document.createElement('div');
+  radiusReadoutEl.className = 'shape-radius-readout';
+  radiusReadoutEl.hidden = true;
+  map.getContainer().appendChild(radiusReadoutEl);
   map.on('click', onMapClick);
   map.on('dblclick', onMapDblClick);
   map.on('mousemove', onMapMove);

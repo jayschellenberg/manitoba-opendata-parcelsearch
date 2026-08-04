@@ -117,15 +117,49 @@ function closeRing(ring) {
   return [...ring, first];
 }
 
+/** "650 m" under a kilometre, "2.35 km" from there up — the radius
+ *  readout while drawing and the committed circle's label. */
+export function formatKm(km) {
+  if (!Number.isFinite(km) || km < 0) return '';
+  if (km < 1) return `${Math.round(km * 1000)} m`;
+  return `${km.toFixed(2)} km`;
+}
+
+/** Label anchor for a shape: the true centre for a circle, the ring's
+ *  bbox midpoint otherwise (may fall outside a concave polygon — fine
+ *  for a badge; the fill click works everywhere regardless). */
+function labelPoint(s) {
+  if (s.kind === 'circle') return [s.center.lng, s.center.lat];
+  let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+  for (const [x, y] of s.ring || []) {
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  return [(minX + maxX) / 2, (minY + maxY) / 2];
+}
+
 /**
  * Render FeatureCollection: every shape becomes one Polygon feature
- * carrying { id, mode, kind } so the fill layer can colour include
- * green / exclude red and the click handler can find the shape back.
+ * (the fill/outline, coloured include-green / exclude-red) PLUS one
+ * Point feature at its label anchor — the Matrix-style centre dot the
+ * user clicks to flip Include/Exclude, with a text badge underneath.
+ *
+ * The badge is a Point feature, not a symbol on the Polygon, for the
+ * same reason the survey-grid labels are (see map.js): MapLibre's
+ * GeoJSON tiler treats each tile-clipped polygon fragment as its own
+ * symbol-placement candidate, so an RM-sized shape would grow one
+ * badge per tile it spans.
+ *
+ * Circle badges carry the radius ("Include · 2.35 km") because the
+ * radius IS the definition of the shape and the number an appraiser
+ * quotes; rectangle/polygon badges are just the mode word.
  */
 export function shapesToFc(shapes) {
-  return {
-    type: 'FeatureCollection',
-    features: (shapes || []).map((s) => ({
+  const features = [];
+  for (const s of shapes || []) {
+    features.push({
       type: 'Feature',
       properties: { id: s.id, mode: s.mode, kind: s.kind },
       geometry: {
@@ -134,6 +168,20 @@ export function shapesToFc(shapes) {
           s.kind === 'circle' ? circleRing(s.center, s.radiusKm) : closeRing(s.ring),
         ],
       },
-    })),
-  };
+    });
+    const modeWord = s.mode === 'exclude' ? 'Exclude' : 'Include';
+    features.push({
+      type: 'Feature',
+      properties: {
+        id: s.id,
+        mode: s.mode,
+        kind: s.kind,
+        label: s.kind === 'circle'
+          ? `${modeWord} · ${formatKm(s.radiusKm)}`
+          : modeWord,
+      },
+      geometry: { type: 'Point', coordinates: labelPoint(s) },
+    });
+  }
+  return { type: 'FeatureCollection', features };
 }
