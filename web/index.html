@@ -641,12 +641,26 @@
             </button>
             <!-- Water Influence colours the RESULT PARCELS themselves, so it
                  belongs with the parcel layers rather than with the reference
-                 overlays it used to sit among. Its two search filters stay in
-                 Reference: those narrow what is fetched, which is a different
-                 job from painting what is already on screen. -->
+                 overlays it used to sit among. -->
             <button id="water-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Water Influence — colours the result parcels by waterfront classification. DARK BLUE = actual frontage (Direct / Waterfront / Reserve separated); PALE BLUE = near water but no frontage, because a road or another parcel lies between (the 'second row', often a view). Reads the same pre-baked data as the Water column, so no extra fetch. Screening aid from provincial/federal mapping — not a survey.">
               <span class="overlay-btn-label">Water Influence</span>
             </button>
+            <!-- Its two search filters sit directly beneath it: ticking one
+                 also arms the overlay above, so keeping them adjacent makes
+                 that coupling visible instead of surprising. Pure post-filters
+                 on the pre-baked water shards (or, with a municipality
+                 selected, a roll-list pre-filter so the result cap can't hide
+                 matches) — no municipality scoping needed and no extra fetch.
+                 Ticking both gives "any water influence".
+                 Full-width rows: the labels don't fit a half column. -->
+            <label class="overlay-check" title="Return only parcels with actual water FRONTAGE — the detection's Direct, Waterfront and Reserve-separated classes. Reserve-separated means a narrow public reserve strip sits between the lot and the water, which is normal in Manitoba lake communities and still counts as waterfront. Works on an imported sales list too.">
+              <input type="checkbox" id="waterfront-only" />
+              <span>Waterfront only</span>
+            </label>
+            <label class="overlay-check" title="Return only parcels NEAR water but WITHOUT frontage — across a developed road, or with another parcel between them and the water. The 'second row': often a view, but not comparable to true waterfront. Tick alongside Waterfront only to get every parcel with any water influence.">
+              <input type="checkbox" id="near-water-only" />
+              <span>Near water (no frontage)</span>
+            </label>
             </div>
           </details>
 
@@ -677,21 +691,6 @@
             <button id="grid-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Sec-Twp grid + river lots. Tri-state cycle: 1st click → Section/township grid (one box per 1-mile section); 2nd click → Quarter section grid (four boxes per section, requires a municipality); 3rd click → off. River lots ride along on both grid modes. Without a municipality, only the section grid is available (province-wide).">
               <span class="overlay-btn-label">Section/Township Grid</span>
             </button>
-            <!-- The two water-influence SEARCH FILTERS. The overlay button that
-                 paints them lives in Parcel layers, beside Assessment Parcels —
-                 these narrow what gets fetched, which is reference-style work.
-                 Pure post-filters on the pre-baked water shards (or, with a
-                 municipality selected, a roll-list pre-filter so the result cap
-                 can't hide matches). No municipality scoping needed and no
-                 extra fetch. Ticking both gives "any water influence". -->
-            <label class="overlay-check" title="Return only parcels with actual water FRONTAGE — the detection's Direct, Waterfront and Reserve-separated classes. Reserve-separated means a narrow public reserve strip sits between the lot and the water, which is normal in Manitoba lake communities and still counts as waterfront. Works on an imported sales list too.">
-              <input type="checkbox" id="waterfront-only" />
-              <span>Waterfront only</span>
-            </label>
-            <label class="overlay-check" title="Return only parcels NEAR water but WITHOUT frontage — across a developed road, or with another parcel between them and the water. The 'second row': often a view, but not comparable to true waterfront. Tick alongside Waterfront only to get every parcel with any water influence.">
-              <input type="checkbox" id="near-water-only" />
-              <span>Near water (no frontage)</span>
-            </label>
             </div>
           </details>
 
