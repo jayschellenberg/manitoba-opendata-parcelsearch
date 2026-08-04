@@ -24,7 +24,7 @@ import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import { landCoverBreakdown, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
 import {
   addShapeLayers,
-  createShapeDrawControl,
+  initShapeDraw,
   shapeClickHandled,
   isShapeDrawing,
 } from './drawShapes.js';
@@ -545,8 +545,10 @@ export function initMap(container, { onFeatureClick } = {}) {
   map.addControl(measureDraw);
   map.addControl(new MeasureControl(measureDraw), 'top-right');
   // Area-selection shape tools (radius / rectangle / polygon +
-  // include/exclude). Sales-mode only via CSS; see drawShapes.js.
-  map.addControl(createShapeDrawControl(), 'top-right');
+  // include/exclude). The buttons live in the TOPBAR next to
+  // Hide/Expand Map; this binds them plus the map draw events.
+  // Sales-mode only via CSS; see drawShapes.js.
+  initShapeDraw(map);
 
   const ready = new Promise((resolve) => {
     // Setup runs once. Three triggers race: 'load', the first 'idle',

@@ -14,9 +14,11 @@
  * shape starts as INCLUDE (green); clicking it toggles to EXCLUDE
  * (red) and back. The eraser clears every shape.
  *
- * The control is sales-mode only via CSS (body.sales-mode gate in
- * style.css) — the filter it drives lives in the sales-CSV predicate
- * chain, so outside sales mode the buttons would do nothing.
+ * The toolbar lives in the TOPBAR (next to Hide/Expand Map — static
+ * markup in index.html, wired by initShapeDraw) and is sales-mode only
+ * via CSS (body.sales-mode gate in style.css): the filter it drives
+ * lives in the sales-CSV predicate chain, so outside sales mode the
+ * buttons would do nothing.
  */
 
 import {
@@ -276,57 +278,43 @@ function onKeyDown(e) {
 }
 
 // ---------------------------------------------------------------------------
-// Toolbar control
+// Toolbar wiring — the buttons live in the TOPBAR (next to Hide Map /
+// Expand Map), not on the map: static markup in index.html, wired here.
 // ---------------------------------------------------------------------------
 
-const TOOLS = [
-  { tool: 'circle',    label: '◯', title: 'Draw radius — click the centre, then click again to set the radius' },
-  { tool: 'rectangle', label: '▭', title: 'Draw rectangle — click one corner, then the opposite corner' },
-  { tool: 'polygon',   label: '⬠', title: 'Draw polygon — click vertices; double-click or click the first vertex to close' },
+const TOOL_BUTTONS = [
+  ['circle',    'shape-tool-circle'],
+  ['rectangle', 'shape-tool-rectangle'],
+  ['polygon',   'shape-tool-polygon'],
 ];
 
-class ShapeDrawControl {
-  onAdd(map) {
-    mapRef = map;
-    controlRef = this;
-    this._container = document.createElement('div');
-    this._container.className = 'maplibregl-ctrl maplibregl-ctrl-group shape-draw-control';
-    this._btns = new Map();
-    for (const { tool, label, title } of TOOLS) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = label;
-      b.title = `${title}. Click a finished shape to flip Include/Exclude; Esc cancels.`;
-      b.setAttribute('aria-label', title);
-      b.addEventListener('click', () => setArmed(tool));
-      this._container.appendChild(b);
-      this._btns.set(tool, b);
-    }
-    const erase = document.createElement('button');
-    erase.type = 'button';
-    erase.textContent = '⌫';
-    erase.title = 'Clear all drawn shapes';
-    erase.setAttribute('aria-label', 'Clear all drawn shapes');
-    erase.addEventListener('click', () => clearShapes());
-    this._container.appendChild(erase);
+const toolBtns = new Map();
 
-    map.on('click', onMapClick);
-    map.on('dblclick', onMapDblClick);
-    map.on('mousemove', onMapMove);
-    document.addEventListener('keydown', onKeyDown);
-    return this._container;
-  }
-  onRemove() {
-    document.removeEventListener('keydown', onKeyDown);
-    this._container.remove();
-  }
-  syncActive() {
-    for (const [tool, b] of this._btns) {
-      b.classList.toggle('active', armed === tool);
-    }
+function syncToolbar() {
+  for (const [tool, b] of toolBtns) {
+    b.classList.toggle('active', armed === tool);
+    b.setAttribute('aria-pressed', String(armed === tool));
   }
 }
 
-export function createShapeDrawControl() {
-  return new ShapeDrawControl();
+/**
+ * Bind the map events and the topbar buttons. Called once from map.js
+ * right after the map is constructed — the topbar markup is static, so
+ * the buttons exist by the time module scripts run.
+ */
+export function initShapeDraw(map) {
+  mapRef = map;
+  controlRef = { syncActive: syncToolbar };
+  for (const [tool, id] of TOOL_BUTTONS) {
+    const b = document.getElementById(id);
+    if (!b) continue;
+    toolBtns.set(tool, b);
+    b.addEventListener('click', () => setArmed(tool));
+  }
+  document.getElementById('shape-tool-clear')
+    ?.addEventListener('click', () => clearShapes());
+  map.on('click', onMapClick);
+  map.on('dblclick', onMapDblClick);
+  map.on('mousemove', onMapMove);
+  document.addEventListener('keydown', onKeyDown);
 }

@@ -2495,30 +2495,41 @@ body.measuring .map-legend {
 }
 
 /* Area-selection shape toolbar (radius / rectangle / polygon / erase).
-   Sales-mode only: the filter it drives runs in the sales-CSV predicate
-   chain, so outside sales mode the buttons would silently do nothing. */
-.maplibregl-ctrl.shape-draw-control {
-  display: flex;
+   Lives in the TOPBAR next to Hide/Expand Map, styled to match those
+   buttons. Sales-mode only: the filter it drives runs in the sales-CSV
+   predicate chain, so outside sales mode the buttons would silently do
+   nothing. */
+.topbar .shape-tools {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
 }
-body:not(.sales-mode) .maplibregl-ctrl.shape-draw-control {
+body:not(.sales-mode) .topbar .shape-tools {
   display: none;
 }
-.maplibregl-ctrl.shape-draw-control > button {
-  width: 29px;
-  height: 29px;
-  padding: 0;
-  font-size: 15px;
+.topbar .shape-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  padding: 5px 0;
+  font-size: 14px;
   line-height: 1;
-  color: #1a3a4a;
-  background: #fff;
-  border: none;
+  border-radius: 4px;
   cursor: pointer;
+  font-family: inherit;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #d8e3f4;
 }
-.maplibregl-ctrl.shape-draw-control > button:hover {
-  background: #eef6fb;
+.topbar .shape-tool-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.32);
+  color: #fff;
 }
-.maplibregl-ctrl.shape-draw-control > button.active {
-  background: #1a3a4a;
+.topbar .shape-tool-btn.active {
+  background: rgba(37, 99, 235, 0.28);
+  border-color: var(--color-accent-500, #2563eb);
   color: #fff;
 }
 /* Crosshair everywhere on the canvas while a tool is armed. */
