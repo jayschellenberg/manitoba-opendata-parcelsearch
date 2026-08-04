@@ -2,9 +2,9 @@
 
 Last updated: 2026-08-04
 
-Companion to [HANDOFF.md](HANDOFF.md), which is a frozen 2026-05-07 MASC
-snapshot and untouched by this work. Operator procedures live in
-[MAINTENANCE.md](MAINTENANCE.md).
+The old HANDOFF.md (a frozen 2026-05-07 MASC snapshot) has been deleted;
+it remains in git history if the MASC notes are ever needed. Operator
+procedures live in [MAINTENANCE.md](MAINTENANCE.md).
 
 This covers one feature that spans **three repos**, so read the map first.
 
@@ -59,20 +59,21 @@ mb-parcelsearch  r/build_water.R     -> mb-parcel-data/water/<MUNI>.json + _inde
 ## 3. Current state (2026-08-04)
 
 **Published and live:**
-- `mb-parcel-data` @ `f5804d70` — 180 water shards, on the CDN
-- `mb-parcelsearch` @ `f68469e` and later — app pinned to that revision
-
-**NOT yet published:** everything after the 08-03 parquet. The CDN still serves
-shards built from `MAOParcelOutput20260803.parquet`, i.e. the **V6.1** algorithm
-on **two-month-old** inputs. See §7 for what is pending.
+- `mb-parcel-data` @ `c390d65e` — 180 water shards rebuilt from
+  `MAOParcelOutput20260804.parquet` (**V6.2**, per-parcel `d` distances), on
+  the CDN and verified fetched by the app.
+- `mb-parcelsearch` — app pinned to that revision. Water cache keys now
+  include `MB_PARCEL_DATA_REVISION` (they previously did not, so a revision
+  bump would NOT have invalidated cached shards for up to the 30-day TTL).
 
 **Committed and pushed** (mb-parcelsearch main): water column, both filters,
-roll pre-filter, map overlay, blue ramp, sidebar regrouping, `water.test.js`.
+roll pre-filter, map overlay, blue ramp, sidebar regrouping, `water.test.js`,
+and the `WaterDistanceFt` surfacing (cell text "body · N ft", tooltip line,
+distance tie-break in sorting).
 
-**Committed and pushed** (mao-assembly main, `2df49c6`): V6.1 retention ponds.
-
-**Uncommitted in mao-assembly** — the V6.2 work described in §4/§5, plus the
-scheduling scripts in §6. Commit these.
+**Committed and pushed** (mao-assembly main): `2df49c6` V6.1 retention ponds,
+`191daf1` V6.2 containing-parcel fallback + WaterDistanceFt, `8e3a4bb`
+scheduled input refresh + staleness watchdog + OSM cache TTL.
 
 ---
 
@@ -208,12 +209,13 @@ success.
    threshold is a high-leverage number and a second community's calibration
    could move the province-wide count a lot. Re-check the total after any
    retune.
-2. **Rebuild shards**: `Rscript r/build_water.R`
-3. **Publish**: commit + push `mb-parcel-data`, then bump
-   `MB_PARCEL_DATA_REVISION` in `web/src/arcgis.js` to the new SHA.
-   *Do not sweep in the ~187 modified `assessment/*.json`* — an unrelated
-   rebuild that predates this work.
-4. **Commit the mao-assembly V6.2 + scheduling changes.**
+2. ~~Rebuild shards.~~ **DONE 2026-08-04** — 180 shards, 5.41 MB, 54,427
+   Yes, every shipped row carries `d` (whole feet).
+3. ~~Publish.~~ **DONE 2026-08-04** — `mb-parcel-data` @ `c390d65e`, revision
+   bumped, CDN fetch verified in-app. The ~187 modified `assessment/*.json`
+   (an unrelated rebuild predating this work) remain uncommitted there.
+4. ~~Commit the mao-assembly V6.2 + scheduling changes.~~ **DONE 2026-08-04**
+   — `191daf1` (V6.2) and `8e3a4bb` (scheduling), pushed.
 
 ### Known gaps
 - **Ag parquet not regenerated.** `build_landcover.R` reads

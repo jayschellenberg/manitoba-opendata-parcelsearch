@@ -127,7 +127,16 @@ if (!identical(pq_path, newest)) {
 cat("Reading water Parquet:", basename(pq_path),
     sprintf("(%s rows)\n", format(pq_rows[pq_files == pq_path], big.mark = ",")))
 
-water_cols <- c("WaterInfluence", "WaterInfluenceClass", "WaterBodyType", "WaterBody")
+# WaterDistanceFt is the parcel-boundary distance to the nearest water feature,
+# in FEET — the unit frontage is read and argued in. (The pipeline measures in
+# metres because the CRS is UTM 14N, and converts once on the way out.)
+#
+# It ships because no single frontage threshold can be right in every
+# community — amenity-strip widths and pond setbacks are developer choices, not
+# a standard — so a borderline parcel needs to show its measurement rather than
+# a bare Yes/No the reader has to take on trust.
+water_cols <- c("WaterInfluence", "WaterInfluenceClass", "WaterBodyType",
+                "WaterBody", "WaterDistanceFt")
 pq <- arrow::open_dataset(pq_path)
 missing_cols <- setdiff(c("MuniCode", "Municipality", "TaxID", water_cols), names(pq))
 if (length(missing_cols)) {
@@ -233,7 +242,13 @@ for (key in muni_keys) {
         i = nz(rows$WaterInfluence[i]),
         c = nz(rows$WaterInfluenceClass[i]),
         t = nz(rows$WaterBodyType[i]),
-        b = nz(rows$WaterBody[i])
+        b = nz(rows$WaterBody[i]),
+        # Whole feet. At ~0.3 m per foot that is already finer than the parcel
+        # fabric or the water polygons justify — the 2026-08-04 fabric refresh
+        # moved the same Kingsley lots by up to 4 ft, which is the real error
+        # bar — so a decimal would only imply precision the sources lack.
+        d = if (is.na(rows$WaterDistanceFt[i])) NULL
+            else as.integer(round(as.numeric(rows$WaterDistanceFt[i])))
       ))
     }),
     rows$Roll_No_Txt

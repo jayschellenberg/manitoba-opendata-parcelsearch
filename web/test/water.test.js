@@ -12,6 +12,8 @@ import {
   waterCellText,
   waterSortRank,
   waterTooltip,
+  waterDistance,
+  formatWaterDistance,
   isWaterfront,
   isNearWater,
 } from '../src/lib/water.js';
@@ -99,18 +101,49 @@ assert.equal(
 // No body name at all falls back to the class label.
 assert.equal(waterCellText({ c: 'Corridor Blocked' }), 'Corridor blocked');
 
-// ---- sorting groups frontage first ---------------------------------------
-// Sorting by class rank (not alphabetically by water body) keeps every
-// frontage parcel above every near-water one.
+// ---- distance rides along on the cell text -------------------------------
+// No single frontage threshold suits every community, so a borderline parcel
+// has to show its measurement rather than only the verdict.
+assert.equal(
+  waterCellText({ c: 'Direct', t: 'Watercourse', b: 'Red River', d: 60 }),
+  'Red River · 60 ft',
+);
+// Under 10 ft keeps a decimal: at that range the tenth still distinguishes
+// two lots rather than being noise.
+assert.equal(
+  waterCellText({ c: 'Direct', t: 'Lake', b: 'Lake Winnipeg', d: 4.2 }),
+  'Lake Winnipeg · 4.2 ft',
+);
+// A near-water parcel now names the water it is near, which it previously
+// could not — "near Lake Manitoba, no frontage" reads differently to "near
+// something, no frontage".
+assert.equal(
+  waterCellText({ c: 'Corridor Blocked', t: 'Lake', b: 'Lake Manitoba', d: 79 }),
+  'Lake Manitoba · 79 ft',
+);
+// A missing or unusable distance must never print "NaN ft" or a bare separator.
+for (const bad of [undefined, null, 'x', NaN]) {
+  const txt = waterCellText({ c: 'Direct', b: 'Red River', d: bad });
+  assert.equal(txt, 'Red River', `distance ${String(bad)} should be omitted`);
+}
+assert.equal(waterDistance({ c: 'Direct' }), null);
+assert.equal(formatWaterDistance(NaN), '');
+
+// ---- sorting: class first, distance as the tie-break ---------------------
+// Class severity must still dominate, so every frontage parcel outranks every
+// near-water one no matter how close the near-water lot is.
 const ranks = WATER_CLASSES.map((c) => waterSortRank(stamp(c.key)));
 assert.deepEqual(ranks, [...ranks].sort((a, b) => a - b), 'ranks must be ordered');
 const worstFrontage = Math.max(...WATER_CLASSES.filter((c) => c.frontage)
-  .map((c) => waterSortRank(stamp(c.key))));
+  .map((c) => waterSortRank(stamp(c.key, { d: 164 }))));
 const bestNear = Math.min(...WATER_CLASSES.filter((c) => !c.frontage)
-  .map((c) => waterSortRank(stamp(c.key))));
-assert.ok(worstFrontage < bestNear, 'all frontage classes must sort above near-water');
+  .map((c) => waterSortRank(stamp(c.key, { d: 0 }))));
+assert.ok(worstFrontage < bestNear,
+  'a 164 ft frontage parcel must still sort above a 0 ft near-water one');
+// Within one class, closer sorts first.
+assert.ok(waterSortRank(stamp('Direct', { d: 7 })) < waterSortRank(stamp('Direct', { d: 130 })));
 // Unstamped parcels sort last.
-assert.ok(waterSortRank(null) > waterSortRank(stamp('No Corroboration')));
+assert.ok(waterSortRank(null) > waterSortRank(stamp('No Corroboration', { d: 160 })));
 
 // ---- tooltip carries the caveat ------------------------------------------
 // Every rendered tooltip must say this is a screening aid, not a survey.

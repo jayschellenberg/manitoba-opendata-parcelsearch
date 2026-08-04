@@ -147,7 +147,7 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // this SHA — see MAINTENANCE.md. section-grid.json stays local because
 // at 41 MB it's over jsDelivr's per-file cap.
 export const MB_PARCEL_DATA_REVISION =
-  'f5804d70d472a13c92fc4ed6408f1b824fc99e30';
+  'c390d65eb28050cd5b02294d61c2aa7db161f0a6';
 export const MB_PARCEL_DATA_CDN =
   `https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-data@${MB_PARCEL_DATA_REVISION}`;
 const SNAPSHOT_BASE_URL = `${MB_PARCEL_DATA_CDN}/rollentry-snapshot/`;
@@ -1646,7 +1646,10 @@ let waterIndexPromise = null;
 async function fetchWaterIndex() {
   if (waterIndexPromise) return waterIndexPromise;
   waterIndexPromise = (async () => {
-    const cacheKey = 'mb_water_index_v1';
+    // Revision in the key, matching the MASC pattern: bumping the pinned
+    // data commit must invalidate cached shards, or a browser keeps serving
+    // old verdicts for up to the 30-day TTL after a publish.
+    const cacheKey = `mb_water_index_v1_${MB_PARCEL_DATA_REVISION}`;
     const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
     if (cached) return cached;
     try {
@@ -1668,7 +1671,7 @@ export async function fetchWaterForMuni(muniNameWithTyp) {
   const entry = lookupMuniManifestEntry(idx, muniNameWithTyp, { stripType: false });
   if (!entry) return null;
   const file = entry.file;
-  const cacheKey = `mb_water_${file}_v1`;
+  const cacheKey = `mb_water_${file}_v1_${MB_PARCEL_DATA_REVISION}`;
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
   try {

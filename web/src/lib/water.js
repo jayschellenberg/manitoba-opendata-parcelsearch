@@ -16,7 +16,7 @@
  * ABSENCE IS MEANINGFUL, and there are three states — same shape as the Tile
  * Drainage column:
  *   `_water` present                      -> classified, show it
- *   shard loaded, roll absent             -> genuinely no water within 50 m
+ *   shard loaded, roll absent             -> genuinely no water within 164 ft
  *   shard never loaded (`_waterLoaded`
  *   falsy)                                -> unknown, show blank not "No"
  * Only non-"None" parcels are shipped (370k of 437k are None), so absence from
@@ -106,25 +106,78 @@ export function waterColor(w) {
 }
 
 /**
- * Grid cell text. Leads with the water body name when there is one, because
- * that is what an appraiser actually reads ("Red River"), and falls back to
- * the class label. Returns '' when there's no stamp — callers decide between
- * blank (not loaded) and an explicit no-water dash.
+ * Distance in FEET to the nearest water feature, or null.
+ *
+ * Feet throughout the app because that is the unit frontage is read and argued
+ * in. The pipeline measures in metres — the CRS is UTM 14N, so st_distance has
+ * no choice — and converts once on the way out, so nothing downstream of the
+ * shard ever sees a metre.
+ *
+ * The explicit null/undefined/'' guard is load-bearing: Number(null) is 0, not
+ * NaN, so a shard row with no distance would otherwise read as 0 ft — the cell
+ * printing "Red River - 0 ft" and asserting the parcel sits ON the water,
+ * which is the strongest claim this column can make and exactly the one we
+ * have no evidence for.
+ */
+export function waterDistance(w) {
+  const raw = w?.d;
+  if (raw === null || raw === undefined || raw === '') return null;
+  const d = Number(raw);
+  return Number.isFinite(d) ? d : null;
+}
+
+/** "64 ft" / "3.5 ft" — whole feet at 10 ft and above, one decimal below,
+ *  where the difference between 3.5 and 8 ft still distinguishes two lots. */
+export function formatWaterDistance(d) {
+  if (!Number.isFinite(d)) return '';
+  return d >= 10 ? `${Math.round(d)} ft` : `${d.toFixed(1)} ft`;
+}
+
+/**
+ * Grid cell text — water body then distance, e.g. "Red River · 60 ft".
+ *
+ * Leads with the body name because that is what an appraiser actually reads,
+ * and carries the distance because no frontage threshold is right in every
+ * community: amenity-strip widths and pond setbacks are developer choices. A
+ * borderline parcel should show its measurement rather than a bare verdict.
+ *
+ * Near-water rows now carry a body name too (the pipeline records the nearest
+ * feature whatever the verdict), so this reads "Lake Winnipeg · 79 ft" on a
+ * Corridor Blocked lot instead of the bare class label. The dot colour and the
+ * tooltip still carry the frontage verdict — the name is context, not a claim.
+ *
+ * Returns '' when there is no stamp; callers decide between blank (not loaded)
+ * and an explicit no-water label.
  */
 export function waterCellText(w) {
   const c = waterClass(w);
   if (!c) return '';
   const body = (w.b || '').trim();
-  if (body && body !== 'Retention Pond') return body;
-  if (w.t === 'Retention Pond') return 'Retention pond';
-  return c.label;
+  const dist = formatWaterDistance(waterDistance(w));
+  let head;
+  if (body && body !== 'Retention Pond') head = body;
+  else if (w.t === 'Retention Pond') head = 'Retention pond';
+  else head = c.label;
+  return dist ? `${head} · ${dist}` : head;
 }
 
-/** Sort key: frontage classes first, then near-water, then everything else. */
+/**
+ * Sort key: class severity first, distance as the tie-break within a class.
+ *
+ * The integer part is the class index so every frontage parcel still sorts
+ * above every near-water one. The fractional part is distance scaled into
+ * [0, 1) — capped at the detection limit, so ordering by "how close" inside a
+ * class can never reorder the classes themselves. Unstamped parcels sort last.
+ */
+export const WATER_DETECTION_LIMIT_FT = 164;   // the pipeline's 50 m buffer
+
 export function waterSortRank(w) {
   const c = waterClass(w);
   if (!c) return WATER_CLASSES.length;
-  return WATER_CLASSES.indexOf(c);
+  const d = waterDistance(w);
+  const cap = WATER_DETECTION_LIMIT_FT;
+  const within = Number.isFinite(d) ? Math.min(d, cap) / (cap + 1) : cap / (cap + 1);
+  return WATER_CLASSES.indexOf(c) + within;
 }
 
 /** Hover detail — class, water body and type, one per line. */
@@ -135,6 +188,14 @@ export function waterTooltip(w) {
   const body = (w.b || '').trim();
   if (body) out.push(`Water body: ${body}`);
   if (w.t && w.t !== body) out.push(`Type: ${w.t}`);
+  const d = waterDistance(w);
+  if (Number.isFinite(d)) {
+    // Spelled out because the verdict is a threshold applied to this number,
+    // and thresholds calibrated in one community do not transfer cleanly to
+    // another. Showing the measurement lets a borderline call be second-
+    // guessed instead of taken on trust.
+    out.push(`Distance to water: ${formatWaterDistance(d)} (parcel boundary)`);
+  }
   if (!c.frontage) {
     out.push(c.key === 'No Corroboration'
       ? 'Near an unnamed water feature that could not be confirmed against a named one.'
