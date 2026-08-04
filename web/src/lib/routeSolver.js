@@ -377,6 +377,33 @@ export function haversineMatrix(points) {
   return out;
 }
 
+/**
+ * Index of the point farthest from the rest of the set — the "most
+ * outlying" stop, used as the auto-picked start for the starred-comps
+ * route (start at the edge of the cluster and sweep across once,
+ * instead of starting mid-cluster and backtracking).
+ *
+ * "Farthest" is the greatest SUM of great-circle distances to every
+ * other point, not farthest-from-centroid: with two distant clusters
+ * the centroid sits in the empty middle where no parcel is, and
+ * distance-from-centroid can then crown a mid-cluster point. The sum
+ * formulation always lands on an extreme edge. O(n²), n = starred
+ * comps — tens at most.
+ */
+export function mostOutlyingIndex(points) {
+  if (!Array.isArray(points) || points.length === 0) return -1;
+  let bestIdx = 0;
+  let bestSum = -Infinity;
+  for (let i = 0; i < points.length; i++) {
+    let sum = 0;
+    for (let j = 0; j < points.length; j++) {
+      if (j !== i) sum += haversineKm(points[i], points[j]);
+    }
+    if (sum > bestSum) { bestSum = sum; bestIdx = i; }
+  }
+  return bestIdx;
+}
+
 /** Great-circle distance in kilometres between two {lng, lat} pts. */
 export function haversineKm(a, b) {
   const R = 6371; // mean Earth radius in km

@@ -12,7 +12,7 @@ import { initInfoIcons } from './lib/infoIcon.js';
 import { initParcelListImport } from './lib/parcelListImport.js';
 import { initSalesPasteImport } from './lib/salesPasteImport.js';
 // Route planner — TSP solver + Mapbox client.
-import { solveRoute, haversineMatrix } from './lib/routeSolver.js';
+import { solveRoute, haversineMatrix, mostOutlyingIndex } from './lib/routeSolver.js';
 import {
   hasToken as hasMapboxToken,
   fetchDrivingMatrix,
@@ -798,6 +798,15 @@ let listSiteByKey = null;
 let routeStart = null;
 let routeResult = null;
 let routeRoundTrip = true;
+// Starred-comps routing ("Route Starred" button). When routeStarredOnly is
+// true the planner's stop set is the unique starred parcels instead of every
+// row; routeStartExcludeKey drops the parcel doubling as the start point (so
+// the Matrix/Directions calls never see two identical coordinates); and
+// routeStartLabel replaces the bare start coordinates in the panel with the
+// roll that was auto-picked. All reset by clearRoutePlanner().
+let routeStarredOnly = false;
+let routeStartExcludeKey = null;
+let routeStartLabel = null;
 
 // Subject parcel state. setSubjectParcel() / clearSubjectParcel()
 // drive these alongside the map source and re-stamp distances onto
@@ -1320,7 +1329,23 @@ if ($routePlanTrigger && !hasMapboxToken()) {
   $routePlanTrigger.disabled = true;
   $routePlanTrigger.title = 'Route planning needs a Mapbox token. Add VITE_MAPBOX_TOKEN to web/.env.local (see .env.example) and restart the dev server, or set it in your Vercel project env vars.';
 }
-$routePlanTrigger?.addEventListener('click', openRoutePanel);
+$routePlanTrigger?.addEventListener('click', () => {
+  // The generic planner routes EVERY loaded parcel. If a starred route
+  // ran earlier, drop its stop filter and auto-start bookkeeping here —
+  // otherwise this panel would silently keep routing only the starred
+  // subset. The start point itself survives; only its "starred" framing
+  // and exclusion go.
+  routeStarredOnly = false;
+  routeStartExcludeKey = null;
+  routeStartLabel = null;
+  openRoutePanel();
+});
+// Starred-comps one-click route. Same token gating as the trigger above.
+const $routeStarredBtn = document.getElementById('route-starred');
+if ($routeStarredBtn && !hasMapboxToken()) {
+  $routeStarredBtn.title = 'Route planning needs a Mapbox token. Add VITE_MAPBOX_TOKEN to web/.env.local (see .env.example) and restart the dev server, or set it in your Vercel project env vars.';
+}
+$routeStarredBtn?.addEventListener('click', startStarredRoute);
 document.getElementById('route-panel-close')
   ?.addEventListener('click', () => { hideRoutePanel(); });
 document.getElementById('route-start-btn')
@@ -4085,17 +4110,29 @@ function buildClusterIds(startLngLat, parcels) {
  *  but the guard keeps the planner robust against future shape drift. */
 function collectRouteableParcels() {
   const out = [];
+  const seen = new Set();
   for (const row of currentRows || []) {
     const f = row?.parcel;
     if (!f?.geometry) continue;
+    const p = f.properties || {};
+    const key = parcelLegalKey(p);
+    if (routeStarredOnly) {
+      // Starred subset: favourited parcels only, once each — a repeat-sold
+      // parcel contributes several sale rows but is one physical stop —
+      // minus the parcel serving as the start point, so the start never
+      // appears twice in the Matrix/Directions coordinate list.
+      if (!key || !favoriteKeys.has(key)) continue;
+      if (key === routeStartExcludeKey || seen.has(key)) continue;
+      seen.add(key);
+    }
     const bb = bboxOfFeature(f);
     if (!Number.isFinite(bb[0])) continue;
     const lng = (bb[0] + bb[2]) / 2;
     const lat = (bb[1] + bb[3]) / 2;
-    const p = f.properties || {};
     out.push({
       lng,
       lat,
+      key,
       roll: p._rollDisplay || (typeof p.Roll_No_Txt === 'string'
         ? (p.Roll_No_Txt.endsWith('.000') ? p.Roll_No_Txt.slice(0, -4) : p.Roll_No_Txt)
         : ''),
@@ -4130,6 +4167,9 @@ function hideRoutePanel() {
 function clearRoutePlanner() {
   routeStart = null;
   routeResult = null;
+  routeStarredOnly = false;
+  routeStartExcludeKey = null;
+  routeStartLabel = null;
   setRouteStart(map, null);
   setRouteData(map, [], null);
   setRouteVisible(map, true);  // empty data renders nothing, but visibility stays on
@@ -4150,7 +4190,13 @@ function refreshRouteStartStatus() {
   const $btn = document.getElementById('route-start-btn');
   if (!$status || !$btn) return;
   if (routeStart) {
-    $status.innerHTML = `Start: <strong>${routeStart.lng.toFixed(5)}, ${routeStart.lat.toFixed(5)}</strong>`;
+    // Auto-picked starred start shows its roll, not bare coordinates —
+    // "Roll 12345 — most outlying starred" tells the user WHY the route
+    // begins there. Built from the roll number, but escaped anyway.
+    const label = routeStartLabel
+      ? routeStartLabel.replace(/[<>&]/g, '')
+      : `${routeStart.lng.toFixed(5)}, ${routeStart.lat.toFixed(5)}`;
+    $status.innerHTML = `Start: <strong>${label}</strong>`;
     $btn.textContent = 'Change Start';
   } else {
     $status.innerHTML = 'Start: <em>not set</em>';
@@ -4188,10 +4234,76 @@ async function handleSetStart() {
     return;
   }
   routeStart = picked;
+  // A manual pick supersedes an auto-picked starred start: drop the label
+  // (it named a parcel this start no longer is) and un-exclude that parcel
+  // so it rejoins the stop list.
+  routeStartLabel = null;
+  routeStartExcludeKey = null;
   setRouteStart(map, routeStart);
   refreshRouteStartStatus();
   refreshCalculateEnabled();
   setCount(`Start set at ${routeStart.lng.toFixed(5)}, ${routeStart.lat.toFixed(5)}.`);
+}
+
+/**
+ * One-click driving route through every starred comp (the ★ column).
+ *
+ * Start = the most outlying starred parcel, so the route enters the
+ * cluster from its far edge and sweeps across once instead of starting
+ * mid-cluster and backtracking. That parcel is excluded from the stop
+ * list (it IS the start), which also keeps the Matrix/Directions calls
+ * free of duplicate coordinates. One-way by construction — an efficient
+ * sweep, not a loop back to the far edge — though the panel's
+ * round-trip toggle still works for a recalculate.
+ *
+ * Everything downstream is the existing route planner: Matrix costs
+ * (clustered when > 24 stops), TSP solver, Directions polyline,
+ * on-screen itinerary and print.
+ */
+async function startStarredRoute() {
+  if (!hasMapboxToken()) return;
+  routeStarredOnly = true;
+  routeStartExcludeKey = null;   // collect ALL starred first to pick the start
+  const stops = collectRouteableParcels();
+  if (stops.length < 2) {
+    routeStarredOnly = false;
+    setCount('Star at least two parcels (★ column) to route them.');
+    return;
+  }
+  const start = stops[mostOutlyingIndex(stops)];
+  routeStart = { lng: start.lng, lat: start.lat };
+  routeStartExcludeKey = start.key;
+  routeStartLabel = `Roll ${start.roll} — most outlying starred`;
+  setRouteStart(map, routeStart);
+  routeRoundTrip = false;
+  const $rt = document.getElementById('route-roundtrip');
+  if ($rt) $rt.checked = false;
+  openRoutePanel();
+  await handleCalculateRoute();
+}
+
+/** Enable the Route Starred button only when it can actually route:
+ *  a Mapbox token plus at least two unique starred parcels with
+ *  geometry in the current rows. Called from the star toggles and
+ *  after every render that re-applies starred state. */
+function refreshRouteStarredBtn() {
+  const $btn = document.getElementById('route-starred');
+  if (!$btn) return;
+  if (!hasMapboxToken()) {
+    $btn.disabled = true;
+    $btn.title = 'Route planning needs a Mapbox token — see route planner setup.';
+    return;
+  }
+  const seen = new Set();
+  for (const row of currentRows || []) {
+    if (!row?.parcel?.geometry) continue;
+    const k = parcelLegalKey(row.parcel.properties || {});
+    if (k && favoriteKeys.has(k)) seen.add(k);
+  }
+  $btn.disabled = seen.size < 2;
+  $btn.title = seen.size < 2
+    ? 'Star at least two parcels (★ column in sales mode) to route them.'
+    : `Driving route through the ${seen.size} starred parcels, starting at the most outlying one.`;
 }
 
 async function handleCalculateRoute() {
@@ -9815,6 +9927,7 @@ function favoriteCell(row) {
       el.closest('tr')?.classList.toggle('starred', nowFav);
     }
     setStarredOnMap(row?.parcel, nowFav);
+    refreshRouteStarredBtn();
   });
   cell.appendChild(btn);
   return cell;
@@ -9851,6 +9964,10 @@ function setStarredOnMap(parcel, on) {
  * rendered rows to apply the .starred class for table shading.
  */
 function applyStarredFromFavorites(parcelFc) {
+  // Route Starred gating tracks the same events that change starred
+  // state on screen — refresh it here even when nothing is starred,
+  // so the button correctly disables after an unstar-everything.
+  refreshRouteStarredBtn();
   if (favoriteKeys.size === 0) return;
   // Map-side flip
   for (const f of parcelFc?.features || []) {

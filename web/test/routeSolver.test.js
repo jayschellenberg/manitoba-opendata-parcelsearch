@@ -12,6 +12,7 @@ import {
   tourCost,
   haversineKm,
   haversineMatrix,
+  mostOutlyingIndex,
 } from '../src/lib/routeSolver.js';
 
 const results = [];
@@ -331,6 +332,39 @@ await test('haversineMatrix is symmetric with zero diagonal', () => {
       assert.equal(m[i][j], m[j][i]);
     }
   }
+});
+
+// ---- mostOutlyingIndex — auto-picked start for starred routes -----
+
+await test('picks the point far from the cluster', () => {
+  // Three near Winnipeg Beach, one ~80 km away near Gimli-ish north.
+  const pts = [
+    { lng: -96.97, lat: 50.51 },
+    { lng: -96.98, lat: 50.52 },
+    { lng: -96.96, lat: 50.50 },
+    { lng: -97.00, lat: 51.20 },   // the outlier
+  ];
+  assert.equal(mostOutlyingIndex(pts), 3);
+});
+
+await test('two distant clusters: start is at an extreme edge, not mid-cluster', () => {
+  // Cluster A (3 pts) and cluster B (2 pts) 100 km apart. The smaller
+  // cluster is farther from "everyone else" on average, so the start
+  // must be inside B — either member is an extreme edge of the set.
+  const pts = [
+    { lng: -97.0, lat: 50.0 },
+    { lng: -97.02, lat: 50.01 },
+    { lng: -97.01, lat: 49.99 },
+    { lng: -98.4, lat: 50.0 },
+    { lng: -98.42, lat: 50.01 },
+  ];
+  assert.ok(mostOutlyingIndex(pts) >= 3);
+});
+
+await test('degenerate inputs', () => {
+  assert.equal(mostOutlyingIndex([]), -1);
+  assert.equal(mostOutlyingIndex(null), -1);
+  assert.equal(mostOutlyingIndex([{ lng: -97, lat: 50 }]), 0);
 });
 
 // ---- summary --------------------------------------------------
