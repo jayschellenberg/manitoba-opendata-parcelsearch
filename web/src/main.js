@@ -970,6 +970,7 @@ const SORT_KEYS = {
   // location at all (lat/lon centroid OR a usable street address); rows
   // that can't deep-link sort last.
   flood:   (r) => strKey(r.parcel.geometry ? '1' : r.parcel.properties.Property_Address),
+  streetview: (r) => strKey(r.parcel.geometry ? '1' : ''),
   value:   (r) => finiteOrNeg(parseTotalValue(r.parcel.properties.Total_Value)),
   report:  (r) => strKey(r.parcel.properties.Asmt_Rpt_Url),
   saledate:    (r) => strKey(r.parcel.properties._saleDate),
@@ -8356,6 +8357,7 @@ function renderTable(rows, { resetPage = true } = {}) {
     tr.appendChild(assessmentCell(p));
     tr.appendChild(walkCell(row));
     tr.appendChild(floodCell(row));
+    tr.appendChild(streetViewCell(row));
     frag.appendChild(tr);
   }
   $tbody.appendChild(frag);
@@ -9497,6 +9499,50 @@ function walkCell(row) {
 }
 
 /**
+ * Google Street View deep link for a parcel, or '' without geometry.
+ *
+ * The Maps URLs pano action takes a VIEWPOINT, not an address — Google
+ * opens the nearest panorama to that point, i.e. the road in front of
+ * the parcel. That is what makes this work for unaddressed rural
+ * parcels (a quarter-section legal description geocodes nowhere), and
+ * it needs no API key. Where no panorama exists nearby, Google falls
+ * back to a map at the spot instead of erroring.
+ */
+function streetViewUrl(feature) {
+  if (!feature?.geometry) return '';
+  try {
+    const [minLon, minLat, maxLon, maxLat] = bboxOfFeature(feature);
+    const lat = (minLat + maxLat) / 2;
+    const lon = (minLon + maxLon) / 2;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return '';
+    return `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat.toFixed(6)}%2C${lon.toFixed(6)}`;
+  } catch {
+    return '';
+  }
+}
+
+/** StreetView cell — a 🌐 link into Street View at the parcel, same
+ *  interaction pattern as the Walkscore / Flood link cells. */
+function streetViewCell(row) {
+  const cell = document.createElement('td');
+  const url = streetViewUrl(row.parcel);
+  if (!url) {
+    cell.textContent = '—';
+    cell.classList.add('empty');
+    return cell;
+  }
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  a.textContent = '🌐';
+  a.title = 'Open Google Street View at this parcel (nearest panorama)';
+  a.addEventListener('click', (e) => e.stopPropagation());
+  cell.appendChild(a);
+  return cell;
+}
+
+/**
  * Flood-screening deep-link. Sister tool at mb-flood-mapping.vercel.app
  * accepts ?lat=&lon=&label=… (preferred) or ?address=… (geocodes via
  * Mapbox/Nominatim). We pass lat/lon when we can compute a centroid from
@@ -10491,7 +10537,7 @@ function exportCsv(explicitRows) {
     'Changes',
     'DU', 'Acres', 'SF', 'Acres Src',
     csvAssessHeader(currentRows), 'Asmt Report URL',
-    'Walkscore URL', 'Flood-Map URL',
+    'Walkscore URL', 'Flood-Map URL', 'Street View URL',
     ...(inSalesMode
       ? [
           'Sale Date', 'Sale Price',
@@ -10578,6 +10624,7 @@ function exportCsv(explicitRows) {
       p.Asmt_Rpt_Url ?? '',
       walkscoreUrl(p),
       floodMapUrl(row),
+      streetViewUrl(row.parcel),
       ...(inSalesMode
         ? [
             p._saleDate ?? '',

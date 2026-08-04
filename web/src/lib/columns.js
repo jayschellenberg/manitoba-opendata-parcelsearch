@@ -77,7 +77,20 @@ export const DEFAULT_VISIBLE = new Set([
   // to the grid.
   'tile',
   'irrigation',
+  // StreetView is a link-out like Walkscore/Flood, but unlike them it is
+  // default-visible: it was requested as an always-there orientation tool,
+  // and the 🌐 cell costs almost no width.
+  'streetview',
 ]);
+
+// Columns added AFTER a user's stored visible-set may have been written.
+// A stored set predating a column cannot contain it, and the stored set
+// wins over DEFAULT_VISIBLE — so without this, a new column would stay
+// invisible to every existing user until they happened to open the gear.
+// Each key here is added to the visible set ONCE (tracked separately in
+// ADOPTED_KEY); untick it after that and it stays unticked.
+const ADOPTED_KEY = 'mbps_table_columns_adopted';
+const ADOPT_ONCE = ['streetview'];
 
 // Column presets — `null` value means "everything that the current
 // mode would show". The labels match the dropdown options.
@@ -293,6 +306,21 @@ export function onColumnsChange(fn) {
 export function initColumns() {
   const stored = readStored();
   if (stored) visible = stored;
+  // One-time adoption of post-v2 columns — see ADOPT_ONCE above.
+  try {
+    const adopted = new Set(JSON.parse(localStorage.getItem(ADOPTED_KEY) || '[]'));
+    let changed = false;
+    for (const key of ADOPT_ONCE) {
+      if (adopted.has(key)) continue;
+      adopted.add(key);
+      if (visible != null) visible.add(key);
+      changed = true;
+    }
+    if (changed) {
+      localStorage.setItem(ADOPTED_KEY, JSON.stringify([...adopted]));
+      writeStored();
+    }
+  } catch { /* storage unavailable — column stays gear-only */ }
   const gear = document.getElementById('columns-gear');
   const popover = document.getElementById('columns-popover');
   const presetSelect = document.getElementById('columns-preset');
