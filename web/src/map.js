@@ -731,14 +731,24 @@ export function initMap(container, { onFeatureClick } = {}) {
         source: 'contam',
         layout: { visibility: 'none' },
         paint: {
-          'circle-radius': 6,
+          // Sized to be findable, not just present: these sites are the
+          // point of turning the overlay on, and a fixed 6 px dot
+          // vanished against satellite imagery at municipal zooms. Ramp
+          // rather than a bigger constant so close-in the dot doesn't
+          // swallow the parcel it flags.
+          'circle-radius': [
+            'interpolate', ['linear'], ['zoom'],
+            8,  8,
+            12, 11,
+            16, 15,
+          ],
           'circle-color': [
             'match', ['get', 'CSGROUP'],
             'Designated Contaminated Site', '#c0392b',
             'Designated Impacted Site',     '#e67e22',
             '#7f8c8d', // Not Designated / unknown
           ],
-          'circle-stroke-width': 1,
+          'circle-stroke-width': 1.5,
           'circle-stroke-color': '#fff',
           'circle-opacity': 0.9,
         },
