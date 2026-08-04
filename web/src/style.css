@@ -2496,16 +2496,12 @@ body.measuring .map-legend {
 
 /* Area-selection shape toolbar (radius / rectangle / polygon / erase).
    Lives in the TOPBAR next to Hide/Expand Map, styled to match those
-   buttons. Sales-mode only: the filter it drives runs in the sales-CSV
-   predicate chain, so outside sales mode the buttons would silently do
-   nothing. */
+   buttons. Visible in every mode: sales-CSV runs shapes inside its
+   filter pass, plain Property Search through refilterBasicByShapes. */
 .topbar .shape-tools {
   display: inline-flex;
   gap: 4px;
   align-items: center;
-}
-body:not(.sales-mode) .topbar .shape-tools {
-  display: none;
 }
 .topbar .shape-tool-btn {
   display: inline-flex;

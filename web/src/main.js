@@ -2393,9 +2393,14 @@ for (const el of [
   el.addEventListener('change', refilterCsvIfActive);
   el.addEventListener('input',  refilterCsvIfActive);
 }
-// Drawn area shapes re-filter through the same path: committing a
-// shape, flipping include/exclude, or erasing all re-runs the pass.
-onShapesChanged(refilterCsvIfActive);
+// Drawn area shapes re-filter whichever mode is live: the sales-CSV
+// pass when a CSV is loaded, the shapes-only basic pass otherwise.
+// Committing a shape, flipping include/exclude, or erasing all
+// re-runs it.
+onShapesChanged(() => {
+  if (csvFullRows != null) refilterCsvIfActive();
+  else refilterBasicByShapes();
+});
 // Subject-distance ring follows the Max-Distance input in real time
 // so the user sees the radius they're choosing without having to wait
 // for the table to re-filter. Triggered independently of
@@ -2903,6 +2908,7 @@ async function runSearch() {
   // pattern.
   if ($vacantImproved) $vacantImproved.value = 'all';
   clearMapShapes();
+  invalidateBasicShapeSnapshot();
   if ($saleDateFrom)  $saleDateFrom.value = '';
   if ($saleDateTo)    $saleDateTo.value = '';
   if ($distanceMax)   $distanceMax.value = '';
@@ -4903,6 +4909,48 @@ function refilterCsvIfActive() {
   // so re-apply starred state from favoriteKeys after the source
   // refresh. mapReady gate is inside setStarredOnMap.
   applyStarredFromFavorites(fc);
+}
+
+// ---------------------------------------------------------------------------
+// Area-shape narrowing for plain Property Search results. Sales-CSV
+// mode runs shapes inside its full filter pass above; this is the
+// basic-mode counterpart, shapes only. The full rendered set is
+// snapshotted on first use so erasing shapes (or drawing a wider one)
+// restores rows without a re-search; a fresh Search invalidates the
+// snapshot alongside clearing the shapes themselves.
+// ---------------------------------------------------------------------------
+
+let basicFullRows = null;
+let basicFullMsg = '';
+
+function invalidateBasicShapeSnapshot() {
+  basicFullRows = null;
+  basicFullMsg = '';
+}
+
+function refilterBasicByShapes() {
+  if (csvFullRows != null) return;   // sales-CSV path owns its filtering
+  const shapes = getMapShapes();
+  if (basicFullRows == null) {
+    if (shapes.length === 0 || currentRows.length === 0) return;
+    basicFullRows = currentRows;
+    basicFullMsg = $count.textContent || '';
+  }
+  const total = basicFullRows.length;
+  const filtered = shapes.length === 0
+    ? basicFullRows
+    : basicFullRows.filter((row) => passesShapeFilter(computeCentroid(row.parcel), shapes));
+  renderTable(filtered);
+  const fc = { type: 'FeatureCollection', features: filtered.map((r) => r.parcel) };
+  // Same no-refit-on-zero reasoning as the sales refilter above.
+  setMapData(fc, lastZoningFc, lastDevPlanFc, { fit: filtered.length > 0 });
+  applyStarredFromFavorites(fc);
+  if (shapes.length === 0) {
+    setCount(basicFullMsg);
+    invalidateBasicShapeSnapshot();
+  } else {
+    setCount(`${filtered.length} of ${total} parcels shown (area filter)`);
+  }
 }
 
 function filterCsvRowsByOtherSearches(rows) {

@@ -15,10 +15,10 @@
  * (red) and back. The eraser clears every shape.
  *
  * The toolbar lives in the TOPBAR (next to Hide/Expand Map — static
- * markup in index.html, wired by initShapeDraw) and is sales-mode only
- * via CSS (body.sales-mode gate in style.css): the filter it drives
- * lives in the sales-CSV predicate chain, so outside sales mode the
- * buttons would do nothing.
+ * markup in index.html, wired by initShapeDraw) and works in both
+ * modes: sales-CSV runs shapes inside its full filter pass, plain
+ * Property Search through main.js's refilterBasicByShapes (a
+ * shapes-only narrowing over the rendered result set).
  */
 
 import {
