@@ -2493,6 +2493,38 @@ body.measuring .map-legend {
 .maplibregl-ctrl.measure-control > button:hover {
   background: #eef6fb;
 }
+
+/* Area-selection shape toolbar (radius / rectangle / polygon / erase).
+   Sales-mode only: the filter it drives runs in the sales-CSV predicate
+   chain, so outside sales mode the buttons would silently do nothing. */
+.maplibregl-ctrl.shape-draw-control {
+  display: flex;
+}
+body:not(.sales-mode) .maplibregl-ctrl.shape-draw-control {
+  display: none;
+}
+.maplibregl-ctrl.shape-draw-control > button {
+  width: 29px;
+  height: 29px;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1;
+  color: #1a3a4a;
+  background: #fff;
+  border: none;
+  cursor: pointer;
+}
+.maplibregl-ctrl.shape-draw-control > button:hover {
+  background: #eef6fb;
+}
+.maplibregl-ctrl.shape-draw-control > button.active {
+  background: #1a3a4a;
+  color: #fff;
+}
+/* Crosshair everywhere on the canvas while a tool is armed. */
+body.shape-drawing .maplibregl-canvas {
+  cursor: crosshair !important;
+}
 .maplibregl-ctrl.measure-control > button.active {
   background: #1a3a4a;
   color: #fff;

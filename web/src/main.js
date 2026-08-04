@@ -194,6 +194,9 @@ import {
   fetchTileNetwork,
 } from './wallas.js';
 import { generateParcelSnapshotsZip } from './snapshotExport.js';
+// Area-selection shape filter (draw radius/rectangle/polygon on the map).
+import { getShapes as getMapShapes, clearShapes as clearMapShapes, onShapesChanged } from './drawShapes.js';
+import { passesShapeFilter } from './lib/shapeFilter.js';
 import { countSnapshotFrames } from './lib/snapshotGroups.js';
 import { OUTPUT_MIME, OUTPUT_QUALITY, MAX_OUTPUT_DIM } from './lib/imageOutput.js';
 import { dominantBucket, cultFraction, LAND_COVER_BUCKETS, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
@@ -2390,6 +2393,9 @@ for (const el of [
   el.addEventListener('change', refilterCsvIfActive);
   el.addEventListener('input',  refilterCsvIfActive);
 }
+// Drawn area shapes re-filter through the same path: committing a
+// shape, flipping include/exclude, or erasing all re-runs the pass.
+onShapesChanged(refilterCsvIfActive);
 // Subject-distance ring follows the Max-Distance input in real time
 // so the user sees the radius they're choosing without having to wait
 // for the table to re-filter. Triggered independently of
@@ -2896,6 +2902,7 @@ async function runSearch() {
   // regular Search reuses the page — explicit reset matches existing
   // pattern.
   if ($vacantImproved) $vacantImproved.value = 'all';
+  clearMapShapes();
   if ($saleDateFrom)  $saleDateFrom.value = '';
   if ($saleDateTo)    $saleDateTo.value = '';
   if ($distanceMax)   $distanceMax.value = '';
@@ -4899,6 +4906,9 @@ function refilterCsvIfActive() {
 }
 
 function filterCsvRowsByOtherSearches(rows) {
+  // Drawn area shapes (radius/rectangle/polygon, include/exclude) —
+  // read once per pass; the per-row test is a centroid point-in-shape.
+  const drawnShapes = getMapShapes();
   const zoneCat = $zoneCategory?.value || '';
   const status  = $changedStatus?.value || '';
   const duMode  = $duMode?.value || '';
@@ -5042,6 +5052,15 @@ function filterCsvRowsByOtherSearches(rows) {
     } else if (duMode === 'min' && Number.isFinite(duMin) && duMin > 0) {
       const du = Number(p.Dwelling_Units);
       if (!(Number.isFinite(du) && du >= duMin)) return false;
+    }
+
+    // Drawn-shape area filter. A row must have a placeable centroid
+    // once any shape exists — leaking unplaceable rows into an
+    // area-narrowed comp set would be silently wrong (see
+    // passesShapeFilter for the include/exclude semantics).
+    if (drawnShapes.length > 0) {
+      const c = computeCentroid(row.parcel);
+      if (!passesShapeFilter(c, drawnShapes)) return false;
     }
 
     // Vacant/improved selector (sales-CSV mode only — the control is

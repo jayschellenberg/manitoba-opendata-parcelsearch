@@ -22,6 +22,12 @@ import turfLength from '@turf/length';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import { landCoverBreakdown, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
+import {
+  addShapeLayers,
+  createShapeDrawControl,
+  shapeClickHandled,
+  isShapeDrawing,
+} from './drawShapes.js';
 import { WAYBACK_VERSIONS, waybackTileUrl } from './lib/wayback.js';
 import { MB_PARCEL_DATA_CDN } from './arcgis.js';
 import {
@@ -538,6 +544,9 @@ export function initMap(container, { onFeatureClick } = {}) {
   });
   map.addControl(measureDraw);
   map.addControl(new MeasureControl(measureDraw), 'top-right');
+  // Area-selection shape tools (radius / rectangle / polygon +
+  // include/exclude). Sales-mode only via CSS; see drawShapes.js.
+  map.addControl(createShapeDrawControl(), 'top-right');
 
   const ready = new Promise((resolve) => {
     // Setup runs once. Three triggers race: 'load', the first 'idle',
@@ -2121,6 +2130,10 @@ export function initMap(container, { onFeatureClick } = {}) {
         },
         paint: { 'text-color': '#ffffff' },
       });
+      // Area-selection shapes draw above everything a filter can act
+      // on — the user just drew them, they must never hide under a
+      // fill. Sources + fill/line/label + dashed preview.
+      addShapeLayers(map);
       // MASC label overlay is intentionally above the parcel/roll-fabric
       // layers so the rating letter stays visible when the user turns
       // MASC on after a parcel search.
@@ -2320,7 +2333,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         // down for the duration — this also clears a popup left showing
         // when the panel opened, on the first move after it opens, and
         // keeps the pointer cursor out of draw's crosshair.
-        if (isMeasuring()) {
+        if (isMeasuring() || isShapeDrawing()) {
           clearHover();
           return;
         }
@@ -2440,6 +2453,10 @@ export function initMap(container, { onFeatureClick } = {}) {
       // scroll position while it focuses the newly opened popup.
       const parcelClickPopup = new maplibregl.Popup({ closeButton: true, focusAfterOpen: false, maxWidth: '760px' });
       map.on('click', 'parcel-fill', (e) => {
+        // Shape tools own the click while armed (placing geometry) or
+        // when a committed shape sits under the cursor (mode toggle) —
+        // either way the parcel popup stands down.
+        if (shapeClickHandled(map, e.point)) return;
         const f = e.features?.[0];
         if (!f) return;
         const key = f.properties?._rowKey;
@@ -2512,6 +2529,7 @@ export function initMap(container, { onFeatureClick } = {}) {
       // Same content as the hover popup but with a close button.
       const muniClickPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '760px' });
       map.on('click', 'muni-parcels-fill', (e) => {
+        if (shapeClickHandled(map, e.point)) return;
         if (map.getLayoutProperty('muni-parcels-fill', 'visibility') !== 'visible') return;
         // Defer to the search-result click handler when both layers
         // overlap — keeps the table-scroll behaviour intact.
