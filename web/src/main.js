@@ -5185,7 +5185,7 @@ let waterOverlayOn = false;
 
 /**
  * Toggle the Water Influence map overlay — result parcels painted by
- * waterfront class (blue = frontage, teal = near water without frontage).
+ * waterfront class (dark blue = frontage, pale blue = near water without frontage).
  *
  * No fetch and no municipality dependency, unlike MASC / CLI / Land Cover:
  * `_waterColor` is already stamped on every row by stampWaterInfluence during
@@ -5211,7 +5211,7 @@ function toggleWaterInfluenceOverlay() {
     setCount('Water Influence on — water data has not loaded for these municipalities yet.');
   } else {
     setCount(painted > 0
-      ? `Water Influence on — ${painted} of ${rows.length} parcel${rows.length === 1 ? '' : 's'} coloured (blue = frontage, teal = near water without frontage).`
+      ? `Water Influence on — ${painted} of ${rows.length} parcel${rows.length === 1 ? '' : 's'} coloured (dark blue = frontage, pale blue = near water without frontage).`
       : `Water Influence on — none of these ${rows.length} parcels are within 50 m of mapped water.`);
   }
 }

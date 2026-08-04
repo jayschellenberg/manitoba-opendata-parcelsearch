@@ -487,6 +487,20 @@ const MEASURE_DRAW_STYLES = [
   },
 ];
 
+/**
+ * `parcel-fill`'s normal yellow opacity, hoisted so the water overlay can
+ * suppress it and put it back byte-for-byte. Starred favourites 0.6, a
+ * sale-group hover 0.5, otherwise 0.3.
+ */
+const PARCEL_FILL_OPACITY = [
+  'case',
+  ['boolean', ['feature-state', 'starred'], false],
+  0.6,
+  ['boolean', ['feature-state', 'groupHover'], false],
+  0.5,
+  0.3,
+];
+
 export function initMap(container, { onFeatureClick } = {}) {
   const map = new maplibregl.Map({
     container,
@@ -1688,14 +1702,7 @@ export function initMap(container, { onFeatureClick } = {}) {
             '#8b0000',
             '#ffea00',
           ],
-          'fill-opacity': [
-            'case',
-            ['boolean', ['feature-state', 'starred'], false],
-            0.6,
-            ['boolean', ['feature-state', 'groupHover'], false],
-            0.5,
-            0.3,
-          ],
+          'fill-opacity': PARCEL_FILL_OPACITY,
         },
       });
       map.addLayer({
@@ -1805,9 +1812,9 @@ export function initMap(container, { onFeatureClick } = {}) {
       // Water-influence overlay fill — colours each result parcel by its
       // waterfront classification. Driven by `_waterColor`, stamped per parcel
       // in main.js from the pre-baked water shards (lib/water.js owns the
-      // palette). All blue-family, split by HUE: true blues for genuine frontage
-      // (Direct / Waterfront / Reserve separated), teals for
-      // near-water-without-frontage (Road separated / Corridor blocked). A lot fronting the Red River and a lot across the
+      // palette). One blue ramp, DARK = strongest influence: frontage takes the
+      // dark half (Direct / Waterfront / Reserve separated), near-water the
+      // light half (Road separated / Corridor blocked). A lot fronting the Red River and a lot across the
       // road from it are not comparable, and the map has to show that at a
       // glance — keep the two groups visibly apart if the palette is retuned.
       //
@@ -3394,6 +3401,19 @@ export function setWaterInfluenceVisible(map, on) {
   const vis = on ? 'visible' : 'none';
   for (const id of ['water-fill', 'water-outline']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
+  }
+  // Suppress the generic yellow result fill while water colouring is on.
+  // `water-fill` paints at 0.7 OVER `parcel-fill`'s #ffea00, so the yellow
+  // tinted through every water colour — blues came out muddied and greenish,
+  // and the paler the class the worse it got. Silencing the yellow is what
+  // lets a genuinely light near-water blue read as blue.
+  //
+  // Opacity, NOT visibility: `parcel-fill` is the hit-test layer for parcel
+  // hover and click (queryRenderedFeatures against 'parcel-fill' in several
+  // handlers below), and `visibility: none` would drop it out of those
+  // queries and kill the popups. A zero-opacity layer still hit-tests.
+  if (map.getLayer('parcel-fill')) {
+    map.setPaintProperty('parcel-fill', 'fill-opacity', on ? 0 : PARCEL_FILL_OPACITY);
   }
 }
 

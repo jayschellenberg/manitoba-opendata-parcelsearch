@@ -38,34 +38,42 @@
 // order. `frontage: true` are exactly the classes the detection calls
 // WaterInfluence = "Yes".
 //
-// ALL BLUE-FAMILY, BUT TWO GROUPS — split by HUE:
-//   frontage      true blues
-//   near-water    teals
+// ONE BLUE RAMP, DARK = STRONGEST WATER INFLUENCE.
 //
-// The split has to survive because frontage vs no-frontage is a category
-// boundary, not a gradient: a lot fronting the Red River and a lot across the
-// road from it are not comparable, and a single blue ramp would imply they
-// differ only by degree.
+// The list is ordered strongest-first, and the colours must descend in
+// darkness in exactly that order. Frontage takes the dark half, near-water the
+// light half, so the frontage boundary falls where the ramp steps from a solid
+// mid-blue (#3a90dd, Reserve separated) to a clearly pale one (#8fc0ea, Road
+// separated). Reading darkness as "more water influence" is the intuition
+// people bring to the map, and an earlier palette inverted it — near-water
+// came out DARKER than waterfront, which actively misleads.
 //
-// Two earlier attempts, both rejected on evidence:
-//   - amber for the near-water pair. Separated them unmistakably, but read as
-//     a warning colour for what is often a desirable second-row lot.
-//   - pale low-chroma blue-grey. Checked on the map at z17 and it was too
-//     faint: `water-fill` paints at 0.7 over the app's existing yellow
-//     `parcel-fill` (#ffea00 at 0.4), so a washed-out colour muddies to grey-
-//     green and effectively disappears.
-// Teal keeps the whole overlay blue-ish while staying saturated enough to hold
-// its own over that yellow. Any retune must clear the same bar: check it ON
-// THE MAP over parcel-fill, not just as swatches — `water.test.js` asserts the
-// two groups never share a value but cannot judge whether they still read
-// apart.
+// Within near-water the order is meaningful too: Road separated (a road
+// between the lot and the water, usually still a view) sits above Corridor
+// blocked (another parcel in the way).
+//
+// Rejected earlier, on evidence:
+//   - amber for the near-water pair. Unmistakable, but read as a warning
+//     colour for what is often a desirable second-row lot.
+//   - teal for the near-water pair. Held up over the yellow fill, but split by
+//     hue rather than lightness, so it carried no sense of degree.
+//   - pale low-chroma blue-grey. Checked at z17 and it vanished — but that was
+//     while the yellow parcel-fill still showed through underneath. That fill
+//     is now suppressed whenever the overlay is on (see
+//     setWaterInfluenceVisible in map.js), which is what makes a genuinely
+//     light near-water colour readable at last.
+//
+// Any retune must keep BOTH properties: monotonically lightening down the
+// list, and a visible step at the frontage boundary. water.test.js pins the
+// ordering and the boundary; it cannot judge whether they still read apart on
+// a real basemap, so check that on the map.
 export const WATER_CLASSES = [
-  { key: 'Direct',            label: 'Direct frontage',    short: 'Direct',      color: '#0d5bbf', frontage: true  },
-  { key: 'Waterfront',        label: 'Waterfront',         short: 'Waterfront',  color: '#2e86e0', frontage: true  },
-  { key: 'Reserve Separated', label: 'Reserve separated',  short: 'Reserve',     color: '#6db4f0', frontage: true  },
-  { key: 'Road Separated',    label: 'Road separated',     short: 'Road sep.',   color: '#2aa7b5', frontage: false },
-  { key: 'Corridor Blocked',  label: 'Corridor blocked',   short: 'Blocked',     color: '#177f8e', frontage: false },
-  { key: 'No Corroboration',  label: 'Unconfirmed water',  short: 'Unconfirmed', color: '#9aa0a6', frontage: false },
+  { key: 'Direct',            label: 'Direct frontage',    short: 'Direct',      color: '#0a4a94', frontage: true  },
+  { key: 'Waterfront',        label: 'Waterfront',         short: 'Waterfront',  color: '#1a6fc0', frontage: true  },
+  { key: 'Reserve Separated', label: 'Reserve separated',  short: 'Reserve',     color: '#3a90dd', frontage: true  },
+  { key: 'Road Separated',    label: 'Road separated',     short: 'Road sep.',   color: '#8fc0ea', frontage: false },
+  { key: 'Corridor Blocked',  label: 'Corridor blocked',   short: 'Blocked',     color: '#b3d6f2', frontage: false },
+  { key: 'No Corroboration',  label: 'Unconfirmed water',  short: 'Unconfirmed', color: '#d7dce0', frontage: false },
 ];
 
 const BY_KEY = new Map(WATER_CLASSES.map((c) => [c.key, c]));

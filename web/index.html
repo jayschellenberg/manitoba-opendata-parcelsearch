@@ -639,26 +639,14 @@
             <button id="muni-parcels-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled title="Assessment Parcels — every parcel in the selected municipality (grey fabric under your search results)">
               <span class="overlay-btn-label">Assessment Parcels</span>
             </button>
-            <button id="grid-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Sec-Twp grid + river lots. Tri-state cycle: 1st click → Section/township grid (one box per 1-mile section); 2nd click → Quarter section grid (four boxes per section, requires a municipality); 3rd click → off. River lots ride along on both grid modes. Without a municipality, only the section grid is available (province-wide).">
-              <span class="overlay-btn-label">Section/Township Grid</span>
+            <!-- Water Influence colours the RESULT PARCELS themselves, so it
+                 belongs with the parcel layers rather than with the reference
+                 overlays it used to sit among. Its two search filters stay in
+                 Reference: those narrow what is fetched, which is a different
+                 job from painting what is already on screen. -->
+            <button id="water-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Water Influence — colours the result parcels by waterfront classification. DARK BLUE = actual frontage (Direct / Waterfront / Reserve separated); PALE BLUE = near water but no frontage, because a road or another parcel lies between (the 'second row', often a view). Reads the same pre-baked data as the Water column, so no extra fetch. Screening aid from provincial/federal mapping — not a survey.">
+              <span class="overlay-btn-label">Water Influence</span>
             </button>
-            </div>
-          </details>
-
-          <!-- Historical (as-of-date) compare. Its own collapsed group:
-               it is a two-control feature (enable + pick a date) that
-               most sessions never touch, and pairing the button with the
-               date picker on one line makes the relationship obvious. -->
-          <details class="overlay-group" data-group="historical">
-            <summary class="overlay-group-title">Historical<span class="overlay-group-count"></span></summary>
-            <div class="overlay-group-body">
-            <button id="historical-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled title="Historical (as-of-date) — overlay an earlier year's parcels (dashed amber), zoning, and dev-plan for the selected municipality, to compare against today (e.g. a parcel's size/shape before a subdivision). Select a municipality, then pick a date.">
-              <span class="overlay-btn-label">Show</span>
-            </button>
-            <label class="overlay-subcontrol" id="historical-year-wrap" hidden>
-              <span class="overlay-subcontrol-label">As of</span>
-              <select id="historical-year" aria-label="Historical snapshot date"></select>
-            </label>
             </div>
           </details>
 
@@ -686,16 +674,13 @@
             <button id="highways-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Manitoba Road Network 2023 — official PTH, PR, access, service, and winter-road geometry">
               <span class="overlay-btn-label">Manitoba Highways</span>
             </button>
-            <!-- Water influence lives in Reference, not Agricultural. It reads
-                 on every property type — lakefront cottages, riverfront lots
-                 and subdivision retention ponds are residential concerns — so
-                 grouping it with soil and tile drainage buried it for the
-                 searches that need it most. The WALLAS tile/irrigation pair
-                 stays in Agricultural: those really are farmland attributes. -->
-            <button id="water-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Water Influence — colours the result parcels by waterfront classification. BLUE = actual frontage (Direct / Waterfront / Reserve separated); TEAL = near water but no frontage, because a road or another parcel lies between (the 'second row', often a view). Reads the same pre-baked data as the Water column, so no extra fetch. Screening aid from provincial/federal mapping — not a survey.">
-              <span class="overlay-btn-label">Water Influence</span>
+            <button id="grid-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Sec-Twp grid + river lots. Tri-state cycle: 1st click → Section/township grid (one box per 1-mile section); 2nd click → Quarter section grid (four boxes per section, requires a municipality); 3rd click → off. River lots ride along on both grid modes. Without a municipality, only the section grid is available (province-wide).">
+              <span class="overlay-btn-label">Section/Township Grid</span>
             </button>
-            <!-- Pure post-filters on the pre-baked water shards (or, with a
+            <!-- The two water-influence SEARCH FILTERS. The overlay button that
+                 paints them lives in Parcel layers, beside Assessment Parcels —
+                 these narrow what gets fetched, which is reference-style work.
+                 Pure post-filters on the pre-baked water shards (or, with a
                  municipality selected, a roll-list pre-filter so the result cap
                  can't hide matches). No municipality scoping needed and no
                  extra fetch. Ticking both gives "any water influence". -->
@@ -757,6 +742,24 @@
             <label class="overlay-check" title="Return only parcels overlapped by a licensed irrigation point of use — the location where water is applied. Points of diversion are excluded, matching the Irrigation column. Narrow by municipality first: there are ~2,500 licensed points of use province-wide, so an unscoped run is slow.">
               <input type="checkbox" id="irrigation-only" />
               <span>Licensed irrigation only</span>
+            </label>
+            </div>
+          </details>
+
+          <!-- Historical (as-of-date) compare. Last of the overlay groups:
+               it is a two-control feature (enable + pick a date) that most
+               sessions never touch, so it sits below the layers people reach
+               for every time. Pairing the button with the date picker on one
+               line keeps the relationship obvious. -->
+          <details class="overlay-group" data-group="historical">
+            <summary class="overlay-group-title">Historical<span class="overlay-group-count"></span></summary>
+            <div class="overlay-group-body">
+            <button id="historical-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled title="Historical (as-of-date) — overlay an earlier year's parcels (dashed amber), zoning, and dev-plan for the selected municipality, to compare against today (e.g. a parcel's size/shape before a subdivision). Select a municipality, then pick a date.">
+              <span class="overlay-btn-label">Show</span>
+            </button>
+            <label class="overlay-subcontrol" id="historical-year-wrap" hidden>
+              <span class="overlay-subcontrol-label">As of</span>
+              <select id="historical-year" aria-label="Historical snapshot date"></select>
             </label>
             </div>
           </details>
@@ -1172,7 +1175,7 @@
                  the Agricultural column preset. -->
             <th data-col="landcover" title="Dominant 2020 land-cover bucket for this parcel and its share — Cultivated / Pasture-Grass / Bush-Treed / Wetland-Water / Other. Derived from the LCR_RCT_2020 raster via the mao-assembly pipeline. Shown only for parcels over 10 acres.">Land Cover</th>
             <th data-col="cultpct" title="Cultivated (cropland) share of the parcel from the 2020 land-cover raster. Shown only for parcels over 10 acres.">Cult %</th>
-            <th data-col="water" title="Water influence — is this parcel on or near a lake, river, stream or retention pond? Shows the water body name with a colour dot: BLUE = actual frontage (Direct / Waterfront / Reserve separated), TEAL = near water but no frontage, because a road or another parcel lies between (the 'second row', often a view). 'No water' means the check ran and found nothing within 50 m. Blank means the data hasn't loaded for this municipality yet. Screening aid from provincial/federal mapping — not a survey.">Water</th>
+            <th data-col="water" title="Water influence — is this parcel on or near a lake, river, stream or retention pond? Shows the water body name with a colour dot: DARK BLUE = actual frontage (Direct / Waterfront / Reserve separated), PALE BLUE = near water but no frontage, because a road or another parcel lies between (the 'second row', often a view). 'No water' means the check ran and found nothing within 50 m. Blank means the data hasn't loaded for this municipality yet. Screening aid from provincial/federal mapping — not a survey.">Water</th>
             <!-- Tile Drainage — populated when the Tile Drainage overlay
                  has loaded, by clipping the licensed tile footprints to
                  each parcel (same area-weighted join the zoning and
