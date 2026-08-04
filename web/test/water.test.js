@@ -14,6 +14,7 @@ import {
   waterTooltip,
   waterDistance,
   formatWaterDistance,
+  waterCsvCells,
   isWaterfront,
   isNearWater,
 } from '../src/lib/water.js';
@@ -155,5 +156,28 @@ for (const c of WATER_CLASSES) {
 // Non-frontage tooltips explain WHY there is no frontage.
 assert.ok(waterTooltip(stamp('Road Separated')).includes('without frontage'));
 assert.ok(waterTooltip(stamp('No Corroboration')).includes('could not be confirmed'));
+
+// ---- CSV cells: three states, bare values --------------------------------
+// The export must keep "we never checked" (all blank) distinct from "checked,
+// nothing within 164 ft" ("No water") — same honesty rule as the grid cell.
+assert.deepEqual(waterCsvCells(null, false), ['', '', '', '', '']);
+assert.deepEqual(waterCsvCells(undefined, true), ['No water', '', '', '', '']);
+// A stamped row exports bare values — verdict, class label, body, type,
+// distance as a number — never the grid's "body · 60 ft" composite.
+assert.deepEqual(
+  waterCsvCells({ i: 'Yes', c: 'Direct', t: 'Watercourse', b: 'Red River', d: 60 }, true),
+  ['Yes', 'Direct frontage', 'Red River', 'Watercourse', 60],
+);
+// Near-water: verdict No but the class/body/distance still export, because
+// "near Lake Manitoba, 79 ft, no frontage" is the whole point of the class.
+assert.deepEqual(
+  waterCsvCells({ i: 'No', c: 'Corridor Blocked', t: 'Lake', b: 'Lake Manitoba', d: 79 }, true),
+  ['No', 'Corridor blocked', 'Lake Manitoba', 'Lake', 79],
+);
+// A stamp with no usable distance exports an empty cell, not NaN or 0.
+assert.deepEqual(
+  waterCsvCells({ i: 'Yes', c: 'Waterfront', b: 'Lake Winnipeg' }, true),
+  ['Yes', 'Waterfront', 'Lake Winnipeg', '', ''],
+);
 
 console.log('water.test.js: all assertions passed');

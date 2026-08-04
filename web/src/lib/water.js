@@ -180,6 +180,35 @@ export function waterSortRank(w) {
   return WATER_CLASSES.indexOf(c) + within;
 }
 
+/**
+ * CSV cells for the water export columns: Water / Water Class / Water Body /
+ * Water Type / Water Distance (ft).
+ *
+ * Bare values, not the grid's "body · 60 ft" composite — a spreadsheet
+ * filters and pivots on one fact per column, mirroring how Tiled and
+ * Irrigated split theirs.
+ *
+ * Same three states as the grid cell, and the difference still matters:
+ *   - shard never loaded (`loaded` false) → all blank. We genuinely do not
+ *     know; "No water" here would be a confident lie.
+ *   - loaded, no stamp → "No water", rest blank. Distinct wording from the
+ *     stamped near-water "No" (frontage verdict) on purpose: one says
+ *     nothing is within 164 ft, the other says water is near but access
+ *     has no frontage.
+ *   - stamped → verdict (Yes/No), class label, body, type, whole feet.
+ */
+export function waterCsvCells(w, loaded) {
+  if (!w) return loaded ? ['No water', '', '', '', ''] : ['', '', '', '', ''];
+  const d = waterDistance(w);
+  return [
+    w.i || '',
+    waterClass(w)?.label || '',
+    (w.b || '').trim(),
+    w.t || '',
+    Number.isFinite(d) ? d : '',
+  ];
+}
+
 /** Hover detail — class, water body and type, one per line. */
 export function waterTooltip(w) {
   const c = waterClass(w);

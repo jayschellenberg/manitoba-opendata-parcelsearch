@@ -199,7 +199,7 @@ import { OUTPUT_MIME, OUTPUT_QUALITY, MAX_OUTPUT_DIM } from './lib/imageOutput.j
 import { dominantBucket, cultFraction, LAND_COVER_BUCKETS, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
 import {
   waterColor, waterCellText, waterTooltip, waterSortRank,
-  isWaterfront, isNearWater, WATER_CLASSES,
+  waterCsvCells, isWaterfront, isNearWater, WATER_CLASSES,
 } from './lib/water.js';
 import { resolveParcelAcres } from './lib/acres.js';
 import { computeSizeChanges } from './lib/sizeChange.js';
@@ -10360,6 +10360,10 @@ function exportCsv(explicitRows) {
     'Slope Range', 'Slope Min %', 'Slope Max %', 'Slope Summary',
     ...soilCsvHeaders(),
     'Land Cover', 'Cult %', 'Pasture %', 'Bush %', 'Wetland %', 'Other %',
+    // Water sits between Land Cover and Tiled, matching the grid's column
+    // order. 'Water' is the frontage verdict so a spreadsheet can filter
+    // comps on it directly; distance is a bare number for sorting.
+    'Water', 'Water Class', 'Water Body', 'Water Type', 'Water Distance (ft)',
     // Tiled / Irrigated lead their groups so a sales spreadsheet can
     // filter or pivot on one column instead of testing whether a licence
     // string is blank.
@@ -10445,6 +10449,7 @@ function exportCsv(explicitRows) {
       ...slopeCsvCells(p),
       ...soilCsvCells(p),
       ...landCoverCsvCells(p, ac),
+      ...waterCsvCells(p._water, !!p._waterLoaded),
       ...tileDrainageCsvCells(p),
       ...irrigationCsvCells(p),
       formatChanges(row),
