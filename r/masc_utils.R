@@ -7,6 +7,62 @@
 
 masc_rating_codes <- LETTERS[1:10]
 
+# ----------------------------------------------------------------------
+# Locating the CURRENT MASC scrape output
+# ----------------------------------------------------------------------
+# The MASC-SCRAPE project moved to a "v2" layout that writes each refresh
+# into its own timestamped run directory and marks it finished with a
+# COMPLETE file. The published shards have come from v2 since the
+# 2026-07-30 run.
+#
+# The legacy flat CSVs still sit in this repo's root and in the scrape
+# project root, frozen at 2026-04-01. They are NOT the current data:
+# 153,809 square-section rows against v2's 158,455, and no Range 29A
+# coverage at all. Defaulting to them — which is what these scripts did
+# until 2026-08-05 — means a plain `Rscript r/build_masc_shards.R`
+# silently REPUBLISHES a four-month-old, less complete dataset over the
+# good one. Nothing errors; the shard count just quietly drops.
+#
+# So the default now resolves to the newest COMPLETE v2 run and only
+# falls back to the legacy file when no such run exists, saying so
+# loudly when it does. An explicit env override still wins over both, so
+# pinning a specific run for a rebuild stays possible.
+#
+# @param env_var   env var holding an explicit path (wins if set)
+# @param v2_glob   filename pattern inside a run dir, e.g. "*_square_with_latlon_v2.csv"
+# @param legacy    fallback path used when no completed v2 run is found
+# @return absolute path to the CSV to read
+resolve_masc_csv <- function(env_var, v2_glob, legacy) {
+  override <- Sys.getenv(env_var)
+  if (nzchar(override)) {
+    return(normalizePath(override, winslash = "/", mustWork = FALSE))
+  }
+
+  run_root <- file.path(masc_scrape_root, "v2", "output")
+  if (dir.exists(run_root)) {
+    runs <- list.dirs(run_root, full.names = TRUE, recursive = FALSE)
+    # Only runs that finished. A killed run leaves partial CSVs behind and
+    # publishing those would be worse than publishing the stale ones.
+    runs <- runs[file.exists(file.path(runs, "COMPLETE"))]
+    if (length(runs)) {
+      # Run dirs are named run_YYYYMMDD_HHMMSS, so a plain sort is chronological.
+      for (run in rev(sort(runs))) {
+        hit <- Sys.glob(file.path(run, v2_glob))
+        if (length(hit)) {
+          cat("MASC source: newest completed v2 run —", hit[1], "\n")
+          return(normalizePath(hit[1], winslash = "/", mustWork = FALSE))
+        }
+      }
+    }
+  }
+
+  cat("MASC source: NO completed v2 run found; falling back to", legacy, "\n")
+  cat("  WARNING: the legacy CSVs are frozen at 2026-04-01 and are smaller and\n")
+  cat("  less complete than v2. If a v2 run exists, publishing from this file\n")
+  cat("  will REGRESS the live MASC data. Set", env_var, "to override.\n")
+  normalizePath(legacy, winslash = "/", mustWork = FALSE)
+}
+
 read_masc_square_csv <- function(path) {
   # V2 is mostly numeric ranges, so readr's sample-based guessing sees
   # thousands of values such as 1..30 before the first 29A and otherwise

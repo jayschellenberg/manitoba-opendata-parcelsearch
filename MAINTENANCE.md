@@ -94,6 +94,18 @@ clone (`mb_parcel_data_root` in `r/config.R`). After any rebuild:
 cd ..\mb-parcel-data
 git add -A && git commit -m "<what changed>" && git push
 ```
+**MASC inputs: v2 runs, not the CSVs in the repo root.** `build_masc_shards.R`
+and `build_parcel_masc.R` resolve their source in this order: the
+`MASC_SQUARE_CSV` / `MASC_RIVERLOT_CSV` env override, then the newest
+MASC-SCRAPE **v2** run directory carrying a `COMPLETE` marker, then — with a
+loud warning — the legacy flat CSVs. Those legacy files (`masc_soil_ratings_*`
+in this repo's root and the scrape project root) are frozen at 2026-04-01 and
+hold 153,809 square-section rows with no Range 29A coverage, against v2's
+158,455. Until 2026-08-05 they were the silent default, so a plain
+`Rscript r/build_masc_shards.R` would have quietly republished four-month-old,
+less complete ratings over the good ones with nothing erroring. Don't restore
+that default, and don't "tidy up" the legacy CSVs into the resolver's path.
+
 When publishing only MASC data from a worktree that also contains other
 generated changes, scope the publication so unrelated shards stay unstaged:
 ```

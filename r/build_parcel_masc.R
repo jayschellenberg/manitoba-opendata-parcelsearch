@@ -111,14 +111,13 @@ if (geom_col != "geometry") {
 # ----------------------------------------------------------------------
 # 2. Read MASC ratings; build quarter-section polygons (~800m squares)
 # ----------------------------------------------------------------------
-masc_override <- Sys.getenv("MASC_SQUARE_CSV")
-masc_csv <- if (nzchar(masc_override)) {
-  normalizePath(masc_override, winslash = "/", mustWork = FALSE)
-} else {
-  file.path(source_dir, "masc_soil_ratings_with_latlon.csv")
-}
+masc_csv <- resolve_masc_csv(
+  env_var  = "MASC_SQUARE_CSV",
+  v2_glob  = "*square_with_latlon_v2.csv",
+  legacy   = file.path(source_dir, "masc_soil_ratings_with_latlon.csv")
+)
 if (!file.exists(masc_csv)) {
-  stop("Cannot find masc_soil_ratings_with_latlon.csv at ", masc_csv)
+  stop("Cannot find a MASC square-section CSV at ", masc_csv)
 }
 cat("Reading MASC ratings ...\n")
 masc_raw <- read_masc_square_csv(masc_csv)
@@ -193,12 +192,11 @@ utm14 <- 26914
 # parish_name (heuristic + override map) and matching on
 # (muni, prefix, lot_number).
 riverlot_kmz_path <- file.path(source_dir, "MB-RIVER-LOTS.kmz")
-riverlot_override <- Sys.getenv("MASC_RIVERLOT_CSV")
-riverlot_csv_path <- if (nzchar(riverlot_override)) {
-  normalizePath(riverlot_override, winslash = "/", mustWork = FALSE)
-} else {
-  file.path(masc_scrape_root, "masc_soil_ratings_riverlots.csv")
-}
+riverlot_csv_path <- resolve_masc_csv(
+  env_var  = "MASC_RIVERLOT_CSV",
+  v2_glob  = "*riverlots_v2.csv",
+  legacy   = file.path(masc_scrape_root, "masc_soil_ratings_riverlots.csv")
+)
 
 riverlot_polys <- NULL
 if (file.exists(riverlot_kmz_path) && file.exists(riverlot_csv_path)) {

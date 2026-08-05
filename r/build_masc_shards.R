@@ -5,9 +5,12 @@
 # fetch only the active muni's ratings on toggle. Same shard pattern the
 # legal-search index uses; gitignored generated artifacts.
 #
-# Input  : MASC_SQUARE_CSV, or masc_soil_ratings_with_latlon.csv by
-#          default. V2's text `range` column is retained so special
-#          ranges such as 29A are not collapsed into numeric Range 29.
+# Input  : MASC_SQUARE_CSV if set, else the newest COMPLETE MASC-SCRAPE
+#          v2 run, else (with a loud warning) the frozen 2026-04-01
+#          legacy CSV — see resolve_masc_csv() in masc_utils.R for why
+#          the legacy file must not be the silent default. V2's text
+#          `range` column is retained so special ranges such as 29A are
+#          not collapsed into numeric Range 29.
 # Output : mb-parcel-data/masc/<MUNI_KEY>.json, plus
 #          mb-parcel-data/masc/_index.json — a manifest of muni keys with
 #          row counts so the frontend can show "no MASC data" without a
@@ -40,12 +43,11 @@ suppressPackageStartupMessages({
 source(file.path(.r_dir, "config.R"))
 source(file.path(.r_dir, "masc_utils.R"))
 
-input_override <- Sys.getenv("MASC_SQUARE_CSV")
-input_path <- if (nzchar(input_override)) {
-  normalizePath(input_override, winslash = "/", mustWork = FALSE)
-} else {
-  file.path(mb_parcelsearch_root, "masc_soil_ratings_with_latlon.csv")
-}
+input_path <- resolve_masc_csv(
+  env_var  = "MASC_SQUARE_CSV",
+  v2_glob  = "*square_with_latlon_v2.csv",
+  legacy   = file.path(mb_parcelsearch_root, "masc_soil_ratings_with_latlon.csv")
+)
 # Shards publish into the local mb-parcel-data clone (served to the app
 # via jsDelivr pinned commit — see MB_PARCEL_DATA_CDN in arcgis.js).
 output_dir  <- file.path(mb_parcel_data_root, "masc")
