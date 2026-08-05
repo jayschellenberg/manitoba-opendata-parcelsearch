@@ -17,6 +17,9 @@
  * sales-mode position, one .basic-only at the non-sales position).
  * Toggling "acres" affects both physical columns; that's the right
  * thing because the user conceptually only knows of one Acres column.
+ * `data-col="rollsize"` is doubled the same way and for the same
+ * reason — it rides immediately ahead of Acres in both modes so the
+ * roll's own figure and the working acreage stay side by side.
  *
  * One visible-set serves both tabs — the mode classes, not this set,
  * decide which of its columns a given tab can render. See the notes on
@@ -99,14 +102,22 @@ const ADOPT_ONCE = ['streetview', 'rollsize'];
 // Column presets — `null` value means "everything that the current
 // mode would show". The labels match the dropdown options.
 export const PRESETS = {
+  // Every preset carrying 'acres' also carries 'rollsize'. The roll's own
+  // figure is the primary size source, so a preset that shows a derived
+  // acreage while hiding the number it was derived from would be presenting
+  // the weaker value as the authoritative one — and on the ~37% of parcels
+  // stating frontage feet it would hide the only assessor-stated size there is.
   'Sales analysis': new Set([
     'favorite', 'roll', 'address', 'saledate', 'saleprice',
-    'grouppriceac', 'grouppricesf', 'grouppricelot', 'acres',
+    'grouppriceac', 'grouppricesf', 'grouppricelot', 'rollsize', 'acres',
     'zone1', 'subjdist', 'saletoasmt',
   ]),
+  // Frontage earns its place here on its own merits: minimum lot frontage is
+  // a bulk requirement in most Manitoba zoning by-laws, so on an urban parcel
+  // the roll's frontage figure is the number being checked against.
   'Zoning check': new Set([
     'roll', 'address', 'zone1', 'zone1pct', 'zone2', 'zbl',
-    'dev1', 'dpbylaw', 'changes', 'acres',
+    'dev1', 'dpbylaw', 'changes', 'rollsize', 'acres',
   ]),
   // Farmland-oriented view. Core identity + the land-cover pair, then
   // soil/capability, sales comps, and zoning/legal context (Jason's
@@ -120,7 +131,7 @@ export const PRESETS = {
   // main.js. MASC Rating, Risk Area and Land Cover need no such trigger:
   // they're stamped during every search/import enrichment.
   'Agricultural': new Set([
-    'favorite', 'roll', 'address', 'acres', 'landcover', 'cultpct', 'water',
+    'favorite', 'roll', 'address', 'rollsize', 'acres', 'landcover', 'cultpct', 'water',
     'soil', 'clicls', 'soiltype', 'slope', 'riskarea', 'tile', 'irrigation',
     'grouppriceac', 'saledate', 'saleprice', 'saletoasmt', 'grouppricesf',
     'zone1', 'dev1', 'legal', 'title',
@@ -146,7 +157,7 @@ export const PRESETS = {
   // active — the same mode-gating the Agricultural preset relies on. Being in
   // the set only means the gear isn't independently suppressing them.
   'Residential': new Set([
-    'favorite', 'roll', 'address', 'acres', 'sf', 'du',
+    'favorite', 'roll', 'address', 'rollsize', 'acres', 'sf', 'du',
     'water',
     'value', 'asmtland', 'asmtbldg', 'asmtpct', 'asmtyear',
     'zone1', 'zbl', 'dev1', 'changes',

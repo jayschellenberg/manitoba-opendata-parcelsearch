@@ -70,4 +70,18 @@ stopListening();
 applyPreset('Sales analysis');
 assert.deepEqual(seenPresets, ['Agricultural'], 'unsubscribing should stop notifications');
 
+// The roll's own frontage/area is the primary size source, so no preset may
+// show a derived acreage while hiding the figure it came from. On the ~37% of
+// Manitoba parcels stating frontage feet, hiding it would drop the ONLY
+// assessor-stated size the row has and leave a polygon estimate looking
+// authoritative. Enforced across every preset rather than spot-checked, so a
+// future preset can't quietly reintroduce the gap.
+for (const [name, set] of Object.entries(PRESETS)) {
+  if (set === null) continue;               // 'Full detail' shows everything
+  if (!set.has('acres')) continue;
+  assert.ok(set.has('rollsize'),
+    `preset '${name}' shows Acres but hides Roll Frontage/Area — the roll's own figure must travel with the derived one`);
+}
+assert.ok(DEFAULT_VISIBLE.has('rollsize'), 'Roll Frontage/Area should be visible by default');
+
 console.log('column preset tests passed');

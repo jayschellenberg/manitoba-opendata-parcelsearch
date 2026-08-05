@@ -978,6 +978,18 @@ const SORT_KEYS = {
   water:     (r) => waterSortRank(r.parcel.properties._water),
   changes: (r) => strKey(formatChanges(r)),
   du:      (r) => finiteOrNeg(r.parcel.properties.Dwelling_Units),
+  // Roll Frontage/Area holds two incommensurable things — areas in acres and
+  // widths in feet — so a plain numeric sort would interleave 110 feet with
+  // 110 acres as though they ranked against each other. Sort by unit first so
+  // like groups with like, then numerically inside each group (zero-padded so
+  // the string compare orders 9 before 80). Blank rolls sort last via strKey.
+  rollsize: (r) => {
+    const raw = String(r.parcel.properties.Frontage_or_Area ?? '').trim();
+    const m = raw.match(/^([0-9]+(?:\.[0-9]+)?)\s*([A-Za-z]*)/);
+    if (!m) return strKey(raw);
+    const unit = (m[2] || 'zz').toLowerCase();
+    return `${unit}:${Number(m[1]).toFixed(3).padStart(14, '0')}`;
+  },
   acres:   (r) => finiteOrNeg(parcelAcres(r.parcel)),
   sf:      (r) => finiteOrNeg(parcelAcres(r.parcel)),
   // Walkscore column is just a link — sort by whether we have an address
@@ -8343,6 +8355,9 @@ function renderTable(rows, { resetPage = true } = {}) {
     // Sales-mode position for the Acres column. The basic-mode
     // Acres cell below carries the same value but with .basic-only
     // so only one is visible at a time.
+    const rollSizeSalesCell = td(formatRollSize(p), 'num');
+    rollSizeSalesCell.classList.add('sales-only');
+    tr.appendChild(rollSizeSalesCell);
     const acresSalesCell = td(formatAcres(ac), 'num');
     acresSalesCell.classList.add('sales-only');
     markAreaCheck(acresSalesCell, p);
@@ -8448,7 +8463,9 @@ function renderTable(rows, { resetPage = true } = {}) {
     tr.appendChild(td(formatDu(p.Dwelling_Units), 'num'));
     // Basic-mode position for Acres — hidden in sales mode (the
     // sales-only Acres cell above takes its place after $/Lot).
-    tr.appendChild(td(formatRollSize(p), 'num'));
+    const rollSizeBasicCell = td(formatRollSize(p), 'num');
+    rollSizeBasicCell.classList.add('basic-only');
+    tr.appendChild(rollSizeBasicCell);
     const acresBasicCell = td(formatAcres(ac), 'num');
     acresBasicCell.classList.add('basic-only');
     markAreaCheck(acresBasicCell, p);
