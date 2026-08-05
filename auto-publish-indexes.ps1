@@ -12,7 +12,15 @@
 #   1. Rscript r/build_legal_index.R + r/build_assessment_index.R   (from ../mao-scrape/results/*.parquet)
 #   2. node web/scripts/build-manifest.js --validate                (regen manifest.json; GATE: row-collapse / vanished / truncated -> abort, nothing published)
 #   3. release-indexes.ps1 -SkipBuild                               (size-check + GitHub Release + bump api/*.js RELEASE_URL)
-#   4. git add api/*.js web/public/data/manifest.json; commit; push (Vercel auto-deploys the edge fns + new manifest)
+#   4. update-cdn-pin.ps1                                           (publish mb-parcel-data shards + repin web/src/arcgis.js)
+#   5. git add api/*.js web/src/arcgis.js web/public/data/manifest.json; commit; push (Vercel auto-deploys)
+#
+# WHY STEP 4 EXISTS: build_assessment_index.R writes per-muni shards straight into
+# the mb-parcel-data clone as a side effect, but nothing here used to commit that repo.
+# The shards piled up uncommitted while the app stayed pinned to an older SHA, so the
+# live site served stale assessment data even though the rebuild had "succeeded" --
+# found 2026-08-05 with 187 shards stranded and the pin 3 months behind. Publishing
+# the data repo in the same chain that publishes the indexes keeps the two in step.
 #
 # Safe to run anytime. Logs to logs/auto-publish-YYYYMMDD-HHmm.log; on any failure sends
 # an email + ntfy alert (alert-lib.ps1). If nothing actually changed, the commit is a
@@ -77,8 +85,9 @@ try {
   # release-indexes.ps1 is called IN-PROCESS (not a child powershell) so it inherits the
   # native-error opt-out above and runs cleanly under both Windows PowerShell 5.1 and 7.
   if ($DryRun) {
-    Log '[dry-run] validated OK; would now release-indexes.ps1 -SkipBuild + commit + push.'
+    Log '[dry-run] validated OK; would now release-indexes.ps1 -SkipBuild, publish the CDN shards, then commit + push.'
     & (Join-Path $root 'release-indexes.ps1') -SkipBuild -DryRun *>> $log
+    & (Join-Path $root 'update-cdn-pin.ps1') -DryRun *>> $log
     Log '=== dry-run complete (no changes made) ==='; exit 0
   }
 
@@ -87,8 +96,15 @@ try {
   & (Join-Path $root 'release-indexes.ps1') -SkipBuild *>> $log
   if ($LASTEXITCODE -ne 0) { throw "release-indexes.ps1 failed (exit $LASTEXITCODE)" }
 
-  # 4. Commit the edge-fn URL bumps + manifest and push -> Vercel auto-deploys.
-  & git add api/legal-index.js api/assessment-index.js web/public/data/manifest.json *>> $log
+  # 4. Publish the generated shards sitting in the mb-parcel-data clone and repin the
+  #    app to the new immutable SHA. No-ops cleanly when that repo has no changes
+  #    (the script falls back to current HEAD and leaves arcgis.js alone).
+  Log 'update-cdn-pin.ps1'
+  & (Join-Path $root 'update-cdn-pin.ps1') -Message "Refresh generated data shards ($ts)" *>> $log
+  if ($LASTEXITCODE -ne 0) { throw "update-cdn-pin.ps1 failed (exit $LASTEXITCODE)" }
+
+  # 5. Commit the edge-fn URL bumps + CDN pin + manifest and push -> Vercel auto-deploys.
+  & git add api/legal-index.js api/assessment-index.js web/src/arcgis.js web/public/data/manifest.json *>> $log
   $staged = git diff --cached --name-only
   if (-not $staged) { Log 'nothing changed to commit -- already current; no deploy needed'; Log '=== complete ==='; exit 0 }
   Log "committing: $($staged -join ', ')"

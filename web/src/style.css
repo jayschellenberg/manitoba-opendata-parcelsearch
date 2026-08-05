@@ -1368,6 +1368,12 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 .data-refresh-footer[hidden] { display: none; }
 .data-refresh-footer strong { color: #4a5260; font-weight: 600; }
 .data-refresh-footer .data-refresh-list-sep { margin: 0 6px; color: #aab2bc; }
+/* Dotted underline marks the provincial publish date as carrying a caveat —
+   it reads as a freshness date but isn't one. Detail is in the title attr. */
+.data-refresh-footer .roll-published {
+  border-bottom: 1px dotted currentColor;
+  cursor: help;
+}
 
 /* Civic-address From/To/Street row. From + To are narrow numeric
    inputs; the Street Name field takes whatever's left so the row
@@ -2005,6 +2011,19 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   vertical-align: baseline;
+  cursor: help;
+}
+
+/* Roll-vs-shape area disagreement. A caret rather than a worded badge: the
+   Acres column is narrow and this fires on ~15% of parcels carrying an
+   assessor area, so a full label would crowd every rural search. Amber
+   matches the nominal-roll wording in the map popup; the detail lives in the
+   tooltip and in the CSV's Area Check column. */
+#results .area-check-flag {
+  display: inline-block;
+  margin-left: 3px;
+  color: var(--area-check-fg, #b45309);
+  font-size: 0.85em;
   cursor: help;
 }
 

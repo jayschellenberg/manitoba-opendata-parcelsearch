@@ -3706,6 +3706,17 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
     lines.push(`<small style="color:#b45309">⚠ roll area looks nominal`
       + `${Number.isFinite(rv) ? ` (states ${rv} ac)` : ''} — showing geometry area; verify against plan/title.</small>`);
   }
+  // Roll and polygon disagree by more than the tolerance. Show both figures:
+  // which one is right isn't knowable from here, and a subdivision that has
+  // reached only one half of the provincial record looks exactly like this.
+  else if (p._acresMismatch) {
+    const gv = Number(p._acresGeomValue);
+    const pct = Number(p._acresVariancePct);
+    lines.push(`<small style="color:#b45309">⚠ roll area disagrees with parcel shape`
+      + `${Number.isFinite(gv) ? ` (shape measures ${gv.toFixed(1)} ac` : ''}`
+      + `${Number.isFinite(pct) ? `, ${(pct * 100).toFixed(0)}% apart)` : ')'}`
+      + ` — verify on MAO.</small>`);
+  }
   // Current zoning and DU get separate lines so both regular-search and
   // Sales Analysis popups present zoning immediately before DU. Zoning is
   // stamped by main.js after its area-weighted join; Sales Analysis runs

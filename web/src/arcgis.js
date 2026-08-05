@@ -61,6 +61,10 @@ import {
 // The area join's compute lives in its own module so this file and the
 // Web Worker in overlayJoin.worker.js share one implementation.
 import { computeTopNMatches } from './lib/overlayJoinCore.js';
+// One acreage rule for the whole app: the Roll-Layer hover below and the
+// results grid (main.js parcelAcres) both resolve through this, so the same
+// parcel can't read differently depending on where you look at it.
+import { resolveParcelAcres } from './lib/acres.js';
 // Manitoba Water Rights Licensing (WALLAS) lives on a different host and
 // a different ArcGIS flavour (a 10.51 MapServer, not an AGOL hosted
 // FeatureServer), so its client is its own module. What this file needs
@@ -83,6 +87,47 @@ export const SERVICE_SOURCES = [
   { label: 'Zoning By-Laws',                url: ZONING_URL },
   { label: 'Development Plan Designations', url: DEVPLAN_URL },
 ];
+
+// How long to sit on the provincial roll layer's publish date. It moves a
+// couple of times a month at most, and a stale reading here is harmless (it
+// only ever understates freshness), so a day is plenty.
+const ROLL_PUBLISHED_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * When the province last re-published the ROLL_ENTRY layer.
+ *
+ * This is NOT the same thing as "how current the roll data is", and the
+ * difference is the whole reason this exists. The layer's editingInfo moves
+ * whenever the province pushes a new extract, but the extract itself trails
+ * Manitoba Assessment Online by an unknown margin: on 2026-08-05 the layer
+ * reported an edit date of the previous day while still serving RM of Ste
+ * Anne roll 126910 at its pre-subdivision 17.22 ac, against a matching
+ * pre-subdivision polygon, when MAO's map already showed the ±2.3 ac child
+ * parcel. Quoting this date alone would therefore raise confidence exactly
+ * where it should fall — callers must pair it with the standing caveat that
+ * an individual roll can be older than the publish date implies.
+ *
+ * @returns {string|null} ISO date (YYYY-MM-DD), or null if unavailable.
+ */
+export async function fetchRollLayerPublishedDate() {
+  const cacheKey = 'mb_roll_layer_published_v1';
+  const cached = await readCache(cacheKey, ROLL_PUBLISHED_TTL_MS);
+  if (cached?.date) return cached.date;
+  try {
+    const res = await fetch(`${ROLL_URL}?f=json`);
+    if (!res.ok) return null;
+    const meta = await res.json();
+    const ms = meta?.editingInfo?.dataLastEditDate;
+    if (!Number.isFinite(ms)) return null;
+    const d = new Date(ms);
+    if (!Number.isFinite(d.valueOf())) return null;
+    const date = d.toISOString().slice(0, 10);
+    await writeCache(cacheKey, { date });
+    return date;
+  } catch {
+    return null;
+  }
+}
 
 // ArcGIS Online hosted services cap any single page at 2000 features.
 const PAGE_SIZE = 2000;
@@ -147,7 +192,7 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // this SHA — see MAINTENANCE.md. section-grid.json stays local because
 // at 41 MB it's over jsDelivr's per-file cap.
 export const MB_PARCEL_DATA_REVISION =
-  '627ac00a0570726c5b001ec6d843116be58d32df';
+  '71dca5a1b6897701b4d33ed77cc82f53d362c533';
 export const MB_PARCEL_DATA_CDN =
   `https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-data@${MB_PARCEL_DATA_REVISION}`;
 const SNAPSHOT_BASE_URL = `${MB_PARCEL_DATA_CDN}/rollentry-snapshot/`;
@@ -2190,26 +2235,31 @@ export async function fetchAllParcelsInMunicipality(municipality) {
     seenIds.add(key);
     return true;
   });
-  // Stamp acreage onto each feature so the hover popup can show
-  // Land Size without needing the polygon geometry. Prefers
-  // Roll_Entry's Frontage_or_Area when the assessor recorded an
-  // actual area (e.g. "5.000 Acres") — that's the assessor's
-  // official value. Falls back to turf area on the polygon when the
-  // field is in feet (frontage feet, not derivable to area) or
-  // missing entirely.
+  // Stamp acreage onto each feature so the hover popup can show Land Size
+  // without recomputing. Resolution goes through the shared resolver so this
+  // path applies the same nominal-roll guard and roll-vs-polygon cross-check
+  // as the results grid — before, a crown parcel could read "0.01 ac" here
+  // and "357 ac" in the grid because only the grid ran the guard.
   for (const f of fc.features || []) {
-    const fromField = acresFromFrontageField(f.properties?.Frontage_or_Area);
-    if (fromField != null) {
-      f.properties._acres = fromField;
-      f.properties._acresSource = 'assessor';
-    } else {
-      try {
-        const sqm = area(f);
-        if (Number.isFinite(sqm) && sqm > 0) {
-          f.properties._acres = sqm / 4046.8564224;
-          f.properties._acresSource = 'geometry';
-        }
-      } catch { /* topology errors — skip silently */ }
+    const rollAcres = acresFromFrontageField(f.properties?.Frontage_or_Area);
+    let geomAcres = null;
+    try {
+      const sqm = area(f);
+      if (Number.isFinite(sqm) && sqm > 0) geomAcres = sqm / 4046.8564224;
+    } catch { /* topology errors — leave geometry out of the decision */ }
+    const resolved = resolveParcelAcres(rollAcres, geomAcres);
+    if (resolved.acres != null) {
+      f.properties._acres = resolved.acres;
+      f.properties._acresSource = resolved.source;
+      if (resolved.rollNominal) {
+        f.properties._acresRollNominal = true;
+        f.properties._rollNominalAcres = resolved.rollValue;
+      }
+      if (resolved.areaMismatch) {
+        f.properties._acresMismatch = true;
+        f.properties._acresVariancePct = resolved.variancePct;
+        f.properties._acresGeomValue = resolved.geomValue;
+      }
     }
     // Pre-strip the .000 sub from Roll_No_Txt for display contexts
     // (the muni-parcels-label paint expression in map.js reads

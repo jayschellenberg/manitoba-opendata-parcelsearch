@@ -9,11 +9,15 @@ REM   4. Re-shard the land-cover buckets from the latest mao-assembly
 REM      Parquet (non-fatal — skipped with a warning if that sister
 REM      project's output isn't present; the 2020 raster is static so
 REM      this only changes when parcels change).
-REM   5. Rebuild + VALIDATE the data manifest (--validate compares the
+REM   5. Re-shard water influence from the same mao-assembly Parquet
+REM      (non-fatal, same reasoning as step 4). Previously this script
+REM      had no water step at all, so water shards only ever refreshed
+REM      when someone remembered to run r\build_water.R by hand.
+REM   6. Rebuild + VALIDATE the data manifest (--validate compares the
 REM      fresh shard set against the previously written manifest and
 REM      aborts on collapsed row counts / vanished datasets / corrupt
 REM      sample shards, leaving the prior manifest in place). For a
-REM      legitimate big change, rerun step 5 by hand with
+REM      legitimate big change, rerun step 6 by hand with
 REM      --accept-large-change.
 REM
 REM NOT part of this refresh: the Land Cover "Detailed" raster tiles
@@ -103,22 +107,35 @@ REM present on every machine. A failure here logs a warning and leaves
 REM the existing landcover shards in place rather than aborting the run.
 REM ---------------------------------------------------------------
 echo. >> "%LOGFILE%"
-echo --- step 4/5: build_landcover.R --- >> "%LOGFILE%"
+echo --- step 4/6: build_landcover.R --- >> "%LOGFILE%"
 %RSCRIPT% r\build_landcover.R >> "%LOGFILE%" 2>&1
 if errorlevel 1 (
   echo *** build_landcover.R FAILED (exit code !errorlevel!) — continuing >> "%LOGFILE%"
-  echo *** existing web\public\data\landcover shards left untouched >> "%LOGFILE%"
+  echo *** existing landcover shards left untouched >> "%LOGFILE%"
 )
 
 REM ---------------------------------------------------------------
-REM Step 5 — rebuild the public/data manifest.
+REM Step 5 — re-shard water influence from the mao-assembly Parquet.
+REM Non-fatal for the same reason as step 4: it bridges a sister
+REM project's output that may not exist on every machine.
 REM ---------------------------------------------------------------
 echo. >> "%LOGFILE%"
-echo --- step 5/5: build-manifest.js --validate --- >> "%LOGFILE%"
+echo --- step 5/6: build_water.R --- >> "%LOGFILE%"
+%RSCRIPT% r\build_water.R >> "%LOGFILE%" 2>&1
+if errorlevel 1 (
+  echo *** build_water.R FAILED (exit code !errorlevel!) — continuing >> "%LOGFILE%"
+  echo *** existing water shards left untouched >> "%LOGFILE%"
+)
+
+REM ---------------------------------------------------------------
+REM Step 6 — rebuild the public/data manifest.
+REM ---------------------------------------------------------------
+echo. >> "%LOGFILE%"
+echo --- step 6/6: build-manifest.js --validate --- >> "%LOGFILE%"
 %NODE% web\scripts\build-manifest.js --validate >> "%LOGFILE%" 2>&1
 if errorlevel 1 (
   echo *** build-manifest.js FAILED (exit code !errorlevel!) >> "%LOGFILE%"
-  echo monthly-refresh aborted at step 5. See %LOGFILE% for details.
+  echo monthly-refresh aborted at step 6. See %LOGFILE% for details.
   exit /b 1
 )
 

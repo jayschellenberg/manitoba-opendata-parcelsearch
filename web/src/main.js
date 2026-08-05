@@ -125,6 +125,7 @@ import {
   missingRollsFromResults,
   canonicalRoll,
   acresFromFrontageField,
+  fetchRollLayerPublishedDate,
 } from './arcgis.js';
 import {
   quartersToFc,
@@ -8344,6 +8345,7 @@ function renderTable(rows, { resetPage = true } = {}) {
     // so only one is visible at a time.
     const acresSalesCell = td(formatAcres(ac), 'num');
     acresSalesCell.classList.add('sales-only');
+    markAreaCheck(acresSalesCell, p);
     tr.appendChild(acresSalesCell);
     const ppaCell = td(formatGroupPpa(p), 'num');
     ppaCell.classList.add('sales-only');
@@ -8448,6 +8450,7 @@ function renderTable(rows, { resetPage = true } = {}) {
     // sales-only Acres cell above takes its place after $/Lot).
     const acresBasicCell = td(formatAcres(ac), 'num');
     acresBasicCell.classList.add('basic-only');
+    markAreaCheck(acresBasicCell, p);
     tr.appendChild(acresBasicCell);
     tr.appendChild(td(formatSf(ac), 'num'));
     tr.appendChild(assessmentCell(p));
@@ -9987,8 +9990,56 @@ function parcelAcres(feature) {
       feature.properties._acresRollNominal = true;
       feature.properties._rollNominalAcres = r.rollValue;
     }
+    // Roll-vs-polygon disagreement. Both figures are kept so the popup and
+    // the CSV can show what they actually differ by rather than just
+    // asserting that they do.
+    if (r.areaMismatch) {
+      feature.properties._acresMismatch = true;
+      feature.properties._acresVariancePct = r.variancePct;
+      feature.properties._acresGeomValue = r.geomValue;
+    }
   }
   return r.acres;
+}
+
+/**
+ * Append the area cross-check marker to an Acres cell, if the parcel earned
+ * one. No-op on the ~85% that agree, so the column stays clean.
+ */
+function markAreaCheck(cell, p) {
+  if (!cell || !p?._acresMismatch) return;
+  const gv = Number(p._acresGeomValue);
+  const pct = Number(p._acresVariancePct);
+  const flag = document.createElement('span');
+  flag.className = 'area-check-flag';
+  flag.textContent = '⚠';
+  flag.title = `Roll area (${fmtAcres(p._acres)} ac) disagrees with the parcel shape`
+    + `${Number.isFinite(gv) ? ` (${gv.toFixed(1)} ac)` : ''}`
+    + `${Number.isFinite(pct) ? ` by ${(pct * 100).toFixed(0)}%` : ''}.`
+    + ' A few percent is usually survey-vs-mapped boundary difference; a large gap can mean'
+    + ' a subdivision or consolidation. Confirm on Manitoba Assessment Online before relying on the figure.';
+  cell.appendChild(flag);
+}
+
+/**
+ * The "Area Check" CSV cell — blank when the assessor area and the polygon
+ * agree (the overwhelming majority), otherwise a short phrase naming what the
+ * shape measures and how far off it is. Written out in full words because the
+ * cell can be read months later by someone who never saw this app.
+ */
+function areaCheckCsv(p) {
+  if (!p) return '';
+  if (p._acresRollNominal) {
+    const rv = Number(p._rollNominalAcres);
+    return `roll area nominal${Number.isFinite(rv) ? ` (states ${rv} ac)` : ''} — showing shape area`;
+  }
+  if (!p._acresMismatch) return '';
+  const gv = Number(p._acresGeomValue);
+  const pct = Number(p._acresVariancePct);
+  const bits = [];
+  if (Number.isFinite(gv)) bits.push(`shape measures ${gv.toFixed(1)} ac`);
+  if (Number.isFinite(pct)) bits.push(`${(pct * 100).toFixed(0)}% apart`);
+  return `roll disagrees with shape${bits.length ? ` (${bits.join(', ')})` : ''} — verify on MAO`;
 }
 
 function formatAcres(v) {
@@ -10443,6 +10494,22 @@ async function populateDataRefreshFooter() {
   const asmtDate  = fmt(asmtMetaValue?.generated_at);
   if (legalDate) parts.push(`<strong>Legal:</strong> ${legalDate}`);
   if (asmtDate)  parts.push(`<strong>Assessment:</strong> ${asmtDate}`);
+  // The province's own publish date for the live parcel layer. Deliberately
+  // carries its caveat in the tooltip rather than standing as a bare date:
+  // the extract trails Manitoba Assessment Online, so a recent publish date
+  // does NOT mean an individual roll is current (see
+  // fetchRollLayerPublishedDate in arcgis.js for the worked example).
+  const rollPublished = await fetchRollLayerPublishedDate();
+  if (rollPublished) {
+    parts.push(
+      `<strong>Provincial roll:</strong> <span class="roll-published" title="`
+      + `The province last re-published the parcel layer on ${rollPublished}. `
+      + `That is when the extract was posted, not proof that any one roll is current — `
+      + `the extract trails Manitoba Assessment Online, so a recent subdivision or `
+      + `consolidation can still show its old area and old boundary here. `
+      + `Confirm recently-changed parcels on MAO.">${rollPublished}</span>`,
+    );
+  }
   if (parts.length === 0) return;
   $list.innerHTML = parts.join('<span class="data-refresh-list-sep">·</span>');
   $footer.hidden = false;
@@ -10631,7 +10698,11 @@ function exportCsv(explicitRows) {
     // it would be the constant "Use" on every populated row.
     'Irrigated', 'Irrigation Licence', 'Irrigation Location', 'Irrigation Supply', 'Irrigation Source',
     'Changes',
-    'DU', 'Acres', 'SF', 'Acres Src',
+    // "Area Check" carries the roll-vs-shape cross-check: blank when the two
+    // agree, otherwise the shape's own measurement and how far apart they are.
+    // It travels beside Acres so a reviewer sees the caveat on the same row as
+    // the figure rather than having to know to go looking for it.
+    'DU', 'Acres', 'SF', 'Acres Src', 'Area Check',
     csvAssessHeader(currentRows), 'Asmt Report URL',
     'Walkscore URL', 'Flood-Map URL', 'Street View URL',
     ...(inSalesMode
@@ -10716,6 +10787,7 @@ function exportCsv(explicitRows) {
       formatAcresCsv(ac),
       ac != null && Number.isFinite(ac) && ac > 0 ? Math.round(ac * 43560) : '',
       p._acresRollNominal ? 'geometry (roll nominal)' : (p._acresSource ?? ''),
+      areaCheckCsv(p),
       parseTotalValue(p.Total_Value) ?? '',
       p.Asmt_Rpt_Url ?? '',
       walkscoreUrl(p),

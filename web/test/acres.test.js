@@ -8,6 +8,7 @@ import {
   resolveParcelAcres,
   ROLL_NOMINAL_RATIO,
   ROLL_NOMINAL_MIN_GEOM_ACRES,
+  AREA_VARIANCE_PCT,
 } from '../src/lib/acres.js';
 
 const results = [];
@@ -81,6 +82,62 @@ test('non-finite / non-positive inputs are ignored', () => {
   assert.equal(resolveParcelAcres(0, -3).acres, null);
   assert.equal(resolveParcelAcres(-1, 5).acres, 5);     // bad roll, good geom
   assert.equal(resolveParcelAcres(-1, 5).source, 'geometry');
+});
+
+console.log('\nacres.js — roll-vs-shape cross-check');
+
+test('agreement within tolerance does not flag', () => {
+  // RM of Ste Anne roll 126910 as the province actually serves it
+  // (2026-08-05): roll 17.22 ac against a 16.97 ac polygon. Both predate the
+  // subdivision, so they agree with each other and nothing fires — the case
+  // this check deliberately cannot catch.
+  const r = resolveParcelAcres(17.22, 16.97);
+  assert.equal(r.areaMismatch, false);
+  assert.ok(r.variancePct < AREA_VARIANCE_PCT);
+  assert.equal(r.source, 'assessor');
+});
+
+test('divergence past tolerance flags but still shows the assessor figure', () => {
+  // A subdivision that reached the polygon but not the roll attribute.
+  const r = resolveParcelAcres(17.22, 2.3);
+  assert.equal(r.areaMismatch, true);
+  assert.equal(r.acres, 17.22);            // assessor still wins the display
+  assert.equal(r.source, 'assessor');
+  assert.equal(r.geomValue, 2.3);
+  assert.ok(r.variancePct > 6);            // ~648% of the shape area
+});
+
+test('variance is measured against the polygon, not the roll', () => {
+  const r = resolveParcelAcres(11, 10);
+  assert.ok(Math.abs(r.variancePct - 0.1) < 1e-9);
+});
+
+test('exactly at the tolerance does not flag; just past it does', () => {
+  const at = resolveParcelAcres(10 * (1 + AREA_VARIANCE_PCT), 10);
+  assert.equal(at.areaMismatch, false);    // boundary is inclusive-agreeing
+  const past = resolveParcelAcres(10 * (1 + AREA_VARIANCE_PCT) + 0.01, 10);
+  assert.equal(past.areaMismatch, true);
+});
+
+test('nominal-roll parcels are not double-flagged', () => {
+  const r = resolveParcelAcres(0.01, 357.09);
+  assert.equal(r.rollNominal, true);
+  assert.equal(r.areaMismatch, false);     // rollNominal already explains it
+  assert.equal(r.variancePct, null);
+});
+
+test('single-sided figures cannot be cross-checked', () => {
+  assert.equal(resolveParcelAcres(12.5, null).variancePct, null);
+  assert.equal(resolveParcelAcres(12.5, null).areaMismatch, false);
+  assert.equal(resolveParcelAcres(null, 8.4).variancePct, null);
+  assert.equal(resolveParcelAcres(null, 8.4).areaMismatch, false);
+});
+
+test('geomValue is exposed for the UI on every branch that has one', () => {
+  assert.equal(resolveParcelAcres(17.22, 2.3).geomValue, 2.3);
+  assert.equal(resolveParcelAcres(null, 8.4).geomValue, 8.4);
+  assert.equal(resolveParcelAcres(12.5, null).geomValue, null);
+  assert.equal(resolveParcelAcres(null, null).geomValue, null);
 });
 
 const passed = results.reduce((a, b) => a + b, 0);

@@ -9,7 +9,7 @@ thumb: nothing should go more than ~12 months stale.**
 
 | Dataset | Source of truth | Served from | Cadence |
 |---|---|---|---|
-| Live parcels / zoning / dev-plan | ArcGIS (live) | ArcGIS, live | always current |
+| Live parcels / zoning / dev-plan | ArcGIS (live) | ArcGIS, live | always current *to the provincial extract* — see below |
 | Legal index, assessment index | mao-scrape `parcels.parquet` | GitHub Release → `api/legal-index.js` / `api/assessment-index.js` edge fns | monthly |
 | Section grid | MB_LegalDesc service | GitHub Release → `api/section-grid.js` edge fn | annual (geometry doesn't change) |
 | RollEntry snapshot (fallback), parcel-masc, assessment shards, masc shards, landcover shards, landcover tiles, river-lots, masc-riverlots | various R build scripts | `mb-parcel-data` repo → jsDelivr (pinned commit) | monthly-ish |
@@ -17,13 +17,43 @@ thumb: nothing should go more than ~12 months stale.**
 | **Historical shards** (as-of-date view, keyed `YYYY-MM-DD`) | the cold archive | `mb-parcel-history` repo → jsDelivr | when a new snapshot is archived |
 | **Lineage index** (inferred predecessor/successor) | the historical shards | `mb-parcel-history/lineage/` → jsDelivr | when ≥ 2 snapshots exist |
 
+### The live layers are not as live as "live" suggests
+
+The provincial ROLL_ENTRY FeatureServer is queried at search time, so the app is
+always current *with the extract the province has published*. That extract trails
+Manitoba Assessment Online by an unknown margin, and **nothing in this repo can
+close that gap.**
+
+Worked example (2026-08-05): RM of Ste Anne roll 126910 had been subdivided and
+MAO's assessment map showed the ±2.3 ac child parcel. ROLL_ENTRY returned
+`17.22 ACRES` — the parent figure — against a 16.97 ac polygon, i.e. the
+attribute and the geometry were *both* pre-subdivision and agreed with each
+other to 1.5%. The layer's own `dataLastEditDate` was the previous day. So:
+
+- a recent publish date is **not** evidence that a given roll is current;
+- the app's roll-vs-shape cross-check (see below) **cannot** catch this class of
+  staleness, because there is no internal disagreement to detect;
+- the nightly mao-scrape delta also can't catch it, because that delta triggers
+  on ROLL_ENTRY attribute changes and ROLL_ENTRY never changed. The roll waits
+  for its municipality's 6- or 12-month cadence re-scrape.
+
+The mitigation is disclosure, not detection: the "Data refreshed" footer shows
+the provincial publish date with that caveat in its tooltip, and the export
+disclaimer says it in words. Recently-changed parcels have to be confirmed on
+MAO. Don't let a future refactor quietly re-label the publish date as a
+freshness date.
+
 ## Recurring tasks
 
 ### 1. Shard rebuild — current data  (cadence: as-needed, after a scrape delta)
-Rebuilds the legal/assessment/land-cover shards from the latest scrape.
+Rebuilds the legal/assessment/land-cover/**water** shards from the latest scrape.
 ```
 monthly-refresh.bat
 ```
+(Six steps: scrape delta → legal index → assessment index + shards →
+land-cover shards → water shards → manifest validate. The water step was
+added 2026-08-05; before that `build_water.R` was in no script or task at all
+and water shards only refreshed when someone ran it by hand.)
 Then review `git status`, commit the changed `web/public/data/**`, and push
 (Vercel auto-deploys). **Note:** the underlying MAO scrape is a multi-week,
 deliberately throttled run refreshed roughly **semiannually** — not monthly
@@ -87,6 +117,28 @@ whenever it gets heavy, then repoint the app first.
 `section-grid.json` is published separately via `api/section-grid.js`
 (GitHub Release + edge function — see §1c below). It does NOT live in
 mb-parcel-data because at 41 MB it's over jsDelivr's per-file cap.
+
+**This repin now also happens automatically.** `auto-publish-indexes.ps1`
+(scheduled monthly by `schedule_publish.ps1`) calls `update-cdn-pin.ps1` as its
+step 4, then commits `web/src/arcgis.js` alongside the edge-fn URL bumps. That
+closes a hole found 2026-08-05: `build_assessment_index.R` writes its per-muni
+shards straight into the mb-parcel-data clone as a side effect, but nothing in
+the chain committed that repo — so 187 rebuilt shards sat uncommitted while the
+app stayed pinned to a SHA whose assessment data was generated 2026-05-14. The
+rebuild "succeeded" every time; the result just never reached anyone. If you add
+another build script that writes into mb-parcel-data, make sure something
+publishes it, or it will fail the same silent way.
+
+### 1d. RollEntry fallback snapshot  (cadence: whenever a fresh `RollEntry_*.gpkg` lands)
+The degraded-mode shards the app serves when live ROLL_ENTRY is mid-republish.
+Not on a schedule — rebuild it after `r/download_parcels.R` (or the semiannual
+download) drops a new gpkg, or the fallback silently serves months-old geometry
+during exactly the outage it exists for:
+```
+Rscript r/build_rollentry_snapshot.R
+```
+It auto-selects the newest `RollEntry_YYYYMMDD.gpkg` in the repo root and takes
+~2 minutes. Then publish with `update-cdn-pin.ps1` as above.
 
 ### 2. Snapshot archive + publish — roll / zoning / dev-plan  (cadence: semi-annual, **scheduled end-to-end**)
 Permanent dated snapshots of all three provincial layers (roll info, zoning,
@@ -206,8 +258,24 @@ wrapper/.bat to repoint the task):
 powershell -ExecutionPolicy Bypass -File schedule_monthly.ps1        # mb-parcelsearch-monthly-refresh        — 15th monthly 04:00 (live shards)
 powershell -ExecutionPolicy Bypass -File schedule_semiannual.ps1     # mb-parcelsearch-semiannual-archive     — Jan 1 / Jul 1 04:30 (snapshot publish)
 powershell -ExecutionPolicy Bypass -File schedule_history_check.ps1  # mb-parcelsearch-history-staleness — daily 09:10 (snapshot dead-man watchdog)
+powershell -ExecutionPolicy Bypass -File ..\MBFloodMapping\schedule_flood_check.ps1  # mbfloodmapping-staleness — daily 09:20 (flood-layer watchdog)
 ```
-Verify: `Get-ScheduledTask -TaskName mb-parcelsearch-monthly-refresh,mb-parcelsearch-semiannual-archive,mb-parcelsearch-history-staleness | Format-List *`.
+Verify: `Get-ScheduledTask -TaskName mb-parcelsearch-monthly-refresh,mb-parcelsearch-semiannual-archive,mb-parcelsearch-history-staleness,mbfloodmapping-staleness | Format-List *`.
+
+**Check that they are actually registered, not just documented.** On 2026-08-05
+`mb-parcelsearch-monthly-refresh` was described in this file as a live schedule
+while being absent from Task Scheduler entirely — the `schedule_monthly.ps1`
+line above had never been run on this machine. A task documented here is not
+evidence that it exists; `Get-ScheduledTask` is.
+
+**Sibling project — MBFloodMapping.** Its 11 flood layers had no schedule, no
+watchdog and no documented cadence: every one was fetched by hand on 2026-04-21.
+`mbfloodmapping-staleness` (daily, one reminder per month, 365-day threshold)
+now nags when they age out. The re-pull itself stays manual on purpose — the
+Designated Flood Area and RRV Special Management Area layers are statutory
+boundaries and the rendered report prints their refresh date into client-facing
+text, so replacing them unattended is the wrong trade. See
+`MBFloodMapping/flood-staleness-check.ps1`.
 
 ### Failure / staleness alerts (email + push)
 The scheduled tasks run through wrappers that share one alert path
