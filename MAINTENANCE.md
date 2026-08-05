@@ -43,6 +43,28 @@ disclaimer says it in words. Recently-changed parcels have to be confirmed on
 MAO. Don't let a future refactor quietly re-label the publish date as a
 freshness date.
 
+### Live layers can also be superseded outright
+
+Several provincial services carry their vintage in the SERVICE NAME, so they
+never roll forward. When the province publishes the next one the app keeps
+querying the old URL forever, returning well-formed, current-looking, years-old
+numbers. The app sat on `MHTIS_Traffic_Flow_2019` until 2026-08-05 while a 2023
+layer had been published beside it.
+
+`upstream-vintage-check.ps1` (weekly, task `mb-parcelsearch-upstream-vintage`)
+now watches for this. It reads the service URLs **out of `web/src/*.js`** rather
+than keeping its own copy — a hardcoded list would rot exactly the way the
+traffic URL did — and reports, per service: reachable, last upstream edit, and
+whether a later year-stamped sibling exists. See the table any time with:
+```
+powershell -ExecutionPolicy Bypass -File upstream-vintage-check.ps1 -Report
+```
+**Repointing is never just a URL change.** The 2023 traffic layer kept a stale
+carried-forward `AADT` column and put the current count in `AADT_2023`, so
+swapping the URL alone would have changed nothing on screen. Diff the field
+list, then bump the fetch cache key so browsers don't keep serving the old
+shape.
+
 ## Recurring tasks
 
 ### 1. Shard rebuild — current data  (cadence: as-needed, after a scrape delta)
@@ -270,6 +292,7 @@ wrapper/.bat to repoint the task):
 powershell -ExecutionPolicy Bypass -File schedule_monthly.ps1        # mb-parcelsearch-monthly-refresh        — 15th monthly 04:00 (live shards)
 powershell -ExecutionPolicy Bypass -File schedule_semiannual.ps1     # mb-parcelsearch-semiannual-archive     — Jan 1 / Jul 1 04:30 (snapshot publish)
 powershell -ExecutionPolicy Bypass -File schedule_history_check.ps1  # mb-parcelsearch-history-staleness — daily 09:10 (snapshot dead-man watchdog)
+powershell -ExecutionPolicy Bypass -File schedule_vintage_check.ps1  # mb-parcelsearch-upstream-vintage — weekly Mon 09:30 (superseded-service watchdog)
 powershell -ExecutionPolicy Bypass -File ..\MBFloodMapping\schedule_flood_check.ps1  # mbfloodmapping-staleness — daily 09:20 (flood-layer watchdog)
 ```
 Verify: `Get-ScheduledTask -TaskName mb-parcelsearch-monthly-refresh,mb-parcelsearch-semiannual-archive,mb-parcelsearch-history-staleness,mbfloodmapping-staleness | Format-List *`.
