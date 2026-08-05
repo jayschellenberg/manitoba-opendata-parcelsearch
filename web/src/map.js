@@ -22,6 +22,7 @@ import turfLength from '@turf/length';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import { landCoverBreakdown, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
+import { formatRollSizeField } from './lib/acres.js';
 import {
   addShapeLayers,
   initShapeDraw,
@@ -3698,6 +3699,12 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
   // same on the same parcel.
   const landSize = formatLandSize(p._acres);
   if (landSize) lines.push(`<strong>Land Size</strong> ${landSize}`);
+  // What the roll itself states. Worth its own line rather than folding into
+  // Land Size above: on a frontage-feet parcel the two say different KINDS of
+  // thing (a width vs a computed area), and on an acres parcel showing them
+  // together is how a disputed figure becomes visible.
+  const rollSize = formatRollSizeField(p.Frontage_or_Area);
+  if (rollSize) lines.push(`<strong>Roll States</strong> ${escapeHtml(rollSize)}`);
   // Flag the nominal-roll guard: the assessor area looked like a placeholder
   // (e.g. "0.01 Acres" on a large polygon), so the figure above is the
   // geometry area, not the roll. Surfaced so the appraiser doesn't mistake it.
@@ -4863,6 +4870,8 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
   // arcgis.js when the muni-parcels FC is fetched. Show both ac and sf.
   const landSize = formatLandSize(p._acres);
   if (landSize) lines.push(`<strong>Land Size</strong> ${landSize}`);
+  const muniRollSize = formatRollSizeField(p.Frontage_or_Area);
+  if (muniRollSize) lines.push(`<strong>Roll States</strong> ${escapeHtml(muniRollSize)}`);
   if (p.Total_Value) {
     const cleaned = String(p.Total_Value).replace(/[^0-9.]/g, '');
     const n = Number(cleaned);

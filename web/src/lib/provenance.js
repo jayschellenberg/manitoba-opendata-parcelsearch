@@ -33,14 +33,17 @@ export const APP_BUILD_TIME =
 // measurements.
 export const EXPORT_DISCLAIMER =
   'Research-grade data compiled to support appraisal work — not a legal or survey product. ' +
-  "Areas (acres/SF) are the assessor's recorded area from the provincial roll where one is " +
-  'published, and are otherwise computed by this app from the parcel polygon; the "Acres Src" ' +
-  'column states which was used for each row. Both are approximate. The "Area Check" column is ' +
-  'populated when the recorded area and the polygon disagree by more than 2%, which can indicate ' +
-  'a subdivision or consolidation that has reached only one of them. Note also that the provincial ' +
-  'roll extract trails Manitoba Assessment Online, so a recent parcel change may not appear here at ' +
-  'all, in either figure. Confirm against the registered plan, certificate of title, and the ' +
-  'assessment roll. ' +
+  'The primary size source is the assessment roll itself, reproduced verbatim in the ' +
+  '"Roll Frontage/Area" column: roughly 63% of Manitoba parcels state an area ("160.00 ACRES") ' +
+  'and the remainder state a frontage ("110.00 FEET"), which is a width and carries no area ' +
+  'information. "Acres"/"SF" repeat the roll\'s figure where it is an area, and are otherwise ' +
+  'computed by this app from the parcel polygon — the "Acres Src" column states which applies to ' +
+  'each row, and on a frontage parcel the acreage is an estimate the roll does not support. ' +
+  'All are approximate. The "Area Check" column is populated when a roll-stated area and the ' +
+  'polygon disagree by more than 2%, which can indicate a subdivision or consolidation that has ' +
+  'reached only one of them. Note also that the provincial roll extract trails Manitoba Assessment ' +
+  'Online, so a recent parcel change may not appear here at all, in any figure. Confirm against the ' +
+  'registered plan, certificate of title, and the assessment roll. ' +
   'Zoning and Development Plan designations are matched by spatial overlap and are pointers to verify ' +
   'with the municipality, planning district, or Manitoba Assessment Online — they are not zoning ' +
   'determinations. Land-cover percentages derive from the 2020 provincial land-cover raster and are ' +

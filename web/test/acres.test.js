@@ -9,6 +9,7 @@ import {
   ROLL_NOMINAL_RATIO,
   ROLL_NOMINAL_MIN_GEOM_ACRES,
   AREA_VARIANCE_PCT,
+  formatRollSizeField,
 } from '../src/lib/acres.js';
 
 const results = [];
@@ -138,6 +139,34 @@ test('geomValue is exposed for the UI on every branch that has one', () => {
   assert.equal(resolveParcelAcres(null, 8.4).geomValue, 8.4);
   assert.equal(resolveParcelAcres(12.5, null).geomValue, null);
   assert.equal(resolveParcelAcres(null, null).geomValue, null);
+});
+
+console.log('\nacres.js — formatRollSizeField (the roll\'s own figure, verbatim)');
+
+test('an acres figure keeps its number and trailing zeros', () => {
+  assert.equal(formatRollSizeField('160.00 ACRES'), '160.00 acres');
+});
+
+test('a frontage figure survives instead of being discarded', () => {
+  // The whole point: 37% of parcels state feet, and this is the only
+  // assessor-stated size they have. It must not silently become acres.
+  assert.equal(formatRollSizeField('110.00 FEET'), '110.00 feet');
+});
+
+test('hectares and abbreviations lower-case too', () => {
+  assert.equal(formatRollSizeField('2.5 HA'), '2.5 ha');
+  assert.equal(formatRollSizeField('45 FT'), '45 ft');
+});
+
+test('null-ish and the literal <Null> render as empty, not as text', () => {
+  for (const v of [null, undefined, '', '   ', '<Null>']) {
+    assert.equal(formatRollSizeField(v), '', `expected '' for ${JSON.stringify(v)}`);
+  }
+});
+
+test('an unrecognised string is passed through rather than dropped', () => {
+  // Better to show something odd than to hide what the roll says.
+  assert.equal(formatRollSizeField('16.10'), '16.10');
 });
 
 const passed = results.reduce((a, b) => a + b, 0);

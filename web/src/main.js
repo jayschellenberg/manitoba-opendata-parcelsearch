@@ -205,7 +205,7 @@ import {
   waterColor, waterCellText, waterTooltip, waterSortRank,
   waterCsvCells, isWaterfront, isNearWater, WATER_CLASSES,
 } from './lib/water.js';
-import { resolveParcelAcres } from './lib/acres.js';
+import { resolveParcelAcres, formatRollSizeField } from './lib/acres.js';
 import { computeSizeChanges } from './lib/sizeChange.js';
 import { clearAllCache as clearAllCacheModule } from './cache.js';
 import { getManifest, getManifestSync } from './manifest.js';
@@ -8448,6 +8448,7 @@ function renderTable(rows, { resetPage = true } = {}) {
     tr.appendChild(td(formatDu(p.Dwelling_Units), 'num'));
     // Basic-mode position for Acres — hidden in sales mode (the
     // sales-only Acres cell above takes its place after $/Lot).
+    tr.appendChild(td(formatRollSize(p), 'num'));
     const acresBasicCell = td(formatAcres(ac), 'num');
     acresBasicCell.classList.add('basic-only');
     markAreaCheck(acresBasicCell, p);
@@ -10002,6 +10003,8 @@ function parcelAcres(feature) {
   return r.acres;
 }
 
+const formatRollSize = (p) => formatRollSizeField(p?.Frontage_or_Area);
+
 /**
  * Append the area cross-check marker to an Acres cell, if the parcel earned
  * one. No-op on the ~85% that agree, so the column stays clean.
@@ -10698,11 +10701,14 @@ function exportCsv(explicitRows) {
     // it would be the constant "Use" on every populated row.
     'Irrigated', 'Irrigation Licence', 'Irrigation Location', 'Irrigation Supply', 'Irrigation Source',
     'Changes',
-    // "Area Check" carries the roll-vs-shape cross-check: blank when the two
-    // agree, otherwise the shape's own measurement and how far apart they are.
-    // It travels beside Acres so a reviewer sees the caveat on the same row as
-    // the figure rather than having to know to go looking for it.
-    'DU', 'Acres', 'SF', 'Acres Src', 'Area Check',
+    // "Roll Frontage/Area" is the assessor's figure verbatim and leads the
+    // size group because it is the primary source — including for the ~37% of
+    // parcels stating a frontage in feet, where Acres is only a polygon
+    // estimate. "Area Check" carries the roll-vs-shape cross-check: blank when
+    // the two agree, otherwise the shape's own measurement and how far apart
+    // they are. Both travel beside Acres so a reviewer sees the provenance and
+    // the caveat on the same row as the figure.
+    'DU', 'Roll Frontage/Area', 'Acres', 'SF', 'Acres Src', 'Area Check',
     csvAssessHeader(currentRows), 'Asmt Report URL',
     'Walkscore URL', 'Flood-Map URL', 'Street View URL',
     ...(inSalesMode
@@ -10784,6 +10790,7 @@ function exportCsv(explicitRows) {
       ...irrigationCsvCells(p),
       formatChanges(row),
       p.Dwelling_Units ?? '',
+      formatRollSize(p),
       formatAcresCsv(ac),
       ac != null && Number.isFinite(ac) && ac > 0 ? Math.round(ac * 43560) : '',
       p._acresRollNominal ? 'geometry (roll nominal)' : (p._acresSource ?? ''),

@@ -1203,7 +1203,13 @@
             <th data-col="irrigation" class="water-only" title="Is this parcel covered by a licensed irrigation footprint (WALLAS)? Reads 'Yes' when the parcel falls within a licensed irrigation point of use — the location where water is applied. Points of diversion (intakes and wells) are not reported: water is taken from those, not applied to them, so they say nothing about whether land is irrigated. Hover for the licence, licensee, legal location, and groundwater-vs-surface supply. No percentage is shown: these polygons are DLS quarter sections, so a coverage share would describe where survey lines fall, not where water goes. 'No record' means we checked and found none — licensed works only, so that is NOT proof the land is unirrigated. Blank means the Irrigation Licences overlay (Agricultural section) hasn't been turned on yet.">Irrigation</th>
             <th data-col="changes">Changes</th>
             <th data-col="du">DU</th>
-            <th data-col="acres" class="basic-only">Acres</th>
+            <!-- The assessor's own figure, verbatim. Kept as its own column
+                 because it is the primary source and is NOT always an area:
+                 ~37% of Manitoba parcels record a frontage in feet instead,
+                 which cannot be turned into acres and used to be dropped
+                 entirely — those rows showed only a computed acreage. -->
+            <th data-col="rollsize" title="What the assessment roll itself records for this parcel — verbatim, in the assessor's own units. About 63% of Manitoba parcels carry an area ('160.00 ACRES'); the other 37% carry a frontage instead ('110.00 FEET'), which is a width, not an area, and cannot be converted to acres. This is the primary source; the Acres column beside it is that same figure when it is an area, and a polygon-derived estimate when it is not.">Roll Frontage/Area</th>
+            <th data-col="acres" class="basic-only" title="Parcel area in acres. Uses the assessor's recorded area when the roll states one, otherwise computed from the parcel polygon — the 'Acres Src' column in the CSV export records which. A ⚠ marks rows where the two disagree by more than 2%.">Acres</th>
             <th data-col="sf">SF</th>
             <th data-col="value" id="value-header" title="Click any value to open the parcel's Manitoba Assessment Online report">Assessment</th>
             <th data-col="walk" title="Open this address on walkscore.com">Walkscore</th>

@@ -64,6 +64,33 @@ export const AREA_VARIANCE_PCT = 0.02;        // 2%
 const pos = (v) => v != null && Number.isFinite(v) && v > 0;
 
 /**
+ * The assessment roll's own size figure, tidied for display but not converted.
+ *
+ * ROLL_ENTRY's Frontage_or_Area is a hybrid: about 63% of Manitoba parcels
+ * state an area ("160.00 ACRES") and the other 37% state a frontage
+ * ("110.00 FEET"), which is a width and carries no area information at all.
+ * The app used to read this field only to derive acres, which meant the
+ * frontage cohort's sole assessor-stated size silently became a polygon
+ * estimate that no column identified as such. Showing the raw string keeps the
+ * primary source on the row.
+ *
+ * Units are lower-cased ("160.00 acres") purely so a column of them doesn't
+ * shout. The number is left exactly as the roll states it, trailing zeros and
+ * all, because it is a quoted figure and rounding it would misrepresent the
+ * source.
+ *
+ * @param {string|null} raw  Frontage_or_Area as the service returns it.
+ * @returns {string} display string, or '' when there is nothing to show.
+ */
+export function formatRollSizeField(raw) {
+  if (raw == null) return '';
+  const s = String(raw).trim();
+  // Some service configurations stringify null as the literal '<Null>'.
+  if (!s || s === '<Null>') return '';
+  return s.replace(/\b(ACRES?|FEET|FT|HECTARES?|HA)\b/gi, (u) => u.toLowerCase());
+}
+
+/**
  * Decide the acreage to use for a parcel.
  *
  * @param {number|null} rollAcres  assessor area parsed from Frontage_or_Area (acres), or null.

@@ -59,6 +59,10 @@ export const DEFAULT_VISIBLE = new Set([
   'legal',
   'title',
   'du',
+  // The roll's own frontage/area string. Default-visible because for the ~37%
+  // of parcels recording frontage feet it is the ONLY assessor-stated size the
+  // grid can show — Acres falls back to a polygon estimate there.
+  'rollsize',
   'sf',
   'value',
   'soil',
@@ -90,7 +94,7 @@ export const DEFAULT_VISIBLE = new Set([
 // Each key here is added to the visible set ONCE (tracked separately in
 // ADOPTED_KEY); untick it after that and it stays unticked.
 const ADOPTED_KEY = 'mbps_table_columns_adopted';
-const ADOPT_ONCE = ['streetview'];
+const ADOPT_ONCE = ['streetview', 'rollsize'];
 
 // Column presets — `null` value means "everything that the current
 // mode would show". The labels match the dropdown options.
