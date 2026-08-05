@@ -65,6 +65,7 @@ import { computeTopNMatches } from './lib/overlayJoinCore.js';
 // results grid (main.js parcelAcres) both resolve through this, so the same
 // parcel can't read differently depending on where you look at it.
 import { resolveParcelAcres } from './lib/acres.js';
+import { reconcileMuniSpelling } from './lib/muniIdentity.js';
 // Manitoba Water Rights Licensing (WALLAS) lives on a different host and
 // a different ArcGIS flavour (a 10.51 MapServer, not an AGOL hosted
 // FeatureServer), so its client is its own module. What this file needs
@@ -1134,7 +1135,41 @@ export async function fetchRollEntryCount() {
 // URL — same string here works in both environments.
 const CONTAM_CSV_URL = '/proxy/contam-sites.csv';
 const TRAFFIC_STATIONS_URL  = 'https://services6.arcgis.com/HQUud09zgy3Asw9X/arcgis/rest/services/All_Stations_C_Only/FeatureServer/0';
-const TRAFFIC_FLOW_URL      = 'https://services6.arcgis.com/HQUud09zgy3Asw9X/arcgis/rest/services/MHTIS_Traffic_Flow_2019/FeatureServer/0';
+// MHTIS Traffic Flow. The service name is year-stamped, so it does NOT roll
+// forward on its own — the app sat on the 2019 layer until 2026-08-05 while
+// a 2023 one had been published and was 15 months fresher (last edited
+// 2026-02-10 vs 2024-11-21). Same 2,067 segments, so it is a drop-in.
+//
+// READ AADT_2023, NOT AADT. The new service keeps `AADT` as the carried-forward
+// PRIOR estimate — byte-identical to what the 2019 layer served — and puts the
+// current count in `AADT_2023`. Station 73 reads AADT 1040 / AADT_2023 1020;
+// station 533 reads 540 / 400. Swapping the URL alone would therefore have
+// changed nothing at all, which is the kind of "upgrade" that looks done and
+// isn't. `DateOfEsti` is the year of the NEW estimate (2023/2024); `EYear` is
+// the year of the old one.
+//
+// When a 2027-ish layer lands, expect the same shape: a new AADT_<year> column
+// beside a stale `AADT`. Check the field list before assuming a URL bump is enough.
+const TRAFFIC_FLOW_URL      = 'https://services6.arcgis.com/HQUud09zgy3Asw9X/arcgis/rest/services/MHTIS_Traffic_Flow_2023_(new)/FeatureServer/0';
+// Current-count field on the layer above, in preference order: the first one
+// present on a feature wins, so an older cached FC (or a future republish that
+// renames the column) still resolves to something sane.
+const AADT_FIELDS = ['AADT_2023', 'AADT'];
+
+/**
+ * The current AADT for a traffic-flow feature's attributes.
+ *
+ * Exported so the overlay, the popup and the station join all agree on which
+ * column is authoritative — picking the wrong one silently reports counts that
+ * are several years out of date but perfectly plausible.
+ */
+export function currentAadt(props) {
+  for (const f of AADT_FIELDS) {
+    const v = Number(props?.[f]);
+    if (Number.isFinite(v) && v > 0) return v;
+  }
+  return null;
+}
 const MB_ROAD_NETWORK_URL   = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/Manitoba_Road_Network_2023/FeatureServer/0';
 const MUNICIPALITY_URL      = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/MUNICIPALITY/FeatureServer/0';
 
@@ -1895,12 +1930,10 @@ function compactMuniLookupKey(name, { stripType = false } = {}) {
       return '';
     });
   }
-  const compact = s
-    .replace(/&/g, ' AND ')
-    .replace(/\bMTN\b/g, 'MOUNTAIN')
-    .replace(/\bFRANCOIS\b/g, 'FRANCIS')
-    .replace(/\bDESALABERRY\b/g, 'DE SALABERRY')
-    .replace(/\bSAINTE\b/g, 'STE')
+  // Same reconciliation list the identity matcher uses — imported rather than
+  // repeated so a new alias lands in both. Only the final separator handling
+  // differs: this builds a compact no-separator shard key.
+  const compact = reconcileMuniSpelling(s.replace(/&/g, ' AND '))
     .replace(/[^A-Z0-9]+/g, '');
   return stripType ? compact : `${compact}${type}`;
 }
@@ -2100,13 +2133,17 @@ export async function fetchTrafficStations() {
 }
 
 /**
- * Fetch the MHTIS Traffic Flow 2019 polylines. Each segment carries an
- * AADT value, the highway / road identifier, and the StationNum it was
- * estimated from. Used both as a toggleable map overlay and as the source
- * for inlining AADT into the station-click popup (joined on StationNum).
+ * Fetch the MHTIS Traffic Flow polylines. Each segment carries an AADT value,
+ * the highway / road identifier, and the StationNum it was estimated from.
+ * Used both as a toggleable map overlay and as the source for inlining AADT
+ * into the station-click popup (joined on StationNum).
  */
 export async function fetchTrafficFlow() {
-  const cacheKey = 'mb_traffic_flow_v1';
+  // v2: moved from the 2019 layer to the 2023 one and started reading
+  // AADT_2023. The key bump is essential — a v1 entry holds 2019-vintage
+  // counts under the old field, and those would otherwise sit in browsers
+  // until the cache aged out, hiding the upgrade behind stale data.
+  const cacheKey = 'mb_traffic_flow_v2';
   const cached = await readCache(cacheKey);
   if (cached) return cached;
   // The MHTIS Traffic Flow layer's OID field is `FID`, not OBJECTID,
@@ -2115,7 +2152,7 @@ export async function fetchTrafficFlow() {
   // explicitly so paging works.
   const fc = await fetchAllPages(TRAFFIC_FLOW_URL, {
     where: '1=1',
-    outFields: 'StationNum,ROAD_NO,ROAD_IDENT,FlowDirect,AADT,DateOfEsti,START_KM,END_KM,LENGTH_KM,REGION_NO',
+    outFields: 'StationNum,ROAD_NO,ROAD_IDENT,FlowDirect,AADT,AADT_2023,DateOfEsti,START_KM,END_KM,LENGTH_KM,REGION_NO',
     returnGeometry: 'true',
     outSR: '4326',
     f: 'geojson',
@@ -2298,8 +2335,8 @@ export function buildAadtIndex(trafficFlowFc) {
   for (const f of trafficFlowFc.features || []) {
     const p = f.properties || {};
     const sn = p.StationNum;
-    const aadt = Number(p.AADT);
-    if (sn == null || !Number.isFinite(aadt)) continue;
+    const aadt = currentAadt(p);
+    if (sn == null || aadt == null) continue;
     const prev = map.get(sn);
     if (prev == null || aadt > prev) map.set(sn, aadt);
   }

@@ -19,6 +19,34 @@ export function normalizeMuniType(value) {
 }
 
 /**
+ * Spelling reconciliations for Manitoba municipality names — cases where two
+ * sources spell the same place differently and no amount of punctuation
+ * stripping closes the gap.
+ *
+ * Shared deliberately. This list also drives the shard-lookup key builder in
+ * arcgis.js, which keeps a compact no-separator form and so cannot reuse
+ * parseMuniIdentity() wholesale. The two used to carry their own copies of
+ * these four rules, which meant adding a fifth alias in one place silently
+ * left the other unable to match it. Applied to an already-uppercased,
+ * accent- and punctuation-stripped string.
+ */
+export const MUNI_NAME_RECONCILIATIONS = [
+  [/\bMTN\b/g, 'MOUNTAIN'],
+  [/\bFRANCOIS\b/g, 'FRANCIS'],
+  [/\bDESALABERRY\b/g, 'DE SALABERRY'],
+  [/\bSAINTE\b/g, 'STE'],
+];
+
+/** Apply MUNI_NAME_RECONCILIATIONS in order. */
+export function reconcileMuniSpelling(value) {
+  let s = String(value ?? '');
+  for (const [pattern, replacement] of MUNI_NAME_RECONCILIATIONS) {
+    s = s.replace(pattern, replacement);
+  }
+  return s;
+}
+
+/**
  * Parse a raw municipality string into { name, type }. Strips accents,
  * punctuation, and the type token (whether parenthetical "(RM)", "RM OF
  * ...", or a trailing "... RM"), and applies a handful of spelling
@@ -54,11 +82,7 @@ export function parseMuniIdentity(value) {
     type ||= normalizeMuniType(t);
     return '';
   });
-  s = s
-    .replace(/\bMTN\b/g, 'MOUNTAIN')
-    .replace(/\bFRANCOIS\b/g, 'FRANCIS')
-    .replace(/\bDESALABERRY\b/g, 'DE SALABERRY')
-    .replace(/\bSAINTE\b/g, 'STE')
+  s = reconcileMuniSpelling(s)
     .replace(/[^A-Z0-9]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();

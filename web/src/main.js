@@ -6261,7 +6261,7 @@ async function refreshOverlayLayersForMuniChange() {
 /**
  * Toggle one of the province-wide auxiliary overlays:
  *   contam  — Manitoba Contaminated Sites Registry (CSV → coloured points)
- *   flow    — MHTIS Traffic Flow 2019 (FeatureServer polylines, AADT-coloured)
+ *   flow    — MHTIS Traffic Flow 2023 (FeatureServer polylines, AADT-coloured)
  *   highways — Manitoba Road Network 2023 (FeatureServer polylines)
  *   riskAreas — official MASC crop-insurance risk-area polygons
  *

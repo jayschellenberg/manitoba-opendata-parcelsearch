@@ -30,7 +30,7 @@ import {
   isShapeDrawing,
 } from './drawShapes.js';
 import { WAYBACK_VERSIONS, waybackTileUrl } from './lib/wayback.js';
-import { MB_PARCEL_DATA_CDN } from './arcgis.js';
+import { MB_PARCEL_DATA_CDN, currentAadt } from './arcgis.js';
 import {
   MASC_PALETTE,
   MASC_RATING_LABEL_MIN_ZOOM,
@@ -777,8 +777,14 @@ export function initMap(container, { onFeatureClick } = {}) {
         source: 'traffic-flow',
         layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' },
         paint: {
+          // AADT_2023 first: the MHTIS 2023 layer keeps a stale carried-forward
+          // `AADT` alongside the current count, so reading the obvious field
+          // name would paint the overlay with several-year-old volumes. Mirrors
+          // currentAadt() in arcgis.js — keep the two in step. Coalesce picks
+          // the first non-null BEFORE to-number, so an absent AADT_2023 falls
+          // through rather than being coerced to 0 and winning.
           'line-color': [
-            'step', ['coalesce', ['to-number', ['get', 'AADT']], 0],
+            'step', ['to-number', ['coalesce', ['get', 'AADT_2023'], ['get', 'AADT'], 0]],
             '#cccccc',
             500,    '#a8d8a8',
             2000,   '#f4d35e',
@@ -808,7 +814,7 @@ export function initMap(container, { onFeatureClick } = {}) {
         minzoom: 8,
         layout: {
           visibility: 'none',
-          'text-field': ['to-string', ['get', 'AADT']],
+          'text-field': ['to-string', ['coalesce', ['get', 'AADT_2023'], ['get', 'AADT'], '']],
           'text-font': ['Open Sans Semibold'],
           'text-size': [
             'interpolate', ['linear'], ['zoom'],
@@ -4439,8 +4445,9 @@ function trafficFlowHtml(p) {
   const lines = [];
   const road = p.ROAD_IDENT || (p.ROAD_NO != null ? `Hwy ${p.ROAD_NO}` : null);
   if (road) lines.push(`<strong>${escapeHtml(road)}</strong>`);
-  if (p.AADT != null) {
-    lines.push(`<strong>AADT</strong> ${Number(p.AADT).toLocaleString('en-US')}`);
+  const aadt = currentAadt(p);
+  if (aadt != null) {
+    lines.push(`<strong>AADT</strong> ${aadt.toLocaleString('en-US')}`);
   }
   if (p.DateOfEsti != null) lines.push(`Estimate year: ${escapeHtml(p.DateOfEsti)}`);
   if (p.FlowDirect) lines.push(`Flow: ${escapeHtml(p.FlowDirect)}`);
