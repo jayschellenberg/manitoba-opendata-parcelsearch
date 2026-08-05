@@ -436,10 +436,26 @@ const EMPTY_FC = { type: 'FeatureCollection', features: [] };
  * Municipality website URLs, keyed on the Muni_Name_With_Typ value
  * Roll_Entry returns (e.g. "STONEWALL (TOWN)", "BRANDON (CITY)",
  * "ROCKWOOD (RM)"). Compiled from the province's official Municipal
- * Contact Directory — every muni with a published website is here.
- * Munis whose only published contact is an email (Ethelbert, Grand
- * Rapids, Leaf Rapids, Mystery Lake) intentionally have no entry, so
- * the Muni Website button reads "Muni N/A" for those.
+ * Contact Directory. A muni with no entry here shows "Muni N/A".
+ *
+ * A MISSING ENTRY IS BETTER THAN A WRONG ONE. An absent key degrades
+ * honestly to "Muni N/A"; a rotted URL lights the button and then opens a
+ * browser error, a router login, or — in one case found 2026-08-05 — a
+ * HugeDomains for-sale page, all of which read as this app's bug. So when
+ * a URL can't be confirmed, delete it rather than leave it hopeful.
+ *
+ * These are hand-curated and nothing refreshes them. A full check on
+ * 2026-08-05 found 15 of 153 URLs dead (6.6% of munis, 26% of planning
+ * districts); the ones with findable replacements were repointed and the
+ * rest removed, each with a note saying why. Note that half the failures
+ * returned HTTP 200 — a squatter page, a bare "Index of /", a 390-byte
+ * stub — so a status-code checker would have passed them. That, plus the
+ * many municipalities that legitimately brand off-name
+ * (discoverminnedosa.com, whereyoubelong.ca for Niverville,
+ * ourhomeyourhome.ca for Brokenhead), is why there is no automated link
+ * checker here: measured against this list, one would flag more good
+ * entries than bad. Re-derive from the province's directory instead —
+ * the next refresh follows the October 2026 municipal elections.
  *
  * The lookupMuniWebsite() helper below tolerates dash/diacritic
  * variants the data layer might use (e.g. en-dash vs hyphen, accented
@@ -464,12 +480,18 @@ const MUNI_WEBSITES = {
   'ARBORG (TOWN)':               'https://www.townofarborg.com/',
   'BEAUSEJOUR (TOWN)':           'https://www.townofbeausejour.com/',
   'CARBERRY (TOWN)':             'https://www.townofcarberry.ca/',
-  'CARMAN (TOWN)':               'https://www.carmandufferin.ca/',
+  // Carman and Dufferin share one amalgamated site. The old
+  // carmandufferin.ca / carmanmanitoba.ca domains no longer resolve.
+  'CARMAN (TOWN)':               'https://carmandufferin.com/',
   'CHURCHILL (TOWN)':            'https://www.churchill.ca/',
   'GILLAM (TOWN)':               'https://www.townofgillam.com/',
-  'GRAND RAPIDS (TOWN)':         'https://townofgrandrapidsmb.ca/',
+  // GRAND RAPIDS (TOWN) — no entry: townofgrandrapidsmb.ca stopped resolving
+  // and no replacement was findable. An absent entry reads "Muni N/A", which
+  // is honest; a dead one opens a browser error and looks like our bug.
   'LAC DU BONNET (TOWN)':        'https://www.townoflacdubonnet.com/',
-  'LEAF RAPIDS (TOWN)':          'https://leafrapids.com/',
+  // LEAF RAPIDS (TOWN) — no entry: leafrapids.com is now a HugeDomains
+  // for-sale page. Worst case in the whole list, since it returns HTTP 200
+  // and so looks alive to any status-code check.
   'LYNN LAKE (TOWN)':            'https://www.lynnlake.ca/',
   'MELITA (TOWN)':               'https://www.melitamb.ca/',
   'MINNEDOSA (TOWN)':            'https://www.discoverminnedosa.com/',
@@ -497,7 +519,7 @@ const MUNI_WEBSITES = {
   'CORNWALLIS (RM)':             'https://www.gov.cornwallis.mb.ca/',
   'DAUPHIN (RM)':                'https://www.rmofdauphin.ca/',
   'DE SALABERRY (RM)':           'https://www.rmdesalaberry.mb.ca/',
-  'DUFFERIN (RM)':               'https://www.carmanmanitoba.ca/',
+  'DUFFERIN (RM)':               'https://carmandufferin.com/',
   'EAST ST. PAUL (RM)':          'https://www.eaststpaul.com/',
   'ELLICE-ARCHIE (RM)':          'https://www.rmofellicearchie.ca/',
   'ELTON (RM)':                  'https://www.elton.ca/',
@@ -552,9 +574,12 @@ const MUNI_WEBSITES = {
   // Municipalities (post-amalgamation single-tier)
   'BIFROST-RIVERTON (MUNICIPALITY)':       'https://www.bifrostriverton.ca/',
   'BOISSEVAIN-MORTON (MUNICIPALITY)':      'https://www.boissevain.ca/',
-  'BRENDA-WASKADA (MUNICIPALITY)':         'https://www.waskada.org/',
+  'BRENDA-WASKADA (MUNICIPALITY)':         'https://brendawaskada.ca/',
   'CARTWRIGHT-ROBLIN (MUNICIPALITY)':      'https://cartwrightroblin.com/',
-  'CLANWILLIAM-ERICKSON (MUNICIPALITY)':   'https://www.ericksonmb.ca/',
+  // http only — the host's TLS handshake fails, but the site serves fine
+  // over http. safeExternalUrl() permits http, so the link works; a plain
+  // https entry here was silently unreachable.
+  'CLANWILLIAM-ERICKSON (MUNICIPALITY)':   'http://www.ericksonmb.ca/',
   'DELORAINE-WINCHESTER (MUNICIPALITY)':   'https://www.delowin.ca/',
   'EMERSON-FRANKLIN (MUNICIPALITY)':       'https://www.emersonfranklin.com/',
   'ETHELBERT (MUNICIPALITY)':              'https://www.ethelbert.ca/',
@@ -566,13 +591,14 @@ const MUNI_WEBSITES = {
   'HAMIOTA (MUNICIPALITY)':                'https://www.hamiota.com/',
   'HARRISON PARK (MUNICIPALITY)':          'https://www.harrisonpark.ca/',
   'KILLARNEY TURTLE MOUNTAIN (MUNICIPALITY)': 'https://www.killarney.ca/',
-  'LORNE (MUNICIPALITY)':                  'https://www.rmoflorne.ca/',
+  'LORNE (MUNICIPALITY)':                  'https://www.lornemb.ca/',
   'LOUISE (MUNICIPALITY)':                 'https://www.louisemb.com/',
   'MCCREARY (MUNICIPALITY)':               'https://www.exploremccreary.com/',
   'MINITONAS-BOWSMAN (MUNICIPALITY)':      'https://www.minitonas-bowsman.ca/',
   'MOSSEY RIVER (MUNICIPALITY)':           'https://www.mosseyrivermunicipality.com/',
   'NORFOLK TREHERNE (MUNICIPALITY)':       'https://www.treherne.ca/',
-  'NORTH CYPRESS-LANGFORD (MUNICIPALITY)': 'https://www.rmofnorthcypress.ca/',
+  // NORTH CYPRESS-LANGFORD — no entry: rmofnorthcypress.ca stopped resolving
+  // and the obvious amalgamated spellings do not exist either.
   'NORTH NORFOLK (MUNICIPALITY)':          'https://www.northnorfolk.ca/',
   'OAKLAND-WAWANESA (MUNICIPALITY)':       'https://www.oakland-wawanesa.ca/',
   'PEMBINA (MUNICIPALITY)':                'https://www.pembina.ca/',
@@ -584,7 +610,8 @@ const MUNI_WEBSITES = {
   'RUSSELL-BINSCARTH (MUNICIPALITY)':      'https://www.russellbinscarth.com/',
   'SOURIS-GLENWOOD (MUNICIPALITY)':        'https://www.sourismanitoba.com/',
   'STE. ROSE (MUNICIPALITY)':              'https://www.sterose.ca/',
-  'SWAN VALLEY WEST (MUNICIPALITY)':       'https://www.munswanvalleywest.ca/',
+  // SWAN VALLEY WEST — no entry: munswanvalleywest.ca now answers with a
+  // self-signed cert fronting a router admin login, not a municipal site.
   'TWO BORDERS (MUNICIPALITY)':            'https://www.twoborders.ca/',
   'WESTLAKE-GLADSTONE (MUNICIPALITY)':     'https://www.westlake-gladstone.ca/',
 
@@ -656,10 +683,15 @@ function lookupMuniWebsite(muniNameWithTyp) {
 const PD_WEBSITES = {
   // From the Manitoba PD contact directory (websites or unmistakable
   // PD-specific email-domain → website inferences):
-  'BROKENHEAD RIVER':                  'https://www.brpd.ca/',
-  'CARMAN-DUFFERIN-GREY':              'https://www.cdgplanning.com/',
+  // BROKENHEAD RIVER — no entry: brpd.ca exists but its nameservers are
+  // Microsoft 365's (ns*.bdm.microsoftonline.com) with no A record on the
+  // apex or www. The domain is registered for email only; there is no site.
+  // http only — port 443 on cdgplanning.com does not accept connections
+  // (port 80 serves the site fine). Same shape as CLANWILLIAM-ERICKSON above.
+  'CARMAN-DUFFERIN-GREY':              'http://www.cdgplanning.com/',
   'CYPRESS':                           'https://www.cypressplanningdistrict.com/',
-  'EASTERN INTERLAKE':                 'https://www.eipd.ca/',
+  // EASTERN INTERLAKE — no entry: eipd.ca is email-only, same Microsoft 365
+  // nameservers and no A record as BROKENHEAD RIVER above.
   'KEYSTONE':                          'https://www.keystonepd.ca/',
   'MID-WEST':                          'https://www.midwestplanning.ca/',
   'MORDEN/STANLEY/THOMPSON/WINKLER':   'https://www.mstw.ca/',
@@ -667,13 +699,14 @@ const PD_WEBSITES = {
   'MSTW':                              'https://www.mstw.ca/',
   'NEEPAWA & AREA':                    'https://www.neepawaareaplanning.com/',
   'PORTAGE LA PRAIRIE':                'https://www.ptgplanningdistrict.ca/',
-  'RHINELAND, PLUM COULEE GRETNA, ALTONA': 'https://www.rpgamb.ca/',
-  'RHINELAND PLUM COULEE GRETNA ALTONA':   'https://www.rpgamb.ca/',
-  'RPGA':                              'https://www.rpgamb.ca/',
+  // RHINELAND / PLUM COULEE / GRETNA / ALTONA (all three key spellings) —
+  // no entry: rpgamb.ca serves a bare "Index of /" directory listing. It
+  // returns HTTP 200, so only a content check catches it.
   'RED RIVER':                         'https://www.rrpd.ca/',
   'SOUTH CENTRAL':                     'https://www.scpd.ca/',
   'SOUTH INTERLAKE':                   'https://www.sipd.ca/',
-  'TRANS CANADA WEST':                 'https://www.tcwpd.ca/',
+  // TRANS CANADA WEST — no entry: tcwpd.ca returns a 390-byte stub whose
+  // entire body is the string "TCWPD". Also HTTP 200.
   'TRI-ROADS':                         'https://www.triroads.ca/',
   // PDs administered through a member RM rather than their own site —
   // pointed at the RM's planning page so the button still reaches the
@@ -682,7 +715,7 @@ const PD_WEBSITES = {
   'LAKESHORE':                         'https://www.rmofdauphin.ca/',
   'MACDONALD - RITCHOT':               'https://www.ritchot.com/',
   'MACDONALD-RITCHOT':                 'https://www.ritchot.com/',
-  'MOUNTAIN VIEW':                     'https://www.gilbertplains.net/',
+  'MOUNTAIN VIEW':                     'https://www.gilbertplains.com/',
   'KELSEY':                            'https://www.townofthepas.ca/',
   'THOMPSON':                          'https://www.thompson.ca/',
   'WHITE HORSE PLAINS':                'https://www.rmofcartier.ca/',
