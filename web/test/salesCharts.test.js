@@ -8,7 +8,7 @@
 
 import assert from 'node:assert/strict';
 import {
-  saleRecordsFromRows, fitLinear, fitPoly, median, marketConditions,
+  saleRecordsFromRows, fitLinear, fitPoly, fitPower, median, marketConditions,
   timeAdjust, normalizeOverrideRate, topZones, dotRadius, haversineKm,
   msToDays, WINNIPEG_CENTRE,
 } from '../src/lib/salesCharts.js';
@@ -135,6 +135,33 @@ assert.equal(
   'identical x values have no slope — must not divide by zero',
 );
 {
+  // The same case where the arithmetic does NOT land on an exact zero.
+  // Summing n copies of an irrational-ish value rounds, so the mean is
+  // an ulp off and sxx is ~1e-32 rather than 0 — an `sxx === 0` guard
+  // sails straight past it and returns a fabricated slope. Reachable in
+  // the app: a filtered set of identically-sized lots, seen through the
+  // log-space fit that fitPower uses.
+  const x = Math.log(5);
+  const pts = Array.from({ length: 8 }, (_, i) => ({ x, y: i + 1 }));
+  assert.equal(fitLinear(pts), null, 'near-zero x variance must be rejected too');
+}
+{
+  // ...but a genuinely small spread must still fit. Lot sizes an acre
+  // apart are nowhere near the noise floor.
+  const pts = [{ x: 10, y: 1 }, { x: 11, y: 2 }, { x: 12, y: 3 }];
+  const fit = fitLinear(pts);
+  assert.ok(fit, 'a real 1-unit spread is not degenerate');
+  assert.ok(Math.abs(fit.slope - 1) < 1e-12);
+}
+{
+  // Large x (epoch days ~20000) with a one-day spread must still fit —
+  // the guard scales with x, so it must not swallow real date data.
+  const pts = [{ x: 20000, y: 1 }, { x: 20001, y: 3 }, { x: 20002, y: 5 }];
+  const fit = fitLinear(pts);
+  assert.ok(fit, 'one day apart at epoch-day scale is a real spread');
+  assert.ok(Math.abs(fit.slope - 2) < 1e-9);
+}
+{
   // Flat y: the line fits perfectly but explains nothing. r² must be 0,
   // not NaN, or the stat strip renders "NaN%".
   const fit = fitLinear([{ x: 1, y: 7 }, { x: 2, y: 7 }, { x: 3, y: 7 }]);
@@ -197,6 +224,76 @@ assert.equal(fitPoly([{ x: 1, y: 1 }, { x: 2, y: 2 }, { x: 3, y: 3 }], 3), null,
   // All-identical x is singular: no polynomial is determined.
   const pts = Array.from({ length: 10 }, (_, i) => ({ x: 4, y: i }));
   assert.equal(fitPoly(pts, 3), null);
+}
+
+// ---------- fitPower -----------------------------------------------
+
+{
+  // Exact power law: y = 26000 * x^-0.45, the shape a $/acre-vs-size
+  // curve actually takes. Both parameters must come back.
+  const A = 26000, B = -0.45;
+  const pts = [1, 2, 3, 5, 8, 13, 21, 34].map((x) => ({ x, y: A * Math.pow(x, B) }));
+  const fit = fitPower(pts);
+  assert.ok(fit, 'a clean power law must fit');
+  assert.ok(Math.abs(fit.a - A) / A < 1e-9, `a: got ${fit.a}`);
+  assert.ok(Math.abs(fit.b - B) < 1e-9, `b: got ${fit.b}`);
+  assert.ok(Math.abs(fit.r2 - 1) < 1e-9, 'exact law fits perfectly in log space');
+  for (const p of pts) {
+    assert.ok(Math.abs(fit.predict(p.x) - p.y) / p.y < 1e-9);
+  }
+  // The exponent is the size adjustment: doubling size multiplies the
+  // rate by 2^b. This is the number an appraiser actually quotes.
+  assert.ok(Math.abs(fit.predict(20) / fit.predict(10) - Math.pow(2, B)) < 1e-9);
+}
+
+{
+  // Monotonic decay with noise: the fitted exponent must stay negative,
+  // i.e. the curve still says "bigger parcels sell for less per acre".
+  const pts = [];
+  let s = 7;
+  const rnd = () => (s = (s * 1103515245 + 12345) % 2147483648) / 2147483648;
+  for (let i = 0; i < 40; i++) {
+    const x = 1 + i * 0.5;
+    pts.push({ x, y: 26000 * Math.pow(x, -0.45) * (0.85 + rnd() * 0.3) });
+  }
+  const fit = fitPower(pts);
+  assert.ok(fit.b < -0.3 && fit.b > -0.6, `noisy decay should recover b near -0.45, got ${fit.b}`);
+}
+
+// Non-positive x or y can't be logged and must be dropped, not turned
+// into NaN that poisons the whole fit.
+{
+  const good = [1, 2, 4, 8, 16].map((x) => ({ x, y: 1000 * Math.pow(x, -0.5) }));
+  const fit = fitPower([...good, { x: 0, y: 500 }, { x: 4, y: 0 }, { x: -2, y: 100 }]);
+  assert.ok(fit, 'a zero-acre or zero-dollar comp must not sink the fit');
+  assert.equal(fit.n, 5, 'only the positive points are used');
+  assert.ok(Math.abs(fit.b + 0.5) < 1e-9);
+  assert.ok(Number.isFinite(fit.predict(3)));
+}
+
+// predict is undefined at and below zero — the axis never samples there
+// for a size chart, but it must not return a bogus number if it did.
+{
+  const fit = fitPower([1, 2, 4, 8, 16].map((x) => ({ x, y: 100 * Math.pow(x, -0.4) })));
+  assert.ok(Number.isNaN(fit.predict(0)));
+  assert.ok(Number.isNaN(fit.predict(-5)));
+  assert.ok(Number.isNaN(fit.predict(NaN)));
+}
+
+assert.equal(fitPower([{ x: 1, y: 1 }, { x: 2, y: 2 }, { x: 4, y: 4 }, { x: 8, y: 8 }]), null,
+  'four points is not enough authority for a drawn curve');
+assert.equal(fitPower([]), null);
+{
+  // Identical x throughout is singular in log space too.
+  const pts = Array.from({ length: 8 }, (_, i) => ({ x: 5, y: i + 1 }));
+  assert.equal(fitPower(pts), null);
+}
+{
+  // Flat y: b is 0, the curve is a horizontal line, and r2 is 0 not NaN.
+  const fit = fitPower([1, 2, 4, 8, 16].map((x) => ({ x, y: 5000 })));
+  assert.equal(fit.b, 0);
+  assert.ok(Math.abs(fit.a - 5000) < 1e-9);
+  assert.equal(fit.r2, 0);
 }
 
 // ---------- median -------------------------------------------------

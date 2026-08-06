@@ -186,7 +186,22 @@ export function fitLinear(points) {
     const dx = p.x - mx, dy = p.y - my;
     sxy += dx * dy; sxx += dx * dx; syy += dy * dy;
   }
-  if (sxx === 0) return null;
+
+  // Degenerate x-spread. Testing `sxx === 0` is NOT enough: summing n
+  // identical values does not give exactly n*x (the intermediate sums
+  // round), so the mean lands an ulp off and sxx comes out around 1e-32
+  // rather than 0. The slope would then be noise divided by noise and
+  // return a completely fabricated trend at full confidence.
+  //
+  // Reachable on real data: filter a set down to one subdivision where
+  // every lot is the same size, and the by-size chart's x values are all
+  // equal. It bit the log-space fit first, where ln(x) makes the values
+  // irrational and the exact-zero case stops occurring at all.
+  //
+  // Compare against the scale of x instead. Genuine spreads clear this
+  // by many orders of magnitude; float noise never does.
+  const xScale = Math.max(Math.abs(mx), 1);
+  if (!(sxx > n * ((xScale * 1e-9) ** 2))) return null;
 
   const slope = sxy / sxx;
   const intercept = my - slope * mx;
@@ -265,6 +280,51 @@ export function fitPoly(points, degree = 3) {
       for (let i = coeffs.length - 1; i >= 0; i--) y = y * t + coeffs[i];
       return y;
     },
+  };
+}
+
+/**
+ * Power curve y = a·x^b, fitted by OLS on log-log.
+ *
+ * This is the right curve for price against size and a cubic is not.
+ * Price per acre falls as parcels get bigger, steeply at the small end
+ * and flattening out — a relationship with no inflections, which is
+ * exactly what a power curve describes and exactly what a cubic will
+ * invent. A third-order polynomial through scattered comps bends to
+ * chase noise and then swings hard at whichever end runs out of data,
+ * reading as a market turn that isn't there.
+ *
+ * The exponent `b` is the useful output, not just the drawn line: it IS
+ * the size adjustment. b = -0.45 says every doubling of lot size takes
+ * about 27% off the rate (2^-0.45).
+ *
+ * Requires x > 0 and y > 0 — log of anything else is undefined, and a
+ * zero-dollar or zero-acre comp has nothing to say about the curve
+ * anyway. Null below 5 usable points: the fit is a straight line in log
+ * space so 3 would be arithmetically fine, but a power curve drawn
+ * through 3 comps carries far more visual authority than it has earned.
+ */
+export function fitPower(points) {
+  const pts = (points || []).filter(
+    (p) => Number.isFinite(p?.x) && Number.isFinite(p?.y) && p.x > 0 && p.y > 0,
+  );
+  if (pts.length < 5) return null;
+
+  const logFit = fitLinear(pts.map((p) => ({ x: Math.log(p.x), y: Math.log(p.y) })));
+  if (!logFit) return null;
+
+  const b = logFit.slope;
+  const a = Math.exp(logFit.intercept);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+
+  return {
+    a,
+    b,
+    n: pts.length,
+    // r² of the LOG-space fit, so it is not directly comparable with the
+    // linear fit's r² on the same chart. Reported for shape, not ranking.
+    r2: logFit.r2,
+    predict: (x) => (Number.isFinite(x) && x > 0 ? a * Math.pow(x, b) : NaN),
   };
 }
 
