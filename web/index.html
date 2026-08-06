@@ -508,18 +508,11 @@
               class="secondary"
               title="Open scatter charts of the filtered sales in a new tab — price per lot and per acre/SF over time, by size, by zoning and by distance. The tab tracks these filters live."
             >Charts</button>
-            <span class="far-flung-field">
-              <label for="far-flung-km">Far-Flung &gt;</label>
-              <input id="far-flung-km" type="number" min="0" step="1" />
-              <span class="far-flung-unit">km</span>
-            </span>
-            <span class="field far-flung-exclude-field">
-              <label class="far-flung-exclude" title="Remove the flagged sales from the results table, the map and the CSV export. Off by default — nothing is hidden until you ask for it. Sales whose spread can't be measured (a parcel with no geometry) are never excluded.">
-                <input type="checkbox" id="far-flung-exclude" />
-                <span>Exclude</span>
-              </label>
-              <span class="tip">Far-Flung marks multi-parcel sales whose parcels lie farther apart than the km threshold, measured between parcel centroids. Portfolio and estate sales sweep up land across a wide area, so their blended $/Acre is not a local comparable. Blank or 0 turns the marking off, and marking alone removes nothing — tick Exclude to drop the flagged sales from the table, the map and the CSV export. Sales whose spread can't be measured (a parcel with no geometry) are never excluded.</span>
-            </span>
+            <!-- The Far-Flung CONTROLS live under Additional filters; this
+                 read-out stays here, outside the collapsible, and speaks
+                 up only when the filter is actually marking or removing
+                 sales. Otherwise a filter hidden behind a disclosure could
+                 be silently dropping comps. -->
             <span id="far-flung-count" class="far-flung-count"></span>
           </div>
 
@@ -576,13 +569,18 @@
                 <input id="sales-street-name" type="text" placeholder="Street name" autocomplete="off" />
                 <span class="tip">Filter uploaded sales to rows whose Property Address contains this string. Case-insensitive substring match.</span>
               </span>
+              <!-- `title` rather than a `.tip` span: a .tip makes
+                   infoIcon.js inject an ⓘ button inside the field, and at
+                   ~31px that was most of a 69px control — the placeholder
+                   "Min $/Ac" could not even render in what was left.
+                   Street name keeps its icon; it has the width to spare. -->
               <span class="field ppa-low-field">
-                <input id="sales-ppa-low" type="number" min="0" step="1" placeholder="Min $/Ac" />
-                <span class="tip">Minimum $/Acre (group rate). Empty = no lower limit.</span>
+                <input id="sales-ppa-low" type="number" min="0" step="1" placeholder="Min $/Ac"
+                       title="Minimum $/Acre (group rate). Empty = no lower limit." />
               </span>
               <span class="field ppa-high-field">
-                <input id="sales-ppa-high" type="number" min="0" step="1" placeholder="Max $/Ac" />
-                <span class="tip">Maximum $/Acre (group rate). Empty = no upper limit. Use a high Min on its own to surface development-land sales.</span>
+                <input id="sales-ppa-high" type="number" min="0" step="1" placeholder="Max $/Ac"
+                       title="Maximum $/Acre (group rate). Empty = no upper limit. Use a high Min on its own to surface development-land sales." />
               </span>
             </div>
             <!-- Total consideration bounds. Deliberately a separate
@@ -636,6 +634,24 @@
                   <option value="5">≤ 5</option>
                 </select>
                 <span class="tip">Exclude sales whose Sale ÷ Assessed Total ratio exceeds the chosen cap. Useful when buildings sold before the assessment caught up (Sale/Asmt &gt;&gt; 1). Leave on "Max Sale/Asmt" for no cap. Applies alongside Vacant Only.</span>
+              </span>
+            </div>
+
+            <!-- Far-Flung threshold + Exclude. The tally that says whether
+                 either is biting stays outside this disclosure, up beside
+                 All Sales. -->
+            <div class="far-flung-controls-row">
+              <span class="far-flung-field">
+                <label for="far-flung-km">Far-Flung &gt;</label>
+                <input id="far-flung-km" type="number" min="0" step="1" />
+                <span class="far-flung-unit">km</span>
+              </span>
+              <span class="field far-flung-exclude-field">
+                <label class="far-flung-exclude" title="Remove the flagged sales from the results table, the map and the CSV export. Off by default — nothing is hidden until you ask for it. Sales whose spread can't be measured (a parcel with no geometry) are never excluded.">
+                  <input type="checkbox" id="far-flung-exclude" />
+                  <span>Exclude</span>
+                </label>
+                <span class="tip">Far-Flung marks multi-parcel sales whose parcels lie farther apart than the km threshold, measured between parcel centroids. Portfolio and estate sales sweep up land across a wide area, so their blended $/Acre is not a local comparable. Blank or 0 turns the marking off, and marking alone removes nothing — tick Exclude to drop the flagged sales from the table, the map and the CSV export. Sales whose spread can't be measured (a parcel with no geometry) are never excluded.</span>
               </span>
             </div>
 
@@ -1176,7 +1192,6 @@
                  the same divided by 43560. Single-parcel sales show
                  size 1 and the per-parcel rates. -->
             <th data-col="groupsize" class="sales-only" title="Number of parcels in the same sale (1 = single-parcel sale)">Group #</th>
-            <th data-col="grouppricelot" class="sales-only" title="Sale Price ÷ number of parcels in the same sale (works even when acres are missing)">$/Lot</th>
             <!-- Address + Zoning sit right after $/Lot so the
                  appraiser sees identifying info before the wide
                  stack of numeric columns. Legal / Title / zoning
@@ -1195,8 +1210,12 @@
             <th data-col="acres" class="sales-only" title="Parcel area in acres. Uses the assessor's recorded area when the roll states one, otherwise computed from the parcel polygon. A ⚠ marks rows where the two disagree by more than 2%. On a frontage-feet parcel this is a polygon estimate the roll does not support — check Roll Frontage/Area beside it.">Acres</th>
             <th data-col="grouppriceac" class="sales-only" title="Sale Price ÷ total acres of every parcel in the same sale">$/Acre</th>
             <th data-col="grouppricesf" class="sales-only" title="Sale Price ÷ total square footage of every parcel in the same sale">$/SF</th>
-            <th data-col="saletoasmt" class="sales-only" title="Sale Price ÷ Total Assessed (latest MAO year). For multi-parcel sales the assessed total is summed across the group. Useful for spotting non-arms-length transfers (<1) and significantly above-assessed sales (>1).">Sale/Asmt</th>
+            <!-- $/Lot closes the rate group ($/Acre, $/SF, $/Lot) rather
+                 than leading the row, so the three unit rates read
+                 together. -->
+            <th data-col="grouppricelot" class="sales-only" title="Sale Price ÷ number of parcels in the same sale (works even when acres are missing)">$/Lot</th>
             <th data-col="subjdist" class="sales-only subj-col" title="Centroid-to-centroid distance from the subject parcel (km). Set the subject roll # in the sidebar to populate this column.">Dist (km)</th>
+            <th data-col="saletoasmt" class="sales-only" title="Sale Price ÷ Total Assessed (latest MAO year). For multi-parcel sales the assessed total is summed across the group. Useful for spotting non-arms-length transfers (<1) and significantly above-assessed sales (>1).">Sale/Asmt</th>
             <!-- Per-parcel assessment columns from MAO scrape's latest
                  year. Surfaces the land/buildings split alongside the
                  sale rates so the user can sanity-check whether each

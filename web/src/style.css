@@ -914,8 +914,14 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   gap: 6px;
   align-items: center;
 }
-.sidebar .street-name-row > .field { flex: 1 1 0; min-width: 0; }
-.sidebar .street-name-row > .street-name-field { flex: 2 1 0; }
+/* Was 2:1:1. Street name still leads, but at 1.6:1.2:1.2 it gives up
+   about a quarter of its width to the two rate boxes — which were the
+   ones actually starved, since a 6-digit $/acre and the "Min $/Ac"
+   placeholder both need more than the ~38px they had at a narrow
+   sidebar. Street name is a substring match, so a partial view of a long
+   street name still reads fine; a truncated number does not. */
+.sidebar .street-name-row > .field { flex: 1.2 1 0; min-width: 0; }
+.sidebar .street-name-row > .street-name-field { flex: 1.6 1 0; }
 .sidebar .street-name-row input { width: 100%; padding: 6px 6px; font-size: 12px; }
 
 
@@ -2103,10 +2109,20 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   flex: 0 0 calc(50% - 3px);
   min-width: 0;
 }
-/* Force Far-Flung onto its own line rather than letting it tuck into any
-   slack left beside Charts, which would leave the row ragged at some
-   sidebar widths. */
-.sidebar .far-flung-row .far-flung-field { flex-basis: 100%; }
+/* The Far-Flung threshold + Exclude now live under Additional filters;
+   this row keeps All Sales, Charts, and the tally that reports whether
+   the hidden filter is biting. The tally takes the full next line so a
+   long "⚠ Far-Flung: 4 sales · 9 parcels excluded" never wraps mid-phrase
+   against the Charts button. */
+.sidebar .far-flung-row .far-flung-count { flex-basis: 100%; }
+/* Threshold + Exclude on one line inside the disclosure. */
+.sidebar .far-flung-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.sidebar .far-flung-controls-row .far-flung-exclude-field { flex: 0 0 auto; }
 .sidebar .far-flung-row .vacant-only-label {
   /* Was `0 0 100%` when this select had the line to itself; now an
      explicit half, matching #charts-open beside it. */

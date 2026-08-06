@@ -2421,16 +2421,25 @@ function applyFarFlungFlags(rows) {
   const tally = countFarFlung(csvFullRows ?? rows, threshold);
   if ($farFlungCount) {
     const source = csvFullRows ?? rows;
-    if (threshold == null || !source || source.length === 0) {
+    // Silent unless the filter is actually biting. Its controls now live
+    // behind the Additional-filters disclosure, so this line is the only
+    // thing on screen that can reveal a hidden filter is marking or
+    // dropping comps — and a permanent "none flagged" beside no visible
+    // control would be noise that trains the eye to skip it.
+    //
+    // It names itself for the same reason: with the threshold input out
+    // of sight, "4 sales flagged" alone doesn't say what flagged them.
+    if (threshold == null || !source || source.length === 0 || tally.sales === 0) {
       $farFlungCount.textContent = '';
-      $farFlungCount.classList.remove('has-flagged');
-    } else if (tally.sales === 0) {
-      $farFlungCount.textContent = 'none flagged';
+      $farFlungCount.removeAttribute('title');
       $farFlungCount.classList.remove('has-flagged');
     } else {
       const verb = farFlungExcludeOn() ? 'excluded' : 'flagged';
       $farFlungCount.textContent =
-        `⚠ ${tally.sales} sale${tally.sales === 1 ? '' : 's'} · ${tally.parcels} parcels ${verb}`;
+        `⚠ Far-Flung: ${tally.sales} sale${tally.sales === 1 ? '' : 's'} · ${tally.parcels} parcels ${verb}`;
+      $farFlungCount.title = farFlungExcludeOn()
+        ? `Sales whose parcels lie more than ${threshold} km apart are being REMOVED from the table, map and export. Change the threshold or untick Exclude under Additional filters.`
+        : `Sales whose parcels lie more than ${threshold} km apart are marked with a ⚠ on $/Acre. Nothing is removed unless you tick Exclude under Additional filters.`;
       $farFlungCount.classList.add('has-flagged');
     }
   }
@@ -8449,9 +8458,8 @@ function renderTable(rows, { resetPage = true } = {}) {
     );
     groupSizeCell.classList.add('sales-only');
     tr.appendChild(groupSizeCell);
-    const pplCell = td(formatGroupPpl(p), 'num');
-    pplCell.classList.add('sales-only');
-    tr.appendChild(pplCell);
+    // NOTE: $/Lot is NOT emitted here any more — it moved down to close
+    // the rate group after $/SF. The thead order changed to match.
     // Address + Zoning right after $/Lot so the appraiser sees
     // identifying info before the wide numeric block. These cells
     // are emitted in every mode (no sales-only class); the table's
@@ -8486,12 +8494,16 @@ function renderTable(rows, { resetPage = true } = {}) {
     const ppsfCell = td(formatGroupPpsf(p), 'num');
     ppsfCell.classList.add('sales-only');
     tr.appendChild(ppsfCell);
-    const saleToAsmtCell = td(formatSaleToAsmt(p), 'num');
-    saleToAsmtCell.classList.add('sales-only');
-    tr.appendChild(saleToAsmtCell);
+    // $/Lot closes the rate group, so the three unit rates read together.
+    const pplCell = td(formatGroupPpl(p), 'num');
+    pplCell.classList.add('sales-only');
+    tr.appendChild(pplCell);
     const distCell = td(formatDistanceKm(p), 'num');
     distCell.classList.add('sales-only', 'subj-col');
     tr.appendChild(distCell);
+    const saleToAsmtCell = td(formatSaleToAsmt(p), 'num');
+    saleToAsmtCell.classList.add('sales-only');
+    tr.appendChild(saleToAsmtCell);
     // Per-parcel assessment block (Land $, Bldg $, Bldg %, Asmt Yr).
     // All four cells always emit so the sales-only column count stays
     // stable; values fall through to empty strings when the assessment
