@@ -1065,7 +1065,13 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 .sidebar .subject-row .subject-clear-btn { flex: 0 0 auto; padding: 4px 8px; font-size: 12px; }
 .sidebar .subject-row .subject-clear-btn { width: 24px; padding: 4px 0; font-size: 14px; line-height: 1; }
 .sidebar .subject-row .distance-max-field {
-  flex: 0 0 33%;
+  /* Was `0 0 33%` — a percentage of a row that grows with the sidebar,
+     so this crept from 95px to 123px as the window widened. Max km is 4
+     digits at most; 92px leaves the input ~60px once its ⓘ takes its
+     share, which covers both the digits and the longer "Max km"
+     placeholder. The growth goes to subject-roll instead, which can use
+     it. */
+  flex: 0 0 92px;
   min-width: 0;
 }
 .sidebar .subject-row .distance-max-field input[type="number"] { width: 100%; padding: 6px 6px; font-size: 12px; }
@@ -2118,7 +2124,13 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   font-size: 0.92em;
   color: var(--muted, #555);
 }
-.sidebar .far-flung-field input { width: 2.5em; }
+/* A km threshold is at most 4 digits, so 58px (35px for "9999" plus 22px
+   of padding and border, and a little slack) is all it can use.
+   `flex`, not just `width`: the base `.controls input[type="number"]`
+   rule sets `flex: 1 1 auto`, and a width alone never overrides
+   flex-grow — so inside this flex row the input grew to fill whatever
+   the sidebar gave it, reaching 278px at a 421px sidebar to hold "30". */
+.sidebar .far-flung-field input { flex: 0 0 58px; width: 58px; }
 .sidebar .far-flung-unit { font-size: 0.85em; color: var(--muted, #555); }
 .sidebar .far-flung-exclude {
   display: flex;
