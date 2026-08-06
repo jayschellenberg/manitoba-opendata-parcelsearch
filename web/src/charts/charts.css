@@ -158,13 +158,22 @@ main { padding: 18px 20px 0; }
   text-align: center;
 }
 
+/* Three charts per row, maximum.
+ *
+ * Plain `auto-fit, minmax(430px, 1fr)` packs four or more across a wide
+ * monitor, and at that width a scatter is too cramped to read — the
+ * whole point is seeing where the points sit relative to the trend.
+ * Flooring each track at a third of the row (minus the two 16px gaps a
+ * 3-up row costs) means a fourth column can never fit: four tracks at
+ * that floor plus three gaps always overflows 100%.
+ *
+ * The 430px floor still governs on the way down, so the grid drops to
+ * two columns and then one as the window narrows — no breakpoints to
+ * keep in sync with the gap or the padding. */
 .charts-grid {
   display: grid;
   gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(430px, 1fr));
-}
-@media (max-width: 900px) {
-  .charts-grid { grid-template-columns: 1fr; }
+  grid-template-columns: repeat(auto-fit, minmax(max(430px, calc((100% - 32px) / 3)), 1fr));
 }
 
 /* ---------- one chart card ---------- */
