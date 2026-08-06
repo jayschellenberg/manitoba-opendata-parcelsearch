@@ -10,6 +10,7 @@ import {
   ROLL_NOMINAL_MIN_GEOM_ACRES,
   AREA_VARIANCE_PCT,
   formatRollSizeField,
+  parseRollFrontageFeet,
 } from '../src/lib/acres.js';
 
 const results = [];
@@ -167,6 +168,44 @@ test('null-ish and the literal <Null> render as empty, not as text', () => {
 test('an unrecognised string is passed through rather than dropped', () => {
   // Better to show something odd than to hide what the roll says.
   assert.equal(formatRollSizeField('16.10'), '16.10');
+});
+
+// ---- parseRollFrontageFeet -------------------------------------------
+//
+// Frontage_or_Area is a hybrid field. The whole point of this parser is
+// that it refuses everything that isn't a frontage, so the FF size
+// filter can't quietly compare a width against an area.
+
+test('a stated frontage parses to feet', () => {
+  assert.equal(parseRollFrontageFeet('110.00 FEET'), 110);
+  assert.equal(parseRollFrontageFeet('66 FT'), 66);
+  assert.equal(parseRollFrontageFeet('  75.5  feet '), 75.5);
+  assert.equal(parseRollFrontageFeet('1,250.00 FEET'), 1250);
+});
+
+test('an AREA is not a frontage — must be null, never the number', () => {
+  // The failure this guards: 160.00 ACRES read as 160 feet of frontage,
+  // silently mixing farm areas into an urban frontage filter.
+  for (const v of ['160.00 ACRES', '5.000 Acres', '2.5 HA', '12 HECTARES']) {
+    assert.equal(parseRollFrontageFeet(v), null, `expected null for ${v}`);
+  }
+});
+
+test('null-ish, <Null> and unit-less values yield null', () => {
+  for (const v of [null, undefined, '', '   ', '<Null>', '16.10', 'FEET']) {
+    assert.equal(parseRollFrontageFeet(v), null, `expected null for ${JSON.stringify(v)}`);
+  }
+});
+
+test('zero and negative frontage are treated as absent', () => {
+  assert.equal(parseRollFrontageFeet('0 FEET'), null);
+  assert.equal(parseRollFrontageFeet('0.00 FT'), null);
+});
+
+test('the unit must lead — a trailing "ft" cannot promote an area row', () => {
+  // Anchored match: "160 ACRES ... 66 FT" is an area row that happens to
+  // mention feet, and must not become a 160-foot frontage.
+  assert.equal(parseRollFrontageFeet('160.00 ACRES (66 FT road)'), null);
 });
 
 const passed = results.reduce((a, b) => a + b, 0);

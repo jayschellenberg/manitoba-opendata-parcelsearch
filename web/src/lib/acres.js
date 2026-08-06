@@ -91,6 +91,35 @@ export function formatRollSizeField(raw) {
 }
 
 /**
+ * The roll's stated FRONTAGE in feet, or null when the roll states
+ * something else.
+ *
+ * Frontage_or_Area is a hybrid field — roughly 63% of parcels state an
+ * area and 37% a frontage — so this deliberately returns null for
+ * "160.00 ACRES" rather than 160. A frontage is a width and an area is
+ * an area; treating one as the other would silently filter urban lots
+ * against farm acreages.
+ *
+ * Hectares and any other unit also return null: the app has no frontage
+ * figure for those parcels, and inventing one by conversion would be
+ * fabricating an assessor statement that does not exist.
+ *
+ * @param {string|null} raw  Frontage_or_Area as the service returns it.
+ * @returns {number|null} frontage in feet, or null.
+ */
+export function parseRollFrontageFeet(raw) {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s || s === '<Null>') return null;
+  // Anchored at the start so a stray "FT" later in the string can't
+  // promote an area row into a frontage one.
+  const m = /^([\d,]+(?:\.\d+)?)\s*(FEET|FT)\b/i.exec(s);
+  if (!m) return null;
+  const n = Number(m[1].replace(/,/g, ''));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
  * Decide the acreage to use for a parcel.
  *
  * @param {number|null} rollAcres  assessor area parsed from Frontage_or_Area (acres), or null.
