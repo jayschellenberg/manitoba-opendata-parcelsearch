@@ -19,7 +19,7 @@
 
 import './charts.css';
 import {
-  median, marketConditions, timeAdjust, fitLinear, fitPoly,
+  median, marketConditions, timeAdjust, fitLinear, fitPoly, fitPower,
   normalizeOverrideRate, topZones, dotRadius, haversineKm, WINNIPEG_CENTRE,
 } from '../lib/salesCharts.js';
 import {
@@ -176,22 +176,58 @@ function pointsFor(records, xOf, yOf, colorOf) {
 
 const LINEAR_FIT = { color: INK.primary, label: 'Linear trend' };
 const CUBIC_FIT = { color: SERIES_COLORS[1], dash: '6 4', label: 'Cubic trend' };
+const POWER_FIT = { color: SERIES_COLORS[1], dash: '6 4', label: 'Power trend' };
 
 /**
- * Fit the trend lines a chart shows. The cubic is what ggplot draws as
- * `y ~ poly(x,3)`; fitPoly refuses it below 8 points, and when it does
- * the legend must not advertise it either.
+ * Fit the trend lines a chart shows.
+ *
+ * `curve` picks the second line beside the straight one:
+ *   'cubic' — ggplot's `y ~ poly(x,3)`, for the time and distance charts.
+ *             Both can genuinely turn: markets reverse, and distance
+ *             carries secondary influences — a lake, or a second urban
+ *             centre further out — that put real humps in the curve. A
+ *             cubic can express those; a power curve cannot.
+ *   'power' — y = a*x^b, for the by-size charts only. Price against size
+ *             decays and flattens with no inflections, so a cubic there
+ *             just chases noise and then swings at whichever end runs
+ *             out of comps, showing a bend that isn't in the market.
+ *   'none'  — the zoning chart, where colour is already the variable and
+ *             the curve's hue would collide with a zone's.
+ *
+ * Both fitPoly and fitPower refuse small samples, and when they do the
+ * legend must not advertise a line that was never drawn — hence building
+ * the legend from this return value rather than from the request.
  */
-function fitsFor(points, { cubic = true } = {}) {
+function fitsFor(points, { curve = 'cubic' } = {}) {
   const xy = points.map((p) => ({ x: p.x, y: p.y }));
   const out = [];
   const lin = fitLinear(xy);
   if (lin) out.push({ ...LINEAR_FIT, predict: lin.predict });
-  if (cubic) {
+  if (curve === 'cubic') {
     const cub = fitPoly(xy, 3);
     if (cub) out.push({ ...CUBIC_FIT, predict: cub.predict });
+  } else if (curve === 'power') {
+    const pw = fitPower(xy);
+    if (pw) out.push({ ...POWER_FIT, predict: pw.predict, exponent: pw.b });
   }
   return out;
+}
+
+/**
+ * The power curve's exponent, as a stat. This is the size adjustment
+ * itself, not decoration: b = -0.45 means each doubling of size takes
+ * 2^-0.45, about 27%, off the rate.
+ */
+function powerStat(fits) {
+  const pw = fits.find((f) => Number.isFinite(f.exponent));
+  if (!pw) return [];
+  const perDouble = Math.pow(2, pw.exponent) - 1;
+  return [{
+    label: 'Size exponent',
+    value: pw.exponent.toFixed(2),
+    title: `y = a·x^${pw.exponent.toFixed(3)} — each doubling of size changes the rate by `
+      + `${(perDouble * 100).toFixed(0)}%.`,
+  }];
 }
 
 function legendFor(fits, extra = []) {
@@ -260,6 +296,24 @@ function subjectRef() {
     label: 'Subject',
     color: SERIES_COLORS[0],
   }];
+}
+
+/**
+ * The subject's own distance, as a vertical reference on the distance
+ * charts — so you can see where it sits in the spread of comps rather
+ * than having to work it out from the roll.
+ *
+ * Only drawn when measuring from WINNIPEG. Measuring from the subject,
+ * its distance from itself is 0 by definition: the line would pin itself
+ * to the left edge and say nothing.
+ */
+function subjectDistanceRef() {
+  if (activeDistRef() !== 'winnipeg') return [];
+  const s = data.meta?.subject;
+  if (!Number.isFinite(s?.lat) || !Number.isFinite(s?.lng)) return [];
+  const km = haversineKm(WINNIPEG_CENTRE, { lat: s.lat, lng: s.lng });
+  if (!Number.isFinite(km)) return [];
+  return [{ x: km, label: 'Subject', color: SERIES_COLORS[0] }];
 }
 
 /**
@@ -346,29 +400,33 @@ function buildCharts() {
   const adjArea = areaAdj.adjust;
   const size = (rec) => rec[sizeField()];
 
+  const ref = activeDistRef();
+  const refName = ref === 'subject' ? 'the subject parcel' : 'Portage & Main';
+  const distLabel = `Distance from ${ref === 'subject' ? 'subject' : 'Winnipeg'} (km)`;
+  const distEmpty = ref === 'subject'
+    ? 'No subject distance available. Set a subject roll in the main window, or measure from Winnipeg.'
+    : 'No sales in the current filter have usable parcel geometry to measure from.';
+  const distStats = (pts, adjusted, yFormat) => spreadStats(pts, {
+    xName: 'Median distance',
+    xFormat: (v) => `${fmtNum(v)} km`,
+    adjusted,
+    yFormat,
+  });
+
+  // Charts are grouped by RATE, not by question: every price-per-area
+  // chart first, then every price-per-lot chart. Reading down a column
+  // of one rate and then the other is how the comparison actually gets
+  // made — interleaving them means re-reading the axis label on each
+  // card to work out which rate you are looking at.
   const charts = [];
 
-  // 1 — $/Lot over time. Raw prices; the fitted line IS the trend.
-  {
-    const pts = pointsFor(records, (r) => r.dateMs, (r) => r.ppl);
-    const fits = fitsFor(pts);
-    charts.push(drawChart({
-      title: 'Price per lot over time',
-      subtitle: 'Actual sale prices. One point per sale; larger dots are multi-parcel assemblies.',
-      points: pts, xIsDate: true,
-      xLabel: 'Sale date', yLabel: 'Price per lot',
-      yFormat: fmtMoney0, yAxisFormat: fmtAxisMoney,
-      fits, legend: legendFor(fits),
-      refLines: mcLot?.median != null ? [{ y: mcLot.median, label: 'median' }] : [],
-      stats: trendStats(pts, mcLot, fmtMoney0),
-      tooltipRows,
-    }));
-  }
+  // ---- Price per acre (or per SF) --------------------------------
 
-  // 2 — $/Acre (or $/SF) over time.
+  // Over time. Raw rates; the fitted line IS the trend, and a cubic is
+  // legitimate here because multi-year turns in the market do happen.
   {
     const pts = pointsFor(records, (r) => r.dateMs, (r) => r[metric]);
-    const fits = fitsFor(pts);
+    const fits = fitsFor(pts, { curve: 'cubic' });
     charts.push(drawChart({
       title: `Price per ${unit.toLowerCase()} over time`,
       subtitle: 'Actual rates. Sales whose parcels have incomplete acreage are excluded.',
@@ -382,27 +440,10 @@ function buildCharts() {
     }));
   }
 
-  // 3 — $/Lot by lot size, time-adjusted.
-  {
-    const pts = pointsFor(records, size, adjLot);
-    const fits = fitsFor(pts);
-    charts.push(drawChart({
-      title: 'Price per lot by lot size',
-      subtitle: lotAdj.note,
-      points: pts,
-      xLabel: sizeAxisLabel(), yLabel: `Price per lot${lotAdj.suffix}`,
-      yFormat: fmtMoney0, yAxisFormat: fmtAxisMoney, xAxisFormat: fmtAxisNum,
-      fits, legend: legendFor(fits),
-      refLines: subjectRef(),
-      stats: sizeStats(pts, lotAdj.adjusted, fmtMoney0),
-      tooltipRows,
-    }));
-  }
-
-  // 4 — $/Acre (or $/SF) by lot size, time-adjusted.
+  // By lot size, time-adjusted. Power curve, not cubic — see fitPower.
   {
     const pts = pointsFor(records, size, adjArea);
-    const fits = fitsFor(pts);
+    const fits = fitsFor(pts, { curve: 'power' });
     charts.push(drawChart({
       title: `Price per ${unit.toLowerCase()} by lot size`,
       subtitle: areaAdj.note,
@@ -411,21 +452,21 @@ function buildCharts() {
       yFormat: areaFmt, yAxisFormat: fmtAxisMoney, xAxisFormat: fmtAxisNum,
       fits, legend: legendFor(fits),
       refLines: subjectRef(),
-      stats: sizeStats(pts, areaAdj.adjusted, areaFmt),
+      stats: [...sizeStats(pts, areaAdj.adjusted, areaFmt), ...powerStat(fits)],
       tooltipRows,
     }));
   }
 
-  // 5 — the same by-size view split by zoning. Colour is the variable
-  // here, so this chart drops the cubic: its orange would collide with
-  // a zone's hue, and the question being asked is "do these zones price
-  // differently", not "is the size curve bent".
+  // The same by-size view split by zoning. Colour is the variable here,
+  // so this chart drops the curve entirely: its orange would collide
+  // with a zone's hue, and the question is "do these zones price
+  // differently", not "how does the rate decay with size".
   {
     const zones = topZones(records, SERIES_COLORS.length);
     const colorByZone = new Map(zones.map((z, i) => [z.key, SERIES_COLORS[i]]));
     const pts = pointsFor(records, size, adjArea,
       (r) => colorByZone.get(String(r.zone || '').trim()) || OTHER_COLOR);
-    const fits = fitsFor(pts, { cubic: false });
+    const fits = fitsFor(pts, { curve: 'none' });
     const zoneKeys = new Set(colorByZone.keys());
     const hasOther = records.some((r) => !zoneKeys.has(String(r.zone || '').trim()));
     const legend = [
@@ -447,30 +488,75 @@ function buildCharts() {
     }));
   }
 
-  // 6 — $/Acre (or $/SF) against distance from the reference point.
+  // By distance from the reference point. Cubic, not power: distance is
+  // not a clean decay the way size is. Secondary influences kick in
+  // further out — a lake, another urban centre — and put real humps in
+  // the curve that a monotonic power fit would flatten away.
   {
-    const ref = activeDistRef();
-    const refName = ref === 'subject' ? 'the subject parcel' : 'Portage & Main';
     const pts = pointsFor(records, distanceFor, adjArea);
-    const fits = fitsFor(pts);
+    const fits = fitsFor(pts, { curve: 'cubic' });
     charts.push(drawChart({
       title: `Price per ${unit.toLowerCase()} by distance`,
       subtitle: `Measured from ${refName}. ${areaAdj.note}`,
       points: pts,
-      xLabel: `Distance from ${ref === 'subject' ? 'subject' : 'Winnipeg'} (km)`,
-      yLabel: `Price per ${unit.toLowerCase()}${areaAdj.suffix}`,
+      xLabel: distLabel, yLabel: `Price per ${unit.toLowerCase()}${areaAdj.suffix}`,
       yFormat: areaFmt, yAxisFormat: fmtAxisMoney, xAxisFormat: fmtAxisNum,
       fits, legend: legendFor(fits),
-      stats: spreadStats(pts, {
-        xName: 'Median distance',
-        xFormat: (v) => `${fmtNum(v)} km`,
-        adjusted: areaAdj.adjusted,
-        yFormat: areaFmt,
-      }),
+      refLines: subjectDistanceRef(),
+      stats: distStats(pts, areaAdj.adjusted, areaFmt),
       tooltipRows,
-      empty: ref === 'subject'
-        ? 'No subject distance available. Set a subject roll in the main window, or measure from Winnipeg.'
-        : 'No sales in the current filter have usable parcel geometry to measure from.',
+      empty: distEmpty,
+    }));
+  }
+
+  // ---- Price per lot ---------------------------------------------
+
+  {
+    const pts = pointsFor(records, (r) => r.dateMs, (r) => r.ppl);
+    const fits = fitsFor(pts, { curve: 'cubic' });
+    charts.push(drawChart({
+      title: 'Price per lot over time',
+      subtitle: 'Actual sale prices. One point per sale; larger dots are multi-parcel assemblies.',
+      points: pts, xIsDate: true,
+      xLabel: 'Sale date', yLabel: 'Price per lot',
+      yFormat: fmtMoney0, yAxisFormat: fmtAxisMoney,
+      fits, legend: legendFor(fits),
+      refLines: mcLot?.median != null ? [{ y: mcLot.median, label: 'median' }] : [],
+      stats: trendStats(pts, mcLot, fmtMoney0),
+      tooltipRows,
+    }));
+  }
+
+  {
+    const pts = pointsFor(records, size, adjLot);
+    const fits = fitsFor(pts, { curve: 'power' });
+    charts.push(drawChart({
+      title: 'Price per lot by lot size',
+      subtitle: lotAdj.note,
+      points: pts,
+      xLabel: sizeAxisLabel(), yLabel: `Price per lot${lotAdj.suffix}`,
+      yFormat: fmtMoney0, yAxisFormat: fmtAxisMoney, xAxisFormat: fmtAxisNum,
+      fits, legend: legendFor(fits),
+      refLines: subjectRef(),
+      stats: [...sizeStats(pts, lotAdj.adjusted, fmtMoney0), ...powerStat(fits)],
+      tooltipRows,
+    }));
+  }
+
+  {
+    const pts = pointsFor(records, distanceFor, adjLot);
+    const fits = fitsFor(pts, { curve: 'cubic' });
+    charts.push(drawChart({
+      title: 'Price per lot by distance',
+      subtitle: `Measured from ${refName}. ${lotAdj.note}`,
+      points: pts,
+      xLabel: distLabel, yLabel: `Price per lot${lotAdj.suffix}`,
+      yFormat: fmtMoney0, yAxisFormat: fmtAxisMoney, xAxisFormat: fmtAxisNum,
+      fits, legend: legendFor(fits),
+      refLines: subjectDistanceRef(),
+      stats: distStats(pts, lotAdj.adjusted, fmtMoney0),
+      tooltipRows,
+      empty: distEmpty,
     }));
   }
 
@@ -571,13 +657,20 @@ function syncControls() {
   els.unitSf.setAttribute('aria-checked', String(!isAcres()));
   els.unitAcres.classList.toggle('is-on', isAcres());
   els.unitSf.classList.toggle('is-on', !isAcres());
-  els.effDate.value = opts.effDate;
   els.freeze.checked = opts.frozen;
   els.showTable.checked = opts.showTable;
-
   els.adjMode.value = opts.adjMode;
   els.adjRate.hidden = opts.adjMode !== 'override';
-  els.adjRate.value = opts.adjRate;
+
+  // Never write .value into a field the user is currently typing in.
+  //
+  // syncControls runs on EVERY message from the main window, and the
+  // main window publishes on every renderTable — so with a filter being
+  // adjusted next door, assigning .value to a focused date input resets
+  // its segments mid-entry and the field reads as uneditable. Same for
+  // the rate box. Both are re-synced the moment focus leaves.
+  if (document.activeElement !== els.effDate) els.effDate.value = opts.effDate;
+  if (document.activeElement !== els.adjRate) els.adjRate.value = opts.adjRate;
   // The effective date only means something once something is being
   // carried TO it.
   els.effDate.disabled = opts.adjMode === 'none';
@@ -612,7 +705,14 @@ function setOpt(patch) {
 
 els.unitAcres.addEventListener('click', () => setOpt({ unit: 'acres' }));
 els.unitSf.addEventListener('click', () => setOpt({ unit: 'sf' }));
-els.effDate.addEventListener('change', () => setOpt({ effDate: els.effDate.value }));
+// Both 'input' and 'change': a date field fires 'change' only once the
+// whole date is valid, and on some platforms not until blur. Listening to
+// 'input' as well means the charts follow as soon as a usable date
+// exists. effectiveMs() ignores anything that isn't a full YYYY-MM-DD, so
+// half-typed dates are harmless.
+for (const evt of ['input', 'change']) {
+  els.effDate.addEventListener(evt, () => setOpt({ effDate: els.effDate.value }));
+}
 els.adjMode.addEventListener('change', () => setOpt({ adjMode: els.adjMode.value }));
 els.adjRate.addEventListener('input', () => setOpt({ adjRate: els.adjRate.value }));
 els.distRef.addEventListener('change', () => setOpt({ distRef: els.distRef.value }));
