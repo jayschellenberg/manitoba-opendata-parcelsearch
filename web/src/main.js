@@ -3852,15 +3852,13 @@ async function handleSalesUpload(file) {
       ? { municipality: inputsMuni }
       : { municipalities: csvMatchedMunis.slice() };
 
-    // Mirror runSearch's auto-toggle of the Roll Layer when a single
-    // muni is in scope — gives the user the surrounding parcel
-    // fabric for context without an extra click. Skipped for multi-
-    // muni uploads (see comment above the dominant-muni block).
-    if (isSingleMuni && dominantMuni
-        && $muniParcelsToggle && !$muniParcelsToggle.disabled
-        && !$muniParcelsToggle.classList.contains('active')) {
-      toggleAuxOverlay('muniParcels');
-    }
+    // Deliberately NOT mirroring runSearch's auto-toggle of the
+    // Assessment Parcels layer here. A Property Search is a "where is
+    // this parcel" question, so the surrounding grey fabric is context
+    // worth having for free. A sales import is the opposite: the comps
+    // ARE the subject of the map, and burying them under every parcel in
+    // the municipality is noise the user then has to switch off. The
+    // toggle is still one click away in Map layers > Parcel layers.
 
     // Sales Analysis is an appraisal-data workflow, so a completed import
     // means the parcel rows are fully enriched—not merely plotted. Load the
