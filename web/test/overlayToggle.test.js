@@ -26,7 +26,7 @@ function fakeButton() {
   };
 }
 
-const { setOverlayPressed } = await import('../src/lib/overlayToggle.js');
+const { setOverlayPressed, overlayGroupExpanded } = await import('../src/lib/overlayToggle.js');
 
 const results = [];
 function test(name, fn) {
@@ -92,6 +92,49 @@ test('round-trip: pressed → unpressed → pressed cleans up state', () => {
   setOverlayPressed(btn, true);
   assert.equal(btn.classList.contains('active'), true);
   assert.equal(btn.getAttribute('aria-pressed'), 'true');
+});
+
+// ---- overlayGroupExpanded -------------------------------------------
+//
+// Decides whether the parcel popups render MASC + Soil composition. The
+// fail-open case is the one that matters: getting it backwards would
+// strip real data out of every popup on a markup rename, silently.
+
+/** Minimal Document shim returning `el` for the expected selector only. */
+function fakeDoc(group, el) {
+  return {
+    querySelector(sel) {
+      return sel === `.overlay-group[data-group="${group}"]` ? el : null;
+    },
+  };
+}
+
+test('expanded group reads as expanded', () => {
+  assert.equal(overlayGroupExpanded('agricultural', fakeDoc('agricultural', { open: true })), true);
+});
+
+test('collapsed group reads as collapsed', () => {
+  assert.equal(overlayGroupExpanded('agricultural', fakeDoc('agricultural', { open: false })), false);
+});
+
+test('a missing group fails OPEN, not closed', () => {
+  // A renamed or removed data-group must not silently hide parcel data.
+  assert.equal(overlayGroupExpanded('agricultural', fakeDoc('nope', { open: false })), true);
+  assert.equal(overlayGroupExpanded('agricultural', { querySelector: () => null }), true);
+});
+
+test('no document at all fails OPEN rather than throwing', () => {
+  // map.js is imported in contexts (SSR-ish tooling, tests) with no DOM.
+  assert.equal(overlayGroupExpanded('agricultural', undefined), true);
+  assert.equal(overlayGroupExpanded('agricultural', {}), true);
+});
+
+test('a non-boolean open property is not treated as expanded', () => {
+  // <details>.open is always a real boolean; anything else means we are
+  // not looking at the element we think we are, so fall back to hiding
+  // rather than guessing from a truthy string.
+  assert.equal(overlayGroupExpanded('agricultural', fakeDoc('agricultural', { open: 'true' })), false);
+  assert.equal(overlayGroupExpanded('agricultural', fakeDoc('agricultural', {})), false);
 });
 
 const failed = results.filter((r) => r.status === 'fail');

@@ -35,3 +35,27 @@ export function setOverlayPressed(btn, pressed) {
   btn.classList.toggle('active', value !== 'false');
   btn.setAttribute('aria-pressed', value);
 }
+
+/**
+ * Is a Map-layers group (`<details class="overlay-group" data-group="…">`)
+ * currently expanded?
+ *
+ * Used by the parcel popups to decide whether to render the farmland
+ * sections: with the Agricultural group collapsed, MASC and soil
+ * composition are noise on a residential search, and MASC in particular
+ * is stamped by ordinary enrichment so it turns up whether or not the
+ * user ever asked for farmland data.
+ *
+ * Fails OPEN — a missing group reads as expanded. Getting this backwards
+ * would mean a markup rename silently strips real data out of every
+ * popup with nothing to show that it happened; erring the other way just
+ * restores today's behaviour.
+ *
+ * @param {string} group   the data-group value, e.g. 'agricultural'
+ * @param {Document} [doc] injectable for tests
+ */
+export function overlayGroupExpanded(group, doc = globalThis.document) {
+  const el = doc?.querySelector?.(`.overlay-group[data-group="${group}"]`);
+  if (!el) return true;
+  return el.open === true;
+}

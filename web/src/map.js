@@ -22,6 +22,7 @@ import turfLength from '@turf/length';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import { landCoverBreakdown, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
+import { overlayGroupExpanded } from './lib/overlayToggle.js';
 import { formatRollSizeField } from './lib/acres.js';
 import {
   addShapeLayers,
@@ -3821,7 +3822,25 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
   // soil composition in the right. Actions row spans both at the
   // bottom. When composition is absent, fall back to the legacy
   // single-column layout to keep the popup narrow.
-  const soilTable = soilSurveyParcelHtml(p._soilComposition);
+  // Soil composition is gated on the Map-layers "Agricultural" group
+  // being expanded; MASC and Land cover are not.
+  //
+  // The split is by how much the section costs to read past, not by
+  // whether it is farmland data. Soil composition is a multi-row table
+  // of soil associations and CLI classes — the section that actually
+  // made the popup unwieldy on a rural-residential run. MASC is a single
+  // rating chip and Land cover is a short breakdown whose bush/wetland
+  // split is genuinely useful on a residential parcel, so both earn
+  // their place whether or not the panel is open. Land cover also gates
+  // itself on LAND_COVER_MIN_ACRES.
+  //
+  // The gate covers the sticky click popup as well as hover, since
+  // "don't show it while collapsed" isn't much of a rule if a click
+  // brings it straight back. The consequence is that expanding the
+  // group won't refresh a popup already on screen — re-click the parcel.
+  const soilTable = overlayGroupExpanded('agricultural')
+    ? soilSurveyParcelHtml(p._soilComposition)
+    : null;
   const landCoverTable = landCoverParcelHtml(p);
   const mascBox = mascRatingParcelHtml(p);
 
@@ -3829,9 +3848,7 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
   // then the MASC rating, then Soil composition (when the Soil Survey
   // overlay is loaded) — coarsest to finest. ANY one section alone triggers
   // the 2-column layout; with none, fall back to the narrow single-column
-  // popup. MASC is stamped by ordinary enrichment rather than gated on an
-  // acreage threshold or an overlay being on, so it can well be the only
-  // section present on a small rural parcel.
+  // popup.
   const rightSections = [];
   if (landCoverTable) rightSections.push(`<strong>Land cover</strong>${landCoverTable}`);
   if (mascBox)        rightSections.push(`<strong>MASC rating</strong>${mascBox}`);
@@ -4918,8 +4935,12 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
   //
   // Same 2-column treatment parcelHtml uses — soil composition on the
   // right, parcel info on the left. Falls back to single-column when
-  // composition isn't loaded for this parcel.
-  const soilTable = soilSurveyParcelHtml(p._soilComposition);
+  // composition isn't loaded for this parcel, and gated on the same
+  // Agricultural panel: the same parcel showing soil from the muni-parcels
+  // layer but not from a search result would read as a bug.
+  const soilTable = overlayGroupExpanded('agricultural')
+    ? soilSurveyParcelHtml(p._soilComposition)
+    : null;
   if (soilTable) {
     return `<div class="parcel-popup parcel-popup-2col">
   <div class="parcel-popup-cols">
