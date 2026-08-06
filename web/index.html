@@ -638,29 +638,39 @@
                 <span class="tip">Exclude sales whose Sale ÷ Assessed Total ratio exceeds the chosen cap. Useful when buildings sold before the assessment caught up (Sale/Asmt &gt;&gt; 1). Leave on "Max Sale/Asmt" for no cap. Applies alongside Vacant Only.</span>
               </span>
             </div>
-          </details>
-          <!-- Subject parcel + max-distance combo row. Sits just
-               above the Clear button so it reads as the final
-               step before kicking off the search. -->
-          <div class="subject-row sales-only">
-            <span class="field subject-roll-field">
-              <input id="subject-roll" type="text" placeholder="Subject roll #" autocomplete="off" />
-              <span class="tip">Roll number of the subject property. When the uploaded sales span more than one municipality, a muni picker appears below this row so you can choose which one to fetch the roll from. Single-muni uploads skip the picker — the lone muni is used automatically.</span>
-            </span>
-            <button id="subject-apply" type="button" class="secondary subject-apply-btn">Set</button>
-            <button id="subject-clear" type="button" class="secondary subject-clear-btn" title="Clear the subject parcel">×</button>
-            <span class="field distance-max-field">
-              <input id="distance-max" type="number" min="0" step="0.1" placeholder="Max km" />
-              <span class="tip">Filter to sales within this many kilometres of the subject's centroid. Inactive when no subject is set.</span>
-            </span>
-          </div>
-          <div id="subject-muni-row" class="subject-muni-row sales-only" hidden>
-            <span class="field subject-muni-field">
-              <select id="subject-muni"></select>
-              <span class="tip">Municipality the subject roll # is fetched from.</span>
-            </span>
-          </div>
 
+            <!-- Subject parcel. The muni picker leads deliberately: the
+                 roll number alone does not identify a parcel — the same
+                 roll exists in many municipalities — so the question
+                 "which muni is this roll in" has to be answered before
+                 the roll means anything. It used to sit BELOW the roll
+                 and only appear on multi-muni uploads, which made the
+                 resolution invisible on the single-muni imports that are
+                 the common case. -->
+            <!-- Starts hidden and is revealed once an import has munis to
+                 offer, so an empty select never claims to name one. -->
+            <div id="subject-muni-row" class="subject-muni-row sales-only" hidden>
+              <span class="field subject-muni-field">
+                <select id="subject-muni" aria-label="Municipality for the subject roll"></select>
+                <span class="tip">Municipality the subject roll # is fetched from. Lists every municipality in the current import, defaulting to the one with the most matched parcels.</span>
+              </span>
+            </div>
+            <div class="subject-row sales-only">
+              <span class="field subject-roll-field">
+                <input id="subject-roll" type="text" placeholder="Subject roll #" autocomplete="off" />
+                <span class="tip">Roll number of the subject property, fetched from the municipality selected above.</span>
+              </span>
+              <button id="subject-apply" type="button" class="secondary subject-apply-btn">Set</button>
+              <button id="subject-clear" type="button" class="secondary subject-clear-btn" title="Clear the subject parcel">×</button>
+              <span class="field distance-max-field">
+                <input id="distance-max" type="number" min="0" step="0.1" placeholder="Max km" />
+                <span class="tip">Filter to sales within this many kilometres of the subject's centroid. Inactive when no subject is set.</span>
+              </span>
+            </div>
+          </details>
+          <!-- Clear stays OUTSIDE the collapsible: it resets the whole
+               page, so it has to be reachable without first expanding a
+               panel. -->
           <div class="action-row">
             <button id="sales-clear" type="button" class="tertiary" title="Reset the page — clears any uploaded sales CSV, search results, subject, and filters.">Clear</button>
           </div>

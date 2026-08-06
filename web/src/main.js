@@ -3961,32 +3961,38 @@ async function handleSalesUpload(file) {
     const { classes } = uniqueClassesAndStatuses(parcelFc);
     asmtClassFilter.setOptions(classes);
 
-    // Subject muni picker. Visible only when the upload spans 2+ munis
-    // — single-muni uploads use that muni implicitly so the picker
-    // would just be a one-option dropdown. Default the selection to
-    // the dominant muni (the one with the most matched parcels), so
-    // a user typing a subject roll without touching the picker gets
-    // the most-likely-correct muni.
+    // Subject muni picker — populated for EVERY upload, including
+    // single-muni ones.
+    //
+    // It used to hide itself below two munis, on the reasoning that a
+    // one-option dropdown says nothing. But a roll number does not
+    // identify a parcel on its own — the same roll exists in many
+    // municipalities — so on a single-muni upload the picker was the
+    // only thing that would have shown WHICH muni the roll was being
+    // fetched from, and it was exactly the case where it was hidden.
+    // A one-option dropdown answering that is worth its row.
+    //
+    // Defaults to the dominant muni (most matched parcels), so typing a
+    // roll without touching the picker gets the likeliest match.
     if ($subjectMuni && $subjectMuniRow) {
-      if (csvMatchedMunis && csvMatchedMunis.length > 1) {
-        $subjectMuni.innerHTML = '';
-        for (const m of csvMatchedMunis) {
-          const opt = document.createElement('option');
-          opt.value = m;
-          opt.textContent = m;
-          $subjectMuni.appendChild(opt);
-        }
-        // dominantMuni is the highest-matched-count muni captured
-        // earlier in this function — fall back to the first matched
-        // muni if it's not in scope here for any reason.
-        const defaultMuni = dominantMuni || csvMatchedMunis[0];
-        if ([...$subjectMuni.options].some((o) => o.value === defaultMuni)) {
-          $subjectMuni.value = defaultMuni;
-        }
-        $subjectMuniRow.hidden = false;
-      } else {
-        $subjectMuniRow.hidden = true;
+      const munis = Array.isArray(csvMatchedMunis) ? csvMatchedMunis : [];
+      $subjectMuni.innerHTML = '';
+      for (const m of munis) {
+        const opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m;
+        $subjectMuni.appendChild(opt);
       }
+      // dominantMuni is the highest-matched-count muni captured earlier
+      // in this function — fall back to the first matched muni if it's
+      // not in scope here for any reason.
+      const defaultMuni = dominantMuni || munis[0];
+      if ([...$subjectMuni.options].some((o) => o.value === defaultMuni)) {
+        $subjectMuni.value = defaultMuni;
+      }
+      // Only hidden when there is nothing at all to pick from, which
+      // would leave an empty select claiming to name a municipality.
+      $subjectMuniRow.hidden = munis.length === 0;
     }
 
     // Runtime debugging — expose the post-stamp parcelFc + parcelHtml so the
