@@ -29,13 +29,26 @@
           </div>
         </div>
 
+        <!-- Two separate questions, deliberately not one control:
+             WHETHER the by-size and by-distance charts plot adjusted
+             rates, and on WHAT BASIS the adjustment (and the over-time
+             trend line) is computed. The over-time charts ignore the
+             first and follow only the second. -->
         <div class="ctl">
-          <label class="ctl-label" for="adj-mode">Time adjustment</label>
+          <span class="ctl-label" id="rates-label">Rates</span>
+          <div class="segmented" role="radiogroup" aria-labelledby="rates-label">
+            <button type="button" id="rates-nominal" role="radio" aria-checked="false">Nominal</button>
+            <button type="button" id="rates-adjusted" role="radio" aria-checked="true">Time-adjusted</button>
+          </div>
+          <span class="ctl-hint">Applies to the by-size and by-distance charts.</span>
+        </div>
+
+        <div class="ctl">
+          <label class="ctl-label" for="adj-basis">Trend basis</label>
           <div class="ctl-pair">
-            <select id="adj-mode">
+            <select id="adj-basis">
               <option value="fitted">Fitted trend</option>
               <option value="override">Rate per year…</option>
-              <option value="none">None (nominal)</option>
             </select>
             <input type="number" id="adj-rate" step="0.5" aria-label="Annual adjustment rate, percent" hidden />
           </div>

@@ -28,7 +28,9 @@ import {
 } from '../lib/chartRender.js';
 
 export const CHANNEL_NAME = 'mbps-sales-charts';
-const OPTS_KEY = 'mbps_charts_opts_v1';
+const OPTS_KEY = 'mbps_charts_opts_v2';
+const OPTS_KEY_V1 = 'mbps_charts_opts_v1';
+const MS_PER_DAY = 86400000;
 
 const $ = (id) => document.getElementById(id);
 
@@ -39,7 +41,9 @@ const els = {
   unitAcres: $('unit-acres'),
   unitSf: $('unit-sf'),
   effDate: $('eff-date'),
-  adjMode: $('adj-mode'),
+  ratesNominal: $('rates-nominal'),
+  ratesAdjusted: $('rates-adjusted'),
+  adjBasis: $('adj-basis'),
   adjRate: $('adj-rate'),
   adjHint: $('adj-hint'),
   distRef: $('dist-ref'),
@@ -56,10 +60,15 @@ let receivedAt = null;
 const opts = {
   unit: 'acres',
   effDate: new Date().toISOString().slice(0, 10),
-  // 'fitted'   — the regression's own dollars-per-day (the R engine's default)
-  // 'override' — a judgement percent per year, applied proportionally
-  // 'none'     — nominal rates, no adjustment
-  adjMode: 'fitted',
+  // Whether the by-size / by-distance charts plot adjusted rates. The
+  // two over-time charts ignore this entirely — they always plot rates
+  // as sold, because carrying them to one date is precisely what would
+  // destroy the trend they exist to show.
+  adjusted: true,
+  // How the adjustment (and the over-time trend line) is computed:
+  //   'fitted'   — the regression's own dollars per day, as the R engine does
+  //   'override' — a judgement percent per year, applied proportionally
+  adjBasis: 'fitted',
   adjRate: 3,
   distRef: 'subject',
   frozen: false,
@@ -70,13 +79,26 @@ const opts = {
 function readOpts() {
   try {
     const raw = localStorage.getItem(OPTS_KEY);
-    const parsed = raw ? JSON.parse(raw) : null;
-    if (!parsed || typeof parsed !== 'object') return {};
-    // Freeze is deliberately NOT restored: a tab that opens already
-    // frozen looks broken — it shows stale numbers and ignores the
-    // filters until you find the checkbox.
-    const { frozen, ...rest } = parsed;
-    return rest;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return {};
+      // Freeze is deliberately NOT restored: a tab that opens already
+      // frozen looks broken — it shows stale numbers and ignores the
+      // filters until you find the checkbox.
+      const { frozen, ...rest } = parsed;
+      return rest;
+    }
+    // Migrate the v1 shape, which folded "don't adjust" into the basis
+    // select as a third option. Dropping the old settings on the floor
+    // would silently reset someone's effective date and judgement rate.
+    const legacy = JSON.parse(localStorage.getItem(OPTS_KEY_V1) || 'null');
+    if (!legacy || typeof legacy !== 'object') return {};
+    const { frozen, adjMode, ...rest } = legacy;
+    return {
+      ...rest,
+      adjusted: adjMode !== 'none',
+      adjBasis: adjMode === 'override' ? 'override' : 'fitted',
+    };
   } catch { return {}; }
 }
 
@@ -277,6 +299,83 @@ function spreadStats(points, { xName, xFormat, adjusted, yFormat }) {
   return stats;
 }
 
+const STATED_FIT = { color: INK.primary };
+
+/**
+ * The market path a stated (judgement) rate asserts, as a curve over
+ * time — so the over-time charts can draw what the user declared
+ * instead of a regression the user has overridden.
+ *
+ * Derived from the override itself rather than approximated. The
+ * override says adjusted = P(t) * (1 + r * days/365); a comp sitting
+ * exactly on trend adjusts to the same value C whenever it sold, so the
+ * asserted path is P(t) = C / (1 + r * days/365). Note that is a
+ * hyperbola, not a straight line — the proportional basis compounds
+ * against the gap, and drawing a straight line here would quietly
+ * disagree with the adjusted figures on the other charts.
+ *
+ * C is the median adjusted value, which puts the curve through the
+ * middle of the comps the same way an OLS line passes through the mean.
+ *
+ * Returns null when the denominator can go non-positive across the data
+ * range: a steep negative rate over a long span implies a price that
+ * passed through zero, which is not a curve worth drawing.
+ */
+function statedRateFit(records, metric, ovr, effMs) {
+  const adjusted = (records || [])
+    .map((r) => timeAdjust(r, metric, null, effMs, { overrideRate: ovr }))
+    .filter((v) => v != null && Number.isFinite(v));
+  const C = median(adjusted);
+  if (C == null || !(C > 0)) return null;
+
+  const factor = (ms) => 1 + ovr * ((effMs - ms) / MS_PER_DAY / 365);
+  const dated = (records || []).map((r) => r.dateMs).filter(Number.isFinite);
+  if (!dated.length) return null;
+  if (Math.min(...dated.map(factor)) <= 0) return null;
+
+  return { predict: (ms) => (factor(ms) > 0 ? C / factor(ms) : NaN) };
+}
+
+/**
+ * What the two over-time charts draw and report.
+ *
+ * With a stated rate in force the fitted lines are dropped entirely, not
+ * shown alongside: the user has declared the market's movement, and a
+ * regression drawn next to it invites reading the chart as though the
+ * data still decided. The stat strip drops R² for the same reason —
+ * there is no regression to report the fit of.
+ */
+function timeTrend(records, points, metric, mc, fmt) {
+  const ovr = overrideRate();
+  const effMs = effectiveMs();
+
+  if (ovr != null && effMs != null) {
+    const stated = statedRateFit(records, metric, ovr, effMs);
+    const pct = `${(ovr * 100).toFixed(1)}%`;
+    const stats = [{ label: 'Sales', value: String(points.length) }];
+    const med = median(points.map((p) => p.y));
+    if (med != null) stats.push({ label: 'Median', value: fmt(med) });
+    stats.push({
+      label: 'Per year (stated)',
+      value: pct,
+      title: 'Your judgement rate, not measured from these sales.',
+    });
+    return {
+      fits: stated ? [{ ...STATED_FIT, predict: stated.predict, label: `Stated ${pct}/yr` }] : [],
+      stats,
+      note: stated
+        ? `Trend line is your stated ${pct} per year, not a fit to these sales.`
+        : `Stated ${pct} per year implies a price crossing zero across this date range — no trend drawn.`,
+    };
+  }
+
+  return {
+    fits: fitsFor(points, { curve: 'cubic' }),
+    stats: trendStats(points, mc, fmt),
+    note: '',
+  };
+}
+
 /** Median-size stats for the three by-size charts. */
 function sizeStats(points, adjusted, yFormat) {
   return spreadStats(points, {
@@ -335,7 +434,7 @@ function fmtRate(v) {
 
 /** The judgement rate, or null when the fitted trend is in charge. */
 function overrideRate() {
-  return opts.adjMode === 'override' ? normalizeOverrideRate(opts.adjRate) : null;
+  return opts.adjBasis === 'override' ? normalizeOverrideRate(opts.adjRate) : null;
 }
 
 /**
@@ -348,14 +447,14 @@ function overrideRate() {
 function adjusterFor(metric, mc) {
   const effMs = effectiveMs();
   const ovr = overrideRate();
-  const on = opts.adjMode !== 'none' && effMs != null;
+  const on = opts.adjusted && effMs != null;
 
   if (!on) {
     return {
       adjust: (rec) => rec[metric],
       adjusted: false,
       suffix: '',
-      note: 'Nominal rates — no time adjustment applied.',
+      note: 'Nominal rates, as sold — no time adjustment applied.',
     };
   }
   if (ovr != null) {
@@ -426,16 +525,17 @@ function buildCharts() {
   // legitimate here because multi-year turns in the market do happen.
   {
     const pts = pointsFor(records, (r) => r.dateMs, (r) => r[metric]);
-    const fits = fitsFor(pts, { curve: 'cubic' });
+    const trend = timeTrend(records, pts, metric, mcArea, areaFmt);
     charts.push(drawChart({
       title: `Price per ${unit.toLowerCase()} over time`,
-      subtitle: 'Actual rates. Sales whose parcels have incomplete acreage are excluded.',
+      subtitle: ['Rates as sold — the Nominal/Time-adjusted toggle does not apply here.',
+        trend.note].filter(Boolean).join(' '),
       points: pts, xIsDate: true,
       xLabel: 'Sale date', yLabel: `Price per ${unit.toLowerCase()}`,
       yFormat: areaFmt, yAxisFormat: fmtAxisMoney,
-      fits, legend: legendFor(fits),
+      fits: trend.fits, legend: legendFor(trend.fits),
       refLines: mcArea?.median != null ? [{ y: mcArea.median, label: 'median' }] : [],
-      stats: trendStats(pts, mcArea, areaFmt),
+      stats: trend.stats,
       tooltipRows,
     }));
   }
@@ -513,16 +613,17 @@ function buildCharts() {
 
   {
     const pts = pointsFor(records, (r) => r.dateMs, (r) => r.ppl);
-    const fits = fitsFor(pts, { curve: 'cubic' });
+    const trend = timeTrend(records, pts, 'ppl', mcLot, fmtMoney0);
     charts.push(drawChart({
       title: 'Price per lot over time',
-      subtitle: 'Actual sale prices. One point per sale; larger dots are multi-parcel assemblies.',
+      subtitle: ['Prices as sold. One point per sale; larger dots are multi-parcel assemblies.',
+        trend.note].filter(Boolean).join(' '),
       points: pts, xIsDate: true,
       xLabel: 'Sale date', yLabel: 'Price per lot',
       yFormat: fmtMoney0, yAxisFormat: fmtAxisMoney,
-      fits, legend: legendFor(fits),
+      fits: trend.fits, legend: legendFor(trend.fits),
       refLines: mcLot?.median != null ? [{ y: mcLot.median, label: 'median' }] : [],
-      stats: trendStats(pts, mcLot, fmtMoney0),
+      stats: trend.stats,
       tooltipRows,
     }));
   }
@@ -659,8 +760,20 @@ function syncControls() {
   els.unitSf.classList.toggle('is-on', !isAcres());
   els.freeze.checked = opts.frozen;
   els.showTable.checked = opts.showTable;
-  els.adjMode.value = opts.adjMode;
-  els.adjRate.hidden = opts.adjMode !== 'override';
+  els.adjBasis.value = opts.adjBasis;
+  els.adjRate.hidden = opts.adjBasis !== 'override';
+
+  els.ratesNominal.setAttribute('aria-checked', String(!opts.adjusted));
+  els.ratesAdjusted.setAttribute('aria-checked', String(opts.adjusted));
+  els.ratesNominal.classList.toggle('is-on', !opts.adjusted);
+  els.ratesAdjusted.classList.toggle('is-on', opts.adjusted);
+
+  // The effective date is NOT disabled in Nominal mode: it still anchors
+  // the stated-rate curve on the two over-time charts, which the
+  // Nominal/Time-adjusted toggle does not govern.
+  els.adjHint.textContent = opts.adjBasis === 'override'
+    ? 'Percent per year. "5" and "0.05" both mean 5%.'
+    : 'Dollars per day, measured from the sales on screen.';
 
   // Never write .value into a field the user is currently typing in.
   //
@@ -671,14 +784,6 @@ function syncControls() {
   // the rate box. Both are re-synced the moment focus leaves.
   if (document.activeElement !== els.effDate) els.effDate.value = opts.effDate;
   if (document.activeElement !== els.adjRate) els.adjRate.value = opts.adjRate;
-  // The effective date only means something once something is being
-  // carried TO it.
-  els.effDate.disabled = opts.adjMode === 'none';
-  els.adjHint.textContent = opts.adjMode === 'override'
-    ? 'Percent per year, applied proportionally. "5" and "0.05" both mean 5%.'
-    : opts.adjMode === 'none'
-      ? 'Charts show nominal rates as sold.'
-      : 'Dollars per day, measured from the sales on screen.';
 
   // The subject option is only meaningful once a subject roll is set in
   // the main window; disabling it beats silently measuring from
@@ -713,7 +818,9 @@ els.unitSf.addEventListener('click', () => setOpt({ unit: 'sf' }));
 for (const evt of ['input', 'change']) {
   els.effDate.addEventListener(evt, () => setOpt({ effDate: els.effDate.value }));
 }
-els.adjMode.addEventListener('change', () => setOpt({ adjMode: els.adjMode.value }));
+els.ratesNominal.addEventListener('click', () => setOpt({ adjusted: false }));
+els.ratesAdjusted.addEventListener('click', () => setOpt({ adjusted: true }));
+els.adjBasis.addEventListener('change', () => setOpt({ adjBasis: els.adjBasis.value }));
 els.adjRate.addEventListener('input', () => setOpt({ adjRate: els.adjRate.value }));
 els.distRef.addEventListener('change', () => setOpt({ distRef: els.distRef.value }));
 els.freeze.addEventListener('change', () => setOpt({ frozen: els.freeze.checked }));
