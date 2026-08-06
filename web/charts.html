@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Sales Charts — Manitoba Parcel Search</title>
+  </head>
+  <body class="charts-body">
+    <header class="charts-header">
+      <div class="charts-headline">
+        <h1>Sales Charts</h1>
+        <!-- Live/frozen state. The tab tracks the Sales Analysis filters
+             in the main window over a BroadcastChannel; freezing stops it
+             so a chart can be read (or screenshotted) while the filters
+             keep moving next door. -->
+        <p id="charts-status" class="charts-status">Waiting for the Sales Analysis tab…</p>
+      </div>
+
+      <!-- One filter row, above everything it scopes. Every chart and the
+           table below re-render against the same slice, so the numbers
+           always agree. -->
+      <div class="charts-controls" role="group" aria-label="Chart options">
+        <div class="ctl">
+          <span class="ctl-label" id="unit-label">Size unit</span>
+          <div class="segmented" role="radiogroup" aria-labelledby="unit-label">
+            <button type="button" id="unit-acres" role="radio" aria-checked="true">Acres</button>
+            <button type="button" id="unit-sf" role="radio" aria-checked="false">Sq ft</button>
+          </div>
+        </div>
+
+        <div class="ctl">
+          <label class="ctl-label" for="adj-mode">Time adjustment</label>
+          <div class="ctl-pair">
+            <select id="adj-mode">
+              <option value="fitted">Fitted trend</option>
+              <option value="override">Rate per year…</option>
+              <option value="none">None (nominal)</option>
+            </select>
+            <input type="number" id="adj-rate" step="0.5" aria-label="Annual adjustment rate, percent" hidden />
+          </div>
+          <span class="ctl-hint" id="adj-hint"></span>
+        </div>
+
+        <div class="ctl">
+          <label class="ctl-label" for="eff-date">Effective date</label>
+          <input type="date" id="eff-date" />
+          <span class="ctl-hint">Comps are carried to this date.</span>
+        </div>
+
+        <div class="ctl">
+          <label class="ctl-label" for="dist-ref">Distance from</label>
+          <select id="dist-ref">
+            <option value="subject">Subject parcel</option>
+            <option value="winnipeg">Winnipeg (Portage &amp; Main)</option>
+          </select>
+        </div>
+
+        <div class="ctl ctl-checks">
+          <label class="ctl-check">
+            <input type="checkbox" id="freeze" />
+            <span>Freeze</span>
+          </label>
+          <label class="ctl-check">
+            <input type="checkbox" id="show-table" />
+            <span>Table view</span>
+          </label>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <p id="charts-empty" class="charts-empty">
+        No sales loaded yet. In the main window, open <strong>Sales Analysis</strong>,
+        import or paste a sales export, then click <strong>Charts</strong> again.
+      </p>
+
+      <div id="charts-grid" class="charts-grid" hidden></div>
+
+      <!-- Table-view twin. Every value the charts encode is reachable here
+           without hovering anything, which is also what carries the two
+           lighter palette slots past the contrast floor. -->
+      <section id="table-panel" class="table-panel" hidden>
+        <h2>Sales in the current filter</h2>
+        <div class="table-scroll">
+          <table id="sales-table">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/charts/main.js"></script>
+  </body>
+</html>

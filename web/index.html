@@ -804,6 +804,17 @@
         <div class="sidebar-status">
           <div class="action-row export-row">
             <button id="export" type="button" class="secondary">Export CSV</button>
+            <!-- Opens the Sales Charts tab (charts.html) and keeps it fed
+                 over a BroadcastChannel, so it re-plots as these filters
+                 change rather than freezing at whatever was on screen when
+                 it opened. Sales-mode only: without a sale date and price
+                 there is nothing for it to plot. -->
+            <button
+              id="charts-open"
+              type="button"
+              class="secondary"
+              title="Open scatter charts of the filtered sales in a new tab — price per lot / acre / SF over time, by size, by zoning and by distance. The tab tracks these filters live."
+            >Charts</button>
             <button
               id="route-starred"
               type="button"

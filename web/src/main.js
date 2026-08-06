@@ -48,6 +48,7 @@ import {
   uniqueParcelFeatures, dedupeParcelFeaturesForMap,
 } from './lib/salesDedupe.js';
 import { parseSalesCsv } from './lib/salesCsvParse.js';
+import { saleRecordsFromRows } from './lib/salesCharts.js';
 import { initMultiSelect } from './lib/multiSelect.js';
 import { assignParcelSeq, clearParcelSeq } from './lib/parcelNumbering.js';
 import { parcelLat, parcelLon, featureToWkt, parcelCentrePoint } from './lib/geometryText.js';
@@ -8531,6 +8532,11 @@ function renderTable(rows, { resetPage = true } = {}) {
   // on every re-render.
   $resultsTable?.classList.toggle('numbering-on', numberingOn && rows.length > 1);
   updateNumberingAvailability();
+  // Keep the Sales Charts tab in step with the grid. renderTable is the
+  // single funnel every filter change, sort and re-search passes through,
+  // so publishing here is what makes that tab track the filters rather
+  // than freeze at whatever was on screen when it opened.
+  publishSalesCharts();
 }
 
 /**
@@ -10656,6 +10662,107 @@ function parseSaleDate(s) {
 function formatCurrency(s) {
   return fmtCurrency(parseTotalValue(s));
 }
+
+// ---------- Sales Charts tab ----------
+
+/*
+ * charts.html plots whatever the Sales Analysis grid is currently
+ * showing. Rather than handing it a URL payload or a localStorage blob
+ * (either would freeze at open time), the grid pushes its filtered set
+ * over a BroadcastChannel on every render — so the tab re-plots as the
+ * filters move.
+ *
+ * What crosses the channel is one record PER SALE, not per parcel: the
+ * projection collapses multi-parcel groups so an assembly counts once
+ * in every trendline. That also keeps the message small — the grid rows
+ * carry full parcel geometry, which has no business being cloned into
+ * another tab several times a second.
+ */
+const CHARTS_CHANNEL_NAME = 'mbps-sales-charts';
+let chartsChannel;          // undefined = not yet tried, null = unavailable
+
+function getChartsChannel() {
+  if (chartsChannel !== undefined) return chartsChannel;
+  try {
+    chartsChannel = new BroadcastChannel(CHARTS_CHANNEL_NAME);
+    // The tab may open long after the last render, so it asks rather
+    // than waiting for the next filter change.
+    chartsChannel.addEventListener('message', (e) => {
+      if (e.data?.type === 'request') publishSalesCharts();
+    });
+  } catch {
+    chartsChannel = null; // no BroadcastChannel — the button just won't feed
+  }
+  return chartsChannel;
+}
+
+function publishSalesCharts() {
+  const channel = getChartsChannel();
+  if (!channel) return;
+  // Only sales mode has dates and prices to plot. Publishing an empty
+  // set on a plain Property Search is deliberate: it clears the tab
+  // instead of leaving stale sales on screen next to unrelated results.
+  const inSalesMode = $resultsTable?.classList.contains('sales-mode');
+  const rows = inSalesMode ? currentRows : [];
+  let records = [];
+  try {
+    records = saleRecordsFromRows(rows, {
+      parseDate: parseSaleDate,
+      centroid: parcelCentrePoint,
+    });
+  } catch (err) {
+    console.warn('Sales charts projection failed', err);
+    return;
+  }
+  const subjectAcres = subjectFeature ? parcelAcres(subjectFeature) : null;
+  try {
+    channel.postMessage({
+      type: 'sales',
+      records,
+      meta: {
+        parcelCount: rows.length,
+        subject: subjectCentroid
+          ? {
+              lat: subjectCentroid.lat,
+              lng: subjectCentroid.lng,
+              roll: displayRoll(subjectFeature?.properties?.Roll_No_Txt) || '',
+              acres: Number.isFinite(subjectAcres) && subjectAcres > 0 ? subjectAcres : null,
+            }
+          : null,
+        ts: Date.now(),
+      },
+    });
+  } catch (err) {
+    // A record that won't structured-clone would otherwise throw on
+    // every render and take the grid down with it.
+    console.warn('Sales charts publish failed', err);
+  }
+}
+
+document.getElementById('charts-open')?.addEventListener('click', () => {
+  // A named target so clicking twice focuses the existing tab instead of
+  // piling up windows that all listen on the same channel.
+  let tab = null;
+  try { tab = window.open('charts.html', 'mbps-sales-charts'); } catch { tab = null; }
+  if (tab) { tab.focus?.(); return; }
+
+  // A null return does NOT reliably mean "popup blocked": some embedded
+  // browsers honour the navigation and still hand back null, and there
+  // is no way to tell the two apart from here. So rather than guess —
+  // and rather than show a "popup blocked" message to someone whose tab
+  // just opened fine — synthesize a link click, which is honoured in
+  // both cases and is never subject to the popup blocker.
+  const link = document.createElement('a');
+  link.href = 'charts.html';
+  link.target = '_blank';
+  // The charts tab talks over a BroadcastChannel, not window.opener, so
+  // severing the opener reference costs nothing.
+  link.rel = 'noopener';
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+});
 
 // ---------- CSV export ----------
 

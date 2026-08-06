@@ -779,6 +779,11 @@ body:not(.sales-mode) .sidebar .uom-vacant-row,
 body:not(.sales-mode) .sidebar .far-flung-row,
 body:not(.sales-mode) .sidebar .sale-price-row,
 body:not(.sales-mode) .sidebar .sales-filters,
+/* The Sales Charts button plots sale dates and prices, so outside
+   sales mode there is nothing for it to open. It rides this list
+   rather than the .sales-only class the grid uses — that class is
+   scoped to #results and does nothing to a sidebar control. */
+body:not(.sales-mode) .sidebar #charts-open,
 body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 
 /* "More filters" collapsible — wraps the regular-search filter
