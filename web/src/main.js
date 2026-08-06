@@ -265,53 +265,53 @@ const $duMin         = document.getElementById('du-min');
 // buttons' .active class and updates the dataset attribute.
 const $sizeLow       = document.getElementById('size-low');
 const $sizeHigh      = document.getElementById('size-high');
-const $sizeUomAcres  = document.getElementById('size-uom-acres');
-const $sizeUomSf     = document.getElementById('size-uom-sf');
-const $sizeUomFf     = document.getElementById('size-uom-ff');
+const $sizeUom = document.getElementById('size-uom');
 const SIZE_UOMS = ['acres', 'sf', 'ff'];
 
-/** Which unit the two size boxes are read in. Stored on the pill's own
- *  dataset so there is one source of truth rather than three .active
- *  classes to keep in agreement. */
+/** Which unit the two size boxes are read in. The select's own value is
+ *  the single source of truth. */
 function getSizeUom() {
-  const uom = $sizeUomAcres?.parentElement?.dataset?.uom;
+  const uom = $sizeUom?.value;
   return SIZE_UOMS.includes(uom) ? uom : 'acres';
 }
 
 /**
- * Flip the size filter between acres, square feet and frontage feet.
+ * Apply a change of size unit: acres, square feet, or frontage feet.
  *
  * The typed values are deliberately NOT converted — the boxes are read
- * in whichever unit is lit, so switching re-interprets what is already
- * there. Converting instead would turn a round "5" into "217,800" and
- * leave the user editing a number they never entered. The placeholders
- * move so the active unit is always visible on an empty box.
+ * in whichever unit is selected, so switching re-interprets what is
+ * already there. Converting instead would turn a round "5" into
+ * "217,800" and leave the user editing a number they never entered. The
+ * placeholders move so the active unit is visible on an empty box.
  *
  * FF is a different KIND of measure, not another area unit: it reads the
  * roll's stated frontage, which only about 37% of parcels carry.
+ *
+ * `previous` is passed in because the select's value has already changed
+ * by the time the change event fires, so it cannot be read back here.
  */
-function setSizeUom(uom) {
+function setSizeUom(uom, previous) {
   if (!SIZE_UOMS.includes(uom)) return;
-  const previous = getSizeUom();
-  const pill = $sizeUomAcres?.parentElement;
-  if (pill) pill.dataset.uom = uom;
-  if ($sizeUomAcres) $sizeUomAcres.classList.toggle('active', uom === 'acres');
-  if ($sizeUomSf)    $sizeUomSf.classList.toggle('active',    uom === 'sf');
-  if ($sizeUomFf)    $sizeUomFf.classList.toggle('active',    uom === 'ff');
+  if ($sizeUom) $sizeUom.value = uom;
   const label = uom === 'sf' ? 'SF' : uom === 'ff' ? 'FF' : 'Ac';
   if ($sizeLow)  $sizeLow.placeholder  = `Lo ${label}`;
   if ($sizeHigh) $sizeHigh.placeholder = `Hi ${label}`;
   // Always re-filter when FF is involved (selected or just left), since
   // FF alone changes the row set regardless of the boxes. Otherwise only
-  // when a bound is set — flipping Ac/SF with both boxes empty should
+  // when a bound is set — switching Ac/SF with both boxes empty should
   // not disturb anything.
   if (uom === 'ff' || previous === 'ff' || $sizeLow?.value !== '' || $sizeHigh?.value !== '') {
     refilterCsvIfActive();
   }
 }
-$sizeUomAcres?.addEventListener('click', () => setSizeUom('acres'));
-$sizeUomSf?.addEventListener('click',    () => setSizeUom('sf'));
-$sizeUomFf?.addEventListener('click',    () => setSizeUom('ff'));
+// Track the outgoing value so setSizeUom can tell whether FF was just
+// left, which changes the row set even with both boxes empty.
+let lastSizeUom = getSizeUom();
+$sizeUom?.addEventListener('change', () => {
+  const previous = lastSizeUom;
+  lastSizeUom = $sizeUom.value;
+  setSizeUom($sizeUom.value, previous);
+});
 // Sales-CSV vacant/improved selector (All Sales / Vacant Land Only /
 // Improved Only) — strict group semantics. Vacant reads
 // _saleGroupAllVacant (every member known vacant), Improved reads

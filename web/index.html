@@ -541,19 +541,26 @@
                    37% of parcels carry — the rest state an area instead, and
                    drop out while FF is selected. -->
               <span class="field size-uom-field">
-                <span class="uom-pill" role="group" aria-label="Size unit" data-uom="acres">
-                  <button id="size-uom-acres" type="button" class="active" data-uom="acres" title="Filter on parcel area, in acres">Ac</button>
-                  <button id="size-uom-sf" type="button" data-uom="sf" title="Filter on parcel area, in square feet">SF</button>
-                  <button id="size-uom-ff" type="button" data-uom="ff" title="Filter on the assessment roll's stated frontage, in feet. Parcels whose roll states an area rather than a frontage (about 63%) are excluded while this is selected.">FF</button>
-                </span>
+                <select id="size-uom" aria-label="Size unit"
+                        title="Ac / SF filter on parcel area. FF filters on the assessment roll's stated frontage in feet — parcels whose roll states an area instead (about 63%) drop out while FF is selected.">
+                  <option value="acres" selected>Ac</option>
+                  <option value="sf">SF</option>
+                  <option value="ff">FF</option>
+                </select>
               </span>
+              <!-- These two carry a plain `title` rather than a `.tip` span.
+                   A .tip makes infoIcon.js inject an ⓘ button INSIDE the
+                   field, which on a 46px box left only ~15px for the input
+                   itself. The pill's own button titles already explain the
+                   units, so the icon was costing two thirds of the control
+                   to say something said elsewhere. -->
               <span class="field size-low-field">
-                <input id="size-low" type="number" min="0" step="0.01" placeholder="Lo Ac" />
-                <span class="tip">Minimum parcel size in the unit selected by the Ac/SF pill (empty = no minimum).</span>
+                <input id="size-low" type="number" min="0" step="0.01" placeholder="Lo Ac"
+                       title="Minimum parcel size, in the unit lit on the Ac/SF/FF pill. Empty = no minimum." />
               </span>
               <span class="field size-high-field">
-                <input id="size-high" type="number" min="0" step="0.01" placeholder="Hi Ac" />
-                <span class="tip">Maximum parcel size in the unit selected by the Ac/SF pill (empty = no maximum).</span>
+                <input id="size-high" type="number" min="0" step="0.01" placeholder="Hi Ac"
+                       title="Maximum parcel size, in the unit lit on the Ac/SF/FF pill. Empty = no maximum." />
               </span>
             </div>
             <!-- Street Name + Min $/Ac + Max $/Ac on a single row.
