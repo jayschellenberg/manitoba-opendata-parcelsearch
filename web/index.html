@@ -535,13 +535,16 @@
                 <span class="tip">Filter uploaded sales to rows whose plan number contains this string. Case-insensitive substring match against both the legal-index Plan field AND the raw "Legal Description" cell from the uploaded CSV.</span>
               </span>
               <!-- Unit for the two size boxes below. The boxes are read in
-                   whichever unit is lit, and converted to acres for the
-                   comparison — so switching the pill re-interprets what is
-                   already typed rather than clearing it. -->
+                   whichever unit is lit, so switching the pill re-interprets
+                   what is already typed rather than clearing it.
+                   FF filters on the roll's stated FRONTAGE, which only about
+                   37% of parcels carry — the rest state an area instead, and
+                   drop out while FF is selected. -->
               <span class="field size-uom-field">
                 <span class="uom-pill" role="group" aria-label="Size unit" data-uom="acres">
-                  <button id="size-uom-acres" type="button" class="active" data-uom="acres" title="Enter the size range in acres">Ac</button>
-                  <button id="size-uom-sf" type="button" data-uom="sf" title="Enter the size range in square feet">SF</button>
+                  <button id="size-uom-acres" type="button" class="active" data-uom="acres" title="Filter on parcel area, in acres">Ac</button>
+                  <button id="size-uom-sf" type="button" data-uom="sf" title="Filter on parcel area, in square feet">SF</button>
+                  <button id="size-uom-ff" type="button" data-uom="ff" title="Filter on the assessment roll's stated frontage, in feet. Parcels whose roll states an area rather than a frontage (about 63%) are excluded while this is selected.">FF</button>
                 </span>
               </span>
               <span class="field size-low-field">

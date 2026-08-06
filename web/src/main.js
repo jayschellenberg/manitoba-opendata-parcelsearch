@@ -206,7 +206,7 @@ import {
   waterColor, waterCellText, waterTooltip, waterSortRank,
   waterCsvCells, isWaterfront, isNearWater, WATER_CLASSES,
 } from './lib/water.js';
-import { resolveParcelAcres, formatRollSizeField } from './lib/acres.js';
+import { resolveParcelAcres, formatRollSizeField, parseRollFrontageFeet } from './lib/acres.js';
 import { computeSizeChanges } from './lib/sizeChange.js';
 import { clearAllCache as clearAllCacheModule } from './cache.js';
 import { getManifest, getManifestSync } from './manifest.js';
@@ -267,38 +267,51 @@ const $sizeLow       = document.getElementById('size-low');
 const $sizeHigh      = document.getElementById('size-high');
 const $sizeUomAcres  = document.getElementById('size-uom-acres');
 const $sizeUomSf     = document.getElementById('size-uom-sf');
+const $sizeUomFf     = document.getElementById('size-uom-ff');
+const SIZE_UOMS = ['acres', 'sf', 'ff'];
 
 /** Which unit the two size boxes are read in. Stored on the pill's own
- *  dataset so there is one source of truth rather than two .active
+ *  dataset so there is one source of truth rather than three .active
  *  classes to keep in agreement. */
 function getSizeUom() {
-  return $sizeUomAcres?.parentElement?.dataset?.uom === 'sf' ? 'sf' : 'acres';
+  const uom = $sizeUomAcres?.parentElement?.dataset?.uom;
+  return SIZE_UOMS.includes(uom) ? uom : 'acres';
 }
 
 /**
- * Flip the size filter between acres and square feet.
+ * Flip the size filter between acres, square feet and frontage feet.
  *
  * The typed values are deliberately NOT converted — the boxes are read
  * in whichever unit is lit, so switching re-interprets what is already
  * there. Converting instead would turn a round "5" into "217,800" and
  * leave the user editing a number they never entered. The placeholders
  * move so the active unit is always visible on an empty box.
+ *
+ * FF is a different KIND of measure, not another area unit: it reads the
+ * roll's stated frontage, which only about 37% of parcels carry.
  */
 function setSizeUom(uom) {
-  if (uom !== 'acres' && uom !== 'sf') return;
+  if (!SIZE_UOMS.includes(uom)) return;
+  const previous = getSizeUom();
   const pill = $sizeUomAcres?.parentElement;
   if (pill) pill.dataset.uom = uom;
   if ($sizeUomAcres) $sizeUomAcres.classList.toggle('active', uom === 'acres');
   if ($sizeUomSf)    $sizeUomSf.classList.toggle('active',    uom === 'sf');
-  const label = uom === 'sf' ? 'SF' : 'Ac';
+  if ($sizeUomFf)    $sizeUomFf.classList.toggle('active',    uom === 'ff');
+  const label = uom === 'sf' ? 'SF' : uom === 'ff' ? 'FF' : 'Ac';
   if ($sizeLow)  $sizeLow.placeholder  = `Lo ${label}`;
   if ($sizeHigh) $sizeHigh.placeholder = `Hi ${label}`;
-  // Only re-filter when a bound is actually set; flipping the pill with
-  // both boxes empty should not disturb the result set.
-  if ($sizeLow?.value !== '' || $sizeHigh?.value !== '') refilterCsvIfActive();
+  // Always re-filter when FF is involved (selected or just left), since
+  // FF alone changes the row set regardless of the boxes. Otherwise only
+  // when a bound is set — flipping Ac/SF with both boxes empty should
+  // not disturb anything.
+  if (uom === 'ff' || previous === 'ff' || $sizeLow?.value !== '' || $sizeHigh?.value !== '') {
+    refilterCsvIfActive();
+  }
 }
 $sizeUomAcres?.addEventListener('click', () => setSizeUom('acres'));
 $sizeUomSf?.addEventListener('click',    () => setSizeUom('sf'));
+$sizeUomFf?.addEventListener('click',    () => setSizeUom('ff'));
 // Sales-CSV vacant/improved selector (All Sales / Vacant Land Only /
 // Improved Only) — strict group semantics. Vacant reads
 // _saleGroupAllVacant (every member known vacant), Improved reads
@@ -5056,10 +5069,23 @@ function filterCsvRowsByOtherSearches(rows) {
   // disappearing.
   const sizeLoRaw = parseFloat($sizeLow?.value);
   const sizeHiRaw = parseFloat($sizeHigh?.value);
-  const toAcres = getSizeUom() === 'sf' ? (v) => v / 43560 : (v) => v;
-  const sizeActive = Number.isFinite(sizeLoRaw) || Number.isFinite(sizeHiRaw);
-  const sizeLoAc = Number.isFinite(sizeLoRaw) ? toAcres(sizeLoRaw) : 0;
-  const sizeHiAc = Number.isFinite(sizeHiRaw) ? toAcres(sizeHiRaw) : Infinity;
+  const sizeUom = getSizeUom();
+  // FF is a frontage, not an area, so it is compared in feet against the
+  // roll's own figure rather than converted to acres. Ac and SF both
+  // resolve to acres because parcelAcres() returns acres.
+  const toAcres = sizeUom === 'sf' ? (v) => v / 43560 : (v) => v;
+  // Ac and SF are just units for the numbers typed below, so with both
+  // boxes empty they filter nothing. FF is not only a unit — it also
+  // names a cohort, since roughly 63% of parcels state an area and have
+  // no frontage at all. Selecting it is therefore a filter in its own
+  // right: it drops the area rows immediately rather than waiting for a
+  // bound, because an area row has nothing to show in a frontage view.
+  const sizeActive = sizeUom === 'ff'
+    || Number.isFinite(sizeLoRaw) || Number.isFinite(sizeHiRaw);
+  const sizeLo = Number.isFinite(sizeLoRaw) ? sizeLoRaw : 0;
+  const sizeHi = Number.isFinite(sizeHiRaw) ? sizeHiRaw : Infinity;
+  const sizeLoAc = sizeUom === 'ff' ? sizeLo : toAcres(sizeLo);
+  const sizeHiAc = sizeUom === 'ff' ? sizeHi : toAcres(sizeHi);
 
   // Sale-date range. Empty from = -Infinity, empty to = +Infinity. The
   // HTML5 date input gives us YYYY-MM-DD strings — parseSaleDate() in
@@ -5237,7 +5263,16 @@ function filterCsvRowsByOtherSearches(rows) {
     // to per-parcel parcelAcres() only when the row isn't tagged
     // with a sale group at all (defensive — sales-CSV uploads always
     // stamp _saleGroupId on every matched feature).
-    if (sizeActive) {
+    if (sizeActive && sizeUom === 'ff') {
+      // Frontage is a PER-PARCEL figure the assessor states, with no
+      // group equivalent — summing the frontages of a 3-parcel assembly
+      // would describe a shape nobody bought. So this compares each
+      // parcel's own roll frontage, and a parcel whose roll states an
+      // area instead (about 63% of them) drops out entirely, which is
+      // the point: an area row has no frontage to filter on.
+      const ff = parseRollFrontageFeet(p.Frontage_or_Area);
+      if (ff == null || ff < sizeLoAc || ff > sizeHiAc) return false;
+    } else if (sizeActive) {
       const groupAc = Number(p._saleGroupTotalAcres);
       const parcelAc = Number.isFinite(groupAc) && groupAc > 0
         ? groupAc

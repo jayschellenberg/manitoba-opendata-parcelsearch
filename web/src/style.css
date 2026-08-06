@@ -834,13 +834,23 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   margin-top: 4px;
 }
 /* Four controls on 288px: Plan # | Ac/SF pill | Lo | Hi.
-   Plan # is fixed narrow (it was ~106px and full-width-flexible before
-   the pill joined the row) and the pill takes its natural width, so the
-   two size boxes split whatever is left evenly. */
-.sidebar .size-vacant-row .sales-plan-field { flex: 0 0 52px; min-width: 0; }
+   The size boxes hold short numbers, the plan number does not, so the
+   two size boxes are fixed narrow and Plan # takes everything left over
+   (~125px — every pixel the row can spare once the pill and the two
+   boxes are placed). */
+.sidebar .size-vacant-row .sales-plan-field { flex: 1 1 auto; min-width: 0; }
 .sidebar .size-vacant-row .size-uom-field   { flex: 0 0 auto; }
 .sidebar .size-vacant-row .size-low-field,
-.sidebar .size-vacant-row .size-high-field { flex: 1 1 0; min-width: 0; }
+.sidebar .size-vacant-row .size-high-field { flex: 0 0 36px; min-width: 0; }
+/* Tighter side padding on just these two: at 36px the default 6px each
+   side would leave only ~24px of visible text, which is under three
+   digits. */
+.sidebar .size-vacant-row .size-low-field input,
+.sidebar .size-vacant-row .size-high-field input { padding-left: 4px; padding-right: 4px; }
+/* Tighter than the stock pill: a third segment (FF) at the default 10px
+   side padding would take ~17px straight off the Plan # field, which is
+   the one control on this row with no room to give. */
+.sidebar .size-vacant-row .uom-pill button { padding-left: 6px; padding-right: 6px; }
 .sidebar .size-vacant-row input[type="number"],
 .sidebar .size-vacant-row input[type="text"] {
   width: 100%;
