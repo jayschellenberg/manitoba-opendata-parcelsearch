@@ -838,14 +838,22 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
    two size boxes are fixed narrow and Plan # takes everything left over
    (~125px — every pixel the row can spare once the pill and the two
    boxes are placed). */
-.sidebar .size-vacant-row .sales-plan-field { flex: 1 1 auto; min-width: 0; }
+/* Plan # is FIXED, not flexible.
+   It was the row's only `flex: 1 1 auto` item, so it absorbed every
+   pixel the sidebar gained — at a 421px sidebar it reached 179px and
+   showed 19 characters, while the boxes beside it stayed put. A plan
+   number is at most 7 digits and usually 3-5, so 70px is all it can use:
+   53px for seven zeros (the widest digit) + 12px padding + 2px borders,
+   plus a few px of slack.
+   The two size boxes take the slack instead: they are the controls that
+   benefit from width, holding 7-digit square-foot figures. */
+.sidebar .size-vacant-row .sales-plan-field { flex: 0 0 70px; min-width: 0; }
 .sidebar .size-vacant-row .size-uom-field   { flex: 0 0 auto; }
-/* 66px each: the Ac/SF/FF select is ~40px narrower than the three-segment
-   pill it replaced, and that space goes here rather than back to Plan #.
-   A six-digit square-foot figure (87,120 sf = 2 ac) needs it; Plan # was
-   already comfortable at 94. */
+/* The flexible pair on this row, floored at 66px — enough for a
+   six-digit square-foot figure (87,120 sf = 2 ac) at the narrowest
+   sidebar, and growing from there as the sidebar widens. */
 .sidebar .size-vacant-row .size-low-field,
-.sidebar .size-vacant-row .size-high-field { flex: 0 0 66px; min-width: 0; }
+.sidebar .size-vacant-row .size-high-field { flex: 1 1 66px; min-width: 0; }
 /* Tighter side padding on just these two: at 36px the default 6px each
    side would leave only ~24px of visible text, which is under three
    digits. */

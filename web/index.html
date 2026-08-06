@@ -530,9 +530,14 @@
           <details class="more-filters sales-filters sales-only">
             <summary>Additional filters</summary>
             <div class="size-vacant-row">
+              <!-- A plan number is at most 7 digits, usually 3-5, so this is
+                   sized for 7 and fixed — see the CSS. `title` rather than a
+                   `.tip` span for the same reason as the size boxes: a .tip
+                   makes infoIcon.js inject an ⓘ button inside the field,
+                   which would take 31px of a 65px control. -->
               <span class="field sales-plan-field">
-                <input id="sales-plan" type="text" placeholder="Plan #" autocomplete="off" />
-                <span class="tip">Filter uploaded sales to rows whose plan number contains this string. Case-insensitive substring match against both the legal-index Plan field AND the raw "Legal Description" cell from the uploaded CSV.</span>
+                <input id="sales-plan" type="text" placeholder="Plan #" autocomplete="off" maxlength="12"
+                       title="Filter uploaded sales to rows whose plan number contains this string. Case-insensitive substring match against both the legal-index Plan field AND the raw &quot;Legal Description&quot; cell from the uploaded CSV." />
               </span>
               <!-- Unit for the two size boxes below. The boxes are read in
                    whichever unit is lit, so switching the pill re-interprets
