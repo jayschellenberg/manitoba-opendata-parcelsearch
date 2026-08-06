@@ -265,7 +265,40 @@ const $duMin         = document.getElementById('du-min');
 // buttons' .active class and updates the dataset attribute.
 const $sizeLow       = document.getElementById('size-low');
 const $sizeHigh      = document.getElementById('size-high');
-// (Acres/Sq Ft pill removed — size filter is permanently acres.)
+const $sizeUomAcres  = document.getElementById('size-uom-acres');
+const $sizeUomSf     = document.getElementById('size-uom-sf');
+
+/** Which unit the two size boxes are read in. Stored on the pill's own
+ *  dataset so there is one source of truth rather than two .active
+ *  classes to keep in agreement. */
+function getSizeUom() {
+  return $sizeUomAcres?.parentElement?.dataset?.uom === 'sf' ? 'sf' : 'acres';
+}
+
+/**
+ * Flip the size filter between acres and square feet.
+ *
+ * The typed values are deliberately NOT converted — the boxes are read
+ * in whichever unit is lit, so switching re-interprets what is already
+ * there. Converting instead would turn a round "5" into "217,800" and
+ * leave the user editing a number they never entered. The placeholders
+ * move so the active unit is always visible on an empty box.
+ */
+function setSizeUom(uom) {
+  if (uom !== 'acres' && uom !== 'sf') return;
+  const pill = $sizeUomAcres?.parentElement;
+  if (pill) pill.dataset.uom = uom;
+  if ($sizeUomAcres) $sizeUomAcres.classList.toggle('active', uom === 'acres');
+  if ($sizeUomSf)    $sizeUomSf.classList.toggle('active',    uom === 'sf');
+  const label = uom === 'sf' ? 'SF' : 'Ac';
+  if ($sizeLow)  $sizeLow.placeholder  = `Lo ${label}`;
+  if ($sizeHigh) $sizeHigh.placeholder = `Hi ${label}`;
+  // Only re-filter when a bound is actually set; flipping the pill with
+  // both boxes empty should not disturb the result set.
+  if ($sizeLow?.value !== '' || $sizeHigh?.value !== '') refilterCsvIfActive();
+}
+$sizeUomAcres?.addEventListener('click', () => setSizeUom('acres'));
+$sizeUomSf?.addEventListener('click',    () => setSizeUom('sf'));
 // Sales-CSV vacant/improved selector (All Sales / Vacant Land Only /
 // Improved Only) — strict group semantics. Vacant reads
 // _saleGroupAllVacant (every member known vacant), Improved reads
@@ -5015,18 +5048,18 @@ function filterCsvRowsByOtherSearches(rows) {
   const duMode  = $duMode?.value || '';
   const duMin   = parseInt($duMin?.value || '', 10);
 
-  // Size range — Lo Ac / Hi Ac are always interpreted as acres
-  // (the Sq Ft pill was removed; the simplified appraisal workflow
-  // never wanted the unit toggle in practice). Empty Lo → 0;
-  // empty Hi → ∞. Filter only fires when at least one bound is a
-  // finite positive number; both empty is a no-op so users who
-  // haven't touched the inputs aren't surprised by parcels
+  // Size range — the boxes are read in whichever unit the Ac/SF pill
+  // has lit, and converted to acres here because parcelAcres() returns
+  // acres. Empty Lo → 0; empty Hi → ∞. The filter only fires when at
+  // least one bound is a finite number; both empty is a no-op so users
+  // who haven't touched the inputs aren't surprised by parcels
   // disappearing.
-  const sizeLoAcRaw = parseFloat($sizeLow?.value);
-  const sizeHiAcRaw = parseFloat($sizeHigh?.value);
-  const sizeActive = Number.isFinite(sizeLoAcRaw) || Number.isFinite(sizeHiAcRaw);
-  const sizeLoAc = Number.isFinite(sizeLoAcRaw) ? sizeLoAcRaw : 0;
-  const sizeHiAc = Number.isFinite(sizeHiAcRaw) ? sizeHiAcRaw : Infinity;
+  const sizeLoRaw = parseFloat($sizeLow?.value);
+  const sizeHiRaw = parseFloat($sizeHigh?.value);
+  const toAcres = getSizeUom() === 'sf' ? (v) => v / 43560 : (v) => v;
+  const sizeActive = Number.isFinite(sizeLoRaw) || Number.isFinite(sizeHiRaw);
+  const sizeLoAc = Number.isFinite(sizeLoRaw) ? toAcres(sizeLoRaw) : 0;
+  const sizeHiAc = Number.isFinite(sizeHiRaw) ? toAcres(sizeHiRaw) : Infinity;
 
   // Sale-date range. Empty from = -Infinity, empty to = +Infinity. The
   // HTML5 date input gives us YYYY-MM-DD strings — parseSaleDate() in

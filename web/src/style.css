@@ -833,9 +833,14 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   align-items: center;
   margin-top: 4px;
 }
-.sidebar .size-vacant-row .sales-plan-field { flex: 1 1 auto; min-width: 0; }
+/* Four controls on 288px: Plan # | Ac/SF pill | Lo | Hi.
+   Plan # is fixed narrow (it was ~106px and full-width-flexible before
+   the pill joined the row) and the pill takes its natural width, so the
+   two size boxes split whatever is left evenly. */
+.sidebar .size-vacant-row .sales-plan-field { flex: 0 0 52px; min-width: 0; }
+.sidebar .size-vacant-row .size-uom-field   { flex: 0 0 auto; }
 .sidebar .size-vacant-row .size-low-field,
-.sidebar .size-vacant-row .size-high-field { flex: 0 0 85px; min-width: 0; }
+.sidebar .size-vacant-row .size-high-field { flex: 1 1 0; min-width: 0; }
 .sidebar .size-vacant-row input[type="number"],
 .sidebar .size-vacant-row input[type="text"] {
   width: 100%;
@@ -2049,8 +2054,29 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   gap: 6px;
   flex-wrap: wrap;
 }
+/* All Sales and Charts split the first line of this row; Far-Flung and
+   Exclude wrap onto the second, as they already did when the select had
+   the line to itself. min-width:0 on both halves lets the select shrink
+   below its intrinsic width instead of shoving Charts onto a new line. */
+.sidebar .far-flung-row .vacant-only-label select { width: 100%; }
+/* An explicit half each, rather than `flex: 1 1 0` on both. With grow
+   the button still came out ~38px wider than the select — its intrinsic
+   button sizing wins over a 0 basis even with min-width: 0 — which left
+   the two visibly uneven. A fixed basis takes intrinsic width out of it
+   entirely. The 3px is half the row's 6px gap. */
+.sidebar .far-flung-row #charts-open {
+  flex: 0 0 calc(50% - 3px);
+  min-width: 0;
+}
+/* Force Far-Flung onto its own line rather than letting it tuck into any
+   slack left beside Charts, which would leave the row ragged at some
+   sidebar widths. */
+.sidebar .far-flung-row .far-flung-field { flex-basis: 100%; }
 .sidebar .far-flung-row .vacant-only-label {
-  flex: 0 0 100%;
+  /* Was `0 0 100%` when this select had the line to itself; now an
+     explicit half, matching #charts-open beside it. */
+  flex: 0 0 calc(50% - 3px);
+  min-width: 0;
   gap: 5px;
 }
 .sidebar .far-flung-field {

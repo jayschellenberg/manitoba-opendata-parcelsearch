@@ -496,6 +496,18 @@
                 <option value="improved">Improved Only</option>
               </select>
             </label>
+            <!-- Sits on the right half of the All Sales line, where it is
+                 in view beside the filters it charts. Its old home at the
+                 foot of the sidebar was ~500px below the fold.
+                 Sales-mode only — without a sale date and price there is
+                 nothing for it to plot (see the body:not(.sales-mode)
+                 rule in style.css). -->
+            <button
+              id="charts-open"
+              type="button"
+              class="secondary"
+              title="Open scatter charts of the filtered sales in a new tab — price per lot and per acre/SF over time, by size, by zoning and by distance. The tab tracks these filters live."
+            >Charts</button>
             <span class="far-flung-field">
               <label for="far-flung-km">Far-Flung &gt;</label>
               <input id="far-flung-km" type="number" min="0" step="1" />
@@ -522,13 +534,23 @@
                 <input id="sales-plan" type="text" placeholder="Plan #" autocomplete="off" />
                 <span class="tip">Filter uploaded sales to rows whose plan number contains this string. Case-insensitive substring match against both the legal-index Plan field AND the raw "Legal Description" cell from the uploaded CSV.</span>
               </span>
+              <!-- Unit for the two size boxes below. The boxes are read in
+                   whichever unit is lit, and converted to acres for the
+                   comparison — so switching the pill re-interprets what is
+                   already typed rather than clearing it. -->
+              <span class="field size-uom-field">
+                <span class="uom-pill" role="group" aria-label="Size unit" data-uom="acres">
+                  <button id="size-uom-acres" type="button" class="active" data-uom="acres" title="Enter the size range in acres">Ac</button>
+                  <button id="size-uom-sf" type="button" data-uom="sf" title="Enter the size range in square feet">SF</button>
+                </span>
+              </span>
               <span class="field size-low-field">
                 <input id="size-low" type="number" min="0" step="0.01" placeholder="Lo Ac" />
-                <span class="tip">Minimum acres (empty = 0)</span>
+                <span class="tip">Minimum parcel size in the unit selected by the Ac/SF pill (empty = no minimum).</span>
               </span>
               <span class="field size-high-field">
                 <input id="size-high" type="number" min="0" step="0.01" placeholder="Hi Ac" />
-                <span class="tip">Maximum acres (empty = no max)</span>
+                <span class="tip">Maximum parcel size in the unit selected by the Ac/SF pill (empty = no maximum).</span>
               </span>
             </div>
             <!-- Street Name + Min $/Ac + Max $/Ac on a single row.
@@ -804,17 +826,6 @@
         <div class="sidebar-status">
           <div class="action-row export-row">
             <button id="export" type="button" class="secondary">Export CSV</button>
-            <!-- Opens the Sales Charts tab (charts.html) and keeps it fed
-                 over a BroadcastChannel, so it re-plots as these filters
-                 change rather than freezing at whatever was on screen when
-                 it opened. Sales-mode only: without a sale date and price
-                 there is nothing for it to plot. -->
-            <button
-              id="charts-open"
-              type="button"
-              class="secondary"
-              title="Open scatter charts of the filtered sales in a new tab — price per lot / acre / SF over time, by size, by zoning and by distance. The tab tracks these filters live."
-            >Charts</button>
             <button
               id="route-starred"
               type="button"
