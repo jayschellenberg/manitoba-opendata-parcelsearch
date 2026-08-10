@@ -5018,9 +5018,15 @@ function refilterCsvIfActive() {
   const ffNote = ff.sales > 0
     ? ` · ${ff.sales} far-flung sale${ff.sales === 1 ? '' : 's'} excluded`
     : '';
-  const msg = filtered.length === total
+  // A ticked water-influence box with no resolved shard passes every row
+  // through (unknown ≠ excluded), which without a note reads as "every
+  // sale qualifies" — same honesty rule renderWaterFilteredView applies.
+  const waterNote = waterInfluenceFilterInert(csvFullRows)
+    ? " · water-influence data hasn't loaded for these municipalities, so that filter was not applied"
+    : '';
+  const msg = (filtered.length === total
     ? `${csvFullBaseMsg}${ffNote}`
-    : `${filtered.length} of ${total} sales shown (filtered)${ffNote}`;
+    : `${filtered.length} of ${total} sales shown (filtered)${ffNote}`) + waterNote;
   setCount(msg);
   renderTable(filtered);
   // Re-narrow the map's parcel highlight to the filtered subset.
@@ -5094,6 +5100,15 @@ function filterCsvRowsByOtherSearches(rows) {
   const status  = $changedStatus?.value || '';
   const duMode  = $duMode?.value || '';
   const duMin   = parseInt($duMin?.value || '', 10);
+
+  // Waterfront / near-water boxes — OR'd with each other, AND'd with
+  // everything else, exactly rowPassesWaterFilter's semantics so the
+  // sales pass and the property-search view filter can never disagree
+  // about what qualifies. Gated per-row on _waterLoaded: a row whose
+  // muni shard never resolved is UNKNOWN, not excluded (see
+  // rowPassesWaterFilter for the Niverville incident that rule encodes).
+  const wantFront = !!$waterfrontOnly?.checked;
+  const wantNear  = !!$nearWaterOnly?.checked;
 
   // Size range — the boxes are read in whichever unit the Ac/SF pill
   // has lit, and converted to acres here because parcelAcres() returns
@@ -5200,6 +5215,13 @@ function filterCsvRowsByOtherSearches(rows) {
     // unmeasurable span, so a parcel whose geometry didn't load is
     // never dropped by this filter.
     if (farFlungThreshold != null && isFarFlungSale(p, farFlungThreshold)) return false;
+
+    // Water influence — cheap stamped-property test, no fetch.
+    if ((wantFront || wantNear) && p._waterLoaded) {
+      const ok = (wantFront && isWaterfront(p._water))
+              || (wantNear  && isNearWater(p._water));
+      if (!ok) return false;
+    }
 
     // Plan # filter — runs before the other CSV-mode checks because
     // it's the cheapest predicate. Substring-matches against both
@@ -9381,10 +9403,23 @@ $nearWaterOnly?.addEventListener('change', onWaterInfluenceFilterToggle);
  * resolveWaterRollPrefilter itself requires — re-run the search. Otherwise
  * (imported list, or province-wide where no pre-filter ran) the rows in hand
  * are the full set and the cheap live view filter is still correct.
+ *
+ * Sales-CSV mode trumps all of that: the pasted/uploaded sales are the
+ * whole universe, so the boxes join the other sales filters via
+ * refilterCsvIfActive — never a re-search, which would destroy the upload.
  */
 let waterInfluenceRerunTimer = null;
 
 async function onWaterInfluenceFilterToggle() {
+  // Sales-CSV mode: the loaded sales ARE the universe. No roll pre-filter
+  // ever constrained them, so a view filter is fully correct — and a
+  // re-search would be worse than useless, since runSearch clears
+  // csvFullRows and replaces the upload with a plain parcel search.
+  // Routing through the sales filter pass (rather than the stash-based
+  // view filter below) lets these boxes compose with the date / class /
+  // size filters instead of the two paths overwriting each other's render.
+  if (csvFullRows != null) { refilterCsvIfActive(); return; }
+
   const usedPrefilter = !!$municipality?.value.trim()
     && !(Array.isArray(listParcelKeys) && listParcelKeys.length);
   if (!usedPrefilter) return onWaterFilterToggle();
