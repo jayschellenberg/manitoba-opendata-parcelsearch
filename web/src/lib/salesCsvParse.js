@@ -27,6 +27,17 @@
  *      in the roll column, and the roll/muni guard below discarded the
  *      lot. A 9-sale Flin Flon paste plotted 4 sales — exactly the four
  *      that happened to be single-parcel. See salesCsvParse.test.js.
+ *      Comes in two sub-shapes, needing different reconstructions:
+ *        3a. every logical row carries all its columns, so counting
+ *            delimiters recovers the row ends (tokenizeRowsFixedWidth);
+ *        3b. trailing blank columns are OMITTED — the copy ends each row
+ *            at the last non-empty cell — so the delimiter count never
+ *            reaches the header width and 3a's tokenizer glues
+ *            consecutive sales together instead. Recovered by anchoring
+ *            on the Sale Date column: a physical line whose first cell
+ *            reads as a date starts a sale, anything else continues the
+ *            one above (tokenizeRowsDateAnchored). A 44-sale Niverville
+ *            paste in this shape plotted only its 25 single-parcel rows.
  *
  * Pure (no DOM / no network) so the row reconstruction can be unit
  * tested; main.js owns turning the records into features.
@@ -48,6 +59,19 @@ const HEADER_ALIASES = {
   streetAddress:    ['street address', 'streetaddress', 'address'],
   legalDescription: ['legal description', 'legaldesc', 'legaldescription', 'legal'],
   primaryProperty:  ['primary property', 'primaryprop', 'primaryproperty'],
+  // Columns the MAO sales-database export adds (mao-scrape/scripts/
+  // export_sales_for_web.R). Absent from a hand-pasted comp set, and every
+  // field below is OPTIONAL — when the column is missing the key is omitted
+  // entirely, so records from the paste/upload paths keep their exact shape.
+  //
+  // parcelChange matters: it says whether the parcel was reconfigured AFTER
+  // the sale, which decides whether parcelSize describes what actually sold.
+  // Roughly one sale in thirteen fails that test, so a size shown without it
+  // can be wrong by a factor of four on a subdivided parcel.
+  saleTypeGroup:    ['sale type group', 'sale type', 'saletypegroup'],
+  parcelSize:       ['parcel size', 'parcelsize'],
+  parcelSizeUnit:   ['parcel size unit', 'parcelsizeunit'],
+  parcelChange:     ['parcel change', 'parcelchange'],
 };
 
 /**
@@ -98,6 +122,74 @@ export function splitStackedCell(cell) {
 }
 
 /**
+ * Does this cell read as a sale date? The anchor test for shape 3b's
+ * reconstruction, so it accepts every format the sources actually emit —
+ * the MAO grid ("Dec 30, 2025"), the sales-database CSV export
+ * ("30-Dec-25"), ISO, and slashed dates — and nothing looser. Roll
+ * numbers, addresses and legal descriptions must all fail it, because a
+ * false positive here splits a sale in half.
+ */
+function looksLikeSaleDate(cell) {
+  const v = String(cell ?? '').trim();
+  if (!v) return false;
+  return /^[A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}$/.test(v)  // Dec 30, 2025
+    || /^\d{1,2}-[A-Za-z]{3,9}-\d{2,4}$/.test(v)           // 30-Dec-25
+    || /^\d{4}-\d{2}-\d{2}$/.test(v)                       // 2025-12-30
+    || /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(v);              // 12/30/2025
+}
+
+/**
+ * Reassemble shape 3b: unquoted stacked cells WITHOUT trailing blank
+ * columns, where the fixed-width tokenizer has no delimiter count to
+ * find the row ends with. The Sale Date column is the anchor instead —
+ * every sale starts with one, and no stacked cell's values (rolls,
+ * addresses, legals) can be mistaken for one — so a physical line whose
+ * first cell reads as a date opens a new logical row and every other
+ * line is glued back onto the row above. Each reassembled block then
+ * tokenizes with newlines kept intra-cell (fixed-width with an
+ * unreachable column count), which restores the stacked cells exactly
+ * as shape 3a produces them.
+ *
+ * Callers must guard this the same way as tokenizeRowsFixedWidth: on
+ * shape-1 input (per-parcel rows whose continuations carry a BLANK
+ * date) it glues rows that should stay apart and loses their parcels,
+ * so parseSalesCsv only keeps it when it strictly recovers more.
+ */
+function tokenizeRowsDateAnchored(text, delimiter) {
+  const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
+  const rows = [];
+  let sawHeader = false;
+  let block = null;
+  const flush = () => {
+    if (block == null) return;
+    const [row] = tokenizeRowsFixedWidth(block, delimiter, Infinity);
+    if (row) rows.push(row);
+    block = null;
+  };
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    if (!sawHeader) {
+      sawHeader = true;
+      const [header] = tokenizeRows(line, delimiter);
+      if (header) rows.push(header);
+      continue;
+    }
+    // A leading quote is stripped before the date test so a quoted-CSV
+    // paste isn't unreadable to the anchor — though that shape parses
+    // fine under the naive tokenizer and wins the score anyway.
+    const firstCell = (line.split(delimiter, 1)[0] || '').replace(/^\s*"/, '');
+    if (looksLikeSaleDate(firstCell) || block == null) {
+      flush();
+      block = line;
+    } else {
+      block += '\n' + line;
+    }
+  }
+  flush();
+  return rows;
+}
+
+/**
  * The k-th parcel's value from a split cell. A cell holding a single
  * value applies to every parcel in the sale (the Municipality column of
  * a stacked sale is often written once); a stacked cell is positional.
@@ -135,6 +227,12 @@ function recordsFromRows(rows, cols) {
     const addresses = valuesAt(cols.streetAddress);
     const legals    = valuesAt(cols.legalDescription);
     const primaries = valuesAt(cols.primaryProperty);
+    // Optional MAO-export columns. Stacked like any other per-parcel cell, so a
+    // multi-parcel sale can carry a different size per roll.
+    const types     = valuesAt(cols.saleTypeGroup);
+    const sizes     = valuesAt(cols.parcelSize);
+    const sizeUnits = valuesAt(cols.parcelSizeUnit);
+    const changes   = valuesAt(cols.parcelChange);
 
     const parcels = [];
     for (let k = 0; k < rolls.length; k++) {
@@ -150,6 +248,12 @@ function recordsFromRows(rows, cols) {
         streetAddress:    pickValue(addresses, k),
         legalDescription: pickValue(legals, k),
         primaryProperty:  pickValue(primaries, k),
+        // Spread conditionally: a pasted comp set has none of these columns and
+        // must keep producing exactly the seven-field record it always has.
+        ...(cols.saleTypeGroup  >= 0 ? { saleTypeGroup:  pickValue(types, k) }     : {}),
+        ...(cols.parcelSize     >= 0 ? { parcelSize:     pickValue(sizes, k) }     : {}),
+        ...(cols.parcelSizeUnit >= 0 ? { parcelSizeUnit: pickValue(sizeUnits, k) } : {}),
+        ...(cols.parcelChange   >= 0 ? { parcelChange:   pickValue(changes, k) }   : {}),
       });
     }
     if (parcels.length === 0) continue;
@@ -212,6 +316,22 @@ export function parseSalesCsv(text) {
     if (wideRows.length >= 2) {
       const reassembled = recordsFromRows(wideRows, cols);
       if (reassembled.length > records.length) records = reassembled;
+    }
+
+    // Third candidate, same scoring rule: shape 3b (stacked cells AND
+    // trailing columns omitted) defeats the fixed-width tokenizer — the
+    // delimiter count never reaches the header width, so it glues
+    // consecutive sales and scores WORSE than naive, which itself only
+    // recovers the single-parcel rows. Anchoring on the date column
+    // recovers the rest. Only meaningful when Sale Date is the leading
+    // column (the anchor reads each line's first cell), which is where
+    // every source that produces this shape puts it.
+    if (cols.saleDate === 0) {
+      const anchoredRows = tokenizeRowsDateAnchored(text, delimiter);
+      if (anchoredRows.length >= 2) {
+        const anchored = recordsFromRows(anchoredRows, cols);
+        if (anchored.length > records.length) records = anchored;
+      }
     }
   }
 
