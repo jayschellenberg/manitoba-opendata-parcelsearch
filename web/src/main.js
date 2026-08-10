@@ -3374,13 +3374,10 @@ async function runSearch() {
     renderTable(parcelFc.features.map((p) => ({ parcel: p, zoning: [], devPlan: [] })));
     setMapData(parcelFc, EMPTY_FC, EMPTY_FC);
 
-    // Auto-show the muni-wide parcel fabric so the search results
-    // sit in their surrounding context. Done up front (not gated on
-    // enrichment finishing) so the user gets context immediately.
-    if (inputs.municipality && !$muniParcelsToggle.disabled
-        && !$muniParcelsToggle.classList.contains('active')) {
-      toggleAuxOverlay('muniParcels');
-    }
+    // The muni-wide parcel fabric (Assessment Parcels) is a manual
+    // toggle only — it used to auto-show here on every muni-scoped
+    // search for context, but turning a layer on that the user didn't
+    // ask for costs a per-muni fetch and clutters the map.
 
     // Threshold rule: small/medium result sets auto-enrich so the
     // zoning + dev-plan columns are there as soon as the search
