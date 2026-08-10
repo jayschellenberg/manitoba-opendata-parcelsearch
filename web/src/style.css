@@ -366,6 +366,61 @@ header small a {
   margin-top: 4px;
 }
 
+/* MAO sales database panel. Presented above the upload dropzone because
+   once imported it is the primary source; upload/paste stay as fallbacks.
+   Solid border (vs the dropzone's dashed) so it doesn't read as a drop
+   target — nothing is dropped here, a folder is nominated once. */
+.sales-db {
+  border: 1px solid var(--color-neutral-300, #d4d4d8);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: var(--color-neutral-50, #fafafa);
+  margin-bottom: 10px;
+}
+.sales-db-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sales-db-status {
+  font-size: 0.78rem;
+  color: var(--color-neutral-600, #52525b);
+}
+.sales-db-empty p,
+.sales-db-hint {
+  font-size: 0.78rem;
+  color: var(--color-neutral-600, #52525b);
+  margin: 6px 0;
+}
+.sales-db-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin: 8px 0 4px;
+}
+#sales-db-munis {
+  width: 100%;
+  font-size: 0.82rem;
+}
+.sales-db-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+/* Newer data available. Amber rather than red — informational, not an error. */
+.sales-db-update {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  background: var(--color-amber-50, #fffbeb);
+  border: 1px solid var(--color-amber-300, #fcd34d);
+  color: var(--color-amber-900, #78350f);
+}
+
 /* Sales dropzone (Phase 3). Drag-and-drop wrapper around the
    hidden <input type="file">. The hover/drag-over state lights up
    the border in accent blue so dropping reads as "release here".

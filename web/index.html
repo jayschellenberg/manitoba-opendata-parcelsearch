@@ -385,6 +385,47 @@
           aria-labelledby="tab-btn-sales"
           hidden
         >
+          <!-- MAO sales database. Nothing here ships with the site: the
+               archive is paid MAO subscriber data, so the user nominates a
+               folder on their own disk (the scraper's export, kept current
+               by Dropbox) and it is read locally into IndexedDB. Nothing is
+               uploaded and the server never sees it — a visitor without that
+               folder simply has no database, which is the access control.
+               Chrome/Edge keep a handle so a refreshed export is picked up
+               automatically; other browsers use the folder input fallback. -->
+          <div class="sales-db" id="sales-db">
+            <div class="sales-db-head">
+              <strong>MAO sales database</strong>
+              <span class="sales-db-status" id="sales-db-status">Not imported</span>
+            </div>
+
+            <!-- Shown when nothing is imported yet. -->
+            <div class="sales-db-empty" id="sales-db-empty">
+              <p>Use your scraped MAO sales archive as the source instead of
+                 uploading a CSV each time. Choose the export folder once —
+                 it stays on this device.</p>
+              <button type="button" id="sales-db-import" class="parcel-list-modal-btn primary">Choose export folder…</button>
+              <input id="sales-db-folder-input" type="file" webkitdirectory directory multiple hidden />
+            </div>
+
+            <!-- Shown once a database is present. -->
+            <div class="sales-db-ready" id="sales-db-ready" hidden>
+              <label class="sales-db-label" for="sales-db-munis">Municipalities</label>
+              <select id="sales-db-munis" multiple size="8" aria-describedby="sales-db-hint"></select>
+              <p class="sales-db-hint" id="sales-db-hint">
+                Ctrl/Cmd-click to pick several — comparable selection usually spans a few.
+              </p>
+              <div class="sales-db-actions">
+                <button type="button" id="sales-db-load" class="parcel-list-modal-btn primary">Load sales</button>
+                <button type="button" id="sales-db-refresh" class="parcel-list-modal-btn" title="Re-read the export folder">Refresh</button>
+                <button type="button" id="sales-db-forget" class="parcel-list-modal-btn" title="Remove the imported database from this browser">Forget</button>
+              </div>
+              <p class="sales-db-update" id="sales-db-update" hidden></p>
+            </div>
+          </div>
+
+          <div class="sales-paste-row"><span>or</span></div>
+
           <!-- Phase 3 dropzone. The hidden #sales-upload-input is the
                actual <input type="file">; clicking or dropping on the
                dropzone wrapper drives it. main.js handles change +

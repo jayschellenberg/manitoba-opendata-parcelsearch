@@ -11,6 +11,7 @@ import { initChipInput } from './lib/chipInput.js';
 import { initInfoIcons } from './lib/infoIcon.js';
 import { initParcelListImport } from './lib/parcelListImport.js';
 import { initSalesPasteImport } from './lib/salesPasteImport.js';
+import { initSalesDbPanel } from './lib/salesDbPanel.js';
 // Route planner — TSP solver + Mapbox client.
 import { solveRoute, haversineMatrix, mostOutlyingIndex } from './lib/routeSolver.js';
 import {
@@ -1786,6 +1787,24 @@ const salesImportModal = initSalesPasteImport({
       setActiveTab('sales', { skipFocus: true });
     } catch (err) {
       console.error('Sales paste load failed', err);
+      setCount(`Sales load failed: ${err.message}`);
+    }
+  },
+});
+
+// MAO sales database — the locally-imported archive used as a source, instead
+// of uploading a CSV every time. It hands us the same { name, text } shape the
+// paste and Recent-uploads paths already produce, so everything downstream
+// (parse, roll lookup, enrichment, charts) is unchanged. The archive lives only
+// in this browser and is never uploaded — see lib/salesStore.js for why.
+initSalesDbPanel({
+  setStatus: setCount,
+  onLoad: async ({ name, text }) => {
+    try {
+      await handleSalesUpload({ name, text });
+      setActiveTab('sales', { skipFocus: true });
+    } catch (err) {
+      console.error('Sales database load failed', err);
       setCount(`Sales load failed: ${err.message}`);
     }
   },
