@@ -269,7 +269,7 @@ await test('buildCsvFor windows by date, relying on newest-first ordering', asyn
   const win = await store.buildCsvFor(['400'], { from: '2026-01-01', to: '2026-12-31' });
   assert.equal(win.sales, 2, 'only the two 2026 sales');
   assert.equal(win.salesAvailable, 4);
-  assert.deepEqual(win.window, { from: '2026-01-01', to: '2026-12-31' });
+  assert.deepEqual(win.window, { from: '2026-01-01', to: '2026-12-31', type: null });
   assert.ok(win.text.includes('2026-07-21') && win.text.includes('2026-03-02'));
   assert.ok(!win.text.includes('1991-02-01'), 'older rows never read');
   assert.equal(win.text.split('\n').filter((l) => l.trim()).length, 3, 'header + 2 rows');
@@ -281,6 +281,31 @@ await test('buildCsvFor windows by date, relying on newest-first ordering', asyn
 
   // A window that excludes everything returns null rather than a header-only CSV.
   assert.equal(await store.buildCsvFor(['400'], { from: '2030-01-01' }), null);
+});
+
+await test('buildCsvFor filters by sale type without ending the scan early', async () => {
+  // Type is NOT sorted, so unlike the date window it must keep scanning past
+  // a non-matching row rather than stopping at the first one.
+  await store.clearSales();
+  const csv = 'muni_no,municipality,sale_date_parsed,Sale Type Group\n'
+    + '400,ALTONA,2026-07-21,ICI LAND AND BUILDINGS\n'
+    + '400,ALTONA,2026-06-02,RESIDENTIAL LAND AND BUILDINGS\n'
+    + '400,ALTONA,2026-05-15,ICI LAND AND BUILDINGS\n';
+  await store.putShard({ muni_no: '400', municipality: 'TOWN OF ALTONA', csv, meta: { rows: 3 } });
+
+  const ici = await store.buildCsvFor(['400'], { type: 'ICI LAND AND BUILDINGS' });
+  assert.equal(ici.sales, 2, 'both ICI rows, including the one after a non-match');
+  assert.ok(!ici.text.includes('RESIDENTIAL'));
+  assert.equal(ici.window.type, 'ICI LAND AND BUILDINGS');
+
+  // Case-insensitive, and combinable with the date window.
+  const both = await store.buildCsvFor(['400'], { type: 'ici land and buildings', from: '2026-06-01' });
+  assert.equal(both.sales, 1, 'ICI within the window only');
+
+  // No type means no type filtering.
+  assert.equal((await store.buildCsvFor(['400'], {})).sales, 3);
+  // A type nothing matches returns null rather than a header-only CSV.
+  assert.equal(await store.buildCsvFor(['400'], { type: 'FARM BARE LAND' }), null);
 });
 
 await test('date window keeps undated rows and tolerates an export without the ISO column', async () => {

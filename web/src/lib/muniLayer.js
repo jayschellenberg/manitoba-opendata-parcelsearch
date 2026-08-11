@@ -79,22 +79,15 @@ async function ensureLayer(map) {
     type: 'fill',
     source: SRC,
     paint: {
-      // Three states, deliberately distinguishable at a glance and in the
-      // same blue family so it reads as one control:
-      //   selected           — solid enough to find while zoomed out
-      //   adjacent (derived) — visibly weaker, "coming along for the ride"
-      //   neither            — transparent; the outline alone carries it
-      'fill-color': [
-        'case',
-        ['boolean', ['feature-state', 'selected'], false], '#1d4ed8',
-        ['boolean', ['feature-state', 'adjacent'], false], '#60a5fa',
-        '#000000',
-      ],
+      // Selection is carried by the OUTLINE, not a fill (Jason,
+      // 2026-08-11): a tinted municipality washes over the parcels and
+      // sales dots inside it, which are the things actually being read.
+      // The fill is kept only as a hover cue — a whisper, so the cursor
+      // has something to land on without hiding anything.
+      'fill-color': '#1d4ed8',
       'fill-opacity': [
         'case',
-        ['boolean', ['feature-state', 'selected'], false], 0.28,
-        ['boolean', ['feature-state', 'adjacent'], false], 0.14,
-        ['boolean', ['feature-state', 'hover'], false], 0.08,
+        ['boolean', ['feature-state', 'hover'], false], 0.06,
         0,
       ],
     },
@@ -104,17 +97,28 @@ async function ensureLayer(map) {
     type: 'line',
     source: SRC,
     paint: {
+      // Three states read by line weight and colour alone:
+      //   selected           — strong blue, findable zoomed out
+      //   adjacent (derived) — same hue, thinner and paler
+      //   neither            — hairline grey, just context
       'line-color': [
         'case',
         ['boolean', ['feature-state', 'selected'], false], '#1d4ed8',
+        ['boolean', ['feature-state', 'adjacent'], false], '#60a5fa',
         '#94a3b8',
       ],
       'line-width': [
         'case',
-        ['boolean', ['feature-state', 'selected'], false], 1.6,
+        ['boolean', ['feature-state', 'selected'], false], 2.4,
+        ['boolean', ['feature-state', 'adjacent'], false], 1.6,
         0.6,
       ],
-      'line-opacity': 0.9,
+      'line-opacity': [
+        'case',
+        ['boolean', ['feature-state', 'selected'], false], 1,
+        ['boolean', ['feature-state', 'adjacent'], false], 0.9,
+        0.55,
+      ],
     },
   }, under);
   return true;

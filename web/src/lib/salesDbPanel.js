@@ -134,6 +134,7 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
   const $search   = document.getElementById('sales-db-muni-search');
   const $adjacent = document.getElementById('sales-db-adjacent');
   const $selcount = document.getElementById('sales-db-selcount');
+  const $type     = document.getElementById('sales-db-type');
 
   /**
    * A manifest's `adjacent` field as a list of muni_no strings, whatever
@@ -199,16 +200,65 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
     return out;
   }
 
+  // Above this many sales BEFORE the date/type filters, a load is worth a
+  // word of warning. Each sale becomes a parcel-geometry lookup at 80 rolls
+  // per request, so a whole region with no window is minutes of fetching,
+  // not seconds. Not a block — an appraiser may genuinely want it.
+  const BIG_LOAD_SALES = 25000;
+
   function updateSelCount() {
     if (!$selcount) return;
     const eff = effectiveSelection();
     const extra = eff.size - picked.size;
     const sales = muniIndex.reduce((s, m) => s + (eff.has(m.no) ? (m.sales || 0) : 0), 0);
     $selcount.textContent = eff.size
-      ? `${picked.size} selected${extra ? ` + ${extra} adjacent` : ''} · ${fmt(sales)} sales before date filtering`
+      ? `${picked.size} selected${extra ? ` + ${extra} adjacent` : ''} · ${fmt(sales)} sales before filtering`
       : 'None selected';
+    // The warning names the two filters that actually shrink the load, since
+    // "this is big" without a remedy is just nagging.
+    const { from, to } = dateWindow();
+    const wide = sales >= BIG_LOAD_SALES && !$type?.value && !(from || to);
+    $selcount.classList.toggle('is-warning', wide);
+    if (wide) {
+      $selcount.textContent += ' — large load; set a date range or sale type to speed it up';
+    }
     onSelectionChange?.(eff, picked);
     updateLoadEnabled();
+    updateStaleness();
+  }
+
+  // What the table currently holds, so we can tell the user when the controls
+  // have moved away from it. Set only by a successful load.
+  let loadedState = null;
+
+  const stateKey = () => {
+    const { from, to } = dateWindow();
+    return { munis: [...effectiveSelection()].sort().join(','), from, to, type: $type?.value || '' };
+  };
+
+  /**
+   * Warn when the loaded data no longer matches the controls.
+   *
+   * Changing the municipalities, the sale type, or WIDENING the dates leaves
+   * the table showing something other than what the panel now describes —
+   * and nothing re-reads the archive until Load runs again. Narrowing the
+   * dates is deliberately NOT stale: the sidebar filter still applies to
+   * what is in memory, so a shorter window is honest without a reload.
+   */
+  function updateStaleness() {
+    if (!$update) return;
+    if (!loadedState) { $update.hidden = true; $update.classList.remove('is-stale'); return; }
+    const now = stateKey();
+    const widened = (loadedState.from && (!now.from || now.from < loadedState.from))
+                 || (loadedState.to && (!now.to || now.to > loadedState.to));
+    const stale = now.munis !== loadedState.munis || now.type !== loadedState.type || widened;
+    $update.hidden = !stale;
+    $update.classList.toggle('is-stale', stale);
+    if (stale) {
+      $update.textContent = now.munis !== loadedState.munis
+        ? 'Selected municipalities changed — hit Load sales to refresh the data.'
+        : 'Date range or sale type changed — hit Load sales to refresh the data.';
+    }
   }
 
   // A date range is REQUIRED before loading. It is the load window, not a
@@ -326,6 +376,7 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
   }
 
   $search?.addEventListener('input', renderMuniList);
+  $type?.addEventListener('change', () => { updateSelCount(); });
   // Purely derived, so toggling just redraws — the explicit picks are
   // untouched and unticking gives exactly them back. Turning the option OFF
   // also forgets any waived-off neighbours, so switching it back on starts
@@ -421,7 +472,7 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
       // region being practical to select and not. No range set means the
       // whole archive, exactly as before.
       const { from, to } = getDateWindow?.() || {};
-      const payload = await buildCsvFor(chosen, { manifest, from, to });
+      const payload = await buildCsvFor(chosen, { manifest, from, to, type: $type?.value || null });
       if (!payload) {
         say(from || to
           ? 'No sales in that date range for the selection. Widen the date range and load again.'
@@ -429,6 +480,10 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
         return;
       }
       await onLoad?.(payload);
+      // Remember exactly what the table now holds, so a later change to the
+      // municipalities, sale type or date range can flag the data as stale.
+      loadedState = stateKey();
+      updateStaleness();
       // Say what was actually loaded. A window that quietly returned a
       // slice would look identical to a municipality with few sales, and
       // widening the date range afterwards only re-filters what is

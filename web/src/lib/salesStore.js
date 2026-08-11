@@ -341,6 +341,9 @@ export async function importFromFileList(fileList, { onProgress } = {}) {
 // The export's ISO date column. ISO sorts lexicographically, so the window
 // test below is a string compare — no Date objects, no parsing per row.
 const DATE_COL = 'sale_date_parsed';
+// The EFFECTIVE category, as the export renames it (condos already
+// reclassified out of ICI). Matched case-insensitively on the whole cell.
+const TYPE_COL = 'Sale Type Group';
 
 /**
  * Rows of one shard inside [from, to], relying on the export writing each
@@ -355,28 +358,44 @@ const DATE_COL = 'sale_date_parsed';
  * silently because a cell was blank is the worse failure, and it cannot
  * trigger the early stop.
  */
-function sliceShardByDate(body, header, from, to) {
-  if (!from && !to) return { text: body.replace(/\s+$/, ''), kept: null };
+function sliceShardByDate(body, header, from, to, type) {
+  if (!from && !to && !type) return { text: body.replace(/\s+$/, ''), kept: null };
   const cols = tokenizeRows(header, ',')[0] || [];
   const dateIdx = cols.findIndex((c) => String(c).trim() === DATE_COL);
-  if (dateIdx < 0) return { text: body.replace(/\s+$/, ''), kept: null };  // older export: no window
+  const typeIdx = cols.findIndex((c) => String(c).trim() === TYPE_COL);
+  // An older export without the columns we filter on ignores that filter
+  // rather than testing the wrong column and silently returning nothing.
+  const useDate = dateIdx >= 0 && (from || to);
+  const useType = typeIdx >= 0 && Boolean(type);
+  if (!useDate && !useType) return { text: body.replace(/\s+$/, ''), kept: null };
+  const wantType = String(type || '').trim().toUpperCase();
 
   const keptRows = [];
   forEachCsvRow(body, (row) => {
     const cells = tokenizeRows(row, ',')[0] || [];
-    // Sale-level cells are single-valued even on a multi-parcel row, but
-    // take the first stacked line defensively — same rule the parser uses.
-    const d = String(cells[dateIdx] ?? '').split('\n')[0].trim();
-    if (!d) { keptRows.push(row); return true; }        // undated: keep, never stop
-    if (to && d > to) return true;                      // newer than the window
-    if (from && d < from) return false;                 // sorted desc -> done
+    if (useDate) {
+      // Sale-level cells are single-valued even on a multi-parcel row, but
+      // take the first stacked line defensively — same rule the parser uses.
+      const d = String(cells[dateIdx] ?? '').split('\n')[0].trim();
+      if (d) {
+        if (to && d > to) return true;                  // newer than the window
+        if (from && d < from) return false;             // sorted desc -> done
+      }
+      // An undated row is kept and never stops the walk: dropping sales
+      // because a cell was blank is the worse failure.
+    }
+    // Type is NOT sorted, so it filters without ever ending the scan.
+    if (useType) {
+      const t = String(cells[typeIdx] ?? '').split('\n')[0].trim().toUpperCase();
+      if (t && t !== wantType) return true;             // wrong type: skip, keep going
+    }
     keptRows.push(row);
     return true;
   });
   return { text: keptRows.join('\n'), kept: keptRows.length };
 }
 
-export async function buildCsvFor(muniNos, { manifest, from = null, to = null } = {}) {
+export async function buildCsvFor(muniNos, { manifest, from = null, to = null, type = null } = {}) {
   const recs = await getSalesFor(muniNos);
   if (!recs.length) return null;
 
@@ -394,7 +413,7 @@ export async function buildCsvFor(muniNos, { manifest, from = null, to = null } 
         'Re-import the whole export folder so every shard is the same version.');
     }
     total += r.meta?.rows || 0;
-    const sliced = sliceShardByDate(body, h, from, to);
+    const sliced = sliceShardByDate(body, h, from, to, type);
     kept += sliced.kept === null ? (r.meta?.rows || 0) : sliced.kept;
     const trimmed = sliced.text.replace(/\s+$/, '');
     if (trimmed) bodies.push(trimmed);
@@ -407,7 +426,7 @@ export async function buildCsvFor(muniNos, { manifest, from = null, to = null } 
     ? names.join(', ')
     : `${names.slice(0, 2).join(', ')} +${names.length - 2} more`;
 
-  const windowed = Boolean(from || to);
+  const windowed = Boolean(from || to || type);
   return {
     name: `MAO database — ${label}`,
     text: [header, ...bodies].join('\n') + '\n',
@@ -416,7 +435,7 @@ export async function buildCsvFor(muniNos, { manifest, from = null, to = null } 
     // What the caller actually got, so the panel can say so out loud —
     // a load that silently returned a slice of the archive would be
     // indistinguishable from a municipality with few sales.
-    window: windowed ? { from, to } : null,
+    window: windowed ? { from, to, type } : null,
     sales: kept,
     salesAvailable: total,
   };

@@ -467,6 +467,29 @@ header small a {
   color: var(--color-neutral-600, #52525b);
   margin-top: 4px;
 }
+/* A load this size is slow but legitimate — amber advice, not an error. */
+.sales-db-selcount.is-warning { color: #92400e; font-weight: 600; }
+
+/* Sale type: a suggestion that makes the load smaller, sitting with the
+   other pre-load controls rather than down in the post-load filters. */
+.sales-db-typefilter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  margin-top: 6px;
+}
+.sales-db-typefilter select { flex: 1 1 auto; min-width: 0; font-size: 0.78rem; }
+
+/* The loaded data no longer matches the controls. Red because it is a
+   correctness problem — what is on screen is not what the panel describes —
+   unlike the amber "this will be slow" advice above. */
+.sales-db-update.is-stale {
+  color: #b91c1c;
+  font-weight: 600;
+  border-left: 3px solid #b91c1c;
+  padding-left: 6px;
+}
 .sales-db-actions {
   display: flex;
   gap: 6px;

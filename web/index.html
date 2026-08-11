@@ -431,6 +431,28 @@
               <div id="sales-db-munis" class="sales-db-munis" role="group"
                    aria-label="Municipalities" aria-describedby="sales-db-hint"></div>
               <div class="sales-db-selcount" id="sales-db-selcount" aria-live="polite"></div>
+              <!-- Sale type narrows the load the same way the date range
+                   does: rows outside it are never read, never parsed and
+                   never trigger a parcel-geometry fetch. A suggestion, not
+                   a requirement — "Any" is the default and always available.
+                   Values must match the export's "Sale Type Group" column,
+                   which carries the EFFECTIVE category (condos already
+                   reclassified out of ICI). -->
+              <label class="sales-db-typefilter" for="sales-db-type">
+                <span>Sale type</span>
+                <select id="sales-db-type">
+                  <option value="">Any (all types)</option>
+                  <option value="RESIDENTIAL LAND AND BUILDINGS">Residential land &amp; buildings</option>
+                  <option value="RESIDENTIAL BARE LAND">Residential bare land</option>
+                  <option value="RESIDENTIAL CONDOMINIUM UNITS">Residential condominium units</option>
+                  <option value="RESIDENTIAL CONDOMINIUM BARE LAND">Residential condominium bare land</option>
+                  <option value="ICI LAND AND BUILDINGS">ICI land &amp; buildings</option>
+                  <option value="ICI BARE LAND">ICI bare land</option>
+                  <option value="FARM LAND AND BUILDINGS">Farm land &amp; buildings</option>
+                  <option value="FARM BARE LAND">Farm bare land</option>
+                  <option value="UNCATEGORIZED">Uncategorized</option>
+                </select>
+              </label>
               <p class="sales-db-hint" id="sales-db-hint">
                 Tick a region to take it whole, or open it to pick municipalities.
               </p>
@@ -518,10 +540,11 @@
             <button type="button" class="date-preset-btn" data-months="3">3 mo</button>
             <button type="button" class="date-preset-btn" data-months="6">6 mo</button>
             <button type="button" class="date-preset-btn" data-months="12">12 mo</button>
-            <button type="button" class="date-preset-btn" data-months="24">24 mo</button>
-            <button type="button" class="date-preset-btn" data-months="36">36 mo</button>
-            <button type="button" class="date-preset-btn" data-months="48">48 mo</button>
-            <button type="button" class="date-preset-btn" data-months="60">60 mo</button>
+            <button type="button" class="date-preset-btn" data-months="24">24</button>
+            <button type="button" class="date-preset-btn" data-months="36">36</button>
+            <button type="button" class="date-preset-btn" data-months="48">48</button>
+            <button type="button" class="date-preset-btn" data-months="60">60</button>
+            <button type="button" class="date-preset-btn" data-months="72">72</button>
             <button type="button" class="date-preset-btn date-preset-clear" data-clear="1" title="Clear date range">×</button>
           </div>
           <div class="date-custom sales-only" role="group" aria-label="Custom date range">
