@@ -2970,6 +2970,37 @@ export function setZoningData(map, fc) {
 }
 
 /**
+ * Colour the PARCELS by their zoning code instead of the normal yellow.
+ *
+ * This is what the zoning toggle's "selection" state uses. Drawing the
+ * zoning polygons that intersect the parcels does not answer "what are
+ * these parcels zoned" — a zoning polygon covers a whole block, so the
+ * colour bleeds across everything around the parcels and the selection is
+ * no easier to read than the full overlay. Painting the parcels
+ * themselves puts the colour exactly on the subject and nowhere else.
+ *
+ * `pairs` is the flat [code, colour, …] list from buildZoneCodePaint, so
+ * parcel colours and the zoning legend come from one assignment and cannot
+ * drift. Pass null to restore the ordinary selection fill.
+ *
+ * The starred override stays on top either way — a chosen comparable must
+ * stay findable whatever the fill is showing.
+ */
+export function setParcelZoneColoring(map, pairs) {
+  if (!map.getLayer('parcel-fill')) return;
+  const starred = ['boolean', ['feature-state', 'starred'], false];
+  map.setPaintProperty('parcel-fill', 'fill-color',
+    (pairs && pairs.length)
+      ? ['case', starred, '#8b0000',
+         ['match', ['coalesce', ['get', '_zoneCode'], ''], ...pairs, '#cccccc']]
+      : ['case', starred, '#8b0000', '#ffea00']);
+  // Zone fills need more body than the highlight yellow: they carry meaning
+  // rather than just marking a selection.
+  map.setPaintProperty('parcel-fill', 'fill-opacity',
+    (pairs && pairs.length) ? 0.55 : PARCEL_FILL_OPACITY);
+}
+
+/**
  * Swap the zoning-fill paint to a `match` expression keyed on ZONE code.
  * `pairs` is the flat [code, color, code, color, ...] list returned from
  * buildZoneCodePaint(). Falls back to grey for any unmatched codes (which

@@ -151,6 +151,7 @@ import {
   pickStartFromMap,
   setZoningData,
   setZoningPaint,
+  setParcelZoneColoring,
   setDevPlanData,
   setZoningVisible,
   setDevPlanVisible,
@@ -6362,6 +6363,41 @@ async function toggleOverlay(which) {
   const loadedFor = which === 'zoning' ? zoningLayerLoadedFor : devPlanLayerLoadedFor;
   const cachedFc  = which === 'zoning' ? lastZoningFc        : lastDevPlanFc;
   const haveData  = (cachedFc?.features?.length || 0) > 0;
+  // SELECTED ONLY colours the parcels themselves by their zoning code and
+  // draws no zoning polygons at all. Fetching the polygons that intersect
+  // the parcels (what this did first) shades whole blocks around them,
+  // which is not "zoning for my selection" — and each parcel already
+  // carries _zoneCode from the enrichment join, so the answer is on hand
+  // with no request at all.
+  if (selectedOnly && parcelCount > 0 && which === 'zoning') {
+    const codes = [...new Set(
+      (lastResultFc.features || [])
+        .map((f) => f.properties?._zoneCode)
+        .filter((c) => c != null && String(c).trim() !== ''))].sort();
+    if (!codes.length) {
+      setOverlayPressed(btn, true);          // fall back to the full overlay
+      setOverlayBtnLabel(btn, label);
+      setCount('No zoning is joined to these parcels yet — showing the full layer.');
+      applyOverlayVisibility(which, true);
+      return;
+    }
+    // Reuse the overlay's own palette/legend builder so the parcel colours
+    // and the legend swatches are one assignment, not two that can drift.
+    const pseudoFc = { type: 'FeatureCollection',
+                       features: codes.map((c) => ({ type: 'Feature', properties: { ZONE: c } })) };
+    const { matchPairs } = buildZoneCodePaint(pseudoFc);
+    setParcelZoneColoring(map, matchPairs);
+    rebuildZoningLegend(pseudoFc);
+    applyOverlayVisibility('zoning', false);  // no polygons in this state
+    if ($zoningLegend) $zoningLegend.hidden = false;
+    btn.disabled = false;
+    setOverlayBtnLabel(btn, `${label} (selection)`);
+    setCount(`Zoning shown on the ${parcelCount} selected parcel(s): ${codes.length} zone code(s).`);
+    return;
+  }
+  // Leaving the selection state: parcels go back to the highlight fill.
+  if (which === 'zoning') setParcelZoneColoring(map, null);
+
   // Selected-only needs parcels on the map, not a municipality.
   if (selectedOnly && parcelCount === 0) {
     setOverlayPressed(btn, true);            // fall back to the ALL state
