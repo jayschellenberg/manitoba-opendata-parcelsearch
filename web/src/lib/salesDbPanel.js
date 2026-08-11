@@ -135,6 +135,19 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
   const $adjacent = document.getElementById('sales-db-adjacent');
   const $selcount = document.getElementById('sales-db-selcount');
 
+  /**
+   * A manifest's `adjacent` field as a list of muni_no strings, whatever
+   * shape it arrived in: an array, a bare scalar (jsonlite unboxes a
+   * single-element list), an empty object (it renders a zero-length vector
+   * as {}), or absent. One malformed entry used to abort the entire import.
+   */
+  function normalizeAdjacent(v) {
+    if (Array.isArray(v)) return v.map(String);
+    if (v == null) return [];
+    if (typeof v === 'object') return Object.values(v).map(String);   // {} -> []
+    return [String(v)];
+  }
+
   /** Municipality rows from the manifest, name-first and region-tagged. */
   async function loadMuniIndex() {
     const manifest = await getManifest();
@@ -151,7 +164,11 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
         label: m.list_name || m.municipality || `Muni ${no}`,
         sales: m.sales,
         region: m.region || UNGROUPED,
-        adjacent: (m.adjacent || []).map(String),
+        // Normalise, don't trust. An export written before 2026-08-11
+        // unboxed a single neighbour to a bare string ("175") and emitted
+        // {} for a municipality with none, either of which threw here and
+        // failed the whole import. A folder in that state must still load.
+        adjacent: normalizeAdjacent(m.adjacent),
       };
     }).sort((a, b) => a.label.localeCompare(b.label));
 

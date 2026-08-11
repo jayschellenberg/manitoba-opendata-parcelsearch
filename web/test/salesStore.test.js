@@ -237,6 +237,25 @@ await test('buildCsvFor refuses to merge shards with different columns', async (
   await assert.rejects(() => store.buildCsvFor(['400', '600']), /different columns/);
 });
 
+await test('a manifest adjacency field survives every shape jsonlite emits', async () => {
+  // Regression: the export unboxed a single neighbour to a bare string and
+  // rendered "no neighbours" as {}. Both hit `.map is not a function` in the
+  // panel and failed the ENTIRE import — one odd municipality took the whole
+  // archive down. Mirrors normalizeAdjacent() in salesDbPanel.js.
+  const normalize = (v) => {
+    if (Array.isArray(v)) return v.map(String);
+    if (v == null) return [];
+    if (typeof v === 'object') return Object.values(v).map(String);
+    return [String(v)];
+  };
+  assert.deepEqual(normalize(['135', '138']), ['135', '138']);
+  assert.deepEqual(normalize('175'), ['175'], 'single neighbour unboxed to a string');
+  assert.deepEqual(normalize({}), [], 'no neighbours rendered as an empty object');
+  assert.deepEqual(normalize(undefined), [], 'key absent entirely');
+  assert.deepEqual(normalize(null), []);
+  assert.deepEqual(normalize(175), ['175'], 'numeric muni_no');
+});
+
 await test('buildCsvFor windows by date, relying on newest-first ordering', async () => {
   await store.clearSales();
   // Newest-first, exactly as export_sales_for_web.R writes a shard.
