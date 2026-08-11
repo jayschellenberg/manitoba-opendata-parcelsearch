@@ -20,6 +20,51 @@
  */
 
 /**
+ * How many DATA rows does this CSV text hold (header excluded)?
+ *
+ * Quote-aware, and that is the entire point. The obvious version —
+ * `text.split('\n').filter((l) => l.trim()).length - 1` — counts every
+ * physical line, but the MAO sales export deliberately stacks a
+ * multi-parcel sale's per-parcel values inside QUOTED cells separated by
+ * newlines (see salesCsvParse shape 2). Each stacked parcel therefore
+ * read as another sale: the 48-shard export reported 292,039 sales
+ * against its true 228,957 — 63,082 phantom rows, and the error grew
+ * with the share of multi-parcel sales rather than staying a fixed
+ * offset. Counted here without materializing fields, so it stays cheap
+ * on a 46 MB import.
+ *
+ * Blank lines are not rows. A file with only a header returns 0.
+ */
+export function countDataRows(text) {
+  const src = String(text || '');
+  let rows = 0;
+  let inQuotes = false;
+  let seen = false;      // has the current logical row any non-whitespace?
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (inQuotes) {
+      // "" is an escaped quote INSIDE the field, not the end of it.
+      if (c === '"') {
+        if (src[i + 1] === '"') i++;
+        else inQuotes = false;
+      }
+      seen = true;
+      continue;
+    }
+    if (c === '"') { inQuotes = true; seen = true; continue; }
+    if (c === '\n' || c === '\r') {
+      if (seen) rows++;
+      seen = false;
+      if (c === '\r' && src[i + 1] === '\n') i++;
+      continue;
+    }
+    if (!seen && c.trim() !== '') seen = true;
+  }
+  if (seen) rows++;                 // last row, no trailing newline
+  return Math.max(0, rows - 1);     // drop the header
+}
+
+/**
  * Quote-aware row tokenizer parameterized on delimiter. Handles quoted
  * fields with embedded delimiters, escaped double-quotes (""), and
  * \r\n / \n / \r line endings.

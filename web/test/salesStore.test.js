@@ -237,6 +237,48 @@ await test('buildCsvFor refuses to merge shards with different columns', async (
   await assert.rejects(() => store.buildCsvFor(['400', '600']), /different columns/);
 });
 
+// These two rebuild the store from scratch, so they run LAST — the tests above
+// share one store and expect the fixture set imported at the top of the file.
+await test('a multi-parcel sale counts as ONE row, not one per stacked parcel', async () => {
+  // The import count used to split the raw CSV on newlines, so the parcels
+  // stacked inside these quoted cells each read as another sale (the export
+  // reported 292,039 against a true 228,957). One sale here, two parcels.
+  await store.clearSales();
+  const stacked = 'muni_no,municipality,sale_date,consideration,roll\n'
+                + '463,WINKLER,"Apr 14, 2026","$305,000","330015.000\n330065.000"\n';
+  const dir = fakeDir({
+    'manifest.json': fakeFileHandle('manifest.json', MANIFEST, 1000),
+    'muni_463.csv': fakeFileHandle('muni_463.csv', stacked, 1000),
+  });
+  const s = await store.importFromDirectory(dir);
+  assert.equal(s.rows, 1, 'one sale, not two');
+  assert.equal((await store.getShard('463')).meta.rows, 1);
+});
+
+await test('a corrected row counter recounts already-imported shards', async () => {
+  // Shards imported by an older counter keep their cached meta.rows, and the
+  // mtime skip means an unchanged file would never be re-read — so a counting
+  // fix must invalidate on its own via ROW_COUNT_VERSION.
+  await store.clearSales();
+  const dir = fakeDir({
+    'manifest.json': fakeFileHandle('manifest.json', MANIFEST, 1000),
+    'muni_400.csv': fakeFileHandle('muni_400.csv', CSV_400, 1000),
+  });
+  await store.importFromDirectory(dir);
+  // Simulate state written by the previous version: stale count, old version.
+  const rec = await store.getShard('400');
+  await store.putShard({ ...rec, meta: { ...rec.meta, rows: 999 } });
+  await store.putMeta('importState', { mtimes: { 400: 1000 }, rowCountVersion: 1 });
+
+  const s = await store.importFromDirectory(dir);   // same mtime, no force
+  assert.equal(s.imported, 1, 'version bump forces the re-read');
+  assert.equal(s.skipped, 0);
+  assert.equal((await store.getShard('400')).meta.rows, 2, 'recounted, not 999');
+
+  const again = await store.importFromDirectory(dir);
+  assert.equal(again.skipped, 1, 'and the skip resumes once versions agree');
+});
+
 await test('clearSales wipes shards AND meta together', async () => {
   await store.clearSales();
   assert.deepEqual(await store.listShardKeys(), []);

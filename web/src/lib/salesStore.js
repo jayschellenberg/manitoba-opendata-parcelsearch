@@ -24,6 +24,8 @@
 // anything. Chrome and Edge support it; Firefox and Safari fall back to a manual
 // file picker, which still works, just without the auto-refresh.
 
+import { countDataRows } from './delimitedRows.js';
+
 const DB_NAME = 'mb-parcel-sales';
 const DB_VERSION = 1;
 const SHARDS = 'shards';   // key: muni_no  -> { muni_no, municipality, csv, meta }
@@ -170,6 +172,12 @@ export async function directoryPermission(handle, { request = false } = {}) {
 // ---------------------------------------------------------------------------
 const MUNI_FILE_RE = /^muni_(\d+)\.csv$/i;
 
+// Bump when the row COUNT changes meaning, so already-imported shards get
+// recounted on the next import (see `recount` below).
+//   1 -> naive physical-line count (inflated by stacked multi-parcel cells)
+//   2 -> quote-aware countDataRows()
+const ROW_COUNT_VERSION = 2;
+
 /**
  * Read an export folder into IndexedDB.
  *
@@ -205,6 +213,13 @@ export async function importFromDirectory(dirHandle, { onProgress, force = false
 
   const prev = (await getMeta('importState')) || { mtimes: {} };
   const mtimes = { ...prev.mtimes };
+  // A shard's cached meta.rows was produced by whatever counter shipped at
+  // import time, and the mtime skip below means a corrected counter would
+  // otherwise never be applied to already-imported shards — the wrong total
+  // would persist until the source file happened to change. Bumping
+  // ROW_COUNT_VERSION re-reads everything once, so a counting fix heals
+  // itself on the next import instead of needing a manual force.
+  const recount = prev.rowCountVersion !== ROW_COUNT_VERSION;
   let imported = 0, skipped = 0, rows = 0;
 
   for (let i = 0; i < files.length; i++) {
@@ -212,14 +227,15 @@ export async function importFromDirectory(dirHandle, { onProgress, force = false
     const file = await handle.getFile();
     onProgress?.({ done: i, total: files.length, label: nameByMuni.get(muniNo) || name });
 
-    if (!force && mtimes[muniNo] === file.lastModified) {
+    if (!force && !recount && mtimes[muniNo] === file.lastModified) {
       const existing = await getShard(muniNo);
       if (existing) { skipped++; rows += existing.meta?.rows || 0; continue; }
     }
 
     const csv = await file.text();
-    // -1 for the header; a trailing newline is normal so don't count it.
-    const nRows = Math.max(0, csv.split('\n').filter((l) => l.trim().length).length - 1);
+    // Quote-aware: a multi-parcel sale stacks its parcels on newlines INSIDE
+    // quoted cells, so splitting the raw text counts each parcel as a sale.
+    const nRows = countDataRows(csv);
     await putShard({
       muni_no: muniNo,
       municipality: nameByMuni.get(muniNo) || null,
@@ -241,7 +257,7 @@ export async function importFromDirectory(dirHandle, { onProgress, force = false
     imported_at: new Date().toISOString(),
   };
   await putMeta('manifest', { ...(manifestData || {}), ...summary, munis: manifestData?.munis || null });
-  await putMeta('importState', { mtimes });
+  await putMeta('importState', { mtimes, rowCountVersion: ROW_COUNT_VERSION });
   return summary;
 }
 
@@ -288,7 +304,7 @@ export async function importFromFileList(fileList, { onProgress } = {}) {
     const muniNo = f.name.split('/').pop().match(MUNI_FILE_RE)[1];
     onProgress?.({ done: i, total: shardFiles.length, label: nameByMuni.get(muniNo) || f.name });
     const csv = await f.text();
-    const nRows = Math.max(0, csv.split('\n').filter((l) => l.trim().length).length - 1);
+    const nRows = countDataRows(csv);   // quote-aware, as above
     await putShard({
       muni_no: muniNo, municipality: nameByMuni.get(muniNo) || null, csv,
       meta: { rows: nRows, bytes: f.size, source_mtime: f.lastModified,
