@@ -410,8 +410,21 @@
 
             <!-- Shown once a database is present. -->
             <div class="sales-db-ready" id="sales-db-ready" hidden>
-              <label class="sales-db-label" for="sales-db-munis">Municipalities</label>
-              <select id="sales-db-munis" multiple size="8" aria-describedby="sales-db-hint"></select>
+              <label class="sales-db-label" for="sales-db-muni-search">Municipalities</label>
+              <input id="sales-db-muni-search" type="search" class="sales-db-search"
+                     placeholder="Filter municipalities…" aria-label="Filter municipalities" />
+              <label class="sales-db-adjacent">
+                <input type="checkbox" id="sales-db-adjacent" />
+                <span>Also select adjacent regions</span>
+              </label>
+              <!-- Region groups + per-municipality checkboxes, built by
+                   lib/salesDbPanel.js from the manifest. A flat 186-entry
+                   <select multiple> was unusable at that length, and its
+                   "CITY OF / RM OF" labels sorted by prefix rather than by
+                   place. -->
+              <div id="sales-db-munis" class="sales-db-munis" role="group"
+                   aria-label="Municipalities" aria-describedby="sales-db-hint"></div>
+              <div class="sales-db-selcount" id="sales-db-selcount" aria-live="polite"></div>
               <p class="sales-db-hint" id="sales-db-hint">
                 Ctrl/Cmd-click to pick several — comparable selection usually spans a few.
               </p>

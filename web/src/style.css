@@ -400,9 +400,59 @@ header small a {
   font-weight: 600;
   margin: 8px 0 4px;
 }
+/* Region-grouped municipality picker. Scrolls inside a fixed height so the
+   Load button never gets pushed below the fold as the archive grows toward
+   186 municipalities — the reason the flat <select multiple> stopped
+   working. */
 #sales-db-munis {
   width: 100%;
   font-size: 0.82rem;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--color-neutral-300, #d4d4d8);
+  border-radius: 4px;
+  padding: 2px;
+}
+.sales-db-search {
+  width: 100%;
+  font-size: 0.8rem;
+  padding: 3px 6px;
+  margin-bottom: 4px;
+}
+.sales-db-adjacent {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--color-neutral-600, #52525b);
+  margin-bottom: 4px;
+  cursor: pointer;
+}
+.sales-db-region > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 3px 4px;
+  font-weight: 600;
+  border-radius: 3px;
+}
+.sales-db-region > summary:hover { background: var(--color-neutral-100, #f4f4f5); }
+.sales-db-region-name { flex: 1 1 auto; min-width: 0; }
+/* Municipality rows indent under their region so the hierarchy survives
+   scrolling, when the region heading may be off-screen above. */
+.sales-db-muni {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 22px;
+  cursor: pointer;
+}
+.sales-db-muni:hover { background: var(--color-neutral-100, #f4f4f5); }
+.sales-db-selcount {
+  font-size: 0.75rem;
+  color: var(--color-neutral-600, #52525b);
+  margin-top: 4px;
 }
 .sales-db-actions {
   display: flex;
