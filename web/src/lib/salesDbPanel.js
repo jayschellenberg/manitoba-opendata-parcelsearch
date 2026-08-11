@@ -21,20 +21,22 @@ const fmt = (n) => Number(n || 0).toLocaleString();
 /**
  * @param {Object} opts
  * @param {(payload:{name:string,text:string}) => (void|Promise<void>)} opts.onLoad
- *   Called with the merged CSV for the selected municipalities.
+ *   Called with the merged CSV for the selected municipalities. Same shape
+ *   handleSalesUpload() already accepts from the Recent-uploads picker.
  * @param {(msg:string) => void} [opts.setStatus] surface progress/errors in the
  *   app's own count line rather than inventing a second status channel.
- */
-/**
- * @param {object}   opts
- * @param {Function} opts.onLoad        receives the built CSV payload
- * @param {Function} opts.setStatus     status line writer
  * @param {Function} [opts.getDateWindow] returns {from, to} ISO strings (either
  *   may be empty) limiting which sales are read out of the archive. Supplied by
  *   main.js from the sidebar's date range so the panel does not reach into the
  *   filter DOM itself. Absent (or empty) means load the full history.
+ * @param {Function} [opts.onSelectionChange] called with (effective, picked)
+ *   Sets of muni_no whenever the selection changes, so the map can shade the
+ *   chosen municipalities. Fires for adjacency changes too, since those change
+ *   what a load would cover.
+ * @returns {{refresh: Function, toggleMuni: Function}} toggleMuni(no, on?) lets
+ *   the map drive the same selection the checkboxes do.
  */
-export function initSalesDbPanel({ onLoad, setStatus, getDateWindow } = {}) {
+export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelectionChange } = {}) {
   const $root    = document.getElementById('sales-db');
   if (!$root) return { refresh: () => {} };
 
@@ -109,19 +111,6 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow } = {}) {
     return info;
   }
 
-  // Which regions border which. Derived spatially (dissolve the census
-  // divisions into regions, ask which polygons touch) rather than typed out
-  // by hand — a hand-written adjacency table is exactly the kind that goes
-  // quietly wrong at one border and nobody notices.
-  const REGION_ADJACENCY = {
-    'Winnipeg':                       ['Interlake', 'South-Central / Central Plains', 'Southeast'],
-    'Southeast':                      ['Interlake', 'North', 'South-Central / Central Plains', 'Winnipeg'],
-    'South-Central / Central Plains': ['Interlake', 'Southeast', 'West & Parkland', 'Winnipeg'],
-    'West & Parkland':                ['Interlake', 'North', 'South-Central / Central Plains'],
-    'Interlake':                      ['North', 'South-Central / Central Plains', 'Southeast',
-                                       'West & Parkland', 'Winnipeg'],
-    'North':                          ['Interlake', 'Southeast', 'West & Parkland'],
-  };
   // South to north, the order an appraiser reading the province expects.
   // Anything the manifest reports that isn't listed here sorts to the end
   // under its own name rather than vanishing.
@@ -129,8 +118,18 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow } = {}) {
                         'West & Parkland', 'Interlake', 'North'];
   const UNGROUPED = 'Other';
 
-  const selected = new Set();      // muni_no strings
-  let muniIndex = [];              // [{ no, label, sales, region }]
+  // Two sets, not one. `picked` is what the user actually chose; the adjacent
+  // option DERIVES a wider set from it rather than mutating it, so unticking
+  // the option gives the original picks back instead of leaving the
+  // neighbours stranded in the selection.
+  const picked = new Set();        // muni_no strings, explicitly chosen
+  // Adjacency-derived entries the user has explicitly waved off. Without
+  // this, unticking a derived row did nothing visible — the neighbour rule
+  // put it straight back on the next redraw, so the checkbox looked broken.
+  // Wanting Steinbach and Hanover but not La Broquerie is a normal ask.
+  const excluded = new Set();
+  let muniIndex = [];              // [{ no, label, sales, region, adjacent[] }]
+  let neighbours = new Map();      // muni_no -> [muni_no], shared boundaries only
 
   const $search   = document.getElementById('sales-db-muni-search');
   const $adjacent = document.getElementById('sales-db-adjacent');
@@ -152,28 +151,73 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow } = {}) {
         label: m.list_name || m.municipality || `Muni ${no}`,
         sales: m.sales,
         region: m.region || UNGROUPED,
+        adjacent: (m.adjacent || []).map(String),
       };
     }).sort((a, b) => a.label.localeCompare(b.label));
+
+    // Neighbours are published for the whole province, so drop the ones we
+    // hold no shard for — offering to select a municipality that isn't in
+    // the archive would just fail at load time.
+    const have = new Set(muniIndex.map((m) => m.no));
+    neighbours = new Map(muniIndex.map((m) => [m.no, m.adjacent.filter((n) => have.has(n))]));
   }
 
-  const regionsOf = (region) => (
-    $adjacent?.checked ? [region, ...(REGION_ADJACENCY[region] || [])] : [region]);
-
-  function setRegionSelected(region, on) {
-    const wanted = new Set(regionsOf(region));
-    for (const m of muniIndex) {
-      if (!wanted.has(m.region)) continue;
-      if (on) selected.add(m.no); else selected.delete(m.no);
+  /**
+   * The municipalities a load would actually cover: the explicit picks, plus
+   * everything sharing a boundary with them when the adjacent option is on.
+   *
+   * Adjacency is per MUNICIPALITY, not per region (Jason, 2026-08-11):
+   * picking Steinbach should offer Hanover and La Broquerie — the two that
+   * touch it — not the whole southeast. One hop only; neighbours-of-
+   * neighbours would sprawl across the province in three or four clicks.
+   */
+  function effectiveSelection() {
+    if (!$adjacent?.checked) return new Set(picked);
+    const out = new Set(picked);
+    for (const no of picked) {
+      for (const nb of (neighbours.get(no) || [])) {
+        if (!excluded.has(nb) && !picked.has(nb)) out.add(nb);
+      }
     }
+    return out;
   }
 
   function updateSelCount() {
     if (!$selcount) return;
-    const n = selected.size;
-    const sales = muniIndex.reduce((s, m) => s + (selected.has(m.no) ? (m.sales || 0) : 0), 0);
-    $selcount.textContent = n
-      ? `${n} selected · ${fmt(sales)} sales before date filtering`
+    const eff = effectiveSelection();
+    const extra = eff.size - picked.size;
+    const sales = muniIndex.reduce((s, m) => s + (eff.has(m.no) ? (m.sales || 0) : 0), 0);
+    $selcount.textContent = eff.size
+      ? `${picked.size} selected${extra ? ` + ${extra} adjacent` : ''} · ${fmt(sales)} sales before date filtering`
       : 'None selected';
+    onSelectionChange?.(eff, picked);
+    updateLoadEnabled();
+  }
+
+  // A date range is REQUIRED before loading. It is the load window, not a
+  // display filter: without it the load reads every sale a municipality
+  // holds back to 1987, parses them all and fetches parcel geometry for
+  // each — the slow part the window exists to avoid. Discovering the date
+  // control afterwards is too late, so the button stays disabled and says
+  // why (Jason, 2026-08-11).
+  function dateWindow() {
+    const w = getDateWindow?.() || {};
+    return { from: (w.from || '').trim(), to: (w.to || '').trim() };
+  }
+  function updateLoadEnabled() {
+    if (!$load) return;
+    const { from, to } = dateWindow();
+    const hasWindow = Boolean(from || to);
+    const hasMunis = effectiveSelection().size > 0;
+    $load.disabled = !hasWindow || !hasMunis;
+    $load.title = !hasMunis ? 'Pick at least one municipality'
+      : !hasWindow ? 'Set a date range first — it decides how much of the archive is read'
+      : 'Load the selected municipalities for the chosen date range';
+  }
+  // The date inputs live in the sidebar filters, so watch them rather than
+  // polling; both the presets and hand-typed dates fire 'input'.
+  for (const id of ['sale-date-from', 'sale-date-to']) {
+    document.getElementById(id)?.addEventListener('input', updateLoadEnabled);
   }
 
   /** Rebuild the region groups. Cheap enough to redraw wholesale — 186 rows. */
@@ -181,6 +225,7 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow } = {}) {
     if (!$munis) return;
     const q = ($search?.value || '').trim().toLowerCase();
     const match = (m) => !q || m.label.toLowerCase().includes(q);
+    const eff = effectiveSelection();
 
     const byRegion = new Map();
     for (const m of muniIndex) {
@@ -200,17 +245,20 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow } = {}) {
       wrap.className = 'sales-db-region';
       // A search narrows to what matched, so opening those groups saves the
       // user a second click; without a search everything starts collapsed.
-      wrap.open = Boolean(q) || rows.some((m) => selected.has(m.no));
+      wrap.open = Boolean(q) || rows.some((m) => eff.has(m.no));
 
       const sum = document.createElement('summary');
       const box = document.createElement('input');
       box.type = 'checkbox';
-      const picked = rows.filter((m) => selected.has(m.no)).length;
-      box.checked = picked === rows.length && rows.length > 0;
-      box.indeterminate = picked > 0 && picked < rows.length;
+      const n = rows.filter((m) => picked.has(m.no)).length;
+      box.checked = n === rows.length && rows.length > 0;
+      box.indeterminate = n > 0 && n < rows.length;
       box.addEventListener('click', (e) => e.stopPropagation());   // don't toggle the disclosure
       box.addEventListener('change', () => {
-        setRegionSelected(region, box.checked);
+        for (const m of rows) {
+          if (box.checked) { picked.add(m.no); excluded.delete(m.no); }
+          else picked.delete(m.no);
+        }
         renderMuniList();
         updateSelCount();
       });
@@ -223,17 +271,30 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow } = {}) {
       for (const m of rows) {
         const row = document.createElement('label');
         row.className = 'sales-db-muni';
+        // Pulled in by the adjacent option rather than chosen: shown ticked
+        // (it WILL load) but marked, so "I picked this" stays distinct from
+        // "this came along for the ride".
+        const viaAdjacency = !picked.has(m.no) && eff.has(m.no);
+        if (viaAdjacency) row.classList.add('is-adjacent');
         const cb = document.createElement('input');
         cb.type = 'checkbox';
         cb.value = m.no;
-        cb.checked = selected.has(m.no);
+        cb.checked = eff.has(m.no);
         cb.addEventListener('change', () => {
-          if (cb.checked) selected.add(m.no); else selected.delete(m.no);
+          if (cb.checked) {
+            picked.add(m.no);
+            excluded.delete(m.no);        // re-ticking clears any waive-off
+          } else if (viaAdjacency) {
+            excluded.add(m.no);           // waive off a derived neighbour
+          } else {
+            picked.delete(m.no);
+          }
           renderMuniList();     // refresh the parent's tri-state
           updateSelCount();
         });
         const txt = document.createElement('span');
         txt.textContent = m.sales ? `${m.label} (${fmt(m.sales)})` : m.label;
+        if (viaAdjacency) txt.title = 'Included because it borders a selected municipality';
         row.append(cb, txt);
         wrap.appendChild(row);
       }
@@ -248,23 +309,32 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow } = {}) {
   }
 
   $search?.addEventListener('input', renderMuniList);
-  // Toggling adjacency re-applies whole-region picks: a region whose every
-  // municipality is selected re-selects with its neighbours, so the checkbox
-  // means the same thing before and after the toggle.
+  // Purely derived, so toggling just redraws — the explicit picks are
+  // untouched and unticking gives exactly them back. Turning the option OFF
+  // also forgets any waived-off neighbours, so switching it back on starts
+  // from the plain rule rather than from invisible leftovers.
   $adjacent?.addEventListener('change', () => {
-    for (const region of new Set(muniIndex.map((m) => m.region))) {
-      const rows = muniIndex.filter((m) => m.region === region);
-      if (rows.length && rows.every((m) => selected.has(m.no))) setRegionSelected(region, true);
-    }
+    if (!$adjacent.checked) excluded.clear();
     renderMuniList();
     updateSelCount();
   });
+
+  /** Select/deselect from outside the panel (the map's municipality layer). */
+  function toggleMuni(no, on) {
+    const key = String(no);
+    if (!muniIndex.some((m) => m.no === key)) return false;   // not in the archive
+    const want = on ?? !picked.has(key);
+    if (want) picked.add(key); else picked.delete(key);
+    renderMuniList();
+    updateSelCount();
+    return true;
+  }
 
   async function populateMunis() {
     await loadMuniIndex();
     // Drop selections for municipalities that are no longer in the archive.
     const live = new Set(muniIndex.map((m) => m.no));
-    for (const no of [...selected]) if (!live.has(no)) selected.delete(no);
+    for (const no of [...picked]) if (!live.has(no)) picked.delete(no);
     renderMuniList();
     updateSelCount();
   }
@@ -322,8 +392,9 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow } = {}) {
 
   // ---- load into the existing pipeline ------------------------------------
   $load?.addEventListener('click', async () => {
-    const picked = [...selected];
-    if (!picked.length) { say('Pick at least one municipality.'); return; }
+    // Load what the checkboxes SHOW, i.e. picks plus any adjacency additions.
+    const chosen = [...effectiveSelection()];
+    if (!chosen.length) { say('Pick at least one municipality.'); return; }
     try {
       const manifest = await getManifest();
       // Load only the sales inside the sidebar's date range. Everything
@@ -333,7 +404,7 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow } = {}) {
       // region being practical to select and not. No range set means the
       // whole archive, exactly as before.
       const { from, to } = getDateWindow?.() || {};
-      const payload = await buildCsvFor(picked, { manifest, from, to });
+      const payload = await buildCsvFor(chosen, { manifest, from, to });
       if (!payload) {
         say(from || to
           ? 'No sales in that date range for the selection. Widen the date range and load again.'
@@ -398,5 +469,5 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow } = {}) {
 
   render().then((info) => { if (info?.present) checkQuietly(); });
 
-  return { refresh: render };
+  return { refresh: render, toggleMuni };
 }

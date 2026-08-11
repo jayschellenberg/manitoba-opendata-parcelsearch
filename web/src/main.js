@@ -12,6 +12,9 @@ import { initInfoIcons } from './lib/infoIcon.js';
 import { initParcelListImport } from './lib/parcelListImport.js';
 import { initSalesPasteImport } from './lib/salesPasteImport.js';
 import { initSalesDbPanel } from './lib/salesDbPanel.js';
+import { listShardKeys } from './lib/salesStore.js';
+import { showMuniLayer, hideMuniLayer, paintMuniSelection, wireMuniInteractions }
+  from './lib/muniLayer.js';
 // Route planner — TSP solver + Mapbox client.
 import { solveRoute, haversineMatrix, mostOutlyingIndex } from './lib/routeSolver.js';
 import {
@@ -1166,6 +1169,7 @@ function updateSortIndicators() {
 const { map, ready: mapReady } = initMap($mapEl, {
   onFeatureClick: scrollToRow,
 });
+if (import.meta.env?.DEV) window.__map = map;   // dev-only handle for debugging
 
 // Hide-map toggle. Collapses the map-pane via the .map-collapsed
 // class on the workspace so the results table claims the full
@@ -1797,8 +1801,19 @@ const salesImportModal = initSalesPasteImport({
 // paste and Recent-uploads paths already produce, so everything downstream
 // (parse, roll lookup, enrichment, charts) is unchanged. The archive lives only
 // in this browser and is never uploaded — see lib/salesStore.js for why.
-initSalesDbPanel({
+const salesDbPanel = initSalesDbPanel({
   setStatus: setCount,
+  // Shade the municipalities the current selection would load. Two tints:
+  // explicit picks solid, adjacency-derived ones weaker — the same
+  // distinction the checkbox list draws, so map and list never disagree.
+  onSelectionChange: (effective, picked) => {
+    mapReady.then(async () => {
+      try {
+        await showMuniLayer(map, await listShardKeys());
+        paintMuniSelection(map, effective, picked);
+      } catch (err) { console.warn('municipality layer', err); }
+    });
+  },
   // The sidebar's date range doubles as the LOAD window: sales outside it
   // are never read out of the archive, so they are never parsed and never
   // trigger a parcel-geometry fetch. The shards are written newest-first,
@@ -1817,6 +1832,26 @@ initSalesDbPanel({
     }
   },
 });
+
+// Municipal boundaries are a Sales-Analysis affordance: they answer "which
+// areas am I about to load?". On the Property Search tab they would just be
+// clutter over the parcels, so the layer follows the active tab.
+//
+// Clicking a municipality toggles it in the picker — toggleMuni ignores any
+// municipality the archive does not hold, so a click on an un-scraped one is
+// a no-op rather than a selection that fails at load time.
+mapReady.then(() => {
+  wireMuniInteractions(map, (no) => salesDbPanel.toggleMuni?.(no));
+  const syncMuniLayer = async (tab) => {
+    try {
+      if (tab === 'sales') await showMuniLayer(map, await listShardKeys());
+      else hideMuniLayer(map);
+    } catch (err) { console.warn('municipality layer', err); }
+  };
+  onTabChange(syncMuniLayer);
+  syncMuniLayer(getActiveTab());
+});
+
 document.getElementById('sales-import-trigger')
   ?.addEventListener('click', () => salesImportModal.open());
 

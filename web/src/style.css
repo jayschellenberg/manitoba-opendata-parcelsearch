@@ -888,8 +888,10 @@ body:not(.sales-mode) .sidebar .street-name-row,
 body:not(.sales-mode) .sidebar .ppa-row,
 body:not(.sales-mode) .sidebar .vacant-row,
 body:not(.sales-mode) .sidebar .date-row,
-body:not(.sales-mode) .sidebar .date-presets,
-body:not(.sales-mode) .sidebar .date-custom,
+/* The date range is NOT hidden before a load. It is the load WINDOW — sales
+   outside it are never read out of the archive — so it has to be set before
+   Load sales, not discovered afterwards once the slow part already ran. The
+   rest of the sales filters still wait for data to filter. */
 body:not(.sales-mode) .sidebar .class-row,
 body:not(.sales-mode) .sidebar .subject-row,
 body:not(.sales-mode) .sidebar .subject-muni-row,
