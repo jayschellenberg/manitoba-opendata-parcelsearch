@@ -26,6 +26,24 @@ const URL   = 'mb-municipalities.geojson';
 
 let loading = null;     // in-flight fetch, so two callers share one request
 let featureIds = null;  // Map<muni_no, feature id> for feature-state
+let featureBbox = null; // Map<muni_no, [w,s,e,n]> so the map can frame a selection
+
+/** [w,s,e,n] of any GeoJSON geometry, without pulling in a geometry library. */
+function bboxOf(geom) {
+  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+  const walk = (c) => {
+    if (typeof c[0] === 'number') {
+      if (c[0] < w) w = c[0];
+      if (c[0] > e) e = c[0];
+      if (c[1] < s) s = c[1];
+      if (c[1] > n) n = c[1];
+      return;
+    }
+    for (const part of c) walk(part);
+  };
+  if (geom?.coordinates) walk(geom.coordinates);
+  return Number.isFinite(w) ? [w, s, e, n] : null;
+}
 
 /**
  * addSource/addLayer throw "Style is not done loading" if called too early,
@@ -63,9 +81,13 @@ async function ensureLayer(map) {
   // key but is not guaranteed numeric-safe as an id, so index positionally
   // and keep a lookup.
   featureIds = new Map();
+  featureBbox = new Map();
   fc.features.forEach((f, i) => {
     f.id = i;
-    featureIds.set(String(f.properties?.MUNI_NO ?? ''), i);
+    const no = String(f.properties?.MUNI_NO ?? '');
+    featureIds.set(no, i);
+    const bb = bboxOf(f.geometry);
+    if (bb) featureBbox.set(no, bb);
   });
 
   map.addSource(SRC, { type: 'geojson', data: fc, promoteId: undefined });
@@ -161,6 +183,36 @@ export function paintMuniSelection(map, effective, picked) {
       adjacent: Boolean(isEff && !isPicked),
     });
   }
+}
+
+/**
+ * Frame the selected municipalities.
+ *
+ * Called on every selection change so the map follows what is ticked —
+ * picking Gimli from a province-wide view is otherwise a highlight you
+ * cannot see. Does nothing when the selection is empty (there is nothing
+ * to frame, and snapping back to the whole province on the last untick is
+ * disorienting) or while the user is mid-gesture, so it never yanks the
+ * view out from under a pan or zoom.
+ *
+ * @param {Set<string>} muniNos the municipalities to bring into view
+ */
+export function fitToSelection(map, muniNos, { duration = 600 } = {}) {
+  if (!featureBbox || !muniNos?.size) return;
+  if (map.isMoving?.() || map.isZooming?.()) return;
+  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+  for (const no of muniNos) {
+    const bb = featureBbox.get(String(no));
+    if (!bb) continue;
+    if (bb[0] < w) w = bb[0];
+    if (bb[1] < s) s = bb[1];
+    if (bb[2] > e) e = bb[2];
+    if (bb[3] > n) n = bb[3];
+  }
+  if (!Number.isFinite(w)) return;
+  // maxZoom so a single small town does not slam to street level — the
+  // point is to see the municipality and its surroundings, not a rooftop.
+  map.fitBounds([[w, s], [e, n]], { padding: 40, maxZoom: 11, duration });
 }
 
 /**

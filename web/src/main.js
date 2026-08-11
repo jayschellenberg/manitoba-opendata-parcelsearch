@@ -13,7 +13,7 @@ import { initParcelListImport } from './lib/parcelListImport.js';
 import { initSalesPasteImport } from './lib/salesPasteImport.js';
 import { initSalesDbPanel } from './lib/salesDbPanel.js';
 import { listShardKeys } from './lib/salesStore.js';
-import { showMuniLayer, hideMuniLayer, paintMuniSelection, wireMuniInteractions }
+import { showMuniLayer, hideMuniLayer, paintMuniSelection, wireMuniInteractions, fitToSelection }
   from './lib/muniLayer.js';
 // Route planner — TSP solver + Mapbox client.
 import { solveRoute, haversineMatrix, mostOutlyingIndex } from './lib/routeSolver.js';
@@ -1812,6 +1812,7 @@ const salesDbPanel = initSalesDbPanel({
       try {
         await showMuniLayer(map, await listShardKeys());
         paintMuniSelection(map, effective, picked);
+        fitToSelection(map, effective);
       } catch (err) { console.warn('municipality layer', err); }
     });
   },
@@ -8463,7 +8464,15 @@ function clearAll() {
   // then re-populated every form field at boot, so the page came back
   // looking like the search had just been re-run. The user's complaint
   // was exactly this: Clear didn't actually clear.
-  window.location.href = window.location.pathname;
+  //
+  // The ONE thing carried over is which tab you were on. Clear empties the
+  // work; it is not a request to be moved to a different part of the app,
+  // and landing back on Property Search after clearing a sales set meant
+  // navigating back every time. `t` is the URL-state schema's own tab
+  // param, so this reuses the existing round-trip rather than inventing a
+  // second mechanism.
+  const tab = getActiveTab() === 'sales' ? '?t=sales' : '';
+  window.location.href = window.location.pathname + tab;
 }
 
 function clearTable() {
