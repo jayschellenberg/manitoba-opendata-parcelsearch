@@ -1027,6 +1027,22 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   flex-wrap: wrap;
   align-items: center;
 }
+/* Manual import block (upload / paste / recent). Collapsed by default once
+   the MAO Sales Database is imported — see salesDbPanel.setManualCollapsed.
+   Styled as a quiet disclosure, not a section header: it is the fallback
+   path at that point and should not compete with the database controls. */
+.sidebar .sales-manual { margin-top: 6px; }
+.sidebar .sales-manual-summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--color-neutral-600, #52525b);
+  padding: 3px 0;
+  list-style: revert;            /* keep the native disclosure triangle */
+}
+.sidebar .sales-manual-summary:hover { color: var(--color-neutral-900, #18181b); }
+/* Open state gets a little breathing room before the dropzone. */
+.sidebar .sales-manual[open] > .sales-manual-summary { margin-bottom: 4px; }
+
 /* Custom from/to range — its own row because two native date inputs are
    ~116px each in Chrome, so with the "Date Range:" prefix and the quick
    picks they cannot share a line inside the 336px sidebar. Each input
@@ -1081,6 +1097,14 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   border-radius: 999px;
   cursor: pointer;
   line-height: 1.2;
+  /* Six presets + clear need two lines at 288px, so this row wraps.
+     Deliberately NO flex-grow: letting them stretch to fill each line
+     sized the same kind of button differently per line (58px "3 mo" on
+     a full line vs 102px "36 mo" on a half-empty one) and blew the ×
+     up to a 75px pill around a single glyph. Uniform pills with a
+     ragged right edge read as one set; stretched ones read as a
+     layout accident. */
+  flex: 0 0 auto;
 }
 .sidebar .date-preset-btn:hover { background: #eef6fb; }
 .sidebar .date-preset-clear {

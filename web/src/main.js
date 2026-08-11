@@ -6274,8 +6274,25 @@ async function toggleOverlay(which) {
   const btn = which === 'zoning' ? $zoningToggle : $devplanToggle;
   const label = which === 'zoning' ? 'Zoning' : 'Development plan';
   const wasActive = btn.classList.contains('active');
-  const visible = !wasActive;
-  setOverlayPressed(btn, visible);
+  const wasSelectedOnly = btn.getAttribute('aria-pressed') === 'mixed';
+
+  // Zoning cycles through THREE states, because the whole-municipality
+  // fabric buries the parcels being analysed (Jason, 2026-08-11):
+  //
+  //   off -> ALL (whole muni, the long-standing behaviour)
+  //       -> SELECTED ONLY (just the zones under the loaded parcels)
+  //       -> off
+  //
+  // 'mixed' is the codebase's existing convention for an overlay's
+  // secondary mode (grid section/quarter, landcover, CLI) — see
+  // lib/overlayToggle.js — so the button styling and the URL-state
+  // writer already understand it. Dev plan keeps the plain on/off cycle:
+  // its designations are broad by nature, so clipping them to parcels
+  // hides the surrounding context that makes one readable.
+  const triState = which === 'zoning';
+  const selectedOnly = triState && wasActive && !wasSelectedOnly;
+  const visible = triState ? (!wasActive || selectedOnly) : !wasActive;
+  setOverlayPressed(btn, visible ? (selectedOnly ? 'mixed' : true) : false);
 
   await mapReady;
 
@@ -6293,25 +6310,44 @@ async function toggleOverlay(which) {
     ? csvMatchedMunis.slice()
     : ($municipality.value ? [$municipality.value] : []);
   const munis = [...new Set(munisRaw.filter(Boolean))].sort((a, b) => a.localeCompare(b));
-  const loadKey = munis.join('|');
+  // Selected-only keys its cache on the parcel set, not the muni list —
+  // filtering the table changes what "selected" means, and the layer has
+  // to follow. Without the distinct prefix the two modes would share a
+  // cache entry and the second click would show the first mode's data.
+  const parcelCount = lastResultFc?.features?.length || 0;
+  const loadKey = selectedOnly ? `sel:${munis.join('|')}:${parcelCount}` : munis.join('|');
   const loadedFor = which === 'zoning' ? zoningLayerLoadedFor : devPlanLayerLoadedFor;
   const cachedFc  = which === 'zoning' ? lastZoningFc        : lastDevPlanFc;
   const haveData  = (cachedFc?.features?.length || 0) > 0;
-  const needFetch = munis.length > 0 && loadedFor !== loadKey;
+  // Selected-only needs parcels on the map, not a municipality.
+  if (selectedOnly && parcelCount === 0) {
+    setOverlayPressed(btn, true);            // fall back to the ALL state
+    setOverlayBtnLabel(btn, label);
+    setCount('Load parcels first to show zoning for the selection only.');
+    applyOverlayVisibility(which, true);
+    return;
+  }
+  const needFetch = (selectedOnly || munis.length > 0) && loadedFor !== loadKey;
 
   if (needFetch) {
     btn.disabled = true;
     setOverlayBtnLabel(btn, 'Loading…');
     try {
-      // Per-muni bulk fetch in parallel — every matched muni gets its
-      // full zoning / dev-plan fabric, merged into one FC for the
-      // layer source so the user sees overlay coverage across the
-      // entire sales-CSV upload (not just the dominant muni's parcels).
-      const fcs = await Promise.all(munis.map((m) => (
-        which === 'zoning'
-          ? fetchZoningOverlap(EMPTY_FC, { municipality: m })
-          : fetchDevPlanOverlap(EMPTY_FC, { municipality: m })
-      )));
+      // Two fetch shapes. SELECTED ONLY runs the per-parcel spatial
+      // query (esriSpatialRelIntersects — a true intersection, so the
+      // result is exactly the zones the parcels sit in). ALL does the
+      // per-muni bulk fetch in parallel, so the user sees overlay
+      // coverage across the entire sales-CSV upload rather than just
+      // the dominant municipality's parcels.
+      const fcs = selectedOnly
+        ? [await (which === 'zoning'
+            ? fetchZoningOverlap(lastResultFc)
+            : fetchDevPlanOverlap(lastResultFc))]
+        : await Promise.all(munis.map((m) => (
+            which === 'zoning'
+              ? fetchZoningOverlap(EMPTY_FC, { municipality: m })
+              : fetchDevPlanOverlap(EMPTY_FC, { municipality: m })
+          )));
       const merged = {
         type: 'FeatureCollection',
         features: fcs.flatMap((fc) => fc?.features || []),
@@ -6339,7 +6375,7 @@ async function toggleOverlay(which) {
       return;
     }
     btn.disabled = false;
-  } else if (munis.length === 0 && !haveData) {
+  } else if (!selectedOnly && munis.length === 0 && !haveData) {
     // No muni selected and nothing cached from a previous search —
     // revert the toggle and tell the user what to do.
     setOverlayPressed(btn, false);
@@ -6348,7 +6384,10 @@ async function toggleOverlay(which) {
     return;
   }
 
-  setOverlayBtnLabel(btn, label);
+  // Name the mode on the button itself. Without it the two ON states are
+  // distinguishable only by the pressed shade, which is not enough to
+  // tell "no zoning here" from "zoning hidden outside the selection".
+  setOverlayBtnLabel(btn, selectedOnly ? `${label} (selection)` : label);
   applyOverlayVisibility(which, true);
 }
 

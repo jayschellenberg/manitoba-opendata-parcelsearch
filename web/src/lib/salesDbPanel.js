@@ -48,6 +48,22 @@ export function initSalesDbPanel({ onLoad, setStatus } = {}) {
     return { refresh: () => {} };
   }
 
+  // The manual upload / paste / recent block. Once the MAO database is
+  // imported those become the fallback path, so the block collapses to give
+  // the sidebar back to the filters (Jason, 2026-08-11). Only ever set as a
+  // DEFAULT: once the user opens it by hand we stop touching it, or a render()
+  // triggered by an unrelated refresh would shut it while they were reaching
+  // for the dropzone.
+  const $manual   = document.getElementById('sales-manual');
+  const $manualOr = document.getElementById('sales-manual-or');
+  let manualTouched = false;
+  $manual?.addEventListener('toggle', () => { manualTouched = true; });
+  function setManualCollapsed(collapsed) {
+    if (!$manual || manualTouched) return;
+    $manual.open = !collapsed;
+    if ($manualOr) $manualOr.hidden = collapsed;
+  }
+
   // ---- rendering ----------------------------------------------------------
   async function render() {
     const info = await describeImport();
@@ -55,6 +71,7 @@ export function initSalesDbPanel({ onLoad, setStatus } = {}) {
       $status.textContent = 'Not imported';
       $empty.hidden = false;
       $ready.hidden = true;
+      setManualCollapsed(false);   // no database yet: upload IS the main path
       return info;
     }
     const gen = info.generated_at ? String(info.generated_at).slice(0, 10) : null;
@@ -64,6 +81,7 @@ export function initSalesDbPanel({ onLoad, setStatus } = {}) {
       (gen ? ` · exported ${gen}` : '');
     $empty.hidden = true;
     $ready.hidden = false;
+    setManualCollapsed(true);
     await populateMunis();
     return info;
   }

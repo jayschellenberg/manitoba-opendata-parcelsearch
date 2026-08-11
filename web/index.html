@@ -424,7 +424,15 @@
             </div>
           </div>
 
-          <div class="sales-paste-row"><span>or</span></div>
+          <!-- Manual import (upload / paste / recent). Once the MAO Sales
+               Database is imported these are the fallback path, not the
+               main one, so main.js collapses this <details> and hides the
+               "or" divider to give the sidebar back to the filters. It
+               stays a plain open block until then, and the user can always
+               re-open it — collapsing is a default, not a lockout. -->
+          <div class="sales-paste-row" id="sales-manual-or"><span>or</span></div>
+          <details class="sales-manual" id="sales-manual" open>
+            <summary class="sales-manual-summary">Upload or paste a CSV</summary>
 
           <!-- Phase 3 dropzone. The hidden #sales-upload-input is the
                actual <input type="file">; clicking or dropping on the
@@ -466,6 +474,7 @@
             <select id="recent-uploads-select"><option value="">—</option></select>
             <button id="recent-uploads-clear" type="button" class="secondary" title="Forget all recent uploads">×</button>
           </div>
+          </details>
 
           <!-- Sales filters. Each .sales-only row is hidden by
                body:not(.sales-mode) CSS until a CSV upload completes.
@@ -480,18 +489,19 @@
                preset can be nudged by hand afterwards instead of being
                an either/or choice.
 
-               36 mo / 48 mo were dropped when the custom row landed —
-               the pickers cover every longer window, and four quick
-               picks keep this row on one line at the 336px sidebar. -->
+               Six presets + clear cannot fit one 288px line, so the row
+               wraps — the buttons flex to fill each line evenly rather
+               than leaving the × stranded alone on the second. -->
           <div class="date-presets sales-only" role="group" aria-label="Date range presets">
-            <!-- "Date:" not "Date Range:" — the full label pushed the row to
-                 295px against the sidebar's 288px, wrapping the × onto its own
-                 line. The From/To boxes directly below say "range" anyway. -->
+            <!-- "Date:" not "Date Range:" — the shorter label buys back a
+                 whole button's width. The From/To boxes below say "range". -->
             <span class="date-presets-prefix">Date:</span>
             <button type="button" class="date-preset-btn" data-months="3">3 mo</button>
             <button type="button" class="date-preset-btn" data-months="6">6 mo</button>
             <button type="button" class="date-preset-btn" data-months="12">12 mo</button>
             <button type="button" class="date-preset-btn" data-months="24">24 mo</button>
+            <button type="button" class="date-preset-btn" data-months="36">36 mo</button>
+            <button type="button" class="date-preset-btn" data-months="48">48 mo</button>
             <button type="button" class="date-preset-btn date-preset-clear" data-clear="1" title="Clear date range">×</button>
           </div>
           <div class="date-custom sales-only" role="group" aria-label="Custom date range">
