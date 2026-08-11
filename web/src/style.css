@@ -826,6 +826,7 @@ body:not(.sales-mode) .sidebar .ppa-row,
 body:not(.sales-mode) .sidebar .vacant-row,
 body:not(.sales-mode) .sidebar .date-row,
 body:not(.sales-mode) .sidebar .date-presets,
+body:not(.sales-mode) .sidebar .date-custom,
 body:not(.sales-mode) .sidebar .class-row,
 body:not(.sales-mode) .sidebar .subject-row,
 body:not(.sales-mode) .sidebar .subject-muni-row,
@@ -1026,6 +1027,45 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   flex-wrap: wrap;
   align-items: center;
 }
+/* Custom from/to range — its own row because two native date inputs are
+   ~116px each in Chrome, so with the "Date Range:" prefix and the quick
+   picks they cannot share a line inside the 336px sidebar. Each input
+   flexes to half the row so the pair always spans exactly the width the
+   presets above occupy. */
+.sidebar .date-custom {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  align-items: center;
+}
+.sidebar .date-custom-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+.sidebar .date-custom-label {
+  font-size: 11px;
+  color: var(--color-neutral-600, #52525b);
+  white-space: nowrap;
+}
+.sidebar .date-custom input[type="date"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  padding: 2px 4px;
+}
+/* A preset click fills these in; the highlight fades so it reads as
+   "the boxes now hold what you picked" rather than a separate control. */
+.sidebar .date-custom input[type="date"].just-set {
+  animation: date-set-flash 900ms ease-out;
+}
+@keyframes date-set-flash {
+  from { background: #fff3c4; }
+  to   { background: transparent; }
+}
+
 .sidebar .date-presets-prefix {
   font-size: 11px;
   color: var(--color-neutral-600, #52525b);

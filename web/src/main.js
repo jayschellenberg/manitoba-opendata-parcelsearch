@@ -2550,10 +2550,17 @@ if ($distanceMax) {
   updateMaxKmFlag();
 }
 
-// Date-range quick-preset buttons. Click "12 mo" -> set sale-date-from
-// to 12 months ago, sale-date-to to today, fire input events so the
-// filter re-runs. Click × to clear both. Today's date comes from
-// new Date() — fine for local-time appraisal use, no timezone games.
+// Date-range controls. The two date inputs ARE the filter; the quick
+// picks (3/6/12/24 mo) just fill them in, so a preset can be adjusted by
+// hand afterwards instead of being an either/or choice. Click × to clear
+// both. Today's date comes from new Date() — fine for local-time
+// appraisal use, no timezone games.
+const isoDate = (d) => {
+  const yyyy = d.getFullYear();
+  const mm   = String(d.getMonth() + 1).padStart(2, '0');
+  const dd   = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
 function applyDatePreset(monthsBack, clear) {
   if (!$saleDateFrom || !$saleDateTo) return;
   if (clear) {
@@ -2561,26 +2568,45 @@ function applyDatePreset(monthsBack, clear) {
     $saleDateTo.value = '';
   } else {
     const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm   = String(today.getMonth() + 1).padStart(2, '0');
-    const dd   = String(today.getDate()).padStart(2, '0');
-    const toIso = `${yyyy}-${mm}-${dd}`;
     const back = new Date(today);
-    back.setMonth(back.getMonth() - monthsBack);
-    const fy = back.getFullYear();
-    const fm = String(back.getMonth() + 1).padStart(2, '0');
-    const fd = String(back.getDate()).padStart(2, '0');
-    $saleDateFrom.value = `${fy}-${fm}-${fd}`;
-    $saleDateTo.value = toIso;
+    // setMonth on a day-31 date rolls into the next month (Mar 31 minus
+    // one month is "Feb 31" -> Mar 3), which would silently widen the
+    // window. Clamp to the last day of the target month instead.
+    const targetMonth = back.getMonth() - monthsBack;
+    back.setDate(1);
+    back.setMonth(targetMonth);
+    const lastDay = new Date(back.getFullYear(), back.getMonth() + 1, 0).getDate();
+    back.setDate(Math.min(today.getDate(), lastDay));
+    $saleDateFrom.value = isoDate(back);
+    $saleDateTo.value = isoDate(today);
   }
+  flashDateInputs();
   $saleDateFrom.dispatchEvent(new Event('input', { bubbles: true }));
   $saleDateTo.dispatchEvent(new Event('input', { bubbles: true }));
+}
+// Brief highlight so a preset click visibly lands in the boxes below —
+// without it the two controls read as unrelated.
+function flashDateInputs() {
+  for (const el of [$saleDateFrom, $saleDateTo]) {
+    if (!el) continue;
+    el.classList.remove('just-set');
+    void el.offsetWidth;            // restart the animation
+    el.classList.add('just-set');
+  }
 }
 for (const btn of document.querySelectorAll('.date-preset-btn')) {
   btn.addEventListener('click', () => {
     const monthsBack = parseInt(btn.dataset.months || '0', 10);
     const clear = btn.dataset.clear === '1';
     applyDatePreset(monthsBack, clear);
+  });
+}
+// Typing in either box re-runs the filter (the change event covers the
+// picker; input covers typing). A blank box means "open-ended on that
+// side", which is what the filter already does with an empty value.
+for (const el of [$saleDateFrom, $saleDateTo]) {
+  if (el) el.addEventListener('change', () => {
+    el.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
 

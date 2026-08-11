@@ -474,17 +474,35 @@
                stay out in the open; everything else lives one click
                away in the "Filters" disclosure below them. -->
 
-          <!-- Sale Date hidden range. Driven by the preset buttons. -->
-          <input id="sale-date-from" type="hidden" />
-          <input id="sale-date-to" type="hidden" />
+          <!-- Sale Date range. The quick picks and the two date inputs
+               below drive the SAME pair of values; the inputs are the
+               source of truth and the presets just fill them in, so a
+               preset can be nudged by hand afterwards instead of being
+               an either/or choice.
+
+               36 mo / 48 mo were dropped when the custom row landed —
+               the pickers cover every longer window, and four quick
+               picks keep this row on one line at the 336px sidebar. -->
           <div class="date-presets sales-only" role="group" aria-label="Date range presets">
-            <span class="date-presets-prefix">Date Range:</span>
+            <!-- "Date:" not "Date Range:" — the full label pushed the row to
+                 295px against the sidebar's 288px, wrapping the × onto its own
+                 line. The From/To boxes directly below say "range" anyway. -->
+            <span class="date-presets-prefix">Date:</span>
+            <button type="button" class="date-preset-btn" data-months="3">3 mo</button>
             <button type="button" class="date-preset-btn" data-months="6">6 mo</button>
             <button type="button" class="date-preset-btn" data-months="12">12 mo</button>
             <button type="button" class="date-preset-btn" data-months="24">24 mo</button>
-            <button type="button" class="date-preset-btn" data-months="36">36 mo</button>
-            <button type="button" class="date-preset-btn" data-months="48">48 mo</button>
             <button type="button" class="date-preset-btn date-preset-clear" data-clear="1" title="Clear date range">×</button>
+          </div>
+          <div class="date-custom sales-only" role="group" aria-label="Custom date range">
+            <label class="date-custom-field">
+              <span class="date-custom-label">From</span>
+              <input id="sale-date-from" type="date" aria-label="Sale date from" />
+            </label>
+            <label class="date-custom-field">
+              <span class="date-custom-label">To</span>
+              <input id="sale-date-to" type="date" aria-label="Sale date to" />
+            </label>
           </div>
           <!-- Assessment class. A compact <details> multi-select (see
                lib/multiSelect.js) rather than an always-open list box:
