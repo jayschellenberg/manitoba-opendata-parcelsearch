@@ -73,6 +73,18 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow } = {}) {
     if ($manualOr) $manualOr.hidden = collapsed;
   }
 
+  // The database block itself folds to its title. Markup ships it CLOSED, so a
+  // first visit shows a heading rather than a card for a one-time folder pick;
+  // once an archive exists this is the main way in, so it opens on load. Same
+  // "default, not a lockout" rule as the manual block: once the user works the
+  // disclosure by hand we stop steering it.
+  let dbTouched = false;
+  $root.addEventListener('toggle', () => { dbTouched = true; });
+  function setDbOpen(open) {
+    if (dbTouched) return;
+    $root.open = open;
+  }
+
   // ---- rendering ----------------------------------------------------------
   async function render() {
     const info = await describeImport();
@@ -80,6 +92,7 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow } = {}) {
       $status.textContent = 'Not imported';
       $empty.hidden = false;
       $ready.hidden = true;
+      setDbOpen(false);            // zero state: title only
       setManualCollapsed(false);   // no database yet: upload IS the main path
       return info;
     }
@@ -90,6 +103,7 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow } = {}) {
       (gen ? ` · exported ${gen}` : '');
     $empty.hidden = true;
     $ready.hidden = false;
+    setDbOpen(true);               // an archive exists: this is the main path
     setManualCollapsed(true);
     await populateMunis();
     return info;

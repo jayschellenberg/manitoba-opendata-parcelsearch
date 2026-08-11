@@ -393,11 +393,17 @@
                folder simply has no database, which is the access control.
                Chrome/Edge keep a handle so a refreshed export is picked up
                automatically; other browsers use the folder input fallback. -->
-          <div class="sales-db" id="sales-db">
-            <div class="sales-db-head">
-              <strong>MAO sales database</strong>
+          <!-- A <details> so the whole block folds to its title. Collapsed on a
+               first visit (nothing imported: the one-time folder pick does not
+               need to occupy the sidebar), and opened by salesDbPanel once a
+               database exists, when it becomes the main way in. The status line
+               rides in the summary so the collapsed state still says whether an
+               archive is present and how fresh it is. -->
+          <details class="sales-db" id="sales-db">
+            <summary class="sales-db-head">
+              <strong>MAO Sales Database</strong>
               <span class="sales-db-status" id="sales-db-status">Not imported</span>
-            </div>
+            </summary>
 
             <!-- Shown when nothing is imported yet. -->
             <div class="sales-db-empty" id="sales-db-empty">
@@ -426,7 +432,7 @@
                    aria-label="Municipalities" aria-describedby="sales-db-hint"></div>
               <div class="sales-db-selcount" id="sales-db-selcount" aria-live="polite"></div>
               <p class="sales-db-hint" id="sales-db-hint">
-                Ctrl/Cmd-click to pick several — comparable selection usually spans a few.
+                Tick a region to take it whole, or open it to pick municipalities.
               </p>
               <div class="sales-db-actions">
                 <button type="button" id="sales-db-load" class="parcel-list-modal-btn primary">Load sales</button>
@@ -435,7 +441,7 @@
               </div>
               <p class="sales-db-update" id="sales-db-update" hidden></p>
             </div>
-          </div>
+          </details>
 
           <!-- Manual import (upload / paste / recent). Once the MAO Sales
                Database is imported these are the fallback path, not the
@@ -445,7 +451,7 @@
                re-open it — collapsing is a default, not a lockout. -->
           <div class="sales-paste-row" id="sales-manual-or"><span>or</span></div>
           <details class="sales-manual" id="sales-manual" open>
-            <summary class="sales-manual-summary">Upload or paste a CSV</summary>
+            <summary class="sales-manual-summary">Upload a CSV or Paste Sales from MAO</summary>
 
           <!-- Phase 3 dropzone. The hidden #sales-upload-input is the
                actual <input type="file">; clicking or dropping on the

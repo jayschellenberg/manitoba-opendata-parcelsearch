@@ -377,13 +377,26 @@ header small a {
   background: var(--color-neutral-50, #fafafa);
   margin-bottom: 10px;
 }
+/* Now a <summary>: keep the flex row, add the pointer + hover the rest of
+   the sidebar's disclosures have. list-style stays native so the triangle
+   marks it as expandable. */
 .sales-db-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
   flex-wrap: wrap;
+  cursor: pointer;
+  padding: 2px 0;
+  border-radius: 3px;
 }
+.sales-db-head:hover { background: var(--color-neutral-100, #f4f4f5); }
+/* The status is secondary information inside a clickable row — let clicks
+   fall through to the summary rather than looking like a separate target. */
+.sales-db-head > .sales-db-status { pointer-events: none; }
+/* Collapsed, the block is just a title: drop the inner padding to a line's
+   worth so it reads as a heading rather than an empty card. */
+.sales-db:not([open]) { padding: 6px 12px; }
 .sales-db-status {
   font-size: 0.78rem;
   color: var(--color-neutral-600, #52525b);
@@ -1082,10 +1095,14 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
    Styled as a quiet disclosure, not a section header: it is the fallback
    path at that point and should not compete with the database controls. */
 .sidebar .sales-manual { margin-top: 6px; }
+/* Same size and weight as the MAO Sales Database title above it — the two
+   are peers (database vs manual import), and sizing this one down read as
+   a sub-item of the database block rather than the alternative to it. */
 .sidebar .sales-manual-summary {
   cursor: pointer;
-  font-size: 11px;
-  color: var(--color-neutral-600, #52525b);
+  font-size: 1rem;
+  font-weight: 700;
+  color: inherit;
   padding: 3px 0;
   list-style: revert;            /* keep the native disclosure triangle */
 }
