@@ -65,6 +65,46 @@ export function countDataRows(text) {
 }
 
 /**
+ * Walk a CSV's LOGICAL rows (quote-aware) without tokenizing them.
+ *
+ * `cb(rowText, index)` receives the raw row string, header first at index
+ * 0. Returning false stops the walk immediately — and that early exit is
+ * the whole point: the MAO shards are written newest-sale-first, so a
+ * date-windowed load can stop at the first row older than the window
+ * instead of scanning a 1.4 MB shard to its 1987 tail. Blank lines are
+ * skipped, so indexes count data rows, not physical lines.
+ *
+ * Splitting without tokenizing keeps this ~free next to the per-row
+ * field parse the caller only pays for rows it actually keeps.
+ */
+export function forEachCsvRow(text, cb) {
+  const src = String(text || '');
+  let start = 0, inQuotes = false, index = 0;
+  const emit = (end) => {
+    const row = src.slice(start, end);
+    if (row.trim() === '') return true;      // blank line: not a row
+    return cb(row, index++) !== false;
+  };
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (src[i + 1] === '"') i++;         // "" is an escaped quote
+        else inQuotes = false;
+      }
+      continue;
+    }
+    if (c === '"') { inQuotes = true; continue; }
+    if (c === '\n' || c === '\r') {
+      if (!emit(i)) return;
+      if (c === '\r' && src[i + 1] === '\n') i++;
+      start = i + 1;
+    }
+  }
+  if (start < src.length) emit(src.length);   // last row, no trailing newline
+}
+
+/**
  * Quote-aware row tokenizer parameterized on delimiter. Handles quoted
  * fields with embedded delimiters, escaped double-quotes (""), and
  * \r\n / \n / \r line endings.

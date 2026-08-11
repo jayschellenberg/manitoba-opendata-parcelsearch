@@ -237,6 +237,54 @@ await test('buildCsvFor refuses to merge shards with different columns', async (
   await assert.rejects(() => store.buildCsvFor(['400', '600']), /different columns/);
 });
 
+await test('buildCsvFor windows by date, relying on newest-first ordering', async () => {
+  await store.clearSales();
+  // Newest-first, exactly as export_sales_for_web.R writes a shard.
+  const csv = 'muni_no,municipality,Sale Date,sale_date_parsed,consideration\n'
+    + '400,ALTONA,"Jul 21, 2026",2026-07-21,"$510,000"\n'
+    + '400,ALTONA,"Mar 02, 2026",2026-03-02,"$330,000"\n'
+    + '400,ALTONA,"Sep 15, 2024",2024-09-15,"$275,000"\n'
+    + '400,ALTONA,"Feb 01, 1991",1991-02-01,"$60,000"\n';
+  await store.putShard({ muni_no: '400', municipality: 'TOWN OF ALTONA', csv, meta: { rows: 4 } });
+
+  const win = await store.buildCsvFor(['400'], { from: '2026-01-01', to: '2026-12-31' });
+  assert.equal(win.sales, 2, 'only the two 2026 sales');
+  assert.equal(win.salesAvailable, 4);
+  assert.deepEqual(win.window, { from: '2026-01-01', to: '2026-12-31' });
+  assert.ok(win.text.includes('2026-07-21') && win.text.includes('2026-03-02'));
+  assert.ok(!win.text.includes('1991-02-01'), 'older rows never read');
+  assert.equal(win.text.split('\n').filter((l) => l.trim()).length, 3, 'header + 2 rows');
+
+  // No window -> full history, and the payload says so.
+  const all = await store.buildCsvFor(['400'], {});
+  assert.equal(all.window, null);
+  assert.ok(all.text.includes('1991-02-01'));
+
+  // A window that excludes everything returns null rather than a header-only CSV.
+  assert.equal(await store.buildCsvFor(['400'], { from: '2030-01-01' }), null);
+});
+
+await test('date window keeps undated rows and tolerates an export without the ISO column', async () => {
+  await store.clearSales();
+  const csv = 'muni_no,municipality,Sale Date,sale_date_parsed\n'
+    + '400,ALTONA,"Jul 21, 2026",2026-07-21\n'
+    + '400,ALTONA,"",\n'                            // undated: keep, must not stop the walk
+    + '400,ALTONA,"Jun 01, 2026",2026-06-01\n'
+    + '400,ALTONA,"Feb 01, 1991",1991-02-01\n';
+  await store.putShard({ muni_no: '400', municipality: 'TOWN OF ALTONA', csv, meta: { rows: 4 } });
+  const win = await store.buildCsvFor(['400'], { from: '2026-01-01' });
+  assert.equal(win.sales, 3, 'two dated 2026 sales + the undated one');
+  assert.ok(!win.text.includes('1991-02-01'));
+
+  // An older export with no sale_date_parsed column: window is ignored, not
+  // silently applied against the wrong column.
+  await store.clearSales();
+  const legacy = 'muni_no,municipality,Sale Date\n400,ALTONA,"Feb 01, 1991"\n';
+  await store.putShard({ muni_no: '400', municipality: 'TOWN OF ALTONA', csv: legacy, meta: { rows: 1 } });
+  const out = await store.buildCsvFor(['400'], { from: '2026-01-01' });
+  assert.ok(out.text.includes('Feb 01, 1991'), 'no ISO column -> no window');
+});
+
 // These two rebuild the store from scratch, so they run LAST — the tests above
 // share one store and expect the fixture set imported at the top of the file.
 await test('a multi-parcel sale counts as ONE row, not one per stacked parcel', async () => {

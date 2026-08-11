@@ -25,7 +25,16 @@ const fmt = (n) => Number(n || 0).toLocaleString();
  * @param {(msg:string) => void} [opts.setStatus] surface progress/errors in the
  *   app's own count line rather than inventing a second status channel.
  */
-export function initSalesDbPanel({ onLoad, setStatus } = {}) {
+/**
+ * @param {object}   opts
+ * @param {Function} opts.onLoad        receives the built CSV payload
+ * @param {Function} opts.setStatus     status line writer
+ * @param {Function} [opts.getDateWindow] returns {from, to} ISO strings (either
+ *   may be empty) limiting which sales are read out of the archive. Supplied by
+ *   main.js from the sidebar's date range so the panel does not reach into the
+ *   filter DOM itself. Absent (or empty) means load the full history.
+ */
+export function initSalesDbPanel({ onLoad, setStatus, getDateWindow } = {}) {
   const $root    = document.getElementById('sales-db');
   if (!$root) return { refresh: () => {} };
 
@@ -166,9 +175,32 @@ export function initSalesDbPanel({ onLoad, setStatus } = {}) {
     if (!picked.length) { say('Pick at least one municipality.'); return; }
     try {
       const manifest = await getManifest();
-      const payload = await buildCsvFor(picked, { manifest });
-      if (!payload) { say('No sales found for that selection.'); return; }
+      // Load only the sales inside the sidebar's date range. Everything
+      // skipped here is a row the app would otherwise parse AND fetch
+      // parcel geometry for (80 rolls per ArcGIS request), so on a
+      // 12-month window this is ~87% less work — the difference between a
+      // region being practical to select and not. No range set means the
+      // whole archive, exactly as before.
+      const { from, to } = getDateWindow?.() || {};
+      const payload = await buildCsvFor(picked, { manifest, from, to });
+      if (!payload) {
+        say(from || to
+          ? 'No sales in that date range for the selection. Widen the date range and load again.'
+          : 'No sales found for that selection.');
+        return;
+      }
       await onLoad?.(payload);
+      // Say what was actually loaded. A window that quietly returned a
+      // slice would look identical to a municipality with few sales, and
+      // widening the date range afterwards only re-filters what is
+      // already in memory — more history needs another Load.
+      if (payload.window) {
+        const span = [payload.window.from || 'earliest', payload.window.to || 'today'].join(' → ');
+        say(`Loaded ${fmt(payload.sales)} of ${fmt(payload.salesAvailable)} sales (${span}). `
+          + 'Change the date range and load again for more history.');
+      } else {
+        say(`Loaded ${fmt(payload.sales)} sales (full history).`);
+      }
     } catch (err) {
       say(`Could not load sales: ${err.message}`);
     }

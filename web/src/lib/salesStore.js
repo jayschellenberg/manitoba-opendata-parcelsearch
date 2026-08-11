@@ -24,7 +24,7 @@
 // anything. Chrome and Edge support it; Firefox and Safari fall back to a manual
 // file picker, which still works, just without the auto-refresh.
 
-import { countDataRows } from './delimitedRows.js';
+import { countDataRows, forEachCsvRow, tokenizeRows } from './delimitedRows.js';
 
 const DB_NAME = 'mb-parcel-sales';
 const DB_VERSION = 1;
@@ -338,12 +338,51 @@ export async function importFromFileList(fileList, { onProgress } = {}) {
  * Headers are also compared: a mismatch means shards from different export
  * versions got mixed, and silently interleaving those would misalign columns.
  */
-export async function buildCsvFor(muniNos, { manifest } = {}) {
+// The export's ISO date column. ISO sorts lexicographically, so the window
+// test below is a string compare — no Date objects, no parsing per row.
+const DATE_COL = 'sale_date_parsed';
+
+/**
+ * Rows of one shard inside [from, to], relying on the export writing each
+ * municipality NEWEST-FIRST (verified: Brandon runs 2026-07-21 back to
+ * 1987-01-01, strictly descending). That ordering is what makes the window
+ * cheap — the walk stops at the first row older than `from` instead of
+ * reading to the 1987 tail. Measured on Brandon, a 12-month window is 13.2%
+ * of the shard, and everything skipped here is a row the app would
+ * otherwise parse AND fetch parcel geometry for, 80 rolls per request.
+ *
+ * A row whose date is missing or unparseable is KEPT: dropping sales
+ * silently because a cell was blank is the worse failure, and it cannot
+ * trigger the early stop.
+ */
+function sliceShardByDate(body, header, from, to) {
+  if (!from && !to) return { text: body.replace(/\s+$/, ''), kept: null };
+  const cols = tokenizeRows(header, ',')[0] || [];
+  const dateIdx = cols.findIndex((c) => String(c).trim() === DATE_COL);
+  if (dateIdx < 0) return { text: body.replace(/\s+$/, ''), kept: null };  // older export: no window
+
+  const keptRows = [];
+  forEachCsvRow(body, (row) => {
+    const cells = tokenizeRows(row, ',')[0] || [];
+    // Sale-level cells are single-valued even on a multi-parcel row, but
+    // take the first stacked line defensively — same rule the parser uses.
+    const d = String(cells[dateIdx] ?? '').split('\n')[0].trim();
+    if (!d) { keptRows.push(row); return true; }        // undated: keep, never stop
+    if (to && d > to) return true;                      // newer than the window
+    if (from && d < from) return false;                 // sorted desc -> done
+    keptRows.push(row);
+    return true;
+  });
+  return { text: keptRows.join('\n'), kept: keptRows.length };
+}
+
+export async function buildCsvFor(muniNos, { manifest, from = null, to = null } = {}) {
   const recs = await getSalesFor(muniNos);
   if (!recs.length) return null;
 
   let header = null;
   const bodies = [];
+  let kept = 0, total = 0;
   for (const r of recs) {
     const nl = r.csv.indexOf('\n');
     const h = (nl === -1 ? r.csv : r.csv.slice(0, nl)).replace(/\r$/, '');
@@ -354,21 +393,32 @@ export async function buildCsvFor(muniNos, { manifest } = {}) {
         `Sales shards have different columns (municipality ${r.muni_no} differs). ` +
         'Re-import the whole export folder so every shard is the same version.');
     }
-    const trimmed = body.replace(/\s+$/, '');
+    total += r.meta?.rows || 0;
+    const sliced = sliceShardByDate(body, h, from, to);
+    kept += sliced.kept === null ? (r.meta?.rows || 0) : sliced.kept;
+    const trimmed = sliced.text.replace(/\s+$/, '');
     if (trimmed) bodies.push(trimmed);
   }
   if (header === null) return null;
+  if (!bodies.length) return null;   // window excluded every sale
 
   const names = recs.map((r) => r.municipality || `Muni ${r.muni_no}`);
   const label = names.length <= 3
     ? names.join(', ')
     : `${names.slice(0, 2).join(', ')} +${names.length - 2} more`;
 
+  const windowed = Boolean(from || to);
   return {
     name: `MAO database — ${label}`,
     text: [header, ...bodies].join('\n') + '\n',
     municipalities: recs.map((r) => r.muni_no),
     generated_at: manifest?.generated_at || null,
+    // What the caller actually got, so the panel can say so out loud —
+    // a load that silently returned a slice of the archive would be
+    // indistinguishable from a municipality with few sales.
+    window: windowed ? { from, to } : null,
+    sales: kept,
+    salesAvailable: total,
   };
 }
 

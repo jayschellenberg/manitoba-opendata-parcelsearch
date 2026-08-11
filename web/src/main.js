@@ -1799,6 +1799,14 @@ const salesImportModal = initSalesPasteImport({
 // in this browser and is never uploaded — see lib/salesStore.js for why.
 initSalesDbPanel({
   setStatus: setCount,
+  // The sidebar's date range doubles as the LOAD window: sales outside it
+  // are never read out of the archive, so they are never parsed and never
+  // trigger a parcel-geometry fetch. The shards are written newest-first,
+  // so this is a cheap early-exit scan rather than a full pass.
+  getDateWindow: () => ({
+    from: ($saleDateFrom?.value || '').trim(),
+    to:   ($saleDateTo?.value   || '').trim(),
+  }),
   onLoad: async ({ name, text }) => {
     try {
       await handleSalesUpload({ name, text });
