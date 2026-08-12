@@ -454,7 +454,7 @@ provincial download becoming the archived source-of-record.
 | `web/src/snapshotExport.js` | parcel satellite-snapshot ZIP (+ `PROVENANCE.txt`) | — |
 | `web/vite.config.js` | bakes `__APP_COMMIT__` / `__APP_BUILD_TIME__` for export provenance | — |
 | `MAINTENANCE.md` | operator quick-runbook (subset of §8) | — |
-| `DATA-ARCHIVE-PLAN.md` | original design/decision record (now realized) | — |
+| `DATA-ARCHIVE-PLAN.md` | original design/decision record — **superseded 2026-07, design rationale only**. What shipped differs (semi-annual not annual; all three layers active). Never audit cadence from it: `MAINTENANCE.md` §2-4 is authoritative | — |
 
 ### 10.1 Basemaps
 `map.js` `BASEMAP_STYLE` stacks the basemaps; the top-right menu selects them:

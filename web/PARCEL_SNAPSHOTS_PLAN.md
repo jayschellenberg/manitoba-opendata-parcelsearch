@@ -69,7 +69,7 @@ boundary polygon (exact match on `MUNI_LIST_NAME_WITH_TYPE`, then a tolerant
 grid, and converts it via `surveyFcToRows` → `sectionLinesFromRows` — the same
 per-muni pipeline `toggleSurveyGridOverlay()` uses. If a muni can't be matched,
 that muni's snapshots simply omit the grid (the rest still render). The
-province-wide grid file is far too large (≈41 MB / 215k features) to load into
+province-wide grid file is far too large (≈40 MB / 215k features) to load into
 the export map, so per-muni scoping is deliberate.
 
 ### ZIP writer

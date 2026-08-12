@@ -2,7 +2,7 @@
 // Sec-Twp section-grid GeoJSON back to the browser with the CORS
 // header the client needs.
 //
-// Mirrors api/legal-index.js: section-grid.json is ~41 MB, well past
+// Mirrors api/legal-index.js: section-grid.json is ~40 MB, well past
 // jsDelivr's per-file cap (the rest of the bulk data lives in the
 // mb-parcel-data repo and serves via jsDelivr pinned commits) and
 // also too large for vercel.json static rewrites. Edge Functions
