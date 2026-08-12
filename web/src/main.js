@@ -6276,6 +6276,10 @@ function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
   // Deduped: Parcel Snapshots renders one image per parcel, so a
   // repeat-sold parcel must not produce two identical captures.
   lastResultFc = mapFc;
+  // Keep the SELECTED-ONLY zoning colouring tied to the parcels actually
+  // on the map. Must come after lastResultFc is updated — it reads the new
+  // set's zone codes — and is a no-op in every other overlay state.
+  refreshZoningSelectionColoring();
   updateSnapshotButton();
 }
 
@@ -6551,6 +6555,59 @@ async function enrichImportedSoilComposition(parcelFc, munis, generation, mode) 
   };
 }
 
+/** The distinct zone codes carried by the parcels currently on the map,
+ *  sorted. Empty when the zoning join hasn't run for this result set. */
+function resultZoneCodes() {
+  return [...new Set(
+    (lastResultFc?.features || [])
+      .map((f) => f.properties?._zoneCode)
+      .filter((c) => c != null && String(c).trim() !== ''))].sort();
+}
+
+/** Paint the parcels by zone code and rebuild the legend to match. The
+ *  palette comes from the overlay's own builder, so parcel colours and
+ *  legend swatches are one assignment rather than two that can drift. */
+function paintZoningSelection(codes) {
+  const pseudoFc = {
+    type: 'FeatureCollection',
+    features: codes.map((c) => ({ type: 'Feature', properties: { ZONE: c } })),
+  };
+  setParcelZoneColoring(map, buildZoneCodePaint(pseudoFc).matchPairs);
+  rebuildZoningLegend(pseudoFc);
+}
+
+/**
+ * Re-derive the SELECTED-ONLY zoning colouring for whatever is on the map
+ * now. No-op unless the zoning toggle is actually in that state.
+ *
+ * Called from setMapData, so it fires twice per search and both firings
+ * are wanted. The pre-enrichment call finds no `_zoneCode` yet and CLEARS
+ * the colouring; the post-enrichment call repaints from the new parcels'
+ * own codes.
+ *
+ * Without this the paint expression outlived the result set that built it:
+ * a new search while the toggle sat in SELECTED-ONLY left the previous
+ * search's `match` on parcel-fill, so every zone code absent from the old
+ * palette fell through to the `#cccccc` fallback and the new parcels came
+ * up grey (Jason, 2026-08-12). Clearing on the way through is the point —
+ * a stale palette is worse than no palette, because grey reads as a real
+ * answer rather than as "not loaded yet".
+ */
+function refreshZoningSelectionColoring() {
+  if ($zoningToggle?.getAttribute('aria-pressed') !== 'mixed') return;
+  const codes = resultZoneCodes();
+  if (!codes.length) {
+    setParcelZoneColoring(map, null);
+    // The legend describes the colouring, so it goes with it — otherwise
+    // it sits there listing the previous search's codes against parcels
+    // that no longer carry any of them. rebuildZoningLegend renders its
+    // own "no zoning data for this search" line on an empty set.
+    rebuildZoningLegend(EMPTY_FC);
+    return;
+  }
+  paintZoningSelection(codes);
+}
+
 async function toggleOverlay(which) {
   const btn = which === 'zoning' ? $zoningToggle : $devplanToggle;
   const label = which === 'zoning' ? 'Zoning' : 'Development plan';
@@ -6618,10 +6675,7 @@ async function toggleOverlay(which) {
   // carries _zoneCode from the enrichment join, so the answer is on hand
   // with no request at all.
   if (selectedOnly && parcelCount > 0 && which === 'zoning') {
-    const codes = [...new Set(
-      (lastResultFc.features || [])
-        .map((f) => f.properties?._zoneCode)
-        .filter((c) => c != null && String(c).trim() !== ''))].sort();
+    const codes = resultZoneCodes();
     if (!codes.length) {
       setOverlayPressed(btn, true);          // fall back to the full overlay
       setOverlayBtnLabel(btn, label);
@@ -6629,13 +6683,7 @@ async function toggleOverlay(which) {
       applyOverlayVisibility(which, true);
       return;
     }
-    // Reuse the overlay's own palette/legend builder so the parcel colours
-    // and the legend swatches are one assignment, not two that can drift.
-    const pseudoFc = { type: 'FeatureCollection',
-                       features: codes.map((c) => ({ type: 'Feature', properties: { ZONE: c } })) };
-    const { matchPairs } = buildZoneCodePaint(pseudoFc);
-    setParcelZoneColoring(map, matchPairs);
-    rebuildZoningLegend(pseudoFc);
+    paintZoningSelection(codes);
     applyOverlayVisibility('zoning', false);  // no polygons in this state
     if ($zoningLegend) $zoningLegend.hidden = false;
     btn.disabled = false;
