@@ -59,6 +59,10 @@ export const DEFAULT_VISIBLE = new Set([
   'grouppriceac',
   'acres',
   'zone1',
+  // The province's ZONE_CATEGORY rollup. Default-visible beside the code
+  // because the code alone is unreadable across municipal lines — every
+  // by-law invents its own — and the type is the half that compares.
+  'zonecat',
   'legal',
   'title',
   'du',
@@ -97,7 +101,7 @@ export const DEFAULT_VISIBLE = new Set([
 // Each key here is added to the visible set ONCE (tracked separately in
 // ADOPTED_KEY); untick it after that and it stays unticked.
 const ADOPTED_KEY = 'mbps_table_columns_adopted';
-const ADOPT_ONCE = ['streetview', 'rollsize'];
+const ADOPT_ONCE = ['streetview', 'rollsize', 'zonecat'];
 
 // Column presets — `null` value means "everything that the current
 // mode would show". The labels match the dropdown options.
@@ -110,13 +114,13 @@ export const PRESETS = {
   'Sales analysis': new Set([
     'favorite', 'roll', 'address', 'saledate', 'saleprice',
     'grouppriceac', 'grouppricesf', 'grouppricelot', 'rollsize', 'acres',
-    'zone1', 'subjdist', 'saletoasmt',
+    'zone1', 'zonecat', 'subjdist', 'saletoasmt',
   ]),
   // Frontage earns its place here on its own merits: minimum lot frontage is
   // a bulk requirement in most Manitoba zoning by-laws, so on an urban parcel
   // the roll's frontage figure is the number being checked against.
   'Zoning check': new Set([
-    'roll', 'address', 'zone1', 'zone1pct', 'zone2', 'zbl',
+    'roll', 'address', 'zone1', 'zonecat', 'zone1pct', 'zone2', 'zbl',
     'dev1', 'dpbylaw', 'changes', 'rollsize', 'acres',
   ]),
   // Farmland-oriented view. Core identity + the land-cover pair, then

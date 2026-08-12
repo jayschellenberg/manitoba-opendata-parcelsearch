@@ -581,6 +581,19 @@
               </details>
               <span class="tip">Filter to one or more zone codes — the same values the Zoning and Zoning 2 columns show. The list holds only the codes your current results actually contain, so it changes with every upload. A sale is kept when either of its zones matches anything ticked; leave everything unticked for no zoning filter. Codes are municipality-specific, so a multi-muni upload lists each muni's codes together.</span>
             </span>
+            <!-- Zoning TYPE, the cross-muni companion to the code picker
+                 above. Zone codes are municipality-specific, so on a
+                 multi-muni sales set the code filter can't express
+                 "all the commercial sales" — this can. -->
+            <span class="field zonecat-field">
+              <details class="multiselect" id="zonecat-filter">
+                <summary aria-label="Zoning type filter">
+                  <span class="multiselect-label">Any zoning type</span>
+                </summary>
+                <div class="multiselect-menu"></div>
+              </details>
+              <span class="tip">Filter by broad Zoning Type — Commercial, Industrial, Residential, Open Space and so on — the province's ZONE_CATEGORY rollup shown in the Zoning Type column. Unlike the zone-code filter above, this compares across municipalities, so it's the one to reach for on a multi-muni sales set. The list holds only the types your current results contain. A sale is kept when ANY of its zones matches anything ticked; leave everything unticked for no filter. Source spelling variants and typos are folded together, and sales whose zoning hasn't been joined appear under "(no category)".</span>
+            </span>
           </div>
           <!-- The two sale-level exclusions. Vacant Land Only takes a
                line of its own; the far-flung threshold, its Exclude
@@ -1319,6 +1332,11 @@
                  right where they were. -->
             <th data-col="address">Address</th>
             <th data-col="zone1">Zoning</th>
+            <!-- Zoning Type — the province's ZONE_CATEGORY rollup, sitting
+                 next to the code because the two are read together: the
+                 code is municipality-specific and means nothing across
+                 muni lines, the type is what compares. -->
+            <th data-col="zonecat" title="Zoning Type — the broad ZONE_CATEGORY the province rolls each municipal zone code up into (Commercial, Industrial, Open Space…). Unlike the Zoning code, which every by-law invents for itself, this compares across municipalities. Spelling variants and typos in the source are folded together; a parcel straddling two zones shows its first zone's type.">Zoning Type</th>
             <!-- Sales-mode position for the Roll Frontage/Area + Acres pair.
                  The matching basic-mode pair sits after DU below, tagged
                  .basic-only so only one of each is ever visible at a time.

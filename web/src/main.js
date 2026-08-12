@@ -54,6 +54,12 @@ import {
 import { parseSalesCsv } from './lib/salesCsvParse.js';
 import { saleRecordsFromRows } from './lib/salesCharts.js';
 import { initMultiSelect } from './lib/multiSelect.js';
+import {
+  zoneCategoryLabel,
+  zoneCategoriesInRows,
+  rowMatchesZoneCategories,
+  normalizeZoneCategory,
+} from './lib/zoneCategory.js';
 import { assignParcelSeq, clearParcelSeq } from './lib/parcelNumbering.js';
 import { parcelLat, parcelLon, featureToWkt, parcelCentrePoint } from './lib/geometryText.js';
 import {
@@ -360,6 +366,16 @@ const $zoningFilterEl = document.getElementById('zoning-filter');
 const zoningFilter = initMultiSelect($zoningFilterEl, {
   placeholder: 'Any zoning',
   noun: 'zones',
+  emptyLabel: 'No zoning loaded for these results yet.',
+});
+// Zoning TYPE — the cross-muni companion to the code picker above. Zone
+// codes are municipality-specific, so on a multi-muni sales set the code
+// filter cannot express "every commercial sale"; ZONE_CATEGORY can. Same
+// enrichment dependency: needs the zoning join to have run.
+const $zoneCatFilterEl = document.getElementById('zonecat-filter');
+const zoneCatFilter = initMultiSelect($zoneCatFilterEl, {
+  placeholder: 'Any zoning type',
+  noun: 'types',
   emptyLabel: 'No zoning loaded for these results yet.',
 });
 // Total-consideration bounds. Distinct from the $/Ac pair: this is the
@@ -1049,6 +1065,11 @@ const SORT_KEYS = {
   legal:   (r) => strKey(legalDisplay(r.parcel.properties)),
   title:   (r) => strKey(r.parcel.properties._certificatesOfTitle),
   zone1:   (r) => strKey(r.zoning[0]?.feature.properties.ZONE),
+  // Sort on the DISPLAYED (normalized) type, so the typo'd polygons sort
+  // with their own category rather than into a group of one.
+  zonecat: (r) => strKey(
+    r.zoning.length ? zoneCategoryLabel(r.zoning[0]?.feature.properties.ZONE_CATEGORY) : '',
+  ),
   zone1pct:(r) => finiteOrNeg(r.zoning[0]?.ratio),
   zone2:   (r) => strKey(r.zoning[1]?.feature.properties.ZONE),
   zbl:     (r) => strKey(r.zoning[0]?.feature.properties.ZBL),
@@ -2663,7 +2684,8 @@ if ($farFlungKm) {
 // these listeners are no-ops (Search button still drives the SQL).
 for (const el of [
   $zoneCategory, $changedStatus, $duMode, $duMin, $sizeLow, $sizeHigh, $vacantImproved,
-  $saleDateFrom, $saleDateTo, $asmtClass, $zoningFilterEl, $distanceMax, $salesPlan,
+  $saleDateFrom, $saleDateTo, $asmtClass, $zoningFilterEl, $zoneCatFilterEl,
+  $distanceMax, $salesPlan,
   $salesStreetName, $salesPpaLow, $salesPpaHigh, $saleAsmtMax,
   $salesPriceLow, $salesPriceHigh,
 ].filter(Boolean)) {
@@ -3304,6 +3326,7 @@ async function runSearch() {
   // drops its options — they described the previous result set.
   asmtClassFilter.clear();
   zoningFilter.setOptions([]);
+  zoneCatFilter.setOptions([]);
   // Drop the subject parcel — a fresh Search shouldn't inherit a
   // previous upload's subject highlight on the map.
   clearSubjectParcel();
@@ -5258,6 +5281,9 @@ function zoningCodesInRows(rows) {
  *  exists, so a re-render mid-session doesn't reset the filter. */
 function syncZoningFilterOptions() {
   zoningFilter.setOptions(zoningCodesInRows(csvFullRows));
+  // The type list is derived from the same rows, so it can never offer a
+  // type the current upload doesn't hold.
+  zoneCatFilter.setOptions(zoneCategoriesInRows(csvFullRows));
 }
 
 /**
@@ -5422,6 +5448,11 @@ function filterCsvRowsByOtherSearches(rows) {
   // chosen from the by-law, this one on the ZONE codes present in
   // these results.
   const zoneCodeFilterSet = new Set(zoningFilter.getSelected());
+  // Zoning TYPE ticks. Independent of both the code picker above and the
+  // Property tab's single zoneCat below: this one is multi-select and its
+  // options come from the current upload, which is what makes it usable on
+  // a multi-muni set where no single code spans the whole thing.
+  const zoneCatFilterSet = new Set(zoneCatFilter.getSelected());
 
   // Max distance from subject. Only fires when (a) a subject is set
   // and (b) the input parses to a positive number. Sales without a
@@ -5647,6 +5678,12 @@ function filterCsvRowsByOtherSearches(rows) {
       const d = Number(p._distanceKm);
       if (!Number.isFinite(d) || d > distMaxRaw) return false;
     }
+
+    // Zoning Type ticks (the sales-tab multi-select). Any of the row's
+    // zones matching is enough — a parcel straddling two zones genuinely
+    // is both. Rows with no zoning join read as "(no category)", so they
+    // are findable rather than silently dropped.
+    if (!rowMatchesZoneCategories(row.zoning, zoneCatFilterSet)) return false;
 
     // Zone category — needs zoning enrichment. If the row has no
     // zoning matches at all (enrichment skipped via the >250 button
@@ -8852,6 +8889,11 @@ function renderTable(rows, { resetPage = true } = {}) {
     // thead order matches.
     tr.appendChild(td(p.Property_Address));
     tr.appendChild(td(badge(formatZoneCode(z1), 'badge-zone')));
+    // Zoning Type. Blank rather than "(no category)" when there is no
+    // zoning join at all — an empty cell reads as "not loaded", which is
+    // the truth, whereas the label would assert the polygon was checked
+    // and found blank. The filter still treats the two alike.
+    tr.appendChild(td(row.zoning.length ? zoneCategoryLabel(z1.ZONE_CATEGORY) : null));
     // Sales-mode position for the Acres column. The basic-mode
     // Acres cell below carries the same value but with .basic-only
     // so only one is visible at a time.
@@ -11417,8 +11459,12 @@ function exportCsv(explicitRows) {
       p._plan ?? '',
       p._certificatesOfTitle ?? '',
       p._legalSourceUrl ?? '',
-      formatZoneCode(z1), z1.ZONE_NAME ?? '', z1.ZONE_CATEGORY ?? '', ratioPct(row.zoning[0]?.ratio), z1.ZBL ?? '',
-      formatZoneCode(z2), z2.ZONE_NAME ?? '', z2.ZONE_CATEGORY ?? '', ratioPct(row.zoning[1]?.ratio), z2.ZBL ?? '',
+      // Category exports NORMALIZED, matching the Zoning Type column and
+      // the filter. A row the grid shows as "Residential" writing out as
+      // "Resdential" would be a discrepancy between the screen and the
+      // file, and the file is the one that ends up in a report.
+      formatZoneCode(z1), z1.ZONE_NAME ?? '', normalizeZoneCategory(z1.ZONE_CATEGORY) ?? '', ratioPct(row.zoning[0]?.ratio), z1.ZBL ?? '',
+      formatZoneCode(z2), z2.ZONE_NAME ?? '', normalizeZoneCategory(z2.ZONE_CATEGORY) ?? '', ratioPct(row.zoning[1]?.ratio), z2.ZBL ?? '',
       formatDes(d1), d1.DES_CATEGORY ?? '', ratioPct(row.devPlan[0]?.ratio), d1.DP_BYLAW ?? '', d1.PLANNINGDISTRICT ?? '',
       p._soilRating ?? '', p._soilQuarter ?? '', p._soilRiskArea ?? '',
       dominantCliLabel(p) ?? '', dominantSoilTypeLabel(p) ?? '',
