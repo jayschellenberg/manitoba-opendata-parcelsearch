@@ -56,14 +56,14 @@ mb-parcelsearch  r/build_water.R     -> mb-parcel-data/water/<MUNI>.json + _inde
 
 ---
 
-## 3. Published state (as at 2026-08-04)
+## 3. Publish history
 
-> **This is still what the app serves.** V6.3 (§5A) is implemented, run and
-> verified locally as of 2026-08-11 but **not published** — no new shards, no
-> `mb-parcel-data` commit, no revision bump. §5B covers the scheduled input
-> refreshes, which were found to have been failing silently.
+> **CURRENT: `mb-parcel-data@3385466f`, V6.3, published 2026-08-11** — see §5A.
+> §5B covers the scheduled input refreshes, which were found to have been
+> failing silently and are now fixed. The rest of this section is the previous
+> (V6.2) state, kept for the notes on cache keys and the repo move.
 
-**Published and live:**
+**Previously published (2026-08-04, superseded):**
 - `mb-parcel-data` @ `627ac00a` — 180 water shards (V6.2, per-parcel `d`
   distances, from `MAOParcelOutput20260804.parquet`) **and** 182 landcover
   shards (from the regenerated `MAOParcelOutputAg20260804.parquet`). Both
@@ -218,8 +218,24 @@ NHN was re-downloaded from source rather than served from cache and produced the
 `NRN_MB_6_0`, byte-identical to the April download, so "roads are 4 months old"
 was release cadence, not staleness.
 
-**NOT YET PUBLISHED** — no new shards, no `mb-parcel-data` commit, no revision
-bump. Everything the app serves is still V6.2.
+**PUBLISHED 2026-08-11.** `mb-parcel-data@3385466f` (180 water shards, 5.40 MB,
+30 shards changed), app repointed and deployed — `manitoba-opendata-parcelsearch.vercel.app`
+verified serving pin `3385466f`, and the CDN verified returning the Niverville
+shard with 829 Turnberry as `Yes/Reserve Separated/35 ft` and 42 Gullane absent.
+Published via `update-cdn-pin.ps1`, which is the right tool for this — it
+commits + pushes the data repo, reads back the new HEAD, and rewrites the pin in
+one shot.
+
+Shard-level reconciliation against the previously published V6.2 shards:
+
+| | V6.2 (`627ac00a`/`71dca5a1`) | V6.3 (`3385466f`) |
+|---|---|---|
+| shipped rows (non-`None`) | 67,723 | 67,557 (−166) |
+| `yes` | 54,427 | 54,358 (−69) |
+| shards changed | — | 30 of 180 |
+| Niverville | 514 rows / 401 yes | 415 / 328 |
+| Springfield | 538 / 378 | 502 / 351 |
+| Stonewall | 133 / 73 | 102 / 56 |
 
 Verified vs prediction:
 
