@@ -1,11 +1,11 @@
-# hpi-staleness-check.ps1 -- remind (email + ntfy push) when the manually-
-# updated Winnipeg MLS HPI data behind the residential appraisal dashboard
-# goes stale.
+# hpi-staleness-check.ps1 -- remind (email + ntfy push) when the Winnipeg MLS
+# HPI data behind the residential appraisal dashboard goes stale.
 #
 # Context: ResChartsV2.5.qmd reads CREA MLS HPI from MLS_HPI_<Month>_<Year>
-# folders that Jason drops in by hand each month (the dashboard's loader auto-
-# picks the newest one). CREA releases the index around the 3rd week of the
-# month; if a new folder has not appeared by then, this nudges with an email.
+# folders (the dashboard's loader auto-picks the newest one). Since 2026-08-12
+# the monthly download is automated by hpi-download.ps1 (daily 08:45 task
+# mb-parcelsearch-hpi-download); this check remains the independent BACKSTOP:
+# if no new folder has appeared by the grace day, it nudges with an email.
 #
 # Robustness:
 #   * Staleness is judged from the FOLDER NAME (month+year), NOT the timestamp.

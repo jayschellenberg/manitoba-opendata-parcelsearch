@@ -269,6 +269,30 @@ policy allows the Manitoba Vercel origin, and production's
 Add a new archive host to `vercel.json` `connect-src` if it is not already
 allowed. Review the current MLI terms before publishing.
 
+### 8. Winnipeg MLS HPI — residential dashboard  (cadence: monthly, **scheduled**)
+`ResChartsV2.5.qmd` (in `D:\Dropbox\Appraisal\RProjects\appraisal-templates\residential`)
+reads CREA MLS HPI from `MLS_HPI_<Month>_<Year>` folders next to it; its loader
+auto-picks the newest. Since 2026-08-12 the download is automated:
+`hpi-download.ps1` (task `mb-parcelsearch-hpi-download`, daily 08:45) scrapes
+the CREA HPI tool page for the newest `MLS_HPI-<Month>-<Year>_EN.zip`
+(published ~the 10th), downloads it, and extracts ONLY the two monthly `.xlsx`
+the dashboard reads (`Not Seasonally Adjusted (M)` + `Seasonally Adjusted (M)`;
+the zip's quarterly/annual variants are unused and stay inside the provenance
+zip kept in the folder) — no-op when the newest month is already present. `hpi-staleness-check.ps1` (daily 09:00) stays as the day-25 backstop
+nag; both alert on `mbps-hpi-staleness-jks` + email.
+
+**Naming gotcha (the July 2026 incident):** CREA's raw zip/folder name
+(`MLS_HPI-July-2026_EN`, hyphens + `_EN`) matches NEITHER the dashboard's
+`MLS_HPI_*` glob NOR the watchdog regex `^MLS_HPI_<Month>_<Year>$`. A manual
+"Extract All" therefore produces an invisible drop — exactly what happened
+2026-07-25, leaving the dashboard on June while July sat extracted under the
+wrong name. The downloader normalizes the name; if you ever do it by hand,
+rename to `MLS_HPI_<Month>_<Year>`.
+
+Manual fallback: download via the "Accept and download data" button at
+<https://www.crea.ca/housing-market-stats/mls-home-price-index/hpi-tool/>,
+extract into a correctly named folder, re-render ResChartsV2.5.
+
 ## Continuous integration
 
 GitHub Actions is enabled for the account (the earlier account-level
@@ -294,6 +318,8 @@ powershell -ExecutionPolicy Bypass -File schedule_semiannual.ps1     # mb-parcel
 powershell -ExecutionPolicy Bypass -File schedule_history_check.ps1  # mb-parcelsearch-history-staleness — daily 09:10 (snapshot dead-man watchdog)
 powershell -ExecutionPolicy Bypass -File schedule_vintage_check.ps1  # mb-parcelsearch-upstream-vintage — weekly Mon 09:30 (superseded-service watchdog)
 powershell -ExecutionPolicy Bypass -File ..\MBFloodMapping\schedule_flood_check.ps1  # mbfloodmapping-staleness — daily 09:20 (flood-layer watchdog)
+powershell -ExecutionPolicy Bypass -File schedule_hpi_download.ps1   # mb-parcelsearch-hpi-download  — daily 08:45 (CREA HPI auto-download)
+powershell -ExecutionPolicy Bypass -File schedule_hpi_check.ps1      # mb-parcelsearch-hpi-staleness — daily 09:00 (HPI backstop watchdog)
 ```
 Verify: `Get-ScheduledTask -TaskName mb-parcelsearch-monthly-refresh,mb-parcelsearch-semiannual-archive,mb-parcelsearch-history-staleness,mbfloodmapping-staleness | Format-List *`.
 
