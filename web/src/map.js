@@ -42,6 +42,7 @@ import {
 } from './masc.js';
 import { SOIL_SURVEY_MAP_SOURCE_OPTIONS } from './soilSurvey.js';
 import { safeExternalUrl } from './lib/safeUrl.js';
+import { createMuniPicker } from './lib/muniPicker.js';
 import {
   badgeRadius,
   calloutOffset,
@@ -3390,40 +3391,32 @@ export function setMuniBoundarySelected(map, muniName) {
  * `onPick(muniName)` receives the MUNI_LIST_NAME_WITH_TYPE value.
  */
 export function wireMuniBoundaryPicker(map, { onPick, isEnabled } = {}) {
-  const live = () => (typeof isEnabled === 'function' ? !!isEnabled() : true);
-  let hovered = null;
-  const setHover = (id, on) => {
-    if (id == null) return;
-    map.setFeatureState({ source: 'muni-boundaries', id }, { hover: on });
-  };
-  const clearHover = () => {
-    setHover(hovered, false);
-    hovered = null;
-    map.getCanvas().style.cursor = '';
-  };
-
-  map.on('mousemove', 'muni-boundaries-fill', (e) => {
-    if (!live()) { if (hovered != null) clearHover(); return; }
-    const f = e.features?.[0];
-    if (!f || f.id == null) return;
-    if (hovered !== f.id) { setHover(hovered, false); hovered = f.id; setHover(hovered, true); }
-    map.getCanvas().style.cursor = 'pointer';
+  // The gating logic lives in lib/muniPicker.js so it can be tested under
+  // node — this file can't be, and the map needs a compositing canvas to
+  // initialise at all. Everything here is the MapLibre plumbing.
+  const picker = createMuniPicker({
+    isEnabled,
+    onPick,
+    setHover: (id, on) => {
+      if (id == null) return;
+      map.setFeatureState({ source: 'muni-boundaries', id }, { hover: on });
+    },
+    setCursor: (cursor) => { map.getCanvas().style.cursor = cursor; },
   });
-  map.on('mouseleave', 'muni-boundaries-fill', clearHover);
+
+  map.on('mousemove', 'muni-boundaries-fill', (e) => picker.mouseMove(e.features?.[0]?.id));
+  map.on('mouseleave', 'muni-boundaries-fill', () => picker.mouseLeave());
   map.on('click', 'muni-boundaries-fill', (e) => {
-    if (!live()) return;
     // Shape tools own the click while armed, exactly as the parcel popup
     // stands down for them.
     if (shapeClickHandled(map, e)) return;
-    const name = e.features?.[0]?.properties?.MUNI_LIST_NAME_WITH_TYPE;
-    if (!name) return;
-    onPick?.(String(name));
+    picker.click(e.features?.[0]?.properties?.MUNI_LIST_NAME_WITH_TYPE);
   });
 
-  // Gating is state the caller changes at will; expose a nudge so a
+  // Gating is state the caller changes at will; expose the nudge so a
   // freshly-disabled layer drops its stale hover tint immediately rather
   // than at the next mouse move.
-  return { refresh: () => { if (!live() && hovered != null) clearHover(); } };
+  return { refresh: () => picker.refresh() };
 }
 
 export function setMuniParcelsData(map, fc) {

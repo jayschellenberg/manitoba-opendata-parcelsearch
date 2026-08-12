@@ -96,9 +96,15 @@ export function zoneCategoryLabel(raw) {
 }
 
 /**
- * Every distinct Zoning Type across a set of zoning matches, as display
- * labels, sorted — with NO_ZONE_CATEGORY forced last so the real types
- * lead the dropdown.
+ * Every distinct Zoning Type offered by a row set, as display labels,
+ * sorted — with NO_ZONE_CATEGORY forced last so the real types lead the
+ * dropdown.
+ *
+ * Reads the DOMINANT zone of each row, matching rowMatchesZoneCategories.
+ * If this collected secondary zones too, a type that only ever appears as
+ * some parcel's minor zone would sit in the dropdown and return nothing
+ * when ticked — an option that does nothing is worse than an absent one.
+ * Every entry this returns is guaranteed to keep at least one row.
  *
  * `zoningOf(row)` extracts a row's zoning-match array, keeping this
  * module free of the caller's row shape.
@@ -107,9 +113,8 @@ export function zoneCategoriesInRows(rows, zoningOf) {
   const seen = new Set();
   for (const row of rows || []) {
     const matches = zoningOf ? zoningOf(row) : row?.zoning;
-    for (const z of matches || []) {
-      seen.add(zoneCategoryLabel(z?.feature?.properties?.ZONE_CATEGORY));
-    }
+    const dominant = (matches || [])[0];
+    seen.add(zoneCategoryLabel(dominant?.feature?.properties?.ZONE_CATEGORY));
   }
   const hasBlank = seen.delete(NO_ZONE_CATEGORY);
   const out = [...seen].sort((a, b) => a.localeCompare(b));
@@ -118,9 +123,25 @@ export function zoneCategoriesInRows(rows, zoningOf) {
 }
 
 /**
- * Does a row match the ticked Zoning Types? A row passes when ANY of its
- * zoning polygons matches — the same "either zone counts" rule the zone
- * CODE filter uses, since a parcel straddling two zones is genuinely both.
+ * Does a row match the ticked Zoning Types?
+ *
+ * Matches on the DOMINANT zone only — zoningMatches[0], the polygon
+ * covering the largest share of the parcel, which joinTopNByArea sorts to
+ * the front. Deliberately NOT "any zone matches" (Jason, 2026-08-12).
+ *
+ * The zone CODE filter beside this one does use any-zone matching, and
+ * this started out copying it. But that filter shows BOTH the Zoning and
+ * Zoning 2 columns, so a row kept on its secondary zone explains itself.
+ * The Zoning Type column shows only the dominant type, so any-zone
+ * matching produced rows that flatly contradicted the filter: a parcel 90%
+ * Industrial with a 10% Commercial sliver passed a Commercial filter and
+ * then displayed "Industrial".
+ *
+ * Matching the dominant zone also happens to be the right appraisal
+ * answer. A parcel that is 90% industrial is not a commercial comp; one
+ * that is 70% commercial is. The cutoff is sharp at 50/50, but it is the
+ * same cutoff the grid already uses to decide what to display, so the two
+ * can never disagree.
  *
  * An empty selection is no filter at all. A row with no zoning matches
  * counts as NO_ZONE_CATEGORY, so ticking "(no category)" finds the sales
@@ -129,9 +150,7 @@ export function zoneCategoriesInRows(rows, zoningOf) {
  */
 export function rowMatchesZoneCategories(zoningMatches, selected) {
   if (!selected || selected.size === 0) return true;
-  const matches = zoningMatches || [];
-  if (matches.length === 0) return selected.has(NO_ZONE_CATEGORY);
-  return matches.some((z) => (
-    selected.has(zoneCategoryLabel(z?.feature?.properties?.ZONE_CATEGORY))
-  ));
+  const dominant = (zoningMatches || [])[0];
+  if (!dominant) return selected.has(NO_ZONE_CATEGORY);
+  return selected.has(zoneCategoryLabel(dominant?.feature?.properties?.ZONE_CATEGORY));
 }

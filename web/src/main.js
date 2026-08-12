@@ -6576,6 +6576,17 @@ async function toggleOverlay(which) {
   if (!visible) {
     setOverlayBtnLabel(btn, label);
     applyOverlayVisibility(which, false);
+    // Cycling OFF lands here, and the third click of the zoning cycle
+    // arrives from the SELECTED-ONLY state — which paints the parcels
+    // themselves with their zone colours rather than drawing polygons.
+    // applyOverlayVisibility only hides the polygon layers, so without
+    // this the parcels kept their zone colouring with the overlay
+    // switched off, and no further click could clear it: the next cycle
+    // goes off -> ALL, which repaints rather than resets (Jason,
+    // 2026-08-12). Unconditional for zoning — restoring the plain
+    // highlight fill when it is already the plain highlight fill is a
+    // no-op, and that is cheaper than tracking which state we came from.
+    if (which === 'zoning') setParcelZoneColoring(map, null);
     return;
   }
 

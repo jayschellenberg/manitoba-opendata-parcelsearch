@@ -592,7 +592,7 @@
                 </summary>
                 <div class="multiselect-menu"></div>
               </details>
-              <span class="tip">Filter by broad Zoning Type — Commercial, Industrial, Residential, Open Space and so on — the province's ZONE_CATEGORY rollup shown in the Zoning Type column. Unlike the zone-code filter above, this compares across municipalities, so it's the one to reach for on a multi-muni sales set. The list holds only the types your current results contain. A sale is kept when ANY of its zones matches anything ticked; leave everything unticked for no filter. Source spelling variants and typos are folded together, and sales whose zoning hasn't been joined appear under "(no category)".</span>
+              <span class="tip">Filter by broad Zoning Type — Commercial, Industrial, Residential, Open Space and so on — the province's ZONE_CATEGORY rollup shown in the Zoning Type column. Unlike the zone-code filter above, this compares across municipalities, so it's the one to reach for on a multi-muni sales set. Matches a parcel's DOMINANT zone (the one covering most of it), which is exactly what the Zoning Type column shows — so the ticked types and the column always agree. A parcel that is mostly industrial with a commercial corner counts as Industrial. The list holds only the types your current results contain, and every entry in it returns at least one sale. Source spelling variants and typos are folded together, and sales whose zoning hasn't been joined appear under "(no category)".</span>
             </span>
           </div>
           <!-- The two sale-level exclusions. Vacant Land Only takes a
