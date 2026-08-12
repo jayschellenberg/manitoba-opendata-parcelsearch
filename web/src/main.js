@@ -44,7 +44,7 @@ import { stalenessBannerState } from './lib/staleness.js';
 import { resolveDropdownSources } from './lib/dropdownSources.js';
 import { readMapLegends, layoutMapLegends, paintMapLegends } from './lib/mapLegend.js';
 import {
-  computeSaleGroups, groupPosition,
+  computeSaleGroups, groupPosition, frontageRateState,
   isFarFlungSale, farFlungReason, DEFAULT_FAR_FLUNG_KM,
 } from './lib/saleGroups.js';
 import {
@@ -10685,18 +10685,15 @@ function formatGroupPpsf(p) {
  * sale where some members state a frontage and others don't, so a rate
  * could have been computed and was deliberately withheld as misleading.
  *
- * Two decimals, like $/SF — frontage rates on a town lot run to a few
- * hundred dollars but small-lot cases land low enough that whole-dollar
- * rounding would lose resolution.
+ * Whole dollars (Jason, 2026-08-12), like $/Acre and $/Lot rather than
+ * $/SF. Frontage rates run to hundreds or thousands of dollars a foot,
+ * so cents are noise on the end of a figure nobody quotes that precisely.
  */
 function formatGroupPpff(p) {
-  if (!p?._saleGroupSize) return null;
-  const total = Number(p._saleGroupTotalFrontageFt);
-  const anyFrontage = Number.isFinite(total) && total > 0;
-  if (p._saleGroupFrontageIncomplete) return anyFrontage ? '—' : null;
-  const ppff = Number(p._saleGroupPpff);
-  if (!Number.isFinite(ppff) || ppff <= 0) return null;
-  return '$' + ppff.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const state = frontageRateState(p);
+  if (state === 'withheld') return '—';
+  if (state === 'none') return null;
+  return fmtCurrency(p._saleGroupPpff);
 }
 
 /** Group $/Lot table cell — sale price ÷ number of parcels in the
@@ -11551,7 +11548,7 @@ function exportCsv(explicitRows) {
             // sale, rate withheld" rather than as missing data.
             Number.isFinite(p._saleGroupTotalFrontageFt) && p._saleGroupTotalFrontageFt > 0
               ? p._saleGroupTotalFrontageFt.toFixed(2) : '',
-            p._saleGroupPpff != null ? p._saleGroupPpff.toFixed(2) : '',
+            p._saleGroupPpff != null ? Math.round(p._saleGroupPpff) : '',
             Number.isFinite(p._saleGroupAsmtTotal) ? Math.round(p._saleGroupAsmtTotal) : '',
             p._saleGroupSize != null ? (p._saleGroupAsmtIncomplete ? 'No' : 'Yes') : '',
             p._saleGroupAsmtIncomplete ? '' : (Number.isFinite(p._saleGroupSaleToAsmt) ? p._saleGroupSaleToAsmt.toFixed(2) : ''),

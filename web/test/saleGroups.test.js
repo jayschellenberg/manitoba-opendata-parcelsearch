@@ -7,7 +7,7 @@
 
 import assert from 'node:assert/strict';
 import {
-  computeSaleGroups, groupPosition, maxPairwiseKm,
+  computeSaleGroups, groupPosition, maxPairwiseKm, frontageRateState,
   isFarFlungSale, farFlungReason, DEFAULT_FAR_FLUNG_KM,
 } from '../src/lib/saleGroups.js';
 import { parcelCentrePoint } from '../src/lib/geometryText.js';
@@ -505,6 +505,76 @@ test('frontage totalling is independent of the acres guard', () => {
   assert.equal(stamp._saleGroupPpa, null, 'acres rate correctly withheld');
   assert.equal(stamp._saleGroupFrontageIncomplete, false);
   assert.ok(approx(stamp._saleGroupPpff, 2000), 'frontage rate still computed');
+});
+
+console.log('\nfrontageRateState — what the $/FF cell shows');
+
+// The stated rule (Jason, 2026-08-12): for a multi-parcel sale, total
+// price / total frontage when ALL members state feet; if one member does
+// not, show an em-dash. These drive computeSaleGroups first so the state
+// is derived from real stamps rather than hand-built properties.
+const stateOf = (features) => {
+  const stamp = computeSaleGroups(features, helpers).get('g1');
+  return frontageRateState(stamp);
+};
+const parcel = (oid, price, frontageOrArea, extra = {}) => feat({
+  _saleGroupId: 'g1', OBJECTID: oid, Roll_No_Txt: `${oid}.000`,
+  _salePrice: price, Frontage_or_Area: frontageOrArea, ...extra,
+});
+
+test('all members state feet -> a rate', () => {
+  assert.equal(stateOf([
+    parcel(1, '$300,000', '50.00 FEET'),
+    parcel(2, '$300,000', '100.00 FEET'),
+  ]), 'rate');
+});
+
+test('one member of a group lacks feet -> withheld (em-dash)', () => {
+  assert.equal(stateOf([
+    parcel(1, '$300,000', '110.00 FEET'),
+    parcel(2, '$300,000', '5.00 ACRES'),
+  ]), 'withheld');
+});
+
+test('the missing member can be in any position', () => {
+  assert.equal(stateOf([
+    parcel(1, '$300,000', '5.00 ACRES'),
+    parcel(2, '$300,000', '110.00 FEET'),
+  ]), 'withheld');
+  assert.equal(stateOf([
+    parcel(1, '$400,000', '40.00 FEET'),
+    parcel(2, '$400,000', ''),
+    parcel(3, '$400,000', '60.00 FEET'),
+  ]), 'withheld', 'a blank field counts as missing, not as zero feet');
+});
+
+test('NO member states feet -> blank, not a dash', () => {
+  // Nothing is being withheld here: the roll records an area, which is
+  // what ~63% of Manitoba parcels do. A dash on all of those would be
+  // noise. This is the one place the rule is interpreted rather than
+  // followed literally -- "one member lacks feet" is technically true.
+  assert.equal(stateOf([
+    parcel(1, '$500,000', '80.00 ACRES'),
+    parcel(2, '$500,000', '80.00 ACRES'),
+  ]), 'none');
+  assert.equal(stateOf([parcel(1, '$500,000', '160.00 ACRES')]), 'none',
+    'and the same for an ordinary single-parcel area sale');
+});
+
+test('a single parcel stating feet still rates', () => {
+  assert.equal(stateOf([parcel(1, '$220,000', '110.00 FEET')]), 'rate');
+});
+
+test('a good frontage with no usable price is blank, not withheld', () => {
+  // Nothing was withheld on frontage grounds -- the price is the gap, and
+  // every other rate column is empty for this row too.
+  assert.equal(stateOf([parcel(1, 'N/A', '110.00 FEET')]), 'none');
+});
+
+test('a row with no sale group at all is blank', () => {
+  assert.equal(frontageRateState({}), 'none');
+  assert.equal(frontageRateState(null), 'none');
+  assert.equal(frontageRateState(undefined), 'none');
 });
 
 const failed = results.filter((r) => r.status === 'fail');

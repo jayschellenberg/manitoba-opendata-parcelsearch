@@ -259,6 +259,37 @@ export function computeSaleGroups(
 }
 
 /**
+ * What the $/FF cell should say for a row — three outcomes, not two
+ * (Jason, 2026-08-12).
+ *
+ *   'rate'     every parcel in the sale states a frontage, so total price
+ *              ÷ total frontage is a real number.
+ *   'withheld' SOME parcels state a frontage and some don't. A rate could
+ *              have been computed and deliberately was not: the price
+ *              covers land whose frontage is only partly known, so the
+ *              figure would come out high by roughly the missing share
+ *              and look entirely plausible. Renders as an em-dash — "we
+ *              could have answered this and are declining to".
+ *   'none'     no parcel in the sale states a frontage at all. The roll
+ *              records an area instead, which is the majority of Manitoba
+ *              parcels; the cell stays blank because there is no question
+ *              being dodged, and ~63% of the grid showing a dash would be
+ *              noise rather than information.
+ *
+ * The 'withheld' / 'none' split is the whole reason this is a function
+ * rather than a truthiness check at the call site: both are "no number",
+ * but only one of them is worth a mark on the page.
+ */
+export function frontageRateState(props) {
+  if (!props?._saleGroupSize) return 'none';
+  const total = Number(props._saleGroupTotalFrontageFt);
+  const anyFrontage = Number.isFinite(total) && total > 0;
+  if (props._saleGroupFrontageIncomplete) return anyFrontage ? 'withheld' : 'none';
+  const rate = Number(props._saleGroupPpff);
+  return Number.isFinite(rate) && rate > 0 ? 'rate' : 'none';
+}
+
+/**
  * Adjacency position of a row within its sale group, given the group
  * ids of the previous and next rows in the current sort order. Used to
  * draw the connecting stripe/tint only when sibling rows are adjacent.
