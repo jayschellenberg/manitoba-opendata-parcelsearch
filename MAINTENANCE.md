@@ -366,6 +366,59 @@ powershell -ExecutionPolicy Bypass -File schedule_task_health_check.ps1     # mb
 powershell -ExecutionPolicy Bypass -File schedule_post_refresh_report.ps1   # mb-parcelsearch-post-refresh-report — 15th monthly 08:00 (did the refresh actually publish?)
 ```
 
+#### Run these from an ELEVATED prompt (2026-08-12: tasks are now S4U)
+
+**Re-run any registrar as administrator, or it silently downgrades its task.**
+Every task on this machine used to be `LogonType=Interactive`, which means *does
+not run unless Jason is logged on*. On **2026-08-12 at 01:31** a Windows Update
+reboot left the machine sitting at a logon screen and **nothing ran for 9.3
+hours** — including every watchdog, so no local component could even report the
+outage. `MAOSalesSearch` alone missed 7 firings.
+
+All **14** affected tasks were converted that day to **S4U** — "run whether the
+user is logged on or not", with *no stored password* — and verified working
+(five were run under the new principal and returned 0, exercising Dropbox file
+reads, cross-repo dot-sourcing and outbound HTTPS).
+
+> **The drift trap this closes.** The registrars build their tasks with
+> `schtasks.exe`, which can *only* produce Interactive. So before this change,
+> re-running any `schedule_*.ps1` for an unrelated reason — a changed path, a new
+> flag — silently handed that task back to Interactive and re-opened the gap.
+> Each registrar now sets the principal itself, immediately after its
+> `Set-ScheduledTask -Settings` call.
+
+**Setting a task principal is an administrative operation.** From an ordinary
+prompt `Set-ScheduledTask -Principal` throws `Access is denied.` The registrars
+catch that so the task still registers and stays usable, then **read the
+principal back and print the actual `LogonType`** rather than asserting it. If
+the result is not S4U they end with an unmissable `!!` banner, and they
+distinguish the two cases: *never was S4U* versus **this run just downgraded a
+working S4U task** — the second being the urgent one. Verify any time with:
+
+```
+Get-ScheduledTask | Where-Object TaskName -match 'mb-parcelsearch|mao-|mbflood' |
+  Select-Object TaskName, @{n='LogonType';e={$_.Principal.LogonType}}
+```
+
+> **Exception — the two mao-scrape sales tasks stay Interactive on purpose.**
+> `MAOSalesSearch` (`mao-scrape\schedule_sales_search.ps1`) and
+> `MAOSalesStaleness` (`mao-scrape\schedule_staleness_check.ps1`) must **not** be
+> converted. `scripts/sales_search.R` decrypts the MAO credential blob
+> (`checkpoints\.mao_credentials.xml`) with **DPAPI**, and the staleness check
+> *tests* that the blob still decrypts. DPAPI unwraps with the user's master key,
+> which only an interactive logon unlocks; an S4U token is a logon-less identity
+> and never unlocks it. Under S4U the sweep would fail at login and the watchdog
+> would false-alarm **every day** — trading an occasional gap for a permanent
+> one. The working alternative, which **only Jason can set up by hand**, is the
+> *other* form of "run whether user is logged on or not": the one **with the
+> Windows account password stored** ("Do not store password" unchecked). That
+> establishes a real logon session, so DPAPI still works *and* the task survives
+> a logon screen. It cannot be scripted — Task Scheduler requires the password to
+> be typed into `taskschd.msc` — so nothing in these repos attempts it. Until
+> then these two are the last logged-off hole on this machine, and the
+> healthchecks.io heartbeat (`checkpoints\heartbeat-url.txt`) is the only layer
+> that notices during an outage.
+
 **Post-refresh report (monthly, 15th at 08:00).** `post-refresh-report.ps1`
 runs four hours after the 04:00 refresh and 04:30 publish and sends one
 summary **either way** — which is the point: the standing alerts are
