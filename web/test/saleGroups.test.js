@@ -406,6 +406,107 @@ test('is empty for a sale that is not flagged', () => {
   assert.equal(farFlungReason({ _saleGroupSpanKm: 500 }, null), '');
 });
 
+console.log('\n$/frontage foot');
+
+// Frontage_or_Area is a hybrid field — ~63% of Manitoba parcels state an
+// area and ~37% a frontage — so the interesting cases are all about
+// refusing to compute a rate when the frontage only covers part of the
+// land being paid for.
+
+test('single parcel stating a frontage gets a $/FF', () => {
+  const features = [
+    feat({ _saleGroupId: 'g1', OBJECTID: 1, Roll_No_Txt: '1.000', _salePrice: '$220,000',
+           _acres: 0.25, Frontage_or_Area: '110.00 FEET' }),
+  ];
+  const stamp = computeSaleGroups(features, helpers).get('g1');
+  assert.equal(stamp._saleGroupTotalFrontageFt, 110);
+  assert.equal(stamp._saleGroupFrontageIncomplete, false);
+  assert.ok(approx(stamp._saleGroupPpff, 2000));            // 220000 / 110
+});
+
+test('a parcel stating ACRES yields no frontage and no rate', () => {
+  const features = [
+    feat({ _saleGroupId: 'g1', OBJECTID: 1, Roll_No_Txt: '1.000', _salePrice: '$500,000',
+           _acres: 160, Frontage_or_Area: '160.00 ACRES' }),
+  ];
+  const stamp = computeSaleGroups(features, helpers).get('g1');
+  assert.equal(stamp._saleGroupTotalFrontageFt, 0);
+  assert.equal(stamp._saleGroupFrontageIncomplete, true);
+  assert.equal(stamp._saleGroupPpff, null, 'an area is not a frontage');
+  // The acres rates are unaffected — the two halves of the hybrid field
+  // must not interfere with each other.
+  assert.ok(approx(stamp._saleGroupPpa, 500000 / 160));
+});
+
+test('multi-parcel sale sums frontage when EVERY parcel states one', () => {
+  const features = [
+    feat({ _saleGroupId: 'g1', OBJECTID: 1, Roll_No_Txt: '1.000', _salePrice: '$300,000',
+           _acres: 0.2, Frontage_or_Area: '50.00 FEET' }),
+    feat({ _saleGroupId: 'g1', OBJECTID: 2, Roll_No_Txt: '2.000', _salePrice: '$300,000',
+           _acres: 0.4, Frontage_or_Area: '100.00 FEET' }),
+  ];
+  const stamp = computeSaleGroups(features, helpers).get('g1');
+  assert.equal(stamp._saleGroupTotalFrontageFt, 150);
+  assert.equal(stamp._saleGroupFrontageIncomplete, false);
+  assert.ok(approx(stamp._saleGroupPpff, 2000));            // 300000 / 150
+});
+
+test('MIXED sale withholds the rate rather than roughly doubling it', () => {
+  // The case the strict guard exists for: half the land being paid for has
+  // a knowable frontage. 300000/110 = $2,727/ft would look like a plausible
+  // number and be about double the truth.
+  const features = [
+    feat({ _saleGroupId: 'g1', OBJECTID: 1, Roll_No_Txt: '1.000', _salePrice: '$300,000',
+           _acres: 0.25, Frontage_or_Area: '110.00 FEET' }),
+    feat({ _saleGroupId: 'g1', OBJECTID: 2, Roll_No_Txt: '2.000', _salePrice: '$300,000',
+           _acres: 5, Frontage_or_Area: '5.00 ACRES' }),
+  ];
+  const stamp = computeSaleGroups(features, helpers).get('g1');
+  assert.equal(stamp._saleGroupFrontageIncomplete, true);
+  assert.equal(stamp._saleGroupPpff, null);
+  // The total is still reported, so the export can distinguish "mixed
+  // sale, rate withheld" from "no frontage anywhere".
+  assert.equal(stamp._saleGroupTotalFrontageFt, 110);
+});
+
+test('a missing or junk Frontage_or_Area is not a zero-foot frontage', () => {
+  for (const raw of [undefined, null, '', '<Null>', 'FEET', '0.00 FEET']) {
+    const features = [
+      feat({ _saleGroupId: 'g1', OBJECTID: 1, Roll_No_Txt: '1.000', _salePrice: '$100,000',
+             _acres: 1, Frontage_or_Area: raw }),
+    ];
+    const stamp = computeSaleGroups(features, helpers).get('g1');
+    assert.equal(stamp._saleGroupPpff, null, `${JSON.stringify(raw)} must not produce a rate`);
+    assert.equal(stamp._saleGroupFrontageIncomplete, true);
+  }
+});
+
+test('no sale price means no rate, even with a good frontage', () => {
+  const features = [
+    feat({ _saleGroupId: 'g1', OBJECTID: 1, Roll_No_Txt: '1.000', _salePrice: 'N/A',
+           _acres: 0.25, Frontage_or_Area: '110.00 FEET' }),
+  ];
+  const stamp = computeSaleGroups(features, helpers).get('g1');
+  assert.equal(stamp._saleGroupTotalFrontageFt, 110, 'the frontage still totals');
+  assert.equal(stamp._saleGroupPpff, null);
+});
+
+test('frontage totalling is independent of the acres guard', () => {
+  // Acres incomplete must not suppress $/FF, and vice versa — they are
+  // separate statements about separate figures.
+  const features = [
+    feat({ _saleGroupId: 'g1', OBJECTID: 1, Roll_No_Txt: '1.000', _salePrice: '$200,000',
+           Frontage_or_Area: '50.00 FEET' }),                 // no _acres at all
+    feat({ _saleGroupId: 'g1', OBJECTID: 2, Roll_No_Txt: '2.000', _salePrice: '$200,000',
+           _acres: 0.5, Frontage_or_Area: '50.00 FEET' }),
+  ];
+  const stamp = computeSaleGroups(features, helpers).get('g1');
+  assert.equal(stamp._saleGroupAcresIncomplete, true);
+  assert.equal(stamp._saleGroupPpa, null, 'acres rate correctly withheld');
+  assert.equal(stamp._saleGroupFrontageIncomplete, false);
+  assert.ok(approx(stamp._saleGroupPpff, 2000), 'frontage rate still computed');
+});
+
 const failed = results.filter((r) => r.status === 'fail');
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length > 0) process.exit(1);

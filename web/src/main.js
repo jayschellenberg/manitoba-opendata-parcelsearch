@@ -1159,6 +1159,7 @@ const SORT_KEYS = {
   grouppricelot:(r) => finiteOrNeg(r.parcel.properties._saleGroupPpl),
   grouppriceac: (r) => finiteOrNeg(r.parcel.properties._saleGroupPpa),
   grouppricesf: (r) => finiteOrNeg(r.parcel.properties._saleGroupPpsf),
+  grouppriceff: (r) => finiteOrNeg(r.parcel.properties._saleGroupPpff),
   saletoasmt:   (r) => finiteOrNeg(r.parcel.properties._saleGroupSaleToAsmt),
   subjdist:     (r) => finiteOrNeg(r.parcel.properties._distanceKm),
   asmtland:     (r) => finiteOrNeg(r.parcel.properties._asmtLand),
@@ -4382,6 +4383,9 @@ async function handleSalesUpload(file) {
  *   _saleGroupTotalPriceNum — parsed numeric of consideration
  *   _saleGroupPpa           — total price / total acres
  *   _saleGroupPpsf          — total price / (total acres × 43560)
+ *   _saleGroupTotalFrontageFt — sum of roll-stated frontage feet
+ *   _saleGroupPpff          — total price / total frontage feet, null
+ *                             unless EVERY member states a frontage
  *   _saleGroupRollIds       — array of sibling OBJECTIDs (for the
  *                             hover-highlight feature-state lookup)
  *   _saleGroupAcresIncomplete — true if any group member is missing
@@ -8933,7 +8937,10 @@ function renderTable(rows, { resetPage = true } = {}) {
     const ppsfCell = td(formatGroupPpsf(p), 'num');
     ppsfCell.classList.add('sales-only');
     tr.appendChild(ppsfCell);
-    // $/Lot closes the rate group, so the three unit rates read together.
+    const ppffCell = td(formatGroupPpff(p), 'num');
+    ppffCell.classList.add('sales-only');
+    tr.appendChild(ppffCell);
+    // $/Lot closes the rate group, so the unit rates read together.
     const pplCell = td(formatGroupPpl(p), 'num');
     pplCell.classList.add('sales-only');
     tr.appendChild(pplCell);
@@ -10666,6 +10673,32 @@ function formatGroupPpsf(p) {
   return '$' + ppsf.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/**
+ * Group $/FF table cell — sale price ÷ total roll-stated frontage feet.
+ *
+ * Returns null (an empty cell, not an em-dash) when the roll states an
+ * area rather than a frontage, which is the majority of parcels. A dash
+ * would read as "we tried and failed"; there is simply no frontage on
+ * these records, and ~63% of the grid saying so would be noise.
+ *
+ * The em-dash IS used for the one case worth flagging: a multi-parcel
+ * sale where some members state a frontage and others don't, so a rate
+ * could have been computed and was deliberately withheld as misleading.
+ *
+ * Two decimals, like $/SF — frontage rates on a town lot run to a few
+ * hundred dollars but small-lot cases land low enough that whole-dollar
+ * rounding would lose resolution.
+ */
+function formatGroupPpff(p) {
+  if (!p?._saleGroupSize) return null;
+  const total = Number(p._saleGroupTotalFrontageFt);
+  const anyFrontage = Number.isFinite(total) && total > 0;
+  if (p._saleGroupFrontageIncomplete) return anyFrontage ? '—' : null;
+  const ppff = Number(p._saleGroupPpff);
+  if (!Number.isFinite(ppff) || ppff <= 0) return null;
+  return '$' + ppff.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 /** Group $/Lot table cell — sale price ÷ number of parcels in the
  *  group. Doesn't depend on acres so it works even when acres are
  *  incomplete (no '—' fallback needed). */
@@ -11414,6 +11447,7 @@ function exportCsv(explicitRows) {
           'Sale Group ID', 'Parcels in Sale', 'Group Rolls',
           'Group Total Sale Price', 'Group Total Acres', 'Group Acres Complete',
           'Group $/Lot', 'Group $/SF', 'Group $/Acre',
+          'Group Total Frontage Ft', 'Group $/FF',
           'Group Assessment Total', 'Group Assessment Complete', 'Sale/Asmt',
           // Far-flung diagnostics: how spread out the sale's parcels
           // actually are, and how many munis they touch. Spread Complete
@@ -11512,6 +11546,12 @@ function exportCsv(explicitRows) {
             p._saleGroupPpl != null ? Math.round(p._saleGroupPpl) : '',
             p._saleGroupAcresIncomplete ? '' : (p._saleGroupPpsf != null ? p._saleGroupPpsf.toFixed(2) : ''),
             p._saleGroupAcresIncomplete ? '' : (p._saleGroupPpa  != null ? Math.round(p._saleGroupPpa)   : ''),
+            // Frontage total is written whenever any member states one, so
+            // a blank $/FF beside a non-blank total is legible as "mixed
+            // sale, rate withheld" rather than as missing data.
+            Number.isFinite(p._saleGroupTotalFrontageFt) && p._saleGroupTotalFrontageFt > 0
+              ? p._saleGroupTotalFrontageFt.toFixed(2) : '',
+            p._saleGroupPpff != null ? p._saleGroupPpff.toFixed(2) : '',
             Number.isFinite(p._saleGroupAsmtTotal) ? Math.round(p._saleGroupAsmtTotal) : '',
             p._saleGroupSize != null ? (p._saleGroupAsmtIncomplete ? 'No' : 'Yes') : '',
             p._saleGroupAsmtIncomplete ? '' : (Number.isFinite(p._saleGroupSaleToAsmt) ? p._saleGroupSaleToAsmt.toFixed(2) : ''),

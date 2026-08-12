@@ -165,7 +165,13 @@ export const PRESETS = {
     'water',
     'value', 'asmtland', 'asmtbldg', 'asmtpct', 'asmtyear',
     'zone1', 'zbl', 'dev1', 'changes',
+    // $/FF earns its place here specifically: frontage is what an urban
+    // lot is compared on, and the ~37% of parcels stating a frontage
+    // rather than an area are overwhelmingly town and subdivision lots —
+    // exactly this preset's subject. Blank on the rest, which is the data
+    // saying the roll records no frontage, not a gap.
     'saledate', 'saleprice', 'saletoasmt', 'grouppricelot', 'grouppricesf',
+    'grouppriceff',
     'legal', 'title',
   ]),
   'Full detail': null,

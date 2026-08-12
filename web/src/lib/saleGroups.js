@@ -16,6 +16,8 @@
 // group-level consideration shared by every member, so it's read once
 // from the first-seen parcel in each group (matching the original).
 
+import { parseRollFrontageFeet } from './acres.js';
+
 const SQFT_PER_ACRE = 43560;
 
 /**
@@ -121,6 +123,13 @@ export function computeSaleGroups(
         asmtIncomplete: false,
         priceNum: parsePrice(f.properties?._salePrice),
         acresIncomplete: false,
+        // Frontage feet, for $/FF. Unlike acres this is genuinely absent
+        // for most parcels rather than merely missing: Frontage_or_Area is
+        // a hybrid where ~63% of Manitoba parcels state an area and ~37% a
+        // frontage, so `frontageIncomplete` is the normal state, not an
+        // error. See the stamp below for why that has to be strict.
+        totalFrontageFt: 0,
+        frontageIncomplete: false,
         // Strict group vacancy: stays true only while every member
         // passes the vacancy predicate with data present.
         allVacant: true,
@@ -155,6 +164,14 @@ export function computeSaleGroups(
     const ac = Number(f.properties?._acres);
     if (Number.isFinite(ac) && ac > 0) g.totalAcres += ac;
     else g.acresIncomplete = true;
+
+    // Read the frontage straight off the roll string rather than a stamped
+    // property: parseRollFrontageFeet returns null for "160.00 ACRES", so a
+    // parcel stating an area can never be mistaken for a zero-foot frontage
+    // and drag the group's total down.
+    const ff = parseRollFrontageFeet(f.properties?.Frontage_or_Area);
+    if (Number.isFinite(ff) && ff > 0) g.totalFrontageFt += ff;
+    else g.frontageIncomplete = true;
 
     const at = Number(f.properties?._asmtTotal);
     if (Number.isFinite(at) && at > 0) g.asmtTotal += at;
@@ -213,6 +230,23 @@ export function computeSaleGroups(
           : null,
       _saleGroupPpl:
         priceFinite && g.oids.length > 0 ? g.priceNum / g.oids.length : null,
+      _saleGroupTotalFrontageFt: g.totalFrontageFt,
+      _saleGroupFrontageIncomplete: g.frontageIncomplete,
+      // $/frontage foot — the rate an urban lot is actually compared on,
+      // where width fronting the street drives value and depth is a
+      // secondary consideration.
+      //
+      // The incomplete guard has to be strict, and it matters more here
+      // than for acres. Frontage_or_Area is a hybrid field: a sale of two
+      // parcels where one states "110.00 FEET" and the other "5.00 ACRES"
+      // has a knowable frontage for exactly half the land being paid for.
+      // Dividing the WHOLE consideration by that half would roughly double
+      // the rate and read as a plausible number, so this reports nothing
+      // rather than something confidently wrong.
+      _saleGroupPpff:
+        priceFinite && g.totalFrontageFt > 0 && !g.frontageIncomplete
+          ? g.priceNum / g.totalFrontageFt
+          : null,
       // Geographic spread of the sale. `SpanIncomplete` means at least
       // one member had no usable geometry, so the span understates the
       // true spread and shouldn't be trusted as a hard cutoff.

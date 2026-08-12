@@ -1348,6 +1348,11 @@
             <th data-col="acres" class="sales-only" title="Parcel area in acres. Uses the assessor's recorded area when the roll states one, otherwise computed from the parcel polygon. A ⚠ marks rows where the two disagree by more than 2%. On a frontage-feet parcel this is a polygon estimate the roll does not support — check Roll Frontage/Area beside it.">Acres</th>
             <th data-col="grouppriceac" class="sales-only" title="Sale Price ÷ total acres of every parcel in the same sale">$/Acre</th>
             <th data-col="grouppricesf" class="sales-only" title="Sale Price ÷ total square footage of every parcel in the same sale">$/SF</th>
+            <!-- $/frontage foot. Only ~37% of Manitoba parcels state a
+                 frontage (Frontage_or_Area is a hybrid field), so this is
+                 blank far more often than $/Acre — that is the data, not a
+                 fault. Sits beside the other rate columns. -->
+            <th data-col="grouppriceff" class="sales-only" title="Sale Price ÷ total frontage feet of every parcel in the same sale. Only shown when the assessment roll states a FRONTAGE in feet (the Roll Frontage/Area column reads e.g. &quot;110.00 feet&quot;) — roughly 37% of Manitoba parcels; the rest state an area instead and this stays blank. On a multi-parcel sale EVERY parcel must state a frontage, otherwise the whole price would be divided by only part of the land and the rate would read about double.">$/FF</th>
             <!-- $/Lot closes the rate group ($/Acre, $/SF, $/Lot) rather
                  than leading the row, so the three unit rates read
                  together. -->
