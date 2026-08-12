@@ -388,17 +388,59 @@ several unprotected `Add-Content` calls but runs under
 `$ErrorActionPreference = 'Continue'`, so a lock there costs a log line, not the
 run.
 
-**If a lock ever does trip one of those**, stop patching scripts and take the
-cause out instead — mark the logs directory Dropbox-ignored, which also stops
-pointless sync churn:
+**Done 2026-08-11 — the log directories are now Dropbox-ignored**, which removes
+the cause rather than retrying around it:
 
 ```powershell
-Set-Content -Path 'D:\Dropbox\ClaudeCode\MBOpenData\mb-parcelsearch\logs' -Stream com.dropbox.ignored -Value 1
-Set-Content -Path 'D:\Dropbox\ClaudeCode\MBOpenData\mao-assembly\logs'    -Stream com.dropbox.ignored -Value 1
+Set-Content -Path '<repo>\logs' -Stream com.dropbox.ignored -Value 1
+Get-Content  -Path '<repo>\logs' -Stream com.dropbox.ignored   # verify: 1
 ```
 
-Trade-off: logs stop syncing to your other machines. For scheduled-task logs
-that is almost certainly what you want.
+Current state across the four repos (check with the `Get-Content` line above):
+
+| Path | Dropbox-ignored |
+|---|---|
+| `mao-assembly\logs`, `mb-parcelsearch\logs` | yes — set 2026-08-11 |
+| `mao-scrape\logs`, `mao-scrape\checkpoints` | yes — already was |
+| `mao-scrape\.git`, `mb-parcelsearch\.git` | yes — already was |
+| `mao-assembly\.git`, `mb-parcel-data\.git` | **no** — inconsistent with the other two |
+
+Trade-off: ignored paths stop syncing to your other machines. For scheduled-task
+logs that is what you want. The flag is an NTFS alternate data stream, so it is
+**per-machine and invisible to git** — a fresh clone, a new machine or a Dropbox
+reinstall silently loses it.
+
+**That is why the `Write-Log` retries stay.** They are not redundant with the
+ignore flag; they are the only protection that travels with the code. Belt and
+braces, cheap, and the belt is invisible.
+
+**Not everything is Dropbox — check before assuming.** `mb-parcelsearch\.git`
+was already ignored, and `git add` there still failed on 2026-08-11 with
+"unable to write new index file" (178 GB free, succeeded on retry). Since
+Dropbox was not watching that directory, the likelier culprit is antivirus.
+Do not extend the ignore flag to `.git` on the strength of that incident — it
+would be cargo-culting a fix for a cause that has not been established.
+
+**Large generated directories are NOT ignored**, and that is a separate decision
+about backup posture rather than about locks — nothing has ever failed in them:
+
+| Path | Size |
+|---|---|
+| `mao-assembly\cache` | 3.22 GB (re-downloadable; the annual task clears it anyway) |
+| `mao-assembly\inputs` | 3.08 GB (re-downloadable, slowly) |
+| `mao-assembly\results` | 933 MB (regenerable in ~80 min) |
+| `mao-scrape\results` | 670 MB |
+| `mao-scrape\cache` | 176 MB |
+
+Ignoring those would stop ~8 GB of sync churn at the cost of their offsite copy.
+Everything in them is reproducible from a pipeline run, so it is defensible —
+but it has not been done, deliberately.
+
+**Housekeeping**: 19 orphaned `*.tmp.<pid>.<hex>` files were cleared from
+`mao-scrape` on 2026-08-11 — editor atomic-save leftovers from three dead PIDs
+dating to 2026-06-11/15, all with their real file intact and all matched by
+`.gitignore`'s `*.tmp.*`. Not related to the log-lock incident, despite looking
+like it.
 
 ## Provincial downloads (the upstream manual step)
 
