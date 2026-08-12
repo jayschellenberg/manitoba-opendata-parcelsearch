@@ -1,7 +1,7 @@
 /*
  * Water influence — waterfront / near-water classification.
  *
- * r/build_water.R ships per-muni shards built from the V6.1 waterfront
+ * r/build_water.R ships per-muni shards built from the V6.3 waterfront
  * detection. Each parcel's `_water` stamp (set in main.js from the shard) is a
  * compact object:
  *

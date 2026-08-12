@@ -193,7 +193,7 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // this SHA — see MAINTENANCE.md. section-grid.json stays local because
 // at 41 MB it's over jsDelivr's per-file cap.
 export const MB_PARCEL_DATA_REVISION =
-  '71dca5a1b6897701b4d33ed77cc82f53d362c533';
+  '3385466fc21929b50ebb6ff5d73e3cbc111279fd';
 export const MB_PARCEL_DATA_CDN =
   `https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-data@${MB_PARCEL_DATA_REVISION}`;
 const SNAPSHOT_BASE_URL = `${MB_PARCEL_DATA_CDN}/rollentry-snapshot/`;

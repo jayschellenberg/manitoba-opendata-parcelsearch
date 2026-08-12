@@ -6,7 +6,7 @@
 #
 # WHAT THIS IS
 # ------------
-# Four columns per parcel, produced by the V6.1 waterfront detection:
+# Five columns per parcel, produced by the V6.3 waterfront detection:
 #
 #   WaterInfluence       "Yes" / "No"
 #   WaterInfluenceClass  Direct | Waterfront | Reserve Separated |
@@ -16,10 +16,11 @@
 #                        Water | Pond | Canal | Unknown
 #   WaterBody            Name, e.g. "Red River", "Lake Manitoba",
 #                        "Retention Pond"
+#   WaterDistanceFt      Parcel boundary -> nearest water, whole feet (V6.2)
 #
 # The class matters for appraisal and is NOT reducible to the Yes/No flag:
 # "Road Separated" and "Corridor Blocked" are parcels near water with no
-# frontage — the second-row cohort, often with a view. Keep all four fields.
+# frontage — the second-row cohort, often with a view. Keep all five fields.
 #
 # SOURCE, AND THE PLANNED MIGRATION OFF IT
 # ----------------------------------------
