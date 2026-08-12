@@ -103,8 +103,26 @@ REM Step 1 — mao-scrape delta.
 REM ---------------------------------------------------------------
 echo --- step 1/7: mao-scrape delta --- >> "%LOGFILE%"
 call "..\mao-scrape\run_delta.bat" >> "%LOGFILE%" 2>&1
-if errorlevel 1 (
-  echo *** mao-scrape delta FAILED ^(exit code !errorlevel!^) >> "%LOGFILE%"
+set DELTARC=!errorlevel!
+REM $2run_delta.R exits 2 for "DONE - WITH PROBLEMS": the delta COMPLETED and
+REM wrote its parquets, but some rolls could not be re-fetched and were queued
+REM in checkpoints\pending_refetch.csv for automatic retry. It exits nonzero
+REM deliberately so the nightly wrapper alerts -- it is loud, not broken.
+REM
+REM `if errorlevel 1` is true for ANY code >= 1, so until 2026-08-12 that
+REM routine outcome aborted this whole refresh at step 1 and steps 2-7 never
+REM ran. It was never noticed because this .bat had never run: the delta has
+REM ended "WITH PROBLEMS" on every one of the last 12+ nights (chunked-*.log
+REM back to 2026-07-31), so the first scheduled run on 2026-08-15 would have
+REM aborted immediately, reporting a failure that had not happened.
+REM Exit 2 is now a soft failure: continue, but still exit 3 at the end so the
+REM wrapper alerts. Anything else nonzero is still fatal.
+if !DELTARC! EQU 2 (
+  echo *** mao-scrape delta finished WITH PROBLEMS ^(exit 2^) - continuing with the rebuild >> "%LOGFILE%"
+  echo *** unrecovered rolls are queued in mao-scrape\checkpoints\pending_refetch.csv >> "%LOGFILE%"
+  set SOFTFAIL=1
+) else if !DELTARC! NEQ 0 (
+  echo *** mao-scrape delta FAILED ^(exit code !DELTARC!^) >> "%LOGFILE%"
   echo monthly-refresh aborted at step 1. See %LOGFILE% for details.
   exit /b 1
 )
