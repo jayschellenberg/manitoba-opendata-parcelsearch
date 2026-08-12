@@ -72,10 +72,17 @@ Rebuilds the legal/assessment/land-cover/**water** shards from the latest scrape
 ```
 monthly-refresh.bat
 ```
-(Six steps: scrape delta → legal index → assessment index + shards →
-land-cover shards → water shards → manifest validate. The water step was
-added 2026-08-05; before that `build_water.R` was in no script or task at all
-and water shards only refreshed when someone ran it by hand.)
+(Seven steps: scrape delta → legal index → assessment index + shards →
+land-cover shards → water shards → **RollEntry fallback snapshot** → manifest
+validate. The water step was added 2026-08-05 and the RollEntry step
+2026-08-12; before those, each was in no script or task at all and only
+refreshed when someone ran it by hand.)
+
+**Exit codes:** `0` clean, `1` aborted at a fatal step (1-3, 7), `3` finished
+but a non-fatal shard build (4-6) failed and that dataset is now serving its
+previous shards. Code 3 is new as of 2026-08-12 — before it, a failed shard
+build was logged and otherwise invisible: the run reported COMPLETED, Task
+Scheduler recorded success, and the wrapper sent no alert.
 Then review `git status`, commit the changed `web/public/data/**`, and push
 (Vercel auto-deploys). **Note:** the underlying MAO scrape is a multi-week,
 deliberately throttled run refreshed roughly **semiannually** — not monthly
@@ -163,16 +170,25 @@ rebuild "succeeded" every time; the result just never reached anyone. If you add
 another build script that writes into mb-parcel-data, make sure something
 publishes it, or it will fail the same silent way.
 
-### 1d. RollEntry fallback snapshot  (cadence: whenever a fresh `RollEntry_*.gpkg` lands)
+### 1d. RollEntry fallback snapshot  (cadence: **monthly**, via `monthly-refresh.bat` step 6)
 The degraded-mode shards the app serves when live ROLL_ENTRY is mid-republish.
-Not on a schedule — rebuild it after `r/download_parcels.R` (or the semiannual
-download) drops a new gpkg, or the fallback silently serves months-old geometry
-during exactly the outage it exists for:
+Now rebuilt automatically as step 6 of the monthly refresh. Run it by hand as
+well after any off-cycle `r/download_parcels.R` (or semiannual download) that
+drops a new gpkg mid-month:
 ```
 Rscript r/build_rollentry_snapshot.R
 ```
 It auto-selects the newest `RollEntry_YYYYMMDD.gpkg` in the repo root and takes
 ~2 minutes. Then publish with `update-cdn-pin.ps1` as above.
+
+Until 2026-08-12 this was event-driven and manual ("rebuild whenever a fresh
+gpkg lands"), which is precisely the instruction that does not survive contact
+with a busy week: on 2026-08-12 all 187 shards were still built from
+`RollEntry_20260804` while `_20260811` sat in the repo root, so the fallback
+would have served week-old geometry during exactly the upstream outage it
+exists to cover. Monthly is the floor, not the ideal — the fallback can still
+be up to a month behind the newest gpkg, and it is worth rebuilding by hand
+whenever you notice a fresh one land.
 
 ### 2. Snapshot archive + publish — roll / zoning / dev-plan  (cadence: semi-annual, **scheduled end-to-end**)
 Permanent dated snapshots of all three provincial layers (roll info, zoning,
