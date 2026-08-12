@@ -358,6 +358,48 @@ then delete the old token.
 
 If you see any of these, the fix is the matching task above.
 
+## Scheduled tasks: logs live inside Dropbox
+
+Every scheduled wrapper in this repo and in `mao-assembly` writes its log to a
+`logs\` directory under `D:\Dropbox`. Dropbox opens files it has just seen in
+order to hash and upload them, and that briefly locks them.
+
+**This has already cost a cycle.** On 2026-08-09 `mao-assembly`'s
+`refresh-monthly-wrapper.ps1` died on its *second* log line with "the process
+cannot access the file ... because it is being used by another process". The
+scheduled task reported only a numeric failure code, nobody was watching it, and
+the refresh silently did nothing for two days until it was found on 2026-08-11.
+
+Mitigations in place:
+
+- `Write-Log` / `Log` retries with backoff (10 attempts, ~5.5 s total) in
+  `auto-publish-indexes.ps1` and in both `mao-assembly` refresh wrappers. The
+  dangerous moment is right after file *creation*, so those scripts create the
+  log and write their first line inside the retry.
+- `mao-assembly/input-staleness-check.ps1` checks `LastTaskResult` on the
+  refresh tasks, so a silently-failing task is reported the next morning rather
+  than waiting for its inputs to age past a 45-day limit.
+
+**Not covered:** the `*>> $log` append redirections in
+`auto-publish-indexes.ps1` (nine of them) cannot be individually retried without
+rewriting call sites in a script that git-pushes unattended. They run well after
+creation, so the race has passed by then. `semiannual-publish-wrapper.ps1` uses
+several unprotected `Add-Content` calls but runs under
+`$ErrorActionPreference = 'Continue'`, so a lock there costs a log line, not the
+run.
+
+**If a lock ever does trip one of those**, stop patching scripts and take the
+cause out instead — mark the logs directory Dropbox-ignored, which also stops
+pointless sync churn:
+
+```powershell
+Set-Content -Path 'D:\Dropbox\ClaudeCode\MBOpenData\mb-parcelsearch\logs' -Stream com.dropbox.ignored -Value 1
+Set-Content -Path 'D:\Dropbox\ClaudeCode\MBOpenData\mao-assembly\logs'    -Stream com.dropbox.ignored -Value 1
+```
+
+Trade-off: logs stop syncing to your other machines. For scheduled-task logs
+that is almost certainly what you want.
+
 ## Provincial downloads (the upstream manual step)
 
 The cold archive and mao-assembly both start from MB Open Data downloads:

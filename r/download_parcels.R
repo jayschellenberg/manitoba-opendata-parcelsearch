@@ -91,6 +91,45 @@ fetch_page <- function(url, offset, page_size = PAGE_SIZE) {
   fc
 }
 
+# Page-level retry, wrapping the per-request retry above.
+#
+# req_retry(max_tries = 4) is httr2's PER-REQUEST retry and covers HTTP
+# transients (429, 503). It did not cover a transport-layer failure: on
+# 2026-08-11 the RollEntry download died 175 pages in (~350k features) on
+#
+#   Stream error in the HTTP/2 framing layer [services.arcgis.com]:
+#   HTTP/2 stream 105 was not closed cleanly: PROTOCOL_ERROR (err 1)
+#
+# which surfaced out of curl::curl_fetch_memory() and escaped req_retry
+# entirely, aborting the whole layer. Losing eleven minutes of downloading to
+# one flaky stream is worth a second, coarser retry that re-issues the request
+# from scratch.
+#
+# NULL means end-of-data and must NOT be retried -- only a thrown error is
+# retryable. The result is wrapped in a list because fetch_page() returning
+# NULL is a legitimate success that tryCatch cannot otherwise distinguish from
+# a failure.
+#
+# Cost when the service is genuinely down is bounded: download_layer() breaks
+# out of the page loop on the first hard failure, so at most ONE page per layer
+# ever exhausts its attempts -- about 7 seconds, not 7 seconds per page.
+PAGE_MAX_TRIES <- 3
+PAGE_BACKOFF   <- c(2, 5)   # seconds to wait before attempts 2 and 3
+
+fetch_page_resilient <- function(url, offset, page_size = PAGE_SIZE) {
+  for (attempt in seq_len(PAGE_MAX_TRIES)) {
+    res <- tryCatch(list(ok = TRUE, value = fetch_page(url, offset, page_size)),
+                    error = function(e) list(ok = FALSE, error = e))
+    if (isTRUE(res$ok)) return(res$value)
+    if (attempt == PAGE_MAX_TRIES) stop(res$error)
+    wait <- PAGE_BACKOFF[attempt]
+    cat(sprintf("\n    attempt %d/%d failed (%s); retrying in %ds...\n  fetching offset %d (retry)...",
+                attempt, PAGE_MAX_TRIES,
+                sub("\n.*", "", conditionMessage(res$error)), wait, offset))
+    Sys.sleep(wait)
+  }
+}
+
 # Walk through every page until we run out. The service signals "no more"
 # either by returning fewer rows than asked, or by an empty features array.
 download_layer <- function(ds) {
@@ -111,7 +150,7 @@ download_layer <- function(ds) {
   repeat {
     cat(sprintf("  fetching offset %d...", offset))
     page <- tryCatch(
-      fetch_page(ds$url, offset),
+      fetch_page_resilient(ds$url, offset),
       error = function(e) {
         cat(" FAILED:", conditionMessage(e), "\n")
         failed <<- TRUE
@@ -166,9 +205,33 @@ cat("=== Manitoba Open Data Parcel Snapshot ===\n")
 cat("Date:", format(Sys.Date(), "%Y-%m-%d"), "\n")
 cat("Output:", output_dir, "\n")
 
+# EXIT CODE: non-zero when a layer genuinely failed, zero otherwise.
+#
+# This script used to exit 0 unconditionally, which made a failed layer
+# invisible to everything downstream. On 2026-08-11 the RollEntry fetch died
+# after 175 pages on an HTTP/2 PROTOCOL_ERROR; the script correctly refused to
+# write a partial snapshot and said "re-run to retry", then exited 0. The
+# scheduled refresh reported success, and refresh_provincial_inputs.R quietly
+# adapted the PREVIOUS week's parcels instead — it takes the newest source it
+# can find and has no notion of "must be from today". Nothing in the chain knew.
+#
+# Only real failures count. download_layer() returns the path for both success
+# AND the benign same-day skip, and returns NULL only when it wrote nothing that
+# it meant to write (mid-stream fetch failure, or an empty response). Layers
+# excluded by DOWNLOAD_ONLY never reach here at all. So `is.null()` is exactly
+# the right test, and a second same-day run or a single-layer run still exits 0.
+failed_layers <- character(0)
 for (ds in datasets) {
   if (nzchar(DOWNLOAD_ONLY) && !identical(ds$name, DOWNLOAD_ONLY)) next
-  download_layer(ds)
+  if (is.null(download_layer(ds))) failed_layers <- c(failed_layers, ds$name)
+}
+
+if (length(failed_layers) > 0) {
+  cat(sprintf("\nFAILED: %d of %d layer(s) not written: %s\n",
+              length(failed_layers), length(datasets),
+              paste(failed_layers, collapse = ", ")))
+  cat("Nothing partial was written. Re-run to retry.\n")
+  quit(status = 1)
 }
 
 cat("\nDone.\n")

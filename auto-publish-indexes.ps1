@@ -46,7 +46,33 @@ $NtfyTopic = 'mbps-publish-indexes-jks'
 if (-not (Test-Path logs)) { New-Item -ItemType Directory logs | Out-Null }
 $ts  = Get-Date -Format 'yyyyMMdd-HHmm'
 $log = Join-Path $root "logs\auto-publish-$ts.log"
-function Log($m) { $line = '[{0}] {1}' -f (Get-Date -Format 'HH:mm:ss'), $m; Write-Host $line; Add-Content -Path $log -Value $line }
+
+# This log lives under D:\Dropbox, and Dropbox opens files it has just seen in
+# order to hash and upload them. That is not hypothetical: on 2026-08-09
+# mao-assembly's refresh-monthly-wrapper.ps1 died on its SECOND log line with
+# "the process cannot access the file ... because it is being used by another
+# process", and the scheduled task reported only a numeric failure code. With
+# $ErrorActionPreference = 'Stop', an unprotected Add-Content here would abort
+# the whole publish the same way.
+#
+# The dangerous moment is right after CREATION, so the file is created and its
+# first line written inside the retry below. By the time the `*>> $log`
+# redirections further down run, the file is established and the race has
+# passed. Those redirections are still not individually retryable -- covering
+# them properly would mean rewriting nine call sites in a script that git-pushes
+# and fires unattended, which is not a change to make untested. If one of them
+# ever does trip, mark the logs directory Dropbox-ignored (see MAINTENANCE.md)
+# rather than papering over it here.
+function Log($m) {
+  $line = '[{0}] {1}' -f (Get-Date -Format 'HH:mm:ss'), $m
+  Write-Host $line
+  for ($i = 1; $i -le 10; $i++) {
+    try { Add-Content -Path $log -Value $line -ErrorAction Stop; return }
+    catch { Start-Sleep -Milliseconds (100 * $i) }
+  }
+  Write-Warning "could not write to log after 10 tries: $line"
+}
+Log "auto-publish starting (log warmed)"
 
 if ($TestAlert) {
   $ok = Send-FailureAlert $root $NtfyTopic 'TEST - MB parcel index auto-publish alerts' `
