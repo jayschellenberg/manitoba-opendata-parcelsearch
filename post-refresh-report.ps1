@@ -13,9 +13,17 @@
 # It is READ-ONLY: reads task state, logs, git metadata. It never rebuilds,
 # commits, pushes or repins.
 #
-# Intended use: a ONE-SHOT scheduled task the morning after a first unattended
-# run (see schedule_post_refresh_report.ps1, which registers it for
-# 2026-08-15 08:00 -- after the 04:00 refresh and 04:30 publish have finished).
+# Intended use: a RECURRING monthly scheduled task on the 15th at 08:00 -- see
+# schedule_post_refresh_report.ps1 -- landing after the 04:00 refresh and 04:30
+# publish have finished.
+#
+# 2026-08-12: that task was a ONE-SHOT for 2026-08-15 08:00, registered as a
+# first-run confidence check. It was made monthly because section 3 below is the
+# only automated check anywhere that the CDN pin advanced to match
+# mb-parcel-data HEAD; as a one-shot, that check would have run once and every
+# later refresh would have gone back to unwatched. Nothing in this script
+# changed -- it was already idempotent and already reported either way.
+#
 # Also useful on demand:
 #   powershell -ExecutionPolicy Bypass -File post-refresh-report.ps1 -Console
 #

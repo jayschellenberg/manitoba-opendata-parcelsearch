@@ -19,7 +19,7 @@
 # WHAT IT CHECKS, per service the app actually references:
 #   1. REACHABLE  -- the endpoint still answers and isn't returning an ArcGIS
 #                    error (catches a retired or renamed service).
-#   2. SUPERSEDED -- for year-stamped names (…_2019, …_2023), whether the host
+#   2. SUPERSEDED -- for year-stamped names (..._2019, ..._2023), whether the host
 #                    org publishes a sibling with the same base name and a
 #                    LATER year.
 #   3. AGE        -- how long since the layer's own dataLastEditDate. Reported
@@ -224,11 +224,24 @@ $body += "Full table:  powershell -ExecutionPolicy Bypass -File `"$root\upstream
 $body += "Checked $($now.ToString('s')) on $env:COMPUTERNAME by upstream-vintage-check.ps1."
 $body += "Stop these reminders:  Unregister-ScheduledTask -TaskName mb-parcelsearch-upstream-vintage -Confirm:`$false"
 
-if (Send-FailureAlert $root $NtfyTopic 'UPSTREAM - provincial service superseded or unreachable' ($body -join "`n")) {
+# 2026-08-12: stamp on VERIFIED delivery, not on "something returned true".
+# Send-FailureAlert is true when EITHER channel worked, and an anonymous ntfy
+# publish returns HTTP 200 for any topic even when nobody is subscribed -- so
+# the old `if (Send-FailureAlert ...)` stamped the month even when the email
+# failed, and this weekly check then went quiet until the 1st. Test-AlertDelivered
+# (alert-lib.ps1) accepts a real email, or push alone when email is not
+# configured at all; email configured and failing leaves the stamp alone so next
+# week's run alerts again.
+$sent = Send-FailureAlert $root $NtfyTopic 'UPSTREAM - provincial service superseded or unreachable' ($body -join "`n")
+if (Test-AlertDelivered) {
   New-Item -ItemType Directory -Force -Path (Split-Path $StampFile) | Out-Null
   Set-Content -Path $StampFile -Value $stampVal
   Write-Host "Reminder sent (superseded=$($superseded.Count), unreachable=$($unreachable.Count), quiet=$($ancient.Count))."
   exit 0
+} elseif ($sent) {
+  Write-Warning ('Reminder went out on PUSH ONLY -- email is configured but FAILED. ' +
+                 'Stamp NOT written; the next run will try again. Check the app password.')
+  exit 1
 } else {
   Write-Warning 'Reminder NOT sent -- no channel succeeded.'
   exit 1

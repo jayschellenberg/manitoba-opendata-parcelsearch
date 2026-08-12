@@ -160,11 +160,25 @@ Checked $($now.ToString('s')) on $env:COMPUTERNAME by history-staleness-check.ps
 Stop these reminders:  Unregister-ScheduledTask -TaskName mb-parcelsearch-history-staleness -Confirm:`$false
 "@
 
-if (Send-FailureAlert $root $NtfyTopic $title $body) {
+# 2026-08-12: stamp on VERIFIED delivery, not on "something returned true".
+# Send-FailureAlert is true when EITHER channel worked, and an anonymous ntfy
+# publish returns HTTP 200 for any topic even with zero subscribers -- so the
+# old `if (Send-FailureAlert ...)` recorded this month as reminded even when the
+# email failed, and then suppressed the reminder for the rest of the month. This
+# is the watchdog for a snapshot that only runs twice a year, so a month of
+# silence here is expensive. Test-AlertDelivered (alert-lib.ps1) accepts a real
+# email, or push alone when email is not configured at all; email configured and
+# failing deliberately leaves the stamp alone so tomorrow's run retries.
+$sent = Send-FailureAlert $root $NtfyTopic $title $body
+if (Test-AlertDelivered) {
   New-Item -ItemType Directory -Force -Path (Split-Path $StampFile) | Out-Null
   Set-Content -Path $StampFile -Value $stampVal
   Write-Host "Reminder sent (built: $builtDesc; published: $pubDesc)."
   exit 0
+} elseif ($sent) {
+  Write-Warning ('Reminder went out on PUSH ONLY -- email is configured but FAILED. ' +
+                 'Stamp NOT written; the next run will try again. Check the app password.')
+  exit 1
 } else {
   Write-Warning 'Reminder NOT sent -- no channel succeeded.'
   exit 1

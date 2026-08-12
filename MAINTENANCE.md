@@ -362,22 +362,51 @@ powershell -ExecutionPolicy Bypass -File schedule_vintage_check.ps1  # mb-parcel
 powershell -ExecutionPolicy Bypass -File ..\MBFloodMapping\schedule_flood_check.ps1  # mbfloodmapping-staleness — daily 09:20 (flood-layer watchdog)
 powershell -ExecutionPolicy Bypass -File schedule_hpi_download.ps1   # mb-parcelsearch-hpi-download  — daily 08:45 (CREA HPI auto-download)
 powershell -ExecutionPolicy Bypass -File schedule_hpi_check.ps1      # mb-parcelsearch-hpi-staleness — daily 09:00 (HPI backstop watchdog)
+powershell -ExecutionPolicy Bypass -File schedule_task_health_check.ps1     # mb-parcelsearch-task-health         — daily 09:40 (reads every task's LastTaskResult)
+powershell -ExecutionPolicy Bypass -File schedule_post_refresh_report.ps1   # mb-parcelsearch-post-refresh-report — 15th monthly 08:00 (did the refresh actually publish?)
 ```
 
-**First-run confidence check (one-shot, 2026-08-15 08:00).** The three
-heavyweight tasks above had never once fired as of 2026-08-12 — every refresh
-and publish in this project's history was manual — so `post-refresh-report.ps1`
-is registered one-shot for the morning after the first real run:
-```
-powershell -ExecutionPolicy Bypass -File schedule_post_refresh_report.ps1
-```
-It is read-only and reports **either way**, which is the point: the standing
-alerts are failure-only, so on a first run a silent morning is ambiguous
-between "worked perfectly" and "never started". It summarises task results,
-how far each log got, and — the one that matters — whether the app's CDN pin
-actually moved to match `mb-parcel-data` HEAD, since a green refresh with an
-unchanged pin is exactly how 187 rebuilt shards hid behind a stale SHA until
-2026-08-05. Preview it any time with `-Console`; unregister once it has fired.
+**Post-refresh report (monthly, 15th at 08:00).** `post-refresh-report.ps1`
+runs four hours after the 04:00 refresh and 04:30 publish and sends one
+summary **either way** — which is the point: the standing alerts are
+failure-only, so a silent morning is ambiguous between "worked perfectly" and
+"never started". It summarises task results, how far each log got, and — the
+one that matters — whether the app's CDN pin actually moved to match
+`mb-parcel-data` HEAD, since a green refresh with an unchanged pin is exactly
+how 187 rebuilt shards hid behind a stale SHA until 2026-08-05. Preview it any
+time with `-Console`.
+
+> **2026-08-12 — was a one-shot, now monthly.** It was originally registered
+> `-Once` for 2026-08-15 08:00 as a first-run confidence check (the three
+> heavyweight tasks had never fired; every refresh and publish in this
+> project's history was manual). That was wrong to leave standing: its
+> PUBLISHED STATE block is the *only* automated pin-vs-HEAD check anywhere, so
+> after 08-15 the 2026-08-05 failure mode would have gone back to being
+> unwatched forever. `-At` still overrides, and now sets the day-of-month and
+> time of the **recurrence** (`-At '2026-09-20 07:30'` → the 20th of every
+> month at 07:30); days 29-31 are refused because they do not exist in every
+> month.
+
+**Every scheduled task now has a result reader.** `task-health-check.ps1`
+(daily 09:40, after the other morning watchdogs) walks **all** MBOpenData
+tasks across `mb-parcelsearch`, `mao-assembly`, `mao-scrape` and
+`MBFloodMapping` and flags any whose `LastTaskResult` is not healthy (healthy =
+`0`, `267011` never-run, `267009` running), plus any that is Disabled, has an
+empty `NextRunTime`, is missing from Task Scheduler entirely, or has not run in
+2× its own trigger interval. Codes are translated to words. It gets its task
+list by **reading the `schedule_*.ps1` registrars**, not from a hardcoded
+roster, so tasks added later are covered automatically.
+
+> **Why:** until 2026-08-12 only four of fifteen tasks had anything reading
+> their result — two hardcoded pairs, in `mao-assembly\input-staleness-check.ps1`
+> and `post-refresh-report.ps1`. That morning `MAOSalesStaleness` had been
+> killed at its execution time limit (`267014`) and `MAOChunkedDelta` had exited
+> `2` (file not found) the night before, and **neither sent anything** — the
+> sales watchdog was itself down, silently. Nobody was watching the watchdogs.
+> Push topic: `mbps-task-health-jks`. Check by hand any time with
+> `powershell -File task-health-check.ps1 -NoAlert` (sends nothing, leaves the
+> quiet-period stamp alone).
+
 Verify: `Get-ScheduledTask -TaskName mb-parcelsearch-monthly-refresh,mb-parcelsearch-semiannual-archive,mb-parcelsearch-history-staleness,mbfloodmapping-staleness | Format-List *`.
 
 **Check that they are actually registered, not just documented.** On 2026-08-05
@@ -402,9 +431,10 @@ step; `semiannual-publish-wrapper.ps1` alerts on any failed publish step
 (download / archive / shards / lineage / push / repin); and
 `history-staleness-check.ps1` is the dead-man's switch that alerts when the
 newest snapshot is overdue even if the publish task never started. Push
-notifications work out of the box if you subscribe to both ntfy.sh topics in
-the ntfy app — `mbps-monthly-refresh-jks` and `mbps-semiannual-archive-jks`
-(the publish wrapper and the watchdog share the latter). **Email needs one
+notifications work out of the box if you subscribe to the ntfy.sh topics in
+the ntfy app — `mbps-monthly-refresh-jks`, `mbps-semiannual-archive-jks`
+(the publish wrapper and the watchdog share this one) and
+`mbps-task-health-jks` (the all-tasks result reader). **Email needs one
 5-minute step**: create an app password (M365: Security info → App passwords;
 Gmail: myaccount.google.com/apppasswords) and paste it into `smtp_pass=` in
 `alert-email.local.txt` (gitignored — one file serves all wrappers). Then

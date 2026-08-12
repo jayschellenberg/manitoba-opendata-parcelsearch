@@ -73,15 +73,34 @@ function Write-Log([string]$msg) {
 }
 
 # Hard-failure alert, deduped to one per calendar month.
+#
+# 2026-08-12: the month stamp is written only on VERIFIED delivery. It used to
+# be gated on Send-FailureAlert's boolean, which is true when EITHER channel
+# worked -- and Send-AlertPush returns true on any HTTP 200 from ntfy, which an
+# anonymous publish gets for any topic even with no subscriber. So a dead SMTP
+# path (revoked app password) would still stamp, and this script would then stay
+# silent about a broken CREA download for the REST OF THE MONTH. Now: email
+# succeeded, or email is not configured at all and push worked -> stamp;
+# email configured but failed -> no stamp, so the next daily run alerts again.
+# Either way the outcome goes into hpi-download.log, which previously recorded
+# nothing about whether the email half worked.
 function Send-HardFailure([string]$title, [string]$body) {
   $ym = (Get-Date).ToString('yyyyMM')
   if ((Test-Path $StampFile) -and ((Get-Content $StampFile -Raw).Trim() -eq $ym)) {
     Write-Log "ALERT SUPPRESSED (already alerted $ym): $title"
     return
   }
-  if (Send-FailureAlert $root $NtfyTopic $title $body) {
+  $sent = Send-FailureAlert $root $NtfyTopic $title $body
+  $s  = $global:MbpsLastAlert
+  $ch = "email=$($s.Emailed) push=$($s.Pushed) emailConfigured=$($s.EmailConfigured)"
+  if (Test-AlertDelivered) {
     New-Item -ItemType Directory -Force -Path (Split-Path $StampFile) | Out-Null
     Set-Content -Path $StampFile -Value $ym
+    Write-Log "ALERT DELIVERED ($ch): $title -- month stamp $ym written."
+  } elseif ($sent) {
+    Write-Log "ALERT PUSH-ONLY ($ch): $title -- email configured but FAILED, month stamp NOT written so the next run retries."
+  } else {
+    Write-Log "ALERT FAILED on every channel ($ch): $title -- month stamp NOT written."
   }
 }
 

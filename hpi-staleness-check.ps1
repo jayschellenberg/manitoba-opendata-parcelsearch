@@ -111,11 +111,24 @@ Checked $($now.ToString('s')) on $env:COMPUTERNAME by hpi-staleness-check.ps1.
 Stop these reminders:  Unregister-ScheduledTask -TaskName mb-parcelsearch-hpi-staleness -Confirm:`$false
 "@
 
-if (Send-FailureAlert $root $NtfyTopic $title $body) {
+# 2026-08-12: stamp on VERIFIED delivery, not on "something returned true".
+# Send-FailureAlert is true when EITHER channel worked, and ntfy answers HTTP 200
+# for any topic whether or not anyone subscribes -- so the old
+# `if (Send-FailureAlert ...)` wrote this month's stamp even when the email
+# never left the building, then suppressed the reminder for the rest of the
+# month. Test-AlertDelivered (alert-lib.ps1) accepts a real email, or push alone
+# when email is not configured at all; when email IS configured and failed it
+# leaves the stamp untouched on purpose so the next daily run tries again.
+$sent = Send-FailureAlert $root $NtfyTopic $title $body
+if (Test-AlertDelivered) {
   New-Item -ItemType Directory -Force -Path (Split-Path $StampFile) | Out-Null
   Set-Content -Path $StampFile -Value "$expYM"
   Write-Host "Reminder sent for $expLabel (latest present: $latestLabel)."
   exit 0
+} elseif ($sent) {
+  Write-Warning ('Reminder went out on PUSH ONLY -- email is configured but FAILED. ' +
+                 'Stamp NOT written; the next run will try again. Check the app password.')
+  exit 1
 } else {
   Write-Warning 'Reminder NOT sent -- no channel succeeded.'
   exit 1
