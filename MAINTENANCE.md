@@ -337,6 +337,21 @@ powershell -ExecutionPolicy Bypass -File ..\MBFloodMapping\schedule_flood_check.
 powershell -ExecutionPolicy Bypass -File schedule_hpi_download.ps1   # mb-parcelsearch-hpi-download  — daily 08:45 (CREA HPI auto-download)
 powershell -ExecutionPolicy Bypass -File schedule_hpi_check.ps1      # mb-parcelsearch-hpi-staleness — daily 09:00 (HPI backstop watchdog)
 ```
+
+**First-run confidence check (one-shot, 2026-08-15 08:00).** The three
+heavyweight tasks above had never once fired as of 2026-08-12 — every refresh
+and publish in this project's history was manual — so `post-refresh-report.ps1`
+is registered one-shot for the morning after the first real run:
+```
+powershell -ExecutionPolicy Bypass -File schedule_post_refresh_report.ps1
+```
+It is read-only and reports **either way**, which is the point: the standing
+alerts are failure-only, so on a first run a silent morning is ambiguous
+between "worked perfectly" and "never started". It summarises task results,
+how far each log got, and — the one that matters — whether the app's CDN pin
+actually moved to match `mb-parcel-data` HEAD, since a green refresh with an
+unchanged pin is exactly how 187 rebuilt shards hid behind a stale SHA until
+2026-08-05. Preview it any time with `-Console`; unregister once it has fired.
 Verify: `Get-ScheduledTask -TaskName mb-parcelsearch-monthly-refresh,mb-parcelsearch-semiannual-archive,mb-parcelsearch-history-staleness,mbfloodmapping-staleness | Format-List *`.
 
 **Check that they are actually registered, not just documented.** On 2026-08-05
