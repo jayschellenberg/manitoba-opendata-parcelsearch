@@ -164,6 +164,8 @@ import {
   setMuniParcelsData,
   setMuniParcelsVisible,
   setMuniBoundariesData,
+  setMuniBoundarySelected,
+  wireMuniBoundaryPicker,
   setMascData,
   setMascRiverlotsData,
   setMascVisible,
@@ -407,6 +409,10 @@ const $export        = document.getElementById('export');
 const $numberingRow    = document.getElementById('numbering-row');
 const $numberingToggle = document.getElementById('numbering-toggle');
 const $numberingLabel  = document.getElementById('numbering-toggle-label');
+// "Entry order" — number by the sequence the rolls were typed rather than
+// by muni + Roll #. Only offered when the results came from a typed list.
+const $numberingOrderToggle = document.getElementById('numbering-order-toggle');
+const $numberingOrderLabel  = document.getElementById('numbering-order-label');
 // "Include legend in map image" — sits beside the numbering toggle and is
 // read by composeWithAttribution. Shown only while a legend is on screen.
 const $legendToggle    = document.getElementById('legend-toggle');
@@ -990,6 +996,45 @@ let currentSort = { col: 'roll', dir: 'asc' };
 // parcel at search time (lib/parcelNumbering.js), so re-sorting or
 // filtering the grid never renumbers them.
 let numberingOn = false;
+
+// Number in the order the rolls were TYPED, rather than by muni + roll #
+// (the "Entry order" checkbox beside "Number parcels"). Opt-in, and only
+// offered when the result set came from an explicit Roll # list — see
+// enteredRollOrder below.
+let numberingEntryOrder = false;
+
+// Roll → position in the Roll # field, captured at search time.
+// `Map<canonicalRoll, groupIndex>`; null whenever the current result set
+// didn't come from a typed roll list, which is what hides the checkbox.
+//
+// Group index, not roll index: rolls joined with + / | are one subject and
+// already share one badge, so both members of "83100+83200" carry the same
+// position and the group still consumes a single number.
+let enteredRollOrder = null;
+
+// Has a search (or an import) put results on the map this session? Gates the
+// click-a-municipality picker: Jason's rule is that pointing at the map picks
+// a muni only BEFORE any search has run, and Clear is what re-arms it. Clear
+// reloads the page, so nothing has to reset this by hand.
+let searchHasRun = false;
+
+// The muni picker's handle, so disarmSearchPicker() can reach it.
+let muniPicker = null;
+
+/**
+ * Trip the "a search has run" gate and drop the picker's hover state in the
+ * same breath.
+ *
+ * The gate alone isn't enough: the hover tint and pointer cursor are cleared
+ * by the layer's own mousemove/mouseleave handlers, and neither fires if the
+ * search was started without the mouse leaving the map — Enter in the Roll #
+ * field with the cursor parked over a municipality, say. That left a
+ * municipality lit up and looking clickable when it no longer was.
+ */
+function disarmSearchPicker() {
+  searchHasRun = true;
+  muniPicker?.refresh();
+}
 
 const SORT_KEYS = {
   // Map # — the stable 1..N callout number (muni then Roll #). Sorting
@@ -1854,6 +1899,59 @@ mapReady.then(() => {
   syncMuniLayer(getActiveTab());
 });
 
+// The Property Search counterpart: click a municipality on the ALWAYS-ON
+// grey boundary layer to set the dropdown, instead of hunting for it among
+// ~180 names. Same gesture as the Sales tab, different target.
+//
+// Only armed before a search has run. Once results are on the map the
+// boundaries sit under parcels, popups and overlays, and a click meant for
+// one of those would silently re-scope the search and reset the overlay
+// toggles — so the picker stands down until Clear reloads the page. It is
+// also Property-Search-only, since the Sales tab has its own muni layer and
+// its own meaning for a click.
+mapReady.then(() => {
+  muniPicker = wireMuniBoundaryPicker(map, {
+    isEnabled: () => getActiveTab() === 'property' && !searchHasRun,
+    onPick: (name) => {
+      // The dropdown carries Roll-Entry's Muni_Name_With_Typ, which can
+      // differ from the boundary field in punctuation/accents. Match the
+      // option the same tolerant way the rest of the app matches these two
+      // fields; bail rather than blanking the dropdown if the muni has no
+      // option (it has no parcels to search).
+      const key = normalizeMuniKey(name);
+      const opt = Array.from($municipality.options)
+        .find((o) => o.value && (o.value === name || normalizeMuniKey(o.value) === key));
+      if (!opt) return;
+      // Clicking the muni that's already selected clears back to "Any
+      // municipality" — click on, click off, as on the Sales tab.
+      $municipality.value = ($municipality.value === opt.value) ? '' : opt.value;
+      // The change event does the rest: overlay resets, the fly-to, the
+      // selection outline, and the URL write (URL_INPUT_BINDINGS already
+      // watches this select's `change`).
+      $municipality.dispatchEvent(new Event('change', { bubbles: true }));
+    },
+  });
+  // Drop a stale hover tint the moment the picker goes inert.
+  onTabChange(() => muniPicker?.refresh());
+  // The map may already be armed-and-hovered by the time it wires up, and a
+  // URL-state boot can auto-run a search before this point.
+  muniPicker.refresh();
+  muniBoundariesPromise.then(() => paintSelectedMuniBoundary());
+});
+
+/**
+ * Blue-outline the dropdown's municipality on the map. Resolves the
+ * dropdown's Roll-Entry name to the boundary FC's own spelling first, so
+ * the punctuation-mismatch munis still light up.
+ */
+function paintSelectedMuniBoundary() {
+  const muni = $municipality.value;
+  const feat = muni ? findMuniBoundaryFeature(muni) : null;
+  mapReady.then(() => {
+    setMuniBoundarySelected(map, feat?.properties?.MUNI_LIST_NAME_WITH_TYPE || null);
+  });
+}
+
 document.getElementById('sales-import-trigger')
   ?.addEventListener('click', () => salesImportModal.open());
 
@@ -2132,27 +2230,34 @@ async function handleSnapshotExport() {
 }
 
 /**
+ * Resolve a municipality name to its polygon in the loaded boundaries FC:
+ * an exact match on MUNI_LIST_NAME_WITH_TYPE, then a tolerant normalized
+ * one — the parcel FC and the dropdown carry Roll-Entry's
+ * Muni_Name_With_Typ, which can differ in punctuation/accents from the
+ * boundary field. Returns null when the FC hasn't loaded yet or the name
+ * matches nothing; every caller treats the boundary as optional context.
+ */
+function findMuniBoundaryFeature(muniName) {
+  if (!muniName || !muniBoundariesFc?.features) return null;
+  const exact = muniBoundariesFc.features.find(
+    (f) => f.properties?.MUNI_LIST_NAME_WITH_TYPE === muniName,
+  );
+  if (exact) return exact;
+  const key = normalizeMuniKey(muniName);
+  return muniBoundariesFc.features.find(
+    (f) => normalizeMuniKey(f.properties?.MUNI_LIST_NAME_WITH_TYPE) === key,
+  ) || null;
+}
+
+/**
  * Build the section/township (DLS) grid FC for one muni, for the snapshot
- * export. Resolves the muni's boundary polygon from the loaded boundaries
- * FC (exact match on MUNI_LIST_NAME_WITH_TYPE, then a tolerant normalized
- * match — the parcel FC carries Roll-Entry's Muni_Name_With_Typ, which can
- * differ in punctuation/accents from the boundary field), fetches the
- * survey grid scoped to that polygon, and converts it to section-bbox grid
- * lines — the same per-muni pipeline toggleSurveyGridOverlay() uses.
- * Returns null when the boundaries FC hasn't loaded or the muni can't be
+ * export. Fetches the survey grid scoped to that muni's boundary polygon
+ * and converts it to section-bbox grid lines — the same per-muni pipeline
+ * toggleSurveyGridOverlay() uses. Returns null when the muni can't be
  * matched, in which case that muni's snapshots simply omit the grid.
  */
 async function buildSurveyGridForSnapshot(muniName) {
-  if (!muniName || !muniBoundariesFc?.features) return null;
-  let feat = muniBoundariesFc.features.find(
-    (f) => f.properties?.MUNI_LIST_NAME_WITH_TYPE === muniName,
-  );
-  if (!feat) {
-    const key = normalizeMuniKey(muniName);
-    feat = muniBoundariesFc.features.find(
-      (f) => normalizeMuniKey(f.properties?.MUNI_LIST_NAME_WITH_TYPE) === key,
-    );
-  }
+  const feat = findMuniBoundaryFeature(muniName);
   if (!feat) return null;
   const fc = await fetchSurveyGridForMuni(muniName, feat);
   const rows = surveyFcToRows(fc || { features: [] });
@@ -2371,6 +2476,10 @@ $municipality.addEventListener('change', () => {
   // their data to match the new muni. Skipped quietly when neither
   // layer is on; doesn't refetch when the new muni already matches.
   refreshOverlayLayersForMuniChange();
+  // Blue-outline the selection on the boundary layer, so a muni picked
+  // by clicking the map confirms itself where the click landed — and one
+  // picked from the list is findable on the map without reading labels.
+  paintSelectedMuniBoundary();
   // Zoom the map to the selected muni's bounds so the user lands in
   // the right place before running a search. Skipped if either the
   // boundaries FC hasn't loaded yet or the selection cleared.
@@ -2380,16 +2489,10 @@ $municipality.addEventListener('change', () => {
 /**
  * Fly the map to the bounding box of the currently-selected muni in
  * the dropdown. No-op when no muni is selected, when the boundaries
- * FC hasn't loaded yet, or when no matching feature exists. The
- * boundaries FC matches the dropdown value via MUNI_LIST_NAME_WITH_TYPE
- * (same field already used elsewhere for spatial joins).
+ * FC hasn't loaded yet, or when no matching feature exists.
  */
 function zoomMapToSelectedMuni() {
-  const muni = $municipality.value;
-  if (!muni || !muniBoundariesFc) return;
-  const feat = muniBoundariesFc.features?.find(
-    (f) => f.properties?.MUNI_LIST_NAME_WITH_TYPE === muni
-  );
+  const feat = findMuniBoundaryFeature($municipality.value);
   if (!feat) return;
   mapReady.then(() => flyToFeature(map, feat));
 }
@@ -2722,7 +2825,53 @@ function updateNumberingAvailability() {
   const avail = currentRows.length > 1;
   if ($numberingLabel) $numberingLabel.hidden = !avail;
   if ($numberingToggle) $numberingToggle.checked = numberingOn;
+  // "Entry order" only makes sense when there IS an entry order — a typed
+  // roll list naming more than one subject. A muni-wide or address search
+  // has none, so the checkbox stays out of the way rather than sitting
+  // there as a no-op.
+  const orderAvail = avail && (enteredRollOrder?.groupCount ?? 0) > 1;
+  if (!orderAvail && numberingEntryOrder) numberingEntryOrder = false;
+  if ($numberingOrderLabel) $numberingOrderLabel.hidden = !orderAvail;
+  if ($numberingOrderToggle) $numberingOrderToggle.checked = numberingEntryOrder;
   updateMapOptionsRow();
+}
+
+/**
+ * Build the roll → typed-position map behind the "Entry order" option.
+ *
+ * Keyed by the canonical `<digits>.<3-digit-sub>` form the parcels carry in
+ * Roll_No_Txt, so a user who types "154350" matches the stored
+ * "154350.000". Position is the GROUP index, not the roll index: rolls
+ * joined with + / | are one subject sharing one badge, so both members of
+ * "83100+83200" get the same position and the group still consumes exactly
+ * one number.
+ *
+ * Returns null for an empty field — that's what hides the checkbox.
+ * `groupCount` distinguishes "one roll typed" (no meaningful order) from a
+ * real list.
+ *
+ * @returns {{byRoll: Map<string, number>, groupCount: number} | null}
+ */
+function buildEnteredRollOrder(rollInput) {
+  const groups = parseRollGroups(rollInput);
+  if (groups.length === 0) return null;
+  const byRoll = new Map();
+  groups.forEach((g, i) => {
+    for (const roll of g.rolls) byRoll.set(canonicalRoll(roll), i);
+  });
+  return { byRoll, groupCount: groups.length };
+}
+
+/**
+ * The rollOrder to number by right now — null unless the option is on AND
+ * there is a real order to follow. The `groupCount > 1` test mirrors
+ * updateNumberingAvailability's, so what gets applied can never disagree
+ * with what the checkbox says is on offer.
+ */
+function activeRollOrder() {
+  if (!numberingEntryOrder) return null;
+  if ((enteredRollOrder?.groupCount ?? 0) < 2) return null;
+  return enteredRollOrder.byRoll;
 }
 
 /**
@@ -2773,6 +2922,34 @@ if ($numberingToggle) {
     if (currentRows.length > 0) renderTable(currentRows);
     queueUrlWrite();
   });
+}
+
+if ($numberingOrderToggle) {
+  $numberingOrderToggle.addEventListener('change', () => {
+    numberingEntryOrder = $numberingOrderToggle.checked;
+    renumberCurrentResults();
+  });
+}
+
+/**
+ * Re-stamp `_seq` on the parcels currently on screen, then refresh the map
+ * callouts and the grid. Used when "Entry order" flips — the numbers are
+ * normally assigned once per result set and glued to each parcel, so this
+ * is the one place that deliberately renumbers an existing set.
+ */
+function renumberCurrentResults() {
+  const parcels = currentRows.map((r) => r.parcel).filter(Boolean);
+  if (parcels.length > 1) assignParcelSeq(parcels, { rollOrder: activeRollOrder() });
+  else clearParcelSeq(parcels);
+  // The callout anchors were built from the OLD `_seq` values, so re-push
+  // the features: setParcelNumberData re-reads `_seq` and re-solves the
+  // badge placement. The grid picks the new numbers up on its own, since
+  // the "#" cell reads `_seq` at render time.
+  mapReady.then(() => {
+    setParcelNumberData(map, parcels);
+    setParcelNumbersVisible(map, numberingOn && parcels.length > 1);
+  });
+  if (currentRows.length > 0) renderTable(currentRows);
 }
 
 // Overlay toggle clicks — delegate at the document level so all 12
@@ -3095,6 +3272,10 @@ function fillSelect(sel, values, blankLabel) {
 // ---------- Search ----------
 
 async function runSearch() {
+  // Results are about to land on the map, so the click-a-municipality
+  // picker stands down until Clear. Done before the first await so a click
+  // during a slow search can't slip through.
+  disarmSearchPicker();
   const searchGeneration = ++salesEnrichmentGeneration;
   salesExportEnrichmentComplete = true;
   // Drop the sales-mode column reveal if a previous run came from a
@@ -3168,6 +3349,12 @@ async function runSearch() {
   };
   const hasLegalSearch = hasLegalCriteria(legalInputs);
   const hasList = Array.isArray(listParcelKeys) && listParcelKeys.length > 0;
+
+  // Capture the order the rolls were TYPED, for the "Entry order" numbering
+  // option. Read here, from the raw field, because the water pre-filter below
+  // overwrites inputs.roll with its own generated list — that list is the
+  // shard's order, not the user's, and must never drive the numbering.
+  enteredRollOrder = buildEnteredRollOrder(inputs.roll);
 
   if (!Object.values(inputs).some(Boolean) && !hasLegalSearch && !hasList) {
     setCount('Enter at least one search field.');
@@ -3435,11 +3622,13 @@ async function runSearch() {
     }
 
     // Assign the stable map-numbering sequence for this fresh result set
-    // (muni then Roll #). Done once, here — re-sorting / filtering the
-    // grid later never renumbers, because the number is stamped on the
-    // feature. Single-parcel results carry no number.
-    if (parcelFc.features.length > 1) assignParcelSeq(parcelFc.features);
-    else clearParcelSeq(parcelFc.features);
+    // (muni then Roll #, or the typed order when "Entry order" is on).
+    // Done once, here — re-sorting / filtering the grid later never
+    // renumbers, because the number is stamped on the feature.
+    // Single-parcel results carry no number.
+    if (parcelFc.features.length > 1) {
+      assignParcelSeq(parcelFc.features, { rollOrder: activeRollOrder() });
+    } else clearParcelSeq(parcelFc.features);
 
     // Show parcels-only rows immediately so the user sees something.
     renderTable(parcelFc.features.map((p) => ({ parcel: p, zoning: [], devPlan: [] })));
@@ -3589,6 +3778,12 @@ const $resultsTable = document.getElementById('results');
  * so the user sees what was lost.
  */
 async function handleSalesUpload(file) {
+  // Same rule as runSearch: parcels on the map disarm the muni picker.
+  disarmSearchPicker();
+  // A CSV has its own row order, which is the vendor's sort rather than
+  // anything the user chose — "Entry order" is a typed-Roll#-list option
+  // only, so drop any order left over from an earlier search.
+  enteredRollOrder = null;
   const uploadGeneration = ++salesEnrichmentGeneration;
   salesExportEnrichmentComplete = false;
   setExportEnabled(false);

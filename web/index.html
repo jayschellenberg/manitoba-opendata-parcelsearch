@@ -1005,6 +1005,14 @@
               <input type="checkbox" id="numbering-toggle">
               <span>Number parcels</span>
             </label>
+            <!-- Entry order. Only meaningful when the result set came from
+                 a typed Roll # list, so it stays hidden otherwise: for a
+                 muni-wide or address search there is no entry order to
+                 follow. Shown only alongside "Number parcels". -->
+            <label id="numbering-order-label" class="numbering-toggle" hidden title="Number the parcels in the order you typed them into the Roll # field, instead of by municipality then Roll #. Entering 154350, 154345 makes 154350 #1 and 154345 #2. Rolls joined with + & | still share one number. Only offered when the results came from a typed roll list.">
+              <input type="checkbox" id="numbering-order-toggle">
+              <span>Entry order</span>
+            </label>
             <label id="legend-toggle-label" class="numbering-toggle" hidden title="Draw the map's legend into the Generate Map image, in the bottom-right corner just above the credit line — the same corner it occupies on screen. Every legend currently showing is included, stacked. The image keeps its normal dimensions, so the legend sits over the map rather than beside it.">
               <input type="checkbox" id="legend-toggle">
               <span>Include legend in map image</span>

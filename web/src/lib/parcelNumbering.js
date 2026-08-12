@@ -43,22 +43,44 @@ export function rollNumericValue(props) {
 }
 
 /**
+ * Where this parcel's roll sat in a typed Roll # list. `rollOrder` is a
+ * `Map<Roll_No_Txt, position>` built by the caller from what the user
+ * actually typed; rolls not in it (or no map at all) return +Infinity so
+ * they fall past the entered ones and sort among themselves by the normal
+ * rule.
+ */
+export function enteredOrderValue(props, rollOrder) {
+  if (!rollOrder) return Infinity;
+  const pos = rollOrder.get(String(props?.Roll_No_Txt ?? ''));
+  return Number.isFinite(pos) ? pos : Infinity;
+}
+
+/**
  * Return the features ordered by (municipality name, roll numeric),
  * with the raw roll string and original index as stable tie-breakers.
  * Does not mutate the input array or the features. Features without
  * `.properties` are dropped.
+ *
+ * Pass `rollOrder` (see enteredOrderValue) to order by the sequence the
+ * rolls were TYPED instead. Two rolls entered as "154350, 154345" then
+ * number 1 and 2 in that order, rather than 154345 first as the numeric
+ * sort would have it — when you type a comp list you are usually typing
+ * it in the order you mean to present it. Rolls the list doesn't name
+ * still fall back to muni-then-roll, after the entered ones.
  */
-export function orderForNumbering(features) {
+export function orderForNumbering(features, rollOrder = null) {
   return (features || [])
     .filter((f) => f && f.properties)
     .map((f, idx) => ({
       f,
       idx,
+      entered: enteredOrderValue(f.properties, rollOrder),
       muni: muniCodeValue(f.properties),
       roll: rollNumericValue(f.properties),
       rollStr: String(f.properties.Roll_No_Txt ?? ''),
     }))
     .sort((a, b) => {
+      if (a.entered !== b.entered) return a.entered - b.entered;
       if (a.muni !== b.muni) return a.muni - b.muni;
       if (a.roll !== b.roll) return a.roll - b.roll;
       if (a.rollStr < b.rollStr) return -1;
@@ -108,10 +130,14 @@ export function groupValue(props) {
  * the count advances once for the group. A six-roll holding is one comp on
  * the map and should carry one badge, not six consecutive ones.
  *
+ * `opts.rollOrder` swaps that muni-then-roll sort for the order the rolls
+ * were typed — see orderForNumbering. It only reorders; the group counting
+ * and the Site override are unchanged.
+ *
  * Mutates the features and returns them (in assigned order for the
  * computed case; input order for the Site case).
  */
-export function assignParcelSeq(features) {
+export function assignParcelSeq(features, { rollOrder = null } = {}) {
   const list = (features || []).filter((f) => f && f.properties);
   const anySite = list.some((f) => siteValue(f.properties) != null);
   if (anySite) {
@@ -124,7 +150,7 @@ export function assignParcelSeq(features) {
     }
     return list;
   }
-  const ordered = orderForNumbering(list);
+  const ordered = orderForNumbering(list, rollOrder);
   const numberByGroup = new Map();
   let next = 1;
   for (const f of ordered) {

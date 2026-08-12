@@ -14,6 +14,7 @@ import {
   clearParcelSeq,
   siteValue,
   groupValue,
+  enteredOrderValue,
 } from '../src/lib/parcelNumbering.js';
 
 function feat(municipality, roll, extra = {}) {
@@ -188,6 +189,96 @@ assert.equal(rollNumericValue({}), Infinity);
   ];
   assignParcelSeq(feats);
   assert.deepEqual(feats.map((f) => f.properties._seq), [24, 24]);
+}
+
+// ---- entry order: number by the sequence the rolls were TYPED --------
+// Jason's case: "154350, 154345" typed into the Roll # field for Morden
+// should number 154350 as #1 — the numeric sort would put 154345 first.
+{
+  const a = feat('313 - MORDEN (CITY)', '154350.000');
+  const b = feat('313 - MORDEN (CITY)', '154345.000');
+  const rollOrder = new Map([['154350.000', 0], ['154345.000', 1]]);
+
+  // Without the hint, the numeric roll sort wins.
+  assignParcelSeq([a, b]);
+  assert.equal(b.properties._seq, 1);
+  assert.equal(a.properties._seq, 2);
+
+  // With it, entry order wins — regardless of the input array order.
+  assignParcelSeq([b, a], { rollOrder });
+  assert.equal(a.properties._seq, 1, '154350 was typed first');
+  assert.equal(b.properties._seq, 2);
+}
+
+// ---- enteredOrderValue ----------------------------------------------
+{
+  const order = new Map([['100.000', 0], ['200.000', 1]]);
+  assert.equal(enteredOrderValue({ Roll_No_Txt: '100.000' }, order), 0);
+  assert.equal(enteredOrderValue({ Roll_No_Txt: '200.000' }, order), 1);
+  // Position 0 is falsy but valid — it must not be treated as "missing".
+  assert.notEqual(enteredOrderValue({ Roll_No_Txt: '100.000' }, order), Infinity);
+  // Not in the typed list, and no list at all, both sort last.
+  assert.equal(enteredOrderValue({ Roll_No_Txt: '999.000' }, order), Infinity);
+  assert.equal(enteredOrderValue({ Roll_No_Txt: '100.000' }, null), Infinity);
+}
+
+// ---- entry order: rolls the typed list doesn't name fall to the end --
+// A water-influence or zoning filter can widen a roll search beyond what
+// was typed; those extras keep the muni-then-roll rule, after the typed ones.
+{
+  const typed1 = feat('313 - MORDEN (CITY)', '900.000');
+  const typed2 = feat('313 - MORDEN (CITY)', '800.000');
+  const extraHi = feat('313 - MORDEN (CITY)', '500.000');
+  const extraLo = feat('313 - MORDEN (CITY)', '100.000');
+  const rollOrder = new Map([['900.000', 0], ['800.000', 1]]);
+  assignParcelSeq([extraHi, typed1, extraLo, typed2], { rollOrder });
+  assert.equal(typed1.properties._seq, 1);
+  assert.equal(typed2.properties._seq, 2);
+  assert.equal(extraLo.properties._seq, 3, 'untyped rolls follow, in roll order');
+  assert.equal(extraHi.properties._seq, 4);
+}
+
+// ---- entry order + a joined group still consumes ONE number ----------
+// "83100+83200, 225600" — both members of the joined pair share position 0
+// and one badge; the single roll typed after them is #2, not #3.
+{
+  const g1 = feat('610 - PINEY (RM)', '83100.000', { _saleGroupId: 'g0' });
+  const g2 = feat('610 - PINEY (RM)', '83200.000', { _saleGroupId: 'g0' });
+  const solo = feat('610 - PINEY (RM)', '225600.000');
+  const rollOrder = new Map([['83100.000', 0], ['83200.000', 0], ['225600.000', 1]]);
+  assignParcelSeq([solo, g2, g1], { rollOrder });
+  assert.equal(g1.properties._seq, 1);
+  assert.equal(g2.properties._seq, 1, 'group members share one number');
+  assert.equal(solo.properties._seq, 2, 'the group consumed exactly one number');
+}
+
+// ---- entry order does NOT override an imported Site column -----------
+// Site labels are the caller's own comp numbers and still win outright.
+{
+  const a = feat('313 - MORDEN (CITY)', '154350.000', { _siteNo: '9' });
+  const b = feat('313 - MORDEN (CITY)', '154345.000', { _siteNo: '4' });
+  assignParcelSeq([a, b], { rollOrder: new Map([['154350.000', 0], ['154345.000', 1]]) });
+  assert.equal(a.properties._seq, 9);
+  assert.equal(b.properties._seq, 4);
+}
+
+// ---- orderForNumbering with a rollOrder ------------------------------
+{
+  const feats = [
+    feat('313 - MORDEN (CITY)', '100.000'),
+    feat('313 - MORDEN (CITY)', '300.000'),
+    feat('313 - MORDEN (CITY)', '200.000'),
+  ];
+  const rollOrder = new Map([['300.000', 0], ['100.000', 1], ['200.000', 2]]);
+  assert.deepEqual(
+    orderForNumbering(feats, rollOrder).map((f) => f.properties.Roll_No_Txt),
+    ['300.000', '100.000', '200.000'],
+  );
+  // Omitting the hint leaves the original muni-then-roll behaviour intact.
+  assert.deepEqual(
+    orderForNumbering(feats).map((f) => f.properties.Roll_No_Txt),
+    ['100.000', '200.000', '300.000'],
+  );
 }
 
 // ---- groupValue -----------------------------------------------------

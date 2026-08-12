@@ -569,19 +569,57 @@ export function initMap(container, { onFeatureClick } = {}) {
       // with subtle dark-grey outline; readable on both Streets and
       // Satellite without competing with the data layers.
       map.addSource('muni-boundaries', { type: 'geojson', data: emptyFc() });
+      // Hit-test surface for the Property Search muni picker. Fully
+      // transparent by default — this is a click target, not a visible
+      // layer — and lifts to a whisper of blue under the cursor so the
+      // municipality about to be picked reads before the click lands.
+      // Added BEFORE the outline so the outline always draws over it,
+      // and it sits at the very bottom of the stack, so it never takes
+      // a click away from a parcel or an overlay above it.
+      map.addLayer({
+        id: 'muni-boundaries-fill',
+        type: 'fill',
+        source: 'muni-boundaries',
+        paint: {
+          'fill-color': '#1d4ed8',
+          'fill-opacity': [
+            'case',
+            ['boolean', ['feature-state', 'hover'], false], 0.06,
+            0,
+          ],
+        },
+      });
       map.addLayer({
         id: 'muni-boundaries-line',
         type: 'line',
         source: 'muni-boundaries',
         paint: {
-          'line-color': '#555',
+          // The selected municipality carries a strong blue outline —
+          // the same treatment the Sales Analysis picker uses, so the
+          // two tabs say "selected" the same way. Outline only: a fill
+          // tint would wash over the parcels being read.
+          'line-color': [
+            'case',
+            ['boolean', ['feature-state', 'selected'], false], '#1d4ed8',
+            '#555',
+          ],
+          // interpolate OUTSIDE, case inside each stop: a ['zoom']
+          // expression may only be the input to a top-level interpolate /
+          // step, so nesting the zoom ramp inside the case is a style
+          // validation error rather than a fallback. The selected muni
+          // keeps a ramp of its own so it stays findable zoomed out
+          // without going clumsy at street level.
           'line-width': [
             'interpolate', ['linear'], ['zoom'],
-            5, 0.5,
-            10, 1.0,
-            14, 1.4,
+            5,  ['case', ['boolean', ['feature-state', 'selected'], false], 1.8, 0.5],
+            10, ['case', ['boolean', ['feature-state', 'selected'], false], 2.4, 1.0],
+            14, ['case', ['boolean', ['feature-state', 'selected'], false], 3.0, 1.4],
           ],
-          'line-opacity': 0.55,
+          'line-opacity': [
+            'case',
+            ['boolean', ['feature-state', 'selected'], false], 1,
+            0.55,
+          ],
         },
       });
       map.addLayer({
@@ -3285,9 +3323,107 @@ export function setSurveyGridVisible(map, visible) {
   }
 }
 
+/**
+ * Feature id for each municipality, keyed by MUNI_LIST_NAME_WITH_TYPE —
+ * the field the Property Search dropdown's values match against. Built
+ * when the boundaries FC lands, and needed because setFeatureState
+ * addresses features by id, not by a property value.
+ */
+let muniBoundaryIdByName = new Map();
+
+/** The id currently carrying the `selected` state, so clearing it is one
+ *  write rather than a sweep across all ~190 municipalities. */
+let muniBoundarySelectedId = null;
+
 export function setMuniBoundariesData(map, fc) {
+  // Positional ids: MUNI_LIST_NAME_WITH_TYPE is the natural key but is a
+  // string, and MapLibre feature ids must be numeric to be addressable
+  // by setFeatureState. Stamp the index and keep the name lookup beside it.
+  muniBoundaryIdByName = new Map();
+  // New data means every feature-state is gone; forget which id held the
+  // selection so the next clear doesn't write to a stale one.
+  muniBoundarySelectedId = null;
+  (fc?.features || []).forEach((f, i) => {
+    f.id = i;
+    const name = f.properties?.MUNI_LIST_NAME_WITH_TYPE;
+    if (name) muniBoundaryIdByName.set(String(name), i);
+  });
   const src = map.getSource('muni-boundaries');
   if (src) src.setData(fc);
+}
+
+/**
+ * Paint the blue "selected" outline on one municipality, clearing any
+ * previous one. Pass a falsy name to clear the selection outright.
+ *
+ * The name is matched against MUNI_LIST_NAME_WITH_TYPE; callers holding a
+ * Roll-Entry `Muni_Name_With_Typ` value that differs in punctuation should
+ * resolve it first (main.js owns that tolerant match). An unmatched name
+ * clears rather than throwing — the outline is a cue, not state.
+ */
+export function setMuniBoundarySelected(map, muniName) {
+  if (!map.getSource('muni-boundaries')) return;
+  if (muniBoundarySelectedId != null) {
+    map.setFeatureState(
+      { source: 'muni-boundaries', id: muniBoundarySelectedId },
+      { selected: false },
+    );
+    muniBoundarySelectedId = null;
+  }
+  const id = muniName ? muniBoundaryIdByName.get(String(muniName)) : undefined;
+  if (id == null) return;
+  map.setFeatureState({ source: 'muni-boundaries', id }, { selected: true });
+  muniBoundarySelectedId = id;
+}
+
+/**
+ * Click a municipality on the map to drive the Property Search dropdown —
+ * the same "point at it rather than find it in a list of 180" affordance
+ * the Sales Analysis tab has.
+ *
+ * `isEnabled()` is consulted on every event rather than the handlers being
+ * attached and detached, so the caller can gate it on live state (which tab
+ * is showing, whether a search has already run) without re-wiring. While it
+ * returns false the layer is inert: no pointer cursor, no hover tint, no
+ * click — it must not look clickable when it isn't.
+ *
+ * `onPick(muniName)` receives the MUNI_LIST_NAME_WITH_TYPE value.
+ */
+export function wireMuniBoundaryPicker(map, { onPick, isEnabled } = {}) {
+  const live = () => (typeof isEnabled === 'function' ? !!isEnabled() : true);
+  let hovered = null;
+  const setHover = (id, on) => {
+    if (id == null) return;
+    map.setFeatureState({ source: 'muni-boundaries', id }, { hover: on });
+  };
+  const clearHover = () => {
+    setHover(hovered, false);
+    hovered = null;
+    map.getCanvas().style.cursor = '';
+  };
+
+  map.on('mousemove', 'muni-boundaries-fill', (e) => {
+    if (!live()) { if (hovered != null) clearHover(); return; }
+    const f = e.features?.[0];
+    if (!f || f.id == null) return;
+    if (hovered !== f.id) { setHover(hovered, false); hovered = f.id; setHover(hovered, true); }
+    map.getCanvas().style.cursor = 'pointer';
+  });
+  map.on('mouseleave', 'muni-boundaries-fill', clearHover);
+  map.on('click', 'muni-boundaries-fill', (e) => {
+    if (!live()) return;
+    // Shape tools own the click while armed, exactly as the parcel popup
+    // stands down for them.
+    if (shapeClickHandled(map, e)) return;
+    const name = e.features?.[0]?.properties?.MUNI_LIST_NAME_WITH_TYPE;
+    if (!name) return;
+    onPick?.(String(name));
+  });
+
+  // Gating is state the caller changes at will; expose a nudge so a
+  // freshly-disabled layer drops its stale hover tint immediately rather
+  // than at the next mouse move.
+  return { refresh: () => { if (!live() && hovered != null) clearHover(); } };
 }
 
 export function setMuniParcelsData(map, fc) {
