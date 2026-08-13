@@ -1109,6 +1109,15 @@
       <!-- Filled dynamically by main.js renderLandCoverLegend() from the
            LAND_COVER_BUCKETS palette in lib/landcover.js. -->
       <div id="landcover-legend" class="map-legend masc-legend" hidden></div>
+      <!-- Historical zoning / dev-plan keys. Separate boxes from #zoning-legend
+           so the as-of layer and the current-day Zoning Layer can be read side
+           by side without one clobbering the other's list — comparing the two
+           eras is the whole reason the historical layer exists. Filled by
+           main.js renderHistoricalLegends() from map.js's getHistoricalLegend,
+           which shares the live layer's palette, so a zone code is the same
+           colour in both boxes. -->
+      <div id="historical-zoning-legend" class="map-legend masc-legend" hidden></div>
+      <div id="historical-devplan-legend" class="map-legend masc-legend" hidden></div>
       <div id="flow-legend" class="map-legend flow-legend" hidden>
         <strong>AADT (2019)</strong>
         <ul>

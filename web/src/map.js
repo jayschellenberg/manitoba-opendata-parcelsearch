@@ -1528,15 +1528,30 @@ export function initMap(container, { onFeatureClick } = {}) {
       map.addSource('historical-parcels', { type: 'geojson', data: emptyFc() });
       map.addSource('historical-zoning',  { type: 'geojson', data: emptyFc() });
       map.addSource('historical-devplan', { type: 'geojson', data: emptyFc() });
+      // Seed paint only — the real per-category match expression is pushed in
+      // by setHistoricalData() once the shard is loaded and we know which
+      // codes are present, exactly as the live zoning layer works.
+      //
+      // These used to be FLAT: one purple for all 1,554 of Brandon's zoning
+      // polygons, one teal for all 92 dev-plan designations. A single colour
+      // over the whole city says "this is all one zone" as plainly as a legend
+      // would, and it was read that way — the subject clicked as RHD, the map
+      // showed no variation, so the whole city looked RHD (Jason, 2026-08-13).
+      // It was 47% RSD / 27% RLD / 11% RMD, with RHD at 1.2%.
+      //
+      // Opacity is up from 0.12 / 0.10 because these are opt-in now (see
+      // HISTORICAL_LAYER_IDS): switching a zoning overlay on deliberately is a
+      // good reason to be able to read it. Neutral outlines rather than
+      // self-coloured ones so two adjacent zones always separate.
       map.addLayer({
         id: 'historical-zoning-fill', type: 'fill', source: 'historical-zoning',
         layout: { visibility: 'none' },
-        paint: { 'fill-color': '#7c3aed', 'fill-opacity': 0.12, 'fill-outline-color': '#7c3aed' },
+        paint: { 'fill-color': '#7c3aed', 'fill-opacity': 0.35, 'fill-outline-color': '#5b21b6' },
       });
       map.addLayer({
         id: 'historical-devplan-fill', type: 'fill', source: 'historical-devplan',
         layout: { visibility: 'none' },
-        paint: { 'fill-color': '#0d9488', 'fill-opacity': 0.10, 'fill-outline-color': '#0d9488' },
+        paint: { 'fill-color': '#0d9488', 'fill-opacity': 0.30, 'fill-outline-color': '#115e59' },
       });
       // _sizeBand is stamped in main.js (stampHistoricalSizeChanges) by matching
       // each historical parcel to today's parcel of the same roll: 'major'
@@ -3662,6 +3677,50 @@ export function setHistoricalData(map, data = {}) {
   set('historical-parcels', data.parcels);
   set('historical-zoning',  data.zoning);
   set('historical-devplan', data.devplan);
+  // Colour each polygon by its own category, so the layer shows the muni's
+  // actual mix instead of one flat wash. Returned for the legend.
+  historicalZoningLegend  = setHistoricalCategoryPaint(map, 'historical-zoning-fill',  data.zoning,  'ZONE',     '#7c3aed');
+  historicalDevplanLegend = setHistoricalCategoryPaint(map, 'historical-devplan-fill', data.devplan, 'DES_NAME', '#0d9488');
+}
+
+// Legend rows for whatever the last setHistoricalData() loaded — [{code, color}],
+// read by main.js to render the swatch list beside the map.
+let historicalZoningLegend = [];
+let historicalDevplanLegend = [];
+export function getHistoricalLegend(which) {
+  return which === 'zoning' ? historicalZoningLegend : historicalDevplanLegend;
+}
+
+/**
+ * Paint one historical fill layer by a categorical property.
+ *
+ * Colours come from `colorForZoneCode`, the SAME hash palette the live zoning
+ * overlay uses, so a given zone code is the identical colour in the historical
+ * and current views. That is the point: comparing eras means comparing
+ * colours, and a per-layer palette would have made RSD-then and RSD-now look
+ * like different zones.
+ *
+ * @returns {Array<{code:string,color:string}>} legend rows, sorted by code.
+ */
+function setHistoricalCategoryPaint(map, layerId, fc, field, fallback) {
+  if (!map.getLayer(layerId)) return [];
+  const codes = new Set();
+  for (const f of fc?.features || []) {
+    const v = String(f?.properties?.[field] ?? '').trim();
+    if (v && v !== 'null') codes.add(v);
+  }
+  const sorted = [...codes].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const legend = sorted.map((code) => ({ code, color: colorForZoneCode(code) }));
+  // `match` needs at least one pair; with none, fall back to the flat colour.
+  if (legend.length === 0) {
+    map.setPaintProperty(layerId, 'fill-color', fallback);
+    return [];
+  }
+  const pairs = [];
+  for (const { code, color } of legend) pairs.push(code, color);
+  map.setPaintProperty(layerId, 'fill-color',
+    ['match', ['coalesce', ['get', field], ''], ...pairs, fallback]);
+  return legend;
 }
 
 // Today's MAO URL for a roll, if that roll still exists in current data.

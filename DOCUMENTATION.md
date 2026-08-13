@@ -266,7 +266,8 @@ the manifest's build timestamp, so clients auto-invalidate on the next load.
   The fetchers' `year` parameter now carries a **snapshot_id** value.
 - **map.js**: `historical-parcels` / `-zoning` / `-devplan` sources;
   parcels render as **dashed amber** lines over today's lots, zoning/dev-plan
-  as translucent clickable fills. `setHistoricalData`, `HISTORICAL_LAYER_IDS`
+  as translucent clickable fills **coloured per category** (§5.3.3).
+  `setHistoricalData`, `HISTORICAL_LAYER_IDS`
   + `setHistoricalLayerVisible` (one layer), `setHistoricalVisible` (master
   off) + per-layer click tooltips. Parcel tooltips show **lineage** (`← from` /
   `→ became`, with confidence) and a "verify" note; zoning/dev-plan tooltips
@@ -305,6 +306,40 @@ invisible. Every parcel in the muni was also outlined in dashed amber on top.
   selector the URL-state writer uses (`button.overlay-btn[id$="-toggle"]`), so
   they stay out of shared links. The group's "N on" badge does count them —
   it selects on `aria-pressed`.
+
+#### 5.3.3 Historical zoning / dev-plan are coloured per category
+Both fills were originally ONE flat colour for every polygon — `#7c3aed` across
+all 1,554 of Brandon's zoning polygons, `#0d9488` across all 92 dev-plan ones.
+A single colour over a whole city asserts "this is all one zone", and was read
+that way: the subject clicked as RHD, the map showed no variation, so the city
+looked RHD. The data was never at fault — 409 sampled Brandon parcel centroids
+at 2025-02-12 gave 99% zoning / 100% dev-plan coverage and a distribution of
+**RSD 47%, RLD 27%, RMD 11%, RHD 1.2%**.
+
+- `setHistoricalCategoryPaint` (map.js, called from `setHistoricalData`) builds
+  a `match` expression over `ZONE` / `DES_NAME` and returns legend rows;
+  `getHistoricalLegend('zoning'|'devplan')` exposes them.
+- Colours come from **`colorForZoneCode`, the same palette the live Zoning
+  Layer uses**, so a code is the identical colour in the as-of and current-day
+  views. Comparing eras means comparing colours; a per-layer palette would have
+  made RSD-then and RSD-now look like different zones.
+- **Known collision:** the palette is a hash, so codes can share a colour —
+  Brandon 2025-02-12 has `CN` and `OS` both at `#df90d1`. Pre-existing and
+  shared with the live layer, but more visible now there is a 24-row legend.
+- `#historical-zoning-legend` / `#historical-devplan-legend` are separate boxes
+  from `#zoning-legend`, so the as-of and current-day keys can be read side by
+  side. Each shows only while its own layer draws, is titled with the
+  snapshot_id, and is picked up by the static-map export (`readMapLegends`).
+- Opacity 0.35 / 0.30 (was 0.12 / 0.10) — justified because §5.3.2 made these
+  opt-in, and switching a zoning overlay on deliberately is a reason to see it.
+
+> **Designation vocabularies are NOT stable across snapshots.** Brandon
+> replaced its development plan between 2025-02-12 (92 polygons, 8 designations
+> — Residential / The Hub / Commercial …, by-law `95/01/12`) and 2026-06-05
+> (7 polygons, 4 designations — General Urban / Employment / Floodway /
+> Development Reserve, by-law `7392`). Across such a boundary the designations
+> are not comparable and neither are their colours. Read the by-law number in
+> the popup before comparing two dates.
 
 #### 5.3.1 The search highlight follows the as-of date
 While a snapshot is active, a **Property Search highlights the parcel as it

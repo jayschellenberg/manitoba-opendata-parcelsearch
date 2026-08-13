@@ -193,6 +193,7 @@ import {
   setHistoricalData,
   setHistoricalVisible,
   setHistoricalLayerVisible,
+  getHistoricalLegend,
   setLandCoverRasterVisible,
   setLandCoverRasterOpacity,
   flyToFeature,
@@ -464,6 +465,8 @@ const $historicalYearWrap = document.getElementById('historical-year-wrap');
 const $historicalBanner   = document.getElementById('historical-banner');
 // Per-layer sub-toggles, keyed to map.js's HISTORICAL_LAYER_IDS.
 const $historicalLayersWrap = document.getElementById('historical-layers-wrap');
+const $historicalZoningLegend  = document.getElementById('historical-zoning-legend');
+const $historicalDevplanLegend = document.getElementById('historical-devplan-legend');
 const $historicalLayerBtns = {
   parcels: document.getElementById('historical-layer-parcels'),
   zoning:  document.getElementById('historical-layer-zoning'),
@@ -7035,7 +7038,38 @@ function applyHistoricalLayers() {
     setOverlayPressed(btn, live && on);
   }
   if ($historicalLayersWrap) $historicalLayersWrap.hidden = !live;
+  renderHistoricalLegends();
   refreshOverlayGroupCounts();
+}
+
+/**
+ * Swatch keys for the historical zoning / dev-plan fills, each shown only
+ * while its own layer is drawing.
+ *
+ * These layers used to be one flat colour apiece, which is what made the
+ * whole city read as a single zone. Colouring by category fixes the map; a
+ * key is what makes the colours mean anything without clicking every polygon.
+ * Deliberately separate boxes from #zoning-legend (the live Zoning Layer's) so
+ * the as-of and current-day keys can sit side by side — comparing the two is
+ * the reason to be in this view at all. Both draw from the same palette, so a
+ * code that appears in both boxes carries the same colour.
+ */
+function renderHistoricalLegends() {
+  const render = ($el, which, title) => {
+    if (!$el) return;
+    const show = historicalActive && historicalLayersOn[which];
+    const rows = show ? getHistoricalLegend(which) : [];
+    if (!rows.length) { $el.hidden = true; $el.innerHTML = ''; return; }
+    const snap = $historicalYear?.value || '';
+    const items = rows
+      .map((r) => `<li><span class="swatch" style="background:${escapeHtmlText(r.color)}"></span>${escapeHtmlText(r.code)}</li>`)
+      .join('');
+    $el.innerHTML = `<strong>${title}${snap ? ` (${escapeHtmlText(snap)})` : ''}</strong><ul>${items}</ul>`
+      + '<small style="display:block;margin-top:4px;color:#6b7280;font-style:italic">Pointer only — verify against the by-law / planning district.</small>';
+    $el.hidden = false;
+  };
+  render($historicalZoningLegend,  'zoning',  'Historical zoning');
+  render($historicalDevplanLegend, 'devplan', 'Historical dev plan');
 }
 
 function toggleHistoricalLayer(key) {
