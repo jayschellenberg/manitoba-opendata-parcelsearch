@@ -1552,7 +1552,21 @@ export function initMap(container, { onFeatureClick } = {}) {
         paint: {
           'fill-color': SIZE_FILL_COLOR,
           // Tint changed parcels a touch more so they read at a glance.
-          'fill-opacity': ['match', ['get', '_sizeBand'], 'major', 0.16, 'minor', 0.11, 0.06],
+          //
+          // The baseline band covers EVERY parcel in the muni — 17,153 of them
+          // in Brandon — so whatever it is set to is a wall-to-wall wash over
+          // the whole town, not an accent. At 0.06 it read as "the map has been
+          // shaded" rather than as context (Jason, 2026-08-13). Dropped to a
+          // near-nothing 0.025 and the changed bands roughly halved with it,
+          // which also widens the unchanged→major contrast (2.7× → 4×) so the
+          // size-change signal carries better than it did when everything was
+          // darker. The dashed amber outline is what marks a parcel historical;
+          // this fill only needs to tint the changed ones and stay clickable.
+          //
+          // Must stay > 0: this layer is the click target behind the historical
+          // parcel popup (wireHist below), so unchanged parcels cannot go
+          // fill-less without losing their tooltip.
+          'fill-opacity': ['match', ['get', '_sizeBand'], 'major', 0.10, 'minor', 0.06, 0.025],
         },
       });
       map.addLayer({
