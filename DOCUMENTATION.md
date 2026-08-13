@@ -266,8 +266,9 @@ the manifest's build timestamp, so clients auto-invalidate on the next load.
   The fetchers' `year` parameter now carries a **snapshot_id** value.
 - **map.js**: `historical-parcels` / `-zoning` / `-devplan` sources;
   parcels render as **dashed amber** lines over today's lots, zoning/dev-plan
-  as translucent clickable fills. `setHistoricalData` / `setHistoricalVisible`
-  + per-layer click tooltips. Parcel tooltips show **lineage** (`← from` /
+  as translucent clickable fills. `setHistoricalData`, `HISTORICAL_LAYER_IDS`
+  + `setHistoricalLayerVisible` (one layer), `setHistoricalVisible` (master
+  off) + per-layer click tooltips. Parcel tooltips show **lineage** (`← from` /
   `→ became`, with confidence) and a "verify" note; zoning/dev-plan tooltips
   carry a "pointer only — verify" line.
 - **main.js**: the **Historical** toggle + **"As of"** snapshot-date picker
@@ -277,6 +278,33 @@ the manifest's build timestamp, so clients auto-invalidate on the next load.
   verify vs by-law / title` banner, and a `> 12 mo old` flag.
 - **Self-contained:** reads only shard fields — no coupling to the live
   enrichment pipeline (legal/assessment/MASC/land-cover).
+
+#### 5.3.2 The three context layers are opt-in, one toggle each
+Each historical layer blankets the WHOLE municipality, so switching all three
+on together buried whatever the user had searched for. Measured on Brandon
+2025-02-12, the composite wash was **0.256**, of which `historical-zoning-fill`
+(0.12) was 49% and `historical-devplan-fill` (0.10) 41% — the parcel fill was
+10%, and lightening it alone (0.06 → 0.025) moved the total by 11%, which is
+invisible. Every parcel in the muni was also outlined in dashed amber on top.
+
+- A **Layers** row under the As-of picker carries three sub-toggles —
+  **Parcels / Zoning / Dev Plan** — driving `setHistoricalLayerVisible`.
+  State lives in `historicalLayersOn`; `applyHistoricalLayers()` pushes it to
+  the map and to the buttons' pressed state in one place.
+- **All three default OFF.** An as-of date on its own draws only the searched
+  parcel's as-of boundary (§5.3.1). The status line says so and names the
+  control, so an intentionally sparse map can't be mistaken for a failed load.
+- State **persists** across toggling Historical off/on and across an As-of date
+  change — walking the snapshot dates shouldn't make you re-tick zoning at
+  every step. It is not persisted across a reload.
+- `historicalGeomByKey` is built whether or not the Parcels layer is on: it
+  drives the search highlight, which is independent of these toggles.
+- The size-change colour key only prints in the status line when Parcels is
+  actually drawing; the counts print either way.
+- The sub-toggle ids deliberately do **not** end in `-toggle`, which is the
+  selector the URL-state writer uses (`button.overlay-btn[id$="-toggle"]`), so
+  they stay out of shared links. The group's "N on" badge does count them —
+  it selects on `aria-pressed`.
 
 #### 5.3.1 The search highlight follows the as-of date
 While a snapshot is active, a **Property Search highlights the parcel as it

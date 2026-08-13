@@ -3705,11 +3705,44 @@ function lineageHtml(roll) {
     + `<br><small style="color:#888">Inferred from geometry — verify against the registered plan / title.</small></div>`;
 }
 
-export function setHistoricalVisible(map, on) {
+/**
+ * The three historical context layers, each independently switchable.
+ *
+ * They are separate controls because each one blankets the WHOLE
+ * municipality: the zoning and dev-plan fills were ~90% of the translucent
+ * wash between them, over a parcel fabric that outlines every lot in the muni
+ * in dashed amber. Switching all three on together buried the parcel the user
+ * had just searched for (Jason, 2026-08-13). None is on by default now — see
+ * main.js `historicalLayersOn`.
+ *
+ * Note the searched parcel's own as-of boundary does NOT live here. That is
+ * the yellow result highlight, driven by lib/historicalHighlight.js, and it
+ * shows whenever an as-of date is active regardless of these toggles.
+ */
+export const HISTORICAL_LAYER_IDS = {
+  parcels: ['historical-parcels-fill', 'historical-parcels-line'],
+  zoning:  ['historical-zoning-fill'],
+  devplan: ['historical-devplan-fill'],
+};
+
+/** Show/hide ONE historical context layer. `key` indexes HISTORICAL_LAYER_IDS. */
+export function setHistoricalLayerVisible(map, key, on) {
   const vis = on ? 'visible' : 'none';
-  for (const id of ['historical-zoning-fill', 'historical-devplan-fill',
-                    'historical-parcels-fill', 'historical-parcels-line']) {
+  for (const id of HISTORICAL_LAYER_IDS[key] || []) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
+  }
+}
+
+/**
+ * Master switch — hides every historical context layer at once.
+ *
+ * Only ever called with `false` now (deactivating Historical). Turning the
+ * overlay ON applies the per-layer state instead, so the caller decides what
+ * comes back rather than everything doing so unbidden.
+ */
+export function setHistoricalVisible(map, on) {
+  for (const key of Object.keys(HISTORICAL_LAYER_IDS)) {
+    setHistoricalLayerVisible(map, key, on);
   }
 }
 

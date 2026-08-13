@@ -961,6 +961,28 @@
               <span class="overlay-subcontrol-label">As of</span>
               <select id="historical-year" aria-label="Historical snapshot date"></select>
             </label>
+            <!-- Per-layer sub-toggles, all OFF when Historical is switched on.
+                 The three historical layers each blanket the whole
+                 municipality — the zoning and dev-plan fills alone were ~90%
+                 of the amber/purple/teal wash, on top of every parcel in the
+                 muni outlined in dashed amber — so turning them all on at once
+                 buried the thing you actually searched for. With Historical
+                 on, the default view is your search result drawn with its
+                 as-of boundary and nothing else; each context layer comes in
+                 only when asked for. Choices persist for the session, so
+                 changing the As-of date keeps whatever you had turned on. -->
+            <div class="overlay-sublayers" id="historical-layers-wrap" hidden>
+              <span class="overlay-subcontrol-label">Layers</span>
+              <button id="historical-layer-parcels" type="button" class="overlay-btn overlay-btn-sub" aria-pressed="false" disabled title="Historical parcel fabric — every parcel in the municipality as of the selected date, dashed amber, coloured by how much its area changed since (red >25%, orange >5%, grey = roll gone). Your searched parcel is already drawn with its as-of boundary without this.">
+                <span class="overlay-btn-label">Parcels</span>
+              </button>
+              <button id="historical-layer-zoning" type="button" class="overlay-btn overlay-btn-sub" aria-pressed="false" disabled title="Historical zoning — the municipality's zoning by-law designations as of the selected date, as a translucent purple fill. Click for the as-of zone. A pointer to verify against the by-law, never a legal determination.">
+                <span class="overlay-btn-label">Zoning</span>
+              </button>
+              <button id="historical-layer-devplan" type="button" class="overlay-btn overlay-btn-sub" aria-pressed="false" disabled title="Historical development plan — planning-district designations as of the selected date, as a translucent teal fill. Click for the as-of designation. A pointer to verify against the planning district, never a legal determination.">
+                <span class="overlay-btn-label">Dev Plan</span>
+              </button>
+            </div>
             </div>
           </details>
 

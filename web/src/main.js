@@ -192,6 +192,7 @@ import {
   setWaterInfluenceVisible,
   setHistoricalData,
   setHistoricalVisible,
+  setHistoricalLayerVisible,
   setLandCoverRasterVisible,
   setLandCoverRasterOpacity,
   flyToFeature,
@@ -461,6 +462,13 @@ const $historicalToggle   = document.getElementById('historical-toggle');
 const $historicalYear     = document.getElementById('historical-year');
 const $historicalYearWrap = document.getElementById('historical-year-wrap');
 const $historicalBanner   = document.getElementById('historical-banner');
+// Per-layer sub-toggles, keyed to map.js's HISTORICAL_LAYER_IDS.
+const $historicalLayersWrap = document.getElementById('historical-layers-wrap');
+const $historicalLayerBtns = {
+  parcels: document.getElementById('historical-layer-parcels'),
+  zoning:  document.getElementById('historical-layer-zoning'),
+  devplan: document.getElementById('historical-layer-devplan'),
+};
 const $count         = document.getElementById('count');
 const $tbody         = document.querySelector('#results tbody');
 const $mapEl         = document.getElementById('map');
@@ -2131,6 +2139,9 @@ if ($landcoverToggle) $landcoverToggle.addEventListener('click', () => toggleLan
 if ($waterToggle) $waterToggle.addEventListener('click', () => toggleWaterInfluenceOverlay());
 if ($historicalToggle) $historicalToggle.addEventListener('click', () => toggleHistoricalOverlay());
 if ($historicalYear) $historicalYear.addEventListener('change', () => onHistoricalYearChange());
+for (const [key, btn] of Object.entries($historicalLayerBtns)) {
+  if (btn) btn.addEventListener('click', () => toggleHistoricalLayer(key));
+}
 initHistoricalSnapshots();
 $gridToggle.addEventListener('click', () => toggleSurveyGridOverlay());
 setTimeout(() => restoreUrlOverlays(initialUrlState), 0);
@@ -6998,7 +7009,56 @@ let historicalIndexCache = null;
 // (muni|roll) → as-of geometry for the snapshot currently loaded, built from
 // the same shard the dashed-amber overlay draws. Non-null only while the
 // overlay is on; drives the search-result highlight (see asOfHighlight).
+//
+// Built whether or not the Parcels sub-layer below is switched on: the
+// searched parcel's as-of boundary is the ONE thing an active snapshot always
+// shows, and it is independent of the muni-wide context layers.
 let historicalGeomByKey = null;
+
+// Which historical context layers are showing. All OFF on first activation —
+// each blankets the whole municipality, and switching the three on together
+// buried the searched parcel under the wash (Jason, 2026-08-13). Deliberately
+// NOT reset when the overlay is toggled off or the As-of date changes: once
+// you have asked for historical zoning, walking through the snapshot dates
+// should keep showing it rather than making you re-tick it each time.
+const historicalLayersOn = { parcels: false, zoning: false, devplan: false };
+
+/** Push `historicalLayersOn` to the map and to the three buttons' pressed state. */
+function applyHistoricalLayers() {
+  const live = historicalActive;
+  for (const [key, on] of Object.entries(historicalLayersOn)) {
+    // Nothing shows while the overlay is off, whatever the remembered state.
+    mapReady.then(() => setHistoricalLayerVisible(map, key, live && on));
+    const btn = $historicalLayerBtns[key];
+    if (!btn) continue;
+    btn.disabled = !live;
+    setOverlayPressed(btn, live && on);
+  }
+  if ($historicalLayersWrap) $historicalLayersWrap.hidden = !live;
+  refreshOverlayGroupCounts();
+}
+
+function toggleHistoricalLayer(key) {
+  if (!historicalActive || !(key in historicalLayersOn)) return;
+  historicalLayersOn[key] = !historicalLayersOn[key];
+  applyHistoricalLayers();
+}
+
+const HISTORICAL_LAYER_LABELS = { parcels: 'Parcels', zoning: 'Zoning', devplan: 'Dev Plan' };
+
+/**
+ * Status-line clause naming which context layers are drawing. With none on —
+ * the default — it says so and points at the control, so an empty-looking
+ * historical map reads as a setting rather than as a failed load.
+ */
+function historicalLayerNote() {
+  const on = Object.entries(historicalLayersOn)
+    .filter(([, v]) => v)
+    .map(([k]) => HISTORICAL_LAYER_LABELS[k]);
+  return on.length
+    ? ` Context layers on: ${on.join(', ')}. Click one for its as-of details.`
+    : ' Only your search result is drawn, with its as-of boundary — switch on Parcels / Zoning / Dev Plan under Layers for muni-wide context.';
+}
 
 /**
  * As-of geometry for a result set, or null when no as-of date is in force.
@@ -7244,9 +7304,12 @@ async function loadHistorical(snap, muniName) {
       lineage: lineage?.by_roll || null,
       currentUrls: enrich?.curUrlByRoll || null,   // roll → today's MAO URL for the popup links
     });
-    setHistoricalVisible(map, true);
     historicalActive = true;
     historicalLoadedMuni = muniName;
+    // Apply the remembered per-layer state rather than showing everything.
+    // First activation = all three off, so an as-of date on its own draws only
+    // the searched parcel's as-of boundary.
+    applyHistoricalLayers();
     // Index the same shard by (muni, roll) so a search under this as-of date
     // highlights the parcel as it stood then. Built before the highlight is
     // refreshed below, and again on every snapshot change.
@@ -7263,9 +7326,16 @@ async function loadHistorical(snap, muniName) {
       if (sizeSummary.major) parts.push(`${sizeSummary.major} major`);
       if (sizeSummary.minor) parts.push(`${sizeSummary.minor} minor`);
       if (sizeSummary.gone)  parts.push(`${sizeSummary.gone} gone`);
-      if (parts.length) changeNote = ` Size changes: ${parts.join(', ')} (red >25%, orange >5%, grey = roll gone).`;
+      // The colour key only means anything while the Parcels layer is drawing;
+      // the counts themselves are worth stating either way.
+      if (parts.length) {
+        changeNote = ` Size changes since: ${parts.join(', ')}`
+          + (historicalLayersOn.parcels ? ' (red >25%, orange >5%, grey = roll gone).' : '.');
+      }
     }
-    setCount(`Historical as of ${snap} — ${n} parcel${n === 1 ? '' : 's'} in ${muniName}, dashed over today's lots. Click a parcel/zone for its as-of details.${changeNote}${asOfHighlightNote(asOf, snap)} Verify against by-law/title records.`);
+    setCount(`Historical as of ${snap} — ${muniName}, ${n} parcel${n === 1 ? '' : 's'} in the snapshot.`
+      + `${asOfHighlightNote(asOf, snap)}${changeNote}${historicalLayerNote()}`
+      + ' Verify against by-law/title records.');
   } catch (err) {
     console.warn('historical load failed', err);
     setCount('Historical: load failed.');
@@ -7282,6 +7352,9 @@ function deactivateHistorical() {
   historicalLoadedMuni = null;
   historicalGeomByKey = null;
   mapReady.then(() => setHistoricalVisible(map, false));
+  // Hides + disables the three sub-toggles. historicalLayersOn itself is NOT
+  // cleared — switching the overlay back on restores the layers you had chosen.
+  applyHistoricalLayers();
   if ($historicalToggle) {
     setOverlayPressed($historicalToggle, false);
     setOverlayBtnLabel($historicalToggle, 'Show');
