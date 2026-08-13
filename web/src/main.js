@@ -2441,6 +2441,28 @@ function wrapToWidth(ctx, text, maxWidth) {
  * and right-click + paste-into-Word is the actual workflow they
  * described.
  */
+/**
+ * Drop the Generate Image snapshot.
+ *
+ * The snapshot is a still of the map AT THE MOMENT IT WAS TAKEN, and nothing
+ * on it says so. Left on the page through a new search it sits directly under
+ * a grid describing different parcels, looking exactly like output of the
+ * search you are now reading — the one failure mode where a stale image is
+ * worse than no image, because the user's next step is pasting it into a
+ * report (Jason, 2026-08-13).
+ *
+ * Called when a NEW RESULT SET arrives — a Property Search, or a sales upload
+ * — and deliberately not on filter changes, overlay toggles or re-sorts. Those
+ * refine the set the image was taken of; clearing there would yank the image
+ * out from under someone who took it and then tidied the view before saving.
+ */
+function clearStaticMap() {
+  if (!$staticMapOutput) return;
+  $staticMapOutput.innerHTML = '';
+  $staticMapOutput.hidden = true;
+  if ($staticMapSection) $staticMapSection.hidden = true;
+}
+
 async function generateStaticMap() {
   if (!$staticMapOutput) return;
   await mapReady;
@@ -3384,6 +3406,8 @@ async function runSearch() {
   setBusy(true);
   setCount('Searching Roll Entry…');
   clearTable();
+  // A new result set makes any existing snapshot a picture of the last one.
+  clearStaticMap();
   setMapData(EMPTY_FC, EMPTY_FC, EMPTY_FC);
 
   // Resolve a ticked water-influence box into a roll list BEFORE the query
@@ -3771,6 +3795,10 @@ const $resultsTable = document.getElementById('results');
 async function handleSalesUpload(file) {
   // Same rule as runSearch: parcels on the map disarm the muni picker.
   disarmSearchPicker();
+  // …and the same rule for the snapshot: a new upload is a new result set, so
+  // any image on the page is of the previous one. Covers every entry point
+  // into this function — dropzone, paste modal and Recent uploads alike.
+  clearStaticMap();
   // A CSV has its own row order, which is the vendor's sort rather than
   // anything the user chose — "Entry order" is a typed-Roll#-list option
   // only, so drop any order left over from an earlier search.
