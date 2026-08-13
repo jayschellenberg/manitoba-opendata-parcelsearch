@@ -1790,7 +1790,7 @@ export async function fetchWaterForMuni(muniNameWithTyp) {
 // MAINTENANCE: when you republish mb-parcel-history (new snapshot or a data
 // fix), update this SHA to the new commit — see MAINTENANCE.md.
 const HISTORICAL_CDN =
-  'https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-history@c8cc4a9ee261217e90e96d32a132d8beddf42ba2';
+  'https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-history@7e736813060449f20cf80095f49c7d4b4966867c';
 const HISTORICAL_INDEX_TTL_MS = 24 * 60 * 60 * 1000;        // 1 day — so new years surface
 const HISTORICAL_MANIFEST_TTL_MS = 6 * 60 * 60 * 1000;     // 6 h — gates the shard version token, keep fresh
 const HISTORICAL_SHARD_TTL_MS = 30 * 24 * 60 * 60 * 1000;   // 30 days — safe: the key is version-stamped, so a rebuild changes it
@@ -1801,7 +1801,12 @@ let historicalIndexPromise = null;
 export async function fetchHistoricalIndex() {
   if (historicalIndexPromise) return historicalIndexPromise;
   historicalIndexPromise = (async () => {
-    const cacheKey = 'mb_historical_index_v2';   // v2: snapshot-date schema
+    // v3: bumped when 2026-06-05 was RETIRED (2026-08-13). The 1-day TTL is
+    // sized for snapshots being ADDED, where a day's lag costs nothing. A
+    // REMOVAL is the opposite case: a stale index keeps offering a date whose
+    // shards now 404, so the picker lists an option that fails when chosen.
+    // Bump this key on every retirement — it invalidates on the next load.
+    const cacheKey = 'mb_historical_index_v3';
     const cached = await readCache(cacheKey, HISTORICAL_INDEX_TTL_MS);
     if (cached) return cached;
     try {
