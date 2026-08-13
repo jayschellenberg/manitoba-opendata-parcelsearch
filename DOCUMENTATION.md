@@ -278,6 +278,35 @@ the manifest's build timestamp, so clients auto-invalidate on the next load.
 - **Self-contained:** reads only shard fields — no coupling to the live
   enrichment pipeline (legal/assessment/MASC/land-cover).
 
+#### 5.3.1 The search highlight follows the as-of date
+While a snapshot is active, a **Property Search highlights the parcel as it
+stood at that date** — the yellow outline and the camera fit both come from the
+snapshot shard, not from today's Roll Entry. Without this the two disagreed:
+Brandon roll **562264** (1501 BRAECREST DR) was 12.23 ac on 2025-02-12 and is
+3.78 ac today after roll 562314 was carved off it, so a search under the
+2025-02-12 banner used to highlight (and zoom to) the small modern remnant.
+
+- `lib/historicalHighlight.js` — `indexHistoricalGeometry(shardFc)` keys the
+  loaded shard by **(muni, roll)**; `applyHistoricalGeometry(resultFc, index)`
+  returns a copy of the result set with as-of geometry swapped in. Pure, unit-
+  tested (`test/historicalHighlight.test.js`). Keyed by muni **and** roll
+  because roll numbers are unique only within a municipality — a multi-muni
+  result set must never borrow another muni's parcel.
+- Applied in `setMapData` (so both of a search's pushes get it) and on the
+  soil-composition re-push; `refreshAsOfHighlight()` re-draws the current
+  result set when the date is toggled or changed, so no re-search is needed.
+  It re-fits the camera only when geometry actually moved.
+- **Scope: the map highlight only.** The results table, CSV / evidence exports
+  and Parcel Snapshot images stay on today's record — those are live-enriched
+  (legal, assessment, MASC, land cover) and the shards carry none of it. The
+  popup says which boundary it is drawing (`Boundary as of <date>`, from the
+  `_asOfGeom` / `_asOfDate` stamps) and repeats the simplified-geometry caveat.
+- A roll with **no parcel at that date** (created since) keeps today's boundary
+  and is named in the status line — `1 had no parcel at that date (roll 562314)
+  — still showing today's boundary` — rather than silently falling back.
+  Lineage (§5.6) is not yet consulted here: showing such a roll's *predecessor*
+  outline as-of would need a reverse lineage lookup.
+
 ### 5.4 Sync — how the two projects stay aligned
 - **Generator in the main repo** = one source of truth for the format.
 - **Discovery:** the app reads `index.json`; adding a snapshot needs only the

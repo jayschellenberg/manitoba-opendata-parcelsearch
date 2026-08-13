@@ -220,6 +220,7 @@ import {
 } from './lib/water.js';
 import { resolveParcelAcres, formatRollSizeField, parseRollFrontageFeet } from './lib/acres.js';
 import { computeSizeChanges } from './lib/sizeChange.js';
+import { indexHistoricalGeometry, applyHistoricalGeometry } from './lib/historicalHighlight.js';
 import { clearAllCache as clearAllCacheModule } from './cache.js';
 import { getManifest, getManifestSync } from './manifest.js';
 import { buildProvenance, provenanceCsvLines, provenanceText } from './lib/provenance.js';
@@ -851,6 +852,10 @@ let lastDevPlanFc = EMPTY_FC;
 // Most recent parcel result set pushed to the map — drives the Parcel
 // Snapshots (ZIP) export. Updated by every setMapData() call.
 let lastResultFc = EMPTY_FC;
+// What the last setMapData() push did to the highlight geometry under an
+// active as-of date: {swapped, missing, missingRolls}, or null when no
+// Historical snapshot is in force. Read by the search's status line.
+let lastAsOfHighlight = null;
 // CSV-upload mode state. csvFullRows holds the full enriched row set
 // from the last sales-CSV upload (with zoning / dev-plan / risk-area
 // data joined in), so changing the Other Searches filters after upload
@@ -3557,7 +3562,9 @@ async function runSearch() {
         ? `${n} of ${rollList.length} rolls matched`
         : `${n} parcels found`;
     }
-    const baseMsg = capNotes.length
+    // `let`: an active as-of date appends its highlight note once the first
+    // setMapData push below reports what it swapped.
+    let baseMsg = capNotes.length
       ? `${countLabel} (${capNotes.join('; ')})`
       : countLabel;
     // Stamp _rowKey so map clicks can find the matching table row,
@@ -3595,6 +3602,9 @@ async function runSearch() {
     // Show parcels-only rows immediately so the user sees something.
     renderTable(parcelFc.features.map((p) => ({ parcel: p, zoning: [], devPlan: [] })));
     setMapData(parcelFc, EMPTY_FC, EMPTY_FC);
+    // Every later status line is built from baseMsg, so folding the as-of note
+    // in here carries it through enrichment, water and soil stages alike.
+    baseMsg += asOfHighlightNote(lastAsOfHighlight, $historicalYear?.value);
 
     // The muni-wide parcel fabric (Assessment Parcels) is a manual
     // toggle only — it used to auto-show here on every muni-scoped
@@ -6182,8 +6192,16 @@ function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
   // Geometry is drawn once per parcel even when the result set carries
   // one feature per sale — see dedupeParcelFeaturesForMap().
   const mapFc = dedupeParcelFeaturesForMap(parcelFc);
+  // Under an active as-of date the highlight must trace the parcel as it stood
+  // THEN, not now — see asOfHighlight(). Applied here so both pushes a search
+  // makes (the immediate one and the post-enrichment repush) get it.
+  const asOf = asOfHighlight(mapFc);
+  const highlightFc = asOf ? asOf.fc : mapFc;
+  // Stashed for the search's status line, which is composed before this push
+  // reports back. Null whenever no as-of date is in force.
+  lastAsOfHighlight = asOf;
   mapReady.then(() => {
-    showResults(map, mapFc, opts);
+    showResults(map, highlightFc, opts);
     setZoningData(map, zoningFc);
     setDevPlanData(map, devPlanFc);
     // Parcel-number callouts. The `_seq` values are assigned once per
@@ -6191,8 +6209,11 @@ function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
     // current features' anchors and toggle visibility to match. Passing
     // a filtered subset shows only those parcels' (fixed) numbers, with
     // gaps — the number stays glued to the parcel, never renumbers.
-    const numberable = (mapFc.features?.length || 0) > 1;
-    setParcelNumberData(map, mapFc.features || []);
+    const numberable = (highlightFc.features?.length || 0) > 1;
+    // Anchored off the HIGHLIGHT features so a callout's leader stays glued to
+    // the outline actually drawn — an as-of boundary can sit well away from
+    // today's centroid (Brandon 562264's moved ~120 m when it lost 8.4 acres).
+    setParcelNumberData(map, highlightFc.features || []);
     setParcelNumbersVisible(map, numberingOn && numberable);
     // Re-assert the water overlay. Its layers are declared with
     // `visibility: 'none'` at style-build time, so any path that rebuilds the
@@ -6213,6 +6234,9 @@ function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
   // their parcelFc through here.
   // Deduped: Parcel Snapshots renders one image per parcel, so a
   // repeat-sold parcel must not produce two identical captures.
+  // Deliberately the UNSWAPPED set: the satellite snapshots and the evidence
+  // exports are of today's parcel, and it is also what a Historical toggle
+  // re-derives its as-of highlight from (see refreshAsOfHighlight).
   lastResultFc = mapFc;
   // Keep the SELECTED-ONLY zoning colouring tied to the parcels actually
   // on the map. Must come after lastResultFc is updated — it reads the new
@@ -6274,7 +6298,12 @@ function refreshCliLoadingIndicator(busyLabel = 'Loading…') {
  */
 function scheduleSoilCompositionStamp(parcelFc, { repush } = {}) {
   if (!lastCliFc?.features?.length) return;
-  const defaultRepush = () => mapReady.then(() => showResults(map, parcelFc, { fit: false }));
+  // Re-push through the as-of swap too, or a composition stamp landing while
+  // the Historical overlay is on would quietly put today's boundary back.
+  const defaultRepush = () => mapReady.then(() => {
+    const asOf = asOfHighlight(parcelFc);
+    showResults(map, asOf ? asOf.fc : parcelFc, { fit: false });
+  });
   const doRepush = repush || defaultRepush;
   beginCliOp('Composing…');
   const run = async () => {
@@ -6966,6 +6995,81 @@ function resetMuniParcelsToggle() {
 let historicalActive = false;
 let historicalLoadedMuni = null;
 let historicalIndexCache = null;
+// (muni|roll) → as-of geometry for the snapshot currently loaded, built from
+// the same shard the dashed-amber overlay draws. Non-null only while the
+// overlay is on; drives the search-result highlight (see asOfHighlight).
+let historicalGeomByKey = null;
+
+/**
+ * As-of geometry for a result set, or null when no as-of date is in force.
+ *
+ * With the Historical overlay on, a search has to highlight the parcel as it
+ * stood at the snapshot date. Brandon roll 562264 (1501 BRAECREST DR) is the
+ * reported case: 12.23 acres on 2025-02-12, 3.78 acres today after roll 562314
+ * was carved off it. Highlighting today's remnant under a banner reading
+ * "HISTORICAL as of 2025-02-12" asserts the wrong boundary for the date on
+ * screen — and fitBounds then framed the wrong extent as well.
+ *
+ * Only the map highlight is swapped. The results table, the CSV/evidence
+ * exports and the Parcel Snapshots images stay on today's record — those are
+ * live-enriched (legal, assessment, MASC, land cover) and the shards carry none
+ * of it. The popup says which boundary it is drawing (`_asOfGeom`), and the
+ * status line reports the count.
+ *
+ * Returns null (caller uses today's geometry unchanged) when the overlay is off
+ * or still loading, and when nothing in the result set is in its scope. Scope is
+ * enforced per feature by the (muni, roll) key rather than by a dropdown check,
+ * so a multi-muni result set keeps today's geometry on the parcels the loaded
+ * snapshot says nothing about.
+ */
+function asOfHighlight(parcelFc) {
+  if (!historicalActive || !historicalGeomByKey) return null;
+  if (!(parcelFc?.features?.length)) return null;
+  const r = applyHistoricalGeometry(parcelFc, historicalGeomByKey, {
+    snapshot: $historicalYear?.value || null,
+    canonicalRoll,
+  });
+  return r.swapped > 0 || r.missing > 0 ? r : null;
+}
+
+/**
+ * Re-draw the current result set's highlight after the as-of date is turned
+ * on, changed, or turned off, so the outline follows without re-running the
+ * search. Re-fits the camera only when the swap actually moved geometry — an
+ * as-of parcel can be an order of magnitude larger than today's remnant, and
+ * leaving the old frame would put most of it off-screen.
+ *
+ * @returns {{swapped:number, missing:number, missingRolls:string[]}|null}
+ *   null when there is no result set on the map, or nothing to swap.
+ */
+function refreshAsOfHighlight() {
+  const fc = lastResultFc;
+  if (!(fc?.features?.length)) return null;
+  const asOf = asOfHighlight(fc);
+  lastAsOfHighlight = asOf;   // keep in step with what setMapData would have stashed
+  mapReady.then(() => {
+    showResults(map, asOf ? asOf.fc : fc, { fit: !!asOf?.swapped });
+    setParcelNumberData(map, (asOf ? asOf.fc : fc).features || []);
+  });
+  return asOf;
+}
+
+/** Status-line note for what the as-of highlight did, or '' when it did nothing. */
+function asOfHighlightNote(asOf, snap) {
+  if (!asOf?.swapped && !asOf?.missing) return '';
+  const parts = [];
+  if (asOf.swapped) {
+    parts.push(`${asOf.swapped} highlighted parcel${asOf.swapped === 1 ? '' : 's'} redrawn`
+      + ` as of ${snap} (display geometry simplified — verify against the archived source)`);
+  }
+  if (asOf.missing) {
+    const shown = asOf.missingRolls.slice(0, 3).map(displayRoll).join(', ');
+    const extra = asOf.missingRolls.length > 3 ? ` +${asOf.missingRolls.length - 3} more` : '';
+    parts.push(`${asOf.missing} had no parcel at that date (roll ${shown}${extra})`
+      + ' — still showing today\'s boundary');
+  }
+  return ` Highlight: ${parts.join('; ')}.`;
+}
 
 // Populate the "As of" picker from the CDN discovery index — snapshot dates
 // (YYYY-MM-DD), grouped by year via <optgroup>. Self-describing: adding a
@@ -7143,8 +7247,15 @@ async function loadHistorical(snap, muniName) {
     setHistoricalVisible(map, true);
     historicalActive = true;
     historicalLoadedMuni = muniName;
+    // Index the same shard by (muni, roll) so a search under this as-of date
+    // highlights the parcel as it stood then. Built before the highlight is
+    // refreshed below, and again on every snapshot change.
+    historicalGeomByKey = indexHistoricalGeometry(parcels, { canonicalRoll });
     setOverlayPressed($historicalToggle, true);
     updateHistoricalBanner(snap);
+    // An as-of date turned on (or changed) over an existing result set redraws
+    // that highlight immediately — no need to re-run the search.
+    const asOf = refreshAsOfHighlight();
     const n = parcels.features?.length || 0;
     let changeNote = '';
     if (sizeSummary) {
@@ -7154,7 +7265,7 @@ async function loadHistorical(snap, muniName) {
       if (sizeSummary.gone)  parts.push(`${sizeSummary.gone} gone`);
       if (parts.length) changeNote = ` Size changes: ${parts.join(', ')} (red >25%, orange >5%, grey = roll gone).`;
     }
-    setCount(`Historical as of ${snap} — ${n} parcel${n === 1 ? '' : 's'} in ${muniName}, dashed over today's lots. Click a parcel/zone for its as-of details.${changeNote} Verify against by-law/title records.`);
+    setCount(`Historical as of ${snap} — ${n} parcel${n === 1 ? '' : 's'} in ${muniName}, dashed over today's lots. Click a parcel/zone for its as-of details.${changeNote}${asOfHighlightNote(asOf, snap)} Verify against by-law/title records.`);
   } catch (err) {
     console.warn('historical load failed', err);
     setCount('Historical: load failed.');
@@ -7166,14 +7277,20 @@ async function loadHistorical(snap, muniName) {
 }
 
 function deactivateHistorical() {
+  const wasActive = historicalActive;
   historicalActive = false;
   historicalLoadedMuni = null;
+  historicalGeomByKey = null;
   mapReady.then(() => setHistoricalVisible(map, false));
   if ($historicalToggle) {
     setOverlayPressed($historicalToggle, false);
     setOverlayBtnLabel($historicalToggle, 'Show');
   }
   if ($historicalBanner) $historicalBanner.hidden = true;
+  // Put today's boundary back under the highlight. Guarded on wasActive so the
+  // no-op calls (a failed load, a muni change with the overlay already off)
+  // don't touch the map.
+  if (wasActive) refreshAsOfHighlight();
 }
 
 function updateHistoricalBanner(snap) {

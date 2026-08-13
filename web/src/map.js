@@ -3811,6 +3811,18 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
   }
   if (p.Property_Address)   lines.push(escapeHtml(p.Property_Address));
   if (p.Muni_Name_With_Typ) lines.push(`<em>${escapeHtml(p.Muni_Name_With_Typ)}</em>`);
+  // As-of boundary. With the Historical overlay on, the highlight traces this
+  // parcel as it stood at the snapshot date while every attribute below it —
+  // address, value, area, legal, land cover — is still TODAY's record. Say so
+  // right under the identity block: on a parcel that has been subdivided since,
+  // the shape and the numbers describe two different things.
+  if (p._asOfGeom) {
+    lines.push(
+      `<strong style="color:#b45309">Boundary as of ${escapeHtml(p._asOfDate || 'the selected snapshot')}</strong>`
+      + '<br><small style="color:#888">Details below are current. Display geometry simplified —'
+      + ' verify boundary/area against the archived source-of-record.</small>',
+    );
+  }
   // Sale Date / Sale Price / Primary Property — populated only when
   // this parcel was surfaced via a sales-CSV upload
   // (handleSalesUpload in main.js stamps these onto each matched
