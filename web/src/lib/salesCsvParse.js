@@ -108,12 +108,13 @@ function mapSalesColumns(headerRow) {
 /**
  * Split one cell into the values it carries, one per parcel.
  *
- * Only newlines separate — deliberately NOT the pipe, which the Roll #
- * search box treats as a JOINER meaning "one property spanning several
- * rolls" (see ROLL_JOINERS in arcgis.js). Trailing blank values are
- * dropped so a cell that merely ends in a newline still reads as one
- * value; interior blanks are kept, because position is what aligns the
- * roll column against the address and legal columns.
+ * Only newlines separate — deliberately NOT the pipe or any of the other
+ * characters the Roll # search box splits on (ROLL_SEPARATORS in
+ * arcgis.js). A stacked cell is positional: line N of the roll column
+ * pairs with line N of the address and legal columns, so only the line
+ * break may split it. Trailing blank values are dropped so a cell that
+ * merely ends in a newline still reads as one value; interior blanks are
+ * kept, because that position is exactly what does the aligning.
  */
 export function splitStackedCell(cell) {
   const parts = String(cell ?? '').split(/\r\n|\r|\n/).map((s) => s.trim());

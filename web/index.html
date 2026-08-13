@@ -255,20 +255,20 @@
               <input
                 class="chip-input-text"
                 type="text"
-                placeholder="Roll # — Enter, comma, or space to add"
+                placeholder="Roll # — Enter, comma, space, &amp;, + or | to add"
                 autocomplete="off"
                 aria-label="Roll number"
               />
             </div>
-            <span class="tip">Roll # — exact match. Two punctuation rules, and they mean opposite things.
-              SEPARATE different properties with a comma, space or newline — so a column pasted straight
-              from a spreadsheet lands as one chip per roll (e.g. 83100, 85200, 93000 = three properties).
-              JOIN rolls of ONE property with + &amp; or | — e.g. 83100+83200 or 83100&amp;83200 — and they
-              stay a single chip, shade together on the map, share one badge number, and produce ONE
-              combined Parcel Snapshot instead of one image per roll. Press Enter, comma or space to
-              commit a chip; Backspace on an empty input removes the last one. Accepts both 3600 and
-              3600.000. For a cross-muni list, use Import List… (under Advanced searches) to paste 2–4
-              columns and have each row's muni resolved automatically.</span>
+            <span class="tip">Roll # — exact match, single value or a list. Comma, space, newline,
+              semicolon, &amp;, + and | all SEPARATE — every roll you type is its own property, so it gets
+              its own chip, its own highlight and number on the map, and its own Parcel Snapshot.
+              Spacing never matters: 284950&amp;373300, 284950 &amp; 373300 and 284950, 373300 are the same
+              search, and a column pasted straight from a spreadsheet lands as one chip per roll.
+              Press Enter or any separator to commit a chip; Backspace on an empty input removes the
+              last one. Accepts both 3600 and 3600.000. For a cross-muni list, use Import List… (under
+              Advanced searches) to paste 2–4 columns and have each row's muni resolved
+              automatically.</span>
           </span>
 
           <!-- Resolved-list pill. Populated by main.js after the

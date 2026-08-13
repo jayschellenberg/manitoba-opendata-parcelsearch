@@ -296,13 +296,13 @@ await test('a numeric Muni # column still guesses muni, not muniName', () => {
   assert.deepEqual(p.guesses, ['legal', 'roll', 'muni']);
 });
 
-await test('clean rows carry null groupIds (no false grouping)', () => {
+await test('clean single-value rows are left alone (no false expansion)', () => {
   const text = 'Municipality\tRoll Number\nRM OF SPRINGFIELD\t12800.000\nRM OF SPRINGFIELD\t618845.000';
   const p = parseParcelList(text);
-  assert.deepEqual(p.groupIds, [null, null]);
+  assert.deepEqual(p.columns[1], ['12800.000', '618845.000']);
 });
 
-await test('stacked multi-parcel sale row expands to one row per roll with a shared group id', () => {
+await test('stacked multi-parcel row expands to one independent row per roll', () => {
   // The user's $3,334,633 row: one Consideration, three munis/rolls/legals
   // stacked with raw (unquoted) newlines inside the cells. The last column
   // (Primary Property) stays single-line, so the column-count-aware pass
@@ -319,12 +319,9 @@ await test('stacked multi-parcel sale row expands to one row per roll with a sha
   for (const r of ['32200.000', '44600.000', '49300.000']) {
     assert.ok(roll.includes(r), `expected ${r} on its own row`);
   }
-  // Exactly one 3-member group; the two singletons carry no group id.
-  const counts = {};
-  for (const g of p.groupIds) if (g != null) counts[g] = (counts[g] || 0) + 1;
-  const threes = Object.values(counts).filter((n) => n === 3);
-  assert.equal(threes.length, 1, 'exactly one 3-member group');
-  assert.equal(p.groupIds.filter((g) => g == null).length, 2);
+  // The three members carry no shared identity — Property Search shows
+  // every parcel on its own, so nothing marks them as one subject.
+  assert.equal(p.groupIds, undefined, 'the parser no longer emits group ids');
 });
 
 // ---------- applyMapping ----------
@@ -381,7 +378,7 @@ await test('lineNo accounts for header offset', () => {
   assert.equal(m.rows[1].lineNo, 3);
 });
 
-await test('captures muniName and the shared groupId for a stacked sale', () => {
+await test('captures muniName on every member of a stacked row', () => {
   const text =
     'Sale Date\tConsideration\tMunicipality\tRoll Number\tStreet Address\tLegal Description\tPrimary Property\n' +
     'Jun 05, 2026\t$3,334,633\tRM OF SPRINGFIELD\nRM OF SPRINGFIELD\t32200.000\n44600.000\t2-RC-433\n20117 JACKSON RD\t2-RC-433\nDESC 35\t ';
@@ -395,8 +392,8 @@ await test('captures muniName and the shared groupId for a stacked sale', () => 
   assert.equal(m.rows[0].muniName, 'RM OF SPRINGFIELD');
   assert.equal(m.rows[0].roll, '32200.000');
   assert.equal(m.rows[1].roll, '44600.000');
-  assert.ok(m.rows[0].groupId != null);
-  assert.equal(m.rows[0].groupId, m.rows[1].groupId);
+  assert.equal(m.rows[0].groupId, undefined, 'members carry no shared identity');
+  assert.equal(m.rows[1].groupId, undefined);
 });
 
 // ---------- validateMapping ----------
@@ -463,14 +460,11 @@ await test('a pipe-separated Rolls cell expands to one row per parcel', () => {
   assert.deepEqual(p.columns[0], ['225600', '83100', '83200', '85200']);
   // Single-value cells repeat across the expanded members.
   assert.deepEqual(p.columns[1], ['610', '610', '610', '610']);
-  // The three members share a group id; the single-parcel row has none.
-  assert.equal(p.groupIds[0], null);
-  assert.equal(p.groupIds[1], p.groupIds[2]);
-  assert.equal(p.groupIds[2], p.groupIds[3]);
-  assert.ok(p.groupIds[1] != null);
+  // Nothing marks the three as one subject — each is its own parcel.
+  assert.equal(p.groupIds, undefined);
 });
 
-await test('applyMapping carries the group id onto every member', () => {
+await test('applyMapping gives every member its own independent row', () => {
   const text = [
     'Rolls,MuniNum',
     '196550 | 196800,612',
@@ -480,7 +474,8 @@ await test('applyMapping carries the group id onto every member', () => {
   assert.equal(rows.length, 2);
   assert.deepEqual(rows.map((r) => r.roll), ['196550.000', '196800.000']);
   assert.deepEqual(rows.map((r) => r.muniNo), [612, 612]);
-  assert.equal(rows[0].groupId, rows[1].groupId);
+  assert.deepEqual(rows.map((r) => r.groupId), [undefined, undefined],
+    'a pipe in the Rolls cell lists two parcels; it does not bind them');
 });
 
 await test('a lone pipe with no value beside it is not a separator', () => {

@@ -85,7 +85,7 @@ const lookup = (rolls) => lookupLegalRecordsByRollSet(FIXTURE, rolls);
 
 // ---- helpers ----------------------------------------------------
 
-function makeRow({ roll, muniNo = null, muniName = null, legal = null, title = '', site = null, groupId = null, lineNo = 1 }) {
+function makeRow({ roll, muniNo = null, muniName = null, legal = null, title = '', site = null, lineNo = 1 }) {
   return {
     lineNo,
     roll,
@@ -94,7 +94,6 @@ function makeRow({ roll, muniNo = null, muniName = null, legal = null, title = '
     legal: legal ? parseLegalToken(legal) : null,
     title,
     site,
-    groupId,
     raw: { roll, muni: muniNo, muniName, legal, title, site },
   };
 }
@@ -334,21 +333,24 @@ await test('municipality-name miss lands in unresolved with the reconciler reaso
   assert.match(out.unresolved[0].reason, /RM OF SPRINGFIELD/);
 });
 
-await test('muni-name resolution carries the sale groupId onto resolved entries', async () => {
+await test('both members of an expanded row resolve as independent parcels', async () => {
+  // A row that listed two rolls in one cell arrives here already expanded
+  // into two rows. They resolve separately and carry no shared identity —
+  // Property Search never binds parcels together.
   const resolveMuniNames = makeMuniNameStub({
     '32200.000': { muni_no: 42, roll_no_txt: '32200.000' },
     '44600.000': { muni_no: 42, roll_no_txt: '44600.000' },
   });
   const out = await resolveParcelList(
     [
-      makeRow({ roll: '32200.000', muniName: 'RM OF SPRINGFIELD', groupId: 1, lineNo: 1 }),
-      makeRow({ roll: '44600.000', muniName: 'RM OF SPRINGFIELD', groupId: 1, lineNo: 2 }),
+      makeRow({ roll: '32200.000', muniName: 'RM OF SPRINGFIELD', lineNo: 1 }),
+      makeRow({ roll: '44600.000', muniName: 'RM OF SPRINGFIELD', lineNo: 2 }),
     ],
     { lookupRollSet: lookup, resolveMuniNames },
   );
   assert.equal(out.resolved.length, 2);
-  assert.equal(out.resolved[0].groupId, 1);
-  assert.equal(out.resolved[1].groupId, 1);
+  assert.deepEqual(out.resolved.map((r) => r.roll), ['32200.000', '44600.000']);
+  assert.deepEqual(out.resolved.map((r) => r.groupId), [undefined, undefined]);
   assert.equal(out.stats.byVia.muniName, 2);
 });
 

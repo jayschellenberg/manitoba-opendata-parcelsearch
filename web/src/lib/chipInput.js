@@ -41,19 +41,17 @@ export function initChipInput(wrapperEl, { onEnterEmpty } = {}) {
   let values = parseList(hidden.value);
 
   function parseList(s) {
-    // Split on commas OR any whitespace (spaces, tabs, newlines). Lets the
+    // Split on commas, semicolons, `&`, `+`, `|` OR any whitespace (spaces,
+    // tabs, newlines) — deliberately the same set as ROLL_SEPARATORS in
+    // arcgis.js, so the chips show exactly what the search will run. Lets the
     // user paste a column copied straight out of a spreadsheet — each cell
     // ends up on its own row separated by a newline — and have every value
-    // land as its own chip without any pre-formatting. Multiple consecutive
-    // delimiters are collapsed by the `+` quantifier so "  a,, b\n\nc d "
-    // becomes ['a', 'b', 'c', 'd'].
-    //
-    // Deliberately does NOT split on the roll JOINERS (+ & |). Those mean
-    // "one property spanning several rolls" (see ROLL_JOINERS in arcgis.js),
-    // so "83100+83200" has to survive as a single chip — that chip is how
-    // the user sees the grouping before running the search.
+    // land as its own chip without any pre-formatting, and reads
+    // "284950&373300" or "83100+83200" as the two-property listing styles
+    // they are, spaced or not. Multiple consecutive delimiters collapse via
+    // the `+` quantifier, so "  a,, b\n\nc d " becomes ['a','b','c','d'].
     return String(s ?? '')
-      .split(/[,\s]+/)
+      .split(/[,;&+|\s]+/)
       .map((x) => x.trim())
       .filter(Boolean);
   }
@@ -186,15 +184,12 @@ export function initChipInput(wrapperEl, { onEnterEmpty } = {}) {
         e.preventDefault();
         onEnterEmpty();
       }
-    } else if (e.key === ',' || e.key === ' ') {
-      // Comma or space commits the current token. Roll numbers are numeric
-      // (e.g. "218600.000") so neither is a real character inside a value,
-      // and matching the parser's separator set keeps the mental model
-      // simple ("either of those ends a chip").
-      //
-      // `&` used to commit here too. It doesn't any more: it now JOINS
-      // rolls into one property (see ROLL_JOINERS in arcgis.js), so it has
-      // to be typeable mid-token the same way + and | are.
+    } else if (e.key === ',' || e.key === ';' || e.key === ' '
+               || e.key === '&' || e.key === '+' || e.key === '|') {
+      // Any separator commits the current token. Roll numbers are numeric
+      // (e.g. "218600.000") so none of these is a real character inside a
+      // value, and matching the parser's separator set keeps the mental
+      // model simple ("any of those ends a chip").
       e.preventDefault();
       commit();
     } else if (e.key === 'Backspace' && !textInput.value && values.length) {
@@ -213,17 +208,16 @@ export function initChipInput(wrapperEl, { onEnterEmpty } = {}) {
   // Paste of multi-value text expands immediately. The native
   // paste fires the keydown listener too, but the input value
   // hasn't updated yet at that point — easier to handle here.
-  // Triggered on any delimiter we know about (comma OR any
-  // whitespace including newlines / tabs) so a column copied
-  // straight out of a spreadsheet — one value per row separated
-  // by newlines — explodes into one chip per row. Plain
-  // single-token pastes fall through to the browser's default —
-  // which now includes a joined set like "83100+83200&85200", since
-  // that is one value, not several.
+  // Triggered on any delimiter we know about (comma, semicolon, `&`,
+  // `+`, `|`, OR any whitespace including newlines / tabs) so a column
+  // copied straight out of a spreadsheet — one value per row separated
+  // by newlines — explodes into one chip per row, and a pasted
+  // "284950&373300" lands as two chips. Only a genuinely single-token
+  // paste falls through to the browser's default.
   textInput.addEventListener('paste', (e) => {
     const text = e.clipboardData?.getData('text');
     if (!text) return;
-    if (!/[,\s]/.test(text)) return; // single token → let default handle
+    if (!/[,;&+|\s]/.test(text)) return; // single token → let default handle
     e.preventDefault();
     const before = textInput.value;
     textInput.value = before + text;

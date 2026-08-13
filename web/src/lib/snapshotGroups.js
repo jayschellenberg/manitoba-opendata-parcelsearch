@@ -1,21 +1,21 @@
 /*
  * Grouping + file naming for the parcel-snapshot export.
  *
- * A multi-parcel comp — a sale spanning several rolls, or an imported list
- * row whose Roll cell held several rolls — is ONE subject, so it gets ONE
- * frame: every member highlighted, the camera fit to the union of their
- * extents. Capturing each roll separately would hand the appraiser six
- * images of a six-parcel holding with no picture of the holding itself.
+ * A sale spanning several rolls is ONE subject, so it gets ONE frame: every
+ * member highlighted, the camera fit to the union of their extents.
+ * Capturing each roll separately would hand the appraiser six images of a
+ * six-parcel holding with no picture of the holding itself.
  *
  * Single parcels are simply groups of one, so snapshotExport.js has a
- * single code path.
+ * single code path — and on Property Search that is every parcel. Only
+ * sales work groups: a Roll # list and a parcel-list import both put each
+ * parcel in its own frame, however the rolls were punctuated.
  *
  * Group identity comes from the stamps the search path already applies:
- *   _saleGroupId — set by both entry points (a parcel-list import's shared
- *                  group id, and a sales-CSV upload's per-sale group id)
+ *   _saleGroupId — a sales-CSV upload's per-sale group id (the Sales tab)
  *   _siteNo      — the caller's Site / Comp # column, when mapped
  * _saleGroupId wins because it is the transaction-level identity; _siteNo
- * covers a list that carried comp numbers but no multi-roll rows.
+ * covers a list that carried comp numbers but no sale grouping.
  *
  * Pure (no map / no DOM) so node can exercise the grouping and naming
  * rules; snapshotExport.js owns the rendering.

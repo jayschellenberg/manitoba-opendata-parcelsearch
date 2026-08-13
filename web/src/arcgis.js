@@ -3195,10 +3195,11 @@ function makeEmptyFc({ truncated = false } = {}) {
 }
 
 /**
- * Parse a Roll # input that may be a single value or a list (commas,
- * whitespace, newlines, semicolons all work as separators). Trims
- * each entry, drops empties and pure-junk values, dedupes, returns an
- * array preserving first-seen order. Empty array for empty input.
+ * Parse a Roll # input that may be a single value or a list. Every
+ * punctuation form people put between rolls separates them — see
+ * ROLL_SEPARATORS. Trims each entry, drops empties and pure-junk values,
+ * dedupes, returns an array preserving first-seen order. Empty array for
+ * empty input.
  *
  * Exported so the bulk-search "missing rolls" diagnostic in main.js
  * can reuse the same parser the SQL clause builds against — keeps
@@ -3206,79 +3207,39 @@ function makeEmptyFc({ truncated = false } = {}) {
  * actually got queried.
  */
 export function parseRollList(input) {
+  if (!input) return [];
   const out = [];
   const seen = new Set();
-  for (const group of parseRollGroups(input)) {
-    for (const v of group.rolls) {
-      if (seen.has(v)) continue;
-      seen.add(v);
-      out.push(v);
-    }
+  for (const raw of String(input).split(ROLL_SEPARATORS)) {
+    const v = raw.trim();
+    if (!v || seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
   }
   return out;
 }
 
 /**
  * Roll entries are SEPARATED — "these are different properties" — by
- * whitespace, comma or semicolon. Comma is the preferred form in tooltips;
- * whitespace covers a column pasted straight out of a spreadsheet. Neither
- * appears in a valid roll number (\d+(\.\d{3})?), so the cross-product with
- * the joiners below is unambiguous.
+ * whitespace, comma, semicolon, `&`, `+` or `|`. Comma is the preferred form
+ * in tooltips; whitespace covers a column pasted straight out of a
+ * spreadsheet; `&`, `+` and `|` cover the "Roll A & Roll B" and "83100+83200"
+ * listing styles people type from memory or paste out of a multi-parcel row.
+ * None appears in a valid roll number (\d+(\.\d{3})?), so every form is
+ * unambiguous, and spacing never matters — "284950&373300" and
+ * "284950 & 373300" parse identically.
+ *
+ * There is deliberately NO joiner. `+`, `&` and `|` briefly merged their
+ * rolls into a single subject that shared one map badge and produced one
+ * combined Parcel Snapshot; collapsing typed rolls into one number is never
+ * the wanted behaviour, so each roll highlights as its own parcel — its own
+ * badge, its own snapshot — whichever separator was typed between them.
+ *
+ * (The parcel-list import is a separate path: a row there can still carry
+ * several parcels for one comp — see lib/parcelListParser.js — because that
+ * grouping comes from the imported data, not from punctuation typed here.)
  */
-const ROLL_SEPARATORS = /[\s,;]+/;
-
-/**
- * Rolls are JOINED — "these are one property" — by `+`, `&` or `|`.
- *
- * `&` used to separate, matching the "Roll A & Roll B" style some people
- * type from memory. It moved here because that reading is genuinely
- * ambiguous in English — "83100 & 83200" is as easily one holding as two
- * properties — and joining is the meaning this app can act on. Anyone still
- * pasting `&`-separated lists gets one combined snapshot instead of two, so
- * the tooltip and README now spell out separators vs joiners.
- *
- * `|` doubles as the multi-parcel-comp joiner in the parcel-list import
- * (see lib/parcelListParser.js), so a roll list pasted out of that data
- * groups the same way here. None of the three appears in a roll number, and
- * the Roll # chip input splits on none of them, so a joined set stays a
- * SINGLE chip and the grouping is visible before the search runs.
- */
-const ROLL_JOINERS = /[+|&]+/;
-
-/**
- * Parse a Roll # input into GROUPS of rolls: separated entries become their
- * own group, joined entries share one.
- *
- *   "179800, 83100+83200, 225600"
- *     → [{rolls:['179800']}, {rolls:['83100','83200']}, {rolls:['225600']}]
- *
- * Rolls are returned in input form (not canonicalized) to match
- * parseRollList; callers that need the stored ".000" form run them through
- * canonicalRoll. Duplicates WITHIN a group collapse; a roll repeated across
- * groups is kept in the first group that claims it, so a stray repeat can't
- * silently move a parcel from one snapshot frame to another.
- *
- * Exported so main.js can stamp the group identity onto fetched parcels —
- * that's what makes a joined set shade together on the map and land in one
- * Parcel Snapshot frame instead of one frame per roll.
- */
-export function parseRollGroups(input) {
-  if (!input) return [];
-  const groups = [];
-  const claimed = new Set();
-  for (const chunk of String(input).split(ROLL_SEPARATORS)) {
-    if (!chunk.trim()) continue;
-    const rolls = [];
-    for (const raw of chunk.split(ROLL_JOINERS)) {
-      const v = raw.trim();
-      if (!v || claimed.has(v)) continue;
-      claimed.add(v);
-      rolls.push(v);
-    }
-    if (rolls.length > 0) groups.push({ rolls });
-  }
-  return groups;
-}
+const ROLL_SEPARATORS = /[\s,;&+|]+/;
 
 /**
  * Canonicalize a single roll-number input to the source's stored form

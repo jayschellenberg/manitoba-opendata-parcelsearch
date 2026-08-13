@@ -200,37 +200,34 @@ export function splitCellValues(cell) {
 
 /**
  * Expand any row whose cells carry several values into one row per value
- * — a multi-parcel sale becomes N single-parcel rows. `K` = the max value
- * count across the row's cells; single-value cells repeat their value,
+ * — a row listing several rolls becomes N single-parcel rows. `K` = the max
+ * value count across the row's cells; single-value cells repeat their value,
  * multi-value cells take their k-th value (missing values blank-fill).
- * Rows that produce K>1 members share a `groupId` (a monotonic counter)
- * so the caller can highlight them as one sale group; single-parcel rows
- * get `groupId: null`.
+ *
+ * The members are not tagged as belonging to one another. Property Search
+ * shows every parcel on its own — its own row, its own map badge, its own
+ * snapshot — so "one input row" is a fact about the paste, not about the
+ * parcels. (Sale-level grouping, where a combined $/acre is the number that
+ * matters, is the Sales tab's job and comes from the sales CSV.)
  *
  * Runs before cleanCell so the embedded separators are still present.
- * Returns { rows, groupIds } with groupIds parallel to rows.
  */
 function expandMultiValueRows(bodyRows) {
   const outRows = [];
-  const groupIds = [];
-  let groupCounter = 0;
   for (const row of bodyRows) {
     const split = row.map((cell) => splitCellValues(cell));
     const K = split.reduce((m, parts) => Math.max(m, parts.length), 1);
     if (K <= 1) {
       outRows.push(row);
-      groupIds.push(null);
       continue;
     }
-    groupCounter += 1;
     for (let k = 0; k < K; k++) {
       const subRow = split.map((parts) => (parts.length === 1 ? parts[0] : (parts[k] ?? '')));
       if (subRow.every((c) => String(c).trim() === '')) continue;
       outRows.push(subRow);
-      groupIds.push(groupCounter);
     }
   }
-  return { rows: outRows, groupIds };
+  return outRows;
 }
 
 // ---- header + column-shape detection -----------------------------
@@ -405,7 +402,7 @@ export function parseParcelList(text) {
   const delim = detectDelimiter(text);
   let rows = tokenizeRows(text, delim).filter((r) => r.some((c) => String(c).trim() !== ''));
   if (rows.length === 0) {
-    return { headers: null, columns: [], guesses: [], rawLines: [], delimiter: String(delim), groupIds: [] };
+    return { headers: null, columns: [], guesses: [], rawLines: [], delimiter: String(delim) };
   }
 
   // Multi-line-cell reconstruction. When the input uses a literal
@@ -436,9 +433,8 @@ export function parseParcelList(text) {
 
   // Expand multi-value cells (from either the quoted-CSV path or the
   // column-count-aware reassembly) into one parcel-row per value, before
-  // cleanCell collapses the embedded newlines. groupIds is parallel to
-  // the expanded body so applyMapping can tag each row's sale group.
-  const { rows: body, groupIds } = expandMultiValueRows(rows.slice(bodyStart));
+  // cleanCell collapses the embedded newlines.
+  const body = expandMultiValueRows(rows.slice(bodyStart));
 
   const columns = Array.from({ length: widest }, (_, c) => body.map((r) => cleanCell(r[c] || '')));
   const guesses = guessColumns(columns, headers);
@@ -448,7 +444,7 @@ export function parseParcelList(text) {
   // version.
   const rawLines = body.map((r) => r.join(delim instanceof RegExp ? '  ' : String(delim)));
 
-  return { headers, columns, guesses, rawLines, delimiter: String(delim), groupIds };
+  return { headers, columns, guesses, rawLines, delimiter: String(delim) };
 }
 
 /**
@@ -511,7 +507,6 @@ export function applyMapping(parsed, mapping, { canonicalRoll } = {}) {
       legal,
       title,
       site,
-      groupId: parsed.groupIds?.[r] ?? null,
       raw: { roll: rollRaw, muni: muniRaw, muniName: muniNameRaw, legal: legalRaw, title: titleRaw, site: siteRaw },
     });
   }

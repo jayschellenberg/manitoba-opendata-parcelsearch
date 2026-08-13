@@ -132,7 +132,6 @@ import {
   fetchMascRiverlots,
   fetchCliAgrForMuni,
   parseRollList,
-  parseRollGroups,
   missingRollsFromResults,
   canonicalRoll,
   acresFromFrontageField,
@@ -900,13 +899,6 @@ let listMatchedMunis = null;
 // unmatched-records drawer (renderUnmatchedPanel) so the user can see
 // at a glance which input rows didn't resolve and why.
 let listUnresolvedRows = null;
-// Sale-group tagging for an imported sales list: Map("muni_no|roll_no_txt"
-// → groupId) built from the resolver's output for any stacked multi-parcel
-// sale (one Consideration, several rolls). runSearch stamps _saleGroupId
-// from this onto the fetched parcels so computeSaleGroupTotals + the map's
-// group shade / hover-sibling highlight treat them as one sale. null when
-// the import had no multi-parcel groups.
-let listSaleGroupByKey = null;
 // Site/Comp # tagging for a parcel-list import: Map("muni_no|roll_no_txt"
 // → site label) built from the resolver's output when the import mapped a
 // Site column. runSearch stamps _siteNo from this onto the fetched
@@ -1020,12 +1012,11 @@ let numberingOn = false;
 let numberingEntryOrder = false;
 
 // Roll → position in the Roll # field, captured at search time.
-// `Map<canonicalRoll, groupIndex>`; null whenever the current result set
+// `Map<canonicalRoll, rollIndex>`; null whenever the current result set
 // didn't come from a typed roll list, which is what hides the checkbox.
 //
-// Group index, not roll index: rolls joined with + / | are one subject and
-// already share one badge, so both members of "83100+83200" carry the same
-// position and the group still consumes a single number.
+// One position per roll: every roll typed into the field is its own parcel,
+// whichever separator sits between them, so each consumes its own number.
 let enteredRollOrder = null;
 
 // Has a search (or an import) put results on the map this session? Gates the
@@ -1405,20 +1396,6 @@ async function resolveMuniNamesForImport(rows) {
   return { resolvedByLine, unresolvedByLine };
 }
 
-// Build the "muni_no|roll_no_txt" → groupId map the highlight path reads
-// to shade multi-parcel sale groups. Only entries with a real groupId
-// (the stacked multi-parcel rows) are kept; returns null when the import
-// had no groups so runSearch can skip the stamping pass entirely.
-function buildListGroupKeyMap(resolved) {
-  const map = new Map();
-  for (const r of resolved || []) {
-    if (r.groupId == null) continue;
-    if (!Number.isFinite(Number(r.muniNo)) || !r.roll) continue;
-    map.set(`${Number(r.muniNo)}|${String(r.roll)}`, r.groupId);
-  }
-  return map.size > 0 ? map : null;
-}
-
 // Build the "muni_no|roll_no_txt" → Site-label map from the resolver's
 // output. Only entries whose import row carried a Site value are kept;
 // returns null when the import had no Site column so runSearch skips the
@@ -1463,7 +1440,6 @@ const importModal = initParcelListImport({
       listParcelKeys = null;
       listMatchedMunis = null;
       listUnresolvedRows = unresolved || [];
-      listSaleGroupByKey = null;
       listSiteByKey = null;
       renderListPill();
       renderListUnresolvedDrawer();
@@ -1474,7 +1450,6 @@ const importModal = initParcelListImport({
     listParcelKeys = parcelKeys;
     listMatchedMunis = null;
     listUnresolvedRows = unresolved || [];
-    listSaleGroupByKey = buildListGroupKeyMap(resolved);
     listSiteByKey = buildListSiteKeyMap(resolved);
     renderListPill();
     renderListUnresolvedDrawer();
@@ -1490,7 +1465,6 @@ document.getElementById('parcel-list-pill-clear')
     listParcelKeys = null;
     listMatchedMunis = null;
     listUnresolvedRows = null;
-    listSaleGroupByKey = null;
     listSiteByKey = null;
     renderListPill();
     renderListUnresolvedDrawer();
@@ -2852,7 +2826,7 @@ function updateNumberingAvailability() {
   // roll list naming more than one subject. A muni-wide or address search
   // has none, so the checkbox stays out of the way rather than sitting
   // there as a no-op.
-  const orderAvail = avail && (enteredRollOrder?.groupCount ?? 0) > 1;
+  const orderAvail = avail && (enteredRollOrder?.rollCount ?? 0) > 1;
   if (!orderAvail && numberingEntryOrder) numberingEntryOrder = false;
   if ($numberingOrderLabel) $numberingOrderLabel.hidden = !orderAvail;
   if ($numberingOrderToggle) $numberingOrderToggle.checked = numberingEntryOrder;
@@ -2864,36 +2838,32 @@ function updateNumberingAvailability() {
  *
  * Keyed by the canonical `<digits>.<3-digit-sub>` form the parcels carry in
  * Roll_No_Txt, so a user who types "154350" matches the stored
- * "154350.000". Position is the GROUP index, not the roll index: rolls
- * joined with + / | are one subject sharing one badge, so both members of
- * "83100+83200" get the same position and the group still consumes exactly
- * one number.
+ * "154350.000". One position per typed roll — `+`, `&` and `|` separate the
+ * same way a comma does, so "83100+83200" is two parcels taking two numbers.
  *
  * Returns null for an empty field — that's what hides the checkbox.
- * `groupCount` distinguishes "one roll typed" (no meaningful order) from a
+ * `rollCount` distinguishes "one roll typed" (no meaningful order) from a
  * real list.
  *
- * @returns {{byRoll: Map<string, number>, groupCount: number} | null}
+ * @returns {{byRoll: Map<string, number>, rollCount: number} | null}
  */
 function buildEnteredRollOrder(rollInput) {
-  const groups = parseRollGroups(rollInput);
-  if (groups.length === 0) return null;
+  const rolls = parseRollList(rollInput);
+  if (rolls.length === 0) return null;
   const byRoll = new Map();
-  groups.forEach((g, i) => {
-    for (const roll of g.rolls) byRoll.set(canonicalRoll(roll), i);
-  });
-  return { byRoll, groupCount: groups.length };
+  rolls.forEach((roll, i) => byRoll.set(canonicalRoll(roll), i));
+  return { byRoll, rollCount: rolls.length };
 }
 
 /**
  * The rollOrder to number by right now — null unless the option is on AND
- * there is a real order to follow. The `groupCount > 1` test mirrors
+ * there is a real order to follow. The `rollCount > 1` test mirrors
  * updateNumberingAvailability's, so what gets applied can never disagree
  * with what the checkbox says is on offer.
  */
 function activeRollOrder() {
   if (!numberingEntryOrder) return null;
-  if ((enteredRollOrder?.groupCount ?? 0) < 2) return null;
+  if ((enteredRollOrder?.rollCount ?? 0) < 2) return null;
   return enteredRollOrder.byRoll;
 }
 
@@ -3498,48 +3468,16 @@ async function runSearch() {
     // whatever the muni query returned, which MAX_RESULTS caps at 1000.
     applyCivicNumberFilter(parcelFc, inputs.addressFrom, inputs.addressTo);
 
-    // Multi-parcel imported sales: stamp the shared group id resolved at
-    // import time, then reuse the sales-group rollup so the map shades
-    // each group (parcel-fill's _saleGroupSize branch) and the
-    // hover-sibling highlight lights up its members. No-op unless the
-    // import carried a stacked multi-parcel sale.
-    if (hasList && listSaleGroupByKey) {
-      for (const f of parcelFc.features || []) {
-        const key = parcelLegalKey(f.properties || {});
-        const gid = key ? listSaleGroupByKey.get(key) : null;
-        if (gid != null) f.properties._saleGroupId = gid;
-      }
-      computeSaleGroupTotals(parcelFc);
-    }
-
-    // Joined Roll # entries — "83100+83200" typed into the Roll # field —
-    // mean "treat these as ONE subject". Stamp them with a shared group id,
-    // which is the same signal the import path uses: the map shades the set
-    // together, the hover-sibling highlight lights up its members, and
-    // Parcel Snapshots captures one framed image of the whole holding
-    // instead of one image per roll.
+    // Property Search never groups parcels — not from Roll # punctuation
+    // ("83100+83200" is two parcels, not one subject), and not from a
+    // parcel-list import row that carried several rolls in one cell. Every
+    // parcel here keeps its own badge number, its own map highlight and its
+    // own Parcel Snapshot.
     //
-    // Single-roll groups are deliberately left unstamped. A group id on
-    // every parcel would shade the entire result set as if it were all one
-    // sale, which is the opposite of the signal.
-    //
-    // Rolls are matched on the canonical form alone, not muni+roll: the
-    // Roll # field is normally used with a municipality selected, and a
-    // cross-muni roll collision would already have returned both parcels.
-    if (!hasList && inputs.roll) {
-      const joined = parseRollGroups(inputs.roll).filter((g) => g.rolls.length > 1);
-      if (joined.length > 0) {
-        const groupByRoll = new Map();
-        joined.forEach((g, i) => {
-          for (const r of g.rolls) groupByRoll.set(canonicalRoll(r), i + 1);
-        });
-        for (const f of parcelFc.features || []) {
-          const gid = groupByRoll.get(String(f.properties?.Roll_No_Txt || ''));
-          if (gid != null) f.properties._saleGroupId = gid;
-        }
-        computeSaleGroupTotals(parcelFc);
-      }
-    }
+    // Grouping exists only for sales work, where the combined $/acre across
+    // a multi-parcel transaction is the number that matters, so it lives on
+    // the Sales tab and is stamped by handleSalesUpload alone. This search
+    // path deliberately stamps no _saleGroupId of its own.
 
     // Site/Comp # from a parcel-list import: stamp the caller's label onto
     // each fetched parcel so assignParcelSeq uses it as the map/grid

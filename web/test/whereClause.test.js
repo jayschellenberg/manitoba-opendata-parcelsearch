@@ -27,7 +27,7 @@ function makeFakeStorage() {
 globalThis.localStorage = makeFakeStorage();
 globalThis.sessionStorage = makeFakeStorage();
 
-const { _internals, canonicalRoll, parseRollList, parseRollGroups } = await import('../src/arcgis.js');
+const { _internals, canonicalRoll, parseRollList } = await import('../src/arcgis.js');
 const {
   escapeSql, buildParcelClauses, canonicalRollList, rollKeyWhereClause, chunkRollKeys,
   overlayCacheKey, ZONING_URL, DEVPLAN_URL,
@@ -175,9 +175,7 @@ test('canonicalRollList dedupes across input forms', () => {
 });
 
 test('canonicalRollList returns every roll regardless of punctuation', () => {
-  // The SQL path is grouping-blind: separated or joined, all four rolls
-  // have to be fetched. `&` moved from separator to joiner without changing
-  // this list — only which parcels end up sharing a snapshot frame.
+  // Whatever punctuation separates them, all four rolls get fetched.
   assert.deepEqual(canonicalRollList('28410&970 966,1000.5'),
     ['28410.000', '970.000', '966.000', '1000.500']);
 });
@@ -278,88 +276,62 @@ test('unknown layer or blank muni yields no key (caching skipped)', () => {
   assert.equal(overlayCacheKey(ZONING_URL, null), null);
 });
 
-// ---- roll GROUPING: "+" / "|" mean one subject ----------------------
-// Separated entries are separate parcels; joined entries are one holding
-// that shares a map badge and lands in a single Parcel Snapshot frame.
+// ---- roll SEPARATORS: every punctuation form splits ------------------
+// There is no joiner. Whatever sits between two typed rolls, they are two
+// properties — two chips, two map badges, two Parcel Snapshots. `+`, `&`
+// and `|` used to merge their rolls into one subject; collapsing typed
+// rolls into one number is never wanted, so they separate like the rest.
 
-console.log('\nparseRollGroups');
+console.log('\nparseRollList separators');
 
-test('joined rolls form one group, separated rolls form their own', () => {
+test('comma, whitespace and semicolon separate', () => {
+  assert.deepEqual(parseRollList('100 200,300;400'), ['100', '200', '300', '400']);
+});
+
+test('ampersand separates — "284950&373300" is TWO properties', () => {
+  assert.deepEqual(parseRollList('284950&373300'), ['284950', '373300']);
   assert.deepEqual(
-    parseRollGroups('179800, 83100+83200+85200, 225600').map((g) => g.rolls),
-    [['179800'], ['83100', '83200', '85200'], ['225600']],
+    parseRollList('284950&373300'),
+    parseRollList('284950, 373300'),
+    'unspaced & reads exactly like the comma form',
   );
+  assert.deepEqual(parseRollList('284950 & 373300'), ['284950', '373300'],
+    'and spacing around it changes nothing');
 });
 
-test('pipe joins the same way plus does — the CSV-import convention', () => {
-  assert.deepEqual(
-    parseRollGroups('83100|83200, 225600').map((g) => g.rolls),
-    [['83100', '83200'], ['225600']],
-  );
+test('plus and pipe separate too — no roll merging, ever', () => {
+  assert.deepEqual(parseRollList('83100+83200'), ['83100', '83200']);
+  assert.deepEqual(parseRollList('83100|83200'), ['83100', '83200']);
+  assert.deepEqual(parseRollList('179800, 83100+83200+85200, 225600'),
+    ['179800', '83100', '83200', '85200', '225600']);
 });
 
-test('ampersand joins — "83100 & 83200" is ONE property', () => {
-  // `&` was a separator until users confirmed they never paste the
-  // "Roll A & Roll B" listing style it was added for. Reading it as "these
-  // two together" is the meaning the app can act on.
-  assert.deepEqual(
-    parseRollGroups('83100&83200, 225600').map((g) => g.rolls),
-    [['83100', '83200'], ['225600']],
-  );
+test('separators mix freely and spacing never matters', () => {
+  assert.deepEqual(parseRollList('83100+83200|85200&86400;100 200'),
+    ['83100', '83200', '85200', '86400', '100', '200']);
+  assert.deepEqual(parseRollList('83100 + 83200'), ['83100', '83200']);
+  assert.deepEqual(parseRollList('83100+ 83200'), ['83100', '83200']);
 });
 
-test('the three joiners mix freely inside one group', () => {
-  assert.deepEqual(
-    parseRollGroups('83100+83200|85200&86400').map((g) => g.rolls),
-    [['83100', '83200', '85200', '86400']],
-  );
+test('sub-roll suffixes survive splitting', () => {
+  assert.deepEqual(parseRollList('85000.1+85900.010'), ['85000.1', '85900.010']);
 });
 
-test('the remaining separators still separate', () => {
-  // Whitespace, comma and semicolon keep splitting rolls into their own
-  // groups. Ampersand is deliberately absent — it joins now.
-  assert.deepEqual(
-    parseRollGroups('100 200,300;400').map((g) => g.rolls),
-    [['100'], ['200'], ['300'], ['400']],
-  );
+test('duplicates and stray separators collapse', () => {
+  assert.deepEqual(parseRollList('100++200'), ['100', '200']);
+  assert.deepEqual(parseRollList('100+100'), ['100']);
+  assert.deepEqual(parseRollList('+100+'), ['100']);
+  assert.deepEqual(parseRollList('100+200, 200+300'), ['100', '200', '300'],
+    'a roll repeated later in the list is dropped, not re-listed');
 });
 
-test('spacing around a joiner is tolerated', () => {
-  assert.deepEqual(parseRollGroups('83100 + 83200').map((g) => g.rolls), [['83100'], ['83200']],
-    'a spaced joiner separates — whitespace wins, matching what the chip input shows');
-  assert.deepEqual(parseRollGroups('83100+ 83200').map((g) => g.rolls), [['83100'], ['83200']]);
+test('empty input yields no rolls', () => {
+  assert.deepEqual(parseRollList(''), []);
+  assert.deepEqual(parseRollList(null), []);
+  assert.deepEqual(parseRollList('  '), []);
 });
 
-test('sub-roll suffixes survive joining', () => {
-  assert.deepEqual(
-    parseRollGroups('85000.1+85900.010').map((g) => g.rolls),
-    [['85000.1', '85900.010']],
-  );
-});
-
-test('a roll repeated across groups stays in the first group that claims it', () => {
-  assert.deepEqual(
-    parseRollGroups('100+200, 200+300').map((g) => g.rolls),
-    [['100', '200'], ['300']],
-    'a stray repeat must not silently move a parcel between snapshot frames',
-  );
-});
-
-test('duplicates and stray joiners collapse', () => {
-  assert.deepEqual(parseRollGroups('100++200').map((g) => g.rolls), [['100', '200']]);
-  assert.deepEqual(parseRollGroups('100+100').map((g) => g.rolls), [['100']]);
-  assert.deepEqual(parseRollGroups('+100+').map((g) => g.rolls), [['100']]);
-});
-
-test('empty input yields no groups', () => {
-  assert.deepEqual(parseRollGroups(''), []);
-  assert.deepEqual(parseRollGroups(null), []);
-  assert.deepEqual(parseRollGroups('  '), []);
-});
-
-test('parseRollList still returns the flat list a query needs', () => {
-  // The SQL path is grouping-blind: it fetches every roll either way.
-  assert.deepEqual(parseRollList('179800, 83100+83200'), ['179800', '83100', '83200']);
+test('the canonical list the SQL path queries follows the same split', () => {
   assert.deepEqual(canonicalRollList('83100+83200'), ['83100.000', '83200.000']);
 });
 

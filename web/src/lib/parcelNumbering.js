@@ -103,9 +103,11 @@ export function siteValue(props) {
 
 /**
  * Group identity — parcels that are one subject rather than several.
- * Stamped as `_saleGroupId` by all three paths that can produce one: a
- * multi-parcel sale in a CSV upload, a multi-roll row in a parcel-list
- * import, and rolls joined with `+` / `|` in the Roll # field.
+ * Stamped as `_saleGroupId` by the two paths that can produce one: a
+ * multi-parcel sale in a CSV upload, and a multi-roll row in a parcel-list
+ * import. Both come from the imported data. Punctuation typed into the
+ * Roll # field never groups — `+`, `&` and `|` all separate there, so each
+ * typed roll is its own subject and takes its own number.
  */
 export function groupValue(props) {
   const raw = props?._saleGroupId;
