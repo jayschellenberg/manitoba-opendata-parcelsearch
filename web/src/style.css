@@ -2276,6 +2276,17 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   cursor: help;
 }
 
+/* Group Acres, on a MULTI-parcel sale only. The figure differs from the
+   Acres cell two columns left — it is the whole sale, not this row — and on a
+   grid of mostly single-parcel sales, where the two columns agree, that
+   difference is easy to read straight past. Weight rather than colour: the
+   number is not a warning, just the one that belongs to a different unit of
+   analysis than the row it sits on. Single-parcel sales stay plain, since
+   there the two columns genuinely say the same thing. */
+#results td.group-total {
+  font-weight: 600;
+}
+
 /* Roll-vs-shape area disagreement. A caret rather than a worded badge: the
    Acres column is narrow and this fires on ~15% of parcels carrying an
    assessor area, so a full label would crowd every rural search. Amber

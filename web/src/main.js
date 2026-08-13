@@ -1165,6 +1165,11 @@ const SORT_KEYS = {
   groupsize:    (r) => finiteOrNeg(r.parcel.properties._saleGroupSize),
   grouppricelot:(r) => finiteOrNeg(r.parcel.properties._saleGroupPpl),
   grouppriceac: (r) => finiteOrNeg(r.parcel.properties._saleGroupPpa),
+  // Sorts on the raw total even when the cell renders an em-dash for an
+  // incomplete group — a partial total is still the right sort position, and
+  // parking those rows at the bottom would hide the biggest assemblies, which
+  // are exactly the ones most likely to have a member missing its area.
+  groupacres:   (r) => finiteOrNeg(r.parcel.properties._saleGroupTotalAcres),
   grouppricesf: (r) => finiteOrNeg(r.parcel.properties._saleGroupPpsf),
   grouppriceff: (r) => finiteOrNeg(r.parcel.properties._saleGroupPpff),
   saletoasmt:   (r) => finiteOrNeg(r.parcel.properties._saleGroupSaleToAsmt),
@@ -9129,6 +9134,16 @@ function renderTable(rows, { resetPage = true } = {}) {
     acresSalesCell.classList.add('sales-only');
     markAreaCheck(acresSalesCell, p);
     tr.appendChild(acresSalesCell);
+    // Group Acres sits between Acres and $/Acre: per-parcel size, then the
+    // sale's total, then the rate that divides by it. Reading left to right
+    // now shows where the rate comes from.
+    const groupAcresCell = td(formatGroupAcres(p), 'num');
+    groupAcresCell.classList.add('sales-only');
+    // Mark the total when it differs from this parcel's own acreage, i.e. the
+    // sale bought more land than the row describes. That is the whole reason
+    // the column exists, and it is invisible on a row-by-row read otherwise.
+    if (Number.isFinite(groupSize) && groupSize > 1) groupAcresCell.classList.add('group-total');
+    tr.appendChild(groupAcresCell);
     const ppaCell = td(formatGroupPpa(p), 'num');
     ppaCell.classList.add('sales-only');
     // Far-flung marker rides on $/Acre deliberately: that's the number a
@@ -10860,6 +10875,31 @@ function formatAcres(v) {
   // preference; appraisers reading the column will still get the
   // thousands separator for large parcels (e.g. "12,345.6").
   return fmtAcres(v);
+}
+
+/**
+ * Total acres across every parcel in the sale — the land the price actually
+ * bought, and the denominator behind the $/Acre cell beside it.
+ *
+ * Same three-outcome shape as the rate cells, and for the same reason: '—'
+ * when a member parcel has no area, because a partial total understates the
+ * land and would make $/Acre look high while both numbers read as plausible.
+ * Returns null when the row isn't part of a sale at all — td() renders that as
+ * an em-dash too, but carrying the `.empty` class, which is how "no sale here"
+ * stays distinguishable from "withheld" exactly as it is for $/Acre.
+ *
+ * A single-parcel sale still gets a figure rather than a blank. It equals the
+ * Acres cell, which looks redundant, but a blank here would read as "unknown"
+ * on precisely the rows where the total is most certain — and it is what makes
+ * the column safe to total or eyeball down a mixed column of single- and
+ * multi-parcel sales.
+ */
+function formatGroupAcres(p) {
+  if (!p?._saleGroupSize) return null;
+  if (p._saleGroupAcresIncomplete) return '—';
+  const total = Number(p._saleGroupTotalAcres);
+  if (!Number.isFinite(total) || total <= 0) return null;
+  return fmtAcres(total);
 }
 
 /** Group $/Acre table cell. Returns the formatted dollar string, or

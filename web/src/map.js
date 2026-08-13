@@ -4080,6 +4080,20 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
     const pplFmt  = (Number.isFinite(ppl) && ppl > 0)
       ? '$' + Math.round(ppl).toLocaleString('en-US')
       : null;
+    // The land the price bought, stated before the rates derived from it.
+    // On a multi-parcel sale this is NOT the Land Size shown above — that is
+    // this parcel alone — and Price/Acre divides by this one, so leaving it
+    // out meant the popup asserted a rate whose denominator appeared nowhere.
+    // Labelled "Total land" rather than "Acres" so the two can't be confused,
+    // and suppressed to an em-dash on an incomplete group for the same reason
+    // the rates are: a partial total reads as a whole one.
+    // formatLandSize already returns null for a non-positive total.
+    const gAcresFmt = p._saleGroupAcresIncomplete
+      ? '—'
+      : formatLandSize(p._saleGroupTotalAcres);
+    if (gAcresFmt && groupSize > 1) {
+      lines.push(`<strong>Total land (${escapeHtml(groupSize)} parcels)</strong> ${gAcresFmt}`);
+    }
     if (ppsfFmt) lines.push(`<strong>Price/SF</strong> ${escapeHtml(ppsfFmt)}`);
     if (ppaFmt)  lines.push(`<strong>Price/Acre</strong> ${escapeHtml(ppaFmt)}`);
     if (pplFmt)  lines.push(`<strong>Price/Lot</strong> ${escapeHtml(pplFmt)} (${escapeHtml(groupSize)})`);

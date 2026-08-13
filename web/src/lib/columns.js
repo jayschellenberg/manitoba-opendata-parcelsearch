@@ -57,6 +57,12 @@ export const DEFAULT_VISIBLE = new Set([
   'saledate',
   'saleprice',
   'grouppriceac',
+  // Total acres across the sale. Default-visible beside $/Acre because it is
+  // that rate's denominator: on a multi-parcel sale the per-parcel Acres cell
+  // is not the land the price bought, and without this the grid showed the
+  // rate and both of its inputs EXCEPT the one that differs from what the eye
+  // expects (Jason, 2026-08-13).
+  'groupacres',
   'acres',
   'zone1',
   // The province's ZONE_CATEGORY rollup. Default-visible beside the code
@@ -114,6 +120,7 @@ export const PRESETS = {
   'Sales analysis': new Set([
     'favorite', 'roll', 'address', 'saledate', 'saleprice',
     'grouppriceac', 'grouppricesf', 'grouppricelot', 'rollsize', 'acres',
+    'groupacres',
     'zone1', 'zonecat', 'subjdist', 'saletoasmt',
   ]),
   // Frontage earns its place here on its own merits: minimum lot frontage is
@@ -137,7 +144,7 @@ export const PRESETS = {
   'Agricultural': new Set([
     'favorite', 'roll', 'address', 'rollsize', 'acres', 'landcover', 'cultpct', 'water',
     'soil', 'clicls', 'soiltype', 'slope', 'riskarea', 'tile', 'irrigation',
-    'grouppriceac', 'saledate', 'saleprice', 'saletoasmt', 'grouppricesf',
+    'grouppriceac', 'groupacres', 'saledate', 'saleprice', 'saletoasmt', 'grouppricesf',
     'zone1', 'dev1', 'legal', 'title',
   ]),
   // Residential-oriented view — the mirror of Agricultural. Deliberately
