@@ -5190,6 +5190,43 @@ body {
   box-shadow: none;
 }
 
+/* Search — green, so the go action is findable at a glance and pairs
+   with the red Clear beside it (Jason, 2026-08-12).
+
+   Scoped to #search rather than to .primary on purpose: `.controls
+   button.primary` also matches the sales-database panel's "Choose export
+   folder…" and "Load sales", and recolouring those was not asked for and
+   would dilute the signal — three green buttons stand out less than one.
+   The ID also outranks every .primary rule above, so this needs no
+   ordering care.
+
+   #166534 clears 7:1 white-text contrast (measured 7.13), the same AAA
+   bar the Clear button meets, rather than the brighter greens that only
+   reach AA.
+
+   CAVEAT worth knowing: green Search and dark-red Clear sit adjacent in
+   the same .action-row and are close in LUMINANCE (1.4:1), so to a
+   red-green colour-blind reader they are two similar dark buttons
+   separated mainly by hue. That is acceptable here only because colour
+   is not carrying the meaning — the labels and the fixed left/right
+   positions do — but do not let colour become the sole signal on this
+   row. */
+.controls button#search {
+  background: #166534;
+  border-color: #166534;
+  color: #fff;
+}
+.controls button#search:hover:not(:disabled) {
+  background: #14532d;
+  border-color: #14532d;
+}
+.controls button#search:disabled {
+  background: #e7ebe7;
+  color: #8b958f;
+  border-color: var(--ui-line);
+  box-shadow: none;
+}
+
 .controls button:focus-visible,
 .map-toggle-btn:focus-visible,
 .columns-gear-btn:focus-visible,
