@@ -1928,7 +1928,10 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 /* Phase 4 button hierarchy:
    - .primary  : filled accent (Search, Generate Map). Highest weight.
    - .secondary: outlined accent (Export CSV, in-line action buttons).
-   - .tertiary : text-only, no border (Clear and similar reset-style).
+   - .tertiary : quietest weight, outlined. Currently unused — Clear
+     moved to .danger (see below) once it became clear that the one
+     button which throws work away should not be the quietest on the row.
+   - .danger   : destructive reset (Clear, both tabs).
    The bare `.controls button` selector below stays as the default
    for any button without a class — visually equivalent to .primary
    so existing untagged buttons (subject Set, etc.) keep working. */
@@ -1996,9 +1999,9 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 .controls button.tertiary {
   background: transparent;
   color: var(--color-primary-500, #1e293b);
-  /* Visible 1-px outline so the Clear button reads as a button rather
-     than as plain text. Slightly muted so it doesn't compete with the
-     primary Search button. */
+  /* Visible 1-px outline so a tertiary button reads as a button rather
+     than as plain text. Muted so it doesn't compete with the primary
+     Search button. */
   border: 1px solid var(--color-neutral-300, #d4d4d8);
   padding: 7px 12px;
   font-weight: 500;
@@ -5150,6 +5153,41 @@ body {
 .sidebar .generate-map-btn:hover {
   background: var(--ui-brand-hover);
   border-color: var(--ui-brand-hover);
+}
+
+/* .danger — a destructive reset. Currently the Clear button on both
+   tabs, which reloads the page and drops the uploaded CSV, the results,
+   the subject parcel and every filter. It used to be .tertiary, the
+   quietest weight in the hierarchy, which understated what it does
+   (Jason, 2026-08-12): the one button that throws work away read as the
+   least significant thing on the row.
+
+   Dark red rather than the accent so it reads as "different in kind"
+   from Search and Export, not merely "more important". #8b0000 is the
+   app's existing dark red — the starred-parcel fill in map.js — so this
+   introduces no new colour. Against white it clears 9:1 contrast, well
+   past AA.
+
+   Placed after the theme block above so it wins on source order against
+   the rules there that also match `.controls button`. */
+.controls button.danger {
+  background: #8b0000;
+  color: #fff;
+  border: 1px solid #8b0000;
+  padding: 7px 12px;
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+.controls button.danger:hover:not(:disabled) {
+  background: #6f0000;
+  border-color: #6f0000;
+  color: #fff;
+}
+.controls button.danger:disabled {
+  background: #e7ebe7;
+  color: #8b958f;
+  border-color: var(--ui-line);
+  box-shadow: none;
 }
 
 .controls button:focus-visible,
