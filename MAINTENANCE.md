@@ -285,6 +285,89 @@ git add lineage && git commit -m "Rebuild lineage" && git push
 Each record is **inferred from public geometry** and carries a verify
 disclaimer — confirm against registered plans / titles before relying on it.
 
+### 4b. Retire a snapshot  (cadence: rare — when two captures sit too close)
+
+Withdraws a snapshot from the app's "As of" picker. Nothing here implies the
+data was wrong; the usual reason is two captures close enough that the second
+adds nothing while splitting the lineage chain.
+
+**Move the archived files OUT of `MAO_SNAPSHOTS_ROOT` — not into a subfolder.**
+`build_historical_shards.R` and `build_lineage.R` both scan that root with
+`recursive = TRUE`, so a `retired/` folder inside it is still found and the
+snapshot is rebuilt on the next run. A sibling directory is what retires it.
+
+**All three files travel together.** Zoning/dev-plan are paired to a parcel
+file by an **on-or-before** date rule, so moving only the paired layers while
+leaving the GeoPackage silently re-pairs that snapshot to an *older* year's
+zoning — a wrong snapshot that looks entirely normal.
+
+```
+:: 1. move parcels + paired zoning + dev-plan, each WITH its .meta.json,
+::    to a sibling of MAOSnapshots (or straight to deletion — see below)
+move "D:\Dropbox\Appraisal\Web\MAOSnapshots\<yr>\MBRollGeoPackage<YYYYMMDD>.gpkg*" ...
+:: 2. drop the published shards
+rmdir /s /q ..\mb-parcel-history\<snapshot_id>
+:: 3. rewrite the discovery index from what is on disk
+Rscript r/build_historical_shards.R --index-only
+:: 4. REQUIRED — lineage names its snapshots; see below
+Rscript r/build_lineage.R
+:: 5. publish, then repin the app
+cd ..\mb-parcel-history && git add -A && git commit && git push
+```
+Then repoint `HISTORICAL_CDN` in `web/src/arcgis.js` to the new commit SHA
+(§3) **and bump the index cache key** beside it (`mb_historical_index_v<n>`).
+The bump is load-bearing on a removal specifically: the 1-day index TTL is
+sized for snapshots being *added*, where lag costs nothing, but a cached index
+keeps offering a date whose shards now 404 — the picker lists an option that
+fails when chosen and reads as a broken feature.
+
+Step 4 is not optional. Lineage is inferred between **consecutive** pairs and
+every record names its snapshot, so removing one without rebuilding leaves
+records pointing at a snapshot the picker no longer offers.
+
+#### Deleting a retired archive — provenance of record
+
+Retiring is reversible; **deleting is not.** The province's FeatureServer
+serves current data only, so a dated capture cannot be re-pulled after the
+fact. The archived downloads are the **source-of-record**: display shards are
+simplified (~2-3 m) for visualization, measurements resolve back to the
+archived file named in an export's provenance, and exports stamp
+`as-of <snapshot>` into their preamble.
+
+So before deleting, **transcribe the `.meta.json` sidecars here** — they are
+deleted with the files, and this becomes the only record of what a cited
+snapshot actually was.
+
+##### `2026-06-05` — retired and deleted 2026-08-13
+
+Sat only **26 days** before `2026-07-01`. Two captures that close add nothing
+comparatively, and having both split the meaningful 2025-02-12 → 2026-07-01
+lineage into two hops — the 26-day hop carrying almost no real events, while
+the 16-month comparison never existed as a direct pair. Jan 1 / Jul 1 is the
+intended cadence. **Nothing was wrong with the data.**
+
+All three: Province of Manitoba (Manitoba geoPortal — public open data),
+licence *Open Government Licence – Manitoba* (verify current terms).
+`retrieved_at` was flagged `inferred` on all three (dated by file mtime).
+
+| Archived file | Layer | Source date | Retrieved | CRS | Bytes | SHA-256 |
+|---|---|---|---|---|---|---|
+| `MBRollGeoPackage20260605.gpkg` | parcels | 2026-06-05 | 2026-06-05T15:19:37-0500 | EPSG:26914 | 235,020,288 | `44fd3250864553fa7a0dcc224f87b1736f6e0b431a8646efccf9bcfa6da87526` |
+| `Manitoba_Zoning_By_Laws20260603.geojson` | zoning | 2026-06-03 | 2026-06-03T12:06:39-0500 | EPSG:4326 | 63,435,541 | `33386333dbedbf95d840be76d6a0a890c2fb7e1a4c82cf14d02ccd37d076f036` |
+| `Manitoba_Development_Plan_Designations20260603.geojson` | devplan | 2026-06-03 | 2026-06-03T12:06:52-0500 | EPSG:4326 | 29,834,364 | `59e78ab012568cd6c87da59a4a2e18f9dfa5051dead5806fec3a305bf82ceaa9` |
+
+Source datasets:
+[Roll Entry](https://geoportal.gov.mb.ca/datasets/manitoba::roll-entry/explore) ·
+[Manitoba Zoning By-Laws](https://geoportal.gov.mb.ca/datasets/manitoba-zoning-by-laws/) ·
+[Development Plan Designations](https://geoportal.gov.mb.ca/datasets/manitoba::manitoba-development-plan-designations/about)
+
+Verified after the retirement: 467 shard files removed; `index.json` lists
+`2026-07-01` + `2025-02-12`; lineage rebuilt as one 2025-02-12 → 2026-07-01
+pair (142 munis, 1,403 events, **zero** remaining references); pin moved to
+`mb-parcel-history@7e73681`; cache key `mb_historical_index_v2` → `v3`. Links
+improved rather than merely surviving — Brandon 562264 → 562314 now resolves
+directly at confidence 1.00, where routing through 2026-06-05 had it at 0.99.
+
 ### 5. Land-cover shards  (cadence: when mao-assembly reruns)
 `build_landcover.R` runs as a non-fatal step inside `monthly-refresh.bat`;
 it re-shards from whatever complete mao-assembly Parquet is current.

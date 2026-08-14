@@ -67,9 +67,17 @@ so prior versions are lost.
 - **Access (cold):** open the year's `.gpkg`/`.geojson` in QGIS or R to
   read a parcel's pre-subdivision size/shape. No app changes.
 
-Status: **2026 geometry captured** (`MAOSnapshots\2026\MBRollGeoPackage20260605.gpkg`).
-That's the whole feature for the stated need; everything below is
-optional polish.
+Status: **2026 geometry captured.** The first 2026 capture was
+`MBRollGeoPackage20260605.gpkg`; it has since been retired and deleted (see
+"Retired snapshots" below), and the live 2026 capture is
+`MAOSnapshots\2026\MBRollGeoPackage20260701.gpkg`. That's the whole feature
+for the stated need; everything below is optional polish.
+
+> **Retiring / deleting a snapshot → `MAINTENANCE.md` §4b.** That is where the
+> procedure lives, along with the transcribed provenance (dataset, date, size,
+> SHA-256) of snapshots whose archived files have since been deleted — the only
+> surviving record of what a cited snapshot was, since the `.meta.json`
+> sidecars are deleted with the files and the captures are not reproducible.
 
 ## Repo-size cleanup — separate, optional follow-up
 
