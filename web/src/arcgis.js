@@ -199,7 +199,7 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // 40 MB copy is still git-tracked in mb-parcel-data; nothing here points
 // at it.
 export const MB_PARCEL_DATA_REVISION =
-  '77572021b52f480c5491631514e9b7759fdcb1de';
+  '28bab05c3be2d12b1c0104f209fac54bf93cf051';
 export const MB_PARCEL_DATA_CDN =
   `https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-data@${MB_PARCEL_DATA_REVISION}`;
 const SNAPSHOT_BASE_URL = `${MB_PARCEL_DATA_CDN}/rollentry-snapshot/`;
