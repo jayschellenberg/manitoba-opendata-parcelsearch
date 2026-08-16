@@ -56,6 +56,11 @@ import { parseSalesCsv } from './lib/salesCsvParse.js';
 import { saleRecordsFromRows } from './lib/salesCharts.js';
 import { initMultiSelect } from './lib/multiSelect.js';
 import {
+  primaryPropertyTree,
+  matchingSaleGroupIds,
+  rowPassesPrimaryProperty,
+} from './lib/primaryProperty.js';
+import {
   zoneCategoryLabel,
   zoneCategoriesInRows,
   rowMatchesZoneCategories,
@@ -380,6 +385,19 @@ const zoneCatFilter = initMultiSelect($zoneCatFilterEl, {
   placeholder: 'Any zoning type',
   noun: 'types',
   emptyLabel: 'No zoning loaded for these results yet.',
+});
+// Primary Property — what actually stands on the parcel, per MAO. Grouped
+// rather than flat (lib/primaryProperty.js explains the taxonomy): the
+// descriptor runs to 565 distinct values province-wide, so the family
+// (Residential / ICI / Farm, taken from the sale's own Sale Type Group)
+// carries the top layer and the structure type sits under it. Unlike the
+// two zoning pickers this needs no overlay join — the values ride in on
+// the sales data itself, so the filter works the moment an upload lands.
+const $primaryPropEl = document.getElementById('primaryprop-filter');
+const primaryPropFilter = initMultiSelect($primaryPropEl, {
+  placeholder: 'Any property type',
+  noun: 'property types',
+  emptyLabel: 'No values yet — upload sales first.',
 });
 // Total-consideration bounds. Distinct from the $/Ac pair: this is the
 // whole transaction, so a multi-parcel sale passes or fails as one.
@@ -1163,6 +1181,7 @@ const SORT_KEYS = {
   report:  (r) => strKey(r.parcel.properties.Asmt_Rpt_Url),
   saledate:    (r) => strKey(r.parcel.properties._saleDate),
   saleprice:   (r) => finiteOrNeg(parseTotalValue(r.parcel.properties._salePrice)),
+  primaryprop: (r) => strKey(r.parcel.properties._primaryProperty),
   groupsize:    (r) => finiteOrNeg(r.parcel.properties._saleGroupSize),
   grouppricelot:(r) => finiteOrNeg(r.parcel.properties._saleGroupPpl),
   grouppriceac: (r) => finiteOrNeg(r.parcel.properties._saleGroupPpa),
@@ -2709,6 +2728,7 @@ if ($farFlungKm) {
 for (const el of [
   $zoneCategory, $changedStatus, $duMode, $duMin, $sizeLow, $sizeHigh, $vacantImproved,
   $saleDateFrom, $saleDateTo, $asmtClass, $zoningFilterEl, $zoneCatFilterEl,
+  $primaryPropEl,
   $distanceMax, $salesPlan,
   $salesStreetName, $salesPpaLow, $salesPpaHigh, $saleAsmtMax,
   $salesPriceLow, $salesPriceHigh,
@@ -3347,6 +3367,9 @@ async function runSearch() {
   asmtClassFilter.clear();
   zoningFilter.setOptions([]);
   zoneCatFilter.setOptions([]);
+  // Same reasoning as zoning: the groups described the previous upload's
+  // sales, so they go rather than lingering as options that match nothing.
+  primaryPropFilter.setGroups([]);
   // Drop the subject parcel — a fresh Search shouldn't inherit a
   // previous upload's subject highlight on the map.
   clearSubjectParcel();
@@ -3911,6 +3934,13 @@ async function handleSalesUpload(file) {
           p._saleDate        = sale.saleDate || null;
           p._salePrice       = sale.consideration || null;
           p._primaryProperty = sale.primaryProperty || null;
+          // MAO's own Residential / ICI / Farm classification, which is the
+          // top layer of the Primary Property filter. Present only on the
+          // database export — a hand-pasted MAO block is the seven-column
+          // grid with no type column — so null is normal, not a fault, and
+          // primaryProperty.js infers the family from the descriptor when
+          // it is missing.
+          p._saleTypeGroup   = sale.saleTypeGroup || null;
           // CSV's raw "Legal Description" cell. Lives alongside the
           // legal-index-derived _plan/_legalDescription so the Plan #
           // filter can fall back to substring-matching against the
@@ -5286,6 +5316,13 @@ function syncZoningFilterOptions() {
   // The type list is derived from the same rows, so it can never offer a
   // type the current upload doesn't hold.
   zoneCatFilter.setOptions(zoneCategoriesInRows(csvFullRows));
+  // Primary Property rides in on the sales data rather than on an overlay
+  // join, so unlike the two zoning pickers this is populated for every
+  // upload the moment it lands — no "Load zoning + dev-plan" needed.
+  primaryPropFilter.setGroups(primaryPropertyTree(csvFullRows, {
+    saleTypeOf: (r) => r.parcel?.properties?._saleTypeGroup,
+    primaryOf:  (r) => r.parcel?.properties?._primaryProperty,
+  }));
 }
 
 /**
@@ -5455,6 +5492,23 @@ function filterCsvRowsByOtherSearches(rows) {
   // options come from the current upload, which is what makes it usable on
   // a multi-muni set where no single code spans the whole thing.
   const zoneCatFilterSet = new Set(zoneCatFilter.getSelected());
+
+  // Primary Property ticks, resolved to SALE GROUPS in one pass up front
+  // rather than tested per row.
+  //
+  // Group semantics, like the far-flung / size / price filters: a
+  // multi-parcel sale passes or fails as one transaction. Ticking "One
+  // storey" on a sale that bundles a house and a bare lot has to keep both
+  // rows, because dropping the lot would leave the group's $/Acre and $/SF
+  // describing land no longer on screen. That cannot be decided row by
+  // row, hence the pre-pass; null means nothing is ticked.
+  const primaryPropAccessors = {
+    saleTypeOf: (r) => r.parcel?.properties?._saleTypeGroup,
+    primaryOf:  (r) => r.parcel?.properties?._primaryProperty,
+    groupIdOf:  (r) => r.parcel?.properties?._saleGroupId,
+  };
+  const primaryPropGroups = matchingSaleGroupIds(
+    rows, new Set(primaryPropFilter.getSelected()), primaryPropAccessors);
 
   // Max distance from subject. Only fires when (a) a subject is set
   // and (b) the input parses to a positive number. Sales without a
@@ -5686,6 +5740,12 @@ function filterCsvRowsByOtherSearches(rows) {
     // is both. Rows with no zoning join read as "(no category)", so they
     // are findable rather than silently dropped.
     if (!rowMatchesZoneCategories(row.zoning, zoneCatFilterSet)) return false;
+
+    // Primary Property ticks. The work was done in the pre-pass above;
+    // this is a Set membership test on the row's sale group. Sales with no
+    // descriptor are not dropped — they are bare land, 56.4% of the
+    // archive, and reachable via their family's "(no primary structure)".
+    if (!rowPassesPrimaryProperty(row, primaryPropGroups, primaryPropAccessors)) return false;
 
     // Zone category — needs zoning enrichment. If the row has no
     // zoning matches at all (enrichment skipped via the >250 button
@@ -9132,6 +9192,12 @@ function renderTable(rows, { resetPage = true } = {}) {
     const salePriceCell = td(p._salePrice || null);
     salePriceCell.classList.add('sales-only', 'num');
     tr.appendChild(salePriceCell);
+    // Primary Property. Positional, like every other cell here — the tds
+    // carry no data-col of their own, so this must stay in step with the
+    // <th> order in index.html.
+    const primaryPropCell = td(p._primaryProperty || null);
+    primaryPropCell.classList.add('sales-only');
+    tr.appendChild(primaryPropCell);
     // Multi-parcel-sale group columns. Identical for every parcel
     // in the same sale. Empty (single-cell dash) for non-grouped
     // single-parcel sales / no-sale rows.
@@ -11717,7 +11783,7 @@ function exportCsv(explicitRows) {
     'Walkscore URL', 'Flood-Map URL', 'Street View URL',
     ...(inSalesMode
       ? [
-          'Sale Date', 'Sale Price',
+          'Sale Date', 'Sale Price', 'Primary Property', 'Sale Type Group',
           // Repeat sales: 'Sale # for Parcel' is 1-based, most recent
           // first, so a spreadsheet can filter to first sales only or
           // pair a parcel's transactions without regrouping by roll.
@@ -11813,6 +11879,8 @@ function exportCsv(explicitRows) {
         ? [
             p._saleDate ?? '',
             p._salePrice ?? '',
+            p._primaryProperty ?? '',
+            p._saleTypeGroup ?? '',
             p._saleSeq != null ? Number(p._saleSeq) + 1 : '',
             p._saleCount ?? '',
             p._saleGroupId ?? '',

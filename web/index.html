@@ -604,6 +604,21 @@
               </details>
               <span class="tip">Filter by broad Zoning Type — Commercial, Industrial, Residential, Open Space and so on — the province's ZONE_CATEGORY rollup shown in the Zoning Type column. Unlike the zone-code filter above, this compares across municipalities, so it's the one to reach for on a multi-muni sales set. Matches a parcel's DOMINANT zone (the one covering most of it), which is exactly what the Zoning Type column shows — so the ticked types and the column always agree. A parcel that is mostly industrial with a commercial corner counts as Industrial. The list holds only the types your current results contain, and every entry in it returns at least one sale. Source spelling variants and typos are folded together, and sales whose zoning hasn't been joined appear under "(no category)".</span>
             </span>
+            <!-- Primary Property — MAO's primary-STRUCTURE descriptor, in
+                 two layers: Residential / ICI / Farm on top (taken from
+                 the sale's own Sale Type Group, not guessed from the
+                 text), then the kind of structure underneath. Flat, the
+                 descriptor runs to 565 distinct values province-wide,
+                 which is unusable as a checkbox list. -->
+            <span class="field primaryprop-field">
+              <details class="multiselect" id="primaryprop-filter">
+                <summary aria-label="Primary property filter">
+                  <span class="multiselect-label">Any property type</span>
+                </summary>
+                <div class="multiselect-menu"></div>
+              </details>
+              <span class="tip">Filter by what actually stands on the parcel — MAO's Primary Property descriptor, grouped in two layers. The top layer is Residential, ICI or Farm, taken from the sale's own Sale Type Group rather than guessed from the description; tick a family to take all of it, or open it and pick structure types (One storey, Bi-level, Cottage, Warehouse, Grain storage…). Counts show how many rows each entry holds. Be aware that most sales carry NO descriptor — it is bare land — so every family also offers "(no primary structure)": that is 45% of residential sales, 71% of ICI and fully 96% of farm sales, which is why the farm structure types look sparse. A multi-parcel sale is kept or dropped whole when any of its parcels matches, so its $/Acre keeps describing the land that was actually bought. The list holds only the types your current results contain, and every entry returns at least one sale.</span>
+            </span>
           </div>
           <!-- The two sale-level exclusions. Vacant Land Only takes a
                line of its own; the far-flung threshold, its Exclude
@@ -1419,6 +1434,12 @@
                  #results based on whether any current row has _saleDate). -->
             <th data-col="saledate"  class="sales-only" title="Sale Date (from uploaded CSV)">Sale Date</th>
             <th data-col="saleprice" class="sales-only" title="Sale Price / Consideration (from uploaded CSV)">Sale Price</th>
+            <!-- MAO's primary-structure descriptor, and the column the
+                 Primary Property filter ticks against. Off by default (it
+                 is long free text), but a filtered row has to be able to
+                 explain itself — see the Zoning Type note in
+                 lib/zoneCategory.js about filters the screen can't back up. -->
+            <th data-col="primaryprop" class="sales-only" title="Primary Property — MAO's description of the main structure on the parcel (&quot;1 STY RES AVG QUALITY&quot;, &quot;AVERAGE FRAME WAREHOUSE&quot;). Blank means no primary structure, i.e. bare land, which is the majority of sales — 45% of residential, 71% of ICI and 96% of farm. Available on subscriber sales data only.">Primary Property</th>
             <!-- Multi-parcel-sale group columns — populated by
                  computeSaleGroupTotals after a sales CSV upload. Group
                  Size = N parcels in the same sale; $/ac = total
