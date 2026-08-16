@@ -77,7 +77,8 @@ const BASE = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services'
 const ROLL_URL    = `${BASE}/ROLL_ENTRY/FeatureServer/0`;
 const ZONING_URL  = `${BASE}/Manitoba_Zoning_By_Laws/FeatureServer/0`;
 const DEVPLAN_URL = `${BASE}/Manitoba_Development_Plan_Designations/FeatureServer/0`;
-const MASC_RISK_AREAS_URL = `${BASE}/MASC_Risk_Areas/FeatureServer/0`;
+// Exported for the Data Status tab's live-service list.
+export const MASC_RISK_AREAS_URL = `${BASE}/MASC_Risk_Areas/FeatureServer/0`;
 
 // Live provincial FeatureServers the results grid is sourced from, as a
 // citable list for evidence-export provenance (lib/provenance.js). These are
@@ -1320,7 +1321,8 @@ export async function fetchMascRiskAreas() {
  * FeatureCollection of polygons each carrying AGCAP_CLS1 as the
  * stable dominant-class field for map paint.
  */
-const CLI_AGR_CAP_URL =
+// Exported for the Data Status tab's live-service list.
+export const CLI_AGR_CAP_URL =
   'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/Soil_Survey_MB/FeatureServer/0';
 
 // Parcel composition needs Manitoba's original survey boundaries. Keeping

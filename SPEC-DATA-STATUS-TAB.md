@@ -1,7 +1,8 @@
 # SPEC — Data Status tab + sales coverage document
 
 Written 2026-08-16. Decisions are Jason's; the surrounding facts were verified
-against the working tree the same day. Nothing is built yet.
+against the working tree the same day. **BUILT 2026-08-16 (evening)** — see
+"As built" at the end for what shipped and where it deviates.
 
 ---
 
@@ -116,3 +117,37 @@ already tracks this and is the natural source.
 - The sweep is still filling in — 115/186 captured as of 2026-08-16 — so the
   sales coverage doc will legitimately show many municipalities as never
   scraped for a while yet.
+
+---
+
+## As built (2026-08-16 evening)
+
+Everything above shipped, with two scope corrections found during the build:
+
+1. **Soils and MASC added** (Jason, same day): the tab's live-services table
+   covers the Soil Survey (CLI) layer and MASC Risk Areas alongside Roll
+   Entry / Zoning / DevPlan and the three WALLAS layers, each showing its own
+   `editingInfo.dataLastEditDate` fetched on tab open. The CDN-shipped MASC /
+   land cover / water shards carry no timestamp at all (their `_index.json` is
+   bare `{file, count}`), so they appear as one row pinned at the
+   `mb-parcel-data` revision — adding `generated_at` to those manifests in
+   `r/build_masc_shards.R` etc. is possible follow-up work.
+2. **HPI dropped**: there is no HPI in this app. The CREA MLS HPI pipeline
+   (`hpi-download.ps1`) feeds `ResChartsV2.5.qmd` in appraisal-templates, a
+   different project; the in-app trend line (`salesCharts.js marketConditions`)
+   is computed from the user's own loaded sales and has no vintage of its own.
+
+What landed where:
+
+| Piece | Location |
+|---|---|
+| Per-muni assessment vintage | `buildMuniVintage()` in `web/scripts/build-manifest.js` → `web/public/data/muni-vintage.json` (186 rows, month precision, listed in the manifest + covered by the `--validate` gate) |
+| Data Status tab | third sidebar tab (`data-tab="status"`); driver `web/src/dataStatusTab.js`, pure logic `web/src/lib/dataStatus.js` (tested), lazy-loads on first open |
+| Sales coverage data | `export_sales_for_web.R` joins the sweep ledger: per-muni `scraped_at`/`scrape_status` on `munis`, plus a full 186-row `coverage` array in the LOCAL manifest.json |
+| Sales coverage documents | `SALES-COVERAGE.csv` + `.md` written beside the shards on every publish (change-skipped) |
+| Panel view | "Coverage" button in the MAO Sales Database panel → dialog table from `web/src/lib/salesCoverage.js` (tested); pending municipalities dimmed, capped slices flagged |
+
+The privacy line held: nothing sales-derived is in the published manifest, the
+tab, or any Vercel-served file — coverage renders only from the local folder
+the user already nominated. In passing, the published manifest's `source`
+fields were trimmed to basenames (they leaked absolute `D:/...` paths).

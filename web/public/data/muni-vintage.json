@@ -1,0 +1,1128 @@
+{
+ "version": 1,
+ "metadata": {
+  "generated_at": "2026-08-16T23:05:19.091Z",
+  "source": "mao-scrape muni_refresh_ledger.csv (assessment cadence, month precision)",
+  "source_modified": "2026-08-02T11:17:32.032Z",
+  "precision": "month",
+  "row_count": 186
+ },
+ "rows": [
+  {
+   "muni_no": "741",
+   "name": "AGHAMING (NORTHERN SETTLEMENT)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "600",
+   "name": "ALEXANDER (RM)",
+   "region": "Southeast",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "601",
+   "name": "ALONSA (RM)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "400",
+   "name": "ALTONA (TOWN)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "300",
+   "name": "ARBORG (TOWN)",
+   "region": "Interlake",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "102",
+   "name": "ARGYLE (RM)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "602",
+   "name": "ARMSTRONG (RM)",
+   "region": "Interlake",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "781",
+   "name": "BADEN (NORTHERN SETTLEMENT)",
+   "region": "North",
+   "last_refreshed": "2026-08"
+  },
+  {
+   "muni_no": "782",
+   "name": "BARROWS (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "401",
+   "name": "BEAUSEJOUR (TOWN)",
+   "region": "Southeast",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "744",
+   "name": "BERENS RIVER (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "105",
+   "name": "BIFROST-RIVERTON (MUNICIPALITY)",
+   "region": "Interlake",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "746",
+   "name": "BISSETT (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-08"
+  },
+  {
+   "muni_no": "153",
+   "name": "BOISSEVAIN-MORTON (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "500",
+   "name": "BRANDON (CITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-08"
+  },
+  {
+   "muni_no": "109",
+   "name": "BRENDA-WASKADA (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "734",
+   "name": "BROCHET (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "110",
+   "name": "BROKENHEAD (RM)",
+   "region": "Southeast",
+   "last_refreshed": "2026-08"
+  },
+  {
+   "muni_no": "783",
+   "name": "CAMPERVILLE (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "407",
+   "name": "CARBERRY (TOWN)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "409",
+   "name": "CARMAN (TOWN)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "112",
+   "name": "CARTIER (RM)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "167",
+   "name": "CARTWRIGHT-ROBLIN  (MUNICIPALITY)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "603",
+   "name": "CHURCHILL (TOWN)",
+   "region": "North",
+   "last_refreshed": "2026-08"
+  },
+  {
+   "muni_no": "114",
+   "name": "CLANWILLIAM-ERICKSON (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "115",
+   "name": "COLDWELL (RM)",
+   "region": "Interlake",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "784",
+   "name": "CORMORANT (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "116",
+   "name": "CORNWALLIS (RM)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "727",
+   "name": "CRANE RIVER (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "707",
+   "name": "CROSS LAKE (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "747",
+   "name": "DALLAS/RED ROSE (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "411",
+   "name": "DAUPHIN (CITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-08"
+  },
+  {
+   "muni_no": "118",
+   "name": "DAUPHIN (RM)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "748",
+   "name": "DAUPHIN RIVER (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "785",
+   "name": "DAWSON BAY (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "119",
+   "name": "DE SALABERRY (RM)",
+   "region": "Southeast",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "205",
+   "name": "DELORAINE-WINCHESTER (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "786",
+   "name": "DUCK BAY (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "120",
+   "name": "DUFFERIN (RM)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-08"
+  },
+  {
+   "muni_no": "311",
+   "name": "DUNNOTTAR (VILLAGE)",
+   "region": "Interlake",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "121",
+   "name": "EAST ST PAUL (RM)",
+   "region": "Winnipeg",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "736",
+   "name": "EASTERVILLE (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "101",
+   "name": "ELLICE-ARCHIE (RM)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "124",
+   "name": "ELTON (RM)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-08"
+  },
+  {
+   "muni_no": "127",
+   "name": "EMERSON-FRANKLIN (MUNICIPALITY)",
+   "region": "Southeast",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "126",
+   "name": "ETHELBERT (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "605",
+   "name": "FISHER (RM)",
+   "region": "Interlake",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "750",
+   "name": "FISHER BAY (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "540",
+   "name": "FLIN FLON (CITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "323",
+   "name": "GILBERT PLAINS  (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-08"
+  },
+  {
+   "muni_no": "619",
+   "name": "GILLAM (TOWN)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "129",
+   "name": "GIMLI (RM)",
+   "region": "Interlake",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "187",
+   "name": "GLENBORO-SOUTH CYPRESS (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-08"
+  },
+  {
+   "muni_no": "142",
+   "name": "GLENELLA-LANSDOWNE (MUNICIPALITY)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "704",
+   "name": "GODS LAKE NARROWS (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "606",
+   "name": "GRAHAMDALE (RM)",
+   "region": "Interlake",
+   "last_refreshed": "2026-08"
+  },
+  {
+   "muni_no": "615",
+   "name": "GRAND RAPIDS (TOWN)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "132",
+   "name": "GRANDVIEW  (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "111",
+   "name": "GRASSLAND (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "133",
+   "name": "GREY (RM)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "331",
+   "name": "HAMIOTA  (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "135",
+   "name": "HANOVER (RM)",
+   "region": "Southeast",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "609",
+   "name": "HARRISON PARK (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "752",
+   "name": "HARWILL (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "208",
+   "name": "HEADINGLEY (RM)",
+   "region": "Winnipeg",
+   "last_refreshed": "2026-08"
+  },
+  {
+   "muni_no": "738",
+   "name": "HERB LAKE LANDING (NORTHERN SETTLEMENT)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "754",
+   "name": "HOMEBROOK-PEONAN POINT (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "739",
+   "name": "ILFORD (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "755",
+   "name": "ISLAND LAKE (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "604",
+   "name": "KELSEY (RM)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "196",
+   "name": "KILLARNEY TURTLE MOUNTAIN (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "138",
+   "name": "LA BROQUERIE (RM)",
+   "region": "Southeast",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "139",
+   "name": "LAC DU BONNET (RM)",
+   "region": "Southeast",
+   "last_refreshed": "2026-08"
+  },
+  {
+   "muni_no": "333",
+   "name": "LAC DU BONNET (TOWN)",
+   "region": "Southeast",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "143",
+   "name": "LAKESHORE (RM)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "428",
+   "name": "LEAF RAPIDS (TOWN)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "760",
+   "name": "LITTLE GRAND RAPIDS (NORTHERN SETTLEMENT)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "761",
+   "name": "LOON STRAITS (NORTHERN SETTLEMENT)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "144",
+   "name": "LORNE (MUNICIPALITY)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "145",
+   "name": "LOUISE (MUNICIPALITY)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "614",
+   "name": "LYNN LAKE (TOWN)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "146",
+   "name": "MACDONALD (RM)",
+   "region": "Winnipeg",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "728",
+   "name": "MALLARD (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-08"
+  },
+  {
+   "muni_no": "762",
+   "name": "MANIGOTAGAN (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "763",
+   "name": "MATHESON ISLAND (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "147",
+   "name": "MCCREARY (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "729",
+   "name": "MEADOW PORTAGE (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "429",
+   "name": "MELITA (TOWN)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "149",
+   "name": "MINITONAS-BOWSMAN (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "431",
+   "name": "MINNEDOSA (TOWN)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "159",
+   "name": "MINTO-ODANAH (RM)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "151",
+   "name": "MONTCALM (RM)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "787",
+   "name": "MOOSE LAKE (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "433",
+   "name": "MORDEN (CITY)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "152",
+   "name": "MORRIS (RM)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "435",
+   "name": "MORRIS (TOWN)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "154",
+   "name": "MOSSEY RIVER (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "617",
+   "name": "MOUNTAIN (RM)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "700",
+   "name": "Muni 700",
+   "region": null,
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "701",
+   "name": "Muni 701",
+   "region": null,
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "702",
+   "name": "Muni 702",
+   "region": null,
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "703",
+   "name": "Muni 703",
+   "region": null,
+   "last_refreshed": "2026-08"
+  },
+  {
+   "muni_no": "608",
+   "name": "MYSTERY LAKE (LGD)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "788",
+   "name": "NATIONAL MILLS (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "437",
+   "name": "NEEPAWA (TOWN)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "706",
+   "name": "NELSON HOUSE  (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "340",
+   "name": "NIVERVILLE (TOWN)",
+   "region": "Southeast",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "188",
+   "name": "NORFOLK TREHERNE (MUNICIPALITY)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "155",
+   "name": "NORTH CYPRESS-LANGFORD (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "156",
+   "name": "NORTH NORFOLK (MUNICIPALITY)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-08"
+  },
+  {
+   "muni_no": "710",
+   "name": "NORWAY HOUSE (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "157",
+   "name": "OAKLAND-WAWANESA (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "107",
+   "name": "OAKVIEW (RM)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "789",
+   "name": "PELICAN RAPIDS (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "161",
+   "name": "PEMBINA (MUNICIPALITY)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "712",
+   "name": "PIKWITONEI (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "616",
+   "name": "PINAWA (LGD)",
+   "region": "Southeast",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "765",
+   "name": "PINE DOCK (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "610",
+   "name": "PINEY (RM)",
+   "region": "Southeast",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "162",
+   "name": "PIPESTONE (RM)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "550",
+   "name": "PORTAGE LA PRAIRIE (CITY)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "163",
+   "name": "PORTAGE LA PRAIRIE (RM)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "347",
+   "name": "POWERVIEW-PINE FALLS (TOWN)",
+   "region": "Southeast",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "192",
+   "name": "PRAIRIE LAKES (RM)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "403",
+   "name": "PRAIRIE VIEW  (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "766",
+   "name": "PRINCESS HARBOUR (NORTHERN SETTLEMENT)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "792",
+   "name": "RED DEER LAKE (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "611",
+   "name": "REYNOLDS (RM)",
+   "region": "Southeast",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "164",
+   "name": "RHINELAND (MUNICIPALITY)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-08"
+  },
+  {
+   "muni_no": "181",
+   "name": "RIDING MOUNTAIN WEST (RM)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "165",
+   "name": "RITCHOT (RM)",
+   "region": "Winnipeg",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "443",
+   "name": "RIVERDALE  (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "182",
+   "name": "ROBLIN (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "730",
+   "name": "ROCK RIDGE (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "168",
+   "name": "ROCKWOOD (RM)",
+   "region": "Interlake",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "169",
+   "name": "ROLAND (RM)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "170",
+   "name": "ROSEDALE (RM)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "353",
+   "name": "ROSSBURN  (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "172",
+   "name": "ROSSER (RM)",
+   "region": "Winnipeg",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "445",
+   "name": "RUSSELL-BINSCARTH (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "731",
+   "name": "SALT POINT (NORTHERN SETTLEMENT)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "447",
+   "name": "SELKIRK (CITY)",
+   "region": "Interlake",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "708",
+   "name": "SEYMOURVILLE (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "713",
+   "name": "SHERRIDON (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "184",
+   "name": "SIFTON (RM)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "448",
+   "name": "SNOW LAKE (TOWN)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "449",
+   "name": "SOURIS-GLENWOOD (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "714",
+   "name": "SOUTH INDIAN LAKE (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "732",
+   "name": "SPENCE LAKE (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "189",
+   "name": "SPRINGFIELD (RM)",
+   "region": "Winnipeg",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "174",
+   "name": "ST ANDREWS (RM)",
+   "region": "Interlake",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "176",
+   "name": "ST CLEMENTS (RM)",
+   "region": "Interlake",
+   "last_refreshed": "2026-08"
+  },
+  {
+   "muni_no": "177",
+   "name": "ST FRANCOIS XAVIER (RM)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "178",
+   "name": "ST LAURENT (RM)",
+   "region": "Interlake",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "357",
+   "name": "ST PIERRE-JOLYS (VILLAGE)",
+   "region": "Southeast",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "190",
+   "name": "STANLEY (RM)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "175",
+   "name": "STE ANNE (RM)",
+   "region": "Southeast",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "351",
+   "name": "STE ANNE (TOWN)",
+   "region": "Southeast",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "359",
+   "name": "STE. ROSE (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "451",
+   "name": "STEINBACH (CITY)",
+   "region": "Southeast",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "453",
+   "name": "STONEWALL (TOWN)",
+   "region": "Interlake",
+   "last_refreshed": "2026-08"
+  },
+  {
+   "muni_no": "612",
+   "name": "STUARTBURN (RM)",
+   "region": "Southeast",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "455",
+   "name": "SWAN RIVER (TOWN)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "193",
+   "name": "SWAN VALLEY WEST (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "194",
+   "name": "TACHE (RM)",
+   "region": "Southeast",
+   "last_refreshed": "2026-08"
+  },
+  {
+   "muni_no": "363",
+   "name": "TEULON (TOWN)",
+   "region": "Interlake",
+   "last_refreshed": "2026-08"
+  },
+  {
+   "muni_no": "457",
+   "name": "THE PAS (TOWN)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "715",
+   "name": "THICKET PORTAGE (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "560",
+   "name": "THOMPSON (CITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "195",
+   "name": "THOMPSON (RM)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "122",
+   "name": "TWO BORDERS (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "197",
+   "name": "VICTORIA (RM)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "198",
+   "name": "VICTORIA BEACH (RM)",
+   "region": "Southeast",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "461",
+   "name": "VIRDEN (TOWN)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "716",
+   "name": "WABOWDEN (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "199",
+   "name": "WALLACE-WOODWORTH (RM)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "733",
+   "name": "WATERHEN (NORTHERN COMMUNITY)",
+   "region": "North",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "185",
+   "name": "WEST INTERLAKE (RM)",
+   "region": "Interlake",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "201",
+   "name": "WEST ST PAUL (RM)",
+   "region": "Winnipeg",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "200",
+   "name": "WESTLAKE-GLADSTONE (MUNICIPALITY)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "202",
+   "name": "WHITEHEAD (RM)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "203",
+   "name": "WHITEMOUTH (RM)",
+   "region": "Southeast",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "463",
+   "name": "WINKLER (CITY)",
+   "region": "South-Central / Central Plains",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "465",
+   "name": "WINNIPEG BEACH (TOWN)",
+   "region": "Interlake",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "206",
+   "name": "WOODLANDS (RM)",
+   "region": "Interlake",
+   "last_refreshed": "2026-07"
+  },
+  {
+   "muni_no": "183",
+   "name": "YELLOWHEAD (MUNICIPALITY)",
+   "region": "West & Parkland",
+   "last_refreshed": "2026-07"
+  }
+ ]
+}

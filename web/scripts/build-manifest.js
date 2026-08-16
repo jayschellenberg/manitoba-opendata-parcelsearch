@@ -42,6 +42,10 @@ const DATA_DIR = path.resolve(__dirname, '..', 'public', 'data');
 const DATASETS = [
   { name: 'legal_index',      file: 'legal-index.json',      hasMetadata: true,  schema_version: 1 },
   { name: 'assessment_index', file: 'assessment-index.json', hasMetadata: true,  schema_version: 1 },
+  // Written by buildMuniVintage() below from mao-scrape's assessment cadence
+  // ledger — when each municipality's MAO rolls were last refreshed, month
+  // precision. Feeds the Data Status tab.
+  { name: 'muni_vintage',     file: 'muni-vintage.json',     hasMetadata: true,  schema_version: 1 },
   // section-grid, river-lots, masc-riverlots, and every per-muni
   // shard set now ship from outside this repo: the two big indexes
   // above via GitHub Releases + edge functions; section-grid via the
@@ -120,9 +124,96 @@ function extractMetadataBlock(filePath) {
   }
 }
 
+// ---- muni-vintage.json ------------------------------------------------------
+// Per-municipality assessment vintage for the Data Status tab: when each
+// municipality's MAO rolls were last refreshed. Source is mao-scrape's cadence
+// ledger, which is gitignored over there — this build step is how it reaches
+// the site. The ledger is MONTH precision ("2026-07" = refreshed in the July
+// cohort, see mao-scrape/scripts/cadence.R), so the UI must render "July 2026"
+// and never invent a day. Names/regions join in from muni_regions.csv so the
+// browser needs no second lookup. Assessment cadence is derived from public
+// MAO pages — publishable; the SALES ledger next to it is subscriber data and
+// must never pass through here (SPEC-DATA-STATUS-TAB.md).
+const MAO_SCRAPE_DIR = process.env.MAO_SCRAPE_DIR
+  || path.resolve(__dirname, '..', '..', '..', 'mao-scrape');
+
+/** One CSV line, quote-aware. Enough for the two mao-scrape config files. */
+function parseCsvLine(line) {
+  const out = [];
+  let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (inQ) {
+      if (c === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (c === '"') inQ = false;
+      else cur += c;
+    } else if (c === '"') inQ = true;
+    else if (c === ',') { out.push(cur); cur = ''; }
+    else cur += c;
+  }
+  out.push(cur);
+  return out;
+}
+
+function readCsv(filePath) {
+  const lines = fs.readFileSync(filePath, 'utf8').split(/\r?\n/).filter((l) => l.length);
+  const header = parseCsvLine(lines[0]);
+  return lines.slice(1).map((l) => {
+    const cells = parseCsvLine(l);
+    return Object.fromEntries(header.map((h, i) => [h, cells[i] ?? '']));
+  });
+}
+
+/**
+ * Build DATA_DIR/muni-vintage.json from the mao-scrape ledger. Skips (keeping
+ * any previously built file in place) when mao-scrape isn't reachable — a
+ * clone of this repo alone can still build; the dataset just goes stale, which
+ * the manifest's modified_at makes visible.
+ */
+function buildMuniVintage(warnings) {
+  const ledgerPath  = path.join(MAO_SCRAPE_DIR, 'checkpoints', 'muni_refresh_ledger.csv');
+  const regionsPath = path.join(MAO_SCRAPE_DIR, 'config', 'muni_regions.csv');
+  if (!fs.existsSync(ledgerPath)) {
+    warnings.push(`muni-vintage: ${ledgerPath} not reachable — kept the previous muni-vintage.json`);
+    return;
+  }
+  const byNo = new Map();
+  if (fs.existsSync(regionsPath)) {
+    for (const r of readCsv(regionsPath)) {
+      byNo.set(String(Number(r.muni_no)), { list_name: r.list_name, region: r.region });
+    }
+  }
+  const rows = readCsv(ledgerPath).map((r) => {
+    const no = String(Number(r.muni_no));
+    const id = byNo.get(no) || {};
+    return {
+      muni_no: no,
+      name: id.list_name || `Muni ${no}`,
+      region: id.region || null,
+      last_refreshed: r.last_refreshed || null,
+    };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+
+  // metadata sits before rows so extractMetadataBlock() finds it in the
+  // first 4 KB, same contract as the R-built indexes.
+  const out = {
+    version: 1,
+    metadata: {
+      generated_at: new Date().toISOString(),
+      source: 'mao-scrape muni_refresh_ledger.csv (assessment cadence, month precision)',
+      source_modified: fs.statSync(ledgerPath).mtime.toISOString(),
+      precision: 'month',
+      row_count: rows.length,
+    },
+    rows,
+  };
+  fs.writeFileSync(path.join(DATA_DIR, 'muni-vintage.json'), JSON.stringify(out, null, 1) + '\n');
+}
+
 function buildManifest() {
   const datasets = {};
   const warnings = [];
+  buildMuniVintage(warnings);
   for (const ds of DATASETS) {
     const filePath = path.join(DATA_DIR, ds.file);
     if (!fs.existsSync(filePath)) {
@@ -140,6 +231,12 @@ function buildManifest() {
       const meta = extractMetadataBlock(filePath);
       if (meta) Object.assign(entry, meta);
       else warnings.push(`${ds.file} has no extractable metadata block`);
+      // The R builders record `source` as an absolute path on this machine.
+      // Useful provenance locally, but the manifest is public — ship the
+      // basename only.
+      if (typeof entry.source === 'string' && /[\\/]/.test(entry.source)) {
+        entry.source = path.basename(entry.source);
+      }
     }
     datasets[ds.name] = entry;
   }

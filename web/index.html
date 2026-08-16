@@ -178,10 +178,10 @@
     <div class="app-shell" id="app-shell">
       <aside class="controls sidebar" aria-label="Search and overlay controls">
 
-        <!-- Phase 3 tab strip. Three tabs split the sidebar by
-             workflow: Property search (default), Sales analysis,
-             Map layers. The status block below the tab panels stays
-             visible across all three tabs. Tab state is persisted to
+        <!-- Tab strip. Three tabs split the sidebar by workflow:
+             Property search (default), Sales analysis, and Data status
+             (source freshness). Map layers live in an always-visible
+             section below the tab panels. Tab state is persisted to
              localStorage by `tabs.js` so a refresh keeps you put. -->
         <div class="sidebar-tabs" role="tablist" aria-label="Sidebar sections">
           <button
@@ -199,6 +199,14 @@
             aria-selected="false"
             tabindex="-1"
           >Sales Analysis</button>
+          <button
+            type="button" role="tab"
+            id="tab-btn-status" class="sidebar-tab"
+            data-tab="status"
+            aria-controls="tab-panel-status"
+            aria-selected="false"
+            tabindex="-1"
+          >Data Status</button>
         </div>
 
         <!-- ===================================================
@@ -460,6 +468,8 @@
                 <button type="button" id="sales-db-load" class="parcel-list-modal-btn primary">Load sales</button>
                 <button type="button" id="sales-db-refresh" class="parcel-list-modal-btn" title="Re-read the export folder">Refresh</button>
                 <button type="button" id="sales-db-forget" class="parcel-list-modal-btn" title="Remove the imported database from this browser">Forget</button>
+                <button type="button" id="sales-db-coverage" class="parcel-list-modal-btn"
+                        title="When each municipality was last scraped for sales">Coverage</button>
               </div>
               <p class="sales-db-update" id="sales-db-update" hidden></p>
             </div>
@@ -816,6 +826,66 @@
             <button id="sales-clear" type="button" class="danger" title="Reset the page — clears any uploaded sales CSV, search results, subject, and filters.">Clear</button>
           </div>
         </section><!-- /tab-panel-sales -->
+
+        <!-- ===================================================
+             Tab 3: Data status — when each data source behind the
+             site was last refreshed. Driven by src/dataStatusTab.js,
+             loaded lazily on first open. Per-municipality rows come
+             from data/muni-vintage.json (assessment cadence, MONTH
+             precision); live-service dates from each service's own
+             ?f=json edit stamp. Sales coverage is deliberately NOT
+             here — see SPEC-DATA-STATUS-TAB.md.
+             =================================================== -->
+        <section
+          class="sidebar-tab-panel"
+          id="tab-panel-status"
+          data-tab="status"
+          role="tabpanel"
+          aria-labelledby="tab-btn-status"
+          hidden
+        >
+          <p class="data-status-intro">When each data source behind this site
+            was last refreshed.</p>
+
+          <details class="data-status-block" open>
+            <summary><strong>Assessment rolls by municipality</strong>
+              <span class="data-status-side" id="data-status-muni-summary"></span></summary>
+            <p class="data-status-hint">Rolls are re-scraped in monthly cohorts,
+              so vintages are months — "July 2026" means refreshed in the July
+              cohort, not on a particular day.</p>
+            <input id="data-status-muni-search" type="search" class="sales-db-search"
+                   placeholder="Filter municipalities…" aria-label="Filter municipalities" />
+            <div class="data-status-scroll">
+              <table class="data-status-table">
+                <thead><tr><th>Municipality</th><th>Region</th><th>Rolls refreshed</th></tr></thead>
+                <tbody id="data-status-munis"></tbody>
+              </table>
+            </div>
+          </details>
+
+          <details class="data-status-block" open>
+            <summary><strong>Published site data</strong></summary>
+            <div class="data-status-scroll">
+              <table class="data-status-table">
+                <thead><tr><th>Dataset</th><th>Vintage</th><th>Detail</th></tr></thead>
+                <tbody id="data-status-published"></tbody>
+              </table>
+            </div>
+          </details>
+
+          <details class="data-status-block" open>
+            <summary><strong>Live map services</strong></summary>
+            <p class="data-status-hint">Each service's own last-edit stamp,
+              fetched when this tab opens. A recent date means the layer
+              changed; it does not promise every record in it is current.</p>
+            <div class="data-status-scroll">
+              <table class="data-status-table">
+                <thead><tr><th>Service</th><th>Upstream last edit</th></tr></thead>
+                <tbody id="data-status-services"></tbody>
+              </table>
+            </div>
+          </details>
+        </section><!-- /tab-panel-status -->
 
         <!-- ===================================================
              Map layers — always visible below the active tab.
@@ -1627,6 +1697,36 @@
           <p class="parcel-list-modal-help">Resolving rows against the legal index…</p>
           <div class="parcel-list-modal-busy" aria-hidden="true"></div>
         </section>
+      </div>
+    </dialog>
+
+    <!-- Sales scrape coverage. Per-municipality last-scraped dates from the
+         LOCAL export's manifest (subscriber-derived, so it lives only behind
+         the folder handle — deliberately absent from the public Data Status
+         tab; see SPEC-DATA-STATUS-TAB.md). Table built by salesDbPanel.js
+         from lib/salesCoverage.js. -->
+    <dialog id="sales-coverage-modal" class="parcel-list-modal">
+      <div class="parcel-list-modal-inner">
+        <header class="parcel-list-modal-header">
+          <h2 class="parcel-list-modal-title">Sales scrape coverage</h2>
+          <button
+            type="button"
+            id="sales-coverage-close"
+            class="parcel-list-modal-close"
+            aria-label="Close coverage dialog"
+          >×</button>
+        </header>
+        <p class="parcel-list-modal-help" id="sales-coverage-summary"></p>
+        <input id="sales-coverage-search" type="search" class="sales-db-search"
+               placeholder="Filter municipalities…" aria-label="Filter coverage table" />
+        <div class="sales-coverage-scroll">
+          <table class="sales-coverage-table" id="sales-coverage-table">
+            <thead>
+              <tr><th>Municipality</th><th>Region</th><th>Last scraped</th><th>Sales</th><th>Newest sale</th></tr>
+            </thead>
+            <tbody id="sales-coverage-rows"></tbody>
+          </table>
+        </div>
       </div>
     </dialog>
 

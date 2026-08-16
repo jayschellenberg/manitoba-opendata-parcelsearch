@@ -496,6 +496,88 @@ header small a {
   flex-wrap: wrap;
   margin-top: 8px;
 }
+/* Data Status tab: three disclosure blocks of small tables. Same table
+   treatment as the sales coverage dialog; unknown vintages read muted
+   rather than alarming — absence of a date is normal for some sources. */
+.data-status-intro {
+  margin: 8px 0;
+  font-size: 0.85rem;
+  color: var(--color-gray-600, #4b5563);
+}
+.data-status-block {
+  margin-bottom: 10px;
+}
+.data-status-block > summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 4px 0;
+}
+.data-status-side {
+  margin-left: 6px;
+  font-size: 0.75rem;
+  color: var(--color-gray-500, #6b7280);
+}
+.data-status-hint {
+  margin: 4px 0 6px;
+  font-size: 0.75rem;
+  color: var(--color-gray-500, #6b7280);
+}
+.data-status-scroll {
+  max-height: 45vh;
+  overflow: auto;
+}
+.data-status-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+.data-status-table th,
+.data-status-table td {
+  text-align: left;
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--color-gray-200, #e5e7eb);
+}
+.data-status-table th {
+  position: sticky;
+  top: 0;
+  background: var(--color-white, #fff);
+}
+.data-status-table td.is-unknown {
+  color: var(--color-gray-400, #9ca3af);
+}
+
+/* Scrape coverage dialog: 186 rows, so the table scrolls inside the modal
+   and pending municipalities read as dimmed rather than filtered away. */
+.sales-coverage-scroll {
+  max-height: 60vh;
+  overflow: auto;
+  margin-top: 6px;
+}
+.sales-coverage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+.sales-coverage-table th,
+.sales-coverage-table td {
+  text-align: left;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--color-gray-200, #e5e7eb);
+  white-space: nowrap;
+}
+.sales-coverage-table th {
+  position: sticky;
+  top: 0;
+  background: var(--color-white, #fff);
+}
+.sales-coverage-table tr.is-pending {
+  opacity: 0.55;
+}
+.sales-coverage-table tr.is-capped td:first-child::after {
+  content: " *";
+  color: #b45309;
+}
+
 /* Newer data available. Amber rather than red — informational, not an error. */
 .sales-db-update {
   margin: 8px 0 0;

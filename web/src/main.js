@@ -5,6 +5,7 @@ import './lib/tailwind.css';
 
 // Phase 3 sidebar tabs.
 import { initSidebarTabs, setActiveTab, getActiveTab, onTabChange } from './lib/tabs.js';
+import { initDataStatusTab } from './dataStatusTab.js';
 
 // Phase 4 form controls.
 import { initChipInput } from './lib/chipInput.js';
@@ -1325,6 +1326,8 @@ if ($mapExpandBtn) {
 // Sidebar tabs. Restores the last-active tab from localStorage so a
 // refresh keeps the user where they left off.
 initSidebarTabs();
+// Data Status tab — self-contained; loads its data on first open.
+initDataStatusTab();
 
 /**
  * Park the map-options toggles (Number parcels, Include legend) at the

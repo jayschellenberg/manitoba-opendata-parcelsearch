@@ -15,6 +15,7 @@ import {
   importFromDirectory, importFromFileList, checkForUpdates,
   clearSales, requestPersistence, fsAccessSupported, salesDbAvailable,
 } from './salesStore.js';
+import { coverageRows, coverageSummary, statusLabel } from './salesCoverage.js';
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 
@@ -499,6 +500,71 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
       say(`Could not load sales: ${err.message}`);
     }
   });
+
+  // ---- scrape coverage ----------------------------------------------------
+  // Per-municipality last-scraped dates from the export's coverage table.
+  // Subscriber-derived, so it renders only here — never on the public Data
+  // Status tab (SPEC-DATA-STATUS-TAB.md).
+  const $covBtn     = document.getElementById('sales-db-coverage');
+  const $covModal   = document.getElementById('sales-coverage-modal');
+  const $covClose   = document.getElementById('sales-coverage-close');
+  const $covSummary = document.getElementById('sales-coverage-summary');
+  const $covSearch  = document.getElementById('sales-coverage-search');
+  const $covRows    = document.getElementById('sales-coverage-rows');
+
+  let covCache = null;   // last coverageRows() result while the dialog is open
+
+  function renderCoverageTable() {
+    if (!$covRows) return;
+    $covRows.textContent = '';
+    if (!covCache) return;
+    const q = ($covSearch?.value || '').trim().toLowerCase();
+    for (const r of covCache.rows) {
+      if (q && !r.label.toLowerCase().includes(q)
+            && !(r.region || '').toLowerCase().includes(q)) continue;
+      const tr = document.createElement('tr');
+      if (r.status === 'never') tr.classList.add('is-pending');
+      const cells = [
+        r.label,
+        r.region || '',
+        r.status === 'done' ? (r.lastScraped || 'yes') : statusLabel(r),
+        r.sales != null ? fmt(r.sales) : '',
+        r.newestSale || '',
+      ];
+      for (const text of cells) {
+        const td = document.createElement('td');
+        td.textContent = text;
+        tr.appendChild(td);
+      }
+      // A truncated slice means the deep history is still being backfilled —
+      // worth a marker, not a column of mostly zeroes.
+      if (r.cappedRows > 0) {
+        tr.classList.add('is-capped');
+        tr.title = `${fmt(r.cappedRows)} rows in slices still capped at MAO's search limit — backfill pending`;
+      }
+      $covRows.appendChild(tr);
+    }
+  }
+
+  $covBtn?.addEventListener('click', async () => {
+    covCache = coverageRows(await getManifest());
+    if ($covSummary) {
+      const sum = coverageSummary(covCache);
+      $covSummary.textContent = !sum
+        ? 'This export has no coverage information yet — hit Refresh after the next publish.'
+        : sum.total != null
+          ? `${fmt(sum.scraped)} of ${fmt(sum.total)} municipalities scraped for sales`
+            + (sum.latest ? ` · most recent scrape ${sum.latest}` : '')
+          : `${fmt(sum.scraped)} municipalities in the archive`
+            + (sum.latest ? ` · most recent scrape ${sum.latest}` : '')
+            + ' — re-export to also list not-yet-scraped municipalities';
+    }
+    if ($covSearch) $covSearch.value = '';
+    renderCoverageTable();
+    $covModal?.showModal();
+  });
+  $covClose?.addEventListener('click', () => $covModal?.close());
+  $covSearch?.addEventListener('input', renderCoverageTable);
 
   // ---- refresh / forget ---------------------------------------------------
   $refresh?.addEventListener('click', async () => {

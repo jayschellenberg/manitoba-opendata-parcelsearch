@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "generated_at": "2026-08-15T09:36:25.825Z",
+  "generated_at": "2026-08-16T23:05:19.093Z",
   "datasets": {
     "legal_index": {
       "file": "legal-index.json",
@@ -8,7 +8,7 @@
       "size_bytes": 138213393,
       "modified_at": "2026-08-15T09:32:13.856Z",
       "generated_at": "2026-08-15T09:30:43Z",
-      "source": "D:/Dropbox/ClaudeCode/MBOpenData/mao-scrape/results/parcels.parquet",
+      "source": "parcels.parquet",
       "source_modified": "2026-08-15T09:05:38Z",
       "row_count": 437778
     },
@@ -18,7 +18,7 @@
       "size_bytes": 29791640,
       "modified_at": "2026-08-15T09:34:29.345Z",
       "generated_at": "2026-08-15T09:32:45Z",
-      "source": "D:/Dropbox/ClaudeCode/MBOpenData/mao-scrape/results/tax_history.parquet",
+      "source": "tax_history.parquet",
       "source_modified": "2026-08-15T09:05:42Z",
       "row_count": 437981,
       "year_min": 2026,
@@ -26,6 +26,17 @@
       "vacant_threshold_pct": 2,
       "nominal_vacant_count": 202452,
       "zero_buildings_count": 196322
+    },
+    "muni_vintage": {
+      "file": "muni-vintage.json",
+      "schema_version": 1,
+      "size_bytes": 23944,
+      "modified_at": "2026-08-16T23:05:19.092Z",
+      "generated_at": "2026-08-16T23:05:19.091Z",
+      "source": "mao-scrape muni_refresh_ledger.csv (assessment cadence, month precision)",
+      "source_modified": "2026-08-02T11:17:32.032Z",
+      "precision": "month",
+      "row_count": 186
     }
   },
   "shard_dirs": {}
