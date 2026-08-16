@@ -1,0 +1,118 @@
+# SPEC — Data Status tab + sales coverage document
+
+Written 2026-08-16. Decisions are Jason's; the surrounding facts were verified
+against the working tree the same day. Nothing is built yet.
+
+---
+
+## What is being asked for
+
+1. A new tab on https://manitoba-opendata-parcelsearch.vercel.app/ showing the
+   status of every data source — when each was last refreshed/scraped, by
+   municipality where that concept exists.
+2. **Sales must NOT appear in that tab.** Sales status belongs only inside
+   Sales Analysis → the MAO sales database option, as a **link to a document**
+   listing last-scraped-for-sales by municipality.
+
+---
+
+## Decisions (2026-08-16)
+
+| Question | Decision |
+|---|---|
+| Where the sales coverage doc lives | **Local folder**, `D:\Dropbox\Appraisal\Web\MAOSales\`, beside the shards — never Vercel |
+| Granularity | **Mixed**: per-municipality where it genuinely exists, one dataset-level vintage otherwise |
+| Scope | **All four**: MAO parcels+assessment (per muni), Zoning + DevPlan + RollEntry, HPI/derived series, live ArcGIS services |
+
+### Why the sales doc is local, not published
+
+The privacy model is explicit and deliberate (see `mao-scrape/HANDOFF-SALES-SEARCH.md`,
+"Privacy model — do not break this"): the sales archive is paid MAO subscriber
+data and is **never** published — not to the repo, not to the GitHub Release /
+jsDelivr path the parcel shards use, not to Vercel. The browser reads a folder on
+the user's own disk via the File System Access API; access control is *absence*,
+not a password.
+
+A municipality+date list is metadata rather than sale records, but it is still
+derived from the subscriber scrape and would publicly advertise that the archive
+exists and exactly what it covers. Keeping it in the same local folder costs
+nothing — **the app already holds a directory handle for that folder** — and
+keeps the model intact.
+
+---
+
+## What already exists (verified 2026-08-16)
+
+**Published manifest** — `web/public/data/manifest.json`, built by
+`web/scripts/build-manifest.js`, read by `web/src/manifest.js`. Carries ONE
+vintage per dataset:
+
+```
+datasets/legal_index      generated_at 2026-08-15T09:30:43Z  row_count 437778
+datasets/assessment_index generated_at 2026-08-15T09:32:45Z  row_count 437981
+```
+
+That is the whole of what the site knows about freshness today, and it is what
+the footer's "Data refreshed …" reads.
+
+**Per-municipality vintage exists ONLY in mao-scrape, and is gitignored:**
+
+| Source | File | Shape |
+|---|---|---|
+| assessment / parcels | `mao-scrape/checkpoints/muni_refresh_ledger.csv` | `muni_no, last_refreshed` — 186 rows, month precision (`2026-07`) |
+| sales | `mao-scrape/checkpoints/sales_search_ledger.json` | per-muni `scraped_at` (full timestamp), plus `status`, `rows`, `capped_groups`, `cap_backfilled_at` |
+
+Neither reaches Vercel today. **The assessment one will need publishing** (a new
+small file in the build); the sales one must NOT be.
+
+**Tabs** are `data-tab="property"` and `data-tab="sales"`, with
+`#tab-btn-*` / `#tab-panel-*` ids — a third tab follows the same pattern.
+
+**Sales panel** — `web/src/lib/salesStore.js` + `salesDbPanel.js`.
+`showDirectoryPicker({ id: 'mao-sales', mode: 'read' })`, handle persisted, data
+cached in IndexedDB. The coverage doc should be read through that same handle.
+
+**Province-wide layers have no per-municipality concept at all** — zoning,
+devplan and RollEntry are single provincial gpkg snapshots
+(`ManitobaZoning_20260811.gpkg` etc., date in the filename). One vintage each.
+
+**Live ArcGIS services** (`web/src/arcgis.js`): Parcels (Roll Entry), Zoning
+By-Laws, Development Plan Designations. Fetched live, so their "vintage" is the
+upstream service's own published date, not ours — `upstream-vintage-check.ps1`
+already tracks this and is the natural source.
+
+---
+
+## Build plan
+
+1. **Publish per-muni assessment vintage.** Extend `build-manifest.js` (or add a
+   sibling step) to emit `web/public/data/muni-vintage.json` from
+   `mao-scrape/checkpoints/muni_refresh_ledger.csv`. Small — 186 rows. Note the
+   ledger is month-precision, so the UI should say "July 2026", not a false day.
+2. **New "Data Status" tab.** Two sections, because the granularities are
+   genuinely different and pretending otherwise misleads:
+   - *By municipality* — 186 rows, assessment/parcels last-refreshed.
+   - *Province-wide sources* — one row each: zoning, devplan, RollEntry, HPI,
+     and the live ArcGIS services with their upstream dates.
+   Explicitly **no sales column**.
+3. **Sales coverage document.** Have `mao-scrape/scripts/export_sales_for_web.R`
+   write `SALES-COVERAGE.csv` (and/or `.md`) into
+   `D:\Dropbox\Appraisal\Web\MAOSales\` on every publish: muni_no, municipality,
+   last scraped, rows, whether any slice is still truncated. It already writes
+   `manifest.json` there, so this is the same path and cadence.
+4. **Link it from the sales panel**, read through the existing directory handle.
+
+## Traps worth knowing before starting
+
+- **Do not add sales to the manifest or any published file.** That is the one
+  hard constraint here.
+- `muni_refresh_ledger.csv` is the ASSESSMENT cadence ledger, written by
+  `$2run_delta.R` via `scripts/cadence.R`. It is unrelated to the sales sweep,
+  which tracks its own state in `sales_search_ledger.json`. The two look
+  interchangeable and are not.
+- A municipality's assessment vintage is a **cohort month**, not a scrape
+  timestamp: `cadence.R` splits munis into 6 or 12 monthly cohorts, so
+  `2026-07` means "refreshed in the July cohort".
+- The sweep is still filling in — 115/186 captured as of 2026-08-16 — so the
+  sales coverage doc will legitimately show many municipalities as never
+  scraped for a while yet.
