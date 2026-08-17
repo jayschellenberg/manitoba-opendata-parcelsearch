@@ -156,8 +156,17 @@ export function initChipInput(wrapperEl, { onEnterEmpty } = {}) {
     }
   }
 
-  function commit() {
-    const raw = textInput.value.trim();
+  /**
+   * Turn pending text into chips.
+   *
+   * `rawText` overrides what is read from the box. The paste handler needs
+   * that: `textInput` is an <input type="text">, and HTML's value-sanitising
+   * step strips CR/LF, so text staged through `textInput.value` arrives here
+   * with its newlines already gone. Anything multi-line must therefore be
+   * passed straight in, never round-tripped through the element.
+   */
+  function commit(rawText) {
+    const raw = String(rawText ?? textInput.value).trim();
     if (!raw) return false;
     const parts = parseList(raw);
     let added = false;
@@ -214,14 +223,19 @@ export function initChipInput(wrapperEl, { onEnterEmpty } = {}) {
   // by newlines — explodes into one chip per row, and a pasted
   // "284950&373300" lands as two chips. Only a genuinely single-token
   // paste falls through to the browser's default.
+  //
+  // The clipboard text goes STRAIGHT to commit(); it must never be staged in
+  // `textInput.value` first. That element is a single-line <input type=text>,
+  // whose value sanitisation strips CR/LF, so a spreadsheet column pasted that
+  // way lost exactly the delimiter it was separated by and three rolls landed
+  // as one concatenated number (Jason, 2026-08-17). Commas, tabs and spaces
+  // survived the round-trip, which is why only the column case was broken.
   textInput.addEventListener('paste', (e) => {
     const text = e.clipboardData?.getData('text');
     if (!text) return;
     if (!/[,;&+|\s]/.test(text)) return; // single token → let default handle
     e.preventDefault();
-    const before = textInput.value;
-    textInput.value = before + text;
-    commit();
+    commit(textInput.value + text);
   });
 
   // Click anywhere on the wrapper focuses the text input so the
