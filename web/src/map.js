@@ -560,6 +560,9 @@ export function initMap(container, { onFeatureClick } = {}) {
     // skip 'load' entirely; the multi-trigger guard keeps mapReady
     // from hanging the overlay toggles.
     let setupDone = false;
+    // Last error setupMap threw, so a permanent failure can name itself
+    // instead of looking like a slow network. See the catch below.
+    let setupError = null;
     const setupMap = () => {
       if (setupDone) return;
       setupDone = true;
@@ -2832,8 +2835,19 @@ export function initMap(container, { onFeatureClick } = {}) {
       map.on('mouseleave', 'mb-highways-line', () => { setHoverCursor(''); });
 
       } catch (err) {
-        // Setup ran before the style was ready — back off and let
-        // the next trigger try again. We re-arm setupDone here.
+        // Usually "Style is not done loading" — setup ran ahead of the
+        // style, so back off and let the next trigger retry. We re-arm
+        // setupDone here.
+        //
+        // But this also swallows a GENUINE error in a layer definition,
+        // which is indistinguishable from the benign case at this point
+        // and now retries forever rather than being papered over at 30s.
+        // Keep the last one so the timeout below can name it: a bad paint
+        // expression fails every attempt identically, and without this the
+        // only symptom is a map that never finishes loading. (An invalid
+        // `line-width` did exactly that on 2026-08-12 and took a
+        // style-spec validator to find.)
+        setupError = err;
         setupDone = false;
         return;
       }
@@ -2856,19 +2870,51 @@ export function initMap(container, { onFeatureClick } = {}) {
     // Poll fallback. Some builds deliver none of the events in
     // time; the poll runs setupMap, which guards via setupDone +
     // catch-on-throw.
-    const pollId = setInterval(() => {
+    //
+    // This poll NEVER gives up, which is what lets the promise below stay
+    // honest. It used to be cleared by a 30s failsafe that then resolved
+    // `ready` regardless, so a slow style load produced a permanently
+    // half-dead map: every mapReady consumer did its one-time wiring
+    // against a map with no sources and no layers, and nothing was left
+    // running that could have recovered when the style finally arrived.
+    //
+    // After the warning threshold it backs off to 1s. Retrying forever at
+    // 120ms would spin a dead tab hot for no benefit; at 1s a late load
+    // still recovers within a second of becoming possible.
+    const poll = (ms) => setInterval(() => {
       if (setupDone) { clearInterval(pollId); return; }
       setupMap();
-    }, 120);
-    // Failsafe so the UI doesn't hang forever in pathological cases
-    // (style genuinely failing to load). Resolves mapReady so the
-    // overlay toggles don't get stuck on "Loading…" — setVis on a
-    // missing layer is a silent no-op.
+    }, ms);
+    let pollId = poll(120);
+
+    // Diagnostic only — it does NOT resolve `ready` (Jason, 2026-08-12).
+    //
+    // Resolving here was the bug: `ready` is the promise 40-odd callers
+    // use to mean "the layers exist now", and firing it when setupMap had
+    // never run made every one of them operate on an empty map. The
+    // symptom was invisible because the failures are all silent —
+    // setPaintProperty and setLayoutProperty on a missing layer are
+    // no-ops, and map.on() against a missing layer registers a handler
+    // that can never fire. It cost a debugging session chasing a
+    // "zero delegated listeners" reading that was really just this.
+    //
+    // The original concern behind resolving — don't leave the UI waiting
+    // forever — is now handled by the poll never stopping: `ready`
+    // resolves whenever the style loads, however late. The only case it
+    // never resolves is a style that never loads at all, and there the
+    // map is blank and unusable regardless, so a button that stays
+    // un-actioned is a truthful signal rather than a hang to paper over.
     setTimeout(() => {
       if (setupDone) return;
-      console.warn('Map setup did not complete after 30s — some overlays may not render until you reload.');
+      console.warn(
+        'Map setup has not completed after 30s — still retrying. '
+        + 'Overlays and map-dependent actions stay inert until the basemap style loads.',
+        setupError
+          ? `\nLast setup error (repeats every attempt if it is a layer-definition bug): ${setupError.message}`
+          : '\nNo error was thrown — the basemap style simply has not finished loading.',
+      );
       clearInterval(pollId);
-      resolve();
+      pollId = poll(1000);
     }, 30000);
   });
 
