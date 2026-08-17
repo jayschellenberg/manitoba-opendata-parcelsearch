@@ -57,10 +57,12 @@ const HEADER_PATTERNS = {
   muni:  /^(munis?|muni\s*#|muni\s*nos?\.?|muni\s*num(ber)?|muni\s*code|muni_no|municipality|municipality\s*#|municipality\s*nos?\.?|municipality\s*num(ber)?|municipality\s*code)$/i,
   legal: /^(legal|legal_?\s*desc|legal_?\s*description|description|leg\s*desc|qq|qs)$/i,
   title: /^(title|title\s*#|title\s*no\.?|c\.?\s*o\.?\s*f?\s*t\.?|cert(ificate)?\s*of\s*title|ct)$/i,
-  // Site / Comp #: a caller-supplied label used as the map/grid number
-  // instead of the auto 1..N sequence. "N1 ID" is the comp number an
-  // R-side comparable-sales export carries.
-  site:  /^(site|site\s*#|site\s*no\.?|site\s*number|comp|comp\s*#|comp\s*no\.?|n1\s*id)$/i,
+  // Site / Parcel / Comp #: a caller-supplied label used as the map/grid
+  // number instead of the auto 1..N sequence. "N1 ID" is the comp number
+  // an R-side comparable-sales export carries. Appraiser-built lists head
+  // this column "Parcel", "Site" or a bare "#", with or without the hash,
+  // so all of those forms land here.
+  site:  /^(#|site|parcel|(site|parcel)\s*#|(site|parcel)\s*nos?\.?|(site|parcel)\s*num(ber)?|comp|comp\s*#|comp\s*nos?\.?|n1\s*id)$/i,
 };
 
 export const FIELD_TYPES = Object.freeze(['roll', 'muni', 'muniName', 'legal', 'title', 'site', 'ignore']);
@@ -297,7 +299,16 @@ function guessColumnType(columnCells, headerCell) {
   // CODE or a muni NAME (the sales-export shape). Decide from content:
   // any name-shaped cells mean it's a name column, else a code column.
   if (hdrHint === 'muni') {
-    return tally.muniName > 0 ? 'muniName' : 'muni';
+    if (tally.muniName > 0) return 'muniName';
+    // Bare names — "ARBORG", "BIFROST-RIVERTON", the shape a hand-built
+    // list uses — carry no "RM OF" / "(RM)" decoration, so they never
+    // trip looksLikeMuniName above and used to fall through to the
+    // numeric-code bucket, where applyMapping stripped them to nothing.
+    // Under a Municipality header, anything that isn't mostly digits is
+    // a name; the resolver reconciles it against the muni list.
+    const numeric = tally.numSmall + tally.numMed + tally.numOther;
+    if (nonEmpty > 0 && numeric < nonEmpty / 2) return 'muniName';
+    return 'muni';
   }
   if (hdrHint) return hdrHint;
 

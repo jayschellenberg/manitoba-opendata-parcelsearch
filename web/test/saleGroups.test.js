@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import {
   computeSaleGroups, groupPosition, maxPairwiseKm, frontageRateState,
   isFarFlungSale, farFlungReason, DEFAULT_FAR_FLUNG_KM,
+  isNominalSale, NOMINAL_SALE_MAX,
 } from '../src/lib/saleGroups.js';
 import { parcelCentrePoint } from '../src/lib/geometryText.js';
 
@@ -575,6 +576,48 @@ test('a row with no sale group at all is blank', () => {
   assert.equal(frontageRateState({}), 'none');
   assert.equal(frontageRateState(null), 'none');
   assert.equal(frontageRateState(undefined), 'none');
+});
+
+console.log('\nisNominalSale');
+
+test('nominal considerations are caught at the $1,000 line', () => {
+  assert.equal(NOMINAL_SALE_MAX, 1000);
+  assert.equal(isNominalSale({ _saleGroupTotalPriceNum: 0 }), true);
+  assert.equal(isNominalSale({ _saleGroupTotalPriceNum: 1 }), true);
+  assert.equal(isNominalSale({ _saleGroupTotalPriceNum: 999.99 }), true);
+  assert.equal(isNominalSale({ _saleGroupTotalPriceNum: 1000 }), false);   // the bound is exclusive
+  assert.equal(isNominalSale({ _saleGroupTotalPriceNum: 425000 }), false);
+});
+
+test('an unreadable consideration is kept, not treated as $0', () => {
+  // parsePrice returns null for a blank cell or "SEE DOCUMENT". Number(null)
+  // is 0, so a missing null-check here would silently drop every such sale.
+  assert.equal(parsePrice(''), null);
+  assert.equal(parsePrice('SEE DOCUMENT'), null);
+  assert.equal(isNominalSale({ _saleGroupTotalPriceNum: null }), false);
+  assert.equal(isNominalSale({ _saleGroupTotalPriceNum: undefined }), false);
+  assert.equal(isNominalSale({}), false);
+  assert.equal(isNominalSale(null), false);
+});
+
+test('a custom threshold is honoured, and a nonsense one disables it', () => {
+  assert.equal(isNominalSale({ _saleGroupTotalPriceNum: 4000 }, 5000), true);
+  assert.equal(isNominalSale({ _saleGroupTotalPriceNum: 4000 }, 0), false);
+  assert.equal(isNominalSale({ _saleGroupTotalPriceNum: 1 }, NaN), false);
+});
+
+test('the whole sale is judged, so both members of a $1 pair drop', () => {
+  // computeSaleGroups puts the group total on the stamp every member
+  // carries, so the predicate reaches the same verdict from either row.
+  const features = [
+    feat({ _saleGroupId: 'g1', OBJECTID: 1, _salePrice: '$1' }),
+    feat({ _saleGroupId: 'g1', OBJECTID: 2, _salePrice: '$1' }),
+  ];
+  const stamp = computeSaleGroups(features, helpers).get('g1');
+  assert.equal(stamp._saleGroupTotalPriceNum, 1);
+  for (const f of features) {
+    assert.equal(isNominalSale({ ...f.properties, ...stamp }), true);
+  }
 });
 
 const failed = results.filter((r) => r.status === 'fail');

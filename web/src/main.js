@@ -47,6 +47,7 @@ import { readMapLegends, layoutMapLegends, paintMapLegends } from './lib/mapLege
 import {
   computeSaleGroups, groupPosition, frontageRateState,
   isFarFlungSale, farFlungReason, DEFAULT_FAR_FLUNG_KM,
+  isNominalSale,
 } from './lib/saleGroups.js';
 import {
   dedupeSalesByRoll, expandFeaturesBySale, unmatchedSales,
@@ -79,7 +80,7 @@ import {
   parcelSlopeRange,
   slopeRangeText,
 } from './lib/cellFormat.js';
-import { filterMascRiverlotsForMuni } from './lib/muniIdentity.js';
+import { filterMascRiverlotsForMuni, matchMuniNameCandidates } from './lib/muniIdentity.js';
 import { safeExternalUrl } from './lib/safeUrl.js';
 import {
   applyCivicNumberFilter,
@@ -438,6 +439,12 @@ const $salesN1 = document.getElementById('sales-n1-filter');
 // rate per acre than rural / farm comps.
 const $salesPpaLow   = document.getElementById('sales-ppa-low');
 const $salesPpaHigh  = document.getElementById('sales-ppa-high');
+// Nominal-sale exclusion (Sales Analysis, beside Sales Coverage). Drops
+// sales whose whole consideration is under NOMINAL_SALE_MAX — the $0/$1
+// family and corrective transfers that carry no market evidence. The
+// predicate + threshold live in lib/saleGroups.js beside isFarFlungSale,
+// the other "remove whole sales" rule.
+const $excludeNominal = document.getElementById('exclude-nominal');
 const $farFlungKm      = document.getElementById('far-flung-km');
 const $farFlungCount   = document.getElementById('far-flung-count');
 const $farFlungExclude = document.getElementById('far-flung-exclude');
@@ -1415,12 +1422,29 @@ if ($rollChip) initChipInput($rollChip, { onEnterEmpty: () => runSearch() });
 async function resolveMuniNamesForImport(rows) {
   const resolvedByLine = new Map();
   const unresolvedByLine = new Map();
+  // The municipality dropdown holds Roll Entry's canonical
+  // Muni_Name_With_Typ values — the names searchParcels matches on
+  // exactly, and so the candidate list for the fuzzy reconciliation.
+  const knownMunis = $municipality
+    ? Array.from($municipality.options).map((o) => o.value).filter(Boolean)
+    : [];
 
-  // Bucket by normalized muni name; drop rows whose name or roll is bad.
-  const byMuni = new Map(); // normName → [{ lineNo, roll }]
+  // Bucket by candidate municipality; drop rows whose name or roll is bad.
+  // A bare name that fits several municipalities ("MORRIS" — both a Town
+  // and an RM) is queried against each, and the roll # decides.
+  const byMuni = new Map();           // canonical muni name → [{ lineNo, roll }]
+  const candidatesByLine = new Map(); // lineNo → canonical names being tried
   for (const r of rows || []) {
-    const norm = normalizeMuniFromCsv(r.muniName);
-    if (!norm) {
+    let candidates = matchMuniNameCandidates(r.muniName, knownMunis);
+    if (candidates.length === 0) {
+      // Nothing matched — either the dropdown hasn't loaded yet or the
+      // name isn't one Roll Entry publishes. Fall back to the strict
+      // prefix/suffix conversion so a well-formed "RM OF X" still goes
+      // out on its own, exactly as it did before fuzzy matching.
+      const strict = normalizeMuniFromCsv(r.muniName);
+      if (strict) candidates = [strict];
+    }
+    if (candidates.length === 0) {
       unresolvedByLine.set(r.lineNo, `Municipality not recognised: "${r.muniName}"`);
       continue;
     }
@@ -1429,19 +1453,27 @@ async function resolveMuniNamesForImport(rows) {
       unresolvedByLine.set(r.lineNo, 'Row has no usable roll #');
       continue;
     }
-    if (!byMuni.has(norm)) byMuni.set(norm, []);
-    byMuni.get(norm).push({ lineNo: r.lineNo, roll });
+    candidatesByLine.set(r.lineNo, candidates);
+    for (const muni of candidates) {
+      if (!byMuni.has(muni)) byMuni.set(muni, []);
+      byMuni.get(muni).push({ lineNo: r.lineNo, roll });
+    }
   }
 
-  // One live lookup per muni. A fetch error drops that muni's rows to
-  // unresolved with the reason rather than letting them vanish silently.
+  // One live lookup per candidate muni. Hits and misses are collected per
+  // line rather than written straight to the output maps — a row with two
+  // candidates legitimately misses in one of them.
+  const hitsByLine = new Map();   // lineNo → [{ muni, hit }]
+  const missByLine = new Map();   // lineNo → first miss reason seen
   await Promise.all([...byMuni.entries()].map(async ([muni, recs]) => {
     const rollList = [...new Set(recs.map((r) => r.roll))].join(',');
     let fc = { features: [] };
     try {
       fc = await searchParcels({ municipality: muni, roll: rollList });
     } catch (err) {
-      for (const r of recs) unresolvedByLine.set(r.lineNo, `Lookup failed for ${muni}: ${err.message || err}`);
+      for (const r of recs) {
+        if (!missByLine.has(r.lineNo)) missByLine.set(r.lineNo, `Lookup failed for ${muni}: ${err.message || err}`);
+      }
       return;
     }
     // Index returned features by canonical Roll_No_Txt → {muni_no, roll}.
@@ -1457,10 +1489,33 @@ async function resolveMuniNamesForImport(rows) {
     }
     for (const r of recs) {
       const hit = byRoll.get(r.roll);
-      if (hit) resolvedByLine.set(r.lineNo, hit);
-      else unresolvedByLine.set(r.lineNo, `Roll ${displayRoll(r.roll)} not found in Roll Entry for ${muni}`);
+      if (hit) {
+        if (!hitsByLine.has(r.lineNo)) hitsByLine.set(r.lineNo, []);
+        hitsByLine.get(r.lineNo).push({ muni, hit });
+      } else if (!missByLine.has(r.lineNo)) {
+        missByLine.set(r.lineNo, `Roll ${displayRoll(r.roll)} not found in Roll Entry for ${muni}`);
+      }
     }
   }));
+
+  for (const [lineNo, candidates] of candidatesByLine) {
+    const hits = hitsByLine.get(lineNo) || [];
+    if (hits.length === 1) {
+      resolvedByLine.set(lineNo, hits[0].hit);
+    } else if (hits.length > 1) {
+      // The roll exists in more than one municipality the bare name fits.
+      // Genuinely ambiguous — say so rather than picking one.
+      unresolvedByLine.set(
+        lineNo,
+        `Roll matches ${hits.length} municipalities (${hits.map((h) => h.muni).join(', ')}) — qualify the name or supply a Muni #`,
+      );
+    } else {
+      unresolvedByLine.set(
+        lineNo,
+        missByLine.get(lineNo) || `Roll not found in ${candidates.join(' or ')}`,
+      );
+    }
+  }
 
   return { resolvedByLine, unresolvedByLine };
 }
@@ -1717,6 +1772,10 @@ function applyUrlStateToInputs(state) {
   if (Number.isInteger(state.page) && state.page >= 1) {
     currentPage = state.page - 1;  // back to 0-based
   }
+  // A shared URL can arrive with advanced criteria already filled in,
+  // and none of the assignments above fire an event — badge the group
+  // so the restored filters are visible while it's still collapsed.
+  renderAdvancedFilterBadge();
 }
 
 // Restore overlays only after their click handlers are registered. Keeping
@@ -2757,7 +2816,7 @@ for (const el of [
   $primaryPropEl,
   $distanceMax, $salesPlan,
   $salesStreetName, $salesPpaLow, $salesPpaHigh, $saleAsmtMax,
-  $salesPriceLow, $salesPriceHigh, $salesN1,
+  $salesPriceLow, $salesPriceHigh, $salesN1, $excludeNominal,
 ].filter(Boolean)) {
   el.addEventListener('change', refilterCsvIfActive);
   el.addEventListener('input',  refilterCsvIfActive);
@@ -2900,6 +2959,71 @@ for (const el of [$addressFrom, $addressTo, $addressStreet, $roll, $legalText, $
     if (e.key === 'Enter') runSearch();
   });
 }
+
+// ---------- "Advanced searches" active-criteria badge ----------
+//
+// The advanced group is collapsed by default, so a criterion set in an
+// earlier session (or restored from a shared URL) silently narrows the
+// next search with nothing on screen to say so. The badge names each
+// active criterion beside the summary title, visible open or closed;
+// the title attribute carries the actual values.
+//
+// Deliberately excludes the Import List of Parcels action that shares
+// the group — a resolved list already announces itself in its own pill
+// above the action row.
+
+/** One entry per active advanced criterion: short label + full detail. */
+function advancedFilterChips() {
+  const chips = [];
+  const legal = $legalText?.value.trim() || '';
+  if (legal) chips.push({ label: 'Legal', detail: `Legal description contains "${legal}"` });
+  const ct = $title?.value.trim() || '';
+  if (ct) chips.push({ label: 'Title', detail: `Certificate of title contains "${ct}"` });
+  const zone = $zoneCategory?.value.trim() || '';
+  if (zone) chips.push({ label: 'Zoning', detail: `Zoning category: ${zone}` });
+  const status = $changedStatus?.value || '';
+  if (status) {
+    const text = $changedStatus.selectedOptions?.[0]?.textContent?.trim() || status;
+    chips.push({ label: 'Amendments', detail: `Amendments: ${text}` });
+  }
+  const duMode = $duMode?.value || '';
+  if (duMode === 'zero') {
+    chips.push({ label: '0 DU', detail: 'Dwelling units: 0 only (vacant / non-residential)' });
+  } else if (duMode === 'min') {
+    const n = parseInt($duMin?.value ?? '', 10);
+    chips.push(Number.isFinite(n) && n > 0
+      ? { label: `DU ≥ ${n}`, detail: `Dwelling units: at least ${n}` }
+      : { label: 'Min DU', detail: 'Dwelling units: minimum set, no count entered yet' });
+  }
+  return chips;
+}
+
+function renderAdvancedFilterBadge() {
+  // Looked up per call rather than captured in a module-level const:
+  // applyUrlStateToInputs() calls this during boot, well before this
+  // point in the module body would have initialized one.
+  const badge = document.getElementById('advanced-filters-badge');
+  if (!badge) return;
+  const chips = advancedFilterChips();
+  if (chips.length === 0) {
+    badge.hidden = true;
+    badge.textContent = '';
+    badge.removeAttribute('title');
+    return;
+  }
+  badge.hidden = false;
+  badge.textContent = chips.map((c) => c.label).join(' · ');
+  badge.title = `${chips.length} advanced criteri${chips.length === 1 ? 'on' : 'a'} set — ${chips.map((c) => c.detail).join('; ')}`;
+}
+
+// Delegated so every control in the group is covered, including any
+// added later. `input` catches typing in the two text fields; `change`
+// catches the selects and the Min # spinner (and fires after the
+// du-mode handler above has rewritten $duMin, so the count is current).
+const $advancedFiltersGroup = document.querySelector('details.advanced-filters');
+$advancedFiltersGroup?.addEventListener('input', renderAdvancedFilterBadge);
+$advancedFiltersGroup?.addEventListener('change', renderAdvancedFilterBadge);
+renderAdvancedFilterBadge();
 
 for (const th of document.querySelectorAll('#results th[data-col]')) {
   th.addEventListener('click', () => {
@@ -3334,6 +3458,11 @@ async function refilterCategoryDropdowns() {
     // Restore prior selection if it's still valid in the (potentially
     // narrowed/widened) list.
     if (zoneCats.includes(prevZone)) $zoneCategory.value = prevZone;
+    // Refilling the select can drop a category the new muni doesn't
+    // have, and that assignment fires no change event — refresh the
+    // summary badge by hand so it never claims a zoning filter that
+    // is no longer selected.
+    renderAdvancedFilterBadge();
   } catch (err) {
     console.warn('Failed to refilter category dropdowns', err);
     $zoneCategory.disabled = false;
@@ -5601,8 +5730,19 @@ function filterCsvRowsByOtherSearches(rows) {
   // part of one, which would silently corrupt its $/Acre.
   const farFlungThreshold = farFlungExcludeOn() ? farFlungThresholdKm() : null;
 
+  // Nominal-sale exclusion — the ticked box beside Sales Coverage.
+  const excludeNominal = !!$excludeNominal?.checked;
+
   return rows.filter((row) => {
     const p = row.parcel?.properties || {};
+
+    // Nominal sales — $0 / $1 family and corrective transfers, no market
+    // evidence in them. Group-level like the price-range filter, so a
+    // multi-parcel conveyance drops whole. Deliberately fails OPEN on an
+    // unparseable consideration: "SEE DOCUMENT" is unknown, not nominal,
+    // and silently dropping unknowns from a comp set would be worse than
+    // leaving one nominal sale in view.
+    if (excludeNominal && isNominalSale(p)) return false;
 
     // Far-flung sales — a portfolio or estate transaction whose blended
     // rate isn't a local comparable. isFarFlungSale fails open on an

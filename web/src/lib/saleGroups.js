@@ -79,6 +79,34 @@ export function isFarFlungSale(props, thresholdKm) {
 }
 
 /**
+ * Consideration below which a sale is nominal rather than market
+ * evidence — the $0 / $1 family conveyances, corrective transfers and
+ * quit claims. The "Exclude Nominal Sales" tooltip states this figure,
+ * so the two move together.
+ */
+export const NOMINAL_SALE_MAX = 1000;
+
+/**
+ * Is this a nominal sale — whole consideration under `maxPrice`?
+ *
+ * Judged on the sale-group total, so a multi-parcel conveyance passes or
+ * fails as one transaction (the same rule the price-range filter uses).
+ *
+ * Fails OPEN on an unreadable consideration: parsePrice returns null for
+ * a blank cell or "SEE DOCUMENT", and unknown is not the same as
+ * nominal. Note that null must be screened before any Number() coercion
+ * — Number(null) is 0, which would read as a $0 sale.
+ */
+export function isNominalSale(props, maxPrice = NOMINAL_SALE_MAX) {
+  const raw = props?._saleGroupTotalPriceNum;
+  if (raw == null) return false;
+  const price = Number(raw);
+  if (!Number.isFinite(price)) return false;
+  if (!Number.isFinite(maxPrice) || maxPrice <= 0) return false;
+  return price < maxPrice;
+}
+
+/**
  * Human-readable reason string for the grid badge's tooltip and the map
  * popup, or '' when the sale isn't far-flung. Names the threshold that
  * produced the verdict so the user isn't left guessing why this sale

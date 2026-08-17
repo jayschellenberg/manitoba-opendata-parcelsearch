@@ -306,7 +306,16 @@
                of title, zoning category, amendment status, dwelling units).
                Phase 4 will replace the inline tooltips with info icons. -->
           <details class="advanced-filters">
-            <summary>Advanced searches</summary>
+            <!-- The badge lists whichever advanced criteria are set. It
+                 lives inside <summary> so it stays visible when the
+                 group is collapsed — the case where a forgotten filter
+                 silently narrows a search. Filled by
+                 renderAdvancedFilterBadge() in main.js. -->
+            <summary><span class="advanced-filters-title">Advanced searches</span><span
+              class="advanced-filters-badge"
+              id="advanced-filters-badge"
+              hidden
+            ></span></summary>
             <!-- Legal description + Certificate of Title row -->
             <div class="legal-title-row">
               <span class="field legal-title-field">
@@ -367,8 +376,18 @@
                 type="button"
                 id="parcel-list-import-trigger"
                 class="parcel-list-import-trigger"
-                title="Paste or upload a multi-municipality parcel list — Roll # plus at least one of Municipality name, Muni #, Title #, or Legal Description. A sales export works too: map its Municipality column to 'Municipality (name)'. Resolves each row's muni and highlights them all; multi-parcel sales (stacked rolls) import as a shaded group."
+                title="Paste or upload a multi-municipality parcel list — Roll # plus at least one of Municipality name, Muni #, Title #, or Legal Description. Bare municipality names work ('ARBORG' matches 'ARBORG (TOWN)'), and a Site / Parcel / # column numbers the parcels on the map. A sales export works too: map its Municipality column to 'Municipality (name)'. Resolves each row's muni and highlights them all; multi-parcel sales (stacked rolls) import as a shaded group."
               >Import List of Parcels</button>
+              <!-- Template download. Static file in web/public, so it is
+                   served straight off the site root in both dev and
+                   production. One row per accepted identifier so the
+                   file itself documents the rule the modal states. -->
+              <a
+                class="sample-csv-link"
+                href="sample-parcel-list.csv"
+                download="sample-parcel-list.csv"
+                title="Download a sample CSV — Roll # plus any one of Municipality Name, Muni #, Title # or Legal Description. Every row in it resolves."
+              >Sample CSV</a>
             </div>
           </details>
 
@@ -477,6 +496,20 @@
               <p class="sales-db-update" id="sales-db-update" hidden></p>
             </div>
           </details>
+
+          <!-- Nominal-sale exclusion. Directly under the database block, so
+               it still reads as the line after Sales Coverage — but OUTSIDE
+               it, because #sales-db-ready is hidden until a database folder
+               is connected and that would keep this filter from everyone
+               working off a CSV upload or paste. It applies to whichever
+               sale set is loaded; the filter itself is a pass in main.js. -->
+          <div class="sales-nominal-row">
+            <label class="sales-nominal-exclude" for="exclude-nominal"
+                   title="Sales where consideration &lt;$1000 — the $0 / $1 nominal transfers (family conveyances, corrective transfers) that are not market evidence. Applies to both the MAO database and an uploaded CSV. Tested against the whole sale's consideration, so a multi-parcel sale drops as one; a sale with no readable consideration is kept.">
+              <input type="checkbox" id="exclude-nominal" />
+              <span>Exclude Nominal Sales</span>
+            </label>
+          </div>
 
           <!-- Manual import (upload / paste / recent). Once the MAO Sales
                Database is imported these are the fallback path, not the
@@ -1607,9 +1640,18 @@
             <strong>Title #</strong>, or <strong>Legal Description</strong>.
             A sales export (Sale Date, Consideration, Municipality, Roll #, …) works too —
             map its Municipality column to <strong>Municipality (name)</strong> to reconcile
-            by name. Supplying a Muni # (or a recognised Municipality name) skips the
-            legal-index lookup and is the most reliable input. Multi-parcel sales — one row
-            with several stacked rolls — import as a single shaded group.
+            by name. Municipality names can be bare: <em>ARBORG</em> matches
+            <em>ARBORG (TOWN)</em>, <em>BIFROST-RIVERTON</em> matches
+            <em>BIFROST-RIVERTON (MUNICIPALITY)</em>. Supplying a Muni # (or a recognised
+            Municipality name) skips the legal-index lookup and is the most reliable input.
+            A <strong>Site #</strong> column — headed Site, Parcel or just # — numbers the
+            parcels on the map instead of the automatic 1…N order. Multi-parcel sales — one
+            row with several stacked rolls — import as a single shaded group.
+            <a
+              class="sample-csv-link"
+              href="sample-parcel-list.csv"
+              download="sample-parcel-list.csv"
+            >Download a sample CSV</a> — one row per accepted identifier.
           </p>
           <textarea
             id="parcel-list-import-text"

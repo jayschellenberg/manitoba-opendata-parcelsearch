@@ -103,6 +103,59 @@ export function muniIdentitiesMatch(sourceMuni, selectedMuni, { allowTypeFallbac
   return allowTypeFallback;
 }
 
+/**
+ * Split a municipality string into { name, type }, tolerating a
+ * parenthetical type parseMuniIdentity doesn't know ("(LGD)", "(NORTHERN
+ * COMMUNITY)"). Any trailing "(…)" is lifted off first, so the bare name
+ * survives instead of being folded into it.
+ */
+function splitTypedMuniName(value) {
+  const s = String(value ?? '').trim();
+  const paren = s.match(/\s*\(([^)]*)\)\s*$/);
+  const identity = parseMuniIdentity(paren ? s.slice(0, paren.index) : s);
+  const type = paren ? normalizeMuniType(paren[1]) : identity.type;
+  return { name: identity.name, type: type || null };
+}
+
+/**
+ * Match a user-supplied municipality string against the canonical names
+ * the app knows ("ARBORG (TOWN)", "ROCKWOOD (RM)").
+ *
+ * Appraiser-built parcel lists write the bare place name — "ARBORG",
+ * "BIFROST-RIVERTON", "ST. ANDREWS" — with none of the "RM OF" / "(RM)"
+ * decoration an exact match needs. This reconciles both sides through
+ * parseMuniIdentity (accents, punctuation, type tokens, spelling
+ * reconciliations) and returns EVERY known name sharing that identity.
+ *
+ * Returning all of them is deliberate: a bare name can fit two
+ * municipalities of different type — Manitoba has both a Town and an RM
+ * of Morris — and the caller is better placed to break the tie (the
+ * parcel-list import asks which one actually holds the roll #) than a
+ * coin flip here.
+ *
+ * Order of preference:
+ *   1. exact string match            → that one name
+ *   2. same name + same stated type  → "RM OF MORRIS" → "MORRIS (RM)"
+ *   3. same name, type unstated      → every municipality of that name
+ */
+export function matchMuniNameCandidates(raw, knownNames = []) {
+  const list = (knownNames || []).filter(Boolean).map(String);
+  const input = String(raw ?? '').trim();
+  if (!input || list.length === 0) return [];
+
+  const flatten = (v) => v.toUpperCase().replace(/\s+/g, ' ').trim();
+  const exact = list.find((n) => flatten(n) === flatten(input));
+  if (exact) return [exact];
+
+  const want = splitTypedMuniName(input);
+  if (!want.name) return [];
+  const sameName = list.filter((n) => splitTypedMuniName(n).name === want.name);
+  if (sameName.length <= 1 || !want.type) return sameName;
+
+  const sameType = sameName.filter((n) => splitTypedMuniName(n).type === want.type);
+  return sameType.length > 0 ? sameType : sameName;
+}
+
 /** The distinct municipality strings a MASC river-lot feature carries. */
 export function featureMascMunis(feature) {
   const p = feature?.properties || {};

@@ -363,6 +363,30 @@ header small a {
   user-select: none;
 }
 .sidebar .advanced-filters > summary:hover { color: #2c3e50; }
+/* Active-criteria badge in the summary. The themed summary further down
+   this file is a flex row (chevron · title · badge); wrapping lets a
+   long criteria list drop to its own line at the 320-px sidebar width
+   rather than squeezing the title. The chip reads as data, not as more
+   heading: normal case (the summary is uppercased), accent tint. */
+.sidebar .advanced-filters > summary { flex-wrap: wrap; }
+.sidebar .advanced-filters > summary .advanced-filters-title { flex: 0 0 auto; }
+.sidebar .advanced-filters > summary .advanced-filters-badge {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 1px 7px;
+  border: 1px solid var(--ui-accent, #2f6f6a);
+  border-radius: 999px;
+  background: var(--ui-accent-soft, #e4f1ef);
+  color: var(--ui-accent-dark, #1f5752);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: normal;
+}
+.sidebar .advanced-filters > summary .advanced-filters-badge[hidden] {
+  display: none;
+}
 .sidebar .advanced-filters > summary:focus-visible {
   outline: 2px solid var(--color-accent-500, #2563eb);
   outline-offset: 2px;
@@ -515,6 +539,26 @@ header small a {
   flex-wrap: wrap;
   margin-top: 8px;
 }
+/* Exclude Nominal Sales — its own row under the sales-database block,
+   so it survives that block collapsing to a title on the CSV-upload
+   path. Reads as a checkbox, not a button: no border, no fill. */
+.sales-nominal-row {
+  display: flex;
+  margin: 2px 0 4px;
+}
+.sales-nominal-exclude {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 2px;
+  font-size: 12.5px;
+  color: var(--ui-ink-soft, #4d5752);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.sales-nominal-exclude input { cursor: pointer; margin: 0; }
+.sales-nominal-exclude:hover { color: var(--ui-ink, #151916); }
 /* Data Status tab: three disclosure blocks of small tables. Same table
    treatment as the sales coverage dialog; unknown vintages read muted
    rather than alarming — absence of a date is normal for some sources. */
@@ -938,16 +982,18 @@ header small a {
   text-align: center;
 }
 
-/* DU mode + min-# in a side-by-side row inside the sidebar. The mode
-   select takes ~half the width, the min-# input takes the rest, so the
-   user can still see both at the same time at the 280-px sidebar width. */
+/* DU mode + min-# in a side-by-side row inside the sidebar. Even
+   50/50 split: the mode select is capped at half the sidebar width
+   (it used to grow to fill, leaving a cramped 64-px unit input on a
+   wide sidebar) and the min-# input takes the other half. Both carry
+   min-width:0 so they can shrink past the select's intrinsic width. */
 .sidebar .du-row {
   display: flex;
   gap: 6px;
 }
 
-.sidebar .du-row .du-mode-field { flex: 1 1 50%; min-width: 0; }
-.sidebar .du-row .du-min-field  { flex: 0 0 64px; min-width: 0; }
+.sidebar .du-row .du-mode-field { flex: 1 1 50%; max-width: 50%; min-width: 0; }
+.sidebar .du-row .du-min-field  { flex: 1 1 50%; min-width: 0; }
 
 /* Combined DU + Size row — 4 fields on one line at the 280-px
    sidebar width. Left half (DU mode + #) takes 50%; right half
@@ -1066,8 +1112,8 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   gap: 6px;
   margin-top: 4px;
 }
-.sidebar .more-filters .du-row .du-mode-field { flex: 1 1 50%; min-width: 0; }
-.sidebar .more-filters .du-row .du-min-field  { flex: 0 0 64px; min-width: 0; }
+.sidebar .more-filters .du-row .du-mode-field { flex: 1 1 50%; max-width: 50%; min-width: 0; }
+.sidebar .more-filters .du-row .du-min-field  { flex: 1 1 50%; min-width: 0; }
 
 /* Plan # + size row — all three on one line. Lo Ac / Hi Ac inputs are
    equal-width; Plan # absorbs the rest. (Vacant Only used to end this
@@ -4048,7 +4094,9 @@ body:not(.has-max-km) #results td.subj-col {
 
 .advanced-import-row {
   display: flex;
+  align-items: center;
   justify-content: flex-start;
+  gap: 10px;
   margin-top: 10px;
 }
 
@@ -4076,8 +4124,10 @@ body:not(.has-max-km) #results td.subj-col {
 }
 
 /* The property-search import is a primary advanced-search action, so it
-   gets a full button treatment. Scope this to its row so the compact
-   "Paste data…" action in Sales analysis keeps its link-like styling. */
+   gets a full button treatment — black, matching the Search button's
+   weight rather than the teal accent, which read as a secondary action.
+   Scope this to its row so the compact "Paste data…" action in Sales
+   analysis keeps its link-like styling. */
 .advanced-import-row .parcel-list-import-trigger {
   display: inline-flex;
   align-items: center;
@@ -4086,8 +4136,8 @@ body:not(.has-max-km) #results td.subj-col {
   min-width: 166px;
   min-height: 38px;
   padding: 8px 14px;
-  border: 1px solid var(--color-accent-600, #1d4ed8);
-  background: var(--color-accent-600, #1d4ed8);
+  border: 1px solid var(--ui-brand, #121613);
+  background: var(--ui-brand, #121613);
   color: #fff;
   font-size: 13px;
   font-weight: 600;
@@ -4097,9 +4147,41 @@ body:not(.has-max-km) #results td.subj-col {
 }
 
 .advanced-import-row .parcel-list-import-trigger:hover {
-  border-color: var(--color-accent-700, #1e40af);
-  background: var(--color-accent-700, #1e40af);
+  border-color: var(--ui-brand-hover, #222c27);
+  background: var(--ui-brand-hover, #222c27);
   color: #fff;
+}
+
+/* "Sample CSV" template download — quiet link weight beside the black
+   import button, and inline in the modal's help paragraph. The file is
+   web/public/sample-parcel-list.csv: Roll # plus one each of the four
+   accepted identifiers, so it doubles as the format's documentation. */
+.sample-csv-link {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ui-accent-dark, #1f5752);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sample-csv-link:hover {
+  color: var(--ui-brand, #121613);
+}
+
+.sample-csv-link:focus-visible {
+  outline: 2px solid var(--ui-focus, #3867d6);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* Inside the modal the link sits mid-sentence in the help copy, so it
+   inherits that paragraph's size and only the colour sets it apart. */
+.parcel-list-modal-help .sample-csv-link {
+  font-size: inherit;
+  font-weight: 600;
+  white-space: normal;
 }
 
 /* Resolved-list pill — shown above the Search/Clear buttons once

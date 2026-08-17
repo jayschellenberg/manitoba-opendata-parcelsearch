@@ -14,6 +14,7 @@ import {
   normalizeMuniType,
   parseMuniIdentity,
   muniIdentitiesMatch,
+  matchMuniNameCandidates,
   featureMascMunis,
   filterMascRiverlotsForMuni,
 } from '../src/lib/muniIdentity.js';
@@ -133,6 +134,59 @@ test('falls back to shared bare name only when no exact match exists', () => {
 test('returns empty when nothing shares the name', () => {
   const feats = [{ properties: { muni: 'MORRIS (RM)' } }];
   assert.deepEqual(filterMascRiverlotsForMuni(feats, 'DE SALABERRY (RM)'), []);
+});
+
+console.log('\nmatchMuniNameCandidates');
+
+// The canonical names Roll Entry publishes, as the municipality dropdown
+// carries them. MORRIS appears twice on purpose — a bare "MORRIS" is
+// genuinely ambiguous and the matcher must not pick one.
+const KNOWN = [
+  'ARBORG (TOWN)',
+  'BIFROST-RIVERTON (MUNICIPALITY)',
+  'ROCKWOOD (RM)',
+  'STONEWALL (TOWN)',
+  'TEULON (TOWN)',
+  'MORRIS (RM)',
+  'MORRIS (TOWN)',
+  'ST ANDREWS (RM)',
+  'MYSTERY LAKE (LGD)',
+];
+
+test('bare place name matches its canonical typed name', () => {
+  assert.deepEqual(matchMuniNameCandidates('ARBORG', KNOWN), ['ARBORG (TOWN)']);
+  assert.deepEqual(matchMuniNameCandidates('ROCKWOOD', KNOWN), ['ROCKWOOD (RM)']);
+  assert.deepEqual(matchMuniNameCandidates('BIFROST-RIVERTON', KNOWN), ['BIFROST-RIVERTON (MUNICIPALITY)']);
+});
+
+test('exact and prefixed forms keep working', () => {
+  assert.deepEqual(matchMuniNameCandidates('STONEWALL (TOWN)', KNOWN), ['STONEWALL (TOWN)']);
+  assert.deepEqual(matchMuniNameCandidates('RM OF ROCKWOOD', KNOWN), ['ROCKWOOD (RM)']);
+  assert.deepEqual(matchMuniNameCandidates('town of teulon', KNOWN), ['TEULON (TOWN)']);
+});
+
+test('punctuation and case differences close', () => {
+  assert.deepEqual(matchMuniNameCandidates('St. Andrews', KNOWN), ['ST ANDREWS (RM)']);
+  assert.deepEqual(matchMuniNameCandidates('bifrost riverton', KNOWN), ['BIFROST-RIVERTON (MUNICIPALITY)']);
+});
+
+test('a parenthetical type the parser does not know still matches', () => {
+  assert.deepEqual(matchMuniNameCandidates('MYSTERY LAKE', KNOWN), ['MYSTERY LAKE (LGD)']);
+});
+
+test('an ambiguous bare name returns every candidate, unpicked', () => {
+  assert.deepEqual(matchMuniNameCandidates('MORRIS', KNOWN), ['MORRIS (RM)', 'MORRIS (TOWN)']);
+});
+
+test('a stated type breaks the tie', () => {
+  assert.deepEqual(matchMuniNameCandidates('RM OF MORRIS', KNOWN), ['MORRIS (RM)']);
+  assert.deepEqual(matchMuniNameCandidates('MORRIS (TOWN)', KNOWN), ['MORRIS (TOWN)']);
+});
+
+test('unknown names and empty input yield nothing', () => {
+  assert.deepEqual(matchMuniNameCandidates('NOWHERE', KNOWN), []);
+  assert.deepEqual(matchMuniNameCandidates('', KNOWN), []);
+  assert.deepEqual(matchMuniNameCandidates('ARBORG', []), []);
 });
 
 const failed = results.filter((r) => r.status === 'fail');

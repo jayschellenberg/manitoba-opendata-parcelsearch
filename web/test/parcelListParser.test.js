@@ -563,6 +563,57 @@ await test('header aliases: plural / no-space / underscore export forms', () => 
   }
 });
 
+await test('a Municipality column of bare names types as muniName, not a code', () => {
+  // The hand-built appraiser shape: no "RM OF" / "(RM)" decoration, so
+  // looksLikeMuniName can't see it — the header plus non-numeric content
+  // has to carry the decision, or applyMapping strips the names to null.
+  const text = [
+    'Roll \tMunicipality',
+    '53850\tBIFROST-RIVERTON',
+    '3900\tARBORG',
+    '312100\tROCKWOOD',
+  ].join('\n');
+  const p = parseParcelList(text);
+  assert.deepEqual(p.guesses, ['roll', 'muniName']);
+  const { rows } = applyMapping(p, p.guesses, { canonicalRoll });
+  assert.deepEqual(
+    rows.map((r) => [r.roll, r.muniName, r.muniNo]),
+    [['53850.000', 'BIFROST-RIVERTON', null],
+     ['3900.000', 'ARBORG', null],
+     ['312100.000', 'ROCKWOOD', null]],
+  );
+});
+
+await test('a numeric Municipality column is still a muni code', () => {
+  const p = parseParcelList('Roll #\tMunicipality\n218600\t275\n219000\t275');
+  assert.deepEqual(p.guesses, ['roll', 'muni']);
+});
+
+await test('Site / Parcel / # header aliases all map to the site label', () => {
+  for (const header of ['Site', 'Site #', 'Parcel', 'Parcel #', '#', 'Parcel No.', 'Comp']) {
+    const p = parseParcelList(`${header}\tRoll #\tMunicipality\n1\t53850\tBIFROST-RIVERTON`);
+    assert.equal(p.guesses[0], 'site', `${header} → site`);
+  }
+});
+
+await test('the Parcel / Roll / Municipality list maps and validates whole', () => {
+  const text = [
+    'Parcel\tRoll #\tMunicipality',
+    '1\t53850\tBIFROST-RIVERTON',
+    '2\t3900\tARBORG',
+    '17\t108302.98\tSTONEWALL',
+  ].join('\n');
+  const p = parseParcelList(text);
+  assert.deepEqual(p.guesses, ['site', 'roll', 'muniName']);
+  assert.equal(validateMapping(p.guesses), null);
+  const { rows, issues } = applyMapping(p, p.guesses, { canonicalRoll });
+  assert.deepEqual(issues, []);
+  assert.deepEqual(rows.map((r) => r.site), ['1', '2', '17']);
+  // Sub-roll suffixes survive canonicalization.
+  assert.equal(rows[2].roll, '108302.980');
+  assert.equal(rows[2].muniName, 'STONEWALL');
+});
+
 // ---------- summary ----------
 
 const fails = results.filter((r) => r.status === 'fail');
