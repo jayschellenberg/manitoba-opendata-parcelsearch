@@ -5,6 +5,24 @@ Notes captured during the rollout of the per-roll assessment shard +
 these are the next leverage points off the same data once we have a
 need + headspace.
 
+## Shard CDN: Vercel proxy in front of raw.githubusercontent
+
+2026-08-17: mb-parcel-data (~175 MB) and mb-parcel-history (~177 MB)
+turned out to be over jsDelivr's 50 MB *package* limit — cached files
+kept serving but every cold file failed, and new commit pins could
+never ingest. Both CDN constants in `web/src/arcgis.js` now point at
+`raw.githubusercontent.com/<repo>/<sha>/<path>` (no size limit, no
+ingestion lag, CORS `*`), which is fine at this app's traffic since
+every fetch is localStorage-cached 30 days keyed by the pinned SHA.
+
+raw is rate-limited per client IP, though. If users ever report shards
+"missing" in bursts (fetch helpers swallow 429s as "no data"), add a
+`vercel.json` rewrite such as `/parcel-data/:sha/:path*` →
+`raw.githubusercontent.com/jayschellenberg/mb-parcel-data/:sha/:path*`
+with a long `s-maxage` header, point `MB_PARCEL_DATA_CDN` at the
+same-origin path, and let Vercel's edge cache absorb the traffic (same
+pattern as `api/section-grid.js`).
+
 ## Table + popup + CSV columns
 
 The filter alone hides parcels — but the assessment values themselves
