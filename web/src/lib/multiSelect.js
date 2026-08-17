@@ -18,6 +18,25 @@
  * the selection changes, so callers can keep wiring it alongside plain
  * <input>/<select> elements in a single listener loop.
  *
+ * TWO MODES.
+ *
+ *   FLAT — setOptions(['RESIDENTIAL 1', ...]). What the class, zoning and
+ *     zoning-type filters use: a short list of strings, ticked directly.
+ *
+ *   GROUPED — setGroups([{family, options:[{value, label, count}]}]).
+ *     Added for the Primary Property filter, whose value space is far too
+ *     long to tick through flat (565 descriptors province-wide, median 100
+ *     per municipality). Each group renders as its own <details> with a
+ *     tri-state parent checkbox, so "every Residential structure type" is
+ *     one click rather than nine. The pattern is lifted from the sales
+ *     database panel's region list (salesDbPanel.js renderMuniList), which
+ *     solved the same problem for 186 municipalities.
+ *
+ * In grouped mode a tick's `value` is a caller-supplied key rather than the
+ * visible text, because labels are NOT unique across groups — Primary
+ * Property has an "Other" bucket under both Residential and ICI, and
+ * ticking one must not silently tick the other.
+ *
  * Expected markup — the module fills in the label and the menu:
  *   <details class="multiselect" id="asmt-class">
  *     <summary><span class="multiselect-label"></span></summary>
@@ -33,11 +52,21 @@
  * or more collapse to a count, because the values run to 30-odd
  * characters ("RESIDENTIAL 3--CONDOS & CO-OPS") and two of them
  * side by side would just truncate into noise.
+ *
+ * `labelOf` maps a value to its display text, for grouped mode where the
+ * two differ. Omitted, the value IS the label, which is what every flat
+ * caller wants.
  */
-export function summarizeSelection(selected, { placeholder = 'Any', noun = 'selected' } = {}) {
+export function summarizeSelection(selected, { placeholder = 'Any', noun = 'selected', labelOf } = {}) {
   const list = (selected || []).filter((v) => v !== '' && v != null);
   if (list.length === 0) return placeholder;
-  if (list.length === 1) return String(list[0]);
+  if (list.length === 1) {
+    // Fall back to the value when the label map doesn't know it — a stale
+    // selection would otherwise put the literal text "undefined" on the
+    // closed control, which reads as a bug rather than as a stale tick.
+    const one = list[0];
+    return String((labelOf ? labelOf(one) : one) ?? one);
+  }
   return `${list.length} ${noun}`;
 }
 
@@ -56,13 +85,28 @@ export function retainSelection(previousSelected, nextOptions) {
 }
 
 /**
+ * Flatten a grouped option tree to the leaf values, in display order.
+ * Exported so callers (and tests) can reason about what a tree offers
+ * without walking it themselves.
+ */
+export function flattenGroups(groups) {
+  const out = [];
+  for (const g of groups || []) {
+    for (const o of g?.options || []) out.push(o);
+  }
+  return out;
+}
+
+const fmtCount = (n) => Number(n || 0).toLocaleString();
+
+/**
  * Wire up a compact multi-select.
  *
  * @param {HTMLElement} root - the <details class="multiselect"> element
  * @param {Object} opts
  * @param {string} opts.placeholder - label when nothing is selected
  * @param {string} opts.noun - plural noun for the "N noun" summary
- * @returns {{setOptions, getSelected, setSelected, clear, isEmpty}}
+ * @returns {{setOptions, setGroups, getSelected, setSelected, clear, isEmpty}}
  *   A no-op stub when `root` is missing, so callers don't need to
  *   null-check every method.
  */
@@ -74,6 +118,7 @@ export function initMultiSelect(root, {
   if (!root) {
     return {
       setOptions: () => {},
+      setGroups: () => {},
       getSelected: () => [],
       setSelected: () => {},
       clear: () => {},
@@ -83,11 +128,25 @@ export function initMultiSelect(root, {
 
   const $label = root.querySelector('.multiselect-label');
   const $menu  = root.querySelector('.multiselect-menu');
-  let options  = [];
-  let selected = [];
+  // `options` is always the flat list of selectable leaves, in display
+  // order, whichever mode we are in — so selection retention, ordering and
+  // the summary have exactly one code path. `groups` is non-empty only in
+  // grouped mode, and only the renderer looks at it.
+  let groups   = [];
+  let options  = [];   // [{value, label, count?}]
+  let selected = [];   // values
+
+  // Live checkbox references, rebuilt by renderMenu. Ticking a box updates
+  // its siblings' state in place rather than re-rendering the menu, which
+  // would collapse the open group and lose the scroll position mid-click.
+  let childBoxes = new Map();   // value -> input
+  let groupBoxes = [];          // [{box, values}]
+
+  const labelOf = (value) => options.find((o) => o.value === value)?.label ?? value;
+  const optionValues = () => options.map((o) => o.value);
 
   function renderLabel() {
-    if ($label) $label.textContent = summarizeSelection(selected, { placeholder, noun });
+    if ($label) $label.textContent = summarizeSelection(selected, { placeholder, noun, labelOf });
     // Lets CSS mute the control while it reads "Any …", matching how a
     // placeholder in a text input renders against a filled-in one.
     root.classList.toggle('has-selection', selected.length > 0);
@@ -97,9 +156,68 @@ export function initMultiSelect(root, {
     root.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
+  /** Keep selection in the option list's order, not click order. */
+  function normalizeSelection() {
+    const picked = new Set(selected);
+    selected = optionValues().filter((v) => picked.has(v));
+  }
+
+  /** Refresh every checkbox from `selected`, without rebuilding the DOM. */
+  function refreshBoxes() {
+    const picked = new Set(selected);
+    for (const [value, box] of childBoxes) box.checked = picked.has(value);
+    for (const { box, values } of groupBoxes) {
+      const n = values.filter((v) => picked.has(v)).length;
+      box.checked = n === values.length && values.length > 0;
+      box.indeterminate = n > 0 && n < values.length;
+    }
+  }
+
+  function setValues(values, on) {
+    const picked = new Set(selected);
+    for (const v of values) {
+      if (on) picked.add(v); else picked.delete(v);
+    }
+    selected = [...picked];
+    normalizeSelection();
+    refreshBoxes();
+    renderLabel();
+    emitChange();
+  }
+
+  function optionRow(opt) {
+    const row = document.createElement('label');
+    row.className = 'multiselect-option';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.value = opt.value;
+    box.checked = selected.includes(opt.value);
+    box.addEventListener('change', (e) => {
+      // The checkbox's own change event would bubble to the root as
+      // well, so callers listening on the root would be told twice
+      // per click. Swallow it and let emitChange() below be the one
+      // signal the control produces — the Clear button needs an
+      // explicit dispatch anyway, and one code path is easier to
+      // reason about than two that happen to agree.
+      e.stopPropagation();
+      setValues([opt.value], box.checked);
+    });
+    const text = document.createElement('span');
+    // The count matters more than it looks. Primary Property's blank share
+    // swings from 45% of Residential sales to 96% of Farm ones, so a bare
+    // list would hide that a farm subcategory filter addresses 4% of the
+    // farm sales on screen.
+    text.textContent = opt.count == null ? opt.label : `${opt.label} (${fmtCount(opt.count)})`;
+    row.append(box, text);
+    return row;
+  }
+
   function renderMenu() {
     if (!$menu) return;
     $menu.innerHTML = '';
+    childBoxes = new Map();
+    groupBoxes = [];
+
     if (options.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'multiselect-empty';
@@ -116,46 +234,74 @@ export function initMultiSelect(root, {
     clearBtn.textContent = 'Clear';
     clearBtn.addEventListener('click', () => {
       if (selected.length === 0) return;
-      clear();
+      selected = [];
+      refreshBoxes();
+      renderLabel();
       emitChange();
     });
     $menu.appendChild(clearBtn);
 
-    const selectedSet = new Set(selected);
-    for (const value of options) {
-      const row = document.createElement('label');
-      row.className = 'multiselect-option';
+    if (groups.length === 0) {
+      for (const opt of options) {
+        const row = optionRow(opt);
+        childBoxes.set(opt.value, row.querySelector('input'));
+        $menu.appendChild(row);
+      }
+      refreshBoxes();
+      return;
+    }
+
+    for (const group of groups) {
+      const values = (group.options || []).map((o) => o.value);
+      if (values.length === 0) continue;
+      const wrap = document.createElement('details');
+      wrap.className = 'multiselect-group';
+      // Open a group that already has ticks, so a re-render after an
+      // upload doesn't hide the user's own selection behind a summary.
+      wrap.open = values.some((v) => selected.includes(v));
+
+      const sum = document.createElement('summary');
       const box = document.createElement('input');
       box.type = 'checkbox';
-      box.value = value;
-      box.checked = selectedSet.has(value);
+      box.addEventListener('click', (e) => e.stopPropagation());   // don't toggle the disclosure
       box.addEventListener('change', (e) => {
-        // The checkbox's own change event would bubble to the root as
-        // well, so callers listening on the root would be told twice
-        // per click. Swallow it and let emitChange() below be the one
-        // signal the control produces — the Clear button needs an
-        // explicit dispatch anyway, and one code path is easier to
-        // reason about than two that happen to agree.
         e.stopPropagation();
-        selected = box.checked
-          ? [...selected, value]
-          : selected.filter((v) => v !== value);
-        // Keep selection in the option list's order so the summary and
-        // any future export read predictably rather than in click order.
-        selected = options.filter((v) => selected.includes(v));
-        renderLabel();
-        emitChange();
+        setValues(values, box.checked);
       });
-      const text = document.createElement('span');
-      text.textContent = value;
-      row.append(box, text);
-      $menu.appendChild(row);
+      const name = document.createElement('span');
+      name.className = 'multiselect-group-name';
+      const total = group.count == null
+        ? group.options.reduce((s, o) => s + (o.count || 0), 0)
+        : group.count;
+      name.textContent = total ? `${group.family} (${fmtCount(total)})` : group.family;
+      sum.append(box, name);
+      wrap.appendChild(sum);
+      groupBoxes.push({ box, values });
+
+      for (const opt of group.options) {
+        const row = optionRow(opt);
+        childBoxes.set(opt.value, row.querySelector('input'));
+        wrap.appendChild(row);
+      }
+      $menu.appendChild(wrap);
     }
+    refreshBoxes();
   }
 
+  /** Flat mode: a plain list of strings, value and label being the same. */
   function setOptions(values) {
-    options = [...(values || [])];
-    selected = retainSelection(selected, options);
+    groups = [];
+    options = (values || []).map((v) => ({ value: v, label: v }));
+    selected = retainSelection(selected, optionValues());
+    renderMenu();
+    renderLabel();
+  }
+
+  /** Grouped mode: [{family, count?, options:[{value, label, count?}]}]. */
+  function setGroups(next) {
+    groups = (next || []).filter((g) => (g?.options || []).length > 0);
+    options = flattenGroups(groups);
+    selected = retainSelection(selected, optionValues());
     renderMenu();
     renderLabel();
   }
@@ -165,7 +311,7 @@ export function initMultiSelect(root, {
   }
 
   function setSelected(values) {
-    selected = retainSelection(values, options);
+    selected = retainSelection(values, optionValues());
     renderMenu();
     renderLabel();
   }
@@ -193,5 +339,5 @@ export function initMultiSelect(root, {
 
   renderMenu();
   renderLabel();
-  return { setOptions, getSelected, setSelected, clear, isEmpty: () => selected.length === 0 };
+  return { setOptions, setGroups, getSelected, setSelected, clear, isEmpty: () => selected.length === 0 };
 }

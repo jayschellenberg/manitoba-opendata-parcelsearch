@@ -1570,6 +1570,37 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   font-size: 11px;
   color: var(--ui-muted, #6d7771);
 }
+/* Grouped multi-select (the Primary Property filter). Same visual
+   language as the sales database's region list, which solved the same
+   problem for 186 municipalities: a tri-state parent over a collapsed
+   child list, so a long value space stays one screenful.
+
+   The menu runs taller than the flat pickers because a family opens in
+   place, and wider because the structure labels are phrases rather than
+   codes — but both stay inside the 288px sidebar column. */
+.sidebar #primaryprop-filter .multiselect-menu {
+  max-width: 262px;
+  max-height: 320px;
+}
+.sidebar .multiselect-group > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary-500, #1e293b);
+  cursor: pointer;
+  border-radius: 3px;
+}
+.sidebar .multiselect-group > summary:hover { background: var(--color-neutral-100, #f4f4f5); }
+.sidebar .multiselect-group > summary input[type="checkbox"] { margin: 0; cursor: pointer; }
+.sidebar .multiselect-group-name { flex: 1 1 auto; min-width: 0; }
+/* Structure types indent under their family so the hierarchy survives
+   scrolling, when the family heading may be off-screen above — the same
+   reasoning as .sales-db-muni. */
+.sidebar .multiselect-group > .multiselect-option { padding-left: 26px; }
+
 /* The right-hand picker of a two-up row grows leftward instead, so a
    menu wider than its trigger opens into the sidebar rather than off
    its right edge. */

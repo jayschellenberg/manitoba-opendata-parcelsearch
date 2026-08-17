@@ -7,7 +7,7 @@
 // Run: cd web && node test/multiSelect.test.js
 
 import assert from 'node:assert/strict';
-import { summarizeSelection, retainSelection } from '../src/lib/multiSelect.js';
+import { summarizeSelection, retainSelection, flattenGroups } from '../src/lib/multiSelect.js';
 
 const results = [];
 function test(name, fn) {
@@ -77,6 +77,69 @@ test('empty or missing inputs are safe', () => {
   assert.deepEqual(retainSelection([], ['A']), []);
   assert.deepEqual(retainSelection(null, ['A']), []);
   assert.deepEqual(retainSelection(['A'], null), []);
+});
+
+console.log('\ngrouped mode');
+
+// The shape setGroups() takes — the Primary Property tree, whose labels are
+// NOT unique across groups ("Other" appears under two families), which is
+// why a tick's value is a composite key rather than the visible text.
+const GROUPS = [
+  { family: 'Residential', count: 3, options: [
+    { value: 'Residential|One storey', label: 'One storey', count: 2 },
+    { value: 'Residential|Other',      label: 'Other',      count: 1 },
+  ] },
+  { family: 'ICI', count: 1, options: [
+    { value: 'ICI|Other', label: 'Other', count: 1 },
+  ] },
+];
+
+test('flattenGroups returns the leaves in display order', () => {
+  assert.deepEqual(
+    flattenGroups(GROUPS).map((o) => o.value),
+    ['Residential|One storey', 'Residential|Other', 'ICI|Other'],
+  );
+});
+
+test('flattenGroups is safe on empty and missing input', () => {
+  assert.deepEqual(flattenGroups([]), []);
+  assert.deepEqual(flattenGroups(null), []);
+  assert.deepEqual(flattenGroups([{ family: 'Farm' }]), []);   // no options key
+});
+
+test('the same label under two groups stays two distinct values', () => {
+  const values = flattenGroups(GROUPS).map((o) => o.value);
+  assert.equal(new Set(values).size, values.length);
+});
+
+test('a single grouped selection reads as its LABEL, not its key', () => {
+  // Without labelOf the closed control would read "Residential|One storey".
+  const labelOf = (v) => flattenGroups(GROUPS).find((o) => o.value === v)?.label ?? v;
+  assert.equal(
+    summarizeSelection(['Residential|One storey'], { placeholder: 'Any type', noun: 'types', labelOf }),
+    'One storey',
+  );
+});
+
+test('labelOf is ignored once the summary collapses to a count', () => {
+  const labelOf = () => 'never shown';
+  assert.equal(
+    summarizeSelection(['a', 'b'], { noun: 'types', labelOf }),
+    '2 types',
+  );
+});
+
+test('an unknown value falls back to itself rather than rendering undefined', () => {
+  const labelOf = (v) => ({}) [v];
+  assert.equal(summarizeSelection(['ICI|Ghost'], { labelOf }), 'ICI|Ghost');
+});
+
+test('retainSelection works on composite keys too', () => {
+  const values = flattenGroups(GROUPS).map((o) => o.value);
+  assert.deepEqual(
+    retainSelection(['Residential|Other', 'Farm|Grain storage'], values),
+    ['Residential|Other'],
+  );
 });
 
 const fails = results.filter((r) => r.status === 'fail');
