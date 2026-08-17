@@ -50,8 +50,9 @@ const DATASETS = [
   // shard set now ship from outside this repo: the two big indexes
   // above via GitHub Releases + edge functions; section-grid via the
   // same Release-fn pattern (api/section-grid.js); everything else
-  // via the mb-parcel-data jsDelivr CDN. Future single-file datasets
-  // that this repo's deploy serves directly go back in this list.
+  // via the mb-parcel-data CDN (raw.githubusercontent, pinned commit).
+  // Future single-file datasets that this repo's deploy serves directly
+  // go back in this list.
 ];
 
 // Shard directories: each holds per-municipality JSON files registered
@@ -59,9 +60,9 @@ const DATASETS = [
 // --validate gate can spot a collapsed rebuild. New shard datasets are
 // one-line additions here.
 const SHARD_DIRS = [
-  // All per-muni shard sets moved to the mb-parcel-data repo (jsDelivr,
-  // pinned commit — MB_PARCEL_DATA_CDN in web/src/arcgis.js); none are
-  // local any more. The first rebuild after each move needed
+  // All per-muni shard sets moved to the mb-parcel-data repo
+  // (raw.githubusercontent, pinned commit — MB_PARCEL_DATA_CDN in
+  // web/src/arcgis.js); none are local any more. The first rebuild after each move needed
   // --accept-large-change once. Future shard families that ship through
   // this repo's deploy go back in the list above.
 ];

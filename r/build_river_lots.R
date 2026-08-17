@@ -32,7 +32,7 @@ source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "confi
 source_dir  <- mb_parcelsearch_root
 input_kmz   <- file.path(source_dir, "MB-RIVER-LOTS.kmz")
 # Output publishes into the local mb-parcel-data clone (served via
-# jsDelivr pinned commit — see MB_PARCEL_DATA_CDN in arcgis.js).
+# raw.githubusercontent pinned commit — see MB_PARCEL_DATA_CDN in arcgis.js).
 output_path <- file.path(mb_parcel_data_root, "river-lots.json")
 
 if (!file.exists(input_kmz)) {

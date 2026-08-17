@@ -48,8 +48,8 @@ input_path <- resolve_masc_csv(
   v2_glob  = "*square_with_latlon_v2.csv",
   legacy   = file.path(mb_parcelsearch_root, "masc_soil_ratings_with_latlon.csv")
 )
-# Shards publish into the local mb-parcel-data clone (served to the app
-# via jsDelivr pinned commit — see MB_PARCEL_DATA_CDN in arcgis.js).
+# Shards publish into the local mb-parcel-data clone (served to the app via
+# raw.githubusercontent pinned commit — see MB_PARCEL_DATA_CDN in arcgis.js).
 output_dir  <- file.path(mb_parcel_data_root, "masc")
 index_path  <- file.path(output_dir, "_index.json")
 

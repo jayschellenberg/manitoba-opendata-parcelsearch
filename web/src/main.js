@@ -3170,8 +3170,8 @@ function liveRollEntryIncomplete(liveMuniCount, liveRecordCount, snapshotManifes
     liveRecordCount < snapTotal * ROLL_ENTRY_MIN_RECORD_RATIO;
   return muniSignal || recordSignal;
 }
-// Served from the mb-parcel-data repo via jsDelivr (pinned commit —
-// see MB_PARCEL_DATA_CDN in arcgis.js), not from web/public/data/.
+// Served from the mb-parcel-data repo via raw.githubusercontent (pinned
+// commit — see MB_PARCEL_DATA_CDN in arcgis.js), not from web/public/data/.
 const ROLL_ENTRY_SNAPSHOT_MANIFEST_URL = `${MB_PARCEL_DATA_CDN}/rollentry-snapshot/_index.json`;
 
 /** Fetch the snapshot manifest; null on any failure (so the call site

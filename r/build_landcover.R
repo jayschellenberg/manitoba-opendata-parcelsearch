@@ -91,8 +91,8 @@ source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "confi
 
 source_dir   <- mb_parcelsearch_root
 assembly_dir <- file.path(mao_assembly_root, "results")
-# Shards publish into the local mb-parcel-data clone (served via jsDelivr
-# pinned commit — see MB_PARCEL_DATA_CDN in arcgis.js).
+# Shards publish into the local mb-parcel-data clone (served via
+# raw.githubusercontent pinned commit — see MB_PARCEL_DATA_CDN in arcgis.js).
 output_dir   <- file.path(mb_parcel_data_root, "landcover")
 index_path   <- file.path(output_dir, "_index.json")
 

@@ -45,8 +45,8 @@ by R scripts and served either from the deploy or from a CDN:
         └───────┬───────────────────┬───────┘      │  (archive_snapshot.R)      │
                 │ in-deploy shards   │ historical   └────────────────────────────┘
                 ▼                    ▼ shards + lineage
-   web/public/data/**         mb-parcel-history repo ──► jsDelivr CDN
-   (Vercel deploy)            (separate, data-only)      (free)
+   web/public/data/**         mb-parcel-history repo ──► raw.githubusercontent
+   (Vercel deploy)            (separate, data-only)      (free, pinned commit)
                 \                   /
                  ▼                 ▼
               ┌───────────────────────┐
@@ -58,8 +58,10 @@ by R scripts and served either from the deploy or from a CDN:
 - **`manitoba-opendata-parcelsearch`** (this one) — the app + all generator
   scripts + the in-deploy generated data.
 - **`mb-parcel-history`** — data-only; per-muni historical shards served via
-  jsDelivr. Kept separate so ~300 MB/year of history never bloats the main
-  repo or the Vercel deploy.
+  raw.githubusercontent (pinned commit; moved off jsDelivr 2026-08-17 — the
+  repo is over jsDelivr's 50 MB package limit, see MAINTENANCE.md §1b). Kept
+  separate so ~300 MB/year of history never bloats the main repo or the
+  Vercel deploy.
 
 **Automated snapshot publish (2026-07):** the historical-snapshot path
 (download → archive → shards → lineage → push `mb-parcel-history` → repin the
@@ -80,8 +82,8 @@ feeds only **mao-assembly's** land-cover inputs. A daily dead-man watchdog
 | **Live** | parcels, zoning, dev-plan | ArcGIS (live) | always current |
 | **Latest-only generated** | legal-index (129 MB), assessment-index (28 MB), land-cover shards, land-cover tiles, RollEntry snapshot fallback | `web/public/data/**` (in deploy) | monthly / on rebuild |
 | **Cold archive + provenance** | dated provincial source downloads + `<file>.meta.json` sidecars (sha256, source date, retrieved_at, source_crs, source_url, license) | `D:\Dropbox\Appraisal\Web\MAOSnapshots\<year>\` (Dropbox, outside git) | semi-annual / annual |
-| **Historical shards** | per-muni parcels/zoning/dev-plan **per snapshot date** (`YYYY-MM-DD`) + per-snapshot provenance manifest | `mb-parcel-history` → jsDelivr | when a snapshot is archived |
-| **Lineage index** | inferred predecessor/successor per parcel, per muni | `mb-parcel-history/lineage/**` → jsDelivr | when ≥ 2 snapshots exist |
+| **Historical shards** | per-muni parcels/zoning/dev-plan **per snapshot date** (`YYYY-MM-DD`) + per-snapshot provenance manifest | `mb-parcel-history` → raw.githubusercontent | when a snapshot is archived |
+| **Lineage index** | inferred predecessor/successor per parcel, per muni | `mb-parcel-history/lineage/**` → raw.githubusercontent | when ≥ 2 snapshots exist |
 
 ### 2.1 Soil-productivity geometry and scale
 
@@ -240,7 +242,7 @@ captures in the same calendar year are two distinct snapshots.
   ship parcels-only).
 
 ### 5.2 The data repo + CDN
-`mb-parcel-history` layout (served read-only via jsDelivr, **free**):
+`mb-parcel-history` layout (served read-only via raw.githubusercontent, **free**):
 ```
 index.json                              # discovery: snapshots + per-layer dates (schema 2)
 <snapshot_id>/manifest.json             # provenance + munis { "<muni_no>": { name, parcels } }
@@ -251,13 +253,14 @@ lineage/<muni_no>.json                  # inferred predecessor/successor (§5.6)
 lineage/_index.json
 ```
 `<snapshot_id>` is the full date, e.g. `2026-06-05/parcels/168.json`.
-URL base: `https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-history@<commit-sha>`
-— the app **pins an immutable commit**, not `@main`. jsDelivr's view of a branch
-HEAD lags and is inconsistent per-file, so `@main` served stale geometry for
-some munis even after purging; a commit SHA is served immediately and never
-goes stale. On every republish, bump the pinned SHA in `web/src/arcgis.js`
-(`HISTORICAL_CDN`) — see MAINTENANCE.md §3. The shard cache key is stamped with
-the manifest's build timestamp, so clients auto-invalidate on the next load.
+URL base: `https://raw.githubusercontent.com/jayschellenberg/mb-parcel-history/<commit-sha>`
+— the app **pins an immutable commit**, not a branch ref, so every client sees
+one coherent tree. (Until 2026-08-17 this was jsDelivr, where `@main` served
+stale geometry for some munis even after purging; the repo then outgrew
+jsDelivr's 50 MB package limit entirely — see MAINTENANCE.md §1b.) On every
+republish, bump the pinned SHA in `web/src/arcgis.js` (`HISTORICAL_CDN`) — see
+MAINTENANCE.md §3. The shard cache key is stamped with the manifest's build
+timestamp, so clients auto-invalidate on the next load.
 
 ### 5.3 Frontend
 - **arcgis.js**: `fetchHistoricalIndex` / `fetchHistoricalManifest` /
@@ -473,8 +476,8 @@ was pulled, by *which build*, from *what sources*, with *what caveats*.
 ## 7. Hosting & cost
 
 - Main app: **Vercel** (deploys from `main`).
-- Historical shards: **jsDelivr CDN** off a public GitHub repo — **$0**,
-  isolates ~300 MB/snapshot from the main repo + deploy.
+- Historical shards: **raw.githubusercontent** off a public GitHub repo —
+  **$0**, isolates ~300 MB/snapshot from the main repo + deploy.
 - Cold archive: **Dropbox** (already in use), outside git/deploy.
 
 ---
@@ -499,10 +502,10 @@ Rows 4-6 below are the **manual fallback** (backfill / off-cycle).
 | 7 | Land-cover shards / Detailed tiles | mao-assembly rerun / new raster | inside `monthly-refresh.bat` / `Rscript r/build_landcover_tiles.R` |
 | 8 | Provincial land-cover inputs (mao-assembly) | ≥ annual | manual MB Open Data download into `mao-assembly/inputs/`, rerun mao-assembly (the snapshot path auto-downloads separately) |
 
-The automated wrapper repins an **immutable commit SHA**, so it needs no
-purge. Only after a **manual** republish to `mb-parcel-history` do you purge
-jsDelivr for the changed `index.json` / `lineage/_index.json`
-(`https://purge.jsdelivr.net/gh/...`), to skip the ≤ ~12 h `@main` cache lag.
+The automated wrapper repins an **immutable commit SHA**, and
+raw.githubusercontent serves any pushed commit immediately — no purge step
+exists or is needed on either the automated or the manual path. (The old
+jsDelivr purge instruction died with the jsDelivr hosting, 2026-08-17.)
 
 ---
 
@@ -585,9 +588,10 @@ licence attribution, are in `docs/MLI-IMAGERY-BASEMAP.md`.
 - **Local `npm run build` fails with `EPERM … dist\data`** → Dropbox is
   holding the build copy; harmless. Build with `--emptyOutDir false`, or
   just push (Vercel builds in a clean environment).
-- **Preview sandbox** can't load the basemap or fetch jsDelivr (no external
-  network) — verify those on the live deploy. (This is also why an in-app
-  browser can't fully load the map to exercise the basemap toggle live.)
+- **Preview sandbox** can't load the basemap or fetch the shard CDN
+  (raw.githubusercontent — no external network) — verify those on the live
+  deploy. (This is also why an in-app browser can't fully load the map to
+  exercise the basemap toggle live.)
 - **A scheduled `.ps1` fails to parse under Windows PowerShell 5.1** (the Task
   Scheduler runtime) → an em-dash or other non-ASCII char inside a
   **double-quoted** string in a BOM-less UTF-8 file mojibakes and terminates

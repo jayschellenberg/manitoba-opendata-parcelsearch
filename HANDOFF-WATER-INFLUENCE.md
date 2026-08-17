@@ -38,7 +38,7 @@ a Yes/No.
 | Repo | Role |
 |---|---|
 | `D:\Dropbox\ClaudeCode\MBOpenData\mao-assembly` | **Detection.** Builds the water layer and classifies every parcel. (Moved 2026-08-04 from `D:\Dropbox\Appraisal\RProjects\appraisal-templates\mao-assembly`.) |
-| `D:\Dropbox\ClaudeCode\MBOpenData\mb-parcel-data` | **Published shards.** Data only, served via jsDelivr pinned to a commit SHA. |
+| `D:\Dropbox\ClaudeCode\MBOpenData\mb-parcel-data` | **Published shards.** Data only, served via raw.githubusercontent pinned to a commit SHA (jsDelivr until 2026-08-17 — see MAINTENANCE.md §1b). |
 | `D:\Dropbox\ClaudeCode\MBOpenData\mb-parcelsearch` | **The app** + the bridge script that turns the parquet into shards. |
 
 Data flow:

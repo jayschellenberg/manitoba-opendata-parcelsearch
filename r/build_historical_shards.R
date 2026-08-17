@@ -23,7 +23,7 @@
 # source-of-record named in each layer's provenance (source_file / sha256).
 #
 # The output tree is destined for a SEPARATE public repo (mb-parcel-history)
-# served via the jsDelivr CDN, so it stays out of the main repo + Vercel
+# served via raw.githubusercontent, so it stays out of the main repo + Vercel
 # deploy. Hosting-agnostic: this script just writes files.
 #
 # Muni key: the muni NUMBER, the one field common to all three layers
@@ -271,8 +271,10 @@ write_root_index <- function() {
     dataset   = "mb-parcel-history",
     schema    = 2,
     generated = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
-    # Base only — consumers MUST append an immutable @<commit-sha> (never @main).
-    cdn       = "https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-history",
+    # Base only — consumers MUST append an immutable /<commit-sha>/ path
+    # segment (never a branch ref). jsDelivr base until 2026-08-17 (the repo
+    # outgrew its 50 MB package limit — MAINTENANCE.md §1b).
+    cdn       = "https://raw.githubusercontent.com/jayschellenberg/mb-parcel-history",
     snapshots = out
   )
   dir.create(OUTPUT_ROOT, showWarnings = FALSE, recursive = TRUE)

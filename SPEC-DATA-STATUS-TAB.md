@@ -30,7 +30,8 @@ against the working tree the same day. **BUILT 2026-08-16 (evening)** — see
 The privacy model is explicit and deliberate (see `mao-scrape/HANDOFF-SALES-SEARCH.md`,
 "Privacy model — do not break this"): the sales archive is paid MAO subscriber
 data and is **never** published — not to the repo, not to the GitHub Release /
-jsDelivr path the parcel shards use, not to Vercel. The browser reads a folder on
+shard-CDN path the parcel shards use (raw.githubusercontent), not to Vercel.
+The browser reads a folder on
 the user's own disk via the File System Access API; access control is *absence*,
 not a password.
 

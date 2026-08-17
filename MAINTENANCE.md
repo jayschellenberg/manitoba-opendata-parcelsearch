@@ -12,10 +12,10 @@ thumb: nothing should go more than ~12 months stale.**
 | Live parcels / zoning / dev-plan | ArcGIS (live) | ArcGIS, live | always current *to the provincial extract* — see below |
 | Legal index, assessment index | mao-scrape `parcels.parquet` | GitHub Release → `api/legal-index.js` / `api/assessment-index.js` edge fns | monthly |
 | Section grid | MB_LegalDesc service | GitHub Release → `api/section-grid.js` edge fn | annual (geometry doesn't change) |
-| RollEntry snapshot (fallback), parcel-masc, assessment shards, masc shards, landcover shards, landcover tiles, river-lots, masc-riverlots | various R build scripts | `mb-parcel-data` repo → jsDelivr (pinned commit) | monthly-ish |
+| RollEntry snapshot (fallback), parcel-masc, assessment shards, masc shards, landcover shards, landcover tiles, river-lots, masc-riverlots | various R build scripts | `mb-parcel-data` repo → raw.githubusercontent (pinned commit) | monthly-ish |
 | **Cold archive** (provincial source + provenance sidecars: roll / zoning / dev-plan) | MB Open Data downloads | `D:\Dropbox\Appraisal\Web\MAOSnapshots\<year>\` | semi-annual (scheduled Jan 1 / Jul 1) |
-| **Historical shards** (as-of-date view, keyed `YYYY-MM-DD`) | the cold archive | `mb-parcel-history` repo → jsDelivr | when a new snapshot is archived |
-| **Lineage index** (inferred predecessor/successor) | the historical shards | `mb-parcel-history/lineage/` → jsDelivr | when ≥ 2 snapshots exist |
+| **Historical shards** (as-of-date view, keyed `YYYY-MM-DD`) | the cold archive | `mb-parcel-history` repo → raw.githubusercontent | when a new snapshot is archived |
+| **Lineage index** (inferred predecessor/successor) | the historical shards | `mb-parcel-history/lineage/` → raw.githubusercontent | when ≥ 2 snapshots exist |
 
 ### The live layers are not as live as "live" suggests
 
@@ -102,8 +102,8 @@ Then commit + push the `api/` URL bumps it makes.
 
 ### 1c. Section grid (cadence: annual or after a build_section_grid.R change)
 The 40 MB province-wide grid ships through `api/section-grid.js` (same Release
-+ edge-fn pattern as the indexes above — over jsDelivr's per-file cap, so it
-can't ride the mb-parcel-data CDN). To roll a new build:
++ edge-fn pattern as the indexes above — a split that predates the
+raw.githubusercontent switch and stays, see §1b). To roll a new build:
 ```
 Rscript r/build_section_grid.R
 gh release create data-section-grid-YYYY-MM-DD web/public/data/section-grid.json --title "Section grid YYYY-MM-DD"
@@ -132,10 +132,11 @@ repoint the app first.
 Most of the app's generated data — RollEntry fallback shards,
 parcel-masc, assessment shards, MASC shards, landcover shards, landcover
 tiles, river-lots, masc-riverlots — lives in the **`mb-parcel-data`**
-repo and reaches the app via jsDelivr pinned to an immutable commit
-(never `@main` — branch HEADs lag and serve inconsistent files). The R
-build scripts already write straight into the local `mb-parcel-data`
-clone (`mb_parcel_data_root` in `r/config.R`). After any rebuild:
+repo and reaches the app via **raw.githubusercontent.com** pinned to an
+immutable commit (never a branch ref — every client must see one
+coherent tree). The R build scripts already write straight into the
+local `mb-parcel-data` clone (`mb_parcel_data_root` in `r/config.R`).
+After any rebuild:
 ```
 cd ..\mb-parcel-data
 git add -A && git commit -m "<what changed>" && git push
@@ -173,8 +174,25 @@ automatically invalidates stale 30-day browser entries. That
 data repo's history exists only to mint immutable SHAs — squash it
 whenever it gets heavy, then repoint the app first.
 `section-grid.json` is published separately via `api/section-grid.js`
-(GitHub Release + edge function — see §1c below), because at 40 MB it is over
-jsDelivr's per-file cap and cannot ride this CDN.
+(GitHub Release + edge function — see §1c below); that split predates the
+raw.githubusercontent switch (it was over jsDelivr's per-file cap) and stays
+because the edge function's 7-day edge cache suits a 40 MB file better than a
+raw fetch would.
+
+> **Host switched 2026-08-17: jsDelivr → raw.githubusercontent.** jsDelivr
+> enforces a 50 MB *package* (whole-repo) limit and `mb-parcel-data` is
+> ~175 MB. The failure mode was silent and partial: files already in
+> jsDelivr's cache kept serving while every cold file returned an error the
+> app swallowed as "no data for this muni", and no new commit pin could ever
+> ingest. Both CDN constants in `web/src/arcgis.js` (`MB_PARCEL_DATA_CDN`,
+> `HISTORICAL_CDN`) now build `raw.githubusercontent.com/<repo>/<sha>/<path>`
+> URLs — per-file serving, no repo-size limit, no ingestion lag, CORS `*`.
+> The host must stay listed in `vercel.json`'s CSP `connect-src`. **Do not
+> point these repos back at cdn.jsdelivr.net.** raw is rate-limited per
+> client IP — fine at this app's traffic since every fetch is
+> localStorage-cached 30 days keyed by the pin; if 429s ever show up in the
+> field, the upgrade path (a Vercel rewrite proxy with long `s-maxage`) is
+> written up in FUTURE_WORK.md.
 
 > **Corrected 2026-08-12.** This paragraph used to say the file "does NOT live
 > in mb-parcel-data". It does: a 40 MB copy is git-tracked at
@@ -266,13 +284,17 @@ git add <snapshot_id> index.json && git commit -m "Add <snapshot_id>" && git pus
 (`--require` hard-fails if zoning/dev-plan is missing for a snapshot — drop it
 only when deliberately processing an old archive that predates a layer.)
 **Then update the pinned commit in the app** (REQUIRED): the app fetches
-history from a pinned `mb-parcel-history` commit, not `@main` — jsDelivr's view
-of a branch HEAD lags and is inconsistent per-file, so `@main` served stale
-geometry even after purging. Copy the new commit SHA and set `HISTORICAL_CDN`
-in `web/src/arcgis.js` to `…/mb-parcel-history@<new-sha>`, then commit + push
-the app (Vercel redeploys). The pinned SHA is immutable on jsDelivr → served
-immediately, no lag, no purge. (The shard cache key auto-invalidates off the
-manifest's build timestamp, so clients pick it up on next load.)
+history from a pinned `mb-parcel-history` commit, not a branch ref — the pin
+guarantees every client sees one coherent tree (back on jsDelivr, `@main`
+served stale geometry even after purging; raw.githubusercontent serves branch
+refs live but the coherence argument still holds). Copy the new commit SHA
+into `HISTORICAL_CDN` in `web/src/arcgis.js`
+(`…/mb-parcel-history/<new-sha>`), then commit + push the app (Vercel
+redeploys). raw serves any pushed commit immediately — no ingestion lag, no
+purge. (The shard cache key auto-invalidates off the manifest's build
+timestamp, so clients pick it up on next load. This repo is served from
+raw.githubusercontent for the same reason as mb-parcel-data — it is ~177 MB,
+over jsDelivr's 50 MB package limit; see §1b.)
 
 ### 4. Rebuild parcel lineage  (cadence: after #3, once ≥ 2 snapshots exist)
 Infer predecessor/successor (subdivision / consolidation / …) across

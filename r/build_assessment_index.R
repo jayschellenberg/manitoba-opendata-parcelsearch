@@ -260,9 +260,10 @@ message("[assessment-index] done — ", out_size_mb, " MiB on disk")
 # paths that don't know their muni list in advance.
 
 # Shards publish into the local mb-parcel-data clone (served via
-# jsDelivr pinned commit — see MB_PARCEL_DATA_CDN in arcgis.js). The
-# unified `output` JSON above still lands locally because it ships to
-# users through a GitHub Release + Vercel edge function, not jsDelivr.
+# raw.githubusercontent pinned commit — see MB_PARCEL_DATA_CDN in
+# arcgis.js). The unified `output` JSON above still lands locally because
+# it ships to users through a GitHub Release + Vercel edge function, not
+# the shard CDN.
 shard_dir <- file.path(mb_parcel_data_root, "assessment")
 dir.create(shard_dir, recursive = TRUE, showWarnings = FALSE)
 # Wipe any stale shards from a previous run — muni_no list can change

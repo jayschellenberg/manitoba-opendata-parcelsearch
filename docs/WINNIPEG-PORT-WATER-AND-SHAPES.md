@@ -61,7 +61,7 @@ DETECTION   mao-assembly (R)      prepare_water_data.R -> inputs/MB_Water_Featur
                                      5 columns: WaterInfluence, WaterInfluenceClass,
                                      WaterBodyType, WaterBody, WaterDistanceFt
 BRIDGE      mb-parcelsearch       r/build_water.R      -> per-muni JSON shards + _index.json
-PUBLISH     mb-parcel-data        committed, served via jsDelivr pinned to a COMMIT SHA
+PUBLISH     mb-parcel-data        committed, served via raw.githubusercontent pinned to a COMMIT SHA
 APP         mb-parcelsearch/web   arcgis.js fetch -> main.js stamp -> lib/water.js render
 ```
 

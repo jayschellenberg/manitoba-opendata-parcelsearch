@@ -54,9 +54,10 @@ source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "confi
 
 source_dir   <- mb_parcelsearch_root
 # Shards publish into the local mb-parcel-data clone (served to the app
-# via jsDelivr pinned to an immutable commit — see SNAPSHOT_CDN in
-# web/src/arcgis.js), NOT web/public/data/. After a rebuild: commit +
-# push mb-parcel-data, then update the pinned SHA. See MAINTENANCE.md.
+# via raw.githubusercontent pinned to an immutable commit — see
+# SNAPSHOT_CDN in web/src/arcgis.js), NOT web/public/data/. After a
+# rebuild: commit + push mb-parcel-data, then update the pinned SHA.
+# See MAINTENANCE.md.
 output_dir   <- file.path(mb_parcel_data_root, "rollentry-snapshot")
 manifest_path <- file.path(output_dir, "_index.json")
 

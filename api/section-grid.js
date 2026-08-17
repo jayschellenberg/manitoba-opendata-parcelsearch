@@ -3,8 +3,8 @@
 // header the client needs.
 //
 // Mirrors api/legal-index.js: section-grid.json is ~40 MB, well past
-// jsDelivr's per-file cap (the rest of the bulk data lives in the
-// mb-parcel-data repo and serves via jsDelivr pinned commits) and
+// the shard CDN's comfort zone (the rest of the bulk data lives in the
+// mb-parcel-data repo and serves via raw.githubusercontent pinned commits) and
 // also too large for vercel.json static rewrites. Edge Functions
 // stream the body straight through with no buffering, so a single
 // large file flows fine.
