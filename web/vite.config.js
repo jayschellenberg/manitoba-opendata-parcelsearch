@@ -95,6 +95,16 @@ export default defineConfig({
     // fetch fails CORS. Vercel's vercel.json rewrites handle this in
     // production. The path matches the production rewrite source.
     proxy: {
+      // Shard-repo proxy: production serves /gh-data/<repo>/<sha>/<path>
+      // through the api/gh-data.js edge function (Vercel edge cache in
+      // front of raw.githubusercontent — see that file). Vite doesn't run
+      // Vercel functions, so dev proxies the same path shape straight to
+      // raw. Same-origin in both worlds; only the caching layer differs.
+      '/gh-data': {
+        target: 'https://raw.githubusercontent.com',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/gh-data\//, '/jayschellenberg/'),
+      },
       '/proxy/contam-sites.csv': {
         target: 'https://manitoba.ca',
         changeOrigin: true,

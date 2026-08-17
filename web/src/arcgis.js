@@ -198,21 +198,27 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // refused every cold file ("Failed to fetch the requested commit" /
 // "Package size exceeded"), so land cover and water quietly returned
 // null for any muni nobody had fetched before, and new pins could never
-// ingest at all. raw.githubusercontent.com has no repo-size limit,
-// serves any pushed commit immediately (no ingestion lag), and sends
-// Access-Control-Allow-Origin: *. It is rate-limited per client IP,
-// which is fine at this app's traffic — every fetch below is cached in
-// localStorage for 30 days keyed by this revision. If 429s ever show up
-// in the field, front this with a Vercel rewrite proxy (see
-// FUTURE_WORK.md). The host must stay listed in vercel.json's CSP
-// connect-src. section-grid.json is separate: at 40 MB it ships from a
-// GitHub Release through the /api/section-grid edge function (see
+// ingest at all. It moved to direct raw.githubusercontent.com fetches
+// (no repo-size limit, no ingestion lag, CORS *), but raw rate-limits
+// per client IP and the very first live check tripped a 429 — so the
+// app now fetches same-origin /gh-data/<repo>/<sha>/<path>, which the
+// api/gh-data.js edge function proxies to raw with Vercel's edge cache
+// in front (immutable per-URL, so a repin never needs a purge). GitHub
+// only sees Vercel egress traffic; client IPs stop mattering. In `npm
+// run dev` the same path is proxied straight to raw by vite.config.js.
+// section-grid.json is separate: at 40 MB it ships from a GitHub
+// Release through the /api/section-grid edge function (see
 // fetchProvinceSectionGrid below). A stale, unread 40 MB copy is still
 // git-tracked in mb-parcel-data; nothing here points at it.
 export const MB_PARCEL_DATA_REVISION =
   '85d0203094aad5ecc61ae4e86b7b69a84371788e';
+// Origin-absolute rather than a bare /gh-data/... path: MapLibre tile
+// templates (map.js landcover-tiles) need absolute URLs. Node imports
+// this module in unit tests, where location is absent — the fallback
+// produces a relative URL that those tests never fetch.
+const GH_DATA_ORIGIN = globalThis.location?.origin ?? '';
 export const MB_PARCEL_DATA_CDN =
-  `https://raw.githubusercontent.com/jayschellenberg/mb-parcel-data/${MB_PARCEL_DATA_REVISION}`;
+  `${GH_DATA_ORIGIN}/gh-data/mb-parcel-data/${MB_PARCEL_DATA_REVISION}`;
 const SNAPSHOT_BASE_URL = `${MB_PARCEL_DATA_CDN}/rollentry-snapshot/`;
 let rollEntrySnapshot = null;
 const snapshotShardCache = new Map();
@@ -1799,13 +1805,13 @@ export async function fetchWaterForMuni(muniNameWithTyp) {
 // Pinned to an IMMUTABLE commit, not a branch, so every client sees one
 // coherent tree (a branch HEAD once served stale geometry for some munis —
 // Steinbach showed 36% triangles while Hanover was clean).
-// Moved off cdn.jsdelivr.net 2026-08-17: this repo (~177 MB) is over
-// jsDelivr's 50 MB package limit, same silent cold-file failure as
+// Moved off cdn.jsdelivr.net 2026-08-17 (repo ~177 MB, over jsDelivr's
+// 50 MB package limit) and behind the same /gh-data edge proxy as
 // MB_PARCEL_DATA_CDN above — see that comment for the full story.
 // MAINTENANCE: when you republish mb-parcel-history (new snapshot or a data
 // fix), update this SHA to the new commit — see MAINTENANCE.md.
 const HISTORICAL_CDN =
-  'https://raw.githubusercontent.com/jayschellenberg/mb-parcel-history/7e736813060449f20cf80095f49c7d4b4966867c';
+  `${GH_DATA_ORIGIN}/gh-data/mb-parcel-history/7e736813060449f20cf80095f49c7d4b4966867c`;
 const HISTORICAL_INDEX_TTL_MS = 24 * 60 * 60 * 1000;        // 1 day — so new years surface
 const HISTORICAL_MANIFEST_TTL_MS = 6 * 60 * 60 * 1000;     // 6 h — gates the shard version token, keep fresh
 const HISTORICAL_SHARD_TTL_MS = 30 * 24 * 60 * 60 * 1000;   // 30 days — safe: the key is version-stamped, so a rebuild changes it

@@ -179,20 +179,22 @@ raw.githubusercontent switch (it was over jsDelivr's per-file cap) and stays
 because the edge function's 7-day edge cache suits a 40 MB file better than a
 raw fetch would.
 
-> **Host switched 2026-08-17: jsDelivr → raw.githubusercontent.** jsDelivr
-> enforces a 50 MB *package* (whole-repo) limit and `mb-parcel-data` is
-> ~175 MB. The failure mode was silent and partial: files already in
-> jsDelivr's cache kept serving while every cold file returned an error the
-> app swallowed as "no data for this muni", and no new commit pin could ever
-> ingest. Both CDN constants in `web/src/arcgis.js` (`MB_PARCEL_DATA_CDN`,
-> `HISTORICAL_CDN`) now build `raw.githubusercontent.com/<repo>/<sha>/<path>`
-> URLs — per-file serving, no repo-size limit, no ingestion lag, CORS `*`.
-> The host must stay listed in `vercel.json`'s CSP `connect-src`. **Do not
-> point these repos back at cdn.jsdelivr.net.** raw is rate-limited per
-> client IP — fine at this app's traffic since every fetch is
-> localStorage-cached 30 days keyed by the pin; if 429s ever show up in the
-> field, the upgrade path (a Vercel rewrite proxy with long `s-maxage`) is
-> written up in FUTURE_WORK.md.
+> **Host switched 2026-08-17: jsDelivr → raw.githubusercontent, behind the
+> `/gh-data` edge proxy.** jsDelivr enforces a 50 MB *package* (whole-repo)
+> limit and `mb-parcel-data` is ~175 MB. The failure mode was silent and
+> partial: files already in jsDelivr's cache kept serving while every cold
+> file returned an error the app swallowed as "no data for this muni", and
+> no new commit pin could ever ingest. **Do not point these repos back at
+> cdn.jsdelivr.net.** raw.githubusercontent serves per-file with no
+> repo-size limit and no ingestion lag, but rate-limits per client IP (a
+> 429 surfaced on the first live check), so the app fetches same-origin
+> `/gh-data/<repo>/<sha>/<path>` instead: a `vercel.json` rewrite routes it
+> to `api/gh-data.js`, which proxies to raw and lets Vercel's edge cache
+> hold each immutable URL — GitHub only sees Vercel egress traffic, and a
+> repin changes every URL so nothing needs purging. `npm run dev` proxies
+> the same path shape straight to raw (vite.config.js). Nothing about the
+> *publish* flow changed: rebuild → commit/push `mb-parcel-data` → repin
+> via `update-cdn-pin.ps1`, exactly as below.
 
 > **Corrected 2026-08-12.** This paragraph used to say the file "does NOT live
 > in mb-parcel-data". It does: a 40 MB copy is git-tracked at
@@ -290,11 +292,11 @@ served stale geometry even after purging; raw.githubusercontent serves branch
 refs live but the coherence argument still holds). Copy the new commit SHA
 into `HISTORICAL_CDN` in `web/src/arcgis.js`
 (`…/mb-parcel-history/<new-sha>`), then commit + push the app (Vercel
-redeploys). raw serves any pushed commit immediately — no ingestion lag, no
+redeploys). Any pushed commit serves immediately — no ingestion lag, no
 purge. (The shard cache key auto-invalidates off the manifest's build
-timestamp, so clients pick it up on next load. This repo is served from
-raw.githubusercontent for the same reason as mb-parcel-data — it is ~177 MB,
-over jsDelivr's 50 MB package limit; see §1b.)
+timestamp, so clients pick it up on next load. This repo rides the same
+`/gh-data` edge proxy as mb-parcel-data — it is ~177 MB, over jsDelivr's
+50 MB package limit; see §1b.)
 
 ### 4. Rebuild parcel lineage  (cadence: after #3, once ≥ 2 snapshots exist)
 Infer predecessor/successor (subdivision / consolidation / …) across

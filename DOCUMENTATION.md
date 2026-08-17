@@ -253,14 +253,17 @@ lineage/<muni_no>.json                  # inferred predecessor/successor (§5.6)
 lineage/_index.json
 ```
 `<snapshot_id>` is the full date, e.g. `2026-06-05/parcels/168.json`.
-URL base: `https://raw.githubusercontent.com/jayschellenberg/mb-parcel-history/<commit-sha>`
-— the app **pins an immutable commit**, not a branch ref, so every client sees
-one coherent tree. (Until 2026-08-17 this was jsDelivr, where `@main` served
-stale geometry for some munis even after purging; the repo then outgrew
-jsDelivr's 50 MB package limit entirely — see MAINTENANCE.md §1b.) On every
-republish, bump the pinned SHA in `web/src/arcgis.js` (`HISTORICAL_CDN`) — see
-MAINTENANCE.md §3. The shard cache key is stamped with the manifest's build
-timestamp, so clients auto-invalidate on the next load.
+The app fetches same-origin `/gh-data/mb-parcel-history/<commit-sha>/<path>`,
+which the `api/gh-data.js` edge proxy upstreams to
+`https://raw.githubusercontent.com/jayschellenberg/mb-parcel-history/<commit-sha>`
+with Vercel's edge cache in front — the app **pins an immutable commit**, not
+a branch ref, so every client sees one coherent tree. (Until 2026-08-17 this
+was jsDelivr, where `@main` served stale geometry for some munis even after
+purging; the repo then outgrew jsDelivr's 50 MB package limit entirely — see
+MAINTENANCE.md §1b.) On every republish, bump the pinned SHA in
+`web/src/arcgis.js` (`HISTORICAL_CDN`) — see MAINTENANCE.md §3. The shard
+cache key is stamped with the manifest's build timestamp, so clients
+auto-invalidate on the next load.
 
 ### 5.3 Frontend
 - **arcgis.js**: `fetchHistoricalIndex` / `fetchHistoricalManifest` /
