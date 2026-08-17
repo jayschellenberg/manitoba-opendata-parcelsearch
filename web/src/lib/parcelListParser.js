@@ -363,8 +363,54 @@ const SHAPE_SPECIFIC_TYPES = new Set(['muniName', 'legal']);
  * and as a fallback when nothing names a Roll # — without a roll nothing
  * resolves, so a set of guesses beats a screen of Ignores.
  */
+/**
+ * Does this column read as a per-row label — "1, 2, 3 …" — rather than
+ * data? Small positive integers, all distinct, one per row.
+ *
+ * Deliberately narrow: rolls are 5+ digits, prices and acreages aren't
+ * distinct-and-small, and a muni code repeats down the column.
+ */
+function looksLikeRowNumberColumn(cells) {
+  const values = (cells || []).map((c) => cleanCell(c)).filter((c) => c !== '');
+  if (values.length < 2) return false;
+  const seen = new Set();
+  for (const v of values) {
+    if (!/^\d{1,4}$/.test(v)) return false;
+    const n = Number(v);
+    if (n < 1 || seen.has(n)) return false;
+    seen.add(n);
+  }
+  return true;
+}
+
+/**
+ * Claim a leading label column as the Site #.
+ *
+ * A Site / Parcel / Comp column, when a list has one, is always the
+ * FIRST column (Jason, 2026-08-17) — so a first column of row labels is
+ * that, even when its header is blank or something the patterns don't
+ * name. Without this the column stays Ignore and the map numbers the
+ * parcels 1..N by muni + roll, quietly renumbering the appraiser's list.
+ *
+ * Two openings only: a first column nothing else claimed, or one the
+ * content voter could only call a roll while another column is ALSO a
+ * roll — the headerless shape, where "1, 2, 3" and a roll column are
+ * indistinguishable by content alone and the duplicate would block
+ * Resolve anyway.
+ */
+function withLeadingSiteColumn(columns, guesses) {
+  if (guesses.length < 2 || guesses.includes('site')) return guesses;
+  const first = guesses[0];
+  const duplicateRoll = first === 'roll' && guesses.slice(1).includes('roll');
+  if (first !== 'ignore' && !duplicateRoll) return guesses;
+  if (!looksLikeRowNumberColumn(columns[0])) return guesses;
+  const out = guesses.slice();
+  out[0] = 'site';
+  return out;
+}
+
 function guessColumns(columns, headers) {
-  if (!headers) return columns.map((cells) => guessColumnType(cells, ''));
+  if (!headers) return withLeadingSiteColumn(columns, columns.map((cells) => guessColumnType(cells, '')));
   const claimed = new Set();
   const guesses = columns.map(() => 'ignore');
 
@@ -390,8 +436,8 @@ function guessColumns(columns, headers) {
     guesses[c] = t;
   });
 
-  if (claimed.has('roll')) return guesses;
-  return columns.map((cells, c) => guessColumnType(cells, headers[c] || ''));
+  if (claimed.has('roll')) return withLeadingSiteColumn(columns, guesses);
+  return withLeadingSiteColumn(columns, columns.map((cells, c) => guessColumnType(cells, headers[c] || '')));
 }
 
 // ---- top-level parse + mapping ----------------------------------

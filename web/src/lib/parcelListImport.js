@@ -29,7 +29,12 @@ import {
 } from './parcelListParser.js';
 import { resolveParcelList } from '../parcelListResolver.js';
 
-const STORAGE_KEY = 'mbps_parcel_list_mapping_v1';
+// v2, not v1: the column guesser learned to read bare municipality names
+// and Site/Parcel columns, and every v1 entry is a frozen copy of the
+// OLD guesser's answer for that header signature — which then overrode
+// the new one. Bumping the key retires those; mappings the user actually
+// steered are re-learned the next time they resolve that shape.
+const STORAGE_KEY = 'mbps_parcel_list_mapping_v2';
 const RECENT_STORAGE_KEY = 'mbps_parcel_list_recent_v1';
 const RECENT_CAP = 5;
 const MAX_PREVIEW_ROWS = 5;
@@ -320,13 +325,30 @@ export function initParcelListImport({
     } catch { return null; }
   }
 
+  /**
+   * Remember only a mapping the user actually steered.
+   *
+   * When the confirmed mapping is exactly what the guesser produced there
+   * is nothing to remember — the guesser will say the same thing next
+   * time — and storing it anyway fossilizes that answer: a later
+   * improvement to the guesser is then overridden by a saved copy of its
+   * own older opinion, which is how bare municipality names and the
+   * Parcel column stayed unrecognized after both had been fixed.
+   *
+   * The matching case forgets any prior entry, so a stale one heals as
+   * soon as the user puts the dropdowns back where the guesser has them.
+   */
   function rememberMapping(headers, mapping) {
     const sig = mappingSignature(headers);
     if (!sig) return;
+    const steered = !Array.isArray(parsed?.guesses)
+      || parsed.guesses.length !== mapping.length
+      || mapping.some((t, i) => t !== parsed.guesses[i]);
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       const all = raw ? JSON.parse(raw) : {};
-      all[sig] = mapping.slice();
+      if (steered) all[sig] = mapping.slice();
+      else delete all[sig];
       localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
     } catch { /* quota or disabled storage — silently skip */ }
   }

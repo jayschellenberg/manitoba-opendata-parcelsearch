@@ -614,6 +614,44 @@ await test('the Parcel / Roll / Municipality list maps and validates whole', () 
   assert.equal(rows[2].muniName, 'STONEWALL');
 });
 
+await test('an unlabelled leading 1..N column is claimed as the Site #', () => {
+  // A Site / Parcel column is always the first one, so a first column of
+  // row labels is that even when its header isn't a name we know.
+  for (const header of ['', 'No.', 'Item', 'Ref']) {
+    const text = [
+      `${header}\tRoll #\tMunicipality`,
+      '1\t53850\tBIFROST-RIVERTON',
+      '2\t3900\tARBORG',
+      '3\t700\tARBORG',
+    ].join('\n');
+    const p = parseParcelList(text);
+    assert.deepEqual(p.guesses, ['site', 'roll', 'muniName'], `header "${header}"`);
+  }
+});
+
+await test('a headerless list numbers its first column instead of guessing two rolls', () => {
+  // Content alone can't tell "1, 2, 3" from a roll column; without the
+  // leading-site rule both columns guess roll and the duplicate blocks
+  // Resolve until the user clears it by hand.
+  const p = parseParcelList('1\t53850\n2\t3900\n3\t700');
+  assert.equal(p.headers, null);
+  assert.deepEqual(p.guesses, ['site', 'roll']);
+});
+
+await test('the leading-site rule leaves real data columns alone', () => {
+  // Rolls are too long, a claimed Site # column wins, and a first column
+  // that repeats values is not a per-row label.
+  const rolls = parseParcelList('Roll #\tMunicipality\n53850\tARBORG\n3900\tARBORG');
+  assert.deepEqual(rolls.guesses, ['roll', 'muniName']);
+
+  const claimed = parseParcelList('Ref\tRoll #\tN1 ID\n1\t53850\t7\n2\t3900\t9');
+  assert.equal(claimed.guesses[2], 'site');
+  assert.equal(claimed.guesses[0], 'ignore');
+
+  const repeats = parseParcelList('Code\tRoll #\tMunicipality\n610\t53850\tARBORG\n610\t3900\tARBORG');
+  assert.equal(repeats.guesses[0], 'ignore');
+});
+
 // ---------- summary ----------
 
 const fails = results.filter((r) => r.status === 'fail');
