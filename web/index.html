@@ -78,10 +78,11 @@
           href="https://winnipeg-opendata-parcelsearch.vercel.app/"
           target="_blank"
           rel="noreferrer"
-        >Winnipeg Portal</a>
+        ><span aria-hidden="true">🏙️</span> Winnipeg Portal</a>
         <!-- Opens the Data Status dialog: when each data source behind the
-             site was last refreshed. Driven by src/dataStatusDialog.js. -->
-        <button type="button" class="topbar-link" id="data-status-open">Data Status</button>
+             site was last refreshed. Driven by src/dataStatusDialog.js.
+             Emoji are decoration, hidden from the accessible names. -->
+        <button type="button" class="topbar-link" id="data-status-open"><span aria-hidden="true">📅</span> Data Status</button>
         <details class="topbar-details" id="data-sources-details">
           <summary class="topbar-summary">Data Sources</summary>
           <div class="topbar-panel" id="data-sources-panel">
