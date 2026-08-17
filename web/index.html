@@ -497,19 +497,6 @@
             </div>
           </details>
 
-          <!-- Nominal-sale exclusion. Directly under the database block, so
-               it still reads as the line after Sales Coverage — but OUTSIDE
-               it, because #sales-db-ready is hidden until a database folder
-               is connected and that would keep this filter from everyone
-               working off a CSV upload or paste. It applies to whichever
-               sale set is loaded; the filter itself is a pass in main.js. -->
-          <div class="sales-nominal-row">
-            <label class="sales-nominal-exclude" for="exclude-nominal"
-                   title="Sales where consideration &lt;$1000 — the $0 / $1 nominal transfers (family conveyances, corrective transfers) that are not market evidence. Applies to both the MAO database and an uploaded CSV. Tested against the whole sale's consideration, so a multi-parcel sale drops as one; a sale with no readable consideration is kept.">
-              <input type="checkbox" id="exclude-nominal" />
-              <span>Exclude Nominal Sales</span>
-            </label>
-          </div>
 
           <!-- Manual import (upload / paste / recent). Once the MAO Sales
                Database is imported these are the fallback path, not the
@@ -885,9 +872,18 @@
           </details>
           <!-- Clear stays OUTSIDE the collapsible: it resets the whole
                page, so it has to be reachable without first expanding a
-               panel. -->
+               panel. Exclude Nominal Sales rides beside it for the same
+               reason — it applies to whichever sale set is loaded, from
+               the MAO database or a CSV upload, and #sales-db-ready (its
+               first home, beside Sales Coverage) is hidden entirely
+               until a database folder is connected. -->
           <div class="action-row">
             <button id="sales-clear" type="button" class="danger" title="Reset the page — clears any uploaded sales CSV, search results, subject, and filters.">Clear</button>
+            <label class="sales-nominal-exclude" for="exclude-nominal"
+                   title="Sales where consideration &lt;$1000 — the $0 / $1 nominal transfers (family conveyances, corrective transfers) that are not market evidence. Applies to both the MAO database and an uploaded CSV. Tested against the whole sale's consideration, so a multi-parcel sale drops as one; a sale with no readable consideration is kept.">
+              <input type="checkbox" id="exclude-nominal" />
+              <span>Exclude Nominal Sales</span>
+            </label>
           </div>
         </section><!-- /tab-panel-sales -->
 

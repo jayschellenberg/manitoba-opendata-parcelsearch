@@ -539,13 +539,10 @@ header small a {
   flex-wrap: wrap;
   margin-top: 8px;
 }
-/* Exclude Nominal Sales — its own row under the sales-database block,
-   so it survives that block collapsing to a title on the CSV-upload
-   path. Reads as a checkbox, not a button: no border, no fill. */
-.sales-nominal-row {
-  display: flex;
-  margin: 2px 0 4px;
-}
+/* Exclude Nominal Sales — sits beside Clear in the sales action row,
+   which is outside every collapsible and every .sales-only gate, so the
+   filter is reachable on the database and CSV-upload paths alike. Reads
+   as a checkbox, not a button: no border, no fill. */
 .sales-nominal-exclude {
   display: flex;
   align-items: center;
