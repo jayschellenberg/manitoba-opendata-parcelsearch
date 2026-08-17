@@ -1316,6 +1316,7 @@
           <select id="columns-preset" aria-label="Apply a column preset">
             <option value="">Preset…</option>
             <option value="Sales analysis">Sales analysis</option>
+            <option value="Commercial">Commercial</option>
             <option value="Zoning check">Zoning check</option>
             <option value="Agricultural">Agricultural</option>
             <option value="Residential">Residential</option>
@@ -1371,6 +1372,12 @@
             <th data-col="favorite" class="sales-only fav-col" title="Mark this sale as a comparable. Click to star/unstar — choices persist in this browser via localStorage. Starred-only export: hit Export CSV when at least one row is starred.">★</th>
             <th data-col="roll">Roll #</th>
             <th data-col="municode" title="MAO municipality code (the integer prefix on each parcel's Municipality field). Identifies the assessing authority that owns the roll.">Muni #</th>
+            <!-- The human-readable half of the same Municipality field the
+                 Muni # code comes from. In every preset: a multi-municipality
+                 search (regions on the Sales tab, or an imported list) is
+                 unreadable without it, and single-muni searches lose nothing
+                 but width. -->
+            <th data-col="muniname" title="Municipality the assessment roll belongs to, in the same name-first format as the search dropdown — e.g. SPRINGFIELD (RM). Sort here to group a multi-municipality result set by place name.">Municipality</th>
             <!-- Sale Date / Sale Price headers are hidden by default
                  and only revealed when a sales CSV upload populates the
                  table (main.js toggles the `sales-mode` class on

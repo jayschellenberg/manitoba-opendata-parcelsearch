@@ -3406,7 +3406,14 @@ body.sales-mode .sales-row-legend {
   white-space: nowrap;
 }
 
-/* Free-form text columns read better left-aligned. */
+/* Free-form text columns read better left-aligned.
+
+   POSITIONAL — tds carry no data-col, so these indexes must track the
+   <thead> order in index.html. Inserting a column shifts every index
+   after it. Current mapping (skipped numbers stay centered):
+     2 ★  3 Roll #  4 Muni #  5 Municipality  6 Sale Date
+     8 Primary Property  9 Group #  10 Address  11 Zoning
+     12 Zoning Type */
 #results th:nth-child(2),
 #results td:nth-child(2),
 #results th:nth-child(3),
@@ -3415,8 +3422,8 @@ body.sales-mode .sales-row-legend {
 #results td:nth-child(4),
 #results th:nth-child(5),
 #results td:nth-child(5),
-#results th:nth-child(7),
-#results td:nth-child(7),
+#results th:nth-child(6),
+#results td:nth-child(6),
 #results th:nth-child(8),
 #results td:nth-child(8),
 #results th:nth-child(9),
@@ -3424,7 +3431,9 @@ body.sales-mode .sales-row-legend {
 #results th:nth-child(10),
 #results td:nth-child(10),
 #results th:nth-child(11),
-#results td:nth-child(11) {
+#results td:nth-child(11),
+#results th:nth-child(12),
+#results td:nth-child(12) {
   text-align: left;
 }
 

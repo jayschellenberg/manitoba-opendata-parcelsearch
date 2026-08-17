@@ -1087,6 +1087,7 @@ const SORT_KEYS = {
   // Numeric sort so 600 lines up between 500 and 700, not between 6
   // and 7 as a string sort would put it.
   municode: (r) => finiteOrNeg(muniNoFromProps(r.parcel.properties)),
+  muniname: (r) => strKey(muniNameFromProps(r.parcel.properties)),
   address: (r) => strKey(r.parcel.properties.Property_Address),
   legal:   (r) => strKey(legalDisplay(r.parcel.properties)),
   title:   (r) => strKey(r.parcel.properties._certificatesOfTitle),
@@ -1233,6 +1234,23 @@ function muniNoFromProps(props) {
   if (!m) return null;
   const n = Number(m[1]);
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Display name for the parcel's municipality, in Roll_Entry's
+ * name-first format: "HEADINGLEY (RM)". Preferred over the
+ * "RM OF HEADINGLEY" half of the Municipality field because it sorts
+ * by place rather than by type prefix, and it echoes the search
+ * dropdown, which is built from the same Muni_Name_With_Typ values
+ * (Jason, 2026-08-17). Falls back to Municipality with its numeric
+ * prefix stripped should a record arrive without the field.
+ */
+function muniNameFromProps(props) {
+  const typ = String(props?.Muni_Name_With_Typ || '').trim();
+  if (typ) return typ;
+  const raw = String(props?.Municipality || '').trim();
+  if (!raw) return null;
+  return raw.replace(/^\s*\d+\s*-\s*/, '') || raw;
 }
 
 function sortRows(rows) {
@@ -9168,6 +9186,9 @@ function renderTable(rows, { resetPage = true } = {}) {
     // human-readable name.
     const muniNo = muniNoFromProps(p);
     tr.appendChild(td(muniNo != null ? String(muniNo) : null, 'num'));
+    // Municipality name — positional, in step with the data-col="muniname"
+    // <th> right after Muni #.
+    tr.appendChild(td(muniNameFromProps(p)));
     // Sale Date / Sale Price cells — always emitted, hidden by CSS
     // unless #results carries the sales-mode class (toggled by
     // handleSalesUpload). Lets the columns appear/disappear without
@@ -11742,7 +11763,7 @@ function exportCsv(explicitRows) {
   const withSeq = numberingOn;
   const header = [
     ...(withSeq ? ['Map #'] : []),
-    'Roll #', 'Muni #', 'Address',
+    'Roll #', 'Muni #', 'Municipality', 'Address',
     'Legal Description', 'Legal Detail', 'Lot', 'Block', 'Plan',
     'Certificates of Title', 'MAO Legal Source URL',
     'Zoning 1 Code', 'Zoning 1 Name', 'Zoning 1 Category', 'Zoning 1 %', 'Zoning 1 By-law',
@@ -11840,7 +11861,7 @@ function exportCsv(explicitRows) {
     const ac = parcelAcres(row.parcel);
     const cells = [
       ...(withSeq ? [p._seq ?? ''] : []),
-      p.Roll_No_Txt, muniNoFromProps(p) ?? '', p.Property_Address,
+      p.Roll_No_Txt, muniNoFromProps(p) ?? '', muniNameFromProps(p) ?? '', p.Property_Address,
       p._legalDescription ?? '',
       p._legalDetail ?? '',
       p._lot ?? '',

@@ -53,6 +53,12 @@ const STORAGE_KEY = 'mbps_table_columns_v2';
 export const DEFAULT_VISIBLE = new Set([
   'favorite',
   'roll',
+  // Municipality name (Muni_Name_With_Typ, "HEADINGLEY (RM)").
+  // Default-visible (and in every preset): a multi-municipality result
+  // set — regions on the Sales tab, an imported list — is unreadable
+  // without it. Muni # (the numeric code) stays gear-only; the name is
+  // what a reader recognises.
+  'muniname',
   'address',
   'saledate',
   'saleprice',
@@ -107,7 +113,7 @@ export const DEFAULT_VISIBLE = new Set([
 // Each key here is added to the visible set ONCE (tracked separately in
 // ADOPTED_KEY); untick it after that and it stays unticked.
 const ADOPTED_KEY = 'mbps_table_columns_adopted';
-const ADOPT_ONCE = ['streetview', 'rollsize', 'zonecat'];
+const ADOPT_ONCE = ['streetview', 'rollsize', 'zonecat', 'muniname'];
 
 // Column presets — `null` value means "everything that the current
 // mode would show". The labels match the dropdown options.
@@ -118,16 +124,27 @@ export const PRESETS = {
   // the weaker value as the authoritative one — and on the ~37% of parcels
   // stating frontage feet it would hide the only assessor-stated size there is.
   'Sales analysis': new Set([
-    'favorite', 'roll', 'address', 'saledate', 'saleprice',
+    'favorite', 'roll', 'muniname', 'address', 'saledate', 'saleprice',
     'grouppriceac', 'grouppricesf', 'grouppricelot', 'rollsize', 'acres',
     'groupacres',
     'zone1', 'zonecat', 'subjdist', 'saletoasmt',
+  ]),
+  // Commercial comps (Jason's chosen list, 2026-08-17): identity + sale +
+  // zoning/legal/size + the Assessment and StreetView link-outs. Deliberately
+  // NO $/FF (frontage rates are a residential-lot comparison) and none of the
+  // agricultural group (soil, riskarea, clicls, soiltype, slope, landcover,
+  // cultpct, tile, irrigation) — on commercial searches those columns are
+  // empty width. ★ stays so comp starring/export keeps working; rollsize
+  // rides with acres per the invariant at the top of PRESETS.
+  'Commercial': new Set([
+    'favorite', 'roll', 'muniname', 'address', 'saledate', 'saleprice',
+    'zone1', 'legal', 'du', 'rollsize', 'acres', 'sf', 'value', 'streetview',
   ]),
   // Frontage earns its place here on its own merits: minimum lot frontage is
   // a bulk requirement in most Manitoba zoning by-laws, so on an urban parcel
   // the roll's frontage figure is the number being checked against.
   'Zoning check': new Set([
-    'roll', 'address', 'zone1', 'zonecat', 'zone1pct', 'zone2', 'zbl',
+    'roll', 'muniname', 'address', 'zone1', 'zonecat', 'zone1pct', 'zone2', 'zbl',
     'dev1', 'dpbylaw', 'changes', 'rollsize', 'acres',
   ]),
   // Farmland-oriented view. Core identity + the land-cover pair, then
@@ -142,7 +159,7 @@ export const PRESETS = {
   // main.js. MASC Rating, Risk Area and Land Cover need no such trigger:
   // they're stamped during every search/import enrichment.
   'Agricultural': new Set([
-    'favorite', 'roll', 'address', 'rollsize', 'acres', 'landcover', 'cultpct', 'water',
+    'favorite', 'roll', 'muniname', 'address', 'rollsize', 'acres', 'landcover', 'cultpct', 'water',
     'soil', 'clicls', 'soiltype', 'slope', 'riskarea', 'tile', 'irrigation',
     'grouppriceac', 'groupacres', 'saledate', 'saleprice', 'saletoasmt', 'grouppricesf',
     'zone1', 'dev1', 'legal', 'title',
@@ -168,7 +185,7 @@ export const PRESETS = {
   // active — the same mode-gating the Agricultural preset relies on. Being in
   // the set only means the gear isn't independently suppressing them.
   'Residential': new Set([
-    'favorite', 'roll', 'address', 'rollsize', 'acres', 'sf', 'du',
+    'favorite', 'roll', 'muniname', 'address', 'rollsize', 'acres', 'sf', 'du',
     'water',
     'value', 'asmtland', 'asmtbldg', 'asmtpct', 'asmtyear',
     'zone1', 'zbl', 'dev1', 'changes',
