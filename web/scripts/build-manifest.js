@@ -191,6 +191,10 @@ function buildMuniVintage(warnings) {
       name: id.list_name || `Muni ${no}`,
       region: id.region || null,
       last_refreshed: r.last_refreshed || null,
+      // Exact commit day, present only when the ledger recorded one (added
+      // 2026-08; fills in as each cohort's deep refresh lands). The month
+      // stays the cadence truth; the date is display precision.
+      last_refreshed_date: r.last_refreshed_date || null,
     };
   }).sort((a, b) => a.name.localeCompare(b.name));
 

@@ -139,10 +139,22 @@ Everything above shipped, with two scope corrections found during the build:
 
 What landed where:
 
+**Round 2, same evening (Jason's follow-ups):** the tab became a **top-bar
+dialog** ("Data Status" between Winnipeg Portal and Data Sources — the third
+sidebar tab is gone); the ledger now records the **exact refresh day**
+(`last_refreshed_date`, cadence.R 2026-08, backfilled from delta logs for the
+21 munis actually deep-refreshed since logging began — the rest carry seeded
+cohort months and gain dates as their cohorts come due); **MASC soil ratings**
+got a real vintage (`_meta` in `masc/_index.json`, mb-parcel-data `fcbaa29`,
+scrape run date beats rebuild date); and the **WALLAS** rows show
+`newest record YYYY-MM-DD` via a MAX(APPLICATION_DATE) statistics query —
+the provincial ArcGIS 10.51 MapServer publishes no editingInfo, so the newest
+record in the data is the best available currency signal.
+
 | Piece | Location |
 |---|---|
-| Per-muni assessment vintage | `buildMuniVintage()` in `web/scripts/build-manifest.js` → `web/public/data/muni-vintage.json` (186 rows, month precision, listed in the manifest + covered by the `--validate` gate) |
-| Data Status tab | third sidebar tab (`data-tab="status"`); driver `web/src/dataStatusTab.js`, pure logic `web/src/lib/dataStatus.js` (tested), lazy-loads on first open |
+| Per-muni assessment vintage | `buildMuniVintage()` in `web/scripts/build-manifest.js` → `web/public/data/muni-vintage.json` (186 rows; exact day where recorded, cohort month otherwise; listed in the manifest + covered by the `--validate` gate) |
+| Data Status dialog | top-bar button `#data-status-open` → `#data-status-modal`; driver `web/src/dataStatusDialog.js`, pure logic `web/src/lib/dataStatus.js` (tested), lazy-loads on first open |
 | Sales coverage data | `export_sales_for_web.R` joins the sweep ledger: per-muni `scraped_at`/`scrape_status` on `munis`, plus a full 186-row `coverage` array in the LOCAL manifest.json |
 | Sales coverage documents | `SALES-COVERAGE.csv` + `.md` written beside the shards on every publish (change-skipped) |
 | Panel view | "Coverage" button in the MAO Sales Database panel → dialog table from `web/src/lib/salesCoverage.js` (tested); pending municipalities dimmed, capped slices flagged |

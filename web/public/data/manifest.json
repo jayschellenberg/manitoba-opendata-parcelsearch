@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "generated_at": "2026-08-16T23:05:19.093Z",
+  "generated_at": "2026-08-17T00:53:12.450Z",
   "datasets": {
     "legal_index": {
       "file": "legal-index.json",
@@ -30,11 +30,11 @@
     "muni_vintage": {
       "file": "muni-vintage.json",
       "schema_version": 1,
-      "size_bytes": 23944,
-      "modified_at": "2026-08-16T23:05:19.092Z",
-      "generated_at": "2026-08-16T23:05:19.091Z",
+      "size_bytes": 30064,
+      "modified_at": "2026-08-17T00:53:12.450Z",
+      "generated_at": "2026-08-17T00:53:12.447Z",
       "source": "mao-scrape muni_refresh_ledger.csv (assessment cadence, month precision)",
-      "source_modified": "2026-08-02T11:17:32.032Z",
+      "source_modified": "2026-08-17T00:52:28.703Z",
       "precision": "month",
       "row_count": 186
     }

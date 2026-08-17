@@ -39,7 +39,10 @@ export function vintageRows(json) {
     name: r.name || `Muni ${r.muni_no}`,
     region: r.region || null,
     month: r.last_refreshed || null,
-    label: r.last_refreshed ? monthLabel(r.last_refreshed) : null,
+    // The exact refresh day when the ledger recorded one; the cohort month
+    // otherwise. Never both — the date IS that month's refresh.
+    label: r.last_refreshed_date
+      || (r.last_refreshed ? monthLabel(r.last_refreshed) : null),
   })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -77,8 +80,9 @@ export function newestSnapshot(histIndex) {
  * @param {Object} [opts.rollSnap]  rollentry-snapshot/_index.json off the CDN
  * @param {Object} [opts.histIndex] mb-parcel-history index.json
  * @param {string} [opts.revision]  pinned mb-parcel-data commit SHA
+ * @param {Object} [opts.mascMeta]  masc/_index.json `_meta` entry
  */
-export function publishedRows({ manifest, rollSnap, histIndex, revision } = {}) {
+export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMeta } = {}) {
   const rows = [];
   const ds = manifest?.datasets || {};
 
@@ -113,10 +117,38 @@ export function publishedRows({ manifest, rollSnap, histIndex, revision } = {}) 
   }
 
   rows.push({
-    label: 'MASC ratings, land cover & water shards (CDN)',
+    label: 'MASC soil productivity ratings',
+    vintage: mascRunDate(mascMeta) || datePart(mascMeta?.generated_at),
+    detail: mascMeta?.run ? `scrape ${mascMeta.run}` : (mascMeta?.source || null),
+  });
+
+  rows.push({
+    label: 'Land cover & water shards (CDN)',
     vintage: null,
     detail: revision ? `pinned at revision ${String(revision).slice(0, 7)}` : null,
   });
 
   return rows;
+}
+
+/**
+ * The MASC scrape date out of the masc/_index.json `_meta` entry — the
+ * run dir name (run_YYYYMMDD_HHMMSS) IS the scrape date, and it beats
+ * generated_at, which only says when the shards were rebuilt.
+ */
+export function mascRunDate(meta) {
+  const m = /^run_(\d{4})(\d{2})(\d{2})_/.exec(meta?.run || '');
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+}
+
+/**
+ * A WALLAS-style statistics response ({features:[{attributes:{newest}}]})
+ * → ISO date of the newest record, or null. The provincial MapServer is
+ * ArcGIS 10.51 and publishes no editingInfo, so the newest record's
+ * APPLICATION_DATE is the best available currency signal.
+ */
+export function statMaxDate(json) {
+  const ms = json?.features?.[0]?.attributes?.newest;
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  return new Date(ms).toISOString().slice(0, 10);
 }

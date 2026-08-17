@@ -79,6 +79,9 @@
           target="_blank"
           rel="noreferrer"
         >Winnipeg Portal</a>
+        <!-- Opens the Data Status dialog: when each data source behind the
+             site was last refreshed. Driven by src/dataStatusDialog.js. -->
+        <button type="button" class="topbar-link" id="data-status-open">Data Status</button>
         <details class="topbar-details" id="data-sources-details">
           <summary class="topbar-summary">Data Sources</summary>
           <div class="topbar-panel" id="data-sources-panel">
@@ -178,11 +181,11 @@
     <div class="app-shell" id="app-shell">
       <aside class="controls sidebar" aria-label="Search and overlay controls">
 
-        <!-- Tab strip. Three tabs split the sidebar by workflow:
-             Property search (default), Sales analysis, and Data status
-             (source freshness). Map layers live in an always-visible
-             section below the tab panels. Tab state is persisted to
-             localStorage by `tabs.js` so a refresh keeps you put. -->
+        <!-- Tab strip. Two tabs split the sidebar by workflow:
+             Property search (default) and Sales analysis. Map layers live
+             in an always-visible section below the tab panels; Data Status
+             opens from the TOP BAR as a dialog (Jason, 2026-08-16). Tab
+             state is persisted to localStorage by `tabs.js`. -->
         <div class="sidebar-tabs" role="tablist" aria-label="Sidebar sections">
           <button
             type="button" role="tab"
@@ -199,14 +202,6 @@
             aria-selected="false"
             tabindex="-1"
           >Sales Analysis</button>
-          <button
-            type="button" role="tab"
-            id="tab-btn-status" class="sidebar-tab"
-            data-tab="status"
-            aria-controls="tab-panel-status"
-            aria-selected="false"
-            tabindex="-1"
-          >Data Status</button>
         </div>
 
         <!-- ===================================================
@@ -841,66 +836,6 @@
             <button id="sales-clear" type="button" class="danger" title="Reset the page — clears any uploaded sales CSV, search results, subject, and filters.">Clear</button>
           </div>
         </section><!-- /tab-panel-sales -->
-
-        <!-- ===================================================
-             Tab 3: Data status — when each data source behind the
-             site was last refreshed. Driven by src/dataStatusTab.js,
-             loaded lazily on first open. Per-municipality rows come
-             from data/muni-vintage.json (assessment cadence, MONTH
-             precision); live-service dates from each service's own
-             ?f=json edit stamp. Sales coverage is deliberately NOT
-             here — see SPEC-DATA-STATUS-TAB.md.
-             =================================================== -->
-        <section
-          class="sidebar-tab-panel"
-          id="tab-panel-status"
-          data-tab="status"
-          role="tabpanel"
-          aria-labelledby="tab-btn-status"
-          hidden
-        >
-          <p class="data-status-intro">When each data source behind this site
-            was last refreshed.</p>
-
-          <details class="data-status-block" open>
-            <summary><strong>Assessment rolls by municipality</strong>
-              <span class="data-status-side" id="data-status-muni-summary"></span></summary>
-            <p class="data-status-hint">Rolls are re-scraped in monthly cohorts,
-              so vintages are months — "July 2026" means refreshed in the July
-              cohort, not on a particular day.</p>
-            <input id="data-status-muni-search" type="search" class="sales-db-search"
-                   placeholder="Filter municipalities…" aria-label="Filter municipalities" />
-            <div class="data-status-scroll">
-              <table class="data-status-table">
-                <thead><tr><th>Municipality</th><th>Region</th><th>Rolls refreshed</th></tr></thead>
-                <tbody id="data-status-munis"></tbody>
-              </table>
-            </div>
-          </details>
-
-          <details class="data-status-block" open>
-            <summary><strong>Published site data</strong></summary>
-            <div class="data-status-scroll">
-              <table class="data-status-table">
-                <thead><tr><th>Dataset</th><th>Vintage</th><th>Detail</th></tr></thead>
-                <tbody id="data-status-published"></tbody>
-              </table>
-            </div>
-          </details>
-
-          <details class="data-status-block" open>
-            <summary><strong>Live map services</strong></summary>
-            <p class="data-status-hint">Each service's own last-edit stamp,
-              fetched when this tab opens. A recent date means the layer
-              changed; it does not promise every record in it is current.</p>
-            <div class="data-status-scroll">
-              <table class="data-status-table">
-                <thead><tr><th>Service</th><th>Upstream last edit</th></tr></thead>
-                <tbody id="data-status-services"></tbody>
-              </table>
-            </div>
-          </details>
-        </section><!-- /tab-panel-status -->
 
         <!-- ===================================================
              Map layers — always visible below the active tab.
@@ -1718,6 +1653,75 @@
           <p class="parcel-list-modal-help">Resolving rows against the legal index…</p>
           <div class="parcel-list-modal-busy" aria-hidden="true"></div>
         </section>
+      </div>
+    </dialog>
+
+    <!-- Data Status — when each data source behind the site was last
+         refreshed. Opened from the TOP BAR button; driven by
+         src/dataStatusDialog.js, loaded lazily on first open.
+         Per-municipality rows come from data/muni-vintage.json (exact
+         refresh day where the ledger recorded one, cohort month otherwise);
+         live-service dates from each service's ?f=json edit stamp, except
+         WALLAS, whose provincial server publishes none — its vintage is the
+         newest APPLICATION_DATE in the data. Sales coverage is deliberately
+         NOT here — see SPEC-DATA-STATUS-TAB.md. -->
+    <dialog id="data-status-modal" class="parcel-list-modal">
+      <div class="parcel-list-modal-inner">
+        <header class="parcel-list-modal-header">
+          <h2 class="parcel-list-modal-title">Data status</h2>
+          <button
+            type="button"
+            id="data-status-close"
+            class="parcel-list-modal-close"
+            aria-label="Close data status dialog"
+          >×</button>
+        </header>
+        <p class="data-status-intro">When each data source behind this site
+          was last refreshed.</p>
+
+        <details class="data-status-block" open>
+          <summary><strong>Assessment rolls by municipality</strong>
+            <span class="data-status-side" id="data-status-muni-summary"></span></summary>
+          <p class="data-status-hint">A full date is the day that
+            municipality's rolls last had a complete refresh. A bare month
+            ("July 2026") means the refresh committed in that monthly cohort
+            before exact days were recorded — dates fill in as each cohort
+            comes due. Day-to-day roll changes are picked up nightly for all
+            municipalities either way.</p>
+          <input id="data-status-muni-search" type="search" class="sales-db-search"
+                 placeholder="Filter municipalities…" aria-label="Filter municipalities" />
+          <div class="data-status-scroll">
+            <table class="data-status-table">
+              <thead><tr><th>Municipality</th><th>Region</th><th>Rolls refreshed</th></tr></thead>
+              <tbody id="data-status-munis"></tbody>
+            </table>
+          </div>
+        </details>
+
+        <details class="data-status-block" open>
+          <summary><strong>Published site data</strong></summary>
+          <div class="data-status-scroll">
+            <table class="data-status-table">
+              <thead><tr><th>Dataset</th><th>Vintage</th><th>Detail</th></tr></thead>
+              <tbody id="data-status-published"></tbody>
+            </table>
+          </div>
+        </details>
+
+        <details class="data-status-block" open>
+          <summary><strong>Live map services</strong></summary>
+          <p class="data-status-hint">Dates are each service's own last-edit
+            stamp, fetched when this dialog opens. The WALLAS layers publish
+            no edit stamp, so theirs is the newest record in the data. A
+            recent date means the layer changed; it does not promise every
+            record in it is current.</p>
+          <div class="data-status-scroll">
+            <table class="data-status-table">
+              <thead><tr><th>Service</th><th>Upstream last edit</th></tr></thead>
+              <tbody id="data-status-services"></tbody>
+            </table>
+          </div>
+        </details>
       </div>
     </dialog>
 

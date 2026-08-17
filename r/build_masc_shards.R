@@ -125,6 +125,18 @@ for (key in muni_keys) {
 
 # Manifest indexed by normalized key so the frontend can look up an
 # entry without listing the directory at runtime.
+#
+# `_meta` carries the dataset's vintage for the Data Status dialog: when the
+# shards were built and which MASC scrape run fed them (the run dir name is
+# the scrape date). Every consumer that walks this index filters on entries
+# with a `file` string (lookupMuniManifestEntry, shardIndexEntries), so a
+# key with no `file` passes through them invisibly.
+run_dir <- basename(dirname(input_path))
+manifest[["_meta"]] <- list(
+  generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+  source = basename(input_path),
+  run = if (grepl("^run_\\d{8}_\\d{6}$", run_dir)) run_dir else NULL
+)
 jsonlite::write_json(manifest, index_path, auto_unbox = TRUE, pretty = FALSE)
 
 cat("Done.\n")

@@ -61,6 +61,15 @@ body {
   border-radius: 3px;
   cursor: pointer;
 }
+/* The Data Status trigger is a BUTTON wearing the link's clothes — drop
+   the UA button chrome so it sits flush with its top-bar neighbours. */
+button.topbar-link {
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+}
 .topbar-link:hover,
 .topbar-summary:hover {
   color: #fff;
