@@ -54,6 +54,7 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
   const $refresh = document.getElementById('sales-db-refresh');
   const $forget  = document.getElementById('sales-db-forget');
   const $update  = document.getElementById('sales-db-update');
+  const $rangeHint = document.getElementById('sales-db-daterange-hint');
 
   const say = (m) => { if (typeof setStatus === 'function') setStatus(m); };
 
@@ -260,30 +261,33 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
     $update.classList.toggle('is-stale', stale);
     if (stale) {
       $update.textContent = now.munis !== loadedState.munis
-        ? 'Selected municipalities changed — hit Load sales to refresh the data.'
-        : 'Date range or sale type changed — hit Load sales to refresh the data.';
+        ? 'Selected municipalities changed — hit Search Sales to refresh the data.'
+        : 'Date range or sale type changed — hit Search Sales to refresh the data.';
     }
   }
 
-  // A date range is REQUIRED before loading. It is the load window, not a
-  // display filter: without it the load reads every sale a municipality
-  // holds back to 1987, parses them all and fetches parcel geometry for
-  // each — the slow part the window exists to avoid. Discovering the date
-  // control afterwards is too late, so the button stays disabled and says
-  // why (Jason, 2026-08-11).
+  // A date range is strongly RECOMMENDED before searching. It is the load
+  // window, not a display filter: without it the search reads every sale a
+  // municipality holds back to 1987, parses them all and fetches parcel
+  // geometry for each — the slow part the window exists to avoid. The button
+  // was originally hard-disabled until a range was set (Jason, 2026-08-11);
+  // softened to a visible hint plus an are-you-sure confirm on click
+  // (Jason, 2026-08-17), because the silent disable hid WHY nothing worked
+  // and blocked the rare full-history search an appraiser genuinely wants.
   function dateWindow() {
     const w = getDateWindow?.() || {};
     return { from: (w.from || '').trim(), to: (w.to || '').trim() };
   }
   function updateLoadEnabled() {
-    if (!$load) return;
     const { from, to } = dateWindow();
     const hasWindow = Boolean(from || to);
+    if ($rangeHint) $rangeHint.hidden = hasWindow;
+    if (!$load) return;
     const hasMunis = effectiveSelection().size > 0;
-    $load.disabled = !hasWindow || !hasMunis;
+    $load.disabled = !hasMunis;
     $load.title = !hasMunis ? 'Pick at least one municipality'
-      : !hasWindow ? 'Set a date range first — it decides how much of the archive is read'
-      : 'Load the selected municipalities for the chosen date range';
+      : !hasWindow ? 'No date range set — searching loads the full history and can take a long time'
+      : 'Search the selected municipalities for the chosen date range';
   }
   // The date inputs live in the sidebar filters, so watch them rather than
   // polling; both the presets and hand-typed dates fire 'input'.
@@ -467,6 +471,17 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
     // Load what the checkboxes SHOW, i.e. picks plus any adjacency additions.
     const chosen = [...effectiveSelection()];
     if (!chosen.length) { say('Pick at least one municipality.'); return; }
+    // No date range = the whole archive back to the 1980s. Allowed — an
+    // appraiser may genuinely want the full history — but never silently:
+    // the slow part (parcel-geometry fetches per sale) only shows itself
+    // after the click, so the warning has to come before it.
+    const win = dateWindow();
+    if (!win.from && !win.to) {
+      const ok = window.confirm('Are you sure? No date range is set, so this will '
+        + 'load the full sales history for the selection and can take a long time. '
+        + 'Cancel and set a date range below to speed it up.');
+      if (!ok) return;
+    }
     try {
       const manifest = await getManifest();
       // Load only the sales inside the sidebar's date range. Everything
@@ -479,7 +494,7 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
       const payload = await buildCsvFor(chosen, { manifest, from, to, type: $type?.value || null });
       if (!payload) {
         say(from || to
-          ? 'No sales in that date range for the selection. Widen the date range and load again.'
+          ? 'No sales in that date range for the selection. Widen the date range and search again.'
           : 'No sales found for that selection.');
         return;
       }
@@ -495,7 +510,7 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
       if (payload.window) {
         const span = [payload.window.from || 'earliest', payload.window.to || 'today'].join(' → ');
         say(`Loaded ${fmt(payload.sales)} of ${fmt(payload.salesAvailable)} sales (${span}). `
-          + 'Change the date range and load again for more history.');
+          + 'Change the date range and search again for more history.');
       } else {
         say(`Loaded ${fmt(payload.sales)} sales (full history).`);
       }
@@ -556,7 +571,7 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
     if ($covSummary) {
       const sum = coverageSummary(covCache);
       $covSummary.textContent = !sum
-        ? 'This export has no coverage information yet — hit Refresh after the next publish.'
+        ? 'This export has no coverage information yet — hit Reload Sales after the next publish.'
         : sum.total != null
           ? `${fmt(sum.scraped)} of ${fmt(sum.total)} municipalities scraped for sales`
             + (sum.latest ? ` · most recent scrape ${dateLabel(sum.latest)}` : '')
@@ -571,7 +586,7 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
   $covClose?.addEventListener('click', () => $covModal?.close());
   $covSearch?.addEventListener('input', renderCoverageTable);
 
-  // ---- refresh / forget ---------------------------------------------------
+  // ---- reload / disconnect ------------------------------------------------
   $refresh?.addEventListener('click', async () => {
     try {
       const handle = await getSavedDirectory();
@@ -581,13 +596,20 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
       if (perm !== 'granted') { say('Folder access was not granted.'); return; }
       await runImport(handle, { force: true });
       if ($update) $update.hidden = true;
-    } catch (err) { say(`Refresh failed: ${err.message}`); }
+    } catch (err) { say(`Reload failed: ${err.message}`); }
   });
 
+  // Destructive enough for a confirm since 2026-08-17: the button is styled
+  // dark red like Clear, and one stray click otherwise throws away an import
+  // that took real time. Only the browser's copy goes — the export folder on
+  // disk is untouched, which is exactly what the prompt says.
   $forget?.addEventListener('click', async () => {
+    const ok = window.confirm('Disconnect the MAO sales database from this browser? '
+      + 'The export folder on your hard drive is not affected — you can reconnect it any time.');
+    if (!ok) return;
     await clearSales();
     await render();
-    say('Sales database removed from this browser.');
+    say('Sales database disconnected from this browser.');
   });
 
   $import?.addEventListener('click', onChooseFolder);
@@ -605,7 +627,7 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
       if ($update) {
         $update.hidden = false;
         $update.textContent =
-          `${upd.count} municipalit${upd.count === 1 ? 'y has' : 'ies have'} newer data — click Refresh.`;
+          `${upd.count} municipalit${upd.count === 1 ? 'y has' : 'ies have'} newer data — click Reload Sales.`;
       }
     } catch { /* never block the tab on this */ }
   }

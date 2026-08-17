@@ -416,6 +416,16 @@ header small a {
   color: var(--color-neutral-600, #52525b);
   margin: 6px 0;
 }
+/* Pre-search nudge shown while no date range is set. The date inputs sit
+   further down the sidebar, so this says WHERE to look before a search
+   quietly pulls the whole archive. Same amber as
+   .sales-db-selcount.is-warning — advice, not an error. */
+.sales-db-daterange-hint {
+  font-size: 0.78rem;
+  color: #92400e;
+  font-weight: 600;
+  margin: 6px 0 2px;
+}
 .sales-db-label {
   display: block;
   font-size: 0.78rem;
@@ -1003,9 +1013,10 @@ body:not(.sales-mode) .sidebar .ppa-row,
 body:not(.sales-mode) .sidebar .vacant-row,
 body:not(.sales-mode) .sidebar .date-row,
 /* The date range is NOT hidden before a load. It is the load WINDOW — sales
-   outside it are never read out of the archive — so it has to be set before
-   Load sales, not discovered afterwards once the slow part already ran. The
-   rest of the sales filters still wait for data to filter. */
+   outside it are never read out of the archive — so it should be set before
+   Search Sales runs, not discovered afterwards once the slow part already
+   ran (the panel hints at it and confirms before a full-history search).
+   The rest of the sales filters still wait for data to filter. */
 body:not(.sales-mode) .sidebar .class-row,
 body:not(.sales-mode) .sidebar .subject-row,
 body:not(.sales-mode) .sidebar .subject-muni-row,
@@ -5277,9 +5288,10 @@ body {
   border-color: var(--ui-brand-hover);
 }
 
-/* .danger — a destructive reset. Currently the Clear button on both
-   tabs, which reloads the page and drops the uploaded CSV, the results,
-   the subject parcel and every filter. It used to be .tertiary, the
+/* .danger — a destructive reset. The Clear button on both tabs, which
+   reloads the page and drops the uploaded CSV, the results, the subject
+   parcel and every filter; also the sales-database panel's Disconnect
+   (see the scoped rule below). It used to be .tertiary, the
    quietest weight in the hierarchy, which understated what it does
    (Jason, 2026-08-12): the one button that throws work away read as the
    least significant thing on the row.
@@ -5312,12 +5324,31 @@ body {
   box-shadow: none;
 }
 
+/* Disconnect (sales-database panel) — the same destructive dark red as
+   Clear, "different in kind" from Search Sales beside it. Scoped with
+   three classes so it out-specifies both `.controls button` (which
+   paints every sidebar button in the brand colour) and
+   `.controls button.danger` above, whose Clear-sized padding would
+   shrink this button out of line with its row siblings. */
+.sales-db-actions .parcel-list-modal-btn.danger {
+  background: #8b0000;
+  color: #fff;
+  border-color: #8b0000;
+  padding: 8px 18px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+.sales-db-actions .parcel-list-modal-btn.danger:hover:not(:disabled) {
+  background: #6f0000;
+  border-color: #6f0000;
+  color: #fff;
+}
+
 /* Search — green, so the go action is findable at a glance and pairs
    with the red Clear beside it (Jason, 2026-08-12).
 
    Scoped to #search rather than to .primary on purpose: `.controls
    button.primary` also matches the sales-database panel's "Choose export
-   folder…" and "Load sales", and recolouring those was not asked for and
+   folder…" and "Search Sales", and recolouring those was not asked for and
    would dilute the signal — three green buttons stand out less than one.
    The ID also outranks every .primary rule above, so this needs no
    ordering care.

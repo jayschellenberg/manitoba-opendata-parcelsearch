@@ -460,12 +460,19 @@
               <p class="sales-db-hint" id="sales-db-hint">
                 Tick a region to take it whole, or open it to pick municipalities.
               </p>
+              <!-- Shown while no date range is set. The date inputs live
+                   further down the sidebar, so say WHERE to look before the
+                   user searches the whole archive by accident; the Search
+                   button backs this up with an are-you-sure confirm. -->
+              <p class="sales-db-daterange-hint" id="sales-db-daterange-hint" hidden>
+                Select a Date Range from below before Searching.
+              </p>
               <div class="sales-db-actions">
-                <button type="button" id="sales-db-load" class="parcel-list-modal-btn primary">Load sales</button>
-                <button type="button" id="sales-db-refresh" class="parcel-list-modal-btn" title="Re-read the export folder">Refresh</button>
-                <button type="button" id="sales-db-forget" class="parcel-list-modal-btn" title="Remove the imported database from this browser">Forget</button>
+                <button type="button" id="sales-db-load" class="parcel-list-modal-btn primary">Search Sales</button>
+                <button type="button" id="sales-db-refresh" class="parcel-list-modal-btn" title="Re-reads the latest sales files from your hard drive">Reload Sales</button>
+                <button type="button" id="sales-db-forget" class="parcel-list-modal-btn danger" title="Disconnect the imported sales database from this browser">Disconnect</button>
                 <button type="button" id="sales-db-coverage" class="parcel-list-modal-btn"
-                        title="When each municipality was last scraped for sales">Coverage</button>
+                        title="When each municipality was last scraped for sales">Sales Coverage</button>
               </div>
               <p class="sales-db-update" id="sales-db-update" hidden></p>
             </div>
