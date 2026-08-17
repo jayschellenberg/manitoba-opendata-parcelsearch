@@ -153,13 +153,9 @@ export const PRESETS = {
   // parcels, and the assessment split so a "vacant" comp that turns out to
   // carry a building is visible rather than inferred from price.
   //
-  // NOTE: there is no Group SF column in the table — the group block is
-  // Group # and Group Acres only. $/SF already divides by the group's total
-  // square footage, so the figure is present as a rate but not as its own
-  // column; adding one means a new <th>, cell, sort key and export field.
   'Land Sales': new Set([
     'favorite', 'roll', 'muniname', 'saledate', 'saleprice', 'groupsize',
-    'address', 'zone1', 'rollsize', 'acres', 'sf', 'groupacres',
+    'address', 'zone1', 'rollsize', 'acres', 'sf', 'groupacres', 'groupsf',
     'grouppriceac', 'grouppricesf', 'grouppriceff', 'grouppricelot',
     'saletoasmt', 'asmtland', 'asmtbldg', 'asmtpct', 'asmtyear',
     'legal', 'value', 'streetview',

@@ -1191,6 +1191,10 @@ const SORT_KEYS = {
   // parking those rows at the bottom would hide the biggest assemblies, which
   // are exactly the ones most likely to have a member missing its area.
   groupacres:   (r) => finiteOrNeg(r.parcel.properties._saleGroupTotalAcres),
+  // Group SF is Group Acres × 43,560, so it sorts on the same underlying
+  // total — the multiplier is positive and constant, so the ordering is
+  // identical and converting first would only add rounding.
+  groupsf:      (r) => finiteOrNeg(r.parcel.properties._saleGroupTotalAcres),
   grouppricesf: (r) => finiteOrNeg(r.parcel.properties._saleGroupPpsf),
   grouppriceff: (r) => finiteOrNeg(r.parcel.properties._saleGroupPpff),
   saletoasmt:   (r) => finiteOrNeg(r.parcel.properties._saleGroupSaleToAsmt),
@@ -9272,6 +9276,13 @@ function renderTable(rows, { resetPage = true } = {}) {
     // the column exists, and it is invisible on a row-by-row read otherwise.
     if (Number.isFinite(groupSize) && groupSize > 1) groupAcresCell.classList.add('group-total');
     tr.appendChild(groupAcresCell);
+    // Group SF — same total, square feet. Positional like every cell here;
+    // must stay in step with the data-col="groupsf" <th> between Group Acres
+    // and $/Acre.
+    const groupSfCell = td(formatGroupSf(p), 'num');
+    groupSfCell.classList.add('sales-only');
+    if (Number.isFinite(groupSize) && groupSize > 1) groupSfCell.classList.add('group-total');
+    tr.appendChild(groupSfCell);
     const ppaCell = td(formatGroupPpa(p), 'num');
     ppaCell.classList.add('sales-only');
     // Far-flung marker rides on $/Acre deliberately: that's the number a
@@ -11030,6 +11041,24 @@ function formatGroupAcres(p) {
   return fmtAcres(total);
 }
 
+/**
+ * Group SF cell — the same group total in square feet, i.e. the denominator
+ * $/SF divides by. Deliberately derived from _saleGroupTotalAcres rather than
+ * summed separately: two independent totals over the same parcels could drift
+ * apart, and then Group SF ÷ 43,560 would not equal Group Acres on screen.
+ *
+ * Every withholding rule matches formatGroupAcres, including the em-dash on
+ * an incomplete group — a partial total understates the land and would make
+ * $/SF beside it read high while both numbers still look plausible.
+ */
+function formatGroupSf(p) {
+  if (!p?._saleGroupSize) return null;
+  if (p._saleGroupAcresIncomplete) return '—';
+  const total = Number(p._saleGroupTotalAcres);
+  if (!Number.isFinite(total) || total <= 0) return null;
+  return formatSqFtFromAcres(total);
+}
+
 /** Group $/Acre table cell. Returns the formatted dollar string, or
  *  '—' when group acres are incomplete (insufficient data flag set
  *  by computeSaleGroupTotals), or null when the parcel isn't part
@@ -11820,7 +11849,7 @@ function exportCsv(explicitRows) {
           // pair a parcel's transactions without regrouping by roll.
           'Sale # for Parcel', 'Sales for Parcel',
           'Sale Group ID', 'Parcels in Sale', 'Group Rolls',
-          'Group Total Sale Price', 'Group Total Acres', 'Group Acres Complete',
+          'Group Total Sale Price', 'Group Total Acres', 'Group Total SF', 'Group Acres Complete',
           'Group $/Lot', 'Group $/SF', 'Group $/Acre',
           'Group Total Frontage Ft', 'Group $/FF',
           'Group Assessment Total', 'Group Assessment Complete', 'Sale/Asmt',
@@ -11919,6 +11948,9 @@ function exportCsv(explicitRows) {
             Array.isArray(p._saleGroupRolls) ? p._saleGroupRolls.join(' | ') : '',
             Number.isFinite(p._saleGroupTotalPriceNum) ? Math.round(p._saleGroupTotalPriceNum) : '',
             Number.isFinite(p._saleGroupTotalAcres) ? p._saleGroupTotalAcres.toFixed(3) : '',
+            // Rounded to whole feet: the acreage it converts from is only
+            // three decimals, so decimals here would be false precision.
+            Number.isFinite(p._saleGroupTotalAcres) ? Math.round(p._saleGroupTotalAcres * 43560) : '',
             p._saleGroupSize != null ? (p._saleGroupAcresIncomplete ? 'No' : 'Yes') : '',
             p._saleGroupPpl != null ? Math.round(p._saleGroupPpl) : '',
             p._saleGroupAcresIncomplete ? '' : (p._saleGroupPpsf != null ? p._saleGroupPpsf.toFixed(2) : ''),

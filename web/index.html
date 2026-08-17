@@ -1420,6 +1420,11 @@
             <th data-col="rollsize" class="sales-only" title="What the assessment roll itself records for this parcel — verbatim, in the assessor's own units. About 63% of Manitoba parcels carry an area ('160.00 ACRES'); the other 37% carry a frontage instead ('110.00 FEET'), which is a width, not an area, and cannot be converted to acres. This is the primary source; the Acres column beside it is that same figure when it is an area, and a polygon-derived estimate when it is not.">Roll Frontage/Area</th>
             <th data-col="acres" class="sales-only" title="Parcel area in acres. Uses the assessor's recorded area when the roll states one, otherwise computed from the parcel polygon. A ⚠ marks rows where the two disagree by more than 2%. On a frontage-feet parcel this is a polygon estimate the roll does not support — check Roll Frontage/Area beside it.">Acres</th>
             <th data-col="groupacres" class="sales-only" title="Total acres of EVERY parcel in this sale, added up — the land the sale price actually bought, and the denominator behind $/Acre beside it. On a single-parcel sale it equals the Acres column. Shows an em-dash when any parcel in the sale is missing an area, because a partial total would understate the land and make $/Acre look high.">Group Acres</th>
+            <!-- Group SF — the same total as Group Acres, in square feet, so
+                 the denominator behind $/SF is readable beside its rate. Only
+                 ever a conversion of Group Acres (× 43,560); it withholds on
+                 an incomplete group for the same reason. -->
+            <th data-col="groupsf" class="sales-only" title="Total square footage of EVERY parcel in this sale — Group Acres × 43,560, and the denominator behind $/SF beside it. On a single-parcel sale it equals that parcel's SF. Shows an em-dash when any parcel in the sale is missing an area, because a partial total would understate the land and make $/SF read high.">Group SF</th>
             <th data-col="grouppriceac" class="sales-only" title="Sale Price ÷ total acres of every parcel in the same sale">$/Acre</th>
             <th data-col="grouppricesf" class="sales-only" title="Sale Price ÷ total square footage of every parcel in the same sale">$/SF</th>
             <!-- $/frontage foot. Only ~37% of Manitoba parcels state a
