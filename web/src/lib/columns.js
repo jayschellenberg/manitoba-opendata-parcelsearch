@@ -62,6 +62,10 @@ export const DEFAULT_VISIBLE = new Set([
   'address',
   'saledate',
   'saleprice',
+  // N1 crosswalk ID — default-visible (and ADOPT_ONCE for stored sets):
+  // the whole point of the crosswalk is seeing at a glance which comps
+  // already live in N1, so a hidden-by-default column would bury it.
+  'n1id',
   'grouppriceac',
   // Total acres across the sale. Default-visible beside $/Acre because it is
   // that rate's denominator: on a multi-parcel sale the per-parcel Acres cell
@@ -113,7 +117,7 @@ export const DEFAULT_VISIBLE = new Set([
 // Each key here is added to the visible set ONCE (tracked separately in
 // ADOPTED_KEY); untick it after that and it stays unticked.
 const ADOPTED_KEY = 'mbps_table_columns_adopted';
-const ADOPT_ONCE = ['streetview', 'rollsize', 'zonecat', 'muniname'];
+const ADOPT_ONCE = ['streetview', 'rollsize', 'zonecat', 'n1id', 'muniname'];
 
 // Column presets — `null` value means "everything that the current
 // mode would show". The labels match the dropdown options.
@@ -124,7 +128,7 @@ export const PRESETS = {
   // the weaker value as the authoritative one — and on the ~37% of parcels
   // stating frontage feet it would hide the only assessor-stated size there is.
   'Sales analysis': new Set([
-    'favorite', 'roll', 'muniname', 'address', 'saledate', 'saleprice',
+    'favorite', 'roll', 'muniname', 'address', 'saledate', 'saleprice', 'n1id',
     'grouppriceac', 'grouppricesf', 'grouppricelot', 'rollsize', 'acres',
     'groupacres',
     'zone1', 'zonecat', 'subjdist', 'saletoasmt',
@@ -143,7 +147,7 @@ export const PRESETS = {
   // ★ stays so comp starring/export keeps working; rollsize rides with
   // acres per the invariant at the top of PRESETS.
   'Commercial Sales': new Set([
-    'favorite', 'roll', 'muniname', 'address', 'saledate', 'saleprice',
+    'favorite', 'roll', 'muniname', 'address', 'saledate', 'saleprice', 'n1id',
     'zone1', 'legal', 'du', 'rollsize', 'acres', 'value', 'streetview',
   ]),
   // Land comps (Jason's chosen list, 2026-08-17) — the mirror of Commercial

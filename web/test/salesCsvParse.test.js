@@ -459,9 +459,23 @@ test('a pasted comp set without those columns keeps its exact record shape', () 
               'TOWN OF ALTONA,132500.000,"Jul 21, 2026","$510,000"\n';
   const recs = parseSalesCsv(csv);
   assert.equal(recs.length, 1);
-  for (const k of ['parcelSize', 'parcelSizeUnit', 'parcelChange', 'saleTypeGroup']) {
+  for (const k of ['parcelSize', 'parcelSizeUnit', 'parcelChange', 'saleTypeGroup', 'n1Id']) {
     assert.ok(!(k in recs[0]), `${k} must be absent, not empty, when the column is missing`);
   }
+});
+
+test('N1 ID rides the export like the other optional columns', () => {
+  // The crosswalk stamps specific rows: a matched and an unmatched sale in
+  // the same shard must come through as "has an ID" / "blank", not blur.
+  const csv = MAO_HEADER + ',N1 ID\n' +
+    'TOWN OF ALTONA,132500.000,"Jul 21, 2026","$510,000",168 ELMCREST DR SE,11-2-2431,' +
+    'RESIDENTIAL LAND AND BUILDINGS,82.4,FEET,legal_matches_size_unchecked,30798\n' +
+    'TOWN OF ALTONA,132600.000,"Jul 22, 2026","$300,000",170 ELMCREST DR SE,12-2-2431,' +
+    'RESIDENTIAL LAND AND BUILDINGS,80.0,FEET,legal_matches_size_unchecked,\n';
+  const recs = parseSalesCsv(csv);
+  assert.equal(recs.length, 2);
+  assert.equal(recs[0].n1Id, '30798');
+  assert.equal(recs[1].n1Id, '');
 });
 
 test('a multi-parcel sale gets its OWN size per parcel', () => {

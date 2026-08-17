@@ -72,6 +72,10 @@ const HEADER_ALIASES = {
   parcelSize:       ['parcel size', 'parcelsize'],
   parcelSizeUnit:   ['parcel size unit', 'parcelsizeunit'],
   parcelChange:     ['parcel change', 'parcelchange'],
+  // Jason's N1 comp-database ID, joined onto the export by the hand-curated
+  // crosswalk (mao-scrape DESIGN-N1-CROSSWALK.md). Blank = not matched yet,
+  // which the N1 filter uses as its "needs entering into N1" signal.
+  n1Id:             ['n1 id', 'n1id', 'n1'],
 };
 
 /**
@@ -234,6 +238,7 @@ function recordsFromRows(rows, cols) {
     const sizes     = valuesAt(cols.parcelSize);
     const sizeUnits = valuesAt(cols.parcelSizeUnit);
     const changes   = valuesAt(cols.parcelChange);
+    const n1Ids     = valuesAt(cols.n1Id);
 
     const parcels = [];
     for (let k = 0; k < rolls.length; k++) {
@@ -255,6 +260,7 @@ function recordsFromRows(rows, cols) {
         ...(cols.parcelSize     >= 0 ? { parcelSize:     pickValue(sizes, k) }     : {}),
         ...(cols.parcelSizeUnit >= 0 ? { parcelSizeUnit: pickValue(sizeUnits, k) } : {}),
         ...(cols.parcelChange   >= 0 ? { parcelChange:   pickValue(changes, k) }   : {}),
+        ...(cols.n1Id           >= 0 ? { n1Id:           pickValue(n1Ids, k) }     : {}),
       });
     }
     if (parcels.length === 0) continue;

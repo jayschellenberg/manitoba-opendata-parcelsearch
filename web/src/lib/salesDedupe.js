@@ -93,6 +93,10 @@ export function dedupeSalesByRoll(records, { canonicalRoll, saleDateValue }) {
     const sig = joinKey(parcelKey(rec, canonicalRoll), saleSignature(rec));
     const kept = seen.get(sig);
     if (kept) {
+      // The N1 crosswalk stamps its ID on specific archive rows; when an
+      // exact re-listing collapses, the surviving record must not lose the
+      // ID just because the un-stamped copy happened to come first.
+      if (rec?.n1Id && !kept.n1Id) kept.n1Id = rec.n1Id;
       duplicateRows.push({ ...rec, _dupeOf: kept });
       continue;
     }

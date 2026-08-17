@@ -752,6 +752,19 @@
                 <span class="tip">Maximum total sale price (the Consideration from the uploaded CSV). Sales with no readable price drop out while either bound is set. Empty = no upper limit.</span>
               </span>
             </div>
+            <!-- N1 crosswalk filter. Reuses the sale-price row's layout
+                 classes — prefix + field — so it needs no CSS of its own. -->
+            <div class="sale-price-row">
+              <span class="sale-price-prefix">N1:</span>
+              <span class="field">
+                <select id="sales-n1-filter" aria-label="N1 match filter"
+                        title="Filter by N1 crosswalk status. Matched = sale carries an N1 ID; Unmatched = no N1 record linked yet — the data-entry queue. Pasted comp sets have no N1 column and read as entirely unmatched.">
+                  <option value="any" selected>Any</option>
+                  <option value="matched">Matched</option>
+                  <option value="unmatched">Unmatched</option>
+                </select>
+              </span>
+            </div>
             <!-- Vacant-land threshold. Single input + a %/$ pill
                  toggle decides how to interpret the number:
                  building-percentage cap (% mode) or building-dollar
@@ -1391,6 +1404,10 @@
                  explain itself — see the Zoning Type note in
                  lib/zoneCategory.js about filters the screen can't back up. -->
             <th data-col="primaryprop" class="sales-only" title="Primary Property — MAO's description of the main structure on the parcel (&quot;1 STY RES AVG QUALITY&quot;, &quot;AVERAGE FRAME WAREHOUSE&quot;). Blank means no primary structure, i.e. bare land, which is the majority of sales — 45% of residential, 71% of ICI and 96% of farm. Available on subscriber sales data only.">Primary Property</th>
+            <!-- N1 comp-database link, from the hand-curated crosswalk column
+                 in the sales export. Blank = the sale is not matched to an
+                 N1 record yet (see the N1 filter under Additional filters). -->
+            <th data-col="n1id" class="sales-only" title="N1 database ID for this sale, from the MAO↔N1 crosswalk. Blank = not matched to an N1 record yet — filter to Unmatched under Additional filters to work the data-entry queue.">N1 ID</th>
             <!-- Multi-parcel-sale group columns — populated by
                  computeSaleGroupTotals after a sales CSV upload. Group
                  Size = N parcels in the same sale; $/ac = total

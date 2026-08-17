@@ -428,6 +428,10 @@ const $salesPlan     = document.getElementById('sales-plan');
 // $salesPlan; complementary because Plan # narrows by plat/legal
 // while Street Name narrows by civic address.
 const $salesStreetName = document.getElementById('sales-street-name');
+// N1 match filter — any / matched / unmatched against the export's
+// "N1 ID" column. "Unmatched" is the working mode: it turns the site
+// into the browsable queue of sales not yet entered in N1.
+const $salesN1 = document.getElementById('sales-n1-filter');
 // Sales-mode $/Acre filter — pair of bounds against the
 // _saleGroupPpa stamped by computeSaleGroupTotals. Useful for
 // flushing out development-land sales that trade at a much higher
@@ -2753,7 +2757,7 @@ for (const el of [
   $primaryPropEl,
   $distanceMax, $salesPlan,
   $salesStreetName, $salesPpaLow, $salesPpaHigh, $saleAsmtMax,
-  $salesPriceLow, $salesPriceHigh,
+  $salesPriceLow, $salesPriceHigh, $salesN1,
 ].filter(Boolean)) {
   el.addEventListener('change', refilterCsvIfActive);
   el.addEventListener('input',  refilterCsvIfActive);
@@ -3389,6 +3393,7 @@ async function runSearch() {
   if ($distanceMax)   $distanceMax.value = '';
   if ($salesPlan)     $salesPlan.value = '';
   if ($salesStreetName) $salesStreetName.value = '';
+  if ($salesN1)       $salesN1.value = 'any';
   if ($salesPpaLow)   $salesPpaLow.value = '';
   if ($salesPpaHigh)  $salesPpaHigh.value = '';
   if ($salesPriceLow)  $salesPriceLow.value = '';
@@ -3973,6 +3978,9 @@ async function handleSalesUpload(file) {
           // primaryProperty.js infers the family from the descriptor when
           // it is missing.
           p._saleTypeGroup   = sale.saleTypeGroup || null;
+          // N1 comp-database ID from the crosswalk column. Null (not '')
+          // when absent so the N1 filter's truthiness test reads clean.
+          p._n1Id            = sale.n1Id || null;
           // CSV's raw "Legal Description" cell. Lives alongside the
           // legal-index-derived _plan/_legalDescription so the Plan #
           // filter can fall back to substring-matching against the
@@ -5555,6 +5563,10 @@ function filterCsvRowsByOtherSearches(rows) {
   // input disables the filter; any non-empty input is searched as
   // a substring so "32457" matches "32457", "1032457", etc.
   const planFilter = ($salesPlan?.value || '').trim().toUpperCase();
+  // N1 match filter — 'any' is off. Matched/unmatched is a plain
+  // truthiness test on the stamped _n1Id; a pasted comp set (no N1 ID
+  // column at all) reads as entirely unmatched, which is the truth.
+  const n1Mode = $salesN1?.value || 'any';
   // Street Name substring filter — case-insensitive match against
   // Property_Address. Same semantics as Plan #: missing addresses
   // fail when the filter is active. Expanded through the civic-number
@@ -5622,6 +5634,14 @@ function filterCsvRowsByOtherSearches(rows) {
     // Street Name filter — same shape as the Plan # filter above.
     if (streetVariants.length > 0) {
       if (!addressMatchesVariants(p.Property_Address, streetVariants)) return false;
+    }
+
+    // N1 match filter — row-level, not group-level: a multi-parcel sale
+    // can be matched on some rolls only (partial crosswalk coverage),
+    // and the unmatched rows are exactly the queue being asked for.
+    if (n1Mode !== 'any') {
+      const hasN1 = !!p._n1Id;
+      if (n1Mode === 'matched' ? !hasN1 : hasN1) return false;
     }
 
     // $/Acre filter — bounds against the sale-group rate. Rows
@@ -9233,6 +9253,11 @@ function renderTable(rows, { resetPage = true } = {}) {
     const primaryPropCell = td(p._primaryProperty || null);
     primaryPropCell.classList.add('sales-only');
     tr.appendChild(primaryPropCell);
+    // N1 ID — positional like every cell here; must stay in step with the
+    // data-col="n1id" <th> right after Primary Property.
+    const n1IdCell = td(p._n1Id || null, 'num');
+    n1IdCell.classList.add('sales-only');
+    tr.appendChild(n1IdCell);
     // Multi-parcel-sale group columns. Identical for every parcel
     // in the same sale. Empty (single-cell dash) for non-grouped
     // single-parcel sales / no-sale rows.
@@ -11843,7 +11868,7 @@ function exportCsv(explicitRows) {
     'Walkscore URL', 'Flood-Map URL', 'Street View URL',
     ...(inSalesMode
       ? [
-          'Sale Date', 'Sale Price', 'Primary Property', 'Sale Type Group',
+          'Sale Date', 'Sale Price', 'Primary Property', 'Sale Type Group', 'N1 ID',
           // Repeat sales: 'Sale # for Parcel' is 1-based, most recent
           // first, so a spreadsheet can filter to first sales only or
           // pair a parcel's transactions without regrouping by roll.
@@ -11941,6 +11966,7 @@ function exportCsv(explicitRows) {
             p._salePrice ?? '',
             p._primaryProperty ?? '',
             p._saleTypeGroup ?? '',
+            p._n1Id ?? '',
             p._saleSeq != null ? Number(p._saleSeq) + 1 : '',
             p._saleCount ?? '',
             p._saleGroupId ?? '',

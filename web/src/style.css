@@ -3428,8 +3428,8 @@ body.sales-mode .sales-row-legend {
    <thead> order in index.html. Inserting a column shifts every index
    after it. Current mapping (skipped numbers stay centered):
      2 ★  3 Roll #  4 Muni #  5 Municipality  6 Sale Date
-     8 Primary Property  9 Group #  10 Address  11 Zoning
-     12 Zoning Type */
+     8 Primary Property  9 N1 ID  10 Group #  11 Address
+     12 Zoning  13 Zoning Type */
 #results th:nth-child(2),
 #results td:nth-child(2),
 #results th:nth-child(3),
@@ -3449,7 +3449,9 @@ body.sales-mode .sales-row-legend {
 #results th:nth-child(11),
 #results td:nth-child(11),
 #results th:nth-child(12),
-#results td:nth-child(12) {
+#results td:nth-child(12),
+#results th:nth-child(13),
+#results td:nth-child(13) {
   text-align: left;
 }
 

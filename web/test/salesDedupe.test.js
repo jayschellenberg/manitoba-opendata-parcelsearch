@@ -94,6 +94,16 @@ test('an exact re-listing collapses to one sale', () => {
   assert.equal(duplicateRows[0]._dupeOf.saleDate, '16-Sep-25');
 });
 
+test('a collapse never loses an N1 ID to an un-stamped first copy', () => {
+  // The crosswalk stamps specific archive rows; the un-stamped duplicate can
+  // arrive first, and the kept record must still end up carrying the ID.
+  const bare    = rec('RM OF LA BROQUERIE', '300', '16-Sep-25', '$10,907,000');
+  const stamped = { ...rec('RM OF LA BROQUERIE', '300', '16-Sep-25', '$10,907,000'), n1Id: '31337' };
+  const { salesByRoll, saleCount } = dedupeSalesByRoll([bare, stamped], helpers);
+  assert.equal(saleCount, 1);
+  assert.equal(salesByRoll.get('300.000')[0].n1Id, '31337');
+});
+
 test('same roll in DIFFERENT municipalities stays separate', () => {
   // Roll 300.000 exists in most RMs — a bare roll key would merge them.
   const { salesByRoll, duplicateRows } = dedupeSalesByRoll([
