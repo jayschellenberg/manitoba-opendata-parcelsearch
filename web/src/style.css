@@ -2561,6 +2561,22 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 #results .water-only { display: none; }
 #results.water-mode .water-only { display: table-cell; }
 
+/* "Full detail" means every column the data could fill, so it lifts the
+   two OVERLAY gates above as well (columns.js stamps .all-columns on
+   #results whenever the visible-set is null). Without this the preset
+   still withheld Dev-Plan Designation, DP By-law, Tile Drainage and
+   Irrigation until you also switched their layer on, which read as the
+   preset not doing what it says (Jason, 2026-08-17). They render empty
+   until the overlay loads — the same deal as every gear-governed column
+   that waits on a data join.
+
+   Deliberately does NOT lift .sales-only / .basic-only. Those are not a
+   gate on data arriving, they pick which of a DUPLICATED pair renders:
+   Acres and Roll Frontage/Area each exist twice in the thead, once per
+   mode. Lifting it would show both copies side by side. */
+#results.all-columns .devplan-only,
+#results.all-columns .water-only { display: table-cell; }
+
 /* Compact inline button shown next to the count text — used for the
    "Load zoning + dev-plan" opt-in when a search returns more parcels
    than the auto-enrichment threshold. Sized to read as part of the
@@ -5352,15 +5368,42 @@ body {
   color: #fff;
 }
 
+/* Search Sales — the same green as Property Search's Search button
+   (Jason, 2026-08-17), so the go action reads identically on both tabs
+   and pairs with the dark-red Disconnect on its own row. Same #166534
+   and hover as #search below; see that block for the contrast and
+   colour-blindness notes, which apply here too.
+
+   The :disabled rule is NOT optional. This button greys out whenever no
+   municipality is selected, and the ID selector above outranks the
+   shared `.parcel-list-modal-btn:disabled` fill — without it a dead
+   button would keep sitting there looking green and clickable. */
+.controls button#sales-db-load {
+  background: #166534;
+  border-color: #166534;
+  color: #fff;
+}
+.controls button#sales-db-load:hover:not(:disabled) {
+  background: #14532d;
+  border-color: #14532d;
+}
+.controls button#sales-db-load:disabled {
+  background: #e7ebe7;
+  color: #8b958f;
+  border-color: var(--ui-line);
+  box-shadow: none;
+}
+
 /* Search — green, so the go action is findable at a glance and pairs
    with the red Clear beside it (Jason, 2026-08-12).
 
    Scoped to #search rather than to .primary on purpose: `.controls
    button.primary` also matches the sales-database panel's "Choose export
-   folder…" and "Search Sales", and recolouring those was not asked for and
-   would dilute the signal — three green buttons stand out less than one.
-   The ID also outranks every .primary rule above, so this needs no
-   ordering care.
+   folder…", which stays brand-coloured — it is a one-time setup step, not
+   a go action. Sales Analysis's "Search Sales" IS a go action and takes
+   the same green from its own ID rule above (Jason, 2026-08-17), so the
+   two tabs match; keep the count at those two. The ID also outranks every
+   .primary rule above, so this needs no ordering care.
 
    #166534 clears 7:1 white-text contrast (measured 7.13), the same AAA
    bar the Clear button meets, rather than the brighter greens that only

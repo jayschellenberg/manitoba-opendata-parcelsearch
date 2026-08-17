@@ -130,15 +130,39 @@ export const PRESETS = {
     'zone1', 'zonecat', 'subjdist', 'saletoasmt',
   ]),
   // Commercial comps (Jason's chosen list, 2026-08-17): identity + sale +
-  // zoning/legal/size + the Assessment and StreetView link-outs. Deliberately
-  // NO $/FF (frontage rates are a residential-lot comparison) and none of the
-  // agricultural group (soil, riskarea, clicls, soiltype, slope, landcover,
-  // cultpct, tile, irrigation) — on commercial searches those columns are
-  // empty width. ★ stays so comp starring/export keeps working; rollsize
-  // rides with acres per the invariant at the top of PRESETS.
-  'Commercial': new Set([
+  // zoning/legal/size + the Assessment and StreetView link-outs.
+  //
+  // Carries NO unit-rate column at all — not $/Acre, $/SF, $/FF or $/Lot.
+  // That is the deliberate difference from Sales analysis: a commercial
+  // sale is read on its total price against the improvement, and a rate
+  // per acre invites comparing two properties whose value is mostly
+  // building. Also excludes SF, and the whole agricultural group (soil,
+  // riskarea, clicls, soiltype, slope, landcover, cultpct, tile,
+  // irrigation), which is empty width on a commercial search.
+  //
+  // ★ stays so comp starring/export keeps working; rollsize rides with
+  // acres per the invariant at the top of PRESETS.
+  'Commercial Sales': new Set([
     'favorite', 'roll', 'muniname', 'address', 'saledate', 'saleprice',
-    'zone1', 'legal', 'du', 'rollsize', 'acres', 'sf', 'value', 'streetview',
+    'zone1', 'legal', 'du', 'rollsize', 'acres', 'value', 'streetview',
+  ]),
+  // Land comps (Jason's chosen list, 2026-08-17) — the mirror of Commercial
+  // Sales: where that view drops every unit rate, this one leads with them,
+  // because bare land IS compared on rate per unit. Carries the full group
+  // block (Group #, Group Acres) since a land sale is routinely several
+  // parcels, and the assessment split so a "vacant" comp that turns out to
+  // carry a building is visible rather than inferred from price.
+  //
+  // NOTE: there is no Group SF column in the table — the group block is
+  // Group # and Group Acres only. $/SF already divides by the group's total
+  // square footage, so the figure is present as a rate but not as its own
+  // column; adding one means a new <th>, cell, sort key and export field.
+  'Land Sales': new Set([
+    'favorite', 'roll', 'muniname', 'saledate', 'saleprice', 'groupsize',
+    'address', 'zone1', 'rollsize', 'acres', 'sf', 'groupacres',
+    'grouppriceac', 'grouppricesf', 'grouppriceff', 'grouppricelot',
+    'saletoasmt', 'asmtland', 'asmtbldg', 'asmtpct', 'asmtyear',
+    'legal', 'value', 'streetview',
   ]),
   // Frontage earns its place here on its own merits: minimum lot frontage is
   // a bulk requirement in most Manitoba zoning by-laws, so on an urban parcel
@@ -261,7 +285,10 @@ export function isColumnVisible(key) {
 }
 
 export function setColumnVisible(key, on) {
-  if (visible == null) visible = new Set();
+  // Leaving "Full detail" (null = everything). Seed the Set from every
+  // known column, NOT from empty: unticking one box in full-detail mode
+  // used to build an empty Set and blank the entire table.
+  if (visible == null) visible = new Set(listAllColumns().map((c) => c.key));
   if (on) visible.add(key);
   else visible.delete(key);
   writeStored();
@@ -319,6 +346,13 @@ export function onPresetApply(fn) {
 export function applyVisibility() {
   const heads = Array.from(document.querySelectorAll('#results thead th'));
   if (!heads.length) return;
+  // "Full detail" (visible === null) means every column the data could
+  // fill, so it also lifts the OVERLAY gating — Dev-Plan and Tile /
+  // Irrigation otherwise stay hidden until their layer is switched on,
+  // which made the preset look like it was still holding columns back.
+  // See the .all-columns rule in style.css for what it does and does not
+  // reveal.
+  document.getElementById('results')?.classList.toggle('all-columns', visible == null);
   // Compute per-column-index hidden flag from the th's data-col.
   const hiddenAt = heads.map((th) => {
     const key = th.dataset.col;

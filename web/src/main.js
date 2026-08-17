@@ -2809,6 +2809,16 @@ function applyDatePreset(monthsBack, clear) {
     back.setMonth(targetMonth);
     const lastDay = new Date(back.getFullYear(), back.getMonth() + 1, 0).getDate();
     back.setDate(Math.min(today.getDate(), lastDay));
+    // 24 months and up read as "how many YEARS of history", not as an exact
+    // anniversary: at that range an appraiser wants whole calendar years, so
+    // snap From back to Jan 1 of the year the offset lands in — 24 mo from
+    // 2026-08-17 gives 2024-01-01, not 2024-08-17 (Jason, 2026-08-17). Only
+    // ever widens the window, so nothing that used to match drops out. The
+    // short picks (3/6/12) stay exact: those ARE rolling windows.
+    if (monthsBack >= 24) {
+      back.setMonth(0);
+      back.setDate(1);
+    }
     $saleDateFrom.value = isoDate(back);
     $saleDateTo.value = isoDate(today);
   }
