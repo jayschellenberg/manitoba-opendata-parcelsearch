@@ -7,7 +7,26 @@
 // Run: cd web && node test/salesCoverage.test.js
 
 import assert from 'node:assert/strict';
-import { coverageRows, coverageSummary, statusLabel } from '../src/lib/salesCoverage.js';
+import {
+  coverageRows, coverageSummary, statusLabel, nextFullScrape, refreshNote,
+} from '../src/lib/salesCoverage.js';
+
+// ---- next full scrape / refresh cells --------------------------------------
+{
+  // Export ships next_scrape: use it verbatim (as a month label).
+  const shipped = { status: 'done', lastScraped: '2026-08-16', cadenceMonths: 6, nextScrape: '2027-02' };
+  assert.equal(nextFullScrape(shipped), 'February 2027');
+  // Older export without next_scrape: compute from cadence.
+  const computed = { status: 'done', lastScraped: '2026-08-16', cadenceMonths: 6, nextScrape: null };
+  assert.equal(nextFullScrape(computed), 'February 2027');
+  // No cadence known: no claim.
+  assert.equal(nextFullScrape({ status: 'done', lastScraped: '2026-08-16', cadenceMonths: null, nextScrape: null }), null);
+  // Pending municipalities are in the current sweep.
+  assert.equal(nextFullScrape({ status: 'never' }), 'current sweep');
+
+  assert.equal(refreshNote({ status: 'done' }), 'every ~4-5 days');
+  assert.equal(refreshNote({ status: 'never' }), null);
+}
 
 // ---- coverage array (new export) -------------------------------------------
 {

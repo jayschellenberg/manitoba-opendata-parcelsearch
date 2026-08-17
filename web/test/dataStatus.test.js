@@ -9,7 +9,26 @@ import assert from 'node:assert/strict';
 import {
   monthLabel, datePart, vintageRows, serviceEditDate, newestSnapshot, publishedRows,
   mascRunDate, statMaxDate, dateLabel,
+  nextCycleLabel, nextMonthlyLabel, nextSemiannualLabel, mascNextLabel,
 } from '../src/lib/dataStatus.js';
+
+// ---- next-scheduled helpers ------------------------------------------------
+assert.equal(nextCycleLabel('2026-08-16', 6), 'February 2027');
+assert.equal(nextCycleLabel('2026-07', 12), 'July 2027');
+assert.equal(nextCycleLabel('2026-09', 6), 'March 2027');   // year rollover
+assert.equal(nextCycleLabel(null, 6), null);
+assert.equal(nextCycleLabel('2026-08', null), null);
+
+assert.equal(nextMonthlyLabel(new Date(2026, 7, 17)), 'September 2026'); // past the 15th
+assert.equal(nextMonthlyLabel(new Date(2026, 7, 3)), 'August 2026');     // before it
+assert.equal(nextMonthlyLabel(new Date(2026, 11, 20)), 'January 2027');  // year rollover
+
+assert.equal(nextSemiannualLabel(new Date(2026, 7, 17)), 'January 2027');
+assert.equal(nextSemiannualLabel(new Date(2026, 2, 1)), 'July 2026');
+assert.equal(nextSemiannualLabel(new Date(2026, 0, 1)), 'January 2026'); // capture day itself
+
+assert.equal(mascNextLabel({ run: 'run_20260730_093059' }), '~July 2027');
+assert.equal(mascNextLabel(null), null);
 
 // ---- dateLabel -------------------------------------------------------------
 assert.equal(dateLabel('2026-08-01'), 'Aug 1, 2026');
@@ -38,7 +57,7 @@ assert.equal(datePart(null), null);
       { muni_no: '101', name: 'ALTONA (TOWN)', region: 'South-Central / Central Plains', last_refreshed: '2026-06' },
       // Exact refresh day recorded — the date wins over the cohort month.
       { muni_no: '447', name: 'SELKIRK (CITY)', region: 'Interlake',
-        last_refreshed: '2026-08', last_refreshed_date: '2026-08-09' },
+        last_refreshed: '2026-08', last_refreshed_date: '2026-08-09', cadence_months: 6 },
       { muni_no: '999' },   // degenerate row: still renders, nothing invented
     ],
   });
@@ -51,6 +70,8 @@ assert.equal(datePart(null), null);
   assert.equal(rows[2].label, null);
   assert.equal(rows[3].name, 'SELKIRK (CITY)');
   assert.equal(rows[3].label, 'Aug 9, 2026');
+  assert.equal(rows[3].next, 'February 2027');   // 6-month cadence from the date
+  assert.equal(rows[0].next, null);              // no cadence shipped → no claim
 
   assert.equal(vintageRows(null), null);
   assert.equal(vintageRows({ rows: [] }), null);
@@ -102,6 +123,7 @@ assert.equal(serviceEditDate({ editingInfo: { dataLastEditDate: 0 } }), null);
     mascMeta: { generated_at: '2026-08-17T00:54:25Z',
                 source: 'masc_soil_ratings_square_with_latlon_v2.csv',
                 run: 'run_20260730_093059' },
+    now: new Date(2026, 7, 17),
   });
   const byLabel = new Map(rows.map((r) => [r.label, r]));
   assert.equal(byLabel.get('Legal descriptions index').vintage, 'Aug 15, 2026');
@@ -117,6 +139,16 @@ assert.equal(serviceEditDate({ editingInfo: { dataLastEditDate: 0 } }), null);
   assert.equal(byLabel.get('Land cover').vintage, '2020');
   assert.equal(byLabel.get('Land cover').detail, 'Canada Lands Cover Register 2020 (base file)');
   assert.equal(byLabel.get('Water shards (CDN)').detail, 'pinned at revision fcbaa29');
+
+  // Next-update column: monthly refresh (the 15th) for the indexes and the
+  // Roll Entry snapshot; the semiannual archive for the snapshots; the
+  // hand-run annual target for MASC; static/none for the rest.
+  assert.equal(byLabel.get('Legal descriptions index').next, 'September 2026');
+  assert.equal(byLabel.get('Roll Entry snapshot (offline fallback)').next, 'September 2026');
+  assert.equal(byLabel.get('Zoning by-laws (archived snapshot)').next, 'January 2027');
+  assert.equal(byLabel.get('MASC soil productivity ratings').next, '~July 2027');
+  assert.equal(byLabel.get('Land cover').next, 'static');
+  assert.equal(byLabel.get('Water shards (CDN)').next, null);
 
   // Every fetch failing still yields a full table — vintages null, rows
   // kept. Land cover is the one exception: its vintage is a constant.

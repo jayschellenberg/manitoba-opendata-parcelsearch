@@ -83,7 +83,7 @@ export function initDataStatusDialog() {
     if (!muniRows) {
       const tr = document.createElement('tr');
       tr.appendChild(td('Vintage file not available — rebuild the manifest to refresh it.'));
-      tr.firstChild.colSpan = 3;
+      tr.firstChild.colSpan = 4;
       $munis.appendChild(tr);
       return;
     }
@@ -92,7 +92,7 @@ export function initDataStatusDialog() {
       if (q && !r.name.toLowerCase().includes(q)
             && !(r.region || '').toLowerCase().includes(q)) continue;
       const tr = document.createElement('tr');
-      tr.append(td(r.name), td(r.region || ''), td(r.label || '—'));
+      tr.append(td(r.name), td(r.region || ''), td(r.label || '—'), td(r.next || '—'));
       $munis.appendChild(tr);
     }
   }
@@ -102,7 +102,8 @@ export function initDataStatusDialog() {
     $published.textContent = '';
     for (const r of rows) {
       const tr = document.createElement('tr');
-      tr.append(td(r.label), td(r.vintage, r.vintage ? '' : 'is-unknown'), td(r.detail || ''));
+      tr.append(td(r.label), td(r.vintage, r.vintage ? '' : 'is-unknown'),
+                td(r.detail || ''), td(r.next, r.next ? '' : 'is-unknown'));
       $published.appendChild(tr);
     }
   }

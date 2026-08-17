@@ -173,6 +173,7 @@ function readCsv(filePath) {
 function buildMuniVintage(warnings) {
   const ledgerPath  = path.join(MAO_SCRAPE_DIR, 'checkpoints', 'muni_refresh_ledger.csv');
   const regionsPath = path.join(MAO_SCRAPE_DIR, 'config', 'muni_regions.csv');
+  const configPath  = path.join(MAO_SCRAPE_DIR, 'config', 'municipalities.csv');
   if (!fs.existsSync(ledgerPath)) {
     warnings.push(`muni-vintage: ${ledgerPath} not reachable — kept the previous muni-vintage.json`);
     return;
@@ -181,6 +182,17 @@ function buildMuniVintage(warnings) {
   if (fs.existsSync(regionsPath)) {
     for (const r of readCsv(regionsPath)) {
       byNo.set(String(Number(r.muni_no)), { list_name: r.list_name, region: r.region });
+    }
+  }
+  // Cadence tiers from the scrape config, so the tab can say when each
+  // municipality's NEXT full refresh is due. Same normalisation as
+  // cadence.R: "6month" is 6, everything else (annual, blank, typo) is 12.
+  const cadenceByNo = new Map();
+  if (fs.existsSync(configPath)) {
+    for (const r of readCsv(configPath)) {
+      if (String(r.include).toUpperCase() !== 'Y') continue;
+      cadenceByNo.set(String(Number(r.muni_no)),
+        String(r.rescrape_cadence).trim().toLowerCase() === '6month' ? 6 : 12);
     }
   }
   const rows = readCsv(ledgerPath).map((r) => {
@@ -195,6 +207,7 @@ function buildMuniVintage(warnings) {
       // 2026-08; fills in as each cohort's deep refresh lands). The month
       // stays the cadence truth; the date is display precision.
       last_refreshed_date: r.last_refreshed_date || null,
+      cadence_months: cadenceByNo.get(no) ?? null,
     };
   }).sort((a, b) => a.name.localeCompare(b.name));
 

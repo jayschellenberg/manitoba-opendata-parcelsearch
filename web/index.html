@@ -1693,7 +1693,7 @@
                  placeholder="Filter municipalities…" aria-label="Filter municipalities" />
           <div class="data-status-scroll">
             <table class="data-status-table">
-              <thead><tr><th>Municipality</th><th>Region</th><th>Rolls refreshed</th></tr></thead>
+              <thead><tr><th>Municipality</th><th>Region</th><th>Rolls refreshed</th><th>Next refresh</th></tr></thead>
               <tbody id="data-status-munis"></tbody>
             </table>
           </div>
@@ -1703,7 +1703,7 @@
           <summary><strong>Published site data</strong></summary>
           <div class="data-status-scroll">
             <table class="data-status-table">
-              <thead><tr><th>Dataset</th><th>Vintage</th><th>Detail</th></tr></thead>
+              <thead><tr><th>Dataset</th><th>Vintage</th><th>Detail</th><th>Next update</th></tr></thead>
               <tbody id="data-status-published"></tbody>
             </table>
           </div>
@@ -1743,12 +1743,16 @@
           >×</button>
         </header>
         <p class="parcel-list-modal-help" id="sales-coverage-summary"></p>
+        <p class="data-status-hint">"Next full scrape" is the month each
+          municipality's complete re-scrape is due under its cadence tier;
+          "Refresh" is the light incremental pass that tops up new sales and
+          cycles the whole archive every few days once the sweep completes.</p>
         <input id="sales-coverage-search" type="search" class="sales-db-search"
                placeholder="Filter municipalities…" aria-label="Filter coverage table" />
         <div class="sales-coverage-scroll">
           <table class="sales-coverage-table" id="sales-coverage-table">
             <thead>
-              <tr><th>Municipality</th><th>Region</th><th>Last scraped</th><th>Sales</th><th>Newest sale</th></tr>
+              <tr><th>Municipality</th><th>Region</th><th>Last scraped</th><th>Sales</th><th>Newest sale</th><th>Next full scrape</th><th>Refresh</th></tr>
             </thead>
             <tbody id="sales-coverage-rows"></tbody>
           </table>

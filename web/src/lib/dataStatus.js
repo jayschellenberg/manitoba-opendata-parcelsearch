@@ -61,6 +61,9 @@ export function vintageRows(json) {
     label: r.last_refreshed_date
       ? dateLabel(r.last_refreshed_date)
       : (r.last_refreshed ? monthLabel(r.last_refreshed) : null),
+    // When the next full refresh is due under this municipality's cadence.
+    // Month + year only — the nightly queue decides the day.
+    next: nextCycleLabel(r.last_refreshed_date || r.last_refreshed, r.cadence_months),
   })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -99,10 +102,17 @@ export function newestSnapshot(histIndex) {
  * @param {Object} [opts.histIndex] mb-parcel-history index.json
  * @param {string} [opts.revision]  pinned mb-parcel-data commit SHA
  * @param {Object} [opts.mascMeta]  masc/_index.json `_meta` entry
+ * @param {Date}   [opts.now]       injectable clock for the schedule rules
  */
-export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMeta } = {}) {
+export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMeta,
+                                now = new Date() } = {}) {
   const rows = [];
   const ds = manifest?.datasets || {};
+  // Schedules, as registered in Task Scheduler on the build machine:
+  // mb-parcelsearch-monthly-refresh on the 15th (indexes + RollEntry
+  // snapshot), mb-parcelsearch-semiannual-archive on Jan 1 / Jul 1.
+  const monthly = nextMonthlyLabel(now);
+  const semiannual = nextSemiannualLabel(now);
 
   const idx = (name, label) => {
     const e = ds[name];
@@ -110,6 +120,7 @@ export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMet
       label,
       vintage: dateLabel(datePart(e?.generated_at || e?.modified_at)),
       detail: e?.row_count != null ? `${Number(e.row_count).toLocaleString()} rows` : null,
+      next: monthly,
     });
   };
   idx('legal_index', 'Legal descriptions index');
@@ -119,6 +130,7 @@ export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMet
     label: 'Roll Entry snapshot (offline fallback)',
     vintage: dateLabel(rollSnap?.snapshot_date || null),
     detail: rollSnap?.source || null,
+    next: monthly,
   });
 
   const snap = newestSnapshot(histIndex);
@@ -131,6 +143,7 @@ export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMet
       label,
       vintage: dateLabel(snap?.layers?.[key]?.source_date || null),
       detail: snap ? `snapshot ${snap.id}` : null,
+      next: semiannual,
     });
   }
 
@@ -138,6 +151,8 @@ export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMet
     label: 'MASC soil productivity ratings',
     vintage: dateLabel(mascRunDate(mascMeta) || datePart(mascMeta?.generated_at)),
     detail: mascMeta?.run ? `scrape ${mascMeta.run}` : (mascMeta?.source || null),
+    // A target, not a schedule — the scrape is run by hand (see mascNextLabel).
+    next: mascNextLabel(mascMeta),
   });
 
   // Land cover's base file is fixed: the Canada Lands Cover Register 2020
@@ -147,15 +162,57 @@ export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMet
     label: 'Land cover',
     vintage: '2020',
     detail: 'Canada Lands Cover Register 2020 (base file)',
+    next: 'static',
   });
 
   rows.push({
     label: 'Water shards (CDN)',
     vintage: null,
     detail: revision ? `pinned at revision ${String(revision).slice(0, 7)}` : null,
+    next: null,
   });
 
   return rows;
+}
+
+// ---- "next scheduled" helpers (Jason, 2026-08-17) ---------------------------
+// All month-and-year by design: the schedules are month-granular (cohorts,
+// the monthly refresh, the semiannual archive), so a day would be invented.
+
+/**
+ * The month `months` after a YYYY-MM or YYYY-MM-DD vintage, as "February
+ * 2027". The next cycle for anything cadence-driven. Null in, null out.
+ */
+export function nextCycleLabel(last, months) {
+  const m = /^(\d{4})-(\d{2})/.exec(String(last ?? ''));
+  if (!m || !Number.isFinite(months)) return null;
+  const total = Number(m[1]) * 12 + (Number(m[2]) - 1) + Number(months);
+  return monthLabel(`${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, '0')}`);
+}
+
+/** Next run of the monthly index refresh (the 15th), as month + year. */
+export function nextMonthlyLabel(now = new Date()) {
+  const y = now.getFullYear(); const mo = now.getMonth();
+  const passed = now.getDate() > 15;
+  const total = y * 12 + mo + (passed ? 1 : 0);
+  return monthLabel(`${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, '0')}`);
+}
+
+/** Next semiannual archive capture (Jan 1 / Jul 1), as month + year. */
+export function nextSemiannualLabel(now = new Date()) {
+  const y = now.getFullYear(); const mo = now.getMonth();
+  if (mo === 0 && now.getDate() === 1) return `January ${y}`;
+  return mo < 6 ? `July ${y}` : `January ${y + 1}`;
+}
+
+/**
+ * MASC's next-update target: a year after the last scrape run. The scrape is
+ * run by hand — no scheduled task exists — so this is a TARGET, hence the
+ * tilde (Jason's call, 2026-08-17).
+ */
+export function mascNextLabel(meta) {
+  const next = nextCycleLabel(mascRunDate(meta), 12);
+  return next ? `~${next}` : null;
 }
 
 /**

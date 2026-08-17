@@ -29,7 +29,32 @@ function normaliseRow(m, { fromMunis = false } = {}) {
     newestSale: m.newest_sale || null,
     cappedRows: Number.isFinite(Number(m.capped_rows)) && m.capped_rows != null
       ? Number(m.capped_rows) : null,
+    cadenceMonths: Number.isFinite(Number(m.cadence_months)) && m.cadence_months != null
+      ? Number(m.cadence_months) : null,
+    nextScrape: m.next_scrape || null,
   };
+}
+
+/**
+ * "Next full scrape" cell: the month this municipality's full re-scrape is
+ * due under its cadence tier. The export ships its own next_scrape (YYYY-MM);
+ * compute the same thing from cadence when an older export predates it.
+ * Pending municipalities are in the CURRENT sweep, so a due month would be
+ * nonsense for them.
+ */
+export function nextFullScrape(row) {
+  if (row.status === 'never') return 'current sweep';
+  if (row.nextScrape) return monthLabel(row.nextScrape);
+  return nextCycleLabel(row.lastScraped, row.cadenceMonths);
+}
+
+/**
+ * "Refresh" cell: the incremental pass that tops up new sales, roughly
+ * every 4-5 days per municipality once the sweep completes. Uniform by
+ * design — it cycles the whole archive — so scraped rows all read the same.
+ */
+export function refreshNote(row) {
+  return row.status === 'never' ? null : 'every ~4-5 days';
 }
 
 /**
@@ -80,7 +105,7 @@ export function coverageSummary(coverage) {
   };
 }
 
-import { dateLabel } from './dataStatus.js';
+import { dateLabel, monthLabel, nextCycleLabel } from './dataStatus.js';
 
 /** Human wording for a row's scrape state. Raw statuses pass through. */
 export function statusLabel(row) {

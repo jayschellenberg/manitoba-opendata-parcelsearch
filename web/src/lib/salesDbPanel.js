@@ -15,7 +15,9 @@ import {
   importFromDirectory, importFromFileList, checkForUpdates,
   clearSales, requestPersistence, fsAccessSupported, salesDbAvailable,
 } from './salesStore.js';
-import { coverageRows, coverageSummary, statusLabel } from './salesCoverage.js';
+import {
+  coverageRows, coverageSummary, statusLabel, nextFullScrape, refreshNote,
+} from './salesCoverage.js';
 import { dateLabel } from './dataStatus.js';
 
 const fmt = (n) => Number(n || 0).toLocaleString();
@@ -531,6 +533,8 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
         r.status === 'done' ? (dateLabel(r.lastScraped) || 'yes') : statusLabel(r),
         r.sales != null ? fmt(r.sales) : '',
         dateLabel(r.newestSale) || '',
+        nextFullScrape(r) || '',
+        refreshNote(r) || '',
       ];
       for (const text of cells) {
         const td = document.createElement('td');
