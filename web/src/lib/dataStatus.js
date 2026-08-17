@@ -81,8 +81,12 @@ export function newestSnapshot(histIndex) {
  * @param {Object} [opts.histIndex] mb-parcel-history index.json
  * @param {string} [opts.revision]  pinned mb-parcel-data commit SHA
  * @param {Object} [opts.mascMeta]  masc/_index.json `_meta` entry
+ * @param {Object} [opts.landcoverMeta] landcover/_index.json `_meta` entry
+ * @param {Object} [opts.waterMeta]     water/_index.json `_meta` entry
  */
-export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMeta } = {}) {
+export function publishedRows({
+  manifest, rollSnap, histIndex, revision, mascMeta, landcoverMeta, waterMeta,
+} = {}) {
   const rows = [];
   const ds = manifest?.datasets || {};
 
@@ -122,13 +126,32 @@ export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMet
     detail: mascMeta?.run ? `scrape ${mascMeta.run}` : (mascMeta?.source || null),
   });
 
+  // One row covers both shard families; they rebuild together from the same
+  // assembly pipeline, so show the OLDER of the two vintages — the data is
+  // only as current as its stalest half. Like the MASC row, the source
+  // parquet's embedded run date beats generated_at (a rebuild day says
+  // nothing about the data's age).
+  const shardDates = [landcoverMeta, waterMeta]
+    .map((m) => assemblyRunDate(m) || datePart(m?.generated_at))
+    .filter(Boolean)
+    .sort();
   rows.push({
     label: 'Land cover & water shards (CDN)',
-    vintage: null,
+    vintage: shardDates.length ? shardDates[0] : null,
     detail: revision ? `pinned at revision ${String(revision).slice(0, 7)}` : null,
   });
 
   return rows;
+}
+
+/**
+ * The assembly run date out of a landcover/water `_meta` entry — the source
+ * parquet is named MAOParcelOutput[Ag]<YYYYMMDD>.parquet, and that date IS
+ * the data's vintage; generated_at only says when the shards were rebuilt.
+ */
+export function assemblyRunDate(meta) {
+  const m = /(\d{4})(\d{2})(\d{2})\.parquet$/.exec(meta?.source || '');
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
 }
 
 /**

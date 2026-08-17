@@ -293,6 +293,17 @@ for (key in muni_keys) {
 
 # Manifest indexed by Muni_Name_With_Typ (original dropdown value, not
 # the safe filename) so the frontend resolves it directly.
+#
+# `_meta` carries the dataset's vintage for the Data Status dialog — same
+# pattern as masc/_index.json (r/build_masc_shards.R). The source filename
+# embeds the assembly run date (MAOParcelOutputAg<YYYYMMDD>). Every consumer
+# that walks this index filters on entries with a `file` string
+# (lookupMuniManifestEntry, shardIndexEntries), so a key with no `file`
+# passes through them invisibly.
+manifest[["_meta"]] <- list(
+  generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+  source = basename(pq_path)
+)
 jsonlite::write_json(manifest, index_path, auto_unbox = TRUE, pretty = FALSE)
 
 total_size_mb <- sum(file.info(list.files(output_dir, full.names = TRUE))$size) / 1024 / 1024

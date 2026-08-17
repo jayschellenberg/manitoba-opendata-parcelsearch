@@ -217,7 +217,9 @@ payload <- list(
   fields = fields,
   metadata = list(
     generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
-    source = input,
+    # basename only — this JSON ships to every visitor (GitHub Release +
+    # edge function), so the local absolute path must not leak into it.
+    source = basename(input),
     source_modified = format(file.info(input)$mtime, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
     row_count = nrow(agg),
     year_min = min(agg$tax_year, na.rm = TRUE),

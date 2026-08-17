@@ -200,7 +200,7 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // 40 MB copy is still git-tracked in mb-parcel-data; nothing here points
 // at it.
 export const MB_PARCEL_DATA_REVISION =
-  'fcbaa29993afd35431373af9b6843aed770f84a3';
+  '85d0203094aad5ecc61ae4e86b7b69a84371788e';
 export const MB_PARCEL_DATA_CDN =
   `https://cdn.jsdelivr.net/gh/jayschellenberg/mb-parcel-data@${MB_PARCEL_DATA_REVISION}`;
 const SNAPSHOT_BASE_URL = `${MB_PARCEL_DATA_CDN}/rollentry-snapshot/`;
@@ -1668,7 +1668,9 @@ const LANDCOVER_INDEX_URL = `${MB_PARCEL_DATA_CDN}/landcover/_index.json`;
 
 let landCoverIndexPromise = null;
 
-async function fetchLandCoverIndex() {
+// Exported for the Data Status dialog, which reads the index's `_meta`
+// vintage stamp; muni lookups go through fetchLandCoverForMuni below.
+export async function fetchLandCoverIndex() {
   if (landCoverIndexPromise) return landCoverIndexPromise;
   landCoverIndexPromise = (async () => {
     // Revision in the key (same fix as the water keys): bumping the pinned
@@ -1734,7 +1736,8 @@ const WATER_INDEX_URL = `${MB_PARCEL_DATA_CDN}/water/_index.json`;
 
 let waterIndexPromise = null;
 
-async function fetchWaterIndex() {
+// Exported for the Data Status dialog, same as fetchLandCoverIndex.
+export async function fetchWaterIndex() {
   if (waterIndexPromise) return waterIndexPromise;
   waterIndexPromise = (async () => {
     // Revision in the key, matching the MASC pattern: bumping the pinned
