@@ -40,7 +40,7 @@ import { coverageRows, coverageSummary, statusLabel } from '../src/lib/salesCove
   assert.equal(sum.total, 4);
   assert.equal(sum.latest, '2026-08-16');
 
-  assert.equal(statusLabel(cov.rows[0]), 'scraped 2026-08-16');
+  assert.equal(statusLabel(cov.rows[0]), 'scraped Aug 16, 2026');
   assert.equal(statusLabel(cov.rows[3]), 'not yet scraped');
   assert.equal(statusLabel(cov.rows[2]), 'error — retried automatically');
 }

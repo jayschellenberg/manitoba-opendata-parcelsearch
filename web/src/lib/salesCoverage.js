@@ -80,9 +80,13 @@ export function coverageSummary(coverage) {
   };
 }
 
+import { dateLabel } from './dataStatus.js';
+
 /** Human wording for a row's scrape state. Raw statuses pass through. */
 export function statusLabel(row) {
-  if (row.status === 'done') return row.lastScraped ? `scraped ${row.lastScraped}` : 'scraped';
+  if (row.status === 'done') {
+    return row.lastScraped ? `scraped ${dateLabel(row.lastScraped)}` : 'scraped';
+  }
   if (row.status === 'never') return 'not yet scraped';
   if (row.status === 'error' || row.status === 'suspect') {
     return `${row.status} — retried automatically`;

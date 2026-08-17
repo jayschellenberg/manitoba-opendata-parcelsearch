@@ -27,6 +27,23 @@ export function datePart(ts) {
   return ts.slice(0, 10);
 }
 
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * "2026-08-01" → "Aug 1, 2026" (Jason's display preference, 2026-08-17).
+ * Parsed by hand rather than through Date: `new Date('2026-08-01')` is UTC
+ * midnight, which toLocaleDateString renders as the PREVIOUS day anywhere
+ * west of Greenwich — Manitoba included. Non-dates pass through untouched.
+ */
+export function dateLabel(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso ?? ''));
+  if (!m) return iso == null ? null : String(iso);
+  const mi = Number(m[2]) - 1;
+  if (mi < 0 || mi > 11) return String(iso);
+  return `${MONTHS_SHORT[mi]} ${Number(m[3])}, ${m[1]}`;
+}
+
 /**
  * Rows for the per-municipality table from data/muni-vintage.json.
  * Returns null when the file is missing/empty so the UI can say so.
@@ -42,7 +59,8 @@ export function vintageRows(json) {
     // The exact refresh day when the ledger recorded one; the cohort month
     // otherwise. Never both — the date IS that month's refresh.
     label: r.last_refreshed_date
-      || (r.last_refreshed ? monthLabel(r.last_refreshed) : null),
+      ? dateLabel(r.last_refreshed_date)
+      : (r.last_refreshed ? monthLabel(r.last_refreshed) : null),
   })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -90,7 +108,7 @@ export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMet
     const e = ds[name];
     rows.push({
       label,
-      vintage: datePart(e?.generated_at || e?.modified_at),
+      vintage: dateLabel(datePart(e?.generated_at || e?.modified_at)),
       detail: e?.row_count != null ? `${Number(e.row_count).toLocaleString()} rows` : null,
     });
   };
@@ -99,7 +117,7 @@ export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMet
 
   rows.push({
     label: 'Roll Entry snapshot (offline fallback)',
-    vintage: rollSnap?.snapshot_date || null,
+    vintage: dateLabel(rollSnap?.snapshot_date || null),
     detail: rollSnap?.source || null,
   });
 
@@ -111,19 +129,28 @@ export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMet
   ]) {
     rows.push({
       label,
-      vintage: snap?.layers?.[key]?.source_date || null,
+      vintage: dateLabel(snap?.layers?.[key]?.source_date || null),
       detail: snap ? `snapshot ${snap.id}` : null,
     });
   }
 
   rows.push({
     label: 'MASC soil productivity ratings',
-    vintage: mascRunDate(mascMeta) || datePart(mascMeta?.generated_at),
+    vintage: dateLabel(mascRunDate(mascMeta) || datePart(mascMeta?.generated_at)),
     detail: mascMeta?.run ? `scrape ${mascMeta.run}` : (mascMeta?.source || null),
   });
 
+  // Land cover's base file is fixed: the Canada Lands Cover Register 2020
+  // (Jason, 2026-08-17). A pipeline timestamp would only say when the shards
+  // were re-cut; the data's vintage is the register itself.
   rows.push({
-    label: 'Land cover & water shards (CDN)',
+    label: 'Land cover',
+    vintage: '2020',
+    detail: 'Canada Lands Cover Register 2020 (base file)',
+  });
+
+  rows.push({
+    label: 'Water shards (CDN)',
     vintage: null,
     detail: revision ? `pinned at revision ${String(revision).slice(0, 7)}` : null,
   });

@@ -8,8 +8,15 @@
 import assert from 'node:assert/strict';
 import {
   monthLabel, datePart, vintageRows, serviceEditDate, newestSnapshot, publishedRows,
-  mascRunDate, statMaxDate,
+  mascRunDate, statMaxDate, dateLabel,
 } from '../src/lib/dataStatus.js';
+
+// ---- dateLabel -------------------------------------------------------------
+assert.equal(dateLabel('2026-08-01'), 'Aug 1, 2026');
+assert.equal(dateLabel('2026-12-25'), 'Dec 25, 2026');
+assert.equal(dateLabel('2020'), '2020');            // bare years pass through
+assert.equal(dateLabel('2026-08'), '2026-08');      // months are monthLabel's job
+assert.equal(dateLabel(null), null);
 
 // ---- monthLabel ------------------------------------------------------------
 assert.equal(monthLabel('2026-07'), 'July 2026');
@@ -43,7 +50,7 @@ assert.equal(datePart(null), null);
   assert.equal(rows[2].name, 'Muni 999');
   assert.equal(rows[2].label, null);
   assert.equal(rows[3].name, 'SELKIRK (CITY)');
-  assert.equal(rows[3].label, '2026-08-09');
+  assert.equal(rows[3].label, 'Aug 9, 2026');
 
   assert.equal(vintageRows(null), null);
   assert.equal(vintageRows({ rows: [] }), null);
@@ -97,22 +104,25 @@ assert.equal(serviceEditDate({ editingInfo: { dataLastEditDate: 0 } }), null);
                 run: 'run_20260730_093059' },
   });
   const byLabel = new Map(rows.map((r) => [r.label, r]));
-  assert.equal(byLabel.get('Legal descriptions index').vintage, '2026-08-15');
+  assert.equal(byLabel.get('Legal descriptions index').vintage, 'Aug 15, 2026');
   assert.equal(byLabel.get('Legal descriptions index').detail, '437,778 rows');
-  assert.equal(byLabel.get('Roll Entry snapshot (offline fallback)').vintage, '2026-08-11');
-  assert.equal(byLabel.get('Zoning by-laws (archived snapshot)').vintage, '2026-07-01');
+  assert.equal(byLabel.get('Roll Entry snapshot (offline fallback)').vintage, 'Aug 11, 2026');
+  assert.equal(byLabel.get('Zoning by-laws (archived snapshot)').vintage, 'Jul 1, 2026');
   assert.equal(byLabel.get('Zoning by-laws (archived snapshot)').detail, 'snapshot 2026-07-01');
   // The MASC scrape-run date beats generated_at (a rebuild day says nothing
   // about the data's age).
-  assert.equal(byLabel.get('MASC soil productivity ratings').vintage, '2026-07-30');
+  assert.equal(byLabel.get('MASC soil productivity ratings').vintage, 'Jul 30, 2026');
   assert.equal(byLabel.get('MASC soil productivity ratings').detail, 'scrape run_20260730_093059');
-  assert.equal(byLabel.get('Land cover & water shards (CDN)').detail,
-    'pinned at revision fcbaa29');
+  // Land cover's vintage is the fixed base register, not a pipeline stamp.
+  assert.equal(byLabel.get('Land cover').vintage, '2020');
+  assert.equal(byLabel.get('Land cover').detail, 'Canada Lands Cover Register 2020 (base file)');
+  assert.equal(byLabel.get('Water shards (CDN)').detail, 'pinned at revision fcbaa29');
 
-  // Every fetch failing still yields a full table — vintages null, rows kept.
+  // Every fetch failing still yields a full table — vintages null, rows
+  // kept. Land cover is the one exception: its vintage is a constant.
   const empty = publishedRows({});
   assert.equal(empty.length, rows.length);
-  assert.ok(empty.every((r) => r.vintage == null));
+  assert.ok(empty.every((r) => r.label === 'Land cover' || r.vintage == null));
 }
 
 // ---- mascRunDate -----------------------------------------------------------

@@ -16,6 +16,7 @@ import {
   clearSales, requestPersistence, fsAccessSupported, salesDbAvailable,
 } from './salesStore.js';
 import { coverageRows, coverageSummary, statusLabel } from './salesCoverage.js';
+import { dateLabel } from './dataStatus.js';
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 
@@ -527,9 +528,9 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
       const cells = [
         r.label,
         r.region || '',
-        r.status === 'done' ? (r.lastScraped || 'yes') : statusLabel(r),
+        r.status === 'done' ? (dateLabel(r.lastScraped) || 'yes') : statusLabel(r),
         r.sales != null ? fmt(r.sales) : '',
-        r.newestSale || '',
+        dateLabel(r.newestSale) || '',
       ];
       for (const text of cells) {
         const td = document.createElement('td');
@@ -554,9 +555,9 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
         ? 'This export has no coverage information yet — hit Refresh after the next publish.'
         : sum.total != null
           ? `${fmt(sum.scraped)} of ${fmt(sum.total)} municipalities scraped for sales`
-            + (sum.latest ? ` · most recent scrape ${sum.latest}` : '')
+            + (sum.latest ? ` · most recent scrape ${dateLabel(sum.latest)}` : '')
           : `${fmt(sum.scraped)} municipalities in the archive`
-            + (sum.latest ? ` · most recent scrape ${sum.latest}` : '')
+            + (sum.latest ? ` · most recent scrape ${dateLabel(sum.latest)}` : '')
             + ' — re-export to also list not-yet-scraped municipalities';
     }
     if ($covSearch) $covSearch.value = '';

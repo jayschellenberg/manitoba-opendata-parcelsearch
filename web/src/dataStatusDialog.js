@@ -19,7 +19,7 @@ import {
 import { WALLAS_SOURCES } from './wallas.js';
 import { getManifest } from './manifest.js';
 import {
-  vintageRows, publishedRows, serviceEditDate, statMaxDate,
+  vintageRows, publishedRows, serviceEditDate, statMaxDate, dateLabel, monthLabel,
 } from './lib/dataStatus.js';
 
 const BASE_URL = import.meta.env?.BASE_URL || '/';
@@ -119,11 +119,11 @@ export function initDataStatusDialog() {
       const req = s.dateField
         ? fetchJson(statUrl(s.url, s.dateField)).then((json) => {
             const date = statMaxDate(json);
-            return date ? `newest record ${date}` : null;
+            return date ? `newest record ${dateLabel(date)}` : null;
           })
         : fetchJson(`${s.url}?f=json`).then((json) => {
             if (!json) return null;
-            return serviceEditDate(json) || 'not published';
+            return dateLabel(serviceEditDate(json)) || 'not published';
           });
       req.then((text) => {
         tr.lastChild.textContent = text || 'unavailable';
@@ -146,7 +146,7 @@ export function initDataStatusDialog() {
       const months = muniRows.map((r) => r.month).filter(Boolean).sort();
       const latest = months.length ? months[months.length - 1] : null;
       $muniSummary.textContent =
-        `${muniRows.length} municipalities` + (latest ? ` · newest cycle ${latest}` : '');
+        `${muniRows.length} municipalities` + (latest ? ` · newest cycle ${monthLabel(latest)}` : '');
     }
     renderMunis();
     renderPublished(publishedRows({
