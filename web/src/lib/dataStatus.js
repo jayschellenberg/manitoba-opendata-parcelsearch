@@ -102,10 +102,11 @@ export function newestSnapshot(histIndex) {
  * @param {Object} [opts.histIndex] mb-parcel-history index.json
  * @param {string} [opts.revision]  pinned mb-parcel-data commit SHA
  * @param {Object} [opts.mascMeta]  masc/_index.json `_meta` entry
+ * @param {Object} [opts.waterMeta] water/_index.json `_meta` entry
  * @param {Date}   [opts.now]       injectable clock for the schedule rules
  */
 export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMeta,
-                                now = new Date() } = {}) {
+                                waterMeta, now = new Date() } = {}) {
   const rows = [];
   const ds = manifest?.datasets || {};
   // Schedules, as registered in Task Scheduler on the build machine:
@@ -165,9 +166,12 @@ export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMet
     next: 'static',
   });
 
+  // Like the MASC row, the run date embedded in the source parquet's name
+  // beats generated_at — a shard rebuild day says nothing about when the
+  // waterfront detection actually ran.
   rows.push({
     label: 'Water shards (CDN)',
-    vintage: null,
+    vintage: dateLabel(assemblyRunDate(waterMeta) || datePart(waterMeta?.generated_at)),
     detail: revision ? `pinned at revision ${String(revision).slice(0, 7)}` : null,
     next: null,
   });
@@ -213,6 +217,16 @@ export function nextSemiannualLabel(now = new Date()) {
 export function mascNextLabel(meta) {
   const next = nextCycleLabel(mascRunDate(meta), 12);
   return next ? `~${next}` : null;
+}
+
+/**
+ * The assembly run date out of a water/landcover `_meta` entry — the source
+ * parquet is named MAOParcelOutput[Ag]<YYYYMMDD>.parquet, and that date IS
+ * the data's vintage; generated_at only says when the shards were re-cut.
+ */
+export function assemblyRunDate(meta) {
+  const m = /(\d{4})(\d{2})(\d{2})\.parquet$/.exec(meta?.source || '');
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
 }
 
 /**

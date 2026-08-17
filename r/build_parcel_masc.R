@@ -868,6 +868,20 @@ for (key in muni_keys) {
 
 # Manifest indexed by Muni_Name_With_Typ (the original key, not the safe
 # filename) so the frontend can look up directly from the dropdown value.
+#
+# `_meta` carries the dataset's vintage for the Data Status dialog — same
+# pattern as masc/_index.json (r/build_masc_shards.R). `run` is the MASC
+# scrape run the ratings came from (the run dir name is the scrape date);
+# `source` names both inputs since the shards join parcels to ratings.
+# Every consumer that walks this index filters on entries with a `file`
+# string (lookupMuniManifestEntry, shardIndexEntries), so a key with no
+# `file` passes through them invisibly.
+masc_run_dir <- basename(dirname(masc_csv))
+manifest[["_meta"]] <- list(
+  generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+  source = paste(basename(roll_path), basename(masc_csv), sep = " + "),
+  run = if (grepl("^run_\\d{8}_\\d{6}$", masc_run_dir)) masc_run_dir else NULL
+)
 jsonlite::write_json(manifest, index_path, auto_unbox = TRUE, pretty = FALSE)
 
 total_size_mb <- sum(file.info(list.files(output_dir, full.names = TRUE))$size) / 1024 / 1024

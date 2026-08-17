@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict';
 import {
   monthLabel, datePart, vintageRows, serviceEditDate, newestSnapshot, publishedRows,
-  mascRunDate, statMaxDate, dateLabel,
+  mascRunDate, assemblyRunDate, statMaxDate, dateLabel,
   nextCycleLabel, nextMonthlyLabel, nextSemiannualLabel, mascNextLabel,
 } from '../src/lib/dataStatus.js';
 
@@ -123,6 +123,8 @@ assert.equal(serviceEditDate({ editingInfo: { dataLastEditDate: 0 } }), null);
     mascMeta: { generated_at: '2026-08-17T00:54:25Z',
                 source: 'masc_soil_ratings_square_with_latlon_v2.csv',
                 run: 'run_20260730_093059' },
+    waterMeta: { generated_at: '2026-08-17T13:47:06Z',
+                 source: 'MAOParcelOutput20260812.parquet' },
     now: new Date(2026, 7, 17),
   });
   const byLabel = new Map(rows.map((r) => [r.label, r]));
@@ -139,6 +141,9 @@ assert.equal(serviceEditDate({ editingInfo: { dataLastEditDate: 0 } }), null);
   assert.equal(byLabel.get('Land cover').vintage, '2020');
   assert.equal(byLabel.get('Land cover').detail, 'Canada Lands Cover Register 2020 (base file)');
   assert.equal(byLabel.get('Water shards (CDN)').detail, 'pinned at revision fcbaa29');
+  // Water's vintage is the assembly run date embedded in the source parquet's
+  // name, not the shard rebuild day.
+  assert.equal(byLabel.get('Water shards (CDN)').vintage, 'Aug 12, 2026');
 
   // Next-update column: monthly refresh (the 15th) for the indexes and the
   // Roll Entry snapshot; the semiannual archive for the snapshots; the
@@ -161,6 +166,20 @@ assert.equal(serviceEditDate({ editingInfo: { dataLastEditDate: 0 } }), null);
 assert.equal(mascRunDate({ run: 'run_20260730_093059' }), '2026-07-30');
 assert.equal(mascRunDate({ generated_at: '2026-08-17T00:00:00Z' }), null);
 assert.equal(mascRunDate(null), null);
+
+// ---- assemblyRunDate -------------------------------------------------------
+assert.equal(assemblyRunDate({ source: 'MAOParcelOutputAg20260804.parquet' }), '2026-08-04');
+assert.equal(assemblyRunDate({ source: 'MAOParcelOutput20260812.parquet' }), '2026-08-12');
+assert.equal(assemblyRunDate({ source: 'something-else.csv' }), null);
+assert.equal(assemblyRunDate(null), null);
+// A meta with no run date in the source falls back to generated_at day.
+{
+  const rows = publishedRows({
+    waterMeta: { generated_at: '2026-08-17T13:47:06Z', source: 'handmade.parquet' },
+  });
+  const row = rows.find((r) => r.label === 'Water shards (CDN)');
+  assert.equal(row.vintage, 'Aug 17, 2026');
+}
 
 // ---- statMaxDate (WALLAS newest-record proxy) ------------------------------
 assert.equal(statMaxDate({ features: [{ attributes: { newest: Date.UTC(2026, 7, 10, 12) } }] }),
