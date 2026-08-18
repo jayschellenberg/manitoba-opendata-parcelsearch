@@ -170,6 +170,38 @@ main { padding: 18px 20px 0; }
  * The 430px floor still governs on the way down, so the grid drops to
  * two columns and then one as the window narrows — no breakpoints to
  * keep in sync with the gap or the padding. */
+/* Chart-set tabs — Land rates / Total price.
+   Underlined rather than the segmented pill used up in the control bar: these
+   swap the entire grid beneath them, and borrowing the pill would dress a
+   page-level switch as one more filter sitting among the filters. */
+.charts-tabs {
+  display: flex;
+  gap: 2px;
+  margin: 0 0 16px;
+  border-bottom: 1px solid var(--edge);
+}
+.charts-tabs button {
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 16px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;          /* sit the active rule ON the container border */
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.charts-tabs button:hover { color: var(--ink); }
+.charts-tabs button[aria-selected="true"] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+.charts-tabs button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .charts-grid {
   display: grid;
   gap: 16px;

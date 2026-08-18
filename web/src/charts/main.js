@@ -40,6 +40,10 @@ const els = {
   grid: $('charts-grid'),
   unitAcres: $('unit-acres'),
   unitSf: $('unit-sf'),
+  ctlUnit: $('ctl-unit'),
+  ratesHint: $('rates-hint'),
+  tabRates: $('tab-rates'),
+  tabTotal: $('tab-total'),
   effDate: $('eff-date'),
   ratesNominal: $('rates-nominal'),
   ratesAdjusted: $('rates-adjusted'),
@@ -57,9 +61,28 @@ const els = {
 let data = { records: [], meta: null };
 let receivedAt = null;
 
+/**
+ * Today as YYYY-MM-DD in LOCAL time.
+ *
+ * toISOString() was used here and is wrong for this: it renders UTC, and
+ * Manitoba runs 5-6 hours behind it, so from early evening onward the default
+ * effective date was TOMORROW. effectiveMs() parses the string back as local
+ * midnight (see its own note), so the two halves have to agree on local.
+ */
+function todayLocal() {
+  const d = new Date();
+  const p2 = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+}
+
 const opts = {
   unit: 'acres',
-  effDate: new Date().toISOString().slice(0, 10),
+  // Which chart set is showing: 'rates' (per acre/SF/lot) or 'total'
+  // (the whole consideration). Persisted — it is a way of working, not a
+  // transient view, and an appraiser doing land-and-building work wants
+  // the same tab back tomorrow.
+  tab: 'rates',
+  effDate: todayLocal(),
   // Whether the by-size / by-distance charts plot adjusted rates. The
   // two over-time charts ignore this entirely — they always plot rates
   // as sold, because carrying them to one date is precisely what would
@@ -85,7 +108,11 @@ function readOpts() {
       // Freeze is deliberately NOT restored: a tab that opens already
       // frozen looks broken — it shows stale numbers and ignores the
       // filters until you find the checkbox.
-      const { frozen, ...rest } = parsed;
+      // effDate joins frozen in NOT being restored: comps are carried to
+      // "today" by default, and a date stored on some earlier visit is stale
+      // the next morning while still looking deliberate (Jason, 2026-08-18).
+      // Type one by hand and it holds for that session.
+      const { frozen, effDate, ...rest } = parsed;
       return rest;
     }
     // Migrate the v1 shape, which folded "don't adjust" into the basis
@@ -93,7 +120,7 @@ function readOpts() {
     // would silently reset someone's effective date and judgement rate.
     const legacy = JSON.parse(localStorage.getItem(OPTS_KEY_V1) || 'null');
     if (!legacy || typeof legacy !== 'object') return {};
-    const { frozen, adjMode, ...rest } = legacy;
+    const { frozen, adjMode, effDate, ...rest } = legacy;
     return {
       ...rest,
       adjusted: adjMode !== 'none',
@@ -179,6 +206,35 @@ function tooltipRows(rec) {
 }
 
 // ---------- chart builders -----------------------------------------
+
+/**
+ * The distance-axis wording and stats, shared by both chart sets.
+ *
+ * Lifted out of the rate builder when the total-price tab arrived: the two
+ * sets must describe the same reference point in the same words, and a
+ * second copy is a second thing to forget when the subject picker changes.
+ */
+function distContext() {
+  const ref = activeDistRef();
+  return {
+    refName: ref === 'subject' ? 'the subject parcel' : 'Portage & Main',
+    distLabel: `Distance from ${ref === 'subject' ? 'subject' : 'Winnipeg'} (km)`,
+    distEmpty: ref === 'subject'
+      ? 'No subject distance available. Set a subject roll in the main window, or measure from Winnipeg.'
+      : 'No sales in the current filter have usable parcel geometry to measure from.',
+    distStats: (pts, adjusted, yFormat) => spreadStats(pts, {
+      xName: 'Median distance',
+      xFormat: (v) => `${fmtNum(v)} km`,
+      adjusted,
+      yFormat,
+    }),
+  };
+}
+
+/** Dispatch to the active tab's builder. */
+function buildCharts() {
+  return opts.tab === 'total' ? buildTotalCharts() : buildRateCharts();
+}
 
 /** A sale contributes to a chart only when both axes resolve. */
 function pointsFor(records, xOf, yOf, colorOf) {
@@ -482,7 +538,7 @@ function adjusterFor(metric, mc) {
   };
 }
 
-function buildCharts() {
+function buildRateCharts() {
   const records = data.records || [];
   const metric = areaMetric();
   const areaFmt = areaMoneyFmt();
@@ -499,18 +555,7 @@ function buildCharts() {
   const adjArea = areaAdj.adjust;
   const size = (rec) => rec[sizeField()];
 
-  const ref = activeDistRef();
-  const refName = ref === 'subject' ? 'the subject parcel' : 'Portage & Main';
-  const distLabel = `Distance from ${ref === 'subject' ? 'subject' : 'Winnipeg'} (km)`;
-  const distEmpty = ref === 'subject'
-    ? 'No subject distance available. Set a subject roll in the main window, or measure from Winnipeg.'
-    : 'No sales in the current filter have usable parcel geometry to measure from.';
-  const distStats = (pts, adjusted, yFormat) => spreadStats(pts, {
-    xName: 'Median distance',
-    xFormat: (v) => `${fmtNum(v)} km`,
-    adjusted,
-    yFormat,
-  });
+  const { refName, distLabel, distEmpty, distStats } = distContext();
 
   // Charts are grouped by RATE, not by question: every price-per-area
   // chart first, then every price-per-lot chart. Reading down a column
@@ -664,6 +709,120 @@ function buildCharts() {
   return charts;
 }
 
+/**
+ * Total-price charts — the second tab.
+ *
+ * Every y-axis here is the WHOLE consideration, undivided. That is the point
+ * of the tab: on a land-and-building sale a per-acre rate divides a price
+ * that is mostly building by the land the building happens to sit on, and
+ * two properties with identical houses on quarter-acre and half-acre lots
+ * come out an implausible factor apart. Total price asks the question the
+ * improved market actually answers.
+ *
+ * NO by-size chart, deliberately (Jason, 2026-08-18): MAO carries no size for
+ * rural residential sales, so the x-axis would be empty for exactly the
+ * population this tab exists to serve. The size question is on the rates tab,
+ * where the data supports it.
+ *
+ * This set does NOT filter to residential land-and-building. It plots whatever
+ * the main window's filters are showing, the same records the rates tab gets —
+ * sale type is already selectable at load time and through the Primary
+ * Property filter, and a tab that silently re-filtered would disagree with the
+ * table view sitting underneath it.
+ */
+function buildTotalCharts() {
+  const records = data.records || [];
+  const { refName, distLabel, distEmpty, distStats } = distContext();
+
+  // One regression on total price, shared by the over-time caption and the
+  // time adjustment, so the two never state different trends.
+  const mcPrice = marketConditions(records, 'price');
+  const priceAdj = adjusterFor('price', mcPrice);
+  const adjPrice = priceAdj.adjust;
+
+  const charts = [];
+
+  // Over time. Prices as sold — carrying them to one date is precisely what
+  // would flatten the trend this chart exists to show.
+  {
+    const pts = pointsFor(records, (r) => r.dateMs, (r) => r.price);
+    const trend = timeTrend(records, pts, 'price', mcPrice, fmtMoney0);
+    charts.push(drawChart({
+      title: 'Total price over time',
+      subtitle: ['Prices as sold. One point per sale; larger dots are multi-parcel assemblies.',
+        trend.note].filter(Boolean).join(' '),
+      points: pts, xIsDate: true,
+      xLabel: 'Sale date', yLabel: 'Total sale price',
+      yFormat: fmtMoney0, yAxisFormat: fmtAxisMoney,
+      fits: trend.fits, legend: legendFor(trend.fits),
+      refLines: mcPrice?.median != null ? [{ y: mcPrice.median, label: 'median' }] : [],
+      stats: trend.stats,
+      tooltipRows,
+    }));
+  }
+
+  // By distance. Cubic for the same reason the rate charts use one — a lake
+  // or a second town further out puts real humps in the curve.
+  {
+    const pts = pointsFor(records, distanceFor, adjPrice);
+    const fits = fitsFor(pts, { curve: 'cubic' });
+    charts.push(drawChart({
+      title: 'Total price by distance',
+      subtitle: `Measured from ${refName}. ${priceAdj.note}`,
+      points: pts,
+      xLabel: distLabel, yLabel: `Total sale price${priceAdj.suffix}`,
+      yFormat: fmtMoney0, yAxisFormat: fmtAxisMoney, xAxisFormat: fmtAxisNum,
+      fits, legend: legendFor(fits),
+      refLines: subjectDistanceRef(),
+      stats: distStats(pts, priceAdj.adjusted, fmtMoney0),
+      tooltipRows,
+      empty: distEmpty,
+    }));
+  }
+
+  // Against assessed value.
+  //
+  // The record carries the RATIO (saleToAsmt), not the assessed total, so the
+  // total is recovered as price / ratio — exact, since the ratio was computed
+  // from that same price. Sales missing either drop out, which is the usual
+  // "missing = exclude" rule and here means no assessment on file.
+  //
+  // The 1:1 line is supplied as a FIT rather than a refLine because refLines
+  // are horizontal or vertical only; a diagonal cannot be expressed as one.
+  // It is the line that matters: above it the sale beat its assessment, below
+  // it the sale went under, and a cluster hard below is the shape a
+  // non-arms-length transfer makes.
+  {
+    const assessedOf = (r) => (
+      r.saleToAsmt != null && r.saleToAsmt > 0 && r.price != null
+        ? r.price / r.saleToAsmt
+        : null);
+    const pts = pointsFor(records, assessedOf, adjPrice);
+    const fits = [
+      ...fitsFor(pts, { curve: 'none' }),
+      { predict: (x) => x, color: INK.muted, dash: '4 3', label: 'Sale = assessed (1:1)' },
+    ];
+    charts.push(drawChart({
+      title: 'Total price against assessed value',
+      subtitle: `Points above the 1:1 line sold over their assessment. ${priceAdj.note}`,
+      points: pts,
+      xLabel: 'Total assessed value', yLabel: `Total sale price${priceAdj.suffix}`,
+      yFormat: fmtMoney0, yAxisFormat: fmtAxisMoney, xAxisFormat: fmtAxisMoney,
+      fits, legend: legendFor(fits),
+      stats: spreadStats(pts, {
+        xName: 'Median assessed',
+        xFormat: fmtMoney0,
+        adjusted: priceAdj.adjusted,
+        yFormat: fmtMoney0,
+      }),
+      tooltipRows,
+      empty: 'No sales in the current filter carry an assessed value to compare against.',
+    }));
+  }
+
+  return charts;
+}
+
 // ---------- table view ---------------------------------------------
 
 const TABLE_COLS = [
@@ -754,6 +913,21 @@ function render() {
 }
 
 function syncControls() {
+  // Tab state. The size-unit control picks between $/acre and $/SF, so it
+  // governs nothing on the total-price tab; showing it there would be an
+  // inert switch inviting a click that changes no chart on screen.
+  const onTotal = opts.tab === 'total';
+  els.tabRates.setAttribute('aria-selected', String(!onTotal));
+  els.tabTotal.setAttribute('aria-selected', String(onTotal));
+  els.tabRates.classList.toggle('is-on', !onTotal);
+  els.tabTotal.classList.toggle('is-on', onTotal);
+  els.ctlUnit.hidden = onTotal;
+  // Name the charts the Nominal/Time-adjusted toggle actually reaches on
+  // THIS tab — the total set has no by-size chart to speak of.
+  els.ratesHint.textContent = onTotal
+    ? 'Applies to the by-distance and assessed-value charts.'
+    : 'Applies to the by-size and by-distance charts.';
+
   els.unitAcres.setAttribute('aria-checked', String(isAcres()));
   els.unitSf.setAttribute('aria-checked', String(!isAcres()));
   els.unitAcres.classList.toggle('is-on', isAcres());
@@ -808,6 +982,8 @@ function setOpt(patch) {
   render();
 }
 
+els.tabRates.addEventListener('click', () => setOpt({ tab: 'rates' }));
+els.tabTotal.addEventListener('click', () => setOpt({ tab: 'total' }));
 els.unitAcres.addEventListener('click', () => setOpt({ unit: 'acres' }));
 els.unitSf.addEventListener('click', () => setOpt({ unit: 'sf' }));
 // Both 'input' and 'change': a date field fires 'change' only once the

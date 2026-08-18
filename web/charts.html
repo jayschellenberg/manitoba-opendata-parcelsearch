@@ -21,7 +21,7 @@
            table below re-render against the same slice, so the numbers
            always agree. -->
       <div class="charts-controls" role="group" aria-label="Chart options">
-        <div class="ctl">
+        <div class="ctl" id="ctl-unit">
           <span class="ctl-label" id="unit-label">Size unit</span>
           <div class="segmented" role="radiogroup" aria-labelledby="unit-label">
             <button type="button" id="unit-acres" role="radio" aria-checked="true">Acres</button>
@@ -40,7 +40,7 @@
             <button type="button" id="rates-nominal" role="radio" aria-checked="false">Nominal</button>
             <button type="button" id="rates-adjusted" role="radio" aria-checked="true">Time-adjusted</button>
           </div>
-          <span class="ctl-hint">Applies to the by-size and by-distance charts.</span>
+          <span class="ctl-hint" id="rates-hint">Applies to the by-size and by-distance charts.</span>
         </div>
 
         <div class="ctl">
@@ -87,6 +87,21 @@
         No sales loaded yet. In the main window, open <strong>Sales Analysis</strong>,
         import or paste a sales export, then click <strong>Charts</strong> again.
       </p>
+
+      <!-- Two chart sets over one filtered slice. The tabs are named for
+           the MEASURE each puts on the y-axis, not for a property type:
+           neither filters the records, so calling one "Residential" would
+           promise a narrowing it does not do. Total price is the view for
+           land-and-building sales, where a rate per acre divides a price
+           that is mostly building by land the building sits on. -->
+      <div class="charts-tabs" role="tablist" aria-label="Chart set">
+        <button type="button" id="tab-rates" role="tab" aria-selected="true"
+                aria-controls="charts-grid"
+                title="Price per acre, per square foot and per lot — the land-rate views.">Land rates</button>
+        <button type="button" id="tab-total" role="tab" aria-selected="false"
+                aria-controls="charts-grid"
+                title="The whole consideration, undivided. For land-and-building sales, where a per-acre rate spreads building value across land.">Total price</button>
+      </div>
 
       <div id="charts-grid" class="charts-grid" hidden></div>
 
