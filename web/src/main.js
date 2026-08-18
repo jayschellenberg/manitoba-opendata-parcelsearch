@@ -398,7 +398,7 @@ const zoneCatFilter = initMultiSelect($zoneCatFilterEl, {
 const $primaryPropEl = document.getElementById('primaryprop-filter');
 const primaryPropFilter = initMultiSelect($primaryPropEl, {
   placeholder: 'Any Structure Type',
-  noun: 'property types',
+  noun: 'structure types',
   emptyLabel: 'No values yet — upload sales first.',
 });
 // Total-consideration bounds. Distinct from the $/Ac pair: this is the
