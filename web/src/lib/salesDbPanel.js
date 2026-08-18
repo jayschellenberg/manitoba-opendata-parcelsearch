@@ -571,7 +571,7 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
     if ($covSummary) {
       const sum = coverageSummary(covCache);
       $covSummary.textContent = !sum
-        ? 'This export has no coverage information yet — hit Reload Sales after the next publish.'
+        ? 'This export has no coverage information yet — hit Reload after the next publish.'
         : sum.total != null
           ? `${fmt(sum.scraped)} of ${fmt(sum.total)} municipalities scraped for sales`
             + (sum.latest ? ` · most recent scrape ${dateLabel(sum.latest)}` : '')
@@ -627,7 +627,7 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
       if ($update) {
         $update.hidden = false;
         $update.textContent =
-          `${upd.count} municipalit${upd.count === 1 ? 'y has' : 'ies have'} newer data — click Reload Sales.`;
+          `${upd.count} municipalit${upd.count === 1 ? 'y has' : 'ies have'} newer data — click Reload.`;
       }
     } catch { /* never block the tab on this */ }
   }
