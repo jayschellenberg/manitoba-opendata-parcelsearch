@@ -152,6 +152,19 @@ const ROLL_LIST_CHUNK_SIZE = 50;
 // rate-limit at 6000 request-units / minute; keep concurrency modest so
 // a multi-muni upload doesn't trip the cap.
 const ROLL_LIST_CONCURRENCY = 4;
+// Ceiling for the roll-list path alone. MAX_RESULTS exists to stop an
+// open-ended muni-wide query dragging back a third of the province; a roll list
+// is the opposite situation — the caller has already named every record it
+// wants, and the list is finite by construction. Sharing the 1,000 cap silently
+// truncated any longer list: Niverville's residential sales span 1,720 rolls,
+// so 42% of them resolved to nothing and were then reported as "not in
+// Roll_Entry", blaming the source data for a client-side stop (Jason,
+// 2026-08-17). Worse, the four workers race, so WHICH rolls survived varied
+// between runs of the same load.
+//
+// This is a backstop against a pathological paste, not a result cap — the sales
+// panel's own 25,000-sale big-load warning trips first on any realistic list.
+const ROLL_LIST_MAX_RESULTS = 25000;
 // How many per-feature spatial queries we run in parallel. ArcGIS hosted
 // services tolerate this comfortably; staying conservative keeps us off
 // any rate-limit radar.
@@ -426,7 +439,11 @@ export async function searchParcels(args) {
     if (rollList.length <= ROLL_LIST_CHUNK_SIZE) {
       const inList = rollList.map((v) => `'${escapeSql(v)}'`).join(',');
       const where = [...clauses, `Roll_No_Txt IN (${inList})`].join(' AND ');
-      return fetchRollEntryWhere(where, MAX_RESULTS);
+      // Cannot bind at today's 50-roll threshold, but the ceiling here is
+      // coupled to ROLL_LIST_CHUNK_SIZE: raise that and MAX_RESULTS would start
+      // silently truncating this branch while the chunked one below stayed
+      // correct. Same ceiling on both keeps the two halves honest together.
+      return fetchRollEntryWhere(where, ROLL_LIST_MAX_RESULTS);
     }
     return fetchRollListChunked(clauses, rollList);
   }
@@ -531,18 +548,26 @@ async function fetchRollEntryByKeyChunks(parcelKeys, clauses) {
 
   const features = [];
   const seenOids = new Set();
-  let truncated = parcelKeys.length > MAX_RESULTS;
+  // ROLL_LIST_MAX_RESULTS, not MAX_RESULTS: a parcel-key list is an explicit
+  // enumeration exactly like a roll list — the caller named every record it
+  // wants — so it earns the same ceiling for the same reason. Sharing the
+  // muni-wide 1,000 cap truncated any list-import or legal-index lookup past
+  // that point, and this path declared `truncated` from the INPUT length, so a
+  // 1,200-key import reported itself short before a single fetch had run.
+  let truncated = parcelKeys.length > ROLL_LIST_MAX_RESULTS;
 
   for (const chunk of chunks) {
     const keyClause = rollKeyWhereClause(chunk);
     if (!keyClause) continue;
     const where = [...clauses, keyClause].join(' AND ');
-    const remaining = MAX_RESULTS - features.length;
+    const remaining = ROLL_LIST_MAX_RESULTS - features.length;
     if (remaining <= 0) {
       truncated = true;
       break;
     }
-    const fc = await fetchRollEntryWhere(where, remaining);
+    // Per-chunk cap rather than this chunk's share of a running budget — see
+    // the same change in fetchRollListChunked.
+    const fc = await fetchRollEntryWhere(where, Math.min(PAGE_SIZE, remaining));
     truncated = truncated || fc._truncated === true;
     for (const f of fc.features || []) {
       const oid = f.properties?.OBJECTID;
@@ -552,12 +577,12 @@ async function fetchRollEntryByKeyChunks(parcelKeys, clauses) {
       if (seenOids.has(dedupeKey)) continue;
       seenOids.add(dedupeKey);
       features.push(f);
-      if (features.length >= MAX_RESULTS) {
+      if (features.length >= ROLL_LIST_MAX_RESULTS) {
         truncated = true;
         break;
       }
     }
-    if (features.length >= MAX_RESULTS) break;
+    if (features.length >= ROLL_LIST_MAX_RESULTS) break;
   }
 
   return {
@@ -600,11 +625,14 @@ async function fetchRollListChunked(baseClauses, canonicalRolls) {
       const chunk = chunks[idx];
       const inList = chunk.map((v) => `'${escapeSql(v)}'`).join(',');
       const where = [...baseClauses, `Roll_No_Txt IN (${inList})`].join(' AND ');
-      const remaining = MAX_RESULTS - features.length;
+      const remaining = ROLL_LIST_MAX_RESULTS - features.length;
       if (remaining <= 0) { truncated = true; return; }
       let fc;
       try {
-        fc = await fetchRollEntryWhere(where, remaining);
+        // Per-chunk cap, NOT this chunk's share of a global budget. A 50-roll
+        // chunk cannot legitimately fill a page, and deducting the running
+        // total here is what made late chunks ask for (and get) nothing.
+        fc = await fetchRollEntryWhere(where, Math.min(PAGE_SIZE, remaining));
       } catch (e) {
         firstErr = e;
         return;
@@ -618,7 +646,7 @@ async function fetchRollListChunked(baseClauses, canonicalRolls) {
         if (seen.has(key)) continue;
         seen.add(key);
         features.push(f);
-        if (features.length >= MAX_RESULTS) { truncated = true; return; }
+        if (features.length >= ROLL_LIST_MAX_RESULTS) { truncated = true; return; }
       }
     }
   }

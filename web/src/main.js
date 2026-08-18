@@ -4113,6 +4113,11 @@ async function handleSalesUpload(file) {
         console.warn(`searchParcels failed for ${muni}`, err);
         fetchErrors.push({ muni, message: err.message || String(err) });
       }
+      // A lookup that stopped short has established NOTHING about the rolls it
+      // never reached, so the "not in Roll_Entry" reason below would be a plain
+      // falsehood for them. Carried out to the summary line too — a silently
+      // short result set is the one failure the user cannot see in the grid.
+      const lookupTruncated = fc._truncated === true;
       // Reconcile this muni's CSV rows down to distinct SALES before
       // stamping. A MAO export repeats a portfolio sale's block once
       // per member, so the same (roll, date, price) can appear several
@@ -4185,13 +4190,17 @@ async function handleSalesUpload(file) {
         matched: matchedSales,
         parcels: matchedRolls.size,
         duplicateRows,
+        lookupTruncated,
         // Roll_No_Txt simply not in Roll_Entry for this muni (most
         // common cause: typo / old roll / wrong muni assignment in the
-        // source CSV).
+        // source CSV) — unless the lookup itself stopped short, in which
+        // case these rolls were never queried and the miss is ours.
         unmatched: unmatchedSales(
           salesByRoll,
           matchedRolls,
-          `Roll # not found in Roll_Entry for ${muni}`,
+          lookupTruncated
+            ? `${muni} roll lookup stopped at its ceiling before reaching this roll — not a Roll_Entry miss`
+            : `Roll # not found in Roll_Entry for ${muni}`,
         ),
       };
     });
@@ -4217,6 +4226,10 @@ async function handleSalesUpload(file) {
       totalDuplicateRows += (r.duplicateRows || []).length;
       unmatchedRecords.push(...(r.unmatched || []));
     }
+    // Munis whose roll lookup stopped short. This has to be said out loud: a
+    // truncated result set looks exactly like a complete one in the grid, and
+    // before this the only trace was an unmatched panel blaming Roll_Entry.
+    const truncatedMunis = results.filter((r) => r.lookupTruncated).map((r) => r.muni);
     // Distinct sales the CSV actually described, after collapsing exact
     // re-listings: everything that plotted plus everything whose roll
     // wasn't in Roll_Entry. This is the honest denominator — `records`
@@ -4395,8 +4408,11 @@ async function handleSalesUpload(file) {
     const dupeNote = totalDuplicateRows > 0
       ? ` · ${totalDuplicateRows} duplicate row${totalDuplicateRows === 1 ? '' : 's'} merged`
       : '';
+    const truncNote = truncatedMunis.length > 0
+      ? ` · ⚠ roll lookup incomplete for ${truncatedMunis.join(', ')} — sales are MISSING, not absent`
+      : '';
     const baseMsg = `${totalMatched} of ${totalSales} sales plotted${parcelNote}`
-                  + `${dupeNote}${unmatchedNote}`;
+                  + `${dupeNote}${unmatchedNote}${truncNote}`;
     renderUnmatchedPanel(unmatchedRecords);
 
     // Auto-set the muni dropdown to a "dominant" muni — the one with
