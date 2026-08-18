@@ -1533,8 +1533,8 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 .sidebar .class-row .multiselect { width: 100%; }
 
 /* Compact multi-select (lib/multiSelect.js). Closed, it's a single
-   line reading "Any class" / "RESIDENTIAL 1" / "3 classes". Open, the
-   checkbox list is absolutely positioned so it floats over the rows
+   line reading "Any Assessment Class" / "RESIDENTIAL 1" / "3 classes". Open,
+   the checkbox list is absolutely positioned so it floats over the rows
    below rather than pushing the whole panel down — the menu styling
    deliberately mirrors .columns-popover, the app's other
    checkbox-list-in-a-popover. */

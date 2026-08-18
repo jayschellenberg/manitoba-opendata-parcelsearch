@@ -362,7 +362,7 @@ const $saleDateTo    = document.getElementById('sale-date-to');
 // in the map popup and still exported — it just isn't a filter.
 const $asmtClass     = document.getElementById('asmt-class');
 const asmtClassFilter = initMultiSelect($asmtClass, {
-  placeholder: 'Any class',
+  placeholder: 'Any Assessment Class',
   noun: 'classes',
   emptyLabel: 'No values yet — upload sales first.',
 });
@@ -397,7 +397,7 @@ const zoneCatFilter = initMultiSelect($zoneCatFilterEl, {
 // the sales data itself, so the filter works the moment an upload lands.
 const $primaryPropEl = document.getElementById('primaryprop-filter');
 const primaryPropFilter = initMultiSelect($primaryPropEl, {
-  placeholder: 'Any property type',
+  placeholder: 'Any Structure Type',
   noun: 'property types',
   emptyLabel: 'No values yet — upload sales first.',
 });
