@@ -261,8 +261,8 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
     $update.classList.toggle('is-stale', stale);
     if (stale) {
       $update.textContent = now.munis !== loadedState.munis
-        ? 'Selected municipalities changed — hit Search Sales to refresh the data.'
-        : 'Date range or sale type changed — hit Search Sales to refresh the data.';
+        ? 'Selected municipalities changed — hit Search to refresh the data.'
+        : 'Date range or sale type changed — hit Search to refresh the data.';
     }
   }
 
