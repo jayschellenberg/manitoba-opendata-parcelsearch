@@ -134,7 +134,17 @@ export const PRESETS = {
     'zone1', 'zonecat', 'subjdist', 'saletoasmt',
   ]),
   // Commercial comps (Jason's chosen list, 2026-08-17): identity + sale +
-  // zoning/legal/size + the Assessment and StreetView link-outs.
+  // the structure description + zoning/legal/size + the Assessment and
+  // StreetView link-outs.
+  //
+  // Primary Property (added 2026-08-17) is MAO's description of the main
+  // structure — "AVERAGE FRAME WAREHOUSE". On a commercial comp that string
+  // is what decides whether the sale is comparable at all, which matters
+  // more here than on any other preset because this view carries no unit
+  // rate to fall back on. A blank cell is a reading, not a gap: it means no
+  // primary structure, i.e. bare land, which is 71% of ICI sales. Note it
+  // populates from subscriber sales data only, so a non-subscriber export
+  // leaves the column empty throughout.
   //
   // Carries NO unit-rate column at all — not $/Acre, $/SF, $/FF or $/Lot.
   // That is the deliberate difference from Sales analysis: a commercial
@@ -147,7 +157,8 @@ export const PRESETS = {
   // ★ stays so comp starring/export keeps working; rollsize rides with
   // acres per the invariant at the top of PRESETS.
   'Commercial Sales': new Set([
-    'favorite', 'roll', 'muniname', 'address', 'saledate', 'saleprice', 'n1id',
+    'favorite', 'roll', 'muniname', 'address', 'saledate', 'saleprice',
+    'primaryprop', 'n1id',
     'zone1', 'legal', 'du', 'rollsize', 'acres', 'value', 'streetview',
   ]),
   // Land comps (Jason's chosen list, 2026-08-17) — the mirror of Commercial
