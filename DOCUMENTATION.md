@@ -544,6 +544,8 @@ provincial download becoming the archived source-of-record.
 | `r/build_ortho_tiles.ps1` | tile a downloaded aerial ortho mosaic (ECW/GeoTIFF) → raster PMTiles for the optional "Aerial" basemap (§10.1) | `<name>.pmtiles` (→ R2) |
 | `r/build_mli_ortho.ps1` | acquire and mosaic the complete MLI southern-Manitoba Ortho Refresh source set | `D:\MBOrtho\mb-mli-ortho-2007-2013.pmtiles` |
 | `r/build_mli_imagery_years.R` | combine the MLI ortho grid + flight records into local acquisition-year polygons | `web/public/mli-imagery-years.geojson` |
+| `web/scripts/build-places.js` | NRCan CGNDB bulk CSV → Manitoba populated places, each resolved to its containing municipality (point-in-polygon, build time) | `web/public/mb-places.json` |
+| `web/src/lib/placeSearch.js` | map-corner place search: name folding, match ranking, the control itself | — |
 | `web/src/lib/landcover.js` | shared bucket defs + display gate (`LAND_COVER_MIN_ACRES`) | — |
 | `web/src/lib/provenance.js` | evidence-export provenance record + CSV/text renderers | — |
 | `web/src/arcgis.js` | `fetchLandCover*`, `fetchHistorical*` / `fetchHistoricalLineage` (CDN) fetchers, `SERVICE_SOURCES` | — |
@@ -553,6 +555,44 @@ provincial download becoming the archived source-of-record.
 | `web/vite.config.js` | bakes `__APP_COMMIT__` / `__APP_BUILD_TIME__` for export provenance | — |
 | `MAINTENANCE.md` | operator quick-runbook (subset of §8) | — |
 | `DATA-ARCHIVE-PLAN.md` | original design/decision record — **superseded 2026-07, design rationale only**. What shipped differs (semi-annual not annual; all three layers active). Never audit cadence from it: `MAINTENANCE.md` §2-4 is authoritative | — |
+
+### 10.0.1 Place search (map top-left)
+
+A search box in the map's only free corner answers "which RM is this town
+in?" — the question that otherwise costs a pan-and-squint across the
+municipal boundary layer. Type `Souris`, and the hit reads
+**Souris · Town · SOURIS-GLENWOOD (MUNICIPALITY)** before you click it.
+
+Picking a hit does three things, in order: sets the Property Search
+municipality dropdown to that RM (so Search is one click away, no retyping),
+flies to the place, and pins it with a popup repeating the three facts. The
+muni-change handler's own fly-to-the-whole-RM is deliberately superseded a
+macrotask later by the fly to the town — both start within a frame, so the
+wider framing never visibly begins.
+
+Backing data is `web/public/mb-places.json` (~1,969 places, 138 KB), built by
+`scripts/build-places.js` from NRCan's Canadian Geographical Names Database.
+It covers far more than the 183-row municipal boundary file: unincorporated
+localities (Ninette, Kelwood, Elphinstone), local urban districts, northern
+communities, railway points and reserves — reserves carrying the
+"Indian Reserve" label so they never read as ordinary towns.
+
+Three design points worth keeping:
+- **The RM is precomputed.** Point-in-polygon runs in the build script, not
+  the browser. No geometry work, no second lookup, no wait.
+- **The file is bundled, not fetched from an API.** The production CSP pins
+  `connect-src` to a fixed allowlist that includes neither NRCan nor any
+  geocoder, and a static asset needs no key, can't be rate-limited, and works
+  offline. (The existing Mapbox token is URL-restricted and scoped to the
+  route planner; geocoding through it was considered and rejected.)
+- **The pin is a DOM Marker, not a style layer.** Generate Map reads the WebGL
+  canvas, so the pin guides the eye on screen without printing itself into an
+  exported report image.
+
+Name matching folds accents and punctuation both ways, so `ile des chenes`
+finds *Île-des-Chênes* and `ste rose` finds *Ste. Rose du Lac*. Results rank
+by match tier (exact → prefix → word-start → substring), then by place type,
+so `Gimli` puts the town above Gimli Industrial Park.
 
 ### 10.1 Basemaps
 `map.js` `BASEMAP_STYLE` stacks the basemaps; the top-right menu selects them:

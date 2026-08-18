@@ -43,6 +43,7 @@ import {
 import { SOIL_SURVEY_MAP_SOURCE_OPTIONS } from './soilSurvey.js';
 import { safeExternalUrl } from './lib/safeUrl.js';
 import { createMuniPicker } from './lib/muniPicker.js';
+import { PlaceSearchControl, muniLabel } from './lib/placeSearch.js';
 import {
   badgeRadius,
   calloutOffset,
@@ -510,7 +511,7 @@ const PARCEL_FILL_OPACITY = [
   0.3,
 ];
 
-export function initMap(container, { onFeatureClick } = {}) {
+export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
   const map = new maplibregl.Map({
     container,
     style: BASEMAP_STYLE,
@@ -531,6 +532,11 @@ export function initMap(container, { onFeatureClick } = {}) {
   // from the stock control is lost by replacing it outright.
   map.addControl(new FineZoomControl(), 'top-right');
   map.addControl(new BasemapMenuControl(), 'top-right');
+  // Place search, top-LEFT — the only control on that side. Everything
+  // else stacks top-right and the legends sit bottom-right, so the box
+  // gets the empty corner and reads as a distinct kind of tool: it moves
+  // the map to a named place rather than changing what the map shows.
+  map.addControl(new PlaceSearchControl({ onPick: onPlacePick }), 'top-left');
   // Distance / area measurement tool. mapbox-gl-draw owns the drawing
   // state and renders the in-progress line/polygon; MeasureControl wraps
   // it in a small panel that exposes the mode switch and live readout.
@@ -3076,6 +3082,48 @@ export function flyToFeature(map, feature) {
   } catch (err) {
     console.warn('flyToFeature: bbox failed', err);
   }
+}
+
+// The pin dropped by the place search. One at a time — searching a second
+// town replaces the first, because the pin marks "the place you just looked
+// up", not an accumulating set.
+let placePin = null;
+
+/**
+ * Fly to a place-search hit and pin it, with a popup naming the place, its
+ * type, and the municipality it falls in.
+ *
+ * A DOM Marker rather than a style layer, deliberately: this is a
+ * navigation aid, not map content, and Generate Map reads the WebGL
+ * canvas — so the pin guides the eye on screen without printing itself
+ * into an exported report image.
+ */
+export function showPlacePin(map, hit, { zoom = 12.5 } = {}) {
+  clearPlacePin();
+  if (!hit || !Number.isFinite(hit.lat) || !Number.isFinite(hit.lon)) return;
+
+  const popup = new maplibregl.Popup({ offset: 26, closeButton: true, closeOnClick: false })
+    .setHTML(
+      `<div class="place-pin-popup">
+         <strong>${escapeHtml(hit.name)}</strong>
+         <span class="place-pin-type">${escapeHtml(hit.type)}</span>
+         <span class="place-pin-muni${hit.muni ? '' : ' is-none'}">${escapeHtml(muniLabel(hit))}</span>
+       </div>`,
+    );
+
+  placePin = new maplibregl.Marker({ color: '#8f3530' })
+    .setLngLat([hit.lon, hit.lat])
+    .setPopup(popup)
+    .addTo(map);
+  placePin.togglePopup();   // open immediately — the muni name IS the answer
+
+  map.flyTo({ center: [hit.lon, hit.lat], zoom, duration: 900 });
+}
+
+/** Remove the place pin, if one is up. */
+export function clearPlacePin() {
+  placePin?.remove();
+  placePin = null;
 }
 
 export function setZoningData(map, fc) {

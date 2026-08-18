@@ -16,6 +16,7 @@ thumb: nothing should go more than ~12 months stale.**
 | **Cold archive** (provincial source + provenance sidecars: roll / zoning / dev-plan) | MB Open Data downloads | `D:\Dropbox\Appraisal\Web\MAOSnapshots\<year>\` | semi-annual (scheduled Jan 1 / Jul 1) |
 | **Historical shards** (as-of-date view, keyed `YYYY-MM-DD`) | the cold archive | `mb-parcel-history` repo → raw.githubusercontent | when a new snapshot is archived |
 | **Lineage index** (inferred predecessor/successor) | the historical shards | `mb-parcel-history/lineage/` → raw.githubusercontent | when ≥ 2 snapshots exist |
+| **Place names** (map search box) | Canadian Geographical Names Database (NRCan) | `web/public/mb-places.json`, bundled | ~annual / never (stable reference data) |
 
 ### The live layers are not as live as "live" suggests
 
@@ -402,6 +403,33 @@ Only when a new provincial `LCR_RCT_*.tif` lands (years apart):
 Rscript r/build_landcover_tiles.R     # needs GDAL on PATH; ~15-45 min
 ```
 Commit the regenerated `web/public/data/landcover-tiles/`.
+
+### 6b. Place names for the map search box  (cadence: ~annual, or never)
+Feeds the "Find a town…" box in the map's top-left corner — type `Souris`,
+get the town pinned and told it sits in SOURIS-GLENWOOD. Rebuild from `web/`:
+```
+npm run places
+```
+Downloads NRCan's Manitoba CGNDB bulk CSV (~24K names), keeps the ~2,000
+populated places (city / town / village / hamlet / unincorporated / reserve),
+resolves each one's containing municipality by point-in-polygon against
+`web/public/mb-municipalities.geojson`, and writes `web/public/mb-places.json`
+(~138 KB). Commit the regenerated file.
+
+The municipality is resolved **at build time**, which is the point: the client
+never does geometry, so the RM appears the instant a result renders. Places
+whose CGNDB reference point falls just outside their own boundary — the narrow
+Lake Winnipeg village strips, Dunnottar being the worked case — are matched to
+the nearest municipality within 2 km and flagged `near`, which the UI shows as
+"near DUNNOTTAR (VILLAGE)". Genuinely unorganized places (most of the north,
+most reserves) resolve to null and read as "Unorganized territory".
+
+Worth rerunning only if the boundary file is replaced or NRCan revises the
+gazetteer; place names and municipal boundaries both change on a scale of
+years. `test/placeSearch.test.js` asserts the file's schema, that every
+coordinate lands inside Manitoba, and that a handful of known places still
+resolve to the right RM — so a bad regeneration fails the suite rather than
+silently flying the map into Ontario.
 
 ### 7. MLI historical aerial basemap  (cadence: on-demand)
 The complete MLI Ortho Refresh source is built locally and deliberately not

@@ -6460,3 +6460,115 @@ body {
 .sidebar .overlay-group .overlay-btn[aria-pressed="true"] {
   color: #fff;
 }
+
+/* ---- Place search (map top-left) --------------------------------
+   Find a Manitoba town/village/locality and get told which RM it is
+   in. Sits in the one empty map corner: zoom + basemap + measure
+   stack top-right, legends bottom-right.
+
+   The control opts out of .maplibregl-ctrl-group's button-grid
+   styling (it holds an input and a listbox, not a button stack) but
+   keeps the class so it inherits the group's shadow and radius and
+   stacks correctly if another top-left control is ever added. */
+.place-search {
+  position: relative;
+  background: transparent;
+  box-shadow: none;
+}
+
+.place-search-input {
+  width: 210px;
+  max-width: 44vw;
+  padding: 6px 10px;
+  border: 1px solid var(--ui-line-strong, #b8c3ba);
+  border-radius: var(--ui-radius, 6px);
+  background: rgba(255, 255, 255, 0.96);
+  font: inherit;
+  font-size: 13px;
+  color: var(--ui-ink, #151916);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+}
+
+.place-search-input::placeholder { color: var(--ui-muted, #6d7771); }
+
+.place-search-input:focus {
+  outline: 2px solid var(--ui-focus, #3867d6);
+  outline-offset: -1px;
+  background: #fff;
+}
+
+.place-search-results {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 300px;
+  max-width: 72vw;
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: #fff;
+  border: 1px solid var(--ui-line-strong, #b8c3ba);
+  border-radius: var(--ui-radius, 6px);
+  box-shadow: var(--ui-shadow-soft, 0 12px 28px rgba(18, 22, 19, 0.08));
+  font-size: 12.5px;
+}
+
+.place-search-results[hidden] { display: none; }
+
+/* Two rows per hit: the name and its feature type on the first, the
+   municipality on the second. The muni is the answer the user came
+   for, so it gets its own line rather than being truncated into a
+   trailing fragment. */
+.place-search-hit {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.place-search-hit.is-active { background: var(--ui-accent-soft, #e4f1ef); }
+
+.place-search-name {
+  font-weight: 600;
+  color: var(--ui-ink, #151916);
+}
+
+.place-search-type {
+  color: var(--ui-muted, #6d7771);
+  font-size: 11px;
+  white-space: nowrap;
+  align-self: center;
+}
+
+.place-search-muni {
+  grid-column: 1 / -1;
+  color: var(--ui-accent-dark, #1f5752);
+  font-size: 11.5px;
+}
+
+.place-search-muni.is-none,
+.place-pin-muni.is-none {
+  color: var(--ui-muted, #6d7771);
+  font-style: italic;
+}
+
+.place-search-empty {
+  padding: 6px 8px;
+  color: var(--ui-muted, #6d7771);
+  font-style: italic;
+}
+
+/* Pin popup — same three facts as the result row it came from. */
+.place-pin-popup { display: grid; gap: 1px; line-height: 1.45; }
+.place-pin-popup strong { font-size: 13px; }
+.place-pin-type { color: var(--ui-muted, #6d7771); font-size: 11px; }
+.place-pin-muni { color: var(--ui-accent-dark, #1f5752); font-size: 11.5px; font-weight: 600; }
+
+/* The map pane gets short on phones; a 210 px box would crowd it. */
+@media (max-width: 640px) {
+  .place-search-input { width: 150px; }
+}

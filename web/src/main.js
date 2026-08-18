@@ -204,6 +204,7 @@ import {
   setLandCoverRasterVisible,
   setLandCoverRasterOpacity,
   flyToFeature,
+  showPlacePin,
   buildZoneCodePaint,
   parcelHtml,
   setSubjectData,
@@ -1301,6 +1302,7 @@ function updateSortIndicators() {
 
 const { map, ready: mapReady } = initMap($mapEl, {
   onFeatureClick: scrollToRow,
+  onPlacePick: handlePlacePick,
 });
 if (import.meta.env?.DEV) window.__map = map;   // dev-only handle for debugging
 
@@ -2644,6 +2646,44 @@ function zoomMapToSelectedMuni() {
   const feat = findMuniBoundaryFeature($municipality.value);
   if (!feat) return;
   mapReady.then(() => flyToFeature(map, feat));
+}
+
+/**
+ * A place was chosen in the map's search box (lib/placeSearch.js).
+ *
+ * Three things happen, in this order:
+ *
+ *   1. The municipality dropdown is set to the RM the place falls in, so
+ *      the answer to "what RM is Souris in?" is not just displayed but
+ *      *loaded* — Search is one click away without retyping anything.
+ *   2. That dispatch runs the normal muni-change side effects (overlay
+ *      swap, boundary outline, URL state) — including a fly to the whole
+ *      RM's bounds.
+ *   3. We then fly to the town itself, which supersedes step 2's wider
+ *      framing. Scheduled a macrotask later so it lands after the change
+ *      handler's own mapReady continuation; both animations start within
+ *      a frame of each other, so the RM flight never visibly begins and
+ *      the user sees one smooth flight to the town.
+ *
+ * Places in unorganized territory carry no muni and skip step 1, as do
+ * places whose RM has no dropdown option — the muni picker already treats
+ * a missing option as "nothing to select" rather than blanking the field,
+ * since a muni with no parcels has nothing to search.
+ */
+function handlePlacePick(hit, { zoom } = {}) {
+  if (!hit) return;
+
+  if (hit.muni) {
+    const key = normalizeMuniKey(hit.muni);
+    const opt = Array.from($municipality.options)
+      .find((o) => o.value && (o.value === hit.muni || normalizeMuniKey(o.value) === key));
+    if (opt && $municipality.value !== opt.value) {
+      $municipality.value = opt.value;
+      $municipality.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+
+  mapReady.then(() => setTimeout(() => showPlacePin(map, hit, { zoom }), 0));
 }
 // The "Min #" number input is only meaningful when Min DU is selected.
 // Disable it otherwise so users can't type a value that has no effect.
