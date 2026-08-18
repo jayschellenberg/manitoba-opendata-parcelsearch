@@ -360,6 +360,11 @@ export function drawChart(spec) {
   // ---- fitted curves, sampled across the visible x range and clipped
   // to the y domain so a cubic that dives below zero at the edges
   // doesn't paint over the axis.
+  // Trendlines are collected here and appended AFTER the dots below, so the
+  // fitted line reads ON TOP of the scatter (Jason, 2026-08-18). Painted
+  // before the dots, a fit vanished into a dense cloud exactly where it
+  // matters most — the part of the range carrying the most sales.
+  const trendLines = el('g');
   for (const fit of fits) {
     if (typeof fit?.predict !== 'function') continue;
     const STEPS = 96;
@@ -380,7 +385,7 @@ export function drawChart(spec) {
     }
     if (run.length > 1) segs.push(run);
     for (const seg of segs) {
-      svg.appendChild(el('polyline', {
+      trendLines.appendChild(el('polyline', {
         points: seg.join(' '),
         fill: 'none',
         stroke: fit.color || INK.primary,
@@ -408,8 +413,10 @@ export function drawChart(spec) {
     p.node = c;
   }
   svg.appendChild(dots);
+  // Above the dots by construction — see the note where trendLines is built.
+  svg.appendChild(trendLines);
 
-  // Highlight ring for the hovered/focused point, drawn above the dots.
+  // Highlight ring for the hovered/focused point, drawn above both.
   const highlight = el('circle', {
     r: 9, fill: 'none', stroke: INK.primary, 'stroke-width': 2, opacity: 0,
     'pointer-events': 'none',
