@@ -596,30 +596,6 @@
                selection in words, and the menu overlays the rows below
                instead of pushing them down the panel. -->
           <div class="class-row sales-only">
-            <span class="field zoning-field">
-              <details class="multiselect" id="zoning-filter">
-                <summary aria-label="Zoning filter">
-                  <span class="multiselect-label">Any zoning</span>
-                </summary>
-                <div class="multiselect-menu"></div>
-              </details>
-              <span class="tip">Filter to one or more zone codes — the same values the Zoning and Zoning 2 columns show. The list holds only the codes your current results actually contain, so it changes with every upload. A sale is kept when either of its zones matches anything ticked; leave everything unticked for no zoning filter. Codes are municipality-specific, so a multi-muni upload lists each muni's codes together.</span>
-            </span>
-            <!-- Zoning TYPE, the cross-muni companion to the code picker
-                 above. Zone codes are municipality-specific, so on a
-                 multi-muni sales set the code filter can't express
-                 "all the commercial sales" — this can. -->
-            <span class="field zonecat-field">
-              <details class="multiselect" id="zonecat-filter">
-                <summary aria-label="Zoning type filter">
-                  <span class="multiselect-label">Any zoning type</span>
-                </summary>
-                <div class="multiselect-menu"></div>
-              </details>
-              <span class="tip">Filter by broad Zoning Type — Commercial, Industrial, Residential, Open Space and so on — the province's ZONE_CATEGORY rollup shown in the Zoning Type column. Unlike the zone-code filter above, this compares across municipalities, so it's the one to reach for on a multi-muni sales set. Matches a parcel's DOMINANT zone (the one covering most of it), which is exactly what the Zoning Type column shows — so the ticked types and the column always agree. A parcel that is mostly industrial with a commercial corner counts as Industrial. The list holds only the types your current results contain, and every entry in it returns at least one sale. Source spelling variants and typos are folded together, and sales whose zoning hasn't been joined appear under "(no category)".</span>
-            </span>
-          </div>
-          <div class="class-row sales-only">
             <span class="field class-field">
               <details class="multiselect" id="asmt-class">
                 <summary aria-label="Assessment class filter">
@@ -772,6 +748,36 @@
               <span class="field sale-price-high-field">
                 <input id="sales-price-high" type="number" min="0" step="1000" placeholder="Max $" />
                 <span class="tip">Maximum total sale price (the Consideration from the uploaded CSV). Sales with no readable price drop out while either bound is set. Empty = no upper limit.</span>
+              </span>
+            </div>
+            <!-- Zoning code + Zoning Type. Moved in here 2026-08-18 (Jason):
+                 both narrow an already-chosen set rather than describing it,
+                 which is what this section is for, and the top of the sales
+                 panel was carrying four pickers before the first filter that
+                 gets reached on most jobs. They keep .class-row, so the pair
+                 still splits the width 50/50 the way it did above. -->
+            <div class="class-row sales-only">
+              <span class="field zoning-field">
+                <details class="multiselect" id="zoning-filter">
+                  <summary aria-label="Zoning filter">
+                    <span class="multiselect-label">Any zoning</span>
+                  </summary>
+                  <div class="multiselect-menu"></div>
+                </details>
+                <span class="tip">Filter to one or more zone codes — the same values the Zoning and Zoning 2 columns show. The list holds only the codes your current results actually contain, so it changes with every upload. A sale is kept when either of its zones matches anything ticked; leave everything unticked for no zoning filter. Codes are municipality-specific, so a multi-muni upload lists each muni's codes together.</span>
+              </span>
+              <!-- Zoning TYPE, the cross-muni companion to the code picker
+                   above. Zone codes are municipality-specific, so on a
+                   multi-muni sales set the code filter can't express
+                   "all the commercial sales" — this can. -->
+              <span class="field zonecat-field">
+                <details class="multiselect" id="zonecat-filter">
+                  <summary aria-label="Zoning type filter">
+                    <span class="multiselect-label">Any zoning type</span>
+                  </summary>
+                  <div class="multiselect-menu"></div>
+                </details>
+                <span class="tip">Filter by broad Zoning Type — Commercial, Industrial, Residential, Open Space and so on — the province's ZONE_CATEGORY rollup shown in the Zoning Type column. Unlike the zone-code filter above, this compares across municipalities, so it's the one to reach for on a multi-muni sales set. Matches a parcel's DOMINANT zone (the one covering most of it), which is exactly what the Zoning Type column shows — so the ticked types and the column always agree. A parcel that is mostly industrial with a commercial corner counts as Industrial. The list holds only the types your current results contain, and every entry in it returns at least one sale. Source spelling variants and typos are folded together, and sales whose zoning hasn't been joined appear under "(no category)".</span>
               </span>
             </div>
             <!-- N1 crosswalk filter. Reuses the sale-price row's layout
