@@ -23,6 +23,18 @@ const PLACES_URL = 'mb-places.json';
 
 const MAX_RESULTS = 8;
 
+// Dropdown sizing, in px. The list is clamped between these and the room
+// actually left inside the map pane — see _fitToMap().
+//
+// MAX fits a full MAX_RESULTS set without scrolling: rows are two lines
+// (name + type, then municipality) and measure 50 px, so 8 of them plus
+// the list's own padding come to 428. Sizing to the full set matters more
+// here than it looks — the municipality is the answer being read, and a
+// result whose RM sits below the fold is one the user never sees.
+const LIST_MAX_HEIGHT = 430;
+const LIST_MIN_HEIGHT = 96;
+const LIST_BOTTOM_GAP = 10;
+
 // Zoom for a picked place. 12.5 frames a small Manitoba town with enough
 // surrounding township to see which direction the RM extends — the point
 // of the search is orientation, so landing too tight defeats it.
@@ -122,7 +134,14 @@ export class PlaceSearchControl {
   onAdd(map) {
     this._map = map;
     this._container = document.createElement('div');
-    this._container.className = 'maplibregl-ctrl maplibregl-ctrl-group place-search';
+    // `maplibregl-ctrl` only — deliberately NOT `maplibregl-ctrl-group`.
+    // That class carries `overflow: hidden` (style.css), and the results
+    // list is absolutely positioned BELOW the container's own box, so the
+    // group class clips the entire dropdown away: it stays in the DOM,
+    // reads correctly from script, and is never painted. `maplibregl-ctrl`
+    // is the part actually needed — it restores pointer-events on top of
+    // the control container's `pointer-events: none`.
+    this._container.className = 'maplibregl-ctrl place-search';
 
     this._input = document.createElement('input');
     this._input.type = 'search';
@@ -246,6 +265,32 @@ export class PlaceSearchControl {
       this._list.appendChild(li);
     });
     this._list.hidden = false;
+    this._fitToMap();
+  }
+
+  /**
+   * Cap the list's height to the room left below it inside the map pane.
+   *
+   * The map pane is `overflow: hidden` and cannot stop being — so a list
+   * taller than the space beneath the input has its lower rows clipped
+   * away silently. They stay in the DOM and read fine from script; they
+   * are simply never painted, which is indistinguishable from "the search
+   * only found six things". Scrolling (overflow-y on the list) is the
+   * honest alternative, and arrow-key navigation already scrolls the
+   * active row into view.
+   *
+   * Recomputed per render rather than once: the map pane is resizable by
+   * the workspace splitter, so the available room changes at runtime.
+   */
+  _fitToMap() {
+    const mapEl = this._map?.getContainer?.();
+    if (!mapEl) return;
+    const room = mapEl.getBoundingClientRect().bottom
+               - this._list.getBoundingClientRect().top
+               - LIST_BOTTOM_GAP;
+    // Floor at two rows: below that the map pane is too short to work in
+    // at all, and a zero-height list would read as "no results".
+    this._list.style.maxHeight = `${Math.max(LIST_MIN_HEIGHT, Math.min(LIST_MAX_HEIGHT, room))}px`;
   }
 
   _paintActive() {

@@ -594,6 +594,25 @@ finds *Île-des-Chênes* and `ste rose` finds *Ste. Rose du Lac*. Results rank
 by match tier (exact → prefix → word-start → substring), then by place type,
 so `Gimli` puts the town above Gimli Industrial Park.
 
+**Trap — a map control that clips its own dropdown.** The control class is
+`maplibregl-ctrl` and deliberately NOT `maplibregl-ctrl-group`. The group
+class carries `overflow: hidden`, and the results list is absolutely
+positioned *below* the container's own box, so with that class the entire
+dropdown is clipped away: it stays in the DOM, `textContent` reads back
+perfectly, every script-driven test passes, and nothing is ever painted.
+This shipped once and reached production, because DOM presence had been
+used as a stand-in for visibility. `.place-search { overflow: visible }`
+now defends the same ground from the CSS side.
+
+The lesson generalises to anything overlaying the map: **verify paint, not
+presence.** `document.elementFromPoint()` over each row, asserting the hit
+lands inside the list, is the check that catches this class of bug — the
+map pane is `overflow: hidden` too, so a dropdown can also be cut off by
+running past the pane's bottom edge. `_fitToMap()` caps the list per render
+to the room actually left below the input, which is why the cap is computed
+rather than a CSS constant: the workspace splitter resizes the map at
+runtime.
+
 ### 10.1 Basemaps
 `map.js` `BASEMAP_STYLE` stacks the basemaps; the top-right menu selects them:
 - **Streets** — CARTO Positron (default; carries its own labels).

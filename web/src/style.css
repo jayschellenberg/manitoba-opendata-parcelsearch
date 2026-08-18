@@ -6474,6 +6474,11 @@ body {
   position: relative;
   background: transparent;
   box-shadow: none;
+  /* Guard, belt-and-braces with dropping .maplibregl-ctrl-group in
+     placeSearch.js: the results list hangs BELOW this box, so any
+     `overflow: hidden` here clips the whole dropdown out of existence
+     while leaving it perfectly readable from script. */
+  overflow: visible;
 }
 
 .place-search-input {
@@ -6503,7 +6508,8 @@ body {
   left: 0;
   width: 300px;
   max-width: 72vw;
-  max-height: 320px;
+  /* max-height is set per render by _fitToMap() — the cap depends on how
+     much room the (resizable) map pane leaves below the input. */
   overflow-y: auto;
   margin: 0;
   padding: 4px;
@@ -6513,6 +6519,10 @@ body {
   border-radius: var(--ui-radius, 6px);
   box-shadow: var(--ui-shadow-soft, 0 12px 28px rgba(18, 22, 19, 0.08));
   font-size: 12.5px;
+  /* Above the map legends (z-index 5). They sit bottom-right and this
+     hangs top-left, so they do not overlap today — but the list is the
+     thing being read and should win if that ever changes. */
+  z-index: 6;
 }
 
 .place-search-results[hidden] { display: none; }
