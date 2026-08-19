@@ -9036,6 +9036,8 @@ const $psAsmt        = document.getElementById('ps-asmt');
 const $psZoning      = document.getElementById('ps-zoning');
 const $psDevplan     = document.getElementById('ps-devplan');
 const $psTitle       = document.getElementById('ps-title');
+const $psN1          = document.getElementById('ps-n1');
+const $psN1Row       = document.getElementById('ps-n1-row');
 const $psOpenMao     = document.getElementById('ps-open-mao');
 const $psOpenMuni    = document.getElementById('ps-open-muni');
 const $psCopySource  = document.getElementById('ps-copy-source');
@@ -9131,6 +9133,13 @@ function populateSelectedParcel(row) {
     $psDevplan.textContent = des || '—';
   }
   if ($psTitle) $psTitle.textContent = p._certificatesOfTitle || '—';
+  // N1 ID — present only on sales rows that the crosswalk has matched, so the
+  // whole row comes and goes rather than sitting empty. See the markup note.
+  if ($psN1Row) {
+    const n1 = p._n1Id || '';
+    $psN1Row.hidden = !n1;
+    if ($psN1) $psN1.textContent = n1 || '—';
+  }
 
   // Action targets.
   if ($psOpenMao) {

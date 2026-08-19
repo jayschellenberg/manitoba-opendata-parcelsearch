@@ -4048,6 +4048,13 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
       ? escapeHtml(p._saleTypeGroup)
       : '<span style="color:#888">not carried by this data source</span>'}`);
   }
+  // N1 comp-database ID from the MAO<->N1 crosswalk. Shown only when the sale
+  // HAS one: absence is the normal state (most sales are not entered yet), so
+  // an "unmatched" line on every popup would be noise on the map, where the
+  // grid's N1 ID column and its Unmatched filter already work that queue.
+  // Present, it means "this comp is already in N1" — worth knowing before
+  // spending time on it.
+  if (p._n1Id) lines.push(`<strong>N1 ID</strong> ${escapeHtml(p._n1Id)}`);
   // Repeat sale — the upload holds more than one transaction for this
   // parcel, but only the most recent one's feature is drawn (the map
   // shows each parcel once). Listing the full history here keeps the

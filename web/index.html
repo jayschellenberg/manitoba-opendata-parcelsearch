@@ -1343,6 +1343,12 @@
           <div><dt>Zoning</dt><dd id="ps-zoning">—</dd></div>
           <div><dt>Development plan</dt><dd id="ps-devplan">—</dd></div>
           <div><dt>Title</dt><dd id="ps-title">—</dd></div>
+          <!-- N1 crosswalk ID. The row is hidden outright when the sale has
+               none, rather than showing the card's usual em-dash: on a
+               Property Search there is no sale at all, and a permanently
+               blank N1 row would imply the parcel had been checked against
+               the crosswalk and missed. -->
+          <div id="ps-n1-row" hidden><dt>N1 ID</dt><dd id="ps-n1">—</dd></div>
         </dl>
         <div class="parcel-summary-actions">
           <a id="ps-open-mao" class="ps-action" href="#" target="_blank" rel="noreferrer">Open MAO</a>
