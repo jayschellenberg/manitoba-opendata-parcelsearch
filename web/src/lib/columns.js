@@ -132,6 +132,12 @@ export const PRESETS = {
     'grouppriceac', 'grouppricesf', 'grouppricelot', 'rollsize', 'acres',
     'groupacres',
     'zone1', 'zonecat', 'subjdist', 'saletoasmt',
+    // Total assessed, added 2026-08-18 beside Sale/Asmt. That column is a
+    // RATIO, and a ratio shown without its denominator cannot be read: a 0.6
+    // against a $40k assessment and a 0.6 against a $400k one are the same
+    // number describing entirely different sales. Every other sales preset
+    // already carried the value; this one showed only the quotient.
+    'value',
   ]),
   // Commercial comps (Jason's chosen list, 2026-08-17): identity + sale +
   // the structure description + zoning/legal/size + the Assessment and
@@ -231,6 +237,12 @@ export const PRESETS = {
     // saying the roll records no frontage, not a gap.
     'saledate', 'saleprice', 'saletoasmt', 'grouppricelot', 'grouppricesf',
     'grouppriceff',
+    // Primary Property — MAO's structure descriptor, added 2026-08-18. 45% of
+    // residential sales carry none at all, which IS the reading: bare land.
+    // Without it nothing in this preset separates a house sale from a vacant
+    // lot except inferring it backwards from Bldg %, and that inference fails
+    // on exactly the rolls with no assessment split on file.
+    'primaryprop',
     'legal', 'title',
   ]),
   'Full detail': null,
