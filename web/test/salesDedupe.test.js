@@ -134,6 +134,103 @@ test('same date, different price is two sales (not a re-listing)', () => {
   assert.equal(duplicateRows.length, 0);
 });
 
+// ── same-day twins, pinned to the archive rows they come from ───────────────
+//
+// 847 archive identities hold more than one consideration on one day under
+// one Sale Type Group, and the matcher used to keep only the last. This
+// module always kept both; these lock that in from the real cases, so the
+// two implementations cannot drift apart again silently.
+
+test('a same-day twin under ONE type group survives (muni 172 / 8600.000)', () => {
+  // RM of Rosser, Jan 10 2023: MAO's grid lists $190,000 AND
+  // $400,000, both FARM BARE LAND, in a single scrape.
+  const { salesByRoll, saleCount, duplicateRows } = dedupeSalesByRoll([
+    rec('RM OF ROSSER', '8600.000', '10-Jan-23', '$190,000', { saleTypeGroup: 'FARM BARE LAND' }),
+    rec('RM OF ROSSER', '8600.000', '10-Jan-23', '$400,000', { saleTypeGroup: 'FARM BARE LAND' }),
+  ], helpers);
+  assert.equal(saleCount, 2);
+  assert.equal(duplicateRows.length, 0);
+  assert.deepEqual(
+    salesByRoll.get('8600.000').map((r) => r.consideration),
+    ['$190,000', '$400,000'],
+  );
+});
+
+test('a $1 transfer beside a real sale on one day keeps both', () => {
+  // 460 of the 847 are this shape — a nominal related-party transfer and an
+  // arm's-length sale of the same parcel on the same day.
+  const { saleCount } = dedupeSalesByRoll([
+    rec('TOWN OF THE PAS', '85800.000', '12-Aug-10', '$1'),
+    rec('TOWN OF THE PAS', '85800.000', '12-Aug-10', '$115,000'),
+  ], helpers);
+  assert.equal(saleCount, 2);
+});
+
+test('one sale filed under two type groups collapses to one', () => {
+  // 56 identities carry ONE consideration under two labels — MAO filing a
+  // single transaction in two type slices. The Sale Type Group is therefore
+  // not part of the key, on either side.
+  const { saleCount, duplicateRows } = dedupeSalesByRoll([
+    rec('RM OF COLDWELL', '125208.000', '19-Jun-26', '$55,000', { saleTypeGroup: 'RESIDENTIAL LAND AND BUILDINGS' }),
+    rec('RM OF COLDWELL', '125208.000', '19-Jun-26', '$55,000', { saleTypeGroup: 'RESIDENTIAL BARE LAND' }),
+  ], helpers);
+  assert.equal(saleCount, 1);
+  assert.equal(duplicateRows.length, 1);
+});
+
+test('a typed row beats its UNCATEGORIZED duplicate whichever comes first', () => {
+  // The typed passes and the ANY pass overlap; the leaked copy is labelled
+  // UNCATEGORIZED and must never be the one the site shows.
+  for (const uncatFirst of [true, false]) {
+    const typed = rec('MUNICIPALITY OF BRENDA-WASKADA', '72400.000', '31-Jul-26', '$800,392', { saleTypeGroup: 'FARM BARE LAND' });
+    const uncat = rec('MUNICIPALITY OF BRENDA-WASKADA', '72400.000', '31-Jul-26', '$800,392', { saleTypeGroup: 'UNCATEGORIZED' });
+    const { salesByRoll, saleCount } = dedupeSalesByRoll(
+      uncatFirst ? [uncat, typed] : [typed, uncat], helpers);
+    assert.equal(saleCount, 1);
+    assert.equal(salesByRoll.get('72400.000')[0].saleTypeGroup, 'FARM BARE LAND');
+  }
+});
+
+test('the displaced UNCATEGORIZED copy hands over its N1 ID', () => {
+  const uncat = { ...rec('MUNICIPALITY OF BRENDA-WASKADA', '72400.000', '31-Jul-26', '$800,392', { saleTypeGroup: 'UNCATEGORIZED' }), n1Id: '31337' };
+  const typed = rec('MUNICIPALITY OF BRENDA-WASKADA', '72400.000', '31-Jul-26', '$800,392', { saleTypeGroup: 'FARM BARE LAND' });
+  const { salesByRoll } = dedupeSalesByRoll([uncat, typed], helpers);
+  const kept = salesByRoll.get('72400.000')[0];
+  assert.equal(kept.saleTypeGroup, 'FARM BARE LAND');
+  assert.equal(kept.n1Id, '31337');
+});
+
+test('two UNCATEGORIZED copies with no typed row still collapse to one', () => {
+  const { saleCount, salesByRoll } = dedupeSalesByRoll([
+    rec('MUNICIPALITY OF BRENDA-WASKADA', '91000.000', '31-Jul-26', '$1,000', { saleTypeGroup: 'UNCATEGORIZED' }),
+    rec('MUNICIPALITY OF BRENDA-WASKADA', '91000.000', '31-Jul-26', '$1,000', { saleTypeGroup: 'UNCATEGORIZED' }),
+  ], helpers);
+  assert.equal(saleCount, 1);
+  assert.equal(salesByRoll.get('91000.000')[0].saleTypeGroup, 'UNCATEGORIZED');
+});
+
+test('a blank Sale Type Group is not treated as UNCATEGORIZED', () => {
+  // Shards predating the column carry no label; the first copy still wins,
+  // so the tie-break cannot reorder rows an older export produced.
+  const first = rec('RM OF PINEY', '18000.000', '08-May-25', '$185,000');
+  const second = rec('RM OF PINEY', '18000.000', '08-May-25', '$185,000', { saleTypeGroup: 'RESIDENTIAL BARE LAND' });
+  const { salesByRoll, saleCount } = dedupeSalesByRoll([first, second], helpers);
+  assert.equal(saleCount, 1);
+  assert.equal(salesByRoll.get('18000.000')[0].saleTypeGroup, undefined);
+});
+
+test('the twin ordering survives the newest-first sort with other sales', () => {
+  const { salesByRoll } = dedupeSalesByRoll([
+    rec('RM OF ROSSER', '8600.000', '02-Feb-24', '$500,000'),
+    rec('RM OF ROSSER', '8600.000', '10-Jan-23', '$190,000'),
+    rec('RM OF ROSSER', '8600.000', '10-Jan-23', '$400,000'),
+  ], helpers);
+  assert.deepEqual(
+    salesByRoll.get('8600.000').map((r) => r.consideration),
+    ['$500,000', '$190,000', '$400,000'],   // same-day pair keeps CSV order
+  );
+});
+
 test('roll forms 3600 / 3600.0 / 3600.000 are one parcel', () => {
   const { salesByRoll, saleCount } = dedupeSalesByRoll([
     rec('RM OF PINEY', '3600', '08-May-25', '$185,000'),
