@@ -116,11 +116,6 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
     return info;
   }
 
-  // South to north, the order an appraiser reading the province expects.
-  // Anything the manifest reports that isn't listed here sorts to the end
-  // under its own name rather than vanishing.
-  const REGION_ORDER = ['Winnipeg', 'Southeast', 'South-Central / Central Plains',
-                        'West & Parkland', 'Interlake', 'North'];
   const UNGROUPED = 'Other';
 
   // Two sets, not one. `picked` is what the user actually chose; the adjacent
@@ -308,9 +303,12 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
       if (!byRegion.has(m.region)) byRegion.set(m.region, []);
       byRegion.get(m.region).push(m);
     }
+    // Alphabetical (Jason, 2026-08-19). "Other" is a catch-all rather than a
+    // place, so it still sorts to the end instead of landing between named
+    // regions.
     const order = [...byRegion.keys()].sort((a, b) => {
-      const ia = REGION_ORDER.indexOf(a), ib = REGION_ORDER.indexOf(b);
-      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
+      const oa = a === UNGROUPED ? 1 : 0, ob = b === UNGROUPED ? 1 : 0;
+      return oa - ob || a.localeCompare(b);
     });
 
     $munis.textContent = '';
