@@ -24,7 +24,9 @@ import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import { landCoverBreakdown, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
 import { overlayGroupExpanded } from './lib/overlayToggle.js';
 import { formatRollSizeField } from './lib/acres.js';
-import { saleSizeState, saleAcres, saleFrontageFeet, sizeSourceLabel } from './lib/saleSize.js';
+import {
+  saleSizeState, saleAcres, saleFrontageFeet, sizeSourceLabel, shapeDerivedNote,
+} from './lib/saleSize.js';
 import {
   addShapeLayers,
   initShapeDraw,
@@ -4359,6 +4361,24 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
   if (landCoverTable) rightSections.push(`<strong>Land cover</strong>${landCoverTable}`);
   if (mascBox)        rightSections.push(`<strong>MASC rating</strong>${mascBox}`);
   if (soilTable)      rightSections.push(`<strong>Soil composition</strong>${soilTable}`);
+  // Everything in this column is sampled against the parcel's CURRENT polygon.
+  // When that boundary has been withheld because the parcel was reconfigured
+  // after the sale (lib/withheldGeometry.js), these describe a different piece
+  // of land than the one the price bought — the same error the acreage used to
+  // make, but quieter, since nothing about a soil percentage looks like a size.
+  //
+  // Named rather than removed: there is no at-sale soil survey to substitute,
+  // and the figures stay true of the land that is there now. One heading
+  // covers all three sections, which is why it goes here and not into each.
+  const shapeNote = shapeDerivedNote(p);
+  if (shapeNote && rightSections.length) {
+    rightSections.unshift(
+      `<div style="color:#b45309;font-size:11px;line-height:1.35;margin-bottom:6px">`
+      + `<strong>\u26a0 Below describes the ${escapeHtml(shapeNote)}</strong>`
+      + `<br>Not the parcel as it sold. Read as current conditions, not as evidence about the sale.`
+      + `</div>`,
+    );
+  }
 
   if (rightSections.length) {
     return `<div class="parcel-popup parcel-popup-2col">

@@ -231,6 +231,7 @@ import {
 import { resolveParcelAcres, formatRollSizeField, parseRollFrontageFeet } from './lib/acres.js';
 import {
   saleSizeStamp, saleSizeState, saleAcres, sizeSourceLabel, showsCurrentRollSize,
+  shapeDerivedNote,
 } from './lib/saleSize.js';
 import { computeSizeChanges } from './lib/sizeChange.js';
 import { indexHistoricalGeometry, applyHistoricalGeometry } from './lib/historicalHighlight.js';
@@ -12157,6 +12158,12 @@ function exportCsv(explicitRows) {
           // is No when a member had no usable geometry, meaning the km
           // figure understates the true spread.
           'Sale Spread (km)', 'Munis in Sale', 'Spread Complete',
+          // What the shape-derived columns (Soil, CLI, Slope, Land Cover,
+          // Cult %, MASC, Water) actually describe on this row. Blank when the
+          // parcel is the one that sold; otherwise it names the parcel they
+          // were sampled from, so a figure lifted into a report carries its
+          // referent with it. See lib/saleSize.js shapeDerivedNote().
+          'Shape-Derived Basis',
           'Dist (km)', 'Asmt Land', 'Asmt Buildings', 'Asmt Bldg %', 'Asmt Year', 'Asmt Class', 'Asmt Status',
         ]
       : []),
@@ -12277,6 +12284,7 @@ function exportCsv(explicitRows) {
             Number.isFinite(p._saleGroupSpanKm) ? p._saleGroupSpanKm.toFixed(1) : '',
             p._saleGroupMuniCount ?? '',
             p._saleGroupSpanKm == null ? '' : (p._saleGroupSpanIncomplete ? 'No' : 'Yes'),
+            shapeDerivedNote(p),
             Number.isFinite(p._distanceKm) ? p._distanceKm.toFixed(2) : '',
             Number.isFinite(p._asmtLand) ? Math.round(p._asmtLand) : '',
             Number.isFinite(p._asmtBuildings) ? Math.round(p._asmtBuildings) : '',

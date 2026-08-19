@@ -253,3 +253,30 @@ export function showsCurrentRollSize(props) {
   // the worse error of the two.
   return props?._saleSizeBasis !== 'at_sale_pdf';
 }
+
+/**
+ * Why this row's shape-derived values describe something other than what sold,
+ * or '' when they don't.
+ *
+ * Soil composition, land cover, cultivated share, slope, CLI class and the
+ * MASC rating are all computed by intersecting overlay layers with the
+ * parcel's CURRENT polygon. On a parcel reconfigured after its sale that
+ * polygon is a different piece of land — so those figures are wrong for the
+ * comp in exactly the way the acreage was, just more quietly, because nothing
+ * about a soil percentage looks like a size.
+ *
+ * They are NOT suppressed. Unlike the size, there is no at-sale substitute to
+ * fall back to — no historical soil sampling of the old boundary exists — and
+ * the figures remain true of the land that is there now, which is worth
+ * knowing. What they need is their referent named, so the number is read as a
+ * fact about today's parcel rather than about the transaction.
+ *
+ * Silent unless the boundary was actually withheld: on a confirmed or
+ * provisional row the polygon IS (or plausibly is) what sold, and on a pasted
+ * comp set no claim is being made either way.
+ */
+export function shapeDerivedNote(props) {
+  return props?._geomTrust === 'withheld'
+    ? 'current parcel — reconfigured since the sale'
+    : '';
+}

@@ -18,6 +18,7 @@ import {
   saleSizeState,
   sizeSourceLabel,
   showsCurrentRollSize,
+  shapeDerivedNote,
 } from '../src/lib/saleSize.js';
 
 const results = [];
@@ -266,6 +267,26 @@ test('sizeBasis rides through the stamp', () => {
   assert.equal(st._saleSizeBasis, 'at_sale_pdf');
   // absent column → null, not undefined-shaped noise
   assert.equal(saleSizeStamp({ parcelSize: '160', parcelSizeUnit: 'ACRES' })._saleSizeBasis, null);
+});
+
+console.log('\nsaleSize.js — shapeDerivedNote');
+
+test('a withheld boundary names what the shape-derived figures describe', () => {
+  // Soil, land cover, cult %, slope and MASC are all sampled against the
+  // current polygon. On a reconfigured parcel they are wrong for the comp in
+  // the same way the acreage was — just quieter.
+  assert.match(shapeDerivedNote({ _geomTrust: 'withheld' }), /current parcel/);
+});
+
+test('a boundary that is (or plausibly is) what sold says nothing', () => {
+  assert.equal(shapeDerivedNote({ _geomTrust: 'confirmed' }), '');
+  assert.equal(shapeDerivedNote({ _geomTrust: 'provisional' }), '');
+});
+
+test('a pasted comp set makes no claim either way', () => {
+  assert.equal(shapeDerivedNote({ _geomTrust: 'unknown' }), '');
+  assert.equal(shapeDerivedNote({}), '');
+  assert.equal(shapeDerivedNote(null), '');
 });
 
 const passed = results.reduce((a, b) => a + b, 0);
