@@ -232,6 +232,7 @@ import { resolveParcelAcres, formatRollSizeField, parseRollFrontageFeet } from '
 import { saleSizeStamp, saleSizeState, saleAcres } from './lib/saleSize.js';
 import { computeSizeChanges } from './lib/sizeChange.js';
 import { indexHistoricalGeometry, applyHistoricalGeometry } from './lib/historicalHighlight.js';
+import { withholdChangedGeometry, withheldNote } from './lib/withheldGeometry.js';
 import { clearAllCache as clearAllCacheModule } from './cache.js';
 import { getManifest, getManifestSync } from './manifest.js';
 import { buildProvenance, provenanceCsvLines, provenanceText } from './lib/provenance.js';
@@ -899,6 +900,10 @@ let lastResultFc = EMPTY_FC;
 // active as-of date: {swapped, missing, missingRolls}, or null when no
 // Historical snapshot is in force. Read by the search's status line.
 let lastAsOfHighlight = null;
+// Result of the most recent boundary-withholding pass, for the status line —
+// same role lastAsOfHighlight plays for the as-of swap. See
+// lib/withheldGeometry.js.
+let lastWithheldGeometry = null;
 // CSV-upload mode state. csvFullRows holds the full enriched row set
 // from the last sales-CSV upload (with zoning / dev-plan / risk-area
 // data joined in), so changing the Other Searches filters after upload
@@ -3885,6 +3890,11 @@ async function runSearch() {
     // Every later status line is built from baseMsg, so folding the as-of note
     // in here carries it through enrichment, water and soil stages alike.
     baseMsg += asOfHighlightNote(lastAsOfHighlight, $historicalYear?.value);
+    // …and how many parcels were reduced to a pin because they changed after
+    // the sale. Folded in at the same point and for the same reason: every
+    // later status line is rebuilt from baseMsg.
+    const withheldMsg = withheldNote(lastWithheldGeometry);
+    if (withheldMsg) baseMsg += ` ${withheldMsg}.`;
 
     // The muni-wide parcel fabric (Assessment Parcels) is a manual
     // toggle only — it used to auto-show here on every muni-scoped
@@ -4428,8 +4438,14 @@ async function handleSalesUpload(file) {
     const truncNote = truncatedMunis.length > 0
       ? ` · ⚠ roll lookup incomplete for ${truncatedMunis.join(', ')} — sales are MISSING, not absent`
       : '';
+    // Parcels reduced to a pin because they changed after their sale. This is
+    // the path where that actually happens (setMapData above has already run,
+    // so the count is in hand), and it needs saying out loud: a pin among
+    // polygons otherwise reads as a rendering glitch rather than a finding.
+    const withheldMsg = withheldNote(lastWithheldGeometry);
+    const withheldNoteText = withheldMsg ? ` · ${withheldMsg}` : '';
     const baseMsg = `${totalMatched} of ${totalSales} sales plotted${parcelNote}`
-                  + `${dupeNote}${unmatchedNote}${truncNote}`;
+                  + `${dupeNote}${unmatchedNote}${truncNote}${withheldNoteText}`;
     renderUnmatchedPanel(unmatchedRecords);
 
     // Auto-set the muni dropdown to a "dominant" muni — the one with
@@ -6571,10 +6587,18 @@ function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
   // THEN, not now — see asOfHighlight(). Applied here so both pushes a search
   // makes (the immediate one and the post-enrichment repush) get it.
   const asOf = asOfHighlight(mapFc);
-  const highlightFc = asOf ? asOf.fc : mapFc;
+  const asOfFc = asOf ? asOf.fc : mapFc;
+  // Then withhold the boundary of any parcel this sale's own evidence says
+  // changed after it sold — today's polygon there is a different piece of
+  // land, so it becomes a pin instead. Runs AFTER the as-of swap on purpose:
+  // a real historical boundary beats a pin, so a feature that pass redrew is
+  // left alone (see shouldWithhold()).
+  const withheld = withholdChangedGeometry(asOfFc, { centroid: parcelCentrePoint });
+  const highlightFc = withheld.withheld ? withheld.fc : asOfFc;
   // Stashed for the search's status line, which is composed before this push
   // reports back. Null whenever no as-of date is in force.
   lastAsOfHighlight = asOf;
+  lastWithheldGeometry = withheld;
   mapReady.then(() => {
     showResults(map, highlightFc, opts);
     setZoningData(map, zoningFc);
@@ -7502,9 +7526,16 @@ function refreshAsOfHighlight() {
   if (!(fc?.features?.length)) return null;
   const asOf = asOfHighlight(fc);
   lastAsOfHighlight = asOf;   // keep in step with what setMapData would have stashed
+  // Re-apply the boundary withholding on the same terms setMapData uses.
+  // Without this, turning the as-of date off would hand every changed parcel
+  // its current polygon back — the one thing the withholding exists to stop.
+  const asOfFc = asOf ? asOf.fc : fc;
+  const withheld = withholdChangedGeometry(asOfFc, { centroid: parcelCentrePoint });
+  lastWithheldGeometry = withheld;
+  const pushFc = withheld.withheld ? withheld.fc : asOfFc;
   mapReady.then(() => {
-    showResults(map, asOf ? asOf.fc : fc, { fit: !!asOf?.swapped });
-    setParcelNumberData(map, (asOf ? asOf.fc : fc).features || []);
+    showResults(map, pushFc, { fit: !!asOf?.swapped });
+    setParcelNumberData(map, pushFc.features || []);
   });
   return asOf;
 }

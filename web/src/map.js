@@ -503,6 +503,19 @@ const MEASURE_DRAW_STYLES = [
  * suppress it and put it back byte-for-byte. Starred favourites 0.6, a
  * sale-group hover 0.5, otherwise 0.3.
  */
+// The layers a search-result parcel can be hit on. Two, not one: a parcel whose
+// boundary was withheld (lib/withheldGeometry.js) renders as a Point on
+// 'parcel-pin' and would be invisible to a fill-only hit test — hover, click,
+// the sibling-group highlight and the defer-to-parcel checks would all skip
+// exactly the comps that most need explaining.
+const PARCEL_HIT_LAYERS = ['parcel-fill', 'parcel-pin'];
+
+/** PARCEL_HIT_LAYERS filtered to those actually added to this map. */
+const parcelHitLayers = (map) => PARCEL_HIT_LAYERS.filter((id) => map.getLayer(id));
+
+/** Is this queryRenderedFeatures hit a search-result parcel, pin or polygon? */
+const isParcelHit = (h) => PARCEL_HIT_LAYERS.includes(h?.layer?.id);
+
 const PARCEL_FILL_OPACITY = [
   'case',
   ['boolean', ['feature-state', 'starred'], false],
@@ -1914,6 +1927,44 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // stamp (below the threshold or no land-cover data) draw nothing. Hidden until
       // the Land Cover overlay is turned on. Inserted before parcel-line
       // so the yellow selection outline still reads on top of the colour.
+      // Pin for a parcel whose boundary has been withheld — the sale evidence
+      // says it changed afterwards, so lib/withheldGeometry.js replaced its
+      // polygon with a centroid rather than draw land that didn't sell. The
+      // geometry-type filter is what selects them: nothing else in this source
+      // is a Point, and the fill/line layers above ignore Points on their own.
+      //
+      // Amber rather than the result yellow, and solid rather than dashed: it
+      // is deliberately NOT the selection idiom, because it is not a selected
+      // extent — it is a location standing in for one. White casing keeps it
+      // legible on both the pale Voyager basemap and dark satellite imagery.
+      map.addLayer({
+        id: 'parcel-pin',
+        type: 'circle',
+        source: 'parcels',
+        filter: ['==', ['geometry-type'], 'Point'],
+        paint: {
+          // Grows with zoom so the pin stays findable when zoomed out over a
+          // province-wide result set and precise when zoomed in on one sale.
+          'circle-radius': [
+            'interpolate', ['linear'], ['zoom'],
+            6, 4,
+            12, 7,
+            16, 9,
+          ],
+          'circle-color': [
+            'case',
+            ['boolean', ['feature-state', 'starred'], false],
+            '#8b0000',
+            '#b45309',
+          ],
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#ffffff',
+          // Matches the parcel outline's easing so the pin sits at the same
+          // visual weight as the highlights around it.
+          'circle-opacity': 0.9,
+          'circle-stroke-opacity': 0.9,
+        },
+      });
       map.addLayer({
         id: 'landcover-fill',
         type: 'fill',
@@ -2425,7 +2476,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
           clearHover();
           return;
         }
-        const visibleLayers = ['parcel-fill'];
+        const visibleLayers = parcelHitLayers(map);
         // Subject parcel is on a separate source/layer — include its
         // fill in the hit-test so hovering the subject also pops a
         // tooltip (with the "Subject parcel" header via _isSubject).
@@ -2449,7 +2500,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
         // single-parcel sales get their one parcel highlighted, multi-
         // parcel sales get every sibling lit at once. Non-sales searches
         // skip this (no _saleGroupRollIds stamped).
-        const parcelHit = hits.find((h) => h.layer.id === 'parcel-fill');
+        const parcelHit = hits.find(isParcelHit);
         const oids = readSaleGroupOids(parcelHit?.properties);
         // Always-on diagnostic snapshot — readable as window.__lastHover
         // from the devtools console without flipping a flag. Lets the
@@ -2481,7 +2532,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
         if (subject) {
           blocks.push(`<div><strong style="color:#1e6fd9">Subject</strong><br>${parcelHtml(subject.properties)}</div>`);
         }
-        const parcel = hits.find((h) => h.layer.id === 'parcel-fill');
+        const parcel = hits.find(isParcelHit);
         if (parcel && !subject) blocks.push(`<div><strong style="color:#7a5c00">Parcel</strong><br>${parcelHtml(parcel.properties)}</div>`);
         const zone = hits.find((h) => h.layer.id === 'zoning-fill');
         if (zone) blocks.push(`<div><strong style="color:#1a2a4a">Zoning</strong><br>${zoningHtml(zone.properties)}</div>`);
@@ -2540,7 +2591,11 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // focusAfterOpen:false also prevents MapLibre from changing the page's
       // scroll position while it focuses the newly opened popup.
       const parcelClickPopup = new maplibregl.Popup({ closeButton: true, focusAfterOpen: false, maxWidth: '760px' });
-      map.on('click', 'parcel-fill', (e) => {
+      // Registered per layer rather than once: MapLibre 4's layer-scoped
+      // Map#on takes a single layer id, and a withheld-boundary parcel is a
+      // Point on 'parcel-pin' — without the second registration, clicking a
+      // pin would do nothing at all.
+      const onParcelClick = (e) => {
         // Shape tools own the click while armed (placing geometry) or
         // when a committed shape sits under the cursor (mode toggle) —
         // either way the parcel popup stands down.
@@ -2562,11 +2617,15 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
         // properties from the symbol/fill layer hit; for the geometry
         // we need the rendered feature. Fall back to the click point
         // when no polygon geometry is available.
-        const rendered = map.queryRenderedFeatures(e.point, { layers: ['parcel-fill'] })[0];
+        const rendered = map.queryRenderedFeatures(e.point, { layers: parcelHitLayers(map) })[0];
+        // polygonBboxMidpoint returns null for a Point, so a withheld parcel
+        // falls through to the click point — which IS its centroid, since the
+        // pin is drawn there. Same answer, no special case.
         const center = polygonBboxMidpoint(rendered?.geometry)
           ?? [e.lngLat.lng, e.lngLat.lat];
         wireCoordsCopy(parcelClickPopup, center);
-      });
+      };
+      for (const layerId of PARCEL_HIT_LAYERS) map.on('click', layerId, onParcelClick);
 
       // Muni-parcels hover popup. The muni-parcels source carries a richer
       // property set than the parcel hover (Roll #, Address, DU, area,
@@ -2592,7 +2651,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
         }
         // If a search-result parcel is also under the cursor, defer to its
         // popup (handled by the global mousemove above) and hide ours.
-        const overSearchResult = map.queryRenderedFeatures(e.point, { layers: ['parcel-fill'] }).length > 0;
+        const overSearchResult = map.queryRenderedFeatures(e.point, { layers: parcelHitLayers(map) }).length > 0;
         if (overSearchResult) { muniHoverPopup.remove(); return; }
         const p = e.features?.[0]?.properties;
         if (!p) return;
@@ -2621,7 +2680,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
         if (map.getLayoutProperty('muni-parcels-fill', 'visibility') !== 'visible') return;
         // Defer to the search-result click handler when both layers
         // overlap — keeps the table-scroll behaviour intact.
-        const overSearchResult = map.queryRenderedFeatures(e.point, { layers: ['parcel-fill'] }).length > 0;
+        const overSearchResult = map.queryRenderedFeatures(e.point, { layers: parcelHitLayers(map) }).length > 0;
         if (overSearchResult) return;
         const p = e.features?.[0]?.properties;
         if (!p) return;
@@ -2681,7 +2740,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // / muni-parcels-fill / subject-fill the same way the hover
       // path does.
       function shouldDeferToParcelLayer(point) {
-        if (map.queryRenderedFeatures(point, { layers: ['parcel-fill'] }).length > 0) return true;
+        if (map.queryRenderedFeatures(point, { layers: parcelHitLayers(map) }).length > 0) return true;
         if (map.getLayer('subject-fill') &&
             map.queryRenderedFeatures(point, { layers: ['subject-fill'] }).length > 0) return true;
         if (map.getLayer('muni-parcels-fill') &&
@@ -4023,6 +4082,28 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
       + '<br><small style="color:#888">Details below are current. Display geometry simplified —'
       + ' verify boundary/area against the archived source-of-record.</small>',
     );
+  }
+  // What the boundary on screen is worth, for this sale. Sits directly under
+  // the identity block and above the sale figures, because it qualifies both:
+  // a withheld boundary also means the size and every rate derived from it
+  // came from somewhere other than this polygon.
+  //
+  // Silent on 'unknown' (a pasted comp set makes no claim either way) so the
+  // regular-search popup is unchanged.
+  if (p._geomTrust === 'withheld') {
+    lines.push('<strong style="color:#b45309">\u26a0 Boundary withheld</strong>'
+      + '<br><small style="color:#888">This parcel changed after the sale, so its current'
+      + ' outline is not what sold. Shown as a pin at the parcel centre \u2014 the location'
+      + ' is right, the extent is not available. Confirm against the registered plan'
+      + ' or the LIST OF PROPERTY SALES report.</small>');
+  } else if (p._geomTrust === 'provisional') {
+    lines.push('<small style="color:#888"><strong>Boundary not confirmed</strong> \u2014 the legal'
+      + ' description still matches, but no at-sale size existed to check it against.'
+      + ' A matching legal misses roughly 43% of size changes, so treat the outline'
+      + ' as likely rather than verified.</small>');
+  } else if (p._geomTrust === 'confirmed') {
+    lines.push('<small style="color:#888"><strong>Boundary verified</strong> \u2014 the parcel'
+      + ' measures the same today as it did at the sale.</small>');
   }
   // Sale Date / Sale Price / Primary Property — populated only when
   // this parcel was surfaced via a sales-CSV upload
