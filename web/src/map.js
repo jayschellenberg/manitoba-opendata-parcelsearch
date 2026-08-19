@@ -42,6 +42,10 @@ import {
 } from './masc.js';
 import { SOIL_SURVEY_MAP_SOURCE_OPTIONS } from './soilSurvey.js';
 import { safeExternalUrl } from './lib/safeUrl.js';
+
+// Report Writer's parcel-edit route. The N1 ID is appended verbatim, so only
+// all-digit ids are ever put through it (see the N1 block in parcelHtml).
+const N1_EDIT_URL_BASE = 'https://reportwriter.lightboxre.com/Parcel/Edit/General/';
 import { createMuniPicker } from './lib/muniPicker.js';
 import { PlaceSearchControl, muniLabel } from './lib/placeSearch.js';
 import {
@@ -2565,6 +2569,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
         const center = polygonBboxMidpoint(rendered?.geometry)
           ?? [e.lngLat.lng, e.lngLat.lat];
         wireCoordsCopy(parcelClickPopup, center);
+        wireN1Copy(parcelClickPopup);
       });
 
       // Muni-parcels hover popup. The muni-parcels source carries a richer
@@ -3600,14 +3605,16 @@ function polygonBboxMidpoint(geometry) {
  * the anchor from there scopes the listener to THIS popup instance
  * (multiple popups stacked from different layers each get their own).
  */
-function wireCoordsCopy(popup, lngLat) {
-  if (!popup || !Array.isArray(lngLat)) return;
-  const el = popup.getElement?.();
-  const anchor = el?.querySelector('.parcel-coords-copy');
-  if (!anchor) return;
-  const [lng, lat] = lngLat;
-  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
-  const text = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+/**
+ * Turn a popup anchor into a copy-to-clipboard button.
+ *
+ * Shared by the GPS Coordinates and N1 ID links so the clipboard fallback
+ * below is written once. Anchors rendered into a HOVER popup are never wired
+ * — that popup is gone by the time the pointer reaches the link — so the
+ * markup appears in both and only the sticky click popup acts on it.
+ */
+function wireCopyAnchor(anchor, text) {
+  if (!anchor || !text) return;
   anchor.addEventListener('click', (ev) => {
     ev.preventDefault();
     const onSuccess = () => {
@@ -3635,6 +3642,27 @@ function wireCoordsCopy(popup, lngLat) {
       } catch { onFailure(); }
     }
   });
+}
+
+function wireCoordsCopy(popup, lngLat) {
+  if (!popup || !Array.isArray(lngLat)) return;
+  const [lng, lat] = lngLat;
+  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+  wireCopyAnchor(
+    popup.getElement?.()?.querySelector('.parcel-coords-copy'),
+    `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
+  );
+}
+
+/**
+ * Wire the N1 ID copy link(s) in a click popup. The value comes off the
+ * anchor's own data-n1 rather than being threaded through the call site,
+ * because the popup HTML is the only thing that knows which sale it drew.
+ */
+function wireN1Copy(popup) {
+  for (const anchor of popup?.getElement?.()?.querySelectorAll('.parcel-n1-copy') || []) {
+    wireCopyAnchor(anchor, anchor.dataset.n1 || '');
+  }
 }
 
 /** Wire the click-popup action that reveals this parcel's results-table row. */
@@ -4054,7 +4082,38 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
   // grid's N1 ID column and its Unmatched filter already work that queue.
   // Present, it means "this comp is already in N1" — worth knowing before
   // spending time on it.
-  if (p._n1Id) lines.push(`<strong>N1 ID</strong> ${escapeHtml(p._n1Id)}`);
+  //
+  // Two affordances, because there are two things you do with an ID you just
+  // found: paste it somewhere, or go edit the record. The ID itself copies to
+  // the clipboard (wired by wireN1Copy on the CLICK popup only — the hover
+  // popup dies on mouseout, so its link is inert, exactly as the GPS
+  // Coordinates link already is), and an edit link opens the Report Writer
+  // record.
+  //
+  // A cell can hold MORE than one ID: the crosswalk records "19035; 19036"
+  // where one sale matched two N1 records. Copy takes the cell verbatim —
+  // that is what you meant to paste — while each id gets its own edit link,
+  // since a URL can only address one record. Non-numeric fragments are
+  // dropped from the links rather than guessed at, so a malformed cell
+  // degrades to a copyable string instead of a broken URL.
+  if (p._n1Id) {
+    const rawN1 = String(p._n1Id).trim();
+    const n1Ids = rawN1.split(/[;,]/).map((t) => t.trim()).filter((t) => /^\d+$/.test(t));
+    const copy = `<a href="#" class="parcel-n1-copy" role="button"`
+      + ` data-n1="${escapeHtml(rawN1)}"`
+      + ` title="Copy N1 ID ${escapeHtml(rawN1)} to the clipboard">${escapeHtml(rawN1)}</a>`;
+    const edits = n1Ids.map((id) => {
+      const url = safeExternalUrl(N1_EDIT_URL_BASE + id);
+      if (!url) return '';
+      // Name the id in the link text only when there is more than one, so the
+      // ordinary single-match case stays a short "edit" and the rare double
+      // says which record each link goes to.
+      const label = n1Ids.length > 1 ? `edit ${escapeHtml(id)} →` : 'edit →';
+      return ` · <a href="${escapeHtml(url)}" target="_blank" rel="noreferrer"`
+        + ` title="Open N1 record ${escapeHtml(id)} in Report Writer">${label}</a>`;
+    }).join('');
+    lines.push(`<strong>N1 ID</strong> ${copy}${edits}`);
+  }
   // Repeat sale — the upload holds more than one transaction for this
   // parcel, but only the most recent one's feature is drawn (the map
   // shows each parcel once). Listing the full history here keeps the
