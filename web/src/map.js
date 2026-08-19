@@ -4031,6 +4031,23 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
   // lines so the price reads cleanly when it's a long figure.
   if (p._saleDate)  lines.push(`<strong>Sold</strong> ${escapeHtml(p._saleDate)}`);
   if (p._salePrice) lines.push(`<strong>Price</strong> ${escapeHtml(p._salePrice)}`);
+  // Sale Type — MAO's own classification of the transaction, the same value
+  // the sidebar's Sale type dropdown loads against. Reads beside Sold/Price
+  // because it decides which searches this sale can appear in at all, and
+  // nothing else on the parcel reveals it: a farm bare-land sale is invisible
+  // to an ICI search and the popup gave no hint why (Macdonald roll 83500,
+  // Jason 2026-08-19).
+  //
+  // The blank case is called out rather than skipped, because "no value" and
+  // MAO's literal UNCATEGORIZED category are different answers to the same
+  // question. Blank means the SOURCE carried no Sale Type Group column — a
+  // hand-pasted MAO block is the seven-column grid — not that MAO declined to
+  // classify the sale. Only stated when there is a sale to classify.
+  if (p._saleDate || p._salePrice) {
+    lines.push(`<strong>Sale Type</strong> ${p._saleTypeGroup
+      ? escapeHtml(p._saleTypeGroup)
+      : '<span style="color:#888">not carried by this data source</span>'}`);
+  }
   // Repeat sale — the upload holds more than one transaction for this
   // parcel, but only the most recent one's feature is drawn (the map
   // shows each parcel once). Listing the full history here keeps the

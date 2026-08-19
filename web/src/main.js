@@ -434,6 +434,12 @@ const $salesStreetName = document.getElementById('sales-street-name');
 // "N1 ID" column. "Unmatched" is the working mode: it turns the site
 // into the browsable queue of sales not yet entered in N1.
 const $salesN1 = document.getElementById('sales-n1-filter');
+// Parcels-per-sale filter — 'any' | 'single' | 'multi', tested against the
+// _saleGroupSize stamped by computeSaleGroupTotals. Shares a row with the N1
+// filter. Separates assemblies (one price, several rolls) from ordinary
+// single-roll sales, which read completely differently as comps: an assembly's
+// $/Acre is spread across land the buyer took as one deal.
+const $salesGroupSize = document.getElementById('sales-groupsize-filter');
 // Sales-mode $/Acre filter — pair of bounds against the
 // _saleGroupPpa stamped by computeSaleGroupTotals. Useful for
 // flushing out development-land sales that trade at a much higher
@@ -1195,6 +1201,7 @@ const SORT_KEYS = {
   saledate:    (r) => strKey(r.parcel.properties._saleDate),
   saleprice:   (r) => finiteOrNeg(parseTotalValue(r.parcel.properties._salePrice)),
   primaryprop: (r) => strKey(r.parcel.properties._primaryProperty),
+  saletype:    (r) => strKey(r.parcel.properties._saleTypeGroup),
   groupsize:    (r) => finiteOrNeg(r.parcel.properties._saleGroupSize),
   grouppricelot:(r) => finiteOrNeg(r.parcel.properties._saleGroupPpl),
   grouppriceac: (r) => finiteOrNeg(r.parcel.properties._saleGroupPpa),
@@ -1995,6 +2002,11 @@ const salesDbPanel = initSalesDbPanel({
     from: ($saleDateFrom?.value || '').trim(),
     to:   ($saleDateTo?.value   || '').trim(),
   }),
+  // Fired once a Search is committed (after the no-date-range confirm) and
+  // before anything is read. Drops the previous result set so a search that
+  // finds nothing — or fails — can never leave the last one on screen
+  // pretending to be the answer. See clearSalesResults.
+  onSearchStart: clearSalesResults,
   onLoad: async ({ name, text }) => {
     try {
       await handleSalesUpload({ name, text });
@@ -2856,7 +2868,7 @@ for (const el of [
   $primaryPropEl,
   $distanceMax, $salesPlan,
   $salesStreetName, $salesPpaLow, $salesPpaHigh, $saleAsmtMax,
-  $salesPriceLow, $salesPriceHigh, $salesN1, $excludeNominal,
+  $salesPriceLow, $salesPriceHigh, $salesN1, $salesGroupSize, $excludeNominal,
 ].filter(Boolean)) {
   el.addEventListener('change', refilterCsvIfActive);
   el.addEventListener('input',  refilterCsvIfActive);
@@ -3563,6 +3575,7 @@ async function runSearch() {
   if ($salesPlan)     $salesPlan.value = '';
   if ($salesStreetName) $salesStreetName.value = '';
   if ($salesN1)       $salesN1.value = 'any';
+  if ($salesGroupSize) $salesGroupSize.value = 'any';
   if ($salesPpaLow)   $salesPpaLow.value = '';
   if ($salesPpaHigh)  $salesPpaHigh.value = '';
   if ($salesPriceLow)  $salesPriceLow.value = '';
@@ -5752,6 +5765,9 @@ function filterCsvRowsByOtherSearches(rows) {
   // truthiness test on the stamped _n1Id; a pasted comp set (no N1 ID
   // column at all) reads as entirely unmatched, which is the truth.
   const n1Mode = $salesN1?.value || 'any';
+  // Parcels-per-sale filter — 'any' is off. See the predicate below for why
+  // the two live options are not symmetrical.
+  const groupSizeMode = $salesGroupSize?.value || 'any';
   // Street Name substring filter — case-insensitive match against
   // Property_Address. Same semantics as Plan #: missing addresses
   // fail when the filter is active. Expanded through the civic-number
@@ -5838,6 +5854,22 @@ function filterCsvRowsByOtherSearches(rows) {
     if (n1Mode !== 'any') {
       const hasN1 = !!p._n1Id;
       if (n1Mode === 'matched' ? !hasN1 : hasN1) return false;
+    }
+
+    // Parcels-per-sale filter. Group-level by construction: _saleGroupSize is
+    // identical on every member of a sale, so a whole assembly is kept or
+    // dropped together and its $/Acre keeps describing the land the price
+    // actually bought — the same rule the size and far-flung filters follow.
+    //
+    // Deliberately NOT the usual "missing = exclude": 'multi' asserts
+    // something positive and demands proof (>1), while 'single' is its exact
+    // complement, so a row whose group size never got stamped counts as
+    // single rather than falling out of both options. Calling an unstamped
+    // row an assembly would be the wrong way to be wrong, and between them
+    // the two options always account for every sale on the table.
+    if (groupSizeMode !== 'any') {
+      const isMulti = Number(p._saleGroupSize) > 1;
+      if (groupSizeMode === 'multi' ? !isMulti : isMulti) return false;
     }
 
     // $/Acre filter — bounds against the sale-group rate. Rows
@@ -9282,6 +9314,40 @@ function clearTable() {
   setExportEnabled(false);
 }
 
+/**
+ * Drop the loaded sales result set — table, map and the filter option lists
+ * derived from it — WITHOUT touching the sales-database panel's municipality
+ * selection or any sidebar filter the user typed.
+ *
+ * Exists because a sales-database Search had no way to fail loudly. Every
+ * early exit on that path — the date/type window excluding every sale, a CSV
+ * that parsed to no usable rows, a thrown lookup — just set a status line and
+ * returned, leaving the PREVIOUS search's rows sitting on the table and the
+ * map. Switching Sale type from ICI to Residential bare land and hitting
+ * Search therefore looked like the button had done nothing, when in fact it
+ * had run and found nothing to show (Jason, 2026-08-19).
+ *
+ * Called at the start of every sales-DB search rather than only on the empty
+ * paths, so no future early return can reintroduce the same class of bug.
+ * Deliberately NOT a Clear: the selection is what the user is iterating on.
+ */
+function clearSalesResults() {
+  clearTable();
+  clearStaticMap();
+  csvFullRows = null;
+  csvFullBaseMsg = '';
+  csvMatchedMunis = null;
+  // These lists were derived from the results just dropped, so leaving them
+  // up would offer zone codes and structure types nothing can match. Same
+  // reasoning — and the same three calls — as runSearch's reset.
+  zoningFilter.setOptions([]);
+  zoneCatFilter.setOptions([]);
+  primaryPropFilter.setGroups([]);
+  resetWaterFilterBase();
+  renderUnmatchedPanel([]);
+  setMapData(EMPTY_FC, EMPTY_FC, EMPTY_FC, { fit: false });
+}
+
 // $paginator + PAGE_SIZE + currentPage all live near the top of the
 // module so renderTable / paginator helpers can read them without
 // hitting TDZ during early code paths (sales-CSV upload via the
@@ -9443,6 +9509,12 @@ function renderTable(rows, { resetPage = true } = {}) {
     const salePriceCell = td(p._salePrice || null);
     salePriceCell.classList.add('sales-only', 'num');
     tr.appendChild(salePriceCell);
+    // Sale Type Group — MAO's category for the sale. Must stay positionally
+    // in step with its th (between Sale Price and Primary Property): the
+    // visibility pass matches tds to ths by index, not by name.
+    const saleTypeCell = td(p._saleTypeGroup || null);
+    saleTypeCell.classList.add('sales-only');
+    tr.appendChild(saleTypeCell);
     // Primary Property. Positional, like every other cell here — the tds
     // carry no data-col of their own, so this must stay in step with the
     // <th> order in index.html.
@@ -11593,11 +11665,18 @@ async function applySubjectFromInput() {
     // If we have CSV rows already, restamp distances and re-render
     // so the new column shows up immediately. Outside CSV mode the
     // column isn't visible anyway, so no-op.
+    let refiltered = false;
     if (csvFullRows && csvFullRows.length > 0) {
       stampDistancesFromSubject(csvFullRows);
       refilterCsvIfActive();
+      refiltered = true;
     }
-    setCount(`Subject set to ${raw} (${muni}). Distance column populated.`);
+    // Only claim the status line when the refilter did not. Setting a subject
+    // with a Max km already typed ARMS the distance filter — that pass writes
+    // "N of M sales shown (filtered)", and overwriting it here erased the one
+    // signal that the radius had done anything, which read as the radius not
+    // working at all (Jason, 2026-08-19).
+    if (!refiltered) setCount(`Subject set to ${raw} (${muni}). Distance column populated.`);
     // Fly the map to include the subject in view. Keep zoom modest so
     // the surrounding sales stay on-screen.
     mapReady.then(() => flyToFeature(map, feat));

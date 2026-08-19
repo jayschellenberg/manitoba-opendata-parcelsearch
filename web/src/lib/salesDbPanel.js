@@ -40,7 +40,9 @@ const fmt = (n) => Number(n || 0).toLocaleString();
  * @returns {{refresh: Function, toggleMuni: Function}} toggleMuni(no, on?) lets
  *   the map drive the same selection the checkboxes do.
  */
-export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelectionChange } = {}) {
+export function initSalesDbPanel({
+  onLoad, setStatus, getDateWindow, onSelectionChange, onSearchStart,
+} = {}) {
   const $root    = document.getElementById('sales-db');
   if (!$root) return { refresh: () => {} };
 
@@ -480,6 +482,13 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
         + 'Cancel and set a date range below to speed it up.');
       if (!ok) return;
     }
+    // The search is now committed, so the previous result set stops being the
+    // answer to anything. Dropping it HERE rather than in each failure branch
+    // is what guarantees a search that finds nothing shows nothing instead of
+    // leaving the last search's rows up — the whole reason changing Sale type
+    // and hitting Search looked like a no-op. After the confirm, so cancelling
+    // genuinely changes nothing.
+    onSearchStart?.();
     try {
       const manifest = await getManifest();
       // Load only the sales inside the sidebar's date range. Everything
@@ -491,8 +500,19 @@ export function initSalesDbPanel({ onLoad, setStatus, getDateWindow, onSelection
       const { from, to } = getDateWindow?.() || {};
       const payload = await buildCsvFor(chosen, { manifest, from, to, type: $type?.value || null });
       if (!payload) {
-        say(from || to
-          ? 'No sales in that date range for the selection. Widen the date range and search again.'
+        // The table was emptied by onSearchStart, so this state IS what the
+        // controls now describe. Recording it stops the staleness banner
+        // still reading "hit Search to refresh" immediately after a Search —
+        // which, on top of the stale rows, was the second half of why the
+        // button looked broken.
+        loadedState = stateKey();
+        updateStaleness();
+        const scope = [
+          $type?.value ? `sale type "${$type.options[$type.selectedIndex]?.text || $type.value}"` : '',
+          (from || to) ? 'that date range' : '',
+        ].filter(Boolean).join(' in ');
+        say(scope
+          ? `No sales match ${scope} for the selection. Widen the date range or choose a different sale type, then search again.`
           : 'No sales found for that selection.');
         return;
       }

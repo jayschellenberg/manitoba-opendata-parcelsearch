@@ -780,17 +780,33 @@
                 <span class="tip">Filter by broad Zoning Type — Commercial, Industrial, Residential, Open Space and so on — the province's ZONE_CATEGORY rollup shown in the Zoning Type column. Unlike the zone-code filter above, this compares across municipalities, so it's the one to reach for on a multi-muni sales set. Matches a parcel's DOMINANT zone (the one covering most of it), which is exactly what the Zoning Type column shows — so the ticked types and the column always agree. A parcel that is mostly industrial with a commercial corner counts as Industrial. The list holds only the types your current results contain, and every entry in it returns at least one sale. Source spelling variants and typos are folded together, and sales whose zoning hasn't been joined appear under "(no category)".</span>
               </span>
             </div>
-            <!-- N1 crosswalk filter. Reuses the sale-price row's layout
-                 classes — prefix + field — so it needs no CSS of its own. -->
+            <!-- Parcels-per-sale + N1 crosswalk, sharing one row at half
+                 width each. Both are single-select questions about the SHAPE
+                 of a sale rather than its numbers, and neither needs a row of
+                 its own. Reuses the sale-price row's layout classes — prefix
+                 + field — plus .sale-price-half to split it. -->
             <div class="sale-price-row">
-              <span class="sale-price-prefix">N1:</span>
-              <span class="field">
-                <select id="sales-n1-filter" aria-label="N1 match filter"
-                        title="Filter by N1 crosswalk status. Matched = sale carries an N1 ID; Unmatched = no N1 record linked yet — the data-entry queue. Pasted comp sets have no N1 column and read as entirely unmatched.">
-                  <option value="any" selected>Any</option>
-                  <option value="matched">Matched</option>
-                  <option value="unmatched">Unmatched</option>
-                </select>
+              <span class="sale-price-half">
+                <span class="sale-price-prefix">Parcels:</span>
+                <span class="field">
+                  <select id="sales-groupsize-filter" aria-label="Parcels per sale filter"
+                          title="Filter by how many parcels the sale transferred. Multi-parcel only keeps assemblies — sales where one price bought several rolls, which is what the Group # column counts and what every $/Acre on this tab is computed across. Single parcel only keeps the rest. A whole sale is kept or dropped together, never part of one, so the group rates keep describing the land actually bought.">
+                    <option value="any" selected>All sales</option>
+                    <option value="single">Single parcel</option>
+                    <option value="multi">Multi-parcel</option>
+                  </select>
+                </span>
+              </span>
+              <span class="sale-price-half">
+                <span class="sale-price-prefix">N1:</span>
+                <span class="field">
+                  <select id="sales-n1-filter" aria-label="N1 match filter"
+                          title="Filter by N1 crosswalk status. Matched = sale carries an N1 ID; Unmatched = no N1 record linked yet — the data-entry queue. Pasted comp sets have no N1 column and read as entirely unmatched.">
+                    <option value="any" selected>Any</option>
+                    <option value="matched">Matched</option>
+                    <option value="unmatched">Unmatched</option>
+                  </select>
+                </span>
               </span>
             </div>
             <!-- Vacant-land threshold. Single input + a %/$ pill
@@ -865,17 +881,22 @@
                 <span class="tip">Municipality the subject roll # is fetched from. Lists every municipality in the current import, defaulting to the one with the most matched parcels.</span>
               </span>
             </div>
+            <!-- Roll # and radius sit together because they are one thought —
+                 "how far from THIS parcel" — and the buttons that commit it
+                 follow both rather than splitting the pair. One tip for the
+                 row, on the radius field: two icons a few pixels apart said
+                 half the story each, and the half about the subject roll was
+                 the half you needed to read the radius (Jason, 2026-08-19). -->
             <div class="subject-row sales-only">
               <span class="field subject-roll-field">
                 <input id="subject-roll" type="text" placeholder="Subject roll #" autocomplete="off" />
-                <span class="tip">Roll number of the subject property, fetched from the municipality selected above.</span>
+              </span>
+              <span class="field distance-max-field">
+                <input id="distance-max" type="number" min="0" step="0.1" placeholder="Max km" />
+                <span class="tip">Sets the subject property and filters the sales around it. Subject roll # is the roll of the subject, fetched from the municipality selected above; Max km then keeps only sales within that many kilometres of the subject's centroid. Hit Set to apply — the radius does nothing until a subject is set — and × to clear the subject and its distance column.</span>
               </span>
               <button id="subject-apply" type="button" class="secondary subject-apply-btn">Set</button>
               <button id="subject-clear" type="button" class="secondary subject-clear-btn" title="Clear the subject parcel">×</button>
-              <span class="field distance-max-field">
-                <input id="distance-max" type="number" min="0" step="0.1" placeholder="Max km" />
-                <span class="tip">Filter to sales within this many kilometres of the subject's centroid. Inactive when no subject is set.</span>
-              </span>
             </div>
           </details>
           <!-- Clear stays OUTSIDE the collapsible: it resets the whole
@@ -1435,6 +1456,14 @@
                  #results based on whether any current row has _saleDate). -->
             <th data-col="saledate"  class="sales-only" title="Sale Date (from uploaded CSV)">Sale Date</th>
             <th data-col="saleprice" class="sales-only" title="Sale Price / Consideration (from uploaded CSV)">Sale Price</th>
+            <!-- MAO's own classification of the TRANSACTION — the same value
+                 the sidebar's Sale type dropdown loads against, and the top
+                 layer of the Primary Property filter. Sits between Sale Price
+                 and Primary Property because that is the nesting: this names
+                 the family, Primary Property names the structure inside it.
+                 Added 2026-08-19 — without it, a sale missing from a filtered
+                 search gave no clue which category it actually belongs to. -->
+            <th data-col="saletype" class="sales-only" title="Sale Type Group — MAO's classification of the sale itself (Residential / ICI / Farm, each split into Land &amp; Buildings vs Bare Land, plus condo variants and Uncategorized). This is what the sidebar's Sale type dropdown filters on at load time, so it explains why a sale does or does not appear in a narrowed search. Blank means the data source carried no Sale Type Group column — a hand-pasted MAO block is the seven-column grid — which is NOT the same as MAO's own UNCATEGORIZED category, and that value shows as itself. Carries the EFFECTIVE category, so residential condos already read out of ICI. Note it can disagree with Primary Property: a sale classed LAND AND BUILDINGS with no structure descriptor is worth a second look.">Sale Type</th>
             <!-- MAO's primary-structure descriptor, and the column the
                  Primary Property filter ticks against. Off by default (it
                  is long free text), but a filtered row has to be able to
