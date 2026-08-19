@@ -16,6 +16,8 @@ import {
   saleAcres,
   saleFrontageFeet,
   saleSizeState,
+  sizeSourceLabel,
+  showsCurrentRollSize,
 } from '../src/lib/saleSize.js';
 
 const results = [];
@@ -193,6 +195,77 @@ test('three states, one per source situation', () => {
   assert.equal(saleSizeState({ _saleSizeKnown: true, _acresAtSale: 160 }), 'resolved');
   assert.equal(saleSizeState({ _saleSizeKnown: true, _frontageAtSaleFt: 110 }), 'resolved');
   assert.equal(saleSizeState({ _saleSizeKnown: true, _acresAtSale: null }), 'withheld');
+});
+
+console.log('\nsaleSize.js — sizeSourceLabel');
+
+test('names the property-sales report and the verified-current case apart', () => {
+  // The distinction the Size Source column exists for: both may read "160
+  // acres", but only one of them is what sold.
+  assert.equal(
+    sizeSourceLabel({ _saleSizeKnown: true, _acresAtSale: 160, _saleSizeBasis: 'at_sale_pdf' }),
+    'at sale (property-sales report)');
+  assert.equal(
+    sizeSourceLabel({ _saleSizeKnown: true, _acresAtSale: 160, _saleSizeBasis: 'current_unchanged' }),
+    'current, verified unchanged since sale');
+});
+
+test('names both withheld cases', () => {
+  assert.match(
+    sizeSourceLabel({ _saleSizeKnown: true, _acresAtSale: null, _saleSizeBasis: 'unknown_changed' }),
+    /^withheld \(parcel changed/);
+  assert.match(
+    sizeSourceLabel({ _saleSizeKnown: true, _acresAtSale: null, _saleSizeBasis: 'no_current_record' }),
+    /^withheld \(no current parcel record/);
+});
+
+test('an older shard without the column falls back to the vaguer wording', () => {
+  assert.equal(
+    sizeSourceLabel({ _saleSizeKnown: true, _acresAtSale: 160 }),
+    'sale-resolved (MAO sales export)');
+  assert.match(
+    sizeSourceLabel({ _saleSizeKnown: true, _acresAtSale: null }),
+    /^withheld/);
+});
+
+test('a regular search or pasted comp set has nothing to attribute', () => {
+  assert.equal(sizeSourceLabel({ _acres: 40 }), '');
+  assert.equal(sizeSourceLabel({}), '');
+});
+
+console.log('\nsaleSize.js — showsCurrentRollSize');
+
+test('the area check stays on rows that actually show today\'s roll figure', () => {
+  assert.equal(showsCurrentRollSize({ _acres: 40 }), true);
+  assert.equal(showsCurrentRollSize({
+    _saleSizeKnown: true, _acresAtSale: 40, _saleSizeBasis: 'current_unchanged',
+  }), true);
+});
+
+test('and comes off an at-sale row, where it would warn about absent numbers', () => {
+  assert.equal(showsCurrentRollSize({
+    _saleSizeKnown: true, _acresAtSale: 160, _saleSizeBasis: 'at_sale_pdf',
+  }), false);
+});
+
+test('a withheld row has no size to check', () => {
+  assert.equal(showsCurrentRollSize({
+    _saleSizeKnown: true, _acresAtSale: null, _saleSizeBasis: 'unknown_changed',
+  }), false);
+});
+
+test('without size_basis the marker is KEPT — losing a real warning is worse', () => {
+  assert.equal(showsCurrentRollSize({ _saleSizeKnown: true, _acresAtSale: 160 }), true);
+});
+
+test('sizeBasis rides through the stamp', () => {
+  const st = saleSizeStamp({
+    parcelSize: '160', parcelSizeUnit: 'ACRES',
+    parcelChange: 'verified_unchanged', sizeBasis: 'at_sale_pdf',
+  });
+  assert.equal(st._saleSizeBasis, 'at_sale_pdf');
+  // absent column → null, not undefined-shaped noise
+  assert.equal(saleSizeStamp({ parcelSize: '160', parcelSizeUnit: 'ACRES' })._saleSizeBasis, null);
 });
 
 const passed = results.reduce((a, b) => a + b, 0);

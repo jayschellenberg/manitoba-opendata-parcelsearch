@@ -24,7 +24,7 @@ import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import { landCoverBreakdown, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
 import { overlayGroupExpanded } from './lib/overlayToggle.js';
 import { formatRollSizeField } from './lib/acres.js';
-import { saleSizeState, saleAcres, saleFrontageFeet } from './lib/saleSize.js';
+import { saleSizeState, saleAcres, saleFrontageFeet, sizeSourceLabel } from './lib/saleSize.js';
 import {
   addShapeLayers,
   initShapeDraw,
@@ -4185,7 +4185,15 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
     const asSold = acAtSale != null
       ? formatLandSize(acAtSale)
       : (ffAtSale != null ? `${ffAtSale.toLocaleString('en-US')} ft frontage` : null);
-    if (asSold) lines.push(`<strong>Land Size (as sold)</strong> ${asSold}`);
+    if (asSold) {
+      // Name the source. "160 acres" from the property-sales report and "160
+      // acres" from today's roll are different claims — the first is what
+      // sold, the second is what is there now and happens to match — and a
+      // figure going into a report has to be able to say which.
+      const src = sizeSourceLabel(p);
+      lines.push(`<strong>Land Size (as sold)</strong> ${asSold}`
+        + (src ? `<br><small style="color:#888">Source: ${escapeHtml(src)}</small>` : ''));
+    }
   } else {
     const landSize = formatLandSize(p._acres);
     if (landSize) lines.push(`<strong>Land Size</strong> ${landSize}`);

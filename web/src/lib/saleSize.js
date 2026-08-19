@@ -158,6 +158,7 @@ export function saleSizeStamp(sale) {
     _saleSizeUnit:     size.unit,
     _acresAtSale:      size.acres,
     _frontageAtSaleFt: size.frontageFt,
+    _saleSizeBasis:    blankToNull(sale.sizeBasis),
     _saleChangeSignal: blankToNull(sale.parcelChange),
     _geomTrust:        geometryTrust(sale.parcelChange),
   };
@@ -203,4 +204,52 @@ export function saleSizeState(props) {
   const hasSize = posOrNull(props._acresAtSale) != null
                || posOrNull(props._frontageAtSaleFt) != null;
   return hasSize ? 'resolved' : 'withheld';
+}
+
+/**
+ * Plain-language source for the size this row displays, or '' when there is
+ * nothing to attribute (a regular search or a pasted comp set, where the
+ * acreage is simply today's and always has been).
+ *
+ * Naming the source is not decoration. "160 acres" from the property-sales
+ * report and "160 acres" from today's roll are different claims — the first is
+ * what sold, the second is what is there now and happens to match — and an
+ * appraisal that quotes one has to be able to say which. Before size_basis was
+ * exported the app could only say "sale-resolved" and lump the two together.
+ *
+ * Falls back to that vaguer wording when the column is absent, which is what an
+ * older shard (exported before size_basis was added) still ships.
+ */
+export function sizeSourceLabel(props) {
+  const state = saleSizeState(props);
+  if (state === 'legacy') return '';
+  switch (props?._saleSizeBasis) {
+    case 'at_sale_pdf':       return 'at sale (property-sales report)';
+    case 'current_unchanged': return 'current, verified unchanged since sale';
+    case 'unknown_changed':   return 'withheld (parcel changed since sale)';
+    case 'no_current_record': return 'withheld (no current parcel record)';
+    default:
+      return state === 'withheld'
+        ? 'withheld (parcel changed since sale)'
+        : 'sale-resolved (MAO sales export)';
+  }
+}
+
+/**
+ * Is the size on screen today's roll figure?
+ *
+ * Decides whether the roll-vs-polygon area check still applies to the cell it
+ * decorates. That check compares two CURRENT figures, so on a row showing the
+ * at-sale size it warns about numbers that appear nowhere — and on a withheld
+ * row there is no size to warn about at all.
+ */
+export function showsCurrentRollSize(props) {
+  const state = saleSizeState(props);
+  if (state === 'legacy') return true;
+  if (state === 'withheld') return false;
+  // An older shard without size_basis can't distinguish the two resolved
+  // cases. Keep the marker: on current_unchanged it is right, and on
+  // at_sale_pdf it is merely imprecisely targeted — losing a real warning is
+  // the worse error of the two.
+  return props?._saleSizeBasis !== 'at_sale_pdf';
 }

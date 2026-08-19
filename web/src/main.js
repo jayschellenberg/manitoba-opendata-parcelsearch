@@ -229,7 +229,9 @@ import {
   waterCsvCells, isWaterfront, isNearWater, WATER_CLASSES,
 } from './lib/water.js';
 import { resolveParcelAcres, formatRollSizeField, parseRollFrontageFeet } from './lib/acres.js';
-import { saleSizeStamp, saleSizeState, saleAcres } from './lib/saleSize.js';
+import {
+  saleSizeStamp, saleSizeState, saleAcres, sizeSourceLabel, showsCurrentRollSize,
+} from './lib/saleSize.js';
 import { computeSizeChanges } from './lib/sizeChange.js';
 import { indexHistoricalGeometry, applyHistoricalGeometry } from './lib/historicalHighlight.js';
 import { withholdChangedGeometry, withheldNote } from './lib/withheldGeometry.js';
@@ -11245,8 +11247,13 @@ const formatRollSize = (p) => formatRollSizeField(p?.Frontage_or_Area);
  * Append the area cross-check marker to an Acres cell, if the parcel earned
  * one. No-op on the ~85% that agree, so the column stays clean.
  */
+// The roll-vs-polygon area check compares two CURRENT figures. On a row showing
+// the at-sale size it would warn about numbers that appear nowhere on screen,
+// and on a withheld row there is no size to warn about — so the marker is gated
+// on the cell actually showing today's roll figure. See showsCurrentRollSize().
 function markAreaCheck(cell, p) {
   if (!cell || !p?._acresMismatch) return;
+  if (!showsCurrentRollSize(p)) return;
   const gv = Number(p._acresGeomValue);
   const pct = Number(p._acresVariancePct);
   const flag = document.createElement('span');
@@ -12225,14 +12232,12 @@ function exportCsv(explicitRows) {
       acSize != null && Number.isFinite(acSize) && acSize > 0 ? Math.round(acSize * 43560) : '',
       // Where the exported size came from. On a sales row the acreage is the
       // pipeline's, so naming the current record's source ('assessor' /
-      // 'geometry') would misattribute it. NOTE: this cannot yet distinguish a
-      // PDF at-sale figure from a verified-unchanged current one — that needs
-      // size_basis added to export_sales_for_web.R's KEEP list.
-      saleSizeState(p) !== 'legacy'
-        ? (saleSizeState(p) === 'withheld'
-            ? 'withheld (parcel changed since sale)'
-            : 'sale-resolved (MAO sales export)')
-        : (p._acresRollNominal ? 'geometry (roll nominal)' : (p._acresSource ?? '')),
+      // 'geometry') would misattribute it — sizeSourceLabel() reads the Size
+      // Source column and distinguishes a property-sales-report figure from a
+      // verified-unchanged current one, which is the difference an appraisal
+      // has to be able to state.
+      sizeSourceLabel(p)
+        || (p._acresRollNominal ? 'geometry (roll nominal)' : (p._acresSource ?? '')),
       areaCheckCsv(p),
       parseTotalValue(p.Total_Value) ?? '',
       p.Asmt_Rpt_Url ?? '',
