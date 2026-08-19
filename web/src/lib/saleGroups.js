@@ -15,8 +15,15 @@
 // Parcels are grouped by `properties._saleGroupId`. The sale price is a
 // group-level consideration shared by every member, so it's read once
 // from the first-seen parcel in each group (matching the original).
+//
+// SIZE COMES FROM lib/saleSize.js, NOT FROM THE CURRENT PARCEL. Every rate
+// here divides a price fixed at the sale date, so its denominator has to be
+// the parcel as it was then. saleAcres()/saleFrontageFeet() return the size
+// the upstream pipeline resolved for that sale, and null where it resolved
+// none — which flows into the existing acresIncomplete/frontageIncomplete
+// guards and suppresses the rate rather than stating a wrong one.
 
-import { parseRollFrontageFeet } from './acres.js';
+import { saleAcres, saleFrontageFeet } from './saleSize.js';
 
 const SQFT_PER_ACRE = 43560;
 
@@ -189,16 +196,27 @@ export function computeSaleGroups(
     const muni = f.properties?.Municipality;
     if (muni) g.munis.add(String(muni).trim());
 
-    const ac = Number(f.properties?._acres);
-    if (Number.isFinite(ac) && ac > 0) g.totalAcres += ac;
+    // At-sale acreage, not today's. saleAcres() returns the figure the
+    // upstream pipeline resolved for THIS SALE and null when it deliberately
+    // resolved none (parcel changed, at-sale size unrecoverable) — see
+    // lib/saleSize.js. A pasted comp set has no such column and falls back to
+    // today's acreage there, exactly as before.
+    //
+    // Null lands in acresIncomplete, which already suppresses $/acre and $/SF
+    // for the whole group. That is the correct outcome and needs no new rule:
+    // dividing a whole consideration by a partially-known area produces a
+    // plausible wrong rate, which is the one failure mode worth engineering
+    // against.
+    const ac = saleAcres(f.properties);
+    if (ac != null) g.totalAcres += ac;
     else g.acresIncomplete = true;
 
-    // Read the frontage straight off the roll string rather than a stamped
-    // property: parseRollFrontageFeet returns null for "160.00 ACRES", so a
-    // parcel stating an area can never be mistaken for a zero-foot frontage
-    // and drag the group's total down.
-    const ff = parseRollFrontageFeet(f.properties?.Frontage_or_Area);
-    if (Number.isFinite(ff) && ff > 0) g.totalFrontageFt += ff;
+    // At-sale frontage, on the same terms as acreage above. On the legacy
+    // path saleFrontageFeet() reads the frontage straight off the roll string
+    // rather than a stamped property, so a parcel stating an area can never be
+    // mistaken for a zero-foot frontage and drag the group's total down.
+    const ff = saleFrontageFeet(f.properties);
+    if (ff != null) g.totalFrontageFt += ff;
     else g.frontageIncomplete = true;
 
     const at = Number(f.properties?._asmtTotal);

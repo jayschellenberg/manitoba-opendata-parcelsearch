@@ -24,6 +24,7 @@ import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import { landCoverBreakdown, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
 import { overlayGroupExpanded } from './lib/overlayToggle.js';
 import { formatRollSizeField } from './lib/acres.js';
+import { saleSizeState, saleAcres, saleFrontageFeet } from './lib/saleSize.js';
 import {
   addShapeLayers,
   initShapeDraw,
@@ -4072,12 +4073,42 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
   }
   if (p._legalDescription)  lines.push(`<strong>Legal</strong> ${escapeHtml(p._legalDescription)}`);
   if (p._certificatesOfTitle) lines.push(`<strong>Title</strong> ${escapeHtml(p._certificatesOfTitle)}`);
-  // Land Size — _acres stamped onto each parcel feature by main.js
-  // after the search lands (same shape as the muni-parcels-fill
-  // popup). Format mirrors muniParcelHtml so both popups read the
-  // same on the same parcel.
-  const landSize = formatLandSize(p._acres);
-  if (landSize) lines.push(`<strong>Land Size</strong> ${landSize}`);
+  // Land Size. On a regular search this is _acres, stamped onto each parcel
+  // feature by main.js after the search lands (same shape as the
+  // muni-parcels-fill popup), and the format mirrors muniParcelHtml so both
+  // popups read the same on the same parcel.
+  //
+  // On a SALES row it must instead be the size the pipeline resolved for that
+  // sale (lib/saleSize.js). Two reasons, and the second is the load-bearing
+  // one: today's acreage on a parcel subdivided since the sale describes
+  // different land, and this figure is the denominator of the Price/Acre
+  // printed at the bottom of this same popup. Showing today's area above a
+  // rate computed from the at-sale area would put two incompatible numbers on
+  // one card with nothing to say which fed which.
+  //
+  // A withheld size says so outright. The alternative — quietly falling back
+  // to today's figure — is the failure this whole path exists to prevent, and
+  // it would read as an answer rather than as a gap.
+  const sizeState = saleSizeState(p);
+  if (sizeState === 'withheld') {
+    lines.push('<strong>Land Size</strong> &mdash;'
+      + '<br><small style="color:#b45309">No at-sale size available &mdash; this parcel changed'
+      + ' after the sale and no at-sale figure could be recovered. Price/Acre and Price/SF'
+      + ' below are suppressed; verify against the LIST OF PROPERTY SALES report'
+      + ' before using this comp.</small>');
+  } else if (sizeState === 'resolved') {
+    // Acres XOR frontage — saleSize never converts between them, so whichever
+    // the roll/PDF stated is the one that prints.
+    const acAtSale = saleAcres(p);
+    const ffAtSale = saleFrontageFeet(p);
+    const asSold = acAtSale != null
+      ? formatLandSize(acAtSale)
+      : (ffAtSale != null ? `${ffAtSale.toLocaleString('en-US')} ft frontage` : null);
+    if (asSold) lines.push(`<strong>Land Size (as sold)</strong> ${asSold}`);
+  } else {
+    const landSize = formatLandSize(p._acres);
+    if (landSize) lines.push(`<strong>Land Size</strong> ${landSize}`);
+  }
   // What the roll itself states. Worth its own line rather than folding into
   // Land Size above: on a frontage-feet parcel the two say different KINDS of
   // thing (a width vs a computed area), and on an acres parcel showing them
