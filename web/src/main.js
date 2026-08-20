@@ -229,8 +229,13 @@ import {
   waterCsvCells, isWaterfront, isNearWater, WATER_CLASSES,
 } from './lib/water.js';
 import { resolveParcelAcres, formatRollSizeField, parseRollFrontageFeet } from './lib/acres.js';
+import {
+  saleSizeStamp, saleSizeState, saleAcres, sizeSourceLabel, showsCurrentRollSize,
+  shapeDerivedNote,
+} from './lib/saleSize.js';
 import { computeSizeChanges } from './lib/sizeChange.js';
 import { indexHistoricalGeometry, applyHistoricalGeometry } from './lib/historicalHighlight.js';
+import { withholdChangedGeometry, withheldNote } from './lib/withheldGeometry.js';
 import { clearAllCache as clearAllCacheModule } from './cache.js';
 import { getManifest, getManifestSync } from './manifest.js';
 import { buildProvenance, provenanceCsvLines, provenanceText } from './lib/provenance.js';
@@ -814,6 +819,13 @@ const PD_WEBSITES = {
   'CYPRESS':                           'https://www.cypressplanningdistrict.com/',
   // EASTERN INTERLAKE — no entry: eipd.ca is email-only, same Microsoft 365
   // nameservers and no A record as BROKENHEAD RIVER above.
+  // INLAND PORT SPECIAL PLANNING AREA is an area name, not a PD, but it
+  // out-votes SOUTH INTERLAKE 17-to-7 in RM of Rosser's dev-plan polygons
+  // and updatePdWebsiteButton takes the most frequent PLANNINGDISTRICT
+  // value — so without an entry here the button dead-ends. Rosser is a
+  // South Interlake member, hence the same URL. MUNI_TO_PD can't rescue
+  // it; that fallback only fires when the dev-plan layer returns nothing.
+  'INLAND PORT SPECIAL PLANNING AREA': 'https://www.sipd.ca/',
   'KEYSTONE':                          'https://www.keystonepd.ca/',
   'MID-WEST':                          'https://www.midwestplanning.ca/',
   'MORDEN/STANLEY/THOMPSON/WINKLER':   'https://www.mstw.ca/',
@@ -904,6 +916,10 @@ let lastResultFc = EMPTY_FC;
 // active as-of date: {swapped, missing, missingRolls}, or null when no
 // Historical snapshot is in force. Read by the search's status line.
 let lastAsOfHighlight = null;
+// Result of the most recent boundary-withholding pass, for the status line —
+// same role lastAsOfHighlight plays for the as-of swap. See
+// lib/withheldGeometry.js.
+let lastWithheldGeometry = null;
 // CSV-upload mode state. csvFullRows holds the full enriched row set
 // from the last sales-CSV upload (with zoning / dev-plan / risk-area
 // data joined in), so changing the Other Searches filters after upload
@@ -1186,8 +1202,12 @@ const SORT_KEYS = {
     const unit = (m[2] || 'zz').toLowerCase();
     return `${unit}:${Number(m[1]).toFixed(3).padStart(14, '0')}`;
   },
-  acres:   (r) => finiteOrNeg(parcelAcres(r.parcel)),
-  sf:      (r) => finiteOrNeg(parcelAcres(r.parcel)),
+  // Sort on the figure the cell SHOWS — the sale-resolved size on a sales row
+  // (lib/saleSize.js), today's acreage everywhere else. Sorting by today's
+  // acreage while displaying the at-sale one would shuffle the column out of
+  // order for exactly the subdivided parcels this path exists to get right.
+  acres:   (r) => finiteOrNeg(rowSizeAcres(r.parcel.properties || {}, parcelAcres(r.parcel))),
+  sf:      (r) => finiteOrNeg(rowSizeAcres(r.parcel.properties || {}, parcelAcres(r.parcel))),
   // Walkscore column is just a link — sort by whether we have an address
   // to send to walkscore.com (rows without an address sort last).
   walk:    (r) => strKey(r.parcel.properties.Property_Address),
@@ -3893,6 +3913,11 @@ async function runSearch() {
     // Every later status line is built from baseMsg, so folding the as-of note
     // in here carries it through enrichment, water and soil stages alike.
     baseMsg += asOfHighlightNote(lastAsOfHighlight, $historicalYear?.value);
+    // …and how many parcels were reduced to a pin because they changed after
+    // the sale. Folded in at the same point and for the same reason: every
+    // later status line is rebuilt from baseMsg.
+    const withheldMsg = withheldNote(lastWithheldGeometry);
+    if (withheldMsg) baseMsg += ` ${withheldMsg}.`;
 
     // The muni-wide parcel fabric (Assessment Parcels) is a manual
     // toggle only — it used to auto-show here on every muni-scoped
@@ -4176,6 +4201,18 @@ async function handleSalesUpload(file) {
           // "6--66600" / "4--66600" in the CSV but no legal-index hit
           // → _plan is null and the filter would otherwise miss them).
           p._csvLegal        = sale.legalDescription || null;
+          // At-sale parcel size + how far this sale's evidence supports the
+          // boundary we are about to draw, from the MAO database export's
+          // Parcel Size / Parcel Size Unit / Parcel Change columns.
+          //
+          // The pipeline has already decided which size is safe to analyse
+          // from — the PDF's at-sale figure, today's figure where the parcel
+          // is verified unchanged, or nothing at all — so this only carries
+          // that verdict onto the feature. See lib/saleSize.js for why a
+          // blank must never fall back to today's acreage, and why a pasted
+          // comp set (which has none of these columns) keeps the old
+          // behaviour instead.
+          Object.assign(p, saleSizeStamp(sale));
           // Group identity for the on-hover sibling-highlight + the
           // group price-per-acre / price-per-sf table columns. Used
           // by handleSalesUpload's group-totals pass below.
@@ -4424,8 +4461,14 @@ async function handleSalesUpload(file) {
     const truncNote = truncatedMunis.length > 0
       ? ` · ⚠ roll lookup incomplete for ${truncatedMunis.join(', ')} — sales are MISSING, not absent`
       : '';
+    // Parcels reduced to a pin because they changed after their sale. This is
+    // the path where that actually happens (setMapData above has already run,
+    // so the count is in hand), and it needs saying out loud: a pin among
+    // polygons otherwise reads as a rendering glitch rather than a finding.
+    const withheldMsg = withheldNote(lastWithheldGeometry);
+    const withheldNoteText = withheldMsg ? ` · ${withheldMsg}` : '';
     const baseMsg = `${totalMatched} of ${totalSales} sales plotted${parcelNote}`
-                  + `${dupeNote}${unmatchedNote}${truncNote}`;
+                  + `${dupeNote}${unmatchedNote}${truncNote}${withheldNoteText}`;
     renderUnmatchedPanel(unmatchedRecords);
 
     // Auto-set the muni dropdown to a "dominant" muni — the one with
@@ -6586,10 +6629,18 @@ function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
   // THEN, not now — see asOfHighlight(). Applied here so both pushes a search
   // makes (the immediate one and the post-enrichment repush) get it.
   const asOf = asOfHighlight(mapFc);
-  const highlightFc = asOf ? asOf.fc : mapFc;
+  const asOfFc = asOf ? asOf.fc : mapFc;
+  // Then withhold the boundary of any parcel this sale's own evidence says
+  // changed after it sold — today's polygon there is a different piece of
+  // land, so it becomes a pin instead. Runs AFTER the as-of swap on purpose:
+  // a real historical boundary beats a pin, so a feature that pass redrew is
+  // left alone (see shouldWithhold()).
+  const withheld = withholdChangedGeometry(asOfFc, { centroid: parcelCentrePoint });
+  const highlightFc = withheld.withheld ? withheld.fc : asOfFc;
   // Stashed for the search's status line, which is composed before this push
   // reports back. Null whenever no as-of date is in force.
   lastAsOfHighlight = asOf;
+  lastWithheldGeometry = withheld;
   mapReady.then(() => {
     showResults(map, highlightFc, opts);
     setZoningData(map, zoningFc);
@@ -7517,9 +7568,16 @@ function refreshAsOfHighlight() {
   if (!(fc?.features?.length)) return null;
   const asOf = asOfHighlight(fc);
   lastAsOfHighlight = asOf;   // keep in step with what setMapData would have stashed
+  // Re-apply the boundary withholding on the same terms setMapData uses.
+  // Without this, turning the as-of date off would hand every changed parcel
+  // its current polygon back — the one thing the withholding exists to stop.
+  const asOfFc = asOf ? asOf.fc : fc;
+  const withheld = withholdChangedGeometry(asOfFc, { centroid: parcelCentrePoint });
+  lastWithheldGeometry = withheld;
+  const pushFc = withheld.withheld ? withheld.fc : asOfFc;
   mapReady.then(() => {
-    showResults(map, asOf ? asOf.fc : fc, { fit: !!asOf?.swapped });
-    setParcelNumberData(map, (asOf ? asOf.fc : fc).features || []);
+    showResults(map, pushFc, { fit: !!asOf?.swapped });
+    setParcelNumberData(map, pushFc.features || []);
   });
   return asOf;
 }
@@ -9462,6 +9520,10 @@ function renderTable(rows, { resetPage = true } = {}) {
     const z2 = row.zoning[1]?.feature.properties || {};
     const d1 = row.devPlan[0]?.feature.properties || {};
     const ac = parcelAcres(row.parcel);
+    // Size columns follow the sale, not the current parcel; `ac` stays today's
+    // figure for the polygon-sampled columns further down (land cover,
+    // cultivation, soil), which measure the shape that is actually there.
+    const acSize = rowSizeAcres(p, ac);
 
     // Zoning 2 only shown when its coverage is ≥ ZONE2_MIN_RATIO —
     // sub-1% slivers are usually GIS noise (boundary digitization
@@ -9564,7 +9626,7 @@ function renderTable(rows, { resetPage = true } = {}) {
     const rollSizeSalesCell = td(formatRollSize(p), 'num');
     rollSizeSalesCell.classList.add('sales-only');
     tr.appendChild(rollSizeSalesCell);
-    const acresSalesCell = td(formatAcres(ac), 'num');
+    const acresSalesCell = td(formatAcres(acSize), 'num');
     acresSalesCell.classList.add('sales-only');
     markAreaCheck(acresSalesCell, p);
     tr.appendChild(acresSalesCell);
@@ -9696,11 +9758,11 @@ function renderTable(rows, { resetPage = true } = {}) {
     const rollSizeBasicCell = td(formatRollSize(p), 'num');
     rollSizeBasicCell.classList.add('basic-only');
     tr.appendChild(rollSizeBasicCell);
-    const acresBasicCell = td(formatAcres(ac), 'num');
+    const acresBasicCell = td(formatAcres(acSize), 'num');
     acresBasicCell.classList.add('basic-only');
     markAreaCheck(acresBasicCell, p);
     tr.appendChild(acresBasicCell);
-    tr.appendChild(td(formatSf(ac), 'num'));
+    tr.appendChild(td(formatSf(acSize), 'num'));
     tr.appendChild(assessmentCell(p));
     tr.appendChild(walkCell(row));
     tr.appendChild(floodCell(row));
@@ -11274,8 +11336,13 @@ const formatRollSize = (p) => formatRollSizeField(p?.Frontage_or_Area);
  * Append the area cross-check marker to an Acres cell, if the parcel earned
  * one. No-op on the ~85% that agree, so the column stays clean.
  */
+// The roll-vs-polygon area check compares two CURRENT figures. On a row showing
+// the at-sale size it would warn about numbers that appear nowhere on screen,
+// and on a withheld row there is no size to warn about — so the marker is gated
+// on the cell actually showing today's roll figure. See showsCurrentRollSize().
 function markAreaCheck(cell, p) {
   if (!cell || !p?._acresMismatch) return;
+  if (!showsCurrentRollSize(p)) return;
   const gv = Number(p._acresGeomValue);
   const pct = Number(p._acresVariancePct);
   const flag = document.createElement('span');
@@ -11308,6 +11375,25 @@ function areaCheckCsv(p) {
   if (Number.isFinite(gv)) bits.push(`shape measures ${gv.toFixed(1)} ac`);
   if (Number.isFinite(pct)) bits.push(`${(pct * 100).toFixed(0)}% apart`);
   return `roll disagrees with shape${bits.length ? ` (${bits.join(', ')})` : ''} — verify on MAO`;
+}
+
+/**
+ * The acreage this row's SIZE columns and unit rates are computed from.
+ *
+ * Not the same thing as parcelAcres(): that is the parcel as it stands today,
+ * which is what the polygon-sampled columns (land cover, soil, cultivation)
+ * must keep using because they measure today's shape. The size columns instead
+ * have to agree with the $/Acre beside them, and on a sales row that rate
+ * divides by the size the pipeline resolved for the sale — see lib/saleSize.js.
+ *
+ * Returns null on a sales row whose at-sale size was withheld, which is the
+ * point: the cell goes blank rather than showing a figure the rate did not use.
+ *
+ * @param {object} props       the parcel's properties
+ * @param {number|null} today  parcelAcres() for this row, already computed
+ */
+function rowSizeAcres(props, today) {
+  return saleSizeState(props) === 'legacy' ? today : saleAcres(props);
 }
 
 function formatAcres(v) {
@@ -12167,6 +12253,12 @@ function exportCsv(explicitRows) {
           // is No when a member had no usable geometry, meaning the km
           // figure understates the true spread.
           'Sale Spread (km)', 'Munis in Sale', 'Spread Complete',
+          // What the shape-derived columns (Soil, CLI, Slope, Land Cover,
+          // Cult %, MASC, Water) actually describe on this row. Blank when the
+          // parcel is the one that sold; otherwise it names the parcel they
+          // were sampled from, so a figure lifted into a report carries its
+          // referent with it. See lib/saleSize.js shapeDerivedNote().
+          'Shape-Derived Basis',
           'Dist (km)', 'Asmt Land', 'Asmt Buildings', 'Asmt Bldg %', 'Asmt Year', 'Asmt Class', 'Asmt Status',
         ]
       : []),
@@ -12207,6 +12299,9 @@ function exportCsv(explicitRows) {
     const z2 = row.zoning[1]?.feature.properties || {};
     const d1 = row.devPlan[0]?.feature.properties || {};
     const ac = parcelAcres(row.parcel);
+    // Same split as the grid: acSize follows the sale, ac stays today's
+    // figure for the polygon-sampled columns (land cover, soil).
+    const acSize = rowSizeAcres(p, ac);
     const cells = [
       ...(withSeq ? [p._seq ?? ''] : []),
       p.Roll_No_Txt, muniNoFromProps(p) ?? '', muniNameFromProps(p) ?? '', p.Property_Address,
@@ -12235,9 +12330,16 @@ function exportCsv(explicitRows) {
       formatChanges(row),
       p.Dwelling_Units ?? '',
       formatRollSize(p),
-      formatAcresCsv(ac),
-      ac != null && Number.isFinite(ac) && ac > 0 ? Math.round(ac * 43560) : '',
-      p._acresRollNominal ? 'geometry (roll nominal)' : (p._acresSource ?? ''),
+      formatAcresCsv(acSize),
+      acSize != null && Number.isFinite(acSize) && acSize > 0 ? Math.round(acSize * 43560) : '',
+      // Where the exported size came from. On a sales row the acreage is the
+      // pipeline's, so naming the current record's source ('assessor' /
+      // 'geometry') would misattribute it — sizeSourceLabel() reads the Size
+      // Source column and distinguishes a property-sales-report figure from a
+      // verified-unchanged current one, which is the difference an appraisal
+      // has to be able to state.
+      sizeSourceLabel(p)
+        || (p._acresRollNominal ? 'geometry (roll nominal)' : (p._acresSource ?? '')),
       areaCheckCsv(p),
       parseTotalValue(p.Total_Value) ?? '',
       p.Asmt_Rpt_Url ?? '',
@@ -12277,6 +12379,7 @@ function exportCsv(explicitRows) {
             Number.isFinite(p._saleGroupSpanKm) ? p._saleGroupSpanKm.toFixed(1) : '',
             p._saleGroupMuniCount ?? '',
             p._saleGroupSpanKm == null ? '' : (p._saleGroupSpanIncomplete ? 'No' : 'Yes'),
+            shapeDerivedNote(p),
             Number.isFinite(p._distanceKm) ? p._distanceKm.toFixed(2) : '',
             Number.isFinite(p._asmtLand) ? Math.round(p._asmtLand) : '',
             Number.isFinite(p._asmtBuildings) ? Math.round(p._asmtBuildings) : '',

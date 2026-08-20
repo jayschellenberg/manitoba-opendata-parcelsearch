@@ -25,11 +25,15 @@ import { landCoverBreakdown, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
 import { overlayGroupExpanded } from './lib/overlayToggle.js';
 import { formatRollSizeField } from './lib/acres.js';
 import {
+  saleSizeState, saleAcres, saleFrontageFeet, sizeSourceLabel, shapeDerivedNote,
+} from './lib/saleSize.js';
+import {
   addShapeLayers,
   initShapeDraw,
   shapeClickHandled,
   isShapeDrawing,
 } from './drawShapes.js';
+import { isMeasuring, setMeasuring } from './lib/measuring.js';
 import { WAYBACK_VERSIONS, waybackTileUrl } from './lib/wayback.js';
 import { MB_PARCEL_DATA_CDN, currentAadt } from './arcgis.js';
 import {
@@ -423,13 +427,40 @@ if (MLI_ORTHO_PMTILES_URL) {
 }
 
 /**
- * True while the measurement panel is open. MeasureControl owns the
- * `measuring` class on <body> — the bottom-right map legends already
- * hide off it in CSS — so reading it back here keeps the hover tooltips
- * in step with the panel without a second flag to keep synchronised.
+ * True when a map TOOL already owns this click, so the layer handlers —
+ * every popup, and both click-a-municipality pickers — must stand down.
+ *
+ * Two owners, the same pair the hover handlers defer to through
+ * isMeasuring()/isShapeDrawing():
+ *
+ *   - the measurement panel, where every click is placing a vertex;
+ *   - the shape-draw tools, where every click is placing geometry or
+ *     toggling a committed shape's Include/Exclude.
+ *
+ * MapLibre dispatches a click to EVERY layer handler under the point
+ * independently — there is no propagation to stop — so without this gate
+ * a vertex click also fires whatever sits beneath it. The visible damage
+ * was the Property Search muni picker (armed until a search has run):
+ * measuring across a municipality boundary re-scoped the search and then
+ * flew the map out to the whole municipality mid-measurement.
+ *
+ * Register through onLayerClick() rather than calling this directly, so a
+ * layer added later cannot forget the gate.
  */
-function isMeasuring() {
-  return document.body.classList.contains('measuring');
+function clickOwnedByTool(map, e) {
+  if (isMeasuring()) return true;
+  return shapeClickHandled(map, e);
+}
+
+/**
+ * map.on('click', layer, fn) with the tool gate applied. Every layer
+ * click in the app goes through here.
+ */
+function onLayerClick(map, layerId, handler) {
+  map.on('click', layerId, (e) => {
+    if (clickOwnedByTool(map, e)) return;
+    handler(e);
+  });
 }
 
 // mapbox-gl-draw style spec for the measurement tool. High-contrast orange
@@ -506,6 +537,19 @@ const MEASURE_DRAW_STYLES = [
  * suppress it and put it back byte-for-byte. Starred favourites 0.6, a
  * sale-group hover 0.5, otherwise 0.3.
  */
+// The layers a search-result parcel can be hit on. Two, not one: a parcel whose
+// boundary was withheld (lib/withheldGeometry.js) renders as a Point on
+// 'parcel-pin' and would be invisible to a fill-only hit test — hover, click,
+// the sibling-group highlight and the defer-to-parcel checks would all skip
+// exactly the comps that most need explaining.
+const PARCEL_HIT_LAYERS = ['parcel-fill', 'parcel-pin'];
+
+/** PARCEL_HIT_LAYERS filtered to those actually added to this map. */
+const parcelHitLayers = (map) => PARCEL_HIT_LAYERS.filter((id) => map.getLayer(id));
+
+/** Is this queryRenderedFeatures hit a search-result parcel, pin or polygon? */
+const isParcelHit = (h) => PARCEL_HIT_LAYERS.includes(h?.layer?.id);
+
 const PARCEL_FILL_OPACITY = [
   'case',
   ['boolean', ['feature-state', 'starred'], false],
@@ -1917,6 +1961,44 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // stamp (below the threshold or no land-cover data) draw nothing. Hidden until
       // the Land Cover overlay is turned on. Inserted before parcel-line
       // so the yellow selection outline still reads on top of the colour.
+      // Pin for a parcel whose boundary has been withheld — the sale evidence
+      // says it changed afterwards, so lib/withheldGeometry.js replaced its
+      // polygon with a centroid rather than draw land that didn't sell. The
+      // geometry-type filter is what selects them: nothing else in this source
+      // is a Point, and the fill/line layers above ignore Points on their own.
+      //
+      // Amber rather than the result yellow, and solid rather than dashed: it
+      // is deliberately NOT the selection idiom, because it is not a selected
+      // extent — it is a location standing in for one. White casing keeps it
+      // legible on both the pale Voyager basemap and dark satellite imagery.
+      map.addLayer({
+        id: 'parcel-pin',
+        type: 'circle',
+        source: 'parcels',
+        filter: ['==', ['geometry-type'], 'Point'],
+        paint: {
+          // Grows with zoom so the pin stays findable when zoomed out over a
+          // province-wide result set and precise when zoomed in on one sale.
+          'circle-radius': [
+            'interpolate', ['linear'], ['zoom'],
+            6, 4,
+            12, 7,
+            16, 9,
+          ],
+          'circle-color': [
+            'case',
+            ['boolean', ['feature-state', 'starred'], false],
+            '#8b0000',
+            '#b45309',
+          ],
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#ffffff',
+          // Matches the parcel outline's easing so the pin sits at the same
+          // visual weight as the highlights around it.
+          'circle-opacity': 0.9,
+          'circle-stroke-opacity': 0.9,
+        },
+      });
       map.addLayer({
         id: 'landcover-fill',
         type: 'fill',
@@ -2428,7 +2510,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
           clearHover();
           return;
         }
-        const visibleLayers = ['parcel-fill'];
+        const visibleLayers = parcelHitLayers(map);
         // Subject parcel is on a separate source/layer — include its
         // fill in the hit-test so hovering the subject also pops a
         // tooltip (with the "Subject parcel" header via _isSubject).
@@ -2452,7 +2534,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
         // single-parcel sales get their one parcel highlighted, multi-
         // parcel sales get every sibling lit at once. Non-sales searches
         // skip this (no _saleGroupRollIds stamped).
-        const parcelHit = hits.find((h) => h.layer.id === 'parcel-fill');
+        const parcelHit = hits.find(isParcelHit);
         const oids = readSaleGroupOids(parcelHit?.properties);
         // Always-on diagnostic snapshot — readable as window.__lastHover
         // from the devtools console without flipping a flag. Lets the
@@ -2484,7 +2566,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
         if (subject) {
           blocks.push(`<div><strong style="color:#1e6fd9">Subject</strong><br>${parcelHtml(subject.properties)}</div>`);
         }
-        const parcel = hits.find((h) => h.layer.id === 'parcel-fill');
+        const parcel = hits.find(isParcelHit);
         if (parcel && !subject) blocks.push(`<div><strong style="color:#7a5c00">Parcel</strong><br>${parcelHtml(parcel.properties)}</div>`);
         const zone = hits.find((h) => h.layer.id === 'zoning-fill');
         if (zone) blocks.push(`<div><strong style="color:#1a2a4a">Zoning</strong><br>${zoningHtml(zone.properties)}</div>`);
@@ -2543,11 +2625,11 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // focusAfterOpen:false also prevents MapLibre from changing the page's
       // scroll position while it focuses the newly opened popup.
       const parcelClickPopup = new maplibregl.Popup({ closeButton: true, focusAfterOpen: false, maxWidth: '760px' });
-      map.on('click', 'parcel-fill', (e) => {
-        // Shape tools own the click while armed (placing geometry) or
-        // when a committed shape sits under the cursor (mode toggle) —
-        // either way the parcel popup stands down.
-        if (shapeClickHandled(map, e)) return;
+      // Registered per layer rather than once: MapLibre 4's layer-scoped
+      // Map#on takes a single layer id, and a withheld-boundary parcel is a
+      // Point on 'parcel-pin' — without the second registration, clicking a
+      // pin would do nothing at all.
+      const onParcelClick = (e) => {
         const f = e.features?.[0];
         if (!f) return;
         const key = f.properties?._rowKey;
@@ -2565,12 +2647,16 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
         // properties from the symbol/fill layer hit; for the geometry
         // we need the rendered feature. Fall back to the click point
         // when no polygon geometry is available.
-        const rendered = map.queryRenderedFeatures(e.point, { layers: ['parcel-fill'] })[0];
+        const rendered = map.queryRenderedFeatures(e.point, { layers: parcelHitLayers(map) })[0];
+        // polygonBboxMidpoint returns null for a Point, so a withheld parcel
+        // falls through to the click point — which IS its centroid, since the
+        // pin is drawn there. Same answer, no special case.
         const center = polygonBboxMidpoint(rendered?.geometry)
           ?? [e.lngLat.lng, e.lngLat.lat];
         wireCoordsCopy(parcelClickPopup, center);
         wireN1Copy(parcelClickPopup);
-      });
+      };
+      for (const layerId of PARCEL_HIT_LAYERS) onLayerClick(map, layerId, onParcelClick);
 
       // Muni-parcels hover popup. The muni-parcels source carries a richer
       // property set than the parcel hover (Roll #, Address, DU, area,
@@ -2596,7 +2682,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
         }
         // If a search-result parcel is also under the cursor, defer to its
         // popup (handled by the global mousemove above) and hide ours.
-        const overSearchResult = map.queryRenderedFeatures(e.point, { layers: ['parcel-fill'] }).length > 0;
+        const overSearchResult = map.queryRenderedFeatures(e.point, { layers: parcelHitLayers(map) }).length > 0;
         if (overSearchResult) { muniHoverPopup.remove(); return; }
         const p = e.features?.[0]?.properties;
         if (!p) return;
@@ -2620,12 +2706,11 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // copy the roll number, click the assessment-report link, etc).
       // Same content as the hover popup but with a close button.
       const muniClickPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '760px' });
-      map.on('click', 'muni-parcels-fill', (e) => {
-        if (shapeClickHandled(map, e)) return;
+      onLayerClick(map, 'muni-parcels-fill', (e) => {
         if (map.getLayoutProperty('muni-parcels-fill', 'visibility') !== 'visible') return;
         // Defer to the search-result click handler when both layers
         // overlap — keeps the table-scroll behaviour intact.
-        const overSearchResult = map.queryRenderedFeatures(e.point, { layers: ['parcel-fill'] }).length > 0;
+        const overSearchResult = map.queryRenderedFeatures(e.point, { layers: parcelHitLayers(map) }).length > 0;
         if (overSearchResult) return;
         const p = e.features?.[0]?.properties;
         if (!p) return;
@@ -2653,7 +2738,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // handlers raced on one shared popup and dev-plan (wired last) won.
       const histClickPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '320px' });
       const wireHist = (layerId, htmlFn, deferTo = []) => {
-        map.on('click', layerId, (e) => {
+        onLayerClick(map, layerId, (e) => {
           if (map.getLayoutProperty(layerId, 'visibility') !== 'visible') return;
           for (const other of deferTo) {
             if (map.getLayer(other) &&
@@ -2685,7 +2770,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // / muni-parcels-fill / subject-fill the same way the hover
       // path does.
       function shouldDeferToParcelLayer(point) {
-        if (map.queryRenderedFeatures(point, { layers: ['parcel-fill'] }).length > 0) return true;
+        if (map.queryRenderedFeatures(point, { layers: parcelHitLayers(map) }).length > 0) return true;
         if (map.getLayer('subject-fill') &&
             map.queryRenderedFeatures(point, { layers: ['subject-fill'] }).length > 0) return true;
         if (map.getLayer('muni-parcels-fill') &&
@@ -2694,7 +2779,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
         return false;
       }
       const cliClickPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '340px' });
-      map.on('click', 'cli-agr-fill', (e) => {
+      onLayerClick(map, 'cli-agr-fill', (e) => {
         if (map.getLayoutProperty('cli-agr-fill', 'visibility') !== 'visible') return;
         if (shouldDeferToParcelLayer(e.point)) return;
         const p = e.features?.[0]?.properties;
@@ -2710,7 +2795,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // Click a contaminated-site point → small popup with the registry
       // designation + a link out to the official page for that site.
       const contamPopup = new maplibregl.Popup({ closeButton: true });
-      map.on('click', 'contam-circle', (e) => {
+      onLayerClick(map, 'contam-circle', (e) => {
         const p = e.features?.[0]?.properties;
         if (!p) return;
         contamPopup.setLngLat(e.lngLat).setHTML(contamHtml(p)).addTo(map);
@@ -2725,7 +2810,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // Click an official MASC risk-area polygon → small popup with the
       // Risk_Area number from Manitoba Maps.
       const riskAreaPopup = new maplibregl.Popup({ closeButton: true });
-      map.on('click', 'masc-risk-area-fill', (e) => {
+      onLayerClick(map, 'masc-risk-area-fill', (e) => {
         const p = e.features?.[0]?.properties;
         if (!p) return;
         riskAreaPopup.setLngLat(e.lngLat).setHTML(riskAreaHtml(p)).addTo(map);
@@ -2743,7 +2828,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // popups would bury the map.
       const wallasPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '320px' });
       const wireWallas = (layerId, htmlFn) => {
-        map.on('click', layerId, (e) => {
+        onLayerClick(map, layerId, (e) => {
           if (map.getLayoutProperty(layerId, 'visibility') !== 'visible') return;
           const p = e.features?.[0]?.properties;
           if (!p) return;
@@ -2788,7 +2873,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // the source-report citation so the user can trace the data
       // back to the printed soil survey.
       const soilSurveyPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '340px' });
-      map.on('click', 'soil-survey-fill', (e) => {
+      onLayerClick(map, 'soil-survey-fill', (e) => {
         const p = e.features?.[0]?.properties;
         if (!p) return;
         soilSurveyPopup.setLngLat(e.lngLat).setHTML(soilSurveyHtml(p)).addTo(map);
@@ -2805,7 +2890,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // and indexed; main.js stamps the matched AADT onto each station
       // feature's properties before pushing them to the source).
       const trafficPopup = new maplibregl.Popup({ closeButton: true });
-      map.on('click', 'traffic-circle', (e) => {
+      onLayerClick(map, 'traffic-circle', (e) => {
         const p = e.features?.[0]?.properties;
         if (!p) return;
         trafficPopup.setLngLat(e.lngLat).setHTML(trafficHtml(p)).addTo(map);
@@ -2820,7 +2905,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // Click an AADT flow segment → popup with the road / highway, the
       // segment kilometre range, and the AADT estimate for that segment.
       const flowPopup = new maplibregl.Popup({ closeButton: true });
-      map.on('click', 'traffic-flow-line', (e) => {
+      onLayerClick(map, 'traffic-flow-line', (e) => {
         const p = e.features?.[0]?.properties;
         if (!p) return;
         flowPopup.setLngLat(e.lngLat).setHTML(trafficFlowHtml(p)).addTo(map);
@@ -2833,7 +2918,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       map.on('mouseleave', 'traffic-flow-line', () => { setHoverCursor(''); });
 
       const highwaysPopup = new maplibregl.Popup({ closeButton: true });
-      map.on('click', 'mb-highways-line', (e) => {
+      onLayerClick(map, 'mb-highways-line', (e) => {
         const p = e.features?.[0]?.properties;
         if (!p) return;
         highwaysPopup.setLngLat(e.lngLat).setHTML(mbHighwayHtml(p)).addTo(map);
@@ -3532,12 +3617,16 @@ export function wireMuniBoundaryPicker(map, { onPick, isEnabled } = {}) {
     setCursor: (cursor) => { map.getCanvas().style.cursor = cursor; },
   });
 
-  map.on('mousemove', 'muni-boundaries-fill', (e) => picker.mouseMove(e.features?.[0]?.id));
+  // The hover stands down while a tool owns the pointer for the same reason
+  // the click does — and this picker writes the cursor itself rather than
+  // through setHoverCursor(), so its pointer would otherwise overwrite the
+  // measurement crosshair.
+  map.on('mousemove', 'muni-boundaries-fill', (e) => {
+    if (isMeasuring() || isShapeDrawing()) { picker.mouseLeave(); return; }
+    picker.mouseMove(e.features?.[0]?.id);
+  });
   map.on('mouseleave', 'muni-boundaries-fill', () => picker.mouseLeave());
-  map.on('click', 'muni-boundaries-fill', (e) => {
-    // Shape tools own the click while armed, exactly as the parcel popup
-    // stands down for them.
-    if (shapeClickHandled(map, e)) return;
+  onLayerClick(map, 'muni-boundaries-fill', (e) => {
     picker.click(e.features?.[0]?.properties?.MUNI_LIST_NAME_WITH_TYPE);
   });
 
@@ -4051,6 +4140,28 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
       + ' verify boundary/area against the archived source-of-record.</small>',
     );
   }
+  // What the boundary on screen is worth, for this sale. Sits directly under
+  // the identity block and above the sale figures, because it qualifies both:
+  // a withheld boundary also means the size and every rate derived from it
+  // came from somewhere other than this polygon.
+  //
+  // Silent on 'unknown' (a pasted comp set makes no claim either way) so the
+  // regular-search popup is unchanged.
+  if (p._geomTrust === 'withheld') {
+    lines.push('<strong style="color:#b45309">\u26a0 Boundary withheld</strong>'
+      + '<br><small style="color:#888">This parcel changed after the sale, so its current'
+      + ' outline is not what sold. Shown as a pin at the parcel centre \u2014 the location'
+      + ' is right, the extent is not available. Confirm against the registered plan'
+      + ' or the LIST OF PROPERTY SALES report.</small>');
+  } else if (p._geomTrust === 'provisional') {
+    lines.push('<small style="color:#888"><strong>Boundary not confirmed</strong> \u2014 the legal'
+      + ' description still matches, but no at-sale size existed to check it against.'
+      + ' A matching legal misses roughly 43% of size changes, so treat the outline'
+      + ' as likely rather than verified.</small>');
+  } else if (p._geomTrust === 'confirmed') {
+    lines.push('<small style="color:#888"><strong>Boundary verified</strong> \u2014 the parcel'
+      + ' measures the same today as it did at the sale.</small>');
+  }
   // Sale Date / Sale Price / Primary Property — populated only when
   // this parcel was surfaced via a sales-CSV upload
   // (handleSalesUpload in main.js stamps these onto each matched
@@ -4155,12 +4266,50 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
   }
   if (p._legalDescription)  lines.push(`<strong>Legal</strong> ${escapeHtml(p._legalDescription)}`);
   if (p._certificatesOfTitle) lines.push(`<strong>Title</strong> ${escapeHtml(p._certificatesOfTitle)}`);
-  // Land Size — _acres stamped onto each parcel feature by main.js
-  // after the search lands (same shape as the muni-parcels-fill
-  // popup). Format mirrors muniParcelHtml so both popups read the
-  // same on the same parcel.
-  const landSize = formatLandSize(p._acres);
-  if (landSize) lines.push(`<strong>Land Size</strong> ${landSize}`);
+  // Land Size. On a regular search this is _acres, stamped onto each parcel
+  // feature by main.js after the search lands (same shape as the
+  // muni-parcels-fill popup), and the format mirrors muniParcelHtml so both
+  // popups read the same on the same parcel.
+  //
+  // On a SALES row it must instead be the size the pipeline resolved for that
+  // sale (lib/saleSize.js). Two reasons, and the second is the load-bearing
+  // one: today's acreage on a parcel subdivided since the sale describes
+  // different land, and this figure is the denominator of the Price/Acre
+  // printed at the bottom of this same popup. Showing today's area above a
+  // rate computed from the at-sale area would put two incompatible numbers on
+  // one card with nothing to say which fed which.
+  //
+  // A withheld size says so outright. The alternative — quietly falling back
+  // to today's figure — is the failure this whole path exists to prevent, and
+  // it would read as an answer rather than as a gap.
+  const sizeState = saleSizeState(p);
+  if (sizeState === 'withheld') {
+    lines.push('<strong>Land Size</strong> &mdash;'
+      + '<br><small style="color:#b45309">No at-sale size available &mdash; this parcel changed'
+      + ' after the sale and no at-sale figure could be recovered. Price/Acre and Price/SF'
+      + ' below are suppressed; verify against the LIST OF PROPERTY SALES report'
+      + ' before using this comp.</small>');
+  } else if (sizeState === 'resolved') {
+    // Acres XOR frontage — saleSize never converts between them, so whichever
+    // the roll/PDF stated is the one that prints.
+    const acAtSale = saleAcres(p);
+    const ffAtSale = saleFrontageFeet(p);
+    const asSold = acAtSale != null
+      ? formatLandSize(acAtSale)
+      : (ffAtSale != null ? `${ffAtSale.toLocaleString('en-US')} ft frontage` : null);
+    if (asSold) {
+      // Name the source. "160 acres" from the property-sales report and "160
+      // acres" from today's roll are different claims — the first is what
+      // sold, the second is what is there now and happens to match — and a
+      // figure going into a report has to be able to say which.
+      const src = sizeSourceLabel(p);
+      lines.push(`<strong>Land Size (as sold)</strong> ${asSold}`
+        + (src ? `<br><small style="color:#888">Source: ${escapeHtml(src)}</small>` : ''));
+    }
+  } else {
+    const landSize = formatLandSize(p._acres);
+    if (landSize) lines.push(`<strong>Land Size</strong> ${landSize}`);
+  }
   // What the roll itself states. Worth its own line rather than folding into
   // Land Size above: on a frontage-feet parcel the two say different KINDS of
   // thing (a width vs a computed area), and on an acres parcel showing them
@@ -4322,6 +4471,24 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
   if (landCoverTable) rightSections.push(`<strong>Land cover</strong>${landCoverTable}`);
   if (mascBox)        rightSections.push(`<strong>MASC rating</strong>${mascBox}`);
   if (soilTable)      rightSections.push(`<strong>Soil composition</strong>${soilTable}`);
+  // Everything in this column is sampled against the parcel's CURRENT polygon.
+  // When that boundary has been withheld because the parcel was reconfigured
+  // after the sale (lib/withheldGeometry.js), these describe a different piece
+  // of land than the one the price bought — the same error the acreage used to
+  // make, but quieter, since nothing about a soil percentage looks like a size.
+  //
+  // Named rather than removed: there is no at-sale soil survey to substitute,
+  // and the figures stay true of the land that is there now. One heading
+  // covers all three sections, which is why it goes here and not into each.
+  const shapeNote = shapeDerivedNote(p);
+  if (shapeNote && rightSections.length) {
+    rightSections.unshift(
+      `<div style="color:#b45309;font-size:11px;line-height:1.35;margin-bottom:6px">`
+      + `<strong>\u26a0 Below describes the ${escapeHtml(shapeNote)}</strong>`
+      + `<br>Not the parcel as it sold. Read as current conditions, not as evidence about the sale.`
+      + `</div>`,
+    );
+  }
 
   if (rightSections.length) {
     return `<div class="parcel-popup parcel-popup-2col">
@@ -5780,10 +5947,11 @@ class MeasureControl {
       // the Measure button. Adding `body.measuring` lets a CSS rule
       // hide every `.map-legend` until the user closes the panel.
       //
-      // The same class is the signal the hover tooltips read through
-      // isMeasuring() to suppress themselves — keep the two `classList`
-      // calls here and in _close() paired, or the tooltips stay off.
-      document.body.classList.add('measuring');
+      // The same flag is what every hover and click handler reads
+      // through isMeasuring() to stand down while the measurement owns
+      // the pointer — keep this call and the one in _close() paired, or
+      // the map stays inert after the panel closes.
+      setMeasuring(true);
     } else {
       this._close();
     }
@@ -5793,7 +5961,7 @@ class MeasureControl {
     try { this._draw.changeMode('simple_select'); } catch { /* mode may already be simple_select */ }
     this._panel.style.display = 'none';
     this._btn.classList.remove('active');
-    document.body.classList.remove('measuring');
+    setMeasuring(false);
     this._setMode(null, { skipModeChange: true });
     this._setReadout('Pick a mode to start.');
   }

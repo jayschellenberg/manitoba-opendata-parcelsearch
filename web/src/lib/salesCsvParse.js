@@ -72,6 +72,13 @@ const HEADER_ALIASES = {
   parcelSize:       ['parcel size', 'parcelsize'],
   parcelSizeUnit:   ['parcel size unit', 'parcelsizeunit'],
   parcelChange:     ['parcel change', 'parcelchange'],
+  // WHERE parcelSize came from — at_sale_pdf, current_unchanged, or one of the
+  // two blank cases. parcelChange carries the confidence; this carries the
+  // source, and a size quoted in a report has to be able to name it. Added to
+  // the export after the first three (mao-scrape export_sales_for_web.R), so
+  // an older shard simply omits it and the app falls back to the vaguer
+  // wording — hence optional, like every column in this block.
+  sizeBasis:        ['size source', 'sizesource', 'size basis', 'sizebasis'],
   // Jason's N1 comp-database ID, joined onto the export by the hand-curated
   // crosswalk (mao-scrape DESIGN-N1-CROSSWALK.md). Blank = not matched yet,
   // which the N1 filter uses as its "needs entering into N1" signal.
@@ -238,6 +245,7 @@ function recordsFromRows(rows, cols) {
     const sizes     = valuesAt(cols.parcelSize);
     const sizeUnits = valuesAt(cols.parcelSizeUnit);
     const changes   = valuesAt(cols.parcelChange);
+    const bases     = valuesAt(cols.sizeBasis);
     const n1Ids     = valuesAt(cols.n1Id);
 
     const parcels = [];
@@ -260,6 +268,7 @@ function recordsFromRows(rows, cols) {
         ...(cols.parcelSize     >= 0 ? { parcelSize:     pickValue(sizes, k) }     : {}),
         ...(cols.parcelSizeUnit >= 0 ? { parcelSizeUnit: pickValue(sizeUnits, k) } : {}),
         ...(cols.parcelChange   >= 0 ? { parcelChange:   pickValue(changes, k) }   : {}),
+        ...(cols.sizeBasis      >= 0 ? { sizeBasis:      pickValue(bases, k) }     : {}),
         ...(cols.n1Id           >= 0 ? { n1Id:           pickValue(n1Ids, k) }     : {}),
       });
     }

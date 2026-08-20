@@ -620,6 +620,93 @@ test('the whole sale is judged, so both members of a $1 pair drop', () => {
   }
 });
 
+console.log('\ncomputeSaleGroups — at-sale size (lib/saleSize.js)');
+
+test('an export row divides by the AT-SALE acreage, not today\'s', () => {
+  // The headline case: 160 ac sold in 2019, subdivided to 40 ac since. Today's
+  // acreage would put $/acre at four times the true rate.
+  const features = [
+    feat({
+      _saleGroupId: 'g', OBJECTID: 1, _salePrice: '$320,000',
+      _acres: 40,                                   // today
+      _saleSizeKnown: true, _acresAtSale: 160,      // what sold
+      _asmtTotal: 1, _asmtBuildings: 0,
+    }),
+  ];
+  const stamp = computeSaleGroups(features, helpers).get('g');
+  assert.equal(stamp._saleGroupTotalAcres, 160);
+  assert.equal(stamp._saleGroupAcresIncomplete, false);
+  assert.ok(approx(stamp._saleGroupPpa, 2000));     // 320000 / 160, not / 40
+});
+
+test('a withheld at-sale size suppresses $/acre instead of using today\'s', () => {
+  const features = [
+    feat({
+      _saleGroupId: 'g', OBJECTID: 1, _salePrice: '$320,000',
+      _acres: 40,                                   // present, and must be ignored
+      _saleSizeKnown: true, _acresAtSale: null,     // pipeline withheld it
+      _asmtTotal: 1, _asmtBuildings: 0,
+    }),
+  ];
+  const stamp = computeSaleGroups(features, helpers).get('g');
+  assert.equal(stamp._saleGroupAcresIncomplete, true);
+  assert.equal(stamp._saleGroupPpa, null);
+  assert.equal(stamp._saleGroupPpsf, null);
+  assert.equal(stamp._saleGroupPpl, 320000);        // per-lot still works
+});
+
+test('one withheld member withholds the whole group\'s rate', () => {
+  // A partial denominator is the failure mode worth engineering against: it
+  // yields a plausible number rather than a visible gap.
+  const features = [
+    feat({ _saleGroupId: 'g', OBJECTID: 1, _salePrice: '$500,000', _saleSizeKnown: true, _acresAtSale: 80, _asmtTotal: 1, _asmtBuildings: 0 }),
+    feat({ _saleGroupId: 'g', OBJECTID: 2, _salePrice: '$500,000', _saleSizeKnown: true, _acresAtSale: null, _acres: 12, _asmtTotal: 1, _asmtBuildings: 0 }),
+  ];
+  const stamp = computeSaleGroups(features, helpers).get('g');
+  assert.equal(stamp._saleGroupAcresIncomplete, true);
+  assert.equal(stamp._saleGroupPpa, null);
+});
+
+test('a pasted comp set is unaffected — no columns, legacy acreage', () => {
+  // salesCsvParse omits the keys entirely on the paste path, so _saleSizeKnown
+  // is never set and the group must behave exactly as it did before.
+  const features = [
+    feat({ _saleGroupId: 'g', OBJECTID: 1, _salePrice: '$200,000', _acres: 4, _asmtTotal: 1, _asmtBuildings: 0 }),
+    feat({ _saleGroupId: 'g', OBJECTID: 2, _salePrice: '$200,000', _acres: 6, _asmtTotal: 1, _asmtBuildings: 0 }),
+  ];
+  const stamp = computeSaleGroups(features, helpers).get('g');
+  assert.equal(stamp._saleGroupTotalAcres, 10);
+  assert.equal(stamp._saleGroupAcresIncomplete, false);
+  assert.ok(approx(stamp._saleGroupPpa, 20000));
+});
+
+test('at-sale frontage drives $/FF, and an acres row contributes none', () => {
+  const features = [
+    feat({
+      _saleGroupId: 'g', OBJECTID: 1, _salePrice: '$220,000',
+      Frontage_or_Area: '50.00 FEET',               // today's roll — must not win
+      _saleSizeKnown: true, _frontageAtSaleFt: 110, // what sold
+      _asmtTotal: 1, _asmtBuildings: 0,
+    }),
+  ];
+  const stamp = computeSaleGroups(features, helpers).get('g');
+  assert.equal(stamp._saleGroupTotalFrontageFt, 110);
+  assert.equal(stamp._saleGroupFrontageIncomplete, false);
+  assert.ok(approx(stamp._saleGroupPpff, 2000));    // 220000 / 110
+  assert.equal(frontageRateState({ ...features[0].properties, ...stamp }), 'rate');
+});
+
+test('an at-sale ACRES row states no frontage, so $/FF stays withheld', () => {
+  const features = [
+    feat({ _saleGroupId: 'g', OBJECTID: 1, _salePrice: '$320,000', _saleSizeKnown: true, _acresAtSale: 160, _asmtTotal: 1, _asmtBuildings: 0 }),
+  ];
+  const stamp = computeSaleGroups(features, helpers).get('g');
+  assert.equal(stamp._saleGroupTotalFrontageFt, 0);
+  assert.equal(stamp._saleGroupFrontageIncomplete, true);
+  assert.equal(stamp._saleGroupPpff, null);
+  assert.equal(frontageRateState({ ...features[0].properties, ...stamp }), 'none');
+});
+
 const failed = results.filter((r) => r.status === 'fail');
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length > 0) process.exit(1);
