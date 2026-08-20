@@ -813,6 +813,13 @@ const PD_WEBSITES = {
   'CYPRESS':                           'https://www.cypressplanningdistrict.com/',
   // EASTERN INTERLAKE — no entry: eipd.ca is email-only, same Microsoft 365
   // nameservers and no A record as BROKENHEAD RIVER above.
+  // INLAND PORT SPECIAL PLANNING AREA is an area name, not a PD, but it
+  // out-votes SOUTH INTERLAKE 17-to-7 in RM of Rosser's dev-plan polygons
+  // and updatePdWebsiteButton takes the most frequent PLANNINGDISTRICT
+  // value — so without an entry here the button dead-ends. Rosser is a
+  // South Interlake member, hence the same URL. MUNI_TO_PD can't rescue
+  // it; that fallback only fires when the dev-plan layer returns nothing.
+  'INLAND PORT SPECIAL PLANNING AREA': 'https://www.sipd.ca/',
   'KEYSTONE':                          'https://www.keystonepd.ca/',
   'MID-WEST':                          'https://www.midwestplanning.ca/',
   'MORDEN/STANLEY/THOMPSON/WINKLER':   'https://www.mstw.ca/',
