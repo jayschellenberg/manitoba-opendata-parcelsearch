@@ -178,6 +178,7 @@ import {
   setMuniBoundariesData,
   setMuniBoundarySelected,
   wireMuniBoundaryPicker,
+  contentLayerOwnsPoint,
   setMascData,
   setMascRiverlotsData,
   setMascVisible,
@@ -2046,7 +2047,13 @@ const salesDbPanel = initSalesDbPanel({
 // municipality the archive does not hold, so a click on an un-scraped one is
 // a no-op rather than a selection that fails at load time.
 mapReady.then(() => {
-  wireMuniInteractions(map, (no) => salesDbPanel.toggleMuni?.(no));
+  // contentAt lets the boundary picker defer to whatever is drawn on top of
+  // it — the sale the user actually meant to click, or any overlay. map.js
+  // owns the layer ids; muniLayer.js can't import it and stay node-loadable,
+  // so the answer is passed in from here, where both are already in scope.
+  wireMuniInteractions(map, (no) => salesDbPanel.toggleMuni?.(no), {
+    contentAt: (point) => contentLayerOwnsPoint(map, point),
+  });
   const syncMuniLayer = async (tab) => {
     try {
       if (tab === 'sales') await showMuniLayer(map, await listShardKeys());

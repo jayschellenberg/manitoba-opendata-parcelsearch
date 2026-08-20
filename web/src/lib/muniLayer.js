@@ -221,8 +221,15 @@ export function fitToSelection(map, muniNos, { duration = 600 } = {}) {
  * Click a municipality to toggle it; hover to highlight.
  * `onToggle(muniNo)` returns truthy when the click was accepted, so a click
  * on a municipality the archive does not hold leaves the cursor alone.
+ *
+ * `contentAt(point)` reports whether ANY layer above this backdrop is drawn
+ * at that point, so the picker can defer to it. Injected rather than
+ * imported because the answer needs map.js's layer ids, and this module has
+ * to stay loadable under node — map.js pulls in maplibre, turf and
+ * mapbox-gl-draw. Omitted, the picker answers every click on the fill, as
+ * it always did.
  */
-export function wireMuniInteractions(map, onToggle) {
+export function wireMuniInteractions(map, onToggle, { contentAt } = {}) {
   let hovered = null;
   const setHover = (id, on) => {
     if (id == null) return;
@@ -232,15 +239,24 @@ export function wireMuniInteractions(map, onToggle) {
     setHover(hovered, false); hovered = null;
     map.getCanvas().style.cursor = '';
   };
+  // Two ways this backdrop stands down, both because a toggle here refits
+  // the map to the municipality (maxZoom 11) — a big move to make off a
+  // click the user aimed at something else.
+  //
+  //   - A measurement owns the pointer: every click is placing a vertex,
+  //     and this layer blankets the province, so it would otherwise toggle
+  //     a municipality under every vertex.
+  //   - ANYTHING is drawn over it at that point: a sale, zoning, the
+  //     Assessment Parcels fabric. These boundaries are the lowest vector
+  //     layer on the map and MapLibre fires every layer's handler under the
+  //     point, so this one answers only where it is the only thing there.
+  //
+  // The tint and pointer cursor go with the click in both cases; the cursor
+  // is written here directly, so left alone it would overwrite the draw
+  // tool's crosshair.
+  const standDown = (point) => isMeasuring() || (point ? Boolean(contentAt?.(point)) : false);
   map.on('mousemove', FILL, (e) => {
-    // A measurement owns the pointer: its clicks are placing vertices, and
-    // this layer blankets the whole province, so answering them would
-    // toggle a municipality under every vertex — and each toggle refits the
-    // map to that municipality (maxZoom 11), yanking the view out from
-    // under the measurement. The tint and the pointer cursor go with it;
-    // the cursor is written here directly, so left alone it would overwrite
-    // the draw tool's crosshair.
-    if (isMeasuring()) { dropHover(); return; }
+    if (standDown(e.point)) { dropHover(); return; }
     const f = e.features?.[0];
     if (!f) return;
     if (hovered !== f.id) { setHover(hovered, false); hovered = f.id; setHover(hovered, true); }
@@ -248,7 +264,7 @@ export function wireMuniInteractions(map, onToggle) {
   });
   map.on('mouseleave', FILL, dropHover);
   map.on('click', FILL, (e) => {
-    if (isMeasuring()) return;
+    if (standDown(e.point)) return;
     const no = e.features?.[0]?.properties?.MUNI_NO;
     if (no == null) return;
     onToggle?.(String(no));

@@ -550,6 +550,71 @@ const parcelHitLayers = (map) => PARCEL_HIT_LAYERS.filter((id) => map.getLayer(i
 /** Is this queryRenderedFeatures hit a search-result parcel, pin or polygon? */
 const isParcelHit = (h) => PARCEL_HIT_LAYERS.includes(h?.layer?.id);
 
+/**
+ * The municipality backdrop's own layers, on both tabs — Property Search's
+ * `muni-boundaries-*` and the Sales picker's `mb-munis-*`. Neither counts as
+ * content for the other: they are two views of the same backdrop, and when
+ * both are on the map they would otherwise each read the other as something
+ * on top and both stand down.
+ */
+const MUNI_BACKDROP_LAYERS = new Set([
+  'muni-boundaries-fill', 'muni-boundaries-line', 'muni-boundaries-label',
+  'mb-munis-fill', 'mb-munis-line', 'mb-munis-hover',
+]);
+
+/**
+ * True when ANY layer above the municipality backdrop has a feature at this
+ * point — a search result, zoning, dev plan, Assessment Parcels, a soil or
+ * MASC polygon, a traffic point, anything.
+ *
+ * The municipality fill is the lowest VECTOR layer on the map (index 6 of
+ * ~95; everything beneath it is raster basemap, which produces no click
+ * hits at all). That makes it a backdrop in the literal sense, so the rule
+ * is simply: it answers a click only when it is the only thing there.
+ *
+ * Stated that way rather than as a list of layers to defer to, because the
+ * list is the part that goes stale. The picker used to gate on "no search
+ * has run yet" as a proxy for "nothing is drawn over the boundaries", and
+ * the proxy was the bug: Assessment Parcels puts a whole municipality's
+ * fabric on screen with no search, so clicking a parcel silently re-scoped
+ * the search and the next click flew the map out to the municipality's full
+ * extent (measured on Altona: zoom 17.5 to 10.69). Enumerating parcel
+ * layers instead would have fixed that case and left zoning, dev plan and
+ * every future overlay to be remembered one at a time.
+ *
+ * Hidden layers never appear here — queryRenderedFeatures only returns what
+ * is actually drawn — so toggling an overlay off restores the gesture.
+ */
+export function contentLayerOwnsPoint(map, point) {
+  for (const hit of map.queryRenderedFeatures(point)) {
+    if (!MUNI_BACKDROP_LAYERS.has(hit?.layer?.id)) return true;
+  }
+  return false;
+}
+
+/**
+ * True when a PARCEL specifically sits under this point — a search result
+ * (fill or withheld-boundary pin), the subject parcel, or the Assessment
+ * Parcels fabric.
+ *
+ * Narrower than contentLayerOwnsPoint on purpose. This is the CLI popup's
+ * priority rule: a soil polygon should still answer a click that also lands
+ * on zoning, but must yield to the parcel drawn over it.
+ *
+ * Visibility is checked explicitly for the layers that get toggled, which
+ * is belt-and-braces over queryRenderedFeatures already skipping hidden
+ * layers — the intent is worth stating where the priority is decided.
+ */
+function parcelLayerOwnsPoint(map, point) {
+  if (map.queryRenderedFeatures(point, { layers: parcelHitLayers(map) }).length > 0) return true;
+  if (map.getLayer('subject-fill') &&
+      map.queryRenderedFeatures(point, { layers: ['subject-fill'] }).length > 0) return true;
+  if (map.getLayer('muni-parcels-fill') &&
+      map.getLayoutProperty('muni-parcels-fill', 'visibility') === 'visible' &&
+      map.queryRenderedFeatures(point, { layers: ['muni-parcels-fill'] }).length > 0) return true;
+  return false;
+}
+
 const PARCEL_FILL_OPACITY = [
   'case',
   ['boolean', ['feature-state', 'starred'], false],
@@ -2769,15 +2834,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // on over search-result parcels. Click defers to parcel-fill
       // / muni-parcels-fill / subject-fill the same way the hover
       // path does.
-      function shouldDeferToParcelLayer(point) {
-        if (map.queryRenderedFeatures(point, { layers: parcelHitLayers(map) }).length > 0) return true;
-        if (map.getLayer('subject-fill') &&
-            map.queryRenderedFeatures(point, { layers: ['subject-fill'] }).length > 0) return true;
-        if (map.getLayer('muni-parcels-fill') &&
-            map.getLayoutProperty('muni-parcels-fill', 'visibility') === 'visible' &&
-            map.queryRenderedFeatures(point, { layers: ['muni-parcels-fill'] }).length > 0) return true;
-        return false;
-      }
+      const shouldDeferToParcelLayer = (point) => parcelLayerOwnsPoint(map, point);
       const cliClickPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '340px' });
       onLayerClick(map, 'cli-agr-fill', (e) => {
         if (map.getLayoutProperty('cli-agr-fill', 'visibility') !== 'visible') return;
@@ -3617,16 +3674,29 @@ export function wireMuniBoundaryPicker(map, { onPick, isEnabled } = {}) {
     setCursor: (cursor) => { map.getCanvas().style.cursor = cursor; },
   });
 
-  // The hover stands down while a tool owns the pointer for the same reason
-  // the click does — and this picker writes the cursor itself rather than
-  // through setHoverCursor(), so its pointer would otherwise overwrite the
-  // measurement crosshair.
+  // Two ways this backdrop has to stand down, and they are different.
+  //
+  // A tool owning the pointer (measure, shape draw) disarms it everywhere:
+  // every click is placing geometry. The hover is spelled out here rather
+  // than left to onLayerClick because this picker writes the cursor itself
+  // rather than through setHoverCursor(), so its pointer would otherwise
+  // overwrite the draw tool's crosshair.
+  //
+  // ANYTHING drawn over the boundaries disarms it at that point — search
+  // results, zoning, dev plan, Assessment Parcels, a soil polygon. This is
+  // the lowest vector layer on the map, so it answers only where it is the
+  // only thing there. isEnabled()'s !searchHasRun was meant to cover this
+  // but only knows about search results.
   map.on('mousemove', 'muni-boundaries-fill', (e) => {
-    if (isMeasuring() || isShapeDrawing()) { picker.mouseLeave(); return; }
+    if (isMeasuring() || isShapeDrawing() || contentLayerOwnsPoint(map, e.point)) {
+      picker.mouseLeave();
+      return;
+    }
     picker.mouseMove(e.features?.[0]?.id);
   });
   map.on('mouseleave', 'muni-boundaries-fill', () => picker.mouseLeave());
   onLayerClick(map, 'muni-boundaries-fill', (e) => {
+    if (contentLayerOwnsPoint(map, e.point)) return;
     picker.click(e.features?.[0]?.properties?.MUNI_LIST_NAME_WITH_TYPE);
   });
 
