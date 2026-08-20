@@ -33,6 +33,7 @@ import {
   shapeClickHandled,
   isShapeDrawing,
 } from './drawShapes.js';
+import { isMeasuring, setMeasuring } from './lib/measuring.js';
 import { WAYBACK_VERSIONS, waybackTileUrl } from './lib/wayback.js';
 import { MB_PARCEL_DATA_CDN, currentAadt } from './arcgis.js';
 import {
@@ -422,13 +423,40 @@ if (MLI_ORTHO_PMTILES_URL) {
 }
 
 /**
- * True while the measurement panel is open. MeasureControl owns the
- * `measuring` class on <body> — the bottom-right map legends already
- * hide off it in CSS — so reading it back here keeps the hover tooltips
- * in step with the panel without a second flag to keep synchronised.
+ * True when a map TOOL already owns this click, so the layer handlers —
+ * every popup, and both click-a-municipality pickers — must stand down.
+ *
+ * Two owners, the same pair the hover handlers defer to through
+ * isMeasuring()/isShapeDrawing():
+ *
+ *   - the measurement panel, where every click is placing a vertex;
+ *   - the shape-draw tools, where every click is placing geometry or
+ *     toggling a committed shape's Include/Exclude.
+ *
+ * MapLibre dispatches a click to EVERY layer handler under the point
+ * independently — there is no propagation to stop — so without this gate
+ * a vertex click also fires whatever sits beneath it. The visible damage
+ * was the Property Search muni picker (armed until a search has run):
+ * measuring across a municipality boundary re-scoped the search and then
+ * flew the map out to the whole municipality mid-measurement.
+ *
+ * Register through onLayerClick() rather than calling this directly, so a
+ * layer added later cannot forget the gate.
  */
-function isMeasuring() {
-  return document.body.classList.contains('measuring');
+function clickOwnedByTool(map, e) {
+  if (isMeasuring()) return true;
+  return shapeClickHandled(map, e);
+}
+
+/**
+ * map.on('click', layer, fn) with the tool gate applied. Every layer
+ * click in the app goes through here.
+ */
+function onLayerClick(map, layerId, handler) {
+  map.on('click', layerId, (e) => {
+    if (clickOwnedByTool(map, e)) return;
+    handler(e);
+  });
 }
 
 // mapbox-gl-draw style spec for the measurement tool. High-contrast orange
@@ -2598,10 +2626,6 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // Point on 'parcel-pin' — without the second registration, clicking a
       // pin would do nothing at all.
       const onParcelClick = (e) => {
-        // Shape tools own the click while armed (placing geometry) or
-        // when a committed shape sits under the cursor (mode toggle) —
-        // either way the parcel popup stands down.
-        if (shapeClickHandled(map, e)) return;
         const f = e.features?.[0];
         if (!f) return;
         const key = f.properties?._rowKey;
@@ -2627,7 +2651,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
           ?? [e.lngLat.lng, e.lngLat.lat];
         wireCoordsCopy(parcelClickPopup, center);
       };
-      for (const layerId of PARCEL_HIT_LAYERS) map.on('click', layerId, onParcelClick);
+      for (const layerId of PARCEL_HIT_LAYERS) onLayerClick(map, layerId, onParcelClick);
 
       // Muni-parcels hover popup. The muni-parcels source carries a richer
       // property set than the parcel hover (Roll #, Address, DU, area,
@@ -2677,8 +2701,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // copy the roll number, click the assessment-report link, etc).
       // Same content as the hover popup but with a close button.
       const muniClickPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '760px' });
-      map.on('click', 'muni-parcels-fill', (e) => {
-        if (shapeClickHandled(map, e)) return;
+      onLayerClick(map, 'muni-parcels-fill', (e) => {
         if (map.getLayoutProperty('muni-parcels-fill', 'visibility') !== 'visible') return;
         // Defer to the search-result click handler when both layers
         // overlap — keeps the table-scroll behaviour intact.
@@ -2710,7 +2733,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // handlers raced on one shared popup and dev-plan (wired last) won.
       const histClickPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '320px' });
       const wireHist = (layerId, htmlFn, deferTo = []) => {
-        map.on('click', layerId, (e) => {
+        onLayerClick(map, layerId, (e) => {
           if (map.getLayoutProperty(layerId, 'visibility') !== 'visible') return;
           for (const other of deferTo) {
             if (map.getLayer(other) &&
@@ -2751,7 +2774,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
         return false;
       }
       const cliClickPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '340px' });
-      map.on('click', 'cli-agr-fill', (e) => {
+      onLayerClick(map, 'cli-agr-fill', (e) => {
         if (map.getLayoutProperty('cli-agr-fill', 'visibility') !== 'visible') return;
         if (shouldDeferToParcelLayer(e.point)) return;
         const p = e.features?.[0]?.properties;
@@ -2767,7 +2790,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // Click a contaminated-site point → small popup with the registry
       // designation + a link out to the official page for that site.
       const contamPopup = new maplibregl.Popup({ closeButton: true });
-      map.on('click', 'contam-circle', (e) => {
+      onLayerClick(map, 'contam-circle', (e) => {
         const p = e.features?.[0]?.properties;
         if (!p) return;
         contamPopup.setLngLat(e.lngLat).setHTML(contamHtml(p)).addTo(map);
@@ -2782,7 +2805,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // Click an official MASC risk-area polygon → small popup with the
       // Risk_Area number from Manitoba Maps.
       const riskAreaPopup = new maplibregl.Popup({ closeButton: true });
-      map.on('click', 'masc-risk-area-fill', (e) => {
+      onLayerClick(map, 'masc-risk-area-fill', (e) => {
         const p = e.features?.[0]?.properties;
         if (!p) return;
         riskAreaPopup.setLngLat(e.lngLat).setHTML(riskAreaHtml(p)).addTo(map);
@@ -2800,7 +2823,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // popups would bury the map.
       const wallasPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '320px' });
       const wireWallas = (layerId, htmlFn) => {
-        map.on('click', layerId, (e) => {
+        onLayerClick(map, layerId, (e) => {
           if (map.getLayoutProperty(layerId, 'visibility') !== 'visible') return;
           const p = e.features?.[0]?.properties;
           if (!p) return;
@@ -2845,7 +2868,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // the source-report citation so the user can trace the data
       // back to the printed soil survey.
       const soilSurveyPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '340px' });
-      map.on('click', 'soil-survey-fill', (e) => {
+      onLayerClick(map, 'soil-survey-fill', (e) => {
         const p = e.features?.[0]?.properties;
         if (!p) return;
         soilSurveyPopup.setLngLat(e.lngLat).setHTML(soilSurveyHtml(p)).addTo(map);
@@ -2862,7 +2885,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // and indexed; main.js stamps the matched AADT onto each station
       // feature's properties before pushing them to the source).
       const trafficPopup = new maplibregl.Popup({ closeButton: true });
-      map.on('click', 'traffic-circle', (e) => {
+      onLayerClick(map, 'traffic-circle', (e) => {
         const p = e.features?.[0]?.properties;
         if (!p) return;
         trafficPopup.setLngLat(e.lngLat).setHTML(trafficHtml(p)).addTo(map);
@@ -2877,7 +2900,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // Click an AADT flow segment → popup with the road / highway, the
       // segment kilometre range, and the AADT estimate for that segment.
       const flowPopup = new maplibregl.Popup({ closeButton: true });
-      map.on('click', 'traffic-flow-line', (e) => {
+      onLayerClick(map, 'traffic-flow-line', (e) => {
         const p = e.features?.[0]?.properties;
         if (!p) return;
         flowPopup.setLngLat(e.lngLat).setHTML(trafficFlowHtml(p)).addTo(map);
@@ -2890,7 +2913,7 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       map.on('mouseleave', 'traffic-flow-line', () => { setHoverCursor(''); });
 
       const highwaysPopup = new maplibregl.Popup({ closeButton: true });
-      map.on('click', 'mb-highways-line', (e) => {
+      onLayerClick(map, 'mb-highways-line', (e) => {
         const p = e.features?.[0]?.properties;
         if (!p) return;
         highwaysPopup.setLngLat(e.lngLat).setHTML(mbHighwayHtml(p)).addTo(map);
@@ -3589,12 +3612,16 @@ export function wireMuniBoundaryPicker(map, { onPick, isEnabled } = {}) {
     setCursor: (cursor) => { map.getCanvas().style.cursor = cursor; },
   });
 
-  map.on('mousemove', 'muni-boundaries-fill', (e) => picker.mouseMove(e.features?.[0]?.id));
+  // The hover stands down while a tool owns the pointer for the same reason
+  // the click does — and this picker writes the cursor itself rather than
+  // through setHoverCursor(), so its pointer would otherwise overwrite the
+  // measurement crosshair.
+  map.on('mousemove', 'muni-boundaries-fill', (e) => {
+    if (isMeasuring() || isShapeDrawing()) { picker.mouseLeave(); return; }
+    picker.mouseMove(e.features?.[0]?.id);
+  });
   map.on('mouseleave', 'muni-boundaries-fill', () => picker.mouseLeave());
-  map.on('click', 'muni-boundaries-fill', (e) => {
-    // Shape tools own the click while armed, exactly as the parcel popup
-    // stands down for them.
-    if (shapeClickHandled(map, e)) return;
+  onLayerClick(map, 'muni-boundaries-fill', (e) => {
     picker.click(e.features?.[0]?.properties?.MUNI_LIST_NAME_WITH_TYPE);
   });
 
@@ -5837,10 +5864,11 @@ class MeasureControl {
       // the Measure button. Adding `body.measuring` lets a CSS rule
       // hide every `.map-legend` until the user closes the panel.
       //
-      // The same class is the signal the hover tooltips read through
-      // isMeasuring() to suppress themselves — keep the two `classList`
-      // calls here and in _close() paired, or the tooltips stay off.
-      document.body.classList.add('measuring');
+      // The same flag is what every hover and click handler reads
+      // through isMeasuring() to stand down while the measurement owns
+      // the pointer — keep this call and the one in _close() paired, or
+      // the map stays inert after the panel closes.
+      setMeasuring(true);
     } else {
       this._close();
     }
@@ -5850,7 +5878,7 @@ class MeasureControl {
     try { this._draw.changeMode('simple_select'); } catch { /* mode may already be simple_select */ }
     this._panel.style.display = 'none';
     this._btn.classList.remove('active');
-    document.body.classList.remove('measuring');
+    setMeasuring(false);
     this._setMode(null, { skipModeChange: true });
     this._setReadout('Pick a mode to start.');
   }
