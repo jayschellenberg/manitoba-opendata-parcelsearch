@@ -18,6 +18,8 @@
 // export and the picker use). Fetched once, lazily, the first time the layer
 // is asked for: the Property Search tab never needs it.
 
+import { isMeasuring } from './measuring.js';
+
 const SRC   = 'mb-munis';
 const FILL  = 'mb-munis-fill';
 const LINE  = 'mb-munis-line';
@@ -226,17 +228,27 @@ export function wireMuniInteractions(map, onToggle) {
     if (id == null) return;
     map.setFeatureState({ source: SRC, id }, { hover: on });
   };
+  const dropHover = () => {
+    setHover(hovered, false); hovered = null;
+    map.getCanvas().style.cursor = '';
+  };
   map.on('mousemove', FILL, (e) => {
+    // A measurement owns the pointer: its clicks are placing vertices, and
+    // this layer blankets the whole province, so answering them would
+    // toggle a municipality under every vertex — and each toggle refits the
+    // map to that municipality (maxZoom 11), yanking the view out from
+    // under the measurement. The tint and the pointer cursor go with it;
+    // the cursor is written here directly, so left alone it would overwrite
+    // the draw tool's crosshair.
+    if (isMeasuring()) { dropHover(); return; }
     const f = e.features?.[0];
     if (!f) return;
     if (hovered !== f.id) { setHover(hovered, false); hovered = f.id; setHover(hovered, true); }
     map.getCanvas().style.cursor = 'pointer';
   });
-  map.on('mouseleave', FILL, () => {
-    setHover(hovered, false); hovered = null;
-    map.getCanvas().style.cursor = '';
-  });
+  map.on('mouseleave', FILL, dropHover);
   map.on('click', FILL, (e) => {
+    if (isMeasuring()) return;
     const no = e.features?.[0]?.properties?.MUNI_NO;
     if (no == null) return;
     onToggle?.(String(no));
