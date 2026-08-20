@@ -16,6 +16,7 @@ import { initSalesDbPanel } from './lib/salesDbPanel.js';
 import { listShardKeys } from './lib/salesStore.js';
 import { showMuniLayer, hideMuniLayer, paintMuniSelection, wireMuniInteractions, fitToSelection }
   from './lib/muniLayer.js';
+import { buildN1Cell } from './lib/n1Cell.js';
 // Route planner — TSP solver + Mapbox client.
 import { solveRoute, haversineMatrix, mostOutlyingIndex } from './lib/routeSolver.js';
 import {
@@ -179,6 +180,7 @@ import {
   setMuniBoundarySelected,
   wireMuniBoundaryPicker,
   contentLayerOwnsPoint,
+  wireCopyAnchor,
   setMascData,
   setMascRiverlotsData,
   setMascVisible,
@@ -9601,9 +9603,9 @@ function renderTable(rows, { resetPage = true } = {}) {
     tr.appendChild(primaryPropCell);
     // N1 ID — positional like every cell here; must stay in step with the
     // data-col="n1id" <th> right after Primary Property.
-    const n1IdCell = td(p._n1Id || null, 'num');
-    n1IdCell.classList.add('sales-only');
-    tr.appendChild(n1IdCell);
+    const n1Cell = n1IdCell(p);
+    n1Cell.classList.add('sales-only');
+    tr.appendChild(n1Cell);
     // Multi-parcel-sale group columns. Identical for every parcel
     // in the same sale. Empty (single-cell dash) for non-grouped
     // single-parcel sales / no-sale rows.
@@ -11154,6 +11156,13 @@ function rollNumberCell(p) {
   a.addEventListener('click', (e) => e.stopPropagation());
   cell.appendChild(a);
   return cell;
+}
+
+/** N1 ID cell. Shape and rationale live in lib/n1Cell.js, which is where it
+ *  can be tested; this binds it to the real document and map.js's clipboard
+ *  helper. */
+function n1IdCell(p) {
+  return buildN1Cell(document, p._n1Id, { wireCopy: wireCopyAnchor });
 }
 
 function assessmentCell(p) {

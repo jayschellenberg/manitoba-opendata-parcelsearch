@@ -3771,8 +3771,13 @@ function polygonBboxMidpoint(geometry) {
  * below is written once. Anchors rendered into a HOVER popup are never wired
  * — that popup is gone by the time the pointer reaches the link — so the
  * markup appears in both and only the sticky click popup acts on it.
+ *
+ * Exported for the results grid's N1 ID cell, which is the same affordance
+ * in a different container. The fallback is the reason to share rather than
+ * reimplement: it is the part that is easy to get wrong and never notice,
+ * since navigator.clipboard works on every host a developer tests on.
  */
-function wireCopyAnchor(anchor, text) {
+export function wireCopyAnchor(anchor, text) {
   if (!anchor || !text) return;
   anchor.addEventListener('click', (ev) => {
     ev.preventDefault();
