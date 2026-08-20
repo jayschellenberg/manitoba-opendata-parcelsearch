@@ -2242,6 +2242,20 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   white-space: nowrap;
 }
 .sidebar .sale-price-row > .field { flex: 1 1 0; min-width: 0; }
+/* Two labelled controls sharing one row — Parcels + N1. Equal flex basis
+   rather than content width, so the halves stay 50/50 whatever the labels
+   say and the two dropdowns line up with the Min/Max inputs above them. */
+.sidebar .sale-price-row > .sale-price-half {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sidebar .sale-price-row > .sale-price-half > .field { flex: 1 1 0; min-width: 0; }
+/* Selects here must fill their half; left to shrink-wrap they size to the
+   longest option and break the 50/50 split. */
+.sidebar .sale-price-row select { width: 100%; min-width: 0; }
 .sidebar .sale-price-row input[type="number"] {
   width: 100%;
   padding: 6px 6px;

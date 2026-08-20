@@ -62,6 +62,12 @@ export const DEFAULT_VISIBLE = new Set([
   'address',
   'saledate',
   'saleprice',
+  // MAO's classification of the SALE (FARM BARE LAND, ICI LAND AND BUILDINGS…).
+  // Default-visible because it is the field that explains why a sale does or
+  // does not appear in a sale-type-narrowed search — the question the grid
+  // could not answer before (Jason, 2026-08-19). .sales-only, so Property
+  // Search never renders it.
+  'saletype',
   // N1 crosswalk ID — default-visible (and ADOPT_ONCE for stored sets):
   // the whole point of the crosswalk is seeing at a glance which comps
   // already live in N1, so a hidden-by-default column would bury it.
@@ -117,7 +123,7 @@ export const DEFAULT_VISIBLE = new Set([
 // Each key here is added to the visible set ONCE (tracked separately in
 // ADOPTED_KEY); untick it after that and it stays unticked.
 const ADOPTED_KEY = 'mbps_table_columns_adopted';
-const ADOPT_ONCE = ['streetview', 'rollsize', 'zonecat', 'n1id', 'muniname'];
+const ADOPT_ONCE = ['streetview', 'rollsize', 'zonecat', 'n1id', 'muniname', 'saletype'];
 
 // Column presets — `null` value means "everything that the current
 // mode would show". The labels match the dropdown options.
@@ -128,7 +134,7 @@ export const PRESETS = {
   // the weaker value as the authoritative one — and on the ~37% of parcels
   // stating frontage feet it would hide the only assessor-stated size there is.
   'Sales analysis': new Set([
-    'favorite', 'roll', 'muniname', 'address', 'saledate', 'saleprice', 'n1id',
+    'favorite', 'roll', 'muniname', 'address', 'saledate', 'saleprice', 'saletype', 'n1id',
     'grouppriceac', 'grouppricesf', 'grouppricelot', 'rollsize', 'acres',
     'groupacres',
     'zone1', 'zonecat', 'subjdist', 'saletoasmt',
@@ -164,7 +170,7 @@ export const PRESETS = {
   // acres per the invariant at the top of PRESETS.
   'Commercial Sales': new Set([
     'favorite', 'roll', 'muniname', 'address', 'saledate', 'saleprice',
-    'primaryprop', 'n1id',
+    'saletype', 'primaryprop', 'n1id',
     'zone1', 'legal', 'du', 'rollsize', 'acres', 'value', 'streetview',
   ]),
   // Land comps (Jason's chosen list, 2026-08-17) — the mirror of Commercial
@@ -174,10 +180,32 @@ export const PRESETS = {
   // parcels, and the assessment split so a "vacant" comp that turns out to
   // carry a building is visible rather than inferred from price.
   //
+  // Five columns joined on review (Jason, 2026-08-19), each closing a gap the
+  // original list left on a bare-land comp:
+  //
+  //   n1id       — every other sales preset carries it, and the sidebar has an
+  //                N1 filter whose result this view could not read. Which land
+  //                comps are already in N1 is the crosswalk queue's whole
+  //                question.
+  //   zonecat    — Land Sales carried the municipal zone CODE but not the
+  //                province's rollup, and land searches are routinely
+  //                multi-muni, where the code compares across nothing.
+  //   subjdist   — distance from the subject is a first-pass screen on any
+  //                comp set, and the tab's subject/radius controls had no
+  //                column to report into here.
+  //   primaryprop— on a LAND view a non-blank descriptor is a red flag: the
+  //                "bare land" comp has a building on it. The preset already
+  //                carried Bldg $ / Bldg % for that check; this is the direct
+  //                signal rather than the inferred one, and it is what
+  //                disagrees with Sale Type Group on Macdonald roll 90800.
+  //   water      — waterfront and near-water frontage move bare land value
+  //                more than they move improved value, and it ships pre-baked
+  //                per muni, so it costs no overlay load.
   'Land Sales': new Set([
-    'favorite', 'roll', 'muniname', 'saledate', 'saleprice', 'groupsize',
-    'address', 'zone1', 'rollsize', 'acres', 'sf', 'groupacres', 'groupsf',
+    'favorite', 'roll', 'n1id', 'muniname', 'saledate', 'saleprice', 'groupsize',
+    'address', 'zone1', 'zonecat', 'rollsize', 'acres', 'sf', 'groupacres', 'groupsf',
     'grouppriceac', 'grouppricesf', 'grouppriceff', 'grouppricelot',
+    'subjdist', 'saletype', 'primaryprop', 'water',
     'saletoasmt', 'asmtland', 'asmtbldg', 'asmtpct', 'asmtyear',
     'legal', 'value', 'streetview',
   ]),
@@ -202,7 +230,7 @@ export const PRESETS = {
   'Agricultural': new Set([
     'favorite', 'roll', 'muniname', 'address', 'rollsize', 'acres', 'landcover', 'cultpct', 'water',
     'soil', 'clicls', 'soiltype', 'slope', 'riskarea', 'tile', 'irrigation',
-    'grouppriceac', 'groupacres', 'saledate', 'saleprice', 'saletoasmt', 'grouppricesf',
+    'grouppriceac', 'groupacres', 'saledate', 'saleprice', 'saletype', 'saletoasmt', 'grouppricesf',
     'zone1', 'dev1', 'legal', 'title',
   ]),
   // Residential-oriented view — the mirror of Agricultural. Deliberately
@@ -235,7 +263,7 @@ export const PRESETS = {
     // rather than an area are overwhelmingly town and subdivision lots —
     // exactly this preset's subject. Blank on the rest, which is the data
     // saying the roll records no frontage, not a gap.
-    'saledate', 'saleprice', 'saletoasmt', 'grouppricelot', 'grouppricesf',
+    'saledate', 'saleprice', 'saletype', 'saletoasmt', 'grouppricelot', 'grouppricesf',
     'grouppriceff',
     // Primary Property — MAO's structure descriptor, added 2026-08-18. 45% of
     // residential sales carry none at all, which IS the reading: bare land.
@@ -248,7 +276,123 @@ export const PRESETS = {
   'Full detail': null,
 };
 
+/**
+ * Per-preset COLUMN ORDER. The presets above decide WHICH columns render;
+ * this decides WHERE they render.
+ *
+ * The table has exactly one physical column order — the thead's own
+ * sequence — and for most presets that order is right. Land Sales is the
+ * exception. Bare land is compared on rate per unit, so $/Acre is the
+ * whole reason that preset exists, and the natural order buries it 13th
+ * behind the identity, size and group columns — off-screen without a
+ * horizontal scroll (Jason, 2026-08-19). The preset's own comment already
+ * claimed it "leads with them"; this is what makes that true.
+ *
+ * A preset with NO entry here keeps the natural thead order, so nothing
+ * changes for Sales analysis, Commercial Sales, Zoning check, Agricultural,
+ * Residential or Full detail.
+ *
+ * Three rules, each load-bearing:
+ *
+ *   - Unlisted keys keep their natural order and follow the listed ones.
+ *     The list is a "bring these forward" statement, not a full manifest,
+ *     so a column added to the preset later still renders without having
+ *     to be repeated here.
+ *   - A key naming TWO physical columns moves both. `acres` and `rollsize`
+ *     each appear twice in the thead (a .sales-only twin and a .basic-only
+ *     twin); only the mode-appropriate one ever renders, so moving both
+ *     lands them adjacent and the user still sees one column — the same
+ *     reasoning the visibility set uses for the same pair.
+ *   - data-no-gear columns (the map-# column) are pinned at the front and
+ *     never move: their position is part of the numbering affordance.
+ */
+export const PRESET_ORDER = {
+  // Identity and the sale first — enough to know WHICH comp this is —
+  // then the rates, which is what the view is for.
+  //
+  // Every rate is followed immediately by its own denominator. That is the
+  // invariant the natural order already gropes towards and this makes
+  // literal: on a multi-parcel sale a rate shown without the figure it was
+  // divided by cannot be read, because the per-parcel Acres cell is not the
+  // land the price bought (Jason, 2026-08-13). So $/Acre → Group Acres,
+  // $/SF → Group SF, $/Lot → Group #.
+  //
+  // $/FF is the exception to that pairing: its denominator is the frontage
+  // inside Roll Frontage/Area, and that column is ALSO the primary size
+  // source that has to ride immediately ahead of Acres (see the invariant
+  // at the top of PRESETS). It cannot sit in both places, so it stays with
+  // Acres and $/FF is left beside the other rates.
+  'Land Sales': [
+    // N1 ID rides with the identity block: it is a short cell answering "is
+    // this comp already in the database", which is the first thing to know
+    // about a comp and the last thing worth scrolling for. $/Acre still
+    // follows Address immediately, which is the placement that matters.
+    'favorite', 'roll', 'n1id', 'muniname', 'saledate', 'saleprice', 'address',
+    'grouppriceac', 'groupacres', 'grouppricesf', 'groupsf',
+    'grouppriceff', 'grouppricelot', 'groupsize',
+    // Per-parcel size AFTER the group figures: on a land comp the sale is
+    // the transaction and the parcel is a component of it.
+    'rollsize', 'acres', 'sf',
+    // Distance screens the comp set before any of its detail matters.
+    'subjdist',
+    'zone1', 'zonecat', 'water',
+    // The "is it really bare land?" block, read together: MAO's category for
+    // the sale, its structure descriptor, then the assessment split that
+    // either corroborates them or contradicts both.
+    'saletype', 'primaryprop',
+    // Sale/Asmt is a ratio and Assessment is its denominator, so the same
+    // pairing rule puts them together ahead of the assessment split.
+    'saletoasmt', 'value', 'asmtland', 'asmtbldg', 'asmtpct', 'asmtyear',
+    'legal', 'streetview',
+  ],
+};
+
+/**
+ * Resolve a preset's key list into a permutation of natural column indices.
+ *
+ * Pure — no DOM — so the ordering rules above can be tested directly.
+ *
+ * @param {Array<{key: string, pinned?: boolean}>} natural
+ *   Every physical column in thead order. `pinned` marks data-no-gear
+ *   columns, which never move.
+ * @param {string[]|null} order Preset key list, or null for natural order.
+ * @returns {number[]} Natural indices in the order they should render.
+ */
+export function columnPermutation(natural, order) {
+  const all = natural.map((c, i) => i);
+  if (!order || !order.length) return all;
+  // Key -> every natural index carrying it, in natural order. Duplicated
+  // keys (the Acres / Roll Frontage-Area twins) therefore move as a pair.
+  const byKey = new Map();
+  const pinned = [];
+  for (let i = 0; i < natural.length; i++) {
+    if (natural[i].pinned) { pinned.push(i); continue; }
+    const key = natural[i].key;
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(i);
+  }
+  const out = [...pinned];
+  const taken = new Set(pinned);
+  for (const key of order) {
+    for (const i of byKey.get(key) || []) {
+      if (taken.has(i)) continue;   // key listed twice: first mention wins
+      taken.add(i);
+      out.push(i);
+    }
+  }
+  // Everything the list didn't mention keeps its natural order behind.
+  for (const i of all) if (!taken.has(i)) out.push(i);
+  return out;
+}
+
 let visible = new Set(DEFAULT_VISIBLE);
+// Which preset's column ORDER is in force, or null for the natural thead
+// order. Persisted beside the visible-set (own key, so an older stored
+// visibility set is untouched): a reload that restored Land Sales'
+// COLUMNS but not its ORDER would put $/Acre back at position 13 —
+// half the preset, which is worse than neither half.
+const ORDER_KEY = 'mbps_table_order';
+let orderName = null;
 const listeners = new Set();
 const presetListeners = new Set();
 
@@ -339,6 +483,14 @@ export function applyPreset(name) {
   const preset = PRESETS[name];
   if (preset === undefined) return; // unknown
   visible = preset == null ? null : new Set(preset);
+  // A preset with no PRESET_ORDER entry restores the natural thead order
+  // rather than inheriting the last preset's — switching from Land Sales
+  // to Agricultural must not leave the ag view leading with $/Acre.
+  orderName = PRESET_ORDER[name] ? name : null;
+  try {
+    if (orderName) localStorage.setItem(ORDER_KEY, orderName);
+    else localStorage.removeItem(ORDER_KEY);
+  } catch { /* storage unavailable — order just doesn't survive a reload */ }
   writeStored();
   applyVisibility();
   emit();
@@ -366,9 +518,82 @@ export function onPresetApply(fn) {
  * safe to call after each table render so newly-built rows pick
  * up the hidden state.
  */
+/**
+ * Stamp each thead cell with its NATURAL index, once.
+ *
+ * Every reorder is expressed as a permutation of these indices rather than
+ * of current DOM positions, so switching from one preset's order straight
+ * to another's always starts from the same baseline instead of compounding
+ * on whatever the last one left behind.
+ */
+function stampNaturalOrder(heads) {
+  if (heads[0]?.dataset.nat !== undefined) return;
+  heads.forEach((th, i) => { th.dataset.nat = String(i); });
+}
+
+/** Re-append a row's children in `perm` (an array of natural indices). */
+function reorderChildren(rowEl, perm) {
+  const cells = Array.from(rowEl.children);
+  // A freshly-rendered tbody row is built in natural order and its cells
+  // carry no data-col of their own, so position IS natural index on first
+  // sight. Stamping it here is what lets a LATER order change find its way
+  // back to the baseline.
+  cells.forEach((c, i) => { if (c.dataset.nat === undefined) c.dataset.nat = String(i); });
+  const byNat = new Map(cells.map((c) => [Number(c.dataset.nat), c]));
+  const frag = document.createDocumentFragment();
+  for (const n of perm) {
+    const cell = byNat.get(n);
+    if (cell) frag.appendChild(cell);
+  }
+  rowEl.appendChild(frag);
+}
+
+/**
+ * Put the thead and every rendered row into the active preset's order.
+ *
+ * Idempotent and cheap to re-run: each row carries the signature of the
+ * order it is already in, so a re-render (sort, page, filter) only pays
+ * for the rows it actually rebuilt. Runs BEFORE the visibility pass
+ * because that pass matches tds to ths positionally — reordering one
+ * without the other would hide the wrong columns.
+ */
+function applyOrder(heads) {
+  const headRow = heads[0]?.parentElement;
+  if (!headRow) return;
+  const order = orderName ? PRESET_ORDER[orderName] : null;
+  const sig = order ? orderName : 'natural';
+  // Read the column list back in NATURAL order via the data-nat stamps, NOT
+  // in current DOM order. Once the thead has been reordered it no longer
+  // reads left-to-right as the baseline, and feeding it back in computes a
+  // permutation OF the permutation — identity, whenever the same preset is
+  // re-applied. The thead survives that (its signature makes it a no-op) but
+  // freshly rendered rows do not: they would be left in natural order under a
+  // reordered header, putting every cell in the wrong column.
+  const natural = heads
+    .slice()
+    .sort((a, b) => Number(a.dataset.nat) - Number(b.dataset.nat))
+    .map((th) => ({ key: th.dataset.col, pinned: th.hasAttribute('data-no-gear') }));
+  const perm = columnPermutation(natural, order || null);
+  if (headRow.dataset.orderSig !== sig) {
+    reorderChildren(headRow, perm);
+    headRow.dataset.orderSig = sig;
+  }
+  for (const row of document.querySelectorAll('#results tbody tr')) {
+    if (row.dataset.orderSig === sig) continue;
+    reorderChildren(row, perm);
+    row.dataset.orderSig = sig;
+  }
+}
+
 export function applyVisibility() {
-  const heads = Array.from(document.querySelectorAll('#results thead th'));
+  let heads = Array.from(document.querySelectorAll('#results thead th'));
   if (!heads.length) return;
+  // Column ORDER first, then visibility — see applyOrder. Re-read the
+  // thead afterwards: the elements are the same but their DOM order (and
+  // so their positional pairing with each row's tds) has just changed.
+  stampNaturalOrder(heads);
+  applyOrder(heads);
+  heads = Array.from(document.querySelectorAll('#results thead th'));
   // "Full detail" (visible === null) means every column the data could
   // fill, so it also lifts the OVERLAY gating — Dev-Plan and Tile /
   // Irrigation otherwise stay hidden until their layer is switched on,
@@ -412,6 +637,12 @@ export function onColumnsChange(fn) {
 export function initColumns() {
   const stored = readStored();
   if (stored) visible = stored;
+  // Restore the column order alongside the visible-set. Guarded against a
+  // stale key naming a preset that no longer declares an order.
+  try {
+    const savedOrder = localStorage.getItem(ORDER_KEY);
+    if (savedOrder && PRESET_ORDER[savedOrder]) orderName = savedOrder;
+  } catch { /* storage unavailable — natural order */ }
   // One-time adoption of post-v2 columns — see ADOPT_ONCE above.
   try {
     const adopted = new Set(JSON.parse(localStorage.getItem(ADOPTED_KEY) || '[]'));

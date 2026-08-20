@@ -24,6 +24,29 @@
  *
  * Pure (no DOM / no network) so the reconciliation math can be
  * unit-tested; main.js owns turning the result into features.
+ *
+ * KEPT IN STEP WITH THE MATCHER. mao-scrape's n1_mao_for_matching()
+ * (scripts/n1_lib.R) collapses the same archive for the N1 crosswalk, and
+ * as of 2026-08-19 both apply the same rule: consideration is part of the
+ * sale's identity, the Sale Type Group is not. That direction was settled
+ * from the archive — 847 identities hold two considerations under one type
+ * label and all of them arrived in a single scrape, so MAO listed two
+ * sales; while the 95 identities holding one consideration under two
+ * labels are one transaction filed in two type slices. The R side used to
+ * key on the label instead and threw 897 rows away; this module always had
+ * it right.
+ *
+ * Two differences remain, both deliberate:
+ *   - The matcher groups on the archive's VERBATIM roll cell and explodes
+ *     afterwards, so a stacked multi-parcel row and its per-roll twins stay
+ *     separate (it needs to stamp the N1 ID on every representation).
+ *     parseSalesCsv has already exploded stacked cells before this runs, so
+ *     here they collapse — one comp, not two, which is what a table wants.
+ *   - The matcher drops rows superseded by a later scrape of the same sale.
+ *     The export ships no scraped_at column, so this module cannot tell an
+ *     amendment from its stale predecessor and keeps whichever it met
+ *     first. Affects ~15 sales province-wide, all of them revisions to a
+ *     legal description or primary-property descriptor rather than a price.
  */
 
 /**
@@ -49,6 +72,17 @@ export function saleSignature(rec) {
   const date = String(rec?.saleDate ?? '').trim().toUpperCase();
   const price = String(rec?.consideration ?? '').trim().toUpperCase();
   return joinKey(date, price);
+}
+
+/**
+ * MAO's "not classified yet" Sale Type Group. Deliberately not part of any
+ * key — it only breaks ties between copies of one sale (see
+ * dedupeSalesByRoll). Blank is NOT uncategorized: a shard that predates the
+ * column has no label at all, and treating that as the loser would hand the
+ * decision to whichever copy happened to be parsed by a newer export.
+ */
+function isUncategorized(rec) {
+  return String(rec?.saleTypeGroup ?? '').trim().toUpperCase() === 'UNCATEGORIZED';
 }
 
 /**
@@ -84,25 +118,41 @@ export function parcelKey(rec, canonicalRoll) {
  */
 export function dedupeSalesByRoll(records, { canonicalRoll, saleDateValue }) {
   const salesByRoll = new Map();
-  const seen = new Map();          // `${parcelKey}|${saleSignature}` → kept record
+  const seen = new Map();          // `${parcelKey}|${saleSignature}` → slot
   const duplicateRows = [];
 
   for (const rec of records || []) {
     const roll = canonicalRoll(rec?.rollNumber);
     if (!roll) continue;
     const sig = joinKey(parcelKey(rec, canonicalRoll), saleSignature(rec));
-    const kept = seen.get(sig);
-    if (kept) {
+    const slot = seen.get(sig);
+    if (slot) {
+      // Which copy survives only matters when they disagree, and the one
+      // way they do is the Sale Type Group: the scrape unions MAO's typed
+      // passes with an undated "ANY" pass, and the overlap leaks a second
+      // copy labelled UNCATEGORIZED. Every such row in the archive (39 of
+      // them) duplicates a typed row, so the typed label is the true one
+      // and must win however the CSV happened to order them. Same
+      // preference as n1_mao_for_matching()'s first filter.
+      if (isUncategorized(slot.rec) && !isUncategorized(rec)) {
+        const displaced = slot.rec;
+        if (displaced.n1Id && !rec.n1Id) rec.n1Id = displaced.n1Id;
+        salesByRoll.get(slot.roll)[slot.idx] = rec;
+        slot.rec = rec;
+        duplicateRows.push({ ...displaced, _dupeOf: rec });
+        continue;
+      }
       // The N1 crosswalk stamps its ID on specific archive rows; when an
       // exact re-listing collapses, the surviving record must not lose the
       // ID just because the un-stamped copy happened to come first.
-      if (rec?.n1Id && !kept.n1Id) kept.n1Id = rec.n1Id;
-      duplicateRows.push({ ...rec, _dupeOf: kept });
+      if (rec?.n1Id && !slot.rec.n1Id) slot.rec.n1Id = rec.n1Id;
+      duplicateRows.push({ ...rec, _dupeOf: slot.rec });
       continue;
     }
-    seen.set(sig, rec);
     if (!salesByRoll.has(roll)) salesByRoll.set(roll, []);
-    salesByRoll.get(roll).push(rec);
+    const list = salesByRoll.get(roll);
+    seen.set(sig, { rec, roll, idx: list.length });
+    list.push(rec);
   }
 
   // Newest sale first, so the parcel's most recent transaction is the
