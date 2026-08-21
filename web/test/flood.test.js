@@ -54,9 +54,9 @@ for (const g of FLOOD_GROUPS) {
 }
 
 // ---- Severity order ------------------------------------------------------
-// The ranking is by legal force, and the grid cell's headline depends on it:
-// a parcel in both a DFA and the 1997 extent must lead with the DFA, because
-// the statutory boundary is the one that governs what may be built.
+// The grid cell shows ONE headline, so the order decides which fact a reader
+// sees. A parcel in both a DFA and the 1997 extent must lead with the DFA,
+// because the statutory boundary is the one that governs what may be built.
 const kindOrder = FLOOD_ZONES.map((z) => z.kind);
 assert.equal(kindOrder[0], 'Statutory', 'statutory zones must sort first');
 assert.ok(
@@ -65,6 +65,22 @@ assert.ok(
 );
 assert.equal(kindOrder[kindOrder.length - 1], 'Municipal by-law',
   'the Winnipeg setback is a riparian corridor, not a flood extent — it sorts last');
+
+// The planning overlay ranks BELOW the observed extents, out of legal-force
+// order and on purpose: the RRV SMA covers 73% of every parcel this column
+// stamps, so as a headline it barely discriminates, and ranked above the
+// extents it hid the better answer on 2,285 parcels. Regressing this would
+// silently restore that — it changes no data, only which fact wins the cell.
+assert.ok(
+  kindOrder.indexOf('Observed') < kindOrder.indexOf('Planning overlay'),
+  'the SMA must not outrank the observed extents — see the ordering note in lib/flood.js',
+);
+assert.ok(
+  kindOrder.indexOf('Statistical') < kindOrder.indexOf('Planning overlay'),
+  'the SMA must not outrank the 1-in-200 extent',
+);
+// The worked case: SMA at 100% must not beat a 60% 1-in-200 for the headline.
+assert.equal(floodCellText({ z: { SMA: 100, F200: 60 } }), '1-in-200 60% +1');
 
 // ---- Stamp reading -------------------------------------------------------
 const both = { z: { FL1997: 100, RRVDFA: 62 } };

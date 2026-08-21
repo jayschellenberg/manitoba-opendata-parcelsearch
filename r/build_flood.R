@@ -110,12 +110,14 @@ ZONES <- list(
   list(code = "FL1997", file = "red_river_flood_1997"),
   list(code = "FL2009", file = "red_river_flood_2009"),
   list(code = "FL2011", file = "red_river_flood_2011"),
-  # Expect ZERO matches for both corridor zones, and that is not a bug: the
+  # Expect almost nothing from the corridor zones, and that is not a bug. The
   # corridors are clipped to the City of Winnipeg, which does its own
-  # assessment and is absent from the provincial Roll Entry fabric (181 munis,
-  # "WINNIPEG BEACH (TOWN)" being the only near-miss). They stay in the list
-  # because the map overlay draws them where they ARE useful, and because a
-  # future fabric carrying Winnipeg would light this up with no code change.
+  # assessment and is absent from the provincial Roll Entry fabric — so the
+  # only hits are parcels in the adjacent RMs that straddle the city boundary:
+  # 11 of them on the 2026-08-11 fabric (Ritchot, East and West St Paul,
+  # Headingley), all at 1-3% coverage. They stay in the list because the map
+  # overlay draws the corridors where they ARE useful, and because a fabric
+  # that one day carries Winnipeg would light this up with no code change.
   list(code = "WWCR",   file = "wpg_waterway_river_corridor"),
   list(code = "WWCC",   file = "wpg_waterway_creek_corridor")
 )
@@ -195,6 +197,7 @@ cat("  usable parcels:", format(sum(usable), big.mark = ","),
 hits <- list()
 
 for (z in ZONES) {
+  t0 <- Sys.time()
   path <- file.path(flood_dir, paste0(z$file, ".geojson"))
   if (!file.exists(path)) {
     stop("Missing flood layer: ", path,
@@ -212,8 +215,26 @@ for (z in ZONES) {
   # percentages would have to be summed by hand downstream.
   zone_geom <- sf::st_union(sf::st_geometry(layer))
 
-  covered <- sf::st_covered_by(parcels, zone_geom, sparse = FALSE)[, 1]
-  touching <- sf::st_intersects(parcels, zone_geom, sparse = FALSE)[, 1]
+  # ARGUMENT ORDER IS NOT COSMETIC HERE — it is the difference between
+  # minutes and hours.
+  #
+  # sf builds a PREPARED geometry for the first argument of a binary
+  # predicate (`prepared = TRUE` by default) and looks up candidates against
+  # the second. Written the natural way round — st_covered_by(parcels, zone)
+  # — that prepares 438,061 tiny parcels and tests each against an
+  # UNPREPARED extent, so every one of those tests walks the full vertex
+  # list of a 19 MB polygon, and the candidate index is useless because the
+  # second side is a single geometry. Measured on a scaled-down stand-in
+  # (60k-vertex polygon, 20k small squares) that orientation is 35x slower;
+  # at the real sizes the 1-in-200 extent had not finished in 35 minutes.
+  #
+  # Zone first prepares the big geometry ONCE, with its own internal index,
+  # and streams the parcels past it. Same predicate, same answer — st_covers
+  # is exactly the converse of st_covered_by.
+  covered  <- logical(nrow(parcels))
+  touching <- logical(nrow(parcels))
+  covered[sf::st_covers(zone_geom, parcels)[[1]]] <- TRUE
+  touching[sf::st_intersects(zone_geom, parcels)[[1]]] <- TRUE
   partial <- touching & !covered & usable
   covered <- covered & usable
 
@@ -275,9 +296,16 @@ for (z in ZONES) {
     }
   }
 
-  cat(sprintf("  %-7s %7s parcels (%s wholly inside)\n", z$code,
+  # Timing per zone, because the cost is wildly uneven — the 1-in-200 extent
+  # is 19 MB and the Special Management Area is 19 KB — and a run that looks
+  # hung is almost always one layer rather than the whole job.
+  cat(sprintf("  %-7s %7s parcels (%s wholly inside, %s clipped)  %.1f min\n",
+              z$code,
               format(length(matched), big.mark = ","),
-              format(sum(covered), big.mark = ",")))
+              format(sum(covered), big.mark = ","),
+              format(sum(partial), big.mark = ","),
+              as.numeric(difftime(Sys.time(), t0, units = "mins"))))
+  flush.console()
 }
 
 if (length(hits) == 0L) {

@@ -46,18 +46,30 @@
 // grid cell picks its headline from, the order the tooltip lists, and the
 // order the legend renders.
 //
-// The ranking is by LEGAL FORCE, not by water depth or recency:
+// The ranking is by legal force FIRST and discriminating power SECOND — the
+// cell shows one headline, so the winner has to be the fact worth reading:
 //   statutory (WRA Act s.17)      binds construction and flood protection
 //                                 levels — the strongest thing a flood layer
 //                                 can say about a parcel
-//   planning overlay              constrains subdivision and development
 //   statistical (1-in-200)        the design flood; informs, does not itself
 //                                 regulate
 //   observed extents              historical fact, no legal force — but the
 //                                 fact a lot was under water in 1997 is often
 //                                 the most persuasive thing in the file
+//   planning overlay              constrains subdivision, and would rank
+//                                 above the extents on legal force alone
 //   municipal setback by-law      real, but a riparian setback rather than a
 //                                 flood extent, and Winnipeg-only
+//
+// The planning overlay sits out of legal-force order deliberately. The Red
+// River Valley SMA covers 90,647 parcels — 73% of every parcel this column
+// stamps — so it is close to a constant across the valley and discriminates
+// between comparables hardly at all. Ranked by force it led on 2,285 parcels
+// whose better answer was an extent, printing "RRV SMA +1" where "1-in-200
+// 60%" was the fact the reader wanted. It still appears in the cell, in the
+// tooltip and in the CSV; it just stops winning ties it tells you nothing by
+// winning. Move it back above F200 if that trade ever reads wrong — one
+// entry, and flood.test.js pins the intent either way.
 //
 // Ordering observed extents by year (1997 first) is deliberate: 1997 is the
 // flood of record and the largest extent, so a parcel inside 2011 is almost
@@ -81,15 +93,6 @@ export const FLOOD_ZONES = [
     authority: 'The Water Resources Administration Act, s.17',
     group: 'dfa',
     color: '#d4453b',
-  },
-  {
-    code: 'SMA',
-    label: 'Red River Valley Special Management Area',
-    short: 'RRV SMA',
-    kind: 'Planning overlay',
-    authority: 'The Planning Act',
-    group: 'sma',
-    color: '#8e5bb5',
   },
   {
     code: 'F200',
@@ -127,12 +130,29 @@ export const FLOOD_ZONES = [
     group: 'hist',
     color: '#9bb7d9',
   },
-  // The two corridor zones are MAP-ONLY in practice. They are clipped to the
-  // City of Winnipeg, which does its own assessment and is absent from the
-  // provincial Roll Entry fabric this app searches, so no parcel will ever
-  // carry them in its cell. They stay in the table because the overlay draws
-  // them, the legend names them, and a fabric that one day includes Winnipeg
-  // would light the column up without a code change.
+  // Ranked BELOW the observed extents on measured evidence, not on legal
+  // force — see the ordering note above. The SMA covers 90,647 parcels, 73%
+  // of everything this column stamps, so as a headline it says almost
+  // nothing about the parcel in front of you; and ranked above the extents
+  // it actively hid the better answer on 2,285 parcels, which read
+  // "RRV SMA +1" while the fact worth reading was "1-in-200, 60%".
+  {
+    code: 'SMA',
+    label: 'Red River Valley Special Management Area',
+    short: 'RRV SMA',
+    kind: 'Planning overlay',
+    authority: 'The Planning Act',
+    group: 'sma',
+    color: '#8e5bb5',
+  },
+  // The two corridor zones are all but MAP-ONLY. They are clipped to the City
+  // of Winnipeg, which does its own assessment and is absent from the
+  // provincial Roll Entry fabric this app searches, so the only parcels that
+  // carry them are the handful in the adjacent RMs straddling the city
+  // boundary — 11 on the 2026-08-11 fabric, all at 1-3%. They stay in the
+  // table because the overlay draws them, the legend names them, and a fabric
+  // that one day includes Winnipeg would light the column up without a code
+  // change.
   {
     code: 'WWCR',
     label: 'Winnipeg waterway corridor — river (107 m)',
