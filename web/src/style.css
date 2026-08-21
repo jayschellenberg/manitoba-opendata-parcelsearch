@@ -3288,6 +3288,20 @@ body.shape-drawing .maplibregl-canvas {
   border: 1px solid rgba(0, 0, 0, 0.2);
 }
 
+/* Flood cell's deep-link to the standalone screening tool. Muted and small
+   on purpose: the cell's text is now the answer, and the link is the way to
+   the fuller treatment (appraisal paragraph, static exhibit) rather than the
+   point of the column. Full opacity on hover so it is clearly still a link. */
+.flood-link {
+  opacity: 0.55;
+  text-decoration: none;
+  font-size: 0.95em;
+}
+.flood-link:hover,
+.flood-link:focus-visible {
+  opacity: 1;
+}
+
 /* Historical (as-of-year) mode — banner pinned to the top of the map plus
    the inline year picker under the Historical overlay toggle. Amber/brown
    = "historical", matching the dashed parcel outline on the map. */
@@ -6321,6 +6335,10 @@ body {
 .sidebar .overlay-group[data-group="planning"] .overlay-btn,
 .sidebar .overlay-group[data-group="planning"] .overlay-btn:hover:not(:disabled) {
   color: #166534;        /* dark green */
+}
+.sidebar .overlay-group[data-group="flood"] .overlay-btn,
+.sidebar .overlay-group[data-group="flood"] .overlay-btn:hover:not(:disabled) {
+  color: #b3261e;        /* the DFA red, so the panel matches the map */
 }
 .sidebar .overlay-group[data-group="reference"] .overlay-btn,
 .sidebar .overlay-group[data-group="reference"] .overlay-btn:hover:not(:disabled) {

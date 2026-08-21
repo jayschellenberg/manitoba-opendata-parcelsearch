@@ -982,6 +982,37 @@
             </div>
           </details>
 
+          <!-- Flood. Five independently-toggled groups rather than one
+               "flood" button, because they are different instruments and
+               conflating them would be the one mistake this panel must not
+               make: a Designated Flood Area governs what may be BUILT, the
+               1-in-200 extent is a statistical surface, and the 1997 extent
+               is a historical observation with no legal force at all.
+               Geometry is simplified for display — the per-parcel verdict
+               in the Flood Zone column is joined at full resolution.
+               Collapsed by default: specialist, and five more buttons in an
+               already-tall panel. See src/lib/flood.js. -->
+          <details class="overlay-group" data-group="flood">
+            <summary class="overlay-group-title">Flood<span class="overlay-group-count"></span></summary>
+            <div class="overlay-group-body">
+            <button id="flood-dfa-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Designated Flood Areas — the Red River Valley and Lower Red River DFAs, designated under The Water Resources Administration Act s.17. STATUTORY: inside a DFA, construction is subject to flood protection level requirements. Source is the Manitoba Land Initiative, which stopped publishing updates in February 2022 — verify a boundary against Manitoba Transportation and Infrastructure before relying on it.">
+              <span class="overlay-btn-label">Designated Flood Areas</span>
+            </button>
+            <button id="flood-sma-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Red River Valley Special Management Area — a planning overlay under The Planning Act constraining subdivision and development in the valley. Distinct from the Designated Flood Areas and not a flood extent.">
+              <span class="overlay-btn-label">Special Management Area</span>
+            </button>
+            <button id="flood-f200-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Manitoba 1-in-200 Year Flood Extent (0.5% annual exceedance probability) — the design flood, from Manitoba Infrastructure's study reaches. STATISTICAL: a modelled surface, not a boundary that regulates on its own, and it only covers reaches that have been studied.">
+              <span class="overlay-btn-label">1-in-200 Year Flood</span>
+            </button>
+            <button id="flood-hist-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Historical flood extents — where water actually reached in 1997, 2009 and 2011 (Data MB). OBSERVED: no legal force, but the fact a lot was under water in the flood of record is often the most persuasive thing in a file. The three extents nest, so a parcel in 2011 is usually in 1997 as well.">
+              <span class="overlay-btn-label">Historical Flood Extents</span>
+            </button>
+            <button id="flood-corridor-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Winnipeg waterway corridors — the 107 m river and 76 m creek setbacks under City of Winnipeg Waterway By-law 5888/92, derived from OpenStreetMap centrelines and clipped to the city boundary. A riparian setback, not a flood extent, and Winnipeg only.">
+              <span class="overlay-btn-label">Winnipeg Waterway Corridors</span>
+            </button>
+            </div>
+          </details>
+
           <details class="overlay-group" data-group="reference">
             <summary class="overlay-group-title">Reference<span class="overlay-group-count"></span></summary>
             <div class="overlay-group-body">
@@ -1223,6 +1254,10 @@
            colour in both boxes. -->
       <div id="historical-zoning-legend" class="map-legend masc-legend" hidden></div>
       <div id="historical-devplan-legend" class="map-legend masc-legend" hidden></div>
+      <!-- Filled dynamically by main.js renderFloodLegend() from FLOOD_ZONES
+           in lib/flood.js, listing only the groups currently toggled on —
+           five groups at once would be a legend taller than the map. -->
+      <div id="flood-legend" class="map-legend masc-legend" hidden></div>
       <div id="flow-legend" class="map-legend flow-legend" hidden>
         <strong>AADT (2019)</strong>
         <ul>
@@ -1600,7 +1635,7 @@
             <th data-col="sf">SF</th>
             <th data-col="value" id="value-header" title="Click any value to open the parcel's Manitoba Assessment Online report">Assessment</th>
             <th data-col="walk" title="Open this address on walkscore.com">Walkscore</th>
-            <th data-col="flood" title="Run this parcel through the Manitoba flood-screening tool">Flood</th>
+            <th data-col="flood" title="Flood zone this parcel sits in, with the share of the parcel inside it — strongest first where there is more than one. Statutory Designated Flood Areas outrank the 1-in-200 year extent, which outranks the observed 1997 / 2009 / 2011 extents. &quot;None&quot; means outside every layer screened here; blank means no data was loaded for that municipality. Joined at full resolution, so a boundary parcel can read differently from the simplified map overlay. The ↗ opens the parcel in the standalone flood tool for the appraisal paragraph and static exhibit. Screening aid, not a flood determination.">Flood</th>
             <th data-col="streetview" title="Open Google Street View at this parcel (nearest panorama to the parcel centre)">StreetView</th>
           </tr>
         </thead>

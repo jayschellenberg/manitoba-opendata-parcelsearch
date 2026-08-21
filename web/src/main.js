@@ -127,6 +127,8 @@ import {
   fetchMunicipalBoundaries,
   fetchMascRatingsForMuni,
   fetchMascRiskAreas,
+  fetchFloodOverlay,
+  fetchFloodForMuni,
   fetchSurveyGridForMuni,
   fetchProvinceSectionGrid,
   fetchRiverLots,
@@ -190,6 +192,8 @@ import {
   decodeSoilDescriptor,
   setMascRiskAreasData,
   setMascRiskAreasVisible,
+  setFloodData,
+  setFloodVisible,
   setTileDrainageData,
   setTileDrainageVisible,
   setTileNetworkData,
@@ -231,6 +235,10 @@ import {
   waterColor, waterCellText, waterTooltip, waterSortRank,
   waterCsvCells, isWaterfront, isNearWater, WATER_CLASSES,
 } from './lib/water.js';
+import {
+  FLOOD_GROUPS, floodCellText, floodTooltip, floodSortRank,
+  floodCsvCells, floodColor,
+} from './lib/flood.js';
 import { resolveParcelAcres, formatRollSizeField, parseRollFrontageFeet } from './lib/acres.js';
 import {
   saleSizeStamp, saleSizeState, saleAcres, sizeSourceLabel, showsCurrentRollSize,
@@ -490,6 +498,13 @@ const $highwaysToggle = document.getElementById('highways-toggle');
 const $muniParcelsToggle = document.getElementById('muni-parcels-toggle');
 const $mascToggle    = document.getElementById('masc-toggle');
 const $riskAreaToggle = document.getElementById('riskarea-toggle');
+// Flood zones (src/lib/flood.js). Five buttons of identical shape, so they
+// are looked up, wired and registered from FLOOD_GROUPS rather than spelled
+// out five times — the group list is the single source of truth.
+const $floodToggles = new Map(
+  FLOOD_GROUPS.map((g) => [g.key, document.getElementById(`flood-${g.key}-toggle`)]),
+);
+const $floodLegend = document.getElementById('flood-legend');
 // WALLAS water-rights overlays (src/wallas.js).
 const $tileToggle        = document.getElementById('tile-toggle');
 const $tileNetworkToggle = document.getElementById('tile-network-toggle');
@@ -1222,10 +1237,12 @@ const SORT_KEYS = {
   // Walkscore column is just a link — sort by whether we have an address
   // to send to walkscore.com (rows without an address sort last).
   walk:    (r) => strKey(r.parcel.properties.Property_Address),
-  // Flood column sorts on whether the parcel has any geometry-derivable
-  // location at all (lat/lon centroid OR a usable street address); rows
-  // that can't deep-link sort last.
-  flood:   (r) => strKey(r.parcel.geometry ? '1' : r.parcel.properties.Property_Address),
+  // Flood column sorts by zone severity, coverage breaking ties inside a
+  // zone (lib/flood.js). It used to sort on whether the row could deep-link
+  // at all, which was the only thing the cell knew back when it was a bare
+  // link; now the cell carries the verdict, so the sort orders by it —
+  // statutory encumbrance first, unstamped rows last.
+  flood:   (r) => floodSortRank(r.parcel.properties._flood),
   streetview: (r) => strKey(r.parcel.geometry ? '1' : ''),
   value:   (r) => finiteOrNeg(parseTotalValue(r.parcel.properties.Total_Value)),
   report:  (r) => strKey(r.parcel.properties.Asmt_Rpt_Url),
@@ -2208,6 +2225,9 @@ $contamToggle.addEventListener('click', () => toggleAuxOverlay('contam'));
 $flowToggle.addEventListener('click', () => toggleAuxOverlay('flow'));
 $highwaysToggle.addEventListener('click', () => toggleAuxOverlay('highways'));
 $riskAreaToggle.addEventListener('click', () => toggleAuxOverlay('riskAreas'));
+for (const [key, btn] of $floodToggles) {
+  btn?.addEventListener('click', () => toggleAuxOverlay(floodAuxKey(key)));
+}
 $muniParcelsToggle.addEventListener('click', () => toggleAuxOverlay('muniParcels'));
 $tileToggle?.addEventListener('click', async () => {
   await toggleAuxOverlay('tileDrainage');
@@ -3985,7 +4005,9 @@ async function runSearch() {
       // such search. It is a pre-baked per-muni JSON, not an overlay join, so
       // it costs a fraction of what this branch exists to defer.
       const waterRows = parcelFc.features.map((p) => ({ parcel: p, zoning: [], devPlan: [] }));
-      await stampWaterInfluence(waterRows);
+      // Flood zones ride along for the same reason and at the same cost —
+      // another pre-baked per-muni dictionary, one lookup per row.
+      await Promise.all([stampWaterInfluence(waterRows), stampFloodZones(waterRows)]);
       if (waterFilterActive()) {
         setCount(`${baseMsg} · Checking water-rights licences…`);
         const rows = waterRows;
@@ -6397,6 +6419,46 @@ async function stampWaterInfluence(rows) {
   }
 }
 
+/**
+ * Stamp `_flood` / `_floodLoaded` on every row from the per-muni flood shards.
+ *
+ * Same shape as stampWaterInfluence, and for the same reason: the join is
+ * pre-baked (r/build_flood.R, full-resolution geometry), so the client only
+ * has to look each roll up in a dictionary.
+ *
+ * `_floodLoaded` marks every parcel whose muni shard RESOLVED — including
+ * the parcels the shard does not mention, which is exactly the population
+ * that is genuinely outside every zone. Without that flag the cell cannot
+ * tell "outside every flood zone" from "we never checked", and on a hazard
+ * column those must never collapse into one another.
+ *
+ * Non-fatal throughout: a missing shard leaves the column blank, which is
+ * the honest rendering of not knowing.
+ */
+async function stampFloodZones(rows) {
+  try {
+    const muniNames = [...new Set(
+      (rows || []).map((r) => r?.parcel?.properties?.Muni_Name_With_Typ).filter(Boolean),
+    )];
+    if (!muniNames.length) return;
+    const dicts = await Promise.all(
+      muniNames.map((m) => fetchFloodForMuni(m).catch(() => null)),
+    );
+    const byMuni = new Map();
+    muniNames.forEach((m, i) => { if (dicts[i]) byMuni.set(m, dicts[i]); });
+    for (const row of rows) {
+      const p = row?.parcel?.properties;
+      const dict = p?.Muni_Name_With_Typ ? byMuni.get(p.Muni_Name_With_Typ) : null;
+      if (!dict) continue;
+      p._floodLoaded = true;
+      const hit = p?.Roll_No_Txt ? dict[p.Roll_No_Txt] : null;
+      if (hit) p._flood = hit;
+    }
+  } catch (err) {
+    console.warn('flood-zone enrichment failed (non-fatal):', err);
+  }
+}
+
 // The Water Influence overlay is OFF until the user turns it on, like every
 // other map layer. An earlier version auto-armed it whenever a waterfront /
 // near-water filter was ticked, because the toggle was then buried in the
@@ -6619,7 +6681,7 @@ async function enrichOverlays(parcelFc, inputs, baseMsg, { skipDevPlan = false }
     console.warn('land-cover enrichment failed (non-fatal):', err);
   }
 
-  await stampWaterInfluence(rows);
+  await Promise.all([stampWaterInfluence(rows), stampFloodZones(rows)]);
 
   // Stamp the most-common assessment year into the Total Value column
   // header so users can tell which assessment cycle the dollar figure
@@ -7425,6 +7487,74 @@ const AUX_META = {
                  fetch: () => fetchIrrigationLicences(),
                  setData: (m, fc) => setIrrigationData(m, fc), setVis: setIrrigationVisible },
 };
+
+// ---------- Flood zones ----------
+// The five groups are the same aux overlay five times over — a static
+// same-origin GeoJSON fetched once, pushed into its own source, shown or
+// hidden — so their registry entries are generated rather than written out.
+// Anything that differs between them (label, file, palette, layer ids)
+// already lives in FLOOD_GROUPS.
+//
+// The `flood:` prefix keeps the keys from colliding with a future plain
+// `flood` entry and makes the legend hook below a one-line test.
+
+/** Registry key for a flood group: 'dfa' -> 'flood:dfa'. */
+function floodAuxKey(groupKey) { return `flood:${groupKey}`; }
+
+for (const g of FLOOD_GROUPS) {
+  const key = floodAuxKey(g.key);
+  auxLoaded[key] = false;
+  auxData[key] = null;
+  AUX_META[key] = {
+    btn: () => $floodToggles.get(g.key),
+    on: g.label,
+    off: g.label,
+    busy: 'Loading…',
+    fetch: () => fetchFloodOverlay(g.key),
+    setData: (m, fc) => setFloodData(m, g.key, fc),
+    setVis: (m, visible) => setFloodVisible(m, g.key, visible),
+  };
+}
+
+/**
+ * Redraw the flood legend from whichever groups are currently on.
+ *
+ * Only active groups are listed: all five at once is nine rows, taller than
+ * the map is worth giving up, and a legend entry for a layer that isn't
+ * drawn invites the reader to look for something that isn't there.
+ *
+ * Each row carries its legal character ("Statutory", "Observed") because
+ * the colours alone would suggest these are five flavours of the same
+ * thing. They are not — see lib/flood.js.
+ */
+function renderFloodLegend() {
+  if (!$floodLegend) return;
+  const zones = FLOOD_GROUPS
+    .filter((g) => $floodToggles.get(g.key)?.classList.contains('active'))
+    .flatMap((g) => g.zones);
+  if (zones.length === 0) {
+    $floodLegend.hidden = true;
+    $floodLegend.innerHTML = '';
+    return;
+  }
+  const rows = zones.map((z) => {
+    const li = document.createElement('li');
+    const swatch = document.createElement('span');
+    swatch.className = 'swatch';
+    swatch.style.background = z.color;
+    li.appendChild(swatch);
+    li.appendChild(document.createTextNode(`${z.short} — ${z.kind.toLowerCase()}`));
+    return li;
+  });
+  $floodLegend.replaceChildren();
+  const title = document.createElement('strong');
+  title.textContent = 'Flood zones';
+  const ul = document.createElement('ul');
+  ul.replaceChildren(...rows);
+  $floodLegend.appendChild(title);
+  $floodLegend.appendChild(ul);
+  $floodLegend.hidden = false;
+}
 
 // ---------- Tile network (viewport-scoped) ----------
 // 85,000 tile lines exist province-wide, so this layer only ever holds
@@ -9431,6 +9561,9 @@ async function toggleAuxOverlay(which) {
   // The AADT-colour legend rides along with the Flow toggle so the user
   // can read what each segment colour means. Only one place toggles it.
   if (which === 'flow' && $flowLegend) $flowLegend.hidden = !visible;
+  // The flood legend lists every ACTIVE group, so any one of the five
+  // changing state redraws the whole box rather than toggling a row.
+  if (which.startsWith('flood:')) renderFloodLegend();
 }
 
 // ---------- UI helpers ----------
@@ -11159,16 +11292,59 @@ function streetViewCell(row) {
 }
 
 /**
- * Flood-screening deep-link. Sister tool at mb-flood-mapping.vercel.app
- * accepts ?lat=&lon=&label=… (preferred) or ?address=… (geocodes via
- * Mapbox/Nominatim). We pass lat/lon when we can compute a centroid from
- * the parcel polygon, otherwise fall back to the address. Cell renders
- * a "view" link in the same style as the Walkscore / Asmt Report cells;
- * rows with no usable location render the dash.
+ * "Flood" grid cell — which flood zone the parcel is in, plus the deep-link
+ * to the standalone screening tool.
+ *
+ * This column used to be a bare link: one click per parcel, one answer at a
+ * time. The pre-baked shards (r/build_flood.R) mean the answer can be in the
+ * cell for every row at once, which is what makes it sortable, filterable
+ * and exportable — the whole reason to put flood data in a set-based tool.
+ * The link stays as a trailing glyph, because the standalone tool still does
+ * things this column cannot: the appraisal paragraph, the static exhibit,
+ * the NRCan study index, and the full source disclosure.
+ *
+ * Three states, and on a hazard column the difference is not cosmetic:
+ *   - shard never loaded (`_floodLoaded` falsy) → no verdict text at all. We
+ *     genuinely do not know, and "None" here would be a confident lie about
+ *     a hazard.
+ *   - shard loaded, no stamp                    → "None" in the empty style.
+ *     The parcel is outside every layer this app screens against.
+ *   - stamp present                             → dot + strongest zone with
+ *     its coverage, the rest on hover.
+ *
+ * The dot colour is the zone's own (lib/flood.js), so it matches the map
+ * overlay and a scan down the column separates statutory encumbrance (reds)
+ * from historical inundation (blues) without reading a word.
  */
 function floodCell(row) {
   const cell = document.createElement('td');
   const p = row.parcel.properties || {};
+
+  // Gate on the rendered TEXT, not on the stamp being present. A stamp whose
+  // codes this build does not recognise (a shard published ahead of the app)
+  // yields no text, and a bare colour dot with nothing beside it would read
+  // as a zone whose name failed to load rather than as one we cannot name.
+  const f = p._flood;
+  const text = floodCellText(f);
+  if (text) {
+    const dot = document.createElement('span');
+    dot.className = 'lc-dot';
+    dot.style.backgroundColor = floodColor(f) || '#9aa0a6';
+    cell.appendChild(dot);
+    cell.appendChild(document.createTextNode(text));
+    const tip = floodTooltip(f);
+    if (tip) cell.title = tip;
+  } else if (p._floodLoaded && !f) {
+    const none = document.createElement('span');
+    none.className = 'empty';
+    none.textContent = 'None';
+    cell.appendChild(none);
+    cell.title = 'Outside every flood layer screened here: the Designated Flood '
+      + 'Areas, the Special Management Area, the 1-in-200 year extent, the 1997 / '
+      + '2009 / 2011 observed extents, and the Winnipeg waterway corridors.\n'
+      + 'Not a flood determination — other hazards and unmapped reaches exist.';
+  }
+
   const url = new URL('https://mb-flood-mapping.vercel.app/');
   let haveTarget = false;
   if (row.parcel.geometry) {
@@ -11191,18 +11367,29 @@ function floodCell(row) {
   if (haveTarget && p.Property_Address) {
     url.searchParams.set('label', p.Property_Address);
   }
+  // No usable location: the verdict, if we have one, still stands — it came
+  // from the roll number, not from a coordinate. Only a cell with nothing in
+  // it at all falls back to the dash.
   if (!haveTarget) {
-    cell.textContent = '—';
-    cell.classList.add('empty');
+    if (!cell.hasChildNodes()) {
+      cell.textContent = '—';
+      cell.classList.add('empty');
+    }
     return cell;
   }
   const a = document.createElement('a');
   a.href = url.toString();
   a.target = '_blank';
   a.rel = 'noopener noreferrer';
-  a.textContent = 'Flood';
-  a.title = 'Open this parcel in the Manitoba flood-mapping tool';
+  // A glyph rather than the word "Flood": the cell's text is now the answer,
+  // and a second word beside it read as though the verdict were the label of
+  // the link rather than a fact about the parcel.
+  a.className = 'flood-link';
+  a.textContent = '↗';
+  a.title = 'Open this parcel in the Manitoba flood-mapping tool — appraisal '
+    + 'paragraph, static exhibit, and the NRCan study index';
   a.addEventListener('click', (e) => e.stopPropagation());
+  if (cell.hasChildNodes()) cell.appendChild(document.createTextNode(' '));
   cell.appendChild(a);
   return cell;
 }
@@ -12423,6 +12610,11 @@ function exportCsv(explicitRows) {
     // order. 'Water' is the frontage verdict so a spreadsheet can filter
     // comps on it directly; distance is a bare number for sorting.
     'Water', 'Water Class', 'Water Body', 'Water Type', 'Water Distance (ft)',
+    // Flood sits beside Water because they are read together — a riverfront
+    // lot's frontage and its DFA status are one question in practice. Four
+    // bare columns rather than the grid's composite: a spreadsheet filters
+    // on "Statutory", not on "RRV DFA 62% +1".
+    'Flood Zone', 'Flood Zone Type', 'Flood Zone Coverage (%)', 'Flood Zones (all)',
     // Tiled / Irrigated lead their groups so a sales spreadsheet can
     // filter or pivot on one column instead of testing whether a licence
     // string is blank.
@@ -12530,6 +12722,7 @@ function exportCsv(explicitRows) {
       ...soilCsvCells(p),
       ...landCoverCsvCells(p, ac),
       ...waterCsvCells(p._water, !!p._waterLoaded),
+      ...floodCsvCells(p._flood, !!p._floodLoaded),
       ...tileDrainageCsvCells(p),
       ...irrigationCsvCells(p),
       formatChanges(row),

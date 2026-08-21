@@ -53,6 +53,42 @@ Rscript r/build_parcel_masc.R
 | MASC soil ratings | `masc_soil_ratings_with_latlon.csv` + river-lot scrape/KMZ → `web/public/data/masc/`, `web/public/data/masc-riverlots.json`, and `web/public/data/parcel-masc/` | Quarter-section and river-lot MASC layer, A-J rating colours, visible rating-letter labels, parcel-level Soil table field, and split-boundary river lots such as De Salaberry / St-Pierre-Jolys |
 | [MASC Risk Areas / Risk Regions](https://open.canada.ca/data/en/dataset/739cb8ed-b661-5a60-7a26-eb60cd06541f) | `…/MASC_Risk_Areas/FeatureServer/0` | Official crop-insurance risk-area polygons, Risk Areas overlay labels, and parcel-level Risk Area table field |
 | [Manitoba Water Rights Licensing (WALLAS)](https://web43.gov.mb.ca/Html5Viewer/Index.html?viewer=wallasExt.wallas&locale=en-US) | `web43.gov.mb.ca/arcgis/rest/services/WALLAS/wallas_op_external/MapServer` layers `7` (tile-drainage areas), `6` / `5` (tile lines + outlets), `2` / `3` (irrigation points of diversion / use) | Licensed tile-drainage footprints for the Tile Drainage overlay, column, and search filter; tile pipe runs and outlets; irrigation licences. CORS-enabled (origin-reflected), so it is queried directly with no proxy |
+| Flood, regulatory and waterway layers | Cached by the sister [MBFloodMapping](../MBFloodMapping) project from Data MB, the Manitoba Land Initiative and OpenStreetMap → `web/public/data/flood/` (overlay) and `mb-parcel-data/flood/` (per-parcel shards) | Five **Flood** map overlays and the **Flood** table column: Designated Flood Areas, the RRV Special Management Area, the 1-in-200 year extent, the 1997 / 2009 / 2011 observed extents, and the Winnipeg waterway corridors |
+
+### Flood zones
+
+Nine zones, grouped into five map toggles and one table column. The column
+says whether a parcel is in a flood zone, which one (strongest first, ranked
+by legal force), and what share of the parcel is inside it — a quarter section
+4% inside a Designated Flood Area is not encumbered the way a lot wholly
+inside it is.
+
+The overlay and the column are decided from **different geometry on purpose**:
+the map draws MBFloodMapping's web-simplified layers (3–30% of the vertices,
+right for a provincial boundary at town zoom), while the column joins the
+full-resolution cache in `r/build_flood.R`. A boundary parcel can therefore
+look outside the DFA on screen and read `RRV DFA 12%` in its cell.
+
+The **Flood** cell keeps its ↗ deep-link into the standalone
+[flood-screening tool](https://mb-flood-mapping.vercel.app/), which still does
+what a set-based grid cannot: the appraisal paragraph, the static exhibit, the
+NRCan study-coverage index, and the full source disclosure.
+
+Rebuild both after MBFloodMapping refreshes (see MAINTENANCE.md §6c):
+
+```bash
+cd web
+npm run flood:overlay     # web/public/data/flood/ — commit here
+npm run flood:shards      # mb-parcel-data/flood/ — publish per §1b
+```
+
+**Not a flood determination.** These are screening layers. The two statutory
+Designated Flood Area boundaries and the Special Management Area come from the
+Manitoba Land Initiative, which stopped publishing updates on 2022-02-09; a
+newer DFA layer exists on DataMB and has deliberately not been repointed to.
+Verify any boundary against
+[MTI Designated Flood Areas](https://www.gov.mb.ca/mti/wms/permit/designated.html)
+before relying on it.
 
 ## Layout (sidebar + main pane)
 

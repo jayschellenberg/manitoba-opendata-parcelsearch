@@ -431,6 +431,57 @@ coordinate lands inside Manitoba, and that a handful of known places still
 resolve to the right RM — so a bad regeneration fails the suite rather than
 silently flying the map into Ontario.
 
+### 6c. Flood zones — overlay + column  (cadence: when MBFloodMapping refreshes, ~annual)
+
+Two artefacts, two different geometries, and the difference is the point.
+
+| Artefact | Built by | Geometry | Where it lives |
+|---|---|---|---|
+| Map overlay (5 toggles under **Flood**) | `npm run flood:overlay` | MBFloodMapping's **web-simplified** layers (3–30% of vertices) | `web/public/data/flood/*.geojson`, ~490 KB, committed here |
+| **Flood** grid column + CSV | `npm run flood:shards` (`r/build_flood.R`) | MBFloodMapping's **full-resolution** cache | `mb-parcel-data/flood/`, served via the CDN pin |
+
+The overlay draws a simplification and the column decides membership from the
+full geometry, so a boundary parcel can look outside the DFA on screen and
+read `RRV DFA 12%` in its cell. That is deliberate. If they ever have to
+agree, raise the overlay's fidelity — never lower the column's.
+
+Both read the sister project at `D:\Dropbox\ClaudeCode\MBOpenData\MBFloodMapping`
+(override with `MBFLOODMAPPING_ROOT`). Refresh the source there first:
+
+```
+Rscript R/refresh_flood_data.R      # in MBFloodMapping — pulls the layers
+Rscript R/simplify_for_web.R        # in MBFloodMapping — rebuilds web/data/
+```
+
+Then, from this repo:
+
+```
+cd web && npm run flood:overlay     # seconds; commit web/public/data/flood/
+npm run flood:shards                # 10-25 min; then publish per §1b
+```
+
+`build_flood.R` needs the current `RollEntry_<date>.gpkg`, joins all nine
+zones at full resolution, and ships only parcels intersecting at least one —
+most of the province is outside every layer. Publishing the shards is the
+normal CDN dance in §1b (commit `mb-parcel-data`, bump the pin with
+`update-cdn-pin.ps1`). Until that runs, the column stays blank rather than
+saying "None", which is the correct rendering of not knowing.
+
+`web/test/flood.test.js` asserts that `src/lib/flood.js` and the built overlay
+geometry still agree — a zone renamed in one and not the other fails the suite
+instead of quietly rendering every feature in the fallback grey.
+
+**The source vintage is not the boundary vintage.** `RRVDFA`, `LRDFA` and
+`SMA` come from the Manitoba Land Initiative, which stopped publishing updates
+on **2022-02-09**. MBFloodMapping's refresh still succeeds against it — it
+re-fetches 2022 bytes and stamps them with today's date. DataMB carries a
+newer Designated Flood Areas layer (last edited 2025-04-02) that has **not**
+been repointed to; that is Jason's call, recorded in the header of
+`MBFloodMapping/R/refresh_flood_data.R`, and the repoint is a schema change
+rather than a URL swap (DataMB merges both DFAs into one 2-feature layer keyed
+on `Designated_Flood_Area_Zone`). The Data Status dialog's "Flood zone shards"
+row says so on the face of it.
+
 ### 7. MLI historical aerial basemap  (cadence: on-demand)
 The complete MLI Ortho Refresh source is built locally and deliberately not
 uploaded. Full provenance and year-coverage notes are in

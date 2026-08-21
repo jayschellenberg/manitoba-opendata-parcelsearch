@@ -1,0 +1,109 @@
+{
+  "groups": {
+    "dfa": {
+      "file": "dfa.geojson",
+      "label": "Designated Flood Areas",
+      "features": 2,
+      "refreshed": "2026-04-21",
+      "sources": [
+        {
+          "code": "RRVDFA",
+          "label": "Designated Flood Area (Red River Valley DFA)",
+          "source": "Manitoba Land Initiative (WRA Act s.17)",
+          "url": "https://mli.gov.mb.ca/adminbnd/shp_zip_files/bdy_des_flood_area_py_shp.zip",
+          "refreshed": "2026-04-21"
+        },
+        {
+          "code": "LRDFA",
+          "label": "Lower Red River Designated Flood Area",
+          "source": "Manitoba Land Initiative (WRA Act s.17)",
+          "url": "https://mli.gov.mb.ca/adminbnd/shp_zip_files/bdy_lower_red_river_dfa_py_shp.zip",
+          "refreshed": "2026-04-21"
+        }
+      ]
+    },
+    "sma": {
+      "file": "sma.geojson",
+      "label": "Special Management Area",
+      "features": 1,
+      "refreshed": "2026-04-21",
+      "sources": [
+        {
+          "code": "SMA",
+          "label": "Red River Valley Special Management Area",
+          "source": "Manitoba Land Initiative (Planning Act)",
+          "url": "https://mli.gov.mb.ca/adminbnd/shp_zip_files/bdy_rrvsma_py_shp.zip",
+          "refreshed": "2026-04-21"
+        }
+      ]
+    },
+    "f200": {
+      "file": "flood-1in200.geojson",
+      "label": "1-in-200 Year Flood",
+      "features": 13,
+      "refreshed": "2026-04-21",
+      "sources": [
+        {
+          "code": "F200",
+          "label": "Manitoba 1-in-200 Year Flood Extent (0.5% AEP)",
+          "source": "Manitoba Infrastructure",
+          "url": "https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/Manitoba_1_in_200_Flood_Layer_v2/FeatureServer/0",
+          "refreshed": "2026-04-21"
+        }
+      ]
+    },
+    "hist": {
+      "file": "historical.geojson",
+      "label": "Historical Flood Extents",
+      "features": 3,
+      "refreshed": "2026-04-21",
+      "sources": [
+        {
+          "code": "FL1997",
+          "label": "1997 Red River Flood (historical extent)",
+          "source": "Data MB (Manitoba Government)",
+          "url": "https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/img_red_river_flood_1997/FeatureServer/0",
+          "refreshed": "2026-04-21"
+        },
+        {
+          "code": "FL2009",
+          "label": "2009 Red River Flood (historical extent)",
+          "source": "Data MB (Manitoba Government)",
+          "url": "https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/Red_River_Flood_-_2009/FeatureServer/0",
+          "refreshed": "2026-04-21"
+        },
+        {
+          "code": "FL2011",
+          "label": "2011 Red River / Assiniboine Flood (historical extent)",
+          "source": "Data MB (Manitoba Government)",
+          "url": "https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/img_red_river_flood_2011_metadata/FeatureServer/0",
+          "refreshed": "2026-04-21"
+        }
+      ]
+    },
+    "corridor": {
+      "file": "wpg-corridors.geojson",
+      "label": "Winnipeg Waterway Corridors",
+      "features": 2,
+      "refreshed": "2026-04-21",
+      "sources": [
+        {
+          "code": "WWCR",
+          "label": "Winnipeg Waterway Corridor — Rivers (107 m regulated area)",
+          "source": "Derived from OpenStreetMap (City of Winnipeg Waterway By-law 5888/92)",
+          "url": "https://legacy.winnipeg.ca/ppd/CityPlanning/Riverbank/WaterwayPermitApplications.stm",
+          "refreshed": "2026-04-21"
+        },
+        {
+          "code": "WWCC",
+          "label": "Winnipeg Waterway Corridor — Creeks (76 m regulated area)",
+          "source": "Derived from OpenStreetMap (City of Winnipeg Waterway By-law 5888/92)",
+          "url": "https://legacy.winnipeg.ca/ppd/CityPlanning/Riverbank/WaterwayPermitApplications.stm",
+          "refreshed": "2026-04-21"
+        }
+      ]
+    }
+  },
+  "generated_at": "2026-08-21T21:00:10.534Z",
+  "note": "Display geometry, simplified upstream. Per-parcel verdicts come from the flood shards (r/build_flood.R), which join at full resolution."
+}

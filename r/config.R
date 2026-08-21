@@ -48,6 +48,11 @@ mao_assembly_root      <- .path_default("MAO_ASSEMBLY_ROOT",      "D:/Dropbox/Cl
 masc_scrape_root       <- .path_default("MASC_SCRAPE_ROOT",       "D:/Dropbox/ClaudeCode/MASC-SCRAPE")
 mb_parcel_history_root <- .path_default("MB_PARCEL_HISTORY_ROOT", "D:/Dropbox/ClaudeCode/MBOpenData/mb-parcel-history")
 mb_parcel_data_root    <- .path_default("MB_PARCEL_DATA_ROOT",    "D:/Dropbox/ClaudeCode/MBOpenData/mb-parcel-data")
+# Sister MBFloodMapping project — the authoritative flood/regulatory layer
+# cache that build_flood.R joins to the parcel fabric. Its data/ holds the
+# FULL-resolution GeoJSON; its web/data/ holds the display simplification,
+# which is a different thing and must not be substituted here.
+mb_floodmapping_root   <- .path_default("MBFLOODMAPPING_ROOT",    "D:/Dropbox/ClaudeCode/MBOpenData/MBFloodMapping")
 
 # --- shared constants ------------------------------------------------------
 
