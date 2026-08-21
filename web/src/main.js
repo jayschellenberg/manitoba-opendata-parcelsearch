@@ -234,7 +234,7 @@ import {
 import { resolveParcelAcres, formatRollSizeField, parseRollFrontageFeet } from './lib/acres.js';
 import {
   saleSizeStamp, saleSizeState, saleAcres, sizeSourceLabel, showsCurrentRollSize,
-  shapeDerivedNote,
+  shapeDerivedNote, boundaryTrustLabel, boundaryTrustRank,
 } from './lib/saleSize.js';
 import { computeSizeChanges } from './lib/sizeChange.js';
 import { indexHistoricalGeometry, applyHistoricalGeometry } from './lib/historicalHighlight.js';
@@ -1240,6 +1240,9 @@ const SORT_KEYS = {
   // incomplete group — a partial total is still the right sort position, and
   // parking those rows at the bottom would hide the biggest assemblies, which
   // are exactly the ones most likely to have a member missing its area.
+  // Boundary sorts most-changed first, so the rows whose acreage cannot be
+  // trusted rise to the top rather than scattering through the set.
+  boundary:     (r) => boundaryTrustRank(r.parcel.properties._geomTrust),
   groupacres:   (r) => finiteOrNeg(r.parcel.properties._saleGroupTotalAcres),
   // Group SF is Group Acres × 43,560, so it sorts on the same underlying
   // total — the multiplier is positive and constant, so the ordering is
@@ -4007,7 +4010,10 @@ async function runSearch() {
       // polygons for every represented municipality, stamp the dominant
       // CLI capability + soil type onto each parcel, and cache the polygons
       // so either CLI map mode turns on immediately when requested.
-      if (hasList && listMatchedMunis?.length) {
+      // Same gate as the sales path: the soil join is the expensive step and
+      // an imported property list is no more agricultural by default than a
+      // sales search. The Agricultural preset backfills it on demand.
+      if (hasList && listMatchedMunis?.length && agSoilRequested()) {
         setCount(`${baseMsg} · Loading soil survey data…`);
         const soilResult = await enrichImportedSoilComposition(
           parcelFc,
@@ -4569,15 +4575,37 @@ async function handleSalesUpload(file) {
   devPlanDeferred = true;
   await enrichOverlays(parcelFc, fakeInputs, baseMsg, { skipDevPlan: true });
     setExportEnabled(false);
-    setCount(`${baseMsg} · Loading soil survey data…`);
-    const soilResult = await enrichImportedSoilComposition(
-      parcelFc,
-      csvMatchedMunis,
-      uploadGeneration,
-      'sales',
-    );
-    if (soilResult.superseded) return;
-    salesExportEnrichmentComplete = soilResult.complete;
+    // Soil only when it has been asked for. This used to run on EVERY sales
+    // search, on the reasoning that a completed import should be "fully
+    // enriched, not merely plotted" — but the soil half of that is a 30-60s
+    // parcel × polygon join, and most appraisal work here is not agricultural
+    // (Jason, 2026-08-20/21). The rest of the enrichment above is cheap and
+    // still unconditional; this is the expensive one.
+    //
+    // Nothing is lost by deferring it: picking the Agricultural preset later
+    // runs ensureAgriculturalGridData(), which loads the survey and backfills
+    // these same columns for the rows already on screen.
+    // null when soil was not asked for — distinct from a soil FAILURE, which
+    // is what salesExportEnrichmentComplete guards against.
+    let soilResult = null;
+    if (agSoilRequested()) {
+      setCount(`${baseMsg} · Loading soil survey data…`);
+      soilResult = await enrichImportedSoilComposition(
+        parcelFc,
+        csvMatchedMunis,
+        uploadGeneration,
+        'sales',
+      );
+      if (soilResult.superseded) return;
+      salesExportEnrichmentComplete = soilResult.complete;
+    } else {
+      // Export stays ENABLED. The flag means "the enrichment that ran, ran
+      // clean" — it exists to stop a half-written export after a retryable
+      // soil failure. Declining to load soil is not a failure, and disabling
+      // the CSV on every non-agricultural search would be a far worse
+      // regression than blank soil columns.
+      salesExportEnrichmentComplete = true;
+    }
 
     // Compute multi-parcel sale group totals AFTER the enrichment
     // pipeline has stamped _acres on every parcel. Each parcel in a
@@ -4693,9 +4721,16 @@ async function handleSalesUpload(file) {
     // the user to bump the input again to retrigger the listener.
     refilterCsvIfActive();
     setExportEnabled(salesExportEnrichmentComplete && currentRows.length > 0);
-    if (soilResult.complete) {
-      // Carry the water-rights filter note through — enrichOverlays folded
-      // it into its own copy of baseMsg, which this line replaces.
+    // Carry the water-rights filter note through — enrichOverlays folded it
+    // into its own copy of baseMsg, which these lines replace.
+    if (!soilResult) {
+      // Soil was not requested. Say so rather than claiming "all available
+      // parcel data loaded", which would be untrue while the CLI, Soil Type
+      // and Slope columns sit empty — and would leave the user hunting for a
+      // fault instead of reading the one sentence that explains the blanks.
+      const filtered = lastWaterFilterDropped > 0 ? ` · ${waterFilterDropNote()}` : '';
+      setCount(`${baseMsg}${filtered} · soil data not loaded — pick the Agricultural preset to add it`);
+    } else if (soilResult.complete) {
       const filtered = lastWaterFilterDropped > 0 ? ` · ${waterFilterDropNote()}` : '';
       setCount(`${baseMsg}${filtered} · all available parcel data loaded`);
     } else {
@@ -6792,9 +6827,12 @@ function refreshCliLoadingIndicator(busyLabel = 'Loading…') {
  *     map a parcel popup that cannot describe its soil is the odd one out.
  * Neither active means nobody is looking at soil, so the join is pure cost.
  */
+function agSoilRequested() {
+  return soilStampWantedForGrid || cliMode != null;
+}
+
 function soilStampWanted() {
-  return Boolean(lastCliFc?.features?.length)
-    && (soilStampWantedForGrid || cliMode != null);
+  return Boolean(lastCliFc?.features?.length) && agSoilRequested();
 }
 
 function scheduleSoilCompositionStamp(parcelFc, { repush } = {}) {
@@ -9770,6 +9808,17 @@ function renderTable(rows, { resetPage = true } = {}) {
     acresSalesCell.classList.add('sales-only');
     markAreaCheck(acresSalesCell, p);
     tr.appendChild(acresSalesCell);
+    // Boundary — is today's polygon still what sold? Sits immediately after
+    // Acres because it qualifies that number: on a "Changed" row the at-sale
+    // size could not be recovered, which is why Acres is often blank there.
+    // The map already says this by drawing those parcels as pins; the grid
+    // had no way to say it at all. Positional like every cell here — must
+    // stay in step with the data-col="boundary" <th> between Acres and
+    // Group Acres.
+    const boundaryCell = td(boundaryTrustLabel(p._geomTrust), null, BOUNDARY_EMPTY_HINT);
+    boundaryCell.classList.add('sales-only');
+    if (p._geomTrust === 'withheld') boundaryCell.classList.add('boundary-changed');
+    tr.appendChild(boundaryCell);
     // Group Acres sits between Acres and $/Acre: per-parcel size, then the
     // sale's total, then the rate that divides by it. Reading left to right
     // now shows where the rate comes from.
@@ -11919,9 +11968,18 @@ async function applySubjectFromInput() {
     // signal that the radius had done anything, which read as the radius not
     // working at all (Jason, 2026-08-19).
     if (!refiltered) setCount(`Subject set to ${raw} (${muni}). Distance column populated.`);
-    // Fly the map to include the subject in view. Keep zoom modest so
-    // the surrounding sales stay on-screen.
-    mapReady.then(() => flyToFeature(map, feat));
+    // NO camera move. This used to flyToFeature(map, feat), whose comment
+    // claimed it kept "zoom modest so the surrounding sales stay on-screen" —
+    // but flyToFeature fits to the single feature's bbox at maxZoom 18, so
+    // setting a subject slammed the view onto one parcel and threw away the
+    // extent of the comps the user was reading (Jason, 2026-08-21).
+    //
+    // Doing nothing is also what makes the radius work visibly: setting a
+    // subject with a Max km typed ARMS the distance filter, and that pass
+    // refits to the surviving sales on its own. The fly-to was racing it and
+    // winning. With no Max km there is nothing to refit, and leaving the
+    // camera alone is exactly what was asked for — the subject is drawn on
+    // the map either way, so nothing is hidden by not chasing it.
   } catch (err) {
     console.warn('Subject fetch failed', err);
     setCount(`Subject: failed to load (${err.message}).`);
@@ -12787,6 +12845,13 @@ function today() {
 // plain search, so "—" reads as "not loaded yet" rather than "no data". CLI
 // and Soil Type need the soil-survey join, from either entry point; Land Cover
 // / Cult % load from a muni-scoped search of > LAND_COVER_MIN_ACRES-acre parcels (no overlay needed).
+// Not "not loaded yet" like the ones below — this one is "nobody checked".
+// The Parcel Change signal ships in the MAO sales shards; a hand-pasted comp
+// block is the seven-column grid and carries no such column, so there is
+// nothing to load and no amount of waiting will fill it.
+const BOUNDARY_EMPTY_HINT =
+  'This sale set carries no parcel-change evidence, so no claim is made either way. '
+  + 'The MAO Sales Database provides it; a pasted MAO comp block does not.';
 const CLI_EMPTY_HINT =
   'Pick the Agricultural column preset, or turn on the Soil Productivity/Soil Name overlay, to load soil capability for this municipality.';
 const SOIL_EMPTY_HINT =

@@ -139,6 +139,42 @@ export function geometryTrust(changeSignal) {
 }
 
 /**
+ * The Boundary column's cell text, from a stamped `_geomTrust`.
+ *
+ * Four states, not two, and deliberately not collapsed to a Yes/No. `unknown`
+ * means no signal exists at all — a hand-pasted comp set carries none of the
+ * Parcel Change data — and rendering that as "not changed" would assert
+ * something nobody checked. It reads as an em-dash for the same reason a
+ * missing at-sale size does: an honest gap beats a plausible wrong answer.
+ *
+ * `provisional` is its own word because the underlying signal
+ * (legal_matches_size_unchecked) says the legal description still matches but
+ * the size was never re-verified — likelier unchanged than not, but not
+ * evidence of it.
+ *
+ * @param {string|null|undefined} trust  a `_geomTrust` value
+ * @returns {string|null} cell text, or null for "no claim"
+ */
+export function boundaryTrustLabel(trust) {
+  switch (trust) {
+    case 'confirmed':   return 'Same';
+    case 'provisional': return 'Likely same';
+    case 'withheld':    return 'Changed';
+    default:            return null;
+  }
+}
+
+/** Sort rank for the Boundary column: most-changed first, no-claim last. */
+export function boundaryTrustRank(trust) {
+  switch (trust) {
+    case 'withheld':    return 0;
+    case 'provisional': return 1;
+    case 'confirmed':   return 2;
+    default:            return 3;
+  }
+}
+
+/**
  * The `_sale*` properties to merge onto a matched parcel feature, given the
  * sale record it was matched to.
  *
