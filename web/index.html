@@ -492,33 +492,24 @@
                 <button type="button" id="sales-db-forget" class="parcel-list-modal-btn danger" title="Disconnect the imported sales database from this browser">🔌 Disconnect</button>
                 <button type="button" id="sales-db-coverage" class="parcel-list-modal-btn"
                         title="When each municipality was last scraped for sales">📅 Coverage</button>
+                <!-- Exclude Nominal Sales rides in this row, beside Coverage, by
+                     explicit request (Jason, 2026-08-21). KNOWN AND ACCEPTED
+                     TRADE-OFF: this row lives inside #sales-db-ready, which is
+                     hidden until a sales database is connected, and inside a
+                     <details> that collapses in that state — so the checkbox is
+                     unreachable on a CSV-upload-only workflow even though the
+                     filter still applies to uploaded sales. It sat below the
+                     panel, and before that beside Clear, for exactly that
+                     reason. Move it back out if CSV-only work ever needs it. -->
+                <label class="sales-nominal-exclude" for="exclude-nominal"
+                   title="Sales where consideration &lt;$1000 — the $0 / $1 nominal transfers (family conveyances, corrective transfers) that are not market evidence. Applies to both the MAO database and an uploaded CSV. Tested against the whole sale's consideration, so a multi-parcel sale drops as one; a sale with no readable consideration is kept.">
+                  <input type="checkbox" id="exclude-nominal" />
+                  <span>Exclude Nominal Sales</span>
+                </label>
               </div>
               <p class="sales-db-update" id="sales-db-update" hidden></p>
             </div>
           </details>
-          <!-- Exclude Nominal Sales, immediately under the MAO Sales Database
-               panel so it reads with the Search / Coverage controls — but
-               OUTSIDE that <details>. Inside it, it vanishes twice over: the
-               panel collapses when no database is connected, and #sales-db-ready
-               is hidden outright. It applies to whichever sale set is loaded,
-               MAO database or uploaded CSV, so burying it in the database panel
-               takes it away from precisely the workflow that has no database.
-               It lived beside Clear until 2026-08-21 for this reason; this is
-               as close to Coverage as it can sit and still always be there. -->
-            <!-- Exclude Nominal Sales sits directly under the Search/Coverage
-                 row, where it reads as part of that control group — but
-                 OUTSIDE #sales-db-ready, which is hidden entirely until a
-                 database folder is connected. It applies to whichever sale
-                 set is loaded, MAO database or uploaded CSV, so hiding it
-                 with the database panel would take it away from exactly the
-                 workflow that has no database. That is why it lived beside
-                 Clear until 2026-08-21; this keeps the adjacency asked for
-                 without giving the reachability back. -->
-            <label class="sales-nominal-exclude" for="exclude-nominal"
-                   title="Sales where consideration &lt;$1000 — the $0 / $1 nominal transfers (family conveyances, corrective transfers) that are not market evidence. Applies to both the MAO database and an uploaded CSV. Tested against the whole sale's consideration, so a multi-parcel sale drops as one; a sale with no readable consideration is kept.">
-              <input type="checkbox" id="exclude-nominal" />
-              <span>Exclude Nominal Sales</span>
-            </label>
 
 
 
