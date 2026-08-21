@@ -6748,11 +6748,35 @@ function refreshCliLoadingIndicator(busyLabel = 'Loading…') {
  */
 function scheduleSoilCompositionStamp(parcelFc, { repush } = {}) {
   if (!lastCliFc?.features?.length) return;
-  // Re-push through the as-of swap too, or a composition stamp landing while
-  // the Historical overlay is on would quietly put today's boundary back.
+  // Re-push whatever is on the map NOW — not the set captured when this was
+  // scheduled.
+  //
+  // The stamp runs in an idle slot and the join can take twenty seconds on a
+  // busy muni. That is plenty of time for the user to change a filter, and
+  // pushing the captured `parcelFc` then silently puts the pre-filter set
+  // back. Measured on the live site, Lac du Bonnet, ticking Exclude Nominal
+  // Sales: the map correctly narrowed to 461 parcels at 6.2s, then jumped
+  // back to 1,300 at 27.2s while the status line still read "1046 of 1302
+  // sales shown (filtered)". It does not self-correct, and because the
+  // re-push is `fit: false` the camera never moves, so nothing signals it.
+  //
+  // lastResultFc is written by setMapData on every push, so it IS the current
+  // set. The stamp itself does not care which FC it is handed back — it
+  // mutates each feature's properties in place, and a filtered set reuses the
+  // same feature objects, so the enrichment is already on them either way.
+  // All the re-push has to do is make the source re-read them.
+  //
+  // Re-push through the as-of swap AND the boundary withholding, on the same
+  // terms setMapData uses. Either one omitted here is the same bug in a
+  // different coat: a stamp landing while Historical is on would put today's
+  // boundary back, and one landing after a withheld parcel became a pin would
+  // hand it back the polygon that is not what sold.
   const defaultRepush = () => mapReady.then(() => {
-    const asOf = asOfHighlight(parcelFc);
-    showResults(map, asOf ? asOf.fc : parcelFc, { fit: false });
+    const fc = lastResultFc?.features?.length ? lastResultFc : parcelFc;
+    const asOf = asOfHighlight(fc);
+    const asOfFc = asOf ? asOf.fc : fc;
+    const withheld = withholdChangedGeometry(asOfFc, { centroid: parcelCentrePoint });
+    showResults(map, withheld.withheld ? withheld.fc : asOfFc, { fit: false });
   });
   const doRepush = repush || defaultRepush;
   beginCliOp('Composing…');
