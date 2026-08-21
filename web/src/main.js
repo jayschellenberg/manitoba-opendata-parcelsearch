@@ -953,6 +953,14 @@ let csvMatchedMunis = null;
 // down would be in its temporal dead zone at that point.
 let waterRightsWantedForGrid = false;
 
+// The same latch for the soil-composition stamp, which is the expensive one:
+// the parcel × soil-polygon join runs 30-60s on a modest muni. Kept separate
+// from waterRightsWantedForGrid rather than folded into it because the two are
+// not the same question — soil has a SECOND legitimate requester in the CLI /
+// Soil Productivity overlay (see soilStampWanted()), and water-rights does not.
+// They happen to be set from the same preset today; they are not the same idea.
+let soilStampWantedForGrid = false;
+
 // Imported parcel list. Populated by the "Import list…" modal once
 // the resolver returns parcelKeys; runSearch reads this in front of
 // the legal-search branch and feeds the keys straight into
@@ -1691,6 +1699,14 @@ initColumns();
 onPresetApply((name) => {
   const wasLatched = waterRightsWantedForGrid;
   waterRightsWantedForGrid = name === 'Agricultural';
+  // Soil gets the same off-switch. Before this it had none: the stamp was
+  // gated only on the soil FC being loaded, and that is cleared solely on a
+  // MUNI change — so asking for soil once meant every later search in that
+  // municipality paid the 30-60s join again, long after the user had moved
+  // back to non-agricultural work. Most work is not agricultural (Jason,
+  // 2026-08-20). The cached FC deliberately stays, so re-picking Agricultural
+  // is instant, exactly as the water-rights latch above already does.
+  soilStampWantedForGrid = name === 'Agricultural';
   if (name === 'Agricultural') {
     ensureAgriculturalGridData();
   } else if (wasLatched && currentRows.length > 0) {
@@ -6741,20 +6757,48 @@ function refreshCliLoadingIndicator(busyLabel = 'Loading…') {
  * when available (browsers' idle slot — runs only when the main
  * thread is free); falls back to setTimeout(0) otherwise.
  *
- * Driven off the loaded soil FC, not the overlay's paint mode: the
- * polygons arrive either from the CLI overlay or from the Agricultural
- * column preset, and once we hold them for the current scope every
- * subsequent search should stamp too — otherwise the CLI / Soil Type
- * columns would go blank again on the next search for the same muni.
- * `lastCliFc` is cleared on a muni change, so this can't stamp a parcel
- * against some other municipality's soils.
+ * Gated on soilStampWanted(), NOT on merely holding the soil FC.
+ *
+ * It used to be the latter, and the original reasoning was sound as far as
+ * it went: once the polygons are loaded for a scope, every subsequent
+ * search should stamp too, or the CLI / Soil Type columns go blank on the
+ * next search for the same muni. That still holds — and it still happens,
+ * because the Agricultural preset keeps its latch across searches.
+ *
+ * What the old test missed is the way OUT. `lastCliFc` is cleared only on a
+ * muni change, so a single visit to the Agricultural preset committed every
+ * later search in that municipality to the 30-60s join, with no way to stop
+ * short of switching munis. Most appraisal work here is not agricultural, so
+ * that was the common case paying for the rare one.
+ *
+ * `lastCliFc` being cleared on a muni change still matters: it is what stops
+ * this stamping a parcel against some other municipality's soils.
  *
  * `repush` defaults to re-pushing through showResults (the search-
  * results parcel source); callers driving a different source (e.g.
  * the Roll Layer's muni-parcels source) pass their own re-push fn.
  */
+/**
+ * Is a parcel-level soil stamp actually wanted right now?
+ *
+ * Holding the soil FC is not the same as wanting every future search
+ * re-joined against it — that was the old test, and it made the join
+ * unstoppable short of changing municipality.
+ *
+ * Two requesters, either of which is a real request:
+ *   - the Agricultural column preset, which shows CLI / Soil Type and puts
+ *     the soil fields in the CSV export;
+ *   - the CLI / Soil Productivity overlay, because with soil drawn on the
+ *     map a parcel popup that cannot describe its soil is the odd one out.
+ * Neither active means nobody is looking at soil, so the join is pure cost.
+ */
+function soilStampWanted() {
+  return Boolean(lastCliFc?.features?.length)
+    && (soilStampWantedForGrid || cliMode != null);
+}
+
 function scheduleSoilCompositionStamp(parcelFc, { repush } = {}) {
-  if (!lastCliFc?.features?.length) return;
+  if (!soilStampWanted()) return;
   // Re-push whatever is on the map NOW — not the set captured when this was
   // scheduled.
   //
