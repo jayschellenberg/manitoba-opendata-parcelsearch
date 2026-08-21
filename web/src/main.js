@@ -6704,10 +6704,17 @@ function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
 let cliPendingOps = 0;
 function beginCliOp(label = 'Loading…') {
   cliPendingOps += 1;
+  // Also mark the RESULTS status busy. The toggle button and legend below
+  // already reflect this, but they are elsewhere on the page — someone
+  // reading the counts under the table had no way to know the map was still
+  // being rebuilt underneath them. 'Composing…' on a button means something
+  // next to that button; under the counts it needs to name what is moving.
+  beginResultsSettling(label === 'Composing…' ? 'Still adding soil data to the map…' : label);
   refreshCliLoadingIndicator(label);
 }
 function endCliOp() {
   cliPendingOps = Math.max(0, cliPendingOps - 1);
+  endResultsSettling();
   refreshCliLoadingIndicator();
 }
 function refreshCliLoadingIndicator(busyLabel = 'Loading…') {
@@ -6748,11 +6755,35 @@ function refreshCliLoadingIndicator(busyLabel = 'Loading…') {
  */
 function scheduleSoilCompositionStamp(parcelFc, { repush } = {}) {
   if (!lastCliFc?.features?.length) return;
-  // Re-push through the as-of swap too, or a composition stamp landing while
-  // the Historical overlay is on would quietly put today's boundary back.
+  // Re-push whatever is on the map NOW — not the set captured when this was
+  // scheduled.
+  //
+  // The stamp runs in an idle slot and the join can take twenty seconds on a
+  // busy muni. That is plenty of time for the user to change a filter, and
+  // pushing the captured `parcelFc` then silently puts the pre-filter set
+  // back. Measured on the live site, Lac du Bonnet, ticking Exclude Nominal
+  // Sales: the map correctly narrowed to 461 parcels at 6.2s, then jumped
+  // back to 1,300 at 27.2s while the status line still read "1046 of 1302
+  // sales shown (filtered)". It does not self-correct, and because the
+  // re-push is `fit: false` the camera never moves, so nothing signals it.
+  //
+  // lastResultFc is written by setMapData on every push, so it IS the current
+  // set. The stamp itself does not care which FC it is handed back — it
+  // mutates each feature's properties in place, and a filtered set reuses the
+  // same feature objects, so the enrichment is already on them either way.
+  // All the re-push has to do is make the source re-read them.
+  //
+  // Re-push through the as-of swap AND the boundary withholding, on the same
+  // terms setMapData uses. Either one omitted here is the same bug in a
+  // different coat: a stamp landing while Historical is on would put today's
+  // boundary back, and one landing after a withheld parcel became a pin would
+  // hand it back the polygon that is not what sold.
   const defaultRepush = () => mapReady.then(() => {
-    const asOf = asOfHighlight(parcelFc);
-    showResults(map, asOf ? asOf.fc : parcelFc, { fit: false });
+    const fc = lastResultFc?.features?.length ? lastResultFc : parcelFc;
+    const asOf = asOfHighlight(fc);
+    const asOfFc = asOf ? asOf.fc : fc;
+    const withheld = withholdChangedGeometry(asOfFc, { centroid: parcelCentrePoint });
+    showResults(map, withheld.withheld ? withheld.fc : asOfFc, { fit: false });
   });
   const doRepush = repush || defaultRepush;
   beginCliOp('Composing…');
@@ -9330,16 +9361,72 @@ async function toggleAuxOverlay(which) {
 // path during module init without a TDZ error — the const form
 // of the same lookup tripped TDZ when setCount was reached before
 // its declaration line during sales upload boot-strapping.
-function setCount(text) {
-  $count.textContent = text;
+// ---------------------------------------------------------------------------
+// "The results are still settling" signal
+//
+// A search writes its counts as soon as it has them, but work keeps changing
+// the map and the grid afterwards: the zoning and soil fetches, and above all
+// the soil-composition join, which is deferred into an idle slot and takes
+// twenty-odd seconds on a busy muni. For that whole window the status line
+// reads as a finished result — "1302 of 1302 sales plotted across 538 parcels
+// · 2 duplicate rows merged · …" — while the map underneath is still moving.
+// Jason (2026-08-20): "results seem wrong for a minute or more … some
+// indication that refresh of results on map and grid is still happening would
+// be helpful."
+//
+// Two sources feed it. Some call sites already end their message with
+// "· Loading …", the established convention, so the trailing ellipsis is
+// honoured directly. The composition join had NO status signal at all — it
+// only relabelled the CLI toggle button, which is somewhere else on the page
+// entirely — so beginCliOp/endCliOp now drive this counter too.
+//
+// Errors win: a failed search is not "still working", and showing a spinner
+// on one would be a lie that never resolves.
+let resultsSettlingOps = 0;
+let resultsSettlingLabel = '';
+let lastCountText = '';
+
+function beginResultsSettling(label = 'Still updating the map…') {
+  resultsSettlingOps += 1;
+  resultsSettlingLabel = label;
+  renderResultsStatus();
+}
+function endResultsSettling() {
+  resultsSettlingOps = Math.max(0, resultsSettlingOps - 1);
+  if (resultsSettlingOps === 0) resultsSettlingLabel = '';
+  renderResultsStatus();
+}
+
+/** Repaint #results-status from the last count text plus the busy state.
+ *  Split out of setCount so the busy state can change without a caller
+ *  having to re-send the same message. */
+function renderResultsStatus() {
   const el = document.getElementById('results-status');
-  if (el) {
-    const trimmed = (text ?? '').trim();
-    el.textContent = trimmed;
-    el.hidden = trimmed === '';
-    const looksLikeError = /failed|error|rate-limit|couldn't|no parcels|no usable|no matching/i.test(trimmed);
-    el.classList.toggle('results-status-error', looksLikeError);
-  }
+  if (!el) return;
+  const base = lastCountText.trim();
+  const looksLikeError = /failed|error|rate-limit|couldn't|no parcels|no usable|no matching/i.test(base);
+  // A trailing ellipsis is the existing convention for "this message is not
+  // the final word" — several call sites already end theirs that way.
+  const saysSoAlready = /…\s*$/.test(base);
+  const busy = !looksLikeError && (resultsSettlingOps > 0 || saysSoAlready);
+  // Say it in WORDS, not only with the spinner. Jason's browser reports
+  // prefers-reduced-motion, so for him the spinner is a static ring — and a
+  // static ring next to a finished-looking sentence is decoration, not a
+  // signal. The label also names the work rather than making the reader
+  // guess how long a bare spinner means.
+  const text = busy && !saysSoAlready && base && resultsSettlingLabel
+    ? `${base} · ${resultsSettlingLabel}`
+    : base;
+  el.textContent = text;
+  el.hidden = text === '';
+  el.classList.toggle('results-status-error', looksLikeError);
+  el.classList.toggle('results-status-busy', busy);
+}
+
+function setCount(text) {
+  lastCountText = text ?? '';
+  $count.textContent = text;
+  renderResultsStatus();
 }
 function setBusy(busy) {
   $search.disabled = busy;

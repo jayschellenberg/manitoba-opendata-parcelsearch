@@ -3706,6 +3706,37 @@ body:not(.has-max-km) #results td.subj-col {
   color: #991b1b;
 }
 
+/* Still-settling state. The counts are written as soon as they are known,
+   but the zoning/soil fetches and the deferred soil-composition join keep
+   changing the map and grid for up to half a minute afterwards. Without
+   this the line reads as a finished result the whole time, so the map
+   looks wrong rather than unfinished. A spinner rather than a colour
+   change alone: the point is to say WORK IS HAPPENING, and only motion
+   reads that way at a glance. */
+.results-status.results-status-busy {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #854d0e;
+}
+.results-status.results-status-busy::before {
+  content: "";
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 7px;
+  vertical-align: -1px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: results-status-spin 0.7s linear infinite;
+}
+@keyframes results-status-spin { to { transform: rotate(360deg); } }
+/* Reduced motion still needs the state to be legible, so the ring stays
+   and only the spin goes. */
+@media (prefers-reduced-motion: reduce) {
+  .results-status.results-status-busy::before { animation: none; opacity: 0.55; }
+}
+
 /* Phase 7 empty-table state. Sits below the table when the body
    has no rows; hidden once a search returns results. */
 .results-empty {
@@ -5722,6 +5753,14 @@ body {
   background: var(--ui-danger-soft);
   border-color: rgba(143, 53, 48, 0.28);
   color: #7a2723;
+}
+
+/* Theme layer for the still-settling state, alongside the error one above.
+   Amber rather than the accent green so "working" never reads as "done". */
+.results-status.results-status-busy {
+  background: #fdf6e3;
+  border-color: rgba(146, 106, 20, 0.28);
+  color: #7c5a12;
 }
 
 .results-empty,
