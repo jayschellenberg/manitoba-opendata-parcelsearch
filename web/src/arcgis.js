@@ -66,6 +66,7 @@ import { computeTopNMatches } from './lib/overlayJoinCore.js';
 // parcel can't read differently depending on where you look at it.
 import { resolveParcelAcres } from './lib/acres.js';
 import { reconcileMuniSpelling } from './lib/muniIdentity.js';
+import { FLOOD_GROUPS } from './lib/flood.js';
 // Manitoba Water Rights Licensing (WALLAS) lives on a different host and
 // a different ArcGIS flavour (a 10.51 MapServer, not an AGOL hosted
 // FeatureServer), so its client is its own module. What this file needs
@@ -1819,6 +1820,130 @@ export async function fetchWaterForMuni(muniNameWithTyp) {
   } catch {
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Flood zone membership — per-muni shards from r/build_flood.R, served from
+// the mb-parcel-data CDN like the water and land-cover shards.
+//
+// Separate from the overlay geometry below and NOT interchangeable with it:
+// these are decided against the full-resolution layers, the overlay draws a
+// simplification. See the header of src/lib/flood.js.
+// ---------------------------------------------------------------------------
+
+let floodIndexPromise = null;
+
+/** Flood shard manifest: muni -> { file, count }, plus `_meta` carrying the
+ *  build's vintage and each layer's fetch date (read by the Data Status
+ *  dialog). Exported for that dialog the way fetchWaterIndex is. */
+export async function fetchFloodIndex() {
+  if (floodIndexPromise) return floodIndexPromise;
+  floodIndexPromise = (async () => {
+    const cacheKey = `mb_flood_index_v1_${MB_PARCEL_DATA_REVISION}`;
+    const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+    if (cached) return cached;
+    try {
+      const res = await fetch(`${MB_PARCEL_DATA_CDN}/flood/_index.json`);
+      if (!res.ok) return null;
+      const idx = await res.json();
+      await writeCache(cacheKey, idx);
+      return idx;
+    } catch {
+      return null;
+    }
+  })();
+  return floodIndexPromise;
+}
+
+/**
+ * Flood-zone dictionary for one municipality, keyed by Roll_No_Txt, or null
+ * when the muni has no shard.
+ *
+ * null means "we do not know", not "no parcel here is in a flood zone" —
+ * the caller must keep those apart (see `_floodLoaded` in main.js). Only
+ * parcels intersecting at least one zone are shipped, so a muni WITH a shard
+ * and a roll absent from it is the "outside every zone" answer.
+ */
+export async function fetchFloodForMuni(muniNameWithTyp) {
+  if (!muniNameWithTyp) return null;
+  const idx = await fetchFloodIndex();
+  const entry = lookupMuniManifestEntry(idx, muniNameWithTyp, { stripType: false });
+  if (!entry) return null;
+  const file = entry.file;
+  const cacheKey = `mb_flood_${file}_v1_${MB_PARCEL_DATA_REVISION}`;
+  const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  if (cached) return cached;
+  try {
+    const res = await fetch(`${MB_PARCEL_DATA_CDN}/flood/${file}`);
+    if (!res.ok) return null;
+    const dict = await res.json();
+    await writeCache(cacheKey, dict);
+    return dict;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Flood overlay geometry — static assets under public/data/flood/, built by
+// scripts/build-flood-overlay.js from the sister MBFloodMapping project.
+//
+// Same-origin, so no CSP allowlist entry and no CDN pin: these are dissolved
+// provincial boundaries that move about once a year, shipped with the app
+// the way public/mb-municipalities.geojson is.
+//
+// Deliberately NOT routed through readCache/writeCache. The five files run
+// to ~500 KB, which is a meaningful slice of the localStorage budget the
+// muni shards actually need, and Vercel already serves public/ with
+// immutable-style caching — the browser's HTTP cache does this job for free.
+// The in-flight promise memo below is what stops two toggles racing the
+// same file; a second toggle in the same session hits the HTTP cache.
+// ---------------------------------------------------------------------------
+
+const floodOverlayPromises = new Map();
+
+/**
+ * Fetch one flood group's FeatureCollection by group key ('dfa', 'f200', …).
+ * Rejects on a missing file rather than resolving empty: an empty overlay
+ * that silently draws nothing is indistinguishable from "this parcel is in
+ * no flood zone", which is the one wrong impression this layer must not
+ * give. toggleAuxOverlay catches it and reverts the button.
+ */
+export function fetchFloodOverlay(key) {
+  if (floodOverlayPromises.has(key)) return floodOverlayPromises.get(key);
+  const group = FLOOD_GROUPS.find((g) => g.key === key);
+  if (!group) return Promise.reject(new Error(`Unknown flood group: ${key}`));
+  const p = (async () => {
+    const res = await fetch(`/data/flood/${group.file}`);
+    if (!res.ok) throw new Error(`flood/${group.file}: HTTP ${res.status}`);
+    const fc = await res.json();
+    if (!fc?.features?.length) throw new Error(`flood/${group.file}: no features`);
+    return fc;
+  })();
+  // Drop a failed fetch from the memo so the next toggle retries instead of
+  // replaying the rejection forever.
+  p.catch(() => floodOverlayPromises.delete(key));
+  floodOverlayPromises.set(key, p);
+  return p;
+}
+
+/** Provenance for the Flood overlay groups — source URLs and the date each
+ *  was last pulled. Written by the same build script; read by the Data
+ *  Status dialog. Resolves null when absent so a missing file degrades to
+ *  "no vintage shown" rather than breaking the dialog. */
+let floodMetaPromise = null;
+export function fetchFloodOverlayMeta() {
+  if (floodMetaPromise) return floodMetaPromise;
+  floodMetaPromise = (async () => {
+    try {
+      const res = await fetch('/data/flood/_meta.json');
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  })();
+  return floodMetaPromise;
 }
 
 // ---------------------------------------------------------------------------

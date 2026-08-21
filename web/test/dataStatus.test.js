@@ -155,6 +155,21 @@ assert.equal(serviceEditDate({ editingInfo: { dataLastEditDate: 0 } }), null);
   assert.equal(byLabel.get('Land cover').next, 'static');
   assert.equal(byLabel.get('Water shards (CDN)').next, null);
 
+  // Flood's vintage is the OLDEST layer fetch date, not the shard rebuild —
+  // the dataset is only as current as its stalest layer, and the DFA layers
+  // are the stale ones.
+  const floodRows = publishedRows({
+    floodMeta: {
+      generated_at: '2026-08-21T14:00:00Z',
+      layer_fetched: { RRVDFA: '2026-04-21', F200: '2026-06-30' },
+    },
+  });
+  const floodRow = floodRows.find((r) => r.label === 'Flood zone shards (CDN)');
+  assert.equal(floodRow.vintage, 'Apr 21, 2026');
+  // The detail must keep saying the source is frozen. A fetch date on its own
+  // implies a currency these statutory boundaries do not have.
+  assert.match(floodRow.detail, /frozen 2022-02-09/);
+
   // Every fetch failing still yields a full table — vintages null, rows
   // kept. Land cover is the one exception: its vintage is a constant.
   const empty = publishedRows({});

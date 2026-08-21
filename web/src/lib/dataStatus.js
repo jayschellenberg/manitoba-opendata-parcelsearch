@@ -106,7 +106,7 @@ export function newestSnapshot(histIndex) {
  * @param {Date}   [opts.now]       injectable clock for the schedule rules
  */
 export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMeta,
-                                waterMeta, now = new Date() } = {}) {
+                                waterMeta, floodMeta, now = new Date() } = {}) {
   const rows = [];
   const ds = manifest?.datasets || {};
   // Schedules, as registered in Task Scheduler on the build machine:
@@ -176,7 +176,33 @@ export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMet
     next: null,
   });
 
+  // Flood zones. The vintage is when the LAYERS were last pulled, not when
+  // the shards were re-cut — same rule as MASC and Water, and here it also
+  // guards against a rebuild day implying freshness the boundaries do not
+  // have. The detail line carries the thing a reader most needs to know:
+  // the two statutory Designated Flood Area boundaries come from the
+  // Manitoba Land Initiative, which stopped publishing updates on
+  // 2022-02-09, so re-fetching them succeeds without making them current.
+  rows.push({
+    label: 'Flood zone shards (CDN)',
+    vintage: dateLabel(floodLayerDate(floodMeta) || datePart(floodMeta?.generated_at)),
+    detail: 'DFA + Special Management Area from MLI, frozen 2022-02-09 — verify a boundary before relying on it',
+    next: null,
+  });
+
   return rows;
+}
+
+/**
+ * Oldest fetch date across the flood layers, from build_flood.R's
+ * `_meta.layer_fetched` map — a dataset is only as current as its stalest
+ * member, and the DFA layers are the stale ones. Null when absent.
+ */
+export function floodLayerDate(meta) {
+  const dates = Object.values(meta?.layer_fetched || {})
+    .filter((d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d));
+  if (!dates.length) return null;
+  return dates.sort()[0];
 }
 
 // ---- "next scheduled" helpers (Jason, 2026-08-17) ---------------------------

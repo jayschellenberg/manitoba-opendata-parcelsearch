@@ -120,6 +120,13 @@ export const DEFAULT_VISIBLE = new Set([
   // default-visible: it was requested as an always-there orientation tool,
   // and the 🌐 cell costs almost no width.
   'streetview',
+  // Flood was always a bare deep-link and gear-only. It now carries the
+  // parcel's zone membership from the pre-baked shards (r/build_flood.R), so
+  // it is default-visible for the same reason Water is: it fills in on its
+  // own, needs no overlay load, and away from the flood layers it stays as
+  // quiet as it was before — a muni with no parcel in any zone gets no
+  // shard, so those rows render exactly the link they used to.
+  'flood',
 ]);
 
 // Columns added AFTER a user's stored visible-set may have been written.
@@ -129,7 +136,11 @@ export const DEFAULT_VISIBLE = new Set([
 // Each key here is added to the visible set ONCE (tracked separately in
 // ADOPTED_KEY); untick it after that and it stays unticked.
 const ADOPTED_KEY = 'mbps_table_columns_adopted';
-const ADOPT_ONCE = ['streetview', 'rollsize', 'zonecat', 'n1id', 'muniname', 'saletype', 'boundary'];
+// 'flood' is not a NEW column — it predates every stored set — but it changed
+// from a link into a data column, and a user who never ticked a link column
+// would otherwise never discover that it now answers the question. Adopting
+// it once puts it in front of them; unticking it still sticks.
+const ADOPT_ONCE = ['streetview', 'rollsize', 'zonecat', 'n1id', 'muniname', 'saletype', 'boundary', 'flood'];
 
 // Column presets — `null` value means "everything that the current
 // mode would show". The labels match the dropdown options.
@@ -211,7 +222,7 @@ export const PRESETS = {
     'favorite', 'roll', 'n1id', 'muniname', 'saledate', 'saleprice', 'groupsize',
     'address', 'zone1', 'zonecat', 'rollsize', 'acres', 'boundary', 'sf', 'groupacres', 'groupsf',
     'grouppriceac', 'grouppricesf', 'grouppriceff', 'grouppricelot',
-    'subjdist', 'saletype', 'primaryprop', 'water',
+    'subjdist', 'saletype', 'primaryprop', 'water', 'flood',
     'saletoasmt', 'asmtland', 'asmtbldg', 'asmtpct', 'asmtyear',
     'legal', 'value', 'streetview',
   ]),
@@ -261,7 +272,10 @@ export const PRESETS = {
   // the set only means the gear isn't independently suppressing them.
   'Residential': new Set([
     'favorite', 'roll', 'muniname', 'address', 'rollsize', 'acres', 'boundary', 'sf', 'du',
-    'water',
+    // Water and Flood together: on a valley lot they are one question, and a
+    // Designated Flood Area governs what may be built on exactly the kind of
+    // parcel this preset is for.
+    'water', 'flood',
     'value', 'asmtland', 'asmtbldg', 'asmtpct', 'asmtyear',
     'zone1', 'zbl', 'dev1', 'changes',
     // $/FF earns its place here specifically: frontage is what an urban

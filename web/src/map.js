@@ -22,6 +22,7 @@ import turfLength from '@turf/length';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import { landCoverBreakdown, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
+import { FLOOD_GROUPS, floodColorStops, floodZone } from './lib/flood.js';
 import { overlayGroupExpanded } from './lib/overlayToggle.js';
 import { formatRollSizeField } from './lib/acres.js';
 import {
@@ -1231,6 +1232,57 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
           'line-opacity': 0.75,
         },
       });
+
+      // ---- Flood zones (see src/lib/flood.js) ----
+      // Five independently-toggled groups, one GeoJSON source each, all
+      // fetched from public/data/flood/ on first activation. Registered
+      // HERE — below parcel-fill — because these are large background
+      // extents: the Red River Valley DFA alone covers most of the valley,
+      // and a search result drawn underneath it would be unfindable.
+      //
+      // Warm reds/oranges for the regulatory and statistical extents,
+      // slate blue for observed inundation, teal for the by-law corridor.
+      // Deliberately NOT the Water Influence blues — those colour the
+      // result parcels themselves, and a background extent sharing their
+      // ramp would read as a parcel classification.
+      //
+      // Colours come from FLOOD_ZONES so the legend, the grid cell and the
+      // map cannot drift; each source is styled by the `code` property
+      // stamped at build time.
+      for (const group of FLOOD_GROUPS) {
+        map.addSource(group.source, { type: 'geojson', data: emptyFc() });
+        map.addLayer({
+          id: group.fill,
+          type: 'fill',
+          source: group.source,
+          layout: { visibility: 'none' },
+          paint: {
+            'fill-color': ['match', ['get', 'code'], ...floodColorStops(), '#999999'],
+            'fill-opacity': group.opacity,
+          },
+        });
+        map.addLayer({
+          id: group.line,
+          type: 'line',
+          source: group.source,
+          layout: { visibility: 'none', 'line-join': 'round' },
+          paint: {
+            'line-color': ['match', ['get', 'code'], ...floodColorStops(), '#999999'],
+            // Heavier than the fill implies on purpose: at province zoom the
+            // 20%-opacity fill of a single dissolved polygon is nearly
+            // invisible, and the boundary is the part that matters — being
+            // inside or outside a Designated Flood Area is a legal fact
+            // about the parcel, not a gradient.
+            'line-width': [
+              'interpolate', ['linear'], ['zoom'],
+              5, 0.9,
+              9, 1.6,
+              13, 2.4,
+            ],
+            'line-opacity': 0.85,
+          },
+        });
+      }
 
       // ---- WALLAS water rights (see src/wallas.js) ----
       // Three independently-toggled layers, all licensed records only.
@@ -2864,6 +2916,28 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       });
       map.on('mouseleave', 'contam-circle', () => { setHoverCursor(''); });
 
+      // Click a flood extent → which zone, and under what authority.
+      //
+      // One popup shared by all five groups: where extents overlap (most of
+      // the valley is in both a DFA and the 1997 extent) the click returns
+      // whichever layer is on top, so the popup names the layer rather than
+      // claiming to be the parcel's full flood picture. The Flood Zone
+      // column is where the complete per-parcel answer lives.
+      const floodPopup = new maplibregl.Popup({ closeButton: true });
+      for (const group of FLOOD_GROUPS) {
+        onLayerClick(map, group.fill, (e) => {
+          const p = e.features?.[0]?.properties;
+          if (!p) return;
+          floodPopup.setLngLat(e.lngLat).setHTML(floodHtml(p)).addTo(map);
+        });
+        map.on('mouseenter', group.fill, () => {
+          if (map.getLayoutProperty(group.fill, 'visibility') === 'visible') {
+            setHoverCursor('pointer');
+          }
+        });
+        map.on('mouseleave', group.fill, () => { setHoverCursor(''); });
+      }
+
       // Click an official MASC risk-area polygon → small popup with the
       // Risk_Area number from Manitoba Maps.
       const riskAreaPopup = new maplibregl.Popup({ closeButton: true });
@@ -3459,6 +3533,30 @@ export function setMascRiskAreasData(map, fc) {
 export function setMascRiskAreasVisible(map, visible) {
   const v = visible ? 'visible' : 'none';
   for (const id of ['masc-risk-area-fill', 'masc-risk-area-line', 'masc-risk-area-label']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
+  }
+}
+
+// ---- Flood zones ----
+// One pair of setters for all five groups, keyed by group.key — the layers
+// differ only in their data and their palette, both of which come from
+// lib/flood.js, so five near-identical function pairs would be five places
+// for them to drift.
+
+const FLOOD_GROUP_BY_KEY = new Map(FLOOD_GROUPS.map((g) => [g.key, g]));
+
+export function setFloodData(map, key, fc) {
+  const group = FLOOD_GROUP_BY_KEY.get(key);
+  if (!group) return;
+  const src = map.getSource(group.source);
+  if (src) src.setData(fc);
+}
+
+export function setFloodVisible(map, key, visible) {
+  const group = FLOOD_GROUP_BY_KEY.get(key);
+  if (!group) return;
+  const v = visible ? 'visible' : 'none';
+  for (const id of [group.fill, group.line]) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
   }
 }
@@ -4624,6 +4722,24 @@ function contamHtml(p) {
     lines.push(`<a href="${escapeHtml(safeLink)}" target="_blank" rel="noreferrer">Registry page →</a>`);
   }
   return `<div style="max-width:260px;line-height:1.4">${lines.join('<br>')}</div>`;
+}
+
+/** Flood-extent popup: zone, its legal character, and the instrument it
+ *  comes from. The authority line is the point — "1-in-200 Year Flood" and
+ *  "Designated Flood Area" look alike on a map and are not alike at all,
+ *  one being a statistical extent and the other a statutory boundary that
+ *  governs what may be built. */
+function floodHtml(p) {
+  const zone = floodZone(p.code);
+  if (!zone) return '';
+  const reach = String(p.Name ?? '').trim();
+  const lines = [
+    `<strong>${escapeHtml(zone.label)}</strong>`,
+    reach ? `${escapeHtml(reach)}` : '',
+    `<em>${escapeHtml(zone.kind)} — ${escapeHtml(zone.authority)}</em>`,
+    '<span style="color:#666">Screening layer, simplified for display. Not a survey or flood determination.</span>',
+  ];
+  return `<div style="max-width:260px;line-height:1.45;font-size:12px">${lines.filter(Boolean).join('<br>')}</div>`;
 }
 
 function riskAreaHtml(p) {
