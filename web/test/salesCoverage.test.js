@@ -24,7 +24,7 @@ import {
   // Pending municipalities are in the current sweep.
   assert.equal(nextFullScrape({ status: 'never' }), 'current sweep');
 
-  assert.equal(refreshNote({ status: 'done' }), 'every ~4-5 days');
+  assert.equal(refreshNote({ status: 'done' }), 'every ~3 days');
   assert.equal(refreshNote({ status: 'never' }), null);
 }
 

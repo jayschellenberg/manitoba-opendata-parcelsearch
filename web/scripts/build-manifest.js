@@ -187,13 +187,15 @@ function buildMuniVintage(warnings) {
   }
   // Cadence tiers from the scrape config, so the tab can say when each
   // municipality's NEXT full refresh is due. Same normalisation as
-  // cadence.R: "6month" is 6, everything else (annual, blank, typo) is 12.
+  // cadence.R: "6month" is 6, "9month" is 9, everything else (annual,
+  // blank, typo) is 12.
   const cadenceByNo = new Map();
   if (fs.existsSync(configPath)) {
     for (const r of readCsv(configPath)) {
       if (String(r.include).toUpperCase() !== 'Y') continue;
+      const cad = String(r.rescrape_cadence).trim().toLowerCase();
       cadenceByNo.set(String(Number(r.muni_no)),
-        String(r.rescrape_cadence).trim().toLowerCase() === '6month' ? 6 : 12);
+        cad === '6month' ? 6 : (cad === '9month' ? 9 : 12));
     }
   }
   const rows = readCsv(ledgerPath).map((r) => {

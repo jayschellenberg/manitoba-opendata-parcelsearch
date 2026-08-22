@@ -82,7 +82,7 @@
         <!-- Opens the Data Status dialog: when each data source behind the
              site was last refreshed. Driven by src/dataStatusDialog.js.
              Emoji are decoration, hidden from the accessible names. -->
-        <button type="button" class="topbar-link" id="data-status-open"><span aria-hidden="true">📅</span> Data Status</button>
+        <button type="button" class="topbar-link" id="data-status-open"><span aria-hidden="true">📅</span> Property Data Status</button>
         <details class="topbar-details" id="data-sources-details">
           <summary class="topbar-summary">Data Sources</summary>
           <div class="topbar-panel" id="data-sources-panel">
@@ -99,6 +99,16 @@
                 backed by a generated MAO scrape index; substring matches
                 resolve to live parcel records via Roll Entry, so geometry
                 and assessment fields are always current.
+              </p>
+              <p>
+                That scrape index is kept current on three clocks: assessed
+                values, addresses and areas are re-checked nightly for every
+                municipality; a parcel that sells has its title number and
+                legal description re-read within about three days; and every
+                municipality's rolls are re-read in full every 6 months (12 in
+                the North), which is what catches legal and title changes on
+                parcels that did not sell. Per-municipality dates are in
+                <strong>Property Data Status</strong> above.
               </p>
               <p>
                 Roll Entry is queried live for parcel geometry and current
@@ -1925,7 +1935,7 @@
     <dialog id="data-status-modal" class="parcel-list-modal">
       <div class="parcel-list-modal-inner">
         <header class="parcel-list-modal-header">
-          <h2 class="parcel-list-modal-title">Data status</h2>
+          <h2 class="parcel-list-modal-title">Property data status</h2>
           <button
             type="button"
             id="data-status-close"
@@ -1933,8 +1943,11 @@
             aria-label="Close data status dialog"
           >×</button>
         </header>
-        <p class="data-status-intro">When each data source behind this site
-          was last refreshed.</p>
+        <p class="data-status-intro">When the property facts behind this
+          site — legal descriptions, assessed values, title numbers, and the
+          zoning, soil, flood and other parcel layers — were last refreshed.
+          Sales records are tracked separately: see the Coverage button in
+          the Sales Analysis tab's MAO sales database panel.</p>
 
         <details class="data-status-block" open>
           <summary><strong>Assessment rolls by municipality</strong>
@@ -1943,8 +1956,13 @@
             municipality's rolls last had a complete refresh. A bare month
             ("July 2026") means the refresh committed in that monthly cohort
             before exact days were recorded — dates fill in as each cohort
-            comes due. Day-to-day roll changes are picked up nightly for all
-            municipalities either way.</p>
+            comes due. <strong>This date is the floor, not the whole
+            story:</strong> assessed values, addresses and areas are checked
+            nightly for every municipality, and a parcel that sells has its
+            title number and legal description re-read within about three
+            days. The full re-read below is what additionally catches legal
+            and title changes on parcels that did not sell — every 6 months,
+            or 12 in the North.</p>
           <input id="data-status-muni-search" type="search" class="sales-db-search"
                  placeholder="Filter municipalities…" aria-label="Filter municipalities" />
           <div class="data-status-scroll">
@@ -1999,10 +2017,13 @@
           >×</button>
         </header>
         <p class="parcel-list-modal-help" id="sales-coverage-summary"></p>
-        <p class="data-status-hint">"Next full scrape" is the month each
-          municipality's complete re-scrape is due under its cadence tier;
-          "Refresh" is the light incremental pass that tops up new sales and
-          cycles the whole archive every few days once the sweep completes.</p>
+        <p class="data-status-hint">Covers the sales archive only — for the
+          property facts (legal descriptions, assessed values, title numbers),
+          see Property Data Status in the top bar. "Next full scrape" is the
+          month each municipality's complete re-scrape is due under its
+          cadence tier; "Refresh" is the light incremental pass that tops up
+          new sales and cycles the whole archive every few days once the
+          sweep completes.</p>
         <input id="sales-coverage-search" type="search" class="sales-db-search"
                placeholder="Filter municipalities…" aria-label="Filter coverage table" />
         <div class="sales-coverage-scroll">

@@ -50,11 +50,12 @@ export function nextFullScrape(row) {
 
 /**
  * "Refresh" cell: the incremental pass that tops up new sales, roughly
- * every 4-5 days per municipality once the sweep completes. Uniform by
+ * every ~3 days per municipality once the sweep completes (5 municipalities per
+ * hourly slot since 2026-08-22; it was 4-5 days at 3/slot). Uniform by
  * design — it cycles the whole archive — so scraped rows all read the same.
  */
 export function refreshNote(row) {
-  return row.status === 'never' ? null : 'every ~4-5 days';
+  return row.status === 'never' ? null : 'every ~3 days';
 }
 
 /**

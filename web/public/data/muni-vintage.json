@@ -1,7 +1,7 @@
 {
  "version": 1,
  "metadata": {
-  "generated_at": "2026-08-17T15:15:04.263Z",
+  "generated_at": "2026-08-22T20:34:39.865Z",
   "source": "mao-scrape muni_refresh_ledger.csv (assessment cadence, month precision)",
   "source_modified": "2026-08-17T00:52:28.703Z",
   "precision": "month",
@@ -46,7 +46,7 @@
    "region": "Interlake",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "102",
@@ -54,7 +54,7 @@
    "region": "South-Central / Central Plains",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "602",
@@ -62,7 +62,7 @@
    "region": "Interlake",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "781",
@@ -118,7 +118,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "500",
@@ -134,7 +134,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "734",
@@ -190,7 +190,7 @@
    "region": "South-Central / Central Plains",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "603",
@@ -206,7 +206,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "115",
@@ -270,7 +270,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "748",
@@ -302,7 +302,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "786",
@@ -318,7 +318,7 @@
    "region": "South-Central / Central Plains",
    "last_refreshed": "2026-08",
    "last_refreshed_date": "2026-08-01",
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "311",
@@ -326,7 +326,7 @@
    "region": "Interlake",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "121",
@@ -350,7 +350,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "124",
@@ -374,7 +374,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "605",
@@ -382,7 +382,7 @@
    "region": "Interlake",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "750",
@@ -398,7 +398,7 @@
    "region": "North",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 6
+   "cadence_months": 12
   },
   {
    "muni_no": "323",
@@ -406,7 +406,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-08",
    "last_refreshed_date": "2026-08-01",
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "619",
@@ -430,7 +430,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-08",
    "last_refreshed_date": "2026-08-01",
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "142",
@@ -438,7 +438,7 @@
    "region": "South-Central / Central Plains",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "704",
@@ -470,7 +470,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "111",
@@ -478,7 +478,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "133",
@@ -494,7 +494,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "135",
@@ -510,7 +510,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "752",
@@ -574,7 +574,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "138",
@@ -606,7 +606,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "428",
@@ -638,7 +638,7 @@
    "region": "South-Central / Central Plains",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "145",
@@ -678,7 +678,7 @@
    "region": "North",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 6
+   "cadence_months": 12
   },
   {
    "muni_no": "763",
@@ -694,7 +694,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "729",
@@ -710,7 +710,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "149",
@@ -718,7 +718,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "431",
@@ -726,7 +726,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "159",
@@ -734,7 +734,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "151",
@@ -782,7 +782,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "617",
@@ -794,32 +794,32 @@
   },
   {
    "muni_no": "700",
-   "name": "Muni 700",
-   "region": null,
+   "name": "MUNICIPAL AND NORTHERN RELATIONS (700)",
+   "region": "North",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
    "cadence_months": 12
   },
   {
    "muni_no": "701",
-   "name": "Muni 701",
-   "region": null,
+   "name": "MUNICIPAL AND NORTHERN RELATIONS (701)",
+   "region": "North",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
    "cadence_months": 12
   },
   {
    "muni_no": "702",
-   "name": "Muni 702",
-   "region": null,
+   "name": "MUNICIPAL AND NORTHERN RELATIONS (702)",
+   "region": "North",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
    "cadence_months": 12
   },
   {
    "muni_no": "703",
-   "name": "Muni 703",
-   "region": null,
+   "name": "MUNICIPAL AND NORTHERN RELATIONS (703)",
+   "region": "North",
    "last_refreshed": "2026-08",
    "last_refreshed_date": "2026-08-01",
    "cadence_months": 12
@@ -870,7 +870,7 @@
    "region": "South-Central / Central Plains",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "155",
@@ -878,7 +878,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "156",
@@ -886,7 +886,7 @@
    "region": "South-Central / Central Plains",
    "last_refreshed": "2026-08",
    "last_refreshed_date": "2026-08-01",
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "710",
@@ -902,7 +902,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "107",
@@ -910,7 +910,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "789",
@@ -926,7 +926,7 @@
    "region": "South-Central / Central Plains",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "712",
@@ -942,7 +942,7 @@
    "region": "Southeast",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "765",
@@ -966,7 +966,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "550",
@@ -990,7 +990,7 @@
    "region": "Southeast",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "192",
@@ -998,7 +998,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "403",
@@ -1046,7 +1046,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "165",
@@ -1062,7 +1062,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "182",
@@ -1070,7 +1070,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "730",
@@ -1094,7 +1094,7 @@
    "region": "South-Central / Central Plains",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "170",
@@ -1102,7 +1102,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "353",
@@ -1110,7 +1110,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "172",
@@ -1126,7 +1126,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "731",
@@ -1166,7 +1166,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "448",
@@ -1182,7 +1182,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "714",
@@ -1230,7 +1230,7 @@
    "region": "South-Central / Central Plains",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "178",
@@ -1318,7 +1318,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "194",
@@ -1342,7 +1342,7 @@
    "region": "North",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 6
+   "cadence_months": 12
   },
   {
    "muni_no": "715",
@@ -1358,7 +1358,7 @@
    "region": "North",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 6
+   "cadence_months": 12
   },
   {
    "muni_no": "195",
@@ -1374,7 +1374,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "197",
@@ -1382,7 +1382,7 @@
    "region": "South-Central / Central Plains",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "198",
@@ -1390,7 +1390,7 @@
    "region": "Southeast",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "461",
@@ -1414,7 +1414,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "733",
@@ -1454,7 +1454,7 @@
    "region": "West & Parkland",
    "last_refreshed": "2026-07",
    "last_refreshed_date": null,
-   "cadence_months": 12
+   "cadence_months": 6
   },
   {
    "muni_no": "203",

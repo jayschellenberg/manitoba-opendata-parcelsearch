@@ -114,7 +114,11 @@ already tracks this and is the natural source.
   interchangeable and are not.
 - A municipality's assessment vintage is a **cohort month**, not a scrape
   timestamp: `cadence.R` splits munis into 6 or 12 monthly cohorts, so
-  `2026-07` means "refreshed in the July cohort".
+  `2026-07` means "refreshed in the July cohort". (Since 2026-08-22 the tiers
+  are regional — 6 months everywhere except the North, which is 12 — and
+  `build-manifest.js` reads the tier per muni, so the tab's "next refresh"
+  follows a re-tier automatically. A tier whose modulus does not divide 12
+  would also need the absolute-month cohort clock; see `cadence.R`.)
 - The sweep is still filling in — 115/186 captured as of 2026-08-16 — so the
   sales coverage doc will legitimately show many municipalities as never
   scraped for a while yet.

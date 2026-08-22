@@ -36,7 +36,9 @@ other to 1.5%. The layer's own `dataLastEditDate` was the previous day. So:
   staleness, because there is no internal disagreement to detect;
 - the nightly mao-scrape delta also can't catch it, because that delta triggers
   on ROLL_ENTRY attribute changes and ROLL_ENTRY never changed. The roll waits
-  for its municipality's 6- or 12-month cadence re-scrape.
+  for its municipality's cadence re-scrape (6 months everywhere but the North,
+  which is 12 — see mao-scrape's README) unless it SOLD, in which case the
+  daily sales-change bridge corrects its title and legal within ~3 days.
 
 The mitigation is disclosure, not detection: the "Data refreshed" footer shows
 the provincial publish date with that caveat in its tooltip, and the export
