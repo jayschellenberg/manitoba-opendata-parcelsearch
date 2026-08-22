@@ -246,6 +246,27 @@
               <span class="tip">Substring match against the street name portion of Property_Address (e.g. 'MAIN ST', 'DRURY', 'ROAD 96W').</span>
             </span>
           </div>
+          <!-- Street Type + Direction, mirroring the dropdowns on MAO's
+               civic-address search. MAO decides these against structured
+               columns; here they're word-position matches against the
+               Property_Address text, applied client-side alongside the
+               civic-number filter. Options are filled from
+               civicRange.js's lists at boot so the dropdowns and the
+               matcher can't drift apart. -->
+          <div class="address-typedir-row">
+            <span class="field">
+              <select id="address-type">
+                <option value="">Street Type</option>
+              </select>
+              <span class="tip">Street type (AVE, ST, DR…), matched in type position at the end of the address — 'ST' finds "100 MAIN ST N" but not "123 ST MARYS RD". Common long forms match too (RD also finds "ROAD", HWY finds "HIGHWAY"). Works best together with a street name.</span>
+            </span>
+            <span class="field">
+              <select id="address-dir">
+                <option value="">Direction</option>
+              </select>
+              <span class="tip">Street direction (N, S, E, W, NE…), matched as its own word ("MAIN ST N") or glued to a rural grid number ("ROAD 96W").</span>
+            </span>
+          </div>
 
           <!-- Roll # — most precise lookup, one parcel per number.
                Phase 4 wraps the value in a chip-input shell: the
@@ -325,6 +346,84 @@
               <span class="field legal-title-field">
                 <input id="title" type="text" placeholder="Certificate of title (contains)" />
                 <span class="tip">Substring search against the MAO scrape's certificates_of_title field. Accepts plain title numbers (e.g. "2476500") or full prefixed forms ("CT 2476500").</span>
+              </span>
+            </div>
+            <!-- MAO-parity structured legal searches. Four groups in
+                 MAO's search_select.aspx order (lot/block/plan, condo,
+                 parish lot, section-township-range), each an optional
+                 AND filter feeding the same legal-index query as the
+                 Legal description / Title fields above. Condo, parish
+                 and STR match against tokens derived from the legal
+                 text at index load — see legalIndex.core.js. -->
+            <div class="legal-row">
+              <span class="field">
+                <input id="lot" type="text" placeholder="Lot" />
+                <span class="tip">Lot — exact match against the MAO scrape's parsed lot field. "4" and "04" are the same lot.</span>
+              </span>
+              <span class="field">
+                <input id="block" type="text" placeholder="Block" />
+                <span class="tip">Block — exact match against the MAO scrape's parsed block field.</span>
+              </span>
+              <span class="field">
+                <input id="plan" type="text" placeholder="Plan" />
+                <span class="tip">Plan number — matches the parsed plan field, falling back to a text search of the full legal description for plans the parser missed.</span>
+              </span>
+            </div>
+            <div class="condo-row">
+              <span class="field">
+                <input id="condo-plan" type="text" placeholder="Condo Plan" />
+                <span class="tip">Condominium plan number, e.g. 38239. Matches the plan-unit pairs in the legal detail ("38239-1 TOGETHER WITH AN UNDIVIDED…"). On its own it returns every unit on the plan.</span>
+              </span>
+              <span class="field">
+                <input id="condo-unit" type="text" placeholder="Condo Unit" />
+                <span class="tip">Condominium unit number. Unit ranges in the legal description ("1/8-39000") count as every unit they cover.</span>
+              </span>
+            </div>
+            <div class="parish-row">
+              <span class="field parish-field">
+                <select id="parish" disabled>
+                  <option value="">Parish</option>
+                </select>
+                <span class="tip">Parish or settlement for river-lot legal descriptions, e.g. "RL-65-FX-5066" is River Lot 65 in the Parish of St François Xavier. The list only offers parishes that actually occur in the archive. Searches province-wide — no municipality needed.</span>
+              </span>
+              <span class="field">
+                <select id="parish-lot-type">
+                  <option value="">Lot type</option>
+                </select>
+                <span class="tip">Parish lot type (River Lot, Outer Two Miles, Park Lot…). Best-effort narrowing: MAO's legal text codes some settlement and inner-two-mile lots as river lots, so leave on "Lot type" (any) if a search comes up short.</span>
+              </span>
+              <span class="field">
+                <input id="parish-lot" type="text" placeholder="Lot #" />
+                <span class="tip">Parish lot number. Lot ranges in the legal description ("RL45/51-BP-626") count as every lot they cover.</span>
+              </span>
+              <span class="field">
+                <input id="parish-plan" type="text" placeholder="Plan" />
+                <span class="tip">Plan number attached to the parish lot code (the 5066 in "RL-65-FX-5066"). Leave blank to match any plan.</span>
+              </span>
+            </div>
+            <div class="str-row">
+              <span class="field">
+                <input id="str-section" type="text" placeholder="Sec" />
+                <span class="tip">Section number (1–36). With Quarter set to RL, this box takes the township river-lot number instead.</span>
+              </span>
+              <span class="field">
+                <input id="str-township" type="text" placeholder="Twp" />
+                <span class="tip">Township number.</span>
+              </span>
+              <span class="field">
+                <input id="str-range" type="text" placeholder="Rge" />
+                <span class="tip">Range with meridian direction, e.g. "4E" or "28W". A bare number matches both east and west of the principal meridian.</span>
+              </span>
+              <span class="field">
+                <select id="str-quarter">
+                  <option value="">Quarter</option>
+                  <option value="NE">NE</option>
+                  <option value="NW">NW</option>
+                  <option value="SE">SE</option>
+                  <option value="SW">SW</option>
+                  <option value="RL">RL</option>
+                </select>
+                <span class="tip">Quarter section (NE/NW/SE/SW), or RL for river lots surveyed by township ("RL-7-23-4E"). Leave on "Quarter" to match any.</span>
               </span>
             </div>
             <div class="filter-row">

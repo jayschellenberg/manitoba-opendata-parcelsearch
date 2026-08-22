@@ -161,6 +161,109 @@ export function addressMatchesVariants(address, variants) {
   return variants.some((v) => addr.includes(v));
 }
 
+// ---------- Street type + direction (MAO-parity dropdowns) ----------
+//
+// MAO's civic-address search carries Type (AVE, ST, DR, …) and
+// Direction (N, S, E, …) dropdowns backed by structured columns in
+// their database. We only have the Property_Address text, so both
+// filters are decided here, client-side, the same way the civic-number
+// boxes are — the street-name clause still does the SQL narrowing.
+
+// MAO's Type option list, each expanded to the spellings the
+// Property_Address text actually uses ("E ROAD 71 N" spells RD out,
+// highways ride as HWY / HW / PTH-less "HIGHWAY").
+const STREET_TYPE_SYNONYMS = {
+  AVE:  ['AVE', 'AVENUE'],
+  BAY:  ['BAY'],
+  BEND: ['BEND'],
+  BLVD: ['BLVD', 'BOULEVARD'],
+  CL:   ['CL', 'CLOSE'],
+  COVE: ['COVE'],
+  CR:   ['CR'],
+  CRES: ['CRES', 'CRESCENT'],
+  CROS: ['CROS', 'CROSSING'],
+  DR:   ['DR', 'DRIVE'],
+  GATE: ['GATE'],
+  HWY:  ['HWY', 'HW', 'HIGHWAY'],
+  LANE: ['LANE'],
+  PKWY: ['PKWY', 'PKY', 'PARKWAY'],
+  PL:   ['PL', 'PLACE'],
+  RD:   ['RD', 'ROAD'],
+  ROW:  ['ROW'],
+  RUE:  ['RUE'],
+  ST:   ['ST', 'STREET'],
+  TRL:  ['TRL', 'TRAIL'],
+  VILL: ['VILL'],
+  WAY:  ['WAY'],
+};
+
+export const STREET_TYPES = Object.keys(STREET_TYPE_SYNONYMS);
+export const STREET_DIRECTIONS = ['E', 'N', 'NE', 'NW', 'S', 'SE', 'SW', 'W'];
+
+const DIRECTION_SET = new Set(STREET_DIRECTIONS);
+// Tokens allowed AFTER the street type without disqualifying it:
+// directions, numbers / lettered numbers ("ROAD 71 N", "96W"), and
+// unit designators. Anything else means the candidate token was part
+// of the street NAME ("ST MARYS RD" must not match Type=ST).
+function allowedAfterType(tok) {
+  return DIRECTION_SET.has(tok)
+    || /^#?\d+[A-Z]{0,2}$/.test(tok)
+    || tok === 'UNIT' || tok === 'APT' || tok === 'SUITE' || tok === 'STE';
+}
+
+/**
+ * True when `address` satisfies the Type and/or Direction dropdowns.
+ * Empty selections pass everything.
+ *
+ * Type matches when one of its spellings appears as a token followed
+ * only by directions / numbers / unit designators — i.e. in street-
+ * type position: "100 MAIN ST", "100 MAIN ST N", "1 106 E ROAD 71 N"
+ * all match ST / RD; "123 ST MARYS RD" does not match ST.
+ *
+ * Direction matches as a standalone token anywhere ("… ST N") or
+ * glued to a number the way rural grid addresses write it
+ * ("60158 ROAD 96W", "5 008 ROAD 39NW").
+ */
+export function addressMatchesTypeDir(address, type, dir) {
+  const wantType = String(type || '').trim().toUpperCase();
+  const wantDir  = String(dir || '').trim().toUpperCase();
+  if (!wantType && !wantDir) return true;
+  const tokens = String(address || '').toUpperCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return false;
+
+  if (wantDir) {
+    const glued = new RegExp(`^\\d+${wantDir}$`);
+    const hit = tokens.some((t) => t === wantDir || glued.test(t));
+    if (!hit) return false;
+  }
+
+  if (wantType) {
+    const spellings = new Set(STREET_TYPE_SYNONYMS[wantType] || [wantType]);
+    let hit = false;
+    for (let i = tokens.length - 1; i >= 0; i--) {
+      if (!spellings.has(tokens[i])) continue;
+      // A type token at index 0 is a bare street name ("ROAD" alone) —
+      // still fine; what matters is everything after it.
+      if (tokens.slice(i + 1).every(allowedAfterType)) { hit = true; break; }
+    }
+    if (!hit) return false;
+  }
+  return true;
+}
+
+/**
+ * Filter a FeatureCollection in place by the Type / Direction
+ * dropdowns. Mirrors applyCivicNumberFilter's contract: no-op when
+ * neither is set.
+ */
+export function applyStreetTypeDirFilter(fc, type, dir) {
+  if (!String(type || '').trim() && !String(dir || '').trim()) return;
+  const features = fc?.features || [];
+  fc.features = features.filter(
+    (f) => addressMatchesTypeDir(f?.properties?.Property_Address, type, dir),
+  );
+}
+
 /**
  * Classify what a From/To pair is asking for. The two boxes are one
  * control, and how many of them are filled says which question the user

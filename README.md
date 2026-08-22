@@ -32,7 +32,7 @@ cd web
 npm run legal:index
 ```
 
-The browser searches that index for legal description text, Lot/Block/Plan, and certificate-of-title text. Matching `(muni_no, roll_no_txt)` keys are used only as a lookup bridge; the app still fetches the current parcel geometry and assessment fields live from Roll Entry.
+The browser searches that index for legal description text, Lot/Block/Plan, certificate-of-title text, and the structured MAO-parity criteria (condo plan/unit, parish lot, section-township-range) matched against tokens derived from the legal text on first use. Matching `(muni_no, roll_no_txt)` keys are used only as a lookup bridge; the app still fetches the current parcel geometry and assessment fields live from Roll Entry.
 
 MASC soil data is also shipped as generated static artifacts rather than queried live. The quarter-section layer uses per-municipality JSON shards under `web/public/data/masc/`, rated long/narrow river-lot polygons are in `web/public/data/masc-riverlots.json`, and the table's dominant parcel-level soil rating uses `web/public/data/parcel-masc/`. Risk-area numbers come from the official Manitoba Maps / Open Canada `MASC_Risk_Areas` polygon layer and are joined to parcel results at search time. Refresh the generated soil artifacts after a new MASC CSV, river-lot scrape, river-lot KMZ, or Roll Entry snapshot:
 
@@ -102,7 +102,13 @@ The page splits into a fixed-width left sidebar holding all controls and a fluid
   One punctuation rule: **everything separates**. Comma, space, newline, `;`, `&`, `+` and `|` all mean "these are different properties", and spacing is irrelevant — `284950&373300`, `284950 & 373300` and `284950, 373300` are the same search. Each typed roll becomes its own chip, its own map highlight and badge number, and its own Parcel Snapshot.
 
   > Earlier builds treated `+`, `&` and `|` as **joiners** — the rolls either side merged into one subject sharing a single badge and one combined snapshot image. That merge is gone. **Property Search never groups parcels at all**: not from Roll # punctuation, and not from a parcel-list import row that lists several rolls in one cell (those expand to one independent parcel each). Grouping is a sales concept — the combined $/acre across a multi-parcel transaction — so it lives on the **Sales** tab and comes only from an uploaded sales CSV.
+- Street Type (AVE, ST, DR, …) and Direction (N, S, E, …) dropdowns under the address row, mirroring MAO's civic-address search. Both are decided client-side against the `Property_Address` text: the type must sit in type position ('ST' finds "100 MAIN ST N" but not "123 ST MARYS RD", and long forms match — RD also finds "ROAD"), the direction as its own word or glued to a rural grid number ("ROAD 96W")
 - Legal Description (contains), Lot / Block / Plan (exact), and Certificate of Title (contains) from the generated MAO scrape index
+- MAO-parity structured searches (Advanced group), matched against tokens derived from the scrape's legal text at index load (`legalIndex.core.js`):
+  - **Condo Plan / Unit** — the reversed `plan-unit` pairs condominium titles carry (`38239-1 TOGETHER WITH …`); unit ranges (`DESC 1/8-39000`) count as every unit they cover
+  - **Parish lot** — Parish dropdown (data-derived: only parishes occurring in the archive, e.g. St François Xavier, Baie St Paul), Lot type (River / Parish / Settlement / Inner–Outer Two Miles / Park / Wood), Lot # and Plan, parsed from codes like `RL-65-FX-5066`; description-side lot ranges (`RL45/51-BP-626`) expand
+  - **Section-Township-Range + Quarter** — canonical tokens like `NE-01-13-28-W` (≈87 % of the archive). Quarter offers NE/NW/SE/SW plus RL for township river lots; a bare range number matches both meridians, `28W` only the west one
+  - All are optional AND filters under the single Search button (MAO's required-field, one-search-per-row model is deliberately not replicated), and all work province-wide with no municipality selected
 - Zoning Category dropdown (per-muni narrowed)
 - Status dropdown — `Any` / `Zoning Changed` / `Dev Plan Changed` / `Both Changed`
 - DU mode + Min # input — `Any DU` / `0 DU only` (vacant) / `Min DU N` (≥ N units)

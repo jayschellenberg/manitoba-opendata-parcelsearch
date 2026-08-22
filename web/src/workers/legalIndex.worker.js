@@ -15,6 +15,7 @@ import {
   searchLegalIndex,
   lookupLegalRecordsByParcelKeys,
   lookupLegalRecordsByRollSet,
+  listParishOptions,
 } from '../legalIndex.core.js';
 
 let parsed = null;
@@ -27,6 +28,7 @@ self.addEventListener('message', async (ev) => {
     else if (type === 'metadata') result = parsed?.metadata || null;
     else if (type === 'search')   result = searchLegalIndex(parsed, payload);
     else if (type === 'lookup')   result = lookupLegalRecordsByParcelKeys(parsed, payload?.keys || []);
+    else if (type === 'parishOptions') result = listParishOptions(parsed);
     else if (type === 'lookupRolls') {
       // Map → array-of-pairs for postMessage transport. Re-hydrated on
       // the main thread by the wrapper in legalIndex.js.
