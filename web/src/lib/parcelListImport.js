@@ -60,7 +60,7 @@ const FIELD_LABELS = {
  * @param {Function} opts.canonicalRoll - roll-canonicalization helper
  *   from arcgis.js (kept as an injection so this module doesn't pull
  *   that dependency).
- * @param {(payload: { parcelKeys, resolved, unresolved, stats }) => void}
+ * @param {(payload: { parcelKeys, resolved, unresolved, notices, stats }) => void}
  *   opts.onResolved - called when the user clicks Resolve and the
  *   resolver returns. The modal closes itself before invoking this.
  * @param {() => void} [opts.onInputAccepted] - called as soon as a
@@ -246,10 +246,12 @@ export function initParcelListImport({
       $resolve.disabled = true;
       return;
     }
-    if (!types.includes('roll')) {
+    if (!types.includes('roll') && !types.includes('legal')) {
       // Soft warning — applyMapping will work but every row will be
-      // unresolvable. Block resolve to keep the user out of a dead end.
-      $mapWarn.textContent = 'Map a Roll # column. The resolver intersects each row by its roll #.';
+      // unresolvable. Block resolve to keep the user out of a dead
+      // end. A Legal Desc column can stand alone: section-township-
+      // range rows ("NE27-7-4E") resolve without a roll #.
+      $mapWarn.textContent = 'Map a Roll # column, or a Legal Desc column of section-township-range values (e.g. NE27-7-4E).';
       $mapWarn.hidden = false;
       $resolve.disabled = true;
       return;

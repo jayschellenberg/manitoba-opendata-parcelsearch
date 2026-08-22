@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict';
 import { resolveParcelList } from '../src/parcelListResolver.js';
-import { lookupLegalRecordsByRollSet } from '../src/legalIndex.core.js';
+import { lookupLegalRecordsByRollSet, lookupLegalRecordsByStrSet } from '../src/legalIndex.core.js';
 import { parseLegalToken } from '../src/lib/parcelListParser.js';
 
 const results = [];
@@ -76,12 +76,22 @@ const FIXTURE = {
           legal_description: 'LOT 5 BLOCK 2 PLAN 31654',
           lot: '5', block: '2', plan: '31654',
           certificates_of_title: '3009999' }),
+    // A subdivided quarter — THREE parcels sharing one section-township-
+    // range description. Mirrors the real NE27-7-4E in RM of Hanover
+    // (rolls 16300/16325/16350), the roll-less-import multi-match case.
+    row({ muni_no: 135, roll_no_txt: '16300.000', municipality: 'HANOVER (RM)',
+          legal_description: 'DESC NE27-7-4E', legal_detail: 'NE-27-07-04-E' }),
+    row({ muni_no: 135, roll_no_txt: '16325.000', municipality: 'HANOVER (RM)',
+          legal_description: 'DESC NE27-7-4E', legal_detail: 'NE-27-07-04-E PT SW' }),
+    row({ muni_no: 135, roll_no_txt: '16350.000', municipality: 'HANOVER (RM)',
+          legal_description: 'DESC NE27-7-4E', legal_detail: 'NE-27-07-04-E PT NW' }),
   ],
 };
 
-// Pre-build the lookup the resolver expects. Tests pass it in via the
-// opts override.
+// Pre-build the lookups the resolver expects. Tests pass them in via
+// the opts overrides.
 const lookup = (rolls) => lookupLegalRecordsByRollSet(FIXTURE, rolls);
+const lookupStr = (tokens) => lookupLegalRecordsByStrSet(FIXTURE, tokens);
 
 // ---- helpers ----------------------------------------------------
 
@@ -374,6 +384,98 @@ await test('muniName rows are unresolved (not dropped) when no reconciler is inj
   assert.equal(out.resolved.length, 0);
   assert.equal(out.unresolved.length, 1);
   assert.match(out.unresolved[0].reason, /unavailable/);
+});
+
+// ---- roll-less section-township-range rows ----------------------
+
+console.log('resolveParcelList — roll-less STR rows');
+
+await test('a lone quarter resolves without a roll #', async () => {
+  const out = await resolveParcelList(
+    [makeRow({ roll: '', legal: 'NW26-2-13E' })],
+    { lookupRollSet: lookup, lookupStrSet: lookupStr },
+  );
+  assert.equal(out.resolved.length, 1);
+  assert.equal(out.unresolved.length, 0);
+  assert.equal(out.resolved[0].via, 'str');
+  assert.equal(out.resolved[0].muniNo, 275);
+  assert.equal(out.resolved[0].roll, '218600.000');
+  assert.equal(out.notices.length, 0);
+  assert.equal(out.stats.byVia.str, 1);
+});
+
+await test('a subdivided quarter imports every parcel and flags the multiplicity', async () => {
+  const out = await resolveParcelList(
+    [makeRow({ roll: '', legal: 'NE27-7-4E', site: '9' })],
+    { lookupRollSet: lookup, lookupStrSet: lookupStr },
+  );
+  assert.equal(out.resolved.length, 3);
+  assert.deepEqual(out.resolved.map((r) => r.roll).sort(),
+    ['16300.000', '16325.000', '16350.000']);
+  // All three carry the row's Site label — they're one input row.
+  assert.deepEqual(out.resolved.map((r) => r.site), ['9', '9', '9']);
+  assert.equal(out.notices.length, 1);
+  assert.equal(out.notices[0].count, 3);
+  assert.match(out.notices[0].message, /NE27-7-4E matched 3 parcels/);
+  assert.match(out.notices[0].message, /16300, 16325, 16350/);
+  assert.equal(out.parcelKeys.length, 3);
+});
+
+await test('zero-padded and unpadded forms hit the same quarter', async () => {
+  // The fixture's detail is the MAO canonical "NE-27-07-04-E"; the
+  // user may paste "NE27-07-04E" — zero-stripping makes them equal.
+  const out = await resolveParcelList(
+    [makeRow({ roll: '', legal: 'NE27-07-04E' })],
+    { lookupRollSet: lookup, lookupStrSet: lookupStr },
+  );
+  assert.equal(out.resolved.length, 3);
+});
+
+await test('a quarter nothing matches lands in unresolved with a plain reason', async () => {
+  const out = await resolveParcelList(
+    [makeRow({ roll: '', legal: 'SW1-99-9W' })],
+    { lookupRollSet: lookup, lookupStrSet: lookupStr },
+  );
+  assert.equal(out.resolved.length, 0);
+  assert.equal(out.unresolved.length, 1);
+  assert.match(out.unresolved[0].reason, /No parcel's legal description matches "SW1-99-9W"/);
+});
+
+await test('no roll and no grid legal is still unresolvable', async () => {
+  const out = await resolveParcelList(
+    [makeRow({ roll: '', legal: '5-2-31654' })],   // LBP needs a roll
+    { lookupRollSet: lookup, lookupStrSet: lookupStr },
+  );
+  assert.equal(out.resolved.length, 0);
+  assert.equal(out.unresolved.length, 1);
+  assert.match(out.unresolved[0].reason, /no roll # and no section-township-range/);
+});
+
+await test('two rows landing on the same parcel dedupe in parcelKeys', async () => {
+  // NW26-2-13E resolves to 218600; so does an explicit muni+roll row.
+  const out = await resolveParcelList(
+    [
+      makeRow({ roll: '218600.000', muniNo: 275, lineNo: 1 }),
+      makeRow({ roll: '', legal: 'NW26-2-13E', lineNo: 2 }),
+    ],
+    { lookupRollSet: lookup, lookupStrSet: lookupStr },
+  );
+  assert.equal(out.resolved.length, 2);
+  assert.equal(out.parcelKeys.length, 1);
+});
+
+await test('mixed lists keep rolls on the roll path and quarters on the STR path', async () => {
+  const out = await resolveParcelList(
+    [
+      makeRow({ roll: '219000.000', muniNo: 275, lineNo: 1 }),
+      makeRow({ roll: '', legal: 'NE27-7-4E', lineNo: 2 }),
+    ],
+    { lookupRollSet: lookup, lookupStrSet: lookupStr },
+  );
+  assert.equal(out.resolved.length, 4);   // 1 roll row + 3 quarter parcels
+  assert.equal(out.stats.byVia.muni, 1);
+  assert.equal(out.stats.byVia.str, 1);
+  assert.equal(out.notices.length, 1);
 });
 
 // ---- summary ----------------------------------------------------

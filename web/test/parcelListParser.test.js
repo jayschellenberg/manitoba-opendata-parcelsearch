@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import {
   parseLegalToken,
   gridNeedle,
+  gridStrToken,
   parseParcelList,
   applyMapping,
   validateMapping,
@@ -653,6 +654,39 @@ await test('the leading-site rule leaves real data columns alone', () => {
 });
 
 // ---------- summary ----------
+
+// ---------- township river lots + canonical STR tokens ----------
+
+console.log('parseLegalToken — RL township form + gridStrToken');
+
+await test('township river lots parse as grid with the RL quarter', async () => {
+  const t = parseLegalToken('RL7-23-4E');
+  assert.equal(t.kind, 'grid');
+  assert.equal(t.qq, 'RL');
+  assert.equal(t.sec, '7');
+  assert.equal(t.twp, 23);
+  assert.equal(t.rng, 4);
+  assert.equal(t.dir, 'E');
+});
+
+await test('bank-suffixed river lot numbers survive (RL7E-23-4E)', async () => {
+  const t = parseLegalToken('RL7E-23-4E');
+  assert.equal(t.kind, 'grid');
+  assert.equal(t.sec, '7E');
+});
+
+await test('parish river-lot codes stay unparseable (not the township form)', async () => {
+  // "RL45-BP-626" is a PARISH code — alpha third part, no direction.
+  assert.equal(parseLegalToken('RL45-BP-626').kind, 'unparseable');
+});
+
+await test('gridStrToken emits the derived-index encoding, zero-stripped', async () => {
+  assert.equal(gridStrToken(parseLegalToken('NE27-7-4E')), 'NE|27|7|4|E');
+  assert.equal(gridStrToken(parseLegalToken('NE27-07-04E')), 'NE|27|7|4|E');
+  assert.equal(gridStrToken(parseLegalToken('RL07E-23-4E')), 'RL|7E|23|4|E');
+  assert.equal(gridStrToken(parseLegalToken('5-2-31654')), '');   // LBP
+  assert.equal(gridStrToken(null), '');
+});
 
 const fails = results.filter((r) => r.status === 'fail');
 console.log(`\n${results.length - fails.length}/${results.length} passed`);

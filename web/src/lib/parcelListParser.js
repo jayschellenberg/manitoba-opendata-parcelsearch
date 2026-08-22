@@ -33,6 +33,12 @@ import { tokenizeRows, tokenizeRowsFixedWidth } from './delimitedRows.js';
 /** Manitoba township grid: e.g. "NW26-2-13E", "SW25-13-2W". */
 const GRID_RE = /^([NS][EW])(\d{1,2})-(\d{1,3})-(\d{1,3})([EW])$/i;
 
+/** Township river lot: e.g. "RL7-23-4E", "RL7E-23-4E" (lot numbers can
+ *  carry a bank suffix). Same three-part tail as the quarter form; the
+ *  parish river-lot codes ("RL45-BP-626") never match because their
+ *  third part isn't numeric-with-direction. */
+const RL_GRID_RE = /^RL(\d{1,3}[A-Z]?\d*)-(\d{1,3})-(\d{1,3})([EW])$/i;
+
 /** Lot-block-plan: e.g. "5-2-31654". All numeric, three dashes-apart. */
 const LBP_RE = /^(\d{1,5})-(\d{1,5})-(\d{1,7})$/;
 
@@ -133,6 +139,20 @@ export function parseLegalToken(raw) {
       raw: original,
     };
   }
+  const rl = s.match(RL_GRID_RE);
+  if (rl) {
+    return {
+      kind: 'grid',
+      qq: 'RL',
+      // The lot slot can carry a letter ("7E" = east of the river), so
+      // it stays a string; leading zeros drop so "RL07-…" = "RL7-…".
+      sec: rl[1].toUpperCase().replace(/^0+(?=[0-9A-Z])/, ''),
+      twp: parseInt(rl[2], 10),
+      rng: parseInt(rl[3], 10),
+      dir: rl[4].toUpperCase(),
+      raw: original,
+    };
+  }
   const p = s.match(LBP_RE);
   if (p) {
     return {
@@ -156,6 +176,17 @@ export function parseLegalToken(raw) {
 export function gridNeedle(token) {
   if (!token || token.kind !== 'grid') return '';
   return `${token.qq}${token.sec}${token.twp}${token.rng}${token.dir}`;
+}
+
+/**
+ * Canonical derived-token form of a grid legal, matching the encoding
+ * deriveStrTokens() in legalIndex.core.js writes: "NE|27|7|4|E".
+ * Lets a roll-less row resolve through the index's derived STR tokens
+ * instead of the roll-candidate intersection. "" for non-grid tokens.
+ */
+export function gridStrToken(token) {
+  if (!token || token.kind !== 'grid') return '';
+  return `${token.qq}|${token.sec}|${token.twp}|${token.rng}|${token.dir}`;
 }
 
 // ---- delimiter detection + cell splitting ------------------------

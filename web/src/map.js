@@ -35,6 +35,7 @@ import {
   isShapeDrawing,
 } from './drawShapes.js';
 import { isMeasuring, setMeasuring } from './lib/measuring.js';
+import { MUNI_PARCELS_LINE_STYLES, applyMuniParcelsBasemapStyle } from './lib/muniParcelsStyle.js';
 import { WAYBACK_VERSIONS, waybackTileUrl } from './lib/wayback.js';
 import { MB_PARCEL_DATA_CDN, currentAadt } from './arcgis.js';
 import {
@@ -1682,15 +1683,10 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
         type: 'line',
         source: 'muni-parcels',
         layout: { visibility: 'none' },
-        paint: {
-          // Soft slate-grey so the muni-wide parcel fabric reads as
-          // pure supporting context — visible enough to trace lot
-          // boundaries when looking for it but invisible enough that
-          // zoning / MASC / CLI overlays paint cleanly on top.
-          'line-color': '#6b7280',
-          'line-width': 1.5,
-          'line-opacity': 0.8,
-        },
+        // Initial paint = the Streets preset (Streets is the boot
+        // basemap). The basemap menu re-paints on every switch via
+        // applyMuniParcelsBasemapStyle — see MUNI_PARCELS_LINE_STYLES.
+        paint: { ...MUNI_PARCELS_LINE_STYLES.light },
       });
 
       // ----- HISTORICAL (as-of-year) compare overlay -----
@@ -3975,6 +3971,7 @@ export function setBasemapSatellite(map, on) {
   // notably snapshot export, get deterministic Esri imagery. The menu re-shows
   // it only for the explicit MLI state.
   if (map.getLayer('ortho-mb')) map.setLayoutProperty('ortho-mb', 'visibility', 'none');
+  applyMuniParcelsBasemapStyle(map);
 }
 
 /** Show / hide the Wayback historical-imagery basemap layer. */
@@ -3982,6 +3979,7 @@ export function setWaybackVisible(map, on) {
   if (map.getLayer('wayback-imagery')) {
     map.setLayoutProperty('wayback-imagery', 'visibility', on ? 'visible' : 'none');
   }
+  applyMuniParcelsBasemapStyle(map);
 }
 
 /** Swap the Wayback source to a specific release's tiles in place. Uses
@@ -6000,6 +5998,9 @@ class BasemapMenuControl {
     // Apply the selected Wayback release when entering that mode so the
     // tiles match the dropdown (the source defaults to the newest date).
     if (state === 'wayback') setWaybackRelease(m, this._waybackRelease);
+    // Assessment Parcels boundary lines re-calibrate to the new ground:
+    // light + thin over the light rasters, dark + thick over imagery.
+    applyMuniParcelsBasemapStyle(m);
     this._render();
   }
   _yearAtCenter() {
