@@ -232,18 +232,20 @@
                Sits above Roll # to match the Winnipeg ParcelSearch
                sidebar: address is the everyday lookup, roll # the
                precise one you reach for when you already have it. -->
+          <!-- One info icon per ROW from here down (Jason, 2026-08-22):
+               each grouping carries a single combined .tip on its last
+               field, so infoIcon.js renders one ⓘ at the end of the
+               line instead of one per box. -->
           <div class="address-row">
             <span class="field address-from-field">
               <input id="address-from" type="text" placeholder="From #" autocomplete="off" />
-              <span class="tip">Street number. On its own it's a "contains" match, so 1106 finds "1 106 E ROAD 71 N" however the number is spaced. Fill To as well for an exact number (same value) or a range (different).</span>
             </span>
             <span class="field address-to-field">
               <input id="address-to" type="text" placeholder="To #" autocomplete="off" />
-              <span class="tip">Street number upper bound (inclusive). Tab here after From and it auto-fills with the same value (highlighted) for an exact-number search; overwrite for a range. Clear it and From becomes a "contains" match instead.</span>
             </span>
             <span class="field address-street-field">
               <input id="address-street" type="text" placeholder="Street Name (contains)" />
-              <span class="tip">Substring match against the street name portion of Property_Address (e.g. 'MAIN ST', 'DRURY', 'ROAD 96W').</span>
+              <span class="tip">Civic-address search. From # on its own is a "contains" match — 1106 finds "1 106 E ROAD 71 N" however the number is spaced. Fill To # as well for an exact number (same value; tabbing into To auto-fills it) or an inclusive range (different values). Street Name is a substring match against Property_Address (e.g. 'MAIN ST', 'DRURY', 'ROAD 96W').</span>
             </span>
           </div>
           <!-- Street Type + Direction, mirroring the dropdowns on MAO's
@@ -258,13 +260,12 @@
               <select id="address-type">
                 <option value="">Street Type</option>
               </select>
-              <span class="tip">Street type (AVE, ST, DR…), matched in type position at the end of the address — 'ST' finds "100 MAIN ST N" but not "123 ST MARYS RD". Common long forms match too (RD also finds "ROAD", HWY finds "HIGHWAY"). Works best together with a street name.</span>
             </span>
             <span class="field">
               <select id="address-dir">
                 <option value="">Direction</option>
               </select>
-              <span class="tip">Street direction (N, S, E, W, NE…), matched as its own word ("MAIN ST N") or glued to a rural grid number ("ROAD 96W").</span>
+              <span class="tip">Street Type is matched in type position at the end of the address — 'ST' finds "100 MAIN ST N" but not "123 ST MARYS RD"; long forms match too (RD also finds "ROAD", HWY finds "HIGHWAY"). Direction matches as its own word ("MAIN ST N") or glued to a rural grid number ("ROAD 96W"). Both work best together with a street name.</span>
             </span>
           </div>
 
@@ -347,11 +348,10 @@
             <div class="legal-title-row">
               <span class="field legal-title-field">
                 <input id="legal-text" type="text" placeholder="Legal description (contains)" />
-                <span class="tip">Substring search against the MAO scrape's legal description + legal-detail text. Use to find a parcel by its legal description, e.g. "PCL G", "RIVER LOT 12", "PLAN 24208".</span>
               </span>
               <span class="field legal-title-field">
                 <input id="title" type="text" placeholder="Certificate of title (contains)" />
-                <span class="tip">Substring search against the MAO scrape's certificates_of_title field. Accepts plain title numbers (e.g. "2476500") or full prefixed forms ("CT 2476500").</span>
+                <span class="tip">Substring searches against the MAO scrape. Legal description matches the legal description + detail text (e.g. "PCL G", "RIVER LOT 12", "PLAN 24208"). Certificate of title matches the certificates_of_title field — plain numbers ("2476500") or prefixed forms ("CT 2476500") both work.</span>
               </span>
             </div>
             <!-- MAO-parity structured legal searches. Four groups in
@@ -364,25 +364,22 @@
             <div class="legal-row">
               <span class="field">
                 <input id="lot" type="text" placeholder="Lot" />
-                <span class="tip">Lot — exact match against the MAO scrape's parsed lot field. "4" and "04" are the same lot.</span>
               </span>
               <span class="field">
                 <input id="block" type="text" placeholder="Block" />
-                <span class="tip">Block — exact match against the MAO scrape's parsed block field.</span>
               </span>
               <span class="field">
                 <input id="plan" type="text" placeholder="Plan" />
-                <span class="tip">Plan number — matches the parsed plan field, falling back to a text search of the full legal description for plans the parser missed.</span>
+                <span class="tip">Lot / Block / Plan — exact matches against the MAO scrape's parsed fields ("4" and "04" are the same). Plan falls back to a text search of the full legal description for plans the parser missed. Fill any subset.</span>
               </span>
             </div>
             <div class="condo-row">
               <span class="field">
                 <input id="condo-plan" type="text" placeholder="Condo Plan" />
-                <span class="tip">Condominium plan number, e.g. 38239. Matches the plan-unit pairs in the legal detail ("38239-1 TOGETHER WITH AN UNDIVIDED…"). On its own it returns every unit on the plan.</span>
               </span>
               <span class="field">
                 <input id="condo-unit" type="text" placeholder="Condo Unit" />
-                <span class="tip">Condominium unit number. Unit ranges in the legal description ("1/8-39000") count as every unit they cover.</span>
+                <span class="tip">Condominium unit search, e.g. Plan 38239 Unit 1 — matches the plan-unit pairs in the legal detail ("38239-1 TOGETHER WITH AN UNDIVIDED…"). Plan alone returns every unit on the plan; unit ranges in the legal description ("1/8-39000") count as every unit they cover.</span>
               </span>
             </div>
             <div class="parish-row">
@@ -390,36 +387,24 @@
                 <select id="parish" disabled>
                   <option value="">Parish</option>
                 </select>
-                <span class="tip">Parish or settlement for river-lot legal descriptions, e.g. "RL-65-FX-5066" is River Lot 65 in the Parish of St François Xavier. The list only offers parishes that actually occur in the archive. Searches province-wide — no municipality needed.</span>
               </span>
               <span class="field">
                 <select id="parish-lot-type">
                   <option value="">Lot type</option>
                 </select>
-                <span class="tip">Parish lot type (River Lot, Outer Two Miles, Park Lot…). Best-effort narrowing: MAO's legal text codes some settlement and inner-two-mile lots as river lots, so leave on "Lot type" (any) if a search comes up short.</span>
               </span>
               <span class="field">
                 <input id="parish-lot" type="text" placeholder="Lot #" />
-                <span class="tip">Parish lot number. Lot ranges in the legal description ("RL45/51-BP-626") count as every lot they cover.</span>
               </span>
               <span class="field">
                 <input id="parish-plan" type="text" placeholder="Plan" />
-                <span class="tip">Plan number attached to the parish lot code (the 5066 in "RL-65-FX-5066"). Leave blank to match any plan.</span>
+                <span class="tip">Parish river-lot search — "RL-65-FX-5066" is River Lot 65, Parish of St François Xavier, Plan 5066. The Parish list only offers parishes occurring in the archive, and the search is province-wide (no municipality needed). Lot type is best-effort narrowing (MAO codes some settlement and inner-two-mile lots as river lots — leave it on "Lot type" if a search comes up short). Lot ranges ("RL45/51-BP-626") count as every lot they cover; leave Plan blank to match any plan.</span>
               </span>
             </div>
+            <!-- Quarter leads the row (Jason, 2026-08-22): it's how the
+                 legal reads aloud — "NE 27-7-4E" — so the boxes follow
+                 the same order the value is spoken and typed. -->
             <div class="str-row">
-              <span class="field">
-                <input id="str-section" type="text" placeholder="Sec" />
-                <span class="tip">Section number (1–36). With Quarter set to RL, this box takes the township river-lot number instead.</span>
-              </span>
-              <span class="field">
-                <input id="str-township" type="text" placeholder="Twp" />
-                <span class="tip">Township number.</span>
-              </span>
-              <span class="field">
-                <input id="str-range" type="text" placeholder="Rge" />
-                <span class="tip">Range with meridian direction, e.g. "4E" or "28W". A bare number matches both east and west of the principal meridian.</span>
-              </span>
               <span class="field">
                 <select id="str-quarter">
                   <option value="">Quarter</option>
@@ -429,7 +414,16 @@
                   <option value="SW">SW</option>
                   <option value="RL">RL</option>
                 </select>
-                <span class="tip">Quarter section (NE/NW/SE/SW), or RL for river lots surveyed by township ("RL-7-23-4E"). Leave on "Quarter" to match any.</span>
+              </span>
+              <span class="field">
+                <input id="str-section" type="text" placeholder="Sec" />
+              </span>
+              <span class="field">
+                <input id="str-township" type="text" placeholder="Twp" />
+              </span>
+              <span class="field">
+                <input id="str-range" type="text" placeholder="Rge" />
+                <span class="tip">Section-township-range search, e.g. Quarter NE, Sec 27, Twp 7, Rge 4E. Rge takes the meridian direction ("4E" / "28W"); a bare number matches both east and west. Quarter RL is for river lots surveyed by township — Sec then takes the lot number. Leave Quarter on "Quarter" to match any; fill any subset of the boxes.</span>
               </span>
             </div>
             <div class="filter-row">
@@ -437,7 +431,6 @@
                 <select id="zone-category" disabled>
                   <option value="">Zoning Category</option>
                 </select>
-                <span class="tip">Zoning by-law (ZBL) category. Each Manitoba municipality has its own ZBL; this dropdown lists the categories that appear in the selected muni's by-law.</span>
               </span>
               <span class="field">
                 <select id="changed-status">
@@ -446,7 +439,7 @@
                   <option value="devplan">Development plan changed</option>
                   <option value="both">Both changed</option>
                 </select>
-                <span class="tip">Filter by amendment status (recent ZBL or Development Plan changes).</span>
+                <span class="tip">Zoning Category lists the zoning by-law (ZBL) categories present in the selected municipality's by-law — each Manitoba muni has its own. Amendments narrows to parcels whose zoning and/or development plan changed recently.</span>
               </span>
             </div>
             <div class="du-row">
@@ -456,11 +449,10 @@
                   <option value="zero">0 DU only</option>
                   <option value="min">Min DU</option>
                 </select>
-                <span class="tip">Dwelling units (DU) filter. "0 DU only" surfaces vacant or non-residential parcels; "Min DU" pairs with the count input next to it.</span>
               </span>
               <span class="field du-min-field">
                 <input id="du-min" type="number" min="1" step="1" placeholder="#" disabled />
-                <span class="tip">Minimum dwelling units (DU) — applies when 'Min DU' is selected.</span>
+                <span class="tip">Dwelling units (DU) filter. "0 DU only" surfaces vacant or non-residential parcels; "Min DU" pairs with the # box for parcels with at least that many units.</span>
               </span>
             </div>
             <!-- The two water-rights narrowing checkboxes used to live
@@ -723,7 +715,6 @@
                 </summary>
                 <div class="multiselect-menu"></div>
               </details>
-              <span class="tip">Filter to one or more MAO assessment classes. Click to open the list and tick each class you want; leave everything unticked for no class filter.</span>
             </span>
             <!-- Primary Property — MAO's primary-STRUCTURE descriptor, in
                  two layers: Residential / ICI / Farm on top (taken from
@@ -738,7 +729,7 @@
                 </summary>
                 <div class="multiselect-menu"></div>
               </details>
-              <span class="tip">Filter by what actually stands on the parcel — MAO's Primary Property descriptor, grouped in two layers. The top layer is Residential, ICI or Farm, taken from the sale's own Sale Type Group rather than guessed from the description; tick a family to take all of it, or open it and pick structure types (One storey, Bi-level, Cottage, Warehouse, Grain storage…). Counts show how many rows each entry holds. Be aware that most sales carry NO descriptor — it is bare land — so every family also offers "(no primary structure)": that is 45% of residential sales, 71% of ICI and fully 96% of farm sales, which is why the farm structure types look sparse. A multi-parcel sale is kept or dropped whole when any of its parcels matches, so its $/Acre keeps describing the land that was actually bought. The list holds only the types your current results contain, and every entry returns at least one sale.</span>
+              <span class="tip">Assessment Class filters to one or more MAO assessment classes — tick what you want, unticked = no filter. Structure Type filters by what actually stands on the parcel — MAO's Primary Property descriptor in two layers: Residential, ICI or Farm on top (taken from the sale's own Sale Type Group, not guessed from the text), structure types underneath (One storey, Bi-level, Cottage, Warehouse, Grain storage…). Most sales carry NO descriptor — bare land — so every family also offers "(no primary structure)": 45% of residential, 71% of ICI, 96% of farm sales. A multi-parcel sale is kept or dropped whole when any parcel matches, so its $/Acre keeps describing the land actually bought. Both lists hold only values your current results contain.</span>
             </span>
           </div>
           <!-- The two sale-level exclusions. Vacant Land Only takes a
@@ -863,11 +854,10 @@
               <span class="sale-price-prefix">Sale Price:</span>
               <span class="field sale-price-low-field">
                 <input id="sales-price-low" type="number" min="0" step="1000" placeholder="Min $" />
-                <span class="tip">Minimum total sale price (the Consideration from the uploaded CSV). For a multi-parcel sale this is the whole transaction, so the entire sale passes or fails together. Empty = no lower limit.</span>
               </span>
               <span class="field sale-price-high-field">
                 <input id="sales-price-high" type="number" min="0" step="1000" placeholder="Max $" />
-                <span class="tip">Maximum total sale price (the Consideration from the uploaded CSV). Sales with no readable price drop out while either bound is set. Empty = no upper limit.</span>
+                <span class="tip">Total sale price bounds (the Consideration from the uploaded CSV). For a multi-parcel sale this is the whole transaction, so the entire sale passes or fails together. Sales with no readable price drop out while either bound is set; empty = no limit on that side.</span>
               </span>
             </div>
             <!-- Zoning code + Zoning Type. Moved in here 2026-08-18 (Jason):
@@ -884,7 +874,6 @@
                   </summary>
                   <div class="multiselect-menu"></div>
                 </details>
-                <span class="tip">Filter to one or more zone codes — the same values the Zoning and Zoning 2 columns show. The list holds only the codes your current results actually contain, so it changes with every upload. A sale is kept when either of its zones matches anything ticked; leave everything unticked for no zoning filter. Codes are municipality-specific, so a multi-muni upload lists each muni's codes together.</span>
               </span>
               <!-- Zoning TYPE, the cross-muni companion to the code picker
                    above. Zone codes are municipality-specific, so on a
@@ -897,7 +886,7 @@
                   </summary>
                   <div class="multiselect-menu"></div>
                 </details>
-                <span class="tip">Filter by broad Zoning Type — Commercial, Industrial, Residential, Open Space and so on — the province's ZONE_CATEGORY rollup shown in the Zoning Type column. Unlike the zone-code filter above, this compares across municipalities, so it's the one to reach for on a multi-muni sales set. Matches a parcel's DOMINANT zone (the one covering most of it), which is exactly what the Zoning Type column shows — so the ticked types and the column always agree. A parcel that is mostly industrial with a commercial corner counts as Industrial. The list holds only the types your current results contain, and every entry in it returns at least one sale. Source spelling variants and typos are folded together, and sales whose zoning hasn't been joined appear under "(no category)".</span>
+                <span class="tip">Zoning filters by zone code — the values the Zoning and Zoning 2 columns show. Codes are municipality-specific, so a multi-muni upload lists each muni's codes together; a sale is kept when either of its zones matches anything ticked. Zoning Type filters by the province's broad ZONE_CATEGORY rollup (Commercial, Industrial, Residential, Open Space…), which compares ACROSS municipalities — the one to reach for on a multi-muni set. Type matches a parcel's DOMINANT zone, exactly what the Zoning Type column shows, so the ticked types and the column always agree. Both lists hold only values your current results contain; spelling variants fold together and unjoined zoning appears under "(no category)".</span>
               </span>
             </div>
             <!-- Parcels-per-sale + N1 crosswalk, sharing one row at half
@@ -937,7 +926,6 @@
               <span class="vacant-threshold-prefix">Bldg Threshold:</span>
               <span class="field vacant-threshold-field">
                 <input id="vacant-threshold" type="number" min="0" step="0.1" placeholder="5" value="5" />
-                <span class="tip">Vacant land proxy threshold, applied by the Vacant Only checkbox above. In % mode (default), a parcel reads as vacant when Buildings ÷ Total &lt; this percent. In $ mode, when Buildings $ is below this dollar value. Heuristic only — verify with the municipality.</span>
               </span>
               <div class="vacant-mode-pill" role="radiogroup" aria-label="Vacant threshold mode">
                 <button type="button" class="vacant-mode-btn active" data-mode="pct" aria-pressed="true">%</button>
@@ -963,7 +951,7 @@
                   <option value="4">≤ 4</option>
                   <option value="5">≤ 5</option>
                 </select>
-                <span class="tip">Exclude sales whose Sale ÷ Assessed Total ratio exceeds the chosen cap. Useful when buildings sold before the assessment caught up (Sale/Asmt &gt;&gt; 1). Leave on "Max Sale/Asmt" for no cap. Applies alongside Vacant Only.</span>
+                <span class="tip">Bldg Threshold tunes the Vacant Only proxy above: in % mode (default) a parcel reads as vacant when Buildings ÷ Total is below this percent, in $ mode when Buildings $ is below this dollar value — heuristic only, verify with the municipality. Max Sale/Asmt separately caps Sale ÷ Assessed Total, surfacing sales where buildings sold before the assessment caught up (Sale/Asmt &gt;&gt; 1); leave it on "Max Sale/Asmt" for no cap. Both apply alongside Vacant Only.</span>
               </span>
             </div>
 
