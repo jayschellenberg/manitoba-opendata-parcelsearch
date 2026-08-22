@@ -18,6 +18,8 @@ import {
   searchLegalIndex as searchCore,
   lookupLegalRecordsByParcelKeys as lookupCore,
   lookupLegalRecordsByRollSet as lookupRollsCore,
+  listParishOptions as parishOptionsCore,
+  PARISH_LOT_TYPES,
 } from './legalIndex.core.js';
 
 // See legalIndex.worker.js for the production hosting story (GitHub
@@ -29,7 +31,7 @@ const LEGAL_INDEX_LOCAL_URL = `${import.meta.env?.BASE_URL || '/'}data/legal-ind
 const LEGAL_INDEX_PROXY_URL = '/api/legal-index';
 
 // Re-export pure helpers so existing call sites in main.js don't break.
-export { hasLegalCriteria, legalRecordKey, parcelLegalKey };
+export { hasLegalCriteria, legalRecordKey, parcelLegalKey, PARISH_LOT_TYPES };
 
 // Worker singleton + request-id counter. Set lazily so node tests
 // (which don't have `Worker` in their global scope) can fall through
@@ -168,6 +170,22 @@ export async function lookupLegalRecordsByRollSet(rolls) {
   }
   const index = await loadDirect();
   return lookupRollsCore(index, rollList);
+}
+
+/**
+ * Parish codes present in the index — `[{ code, name, count }]` sorted
+ * by name. Feeds the data-derived Parish dropdown in the Advanced
+ * searches group. The first call pays the index's derived-token pass
+ * (a one-time full scan); repeats are cheap.
+ */
+export async function getParishOptions() {
+  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
+  if (viaWorker) {
+    await viaWorker;
+    return postMessage('parishOptions');
+  }
+  const index = await loadDirect();
+  return parishOptionsCore(index);
 }
 
 export async function getLegalIndexMetadata() {

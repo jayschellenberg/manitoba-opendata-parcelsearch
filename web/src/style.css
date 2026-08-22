@@ -395,7 +395,11 @@ header small a {
 .sidebar .advanced-filters[open] > summary { margin-bottom: 4px; }
 .sidebar .advanced-filters .filter-row,
 .sidebar .advanced-filters .du-row,
-.sidebar .advanced-filters .legal-title-row {
+.sidebar .advanced-filters .legal-title-row,
+.sidebar .advanced-filters .legal-row,
+.sidebar .advanced-filters .condo-row,
+.sidebar .advanced-filters .parish-row,
+.sidebar .advanced-filters .str-row {
   margin-top: 4px;
 }
 
@@ -1872,6 +1876,47 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
+.sidebar .legal-row input { width: 100%; min-width: 0; }
+
+/* Street Type + Direction under the civic-address row — two selects
+   at half width each, same rhythm as the zoning/status filter-row. */
+.sidebar .address-typedir-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.sidebar .address-typedir-row > .field { flex: 1 1 50%; min-width: 0; }
+.sidebar .address-typedir-row > .field select { width: 100%; }
+
+/* Condo Plan + Unit — paired inputs like the legal/title row. */
+.sidebar .condo-row {
+  display: flex;
+  gap: 6px;
+}
+.sidebar .condo-row > .field { flex: 1 1 50%; min-width: 0; }
+.sidebar .condo-row input { width: 100%; }
+
+/* Parish-lot search. The parish name is the widest value by far
+   ("ST FRANCOIS XAVIER"), so its select takes the full first line and
+   the lot type / lot # / plan trio shares the second. */
+.sidebar .parish-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.sidebar .parish-row .parish-field { grid-column: 1 / -1; }
+.sidebar .parish-row select,
+.sidebar .parish-row input { width: 100%; min-width: 0; }
+
+/* Section-Township-Range + Quarter — four short values on one line,
+   mirroring MAO's "12 5 4E" three-box entry plus the quarter select. */
+.sidebar .str-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.sidebar .str-row select,
+.sidebar .str-row input { width: 100%; min-width: 0; }
 
 .sidebar .legal-row input {
   text-align: center;

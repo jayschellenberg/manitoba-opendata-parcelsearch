@@ -87,6 +87,9 @@ import {
   applyCivicNumberFilter,
   addressSearchVariants,
   addressMatchesVariants,
+  applyStreetTypeDirFilter,
+  STREET_TYPES,
+  STREET_DIRECTIONS,
 } from './lib/civicRange.js';
 
 // Entry point. Wires the search inputs, the map, and the results table.
@@ -258,6 +261,8 @@ import {
   lookupLegalRecordsByParcelKeys,
   warmLegalIndex,
   getLegalIndexMetadata,
+  getParishOptions,
+  PARISH_LOT_TYPES,
 } from './legalIndex.js';
 import {
   warmAssessmentIndex,
@@ -285,15 +290,51 @@ const $addressTo     = document.getElementById('address-to');
 const $addressStreet = document.getElementById('address-street');
 const $municipality  = document.getElementById('municipality');
 const $roll          = document.getElementById('roll');
-// Legal-search inputs are removed from the DOM until the MAO scrape
-// index is wired up. The lookups below all return null in that state.
-// Every read-site uses optional chaining ?? '' so the empty .value
-// passes through harmlessly and hasLegalCriteria() short-circuits.
+// Legal-search inputs. Every read-site uses optional chaining ?? ''
+// so a missing element's empty value passes through harmlessly and
+// hasLegalCriteria() short-circuits.
 const $legalText     = document.getElementById('legal-text');
 const $lot           = document.getElementById('lot');
 const $block         = document.getElementById('block');
 const $plan          = document.getElementById('plan');
 const $title         = document.getElementById('title');
+// MAO-parity structured searches (Advanced group): condo plan/unit,
+// parish lot, section-township-range. All feed the legal-index query
+// as extra AND criteria — see legalIndex.core.js for the matching.
+const $condoPlan     = document.getElementById('condo-plan');
+const $condoUnit     = document.getElementById('condo-unit');
+const $parish        = document.getElementById('parish');
+const $parishLotType = document.getElementById('parish-lot-type');
+const $parishLot     = document.getElementById('parish-lot');
+const $parishPlan    = document.getElementById('parish-plan');
+const $strSection    = document.getElementById('str-section');
+const $strTownship   = document.getElementById('str-township');
+const $strRange      = document.getElementById('str-range');
+const $strQuarter    = document.getElementById('str-quarter');
+// Street Type + Direction dropdowns under the civic-address row.
+// Decided client-side against Property_Address, like the civic-number
+// boxes — see applyStreetTypeDirFilter in lib/civicRange.js.
+const $addressType   = document.getElementById('address-type');
+const $addressDir    = document.getElementById('address-dir');
+
+// Fixed option lists for the MAO-parity dropdowns. Street type /
+// direction and parish lot type are vocabularies owned by the matching
+// code (civicRange.js / legalIndex.core.js) — filling them from those
+// exports keeps the dropdowns and the matchers in lockstep. Filled
+// HERE, before applyUrlStateToInputs() runs further down, so a shared
+// URL can restore a selection into them.
+function fillStaticOptions(sel, entries) {
+  if (!sel) return;
+  for (const { value, label } of entries) {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = label;
+    sel.appendChild(opt);
+  }
+}
+fillStaticOptions($addressType, STREET_TYPES.map((t) => ({ value: t, label: t })));
+fillStaticOptions($addressDir, STREET_DIRECTIONS.map((d) => ({ value: d, label: d })));
+fillStaticOptions($parishLotType, PARISH_LOT_TYPES.map((t) => ({ value: t.code, label: t.name })));
 const $zoneCategory  = document.getElementById('zone-category');
 const $changedStatus = document.getElementById('changed-status');
 const $duMode        = document.getElementById('du-mode');
@@ -1746,7 +1787,22 @@ const URL_INPUT_BINDINGS = [
   { id: 'address-from',  key: 'addressFrom',   event: 'change' },
   { id: 'address-to',    key: 'addressTo',     event: 'change' },
   { id: 'address-street', key: 'addressStreet', event: 'change' },
+  { id: 'address-type',  key: 'addressType',   event: 'change' },
+  { id: 'address-dir',   key: 'addressDir',    event: 'change' },
   { id: 'legal-text',    key: 'legalText',     event: 'change' },
+  { id: 'lot',           key: 'lot',           event: 'change' },
+  { id: 'block',         key: 'block',         event: 'change' },
+  { id: 'plan',          key: 'plan',          event: 'change' },
+  { id: 'condo-plan',    key: 'condoPlan',     event: 'change' },
+  { id: 'condo-unit',    key: 'condoUnit',     event: 'change' },
+  { id: 'parish',        key: 'parish',        event: 'change' },
+  { id: 'parish-lot-type', key: 'parishLotType', event: 'change' },
+  { id: 'parish-lot',    key: 'parishLot',     event: 'change' },
+  { id: 'parish-plan',   key: 'parishPlan',    event: 'change' },
+  { id: 'str-section',   key: 'strSection',    event: 'change' },
+  { id: 'str-township',  key: 'strTownship',   event: 'change' },
+  { id: 'str-range',     key: 'strRange',      event: 'change' },
+  { id: 'str-quarter',   key: 'strQuarter',    event: 'change' },
   { id: 'title',         key: 'title',         event: 'change' },
   { id: 'zone-category', key: 'zoneCategory',  event: 'change' },
   { id: 'changed-status', key: 'changedStatus', event: 'change' },
@@ -3074,7 +3130,8 @@ if ($addressFrom && $addressTo) {
   });
 }
 
-for (const el of [$addressFrom, $addressTo, $addressStreet, $roll, $legalText, $lot, $block, $plan, $title].filter(Boolean)) {
+for (const el of [$addressFrom, $addressTo, $addressStreet, $roll, $legalText, $lot, $block, $plan, $title,
+  $condoPlan, $condoUnit, $parishLot, $parishPlan, $strSection, $strTownship, $strRange].filter(Boolean)) {
   el.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') runSearch();
   });
@@ -3099,6 +3156,32 @@ function advancedFilterChips() {
   if (legal) chips.push({ label: 'Legal', detail: `Legal description contains "${legal}"` });
   const ct = $title?.value.trim() || '';
   if (ct) chips.push({ label: 'Title', detail: `Certificate of title contains "${ct}"` });
+  // Structured legal searches. Each group collapses to one chip so
+  // the badge stays readable when several boxes in a row are filled.
+  const lbp = [$lot?.value.trim(), $block?.value.trim(), $plan?.value.trim()];
+  if (lbp.some(Boolean)) {
+    const parts = ['Lot', 'Block', 'Plan'].map((n, i) => (lbp[i] ? `${n} ${lbp[i]}` : null)).filter(Boolean);
+    chips.push({ label: 'Lot/Blk/Plan', detail: parts.join(', ') });
+  }
+  const condo = [$condoPlan?.value.trim(), $condoUnit?.value.trim()];
+  if (condo.some(Boolean)) {
+    const parts = ['Condo plan', 'Unit'].map((n, i) => (condo[i] ? `${n} ${condo[i]}` : null)).filter(Boolean);
+    chips.push({ label: 'Condo', detail: parts.join(', ') });
+  }
+  const parishBits = [
+    $parish?.value ? ($parish.selectedOptions?.[0]?.textContent?.trim() || $parish.value) : '',
+    $parishLotType?.value ? ($parishLotType.selectedOptions?.[0]?.textContent?.trim() || $parishLotType.value) : '',
+    $parishLot?.value.trim() ? `Lot ${$parishLot.value.trim()}` : '',
+    $parishPlan?.value.trim() ? `Plan ${$parishPlan.value.trim()}` : '',
+  ].filter(Boolean);
+  if (parishBits.length) chips.push({ label: 'Parish', detail: `Parish lot: ${parishBits.join(', ')}` });
+  const strBits = [
+    $strQuarter?.value.trim(),
+    $strSection?.value.trim() ? `Sec ${$strSection.value.trim()}` : '',
+    $strTownship?.value.trim() ? `Twp ${$strTownship.value.trim()}` : '',
+    $strRange?.value.trim() ? `Rge ${$strRange.value.trim()}` : '',
+  ].filter(Boolean);
+  if (strBits.length) chips.push({ label: 'Sec-Twp-Rge', detail: `Section-township-range: ${strBits.join(' ')}` });
   const zone = $zoneCategory?.value.trim() || '';
   if (zone) chips.push({ label: 'Zoning', detail: `Zoning category: ${zone}` });
   const status = $changedStatus?.value || '';
@@ -3321,6 +3404,30 @@ populateDropdowns().finally(() => {
 // to populate the Legal + Title columns; without this kickoff, the
 // first search would block on a 130 MB cold fetch.
 warmLegalIndex();
+
+// Parish list is data-derived — only parishes that occur in the legal
+// index are offered, so every option can return parcels. The option
+// value is the two-letter code the tokens use; the label is the parish
+// name. Riding behind warmLegalIndex(), this pays the index's derived-
+// token pass once, in the worker, off the critical path.
+(async () => {
+  if (!$parish) return;
+  try {
+    const options = await getParishOptions();
+    if (!Array.isArray(options) || options.length === 0) return;
+    // A restored URL (or a select the user touched before the list
+    // arrived) may already hold a code — re-apply it after the refill.
+    const prev = $parish.value || initialUrlState.parish || '';
+    fillStaticOptions($parish, options.map((o) => ({ value: o.code, label: o.name })));
+    $parish.disabled = false;
+    if (prev && Array.from($parish.options).some((o) => o.value === prev)) {
+      $parish.value = prev;
+      renderAdvancedFilterBadge();
+    }
+  } catch (err) {
+    console.warn('Parish list load failed (dropdown stays disabled):', err);
+  }
+})();
 
 // Once the legal + assessment shards have loaded (lazy, no block on
 // page paint), surface their `generated_at` timestamps in the
@@ -3685,11 +3792,23 @@ async function runSearch() {
     block:          $block?.value.trim()     ?? '',
     plan:           $plan?.value.trim()      ?? '',
     title:          $title?.value.trim()     ?? '',
+    condoPlan:      $condoPlan?.value.trim()   ?? '',
+    condoUnit:      $condoUnit?.value.trim()   ?? '',
+    parish:         $parish?.value.trim()      ?? '',
+    parishLotType:  $parishLotType?.value.trim() ?? '',
+    parishLot:      $parishLot?.value.trim()   ?? '',
+    parishPlan:     $parishPlan?.value.trim()  ?? '',
+    strSection:     $strSection?.value.trim()  ?? '',
+    strTownship:    $strTownship?.value.trim() ?? '',
+    strRange:       $strRange?.value.trim()    ?? '',
+    strQuarter:     $strQuarter?.value.trim()  ?? '',
   };
   const inputs = {
     addressFrom:    $addressFrom?.value.trim()   ?? '',
     addressTo:      $addressTo?.value.trim()     ?? '',
     addressStreet:  $addressStreet?.value.trim() ?? '',
+    addressType:    $addressType?.value.trim()   ?? '',
+    addressDir:     $addressDir?.value.trim()    ?? '',
     municipality:    $municipality.value.trim(),
     roll:            $roll.value.trim(),
     zoneCategory:    $zoneCategory.value.trim(),
@@ -3828,6 +3947,10 @@ async function runSearch() {
     // bare RANGE with no street name is the exception: it post-filters
     // whatever the muni query returned, which MAX_RESULTS caps at 1000.
     applyCivicNumberFilter(parcelFc, inputs.addressFrom, inputs.addressTo);
+    // Street Type + Direction decide here too, for the same reason the
+    // civic number does: ArcGIS SQL can't express "in type position",
+    // so the dropdowns never narrow the fetch — they only filter it.
+    applyStreetTypeDirFilter(parcelFc, inputs.addressType, inputs.addressDir);
 
     // Property Search never groups parcels — not from Roll # punctuation
     // ("83100+83200" is two parcels, not one subject), and not from a
