@@ -20,8 +20,11 @@ export const MUNI_PARCELS_LINE_STYLES = {
     'line-opacity': 0.6,
   },
   imagery: {
+    // 1.5 after white at 2.25 read heavy — white carries more visual
+    // weight than the slate it replaced, so it needs less width
+    // (Jason, 2026-08-22).
     'line-color': '#ffffff',
-    'line-width': 2.25,
+    'line-width': 1.5,
     'line-opacity': 0.95,
   },
 };
