@@ -8,6 +8,7 @@
 import assert from 'node:assert/strict';
 import {
   MUNI_PARCELS_LINE_STYLES,
+  MUNI_PARCELS_FILL_STYLES,
   applyMuniParcelsBasemapStyle,
 } from '../src/lib/muniParcelsStyle.js';
 
@@ -45,9 +46,10 @@ function paintOf(map) {
 
 console.log('applyMuniParcelsBasemapStyle');
 
-test('streets gets the light preset', () => {
+test('streets gets the light preset, lines and fill both', () => {
   const m = stubMap({
     'muni-parcels-line': 'none',
+    'muni-parcels-fill': 'none',
     'carto-voyager': 'visible',
     'esri-imagery': 'none',
     'wayback-imagery': 'none',
@@ -58,12 +60,15 @@ test('streets gets the light preset', () => {
     width: MUNI_PARCELS_LINE_STYLES.light['line-width'],
     opacity: MUNI_PARCELS_LINE_STYLES.light['line-opacity'],
   });
+  assert.equal(m.paint['muni-parcels-fill/fill-opacity'],
+    MUNI_PARCELS_FILL_STYLES.light['fill-opacity']);
 });
 
-test('each aerial raster triggers the imagery preset', () => {
+test('each aerial raster triggers the imagery preset, lines and fill both', () => {
   for (const aerial of ['esri-imagery', 'wayback-imagery', 'ortho-mb']) {
     const m = stubMap({
       'muni-parcels-line': 'none',
+      'muni-parcels-fill': 'none',
       'carto-voyager': 'none',
       'esri-imagery': 'none',
       'wayback-imagery': 'none',
@@ -73,6 +78,8 @@ test('each aerial raster triggers the imagery preset', () => {
     applyMuniParcelsBasemapStyle(m);
     assert.equal(paintOf(m).color, MUNI_PARCELS_LINE_STYLES.imagery['line-color'], aerial);
     assert.equal(paintOf(m).width, MUNI_PARCELS_LINE_STYLES.imagery['line-width'], aerial);
+    assert.equal(m.paint['muni-parcels-fill/fill-opacity'],
+      MUNI_PARCELS_FILL_STYLES.imagery['fill-opacity'], aerial);
   }
 });
 
@@ -99,20 +106,22 @@ test('optional layers that were never added (no MLI configured) do not throw', (
   assert.equal(paintOf(m).color, MUNI_PARCELS_LINE_STYLES.light['line-color']);
 });
 
-test('a map without the fabric layer is a no-op (snapshot-export map)', () => {
+test('a map without the fabric layers is a no-op (snapshot-export map)', () => {
   const m = stubMap({ 'esri-imagery': 'visible' });
   applyMuniParcelsBasemapStyle(m);
   assert.deepEqual(m.paint, {});
 });
 
-test('the imagery preset is genuinely darker and thicker than the light one', () => {
+test('imagery lines are white, thicker and more opaque; streets fill is more transparent', () => {
   const light = MUNI_PARCELS_LINE_STYLES.light;
   const img = MUNI_PARCELS_LINE_STYLES.imagery;
+  // White on imagery — the classic cadastre-on-aerial treatment; a
+  // dark slate tried first washed into the fields (Jason, 2026-08-22).
+  assert.equal(img['line-color'], '#ffffff');
   assert.ok(img['line-width'] > light['line-width']);
   assert.ok(img['line-opacity'] > light['line-opacity']);
-  // Darker = lower luminance; compare summed RGB as a proxy.
-  const lum = (hex) => hex.slice(1).match(/../g).reduce((s, h) => s + parseInt(h, 16), 0);
-  assert.ok(lum(img['line-color']) < lum(light['line-color']));
+  assert.ok(MUNI_PARCELS_FILL_STYLES.light['fill-opacity']
+    < MUNI_PARCELS_FILL_STYLES.imagery['fill-opacity']);
 });
 
 const fails = results.filter((r) => r.status === 'fail');

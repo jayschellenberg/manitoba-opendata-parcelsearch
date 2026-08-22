@@ -35,7 +35,11 @@ import {
   isShapeDrawing,
 } from './drawShapes.js';
 import { isMeasuring, setMeasuring } from './lib/measuring.js';
-import { MUNI_PARCELS_LINE_STYLES, applyMuniParcelsBasemapStyle } from './lib/muniParcelsStyle.js';
+import {
+  MUNI_PARCELS_LINE_STYLES,
+  MUNI_PARCELS_FILL_STYLES,
+  applyMuniParcelsBasemapStyle,
+} from './lib/muniParcelsStyle.js';
 import { WAYBACK_VERSIONS, waybackTileUrl } from './lib/wayback.js';
 import { MB_PARCEL_DATA_CDN, currentAadt } from './arcgis.js';
 import {
@@ -1660,7 +1664,10 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
         type: 'fill',
         source: 'muni-parcels',
         layout: { visibility: 'none' },
-        paint: { 'fill-color': '#6b7280', 'fill-opacity': 0.04 },
+        // Opacity = the Streets preset (Streets is the boot basemap);
+        // re-painted per basemap alongside the lines — see
+        // applyMuniParcelsBasemapStyle.
+        paint: { 'fill-color': '#6b7280', ...MUNI_PARCELS_FILL_STYLES.light },
       });
       // Land-cover choropleth on the muni-wide fabric — colours every parcel
       // in the selected municipality by its dominant 2020 land-cover bucket
