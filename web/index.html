@@ -321,6 +321,12 @@
               title="Plan a driving route through the imported parcels. Click to open the route planner panel above the table."
             >Plan Route</button>
           </div>
+          <!-- Import multi-match notice. Filled by renderListPill() when a
+               section-township-range row resolved to MORE than one parcel
+               (a subdivided quarter, or a parcel spanning quarters) — the
+               list quietly holding more parcels than input rows deserves an
+               on-screen explanation, not just a bigger count in the pill. -->
+          <div id="parcel-list-notice" class="parcel-list-notice" hidden></div>
 
           <!-- Phase 3: Advanced searches collapsible. Holds the less-
                frequently-touched controls (legal description, certificate
@@ -475,7 +481,7 @@
                 type="button"
                 id="parcel-list-import-trigger"
                 class="parcel-list-import-trigger"
-                title="Paste or upload a multi-municipality parcel list — Roll # plus at least one of Municipality name, Muni #, Title #, or Legal Description. Bare municipality names work ('ARBORG' matches 'ARBORG (TOWN)'), and a Site / Parcel / # column numbers the parcels on the map. A sales export works too: map its Municipality column to 'Municipality (name)'. Resolves each row's muni and highlights them all; multi-parcel sales (stacked rolls) import as a shaded group."
+                title="Paste or upload a multi-municipality parcel list — Roll # plus at least one of Municipality name, Muni #, Title #, or Legal Description. A row with ONLY a section-township-range legal (e.g. NE27-7-4E) works too — no roll needed; if the quarter matches several parcels they all import and a notice flags it. Bare municipality names work ('ARBORG' matches 'ARBORG (TOWN)'), and a Site / Parcel / # column numbers the parcels on the map. A sales export works too: map its Municipality column to 'Municipality (name)'. Resolves each row's muni and highlights them all; multi-parcel sales (stacked rolls) import as a shaded group."
               >Import List of Parcels</button>
               <!-- Template download. Static file in web/public, so it is
                    served straight off the site root in both dev and
@@ -485,7 +491,7 @@
                 class="sample-csv-link"
                 href="sample-parcel-list.csv"
                 download="sample-parcel-list.csv"
-                title="Download a sample CSV — Roll # plus any one of Municipality Name, Muni #, Title # or Legal Description. Every row in it resolves."
+                title="Download a sample CSV — Roll # plus any one of Municipality Name, Muni #, Title # or Legal Description, or a section-township-range legal (NE27-7-4E) on its own. Every row in it resolves."
               >Sample CSV</a>
             </div>
           </details>

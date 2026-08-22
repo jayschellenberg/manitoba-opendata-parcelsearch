@@ -1878,6 +1878,20 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 }
 .sidebar .legal-row input { width: 100%; min-width: 0; }
 
+/* Import multi-match notice — the amber line under the list pill that
+   explains a section-township-range row resolving to several parcels.
+   Informational, not an error: the parcels ARE imported. */
+.sidebar .parcel-list-notice {
+  margin-top: 4px;
+  padding: 5px 8px;
+  border: 1px solid #e0b34c;
+  border-radius: 4px;
+  background: #fff7e0;
+  color: #6b4e00;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 /* Street Type + Direction under the civic-address row — two selects
    at half width each, same rhythm as the zoning/status filter-row. */
 .sidebar .address-typedir-row {

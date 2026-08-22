@@ -1035,6 +1035,11 @@ let listMatchedMunis = null;
 // unmatched-records drawer (renderUnmatchedPanel) so the user can see
 // at a glance which input rows didn't resolve and why.
 let listUnresolvedRows = null;
+// Resolver notices from the same import — informational flags on rows
+// that DID resolve, currently the one case of a section-township-range
+// row matching more than one parcel (a subdivided quarter). Rendered
+// as an amber line under the list pill by renderListPill().
+let listImportNotices = null;
 // Site/Comp # tagging for a parcel-list import: Map("muni_no|roll_no_txt"
 // → site label) built from the resolver's output when the import mapped a
 // Site column. runSearch stamps _siteNo from this onto the fetched
@@ -1655,7 +1660,7 @@ const importModal = initParcelListImport({
     $municipality.value = '';
     $municipality.dispatchEvent(new Event('change', { bubbles: true }));
   },
-  onResolved: ({ parcelKeys, resolved, unresolved, stats }) => {
+  onResolved: ({ parcelKeys, resolved, unresolved, notices, stats }) => {
     if (!parcelKeys || parcelKeys.length === 0) {
       // Nothing usable — surface the failure inline and don't enter
       // list mode (the existing muni/roll inputs stay live).
@@ -1665,6 +1670,7 @@ const importModal = initParcelListImport({
       listParcelKeys = null;
       listMatchedMunis = null;
       listUnresolvedRows = unresolved || [];
+      listImportNotices = null;
       listSiteByKey = null;
       renderListPill();
       renderListUnresolvedDrawer();
@@ -1675,6 +1681,7 @@ const importModal = initParcelListImport({
     listParcelKeys = parcelKeys;
     listMatchedMunis = null;
     listUnresolvedRows = unresolved || [];
+    listImportNotices = (notices && notices.length > 0) ? notices : null;
     listSiteByKey = buildListSiteKeyMap(resolved);
     renderListPill();
     renderListUnresolvedDrawer();
@@ -1690,6 +1697,7 @@ document.getElementById('parcel-list-pill-clear')
     listParcelKeys = null;
     listMatchedMunis = null;
     listUnresolvedRows = null;
+    listImportNotices = null;
     listSiteByKey = null;
     renderListPill();
     renderListUnresolvedDrawer();
@@ -4968,11 +4976,13 @@ function renderUnmatchedPanel(unmatched) {
 function renderListPill() {
   const $row = document.getElementById('parcel-list-pill-row');
   const $label = document.getElementById('parcel-list-pill-label');
+  const $notice = document.getElementById('parcel-list-notice');
   const $panel = document.getElementById('tab-panel-property');
   if (!$row || !$label) return;
   if (!Array.isArray(listParcelKeys) || listParcelKeys.length === 0) {
     $row.hidden = true;
     $label.textContent = '';
+    if ($notice) { $notice.hidden = true; $notice.textContent = ''; }
     $panel?.classList.remove('list-mode-active');
     $resultsTable?.classList.remove('list-import-mode');
     applyColumnVisibility();
@@ -4983,6 +4993,20 @@ function renderListPill() {
   const m = munis.size;
   $label.textContent = `Imported list: ${n} parcel${n === 1 ? '' : 's'} across ${m} municipalit${m === 1 ? 'y' : 'ies'}`;
   $row.hidden = false;
+  // Multi-match flags from the resolver — a section-township-range row
+  // that landed on more than one parcel. Shown under the pill so a
+  // quarters list that quietly grew stays explained on screen.
+  if ($notice) {
+    const notes = listImportNotices || [];
+    if (notes.length === 0) {
+      $notice.hidden = true;
+      $notice.textContent = '';
+    } else {
+      $notice.textContent = notes.map((nt) => nt.message).join(' · ');
+      $notice.title = 'A section-township-range row can match several parcels when the quarter has been subdivided (or a parcel spans quarters). Every match is imported.';
+      $notice.hidden = false;
+    }
+  }
   $panel?.classList.add('list-mode-active');
   $resultsTable?.classList.add('list-import-mode');
   applyParcelImportDefaults();

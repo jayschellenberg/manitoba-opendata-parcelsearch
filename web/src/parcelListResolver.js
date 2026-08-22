@@ -22,8 +22,8 @@
  * returned Map.
  */
 
-import { lookupLegalRecordsByRollSet } from './legalIndex.js';
-import { gridNeedle } from './lib/parcelListParser.js';
+import { lookupLegalRecordsByRollSet, lookupLegalRecordsByStrSet } from './legalIndex.js';
+import { gridNeedle, gridStrToken } from './lib/parcelListParser.js';
 
 // ---- normalizers (mirror legalIndex.core.js so we don't depend on
 //      its internals — the duplication is small and keeps coupling
@@ -102,18 +102,21 @@ function legalMatches(rec, token) {
  * @returns {Promise<{
  *   resolved: Array<{lineNo, muniNo, roll, via, raw}>,
  *   unresolved: Array<{lineNo, roll, muniNo, legal, title, raw, reason}>,
+ *   notices: Array<{lineNo, legal, count, message}>,
  *   parcelKeys: Array<{muni_no, roll_no_txt}>,
- *   stats: { total, resolved, unresolved, byVia: {muni, title, legal} },
+ *   stats: { total, resolved, unresolved, byVia: {muni, title, legal, str} },
  * }>}
  */
 export async function resolveParcelList(rows, opts = {}) {
-  // Lookup function is injected so node tests can pass a synthetic
+  // Lookup functions are injected so node tests can pass a synthetic
   // legal-index without going through the worker / fetch path.
   const lookupRollSet = opts.lookupRollSet || lookupLegalRecordsByRollSet;
+  const lookupStrSet = opts.lookupStrSet || lookupLegalRecordsByStrSet;
   const resolveMuniNames = opts.resolveMuniNames || null;
   const resolved = [];
   const unresolved = [];
-  const stats = { total: rows.length, resolved: 0, unresolved: 0, byVia: { muni: 0, muniName: 0, title: 0, legal: 0 } };
+  const notices = [];
+  const stats = { total: rows.length, resolved: 0, unresolved: 0, byVia: { muni: 0, muniName: 0, title: 0, legal: 0, str: 0 } };
 
   // Bucket rows by resolution strategy. A supplied numeric muni is
   // trusted as-is; a municipality NAME resolves via Roll Entry (the
@@ -121,9 +124,18 @@ export async function resolveParcelList(rows, opts = {}) {
   // legal-index lookup.
   const needsLookup = [];
   const needsMuniName = [];
+  const needsStrLookup = [];
   for (const row of rows) {
     if (!row.roll) {
-      unresolved.push({ ...row, reason: 'Row has no roll # — cannot resolve to a parcel' });
+      // No roll # — the one identifier that can still stand alone is a
+      // section-township-range legal ("NE27-7-4E"): the derived STR
+      // tokens in the legal index resolve it directly. Anything else
+      // has nothing to intersect on.
+      if (row.legal && row.legal.kind === 'grid') {
+        needsStrLookup.push(row);
+        continue;
+      }
+      unresolved.push({ ...row, reason: 'Row has no roll # and no section-township-range legal (e.g. NE27-7-4E) — cannot resolve to a parcel' });
       continue;
     }
     if (Number.isFinite(row.muniNo)) {
@@ -191,6 +203,50 @@ export async function resolveParcelList(rows, opts = {}) {
     }
   }
 
+  // Roll-less grid rows: one bulk scan of the derived STR tokens. A
+  // quarter usually holds ONE parcel, but a subdivided quarter (or a
+  // parcel straddling several quarters) can return more — those all
+  // resolve, and a notice flags the multiplicity to the user rather
+  // than silently importing what looks like a 1:1 list.
+  if (needsStrLookup.length > 0) {
+    let byToken = null;
+    try {
+      byToken = await lookupStrSet(new Set(needsStrLookup.map((r) => gridStrToken(r.legal))));
+    } catch (err) {
+      for (const row of needsStrLookup) {
+        unresolved.push({ ...row, reason: `Legal-index lookup failed: ${err.message || err}` });
+      }
+    }
+    if (byToken) {
+      for (const row of needsStrLookup) {
+        const hits = byToken.get(gridStrToken(row.legal)) || [];
+        if (hits.length === 0) {
+          unresolved.push({ ...row, reason: `No parcel's legal description matches "${row.legal.raw}"` });
+          continue;
+        }
+        for (const rec of hits) {
+          resolved.push({
+            lineNo: row.lineNo,
+            muniNo: Number(rec.muni_no),
+            roll: rec.roll_no_txt,
+            via: 'str',
+            site: row.site ?? null,
+            raw: row.raw,
+          });
+        }
+        stats.byVia.str++;
+        if (hits.length > 1) {
+          notices.push({
+            lineNo: row.lineNo,
+            legal: row.legal.raw,
+            count: hits.length,
+            message: `${row.legal.raw} matched ${hits.length} parcels — all imported (rolls ${hits.map((h) => humanRoll(h.roll_no_txt)).join(', ')})`,
+          });
+        }
+      }
+    }
+  }
+
   // Bulk legal-index scan covering every row that needs resolution.
   if (needsLookup.length > 0) {
     const rollSet = new Set(needsLookup.map((r) => r.roll));
@@ -204,7 +260,7 @@ export async function resolveParcelList(rows, opts = {}) {
       for (const row of needsLookup) {
         unresolved.push({ ...row, reason: `Legal-index lookup failed: ${err.message || err}` });
       }
-      return finalize({ resolved, unresolved, stats });
+      return finalize({ resolved, unresolved, notices, stats });
     }
 
     for (const row of needsLookup) {
@@ -291,17 +347,24 @@ export async function resolveParcelList(rows, opts = {}) {
     }
   }
 
-  return finalize({ resolved, unresolved, stats });
+  return finalize({ resolved, unresolved, notices, stats });
 }
 
-function finalize({ resolved, unresolved, stats }) {
+function finalize({ resolved, unresolved, notices, stats }) {
   stats.resolved = resolved.length;
   stats.unresolved = unresolved.length;
-  const parcelKeys = resolved.map((r) => ({
-    muni_no: r.muniNo,
-    roll_no_txt: r.roll,
-  }));
-  return { resolved, unresolved, parcelKeys, stats };
+  // Dedupe the keys: two grid rows can legitimately land on the same
+  // parcel (a parcel straddling the NE and SE quarters matches both
+  // rows), and one fetch per parcel is what searchParcels expects.
+  const seen = new Set();
+  const parcelKeys = [];
+  for (const r of resolved) {
+    const key = `${r.muniNo}|${r.roll}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    parcelKeys.push({ muni_no: r.muniNo, roll_no_txt: r.roll });
+  }
+  return { resolved, unresolved, notices: notices || [], parcelKeys, stats };
 }
 
 /** Trim the canonical ".000" off rolls when surfacing them to the

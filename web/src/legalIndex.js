@@ -18,6 +18,7 @@ import {
   searchLegalIndex as searchCore,
   lookupLegalRecordsByParcelKeys as lookupCore,
   lookupLegalRecordsByRollSet as lookupRollsCore,
+  lookupLegalRecordsByStrSet as lookupStrCore,
   listParishOptions as parishOptionsCore,
   PARISH_LOT_TYPES,
 } from './legalIndex.core.js';
@@ -170,6 +171,24 @@ export async function lookupLegalRecordsByRollSet(rolls) {
   }
   const index = await loadDirect();
   return lookupRollsCore(index, rollList);
+}
+
+/**
+ * Bulk-lookup records by canonical section-township-range token
+ * ("NE|27|7|4|E"). Used by the parcel-list resolver for rows that
+ * carry only a grid legal description. Returns Map<token, Record[]>.
+ */
+export async function lookupLegalRecordsByStrSet(tokens) {
+  const tokenList = tokens instanceof Set ? [...tokens] : Array.from(tokens || []);
+  if (tokenList.length === 0) return new Map();
+  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
+  if (viaWorker) {
+    await viaWorker;
+    const pairs = await postMessage('lookupStr', { tokens: tokenList });
+    return new Map(pairs || []);
+  }
+  const index = await loadDirect();
+  return lookupStrCore(index, tokenList);
 }
 
 /**

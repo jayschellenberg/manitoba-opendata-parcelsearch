@@ -177,6 +177,35 @@ export function lookupLegalRecordsByRollSet(index, rollSet) {
   return out;
 }
 
+/**
+ * Bulk-lookup records by canonical section-township-range token
+ * ("NE|27|7|4|E", the deriveStrTokens encoding). Used by the parcel-
+ * list resolver for rows that carry ONLY a grid legal description —
+ * no roll # to intersect on, so the derived STR tokens are the
+ * identifier. One scan of the index regardless of how many tokens are
+ * wanted. Returns Map<token, Record[]>; a parcel spanning several
+ * quarters lands in every matching token's list.
+ */
+export function lookupLegalRecordsByStrSet(index, tokens) {
+  const want = tokens instanceof Set ? tokens : new Set(tokens || []);
+  const out = new Map();
+  if (want.size === 0) return out;
+  const drv = ensureDerived(index);
+  const rows = index?.rows || [];
+  for (let i = 0; i < rows.length; i++) {
+    const s = drv.str[i];
+    if (!s) continue;
+    let rec = null;
+    for (const tok of s.split(';')) {
+      if (!tok || !want.has(tok)) continue;
+      if (!rec) rec = rowToRecord(rows[i]);
+      if (!out.has(tok)) out.set(tok, []);
+      out.get(tok).push(rec);
+    }
+  }
+  return out;
+}
+
 // ---------- derived legal-token layer ----------
 //
 // MAO's structured searches (condo unit, parish lot, section-township-
