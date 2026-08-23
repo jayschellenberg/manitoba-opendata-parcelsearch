@@ -65,6 +65,7 @@ import { computeTopNMatches } from './lib/overlayJoinCore.js';
 // results grid (main.js parcelAcres) both resolve through this, so the same
 // parcel can't read differently depending on where you look at it.
 import { resolveParcelAcres } from './lib/acres.js';
+import { rollDisplay, civicAddressOrEmpty } from './lib/parcelLabelFields.js';
 import { reconcileMuniSpelling } from './lib/muniIdentity.js';
 import { FLOOD_GROUPS } from './lib/flood.js';
 // Manitoba Water Rights Licensing (WALLAS) lives on a different host and
@@ -2384,36 +2385,6 @@ export async function fetchManitobaHighways() {
  * upper bound — the largest single MB muni outside Winnipeg has ~30k
  * parcels.
  */
-/**
- * Distill Roll_Entry's Property_Address field into a real civic
- * address or the empty string. The field is a hybrid in source: some
- * parcels carry an actual address ("60 SILVERSIDE DR"), others carry
- * a legal reference ("1--24134", "NE34-2-4W", "DESC NE34-2-4W"). The
- * civic-label symbol layer reads the empty-string output and just
- * doesn't render — so the user sees civic addresses at zoom 16 only
- * for parcels that actually have one.
- *
- * Exclusions (returns '' for any of these):
- *   - empty / whitespace
- *   - starts with "DESC " (legal-description marker)
- *   - only digits + dashes / slashes / spaces / dots — covers
- *     "1--24134", "7-1-2246", "8-7-32457"
- *   - section-township-range pattern with optional direction prefix
- *     and meridian suffix — covers "NE34-2-4W", "NW4-3-1E", "S17-10-5"
- */
-const RE_DESC_PREFIX = /^DESC\b/i;
-const RE_NUMERIC_REFERENCE = /^[\d\s\-./]+$/;
-const RE_SEC_TWP_RNG = /^[NSEW]{0,2}\d+-\d+-\d+[NSEW]?$/i;
-function civicAddressOrEmpty(raw) {
-  if (raw == null) return '';
-  const s = String(raw).trim();
-  if (!s) return '';
-  if (RE_DESC_PREFIX.test(s))      return '';
-  if (RE_NUMERIC_REFERENCE.test(s)) return '';
-  if (RE_SEC_TWP_RNG.test(s))      return '';
-  return s;
-}
-
 export async function fetchAllParcelsInMunicipality(municipality) {
   if (rollEntrySnapshot) return fetchAllParcelsInMunicipalityFromSnapshot(municipality);
   if (!municipality) return makeEmptyFc();
@@ -2488,10 +2459,8 @@ export async function fetchAllParcelsInMunicipality(municipality) {
     // (the muni-parcels-label paint expression in map.js reads
     // _rollDisplay). Keeps the raw Roll_No_Txt around for search
     // and join keys; this is purely cosmetic.
-    const r = f.properties?.Roll_No_Txt;
-    if (typeof r === 'string') {
-      f.properties._rollDisplay = r.endsWith('.000') ? r.slice(0, -4) : r;
-    }
+    const rd = rollDisplay(f.properties?.Roll_No_Txt);
+    if (rd !== null) f.properties._rollDisplay = rd;
     // Civic-address pass: Property_Address is a hybrid field — for
     // urban / serviced parcels it holds an actual civic address
     // ("60 SILVERSIDE DR"); for rural / unimproved / legal-description-
