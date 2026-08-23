@@ -254,9 +254,32 @@ hour, nearly all of it tippecanoe.
 
 The archive is **not** in git and **not** in `web/public/` on a deploy — Vite
 copies `public/` into `dist/`, so a stray archive there ships on every Vercel
-build. It lives in object storage; point `VITE_PARCEL_TILES_URL` at it (same
-pattern as `VITE_MLI_ORTHO_PMTILES_URL`, and the origin must also be in
-`connect-src` in `vercel.json`).
+build. It lives in object storage.
+
+**Publishing a rebuild** (credentials are in rclone's config, not this repo;
+the `r2-mb` remote is scoped to the `mb-ortho` bucket):
+```
+rclone copyto "web/public/parcels.pmtiles" "r2-mb:mb-ortho/mb-assessment-parcels.pmtiles" --s3-no-check-bucket --progress
+```
+Live at
+<https://pub-091058079bf6458da1681945177e1682.r2.dev/mb-assessment-parcels.pmtiles>,
+which is what `VITE_PARCEL_TILES_URL` points at in Vercel. Leave that variable
+BLANK locally so dev serves the archive from `web/public/` — offline and no
+egress.
+
+It shares the `mb-ortho` bucket with the MLI ortho archive. The name is a
+mismatch (this is not orthoimagery) and it is worth moving to its own bucket
+one day, but the reuse means the bucket's CORS policy and the `connect-src`
+entry in `vercel.json` already cover it — no CSP change was needed.
+
+**Verify a publish** the same way the ortho was verified: a range request must
+return `206` with the full size in `Content-Range`, the first seven bytes must
+read `PMTiles`, and with an `Origin` header the response must carry
+`Access-Control-Allow-Origin` plus `content-range` in
+`Access-Control-Expose-Headers` (PMTiles cannot work without that last one).
+```
+curl -s -D - -o - -H "Origin: https://manitoba-opendata-parcelsearch.vercel.app"      -H "Range: bytes=0-6"      https://pub-091058079bf6458da1681945177e1682.r2.dev/mb-assessment-parcels.pmtiles
+```
 
 **Prerequisites:** WSL with tippecanoe (`wsl --install`, then
 `sudo apt install tippecanoe`; Ubuntu here has v2.80.0). Note that invoking it
