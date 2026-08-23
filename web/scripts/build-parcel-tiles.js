@@ -23,6 +23,8 @@
 //   node scripts/build-parcel-tiles.js              # write inputs, print the tippecanoe command
 //   node scripts/build-parcel-tiles.js --run         # also run tippecanoe via WSL and promote
 //   node scripts/build-parcel-tiles.js --limit=5000  # smoke-test on a slice
+//   node scripts/build-parcel-tiles.js --promote-only # finish a run whose
+//                                                     # tiling already succeeded
 
 import { createReadStream, createWriteStream } from 'node:fs';
 import { readFile, writeFile, stat, rename, unlink } from 'node:fs/promises';
@@ -84,6 +86,8 @@ function pick(from, keys) {
 
 const args = process.argv.slice(2);
 const RUN_TIPPECANOE = args.includes('--run');
+// Finish a run whose tiling already succeeded but whose promotion did not.
+const PROMOTE_ONLY = args.includes('--promote-only');
 const LIMIT = (() => {
   const a = args.find((x) => x.startsWith('--limit='));
   return a ? Number(a.slice('--limit='.length)) : Infinity;
@@ -286,8 +290,28 @@ async function main() {
   if (res.status !== 0) throw new Error(`tippecanoe exited ${res.status}`);
   const secs = Math.round((Date.now() - started) / 1000);
 
+  await promote({ meta, written, labelled, dupes, noGeom, secs });
+}
+
+/**
+ * Band-check the freshly tiled archive, move it into place, write the meta
+ * sidecar, and drop the intermediates.
+ *
+ * Split out, and reachable on its own via --promote-only, because this step
+ * is cheap and the hour of tiling before it is not. That is not
+ * hypothetical: a run whose tippecanoe pass completed cleanly had its Node
+ * process killed immediately afterwards, leaving a finished, valid 381 MB
+ * archive sitting unpromoted in tiles-build/. Re-tiling for an hour to
+ * recover a rename would be absurd.
+ *
+ * If you did not watch it build, verify the archive before promoting — a
+ * truncated tippecanoe run also leaves a file behind. The band check catches
+ * the gross cases; reading the PMTiles header (zoom range, layer names, a
+ * sample tile at a low zoom) catches the rest.
+ */
+async function promote({ meta, written, labelled, dupes, noGeom, secs = null }) {
   const sizeMb = (await stat(OUT_PMTILES_TMP)).size / 1024 ** 2;
-  console.log(`\nArchive : ${sizeMb.toFixed(1)} MB in ${secs}s`);
+  console.log(`\nArchive : ${sizeMb.toFixed(1)} MB${secs == null ? '' : ` in ${secs}s`}`);
   if (LIMIT === Infinity && (sizeMb < PMTILES_MIN_MB || sizeMb > PMTILES_MAX_MB)) {
     throw new Error(
       `Archive is ${sizeMb.toFixed(1)} MB, outside the ${PMTILES_MIN_MB}-${PMTILES_MAX_MB} MB sanity band. ` +
@@ -320,4 +344,26 @@ async function main() {
   console.log('Cleaned : removed .geojsons intermediates');
 }
 
-main().catch((err) => { console.error(`\n${err.message}`); process.exit(1); });
+/** --promote-only: finish a run whose tiling already succeeded. The counts
+ *  that would have come from the streaming pass are recounted off the
+ *  finished .geojsons, so the meta sidecar stays honest rather than
+ *  reporting zeroes. */
+async function promoteOnly() {
+  const meta = JSON.parse(await readFile(EXPORT_META, 'utf8'));
+  const countLines = async (file) => {
+    let n = 0;
+    const rl = createInterface({
+      input: createReadStream(file, { encoding: 'utf8' }),
+      crlfDelay: Infinity,
+    });
+    for await (const line of rl) if (line.trim()) n += 1;
+    return n;
+  };
+  console.log('Promoting an already-tiled archive.');
+  const written = await countLines(OUT_POLYGONS);
+  const labelled = await countLines(OUT_LABELS);
+  console.log(`Counts  : ${written.toLocaleString()} polygons, ${labelled.toLocaleString()} label points (recounted)`);
+  await promote({ meta, written, labelled, dupes: null, noGeom: null });
+}
+
+(PROMOTE_ONLY ? promoteOnly() : main()).catch((err) => { console.error(`\n${err.message}`); process.exit(1); });
