@@ -239,6 +239,45 @@ exists to cover. Monthly is the floor, not the ideal — the fallback can still
 be up to a month behind the newest gpkg, and it is worth rebuilding by hand
 whenever you notice a fresh one land.
 
+### 1e. Assessment Parcels vector tiles  (cadence: **with 1d** — same gpkg, same staleness)
+The province-wide PMTiles archive behind the **Assessment Parcels** overlay.
+Built from the same `RollEntry_YYYYMMDD.gpkg` as the fallback snapshot in §1d,
+so the two go stale together and should be rebuilt together.
+```
+Rscript r/export_rollentry_geojson.R
+cd web && node scripts/build-parcel-tiles.js --run
+```
+Step 1 is GDAL `vectortranslate` (~12s for 438k features). Step 2 streams that,
+derives `_rollDisplay` / `_civicAddress` / `_acres` **using the app's own
+modules**, writes both tile layers, and runs `tippecanoe` via WSL. Total ~1
+hour, nearly all of it tippecanoe.
+
+The archive is **not** in git and **not** in `web/public/` on a deploy — Vite
+copies `public/` into `dist/`, so a stray archive there ships on every Vercel
+build. It lives in object storage; point `VITE_PARCEL_TILES_URL` at it (same
+pattern as `VITE_MLI_ORTHO_PMTILES_URL`, and the origin must also be in
+`connect-src` in `vercel.json`).
+
+**Prerequisites:** WSL with tippecanoe (`wsl --install`, then
+`sudo apt install tippecanoe`; Ubuntu here has v2.80.0). Note that invoking it
+from Git Bash rather than the Node script fails with *"unable to open database
+file"* — MSYS rewrites the `/mnt/...` paths into Windows ones. Prefix with
+`MSYS_NO_PATHCONV=1` if you run it by hand.
+
+**What to check after a build:** the script refuses to promote an archive
+outside its 40–400 MB sanity band, so a truncated tile run cannot silently
+become the province's parcel fabric. It also reconciles its own read against
+the export's feature count and aborts on a short read. Both guards exist
+because the first full build came out at **1.07 GB** — the tiles were carrying
+all fourteen source fields, and properties were 66% of the payload multiplied
+across six zoom levels. They now carry three; everything else the popup shows
+is resolved by OBJECTID on click.
+
+**Do not add fields to the tiles casually.** A field costs its size × every
+parcel × every zoom level. `Asmt_Rpt_Url` alone was 15% of the payload — and it
+holds MAO's `extrct_prop_id`, which is reissued on the Spring/Fall rollover, so
+a baked copy is wrong within months regardless. Resolve on click instead.
+
 ### 2. Snapshot archive + publish — roll / zoning / dev-plan  (cadence: semi-annual, **scheduled end-to-end**)
 Permanent dated snapshots of all three provincial layers (roll info, zoning,
 development plan), published through to the app. **Scheduled** twice a year
