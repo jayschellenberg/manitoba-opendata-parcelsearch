@@ -441,6 +441,51 @@ const PARCEL_TILES_URL =
 const MUNI_SCOPE_FILTER_NONE = ['in', ['get', 'Muni_Name_With_Typ'], ['literal', []]];
 
 /**
+ * Is the parcel-tile archive actually there?
+ *
+ * Without this check a missing or misconfigured archive fails silently:
+ * MapLibre cannot fetch the tiles, the layer renders nothing, and the
+ * toggle still reads as on — indistinguishable from a municipality that
+ * genuinely has no parcels. That is the worst failure mode for an
+ * appraisal tool, because "no parcels here" is a plausible answer.
+ *
+ * Reads the first 16 bytes and checks the PMTiles magic. A range request
+ * is the cheapest possible probe, and it exercises the exact capability
+ * the format depends on — a host that serves the file but ignores Range
+ * would pass a HEAD check and then fail on every tile.
+ *
+ * Memoised on the promise, so concurrent toggles share one probe. A
+ * failure is NOT cached: a transient network blip should not disable the
+ * layer for the rest of the session.
+ */
+let parcelTilesProbe = null;
+export function probeParcelTiles() {
+  if (parcelTilesProbe) return parcelTilesProbe;
+  parcelTilesProbe = (async () => {
+    try {
+      const res = await fetch(PARCEL_TILES_URL, { headers: { Range: 'bytes=0-15' } });
+      if (!res.ok) return { ok: false, reason: `HTTP ${res.status}` };
+      const buf = await res.arrayBuffer();
+      // PMTiles v3 archives begin with the ASCII magic "PMTiles".
+      const magic = String.fromCharCode(...new Uint8Array(buf).slice(0, 7));
+      if (magic !== 'PMTiles') {
+        return { ok: false, reason: 'not a PMTiles archive (wrong file, or the host returned an error page)' };
+      }
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, reason: err?.message || 'network error' };
+    }
+  })().then((r) => {
+    if (!r.ok) parcelTilesProbe = null;   // let the next toggle retry
+    return r;
+  });
+  return parcelTilesProbe;
+}
+
+/** Where the archive is expected, for error messages. */
+export function parcelTilesUrl() { return PARCEL_TILES_URL; }
+
+/**
  * Narrow every Assessment Parcels layer to `muniNames`. Pass an empty
  * list to show nothing. Accepts a list rather than a single name because
  * both import workflows (sales CSV, property list) resolve a multi-muni

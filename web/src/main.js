@@ -180,6 +180,8 @@ import {
   setMbHighwaysData,
   setMbHighwaysVisible,
   setMuniParcelsData,
+  parcelTilesUrl,
+  probeParcelTiles,
   setMuniParcelResolver,
   setMuniParcelsScope,
   setMuniParcelsVisible,
@@ -7624,7 +7626,18 @@ const AUX_META = {
   // GeoJSON shard), parse it on the main thread and clone it into the
   // MapLibre worker, which is what made a big RM take seconds to appear.
   muniParcels: { btn: () => $muniParcelsToggle, on: 'Assessment Parcels', off: 'Assessment Parcels', busy: 'Loading…',
-                 fetch: () => null,
+                 // Nothing to fetch, but the archive still has to BE there.
+                 // A missing one renders an empty layer that looks exactly
+                 // like a municipality with no parcels, so probe once and
+                 // fail loudly instead. toggleAuxOverlay's catch reverts the
+                 // button; the muniParcels branch there surfaces the reason.
+                 fetch: async () => {
+                   const probe = await probeParcelTiles();
+                   if (!probe.ok) {
+                     throw new Error(`parcel tiles unavailable at ${parcelTilesUrl()} — ${probe.reason}`);
+                   }
+                   return null;
+                 },
                  setData: () => setMuniParcelsScope(map, scopedOverlayMunis()),
                  setVis: setMuniParcelsVisible },
   // WALLAS. Tile drainage is province-wide and cached, so it loads once
@@ -9716,6 +9729,12 @@ async function toggleAuxOverlay(which) {
       setOverlayPressed(btn, false);
       setOverlayBtnLabel(btn, meta.off);
       btn.disabled = false;
+      // The parcel fabric is the one overlay whose failure is otherwise
+      // indistinguishable from an empty result, so say so on screen rather
+      // than only in the console. See AUX_META.muniParcels.fetch.
+      if (which === 'muniParcels') {
+        setCount(`Assessment Parcels could not load: ${err.message}`);
+      }
       return;
     }
     btn.disabled = false;
