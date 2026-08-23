@@ -265,13 +265,31 @@ file"* — MSYS rewrites the `/mnt/...` paths into Windows ones. Prefix with
 `MSYS_NO_PATHCONV=1` if you run it by hand.
 
 **What to check after a build:** the script refuses to promote an archive
-outside its 40–400 MB sanity band, so a truncated tile run cannot silently
+outside its 40–700 MB sanity band, so a truncated tile run cannot silently
 become the province's parcel fabric. It also reconciles its own read against
 the export's feature count and aborts on a short read. Both guards exist
 because the first full build came out at **1.07 GB** — the tiles were carrying
 all fourteen source fields, and properties were 66% of the payload multiplied
 across six zoom levels. They now carry three; everything else the popup shows
 is resolved by OBJECTID on click.
+
+**The zoom floor is measured, not guessed.** The overlay is
+municipality-scoped and the app fits the map to the whole municipality, so the
+floor has to reach whatever zoom that fit lands on. Across 154 municipalities,
+**93 fit below z11**, down to z8.5 for ST CLEMENTS (RM). An earlier build used
+z11 on the assumption that a rural RM fits around z10–11; it did not, and the
+layer would have been blank at exactly the extent most municipalities open at.
+The floor is now z8. Do not raise it without re-measuring — and note that the
+four `INDIGENOUS&NORTHERN RELATIONS` entries fit at z5.6–6.5 and are
+deliberately *not* covered: they are province-spanning administrative
+aggregates, and three more zoom levels of the whole province is a steep price
+for four pseudo-municipalities whose parcels are a grey smear at that scale.
+
+**The ceiling is not a size budget.** The archive is range-requested, so a
+viewer pulls a few hundred KB of tiles whether it is 100 MB or 700 MB, and R2
+storage at this scale is pennies a month with no egress fee. The band exists to
+catch a build having gone wrong, and it is calibrated against real numbers:
+1.07 GB carrying all fourteen source fields, 509 MB after thinning to three.
 
 **Do not add fields to the tiles casually.** A field costs its size × every
 parcel × every zoom level. `Asmt_Rpt_Url` alone was 15% of the payload — and it

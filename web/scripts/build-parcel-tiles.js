@@ -89,15 +89,27 @@ const LIMIT = (() => {
   return a ? Number(a.slice('--limit='.length)) : Infinity;
 })();
 
-// Flag choices follow the Winnipeg archive's (ParcelSearch/r/lib_tippecanoe.R),
-// which were settled against a live overlay, with one deliberate difference:
-// the zoom floor.
+// Flag choices start from the Winnipeg archive's
+// (ParcelSearch/r/lib_tippecanoe.R), which were settled against a live
+// overlay, and differ in two places: the zoom floor, and what happens at it.
 //
-//   --minimum-zoom=11    : Winnipeg uses 13 because below that a city lot is
+//   --minimum-zoom=8     : Winnipeg uses 13 because below that a city lot is
 //                          sub-pixel. Manitoba's overlay is municipality-scoped
-//                          and a whole RM only fits on screen around z10-11, so
-//                          a floor of 13 would leave the layer blank at exactly
-//                          the extent a user lands on after picking a rural muni.
+//                          and the app fits the map to the whole municipality,
+//                          so the floor has to reach whatever zoom that fit
+//                          lands on. MEASURED across 154 municipalities: 93 of
+//                          them fit BELOW z11, down to z8.5 for ST CLEMENTS
+//                          (RM). An earlier build used z11 on the guess that a
+//                          rural RM fits around z10-11; that was wrong, and it
+//                          left the layer blank at exactly the extent most
+//                          municipalities open at.
+//                          Not lower than 8: the only things below it are the
+//                          four INDIGENOUS&NORTHERN RELATIONS entries (z5.6-6.5),
+//                          which are province-spanning administrative
+//                          aggregates rather than contiguous municipalities —
+//                          three more zoom levels of the entire province to
+//                          serve four pseudo-munis whose parcels would be a
+//                          grey smear anyway.
 //   --maximum-zoom=16    : rural quarter-sections carry no detail past this, and
 //                          MapLibre overzooms the z16 tiles for the urban cores.
 //   --simplification=2   : gentle Douglas-Peucker — preserves rectangle corners.
@@ -105,20 +117,41 @@ const LIMIT = (() => {
 //                          (unlike build_rollentry_snapshot.R's 10 m pass), so
 //                          this is the only simplification applied.
 //   --full-detail=14     : 16384-quantum grid per tile vs the default 4096.
-//   --no-feature-limit
-//   --no-tile-size-limit : never drop a parcel. A missing parcel in an appraisal
-//                          tool is worse than a fat tile.
+//   --no-feature-limit   : never cap the feature COUNT in a tile.
+//   --drop-densest-as-needed
+//                        : but do thin the densest areas when a tile would
+//                          otherwise blow past the size limit. This is what
+//                          makes the low zooms affordable — z8-z11 would
+//                          otherwise store all 438k parcels per level, and the
+//                          z11-16 build already came to 509 MB without them.
+//                          The "never drop a parcel" rule that a previous
+//                          revision enforced with --no-tile-size-limit still
+//                          holds where it matters: dropping only kicks in on
+//                          oversized tiles, which at these zooms means parcels
+//                          that are sub-pixel and unclickable. By the zooms
+//                          where a parcel can actually be interrogated,
+//                          everything is present.
 const TIPPECANOE_FLAGS = [
-  '--minimum-zoom=11', '--maximum-zoom=16',
+  '--minimum-zoom=8', '--maximum-zoom=16',
   '--simplification=2', '--full-detail=14',
-  '--no-feature-limit', '--no-tile-size-limit', '--force',
+  '--no-feature-limit', '--drop-densest-as-needed', '--force',
 ];
 
 // Sanity band for the finished archive, checked before it is promoted over
-// whatever is live. The floor catches a truncated or empty tile run; the
-// ceiling catches runaway growth. Widen deliberately, never reflexively.
+// whatever is live.
+//
+// The ceiling is NOT a size budget. The archive is range-requested, so a
+// viewer pulls a few hundred KB of tiles whether it is 100 MB or 700 MB, and
+// R2 storage at this scale costs pennies a month with no egress fee. It
+// exists to catch something having gone WRONG.
+//
+// Calibrated against two real builds rather than a guess: 1.07 GB when the
+// tiles carried all fourteen source fields, 509 MB after thinning to three at
+// z11-16. A ceiling here catches a regression back toward the first while
+// leaving room for the low-zoom levels added above. The floor catches a
+// truncated or empty tile run.
 const PMTILES_MIN_MB = 40;
-const PMTILES_MAX_MB = 400;
+const PMTILES_MAX_MB = 700;
 
 /** WSL sees the Windows drives under /mnt/<drive letter>. */
 function toWslPath(p) {
@@ -272,7 +305,7 @@ async function main() {
     dropped_duplicates: dupes,
     dropped_no_geometry: noGeom,
     size_mb: Number(sizeMb.toFixed(1)),
-    min_zoom: 11,
+    min_zoom: 8,
     max_zoom: 16,
     layers: ['parcels', 'parcels-labels'],
   }, null, 2)}\n`);
