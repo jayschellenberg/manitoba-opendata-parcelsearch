@@ -81,6 +81,7 @@ feeds only **mao-assembly's** land-cover inputs. A daily dead-man watchdog
 |---|---|---|---|
 | **Live** | parcels, zoning, dev-plan | ArcGIS (live) | always current |
 | **Latest-only generated** | legal-index (129 MB), assessment-index (28 MB), land-cover shards, land-cover tiles, RollEntry snapshot fallback | `web/public/data/**` (in deploy) | monthly / on rebuild |
+| **Object storage** | Assessment Parcels vector tiles (363 MB), MLI ortho imagery (16 GB) | Cloudflare R2, via `pmtiles://` + HTTP Range | monthly (tiles) / one-off (ortho) |
 | **Cold archive + provenance** | dated provincial source downloads + `<file>.meta.json` sidecars (sha256, source date, retrieved_at, source_crs, source_url, license) | `D:\Dropbox\Appraisal\Web\MAOSnapshots\<year>\` (Dropbox, outside git) | semi-annual / annual |
 | **Historical shards** | per-muni parcels/zoning/dev-plan **per snapshot date** (`YYYY-MM-DD`) + per-snapshot provenance manifest | `mb-parcel-history` → raw.githubusercontent | when a snapshot is archived |
 | **Lineage index** | inferred predecessor/successor per parcel, per muni | `mb-parcel-history/lineage/**` → raw.githubusercontent | when ≥ 2 snapshots exist |
@@ -159,6 +160,89 @@ Needs GDAL on PATH. **Rebuild only when a new `LCR_RCT_*.tif` lands** (years
 apart) — it's static, so it's not part of any refresh.
 
 ---
+
+## 3.6 Assessment Parcels vector tiles
+
+The **Assessment Parcels** overlay renders from a province-wide PMTiles
+archive rather than fetching a municipality's parcels as GeoJSON. MapLibre
+range-requests only the tiles on screen, so switching municipality is a layer
+FILTER change with no network round trip and nothing parsed on the main thread.
+
+Before this, toggling the layer paged ~17k features out of the live
+FeatureServer (or pulled a 5–12 MB snapshot shard), parsed it on the main
+thread and cloned it into the MapLibre worker. Measured on Brandon: 11.55 MB
+of JSON, 17,329 features, three main-thread passes per toggle.
+
+**Pipeline** (see MAINTENANCE.md §1e for how to run and publish it):
+
+```
+RollEntry_*.gpkg
+  → r/export_rollentry_geojson.R        GDAL vectortranslate, 438k features → 12s
+  → web/scripts/build-parcel-tiles.js   streams, derives fields, writes both layers
+  → tippecanoe (WSL)                    parcels + parcels-labels → parcels.pmtiles
+  → Cloudflare R2                       VITE_PARCEL_TILES_URL
+```
+
+The Node step imports the app's own `resolveParcelAcres`,
+`acresFromFrontageField`, `civicAddressOrEmpty` and `rollDisplay` rather than
+reimplementing them in R. A value baked into a tile that disagreed with what
+the live path stamps would look like a data problem for a whole rebuild
+cadence.
+
+**Two layers in one archive.** `parcels` (polygons) and `parcels-labels` (one
+Point per parcel). The Point layer exists because MapLibre places a polygon
+symbol at the centroid of each *tile-clipped* piece, so a parcel crossing a
+tile boundary would draw its roll number 2–6× at high zoom.
+
+**Three properties per tile** — `OBJECTID`, `Muni_Name_With_Typ`,
+`Roll_No_Txt`. Everything else the popup shows is resolved on click
+(§3.6.1). A first build carrying all fourteen source fields came out at
+**1.07 GB**: properties were 66% of the payload and geometry only 34%, and a
+feature is stored once per zoom level. **Do not add fields casually** — a field
+costs its size × every parcel × every zoom level.
+
+**Zoom floor is z8, and is measured, not assumed.** The app fits the map to
+the municipality you pick, so the floor has to reach whatever zoom that fit
+lands on. Across 154 municipalities, **93 fit below z11** (down to z8.5 for
+ST CLEMENTS (RM)). An earlier build used z11 on the assumption that a rural RM
+fits around z10–11; it does not, and the layer would have rendered nothing at
+the extent most municipalities open at. Re-measure before changing it.
+
+### 3.6.1 Popup resolution — `web/src/lib/muniParcelRecords.js`
+
+Because the tiles carry three properties, the popup resolves the rest on
+click: address, dwelling units, land size, legal description, soil, the MAO
+report link, and zoning. One fetch per municipality per session, through the
+same `fetchAllParcelsInMunicipality` the overlay always used, so snapshot mode
+and its sessionStorage cache still apply.
+
+Resolving on click is also **fresher** than baking: `Asmt_Rpt_Url` carries
+MAO's `extrct_prop_id`, which is reissued on the Spring/Fall rollover, so a
+copy baked into a months-old archive is wrong.
+
+**Keyed on `Roll_No_Txt` + municipality, never OBJECTID.** OBJECTID is an
+ArcGIS row id reissued whenever the province republishes the layer, so ids
+baked into an archive built from one extract do not correspond to what the
+live FeatureServer serves from another. Measured on GREY (RM): **62 of 62
+rolls matched, 0 of 62 OBJECTIDs did** — every lookup returned null and no
+popup could enrich. `arcgis.js` carries the same warning on the zone/dev-plan
+filter path.
+
+**Hover never fetches.** It peeks at what a previous click already resolved,
+and warms the municipality in the background. Fetching on hover would fire one
+request per parcel crossed.
+
+**Zoning** is read off the rendered layer when the zoning overlay is on, and
+fetched per parcel when it is off. ArcGIS spatial queries here take an
+ENVELOPE, so the parcel bbox can catch neighbouring zones; a point-in-polygon
+test picks the zone actually under the click. A resolved *null* is cached (many
+rural parcels genuinely have no zoning polygon); a *failed* lookup is not.
+
+**If the archive is missing**, toggling the layer probes it with a Range
+request and fails loudly with the URL and reason. Without that, a missing
+archive renders an empty layer with the toggle still on — indistinguishable
+from a municipality that genuinely has no parcels, which is the worst failure
+mode available in an appraisal tool.
 
 ## 4. Snapshot archive + provenance
 
@@ -503,6 +587,7 @@ Rows 4-6 below are the **manual fallback** (backfill / off-cycle).
 | 5 | Build a snapshot's shards by hand | backfill | `Rscript r/build_historical_shards.R --year <yyyy> --require zoning,devplan` → commit/push `<snapshot_id>/` + `index.json` in `mb-parcel-history` |
 | 6 | Rebuild parcel lineage by hand | backfill (≥ 2 snapshots) | `Rscript r/build_lineage.R` → commit/push `lineage/` |
 | 7 | Land-cover shards / Detailed tiles | mao-assembly rerun / new raster | inside `monthly-refresh.bat` / `Rscript r/build_landcover_tiles.R` |
+| 8a | **Assessment Parcels vector tiles** | **monthly, scheduled** | `mb-parcelsearch-parcel-tiles` (16th, 03:00) → `rebuild-parcel-tiles.ps1 -IfStale -Publish`; register via `schedule_parcel_tiles.ps1` (**elevated**); `-IfStale` alone is a safe dry run, `-TestAlert` checks the alert path. See MAINTENANCE.md §1e |
 | 8 | Provincial land-cover inputs (mao-assembly) | ≥ annual | manual MB Open Data download into `mao-assembly/inputs/`, rerun mao-assembly (the snapshot path auto-downloads separately) |
 
 The automated wrapper repins an **immutable commit SHA**, and
@@ -552,6 +637,13 @@ provincial download becoming the archived source-of-record.
 | `web/src/map.js` | land-cover + historical map layers, setters, tooltips (+ lineage) | — |
 | `web/src/main.js` | toggles, handlers, banners, CSV export, snapshot export, wiring | — |
 | `web/src/snapshotExport.js` | parcel satellite-snapshot ZIP (+ `PROVENANCE.txt`) | — |
+| `r/export_rollentry_geojson.R` | gpkg → newline-delimited GeoJSON for the tile build (GDAL vectortranslate, ~12s) | `tiles-build/rollentry.geojsons` |
+| `web/scripts/build-parcel-tiles.js` | derives `_rollDisplay`/`_civicAddress`/`_acres`, writes both tile layers, runs tippecanoe, band-checks and promotes. `--promote-only` finishes a run whose tiling already succeeded | `web/public/parcels.pmtiles` + `parcels-pmtiles-meta.json` |
+| `rebuild-parcel-tiles.ps1` | both steps with logging + failure alerts. `-IfStale` skips when the gpkg is unchanged, `-Publish` uploads to R2 and size-verifies, `-TestAlert` proves the alert path | `logs/parcel-tiles-*.log` |
+| `schedule_parcel_tiles.ps1` | registers `mb-parcelsearch-parcel-tiles` (16th, 03:00, S4U). **Run elevated** | — |
+| `web/src/lib/muniParcelRecords.js` | popup resolver — full record + zoning by roll number, on click | — |
+| `web/src/lib/polygonCentroid.js` | bbox midpoint, shared by the map and the tile builder so label placement cannot drift | — |
+| `web/eslint.config.js` | `no-undef` as an error, gating `npm test`. Exists because Rollup treats an unresolved identifier as a global, so a missing import ships green | — |
 | `web/vite.config.js` | bakes `__APP_COMMIT__` / `__APP_BUILD_TIME__` for export provenance | — |
 | `MAINTENANCE.md` | operator quick-runbook (subset of §8) | — |
 | `DATA-ARCHIVE-PLAN.md` | original design/decision record — **superseded 2026-07, design rationale only**. What shipped differs (semi-annual not annual; all three layers active). Never audit cadence from it: `MAINTENANCE.md` §2-4 is authoritative | — |
@@ -637,6 +729,24 @@ licence attribution, are in `docs/MLI-IMAGERY-BASEMAP.md`.
 
 ## 11. Gotchas / troubleshooting
 
+- **Assessment Parcels draws nothing** → check the status line first: the
+  toggle probes the archive and names the URL and reason on failure. "Failed
+  to fetch" means CORS or network, not a missing file — the R2 bucket's policy
+  has to name the origin, and `127.0.0.1` is a *different origin* from
+  `localhost` (MAINTENANCE.md §1e). A `404` means `VITE_PARCEL_TILES_URL` is
+  wrong or unset.
+- **Assessment Parcels draws nothing at a low zoom specifically** → the
+  archive's floor is z8. Re-measure before assuming; 93 of 154 municipalities
+  fit below z11, which is why the floor is not 11.
+- **The parcel popup shows only Roll # and municipality** → the resolver
+  returned null. It keys on `Roll_No_Txt` + municipality; if someone re-keys it
+  on `OBJECTID` it will fail for every parcel, because the province reissues
+  OBJECTIDs on republish (§3.6.1).
+- **The map never appears in `npm run dev`, with no console error** → almost
+  certainly a stale dev server, not the code. Vite silently moves to the next
+  free port when its own is taken, and its SPA fallback serves a *deleted*
+  module as `200 OK` + HTML, which fails as a module parse error rather than a
+  404. See the README's dev-server section.
 - **Land-cover coverage collapsed to a few munis** → a partial/aborted
   mao-assembly Parquet; check the `build_landcover.R` "NOTE … PARTIAL"
   line. It auto-skips partials, so this means re-run a complete assembly.
