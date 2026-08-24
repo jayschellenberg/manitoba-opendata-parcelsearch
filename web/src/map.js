@@ -58,7 +58,7 @@ import { safeExternalUrl } from './lib/safeUrl.js';
 // Report Writer's parcel-edit route. The N1 ID is appended verbatim, so only
 // all-digit ids are ever put through it (see the N1 block in parcelHtml).
 const N1_EDIT_URL_BASE = 'https://reportwriter.lightboxre.com/Parcel/Edit/General/';
-import { createMuniPicker } from './lib/muniPicker.js';
+import { createMuniPicker, hoverInertLoadedMuni } from './lib/muniPicker.js';
 import { PlaceSearchControl, muniLabel } from './lib/placeSearch.js';
 import {
   badgeRadius,
@@ -3888,6 +3888,22 @@ let muniBoundaryIdByName = new Map();
  *  write rather than a sweep across all ~190 municipalities. */
 let muniBoundarySelectedId = null;
 
+/** [w,s,e,n] per feature id, so the hover rule can ask whether the whole
+ *  municipality is on screen. Computed once with the ids, not per event —
+ *  turf's bbox walks every ring of a 190-feature FC. */
+let muniBoundaryBboxById = new Map();
+
+/**
+ * The current viewport as [w,s,e,n], to compare against a municipality's
+ * own extent. getBounds() already accounts for rotation and pitch — it
+ * returns the box around what is actually visible.
+ */
+function viewBboxOf(map) {
+  const b = map.getBounds?.();
+  if (!b) return null;
+  return [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+}
+
 export function setMuniBoundariesData(map, fc) {
   // Positional ids: MUNI_LIST_NAME_WITH_TYPE is the natural key but is a
   // string, and MapLibre feature ids must be numeric to be addressable
@@ -3896,10 +3912,15 @@ export function setMuniBoundariesData(map, fc) {
   // New data means every feature-state is gone; forget which id held the
   // selection so the next clear doesn't write to a stale one.
   muniBoundarySelectedId = null;
+  muniBoundaryBboxById = new Map();
   (fc?.features || []).forEach((f, i) => {
     f.id = i;
     const name = f.properties?.MUNI_LIST_NAME_WITH_TYPE;
     if (name) muniBoundaryIdByName.set(String(name), i);
+    try {
+      const bb = bbox(f);
+      if (bb.every(Number.isFinite)) muniBoundaryBboxById.set(i, bb);
+    } catch { /* a malformed geometry just loses the whole-muni exception */ }
   });
   const src = map.getSource('muni-boundaries');
   if (src) src.setData(fc);
@@ -3948,6 +3969,16 @@ export function wireMuniBoundaryPicker(map, { onPick, isEnabled } = {}) {
   // initialise at all. Everything here is the MapLibre plumbing.
   const picker = createMuniPicker({
     isEnabled,
+    // The loaded municipality tints only when the whole of it is on screen
+    // — the rule itself is hoverInertLoadedMuni(), tested under node. The
+    // id is the same one the blue selected outline uses, so the two can
+    // never disagree.
+    isInert: (id) => hoverInertLoadedMuni({
+      featureId: id,
+      loadedId: muniBoundarySelectedId,
+      featureBbox: muniBoundaryBboxById.get(muniBoundarySelectedId),
+      viewBbox: viewBboxOf(map),
+    }),
     onPick,
     setHover: (id, on) => {
       if (id == null) return;
@@ -3977,9 +4008,34 @@ export function wireMuniBoundaryPicker(map, { onPick, isEnabled } = {}) {
     picker.mouseMove(e.features?.[0]?.id);
   });
   map.on('mouseleave', 'muni-boundaries-fill', () => picker.mouseLeave());
+
+  // Zooming changes the answer without the mouse moving: zoom in past the
+  // loaded muni's extent and the tint under a parked cursor has to go, zoom
+  // back out and it comes back. The hover handlers only fire on movement,
+  // so re-run the rule at the last known pointer position when the view
+  // settles. Tracked map-wide rather than off the layer's own mousemove so
+  // the point is still right after the cursor has crossed onto something
+  // drawn over the boundaries.
+  let lastPoint = null;
+  map.on('mousemove', (e) => { lastPoint = e.point; });
+  map.on('mouseout', () => { lastPoint = null; });
+  map.on('moveend', () => {
+    if (!lastPoint || !map.getLayer('muni-boundaries-fill')) return;
+    if (isMeasuring() || isShapeDrawing() || contentLayerOwnsPoint(map, lastPoint)) {
+      picker.mouseLeave();
+      return;
+    }
+    const f = map.queryRenderedFeatures(lastPoint, { layers: ['muni-boundaries-fill'] })[0];
+    if (!f) { picker.mouseLeave(); return; }
+    picker.mouseMove(f.id);
+  });
+
   onLayerClick(map, 'muni-boundaries-fill', (e) => {
     if (contentLayerOwnsPoint(map, e.point)) return;
-    picker.click(e.features?.[0]?.properties?.MUNI_LIST_NAME_WITH_TYPE);
+    // The id goes with the name so the picker can refuse a click on an
+    // inert municipality — the loaded one, zoomed in past its own extent.
+    const f = e.features?.[0];
+    picker.click(f?.properties?.MUNI_LIST_NAME_WITH_TYPE, f?.id);
   });
 
   // Gating is state the caller changes at will; expose the nudge so a
