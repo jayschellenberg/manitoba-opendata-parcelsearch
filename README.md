@@ -309,8 +309,39 @@ If the project is running from a synced folder and Vite reports `Outdated Optimi
 
 ```powershell
 $env:VITE_CACHE_DIR = Join-Path $env:TEMP 'mbopendata-mb-parcelsearch-vite'
-npm run dev -- --host 127.0.0.1 --force
+npm run dev -- --host localhost --strictPort --force
 ```
+
+### Two dev-server traps worth knowing (both cost an hour on 2026-08-23)
+
+**Use `--strictPort`, and kill old servers properly.** Without it, a Vite
+whose port is taken *silently* moves to the next free one — it prints
+`Port 5173 is in use, trying another one...` and carries on. Restarting
+repeatedly without killing the previous run leaves several servers alive on
+5173, 5174, 5175… and the browser then talks to whichever one it was pointed
+at, not the one just started. Note `pkill -f "vite --port 5173"` does NOT
+match the real process (it is `npx vite …`); check with
+`netstat -ano | grep LISTENING | grep :517` and kill by PID.
+
+**A stale server serves a DELETED module as HTTP 200 + HTML.** Vite's dev
+SPA fallback returns `index.html` for any unmatched path, so a module graph
+still importing a file that a branch switch deleted gets:
+
+```
+GET /src/lib/somethingDeleted.js  →  200 OK, Content-Type: text/html
+```
+
+The browser tries to parse HTML as an ES module, that throws, and the module
+importing it never executes. The symptom is a fully rendered page with **no
+map, no failed network request and nothing obvious in the console** — because
+the request "succeeded". If the app loads but the map never appears, suspect a
+stale server before suspecting the code, and hard-reload after any branch
+switch.
+
+**Use `localhost`, not `127.0.0.1`.** They are different origins to CORS, and
+only `localhost:5173` is in the R2 bucket's allowlist — see MAINTENANCE.md 1e.
+On `127.0.0.1` the Assessment Parcels archive fetch fails with "Failed to
+fetch".
 
 To build for production:
 
