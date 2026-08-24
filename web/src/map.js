@@ -2932,9 +2932,16 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
         // been resolved (by an earlier click, or because an overlay loaded
         // the fabric) shows the full detail; otherwise this is roll +
         // municipality until the user clicks.
+        // Zoning: read off the rendered layer when the overlay is on, else
+        // fall back to whatever a previous click already resolved for this
+        // parcel. Never fetched on hover — crossing a fabric would fire one
+        // spatial query per parcel passed over.
+        const hoverOverlay = overlay.zoning
+          ? overlay
+          : { ...overlay, zoning: muniParcelResolver?.peekZoning?.(p) || null };
         muniHoverPopup
           .setLngLat(e.lngLat)
-          .setHTML(muniParcelHtml(muniParcelPropsNow(p), { overlay }))
+          .setHTML(muniParcelHtml(muniParcelPropsNow(p), { overlay: hoverOverlay }))
           .addTo(map);
         setHoverCursor('pointer');
         // Warm this municipality in the background on first hover. Nothing
@@ -2975,21 +2982,45 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
         // the click rather than after a round trip, then fill in the rest
         // when the OBJECTID lookup lands. setHTML replaces the popup's DOM,
         // so the coords-copy listener has to be re-attached each time.
-        const render = (props) => {
-          muniClickPopup.setHTML(muniParcelHtml(props, { withReportLink: true, overlay }));
+        // `overlay` is re-read from these two as each resolves, so a slow
+        // zoning lookup landing after the record lookup does not wipe it.
+        let shownProps = muniParcelPropsNow(p);
+        let shownZoning = overlay.zoning || muniParcelResolver?.peekZoning?.(p) || null;
+        const render = () => {
+          muniClickPopup.setHTML(muniParcelHtml(shownProps, {
+            withReportLink: true,
+            overlay: overlay.zoning ? overlay : { ...overlay, zoning: shownZoning },
+          }));
           wireCoordsCopy(muniClickPopup, center);
         };
         muniClickPopup.setLngLat(e.lngLat);
-        render(muniParcelPropsNow(p));
+        render();
         muniClickPopup.addTo(map);
 
+        // ONE token for this click, taken before either async path starts.
+        // Both compare against it, so neither invalidates the other — an
+        // earlier version bumped it inside the record path and silently
+        // killed every zoning re-render that was already in flight.
+        const token = ++muniPopupToken;
+
+        // Zoning, when the overlay is off so the popup has nothing to read.
+        if (!overlay.zoning && muniParcelResolver?.resolveZoning && !shownZoning) {
+          Promise.resolve(muniParcelResolver.resolveZoning(p, e.features[0], [e.lngLat.lng, e.lngLat.lat]))
+            .then((z) => {
+              if (!z || token !== muniPopupToken || !muniClickPopup.isOpen()) return;
+              shownZoning = z;
+              render();
+            })
+            .catch(() => {});
+        }
+
         if (muniParcelResolver?.resolve && !muniParcelResolver.peek?.(p)) {
-          const token = ++muniPopupToken;
           Promise.resolve(muniParcelResolver.resolve(p)).then((full) => {
             // Stale guard: the user may have clicked a different parcel, or
             // closed this popup, while the fabric was in flight.
             if (!full || token !== muniPopupToken || !muniClickPopup.isOpen()) return;
-            render(full);
+            shownProps = full;
+            render();
           }).catch((err) => {
             // Non-fatal: the popup keeps the roll + municipality it already
             // has. A failed lookup must not blank content the user can see.
