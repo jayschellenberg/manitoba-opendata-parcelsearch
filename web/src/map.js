@@ -58,7 +58,7 @@ import { safeExternalUrl } from './lib/safeUrl.js';
 // Report Writer's parcel-edit route. The N1 ID is appended verbatim, so only
 // all-digit ids are ever put through it (see the N1 block in parcelHtml).
 const N1_EDIT_URL_BASE = 'https://reportwriter.lightboxre.com/Parcel/Edit/General/';
-import { createMuniPicker, hoverInertLoadedMuni } from './lib/muniPicker.js';
+import { createMuniPicker, hoverInertLoadedMuni, hoverDefersToContent } from './lib/muniPicker.js';
 import { PlaceSearchControl, muniLabel } from './lib/placeSearch.js';
 import {
   badgeRadius,
@@ -4000,12 +4000,23 @@ export function wireMuniBoundaryPicker(map, { onPick, isEnabled } = {}) {
   // the lowest vector layer on the map, so it answers only where it is the
   // only thing there. isEnabled()'s !searchHasRun was meant to cover this
   // but only knows about search results.
-  map.on('mousemove', 'muni-boundaries-fill', (e) => {
-    if (isMeasuring() || isShapeDrawing() || contentLayerOwnsPoint(map, e.point)) {
+  //
+  // ...with one exception, hoverDefersToContent(): the loaded municipality
+  // answers on the cursor being inside it and nothing else. See that
+  // function — deferring is what made it flash across every road.
+  const evaluateHover = (point, featureId) => {
+    if (isMeasuring() || isShapeDrawing()) { picker.mouseLeave(); return; }
+    if (hoverDefersToContent({ featureId, loadedId: muniBoundarySelectedId })
+        && contentLayerOwnsPoint(map, point)) {
       picker.mouseLeave();
       return;
     }
-    picker.mouseMove(e.features?.[0]?.id);
+    // Whether the loaded muni tints at this zoom is isInert's call.
+    picker.mouseMove(featureId);
+  };
+
+  map.on('mousemove', 'muni-boundaries-fill', (e) => {
+    evaluateHover(e.point, e.features?.[0]?.id);
   });
   map.on('mouseleave', 'muni-boundaries-fill', () => picker.mouseLeave());
 
@@ -4021,13 +4032,9 @@ export function wireMuniBoundaryPicker(map, { onPick, isEnabled } = {}) {
   map.on('mouseout', () => { lastPoint = null; });
   map.on('moveend', () => {
     if (!lastPoint || !map.getLayer('muni-boundaries-fill')) return;
-    if (isMeasuring() || isShapeDrawing() || contentLayerOwnsPoint(map, lastPoint)) {
-      picker.mouseLeave();
-      return;
-    }
     const f = map.queryRenderedFeatures(lastPoint, { layers: ['muni-boundaries-fill'] })[0];
     if (!f) { picker.mouseLeave(); return; }
-    picker.mouseMove(f.id);
+    evaluateHover(lastPoint, f.id);
   });
 
   onLayerClick(map, 'muni-boundaries-fill', (e) => {

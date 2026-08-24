@@ -60,6 +60,30 @@ export function hoverInertLoadedMuni({ featureId, loadedId, featureBbox, viewBbo
 }
 
 /**
+ * Does something drawn over the boundaries stand this hover down?
+ *
+ * Yes for every municipality but one. The backdrop is the lowest vector
+ * layer on the map, so normally it answers only where it is the only thing
+ * there — otherwise it would tint while you were pointing at a parcel.
+ *
+ * The loaded municipality is the exception, and this is the half of the fix
+ * that matters (Jason, 2026-08-24, second report — Brandon). Deferring to
+ * the fabric is WHY it flashed: the parcel layer has a gap at every public
+ * road, so the tint switched off and on again with each one. Nothing is
+ * being disambiguated by deferring, either — the municipality under the
+ * cursor is the one already loaded, so there is no second candidate for the
+ * gesture. Left to the cursor being inside it and nothing else, the tint is
+ * steady at any zoom.
+ *
+ * The CLICK still defers, always: clicking a parcel must not clear the
+ * municipality out from under it.
+ */
+export function hoverDefersToContent({ featureId, loadedId } = {}) {
+  if (featureId == null || loadedId == null) return true;
+  return featureId !== loadedId;
+}
+
+/**
  * @param {object}   io
  * @param {Function} io.isEnabled  consulted on EVERY event, so the caller
  *   can gate on live state (active tab, whether a search has run) without

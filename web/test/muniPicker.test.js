@@ -10,7 +10,9 @@
 // Run: cd web && node test/muniPicker.test.js
 
 import assert from 'node:assert/strict';
-import { createMuniPicker, bboxWithin, hoverInertLoadedMuni } from '../src/lib/muniPicker.js';
+import {
+  createMuniPicker, bboxWithin, hoverInertLoadedMuni, hoverDefersToContent,
+} from '../src/lib/muniPicker.js';
 
 /** The loaded municipality's extent, and two viewports over it. */
 const MUNI_BBOX  = [0, 0, 10, 10];
@@ -255,6 +257,32 @@ function harness({ enabled = true, loaded = null, view = VIEW_INSIDE } = {}) {
   h.state.view = VIEW_WHOLE;
   h.picker.mouseMove(7);
   assert.deepEqual(h.tinted(), [7], 'zooming back out shades again');
+}
+
+// ---- the loaded muni's tint ignores what is drawn over it -------------
+// Second report, 2026-08-24 (Brandon): the whole-muni-in-view exception put
+// the flashing straight back, because Brandon is 14 km across — selecting
+// it fits the map to its bounds, which IS "the whole municipality in view",
+// and at that zoom the river, rail corridors and arterials still leave gaps
+// in the parcel fabric. The tint has to stop depending on the fabric.
+{
+  // The loaded municipality: content over it is not a reason to stand down.
+  assert.equal(hoverDefersToContent({ featureId: 7, loadedId: 7 }), false,
+    'the loaded muni does not defer to the parcel drawn on top of it');
+
+  // Everybody else still does — otherwise the backdrop would tint while
+  // you were pointing at a parcel in some other municipality.
+  assert.equal(hoverDefersToContent({ featureId: 8, loadedId: 7 }), true,
+    'a neighbour still defers');
+  assert.equal(hoverDefersToContent({ featureId: 7, loadedId: null }), true,
+    'with nothing loaded, everything defers');
+  assert.equal(hoverDefersToContent({ featureId: null, loadedId: 7 }), true,
+    'an id-less feature defers');
+  assert.equal(hoverDefersToContent(), true, 'and so does a bare call');
+
+  // id 0 again: the first municipality in the file must get the exception.
+  assert.equal(hoverDefersToContent({ featureId: 0, loadedId: 0 }), false,
+    'feature id 0 is a real loaded muni');
 }
 
 // ---- the rule itself, at the edges ------------------------------------
