@@ -345,7 +345,20 @@ the export's feature count and aborts on a short read. Both guards exist
 because the first full build came out at **1.07 GB** — the tiles were carrying
 all fourteen source fields, and properties were 66% of the payload multiplied
 across six zoom levels. They now carry three; everything else the popup shows
-is resolved by OBJECTID on click.
+is resolved **on the roll number** on click — `Roll_No_Txt` + municipality,
+**never OBJECTID**.
+
+That last clause used to read "resolved by OBJECTID on click", which was the
+one thing it must not say. OBJECTID is an ArcGIS row id the province reissues
+on every republish, so ids baked into an archive built from one extract do not
+correspond to what the live FeatureServer serves from another. Measured on
+GREY (RM): **62 of 62 rolls matched, 0 of 62 OBJECTIDs did** — every lookup
+returned null and no popup could enrich. That was found and fixed before the
+tiles shipped; only this line went on recommending it, in the operational doc
+someone actually has open while working. `web/src/lib/muniParcelRecords.js`
+keys on `canonicalRoll(props.Roll_No_Txt)` and says so in its header;
+DOCUMENTATION.md §3.6.1 and `arcgis.js` carry the same warning. If you are
+changing the join key, those are the three places that have to agree.
 
 **The zoom floor is measured, not guessed.** The overlay is
 municipality-scoped and the app fits the map to the whole municipality, so the
