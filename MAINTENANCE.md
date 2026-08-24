@@ -383,12 +383,20 @@ That audit sends back one thing this section does not cover: **dropping the
 floor is what makes the low zooms render, and flat line styling may not
 survive them.** Winnipeg's flat 1.5 px / 0.8 grey turned into a citywide dark
 slab at z11 the moment the tiles existed to draw; it now interpolates width and
-opacity by zoom. The fabric here is lighter (0.75 px / 0.6, `#d1d5db`) and
-scoped to one municipality, so it is likely fine — but nobody has looked at
-BRANDON (17,329 parcels) at the zoom it fits at, and "likely fine" is what the
-floor bug was. Check it before assuming; the fix, if needed, is grafting the
-ramps from `ParcelSearch/web/src/lib/citywideParcelsStyle.js`, whose colours
-are already identical to `web/src/lib/muniParcelsStyle.js` here.
+opacity by zoom. **Checked here 2026-08-24 and the flat values hold.** On
+production, BRANDON (CITY) — the densest municipality in the roll — fits at
+z11.36 and renders 17,444 parcel lines at 0.75 px / 0.6 `#d1d5db`: legible
+texture, place labels readable through it. Winnipeg's blackout was 37,248
+features at 1.5 px / 0.8 `#6b7280`, roughly 5.7x the line-ink.
+
+One municipality settles it because the app fits the map to whichever one you
+pick, so features-in-view is that municipality's whole parcel count almost
+regardless of the zoom the fit lands on — ink-per-pixel tracks COUNT, not
+extent, and the densest-by-count muni is therefore the worst case. Re-run this
+only if an amalgamation puts one meaningfully above Brandon's ~17k. If ramps
+ever are needed, graft them from
+`ParcelSearch/web/src/lib/citywideParcelsStyle.js`, whose colours are already
+identical to `web/src/lib/muniParcelsStyle.js` here.
 
 **Measuring what a floor change costs.** Walk the PMTiles v3 directory for
 bytes-per-zoom rather than reasoning about it. Winnipeg's z13→z8 move cost
