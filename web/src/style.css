@@ -4343,13 +4343,17 @@ body:not(.has-max-km) #results td.subj-col {
 }
 
 /* The `hidden` attribute works by applying display:none from the browser's
-   default stylesheet, which ANY class rule outranks. The pill therefore
-   needs this guard or it renders regardless — which is exactly what
-   happened: the row showed its untouched placeholder label ("—") and the
-   Clear "×" on every page load, with no list imported, so renderListPill's
-   hide branch had been running and silently failing. Four other elements in
-   this file carry the same guard for the same reason. */
-.parcel-list-pill[hidden] { display: none; }
+   default stylesheet, which ANY class rule outranks — and .parcel-list-pill-row
+   sets display:flex. Without this guard the row rendered regardless, showing
+   its untouched placeholder label ("—") and the Clear "×" on every page load
+   with no list imported, so renderListPill's hide branch had been running and
+   silently failing. Four other elements in this file carry the same guard for
+   the same reason.
+
+   Guarding the ROW is only safe because Plan Route no longer lives inside it
+   — that button routes every loaded parcel, not just an imported list, so it
+   now sits with Route Starred in the export row where it belongs. */
+.parcel-list-pill-row[hidden] { display: none; }
 
 /* "Plan route" button — sits beside the pill once a list is loaded.
    Disabled state covers the no-Mapbox-token case; the title attribute
