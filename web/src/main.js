@@ -2222,6 +2222,10 @@ function paintSelectedMuniBoundary() {
   const feat = muni ? findMuniBoundaryFeature(muni) : null;
   mapReady.then(() => {
     setMuniBoundarySelected(map, feat?.properties?.MUNI_LIST_NAME_WITH_TYPE || null);
+    // The muni just loaded stops being hoverable, so a tint left by the
+    // cursor parked over it has to go now — the hover handlers only fire
+    // on movement, and the pick may have come from the dropdown.
+    muniPicker?.refresh();
   });
 }
 
