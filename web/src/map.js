@@ -58,7 +58,7 @@ import { safeExternalUrl } from './lib/safeUrl.js';
 // Report Writer's parcel-edit route. The N1 ID is appended verbatim, so only
 // all-digit ids are ever put through it (see the N1 block in parcelHtml).
 const N1_EDIT_URL_BASE = 'https://reportwriter.lightboxre.com/Parcel/Edit/General/';
-import { createMuniPicker, hoverInertLoadedMuni, hoverDefersToContent } from './lib/muniPicker.js';
+import { createMuniPicker, muniBackdropInert, hoverDefersToContent } from './lib/muniPicker.js';
 import { PlaceSearchControl, muniLabel } from './lib/placeSearch.js';
 import {
   badgeRadius,
@@ -3969,14 +3969,14 @@ export function wireMuniBoundaryPicker(map, { onPick, isEnabled } = {}) {
   // initialise at all. Everything here is the MapLibre plumbing.
   const picker = createMuniPicker({
     isEnabled,
-    // The loaded municipality tints only when the whole of it is on screen
-    // — the rule itself is hoverInertLoadedMuni(), tested under node. The
-    // id is the same one the blue selected outline uses, so the two can
-    // never disagree.
-    isInert: (id) => hoverInertLoadedMuni({
-      featureId: id,
+    // Nothing on this backdrop answers while you are zoomed inside a loaded
+    // municipality — the rule is muniBackdropInert(), tested under node. It
+    // reads the state, not the feature, so it takes no id: the neighbours
+    // have to go quiet too. The loaded id is the same one the blue selected
+    // outline uses, so the two can never disagree.
+    isInert: () => muniBackdropInert({
       loadedId: muniBoundarySelectedId,
-      featureBbox: muniBoundaryBboxById.get(muniBoundarySelectedId),
+      loadedBbox: muniBoundaryBboxById.get(muniBoundarySelectedId),
       viewBbox: viewBboxOf(map),
     }),
     onPick,
