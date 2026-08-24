@@ -11,7 +11,7 @@
 
 import assert from 'node:assert/strict';
 import {
-  createMuniPicker, bboxWithin, hoverInertLoadedMuni, hoverDefersToContent,
+  createMuniPicker, bboxWithin, muniBackdropInert, hoverDefersToContent,
 } from '../src/lib/muniPicker.js';
 
 /** The loaded municipality's extent, and two viewports over it. */
@@ -25,11 +25,11 @@ function harness({ enabled = true, loaded = null, view = VIEW_INSIDE } = {}) {
   const state = { enabled, loaded, view };
   const picker = createMuniPicker({
     isEnabled: () => state.enabled,
-    // The real rule, wired the way map.js wires it.
-    isInert: (id) => hoverInertLoadedMuni({
-      featureId: id,
+    // The real rule, wired the way map.js wires it — the state, not the
+    // feature, so it ignores the id it is handed.
+    isInert: () => muniBackdropInert({
       loadedId: state.loaded,
-      featureBbox: state.loaded == null ? null : MUNI_BBOX,
+      loadedBbox: state.loaded == null ? null : MUNI_BBOX,
       viewBbox: state.view,
     }),
     setHover: (id, on) => calls.hover.push([id, on]),
@@ -148,15 +148,14 @@ function harness({ enabled = true, loaded = null, view = VIEW_INSIDE } = {}) {
   assert.deepEqual(h.tinted(), [], 'the loaded municipality must not tint');
   assert.equal(h.cursorNow(), '', 'and must not offer a pointer cursor');
 
-  // Its NEIGHBOURS are still pointable — that is how you switch munis.
+  // THE THIRD REPORT (Altona, Rhineland): the NEIGHBOURS have to go quiet
+  // too. Altona is 2.4 km across inside the RM of Rhineland, so a cursor a
+  // few hundred pixels off the parcels is over Rhineland — not loaded, and
+  // so still lighting up the whole RM. Brandon hid this: it fills its own
+  // screen, so its neighbour is rarely under the cursor.
   h.picker.mouseMove(8);
-  assert.deepEqual(h.tinted(), [8], 'a different municipality still tints');
-  assert.equal(h.cursorNow(), 'pointer');
-
-  // Crossing back in drops the neighbour's tint rather than leaving it lit.
-  h.picker.mouseMove(7);
-  assert.deepEqual(h.tinted(), [], 'moving back into the loaded muni clears');
-  assert.equal(h.cursorNow(), '');
+  assert.deepEqual(h.tinted(), [], 'a neighbouring RM must not tint either');
+  assert.equal(h.cursorNow(), '', 'and offers no pointer cursor');
 
   // The click goes with the hover (Jason, 2026-08-24). Clicking the loaded
   // muni clears it back to "Any municipality" — destructive, and zoomed in
@@ -164,11 +163,8 @@ function harness({ enabled = true, loaded = null, view = VIEW_INSIDE } = {}) {
   // that anything was about to happen.
   h.picker.click('MORDEN (CITY)', 7);
   assert.deepEqual(h.calls.picked, [], 'an inert municipality refuses the click');
-
-  // A neighbour is still clickable — that is how you switch municipalities
-  // without going back to the dropdown.
   h.picker.click('WINKLER (CITY)', 8);
-  assert.deepEqual(h.calls.picked, ['WINKLER (CITY)'], 'a neighbour still picks');
+  assert.deepEqual(h.calls.picked, [], 'and so does its neighbour');
 }
 
 // ---- ...and the click comes back with the whole municipality in view --
@@ -203,12 +199,32 @@ function harness({ enabled = true, loaded = null, view = VIEW_INSIDE } = {}) {
   assert.equal(h.cursorNow(), '', 'and its pointer cursor');
 }
 
-// ---- refresh() must not blank a hover on some OTHER municipality ------
+// ---- refresh() must not blank a hover the rule still allows -----------
+// Zoomed out, with the loaded muni whole in view, the picker is live for
+// everybody — refresh() fires on tab changes and must not blank that.
 {
-  const h = harness({ loaded: 7 });
+  const h = harness({ loaded: 7, view: VIEW_WHOLE });
   h.picker.mouseMove(8);
   h.picker.refresh();
   assert.deepEqual(h.tinted(), [8], 'a neighbour keeps its hover on refresh');
+}
+
+// ---- a loaded muni parks the whole backdrop, neighbours included ------
+// The rule reads the state, not the feature: while you are zoomed inside a
+// loaded municipality nothing on this layer answers, wherever the cursor is.
+{
+  const h = harness({ loaded: 7 });
+  for (const id of [5, 6, 7, 8, 9]) h.picker.mouseMove(id);
+  assert.deepEqual(h.tinted(), [], 'no municipality tints while zoomed in');
+
+  // Zoom out to the whole loaded muni and every one of them is live again —
+  // that is the state the gesture was for: several munis on screen, point
+  // at one to switch.
+  h.state.view = VIEW_WHOLE;
+  h.picker.mouseMove(8);
+  assert.deepEqual(h.tinted(), [8], 'zoomed out, a neighbour hovers again');
+  h.picker.click('WINKLER (CITY)', 8);
+  assert.deepEqual(h.calls.picked, ['WINKLER (CITY)'], 'and takes a click');
 }
 
 // ---- clearing the municipality re-arms the hover ----------------------
@@ -227,7 +243,7 @@ function harness({ enabled = true, loaded = null, view = VIEW_INSIDE } = {}) {
   h.picker.mouseMove(0);
   assert.deepEqual(h.tinted(), [], 'loaded feature id 0 must not tint');
   h.picker.mouseMove(1);
-  assert.deepEqual(h.tinted(), [1], 'and its neighbour still does');
+  assert.deepEqual(h.tinted(), [], 'and neither does its neighbour');
 }
 
 // ---- ...but it DOES tint once the whole municipality is on screen -----
@@ -297,20 +313,27 @@ function harness({ enabled = true, loaded = null, view = VIEW_INSIDE } = {}) {
   assert.equal(bboxWithin(null, MUNI_BBOX), false, 'a missing extent is not within');
   assert.equal(bboxWithin(MUNI_BBOX, null), false, 'a missing view is not within');
 
-  // Nothing loaded, or a different municipality: never inert.
-  assert.equal(hoverInertLoadedMuni({ featureId: 7, loadedId: null }), false);
-  assert.equal(hoverInertLoadedMuni({
-    featureId: 8, loadedId: 7, featureBbox: MUNI_BBOX, viewBbox: VIEW_INSIDE,
-  }), false, 'a neighbour is never inert');
+  // Nothing loaded: the picker works as it always did, everywhere.
+  assert.equal(muniBackdropInert({ loadedId: null, viewBbox: VIEW_INSIDE }), false,
+    'with no municipality loaded, nothing is inert');
 
-  // Extent unknown — the boundaries FC has not landed yet. Fall back to
-  // the plain rule rather than flashing on a guess.
-  assert.equal(hoverInertLoadedMuni({
-    featureId: 7, loadedId: 7, featureBbox: null, viewBbox: VIEW_WHOLE,
-  }), true, 'an unknown extent suppresses the hover');
+  // Loaded and zoomed in: inert, and the answer does not depend on which
+  // municipality is under the cursor — there is no featureId to pass.
+  assert.equal(muniBackdropInert({
+    loadedId: 7, loadedBbox: MUNI_BBOX, viewBbox: VIEW_INSIDE,
+  }), true, 'zoomed inside the loaded muni parks the whole backdrop');
+  assert.equal(muniBackdropInert({
+    loadedId: 7, loadedBbox: MUNI_BBOX, viewBbox: VIEW_WHOLE,
+  }), false, 'zoomed out to all of it, the backdrop is live again');
+
+  // Extent unknown — the boundaries FC has not landed yet. Stay inert
+  // rather than flashing on a guess.
+  assert.equal(muniBackdropInert({
+    loadedId: 7, loadedBbox: null, viewBbox: VIEW_WHOLE,
+  }), true, 'an unknown extent stays inert');
 
   // No arguments at all must not throw.
-  assert.equal(hoverInertLoadedMuni(), false);
+  assert.equal(muniBackdropInert(), false);
 }
 
 // ---- defensiveness ----------------------------------------------------

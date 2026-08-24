@@ -26,37 +26,38 @@ export function bboxWithin(inner, outer) {
 }
 
 /**
- * Should the hover tint be withheld from this feature?
+ * Is the whole municipality backdrop inert right now?
  *
- * One rule, two halves (Jason, 2026-08-24):
+ * The state, not the feature (Jason, 2026-08-24 — third report, Altona and
+ * Rhineland). Once a municipality is loaded and you have zoomed in past its
+ * extent, you are working inside it: reading parcels, not choosing an area.
+ * Nothing on this backdrop tints or takes a click until you zoom back out
+ * far enough to see the whole loaded municipality.
  *
- *   * The municipality already loaded in Property Search does not tint
- *     while you are working inside it. Zoomed in, its fill shows through
- *     only where the parcel fabric has gaps — public roads, road
- *     allowances, water — so tracking across it flashed the whole RM on
- *     and off with every road crossed. Nothing is being pointed at: the
- *     one under the cursor is the one already loaded, and the blue
- *     selected outline says so.
- *   * ...unless the WHOLE municipality is on screen. Zoomed out that far
- *     the tint is a shape, not a flash — it says which of the municipalities
- *     in view is the loaded one, and that it can be clicked off — and the
- *     fabric gaps are far below a pixel, so there is nothing to flicker.
+ * It has to be every municipality, not just the loaded one, because at any
+ * working zoom the neighbours are on screen too — and for a town they are
+ * most of the screen. Altona is 2.4 km across inside the RM of Rhineland,
+ * so a cursor a few hundred pixels off the parcels is over Rhineland, which
+ * is not loaded and so kept lighting up: the "RM highlighting" of the
+ * original report. Silencing only the loaded municipality left that
+ * untouched, which is why Brandon looked fixed and Altona did not — Brandon
+ * fills its own screen, so its neighbour is rarely under the cursor.
  *
- * Every other municipality hovers as it always did; that is how you point
- * at a neighbour to switch to it.
+ * Zoomed out to the whole loaded municipality the picker is live again, and
+ * that is the state the gesture was for: several municipalities on screen,
+ * point at one to switch to it.
  *
  * @param {object} q
- * @param {number|string|null} q.featureId  the feature under the cursor
- * @param {number|string|null} q.loadedId   the loaded muni's feature id
- * @param {number[]|null}      q.featureBbox [w,s,e,n] of the loaded muni
- * @param {number[]|null}      q.viewBbox    [w,s,e,n] of the current view
+ * @param {number|string|null} q.loadedId   the loaded muni's feature id, or
+ *   null when the dropdown is on "Any municipality" — then nothing is inert
+ * @param {number[]|null}      q.loadedBbox [w,s,e,n] of the loaded muni
+ * @param {number[]|null}      q.viewBbox   [w,s,e,n] of the current view
  */
-export function hoverInertLoadedMuni({ featureId, loadedId, featureBbox, viewBbox } = {}) {
-  if (loadedId == null || featureId == null) return false;
-  if (featureId !== loadedId) return false;
+export function muniBackdropInert({ loadedId, loadedBbox, viewBbox } = {}) {
+  if (loadedId == null) return false;
   // Extent unknown (boundaries not loaded yet, or a muni missing from the
-  // FC): fall back to the plain rule rather than flashing on a guess.
-  return !bboxWithin(featureBbox, viewBbox);
+  // FC): stay inert rather than flashing on a guess.
+  return !bboxWithin(loadedBbox, viewBbox);
 }
 
 /**
@@ -90,7 +91,7 @@ export function hoverDefersToContent({ featureId, loadedId } = {}) {
  *   the handlers being attached and detached.
  * @param {Function} io.isInert    (featureId) => boolean — this feature must
  *   not answer a hover right now. Used for the loaded municipality while it
- *   is only partly on screen; see hoverInertLoadedMuni() and the comment on
+ *   is only partly on screen; see muniBackdropInert() and the comment on
  *   mouseMove.
  * @param {Function} io.setHover   (featureId, on) => void
  * @param {Function} io.setCursor  (cssCursor) => void — '' resets
@@ -117,7 +118,7 @@ export function createMuniPicker({ isEnabled, isInert, setHover, setCursor, onPi
       if (!live()) { clearHover(); return; }
       if (featureId == null) return;
       // Inert right now — the loaded municipality zoomed in past its own
-      // extent; see hoverInertLoadedMuni(). Cleared rather than ignored so
+      // extent; see muniBackdropInert(). Cleared rather than ignored so
       // a tint painted before the rule flipped does not sit there.
       if (inert(featureId)) { clearHover(); return; }
       if (hovered !== featureId) {
