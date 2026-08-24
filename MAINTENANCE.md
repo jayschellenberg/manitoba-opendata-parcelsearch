@@ -239,6 +239,107 @@ exists to cover. Monthly is the floor, not the ideal — the fallback can still
 be up to a month behind the newest gpkg, and it is worth rebuilding by hand
 whenever you notice a fresh one land.
 
+### 1e. Assessment Parcels vector tiles  (cadence: **with 1d** — same gpkg, same staleness)
+The province-wide PMTiles archive behind the **Assessment Parcels** overlay.
+Built from the same `RollEntry_YYYYMMDD.gpkg` as the fallback snapshot in §1d,
+so the two go stale together and should be rebuilt together.
+```
+Rscript r/export_rollentry_geojson.R
+cd web && node scripts/build-parcel-tiles.js --run
+```
+Step 1 is GDAL `vectortranslate` (~12s for 438k features). Step 2 streams that,
+derives `_rollDisplay` / `_civicAddress` / `_acres` **using the app's own
+modules**, writes both tile layers, and runs `tippecanoe` via WSL. Total ~1
+hour, nearly all of it tippecanoe.
+
+The archive is **not** in git and **not** in `web/public/` on a deploy — Vite
+copies `public/` into `dist/`, so a stray archive there ships on every Vercel
+build. It lives in object storage.
+
+**Publishing a rebuild** (credentials are in rclone's config, not this repo;
+the `r2-mb` remote is scoped to the `mb-ortho` bucket):
+```
+rclone copyto "web/public/parcels.pmtiles" "r2-mb:mb-ortho/mb-assessment-parcels.pmtiles" --s3-no-check-bucket --progress
+```
+Live at
+<https://pub-091058079bf6458da1681945177e1682.r2.dev/mb-assessment-parcels.pmtiles>,
+which is what `VITE_PARCEL_TILES_URL` points at in Vercel. Leave that variable
+BLANK locally so dev serves the archive from `web/public/` — offline and no
+egress.
+
+It shares the `mb-ortho` bucket with the MLI ortho archive. The name is a
+mismatch (this is not orthoimagery) and it is worth moving to its own bucket
+one day, but the reuse means the bucket's CORS policy and the `connect-src`
+entry in `vercel.json` already cover it — no CSP change was needed.
+
+**CORS lives on the R2 bucket, not on Vercel.** The headers come from whoever
+serves the file, so nothing in Vercel's settings can grant the app permission
+to read the archive — it is set in the Cloudflare dashboard under R2 →
+`mb-ortho` → Settings → CORS Policy. `AllowedOrigins` covers:
+
+- `https://manitoba-opendata-parcelsearch.vercel.app` — production
+- `https://*-jks-consulting-inc.vercel.app` — **every** preview deploy. Added
+  2026-08-23 after a branch preview failed with *"Failed to fetch"*: the policy
+  named only production and localhost, so the browser blocked the request
+  before any response. The wildcard is verified to match arbitrary future
+  branch hostnames, so a new branch needs no CORS change.
+- `http://localhost:5173` — dev. **`http://127.0.0.1:5173` is NOT allowed, and
+  is a different origin as far as CORS is concerned**, so start dev on
+  `localhost` or the archive fetch fails with the same misleading message.
+
+`ExposeHeaders` MUST keep `content-range`. Without it the browser hides that
+header from JavaScript and PMTiles cannot locate itself in the archive — which
+fails as subtly wrong tiles rather than a clean error.
+
+**Verify a publish** the same way the ortho was verified: a range request must
+return `206` with the full size in `Content-Range`, the first seven bytes must
+read `PMTiles`, and with an `Origin` header the response must carry
+`Access-Control-Allow-Origin` plus `content-range` in
+`Access-Control-Expose-Headers` (PMTiles cannot work without that last one).
+```
+curl -s -D - -o - -H "Origin: https://manitoba-opendata-parcelsearch.vercel.app"      -H "Range: bytes=0-6"      https://pub-091058079bf6458da1681945177e1682.r2.dev/mb-assessment-parcels.pmtiles
+```
+That line is Git Bash. In PowerShell use `curl.exe`, `-o NUL` rather than
+`-o /dev/null`, and `| Select-String access-control` rather than `| grep`.
+
+**Prerequisites:** WSL with tippecanoe (`wsl --install`, then
+`sudo apt install tippecanoe`; Ubuntu here has v2.80.0). Note that invoking it
+from Git Bash rather than the Node script fails with *"unable to open database
+file"* — MSYS rewrites the `/mnt/...` paths into Windows ones. Prefix with
+`MSYS_NO_PATHCONV=1` if you run it by hand.
+
+**What to check after a build:** the script refuses to promote an archive
+outside its 40–700 MB sanity band, so a truncated tile run cannot silently
+become the province's parcel fabric. It also reconciles its own read against
+the export's feature count and aborts on a short read. Both guards exist
+because the first full build came out at **1.07 GB** — the tiles were carrying
+all fourteen source fields, and properties were 66% of the payload multiplied
+across six zoom levels. They now carry three; everything else the popup shows
+is resolved by OBJECTID on click.
+
+**The zoom floor is measured, not guessed.** The overlay is
+municipality-scoped and the app fits the map to the whole municipality, so the
+floor has to reach whatever zoom that fit lands on. Across 154 municipalities,
+**93 fit below z11**, down to z8.5 for ST CLEMENTS (RM). An earlier build used
+z11 on the assumption that a rural RM fits around z10–11; it did not, and the
+layer would have been blank at exactly the extent most municipalities open at.
+The floor is now z8. Do not raise it without re-measuring — and note that the
+four `INDIGENOUS&NORTHERN RELATIONS` entries fit at z5.6–6.5 and are
+deliberately *not* covered: they are province-spanning administrative
+aggregates, and three more zoom levels of the whole province is a steep price
+for four pseudo-municipalities whose parcels are a grey smear at that scale.
+
+**The ceiling is not a size budget.** The archive is range-requested, so a
+viewer pulls a few hundred KB of tiles whether it is 100 MB or 700 MB, and R2
+storage at this scale is pennies a month with no egress fee. The band exists to
+catch a build having gone wrong, and it is calibrated against real numbers:
+1.07 GB carrying all fourteen source fields, 509 MB after thinning to three.
+
+**Do not add fields to the tiles casually.** A field costs its size × every
+parcel × every zoom level. `Asmt_Rpt_Url` alone was 15% of the payload — and it
+holds MAO's `extrct_prop_id`, which is reissued on the Spring/Fall rollover, so
+a baked copy is wrong within months regardless. Resolve on click instead.
+
 ### 2. Snapshot archive + publish — roll / zoning / dev-plan  (cadence: semi-annual, **scheduled end-to-end**)
 Permanent dated snapshots of all three provincial layers (roll info, zoning,
 development plan), published through to the app. **Scheduled** twice a year

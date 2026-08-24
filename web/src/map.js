@@ -40,6 +40,8 @@ import {
   MUNI_PARCELS_FILL_STYLES,
   applyMuniParcelsBasemapStyle,
 } from './lib/muniParcelsStyle.js';
+import { polygonBboxMidpoint } from './lib/polygonCentroid.js';
+import { rollDisplay } from './lib/parcelLabelFields.js';
 import { WAYBACK_VERSIONS, waybackTileUrl } from './lib/wayback.js';
 import { MB_PARCEL_DATA_CDN, currentAadt } from './arcgis.js';
 import {
@@ -413,6 +415,95 @@ const BASEMAP_STYLE = {
 // that archive is hosted. Until then, the built app omits only this menu row.
 // The committed year polygons remain available for provenance and future UI.
 export const MLI_ORTHO_YEAR_RANGE = '2007-2013';
+/**
+ * The province-wide Assessment Parcels vector-tile archive
+ * (scripts/build-parcel-tiles.js). Defaults to the static asset served
+ * beside the app; VITE_PARCEL_TILES_URL moves it to an absolute origin —
+ * a Cloudflare R2 bucket, the way the MLI ortho archive above already
+ * works — without a code change. Any host must support HTTP Range
+ * requests and CORS, and an absolute origin must also be added to
+ * `connect-src` in vercel.json's CSP.
+ */
+const PARCEL_TILES_URL =
+  import.meta.env?.VITE_PARCEL_TILES_URL || '/parcels.pmtiles';
+
+/**
+ * The archive holds every municipality, so each parcel layer carries a
+ * filter narrowing it to the municipalities in scope. This is the
+ * nothing-selected form: a filter that matches no feature, which is also
+ * the correct boot state — the overlay is hidden until a muni is picked.
+ *
+ * Under the old GeoJSON source the scoping was done by only ever fetching
+ * the selected muni's parcels; the fabric now arrives pre-loaded, so
+ * scoping moves from the fetch to the filter. That is what makes changing
+ * municipality instant instead of a multi-megabyte round trip.
+ */
+const MUNI_SCOPE_FILTER_NONE = ['in', ['get', 'Muni_Name_With_Typ'], ['literal', []]];
+
+/**
+ * Is the parcel-tile archive actually there?
+ *
+ * Without this check a missing or misconfigured archive fails silently:
+ * MapLibre cannot fetch the tiles, the layer renders nothing, and the
+ * toggle still reads as on — indistinguishable from a municipality that
+ * genuinely has no parcels. That is the worst failure mode for an
+ * appraisal tool, because "no parcels here" is a plausible answer.
+ *
+ * Reads the first 16 bytes and checks the PMTiles magic. A range request
+ * is the cheapest possible probe, and it exercises the exact capability
+ * the format depends on — a host that serves the file but ignores Range
+ * would pass a HEAD check and then fail on every tile.
+ *
+ * Memoised on the promise, so concurrent toggles share one probe. A
+ * failure is NOT cached: a transient network blip should not disable the
+ * layer for the rest of the session.
+ */
+let parcelTilesProbe = null;
+export function probeParcelTiles() {
+  if (parcelTilesProbe) return parcelTilesProbe;
+  parcelTilesProbe = (async () => {
+    try {
+      const res = await fetch(PARCEL_TILES_URL, { headers: { Range: 'bytes=0-15' } });
+      if (!res.ok) return { ok: false, reason: `HTTP ${res.status}` };
+      const buf = await res.arrayBuffer();
+      // PMTiles v3 archives begin with the ASCII magic "PMTiles".
+      const magic = String.fromCharCode(...new Uint8Array(buf).slice(0, 7));
+      if (magic !== 'PMTiles') {
+        return { ok: false, reason: 'not a PMTiles archive (wrong file, or the host returned an error page)' };
+      }
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, reason: err?.message || 'network error' };
+    }
+  })().then((r) => {
+    if (!r.ok) parcelTilesProbe = null;   // let the next toggle retry
+    return r;
+  });
+  return parcelTilesProbe;
+}
+
+/** Where the archive is expected, for error messages. */
+export function parcelTilesUrl() { return PARCEL_TILES_URL; }
+
+/**
+ * Narrow every Assessment Parcels layer to `muniNames`. Pass an empty
+ * list to show nothing. Accepts a list rather than a single name because
+ * both import workflows (sales CSV, property list) resolve a multi-muni
+ * scope — see scopedOverlayMunis in main.js.
+ */
+export function setMuniParcelsScope(map, muniNames) {
+  const names = (muniNames || []).filter((n) => typeof n === 'string' && n);
+  const scope = ['in', ['get', 'Muni_Name_With_Typ'], ['literal', names]];
+  for (const id of ['muni-parcels-fill', 'muni-parcels-line', 'muni-parcels-label']) {
+    if (map.getLayer(id)) map.setFilter(id, scope);
+  }
+  // The civic-label layer ANDs the scope with its own non-empty test.
+  if (map.getLayer('muni-parcels-civic-label')) {
+    map.setFilter('muni-parcels-civic-label',
+      ['all', scope, ['!=', ['get', '_civicAddress'], '']]);
+  }
+}
+
 const MLI_ORTHO_PMTILES_URL = import.meta.env?.VITE_MLI_ORTHO_PMTILES_URL || '';
 const MLI_ORTHO_ATTRIBUTION =
   '&copy; 2001 Her Majesty the Queen in Right of Manitoba, as represented by the Minister of Conservation. All rights reserved. MLI imagery acquired 2007-2013.';
@@ -1642,16 +1733,31 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       // parcels. Toggleable; off by default since fetching can take a few
       // seconds for big RMs. Lets the user see the surrounding parcel
       // pattern without filtering every search to that level of detail.
+      // Two ways to get that fabric onto the map, and both sources exist:
+      //
+      //  1. muni-parcels-tiles — the province-wide PMTiles archive built by
+      //     scripts/build-parcel-tiles.js. This is what the fill, line and
+      //     label layers render from. MapLibre range-requests only the tiles
+      //     on screen, so switching municipality is a filter change rather
+      //     than a fetch, and nothing is parsed on the main thread.
+      //  2. muni-parcels — the GeoJSON source, still here and still fed the
+      //     real FeatureCollection, but ONLY for the land-cover choropleth.
+      //     That layer paints from `_lcColor`, a property stamped onto the
+      //     features at runtime from the land-cover shard, which a static
+      //     tile cannot carry. main.js only populates it when Land Cover is
+      //     actually switched on.
+      //
+      // The archive covers all 438k provincial parcels, so every layer below
+      // carries a municipality filter — see setMuniParcelsScope.
+      map.addSource('muni-parcels-tiles', {
+        type: 'vector',
+        url: `pmtiles://${PARCEL_TILES_URL}`,
+        // Feature ids for setFeatureState, keyed per source-layer. Nothing
+        // reads them yet; they cost nothing and a tile source cannot have
+        // them added later without a style reload.
+        promoteId: { parcels: 'OBJECTID' },
+      });
       map.addSource('muni-parcels', { type: 'geojson', data: emptyFc() });
-      // Parallel Point source carrying one feature per parcel at its
-      // bbox-midpoint centroid. The label symbol layers below use THIS
-      // source instead of muni-parcels (the Polygon source) because
-      // MapLibre's GeoJSON tile clipper treats each tile-clipped polygon
-      // fragment as a separate symbol-placement candidate. Without the
-      // Point source, a polygon that crosses internal tile boundaries
-      // gets its roll/civic labels rendered 2-6× — once per fragment —
-      // at high zoom. Point features render exactly once.
-      map.addSource('muni-parcels-labels', { type: 'geojson', data: emptyFc() });
       // Light shading so the muni's parcel fabric reads at a glance on
       // either basemap. Cool light-blue is neutral against the cream
       // CARTO streets and the dark Esri imagery, and the moderate alpha
@@ -1662,7 +1768,9 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       map.addLayer({
         id: 'muni-parcels-fill',
         type: 'fill',
-        source: 'muni-parcels',
+        source: 'muni-parcels-tiles',
+        'source-layer': 'parcels',
+        filter: MUNI_SCOPE_FILTER_NONE,
         layout: { visibility: 'none' },
         // Opacity = the Streets preset (Streets is the boot basemap);
         // re-painted per basemap alongside the lines — see
@@ -1688,7 +1796,9 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       map.addLayer({
         id: 'muni-parcels-line',
         type: 'line',
-        source: 'muni-parcels',
+        source: 'muni-parcels-tiles',
+        'source-layer': 'parcels',
+        filter: MUNI_SCOPE_FILTER_NONE,
         layout: { visibility: 'none' },
         // Initial paint = the Streets preset (Streets is the boot
         // basemap). The basemap menu re-paints on every switch via
@@ -1783,8 +1893,10 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       map.addLayer({
         id: 'muni-parcels-label',
         type: 'symbol',
-        // Point source — see comment on muni-parcels-labels source above.
-        source: 'muni-parcels-labels',
+        // Point source — see comment on the muni-parcels-tiles source above.
+        source: 'muni-parcels-tiles',
+        'source-layer': 'parcels-labels',
+        filter: MUNI_SCOPE_FILTER_NONE,
         minzoom: 13,
         layout: {
           visibility: 'none',
@@ -1888,7 +2000,8 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
 
       // Civic-address labels. Renders below the roll number on every
       // parcel that has a real civic address (Property_Address
-      // distilled to non-empty via civicAddressOrEmpty in arcgis.js).
+      // distilled to non-empty via civicAddressOrEmpty in
+      // lib/parcelLabelFields.js).
       //
       // History on the filter expression: tried ['all', ['has', key],
       // ['!=', value, '']] and then ['to-boolean', ['get', key]] —
@@ -1905,10 +2018,14 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
       map.addLayer({
         id: 'muni-parcels-civic-label',
         type: 'symbol',
-        // Point source — see comment on muni-parcels-labels source above.
-        source: 'muni-parcels-labels',
+        // Point source — see comment on the muni-parcels-tiles source above.
+        source: 'muni-parcels-tiles',
+        'source-layer': 'parcels-labels',
+        // Municipality scope AND a non-empty civic address. civicAddressOrEmpty
+        // (lib/parcelLabelFields.js) blanks legal-reference entries at build
+        // time, so this drops the parcels that have no real address.
+        filter: ['all', MUNI_SCOPE_FILTER_NONE, ['!=', ['get', '_civicAddress'], '']],
         minzoom: 16.5,
-        filter: ['!=', '_civicAddress', ''],
         layout: {
           visibility: 'none',
           'text-field': ['get', '_civicAddress'],
@@ -2811,11 +2928,24 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
         // as informative as the search-result popup. Without this, hover
         // on a non-result parcel showed only the Roll Entry attributes.
         const overlay = readOverlaysAt(map, e.point);
+        // peek only — never await on hover. A parcel whose muni has already
+        // been resolved (by an earlier click, or because an overlay loaded
+        // the fabric) shows the full detail; otherwise this is roll +
+        // municipality until the user clicks.
         muniHoverPopup
           .setLngLat(e.lngLat)
-          .setHTML(muniParcelHtml(p, { overlay }))
+          .setHTML(muniParcelHtml(muniParcelPropsNow(p), { overlay }))
           .addTo(map);
         setHoverCursor('pointer');
+        // Warm this municipality in the background on first hover. Nothing
+        // awaits it and this popup does not re-render, but a moment later
+        // every parcel in the muni is peekable, so hovering across the
+        // fabric shows full detail without ever having clicked. Deduped
+        // per-muni inside the resolver, so firing on every mousemove is a
+        // Map lookup, not a fetch.
+        if (muniParcelResolver?.resolve && !muniParcelResolver.peek?.(p)) {
+          Promise.resolve(muniParcelResolver.resolve(p)).catch(() => {});
+        }
       });
       map.on('mouseleave', 'muni-parcels-fill', () => {
         muniHoverPopup.remove();
@@ -2835,17 +2965,37 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
         const p = e.features?.[0]?.properties;
         if (!p) return;
         const overlay = readOverlaysAt(map, e.point);
-        muniClickPopup
-          .setLngLat(e.lngLat)
-          .setHTML(muniParcelHtml(p, { withReportLink: true, overlay }))
-          .addTo(map);
         // Same Coordinates-copy wiring as the parcel-fill click
         // handler: pull the full geometry via queryRenderedFeatures,
         // compute the bbox-midpoint centroid, attach the listener.
         const rendered = map.queryRenderedFeatures(e.point, { layers: ['muni-parcels-fill'] })[0];
         const center = polygonBboxMidpoint(rendered?.geometry)
           ?? [e.lngLat.lng, e.lngLat.lat];
-        wireCoordsCopy(muniClickPopup, center);
+        // Render whatever is available immediately, so the popup opens on
+        // the click rather than after a round trip, then fill in the rest
+        // when the OBJECTID lookup lands. setHTML replaces the popup's DOM,
+        // so the coords-copy listener has to be re-attached each time.
+        const render = (props) => {
+          muniClickPopup.setHTML(muniParcelHtml(props, { withReportLink: true, overlay }));
+          wireCoordsCopy(muniClickPopup, center);
+        };
+        muniClickPopup.setLngLat(e.lngLat);
+        render(muniParcelPropsNow(p));
+        muniClickPopup.addTo(map);
+
+        if (muniParcelResolver?.resolve && !muniParcelResolver.peek?.(p)) {
+          const token = ++muniPopupToken;
+          Promise.resolve(muniParcelResolver.resolve(p)).then((full) => {
+            // Stale guard: the user may have clicked a different parcel, or
+            // closed this popup, while the fabric was in flight.
+            if (!full || token !== muniPopupToken || !muniClickPopup.isOpen()) return;
+            render(full);
+          }).catch((err) => {
+            // Non-fatal: the popup keeps the roll + municipality it already
+            // has. A failed lookup must not blank content the user can see.
+            console.warn('Assessment Parcels popup lookup failed', err);
+          });
+        }
       });
 
       // Historical (as-of-date) overlay click popups — one per layer, each
@@ -3807,54 +3957,18 @@ export function wireMuniBoundaryPicker(map, { onPick, isEnabled } = {}) {
   return { refresh: () => picker.refresh() };
 }
 
+/**
+ * Feed the GeoJSON fabric source. Since the fill, line and label layers
+ * moved to the PMTiles archive this drives ONE layer —
+ * muni-parcels-landcover-fill — because that layer paints from `_lcColor`,
+ * stamped onto the features at runtime from the land-cover shard, which a
+ * static tile cannot carry. main.js only calls this when Land Cover (or a
+ * path that stamps onto the same FC) is actually in use; toggling
+ * Assessment Parcels on its own no longer fetches anything.
+ */
 export function setMuniParcelsData(map, fc) {
   const src = map.getSource('muni-parcels');
   if (src) src.setData(fc);
-  // Build a parallel Point FC: one Point feature per parcel at its
-  // bbox-midpoint centroid, carrying the same properties (so the
-  // label symbol layers can still read _rollDisplay, _civicAddress,
-  // _acres, etc.). See the comment on the muni-parcels-labels source
-  // in initMap for why this is necessary — tile-clipped Polygon
-  // fragments cause duplicate label placement at high zoom.
-  const labelSrc = map.getSource('muni-parcels-labels');
-  if (labelSrc) {
-    const features = [];
-    for (const f of fc?.features || []) {
-      const c = polygonBboxMidpoint(f.geometry);
-      if (!c) continue;
-      features.push({
-        type: 'Feature',
-        properties: f.properties || {},
-        geometry: { type: 'Point', coordinates: c },
-      });
-    }
-    labelSrc.setData({ type: 'FeatureCollection', features });
-  }
-}
-
-/** Bbox midpoint of any Polygon / MultiPolygon geometry. Cheap
- *  approximation of a centroid — exact enough for label placement
- *  (we only need a point within or near the polygon). Returns null
- *  for missing or non-polygon geometries. */
-function polygonBboxMidpoint(geometry) {
-  if (!geometry) return null;
-  const type = geometry.type;
-  if (type !== 'Polygon' && type !== 'MultiPolygon') return null;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  const visit = (coords) => {
-    if (!coords) return;
-    if (typeof coords[0] === 'number') {
-      if (coords[0] < minX) minX = coords[0];
-      if (coords[0] > maxX) maxX = coords[0];
-      if (coords[1] < minY) minY = coords[1];
-      if (coords[1] > maxY) maxY = coords[1];
-      return;
-    }
-    for (const c of coords) visit(c);
-  };
-  visit(geometry.coordinates);
-  if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null;
-  return [(minX + maxX) / 2, (minY + maxY) / 2];
 }
 
 /**
@@ -5673,6 +5787,42 @@ function soilSurveyHoverHtml(p) {
 }
 
 /**
+ * How the Assessment Parcels popup gets more than the three properties
+ * its vector tiles carry.
+ *
+ * The tiles hold OBJECTID, Muni_Name_With_Typ and Roll_No_Txt and nothing
+ * else — see TILE_POLYGON_PROPS in scripts/build-parcel-tiles.js for why
+ * (baking the rest made the archive 1.07 GB, and the baked MAO report URL
+ * goes stale on every Spring/Fall rollover regardless). Everything else
+ * the popup shows — address, dwelling units, land size, legal description,
+ * soil composition, the live report link — is resolved by OBJECTID when a
+ * parcel is actually clicked.
+ *
+ * main.js installs the resolver, because it owns the data access this
+ * needs (the per-muni fabric fetch, the legal index, the soil stamp).
+ * Shape:
+ *   peek(props)    -> enriched props, or null when not resolved yet.
+ *                     Synchronous: the hover popup uses this and never
+ *                     waits, so hovering stays instant.
+ *   resolve(props) -> Promise<enriched props | null>. The click popup
+ *                     awaits this and re-renders when it lands.
+ */
+let muniParcelResolver = null;
+export function setMuniParcelResolver(resolver) {
+  muniParcelResolver = resolver || null;
+}
+
+/** Best properties available right now, without waiting. */
+function muniParcelPropsNow(p) {
+  if (!muniParcelResolver?.peek) return p;
+  try { return muniParcelResolver.peek(p) || p; } catch { return p; }
+}
+
+// Guards against a slow resolve landing after the user has clicked a
+// different parcel and overwriting the newer popup with older content.
+let muniPopupToken = 0;
+
+/**
  * Build the popup body for a muni-parcels feature. Hover variant shows
  * just the lightweight info; click variant adds an assessment-report
  * link if Asmt_Rpt_Url is present. When the zoning or dev-plan overlay
@@ -6264,9 +6414,7 @@ function readJsonArrayProp(raw) {
  *  parcels enrichment). Mirrors the displayRoll() helper in main.js. */
 function rollDisplayFor(p) {
   if (p?._rollDisplay) return p._rollDisplay;
-  const r = p?.Roll_No_Txt;
-  if (typeof r !== 'string') return '';
-  return r.endsWith('.000') ? r.slice(0, -4) : r;
+  return rollDisplay(p?.Roll_No_Txt) ?? '';
 }
 
 function escapeHtml(s) {

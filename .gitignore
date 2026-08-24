@@ -104,3 +104,13 @@ alert-email.local.txt
 # RStudio project file — local IDE state, no need to track.
 *.Rproj
 .vercel
+
+# Assessment Parcels vector-tile build (r/export_rollentry_geojson.R ->
+# web/scripts/build-parcel-tiles.js). The .geojsons intermediates run to
+# ~850 MB and the archive itself is hundreds of MB; both are reproducible
+# from RollEntry_*.gpkg in minutes. The archive is served from object
+# storage (VITE_PARCEL_TILES_URL), never from the repo — note that
+# anything left in web/public/ is also copied into dist/ on every Vercel
+# build, so a stray archive there ships on every deploy.
+web/public/tiles-build/
+web/public/*.pmtiles

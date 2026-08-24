@@ -180,6 +180,10 @@ import {
   setMbHighwaysData,
   setMbHighwaysVisible,
   setMuniParcelsData,
+  parcelTilesUrl,
+  probeParcelTiles,
+  setMuniParcelResolver,
+  setMuniParcelsScope,
   setMuniParcelsVisible,
   setMuniBoundariesData,
   setMuniBoundarySelected,
@@ -243,6 +247,8 @@ import {
   floodCsvCells, floodColor,
 } from './lib/flood.js';
 import { resolveParcelAcres, formatRollSizeField, parseRollFrontageFeet } from './lib/acres.js';
+import { rollDisplay } from './lib/parcelLabelFields.js';
+import { createMuniParcelResolver } from './lib/muniParcelRecords.js';
 import {
   saleSizeStamp, saleSizeState, saleAcres, sizeSourceLabel, showsCurrentRollSize,
   shapeDerivedNote, boundaryTrustLabel, boundaryTrustRank,
@@ -4069,10 +4075,8 @@ async function runSearch() {
         f.properties._rowKey = `p:${oid}`;
         f.id = oid;
       }
-      const r = f.properties?.Roll_No_Txt;
-      if (typeof r === 'string') {
-        f.properties._rollDisplay = r.endsWith('.000') ? r.slice(0, -4) : r;
-      }
+      const rd = rollDisplay(f.properties?.Roll_No_Txt);
+      if (rd !== null) f.properties._rollDisplay = rd;
       const ac = parcelAcres(f);
       if (Number.isFinite(ac) && ac > 0) f.properties._acres = ac;
     }
@@ -4508,10 +4512,8 @@ async function handleSalesUpload(file) {
         f.properties._rowKey = seq ? `p:${oid}#${seq}` : `p:${oid}`;
         f.id = oid;
       }
-      const r = f.properties?.Roll_No_Txt;
-      if (typeof r === 'string') {
-        f.properties._rollDisplay = r.endsWith('.000') ? r.slice(0, -4) : r;
-      }
+      const rd = rollDisplay(f.properties?.Roll_No_Txt);
+      if (rd !== null) f.properties._rollDisplay = rd;
       const ac = parcelAcres(f);
       if (Number.isFinite(ac) && ac > 0) f.properties._acres = ac;
     }
@@ -7164,21 +7166,19 @@ function refreshResultsTableAfterCompositionStamp() {
   catch (err) { console.warn('table refresh after composition stamp failed', err); }
 }
 
-function setMuniParcelsMapData(fc) {
-  // Push to the map source FIRST so the Roll Layer renders without
-  // waiting on the composition join. The join can take 30+ seconds
-  // against a busy muni's full parcel fabric (St Clements has ~8000
-  // parcels × ~3000 soil polygons = up to 24M intersect candidates).
-  // Composition stamps in the background via scheduleSoilCompositionStamp;
-  // the parcel popup picks up `_soilComposition` once the stamp lands.
-  setMuniParcelsData(map, fc);
-  scheduleSoilCompositionStamp(fc, {
-    // Roll Layer source push doesn't need a viewport refit, and we
-    // only re-push the muni-parcels source (not the search-results
-    // source) once stamping completes.
-    repush: () => mapReady.then(() => setMuniParcelsData(map, fc)),
-  });
-}
+// NOTE: the Assessment Parcels overlay no longer pushes a fetched
+// FeatureCollection at all — its fabric is the PMTiles archive, and the
+// toggle is a filter change (see AUX_META.muniParcels). What went away
+// with the push is the popup enrichment that rode on it: the legal
+// description (enrichFcWithLegals) and the soil composition
+// (scheduleSoilCompositionStamp) were stamped onto the fetched features,
+// and a static tile cannot carry either. Both need to become lookups
+// performed when a parcel is actually clicked — the legal index and the
+// soil polygons are already module-cached, so it is one Map get per
+// popup rather than a bulk pre-pass over the whole muni. Until that
+// lands, the overlay popup shows Roll / Address / DU / land size but not
+// Legal or Soil. The search-result popup is unaffected: it still runs on
+// the GeoJSON 'parcels' source and keeps both.
 
 /**
  * Toggle Zoning Layer / Dev Plan Layer visibility, lazy-fetching the
@@ -7621,9 +7621,28 @@ const AUX_META = {
                  fetch: () => fetchManitobaHighways(),         setData: (m, fc) => setMbHighwaysData(m, fc), setVis: setMbHighwaysVisible },
   riskAreas:   { btn: () => $riskAreaToggle,    on: 'MASC risk areas', off: 'MASC risk areas', busy: 'Loading…',
                  fetch: () => fetchMascRiskAreas(),            setData: (m, fc) => setMascRiskAreasData(m, fc), setVis: setMascRiskAreasVisible },
+  // Assessment Parcels is the one overlay with nothing to fetch. Its fabric
+  // is the province-wide PMTiles archive, already on the map as a vector
+  // source that MapLibre range-requests per viewport, so turning the layer
+  // on is a filter change — see setMuniParcelsScope in map.js. This used to
+  // page ~17k features out of the live FeatureServer (or pull a 5-12 MB
+  // GeoJSON shard), parse it on the main thread and clone it into the
+  // MapLibre worker, which is what made a big RM take seconds to appear.
   muniParcels: { btn: () => $muniParcelsToggle, on: 'Assessment Parcels', off: 'Assessment Parcels', busy: 'Loading…',
-                 fetch: () => fetchMuniParcelsForCurrentScope(),
-                 setData: (m, fc) => setMuniParcelsMapData(fc), setVis: setMuniParcelsVisible },
+                 // Nothing to fetch, but the archive still has to BE there.
+                 // A missing one renders an empty layer that looks exactly
+                 // like a municipality with no parcels, so probe once and
+                 // fail loudly instead. toggleAuxOverlay's catch reverts the
+                 // button; the muniParcels branch there surfaces the reason.
+                 fetch: async () => {
+                   const probe = await probeParcelTiles();
+                   if (!probe.ok) {
+                     throw new Error(`parcel tiles unavailable at ${parcelTilesUrl()} — ${probe.reason}`);
+                   }
+                   return null;
+                 },
+                 setData: () => setMuniParcelsScope(map, scopedOverlayMunis()),
+                 setVis: setMuniParcelsVisible },
   // WALLAS. Tile drainage is province-wide and cached, so it loads once
   // and stays; the tile network is viewport-scoped and refetches on map
   // idle (see refreshTileNetworkForViewport).
@@ -7764,6 +7783,28 @@ async function refreshTileNetworkForViewport() {
     tileNetworkLastKey = null;
   }
 }
+
+// ---------- Assessment Parcels popup resolver ----------
+//
+// The overlay's fabric is a vector-tile archive carrying only OBJECTID,
+// Muni_Name_With_Typ and Roll_No_Txt; everything else the popup shows is
+// resolved by OBJECTID on click. The logic lives in lib/muniParcelRecords.js
+// so it can be tested without the network; this just supplies the app's
+// real data access.
+const muniParcelPopupResolver = createMuniParcelResolver({
+  fetchFabric: (muniName) => fetchAllParcelsInMunicipality(muniName),
+  enrichLegals: (fc) => enrichFcWithLegals(fc),
+  // Prefer a fabric an overlay already loaded and stamped — land-cover and
+  // soil-composition mutate those properties in place, so reusing them is
+  // how _lcColor and _soilComposition reach the popup.
+  getLoadedFabric: () => auxData.muniParcels,
+  onWarn: (msg, err) => console.warn(`${msg} (non-fatal):`, err),
+});
+
+// Installed at module scope, immediately after the const it needs — the
+// map's click handler reads it through a module variable in map.js, so it
+// only has to be in place before the first click, not before initMap.
+setMuniParcelResolver(muniParcelPopupResolver);
 
 /** Fetch the Roll Layer's parcel fabric, scoped to either import
  *  workflow's matched-muni list or the dropdown's single muni.
@@ -9683,17 +9724,6 @@ async function toggleAuxOverlay(which) {
     try {
       const fc = await meta.fetch();
       auxData[which] = fc;
-      // muni-parcels: enrich each parcel with its legal-index record
-      // BEFORE pushing to the map, so the hover/click popup on the
-      // Roll Layer can show the legal description without doing a
-      // per-popup async lookup. Cheap: the legal index is already
-      // module-cached via warmLegalIndex(); the lookup is one Map
-      // build + N gets.
-      if (which === 'muniParcels') {
-        await enrichFcWithLegals(fc).catch((err) => {
-          console.warn('Legal enrichment for muni-parcels failed (non-fatal):', err);
-        });
-      }
       meta.setData(map, fc);
       auxLoaded[which] = true;
       if (which === 'muniParcels') muniParcelsLoadedFor = muniParcelsLoadKey();
@@ -9702,6 +9732,12 @@ async function toggleAuxOverlay(which) {
       setOverlayPressed(btn, false);
       setOverlayBtnLabel(btn, meta.off);
       btn.disabled = false;
+      // The parcel fabric is the one overlay whose failure is otherwise
+      // indistinguishable from an empty result, so say so on screen rather
+      // than only in the console. See AUX_META.muniParcels.fetch.
+      if (which === 'muniParcels') {
+        setCount(`Assessment Parcels could not load: ${err.message}`);
+      }
       return;
     }
     btn.disabled = false;
