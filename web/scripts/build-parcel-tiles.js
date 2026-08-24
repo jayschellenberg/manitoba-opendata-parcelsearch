@@ -97,16 +97,28 @@ const LIMIT = (() => {
 // (ParcelSearch/r/lib_tippecanoe.R), which were settled against a live
 // overlay, and differ in two places: the zoom floor, and what happens at it.
 //
-//   --minimum-zoom=8     : Winnipeg uses 13 because below that a city lot is
-//                          sub-pixel. Manitoba's overlay is municipality-scoped
-//                          and the app fits the map to the whole municipality,
-//                          so the floor has to reach whatever zoom that fit
-//                          lands on. MEASURED across 154 municipalities: 93 of
-//                          them fit BELOW z11, down to z8.5 for ST CLEMENTS
-//                          (RM). An earlier build used z11 on the guess that a
-//                          rural RM fits around z10-11; that was wrong, and it
-//                          left the layer blank at exactly the extent most
+//   --minimum-zoom=8     : The floor has to reach whatever zoom the CAMERA
+//                          lands on, not the zoom at which a parcel stops
+//                          being sub-pixel. Those are different questions and
+//                          conflating them is how this ships broken.
+//                          MEASURED across 154 municipalities: 93 of them fit
+//                          BELOW z11, down to z8.5 for ST CLEMENTS (RM). An
+//                          earlier build used z11 on the guess that a rural RM
+//                          fits around z10-11; that was wrong, and it left the
+//                          layer blank at exactly the extent most
 //                          municipalities open at.
+//                          This comment used to read "Winnipeg uses 13 because
+//                          below that a city lot is sub-pixel", as though that
+//                          were a considered choice worth citing. It was the
+//                          same bug. Winnipeg audited it on 2026-08-24 and
+//                          found its overlay rendered NOTHING at the zoom the
+//                          app opens at (z11): 0 tiles requested, 0 features,
+//                          button reading "Hide All Assessment Parcels" the
+//                          whole time. It is on z8 now, reached from a
+//                          completely independent measurement -- fitBounds over
+//                          all 4,239 street_name groups in its assessment roll
+//                          rather than over municipalities. Two different
+//                          apps, two different measurements, same floor.
 //                          Not lower than 8: the only things below it are the
 //                          four INDIGENOUS&NORTHERN RELATIONS entries (z5.6-6.5),
 //                          which are province-spanning administrative
