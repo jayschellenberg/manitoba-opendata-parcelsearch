@@ -272,6 +272,25 @@ mismatch (this is not orthoimagery) and it is worth moving to its own bucket
 one day, but the reuse means the bucket's CORS policy and the `connect-src`
 entry in `vercel.json` already cover it — no CSP change was needed.
 
+**CORS lives on the R2 bucket, not on Vercel.** The headers come from whoever
+serves the file, so nothing in Vercel's settings can grant the app permission
+to read the archive — it is set in the Cloudflare dashboard under R2 →
+`mb-ortho` → Settings → CORS Policy. `AllowedOrigins` covers:
+
+- `https://manitoba-opendata-parcelsearch.vercel.app` — production
+- `https://*-jks-consulting-inc.vercel.app` — **every** preview deploy. Added
+  2026-08-23 after a branch preview failed with *"Failed to fetch"*: the policy
+  named only production and localhost, so the browser blocked the request
+  before any response. The wildcard is verified to match arbitrary future
+  branch hostnames, so a new branch needs no CORS change.
+- `http://localhost:5173` — dev. **`http://127.0.0.1:5173` is NOT allowed, and
+  is a different origin as far as CORS is concerned**, so start dev on
+  `localhost` or the archive fetch fails with the same misleading message.
+
+`ExposeHeaders` MUST keep `content-range`. Without it the browser hides that
+header from JavaScript and PMTiles cannot locate itself in the archive — which
+fails as subtly wrong tiles rather than a clean error.
+
 **Verify a publish** the same way the ortho was verified: a range request must
 return `206` with the full size in `Content-Range`, the first seven bytes must
 read `PMTiles`, and with an `Origin` header the response must carry
@@ -280,6 +299,8 @@ read `PMTiles`, and with an `Origin` header the response must carry
 ```
 curl -s -D - -o - -H "Origin: https://manitoba-opendata-parcelsearch.vercel.app"      -H "Range: bytes=0-6"      https://pub-091058079bf6458da1681945177e1682.r2.dev/mb-assessment-parcels.pmtiles
 ```
+That line is Git Bash. In PowerShell use `curl.exe`, `-o NUL` rather than
+`-o /dev/null`, and `| Select-String access-control` rather than `| grep`.
 
 **Prerequisites:** WSL with tippecanoe (`wsl --install`, then
 `sudo apt install tippecanoe`; Ubuntu here has v2.80.0). Note that invoking it
