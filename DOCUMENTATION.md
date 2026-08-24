@@ -228,23 +228,37 @@ dark slab — basemap, river and place names buried. Lines stack the way fills
 do. The fix was to interpolate `line-width` and `line-opacity` by zoom so the
 low end reads as a density wash, leaving z16+ where it was.
 
-This project is probably safer, and *probably* is the word worth distrusting —
-it is what let the floor bug live in both codebases. The reasons to expect it
-is fine are real: `MUNI_PARCELS_LINE_STYLES.light` is `#d1d5db` at 0.75 px /
-0.6 opacity, much less ink than Winnipeg's old `#6b7280` at 1.5 px / 0.8, and
-the fabric is filtered to one municipality so the province never draws at once.
-Winnipeg's own `web/src/lib/citywideParcelsStyle.js` now states the same
-reasoning outright — *"Manitoba scopes its fabric to one municipality and can
-afford flat values"*. That sentence is an inference, not a measurement, and
-nobody has looked at the densest municipality at the zoom it actually fits at.
+**This project was checked and is fine — flat values hold here.** Measured on
+production 2026-08-24, against BRANDON (CITY), the densest municipality in the
+roll and the one that motivated the move to tiles:
 
-That municipality is **BRANDON** (17,329 parcels — the same one that motivated
-the move to tiles), and it is a ten-minute check: open the app, pick Brandon,
-turn on Assessment Parcels, and look at it. Texture is fine. A grey slab is
-not, and the fix is to port the ramps — the two apps' style modules are now
-direct analogues (`lib/muniParcelsStyle.js` here,
-`lib/citywideParcelsStyle.js` there) and already share their colours exactly,
-so it is a small graft rather than a redesign.
+| | Brandon here | Winnipeg's blackout |
+|---|---|---|
+| fit zoom | z11.36 | z11 |
+| features rendered | 17,444 | 37,248 |
+| `line-width` | 0.75 | 1.5 |
+| `line-opacity` | 0.6 | 0.8 |
+| colour | `#d1d5db` | `#6b7280` |
+
+About 5.7x less line-ink before the lighter grey is even counted. The fabric
+reads as texture — street grid and lot pattern legible inside the boundary,
+place labels readable through it, RM areas outside correctly empty.
+
+**Testing one municipality settles it, and that is worth understanding rather
+than taking on trust.** Because the app fits the map to the municipality you
+pick, the number of features in view is that municipality's whole parcel count
+more or less regardless of what zoom the fit lands on. Ink-per-pixel therefore
+tracks parcel COUNT, not extent — so the densest-by-count municipality is the
+worst case, full stop, and a sparse RM that fits at z8.5 is not a harder test
+than Brandon at z11.36, it is an easier one. If a future amalgamation puts a
+municipality meaningfully above Brandon's ~17k parcels, that becomes the new
+worst case and this is worth re-running; nothing else changes it.
+
+So `MUNI_PARCELS_LINE_STYLES` stays flat deliberately, not by omission. If it
+ever does need ramps, the two apps' style modules are direct analogues
+(`lib/muniParcelsStyle.js` here, `lib/citywideParcelsStyle.js` there) and
+already share their colours exactly, so it is a small graft rather than a
+redesign.
 
 **Per-zoom cost is measurable, not guessable.** A PMTiles v3 directory can be
 walked to get bytes-per-zoom, which turns "what did the extra levels cost" into
