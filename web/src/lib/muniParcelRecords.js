@@ -5,7 +5,8 @@
 // scripts/build-parcel-tiles.js — baking the rest produced a 1.07 GB
 // archive, and the baked MAO report URL goes stale on every Spring/Fall
 // rollover anyway). Everything else the popup shows is resolved here, by
-// OBJECTID, the first time a parcel in a given municipality is clicked.
+// its ROLL NUMBER, the first time a parcel in a given municipality is
+// clicked. (Not OBJECTID -- see recordKey below for why that failed.)
 //
 // This replaced a bulk pre-pass. Turning the layer on used to fetch the
 // whole municipality's fabric and run the legal enrichment across all of
@@ -16,11 +17,32 @@
 // Dependencies are injected rather than imported so this is testable
 // without the network, the DOM, or main.js's module graph.
 
-/** `muni|oid`, or null when either half is missing. */
+/** `muni|roll`, or null when either half is missing.
+ *
+ *  Keyed on the ROLL NUMBER, not OBJECTID. OBJECTID is an ArcGIS row id
+ *  that is reissued whenever the province republishes the layer, so it
+ *  does not survive from a tile archive built off one extract to the live
+ *  FeatureServer serving another. Measured on GREY (RM) against the
+ *  2026-08-11 archive: 62 of 62 rolls matched, and 0 of 62 OBJECTIDs did.
+ *  Every popup lookup returned null.
+ *
+ *  arcgis.js already warned about this in another context ("OBJECTIDs
+ *  don't survive a server republish", on the zone/dev-plan filter path).
+ *  The roll number is the business key the rest of the app joins on. */
 export function recordKey(props) {
   const muni = props?.Muni_Name_With_Typ;
-  const oid = props?.OBJECTID;
-  return (muni && oid != null) ? `${muni}|${oid}` : null;
+  const roll = canonicalRoll(props?.Roll_No_Txt);
+  return (muni && roll) ? `${muni}|${roll}` : null;
+}
+
+/** Roll numbers reach us as `124100.000` from both the tiles and the
+ *  FeatureServer, but a stray sub-roll suffix or whitespace on either
+ *  side would silently break the join, so normalise both ends. */
+export function canonicalRoll(raw) {
+  if (raw == null) return '';
+  const s = String(raw).trim();
+  if (!s) return '';
+  return s.endsWith('.000') ? s.slice(0, -4) : s;
 }
 
 /**
@@ -45,9 +67,9 @@ export function createMuniParcelResolver({
   getLoadedFabric = () => null,
   onWarn = () => {},
 }) {
-  /** muni -> Promise<Map<String(OBJECTID), properties>> */
+  /** muni -> Promise<Map<canonicalRoll, properties>> */
   const inFlight = new Map();
-  /** `muni|oid` -> properties. Backs the synchronous peek. */
+  /** `muni|roll` -> properties. Backs the synchronous peek. */
   const ready = new Map();
 
   function load(muniName) {
@@ -69,13 +91,13 @@ export function createMuniParcelResolver({
           onWarn('Legal enrichment for the parcel popup failed', err);
         }
       }
-      const byOid = new Map();
-      for (const f of fc?.features || []) {
-        const oid = f?.properties?.OBJECTID;
-        if (oid != null) byOid.set(String(oid), f.properties);
+      const byRoll = new Map();
+      for (const feat of fc?.features || []) {
+        const roll = canonicalRoll(feat?.properties?.Roll_No_Txt);
+        if (roll) byRoll.set(roll, feat.properties);
       }
-      for (const [oid, props] of byOid) ready.set(`${muniName}|${oid}`, props);
-      return byOid;
+      for (const [roll, props] of byRoll) ready.set(`${muniName}|${roll}`, props);
+      return byRoll;
     })();
     inFlight.set(muniName, promise);
     // A failed fetch must not poison the cache — the next click retries
@@ -93,13 +115,13 @@ export function createMuniParcelResolver({
     },
     /** Resolve this parcel's full properties, fetching its municipality
      *  once if needed. Null when the tile props are unusable or the
-     *  OBJECTID isn't in the fabric. */
+     *  roll isn't in the fabric. */
     async resolve(props) {
       const muni = props?.Muni_Name_With_Typ;
-      const oid = props?.OBJECTID;
-      if (!muni || oid == null) return null;
-      const byOid = await load(muni);
-      return byOid.get(String(oid)) || null;
+      const roll = canonicalRoll(props?.Roll_No_Txt);
+      if (!muni || !roll) return null;
+      const byRoll = await load(muni);
+      return byRoll.get(roll) || null;
     },
     /** Test seam. */
     _reset() { inFlight.clear(); ready.clear(); },

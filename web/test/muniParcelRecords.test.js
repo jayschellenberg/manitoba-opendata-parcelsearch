@@ -5,7 +5,7 @@
 // Run: cd web && node test/muniParcelRecords.test.js
 
 import assert from 'node:assert/strict';
-import { createMuniParcelResolver, recordKey } from '../src/lib/muniParcelRecords.js';
+import { createMuniParcelResolver, recordKey, canonicalRoll } from '../src/lib/muniParcelRecords.js';
 
 const results = [];
 async function test(name, fn) {
@@ -54,19 +54,30 @@ function harness(overrides = {}) {
 
 // ---------- recordKey ----------
 
-await test('recordKey joins municipality and OBJECTID', () => {
+await test('recordKey joins municipality and ROLL, not OBJECTID', () => {
   assert.equal(recordKey(tileProps(7)), 'ALTONA (TOWN)|7');
 });
 
 await test('recordKey is null when either half is missing', () => {
-  assert.equal(recordKey({ OBJECTID: 7 }), null);
+  assert.equal(recordKey({ Roll_No_Txt: '7.000' }), null);
   assert.equal(recordKey({ Muni_Name_With_Typ: 'ALTONA (TOWN)' }), null);
   assert.equal(recordKey(null), null);
   assert.equal(recordKey(undefined), null);
 });
 
-await test('OBJECTID 0 is a real id, not a missing one', () => {
-  assert.equal(recordKey({ Muni_Name_With_Typ: 'X (RM)', OBJECTID: 0 }), 'X (RM)|0');
+await test('recordKey ignores OBJECTID entirely', () => {
+  const a = recordKey({ Muni_Name_With_Typ: 'X (RM)', Roll_No_Txt: '5.000', OBJECTID: 111 });
+  const b = recordKey({ Muni_Name_With_Typ: 'X (RM)', Roll_No_Txt: '5.000', OBJECTID: 999 });
+  assert.equal(a, b, 'the same parcel must key identically whatever OBJECTID says');
+});
+
+await test('canonicalRoll strips the .000 sub-roll and trims', () => {
+  assert.equal(canonicalRoll('124100.000'), '124100');
+  assert.equal(canonicalRoll('  124100.000  '), '124100');
+  assert.equal(canonicalRoll('124100'), '124100');
+  assert.equal(canonicalRoll('124100.001'), '124100.001');
+  assert.equal(canonicalRoll(null), '');
+  assert.equal(canonicalRoll(''), '');
 });
 
 // ---------- resolve ----------
@@ -137,6 +148,29 @@ await test('a failed legal enrichment is non-fatal — the record still resolves
   assert.equal(rec.Property_Address, '1 MAIN ST');
   assert.equal(rec._legalDescription, undefined);
   assert.equal(calls.warn.length, 1);
+});
+
+await test('resolves when the fabric OBJECTIDs differ from the tiles — the production bug', async () => {
+  // The archive is built from a provincial extract; the live FeatureServer
+  // reissues OBJECTIDs on every republish. Measured on GREY (RM): 62 of 62
+  // rolls matched and 0 of 62 OBJECTIDs did, so an OBJECTID-keyed lookup
+  // returned null for every parcel and no popup ever enriched.
+  const { resolver } = harness({
+    fetchFabric: async (muni) => fabric(
+      { ...fabricFeature(1, muni), properties: { ...fabricFeature(1, muni).properties, OBJECTID: 987654 } },
+    ),
+  });
+  const fromTile = { OBJECTID: 1, Muni_Name_With_Typ: 'ALTONA (TOWN)', Roll_No_Txt: '1.000' };
+  const rec = await resolver.resolve(fromTile);
+  assert.ok(rec, 'must resolve despite the OBJECTID mismatch');
+  assert.equal(rec.Property_Address, '1 MAIN ST');
+});
+
+await test('a roll with no .000 suffix still joins one with it', async () => {
+  const { resolver } = harness();
+  const rec = await resolver.resolve({ Muni_Name_With_Typ: 'ALTONA (TOWN)', Roll_No_Txt: '1' });
+  assert.ok(rec, 'suffix normalisation must work in both directions');
+  assert.equal(rec.Property_Address, '1 MAIN ST');
 });
 
 // ---------- getLoadedFabric ----------
