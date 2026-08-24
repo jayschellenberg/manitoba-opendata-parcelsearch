@@ -4342,6 +4342,15 @@ body:not(.has-max-km) #results td.subj-col {
   gap: 6px;
 }
 
+/* The `hidden` attribute works by applying display:none from the browser's
+   default stylesheet, which ANY class rule outranks. The pill therefore
+   needs this guard or it renders regardless — which is exactly what
+   happened: the row showed its untouched placeholder label ("—") and the
+   Clear "×" on every page load, with no list imported, so renderListPill's
+   hide branch had been running and silently failing. Four other elements in
+   this file carry the same guard for the same reason. */
+.parcel-list-pill[hidden] { display: none; }
+
 /* "Plan route" button — sits beside the pill once a list is loaded.
    Disabled state covers the no-Mapbox-token case; the title attribute
    carries the explanation (set in JS so the env-var path is one

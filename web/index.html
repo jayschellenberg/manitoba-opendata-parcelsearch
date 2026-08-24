@@ -313,9 +313,15 @@
                crowd the sidebar; the Clear "×" removes the list and
                drops back to normal Property Search mode. Stays directly
                under Roll # — it's the outcome of the roll-based Import
-               List flow, so it travels with that field. -->
-          <div id="parcel-list-pill-row" class="parcel-list-pill-row" hidden>
-            <div class="parcel-list-pill" id="parcel-list-pill">
+               List flow, so it travels with that field.
+
+               `hidden` sits on the PILL, not on the row. The row also
+               holds Plan Route, which is not list-specific — its handler
+               routes every loaded parcel, and its only gate is whether a
+               Mapbox token is configured. Hiding the whole row would have
+               taken Plan Route away from every normal search. -->
+          <div id="parcel-list-pill-row" class="parcel-list-pill-row">
+            <div class="parcel-list-pill" id="parcel-list-pill" hidden>
               <span class="parcel-list-pill-label" id="parcel-list-pill-label">—</span>
               <button
                 type="button"
