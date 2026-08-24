@@ -41,7 +41,7 @@ import {
 // Phase 6 URL state — serialises a small set of form values into the
 // query string so a session URL is shareable.
 import { encodeState, decodeState } from './lib/urlState.js';
-import { setOverlayPressed } from './lib/overlayToggle.js';
+import { nextOverlayToggleState, setOverlayPressed } from './lib/overlayToggle.js';
 import { stalenessBannerState } from './lib/staleness.js';
 import { resolveDropdownSources } from './lib/dropdownSources.js';
 import { readMapLegends, layoutMapLegends, paintMapLegends } from './lib/mapLegend.js';
@@ -7367,9 +7367,15 @@ async function toggleOverlay(which) {
   // its designations are broad by nature, so clipping them to parcels
   // hides the surrounding context that makes one readable.
   const triState = which === 'zoning';
-  const selectedOnly = triState && wasActive && !wasSelectedOnly;
-  const visible = triState ? (!wasActive || selectedOnly) : !wasActive;
-  setOverlayPressed(btn, visible ? (selectedOnly ? 'mixed' : true) : false);
+  // SELECTED ONLY needs both a loaded selection AND zoning joined to it —
+  // see nextOverlayToggleState for why that has to be decided before the
+  // click is acted on rather than discovered partway through it.
+  const canSelectOnly = triState
+    && (lastResultFc?.features?.length || 0) > 0
+    && resultZoneCodes().length > 0;
+  const { visible, selectedOnly, skippedSelection, pressed } =
+    nextOverlayToggleState({ triState, wasActive, wasSelectedOnly, canSelectOnly });
+  setOverlayPressed(btn, pressed);
 
   await mapReady;
 
@@ -7387,6 +7393,13 @@ async function toggleOverlay(which) {
     // highlight fill when it is already the plain highlight fill is a
     // no-op, and that is cheaper than tracking which state we came from.
     if (which === 'zoning') setParcelZoneColoring(map, null);
+    // Explain a skipped middle state, so "it went straight off" doesn't
+    // read as the tri-state being broken.
+    if (skippedSelection) {
+      setCount((lastResultFc?.features?.length || 0) === 0
+        ? 'Zoning off. Load parcels first to get the selection-only view.'
+        : 'Zoning off. No zoning is joined to these parcels, so the selection-only view was skipped.');
+    }
     return;
   }
 
@@ -7414,14 +7427,8 @@ async function toggleOverlay(which) {
   // carries _zoneCode from the enrichment join, so the answer is on hand
   // with no request at all.
   if (selectedOnly && parcelCount > 0 && which === 'zoning') {
+    // canSelectOnly already proved there are codes; this cannot be empty.
     const codes = resultZoneCodes();
-    if (!codes.length) {
-      setOverlayPressed(btn, true);          // fall back to the full overlay
-      setOverlayBtnLabel(btn, label);
-      setCount('No zoning is joined to these parcels yet — showing the full layer.');
-      applyOverlayVisibility(which, true);
-      return;
-    }
     paintZoningSelection(codes);
     applyOverlayVisibility('zoning', false);  // no polygons in this state
     if ($zoningLegend) $zoningLegend.hidden = false;
@@ -7433,14 +7440,6 @@ async function toggleOverlay(which) {
   // Leaving the selection state: parcels go back to the highlight fill.
   if (which === 'zoning') setParcelZoneColoring(map, null);
 
-  // Selected-only needs parcels on the map, not a municipality.
-  if (selectedOnly && parcelCount === 0) {
-    setOverlayPressed(btn, true);            // fall back to the ALL state
-    setOverlayBtnLabel(btn, label);
-    setCount('Load parcels first to show zoning for the selection only.');
-    applyOverlayVisibility(which, true);
-    return;
-  }
   const needFetch = (selectedOnly || munis.length > 0) && loadedFor !== loadKey;
 
   if (needFetch) {
