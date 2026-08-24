@@ -315,13 +315,12 @@
                under Roll # — it's the outcome of the roll-based Import
                List flow, so it travels with that field.
 
-               `hidden` sits on the PILL, not on the row. The row also
-               holds Plan Route, which is not list-specific — its handler
-               routes every loaded parcel, and its only gate is whether a
-               Mapbox token is configured. Hiding the whole row would have
-               taken Plan Route away from every normal search. -->
-          <div id="parcel-list-pill-row" class="parcel-list-pill-row">
-            <div class="parcel-list-pill" id="parcel-list-pill" hidden>
+               Plan Route used to sit in this row and so was visible only
+               because the row's `hidden` was being defeated by CSS. It is
+               not list-specific — its handler routes every loaded parcel —
+               so it now lives beside Route Starred in the export row. -->
+          <div id="parcel-list-pill-row" class="parcel-list-pill-row" hidden>
+            <div class="parcel-list-pill" id="parcel-list-pill">
               <span class="parcel-list-pill-label" id="parcel-list-pill-label">—</span>
               <button
                 type="button"
@@ -331,12 +330,6 @@
                 aria-label="Clear imported list"
               >×</button>
             </div>
-            <button
-              type="button"
-              id="route-plan-trigger"
-              class="route-plan-trigger"
-              title="Plan a driving route through the imported parcels. Click to open the route planner panel above the table."
-            >Plan Route</button>
           </div>
           <!-- Import multi-match notice. Filled by renderListPill() when a
                section-township-range row resolved to MORE than one parcel
@@ -1269,6 +1262,12 @@
               disabled
               title="Star at least two parcels (★ column in sales mode) to route them."
             >Route Starred</button>
+            <button
+              type="button"
+              id="route-plan-trigger"
+              class="secondary"
+              title="Plan a driving route through every loaded parcel. Opens the route planner panel above the table."
+            >Plan Route</button>
             <button id="snapshot-zip-btn" type="button" class="secondary" disabled title="Generate a 1600×900 satellite JPEG of each result parcel (highlighted, zoomed to fit 16:9) and download them all as a single ZIP, named muniCode-roll.jpg. Import a parcel list or run a search first.">Parcel Snapshots (ZIP)</button>
           </div>
           <!-- Map options. Two independent toggles, each hidden until it
