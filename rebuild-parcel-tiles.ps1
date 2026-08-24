@@ -56,8 +56,20 @@ param(
     # one, which is the staleness this schedule exists to prevent. The
     # sanity band and the reconcile guard in build-parcel-tiles.js are what
     # stand in for a human look.
-    [switch]$Publish
+    [switch]$Publish,
+
+    # Send a test through the alert path and exit. Same switch the other
+    # wrappers carry -- the only way to prove alerts actually reach a human,
+    # because ntfy's anonymous publish answers 200 for ANY topic, including
+    # one nobody is subscribed to.
+    [switch]$TestAlert
 )
+
+# ntfy topic. The -jks suffix is the convention every other wrapper in this
+# repo follows (mbps-monthly-refresh-jks, mbps-task-health-jks, ...) and it
+# matters: these are the topic names subscribed in the ntfy app. A topic that
+# is merely plausible reaches nobody while reporting success.
+$NtfyTopic = 'mbps-parcel-tiles-jks'
 
 # Where the published archive lives. The object name is stable, so a rebuild
 # overwrites in place and VITE_PARCEL_TILES_URL never changes.
@@ -81,8 +93,8 @@ function Fail([string]$what, [string]$detail) {
     Write-Log "FAILED: $what"
     Write-Log $detail
     try {
-        Send-FailureAlert $root 'mbps-parcel-tiles' `
-            "Assessment Parcels tile rebuild failed" `
+        Send-FailureAlert $root $NtfyTopic `
+            "FAILED - Assessment Parcels tile rebuild on $env:COMPUTERNAME" `
             "$what`n`n$detail`n`nLog: $log"
     } catch {
         Write-Log "(alert delivery also failed: $($_.Exception.Message))"
@@ -93,6 +105,15 @@ function Fail([string]$what, [string]$detail) {
 $started = Get-Date
 Write-Log "Assessment Parcels tile rebuild starting"
 Write-Log "Log: $log"
+
+if ($TestAlert) {
+    $ok = Send-FailureAlert $root $NtfyTopic 'TEST - Assessment Parcels tile rebuild alerts' `
+          ("Test alert from rebuild-parcel-tiles.ps1 on $env:COMPUTERNAME at $(Get-Date -Format s).`n" +
+           'If this reached you, tile-rebuild failure alerts are wired up.')
+    Write-Log ("Test alert sent. email={0} push={1} topic={2}" -f `
+        $global:MbpsLastAlert.Emailed, $global:MbpsLastAlert.Pushed, $NtfyTopic)
+    if ($ok) { exit 0 } else { exit 1 }
+}
 
 # --- Step 0: is there anything to do? ------------------------------------
 # Compares the newest RollEntry_*.gpkg against the source recorded in the
