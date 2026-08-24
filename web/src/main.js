@@ -4974,13 +4974,16 @@ function renderUnmatchedPanel(unmatched) {
  * which would be harder to undo on Clear).
  */
 function renderListPill() {
-  const $row = document.getElementById('parcel-list-pill-row');
+  // The PILL is what appears and disappears with the imported list. The row
+  // around it also holds Plan Route, which is not list-specific (its handler
+  // routes every loaded parcel), so the row itself stays put.
+  const $pill = document.getElementById('parcel-list-pill');
   const $label = document.getElementById('parcel-list-pill-label');
   const $notice = document.getElementById('parcel-list-notice');
   const $panel = document.getElementById('tab-panel-property');
-  if (!$row || !$label) return;
+  if (!$pill || !$label) return;
   if (!Array.isArray(listParcelKeys) || listParcelKeys.length === 0) {
-    $row.hidden = true;
+    $pill.hidden = true;
     $label.textContent = '';
     if ($notice) { $notice.hidden = true; $notice.textContent = ''; }
     $panel?.classList.remove('list-mode-active');
@@ -4992,7 +4995,7 @@ function renderListPill() {
   const n = listParcelKeys.length;
   const m = munis.size;
   $label.textContent = `Imported list: ${n} parcel${n === 1 ? '' : 's'} across ${m} municipalit${m === 1 ? 'y' : 'ies'}`;
-  $row.hidden = false;
+  $pill.hidden = false;
   // Multi-match flags from the resolver — a section-township-range row
   // that landed on more than one parcel. Shown under the pill so a
   // quarters list that quietly grew stays explained on screen.
