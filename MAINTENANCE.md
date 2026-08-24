@@ -302,6 +302,36 @@ curl -s -D - -o - -H "Origin: https://manitoba-opendata-parcelsearch.vercel.app"
 That line is Git Bash. In PowerShell use `curl.exe`, `-o NUL` rather than
 `-o /dev/null`, and `| Select-String access-control` rather than `| grep`.
 
+**Scheduled** monthly, task `mb-parcelsearch-parcel-tiles`, 16th at 03:00 --
+a clear day behind `mb-parcelsearch-monthly-refresh` (15th, 04:00) so a slow
+refresh cannot overlap an hour-long tippecanoe run. Registered by
+`schedule_parcel_tiles.ps1` (idempotent; re-run after changing the script).
+
+The task runs `rebuild-parcel-tiles.ps1 -IfStale -Publish`:
+
+- **`-IfStale`** compares the newest `RollEntry_*.gpkg` against the
+  `source_file` recorded in `web/public/parcels-pmtiles-meta.json` and exits in
+  about a second when they match. That is what makes a monthly schedule cheap:
+  the gpkg only really changes when `r/download_parcels.R` drops a new one, and
+  re-tiling identical data costs an hour of CPU for no change. Checking monthly
+  means a fresh gpkg is never more than a month from production.
+- **`-Publish`** uploads to R2 and verifies the remote object's size against
+  the local build. Without it a rebuild would sit on disk while production kept
+  serving the previous archive -- the exact staleness the schedule exists to
+  prevent. The sanity band and reconcile guard in `build-parcel-tiles.js` stand
+  in for a human look; a size mismatch fails loudly rather than leaving a
+  truncated archive serving everyone.
+
+Run it by hand any time (`-IfStale` alone is a safe no-op dry run):
+```
+powershell -ExecutionPolicy Bypass -File rebuild-parcel-tiles.ps1 -IfStale
+```
+
+**The registrar must be run ELEVATED**, or the task is left `LogonType=Interactive`
+and will not fire at 03:00 while logged off -- see the 2026-08-12 incident in
+`schedule_monthly.ps1`. The registrar reads the principal back and says loudly
+which one it got.
+
 **Prerequisites:** WSL with tippecanoe (`wsl --install`, then
 `sudo apt install tippecanoe`; Ubuntu here has v2.80.0). Note that invoking it
 from Git Bash rather than the Node script fails with *"unable to open database
