@@ -224,6 +224,79 @@ await test('peek never throws on junk', () => {
   assert.equal(resolver.peek({}), null);
 });
 
+// ---------- zoning ----------
+
+const zone = (code) => ({ ZONE: code, ZONE_NAME: `${code} district`, ZBL: '1234' });
+
+function zoningHarness(fetchZoningAt) {
+  const calls = { zoning: 0, warn: [] };
+  const resolver = createMuniParcelResolver({
+    fetchFabric: async (muni) => fabric(fabricFeature(1, muni)),
+    enrichLegals: async () => {},
+    onWarn: (m, e) => calls.warn.push([m, e]),
+    fetchZoningAt: async (...a) => { calls.zoning += 1; return fetchZoningAt(...a); },
+  });
+  return { resolver, calls };
+}
+
+await test('resolveZoning returns the zone and caches it', async () => {
+  const { resolver, calls } = zoningHarness(async () => zone('AG'));
+  assert.deepEqual(await resolver.resolveZoning(tileProps(1), {}, [0, 0]), zone('AG'));
+  await resolver.resolveZoning(tileProps(1), {}, [0, 0]);
+  assert.equal(calls.zoning, 1, 'a second look at the same parcel must not refetch');
+});
+
+await test('a parcel with genuinely no zoning caches the null', async () => {
+  // Rural Manitoba has plenty of unzoned parcels. Without caching the null,
+  // every hover over one would refire the spatial query.
+  const { resolver, calls } = zoningHarness(async () => null);
+  assert.equal(await resolver.resolveZoning(tileProps(1), {}, [0, 0]), null);
+  assert.equal(await resolver.resolveZoning(tileProps(1), {}, [0, 0]), null);
+  assert.equal(calls.zoning, 1);
+});
+
+await test('a failed zoning lookup is NOT cached — the next click retries', async () => {
+  let n = 0;
+  const { resolver, calls } = zoningHarness(async () => {
+    n += 1;
+    if (n === 1) throw new Error('network');
+    return zone('RR');
+  });
+  assert.equal(await resolver.resolveZoning(tileProps(1), {}, [0, 0]), null);
+  assert.deepEqual(await resolver.resolveZoning(tileProps(1), {}, [0, 0]), zone('RR'));
+  assert.equal(calls.warn.length, 1);
+});
+
+await test('concurrent zoning lookups for one parcel share a single fetch', async () => {
+  const { resolver, calls } = zoningHarness(async () => zone('AG'));
+  await Promise.all([
+    resolver.resolveZoning(tileProps(1), {}, [0, 0]),
+    resolver.resolveZoning(tileProps(1), {}, [0, 0]),
+  ]);
+  assert.equal(calls.zoning, 1);
+});
+
+await test('different parcels resolve zoning independently', async () => {
+  const { resolver, calls } = zoningHarness(async (f) => zone(f.z));
+  assert.deepEqual(await resolver.resolveZoning(tileProps(1), { z: 'AG' }, [0, 0]), zone('AG'));
+  assert.deepEqual(await resolver.resolveZoning(tileProps(2), { z: 'RR' }, [0, 0]), zone('RR'));
+  assert.equal(calls.zoning, 2);
+});
+
+await test('peekZoning is null until resolved, then the zone, and never fetches', async () => {
+  const { resolver, calls } = zoningHarness(async () => zone('AG'));
+  assert.equal(resolver.peekZoning(tileProps(1)), null);
+  await resolver.resolveZoning(tileProps(1), {}, [0, 0]);
+  assert.deepEqual(resolver.peekZoning(tileProps(1)), zone('AG'));
+  assert.equal(calls.zoning, 1, 'peek must never trigger a fetch');
+});
+
+await test('without a fetchZoningAt dependency zoning is simply unavailable', async () => {
+  const { resolver } = harness();
+  assert.equal(await resolver.resolveZoning(tileProps(1), {}, [0, 0]), null);
+  assert.equal(resolver.peekZoning(tileProps(1)), null);
+});
+
 const failed = results.filter((r) => r.status === 'fail');
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) process.exit(1);

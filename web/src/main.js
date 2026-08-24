@@ -7790,6 +7790,23 @@ async function refreshTileNetworkForViewport() {
 const muniParcelPopupResolver = createMuniParcelResolver({
   fetchFabric: (muniName) => fetchAllParcelsInMunicipality(muniName),
   enrichLegals: (fc) => enrichFcWithLegals(fc),
+  // Zoning for one clicked parcel, when the zoning overlay is off and the
+  // popup therefore has nothing to read off a rendered layer.
+  //
+  // Two steps because ArcGIS spatial queries here take an ENVELOPE: the
+  // parcel's bbox can overlap neighbouring zones, so the query is a coarse
+  // filter and the point-in-polygon test picks the zone actually under the
+  // click. Falls back to the first result when the click lands in a gap
+  // (rounding at a shared boundary), which beats showing nothing.
+  fetchZoningAt: async (feature, lngLat) => {
+    const fc = await fetchZoningOverlap({ type: 'FeatureCollection', features: [feature] });
+    const zones = fc?.features || [];
+    if (!zones.length) return null;
+    const hit = zones.find((z) => {
+      try { return booleanPointInPolygon(lngLat, z); } catch { return false; }
+    });
+    return (hit || zones[0]).properties || null;
+  },
   // Prefer a fabric an overlay already loaded and stamped — land-cover and
   // soil-composition mutate those properties in place, so reusing them is
   // how _lcColor and _soilComposition reach the popup.

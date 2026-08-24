@@ -64,6 +64,7 @@ export function canonicalRoll(raw) {
 export function createMuniParcelResolver({
   fetchFabric,
   enrichLegals,
+  fetchZoningAt = null,
   getLoadedFabric = () => null,
   onWarn = () => {},
 }) {
@@ -71,6 +72,13 @@ export function createMuniParcelResolver({
   const inFlight = new Map();
   /** `muni|roll` -> properties. Backs the synchronous peek. */
   const ready = new Map();
+  /** `muni|roll` -> zoning properties, or null when the parcel genuinely
+   *  has no zoning polygon over it. A resolved-to-null entry is a real
+   *  answer and must be cached, so this uses has()/get() rather than a
+   *  truthiness check — otherwise every hover over an unzoned rural
+   *  parcel would refire the query. */
+  const zoningReady = new Map();
+  const zoningInFlight = new Map();
 
   function load(muniName) {
     if (inFlight.has(muniName)) return inFlight.get(muniName);
@@ -123,7 +131,48 @@ export function createMuniParcelResolver({
       const byRoll = await load(muni);
       return byRoll.get(roll) || null;
     },
+    /** Synchronous: this parcel's zoning if already resolved, else null.
+     *  The hover popup uses this and never fetches — hovering across a
+     *  fabric would otherwise fire one spatial query per parcel crossed. */
+    peekZoning(props) {
+      const key = recordKey(props);
+      return key && zoningReady.has(key) ? zoningReady.get(key) : null;
+    },
+    /**
+     * Zoning for one parcel, fetched on demand.
+     *
+     * Only used when the zoning OVERLAY is off: when it is on, the popup
+     * already reads the zone under the cursor straight off the rendered
+     * layer for free (readOverlaysAt in map.js), and firing a query as
+     * well would be pure waste.
+     *
+     * @param {object} props   the parcel's tile properties (for the key)
+     * @param {object} feature the clicked feature, for its envelope
+     * @param {[number, number]} lngLat where the user actually clicked
+     */
+    async resolveZoning(props, feature, lngLat) {
+      const key = recordKey(props);
+      if (!key || !fetchZoningAt) return null;
+      if (zoningReady.has(key)) return zoningReady.get(key);
+      if (zoningInFlight.has(key)) return zoningInFlight.get(key);
+      const promise = (async () => {
+        try {
+          const zoning = await fetchZoningAt(feature, lngLat);
+          zoningReady.set(key, zoning || null);
+          return zoning || null;
+        } catch (err) {
+          // Non-fatal, and deliberately NOT cached: a transient failure
+          // should not permanently mark this parcel as unzoned.
+          onWarn('Zoning lookup for the parcel popup failed', err);
+          return null;
+        } finally {
+          zoningInFlight.delete(key);
+        }
+      })();
+      zoningInFlight.set(key, promise);
+      return promise;
+    },
     /** Test seam. */
-    _reset() { inFlight.clear(); ready.clear(); },
+    _reset() { inFlight.clear(); ready.clear(); zoningReady.clear(); zoningInFlight.clear(); },
   };
 }
