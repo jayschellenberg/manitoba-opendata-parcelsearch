@@ -359,6 +359,33 @@ deliberately *not* covered: they are province-spanning administrative
 aggregates, and three more zoom levels of the whole province is a steep price
 for four pseudo-municipalities whose parcels are a grey smear at that scale.
 
+**Cross-checked by the Winnipeg audit, 2026-08-24.** ParcelSearch had the
+identical bug from the identical assumption — z13 floor against a map that
+opens at z11, so its overlay drew nothing at the default view (0 tiles, 0
+features, toggle reading "Hide All Assessment Parcels"). It is on z8 now,
+measured over street searches rather than municipalities, which makes z8 a
+figure two independent measurements arrived at.
+
+That audit sends back one thing this section does not cover: **dropping the
+floor is what makes the low zooms render, and flat line styling may not
+survive them.** Winnipeg's flat 1.5 px / 0.8 grey turned into a citywide dark
+slab at z11 the moment the tiles existed to draw; it now interpolates width and
+opacity by zoom. The fabric here is lighter (0.75 px / 0.6, `#d1d5db`) and
+scoped to one municipality, so it is likely fine — but nobody has looked at
+BRANDON (17,329 parcels) at the zoom it fits at, and "likely fine" is what the
+floor bug was. Check it before assuming; the fix, if needed, is grafting the
+ramps from `ParcelSearch/web/src/lib/citywideParcelsStyle.js`, whose colours
+are already identical to `web/src/lib/muniParcelsStyle.js` here.
+
+**Measuring what a floor change costs.** Walk the PMTiles v3 directory for
+bytes-per-zoom rather than reasoning about it. Winnipeg's z13→z8 move cost
++17.5 MB (z8 1.8, z9 2.9, z10 2.6, z11 3.8, z12 6.4) taking 99.4 → 116.5 MB,
+and the same walk proved z13–z18 came out within 0.2 MB per zoom of the
+previous build — the evidence that `--drop-densest-as-needed` had not started
+quietly thinning tiles where parcels are still clickable. Worth running here
+whenever the tippecanoe flags change.
+
+
 **The ceiling is not a size budget.** The archive is range-requested, so a
 viewer pulls a few hundred KB of tiles whether it is 100 MB or 700 MB, and R2
 storage at this scale is pennies a month with no egress fee. The band exists to
