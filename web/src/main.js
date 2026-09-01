@@ -2591,12 +2591,12 @@ function composeWithAttribution(srcCanvas) {
 
   // Pull the exact text MapLibre shows in its attribution control. This
   // keeps the static image in sync with whatever sources/overlays are
-  // currently visible — basemap (CARTO Voyager or Esri Imagery), zoning,
+  // currently visible — basemap (Protomaps streets or Esri Imagery), zoning,
   // dev-plan, contam, traffic, etc. — without us having to enumerate them.
   const attribEl = $mapEl.querySelector('.maplibregl-ctrl-attrib-inner') ||
                    $mapEl.querySelector('.maplibregl-ctrl-attrib');
   let text = attribEl ? attribEl.innerText.replace(/\s+/g, ' ').trim() : '';
-  if (!text) text = '© OpenStreetMap © CARTO';
+  if (!text) text = '© Protomaps © OpenStreetMap';
 
   // Style the credit similar to the live map's bottom-right overlay: small
   // text, semi-transparent white pill, dark text. Size relative to the

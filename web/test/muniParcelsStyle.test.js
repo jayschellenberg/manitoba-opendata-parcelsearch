@@ -50,7 +50,7 @@ test('streets gets the light preset, lines and fill both', () => {
   const m = stubMap({
     'muni-parcels-line': 'none',
     'muni-parcels-fill': 'none',
-    'carto-voyager': 'visible',
+    'pm-background': 'visible',
     'esri-imagery': 'none',
     'wayback-imagery': 'none',
   });
@@ -69,7 +69,7 @@ test('each aerial raster triggers the imagery preset, lines and fill both', () =
     const m = stubMap({
       'muni-parcels-line': 'none',
       'muni-parcels-fill': 'none',
-      'carto-voyager': 'none',
+      'pm-background': 'none',
       'esri-imagery': 'none',
       'wayback-imagery': 'none',
       'ortho-mb': 'none',
@@ -86,7 +86,7 @@ test('each aerial raster triggers the imagery preset, lines and fill both', () =
 test('the light rasters (transportation / elevation) stay on the light preset', () => {
   const m = stubMap({
     'muni-parcels-line': 'none',
-    'carto-voyager': 'none',
+    'pm-background': 'none',
     'esri-imagery': 'none',
     'wayback-imagery': 'none',
     'nrcan-transportation-geometry': 'visible',
@@ -99,7 +99,7 @@ test('the light rasters (transportation / elevation) stay on the light preset', 
 test('optional layers that were never added (no MLI configured) do not throw', () => {
   const m = stubMap({
     'muni-parcels-line': 'none',
-    'carto-voyager': 'visible',
+    'pm-background': 'visible',
     // no esri/wayback/ortho keys at all
   });
   applyMuniParcelsBasemapStyle(m);

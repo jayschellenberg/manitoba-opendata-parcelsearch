@@ -204,7 +204,7 @@ status per comp, and the CSV export leads each group with a filterable
 - **Muni Website** — opens the selected muni's official site in a new tab. Auto-detects from a lookup of published municipal websites (`MUNI_WEBSITES` in [main.js](web/src/main.js)). Reads "Muni N/A" when there is no entry for that muni.
 - **PD Website** — data-driven. After every search, the dominant `PLANNINGDISTRICT` value across the dev-plan enrichment FC picks the active PD; `PD_WEBSITES` looks up its URL. Reads "PD N/A" when the PD has no website on file. Stays disabled until a search resolves the PD.
 
-**Basemap menu** sits in the map's top-right gutter and offers CARTO Streets,
+**Basemap menu** sits in the map's top-right gutter and offers Protomaps Streets,
 Esri Satellite, the Natural Resources Canada transportation map, and the NRCan
 elevation hillshade. A fifth
 **MLI aerial 2007-2013** row appears when the locally built historical PMTiles
@@ -260,7 +260,7 @@ Pure static. Vercel serves the Vite-built bundle plus the generated legal-search
 
 **Dependencies** (`web/package.json`):
 
-- `maplibre-gl` — map (CARTO Streets, Esri Satellite, NRCan Transportation, and NRCan Elevation)
+- `maplibre-gl` — map (Protomaps/OSM Streets, Esri Satellite, NRCan Transportation, and NRCan Elevation)
 - `pmtiles` — reads the optional MLI historical aerial archive (inert until `VITE_MLI_ORTHO_PMTILES_URL` is set)
 - `@turf/area`, `@turf/bbox`, `@turf/intersect`, `@turf/boolean-point-in-polygon`, `@turf/length` — spatial primitives for the area-weighted join + route distances
 - `@mapbox/mapbox-gl-draw` — measurement / draw tool on the map
