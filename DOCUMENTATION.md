@@ -769,7 +769,12 @@ runtime.
 
 ### 10.1 Basemaps
 `map.js` `BASEMAP_STYLE` stacks the basemaps; the top-right menu selects them:
-- **Streets** — CARTO Positron (default; carries its own labels).
+- **Streets** — Protomaps / OpenStreetMap vector tiles (default; carries its
+  own labels), **self-hosted**: one `basemap-manitoba.pmtiles` archive on the
+  `mb-ortho` R2 bucket, styled in the browser by `@protomaps/basemaps` (light
+  flavor). No API key, no vendor tile quota. Replaced CARTO's raster Voyager
+  tiles in 2026-09 when CARTO began watermarking unkeyed requests and
+  announced the raster service's retirement. Rebuild: MAINTENANCE.md §7b.
 - **Satellite** — **Esri World Imagery** (`server.arcgisonline.com/.../World_Imagery`,
   keyless, ~30–60 cm, current, province-wide) + transparent Esri
   transportation/reference label overlays. This is the standing aerial layer.

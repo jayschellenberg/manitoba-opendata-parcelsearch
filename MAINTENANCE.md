@@ -678,6 +678,32 @@ policy allows the Manitoba Vercel origin, and production's
 Add a new archive host to `vercel.json` `connect-src` if it is not already
 allowed. Review the current MLI terms before publishing.
 
+### 7b. Streets basemap — Protomaps (cadence: ~annual, or when roads change)
+The Streets basemap is a Manitoba cut of the Protomaps daily OpenStreetMap
+build, self-hosted as `basemap-manitoba.pmtiles` on the `mb-ortho` R2 bucket
+(same bucket, CORS and `connect-src` as the MLI ortho and Assessment Parcels
+archives, so nothing else needs configuring). `web/src/map.js` hard-codes the
+public URL as the default; `VITE_BASEMAP_PMTILES_URL` overrides it for local
+work. Style comes from the `@protomaps/basemaps` npm package (light flavor);
+sprites are checked in under `web/public/basemap-sprites/`.
+
+Rebuild = re-extract from a newer daily build and overwrite the object:
+```
+# pmtiles CLI: https://github.com/protomaps/go-pmtiles/releases (Windows zip, ~18 MB)
+# Latest build date: https://maps.protomaps.com/builds/
+pmtiles extract https://build.protomaps.com/<YYYYMMDD>.pmtiles basemap-manitoba.pmtiles `
+  --bbox=-102.5,48.5,-88.5,60.5 --maxzoom=15 --download-threads=8
+rclone copy basemap-manitoba.pmtiles r2-mb:mb-ortho/ --s3-no-check-bucket --s3-chunk-size 64M --s3-upload-concurrency 8
+```
+First build (2026-08-31 planet): 3 min 21 s, 234 range requests, 1.09 GB,
+z0–15 (MapLibre overzooms z15 vector tiles cleanly to z20). The bbox is
+Manitoba plus a margin so the neighbouring provinces/states are drawn at
+province-wide zooms; widen it if the view ever needs more context. The
+Winnipeg app ships the identical file on its own bucket (`r2:wpg-ortho/`), so
+rebuild both together. If Protomaps bumps its tileset major version (v4
+today), `@protomaps/basemaps` must move in step — its `layers()` are written
+against the tileset schema.
+
 ### 8. Winnipeg MLS HPI — residential dashboard  (cadence: monthly, **scheduled**)
 `ResChartsV2.5.qmd` (in `D:\Dropbox\Appraisal\RProjects\appraisal-templates\residential`)
 reads CREA MLS HPI from `MLS_HPI_<Month>_<Year>` folders next to it; its loader
