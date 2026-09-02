@@ -678,31 +678,56 @@ policy allows the Manitoba Vercel origin, and production's
 Add a new archive host to `vercel.json` `connect-src` if it is not already
 allowed. Review the current MLI terms before publishing.
 
-### 7b. Streets basemap — Protomaps (cadence: ~annual, or when roads change)
+### 7b. Streets basemap — Protomaps  (cadence: semi-annual, **scheduled**)
 The Streets basemap is a Manitoba cut of the Protomaps daily OpenStreetMap
 build, self-hosted as `basemap-manitoba.pmtiles` on the `mb-ortho` R2 bucket
 (same bucket, CORS and `connect-src` as the MLI ortho and Assessment Parcels
 archives, so nothing else needs configuring). `web/src/map.js` hard-codes the
 public URL as the default; `VITE_BASEMAP_PMTILES_URL` overrides it for local
 work. Style comes from the `@protomaps/basemaps` npm package (light flavor);
-sprites are checked in under `web/public/basemap-sprites/`.
+sprites are checked in under `web/public/basemap-sprites/`. The Winnipeg app
+serves the **identical file from its own bucket** (`r2:wpg-ortho/`); one
+script publishes to both.
 
-Rebuild = re-extract from a newer daily build and overwrite the object:
+**Rebuild is `rebuild-basemap.ps1`**, scheduled as `mb-parcelsearch-basemap-refresh`
+(Jan 2 / Jul 2, 03:00 — a clear day behind the semiannual publish) with
+`-IfStale -Publish`. 5–30 minutes end to end (the extract is ~4 min; the
+Winnipeg bucket's server-side swap took 20 min on the first run where the
+Manitoba one took 4 s — rclone handles the two remotes' providers differently). By hand:
 ```
-# pmtiles CLI: https://github.com/protomaps/go-pmtiles/releases (Windows zip, ~18 MB)
-# Latest build date: https://maps.protomaps.com/builds/
-pmtiles extract https://build.protomaps.com/<YYYYMMDD>.pmtiles basemap-manitoba.pmtiles `
-  --bbox=-102.5,48.5,-88.5,60.5 --maxzoom=15 --download-threads=8
-rclone copy basemap-manitoba.pmtiles r2-mb:mb-ortho/ --s3-no-check-bucket --s3-chunk-size 64M --s3-upload-concurrency 8
+powershell -ExecutionPolicy Bypass -File rebuild-basemap.ps1 -Publish            # newest daily build, both buckets
+powershell -ExecutionPolicy Bypass -File rebuild-basemap.ps1                     # extract + verify only, leave on disk
+powershell -ExecutionPolicy Bypass -File rebuild-basemap.ps1 -Build 20260831 -Publish
 ```
-First build (2026-08-31 planet): 3 min 21 s, 234 range requests, 1.09 GB,
-z0–15 (MapLibre overzooms z15 vector tiles cleanly to z20). The bbox is
-Manitoba plus a margin so the neighbouring provinces/states are drawn at
-province-wide zooms; widen it if the view ever needs more context. The
-Winnipeg app ships the identical file on its own bucket (`r2:wpg-ortho/`), so
-rebuild both together. If Protomaps bumps its tileset major version (v4
-today), `@protomaps/basemaps` must move in step — its `layers()` are written
-against the tileset schema.
+What it does, in the order that matters for running it unattended:
+1. Finds the newest build by probing `build.protomaps.com/<YYYYMMDD>.pmtiles`
+   back up to 14 days (there is no machine-readable index), and reads its
+   metadata remotely — header only, not the 137 GB planet.
+2. **Schema gate.** Refuses (alert, nothing uploaded) any build whose tileset
+   major version is not the one the deployed `@protomaps/basemaps` targets
+   (`$ExpectedTilesetMajor`, v4 today), or that lacks any of the nine source
+   layers the style reads. Bump the constant only together with the npm
+   package in **both** web trees.
+3. Extracts bbox `-102.5,48.5,-88.5,60.5` to z15 into `%LOCALAPPDATA%\Temp\mb-basemap`
+   (never Dropbox), then `pmtiles verify`, an 800 MB–3 GB size band, and a
+   header read-back of zoom/bounds. First build (2026-08-31 planet): 1.09 GB.
+4. **Staged publish** per bucket: upload as `.staging`, size-verify,
+   server-side rename over the live object, size-verify again, then a public
+   ranged GET on the r2.dev host. Production never has a moment with no file.
+5. Publishes `basemap-manitoba.meta.json` next to the archive (build date,
+   OSM data time, tileset version, bbox, size, sha256). That sidecar is what
+   `-IfStale` and the watchdog read — i.e. what production actually serves.
+
+The pmtiles CLI is pinned by version **and zip SHA-256** and self-installs to
+`%LOCALAPPDATA%\Programs\pmtiles` when missing, so a wiped temp dir or a
+fresh machine cannot turn the job into a silent no-op.
+
+**Dead-man watchdog:** `basemap-staleness-check.ps1`, scheduled daily as
+`mb-parcelsearch-basemap-staleness` (09:15). Reads both public sidecars and
+nags (once a month) when the OSM data is > 400 days old, a sidecar is
+unreadable, or the two buckets serve different builds. Both jobs share the
+ntfy topic `mbps-basemap-jks`; `task-health-check.ps1` picks the two tasks
+up automatically from their registrars.
 
 ### 8. Winnipeg MLS HPI — residential dashboard  (cadence: monthly, **scheduled**)
 `ResChartsV2.5.qmd` (in `D:\Dropbox\Appraisal\RProjects\appraisal-templates\residential`)
@@ -757,6 +782,8 @@ powershell -ExecutionPolicy Bypass -File schedule_hpi_download.ps1   # mb-parcel
 powershell -ExecutionPolicy Bypass -File schedule_hpi_check.ps1      # mb-parcelsearch-hpi-staleness — daily 09:00 (HPI backstop watchdog)
 powershell -ExecutionPolicy Bypass -File schedule_task_health_check.ps1     # mb-parcelsearch-task-health         — daily 09:40 (reads every task's LastTaskResult)
 powershell -ExecutionPolicy Bypass -File schedule_post_refresh_report.ps1   # mb-parcelsearch-post-refresh-report — 15th monthly 08:00 (did the refresh actually publish?)
+powershell -ExecutionPolicy Bypass -File schedule_basemap.ps1        # mb-parcelsearch-basemap-refresh   — Jan 2 / Jul 2 03:00 (Protomaps streets basemap re-cut + publish, both buckets)
+powershell -ExecutionPolicy Bypass -File schedule_basemap_check.ps1  # mb-parcelsearch-basemap-staleness — daily 09:15 (basemap dead-man watchdog, reads the public sidecars)
 ```
 
 #### Run these from an ELEVATED prompt (2026-08-12: tasks are now S4U)
