@@ -1747,6 +1747,11 @@
             <th data-col="value" id="value-header" title="Click any value to open the parcel's Manitoba Assessment Online report">Assessment</th>
             <th data-col="walk" title="Open this address on walkscore.com">Walkscore</th>
             <th data-col="flood" title="Flood zone this parcel sits in, with the share of the parcel inside it — strongest first where there is more than one. Statutory Designated Flood Areas outrank the 1-in-200 year extent, which outranks the observed 1997 / 2009 / 2011 extents. &quot;None&quot; means outside every layer screened here; blank means no data was loaded for that municipality. Joined at full resolution, so a boundary parcel can read differently from the simplified map overlay. The ↗ opens the parcel in the standalone flood tool for the appraisal paragraph and static exhibit. Screening aid, not a flood determination.">Flood</th>
+            <!-- Land Facts — crop history 2009-2025, relief, mapped wetland and
+                 surface water from federal rasters, pre-baked per muni by
+                 r/build_landfacts.R for parcels over 20 acres with a MASC
+                 rating. Hidden by default; surfaced by the Agricultural preset. -->
+            <th data-col="landfacts" title="Crop history from the AAFC Annual Crop Inventory: the last observed year's dominant class and how many observed years since 2009 were at least half annual crop (e.g. Canola 2025 · 15/17). Hover for every year, relief and slope (MRDEM 30 m), mapped wetland (Canadian Wetland Inventory, 10 m) and open water (1984-2021). Satellite classification, not a cropping record — AAFC targets 85% accuracy nationally and publishes none per parcel. Only for parcels over 20 acres with a MASC rating; blank means no data was loaded for that municipality.">Land Facts</th>
             <th data-col="streetview" title="Open Google Street View at this parcel (nearest panorama to the parcel centre)">StreetView</th>
           </tr>
         </thead>

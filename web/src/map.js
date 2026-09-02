@@ -26,6 +26,10 @@ import turfLength from '@turf/length';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import { landCoverBreakdown, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
+import {
+  readLandfacts, yearRecords, croppedYears, observedYears, lastThree,
+  wetlandClassNames, COVER_GROUPS,
+} from './lib/landfacts.js';
 import { FLOOD_GROUPS, floodColorStops, floodZone } from './lib/flood.js';
 import { overlayGroupExpanded } from './lib/overlayToggle.js';
 import { formatRollSizeField } from './lib/acres.js';
@@ -4881,6 +4885,7 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
     : null;
   const landCoverTable = landCoverParcelHtml(p);
   const mascBox = mascRatingParcelHtml(p);
+  const landfactsBox = landfactsParcelHtml(p);
 
   // Right column stacks Land cover (farmland parcels over the threshold),
   // then the MASC rating, then Soil composition (when the Soil Survey
@@ -4890,6 +4895,7 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
   const rightSections = [];
   if (landCoverTable) rightSections.push(`<strong>Land cover</strong>${landCoverTable}`);
   if (mascBox)        rightSections.push(`<strong>MASC rating</strong>${mascBox}`);
+  if (landfactsBox)   rightSections.push(`<strong>Land facts</strong>${landfactsBox}`);
   if (soilTable)      rightSections.push(`<strong>Soil composition</strong>${soilTable}`);
   // Everything in this column is sampled against the parcel's CURRENT polygon.
   // When that boundary has been withheld because the parcel was reconfigured
@@ -5381,6 +5387,36 @@ export function landCoverParcelHtml(p) {
     </tr>`;
   }).join('');
   return `<table style="margin-top:4px;font-size:12px;border-collapse:collapse;width:100%">${html}</table>`;
+}
+
+/**
+ * Land-facts box for the parcel popup: the last three observed crop-inventory
+ * years, a 17-year cover strip (one coloured tick per year, grey = not
+ * observed), cropped/observed years, then relief, wetland and open water.
+ * Returns null when the parcel carries no `_landfacts` stamp — below the
+ * farmland gate, no MASC rating, or the muni shard never loaded.
+ */
+export function landfactsParcelHtml(p) {
+  const lf = readLandfacts(p?._landfacts);
+  if (!lf) return null;
+  const recs = yearRecords(lf);
+  const strip = recs.map((r) => {
+    const g = COVER_GROUPS[r.group];
+    const color = g ? g.color : '#d0d0d0';
+    const tip = r.crop == null ? `${r.year}: not observed` : `${r.year}: ${r.label}, crop ${r.crop}%`;
+    return `<span title="${escapeHtml(tip)}" style="display:inline-block;width:9px;height:14px;margin-right:1px;background:${escapeHtml(color)};border-radius:2px"></span>`;
+  }).join('');
+  const last3 = lastThree(lf).map((r) => `${r.year} ${escapeHtml(r.label)} <span style="color:#555">${r.crop}%</span>`).join('<br>');
+  const lines = [];
+  if (last3) lines.push(last3);
+  lines.push(`${strip}<br><span style="color:#555">${croppedYears(lf)} of ${observedYears(lf)} observed years at least half cropped, 2009\u20132025</span>`);
+  if (lf.rel != null) lines.push(`<span style="color:#555">Relief</span> ${escapeHtml(String(lf.rel))} m \u00b7 slope ${escapeHtml(String(lf.slp))}\u00b0`);
+  if (lf.wet != null) {
+    const cls = wetlandClassNames(lf.wc);
+    lines.push(`<span style="color:#555">Wetland</span> ${escapeHtml(String(lf.wet))}%${cls ? ' (' + escapeHtml(cls) + ')' : ''}`);
+  }
+  if (lf.gsw != null) lines.push(`<span style="color:#555">Open water</span> ${escapeHtml(String(lf.gsw))}% permanent \u00b7 ${escapeHtml(String(lf.gsi))}% intermittent`);
+  return `<div style="margin-top:4px;font-size:12px;line-height:1.7">${lines.join('<br>')}</div>`;
 }
 
 /**

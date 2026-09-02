@@ -245,7 +245,7 @@ export const PRESETS = {
   // main.js. MASC Rating, Risk Area and Land Cover need no such trigger:
   // they're stamped during every search/import enrichment.
   'Agricultural': new Set([
-    'favorite', 'roll', 'muniname', 'address', 'rollsize', 'acres', 'boundary', 'landcover', 'cultpct', 'water',
+    'favorite', 'roll', 'muniname', 'address', 'rollsize', 'acres', 'boundary', 'landcover', 'cultpct', 'landfacts', 'water',
     'soil', 'clicls', 'soiltype', 'slope', 'riskarea', 'tile', 'irrigation',
     'grouppriceac', 'groupacres', 'saledate', 'saleprice', 'saletype', 'saletoasmt', 'grouppricesf',
     'zone1', 'dev1', 'legal', 'title',
