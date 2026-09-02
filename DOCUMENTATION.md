@@ -316,10 +316,7 @@ as per-muni shards in `mb-parcel-data/landfacts/` (same family shape as
 `flood/` and `landcover/`), read by `fetchLandfactsForMuni` in
 `web/src/arcgis.js`, derived by `web/src/lib/landfacts.js`, and shown as the
 **Land Facts** column (Agricultural preset), a popup box, twelve CSV
-columns and the **Crop History** map overlay — one button cycling Years
-Cropped (gold ramp on the share of observed years at least half annual
-crop) → Land Use (cover group of the last observed year) → off, both
-over the muni-wide parcel fabric.
+columns and the **Crop History** map overlay (§3.7.1).
 
 - **Inputs:** the newest complete `mao-assembly` Parquet (`geometry_wkt`,
   `CalcAcres`, `MASCRating`), the RollEntry snapshot for the muni-name map,
@@ -337,6 +334,55 @@ over the muni-wide parcel fabric.
 - **Keep in sync:** `MIN_ACRES` (builder) ↔ `LANDFACTS_MIN_ACRES` (lib), and
   the year range ↔ `LANDFACTS_YEARS`; `web/test/landfacts.test.js` checks both
   against the built index's `_meta`. Operating notes are in MAINTENANCE.md §6d.
+
+### 3.7.1 Frontend — the Crop History overlay
+`web/src/lib/landfacts.js` is the single source of truth for the year range,
+class labels, cover groups, the ramp and the two view rules; `main.js`
+(`toggleLandfactsOverlay` and friends), the legend, the grid dot and the
+popups all read from it.
+
+- **One button, three states**, the same cycle as Land Cover:
+  Off → **Years Cropped** → **Land Use** → Off (`nextLandfactsMode`,
+  `landfactsMode` = `null | 'years' | 'landuse'`). The button label carries
+  the view (`Crop History (Years Cropped)`), the legend re-renders per view.
+- **Years Cropped** = `CROP_RAMP`: one gold hue, light to dark, binned on the
+  share of *observed* years with crop ≥ `CROP_YEAR_MIN_PCT` (50%). Share, not
+  count, so cloudy years do not penalise a parcel. Bin edges follow the
+  legend labels literally — exactly 25% is "Cropped 25-50% of Years",
+  exactly 50% and 75% are "Cropped 50-75% of Years" (`maxInclusive`).
+  Nothing observed → no colour.
+- **Land Use** = `COVER_GROUPS[coverGroup(last observed dom code)]`: annual
+  crop (130–199) / grass-pasture (110, 122) / trees-shrub (50, 200–230) /
+  water-wetland (20, 80, 85) / barren-built (the rest). Forest codes sit
+  *above* the crop range — 200 is not crop.
+- **Both views read the same `_landfacts` stamp**; `landfactsFillColor(lf,
+  mode)` picks the rule and `_lfColor` is what the fill layers paint
+  (`muni-parcels-landfacts-fill` on the fabric, `landfacts-fill` on results).
+  Switching views is `recolorLandfacts()` — a loop over the stamped fabric
+  and the result source, then `setData` on both — never a refetch. The
+  re-entry path (overlay already loaded for this scope) recolours too, or
+  the second pass round the cycle shows Years Cropped in Land Use colours.
+- **Turning it on also turns Assessment Parcels on** through
+  `toggleAuxOverlay('muniParcels')`: the fabric click and hover handlers
+  only run while `muni-parcels-fill` is visible. Because the overlay fetches
+  the fabric itself and claims `auxLoaded.muniParcels`, it must also call
+  `setMuniParcelsScope` — the Assessment Parcels toggle skips its own
+  `setData` (which applies the muni filter) once that flag is set, and the
+  vector-tile layers otherwise keep the empty boot filter: nothing renders,
+  nothing answers a click, even with the button pressed. Land Cover has the
+  same call for the same reason.
+- **Fabric popup** (`muniParcelHtml` in `map.js`) gets a one-line crop
+  history (`landfactsTopLine`: last class and year · years cropped/observed ·
+  wetland %) and a MASC rating line; the overlay load stamps the parcel-MASC
+  fields (`_soilRating`, `_soilQuarter`, `_soilRiskArea`) onto the fabric so
+  the rating is there to show. The search-result popup carries the full
+  series (`landfactsParcelHtml`).
+- **Exclusivity and reset:** Crop History and Land Cover (Dominant) paint the
+  same parcels, so turning either on turns the other off. A scope change
+  (different muni, sales-CSV mode ending) drops the overlay with the scope
+  (`resetOverlayToggles` → `turnLandfactsOff`), like Land Cover.
+- **Grid dot** in the Land Facts cell always uses the ramp step, whatever
+  view the map is in — it answers "how much cropping", not "what now".
 
 ## 4. Snapshot archive + provenance
 
@@ -849,6 +895,17 @@ licence attribution, are in `docs/MLI-IMAGERY-BASEMAP.md`.
 - **Land-cover coverage collapsed to a few munis** → a partial/aborted
   mao-assembly Parquet; check the `build_landcover.R` "NOTE … PARTIAL"
   line. It auto-skips partials, so this means re-run a complete assembly.
+- **Crop History / Land Cover colours show but no parcel answers a click or
+  hover, even with Assessment Parcels pressed** → the vector-tile fabric
+  still has the empty boot filter. Whoever claims `auxLoaded.muniParcels`
+  must call `setMuniParcelsScope` (§3.7.1); check with
+  `_map.getFilter('muni-parcels-fill')` in the console.
+- **Verifying map behaviour from an automated browser: the map never
+  finishes loading** (`Map setup has not completed after 30s`, grey map,
+  `isStyleLoaded()` false) → the tab is hidden. MapLibre applies its style
+  and loads sources from `requestAnimationFrame`, which a background tab
+  never fires, so nothing short of bringing the tab to the front helps.
+  Production looks the same in that state; it is not a deploy problem.
 - **A live parcel shows no land cover** → it's newer than the last assembly
   Parquet; rerun mao-assembly, then `build_landcover.R`.
 - **New snapshot not showing, or stale/triangle geometry after a republish** →
