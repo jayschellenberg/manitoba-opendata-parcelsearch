@@ -315,8 +315,11 @@ Inventory v3A (10 m), and open water from JRC Global Surface Water. Shipped
 as per-muni shards in `mb-parcel-data/landfacts/` (same family shape as
 `flood/` and `landcover/`), read by `fetchLandfactsForMuni` in
 `web/src/arcgis.js`, derived by `web/src/lib/landfacts.js`, and shown as the
-**Land Facts** column (Agricultural preset), a popup box and twelve CSV
-columns.
+**Land Facts** column (Agricultural preset), a popup box, twelve CSV
+columns and the **Crop History** map overlay — one button cycling Years
+Cropped (gold ramp on the share of observed years at least half annual
+crop) → Land Use (cover group of the last observed year) → off, both
+over the muni-wide parcel fabric.
 
 - **Inputs:** the newest complete `mao-assembly` Parquet (`geometry_wkt`,
   `CalcAcres`, `MASCRating`), the RollEntry snapshot for the muni-name map,

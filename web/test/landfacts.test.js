@@ -31,6 +31,10 @@ import {
   cropShare,
   cropRampStep,
   cropRampColor,
+  landUseStep,
+  landUseColor,
+  landfactsFillColor,
+  LANDFACTS_MODES,
 } from '../src/lib/landfacts.js';
 
 const N = LANDFACTS_YEARS.length;
@@ -107,12 +111,34 @@ assert.equal(cropShare(cropland), 1, '16 cropped of 16 observed');
 assert.equal(cropShare(bush), 0);
 assert.equal(cropShare({ cp: fill(null), dom: fill(null) }), null, 'nothing observed -> null, not 0');
 assert.equal(cropRampStep(bush).label, 'Never cropped');
-assert.equal(cropRampStep(cropland).label, 'Mostly cropped');
+assert.equal(cropRampStep(cropland).label, 'Cropped >75% of Years');
 assert.equal(cropRampColor({ cp: fill(null), dom: fill(null) }), null);
-// share, not count: 3 cropped of 6 observed is "up to half", same as 8 of 16
+// share, not count: 3 cropped of 6 observed is exactly half, same bin as 8 of 16
 const half = { cp: [90, 90, 90, 0, 0, 0, null, null, null, null, null, null, null, null, null, null, null],
                dom: [140, 140, 140, 110, 110, 110, null, null, null, null, null, null, null, null, null, null, null] };
-assert.equal(cropRampStep(half).label, 'Up to half');
+assert.equal(cropRampStep(half).label, 'Cropped 50-75% of Years');
+// bin edges follow the labels: exactly a quarter is "25-50%", exactly
+// three-quarters is "50-75%"
+const series = (cropped, observed) => ({
+  cp: Array.from({ length: N }, (_, i) => (i < observed ? (i < cropped ? 90 : 0) : null)),
+  dom: Array.from({ length: N }, (_, i) => (i < observed ? (i < cropped ? 140 : 110) : null)),
+});
+assert.equal(cropShare(series(4, 16)), 0.25);
+assert.equal(cropRampStep(series(4, 16)).label, 'Cropped 25-50% of Years');
+assert.equal(cropRampStep(series(3, 16)).label, 'Cropped <25% of Years');
+assert.equal(cropRampStep(series(12, 16)).label, 'Cropped 50-75% of Years');
+assert.equal(cropRampStep(series(13, 16)).label, 'Cropped >75% of Years');
+assert.equal(cropRampStep(series(8, 16)).label, 'Cropped 50-75% of Years', 'exactly half is the upper bin');
+
+// --- land-use view: cover group of the last observed year -------------------
+assert.equal(landUseStep(cropland).label, 'Annual crop', 'canola in 2025');
+assert.equal(landUseStep(bush).label, 'Grass / pasture', 'grassland in 2025, not the conifer years before');
+assert.equal(landUseColor(bush), landUseStep(bush).color);
+assert.equal(landUseStep({ cp: fill(null), dom: fill(null) }), null);
+assert.equal(landfactsFillColor(cropland, 'landuse'), landUseColor(cropland));
+assert.equal(landfactsFillColor(cropland, 'years'), cropRampColor(cropland));
+assert.equal(landfactsFillColor(cropland, null), cropRampColor(cropland), 'no mode = years cropped');
+assert.deepEqual(Object.keys(LANDFACTS_MODES), ['years', 'landuse']);
 // lightness is monotone light -> dark: check the ramp never gets lighter
 const lum = (hex) => {
   const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
