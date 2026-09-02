@@ -671,7 +671,7 @@ popup never touch a raster.
 
 | Artefact | Built by | Sources | Where it lives |
 |---|---|---|---|
-| **Land Facts** grid column + popup box + 12 CSV columns | `npm run landfacts:shards` (`r/build_landfacts.R`) | AAFC Annual Crop Inventory 2009–2025 (30 m; 56 m in 2009–10), NRCan MRDEM-30, Canadian Wetland Inventory v3A (10 m), JRC Global Surface Water 1984–2021 | `mb-parcel-data/landfacts/`, served via the CDN pin |
+| **Land Facts** grid column + popup box + 12 CSV columns + the **Crop History** map overlay (Years Cropped / Land Use views) | `npm run landfacts:shards` (`r/build_landfacts.R`) | AAFC Annual Crop Inventory 2009–2025 (30 m; 56 m in 2009–10), NRCan MRDEM-30, Canadian Wetland Inventory v3A (10 m), JRC Global Surface Water 1984–2021 | `mb-parcel-data/landfacts/`, served via the CDN pin |
 
 **Which parcels.** `CalcAcres >= 20` with a MASC rating, read from the newest
 complete `mao-assembly` Parquet (173,697 parcels, 147 municipalities on the
@@ -716,10 +716,31 @@ Both of those were bugs caught before the family shipped, by
 rural-report's slower per-parcel path for a fixed set of rolls — run it after
 touching the extraction.
 
+**On the map.** The Crop History button (Agricultural layers) cycles
+Off → **Years Cropped** → **Land Use** → Off over the muni-wide parcel
+fabric. Both views are derived in the browser from the same `cp` / `dom`
+series, so nothing here needs a rebuild:
+
+- *Years Cropped* — gold ramp on the share of observed years with crop
+  ≥ 50% (`CROP_RAMP` and `CROP_YEAR_MIN_PCT` in `web/src/lib/landfacts.js`;
+  legend labels live on the ramp entries, bin edges follow them literally).
+- *Land Use* — cover group of the last observed year (`COVER_GROUPS` /
+  `coverGroup` in the same file; the annual-crop range is 130–199).
+
+Changing a colour, label, bin or group is a lib edit plus
+`web/test/landfacts.test.js`; the legend, grid dot and popups read from the
+lib. A new inventory year is the one change that touches both sides:
+extend `LANDFACTS_YEARS` and the builder's year range together, rebuild
+and republish, and the views follow. The overlay switches Assessment
+Parcels on and scopes the tile fabric itself — see DOCUMENTATION.md
+§3.7.1 before touching that path; the failure mode (colours but no click)
+is silent.
+
 **Not a cropping record.** The crop inventory is a satellite classifier; AAFC
 targets 85% overall accuracy nationally and publishes none per parcel. The
-grid cell says so in its tooltip and the popup shows the whole series so the
-pattern, not one year, is what gets read.
+grid cell says so in its tooltip, the popup shows the whole series, and the
+overlay legend carries the same footnote, so the pattern, not one year, is
+what gets read.
 
 ### 7. MLI historical aerial basemap  (cadence: on-demand)
 The complete MLI Ortho Refresh source is built locally and deliberately not
