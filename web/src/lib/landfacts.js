@@ -154,14 +154,26 @@ export function coverGroup(code) {
 // 17 years from one cropped 5 of 17 -- the distinction that matters to an
 // appraisal. Bins are on share, not count, so a parcel with cloudy years is
 // not penalised for the years nobody saw. Lightness is monotone by
-// construction (Jason, 2026-09-02).
+// construction. Gold, not orange/brown: reads as ripe grain and stays clear
+// of the green land-cover, CLI and soil layers (Jason, 2026-09-02).
+//
+// Bin edges follow the labels: a share of exactly 0.25 is "25-50%", not
+// "<25%"; exactly 0.75 is "50-75%", not ">75%". `maxInclusive` says
+// whether a share equal to `max` still belongs to that bin.
 export const CROP_RAMP = Object.freeze([
-  { max: 0,    label: 'Never cropped',      color: '#F5E1CC' },
-  { max: 0.25, label: 'Up to a quarter',    color: '#F3B77A' },
-  { max: 0.5,  label: 'Up to half',         color: '#E8893A' },
-  { max: 0.75, label: 'Up to three-quarters', color: '#C25A10' },
-  { max: 1,    label: 'Mostly cropped',     color: '#7A360A' },
+  { max: 0,    maxInclusive: true,  label: 'Never cropped',           color: '#FBF3D3' },
+  { max: 0.25, maxInclusive: false, label: 'Cropped <25% of Years',   color: '#F2DC8C' },
+  { max: 0.5,  maxInclusive: false, label: 'Cropped 25-50% of Years', color: '#E1BD45' },
+  { max: 0.75, maxInclusive: true,  label: 'Cropped 50-75% of Years', color: '#BF921B' },
+  { max: 1,    maxInclusive: true,  label: 'Cropped >75% of Years',   color: '#7D5A0B' },
 ]);
+
+// The two views of the Crop History overlay. Both colour the same parcels
+// from the same stamp; only the rule differs.
+export const LANDFACTS_MODES = Object.freeze({
+  years:   { label: 'Years Cropped', legend: 'Crop history \u2014 share of years cropped since 2009' },
+  landuse: { label: 'Land Use',      legend: 'Crop history \u2014 land use in the last observed year' },
+});
 
 /** Share of observed years that were cropped, 0..1, or null when nothing was observed. */
 export function cropShare(lf) {
@@ -173,12 +185,30 @@ export function cropShare(lf) {
 export function cropRampStep(lf) {
   const s = cropShare(lf);
   if (s == null) return null;
-  return CROP_RAMP.find((b) => s <= b.max) || CROP_RAMP[CROP_RAMP.length - 1];
+  return CROP_RAMP.find((b) => (b.maxInclusive ? s <= b.max : s < b.max))
+    || CROP_RAMP[CROP_RAMP.length - 1];
 }
 
-/** Map fill colour for the Crop History overlay, or null. */
+/** Map fill colour for the Crop History overlay (Years Cropped view), or null. */
 export function cropRampColor(lf) {
   return cropRampStep(lf)?.color || null;
+}
+
+/** Cover group of the last observed year -- the Land Use view. Null when
+ *  nothing was observed. */
+export function landUseStep(lf) {
+  const last = lastObserved(lf);
+  return last ? (COVER_GROUPS[coverGroup(last.code)] || null) : null;
+}
+
+/** Map fill colour for the Crop History overlay (Land Use view), or null. */
+export function landUseColor(lf) {
+  return landUseStep(lf)?.color || null;
+}
+
+/** Fill colour for either view of the overlay. Unknown mode = Years Cropped. */
+export function landfactsFillColor(lf, mode) {
+  return mode === 'landuse' ? landUseColor(lf) : cropRampColor(lf);
 }
 
 // Canadian Wetland Inventory v3A class digits in `wc`.

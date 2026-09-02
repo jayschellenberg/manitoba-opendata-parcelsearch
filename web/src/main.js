@@ -250,8 +250,8 @@ import {
 } from './lib/flood.js';
 import {
   landfactsCellText, landfactsTooltip, landfactsSortRank,
-  landfactsCsvHeaders, landfactsCsvCells, cropRampColor, cropRampStep, CROP_RAMP,
-  LANDFACTS_MIN_ACRES,
+  landfactsCsvHeaders, landfactsCsvCells, cropRampStep, CROP_RAMP, COVER_GROUPS,
+  LANDFACTS_MODES, landfactsFillColor, LANDFACTS_MIN_ACRES,
 } from './lib/landfacts.js';
 import { resolveParcelAcres, formatRollSizeField, parseRollFrontageFeet } from './lib/acres.js';
 import { rollDisplay } from './lib/parcelLabelFields.js';
@@ -9118,20 +9118,65 @@ async function toggleCliOverlay() {
 //              fill while on so the two don't compete; flipping back to
 //              Dominant restores it without a refetch.
 // ---- Crop History overlay --------------------------------------------
-// A single on/off toggle (no Detailed mode — there is no raster to show).
-// Mirrors Land Cover (Dominant): load the muni-wide fabric for the current
-// scope, stamp `_lfColor` from the land-facts shard, flip the fill layers,
-// surface the Land Facts column. The two overlays paint the same parcels,
-// so turning either on turns the other off.
+// One button that cycles, the way Land Cover does:
+//   Off -> Years Cropped -> Land Use -> Off
+// Years Cropped shades each parcel by the share of observed years at least
+// half annual crop (gold ramp); Land Use colours it by the cover group of
+// its last observed year (annual crop / grass / trees / water / built).
+// Both read the same `_landfacts` stamp, so switching views is a recolour,
+// not a fetch. Mirrors Land Cover (Dominant) for the load: muni-wide fabric
+// for the current scope, `_lfColor` from the land-facts shard, fill layers
+// flipped, Land Facts column surfaced. The two overlays paint the same
+// parcels, so turning either on turns the other off.
 let landfactsOverlayOn = false;
+let landfactsMode = null;          // null | 'years' | 'landuse'
 let landfactsLoadedFor = null;
 
-/** Fill colour for a land-facts stamp: the years-cropped ramp (share of
- *  observed years at least half annual crop). null when nothing was
- *  observed. One hue by intensity, so "how much cropping" reads at a
- *  glance and a 17/17 quarter separates from a 5/17 one. */
+/** Fill colour for a land-facts stamp under the CURRENT view (Years
+ *  Cropped while the overlay is off, so a later first turn-on needs no
+ *  recolour). null when nothing was observed. */
 function landfactsColorFor(hit) {
-  return hit ? cropRampColor(hit) : null;
+  return hit ? landfactsFillColor(hit, landfactsMode) : null;
+}
+
+function nextLandfactsMode(current) {
+  if (current === null)    return 'years';
+  if (current === 'years') return 'landuse';
+  return null; // 'landuse' -> off
+}
+
+function landfactsButtonLabelFor(mode) {
+  return mode ? `Crop History (${LANDFACTS_MODES[mode].label})` : 'Crop History';
+}
+
+/** Re-derive `_lfColor` under the current view for everything already
+ *  stamped -- the muni fabric and the search-result parcels -- and push
+ *  both sources again. No fetch: the stamp holds the whole series. */
+function recolorLandfacts() {
+  const recolor = (fc) => {
+    let painted = 0;
+    for (const f of fc?.features || []) {
+      const p = f.properties;
+      if (!p?._landfacts) continue;
+      const color = landfactsColorFor(p._landfacts);
+      if (color) { p._lfColor = color; painted += 1; } else if (p._lfColor) delete p._lfColor;
+    }
+    return painted;
+  };
+  let painted = 0;
+  if (auxData.muniParcels?.features?.length) {
+    painted = recolor(auxData.muniParcels);
+    setMuniParcelsData(map, auxData.muniParcels);
+  }
+  // The result layer's source holds the features setMapData last pushed
+  // (same property objects the table rows carry), so recolour in place.
+  const src = map.getSource('parcels');
+  const resultFc = src?._data;
+  if (resultFc && typeof resultFc === 'object' && Array.isArray(resultFc.features)) {
+    recolor(resultFc);
+    src.setData(resultFc);
+  }
+  return painted;
 }
 
 /** Stamp `_lfColor` (+ `_landfacts`) on every fabric parcel from each muni's
@@ -9176,23 +9221,26 @@ async function stampLandfactsOnFabric(fabricFc, munis) {
   return painted;
 }
 
-function renderLandfactsLegend() {
+function renderLandfactsLegend(mode) {
   if (!$landfactsLegend) return;
-  const items = CROP_RAMP
+  const entries = mode === 'landuse' ? Object.values(COVER_GROUPS) : CROP_RAMP;
+  const items = entries
     .map((b) => `<li><span class="swatch" style="background:${b.color}"></span>${b.label}</li>`)
     .join('');
+  const title = (LANDFACTS_MODES[mode] || LANDFACTS_MODES.years).legend;
   $landfactsLegend.innerHTML =
-    `<strong>Crop history — share of years cropped since 2009</strong><ul>${items}</ul>`
+    `<strong>${title}</strong><ul>${items}</ul>`
     + `<small style="display:block;margin-top:4px;color:#6b7280;font-style:italic">`
-    + `Parcels over ${LANDFACTS_MIN_ACRES} acres with a MASC rating · AAFC Annual Crop Inventory, satellite classification</small>`;
+    + `Parcels >${LANDFACTS_MIN_ACRES} acres with a MASC rating · AAFC Annual Crop Inventory, satellite classification</small>`;
 }
 
 function turnLandfactsOff() {
   landfactsOverlayOn = false;
+  landfactsMode = null;
   setLandfactsVisible(map, false);
   if ($landfactsToggle) {
     setOverlayPressed($landfactsToggle, false);
-    setOverlayBtnLabel($landfactsToggle, 'Crop History');
+    setOverlayBtnLabel($landfactsToggle, landfactsButtonLabelFor(null));
   }
   if ($landfactsLegend) $landfactsLegend.hidden = true;
 }
@@ -9200,7 +9248,18 @@ function turnLandfactsOff() {
 async function toggleLandfactsOverlay() {
   if (!$landfactsToggle) return;
   await mapReady;
-  if (landfactsOverlayOn) { turnLandfactsOff(); return; }
+  const targetMode = nextLandfactsMode(landfactsMode);
+  if (targetMode === null) { turnLandfactsOff(); return; }
+
+  // Already on: the next view is a recolour of what is stamped, no load.
+  if (landfactsOverlayOn) {
+    landfactsMode = targetMode;
+    recolorLandfacts();
+    setOverlayBtnLabel($landfactsToggle, landfactsButtonLabelFor(targetMode));
+    renderLandfactsLegend(targetMode);
+    return;
+  }
+  landfactsMode = targetMode;
 
   const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
     ? csvMatchedMunis.slice()
@@ -9231,12 +9290,20 @@ async function toggleLandfactsOverlay() {
       landfactsLoadedFor = scopeKey;
     } catch (err) {
       console.warn('Crop History fabric load failed', err);
+      landfactsMode = null;
+      setOverlayBtnLabel($landfactsToggle, landfactsButtonLabelFor(null));
+      $landfactsToggle.disabled = false;
+      return;
     } finally {
       $landfactsToggle.disabled = false;
     }
   } else if (munis.length > 0) {
-    fabricPainted = (auxData.muniParcels?.features || [])
-      .filter((f) => f?.properties?._lfColor).length;
+    // Already stamped for this scope, but under whichever view was showing
+    // when the overlay last went off (Land Use, at the end of a full
+    // cycle). Recolour for the view coming on, or the second pass round
+    // the cycle shows Years Cropped in Land Use colours and the next click
+    // visibly changes nothing (Jason, 2026-09-02).
+    fabricPainted = recolorLandfacts();
   }
 
   // The fabric click and hover handlers only fire while the Assessment
@@ -9261,9 +9328,9 @@ async function toggleLandfactsOverlay() {
   landfactsOverlayOn = true;
   setLandfactsVisible(map, true);
   setOverlayPressed($landfactsToggle, true);
-  setOverlayBtnLabel($landfactsToggle, fabricPainted ? `Crop History (${fabricPainted.toLocaleString('en-US')})` : 'Crop History (on)');
+  setOverlayBtnLabel($landfactsToggle, landfactsButtonLabelFor(landfactsMode));
   setColumnVisible('landfacts', true);
-  renderLandfactsLegend();
+  renderLandfactsLegend(landfactsMode);
   if ($landfactsLegend) $landfactsLegend.hidden = false;
 }
 
@@ -11754,7 +11821,7 @@ function landfactsCell(row) {
     const dot = document.createElement('span');
     dot.className = 'water-dot';
     dot.style.background = step.color;
-    dot.title = `${step.label} of observed years cropped`;
+    dot.title = `${step.label} (share of observed years at least half annual crop)`;
     cell.appendChild(dot);
   }
   cell.appendChild(document.createTextNode(text));
