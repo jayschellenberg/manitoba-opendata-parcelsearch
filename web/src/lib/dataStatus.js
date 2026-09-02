@@ -106,7 +106,7 @@ export function newestSnapshot(histIndex) {
  * @param {Date}   [opts.now]       injectable clock for the schedule rules
  */
 export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMeta,
-                                waterMeta, floodMeta, now = new Date() } = {}) {
+                                waterMeta, floodMeta, landfactsMeta, now = new Date() } = {}) {
   const rows = [];
   const ds = manifest?.datasets || {};
   // Schedules, as registered in Task Scheduler on the build machine:
@@ -187,6 +187,20 @@ export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMet
     label: 'Flood zone shards (CDN)',
     vintage: dateLabel(floodLayerDate(floodMeta) || datePart(floodMeta?.generated_at)),
     detail: 'DFA + Special Management Area from MLI, frozen 2022-02-09 — verify a boundary before relying on it',
+    next: null,
+  });
+
+  // Land facts: crop history + relief + wetland + water from federal rasters,
+  // built by r/build_landfacts.R. The vintage is the build date; the crop
+  // inventory's own year range is in the detail so a reader can see how far
+  // the series runs without opening a shard.
+  const lfYears = Array.isArray(landfactsMeta?.years) ? landfactsMeta.years : null;
+  rows.push({
+    label: 'Land facts shards (CDN)',
+    vintage: dateLabel(datePart(landfactsMeta?.generated_at)),
+    detail: lfYears
+      ? `AAFC crop inventory ${lfYears[0]}–${lfYears[lfYears.length - 1]}, MRDEM, wetland inventory, surface water — parcels over ${landfactsMeta?.min_acres ?? 20} ac with a MASC rating`
+      : 'AAFC crop inventory, MRDEM, wetland inventory, surface water',
     next: null,
   });
 

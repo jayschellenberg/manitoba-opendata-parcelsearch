@@ -226,7 +226,7 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // fetchProvinceSectionGrid below). A stale, unread 40 MB copy is still
 // git-tracked in mb-parcel-data; nothing here points at it.
 export const MB_PARCEL_DATA_REVISION =
-  '3f4d7dc7cce47196b87c0619a60b6d3e5ef6e87e';
+  '047f0f478fb5008af5e66141ae1f7fabfd45de3c';
 // Origin-absolute rather than a bare /gh-data/... path: MapLibre tile
 // templates (map.js landcover-tiles) need absolute URLs. Node imports
 // this module in unit tests, where location is absent — the fallback
@@ -1824,6 +1824,60 @@ export async function fetchWaterForMuni(muniNameWithTyp) {
 }
 
 // ---------------------------------------------------------------------------
+// Land facts — per-muni shards from r/build_landfacts.R: crop history
+// 2009-2025, relief, mapped wetland and surface water for every parcel over
+// LANDFACTS_MIN_ACRES with a MASC rating. Same family shape as flood/ and
+// landcover/; see the header of src/lib/landfacts.js for the stamp.
+// ---------------------------------------------------------------------------
+
+let landfactsIndexPromise = null;
+
+/** Land-facts shard manifest: muni -> { file, count }, plus `_meta` with the
+ *  year range, thresholds and sources (read by the Data Status dialog). */
+export async function fetchLandfactsIndex() {
+  if (landfactsIndexPromise) return landfactsIndexPromise;
+  landfactsIndexPromise = (async () => {
+    const cacheKey = `mb_landfacts_index_v1_${MB_PARCEL_DATA_REVISION}`;
+    const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+    if (cached) return cached;
+    try {
+      const res = await fetch(`${MB_PARCEL_DATA_CDN}/landfacts/_index.json`);
+      if (!res.ok) return null;
+      const idx = await res.json();
+      await writeCache(cacheKey, idx);
+      return idx;
+    } catch {
+      return null;
+    }
+  })();
+  return landfactsIndexPromise;
+}
+
+/**
+ * Land-facts dictionary for one municipality, keyed by Roll_No_Txt, or null
+ * when the muni has no shard. null means "we do not know"; a muni WITH a
+ * shard and a roll absent from it is a parcel below the farmland gate.
+ */
+export async function fetchLandfactsForMuni(muniNameWithTyp) {
+  if (!muniNameWithTyp) return null;
+  const idx = await fetchLandfactsIndex();
+  const entry = lookupMuniManifestEntry(idx, muniNameWithTyp, { stripType: false });
+  if (!entry) return null;
+  const file = entry.file;
+  const cacheKey = `mb_landfacts_${file}_v1_${MB_PARCEL_DATA_REVISION}`;
+  const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  if (cached) return cached;
+  try {
+    const res = await fetch(`${MB_PARCEL_DATA_CDN}/landfacts/${file}`);
+    if (!res.ok) return null;
+    const dict = await res.json();
+    await writeCache(cacheKey, dict);
+    return dict;
+  } catch {
+    return null;
+  }
+}
+
 // Flood zone membership — per-muni shards from r/build_flood.R, served from
 // the mb-parcel-data CDN like the water and land-cover shards.
 //

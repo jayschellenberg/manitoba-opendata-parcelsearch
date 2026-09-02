@@ -14,7 +14,7 @@
 import {
   SERVICE_SOURCES, CLI_AGR_CAP_URL, MASC_RISK_AREAS_URL,
   MB_PARCEL_DATA_CDN, MB_PARCEL_DATA_REVISION,
-  fetchHistoricalIndex, fetchMascIndex, fetchWaterIndex, fetchFloodIndex,
+  fetchHistoricalIndex, fetchMascIndex, fetchWaterIndex, fetchFloodIndex, fetchLandfactsIndex,
 } from './arcgis.js';
 import { WALLAS_SOURCES } from './wallas.js';
 import { getManifest } from './manifest.js';
@@ -134,7 +134,7 @@ export function initDataStatusDialog() {
   }
 
   async function load() {
-    const [vintage, manifest, rollSnap, histIndex, mascIdx, waterIdx, floodIdx] = await Promise.all([
+    const [vintage, manifest, rollSnap, histIndex, mascIdx, waterIdx, floodIdx, landfactsIdx] = await Promise.all([
       fetchJson(`${BASE_URL}data/muni-vintage.json`),
       getManifest(),
       fetchJson(`${MB_PARCEL_DATA_CDN}/rollentry-snapshot/_index.json`),
@@ -142,6 +142,7 @@ export function initDataStatusDialog() {
       fetchMascIndex().catch(() => null),
       fetchWaterIndex().catch(() => null),
       fetchFloodIndex().catch(() => null),
+      fetchLandfactsIndex().catch(() => null),
     ]);
 
     muniRows = vintageRows(vintage);
@@ -158,6 +159,7 @@ export function initDataStatusDialog() {
       mascMeta: mascIdx?._meta || null,
       waterMeta: waterIdx?._meta || null,
       floodMeta: floodIdx?._meta || null,
+      landfactsMeta: landfactsIdx?._meta || null,
     }));
     renderServices();
   }

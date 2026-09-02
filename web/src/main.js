@@ -132,6 +132,7 @@ import {
   fetchMascRiskAreas,
   fetchFloodOverlay,
   fetchFloodForMuni,
+  fetchLandfactsForMuni,
   fetchSurveyGridForMuni,
   fetchProvinceSectionGrid,
   fetchRiverLots,
@@ -246,6 +247,10 @@ import {
   FLOOD_GROUPS, floodCellText, floodTooltip, floodSortRank,
   floodCsvCells, floodColor,
 } from './lib/flood.js';
+import {
+  landfactsCellText, landfactsTooltip, landfactsSortRank,
+  landfactsCsvHeaders, landfactsCsvCells, lastObserved, coverGroup, COVER_GROUPS,
+} from './lib/landfacts.js';
 import { resolveParcelAcres, formatRollSizeField, parseRollFrontageFeet } from './lib/acres.js';
 import { rollDisplay } from './lib/parcelLabelFields.js';
 import { createMuniParcelResolver } from './lib/muniParcelRecords.js';
@@ -1295,6 +1300,8 @@ const SORT_KEYS = {
   // link; now the cell carries the verdict, so the sort orders by it —
   // statutory encumbrance first, unstamped rows last.
   flood:   (r) => floodSortRank(r.parcel.properties._flood),
+  // Land facts — most-cropped first (share of observed years), unstamped last.
+  landfacts: (r) => landfactsSortRank(r.parcel.properties._landfacts),
   streetview: (r) => strKey(r.parcel.geometry ? '1' : ''),
   value:   (r) => finiteOrNeg(parseTotalValue(r.parcel.properties.Total_Value)),
   report:  (r) => strKey(r.parcel.properties.Asmt_Rpt_Url),
@@ -4146,7 +4153,7 @@ async function runSearch() {
       const waterRows = parcelFc.features.map((p) => ({ parcel: p, zoning: [], devPlan: [] }));
       // Flood zones ride along for the same reason and at the same cost —
       // another pre-baked per-muni dictionary, one lookup per row.
-      await Promise.all([stampWaterInfluence(waterRows), stampFloodZones(waterRows)]);
+      await Promise.all([stampWaterInfluence(waterRows), stampFloodZones(waterRows), stampLandfacts(waterRows)]);
       if (waterFilterActive()) {
         setCount(`${baseMsg} · Checking water-rights licences…`);
         const rows = waterRows;
@@ -6588,6 +6595,37 @@ async function stampWaterInfluence(rows) {
  * Non-fatal throughout: a missing shard leaves the column blank, which is
  * the honest rendering of not knowing.
  */
+/**
+ * Stamp `_landfacts` / `_landfactsLoaded` on every row from the per-muni
+ * land-facts shards (r/build_landfacts.R). Same shape and reasons as
+ * stampFloodZones: the join is pre-baked, the client only looks each
+ * roll up. `_landfactsLoaded` marks parcels whose muni shard RESOLVED so
+ * the cell can tell "below the farmland gate" from "never checked".
+ */
+async function stampLandfacts(rows) {
+  try {
+    const muniNames = [...new Set(
+      (rows || []).map((r) => r?.parcel?.properties?.Muni_Name_With_Typ).filter(Boolean),
+    )];
+    if (!muniNames.length) return;
+    const dicts = await Promise.all(
+      muniNames.map((m) => fetchLandfactsForMuni(m).catch(() => null)),
+    );
+    const byMuni = new Map();
+    muniNames.forEach((m, i) => { if (dicts[i]) byMuni.set(m, dicts[i]); });
+    for (const row of rows) {
+      const p = row?.parcel?.properties;
+      const dict = p?.Muni_Name_With_Typ ? byMuni.get(p.Muni_Name_With_Typ) : null;
+      if (!dict) continue;
+      p._landfactsLoaded = true;
+      const hit = p?.Roll_No_Txt ? dict[p.Roll_No_Txt] : null;
+      if (hit) p._landfacts = hit;
+    }
+  } catch (err) {
+    console.warn('land-facts enrichment failed (non-fatal):', err);
+  }
+}
+
 async function stampFloodZones(rows) {
   try {
     const muniNames = [...new Set(
@@ -6834,7 +6872,7 @@ async function enrichOverlays(parcelFc, inputs, baseMsg, { skipDevPlan = false }
     console.warn('land-cover enrichment failed (non-fatal):', err);
   }
 
-  await Promise.all([stampWaterInfluence(rows), stampFloodZones(rows)]);
+  await Promise.all([stampWaterInfluence(rows), stampFloodZones(rows), stampLandfacts(rows)]);
 
   // Stamp the most-common assessment year into the Total Value column
   // header so users can tell which assessment cycle the dollar figure
@@ -10291,6 +10329,7 @@ function renderTable(rows, { resetPage = true } = {}) {
     tr.appendChild(assessmentCell(p));
     tr.appendChild(walkCell(row));
     tr.appendChild(floodCell(row));
+    tr.appendChild(landfactsCell(row));
     tr.appendChild(streetViewCell(row));
     frag.appendChild(tr);
   }
@@ -11519,6 +11558,39 @@ function streetViewCell(row) {
  * overlay and a scan down the column separates statutory encumbrance (reds)
  * from historical inundation (blues) without reading a word.
  */
+/**
+ * "Land Facts" grid cell — the last observed year's dominant crop-inventory
+ * class, a colour dot for its cover group, and cropped/observed years.
+ * Hover for every year plus relief, wetland and open water.
+ *
+ * Three states, as for Flood: shard never loaded -> blank; shard loaded but
+ * roll absent -> em dash in the empty style (below the farmland gate, or no
+ * MASC rating — not an error); stamped -> the text.
+ */
+function landfactsCell(row) {
+  const cell = document.createElement('td');
+  cell.className = 'landfacts-cell';
+  const p = row.parcel.properties || {};
+  const lf = p._landfacts;
+  const text = landfactsCellText(lf);
+  if (!text) {
+    if (p._landfactsLoaded) { cell.textContent = '\u2014'; cell.classList.add('empty'); }
+    return cell;
+  }
+  const last = lastObserved(lf);
+  const grp = COVER_GROUPS[coverGroup(last?.code)];
+  if (grp) {
+    const dot = document.createElement('span');
+    dot.className = 'water-dot';
+    dot.style.background = grp.color;
+    dot.title = grp.label;
+    cell.appendChild(dot);
+  }
+  cell.appendChild(document.createTextNode(text));
+  cell.title = landfactsTooltip(lf);
+  return cell;
+}
+
 function floodCell(row) {
   const cell = document.createElement('td');
   const p = row.parcel.properties || {};
@@ -12818,6 +12890,7 @@ function exportCsv(explicitRows) {
     // bare columns rather than the grid's composite: a spreadsheet filters
     // on "Statutory", not on "RRV DFA 62% +1".
     'Flood Zone', 'Flood Zone Type', 'Flood Zone Coverage (%)', 'Flood Zones (all)',
+    ...landfactsCsvHeaders(),
     // Tiled / Irrigated lead their groups so a sales spreadsheet can
     // filter or pivot on one column instead of testing whether a licence
     // string is blank.
@@ -12926,6 +12999,7 @@ function exportCsv(explicitRows) {
       ...landCoverCsvCells(p, ac),
       ...waterCsvCells(p._water, !!p._waterLoaded),
       ...floodCsvCells(p._flood, !!p._floodLoaded),
+      ...landfactsCsvCells(p._landfacts, !!p._landfactsLoaded),
       ...tileDrainageCsvCells(p),
       ...irrigationCsvCells(p),
       formatChanges(row),
