@@ -306,6 +306,35 @@ archive renders an empty layer with the toggle still on — indistinguishable
 from a municipality that genuinely has no parcels, which is the worst failure
 mode available in an appraisal tool.
 
+## 3.7 Land-facts layer — `r/build_landfacts.R`
+
+Per-parcel open-data land facts for farmland parcels (≥ 20 ac with a MASC
+rating): crop history 2009–2025 from the AAFC Annual Crop Inventory, relief
+and slope from NRCan MRDEM-30, mapped wetland from the Canadian Wetland
+Inventory v3A (10 m), and open water from JRC Global Surface Water. Shipped
+as per-muni shards in `mb-parcel-data/landfacts/` (same family shape as
+`flood/` and `landcover/`), read by `fetchLandfactsForMuni` in
+`web/src/arcgis.js`, derived by `web/src/lib/landfacts.js`, and shown as the
+**Land Facts** column (Agricultural preset), a popup box and twelve CSV
+columns.
+
+- **Inputs:** the newest complete `mao-assembly` Parquet (`geometry_wkt`,
+  `CalcAcres`, `MASCRating`), the RollEntry snapshot for the muni-name map,
+  and the sister `rural-report` project's extraction library and local
+  crop-inventory cache (`rural_report_root` in `r/config.R`).
+- **Method:** each raster is cropped once to the municipality and extracted
+  against all its parcels in one `exactextractr` call — measured at 0.03–0.05 s
+  per parcel, about two hours for the province. The per-parcel path it
+  replaces (`rural-report`) is the reference implementation and
+  `rural-report/tests/crosscheck_shards.py` asserts the two agree.
+- **Record:** `cp[17]` crop % per year, `dom[17]` dominant class code per year
+  (`null` = not observed, never 0), `rel`, `slp`, `z[min,max]`, `wet`, `wc`
+  (wetland classes present), `gsw`, `gsi`. ~215 bytes per parcel; the client
+  derives last-year / last-three / years-cropped views.
+- **Keep in sync:** `MIN_ACRES` (builder) ↔ `LANDFACTS_MIN_ACRES` (lib), and
+  the year range ↔ `LANDFACTS_YEARS`; `web/test/landfacts.test.js` checks both
+  against the built index's `_meta`. Operating notes are in MAINTENANCE.md §6d.
+
 ## 4. Snapshot archive + provenance
 
 Retains a dated, point-in-time copy of the provincial source data so a

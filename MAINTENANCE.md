@@ -663,6 +663,64 @@ rather than a URL swap (DataMB merges both DFAs into one 2-feature layer keyed
 on `Designated_Flood_Area_Zone`). The Data Status dialog's "Flood zone shards"
 row says so on the face of it.
 
+### 6d. Land facts — crop history, relief, wetland, water  (cadence: annual, after AAFC releases the new crop-inventory year)
+
+One artefact, four federal rasters, one number per parcel per layer — the
+open-data land record for every farmland parcel, pre-baked so the grid and
+popup never touch a raster.
+
+| Artefact | Built by | Sources | Where it lives |
+|---|---|---|---|
+| **Land Facts** grid column + popup box + 12 CSV columns | `npm run landfacts:shards` (`r/build_landfacts.R`) | AAFC Annual Crop Inventory 2009–2025 (30 m; 56 m in 2009–10), NRCan MRDEM-30, Canadian Wetland Inventory v3A (10 m), JRC Global Surface Water 1984–2021 | `mb-parcel-data/landfacts/`, served via the CDN pin |
+
+**Which parcels.** `CalcAcres >= 20` with a MASC rating, read from the newest
+complete `mao-assembly` Parquet (173,697 parcels, 147 municipalities on the
+2026-08-20 run). The rating is what says "agricultural land"; the acreage
+trims hobby blocks. Both are recorded in the index's `_meta` and asserted by
+`web/test/landfacts.test.js` against `LANDFACTS_MIN_ACRES` in
+`web/src/lib/landfacts.js` — change one and the suite fails until the other
+matches.
+
+**Prerequisites.** The crop-inventory GeoTIFFs must be cached in the sister
+project first — a remote read of those zips costs up to 161 s per year and is
+not viable in bulk:
+
+```
+bash ../rural-report/fetch_aci.sh      # ~660 MB, once per year when AAFC publishes
+```
+
+MRDEM, the wetland inventory and surface water are plain cloud-optimised
+GeoTIFFs and are read remotely. `exactextractr` must be installed in R; the
+script falls back to `terra` but that is roughly 100x slower.
+
+Then, from this repo:
+
+```
+cd web && npm run landfacts:shards     # ~2 h for the province; resumable
+npm run landfacts:shards -- --muni 610 # one municipality, by MAO code or name
+```
+
+A municipality whose shard already exists is skipped, so an interrupted run
+picks up where it stopped; `--force` rebuilds. Publishing is the normal CDN
+dance in §1b. Until that runs the column stays blank rather than saying
+"None", which is the correct rendering of not knowing.
+
+**What a record means.** Per year, the dominant crop-inventory class and the
+share of the parcel under annual crop; `null` is a year the inventory did not
+observe (raster background or cloud over more than half the parcel) and is
+never written as 0 — zero would read as "nothing grew". Forest codes 200–230
+sit numerically above the crop range 130–199 and are not crop. Wetland and
+water shares are of the whole parcel, not of the cells that carried a value.
+Both of those were bugs caught before the family shipped, by
+`rural-report/tests/crosscheck_shards.py`, which compares the shards against
+rural-report's slower per-parcel path for a fixed set of rolls — run it after
+touching the extraction.
+
+**Not a cropping record.** The crop inventory is a satellite classifier; AAFC
+targets 85% overall accuracy nationally and publishes none per parcel. The
+grid cell says so in its tooltip and the popup shows the whole series so the
+pattern, not one year, is what gets read.
+
 ### 7. MLI historical aerial basemap  (cadence: on-demand)
 The complete MLI Ortho Refresh source is built locally and deliberately not
 uploaded. Full provenance and year-coverage notes are in
