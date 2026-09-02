@@ -9298,8 +9298,12 @@ async function toggleLandfactsOverlay() {
       $landfactsToggle.disabled = false;
     }
   } else if (munis.length > 0) {
-    fabricPainted = (auxData.muniParcels?.features || [])
-      .filter((f) => f?.properties?._lfColor).length;
+    // Already stamped for this scope, but under whichever view was showing
+    // when the overlay last went off (Land Use, at the end of a full
+    // cycle). Recolour for the view coming on, or the second pass round
+    // the cycle shows Years Cropped in Land Use colours and the next click
+    // visibly changes nothing (Jason, 2026-09-02).
+    fabricPainted = recolorLandfacts();
   }
 
   // The fabric click and hover handlers only fire while the Assessment
