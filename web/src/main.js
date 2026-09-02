@@ -9219,6 +9219,12 @@ async function toggleLandfactsOverlay() {
         auxData.muniParcels = fc;
         auxLoaded.muniParcels = true;
         muniParcelsLoadedFor = scopeKey;
+        // Claiming auxLoaded.muniParcels means a later Assessment Parcels
+        // toggle skips its own setData, which is what scopes the vector-tile
+        // fabric to the municipality. Without this the tile layers keep the
+        // empty boot filter: nothing renders and no click or hover fires,
+        // even with the button pressed (Jason, 2026-09-02).
+        setMuniParcelsScope(map, scopedOverlayMunis());
       }
       fabricPainted = await stampLandfactsOnFabric(auxData.muniParcels, munis);
       setMuniParcelsData(map, auxData.muniParcels);
@@ -9309,6 +9315,12 @@ async function toggleLandCoverOverlay() {
           auxData.muniParcels = fc;
           auxLoaded.muniParcels = true;
           muniParcelsLoadedFor = scopeKey;
+          // Claiming auxLoaded.muniParcels means a later Assessment Parcels
+          // toggle skips its own setData, which is what scopes the vector-tile
+          // fabric to the municipality. Without this the tile layers keep the
+          // empty boot filter: nothing renders and no click or hover fires,
+          // even with the button pressed (Jason, 2026-09-02).
+          setMuniParcelsScope(map, scopedOverlayMunis());
         }
         fabricPainted = await stampLandCoverOnFabric(auxData.muniParcels, munis);
         setMuniParcelsData(map, auxData.muniParcels);
