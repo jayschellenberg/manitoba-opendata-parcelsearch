@@ -250,7 +250,7 @@ import {
 } from './lib/flood.js';
 import {
   landfactsCellText, landfactsTooltip, landfactsSortRank,
-  landfactsCsvHeaders, landfactsCsvCells, lastObserved, coverGroup, COVER_GROUPS,
+  landfactsCsvHeaders, landfactsCsvCells, cropRampColor, cropRampStep, CROP_RAMP,
   LANDFACTS_MIN_ACRES,
 } from './lib/landfacts.js';
 import { resolveParcelAcres, formatRollSizeField, parseRollFrontageFeet } from './lib/acres.js';
@@ -9126,28 +9126,44 @@ async function toggleCliOverlay() {
 let landfactsOverlayOn = false;
 let landfactsLoadedFor = null;
 
-/** Fill colour for a land-facts stamp: the cover group of the last observed
- *  crop-inventory year. null when nothing was observed. */
+/** Fill colour for a land-facts stamp: the years-cropped ramp (share of
+ *  observed years at least half annual crop). null when nothing was
+ *  observed. One hue by intensity, so "how much cropping" reads at a
+ *  glance and a 17/17 quarter separates from a 5/17 one. */
 function landfactsColorFor(hit) {
-  if (!hit) return null;
-  const last = lastObserved(hit);
-  return last ? (COVER_GROUPS[coverGroup(last.code)]?.color || null) : null;
+  return hit ? cropRampColor(hit) : null;
 }
 
 /** Stamp `_lfColor` (+ `_landfacts`) on every fabric parcel from each muni's
  *  land-facts shard. Returns how many parcels got a colour. */
 async function stampLandfactsOnFabric(fabricFc, munis) {
   if (!fabricFc?.features?.length) return 0;
-  const dicts = await Promise.all(
-    munis.map((m) => fetchLandfactsForMuni(m).catch(() => null)),
-  );
+  // Land facts and the parcel-MASC rating together: the fabric popup
+  // shows both, and a coloured parcel you can click but that says nothing
+  // about its soil is only half an answer on farmland.
+  const [dicts, mascDicts] = await Promise.all([
+    Promise.all(munis.map((m) => fetchLandfactsForMuni(m).catch(() => null))),
+    Promise.all(munis.map((m) => fetchParcelMascForMuni(m).catch(() => null))),
+  ]);
   const byMuni = new Map();
-  munis.forEach((m, i) => { if (dicts[i]) byMuni.set(m, dicts[i]); });
+  const mascByMuni = new Map();
+  munis.forEach((m, i) => {
+    if (dicts[i]) byMuni.set(m, dicts[i]);
+    if (mascDicts[i]) mascByMuni.set(m, mascDicts[i]);
+  });
   let painted = 0;
   for (const f of fabricFc.features) {
     const p = f.properties || (f.properties = {});
     const dict = p.Muni_Name_With_Typ ? byMuni.get(p.Muni_Name_With_Typ) : null;
     const hit = (dict && p.Roll_No_Txt) ? dict[p.Roll_No_Txt] : null;
+    const mdict = p.Muni_Name_With_Typ ? mascByMuni.get(p.Muni_Name_With_Typ) : null;
+    const mhit = (mdict && p.Roll_No_Txt) ? mdict[p.Roll_No_Txt] : null;
+    if (mhit) {
+      p._soilRating = mascRatingLabel(mhit) || null;
+      p._soilRatingCode = mascDisplayRating(mhit) || null;
+      p._soilQuarter = soilSourceLabel(mhit);
+      if (mhit.ra != null) p._soilRiskArea = mhit.ra;
+    }
     const color = landfactsColorFor(hit);
     if (color) {
       p._landfacts = hit;
@@ -9162,11 +9178,11 @@ async function stampLandfactsOnFabric(fabricFc, munis) {
 
 function renderLandfactsLegend() {
   if (!$landfactsLegend) return;
-  const items = Object.values(COVER_GROUPS)
-    .map((g) => `<li><span class="swatch" style="background:${g.color}"></span>${g.label}</li>`)
+  const items = CROP_RAMP
+    .map((b) => `<li><span class="swatch" style="background:${b.color}"></span>${b.label}</li>`)
     .join('');
   $landfactsLegend.innerHTML =
-    `<strong>Crop history — last observed year</strong><ul>${items}</ul>`
+    `<strong>Crop history — share of years cropped since 2009</strong><ul>${items}</ul>`
     + `<small style="display:block;margin-top:4px;color:#6b7280;font-style:italic">`
     + `Parcels over ${LANDFACTS_MIN_ACRES} acres with a MASC rating · AAFC Annual Crop Inventory, satellite classification</small>`;
 }
@@ -9203,6 +9219,12 @@ async function toggleLandfactsOverlay() {
         auxData.muniParcels = fc;
         auxLoaded.muniParcels = true;
         muniParcelsLoadedFor = scopeKey;
+        // Claiming auxLoaded.muniParcels means a later Assessment Parcels
+        // toggle skips its own setData, which is what scopes the vector-tile
+        // fabric to the municipality. Without this the tile layers keep the
+        // empty boot filter: nothing renders and no click or hover fires,
+        // even with the button pressed (Jason, 2026-09-02).
+        setMuniParcelsScope(map, scopedOverlayMunis());
       }
       fabricPainted = await stampLandfactsOnFabric(auxData.muniParcels, munis);
       setMuniParcelsData(map, auxData.muniParcels);
@@ -9215,6 +9237,14 @@ async function toggleLandfactsOverlay() {
   } else if (munis.length > 0) {
     fabricPainted = (auxData.muniParcels?.features || [])
       .filter((f) => f?.properties?._lfColor).length;
+  }
+
+  // The fabric click and hover handlers only fire while the Assessment
+  // Parcels layer is visible. A coloured parcel that does not answer a
+  // click is a trap, so switch the fabric on through its own toggle (which
+  // keeps that button's state honest) if it is not already.
+  if ($muniParcelsToggle && !$muniParcelsToggle.classList.contains('active')) {
+    await toggleAuxOverlay('muniParcels');
   }
 
   // The two overlays paint the same parcels: Land Cover (Dominant) yields.
@@ -9285,6 +9315,12 @@ async function toggleLandCoverOverlay() {
           auxData.muniParcels = fc;
           auxLoaded.muniParcels = true;
           muniParcelsLoadedFor = scopeKey;
+          // Claiming auxLoaded.muniParcels means a later Assessment Parcels
+          // toggle skips its own setData, which is what scopes the vector-tile
+          // fabric to the municipality. Without this the tile layers keep the
+          // empty boot filter: nothing renders and no click or hover fires,
+          // even with the button pressed (Jason, 2026-09-02).
+          setMuniParcelsScope(map, scopedOverlayMunis());
         }
         fabricPainted = await stampLandCoverOnFabric(auxData.muniParcels, munis);
         setMuniParcelsData(map, auxData.muniParcels);
@@ -11713,13 +11749,12 @@ function landfactsCell(row) {
     if (p._landfactsLoaded) { cell.textContent = '\u2014'; cell.classList.add('empty'); }
     return cell;
   }
-  const last = lastObserved(lf);
-  const grp = COVER_GROUPS[coverGroup(last?.code)];
-  if (grp) {
+  const step = cropRampStep(lf);
+  if (step) {
     const dot = document.createElement('span');
     dot.className = 'water-dot';
-    dot.style.background = grp.color;
-    dot.title = grp.label;
+    dot.style.background = step.color;
+    dot.title = `${step.label} of observed years cropped`;
     cell.appendChild(dot);
   }
   cell.appendChild(document.createTextNode(text));

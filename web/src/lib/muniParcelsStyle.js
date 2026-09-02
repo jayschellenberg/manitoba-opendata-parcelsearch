@@ -22,7 +22,7 @@ export const MUNI_PARCELS_LINE_STYLES = {
     // 2026-09-02).
     'line-color': '#4b5563',
     'line-width': 0.9,
-    'line-opacity': 0.85,
+    'line-opacity': 0.75, // 0.85 read slightly heavy (Jason, 2026-09-02)
   },
   imagery: {
     // 1.5 after white at 2.25 read heavy — white carries more visual

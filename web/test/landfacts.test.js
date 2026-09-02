@@ -27,6 +27,10 @@ import {
   landfactsSortRank,
   landfactsCsvCells,
   landfactsCsvHeaders,
+  CROP_RAMP,
+  cropShare,
+  cropRampStep,
+  cropRampColor,
 } from '../src/lib/landfacts.js';
 
 const N = LANDFACTS_YEARS.length;
@@ -97,6 +101,26 @@ assert.ok(landfactsSortRank(cropland) < landfactsSortRank(bush), 'more-cropped s
 assert.equal(landfactsSortRank(null), Number.POSITIVE_INFINITY, 'unstamped last');
 assert.equal(wetlandClassNames('124'), 'Bog, Fen, Marsh');
 assert.equal(wetlandClassNames(''), '');
+
+// --- years-cropped ramp ------------------------------------------------------
+assert.equal(cropShare(cropland), 1, '16 cropped of 16 observed');
+assert.equal(cropShare(bush), 0);
+assert.equal(cropShare({ cp: fill(null), dom: fill(null) }), null, 'nothing observed -> null, not 0');
+assert.equal(cropRampStep(bush).label, 'Never cropped');
+assert.equal(cropRampStep(cropland).label, 'Mostly cropped');
+assert.equal(cropRampColor({ cp: fill(null), dom: fill(null) }), null);
+// share, not count: 3 cropped of 6 observed is "up to half", same as 8 of 16
+const half = { cp: [90, 90, 90, 0, 0, 0, null, null, null, null, null, null, null, null, null, null, null],
+               dom: [140, 140, 140, 110, 110, 110, null, null, null, null, null, null, null, null, null, null, null] };
+assert.equal(cropRampStep(half).label, 'Up to half');
+// lightness is monotone light -> dark: check the ramp never gets lighter
+const lum = (hex) => {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+for (let i = 1; i < CROP_RAMP.length; i++) {
+  assert.ok(lum(CROP_RAMP[i].color) < lum(CROP_RAMP[i - 1].color), `ramp step ${i} is not darker than ${i - 1}`);
+}
 
 // --- MapLibre string round-trip ---------------------------------------------
 assert.deepEqual(readLandfacts(JSON.stringify(bush)), bush);
