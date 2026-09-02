@@ -147,6 +147,40 @@ export function coverGroup(code) {
   return 'O';
 }
 
+// Years-cropped ramp for the Crop History map overlay: one hue, light to
+// dark, binned on the share of OBSERVED years that were at least half annual
+// crop. A single hue by intensity reads "how much cropping" at a glance in a
+// way five categorical colours cannot, and separates a quarter cropped 17 of
+// 17 years from one cropped 5 of 17 -- the distinction that matters to an
+// appraisal. Bins are on share, not count, so a parcel with cloudy years is
+// not penalised for the years nobody saw. Lightness is monotone by
+// construction (Jason, 2026-09-02).
+export const CROP_RAMP = Object.freeze([
+  { max: 0,    label: 'Never cropped',      color: '#F5E1CC' },
+  { max: 0.25, label: 'Up to a quarter',    color: '#F3B77A' },
+  { max: 0.5,  label: 'Up to half',         color: '#E8893A' },
+  { max: 0.75, label: 'Up to three-quarters', color: '#C25A10' },
+  { max: 1,    label: 'Mostly cropped',     color: '#7A360A' },
+]);
+
+/** Share of observed years that were cropped, 0..1, or null when nothing was observed. */
+export function cropShare(lf) {
+  const n = observedYears(lf);
+  return n ? croppedYears(lf) / n : null;
+}
+
+/** The ramp step for a stamp, or null when nothing was observed. */
+export function cropRampStep(lf) {
+  const s = cropShare(lf);
+  if (s == null) return null;
+  return CROP_RAMP.find((b) => s <= b.max) || CROP_RAMP[CROP_RAMP.length - 1];
+}
+
+/** Map fill colour for the Crop History overlay, or null. */
+export function cropRampColor(lf) {
+  return cropRampStep(lf)?.color || null;
+}
+
 // Canadian Wetland Inventory v3A class digits in `wc`.
 export const WETLAND_CLASSES = Object.freeze({ 1: 'Bog', 2: 'Fen', 3: 'Swamp', 4: 'Marsh', 5: 'Water' });
 

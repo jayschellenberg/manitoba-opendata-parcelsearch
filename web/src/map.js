@@ -27,7 +27,7 @@ import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import { landCoverBreakdown, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
 import {
-  readLandfacts, yearRecords, croppedYears, observedYears, lastThree,
+  readLandfacts, yearRecords, croppedYears, observedYears, lastThree, lastObserved,
   wetlandClassNames, COVER_GROUPS,
 } from './lib/landfacts.js';
 import { FLOOD_GROUPS, floodColorStops, floodZone } from './lib/flood.js';
@@ -5457,6 +5457,21 @@ export function landfactsParcelHtml(p) {
 }
 
 /**
+ * One-line crop-history summary for the muni-fabric (Roll Layer) popup:
+ * last observed class and year, years cropped of years observed, and the
+ * mapped wetland share. Null when the parcel carries no `_landfacts` stamp.
+ */
+export function landfactsTopLine(p) {
+  const lf = readLandfacts(p?._landfacts);
+  if (!lf) return null;
+  const last = lastObserved(lf);
+  if (!last) return null;
+  const wet = lf.wet != null ? ` &middot; wetland ${escapeHtml(String(lf.wet))}%` : '';
+  return `<strong>Crop history</strong> ${escapeHtml(last.label)} ${last.year} &middot; `
+    + `${croppedYears(lf)}/${observedYears(lf)} yrs cropped${wet}`;
+}
+
+/**
  * MASC soil-rating box for the parcel popup — the dominant crop-insurance
  * rating for this parcel, the quarter section it was read from, and the
  * MASC risk area. All three are stamped onto the parcel during search
@@ -6066,6 +6081,13 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
   // The full per-bucket breakdown lives on the search-result popup.
   const lcLine = landCoverTopTwoLine(p);
   if (lcLine) lines.push(lcLine);
+  // One-line crop history once the Crop History overlay has stamped this
+  // fabric parcel; the full series lives on the search-result popup.
+  const lfLine = landfactsTopLine(p);
+  if (lfLine) lines.push(lfLine);
+  // MASC rating, stamped onto the fabric by the same pass.
+  const mascLine = mascRatingParcelHtml(p);
+  if (mascLine) lines.push(`<strong>MASC rating</strong>${mascLine}`);
   // GPS Coordinates link sits right after DU so it's a single click
   // away on the click popup. Only rendered for the sticky/click
   // variant — the hover popup closes on mouse-out before the user
