@@ -123,6 +123,27 @@
                 repeat work in the same area stays snappy. The Clear button
                 wipes that cache.
               </p>
+              <p>
+                <strong>Land Facts</strong> (Agricultural column preset, parcel
+                popup and CSV) are pre-computed for every parcel of 20 acres or
+                more with a MASC rating, from four federal open datasets:
+                crop history 2009&ndash;2025 from the
+                <a href="https://open.canada.ca/data/en/dataset/ba2645d5-4458-414d-b196-6303ac06c1c9" target="_blank" rel="noreferrer">AAFC Annual Crop Inventory</a>
+                (30 m; 56 m in 2009&ndash;10), elevation and slope from the
+                <a href="https://open.canada.ca/data/en/dataset/18752265-bda3-498c-a4ba-9dfe68cb98da" target="_blank" rel="noreferrer">NRCan Medium Resolution DEM</a>
+                (30 m), mapped wetland from the
+                <a href="https://open.canada.ca/data/en/dataset/87127901-bd6d-46de-9142-e1362d980174" target="_blank" rel="noreferrer">Canadian Wetland Inventory v3A</a>
+                (Ducks Unlimited Canada / NRCan, 10 m), and open water from the
+                <a href="https://global-surface-water.appspot.com/" target="_blank" rel="noreferrer">JRC Global Surface Water</a>
+                record (1984&ndash;2021). The first three are Open Government
+                Licence &ndash; Canada. The crop inventory is a satellite
+                classification, not a cropping record: AAFC targets 85%
+                overall accuracy nationally and publishes none per parcel, so
+                read the pattern across years rather than any single year, and
+                a year shown as not observed means the inventory did not see
+                the land that year, not that nothing grew. Nothing in Land
+                Facts is a wetland delineation, a drainage opinion or a survey.
+              </p>
             </section>
 
             <!-- Data-refresh row, populated by populateDataRefreshFooter()
