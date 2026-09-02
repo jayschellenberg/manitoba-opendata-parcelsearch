@@ -1147,6 +1147,9 @@
             <button id="landcover-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Land Cover — tri-state cycle. 1st click → Dominant (per-parcel headline colour, every parcel in the selected municipality > 20 acres). 2nd click → Detailed (pixel-level 2020 mosaic from the static tile pyramid, when built). 3rd click → off. Populates the Land Cover and Cult % columns. The Detailed branch is skipped when the tile pyramid hasn't been built (build via Rscript r/build_landcover_tiles.R).">
               <span class="overlay-btn-label">Land Cover</span>
             </button>
+            <button id="landfacts-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Crop History — colours every parcel in the selected municipality by the cover group of its most recently observed year in the AAFC Annual Crop Inventory (annual crop, grass/pasture, trees/shrub, water/wetland, barren/built), and shows the Land Facts column: last observed class and how many years since 2009 were at least half cropped. Hover a cell or click a parcel for every year. Parcels over 20 acres with a MASC rating. Satellite classification, not a cropping record.">
+              <span class="overlay-btn-label">Crop History</span>
+            </button>
             <button id="tile-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Tile Drainage — licensed tiled-area footprints from Manitoba's Water Allocation Licensing (WALLAS) Water Control Works layer. Populates the Tile Drainage column. Caveat: the polygon layer's newest record is from Aug 2024 and only licensed works appear, so a parcel with no polygon is not proof the land is untiled.">
               <span class="overlay-btn-label">Tile Drainage</span>
             </button>
@@ -1377,6 +1380,9 @@
       <!-- Filled dynamically by main.js renderLandCoverLegend() from the
            LAND_COVER_BUCKETS palette in lib/landcover.js. -->
       <div id="landcover-legend" class="map-legend masc-legend" hidden></div>
+      <!-- Filled by main.js renderLandfactsLegend() from COVER_GROUPS in
+           lib/landfacts.js, so the map, popup strip and legend never drift. -->
+      <div id="landfacts-legend" class="map-legend masc-legend" hidden></div>
       <!-- Historical zoning / dev-plan keys. Separate boxes from #zoning-legend
            so the as-of layer and the current-day Zoning Layer can be read side
            by side without one clobbering the other's list — comparing the two

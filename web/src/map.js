@@ -1831,6 +1831,21 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
           'fill-opacity': ['case', ['has', '_lcColor'], 0.6, 0],
         },
       });
+      // Crop-history choropleth on the muni-wide fabric — colours every parcel
+      // by the cover group of its last observed crop-inventory year (driven by
+      // `_lfColor`, stamped in main.js from the land-facts shard). Same shape
+      // and placement as the land-cover fill above; hidden until the Crop
+      // History overlay is on.
+      map.addLayer({
+        id: 'muni-parcels-landfacts-fill',
+        type: 'fill',
+        source: 'muni-parcels',
+        layout: { visibility: 'none' },
+        paint: {
+          'fill-color': ['coalesce', ['get', '_lfColor'], 'rgba(0,0,0,0)'],
+          'fill-opacity': ['case', ['has', '_lfColor'], 0.6, 0],
+        },
+      });
       map.addLayer({
         id: 'muni-parcels-line',
         type: 'line',
@@ -2282,6 +2297,18 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
         paint: {
           'fill-color': ['coalesce', ['get', '_lcColor'], 'rgba(0,0,0,0)'],
           'fill-opacity': ['case', ['has', '_lcColor'], 0.6, 0],
+        },
+      }, 'parcel-line');
+      // Crop-history fill for result parcels — `_lfColor` is stamped in
+      // main.js's stampLandfacts pass alongside `_landfacts`.
+      map.addLayer({
+        id: 'landfacts-fill',
+        type: 'fill',
+        source: 'parcels',
+        layout: { visibility: 'none' },
+        paint: {
+          'fill-color': ['coalesce', ['get', '_lfColor'], 'rgba(0,0,0,0)'],
+          'fill-opacity': ['case', ['has', '_lfColor'], 0.6, 0],
         },
       }, 'parcel-line');
 
@@ -4253,6 +4280,16 @@ export function setWaybackRelease(map, release) {
 export function setLandCoverVisible(map, on) {
   const vis = on ? 'visible' : 'none';
   for (const id of ['landcover-fill', 'muni-parcels-landcover-fill']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
+  }
+}
+
+/** Show / hide the Crop History overlay (parcels coloured by the cover group
+ *  of their last observed crop-inventory year). Colour comes from `_lfColor`,
+ *  stamped in main.js; this only flips visibility. */
+export function setLandfactsVisible(map, on) {
+  const vis = on ? 'visible' : 'none';
+  for (const id of ['landfacts-fill', 'muni-parcels-landfacts-fill']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
   }
 }
