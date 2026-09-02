@@ -211,6 +211,7 @@ import {
   setSurveyGridData,
   setSurveyGridVisible,
   setLandCoverVisible,
+  setLandfactsVisible,
   setWaterInfluenceVisible,
   setHistoricalData,
   setHistoricalVisible,
@@ -250,6 +251,7 @@ import {
 import {
   landfactsCellText, landfactsTooltip, landfactsSortRank,
   landfactsCsvHeaders, landfactsCsvCells, lastObserved, coverGroup, COVER_GROUPS,
+  LANDFACTS_MIN_ACRES,
 } from './lib/landfacts.js';
 import { resolveParcelAcres, formatRollSizeField, parseRollFrontageFeet } from './lib/acres.js';
 import { rollDisplay } from './lib/parcelLabelFields.js';
@@ -570,6 +572,8 @@ const $cliLegend     = document.getElementById('cli-legend');
 const $landcoverToggle = document.getElementById('landcover-toggle');
 const $waterToggle     = document.getElementById('water-toggle');
 const $landcoverLegend = document.getElementById('landcover-legend');
+const $landfactsToggle = document.getElementById('landfacts-toggle');
+const $landfactsLegend = document.getElementById('landfacts-legend');
 const $gridToggle    = document.getElementById('grid-toggle');
 const $historicalToggle   = document.getElementById('historical-toggle');
 const $historicalYear     = document.getElementById('historical-year');
@@ -2412,6 +2416,7 @@ function refreshOverlayGroupCounts() {
   refreshOverlayGroupCounts();
 })();
 $mascToggle.addEventListener('click', () => toggleMascOverlay());
+if ($landfactsToggle) $landfactsToggle.addEventListener('click', () => toggleLandfactsOverlay());
 $cliToggle.addEventListener('click', () => toggleCliOverlay());
 if ($landcoverToggle) $landcoverToggle.addEventListener('click', () => toggleLandCoverOverlay());
 if ($waterToggle) $waterToggle.addEventListener('click', () => toggleWaterInfluenceOverlay());
@@ -6620,6 +6625,10 @@ async function stampLandfacts(rows) {
       p._landfactsLoaded = true;
       const hit = p?.Roll_No_Txt ? dict[p.Roll_No_Txt] : null;
       if (hit) p._landfacts = hit;
+      // Fill colour for the Crop History overlay, same rule as the fabric.
+      const color = landfactsColorFor(hit);
+      if (color) p._lfColor = color;
+      else if (p._lfColor) delete p._lfColor;
     }
   } catch (err) {
     console.warn('land-facts enrichment failed (non-fatal):', err);
@@ -8597,6 +8606,12 @@ function resetMascAndGridToggles() {
       });
     }
   }
+  // Crop History: muni-scoped fill like Land Cover (Dominant), so it drops
+  // with the scope rather than leaving the previous muni's colours up.
+  if (landfactsLoadedFor && landfactsLoadedFor !== desiredOverlayKey) {
+    landfactsLoadedFor = null;
+    if (landfactsOverlayOn) mapReady.then(() => turnLandfactsOff());
+  }
   // Survey grid: same cache key as Zoning / Dev Plan / MASC / CLI in
   // sales-CSV mode — the joined matched-muni list, or the dropdown's
   // value, or the __PROVINCE__ sentinel for "any muni" loads. A
@@ -9102,6 +9117,126 @@ async function toggleCliOverlay() {
 //              no fetch on toggle, no muni dependency. Hides the Dominant
 //              fill while on so the two don't compete; flipping back to
 //              Dominant restores it without a refetch.
+// ---- Crop History overlay --------------------------------------------
+// A single on/off toggle (no Detailed mode — there is no raster to show).
+// Mirrors Land Cover (Dominant): load the muni-wide fabric for the current
+// scope, stamp `_lfColor` from the land-facts shard, flip the fill layers,
+// surface the Land Facts column. The two overlays paint the same parcels,
+// so turning either on turns the other off.
+let landfactsOverlayOn = false;
+let landfactsLoadedFor = null;
+
+/** Fill colour for a land-facts stamp: the cover group of the last observed
+ *  crop-inventory year. null when nothing was observed. */
+function landfactsColorFor(hit) {
+  if (!hit) return null;
+  const last = lastObserved(hit);
+  return last ? (COVER_GROUPS[coverGroup(last.code)]?.color || null) : null;
+}
+
+/** Stamp `_lfColor` (+ `_landfacts`) on every fabric parcel from each muni's
+ *  land-facts shard. Returns how many parcels got a colour. */
+async function stampLandfactsOnFabric(fabricFc, munis) {
+  if (!fabricFc?.features?.length) return 0;
+  const dicts = await Promise.all(
+    munis.map((m) => fetchLandfactsForMuni(m).catch(() => null)),
+  );
+  const byMuni = new Map();
+  munis.forEach((m, i) => { if (dicts[i]) byMuni.set(m, dicts[i]); });
+  let painted = 0;
+  for (const f of fabricFc.features) {
+    const p = f.properties || (f.properties = {});
+    const dict = p.Muni_Name_With_Typ ? byMuni.get(p.Muni_Name_With_Typ) : null;
+    const hit = (dict && p.Roll_No_Txt) ? dict[p.Roll_No_Txt] : null;
+    const color = landfactsColorFor(hit);
+    if (color) {
+      p._landfacts = hit;
+      p._lfColor = color;
+      painted += 1;
+    } else if (p._lfColor) {
+      delete p._lfColor;
+    }
+  }
+  return painted;
+}
+
+function renderLandfactsLegend() {
+  if (!$landfactsLegend) return;
+  const items = Object.values(COVER_GROUPS)
+    .map((g) => `<li><span class="swatch" style="background:${g.color}"></span>${g.label}</li>`)
+    .join('');
+  $landfactsLegend.innerHTML =
+    `<strong>Crop history — last observed year</strong><ul>${items}</ul>`
+    + `<small style="display:block;margin-top:4px;color:#6b7280;font-style:italic">`
+    + `Parcels over ${LANDFACTS_MIN_ACRES} acres with a MASC rating · AAFC Annual Crop Inventory, satellite classification</small>`;
+}
+
+function turnLandfactsOff() {
+  landfactsOverlayOn = false;
+  setLandfactsVisible(map, false);
+  if ($landfactsToggle) {
+    setOverlayPressed($landfactsToggle, false);
+    setOverlayBtnLabel($landfactsToggle, 'Crop History');
+  }
+  if ($landfactsLegend) $landfactsLegend.hidden = true;
+}
+
+async function toggleLandfactsOverlay() {
+  if (!$landfactsToggle) return;
+  await mapReady;
+  if (landfactsOverlayOn) { turnLandfactsOff(); return; }
+
+  const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
+    ? csvMatchedMunis.slice()
+    : ($municipality.value ? [$municipality.value] : []);
+  const scopeKey = muniParcelsLoadKey();
+  let fabricPainted = 0;
+  if (munis.length > 0 && landfactsLoadedFor !== scopeKey) {
+    $landfactsToggle.disabled = true;
+    setOverlayBtnLabel($landfactsToggle, 'Loading…');
+    try {
+      if (!auxData.muniParcels?.features?.length || muniParcelsLoadedFor !== scopeKey) {
+        const fc = await fetchMuniParcelsForCurrentScope();
+        await enrichFcWithLegals(fc).catch((err) => {
+          console.warn('Legal enrichment for crop-history fabric failed (non-fatal):', err);
+        });
+        auxData.muniParcels = fc;
+        auxLoaded.muniParcels = true;
+        muniParcelsLoadedFor = scopeKey;
+      }
+      fabricPainted = await stampLandfactsOnFabric(auxData.muniParcels, munis);
+      setMuniParcelsData(map, auxData.muniParcels);
+      landfactsLoadedFor = scopeKey;
+    } catch (err) {
+      console.warn('Crop History fabric load failed', err);
+    } finally {
+      $landfactsToggle.disabled = false;
+    }
+  } else if (munis.length > 0) {
+    fabricPainted = (auxData.muniParcels?.features || [])
+      .filter((f) => f?.properties?._lfColor).length;
+  }
+
+  // The two overlays paint the same parcels: Land Cover (Dominant) yields.
+  if (landCoverMode === 'dominant') {
+    landCoverMode = null;
+    setLandCoverVisible(map, false);
+    if ($landcoverToggle) {
+      setOverlayPressed($landcoverToggle, false);
+      setOverlayBtnLabel($landcoverToggle, landCoverButtonLabelFor(null));
+    }
+    if ($landcoverLegend) $landcoverLegend.hidden = true;
+  }
+
+  landfactsOverlayOn = true;
+  setLandfactsVisible(map, true);
+  setOverlayPressed($landfactsToggle, true);
+  setOverlayBtnLabel($landfactsToggle, fabricPainted ? `Crop History (${fabricPainted.toLocaleString('en-US')})` : 'Crop History (on)');
+  setColumnVisible('landfacts', true);
+  renderLandfactsLegend();
+  if ($landfactsLegend) $landfactsLegend.hidden = false;
+}
+
 function nextLandCoverMode(current) {
   if (current === null)       return 'dominant';
   if (current === 'dominant') return landCoverRasterAvailable ? 'detailed' : null;
@@ -9167,6 +9302,7 @@ async function toggleLandCoverOverlay() {
     }
 
     landCoverMode = 'dominant';
+    if (landfactsOverlayOn) turnLandfactsOff();
     setLandCoverVisible(map, true);
     setLandCoverRasterVisible(map, false);
     setOverlayPressed($landcoverToggle, true);

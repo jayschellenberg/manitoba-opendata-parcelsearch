@@ -15,9 +15,14 @@
 
 export const MUNI_PARCELS_LINE_STYLES = {
   light: {
-    'line-color': '#d1d5db',
-    'line-width': 0.75,
-    'line-opacity': 0.6,
+    // #d1d5db at 60% was tuned against CARTO Voyager and all but vanished
+    // on the Protomaps Streets basemap (2026-09-01), whose land fills are
+    // lighter and busier. Slate-600 at 85% reads as a boundary again
+    // without competing with the highlighted result parcels (Jason,
+    // 2026-09-02).
+    'line-color': '#4b5563',
+    'line-width': 0.9,
+    'line-opacity': 0.85,
   },
   imagery: {
     // 1.5 after white at 2.25 read heavy — white carries more visual

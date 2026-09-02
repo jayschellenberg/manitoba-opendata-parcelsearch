@@ -123,6 +123,27 @@
                 repeat work in the same area stays snappy. The Clear button
                 wipes that cache.
               </p>
+              <p>
+                <strong>Land Facts</strong> (Agricultural column preset, parcel
+                popup and CSV) are pre-computed for every parcel of 20 acres or
+                more with a MASC rating, from four federal open datasets:
+                crop history 2009&ndash;2025 from the
+                <a href="https://open.canada.ca/data/en/dataset/ba2645d5-4458-414d-b196-6303ac06c1c9" target="_blank" rel="noreferrer">AAFC Annual Crop Inventory</a>
+                (30 m; 56 m in 2009&ndash;10), elevation and slope from the
+                <a href="https://open.canada.ca/data/en/dataset/18752265-bda3-498c-a4ba-9dfe68cb98da" target="_blank" rel="noreferrer">NRCan Medium Resolution DEM</a>
+                (30 m), mapped wetland from the
+                <a href="https://open.canada.ca/data/en/dataset/87127901-bd6d-46de-9142-e1362d980174" target="_blank" rel="noreferrer">Canadian Wetland Inventory v3A</a>
+                (Ducks Unlimited Canada / NRCan, 10 m), and open water from the
+                <a href="https://global-surface-water.appspot.com/" target="_blank" rel="noreferrer">JRC Global Surface Water</a>
+                record (1984&ndash;2021). The first three are Open Government
+                Licence &ndash; Canada. The crop inventory is a satellite
+                classification, not a cropping record: AAFC targets 85%
+                overall accuracy nationally and publishes none per parcel, so
+                read the pattern across years rather than any single year, and
+                a year shown as not observed means the inventory did not see
+                the land that year, not that nothing grew. Nothing in Land
+                Facts is a wetland delineation, a drainage opinion or a survey.
+              </p>
             </section>
 
             <!-- Data-refresh row, populated by populateDataRefreshFooter()
@@ -1126,6 +1147,9 @@
             <button id="landcover-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Land Cover — tri-state cycle. 1st click → Dominant (per-parcel headline colour, every parcel in the selected municipality > 20 acres). 2nd click → Detailed (pixel-level 2020 mosaic from the static tile pyramid, when built). 3rd click → off. Populates the Land Cover and Cult % columns. The Detailed branch is skipped when the tile pyramid hasn't been built (build via Rscript r/build_landcover_tiles.R).">
               <span class="overlay-btn-label">Land Cover</span>
             </button>
+            <button id="landfacts-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Crop History — colours every parcel in the selected municipality by the cover group of its most recently observed year in the AAFC Annual Crop Inventory (annual crop, grass/pasture, trees/shrub, water/wetland, barren/built), and shows the Land Facts column: last observed class and how many years since 2009 were at least half cropped. Hover a cell or click a parcel for every year. Parcels over 20 acres with a MASC rating. Satellite classification, not a cropping record.">
+              <span class="overlay-btn-label">Crop History</span>
+            </button>
             <button id="tile-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Tile Drainage — licensed tiled-area footprints from Manitoba's Water Allocation Licensing (WALLAS) Water Control Works layer. Populates the Tile Drainage column. Caveat: the polygon layer's newest record is from Aug 2024 and only licensed works appear, so a parcel with no polygon is not proof the land is untiled.">
               <span class="overlay-btn-label">Tile Drainage</span>
             </button>
@@ -1356,6 +1380,9 @@
       <!-- Filled dynamically by main.js renderLandCoverLegend() from the
            LAND_COVER_BUCKETS palette in lib/landcover.js. -->
       <div id="landcover-legend" class="map-legend masc-legend" hidden></div>
+      <!-- Filled by main.js renderLandfactsLegend() from COVER_GROUPS in
+           lib/landfacts.js, so the map, popup strip and legend never drift. -->
+      <div id="landfacts-legend" class="map-legend masc-legend" hidden></div>
       <!-- Historical zoning / dev-plan keys. Separate boxes from #zoning-legend
            so the as-of layer and the current-day Zoning Layer can be read side
            by side without one clobbering the other's list — comparing the two
