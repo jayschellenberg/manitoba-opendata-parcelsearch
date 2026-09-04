@@ -108,7 +108,7 @@ try {
 Write-Host ""
 Write-Host "Scheduled task '$TaskName' registered:"
 Write-Host "  Runs:        hpi-download.ps1 daily at 08:45 local"
-Write-Host "  Does:        mirrors CREA's newest MLS_HPI-<Month>-<Year>_EN.zip into"
+Write-Host "  Does:        mirrors CREA's newest MLS HPI zip (file name drifts monthly) into"
 Write-Host "               MLS_HPI_<Month>_<Year> under the residential data dir; no-op when current"
 Write-Host "  Alerts:      hard failures only (email + ntfy mbps-hpi-staleness-jks), max one/month;"
 Write-Host "               the 09:00 staleness watchdog remains the day-25 backstop nag"

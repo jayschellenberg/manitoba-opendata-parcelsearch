@@ -9,6 +9,10 @@
 #
 # THE FOLDER LABEL IS CREA'S RELEASE MONTH, NOT THE DATA MONTH.
 #   MLS_HPI_July_2026  ==  CREA's MLS_HPI-July-2026_EN.zip  ==  data through JUNE 2026.
+# (CREA's zip file name drifts month to month -- MLS_HPI_May_2026.zip,
+# MLS_HPI-July-2026_EN.zip, MLS_HPI_Aug_2026.zip -- so since 2026-09-04 the
+# page parser below accepts any of those forms; the LOCAL folder is always
+# MLS_HPI_<FullMonth>_<Year>.)
 # Verified 2026-08-25: that zip's WINNIPEG sheet ends at serial 46174 (2026-06-01),
 # the workbook was built 2026-07-02, and the live file's Last-Modified is
 # Tue 14 Jul 2026 -- i.e. CREA posts release month M around the 14th of M,
@@ -164,13 +168,13 @@ function Get-UpstreamRelease {
     return @{ YM = 0; Source = $null; Error = $_.Exception.Message }
   }
   $up = $null
-  foreach ($m in ([regex]'href="([^"]*MLS_HPI-([A-Za-z]+)-(\d{4})_EN\.zip)"').Matches($page.Content)) {
+  foreach ($m in ([regex]'href="([^"]*MLS_HPI[-_]([A-Za-z]+)[-_](\d{4})(?:_EN)?\.zip)"').Matches($page.Content)) {
     $mkey = $m.Groups[2].Value.ToLower()
     if (-not $months.ContainsKey($mkey)) { continue }
     $ym = [int]$m.Groups[3].Value * 12 + $months[$mkey]
     if (-not $up -or $ym -gt $up.YM) { $up = @{ YM = $ym; Source = "crea.ca, checked just now" } }
   }
-  if (-not $up) { return @{ YM = 0; Source = $null; Error = "no MLS_HPI-<Month>-<Year>_EN.zip link found on $PageUrl" } }
+  if (-not $up) { return @{ YM = 0; Source = $null; Error = "no MLS_HPI[-_]<Month>[-_]<Year>[_EN].zip link found on $PageUrl" } }
   return $up
 }
 
@@ -213,7 +217,8 @@ $manual = @"
 To do it by hand:
   1. Download the Winnipeg MLS HPI zip for the $(Get-YmLabel $wantYM) release from
      $PageUrl
-     (file MLS_HPI-$((Get-YmDate $wantYM).ToString('MMMM'))-$((Get-YmDate $wantYM).Year)_EN.zip), and take BOTH
+     (the zip for the $((Get-YmDate $wantYM).ToString('MMMM')) $((Get-YmDate $wantYM).Year) release -- CREA's file name
+     drifts month to month, e.g. MLS_HPI_Aug_2026.zip), and take BOTH
      'Not Seasonally Adjusted (M).xlsx' and 'Seasonally Adjusted (M).xlsx' out of it.
   2. Create a folder named  $needName  in
      $HpiDir

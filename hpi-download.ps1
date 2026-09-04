@@ -4,9 +4,19 @@
 # Context: ResChartsV2.5.qmd reads CREA MLS HPI from MLS_HPI_<Month>_<Year>
 # folders (loader picks the newest); hpi-staleness-check.ps1 nags when that set
 # falls behind. This script closes the loop by automating the download that was
-# previously manual: it scrapes the HPI tool page for the current
-# MLS_HPI-<Month>-<Year>_EN.zip link (CREA publishes ~the 10th of each month),
-# downloads it, validates it, and extracts it under the folder-name convention
+# previously manual: it scrapes the HPI tool page for the current MLS HPI zip
+# link (CREA publishes ~the 10th of each month), downloads it, validates it,
+# and extracts it under the folder-name convention
+#
+# 2026-09-04: CREA's zip file name DRIFTS month to month -- MLS_HPI_May_2026.zip,
+# MLS_HPI-July-2026_EN.zip and MLS_HPI_Aug_2026.zip have all been seen -- and
+# the original exact-format regex (hyphens + _EN) found no link at all on the
+# August page. The parser now accepts hyphen or underscore, full or 3-letter
+# month, with or without an _EN suffix, and the local folder is ALWAYS named
+# with the full month (MLS_HPI_August_2026) whatever token the link used.
+# The zip's contents have not changed.
+#
+# The folder-name convention is the one
 # BOTH the dashboard glob (MLS_HPI_*) and the watchdog regex
 # (^MLS_HPI_<Month>_<Year>$) understand. The raw CREA zip name
 # (MLS_HPI-July-2026_EN) matches neither -- which is exactly how the July 2026
@@ -106,7 +116,8 @@ function Send-HardFailure([string]$title, [string]$body) {
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# ---- 1. Find the newest MLS_HPI-<Month>-<Year>_EN.zip link on the page -------
+# ---- 1. Find the newest MLS HPI zip link on the page -------------------------
+# Loose on purpose (see header): MLS_HPI[-_]<Month>[-_]<Year>[_EN].zip.
 try {
   $page = Invoke-WebRequest -Uri $PageUrl -UseBasicParsing -TimeoutSec 60
 } catch {
@@ -115,7 +126,8 @@ try {
 }
 
 $best = $null
-$rx = [regex]'href="([^"]*MLS_HPI-([A-Za-z]+)-(\d{4})_EN\.zip)"'
+$rx = [regex]'href="([^"]*MLS_HPI[-_]([A-Za-z]+)[-_](\d{4})(?:_EN)?\.zip)"'
+$inv = [System.Globalization.CultureInfo]::InvariantCulture
 foreach ($m in $rx.Matches($page.Content)) {
   $mkey = $m.Groups[2].Value.ToLower()
   if (-not $months.ContainsKey($mkey)) { continue }
@@ -123,12 +135,14 @@ foreach ($m in $rx.Matches($page.Content)) {
   if (-not $best -or $ym -gt $best.YM) {
     $url = $m.Groups[1].Value
     if ($url -notmatch '^https?://') { $url = (New-Object System.Uri((New-Object System.Uri($PageUrl)), $url)).AbsoluteUri }
-    $best = @{ YM = $ym; Url = $url; Month = $m.Groups[2].Value; Year = $m.Groups[3].Value }
+    # Month is normalized to the FULL invariant name so the folder is
+    # MLS_HPI_August_2026 whether the link said 'Aug' or 'August'.
+    $best = @{ YM = $ym; Url = $url; Month = $inv.DateTimeFormat.GetMonthName($months[$mkey]); Year = $m.Groups[3].Value; Link = (Split-Path $url -Leaf) }
   }
 }
 
 if (-not $best) {
-  $msg = "hpi-download.ps1 found NO MLS_HPI-<Month>-<Year>_EN.zip link on $PageUrl -- CREA may have redesigned the page. Manual download + a script fix needed."
+  $msg = "hpi-download.ps1 found NO MLS_HPI[-_]<Month>[-_]<Year>[_EN].zip link on $PageUrl -- CREA may have redesigned the page or renamed the file again. Manual download + a script fix needed."
   Write-Log "HARD FAIL: $msg"
   if (-not $DryRun) { Send-HardFailure 'HPI download: page parse failed' $msg }
   exit 2
@@ -136,7 +150,7 @@ if (-not $best) {
 
 $folderName = "MLS_HPI_$($best.Month)_$($best.Year)"
 $target     = Join-Path $HpiDir $folderName
-Write-Log "Newest on page: $($best.Month) $($best.Year) -> $($best.Url)"
+Write-Log "Newest on page: $($best.Month) $($best.Year) ($($best.Link)) -> $($best.Url)"
 
 # ---- 2. No-op if that month is already extracted ------------------------------
 $need = @('Not Seasonally Adjusted (M).xlsx', 'Seasonally Adjusted (M).xlsx')

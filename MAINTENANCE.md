@@ -813,8 +813,12 @@ up automatically from their registrars.
 reads CREA MLS HPI from `MLS_HPI_<Month>_<Year>` folders next to it; its loader
 auto-picks the newest. Since 2026-08-12 the download is automated:
 `hpi-download.ps1` (task `mb-parcelsearch-hpi-download`, daily 08:45) scrapes
-the CREA HPI tool page for the newest `MLS_HPI-<Month>-<Year>_EN.zip`
-(published ~the 10th), downloads it, and extracts ONLY the two monthly `.xlsx`
+the CREA HPI tool page for the newest MLS HPI zip (published ~the 10th;
+the file name drifts month to month — `MLS_HPI_May_2026.zip`,
+`MLS_HPI-July-2026_EN.zip` and `MLS_HPI_Aug_2026.zip` have all been seen, so
+since 2026-09-04 the parser accepts hyphen/underscore, full/3-letter month and
+an optional `_EN` suffix, and always names the local folder with the FULL
+month), downloads it, and extracts ONLY the two monthly `.xlsx`
 the dashboard reads (`Not Seasonally Adjusted (M)` + `Seasonally Adjusted (M)`;
 the zip's quarterly/annual variants are unused and stay inside the provenance
 zip kept in the folder) — no-op when the newest month is already present. `hpi-staleness-check.ps1` (daily 09:00) stays as the day-25 backstop
@@ -827,6 +831,13 @@ nag; both alert on `mbps-hpi-staleness-jks` + email.
 2026-07-25, leaving the dashboard on June while July sat extracted under the
 wrong name. The downloader normalizes the name; if you ever do it by hand,
 rename to `MLS_HPI_<Month>_<Year>`.
+
+**The September 2026 incident:** CREA renamed the zip again
+(`MLS_HPI_Aug_2026.zip`: three-letter month, no `_EN`), the exact-format regex
+in both scripts found no link at all, and the downloader raised its
+"page parse failed" alert on 2026-09-04. Both regexes are now format-agnostic
+(`MLS_HPI[-_]<Month>[-_]<Year>[_EN].zip`); if CREA drifts to something
+outside that shape the same alert fires and this is the place to widen it.
 
 Manual fallback: download via the "Accept and download data" button at
 <https://www.crea.ca/housing-market-stats/mls-home-price-index/hpi-tool/>,
