@@ -23,6 +23,39 @@
  * Pure (no DOM, no network) so node can exercise every combination.
  */
 
+/**
+ * Resolve to the first non-empty array among `promises`, in settlement
+ * order — or null once every one has settled without producing one.
+ * Unlike Promise.race, a probe that fails (rejects) or comes back empty
+ * doesn't decide the outcome; the others still get their turn.
+ *
+ * Used to paint the municipality picker from whichever list lands first:
+ * the cached live list (milliseconds on a warm cache) or the snapshot
+ * manifest's muni names (a small CDN fetch). Either is good enough to
+ * search with, and the full resolution repaints later if it disagrees.
+ *
+ * @param {Promise<any>[]} promises
+ * @returns {Promise<any[]|null>}
+ */
+export function firstNonEmptyList(promises) {
+  const list = Array.isArray(promises) ? promises : [];
+  if (list.length === 0) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    let pending = list.length;
+    let done = false;
+    const settle = () => { pending -= 1; if (pending === 0 && !done) { done = true; resolve(null); } };
+    for (const p of list) {
+      Promise.resolve(p).then(
+        (v) => {
+          if (!done && Array.isArray(v) && v.length > 0) { done = true; resolve(v); return; }
+          settle();
+        },
+        () => settle(),
+      );
+    }
+  });
+}
+
 export const MUNI_FAILED_PLACEHOLDER =
   'Failed to load — type to filter parcels another way';
 export const MUNI_PLACEHOLDER = 'Any municipality';

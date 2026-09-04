@@ -143,22 +143,54 @@ function lsDelete(key) {
   } catch { /* ignore */ }
 }
 
-// Validate the parsed envelope and return the inner value, or null if
+// Validate the parsed envelope and return { value, ageMs }, or null if
 // it's expired or malformed. Wraps the legacy unwrapped-array shape
 // that some sessionStorage-era entries carried so we still accept
-// those without breaking.
-function unwrapEnvelope(parsed, ttlMs) {
+// those without breaking (they carry no timestamp, so they read as
+// age 0 — the same "valid forever" treatment they always had).
+function unwrapEntry(parsed, ttlMs) {
   if (parsed == null) return null;
   if (typeof parsed === 'object' && !Array.isArray(parsed) && 't' in parsed && 'v' in parsed) {
-    if (Date.now() - parsed.t > ttlMs) return null;
+    const ageMs = Date.now() - parsed.t;
+    if (ageMs > ttlMs) return null;
     const v = parsed.v;
-    if (Array.isArray(v) || (typeof v === 'object' && v !== null)) return v;
+    if (Array.isArray(v) || (typeof v === 'object' && v !== null)) return { value: v, ageMs };
     return null;
   }
   // Legacy unwrapped value (older code wrote the value directly).
-  if (Array.isArray(parsed)) return parsed;
-  if (typeof parsed === 'object') return parsed;
+  if (Array.isArray(parsed)) return { value: parsed, ageMs: 0 };
+  if (typeof parsed === 'object') return { value: parsed, ageMs: 0 };
   return null;
+}
+
+function unwrapEnvelope(parsed, ttlMs) {
+  const entry = unwrapEntry(parsed, ttlMs);
+  return entry ? entry.value : null;
+}
+
+function normalizeTtl(ttlMs) {
+  if (typeof ttlMs !== 'number' || !Number.isFinite(ttlMs) || ttlMs <= 0) {
+    return 7 * 24 * 60 * 60 * 1000;
+  }
+  return ttlMs;
+}
+
+/**
+ * Like readCache, but returns `{ value, ageMs }` so a caller can serve a
+ * cached value it considers stale while it refreshes behind the scenes
+ * (stale-while-revalidate). `ttlMs` is the HARD limit — older entries
+ * are treated as missing exactly as in readCache; freshness beyond that
+ * is the caller's decision, made from `ageMs`.
+ */
+export async function readCacheEntry(key, ttlMs) {
+  ttlMs = normalizeTtl(ttlMs);
+  if (idbAvailable) {
+    try {
+      const entry = unwrapEntry(await idbGet(key), ttlMs);
+      if (entry !== null) return entry;
+    } catch { /* fall through to localStorage */ }
+  }
+  return unwrapEntry(lsGet(key), ttlMs);
 }
 
 /**
@@ -168,20 +200,8 @@ function unwrapEnvelope(parsed, ttlMs) {
  * implementation.
  */
 export async function readCache(key, ttlMs) {
-  if (typeof ttlMs !== 'number' || !Number.isFinite(ttlMs) || ttlMs <= 0) {
-    ttlMs = 7 * 24 * 60 * 60 * 1000;
-  }
-  // IDB first.
-  if (idbAvailable) {
-    try {
-      const v = await idbGet(key);
-      const unwrapped = unwrapEnvelope(v, ttlMs);
-      if (unwrapped !== null) return unwrapped;
-    } catch { /* fall through to localStorage */ }
-  }
-  // localStorage fallback (also reads legacy entries).
-  const parsed = lsGet(key);
-  return unwrapEnvelope(parsed, ttlMs);
+  const entry = await readCacheEntry(key, ttlMs);
+  return entry ? entry.value : null;
 }
 
 /**

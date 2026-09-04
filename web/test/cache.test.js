@@ -250,6 +250,25 @@ await test('Large GeoJSON-ish payload round-trips through IDB', async () => {
   assert.equal(got.features[1999].properties.OBJECTID, 1999);
 });
 
+await test('readCacheEntry — reports the entry age so callers can serve stale', async () => {
+  const { writeCache, readCacheEntry } = await withFreshCache();
+  await writeCache('aged', ['STONEWALL (TOWN)']);
+  await new Promise((r) => setTimeout(r, 5));
+  const entry = await readCacheEntry('aged', 60_000);
+  assert.deepEqual(entry.value, ['STONEWALL (TOWN)']);
+  assert.ok(entry.ageMs >= 5, `ageMs ${entry.ageMs} should reflect elapsed time`);
+  // Past the hard TTL it is gone, exactly like readCache.
+  assert.equal(await readCacheEntry('aged', 1), null);
+  assert.equal(await readCacheEntry('nope', 60_000), null);
+});
+
+await test('readCacheEntry — a legacy unwrapped entry reads as age 0', async () => {
+  const { readCacheEntry } = await withFreshCache({ idbAvailable: false });
+  globalThis.localStorage.setItem('mbpsCache.legacy-arr', JSON.stringify(['A', 'B']));
+  const entry = await readCacheEntry('legacy-arr', 60_000);
+  assert.deepEqual(entry, { value: ['A', 'B'], ageMs: 0 });
+});
+
 // ---------- Summary ----------
 
 const failed = results.filter((r) => r.status === 'fail');

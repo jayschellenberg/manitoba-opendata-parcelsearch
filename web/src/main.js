@@ -43,7 +43,7 @@ import {
 import { encodeState, decodeState } from './lib/urlState.js';
 import { nextOverlayToggleState, setOverlayPressed } from './lib/overlayToggle.js';
 import { stalenessBannerState } from './lib/staleness.js';
-import { resolveDropdownSources } from './lib/dropdownSources.js';
+import { resolveDropdownSources, firstNonEmptyList, MUNI_PLACEHOLDER } from './lib/dropdownSources.js';
 import { readMapLegends, layoutMapLegends, paintMapLegends } from './lib/mapLegend.js';
 import {
   computeSaleGroups, groupPosition, frontageRateState,
@@ -3505,17 +3505,33 @@ async function populateDropdowns() {
     // with "Failed to load" and leave it that way for the session. Each
     // probe now degrades to null on its own and is handled below.
     // (probeRollEntrySnapshot and fetchRollEntryCount already self-catch.)
+    const muniProbe = fetchMunicipalityList().catch((err) => {
+      console.warn('Live municipality list unavailable', err);
+      return null;
+    });
+    const zoneProbe = fetchZoneCategoryList().catch((err) => {
+      console.warn('Zone-category list unavailable (affects the zoning dropdown only)', err);
+      return null;
+    });
+    const snapshotProbe = probeRollEntrySnapshot();
+    const countProbe = fetchRollEntryCount();
+
+    // Early paint. The municipality picker is the one control every search
+    // goes through, and waiting for all four probes held it hostage to the
+    // slowest one — the zoning service or the record-count probe could
+    // park a picker whose own list had been sitting in cache for a week.
+    // Paint it from whichever list lands first (cached live list, or the
+    // snapshot manifest's names on a cold cache); the full resolution
+    // below repaints only if it settles on a different list.
+    firstNonEmptyList([
+      muniProbe,
+      snapshotProbe.then((m) => (m?.munis ? Object.keys(m.munis).sort() : null)),
+    ]).then((early) => {
+      if (early && $municipality.disabled) repaintSelect($municipality, early, MUNI_PLACEHOLDER);
+    });
+
     const [liveMunis, zoneCats, snapshotManifest, liveRecordCount] = await Promise.all([
-      fetchMunicipalityList().catch((err) => {
-        console.warn('Live municipality list unavailable', err);
-        return null;
-      }),
-      fetchZoneCategoryList().catch((err) => {
-        console.warn('Zone-category list unavailable (affects the zoning dropdown only)', err);
-        return null;
-      }),
-      probeRollEntrySnapshot(),
-      fetchRollEntryCount(),
+      muniProbe, zoneProbe, snapshotProbe, countProbe,
     ]);
     const liveCount = Array.isArray(liveMunis) ? liveMunis.length : 0;
     const snapshotMunis = snapshotManifest?.munis
@@ -3533,7 +3549,9 @@ async function populateDropdowns() {
     if (sources.muniSource === 'snapshot-fallback') {
       console.warn('Municipality list served from the snapshot manifest — the live probe failed.');
     }
-    fillSelect($municipality, sources.munis, sources.muniPlaceholder);
+    // repaintSelect (not fillSelect): the early paint above may already
+    // have filled the picker AND the user may have chosen from it.
+    repaintSelect($municipality, sources.munis, sources.muniPlaceholder);
     fillSelect($zoneCategory, sources.zoneCats, sources.zonePlaceholder);
     updateRollEntryBanner({
       liveCount, liveRecordCount, snapshotManifest,
@@ -3636,7 +3654,7 @@ async function recheckRollEntrySnapshotAfterBoot() {
   if (!manifest || Object.keys(manifest.munis || {}).length === 0) return;
   if (!liveRollEntryIncomplete(liveMuniCount, liveRecordCount, manifest)) return;
   setRollEntrySnapshot(manifest);
-  fillSelect($municipality, Object.keys(manifest.munis).sort(), 'Any municipality');
+  repaintSelect($municipality, Object.keys(manifest.munis).sort(), MUNI_PLACEHOLDER);
   updateRollEntryBanner({
     liveCount: liveMuniCount, liveRecordCount, snapshotManifest: manifest, snapshotActive: true,
   });
@@ -3751,6 +3769,25 @@ function fillSelect(sel, values, blankLabel) {
   // selects that were never in the loading state.
   sel.classList.remove('skeleton');
   sel.removeAttribute('aria-label');
+}
+
+/**
+ * fillSelect for a select that may already be populated and in use: a
+ * no-op when the options already match `values`, otherwise a refill that
+ * keeps the user's current choice if it survives. The municipality
+ * picker is painted early (first list to arrive) and again when the boot
+ * probes fully settle; without this the second paint would throw away
+ * a selection made in between.
+ */
+function repaintSelect(sel, values, blankLabel) {
+  const offset = sel.multiple ? 0 : 1;
+  const same = !sel.disabled
+    && sel.options.length === values.length + offset
+    && values.every((v, i) => sel.options[i + offset].value === v);
+  if (same) return;
+  const prev = sel.value;
+  fillSelect(sel, values, blankLabel);
+  if (prev && values.includes(prev)) sel.value = prev;
 }
 
 // ---------- Search ----------
