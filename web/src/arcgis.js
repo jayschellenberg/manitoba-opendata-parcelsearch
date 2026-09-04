@@ -49,7 +49,7 @@ import bbox from '@turf/bbox';
 // (IndexedDB primary, localStorage fallback) can evolve without
 // touching every call site. readCache + writeCache are async — every
 // caller in this file already runs inside an async function.
-import { readCache, writeCache } from './cache.js';
+import { readCache, readCacheEntry, writeCache } from './cache.js';
 // Owns the "MAO splits the rural grid number at the thousands mark"
 // convention — see lib/civicRange.js. The street clause below and the
 // snapshot filter both expand the search term through it so they agree.
@@ -1135,8 +1135,18 @@ export function bboxOverlapJoin(parcelFc, overlayFc, n = 3) {
  * sorted alphabetically. Cached in sessionStorage for the life of the tab
  * — the list barely changes year to year and the request is ~50 KB.
  */
+// Manitoba publishes ~180-190 munis. A distinct-values answer far below
+// that is the province mid-republish (18 munis seen 2026-06-03) — it is
+// still returned so the boot health check can see it, but it must not be
+// persisted, or every load for the next week (and, with the stale-while-
+// revalidate serving below, every load until the weekly refresh succeeds)
+// would offer a fraction of the province.
+const MUNI_LIST_MIN_CACHEABLE = 150;
+
 export async function fetchMunicipalityList() {
-  return fetchDistinctValues(ROLL_URL, 'Muni_Name_With_Typ', 'mb_munis_v1');
+  return fetchDistinctValues(ROLL_URL, 'Muni_Name_With_Typ', 'mb_munis_v1', null, {
+    minCacheable: MUNI_LIST_MIN_CACHEABLE,
+  });
 }
 
 export async function fetchZoneCategoryList(municipality = null) {
@@ -1169,6 +1179,10 @@ export async function fetchRollEntryCount() {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: usp.toString(),
+      // A stalled upstream used to hold this open for the browser default
+      // (~2 min) and, because it sat in the boot Promise.all, park every
+      // dropdown with it. Null on timeout — it is only a health probe.
+      signal: fetchTimeoutSignal(ROLL_ENTRY_COUNT_TIMEOUT_MS),
     });
     if (!res.ok) return null;
     const json = await res.json();
@@ -3245,16 +3259,61 @@ function fetchTimeoutSignal(ms) {
   try { return AbortSignal.timeout(ms); } catch { return undefined; }
 }
 
+/** Timeout for the boot record-count probe (ms). */
+const ROLL_ENTRY_COUNT_TIMEOUT_MS = 15_000;
+
+// Dropdown lists (municipalities, zone / dev-plan categories) change on a
+// deployment cadence, not a session one, so they are served from cache
+// stale-while-revalidate:
+//   - younger than FRESH: served, nothing else happens (the common case);
+//   - older than FRESH but younger than STALE: served INSTANTLY, and one
+//     background refresh rewrites the entry for next time;
+//   - older than STALE, or never cached: the caller waits on the live
+//     query, as before.
+// Before this, the weekly expiry made the entry vanish, and the very next
+// load blocked the municipality picker on the live query — up to three
+// 60 s attempts against a provincial service that sometimes just hangs.
+// The list a visitor saw last week is worth far more than that wait.
+const DROPDOWN_FRESH_TTL_MS = 7 * 24 * 60 * 60 * 1000;    // refresh weekly
+const DROPDOWN_STALE_TTL_MS = 180 * 24 * 60 * 60 * 1000;  // ...but keep serving for 6 months
+// One in-flight background refresh per key, so a burst of callers (the
+// zone-category list is re-requested per muni change) doesn't fan out.
+const distinctRefreshInflight = new Map();
+
 /**
  * Fetch every distinct value of a categorical column. Used for the muni
- * and category dropdowns. Results cached per browser tab — the list barely
- * changes between deployments and the request is small.
+ * and category dropdowns. Cached in IndexedDB / localStorage per the
+ * stale-while-revalidate policy above.
+ *
+ * @param {{ minCacheable?: number }} [opts]  a result with fewer values
+ *   than `minCacheable` is returned but NOT written to cache (partial
+ *   upstream publish — see MUNI_LIST_MIN_CACHEABLE).
  */
-async function fetchDistinctValues(baseUrl, field, cacheKey, where = null) {
+async function fetchDistinctValues(baseUrl, field, cacheKey, where = null, opts = {}) {
   if (cacheKey) {
-    const cached = await readCache(cacheKey);
-    if (cached) return cached;
+    const hit = await readCacheEntry(cacheKey, DROPDOWN_STALE_TTL_MS);
+    if (hit && Array.isArray(hit.value)) {
+      if (hit.ageMs > DROPDOWN_FRESH_TTL_MS) {
+        refreshDistinctValuesInBackground(baseUrl, field, cacheKey, where, opts);
+      }
+      return hit.value;
+    }
   }
+  return fetchDistinctValuesLive(baseUrl, field, cacheKey, where, opts);
+}
+
+function refreshDistinctValuesInBackground(baseUrl, field, cacheKey, where, opts) {
+  if (distinctRefreshInflight.has(cacheKey)) return;
+  const p = fetchDistinctValuesLive(baseUrl, field, cacheKey, where, opts)
+    .catch((err) => {
+      // Stale entry stays in place; the next load past FRESH tries again.
+      console.warn(`Background refresh of ${cacheKey} failed (serving the cached list)`, err);
+    })
+    .finally(() => distinctRefreshInflight.delete(cacheKey));
+  distinctRefreshInflight.set(cacheKey, p);
+}
+
+async function fetchDistinctValuesLive(baseUrl, field, cacheKey, where, opts = {}) {
   // Routed through fetchPage so these inherit its retry / backoff / timeout
   // handling. This used to be a bare fetch that threw on the FIRST non-200,
   // which made it the most fragile request in the app despite being one of
@@ -3274,7 +3333,8 @@ async function fetchDistinctValues(baseUrl, field, cacheKey, where = null) {
   const values = (json.features || [])
     .map((f) => f.attributes?.[field])
     .filter((v) => v != null && String(v).trim() !== '');
-  if (cacheKey) await writeCache(cacheKey, values);
+  const minCacheable = Number(opts.minCacheable) || 0;
+  if (cacheKey && values.length >= minCacheable) await writeCache(cacheKey, values);
   return values;
 }
 

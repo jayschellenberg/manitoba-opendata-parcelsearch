@@ -12,6 +12,7 @@
 import assert from 'node:assert/strict';
 import {
   resolveDropdownSources,
+  firstNonEmptyList,
   MUNI_PLACEHOLDER,
   MUNI_FAILED_PLACEHOLDER,
   ZONE_PLACEHOLDER,
@@ -118,6 +119,46 @@ test('no arguments at all does not throw', () => {
   assert.deepEqual(r.munis, []);
   assert.deepEqual(r.zoneCats, []);
   assert.equal(r.useSnapshot, false);
+});
+
+console.log('\nfirstNonEmptyList — early paint picks whichever list lands first');
+
+async function atest(name, fn) {
+  try {
+    await fn();
+    results.push({ name, status: 'pass' });
+    console.log(`  ✓ ${name}`);
+  } catch (err) {
+    results.push({ name, status: 'fail', err });
+    console.log(`  ✗ ${name}\n    ${err.message}`);
+  }
+}
+const later = (v, ms) => new Promise((r) => setTimeout(() => r(v), ms));
+const failLater = (ms) => new Promise((_, rej) => setTimeout(() => rej(new Error('probe down')), ms));
+
+await atest('the first non-empty list wins, even when a slower one follows', async () => {
+  const r = await firstNonEmptyList([later(['A', 'B'], 5), later(['C'], 30)]);
+  assert.deepEqual(r, ['A', 'B']);
+});
+
+await atest('a rejected probe does not decide the outcome', async () => {
+  const r = await firstNonEmptyList([failLater(1), later(['C'], 20)]);
+  assert.deepEqual(r, ['C']);
+});
+
+await atest('an empty list is skipped in favour of a later full one', async () => {
+  const r = await firstNonEmptyList([later([], 1), later(null, 2), later(['Z'], 10)]);
+  assert.deepEqual(r, ['Z']);
+});
+
+await atest('null when every probe fails or comes back empty', async () => {
+  const r = await firstNonEmptyList([failLater(1), later([], 2), later(undefined, 3)]);
+  assert.equal(r, null);
+});
+
+await atest('no probes at all resolves to null', async () => {
+  assert.equal(await firstNonEmptyList([]), null);
+  assert.equal(await firstNonEmptyList(), null);
 });
 
 const failed = results.filter((r) => r.status === 'fail');
