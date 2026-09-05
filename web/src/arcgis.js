@@ -491,9 +491,30 @@ function addressLikeClause(term, { anchored = false } = {}) {
  * client-side and makes the exact call. This clause exists to beat the
  * row cap, not to decide.
  */
-function civicNumberClause(addressFrom, addressTo) {
+// Range addresses ("1511 - 1519 26TH ST") answer for every number
+// between their endpoints, and an anchored prefix on the searched number
+// cannot reach them — 1515 does not start the string. Letting any range
+// row on the street through, for applyCivicNumberFilter to decide, is
+// what makes an interior number findable at all. See
+// parseCivicAddressSpans: the SPACED hyphen is the discriminator, so
+// this cannot drag in the legal descriptions that use a bare one.
+const CIVIC_RANGE_ROW_CLAUSE = "Property_Address LIKE '% - %'";
+
+/**
+ * @param narrowed  true when another clause (street name or
+ *   municipality) already bounds the query. The range-row OR widens the
+ *   result set, and province-wide it would add ~9k rows and crowd the
+ *   MAX_RESULTS cap, so it rides only on a query that is already
+ *   bounded. A bare number search with no street and no muni is a coarse
+ *   net already; it keeps the old behaviour.
+ */
+function civicNumberClause(addressFrom, addressTo, narrowed) {
   const { mode, term } = civicSearchMode(addressFrom, addressTo);
-  if (mode === 'exact')    return addressLikeClause(term, { anchored: true });
+  if (mode === 'exact') {
+    const exact = addressLikeClause(term, { anchored: true });
+    if (!exact) return null;
+    return narrowed ? `(${exact} OR ${CIVIC_RANGE_ROW_CLAUSE})` : exact;
+  }
   if (mode === 'contains') return addressLikeClause(term);
   return null;  // 'range' | 'none'
 }
@@ -510,7 +531,7 @@ function buildParcelClauses({ addressStreet, addressFrom, addressTo, municipalit
   // client-side in main.js's applyCivicNumberFilter (ArcGIS SQL can't
   // cleanly cast the leading digits), and a true range narrows there
   // alone.
-  const civicClause = civicNumberClause(addressFrom, addressTo);
+  const civicClause = civicNumberClause(addressFrom, addressTo, clauses.length > 0 || !!municipality);
   if (civicClause) clauses.push(civicClause);
   // Muni dropdown delivers the exact stored form, e.g. "STONEWALL (TOWN)";
   // exact equality is faster than LIKE and avoids surprise partial-matches.

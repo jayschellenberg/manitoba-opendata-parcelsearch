@@ -15,6 +15,7 @@ import {
   addressMatchesVariants,
   civicSearchMode,
   applyCivicNumberFilter,
+  parseCivicAddressSpans,
 } from '../src/lib/civicRange.js';
 
 const results = [];
@@ -249,6 +250,115 @@ test('a range spanning both readings keeps the parcel once', () => {
   const c = fc('1 106 E ROAD 71 N');
   applyCivicNumberFilter(c, '1', '2000');
   assert.equal(c.features.length, 1);
+});
+
+console.log('\nparseCivicAddressSpans — range addresses');
+
+// 8,964 of ROLL_ENTRY's 438,135 Property_Address values are written as a
+// spaced range. Brandon roll 510826 is "1511 - 1519 26TH ST": 1515 26th
+// St is genuinely on that parcel, and keying the text to its first
+// number alone made 1515 unfindable.
+
+test('a plain address is a point span', () => {
+  assert.deepEqual(parseCivicAddressSpans('1525 26TH ST'), [[152500, 152500]]);
+});
+
+test('a range address spans its endpoints', () => {
+  assert.deepEqual(parseCivicAddressSpans('1511 - 1519 26TH ST'), [[151100, 151999]]);
+  assert.deepEqual(parseCivicAddressSpans('40 - 42 MORRIS AVE'), [[4000, 4299]]);
+});
+
+test('a hi endpoint with no letter covers that number’s suffixes', () => {
+  const [[, hi]] = parseCivicAddressSpans('1511 - 1519 26TH ST');
+  assert.equal(hi, 151999);   // 1519B is inside the range
+});
+
+test('lettered endpoints are read exactly', () => {
+  assert.deepEqual(
+    parseCivicAddressSpans('59070A - 59070B PIONEER RD 40E'),
+    [[5907001, 5907002]],
+  );
+});
+
+// The spaced hyphen is the whole discriminator. Every UNspaced hyphen in
+// this column is a legal description, and reading one as a civic range
+// would hand back the wrong parcels for thousands of rows.
+test('an unspaced hyphen is a legal description, never a range', () => {
+  assert.deepEqual(parseCivicAddressSpans('15-42-244'), []);      // lot 15, plan 42
+  assert.deepEqual(parseCivicAddressSpans('NW6-6-29W'), []);      // quarter section
+  assert.deepEqual(parseCivicAddressSpans('13-17665'), []);       // lot-plan pair
+  assert.deepEqual(parseCivicAddressSpans('DESC NE22-21-3E'), []);
+});
+
+test('a malformed range degrades to the leading point key, not a guess', () => {
+  // Real rows. The hi side is not a civic number, so neither is a range.
+  assert.deepEqual(parseCivicAddressSpans('150009 - PTH 5 & 149006 RD 150'), [[15000900, 15000900]]);
+  assert.deepEqual(parseCivicAddressSpans('1705 & - 1741 GIMLI RD'), [[170500, 170500]]);
+});
+
+// 5,972 rows — most of the province's condo units — are written with the
+// unit ahead of the BUILDING's civic address. They keyed to nothing at
+// all before, so an exact or range civic search dropped every one of
+// them: 1015 26th St found none of its units.
+test('a unit prefix keys to the building address, not the unit number', () => {
+  assert.deepEqual(parseCivicAddressSpans('Unit 10    - 1015 26TH ST'), [[101500, 101500]]);
+  assert.deepEqual(parseCivicAddressSpans('Unit 862   - 868 WEISER CRES'), [[86800, 86800]]);
+  assert.deepEqual(parseCivicAddressSpans('Unit 5     - 40 NORTH GATE DR'), [[4000, 4000]]);
+});
+
+test('the unit number itself is not a civic number', () => {
+  const c = fc('Unit 10    - 1015 26TH ST');
+  applyCivicNumberFilter(c, '10', '10');
+  assert.deepEqual(addrs(c), []);
+});
+
+test('the building number finds every unit in it', () => {
+  const c = fc('Unit 10    - 1015 26TH ST', 'Unit 20    - 1015 26TH ST', '1583 26TH ST');
+  applyCivicNumberFilter(c, '1015', '1015');
+  assert.deepEqual(addrs(c), ['Unit 10    - 1015 26TH ST', 'Unit 20    - 1015 26TH ST']);
+});
+
+test('a unit-shaped legal reference is still not an address', () => {
+  assert.deepEqual(parseCivicAddressSpans('DESC 5/6&10&12--6600'), []);
+  assert.deepEqual(parseCivicAddressSpans('B&C--55188'), []);
+});
+
+test('the split-number readings still both survive', () => {
+  assert.deepEqual(parseCivicAddressSpans('1 106 E ROAD 71 N'), [[100, 100], [110605, 110605]]);
+});
+
+console.log('\napplyCivicNumberFilter — interior numbers of a range');
+
+test('an interior number finds the range parcel', () => {
+  const c = fc('1511 - 1519 26TH ST', '1525 26TH ST');
+  applyCivicNumberFilter(c, '1515', '1515');
+  assert.deepEqual(addrs(c), ['1511 - 1519 26TH ST']);
+});
+
+test('both endpoints still match', () => {
+  for (const n of ['1511', '1519']) {
+    const c = fc('1511 - 1519 26TH ST');
+    applyCivicNumberFilter(c, n, n);
+    assert.equal(c.features.length, 1, `endpoint ${n} should match`);
+  }
+});
+
+test('a number outside the range is still excluded', () => {
+  const c = fc('1511 - 1519 26TH ST');
+  applyCivicNumberFilter(c, '1520', '1520');
+  assert.deepEqual(addrs(c), []);
+});
+
+test('a search range that merely overlaps the address range matches', () => {
+  const c = fc('1511 - 1519 26TH ST');
+  applyCivicNumberFilter(c, '1518', '1600');   // overlaps at the top only
+  assert.equal(c.features.length, 1);
+});
+
+test('a legal description is not matched by its lot or plan number', () => {
+  const c = fc('15-42-244', 'NW6-6-29W');
+  applyCivicNumberFilter(c, '42', '42');
+  assert.deepEqual(addrs(c), []);
 });
 
 const failed = results.filter((r) => r.status === 'fail');

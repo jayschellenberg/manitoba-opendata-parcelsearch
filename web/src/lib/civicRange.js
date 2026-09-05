@@ -110,6 +110,67 @@ export function parseCivicAddressKeys(raw) {
   return keys;
 }
 
+// A civic-address RANGE: two civic numbers around a SPACED hyphen.
+// "1511 - 1519 26TH ST", "40 - 42 MORRIS AVE", "59070A - 59070B PIONEER
+// RD 40E". 8,964 of ROLL_ENTRY's 438,135 addresses are written this way.
+//
+// The spaces around the hyphen are the whole discriminator and must not
+// be relaxed. Every UNspaced hyphen in this column is a legal
+// description, not a range — "15-42-244" is lot 15 of plan 42,
+// "NW6-6-29W" a quarter section, "13-17665" a lot-plan pair. A regex
+// that allowed "15-42" would read thousands of legal descriptions as
+// civic ranges and hand back the wrong parcels.
+const RE_CIVIC_RANGE = /^(\d+)([A-Za-z]?)\s+-\s+(\d+)([A-Za-z]?)(?=\s|$)/;
+
+// A unit designator ahead of the building's civic address: "Unit 10    -
+// 1015 26TH ST", "Unit 862   - 868 WEISER CRES". 5,972 rows, i.e. most
+// of the province's condo units. The civic number is the BUILDING's, and
+// it is what someone searching the address types — the unit number is
+// not a civic number and never keyed as one. Stripped before parsing, so
+// 1015 26th St finds its units instead of finding nothing.
+//
+// Requires a digit after the separator so a legal description can't be
+// mistaken for a unit address.
+const RE_UNIT_PREFIX = /^(?:UNIT|APT|SUITE|STE)\s+\S+\s*-\s*(?=\d)/i;
+
+/**
+ * The civic-number SPAN(S) an address occupies, as inclusive [lo, hi]
+ * key pairs. A plain address occupies a point span; a range address
+ * occupies everything between its endpoints.
+ *   "1525 26TH ST"          -> [[152500, 152500]]
+ *   "1511 - 1519 26TH ST"   -> [[151100, 151999]]
+ *   "Unit 10   - 1015 26TH ST" -> [[101500, 101500]]
+ *   "1 106 E ROAD 71 N"     -> [[100, 100], [110605, 110605]]
+ *   "DESC NE22-21-3E"       -> []
+ *
+ * This exists because the number a parcel answers to is often not the
+ * number its address text begins with. Brandon roll 510875 is "1511 -
+ * 1519 26TH ST" and 1515 26th St is genuinely on it; roll 525063 is
+ * "Unit 10    - 1015 26TH ST" and belongs to the building at 1015.
+ * Keying each to its leading token made the first unfindable by 1515 and
+ * the second unfindable by any civic number at all — the same shape of
+ * miss as searching a Winnipeg parcel by an address other than its
+ * assessed one.
+ *
+ * Endpoints follow parseCivicBound's asymmetry, so a hi endpoint typed
+ * without a letter covers that number's suffixed variants: 1519B is
+ * inside "1511 - 1519".
+ *
+ * Ranges written backwards ("1519 - 1511") are not treated as ranges —
+ * the reading is unclear and a point key is the safer answer.
+ */
+export function parseCivicAddressSpans(raw) {
+  if (!raw) return [];
+  const s = String(raw).replace(RE_UNIT_PREFIX, '');
+  const m = s.match(RE_CIVIC_RANGE);
+  if (m) {
+    const lo = civicKey(m[1], m[2]);
+    const hi = m[4] ? civicKey(m[3], m[4]) : Number(m[3]) * 100 + 99;
+    if (lo != null && hi != null && hi >= lo) return [[lo, hi]];
+  }
+  return parseCivicAddressKeys(s).map((k) => [k, k]);
+}
+
 /**
  * Parse a From/To bound into a comparison key. The asymmetry matches
  * user expectations:
@@ -311,6 +372,9 @@ export function civicSearchMode(fromRaw, toRaw) {
  * A split-number address is kept when EITHER reading lands in range (see
  * parseCivicAddressKeys). An exact search stays precise either way; a
  * wide range errs toward showing the parcel rather than hiding it.
+ *
+ * A RANGE address is kept when the search overlaps any part of its span,
+ * not just its endpoints — see parseCivicAddressSpans.
  */
 export function applyCivicNumberFilter(fc, fromRaw, toRaw) {
   const { mode, term } = civicSearchMode(fromRaw, toRaw);
@@ -331,9 +395,13 @@ export function applyCivicNumberFilter(fc, fromRaw, toRaw) {
   if (from == null && to == null) return;
   const kept = [];
   for (const f of features) {
-    const keys = parseCivicAddressKeys(f?.properties?.Property_Address);
-    if (keys.length === 0) continue;            // no civic number → drop when range set
-    const hit = keys.some((k) => (from == null || k >= from) && (to == null || k <= to));
+    const spans = parseCivicAddressSpans(f?.properties?.Property_Address);
+    if (spans.length === 0) continue;           // no civic number → drop when range set
+    // Interval OVERLAP, not point containment: a range address covers
+    // every number between its endpoints, so "1511 - 1519 26TH ST" has
+    // to answer a search for 1515.
+    const hit = spans.some(([lo, hi]) =>
+      (to == null || lo <= to) && (from == null || hi >= from));
     if (hit) kept.push(f);
   }
   fc.features = kept;

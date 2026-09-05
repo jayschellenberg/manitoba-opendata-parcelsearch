@@ -90,6 +90,41 @@ Verify any boundary against
 [MTI Designated Flood Areas](https://www.gov.mb.ca/mti/wms/permit/designated.html)
 before relying on it.
 
+### Address aliases
+
+Manitoba has **no province-wide civic-address dataset**, so unlike the
+[Winnipeg sister site](https://winnipeg-opendata-parcelsearch.vercel.app/) —
+which recovers a parcel's alias addresses by joining a separate address-point
+layer to the parcel polygon — there is no second source to join here. Every
+address the app knows is the one string in `ROLL_ENTRY.Property_Address`.
+
+The aliases are inside that string instead, and two forms of it name addresses
+the parcel answers to but does not begin with:
+
+| Form | Rows | Example |
+|---|---|---|
+| Civic **range** | 8,964 | `1511 - 1519 26TH ST` (Brandon roll 510875) |
+| **Unit** ahead of the building address | 5,972 | `Unit 10    - 1015 26TH ST` (roll 525063) |
+
+Keyed to its leading token, the first was findable only as 1511 or 1519 — 1515
+26th St, a real address on that parcel, returned nothing — and the second keyed
+to no civic number at all, so an exact or range search silently dropped every
+condo unit in the province. `parseCivicAddressSpans` in `lib/civicRange.js` now
+reads an address as an inclusive **span** rather than a point, and the filter
+tests interval overlap, so an interior number matches and a unit address keys
+to its building.
+
+The **spaced** hyphen is the whole discriminator and must not be relaxed: every
+*unspaced* hyphen in this column is a legal description, not a range —
+`15-42-244` is lot 15 of plan 42, `NW6-6-29W` a quarter section. A looser regex
+would read thousands of those as civic ranges.
+
+One matching change in `arcgis.js`: an exact search narrows server-side with an
+anchored prefix (`LIKE '1515%'`), which a range row can never satisfy, so range
+rows on the searched street are OR'd in for the client filter to decide. That
+OR rides only on a query already bounded by street name or municipality — bare
+province-wide it would add ~9k rows and crowd the `MAX_RESULTS` cap.
+
 ## Layout (sidebar + main pane)
 
 The page splits into a fixed-width left sidebar holding all controls and a fluid main pane holding the map and table. On viewports below 900 px the layout collapses to a single column.
