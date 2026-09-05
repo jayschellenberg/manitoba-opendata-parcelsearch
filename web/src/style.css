@@ -1106,6 +1106,35 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   border-radius: 3px;
 }
 .sidebar .more-filters[open] > summary { margin-bottom: 6px; }
+/* Active-filter WARNING in the Sales tab's "Additional filters" summary.
+   Same construction as the Property tab's advanced-filters badge (a chip
+   inside the summary, visible collapsed), but this one is a warning, not
+   a tint: these controls drop comps, the disclosure is closed by default,
+   and Far-Flung Exclude persists between sessions. Amber, the same pair
+   the sales-db selection warning and the staleness banner use, and it
+   names each filter so a glance says what is biting. The themed summary
+   further down is a flex row (chevron · title · badge); wrapping lets a
+   long list drop to its own line at the sidebar's width. */
+.sidebar .more-filters > summary { flex-wrap: wrap; }
+.sidebar .more-filters > summary .more-filters-title { flex: 0 0 auto; }
+.sidebar .more-filters > summary .sales-filters-badge {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 1px 7px;
+  border: 1px solid #e0b34f;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: normal;
+  line-height: 1.35;
+}
+.sidebar .more-filters > summary .sales-filters-badge[hidden] {
+  display: none;
+}
 /* Filter rows inside the collapsible get the same flex layouts the
    old top-level rows had. */
 .sidebar .more-filters .du-row {
@@ -2614,6 +2643,22 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 .sidebar .far-flung-row #charts-open {
   flex: 0 0 calc(50% - 3px);
   min-width: 0;
+  /* Blue, by request (Jason, 2026-09-05). Every other control on this
+     panel is a filter in white or a commit in the brand black; Charts
+     is neither — it opens a second tab — and in white it read as one
+     more filter. --ui-focus is the site's one blue token; the hover is
+     the same hue a step darker, the way the brand pair is built. The
+     id selector outranks the themed `.controls button.secondary` rules
+     further down, so no !important. */
+  background: var(--ui-focus, #3867d6);
+  border-color: var(--ui-focus, #3867d6);
+  color: #fff;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.16) inset, 0 8px 18px rgba(56, 103, 214, 0.18);
+}
+.sidebar .far-flung-row #charts-open:hover:not(:disabled) {
+  background: #2d55b8;
+  border-color: #2d55b8;
+  color: #fff;
 }
 /* The Far-Flung threshold + Exclude now live under Additional filters;
    this row keeps All Sales, Charts, and the tally that reports whether

@@ -808,7 +808,7 @@
               type="button"
               class="secondary"
               title="Open scatter charts of the filtered sales in a new tab — price per lot and per acre/SF over time, by size, by zoning and by distance. The tab tracks these filters live."
-            >Charts</button>
+            >📈 Charts</button>
             <!-- The Far-Flung CONTROLS live under Additional filters; this
                  read-out stays here, outside the collapsible, and speaks
                  up only when the filter is actually marking or removing
@@ -822,7 +822,17 @@
                inside are the ones reached for on particular jobs
                rather than on every upload. -->
           <details class="more-filters sales-filters sales-only">
-            <summary>Additional filters</summary>
+            <!-- The badge is a WARNING that names every control in here
+                 that is set. It lives inside <summary> so it shows when
+                 the group is collapsed — the case where a forgotten Plan #
+                 or a persisted Far-Flung Exclude silently drops comps.
+                 Filled by renderSalesFiltersBadge() in main.js, which also
+                 repeats the list on the count line above the table. -->
+            <summary><span class="more-filters-title">Additional filters</span><span
+              class="sales-filters-badge"
+              id="sales-filters-badge"
+              hidden
+            ></span></summary>
             <div class="size-vacant-row">
               <!-- A plan number is at most 7 digits, usually 3-5, so this is
                    sized for 7 and fixed — see the CSS. `title` rather than a
