@@ -106,9 +106,14 @@ export function initSalesDbPanel({
       return info;
     }
     const gen = info.generated_at ? String(info.generated_at).slice(0, 10) : null;
+    // "MAO posted through", not "newest": the newest sale date is capped
+    // by MAO's own feed, which loads sales in roughly weekly batches 10-14
+    // days behind the sale date, not by when the archive was last
+    // refreshed. "newest 2026-08-17 · exported 2026-09-05" read as the
+    // archive having stopped in August (Jason, 2026-09-05).
     $status.textContent =
       `${fmt(info.municipalities)} municipalities · ${fmt(info.sales)} sales` +
-      (info.newest_sale ? ` · newest ${info.newest_sale}` : '') +
+      (info.newest_sale ? ` · MAO posted through ${info.newest_sale}` : '') +
       (gen ? ` · exported ${gen}` : '');
     $empty.hidden = true;
     $ready.hidden = false;
