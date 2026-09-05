@@ -50,6 +50,7 @@ import {
   isFarFlungSale, farFlungReason, DEFAULT_FAR_FLUNG_KM,
   isNominalSale,
 } from './lib/saleGroups.js';
+import { salesFilterChips, salesFilterChipText } from './lib/salesFilterChips.js';
 import {
   dedupeSalesByRoll, expandFeaturesBySale, unmatchedSales,
   uniqueParcelFeatures, dedupeParcelFeaturesForMap,
@@ -3027,6 +3028,84 @@ for (const el of [
   el.addEventListener('change', refilterCsvIfActive);
   el.addEventListener('input',  refilterCsvIfActive);
 }
+
+// ---------- "Additional filters" active-filter warning (Sales Analysis) ----------
+//
+// The disclosure under the far-flung row is collapsed by default, and the
+// Far-Flung threshold + Exclude inside it persist between sessions, so a
+// filter set there can drop comps with nothing on screen to say so
+// (Jason, 2026-09-05). Two places say so now, both fed by
+// lib/salesFilterChips.js: a warning badge in the disclosure's summary,
+// visible open or closed, naming each control that is set; and a note on
+// the count line above the table (refilterCsvIfActive), where the eye is
+// when the results look thin.
+//
+// The Bldg Threshold controls are declared much further down the module
+// (Phase 6), so they are looked up per call rather than captured here — a
+// module-level const would be in TDZ at this point (see the note above
+// refreshVacancyAndRefilter for what that did last time).
+
+function readSalesFilterState() {
+  const $thr  = document.getElementById('vacant-threshold');
+  const $pill = document.querySelector('.vacant-mode-pill .vacant-mode-btn.active');
+  return {
+    plan: $salesPlan?.value,
+    streetName: $salesStreetName?.value,
+    sizeUom: getSizeUom(),
+    sizeLow: $sizeLow?.value,
+    sizeHigh: $sizeHigh?.value,
+    ppaLow: $salesPpaLow?.value,
+    ppaHigh: $salesPpaHigh?.value,
+    priceLow: $salesPriceLow?.value,
+    priceHigh: $salesPriceHigh?.value,
+    zoning: zoningFilter.getSelected(),
+    zoneCat: zoneCatFilter.getSelected(),
+    groupSize: $salesGroupSize?.value,
+    n1: $salesN1?.value,
+    vacantImproved: $vacantImproved?.value,
+    vacantThreshold: $thr?.value,
+    vacantMode: $pill?.dataset.mode,
+    saleAsmtMax: $saleAsmtMax?.value,
+    farFlungKm: $farFlungKm?.value,
+    farFlungExclude: !!$farFlungExclude?.checked,
+    subjectRoll: $subjectRoll?.value,
+    hasSubject: !!subjectCentroid,
+    distanceMax: $distanceMax?.value,
+  };
+}
+
+/** Repaint the summary badge; returns the chips so the count line can reuse them. */
+function renderSalesFiltersBadge() {
+  const badge = document.getElementById('sales-filters-badge');
+  const chips = salesFilterChips(readSalesFilterState());
+  if (!badge) return chips;
+  if (chips.length === 0) {
+    badge.hidden = true;
+    badge.textContent = '';
+    badge.removeAttribute('title');
+    return chips;
+  }
+  badge.hidden = false;
+  badge.textContent = `⚠ ${salesFilterChipText(chips)}`;
+  badge.title = `${chips.length} additional filter${chips.length === 1 ? '' : 's'} set — `
+    + chips.map((c) => c.detail).join('; ');
+  return chips;
+}
+
+// Delegated so every control in the disclosure is covered — the text and
+// number inputs (`input`); the selects, checkboxes and the two zoning
+// pickers, which dispatch a bubbling `change` from their root; and the %/$
+// pill, whose buttons only ever `click`. This keeps the badge honest before
+// any sales are loaded too, when refilterCsvIfActive's early return would
+// otherwise leave it stale. The subject's Set / × are async or reset state
+// of their own, so applySubjectFromInput and clearSubjectParcel call the
+// repaint themselves.
+const $salesFiltersGroup = document.querySelector('details.more-filters.sales-filters');
+for (const evt of ['input', 'change', 'click']) {
+  $salesFiltersGroup?.addEventListener(evt, () => renderSalesFiltersBadge());
+}
+renderSalesFiltersBadge();
+
 // Drawn area shapes re-filter whichever mode is live: the sales-CSV
 // pass when a CSV is loaded, the shapes-only basic pass otherwise.
 // Committing a shape, flipping include/exclude, or erasing all
@@ -5917,9 +5996,19 @@ function refilterCsvIfActive() {
   const waterNote = waterInfluenceFilterInert(csvFullRows)
     ? " · water-influence data hasn't loaded for these municipalities, so that filter was not applied"
     : '';
+  // Name the Additional filters that are set, for the same reason: the
+  // disclosure is collapsed and the eye is up here when the results look
+  // thin. The badge in the summary repeats the list (repainted here so
+  // the two can never disagree). Far-Flung is left to ffNote once it is
+  // actually removing sales — that line already says how many.
+  const setChips = renderSalesFiltersBadge()
+    .filter((c) => !(c.key === 'farFlung' && ff.sales > 0));
+  const afNote = setChips.length
+    ? ` · ⚠ Additional filters: ${salesFilterChipText(setChips)}`
+    : '';
   const msg = (filtered.length === total
     ? `${csvFullBaseMsg}${ffNote}`
-    : `${filtered.length} of ${total} sales shown (filtered)${ffNote}`) + waterNote;
+    : `${filtered.length} of ${total} sales shown (filtered)${ffNote}`) + afNote + waterNote;
   setCount(msg);
   renderTable(filtered);
   // Re-narrow the map's parcel highlight to the filtered subset.
@@ -12690,6 +12779,9 @@ async function applySubjectFromInput() {
     setSubjectData(map, { type: 'FeatureCollection', features: [feat] });
     updateSubjectRadiusRing();
     document.querySelector('.subject-row')?.classList.add('has-subject');
+    // A Max km typed earlier just became a live radius; say so in the
+    // Additional-filters badge even outside CSV mode.
+    renderSalesFiltersBadge();
     // If we have CSV rows already, restamp distances and re-render
     // so the new column shows up immediately. Outside CSV mode the
     // column isn't visible anyway, so no-op.
@@ -12736,6 +12828,7 @@ function clearSubjectParcel() {
   subjectCentroid = null;
   if ($subjectRoll) $subjectRoll.value = '';
   document.querySelector('.subject-row')?.classList.remove('has-subject');
+  renderSalesFiltersBadge();
   mapReady.then(() => {
     setSubjectData(map, { type: 'FeatureCollection', features: [] });
     setSubjectRadius(map, null, 0);
