@@ -17,6 +17,7 @@ thumb: nothing should go more than ~12 months stale.**
 | **Historical shards** (as-of-date view, keyed `YYYY-MM-DD`) | the cold archive | `mb-parcel-history` repo → raw.githubusercontent | when a new snapshot is archived |
 | **Lineage index** (inferred predecessor/successor) | the historical shards | `mb-parcel-history/lineage/` → raw.githubusercontent | when ≥ 2 snapshots exist |
 | **Place names** (map search box) | Canadian Geographical Names Database (NRCan) | `web/public/mb-places.json`, bundled | ~annual / never (stable reference data) |
+| **MAO sales archive** (subscriber data — private, never served by the site) | mao-scrape `results/sales_search/by_muni/` | `D:\Dropbox\Appraisal\Web\MAOSales\` (`manifest.json` + `muni_<no>.csv`), read locally by the browser from a folder the user picks once | hourly refresh (`MAOSalesSearch`); full re-scrape 6-monthly, North 12 — see #9 for why "MAO posted through" trails today by ~2 weeks |
 
 ### The live layers are not as live as "live" suggests
 
@@ -843,6 +844,58 @@ Manual fallback: download via the "Accept and download data" button at
 <https://www.crea.ca/housing-market-stats/mls-home-price-index/hpi-tool/>,
 extract into a correctly named folder, re-render ResChartsV2.5.
 
+### 9. MAO sales archive — the "MAO posted through" date lags, and that is MAO  (cadence: hourly, **scheduled** in mao-scrape)
+The Sales Analysis panel's MAO Sales Database line reads
+`… · MAO posted through <date> · exported <date>` (PR #49). The two dates
+mean different things and are expected to sit ~2 weeks apart:
+
+- **exported** is when `mao-scrape/scripts/export_sales_for_web.R` last
+  rewrote `D:\Dropbox\Appraisal\Web\MAOSales\` — it runs after every refresh
+  cycle, so this is normally today.
+- **MAO posted through** is the newest `sale_date` in the whole archive.
+  It is capped by MAO's own feed, not by us.
+
+How the archive is kept current, so the lag makes sense: the full sweep
+(186 municipalities, 2026-08-10 → 08-18) is re-run on the regional cadence
+(6 months; North 12 — next Feb / Aug 2027). Between sweeps the hourly
+`MAOSalesSearch` task runs `scripts/run_sales_refresh.R --cycle --munis 5`:
+five municipalities per slot, the whole province every ~3-6 days, reading
+MAO's **newest-first** results grid (3 pages × sale type) and diffing by sale
+identity, plus one deep 18-month re-scrape per cycle. Anything MAO has posted
+lands on page 1 of the next visit — there is no date window to get wrong.
+
+**Measured 2026-09-05** (Jason asked why the newest sale was 2026-08-17 with
+nothing newer): every municipality's `last_refresh` was within 6 days, the
+staleness check had said OK every morning, and `logs/refresh_digest.csv`
+showed 394 / 352 / 526 new sales landing on Sep 2 / 3 / 4 — **not one dated
+after Aug 17.** The newest date the refresh had ever seen stepped
+07-31 (seen 08-19) → 08-07 (08-20) → 08-10 (08-26) → 08-17 (08-27), then held
+flat for 9+ days. So MAO loads sales in roughly **weekly batches, each about
+10-14 days behind the sale date, and can skip a week.** A flat "posted
+through" date with new rows still arriving is MAO's posting lag, not a
+scrape fault.
+
+**Telling MAO lag from a broken scrape** (all paths under
+`D:\Dropbox\ClaudeCode\MBOpenData\mao-scrape\`):
+
+1. `logs/refresh_digest.csv` — `new_sales` per run. Hundreds a day on
+   weekdays is normal; **zero for several days running is not.**
+2. `results/sales_search/refresh_freshness.csv` — every municipality's
+   `last_refresh` should be within the past week. Dates that stop advancing
+   mean the rotation is wedged (see mao-scrape commit `112f501`, when one
+   never-selling northern municipality starved the deep queue for 28 cycles
+   and the digest reported it as routine).
+3. `logs/sales_search_<stamp>.log` — the newest one. `held=N new=0` on every
+   slice is fine; `blank form - re-establishing session` on every slice, or
+   `window empty` for a municipality that plainly sells, is an expired
+   session. `logs/sales-staleness-last.log` only checks that the task RAN.
+
+If (1) is healthy and the date is still flat, MAO simply has not loaded the
+next batch. Nothing here alerts on that: `MAOSalesStaleness` watches the
+task, not MAO. If a batch is more than ~3 weeks late, log into MAO by hand
+and check a busy municipality (Brandon, Steinbach, Springfield) before
+touching the scrape.
+
 ## Continuous integration
 
 GitHub Actions is enabled for the account (the earlier account-level
@@ -1031,6 +1084,9 @@ then delete the old token.
 - **Historical archive:** `build_historical_shards.R` prints a **WARNING**
   (and the in-app historical view flags it) when the newest archived
   snapshot is > 12 months old.
+- **Sales archive:** the "MAO posted through" date on the Sales Analysis
+  panel is MAO's cap, not ours. Expect it 10-14 days behind today, and up to
+  ~3 weeks when MAO skips a batch. Read #9 before suspecting the scrape.
 
 If you see any of these, the fix is the matching task above.
 
