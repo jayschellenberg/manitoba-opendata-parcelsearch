@@ -149,16 +149,32 @@ if ($TestAlert) {
   if ($ok) { Write-Host 'Test alert sent.'; exit 0 } else { Write-Error 'Test alert failed.'; exit 1 }
 }
 
-# Fallback roster ONLY -- used when discovery under-delivers. Snapshot of what
-# Get-ScheduledTask returned on 2026-08-12, which matched discovery exactly.
-# Do not maintain this by hand as the primary list; fix discovery instead.
+# Fallback roster ONLY -- used when discovery under-delivers. Refreshed
+# 2026-09-07: the registrar scan returns these 25 names, and every one is
+# registered on this host except MAOScrapeRun, whose absence is normal (see
+# $OnDemandTasks below). Discovery and Task Scheduler therefore agree exactly,
+# which is the same property the 2026-08-12 snapshot was taken under.
+#
+# Do not maintain this by hand as the primary list; fix discovery instead. It
+# had drifted to 15 names by 2026-09-07 -- 10 short -- because every registrar
+# added since 2026-08-12 (du-snapshot, basemap x2, parcel-tiles, task-health,
+# and five mao-scrape jobs) was picked up by discovery and so never forced
+# anyone to touch this list. That drift is invisible in normal operation:
+# discovery returns 25 against a -MinDiscovered floor of 10, so this array is
+# never consulted, and a stale copy only surfaces on the one day it is needed.
+# Re-derive it rather than editing by hand -- the scan in section 1 is the
+# definition, and this is a transcript of its output.
 $KnownTasks = @(
   'mao-assembly-annual-refresh', 'mao-assembly-input-staleness', 'mao-assembly-monthly-refresh',
-  'MAOChunkedDelta', 'MAOSalesSearch', 'MAOSalesStaleness',
-  'mb-parcelsearch-history-staleness', 'mb-parcelsearch-hpi-download',
-  'mb-parcelsearch-hpi-staleness', 'mb-parcelsearch-monthly-refresh',
+  'MAOChunkedDelta', 'MAOSalesBackfill', 'MAOSalesChangeBridge', 'MAOSalesSearch',
+  'MAOSalesSearchBrandon', 'MAOSalesStaleness', 'MAOScrapeRun', 'MAOSweepHealth',
+  'mb-parcelsearch-basemap-refresh', 'mb-parcelsearch-basemap-staleness',
+  'mb-parcelsearch-du-snapshot', 'mb-parcelsearch-history-staleness',
+  'mb-parcelsearch-hpi-download', 'mb-parcelsearch-hpi-staleness',
+  'mb-parcelsearch-monthly-refresh', 'mb-parcelsearch-parcel-tiles',
   'mb-parcelsearch-post-refresh-report', 'mb-parcelsearch-publish-indexes',
-  'mb-parcelsearch-semiannual-archive', 'mb-parcelsearch-upstream-vintage',
+  'mb-parcelsearch-semiannual-archive', 'mb-parcelsearch-task-health',
+  'mb-parcelsearch-upstream-vintage',
   'mbfloodmapping-staleness'
 )
 
