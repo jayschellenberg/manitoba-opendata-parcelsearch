@@ -363,7 +363,7 @@ if (file.exists(sales_path)) {
                 format(n_distinct(paste(sdu$muni_no, sdu$roll_no_txt)), big.mark = ",")))
   }
 } else {
-  cat("\n[mf-newbuild] no sales archive at ", sales_path, " — sdu omitted\n", sep = "")
+  cat("\n[mf-newbuild] no sales archive at ", sales_path, " - sdu omitted\n", sep = "")
 }
 
 # --- 8. assemble ------------------------------------------------------------
@@ -411,7 +411,7 @@ if (length(roll_files)) {
     distinct(muni_no, Muni_Name_With_Typ)
 } else {
   warning("no RollEntry_YYYYMMDD.gpkg under ", mb_parcelsearch_root,
-          " — shard names fall back to the scrape's own municipality text")
+          " - shard names fall back to the scrape's own municipality text")
 }
 rolls <- rolls |>
   left_join(muni_map %||% tibble(muni_no = integer(), Muni_Name_With_Typ = character()),

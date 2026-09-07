@@ -88,7 +88,7 @@ replay_state <- function(dir) {
   base <- sort(list.files(dir, pattern = "^baseline_[0-9-]{10}[.]csv$", full.names = TRUE))
   if (!length(base)) return(NULL)
   if (length(base) > 1) {
-    stop("more than one baseline in ", dir, " — the replay order is ambiguous:\n  ",
+    stop("more than one baseline in ", dir, " - the replay order is ambiguous:\n  ",
          paste(basename(base), collapse = "\n  "))
   }
   st <- readr::read_csv(base, show_col_types = FALSE, progress = FALSE,
@@ -137,7 +137,7 @@ prev <- replay_state(snap_dir)
 
 if (is.null(prev)) {
   out <- file.path(snap_dir, paste0("baseline_", stamp, ".csv"))
-  cat("[du-snapshot] no prior history — writing the BASELINE\n")
+  cat("[du-snapshot] no prior history - writing the BASELINE\n")
   if (DRY_RUN) { cat("[du-snapshot] --dry-run: nothing written\n"); quit(save = "no") }
   dir.create(snap_dir, showWarnings = FALSE, recursive = TRUE)
   readr::write_csv(cur, out)
@@ -199,7 +199,7 @@ if (is.null(prev)) {
   if (!nrow(cmp)) {
     # Writing an empty delta would add a file that says nothing; skipping it
     # keeps the replay chain honest about when DU actually moved.
-    cat("[du-snapshot] no change — no delta written\n")
+    cat("[du-snapshot] no change - no delta written\n")
   } else {
     readr::write_csv(cmp |> select(muni_no, roll_no_txt, du_prev, du),
                      file.path(snap_dir, paste0("delta_", stamp, ".csv")))
