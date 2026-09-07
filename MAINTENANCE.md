@@ -743,6 +743,109 @@ grid cell says so in its tooltip, the popup shows the whole series, and the
 overlay legend carries the same footnote, so the pattern, not one year, is
 what gets read.
 
+### 6e. Multi-family new construction — DU snapshot + shard rebuild  (cadence: DU snapshot **monthly, scheduled**; shards after a scrape delta)
+
+Where apartment-scale buildings landed on the assessment roll, dated from 20
+years of assessed **building value** rather than from building permits —
+outside Winnipeg there is no province-wide permit feed to read.
+
+| Artefact | Built by | Sources | Where it lives |
+|---|---|---|---|
+| **New MF** grid column + popup box + 6 CSV columns + the **New Multi-Family** map overlay (Year / Units views) | `npm run mf:shards` (`r/build_mf_newbuild.R`) | mao-scrape `tax_history.parquet` (2008–2027, every roll), `parcels.parquet`, `sales_archive.csv` | `mb-parcel-data/mf-newbuild/`, served via the CDN pin |
+| **DU snapshot** — one baseline plus monthly deltas | `mb-parcelsearch-du-snapshot` → `du-snapshot-wrapper.ps1` → `r/snapshot_dwelling_units.R` | `parcels.parquet` | `mb-parcel-history/du-snapshots/` |
+
+**Why value, and not the unit count you would expect.** MAO publishes
+`dwelling_units` as a CURRENT scalar — there is no DU column in the tax
+history and no archived DU anywhere — so a unit-count delta cannot be
+reconstructed for any period before the baseline of **2026-09-07**. Assessed
+building value, by contrast, has twenty years of it on every roll. Manitoba
+freezes values between biennial reassessments, so a within-biennium jump is
+almost pure physical change. Measured over Residential 2 rolls, 2008–2027:
+
+| year-over-year pair | building value changed |
+|---|---|
+| across a reassessment boundary | 99.8% |
+| within a biennium | 7.9% |
+
+Across a boundary the jump is normalised against the median revaluation factor
+for that municipality **and dominant class** — the classes do not move together
+(2025: Residential 1 revalued 1.142 province-wide, Residential 2 1.036) — and
+the event is emitted at lower confidence.
+
+**Which rolls.** `dwelling_units >= 3`, excluding any roll carrying a farm
+class in its latest year. That exclusion is load-bearing, not cosmetic: 1,222
+of the 1,841 rolls with 5+ units are Hutterite colonies, routinely 20–35 units
+and $20–38M of buildings, and they outrank every real apartment block in the
+province if left in. Both thresholds are in the index's `_meta` and asserted by
+`web/test/mfNewbuild.test.js` against `MFNB_MIN_DU` / `MFNB_FROM_YEAR` in
+`web/src/lib/mfNewbuild.js` — change one and the suite fails until the other
+matches.
+
+**Detection is roll-level, across all classes — never within Residential 2.**
+A new block arrives as a *new roll*, or reclassifies into R2 in the same year
+the building appears. Requiring R2 in both years finds **2** events
+province-wide instead of 686. Every event on a roll is kept, not just the
+largest: Selkirk's 1027 Manitoba Ave is a 2017 build (`$163,900` commercial →
+`$16.9M` R2) **and** a 2024 phase two (`$17.0M` → `$37.4M`), and collapsing it
+to one year would discard a real building.
+
+**Event years are ASSESSMENT years** and trail physical completion, typically
+by about a year; a partly built structure can be assessed at part value first.
+The column tooltip, the popup and the legend all say "on the roll", never
+"built", for that reason.
+
+**Rebuilding the shards** (after a scrape delta, or a threshold change):
+
+```
+cd web && npm run mf:shards              # ~2 min; 101 shards, 607 rolls, 686 events, 170 KB
+Rscript ../r/build_mf_newbuild.R --report-only   # print the summaries, write nothing
+```
+
+then publish and repin exactly as §1b — `update-cdn-pin.ps1`, review
+`git diff web/src/arcgis.js`, commit and push the app.
+
+**The DU snapshot: what it is for, and what a missed run actually costs.**
+It closes the DU gap *going forward*, so that a roll which gains units without
+gaining much value — a conversion, a basement suite, a rooming house — becomes
+detectable, which the value signal alone misses. A skipped month does **not**
+lose the observation: the next run diffs against the *replayed* state, so the
+change is still recorded, dated to the month it was finally seen, with any
+intermediate states collapsed (a roll that went 4 → 12 → 6 between snapshots
+records as 4 → 6). Resolution is what is lost. Only the pre-baseline era is
+genuinely unreconstructible.
+
+A delta's date is when the change was **observed**, not when it happened.
+Municipalities re-scrape on a rolling cadence (6 months, annual in the North),
+so a count that moved in March can first appear in an August delta. Read every
+delta date as an upper bound, with that municipality's cadence as the window —
+never as an event date. (The same distinction, from the other end, is why §9
+separates "MAO posted through" from "exported".)
+
+**Storage is baseline-plus-deltas, deliberately.** A full snapshot is 207,259
+rows / 3.3 MB; written twice a year that is ~160 MB of near-identical copies in
+git over a decade for no added information. State at any date = the baseline
+plus every delta up to it, in filename-date order:
+
+```
+Rscript r/snapshot_dwelling_units.R --replay     # print the reconstructed state
+powershell -ExecutionPolicy Bypass -File du-snapshot-wrapper.ps1 -DryRun
+```
+
+**It can refuse, and a refusal needs you.** The log is append-only and
+*self-replaying*, so one bad delta is not a bad file — it is a permanently
+wrong history that silently rewrites every later answer, correctable only by
+editing the log by hand. The script therefore **exits 2 and writes nothing**
+when more than 5% of known rolls lose their units in one cycle, which is the
+signature of a truncated `parcels.parquet`, not of demolition. The wrapper
+turns that into an unmissable `!!` banner. Check the source parquet first; only
+pass `-Force` once you have confirmed the loss is real. Only *losses* are
+gated — a mass gain cannot come from truncation, and capping gains would
+suppress exactly the construction wave the layer exists to catch.
+
+**Overdue coverage.** `mb-parcelsearch-task-health` reads this task's monthly
+trigger out of its XML and flags it after 62 days (interval 31, tolerance 2x).
+It needs no bespoke dead-man's switch of its own.
+
 ### 7. MLI historical aerial basemap  (cadence: on-demand)
 The complete MLI Ortho Refresh source is built locally and deliberately not
 uploaded. Full provenance and year-coverage notes are in
@@ -966,6 +1069,7 @@ powershell -ExecutionPolicy Bypass -File schedule_task_health_check.ps1     # mb
 powershell -ExecutionPolicy Bypass -File schedule_post_refresh_report.ps1   # mb-parcelsearch-post-refresh-report — 15th monthly 08:00 (did the refresh actually publish?)
 powershell -ExecutionPolicy Bypass -File schedule_basemap.ps1        # mb-parcelsearch-basemap-refresh   — Jan 2 / Jul 2 03:00 (Protomaps streets basemap re-cut + publish, both buckets)
 powershell -ExecutionPolicy Bypass -File schedule_basemap_check.ps1  # mb-parcelsearch-basemap-staleness — daily 09:15 (basemap dead-man watchdog, reads the public sidecars)
+powershell -ExecutionPolicy Bypass -File schedule_du_snapshot.ps1    # mb-parcelsearch-du-snapshot       — 14th monthly 03:40 (dwelling-unit snapshot; feeds the New Multi-Family layer, §6e)
 ```
 
 #### Run these from an ELEVATED prompt (2026-08-12: tasks are now S4U)
