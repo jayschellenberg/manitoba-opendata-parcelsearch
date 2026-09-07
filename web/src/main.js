@@ -14048,8 +14048,20 @@ function updateMuniWebsiteButton() {
     return;
   }
   const url = lookupMuniWebsite(muni);
+  // The "add it to the table" half of this used to be in the tooltip, where
+  // the reader is an appraiser who cannot act on it. It belongs to whoever
+  // maintains the table, so it goes to the console; the tooltip says only
+  // what the user needs to know, which is that there is nothing to open.
+  if (!url) warnMissingWebsite('MUNI_WEBSITES', muni);
   setExternalLinkButton($muniWebsiteBtn, url, 'Muni Website ↗',
-    `No website on file for ${muni}. Add it to MUNI_WEBSITES in main.js.`);
+    `No website on file for ${muni}`);
+}
+
+/** One place to log a gap in either website table. Console, not UI: it is
+ *  a note to the person maintaining main.js, not to the person appraising
+ *  a property. */
+function warnMissingWebsite(table, name) {
+  console.warn(`[${table}] no entry for "${name}" — add one in main.js if a site exists`);
 }
 
 /** Muni → Planning District fallback map. Used when the dev-plan
@@ -14086,8 +14098,9 @@ function updatePdWebsiteButton(devPlanFc) {
     const muni = $municipality.value;
     if (muni && MUNI_TO_PD[muni]) {
       const url = lookupPdWebsite(MUNI_TO_PD[muni]);
+      if (!url) warnMissingWebsite('PD_WEBSITES', MUNI_TO_PD[muni]);
       setExternalLinkButton($pdWebsiteBtn, url, 'PD Website ↗',
-        `${MUNI_TO_PD[muni]} — no website on file. Add it to PD_WEBSITES in main.js.`);
+        `${MUNI_TO_PD[muni]} — no website on file`);
       return;
     }
     setExternalLinkButton($pdWebsiteBtn, null, 'PD Website ↗',
@@ -14095,8 +14108,12 @@ function updatePdWebsiteButton(devPlanFc) {
     return;
   }
   const url = lookupPdWebsite(best);
+  if (!url) warnMissingWebsite('PD_WEBSITES', best);
+  // Names the district even when it can't be opened: knowing the parcels
+  // sit in Agassiz PD is most of the answer, and it is the part the user
+  // came for.
   setExternalLinkButton($pdWebsiteBtn, url, 'PD Website ↗',
-    `${best} — no website on file. Add it to PD_WEBSITES in main.js.`);
+    `${best} — no website on file`);
 }
 
 /** Parse the 4-digit year out of Roll_Entry's Asmt_Roll field. Values
