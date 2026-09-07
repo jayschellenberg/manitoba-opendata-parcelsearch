@@ -9872,8 +9872,12 @@ function renderMfnbLegend(mode) {
   const title = (MFNB_MODES[mode] || MFNB_MODES.year).legend;
   $mfnbLegend.innerHTML =
     `<strong>${title}</strong><ul>${items}</ul>`
+    // Three lines, not one run-on. As a single line the footnote was wider
+    // than the swatch list by a long way and it, not the legend, set the box
+    // width - which pushed the panel across the map on a narrow window.
     + `<small style="display:block;margin-top:4px;color:#6b7280;font-style:italic">`
-    + `${MFNB_MIN_DU}+ dwelling units, colonies excluded · from assessed building value ${MFNB_FROM_YEAR}+ · `
+    + `${MFNB_MIN_DU}+ dwelling units, colonies excluded<br>`
+    + `from assessed building value ${MFNB_FROM_YEAR}+<br>`
     + `years are assessment years and trail completion by about a year</small>`;
 }
 
