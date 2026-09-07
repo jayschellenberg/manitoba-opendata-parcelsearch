@@ -281,6 +281,7 @@ import {
   saleSizeStamp, saleSizeState, saleAcres, sizeSourceLabel, showsCurrentRollSize,
   shapeDerivedNote, boundaryTrustLabel, boundaryTrustRank,
 } from './lib/saleSize.js';
+import { parseSaleDate, saleDateSortKey } from './lib/saleDate.js';
 import { computeSizeChanges } from './lib/sizeChange.js';
 import { indexHistoricalGeometry, applyHistoricalGeometry } from './lib/historicalHighlight.js';
 import { withholdChangedGeometry, withheldNote } from './lib/withheldGeometry.js';
@@ -1492,7 +1493,11 @@ const SORT_KEYS = {
   streetview: (r) => strKey(r.parcel.geometry ? '1' : ''),
   value:   (r) => finiteOrNeg(parseTotalValue(r.parcel.properties.Total_Value)),
   report:  (r) => strKey(r.parcel.properties.Asmt_Rpt_Url),
-  saledate:    (r) => strKey(r.parcel.properties._saleDate),
+  // Sale Date sorts on the PARSED instant, not the displayed string. The
+  // cell renders MAO's `DD-Mmm-YY` form, so a string sort ordered by day
+  // of month and then by month NAME alphabetically — Apr before Aug before
+  // Dec, with the year ignored entirely. See lib/saleDate.js.
+  saledate:    (r) => saleDateSortKey(r.parcel.properties._saleDate),
   saleprice:   (r) => finiteOrNeg(parseTotalValue(r.parcel.properties._salePrice)),
   primaryprop: (r) => strKey(r.parcel.properties._primaryProperty),
   saletype:    (r) => strKey(r.parcel.properties._saleTypeGroup),
@@ -6408,10 +6413,11 @@ function filterCsvRowsByOtherSearches(rows) {
 
   // Sale-date range. Empty from = -Infinity, empty to = +Infinity. The
   // HTML5 date input gives us YYYY-MM-DD strings — parseSaleDate() in
-  // main.js handles both that AND the CSV's DD-Mmm-YY native format,
-  // so the two ends of the comparison are always JS Dates (or null
-  // when unparseable; null sale dates fail the active filter, mirroring
-  // the size-range "missing data excluded" behaviour).
+  // lib/saleDate.js handles those AND both of the CSV's month-name forms,
+  // all at local midnight, so the two ends of the comparison are always
+  // JS Dates on the same clock (or null when unparseable; null sale dates
+  // fail the active filter, mirroring the size-range "missing data
+  // excluded" behaviour).
   const dateFrom = parseSaleDate($saleDateFrom?.value);
   const dateTo   = parseSaleDate($saleDateTo?.value);
   const dateActive = !!(dateFrom || dateTo);
@@ -10950,8 +10956,8 @@ function refreshVacancyAndRefilter() {
 // merged into a single $vacantThreshold + pill toggle. The stale names
 // threw an uncaught ReferenceError that halted module init partway
 // through, so every const declared later in the file landed in TDZ —
-// notably SALE_DATE_RE at line 5708, which silently broke the
-// Sale-Date range filter.)
+// notably the sale-date regex (since moved to lib/saleDate.js),
+// which silently broke the Sale-Date range filter.)
 for (const el of [$vacantThreshold].filter(Boolean)) {
   el.addEventListener('input', refreshVacancyAndRefilter);
   el.addEventListener('change', refreshVacancyAndRefilter);
@@ -14112,42 +14118,6 @@ function parseTotalValue(s) {
   if (cleaned === '') return null;
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;
-}
-
-/**
- * Parse the sales-CSV Sale Date column into a Date object. The CSV
- * convention is `DD-Mmm-YY` (e.g. "30-Jan-26") with a two-digit year;
- * fall back to Date.parse for anything else (so YYYY-MM-DD / ISO
- * strings still work if the upstream CSV format ever shifts).
- *
- * The two-digit year disambiguates against a 50-year sliding window:
- * 00-49 → 20xx, 50-99 → 19xx. Manitoba sales data is firmly in the
- * 21st century, so this is just defensive.
- *
- * Returns null when the string can't be parsed — callers treat that
- * as "skip the date check" so a malformed date doesn't drop the row.
- */
-const SALE_DATE_RE = /^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})$/;
-const MONTHS = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
-function parseSaleDate(s) {
-  if (s == null) return null;
-  const str = String(s).trim();
-  if (!str) return null;
-  const m = str.match(SALE_DATE_RE);
-  if (m) {
-    const day = parseInt(m[1], 10);
-    const mon = MONTHS[m[2].toLowerCase()];
-    let year = parseInt(m[3], 10);
-    if (m[3].length === 2) year = (year < 50 ? 2000 : 1900) + year;
-    if (Number.isFinite(day) && mon != null && Number.isFinite(year)) {
-      const d = new Date(year, mon, day);
-      return Number.isFinite(d.valueOf()) ? d : null;
-    }
-  }
-  // Fallback: HTML5 date inputs hand us 'YYYY-MM-DD' directly, and the
-  // upstream sales-CSV format could shift to ISO at any point.
-  const fallback = new Date(str);
-  return Number.isFinite(fallback.valueOf()) ? fallback : null;
 }
 
 function formatCurrency(s) {

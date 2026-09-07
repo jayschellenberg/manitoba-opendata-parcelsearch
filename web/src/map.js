@@ -39,6 +39,7 @@ import { overlayGroupExpanded } from './lib/overlayToggle.js';
 import { formatRollSizeField } from './lib/acres.js';
 import {
   saleSizeState, saleAcres, saleFrontageFeet, sizeSourceLabel, shapeDerivedNote,
+  showMeasuredArea,
 } from './lib/saleSize.js';
 import {
   addShapeLayers,
@@ -4976,6 +4977,24 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
       const src = sizeSourceLabel(p);
       lines.push(`<strong>Land Size (as sold)</strong> ${asSold}`
         + (src ? `<br><small style="color:#888">Source: ${escapeHtml(src)}</small>` : ''));
+    }
+    // A frontage-stated parcel has no area anywhere in the record — the roll
+    // states a width, and saleSize refuses to convert one into the other — so
+    // the line above prints "66 ft frontage" and the popup carries no acreage
+    // or square footage at all. That is the right refusal in general, but not
+    // when the boundary came back VERIFIED UNCHANGED: there the polygon on
+    // screen IS the parcel that sold, so measuring it is not substituting
+    // today's land for the sale's, it is measuring the sale's land. Reported
+    // as a separate line, named as measured-from-shape, so it can never be
+    // mistaken for something the assessor or the sales report stated.
+    if (showMeasuredArea(p)) {
+      const measured = formatLandSize(p._acres);
+      if (measured) {
+        lines.push(`<strong>Land Size (measured)</strong> ${measured}`
+          + '<br><small style="color:#888">Measured from the parcel shape, which this'
+          + ' sale’s evidence verifies as unchanged since the sale. The roll states'
+          + ' a frontage, not an area.</small>');
+      }
     }
   } else {
     const landSize = formatLandSize(p._acres);

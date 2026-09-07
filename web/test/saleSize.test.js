@@ -19,6 +19,7 @@ import {
   sizeSourceLabel,
   showsCurrentRollSize,
   shapeDerivedNote,
+  showMeasuredArea,
 } from '../src/lib/saleSize.js';
 
 const results = [];
@@ -287,6 +288,52 @@ test('a pasted comp set makes no claim either way', () => {
   assert.equal(shapeDerivedNote({ _geomTrust: 'unknown' }), '');
   assert.equal(shapeDerivedNote({}), '');
   assert.equal(shapeDerivedNote(null), '');
+});
+
+console.log('\nsaleSize.js — showMeasuredArea');
+
+// The row that needs it: a frontage-stated parcel whose boundary came back
+// verified_unchanged. 30% of every sale in the export looks like this, and
+// until now the popup reported no area for any of them while simultaneously
+// telling the reader the parcel measures the same today as it did at the sale.
+const FRONTAGE_CONFIRMED = saleSizeStamp({
+  parcelSize: '66', parcelSizeUnit: 'FEET',
+  parcelChange: 'verified_unchanged', sizeBasis: 'current_unchanged',
+});
+
+test('a frontage row with a verified boundary may be measured', () => {
+  assert.equal(saleAcres(FRONTAGE_CONFIRMED), null);          // no area to quote
+  assert.equal(showMeasuredArea(FRONTAGE_CONFIRMED), true);
+});
+
+test('an acres row already has its area — nothing to add', () => {
+  assert.equal(showMeasuredArea(saleSizeStamp({
+    parcelSize: '160', parcelSizeUnit: 'ACRES', parcelChange: 'verified_unchanged',
+  })), false);
+});
+
+test('an unverified boundary is never measured, however plausible', () => {
+  // provisional = the legal still matches but the size was never re-checked,
+  // which misses ~43% of size changes. Not evidence the polygon is what sold.
+  for (const change of ['legal_matches_size_unchecked', 'size_changed',
+                        'legal_changed_size_same', 'unverifiable']) {
+    assert.equal(showMeasuredArea(saleSizeStamp({
+      parcelSize: '66', parcelSizeUnit: 'FEET', parcelChange: change,
+    })), false, change);
+  }
+});
+
+test('a withheld size is not rescued by measuring the polygon', () => {
+  // Blank size + a changed parcel is the exact case the refusal exists for.
+  assert.equal(showMeasuredArea(saleSizeStamp({
+    parcelSize: '', parcelSizeUnit: '', parcelChange: 'size_changed',
+  })), false);
+});
+
+test('a pasted comp set is left alone — it already shows today\'s acreage', () => {
+  assert.equal(showMeasuredArea(saleSizeStamp({ roll: '1' })), false);
+  assert.equal(showMeasuredArea({ _acres: 0.25 }), false);
+  assert.equal(showMeasuredArea(null), false);
 });
 
 const passed = results.reduce((a, b) => a + b, 0);
