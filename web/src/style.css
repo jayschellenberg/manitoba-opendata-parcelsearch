@@ -6564,6 +6564,18 @@ body {
 .sidebar .overlay-group-body > .overlay-check:hover {
   color: var(--ui-ink, #111);
 }
+/* Full-width overlay button. The group body is a two-column grid, so an ODD
+   number of buttons leaves a dangling cell that the next element fills - and
+   the next element here is the first of the Waterfront / Near water pair,
+   which then gets pulled up beside a button and orphans its partner on a row
+   of its own. That is exactly what adding New Multi-Family did. Spanning the
+   full width keeps the button count even from the pair's point of view, and
+   the label needs the room anyway: it carries a "(Year)" / "(Units)" suffix
+   that the half column clips. */
+.sidebar .overlay-group-body > .overlay-btn-wide {
+  grid-column: 1 / -1;
+}
+
 /* Paired half-width variant — two related filters sharing one row rather
    than stacking. Used by Waterfront only / Near water, which are the two
    halves of one question ("what kind of water influence?") and read better
