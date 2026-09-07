@@ -26,6 +26,7 @@
     "@protomaps/basemaps": "^5.7.2",
     "@turf/area": "^7.1.0",
     "@turf/bbox": "^7.1.0",
+    "@turf/boolean-intersects": "^7.4.0",
     "@turf/boolean-point-in-polygon": "^7.3.4",
     "@turf/intersect": "^7.1.0",
     "@turf/length": "^7.3.5",
