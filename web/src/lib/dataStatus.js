@@ -106,7 +106,8 @@ export function newestSnapshot(histIndex) {
  * @param {Date}   [opts.now]       injectable clock for the schedule rules
  */
 export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMeta,
-                                waterMeta, floodMeta, landfactsMeta, mfnbMeta, now = new Date() } = {}) {
+                                waterMeta, floodMeta, landfactsMeta, mfnbMeta, condoMeta,
+                                now = new Date() } = {}) {
   const rows = [];
   const ds = manifest?.datasets || {};
   // Schedules, as registered in Task Scheduler on the build machine:
@@ -215,6 +216,19 @@ export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMet
     detail: mfWin
       ? `Assessed building-value events ${mfWin[0]}–${mfWin[1]} on rolls with ${mfnbMeta?.min_du ?? 3}+ dwelling units, colonies excluded — ${mfnbMeta?.roll_count ?? '?'} rolls, ${mfnbMeta?.event_count ?? '?'} events`
       : 'Multi-family construction dated from assessed building value',
+    next: null,
+  });
+
+  // New condo developments. The detail leads with how many are TYPED, because
+  // that - not the development count - is what decides whether the layer can
+  // answer "row housing or apartment" for a given project.
+  const t = condoMeta?.typed || null;
+  rows.push({
+    label: 'Condo development shards (CDN)',
+    vintage: dateLabel(datePart(condoMeta?.generated_at)),
+    detail: t
+      ? `${condoMeta.development_count} developments / ${condoMeta.unit_count} units first assessed ${condoMeta.window?.[0]}+ — ${t.row} row housing, ${t.apt} apartment, ${t.mixed} mixed, ${t.unknown} not typed`
+      : 'New condo developments, reassembled by condo plan',
     next: null,
   });
 

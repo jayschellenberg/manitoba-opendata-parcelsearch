@@ -13,6 +13,7 @@
     "flood:shards": "Rscript ../r/build_flood.R",
     "landfacts:shards": "Rscript ../r/build_landfacts.R",
     "mf:shards": "Rscript ../r/build_mf_newbuild.R",
+    "condo:shards": "Rscript ../r/build_condo_dev.R",
     "du:snapshot": "Rscript ../r/snapshot_dwelling_units.R",
     "data:all": "Rscript ../r/build_legal_index.R && Rscript ../r/build_assessment_index.R && Rscript ../r/build_section_grid.R && Rscript ../r/build_river_lots.R && Rscript ../r/build_masc_shards.R && Rscript ../r/build_parcel_masc.R && Rscript ../r/build_landcover.R && node scripts/build-manifest.js",
     "build": "vite build",

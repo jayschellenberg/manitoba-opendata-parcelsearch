@@ -1097,6 +1097,9 @@
                  when apartment-scale construction landed on their assessment
                  roll, so it belongs with the parcel layers - not with the
                  Agricultural overlays, whose gate is farmland acreage. -->
+            <button id="condodev-toggle" type="button" class="overlay-btn overlay-btn-wide" aria-pressed="false" title="New Condos &mdash; tri-state cycle. 1st click &rarr; Type: every new condo development in the selected municipality, coloured by what MAO says stands there (green = row housing / townhouse, purple = apartment, orange = mixed, grey = not typed). 2nd click &rarr; Year: the same developments shaded purple by when they first landed on the roll. 3rd click &rarr; off. Also turns on Assessment Parcels and shows the New Condo column. This is the companion to New Multi-Family, not a filter on it: 92% of row-housing rolls carry ONE dwelling unit because row housing is condo-titled, so it never appears in a 3+ unit layer. Units are reassembled into developments by their shared condo plan. Type comes from MAO&#39;s own structure descriptor and is left blank when absent &mdash; the address and density heuristics are not accurate enough to guess with. Years are assessment years and trail completion by about a year.">
+              <span class="overlay-btn-label">New Condos</span>
+            </button>
             <button id="mfnb-toggle" type="button" class="overlay-btn overlay-btn-wide" aria-pressed="false" title="New Multi-Family &mdash; tri-state cycle. 1st click &rarr; Year: every roll in the selected municipality where an apartment-scale building landed on the assessment roll since 2016, shaded red by how recently (pale = 2016-17, dark = 2026+). 2nd click &rarr; Units: the same rolls shaded blue by current dwelling units (3-5 up to 100+). 3rd click &rarr; off. Also turns on Assessment Parcels so each coloured parcel answers a click, and shows the New MF column. Detected from 20 years of assessed BUILDING VALUE, not permits &mdash; Manitoba freezes values between biennial reassessments, so a mid-cycle jump is physical change. 3+ dwelling units (excluding Hutterite colonies). Years are assessment years and trail completion by about a year.">
               <span class="overlay-btn-label">New Multi-Family</span>
             </button>
@@ -1412,6 +1415,9 @@
       <!-- Filled by main.js renderMfnbLegend() from YEAR_RAMP / UNITS_RAMP in
            lib/mfNewbuild.js, so the map and the legend never drift. -->
       <div id="mfnb-legend" class="map-legend masc-legend" hidden></div>
+      <!-- Filled by main.js renderCondoLegend() from CONDO_TYPES /
+           CONDO_YEAR_RAMP in lib/condoDev.js, so the map and legend never drift. -->
+      <div id="condodev-legend" class="map-legend masc-legend" hidden></div>
       <!-- Historical zoning / dev-plan keys. Separate boxes from #zoning-legend
            so the as-of layer and the current-day Zoning Layer can be read side
            by side without one clobbering the other's list — comparing the two
@@ -1813,6 +1819,10 @@
                  rolls with 3+ dwelling units. Hidden by default; surfaced by
                  the New Multi-Family overlay. -->
             <th data-col="mfnb" title="Multi-family construction on this roll: the year an apartment-scale building first appeared in the assessed BUILDING VALUE, how many further events the roll carries, and its current dwelling-unit count (e.g. 2017 +1 &middot; 270 DU). Hover for every event with the value before and after, and for at-sale unit counts where the roll sold. Detected from value history, not building permits - Manitoba freezes assessed values between biennial reassessments, so a mid-cycle jump is physical change. Dwelling units are TODAY's count, not the count at the event: MAO publishes no unit history. Years are assessment years and trail completion by about a year. Blank means no data was loaded for that municipality; a dash means no qualifying construction.">New MF</th>
+            <!-- New Condo - condo developments first assessed 2016+, rebuilt
+                 from their shared condo plan by r/build_condo_dev.R. Hidden by
+                 default; surfaced by the New Condos overlay. -->
+            <th data-col="condodev" title="The new condo development this unit belongs to: the year it first landed on the assessment roll, its type, and how many units it has (e.g. 2017 &middot; Row housing &middot; 122 units). Every unit of one development shows the same text - the development is the thing, and the grid lists its units. Type is MAO&#39;s own Primary Property descriptor, taken from a development&#39;s sold units and applied to the whole plan because a condo plan is one architectural project. Shown as &quot;Not typed&quot; when no unit has sold with a descriptor: the civic-address heuristic reaches only 62% precision even across a whole development, so it is not used to guess. Blank means no data was loaded for that municipality; a dash means the parcel is not part of a new condo development.">New Condo</th>
             <th data-col="streetview" title="Open Google Street View at this parcel (nearest panorama to the parcel centre)">StreetView</th>
           </tr>
         </thead>

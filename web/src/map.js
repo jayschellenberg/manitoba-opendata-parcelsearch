@@ -1879,6 +1879,29 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
           'line-opacity': 0.95,
         },
       });
+      // New condo developments on the muni-wide fabric — same sparse-layer
+      // treatment as the multi-family twin above.
+      map.addLayer({
+        id: 'muni-parcels-condodev-fill',
+        type: 'fill',
+        source: 'muni-parcels',
+        layout: { visibility: 'none' },
+        paint: {
+          'fill-color': ['coalesce', ['get', '_condoColor'], 'rgba(0,0,0,0)'],
+          'fill-opacity': ['case', ['has', '_condoColor'], 0.7, 0],
+        },
+      });
+      map.addLayer({
+        id: 'muni-parcels-condodev-outline',
+        type: 'line',
+        source: 'muni-parcels',
+        layout: { visibility: 'none' },
+        paint: {
+          'line-color': ['coalesce', ['get', '_condoColor'], 'rgba(0,0,0,0)'],
+          'line-width': ['case', ['has', '_condoColor'], 2, 0],
+          'line-opacity': 0.95,
+        },
+      });
       map.addLayer({
         id: 'muni-parcels-line',
         type: 'line',
@@ -2422,6 +2445,36 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
         paint: {
           'line-color': ['coalesce', ['get', '_mfnbColor'], 'rgba(0,0,0,0)'],
           'line-width': ['case', ['has', '_mfnbColor'], 2.2, 0],
+          'line-opacity': 0.95,
+        },
+      });
+
+      // New condo developments — colours each result parcel by its
+      // development's type (row housing / apartment / mixed / not typed) or by
+      // when it first landed on the roll. Driven by `_condoColor`, stamped in
+      // main.js from the condo-dev shards; lib/condoDev.js owns both palettes.
+      //
+      // Fill plus outline for the same reason as mfnb: a development is a
+      // handful of small condo parcels and has to be findable at town-wide
+      // zoom. Outline added with NO beforeId so it sits above `parcel-line`.
+      map.addLayer({
+        id: 'condodev-fill',
+        type: 'fill',
+        source: 'parcels',
+        layout: { visibility: 'none' },
+        paint: {
+          'fill-color': ['coalesce', ['get', '_condoColor'], 'rgba(0,0,0,0)'],
+          'fill-opacity': ['case', ['has', '_condoColor'], 0.7, 0],
+        },
+      }, 'parcel-line');
+      map.addLayer({
+        id: 'condodev-outline',
+        type: 'line',
+        source: 'parcels',
+        layout: { visibility: 'none' },
+        paint: {
+          'line-color': ['coalesce', ['get', '_condoColor'], 'rgba(0,0,0,0)'],
+          'line-width': ['case', ['has', '_condoColor'], 2.2, 0],
           'line-opacity': 0.95,
         },
       });
@@ -4373,6 +4426,20 @@ export function setMfNewbuildVisible(map, on) {
   const vis = on ? 'visible' : 'none';
   for (const id of ['mfnb-fill', 'mfnb-outline',
                     'muni-parcels-mfnb-fill', 'muni-parcels-mfnb-outline']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
+  }
+}
+
+/**
+ * Show / hide the new-condo-development overlay — result parcels and the muni
+ * fabric coloured by development type or year, each with a same-colour
+ * outline. Colour comes from `_condoColor`, stamped in main.js from the
+ * condo-dev shards; this only flips visibility.
+ */
+export function setCondoDevVisible(map, on) {
+  const vis = on ? 'visible' : 'none';
+  for (const id of ['condodev-fill', 'condodev-outline',
+                    'muni-parcels-condodev-fill', 'muni-parcels-condodev-outline']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
   }
 }

@@ -1973,6 +1973,63 @@ export async function fetchMfNewbuildForMuni(muniNameWithTyp) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// New condo developments — per-muni shards from r/build_condo_dev.R: the
+// single-unit condo rolls of a new development, reassembled by their shared
+// condo plan. Same family shape as mf-newbuild/; see the header of
+// src/lib/condoDev.js for the stamp and for why row housing needs its own
+// layer rather than a filter on the multi-family one.
+// ---------------------------------------------------------------------------
+
+let condoDevIndexPromise = null;
+
+/** Condo-development shard manifest: muni -> { file, count }, plus `_meta`
+ *  carrying the window, the type counts and the typing caveats (read by the
+ *  Data Status dialog). */
+export async function fetchCondoDevIndex() {
+  if (condoDevIndexPromise) return condoDevIndexPromise;
+  condoDevIndexPromise = (async () => {
+    const cacheKey = `mb_condodev_index_v1_${MB_PARCEL_DATA_REVISION}`;
+    const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+    if (cached) return cached;
+    try {
+      const res = await fetch(`${MB_PARCEL_DATA_CDN}/condo-dev/_index.json`);
+      if (!res.ok) return null;
+      const idx = await res.json();
+      await writeCache(cacheKey, idx);
+      return idx;
+    } catch {
+      return null;
+    }
+  })();
+  return condoDevIndexPromise;
+}
+
+/**
+ * Condo-development dictionary for one municipality, keyed by Roll_No_Txt, or
+ * null when the muni has no shard. Only 22 municipalities have one at all, so
+ * null is the ordinary case here rather than the error case.
+ */
+export async function fetchCondoDevForMuni(muniNameWithTyp) {
+  if (!muniNameWithTyp) return null;
+  const idx = await fetchCondoDevIndex();
+  const entry = lookupMuniManifestEntry(idx, muniNameWithTyp, { stripType: false });
+  if (!entry) return null;
+  const file = entry.file;
+  const cacheKey = `mb_condodev_${file}_v1_${MB_PARCEL_DATA_REVISION}`;
+  const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  if (cached) return cached;
+  try {
+    const res = await fetch(`${MB_PARCEL_DATA_CDN}/condo-dev/${file}`);
+    if (!res.ok) return null;
+    const dict = await res.json();
+    await writeCache(cacheKey, dict);
+    return dict;
+  } catch {
+    return null;
+  }
+}
+
 // Flood zone membership — per-muni shards from r/build_flood.R, served from
 // the mb-parcel-data CDN like the water and land-cover shards.
 //

@@ -135,6 +135,7 @@ import {
   fetchFloodForMuni,
   fetchLandfactsForMuni,
   fetchMfNewbuildForMuni,
+  fetchCondoDevForMuni,
   fetchSurveyGridForMuni,
   fetchProvinceSectionGrid,
   fetchRiverLots,
@@ -215,6 +216,7 @@ import {
   setLandCoverVisible,
   setLandfactsVisible,
   setMfNewbuildVisible,
+  setCondoDevVisible,
   setWaterInfluenceVisible,
   setHistoricalData,
   setHistoricalVisible,
@@ -262,6 +264,11 @@ import {
   mfnbFillColor, mfnbLegendSteps, MFNB_MODES, MFNB_MIN_DU, MFNB_FROM_YEAR,
   readMfnb, primaryYear, bestConfidence, MFNB_CONFIDENCE,
 } from './lib/mfNewbuild.js';
+import {
+  readCondoDev, condoType, condoFillColor, condoCellText, condoSortRank,
+  condoTooltip, condoCsvHeaders, condoCsvCells, condoLegendSteps,
+  CONDO_TYPES, CONDO_MODES, CONDO_MIN_UNITS, CONDO_FROM_YEAR,
+} from './lib/condoDev.js';
 import { resolveParcelAcres, formatRollSizeField, parseRollFrontageFeet } from './lib/acres.js';
 import { rollDisplay } from './lib/parcelLabelFields.js';
 import { createMuniParcelResolver } from './lib/muniParcelRecords.js';
@@ -585,6 +592,8 @@ const $landfactsToggle = document.getElementById('landfacts-toggle');
 const $landfactsLegend = document.getElementById('landfacts-legend');
 const $mfnbToggle      = document.getElementById('mfnb-toggle');
 const $mfnbLegend      = document.getElementById('mfnb-legend');
+const $condoToggle     = document.getElementById('condodev-toggle');
+const $condoLegend     = document.getElementById('condodev-legend');
 const $gridToggle    = document.getElementById('grid-toggle');
 const $historicalToggle   = document.getElementById('historical-toggle');
 const $historicalYear     = document.getElementById('historical-year');
@@ -1470,6 +1479,8 @@ const SORT_KEYS = {
   // MF new construction — most recent on the roll first, unit count breaking
   // ties within a year, unstamped rows last.
   mfnb:    (r) => mfnbSortRank(r.parcel.properties._mfnb),
+  // Condo developments — typed ahead of untyped, then most recent, then largest.
+  condodev: (r) => condoSortRank(r.parcel.properties._condoDev),
   streetview: (r) => strKey(r.parcel.geometry ? '1' : ''),
   value:   (r) => finiteOrNeg(parseTotalValue(r.parcel.properties.Total_Value)),
   report:  (r) => strKey(r.parcel.properties.Asmt_Rpt_Url),
@@ -2583,6 +2594,7 @@ function refreshOverlayGroupCounts() {
 $mascToggle.addEventListener('click', () => toggleMascOverlay());
 if ($landfactsToggle) $landfactsToggle.addEventListener('click', () => toggleLandfactsOverlay());
 if ($mfnbToggle) $mfnbToggle.addEventListener('click', () => toggleMfNewbuildOverlay());
+if ($condoToggle) $condoToggle.addEventListener('click', () => toggleCondoDevOverlay());
 $cliToggle.addEventListener('click', () => toggleCliOverlay());
 if ($landcoverToggle) $landcoverToggle.addEventListener('click', () => toggleLandCoverOverlay());
 if ($waterToggle) $waterToggle.addEventListener('click', () => toggleWaterInfluenceOverlay());
@@ -4537,7 +4549,7 @@ async function runSearch() {
       const waterRows = parcelFc.features.map((p) => ({ parcel: p, zoning: [], devPlan: [] }));
       // Flood zones ride along for the same reason and at the same cost —
       // another pre-baked per-muni dictionary, one lookup per row.
-      await Promise.all([stampWaterInfluence(waterRows), stampFloodZones(waterRows), stampLandfacts(waterRows), stampMfNewbuild(waterRows)]);
+      await Promise.all([stampWaterInfluence(waterRows), stampFloodZones(waterRows), stampLandfacts(waterRows), stampMfNewbuild(waterRows), stampCondoDev(waterRows)]);
       if (waterFilterActive()) {
         setCount(`${baseMsg} · Checking water-rights licences…`);
         const rows = waterRows;
@@ -7071,6 +7083,39 @@ async function stampMfNewbuild(rows) {
   }
 }
 
+/**
+ * Stamp `_condoDev` / `_condoDevLoaded` on every row from the per-muni condo
+ * development shards (r/build_condo_dev.R). Same shape and reasons as
+ * stampMfNewbuild. Only 22 municipalities have a shard at all, so the loaded
+ * flag is what keeps "not a condo development" apart from "never looked".
+ */
+async function stampCondoDev(rows) {
+  try {
+    const muniNames = [...new Set(
+      (rows || []).map((r) => r?.parcel?.properties?.Muni_Name_With_Typ).filter(Boolean),
+    )];
+    if (!muniNames.length) return;
+    const dicts = await Promise.all(
+      muniNames.map((m) => fetchCondoDevForMuni(m).catch(() => null)),
+    );
+    const byMuni = new Map();
+    muniNames.forEach((m, i) => { if (dicts[i]) byMuni.set(m, dicts[i]); });
+    for (const row of rows) {
+      const p = row?.parcel?.properties;
+      const dict = p?.Muni_Name_With_Typ ? byMuni.get(p.Muni_Name_With_Typ) : null;
+      if (!dict) continue;
+      p._condoDevLoaded = true;
+      const hit = p?.Roll_No_Txt ? dict[p.Roll_No_Txt] : null;
+      if (hit) p._condoDev = hit;
+      const color = condoColorFor(hit);
+      if (color) p._condoColor = color;
+      else if (p._condoColor) delete p._condoColor;
+    }
+  } catch (err) {
+    console.warn('condo-development enrichment failed (non-fatal):', err);
+  }
+}
+
 async function stampFloodZones(rows) {
   try {
     const muniNames = [...new Set(
@@ -7317,7 +7362,7 @@ async function enrichOverlays(parcelFc, inputs, baseMsg, { skipDevPlan = false }
     console.warn('land-cover enrichment failed (non-fatal):', err);
   }
 
-  await Promise.all([stampWaterInfluence(rows), stampFloodZones(rows), stampLandfacts(rows), stampMfNewbuild(rows)]);
+  await Promise.all([stampWaterInfluence(rows), stampFloodZones(rows), stampLandfacts(rows), stampMfNewbuild(rows), stampCondoDev(rows)]);
 
   // Stamp the most-common assessment year into the Total Value column
   // header so users can tell which assessment cycle the dollar figure
@@ -9055,6 +9100,11 @@ function resetMascAndGridToggles() {
     mfnbLoadedFor = null;
     if (mfnbOverlayOn) mapReady.then(() => turnMfnbOff());
   }
+  // New Condos: muni-scoped for the same reason.
+  if (condoLoadedFor && condoLoadedFor !== desiredOverlayKey) {
+    condoLoadedFor = null;
+    if (condoOverlayOn) mapReady.then(() => turnCondoOff());
+  }
   // Survey grid: same cache key as Zoning / Dev Plan / MASC / CLI in
   // sales-CSV mode — the joined matched-muni list, or the dropdown's
   // value, or the __PROVINCE__ sentinel for "any muni" loads. A
@@ -10010,6 +10060,210 @@ async function toggleMfNewbuildOverlay() {
   // same rolls, and re-rendering there would throw away the user's paging and
   // any sort they had set since.
   if (munis.length > 0) showMfNewbuildResults(munis);
+}
+
+// ---------------------------------------------------------------------------
+// New condo developments (r/build_condo_dev.R + lib/condoDev.js).
+//
+// The companion to New Multi-Family, not a variant of it. That layer gates on
+// dwelling_units >= 3, which row housing never satisfies: 92% of the rolls MAO
+// labels row housing carry dwelling_units = 1, because row housing is
+// condo-titled. This layer reassembles those single-unit rolls into projects
+// by their shared condo plan, which is the only handle that does it.
+//
+// Two views off the one stamp, so switching is a recolour: Type (row housing /
+// apartment / mixed / not typed) then Year. Type leads because seeing the
+// types side by side in contrasting colours is the whole point - a toggle that
+// showed one type at a time would be worse for comparing them.
+//
+// Runs happily alongside New Multi-Family; the palettes are deliberately
+// different hues so the two never read as one dataset.
+// ---------------------------------------------------------------------------
+let condoOverlayOn = false;
+let condoMode = null;          // null | 'type' | 'year'
+let condoLoadedFor = null;
+
+function condoColorFor(hit) {
+  return hit ? condoFillColor(hit, condoMode || 'type') : null;
+}
+
+function nextCondoMode(current) {
+  if (current === null)   return 'type';
+  if (current === 'type') return 'year';
+  return null; // 'year' -> off
+}
+
+function condoButtonLabelFor(mode) {
+  return mode ? `New Condos (${CONDO_MODES[mode].label})` : 'New Condos';
+}
+
+/** Re-derive `_condoColor` under the current view for everything already
+ *  stamped. No fetch: the stamp holds the whole development. */
+function recolorCondo() {
+  const recolor = (fc) => {
+    let painted = 0;
+    for (const f of fc?.features || []) {
+      const p = f.properties;
+      if (!p?._condoDev) continue;
+      const color = condoColorFor(p._condoDev);
+      if (color) { p._condoColor = color; painted += 1; } else if (p._condoColor) delete p._condoColor;
+    }
+    return painted;
+  };
+  let painted = 0;
+  if (auxData.muniParcels?.features?.length) {
+    painted = recolor(auxData.muniParcels);
+    setMuniParcelsData(map, auxData.muniParcels);
+  }
+  const src = map.getSource('parcels');
+  const resultFc = src?._data;
+  if (resultFc && typeof resultFc === 'object' && Array.isArray(resultFc.features)) {
+    recolor(resultFc);
+    src.setData(resultFc);
+  }
+  return painted;
+}
+
+/** Stamp `_condoColor` (+ `_condoDev`) on every fabric parcel from each muni's
+ *  condo-development shard. Returns how many parcels got a colour. */
+async function stampCondoDevOnFabric(fabricFc, munis) {
+  if (!fabricFc?.features?.length) return 0;
+  const dicts = await Promise.all(munis.map((m) => fetchCondoDevForMuni(m).catch(() => null)));
+  const byMuni = new Map();
+  munis.forEach((m, i) => { if (dicts[i]) byMuni.set(m, dicts[i]); });
+  let painted = 0;
+  for (const f of fabricFc.features) {
+    const p = f.properties || (f.properties = {});
+    const dict = p.Muni_Name_With_Typ ? byMuni.get(p.Muni_Name_With_Typ) : null;
+    if (dict) p._condoDevLoaded = true;
+    const hit = (dict && p.Roll_No_Txt) ? dict[p.Roll_No_Txt] : null;
+    const color = condoColorFor(hit);
+    if (color) {
+      p._condoDev = hit;
+      p._condoColor = color;
+      painted += 1;
+    } else if (p._condoColor) {
+      delete p._condoColor;
+    }
+  }
+  return painted;
+}
+
+function renderCondoLegend(mode) {
+  if (!$condoLegend) return;
+  const items = condoLegendSteps(mode)
+    .map((b) => `<li><span class="swatch" style="background:${b.color}"></span>${b.label}</li>`)
+    .join('');
+  const title = (CONDO_MODES[mode] || CONDO_MODES.type).legend;
+  $condoLegend.innerHTML =
+    `<strong>${title}</strong><ul>${items}</ul>`
+    + `<small style="display:block;margin-top:4px;color:#6b7280;font-style:italic">`
+    + `${CONDO_MIN_UNITS}+ unit developments, first assessed ${CONDO_FROM_YEAR}+<br>`
+    + `type is MAO's own descriptor, never inferred<br>`
+    + `years are assessment years and trail completion by about a year</small>`;
+}
+
+function turnCondoOff() {
+  condoOverlayOn = false;
+  condoMode = null;
+  setCondoDevVisible(map, false);
+  if ($condoToggle) {
+    setOverlayPressed($condoToggle, false);
+    setOverlayBtnLabel($condoToggle, condoButtonLabelFor(null));
+  }
+  if ($condoLegend) $condoLegend.hidden = true;
+}
+
+/** Put the municipality's condo-development unit rolls into the grid. Same
+ *  shape and reasons as showMfNewbuildResults - no fetch, parcels-only rows. */
+function showCondoDevResults(munis) {
+  const feats = (auxData.muniParcels?.features || []).filter((f) => f.properties?._condoDev);
+  const fc = { type: 'FeatureCollection', features: feats };
+  if (feats.length > 1) {
+    assignParcelSeq(feats, { rollOrder: activeRollOrder() });
+  } else {
+    clearParcelSeq(feats);
+  }
+  if (currentSort.col === 'roll' && currentSort.dir === 'asc') {
+    currentSort = { col: 'condodev', dir: 'desc' };
+    updateSortIndicators();
+  }
+  renderTable(fc.features.map((f) => ({ parcel: f, zoning: [], devPlan: [] })));
+  setMapData(fc, EMPTY_FC, EMPTY_FC);
+
+  // Count DEVELOPMENTS, not rolls. One development is 122 rolls in Brandon's
+  // case, and "471 records" would say nothing about how much was actually
+  // built.
+  const plans = new Set(feats.map((f) => f.properties._condoDev?.p).filter(Boolean));
+  const where = munis.length === 1 ? munis[0] : `${munis.length} municipalities`;
+  setCount(feats.length
+    ? `${plans.size} new condo development${plans.size === 1 ? '' : 's'} in ${where} · ${feats.length} unit${feats.length === 1 ? '' : 's'} · first assessed ${CONDO_FROM_YEAR}+`
+    : `No new condo developments found in ${where} since ${CONDO_FROM_YEAR} (${CONDO_MIN_UNITS}+ units)`);
+  return feats.length;
+}
+
+async function toggleCondoDevOverlay() {
+  if (!$condoToggle) return;
+  await mapReady;
+  const targetMode = nextCondoMode(condoMode);
+  if (targetMode === null) { turnCondoOff(); return; }
+
+  if (condoOverlayOn) {
+    condoMode = targetMode;
+    recolorCondo();
+    setOverlayBtnLabel($condoToggle, condoButtonLabelFor(targetMode));
+    renderCondoLegend(targetMode);
+    return;
+  }
+  condoMode = targetMode;
+
+  const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
+    ? csvMatchedMunis.slice()
+    : ($municipality.value ? [$municipality.value] : []);
+  const scopeKey = muniParcelsLoadKey();
+  if (munis.length > 0 && condoLoadedFor !== scopeKey) {
+    $condoToggle.disabled = true;
+    setOverlayBtnLabel($condoToggle, 'Loading…');
+    try {
+      if (!auxData.muniParcels?.features?.length || muniParcelsLoadedFor !== scopeKey) {
+        const fc = await fetchMuniParcelsForCurrentScope();
+        await enrichFcWithLegals(fc).catch((err) => {
+          console.warn('Legal enrichment for condo-development fabric failed (non-fatal):', err);
+        });
+        auxData.muniParcels = fc;
+        auxLoaded.muniParcels = true;
+        muniParcelsLoadedFor = scopeKey;
+        setMuniParcelsScope(map, scopedOverlayMunis());
+      }
+      await stampCondoDevOnFabric(auxData.muniParcels, munis);
+      setMuniParcelsData(map, auxData.muniParcels);
+      condoLoadedFor = scopeKey;
+    } catch (err) {
+      console.warn('New Condos fabric load failed', err);
+      condoMode = null;
+      setOverlayBtnLabel($condoToggle, condoButtonLabelFor(null));
+      $condoToggle.disabled = false;
+      return;
+    } finally {
+      $condoToggle.disabled = false;
+    }
+  } else if (munis.length > 0) {
+    recolorCondo();
+  }
+
+  if ($muniParcelsToggle && !$muniParcelsToggle.classList.contains('active')) {
+    await toggleAuxOverlay('muniParcels');
+  }
+
+  condoOverlayOn = true;
+  setCondoDevVisible(map, true);
+  setOverlayPressed($condoToggle, true);
+  setOverlayBtnLabel($condoToggle, condoButtonLabelFor(condoMode));
+  setColumnVisible('condodev', true);
+  renderCondoLegend(condoMode);
+  if ($condoLegend) $condoLegend.hidden = false;
+
+  if (munis.length > 0) showCondoDevResults(munis);
 }
 
 function nextLandCoverMode(current) {
@@ -11248,6 +11502,7 @@ function renderTable(rows, { resetPage = true } = {}) {
     tr.appendChild(floodCell(row));
     tr.appendChild(landfactsCell(row));
     tr.appendChild(mfnbCell(row));
+    tr.appendChild(condoDevCell(row));
     tr.appendChild(streetViewCell(row));
     frag.appendChild(tr);
   }
@@ -12543,6 +12798,36 @@ function mfnbCell(row) {
   }
   cell.appendChild(document.createTextNode(text));
   cell.title = mfnbTooltip(m);
+  return cell;
+}
+
+/**
+ * "New Condo" grid cell — the DEVELOPMENT this unit belongs to: the year it
+ * landed on the roll, its type, and how many units it has. Every unit roll of
+ * one development shows the same text, which is correct: the development is
+ * the thing, and the grid lists its units.
+ *
+ * Three states, as for New MF: shard never loaded -> blank; shard loaded but
+ * roll absent -> em dash (not part of a new condo development); stamped -> the
+ * text.
+ */
+function condoDevCell(row) {
+  const cell = document.createElement('td');
+  cell.className = 'landfacts-cell';
+  const p = row.parcel.properties || {};
+  const c = readCondoDev(p._condoDev);
+  const text = condoCellText(c);
+  if (!text) {
+    if (p._condoDevLoaded) { cell.textContent = '—'; cell.classList.add('empty'); }
+    return cell;
+  }
+  const dot = document.createElement('span');
+  dot.className = 'water-dot';
+  dot.style.background = condoFillColor(c, 'type');
+  dot.title = CONDO_TYPES[condoType(c)].blurb;
+  cell.appendChild(dot);
+  cell.appendChild(document.createTextNode(text));
+  cell.title = condoTooltip(c);
   return cell;
 }
 
@@ -13851,6 +14136,7 @@ function exportCsv(explicitRows) {
     'Flood Zone', 'Flood Zone Type', 'Flood Zone Coverage (%)', 'Flood Zones (all)',
     ...landfactsCsvHeaders(),
     ...mfnbCsvHeaders(),
+    ...condoCsvHeaders(),
     // Tiled / Irrigated lead their groups so a sales spreadsheet can
     // filter or pivot on one column instead of testing whether a licence
     // string is blank.
@@ -13961,6 +14247,7 @@ function exportCsv(explicitRows) {
       ...floodCsvCells(p._flood, !!p._floodLoaded),
       ...landfactsCsvCells(p._landfacts, !!p._landfactsLoaded),
       ...mfnbCsvCells(p._mfnb, !!p._mfnbLoaded),
+      ...condoCsvCells(p._condoDev, !!p._condoDevLoaded),
       ...tileDrainageCsvCells(p),
       ...irrigationCsvCells(p),
       formatChanges(row),
