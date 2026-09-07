@@ -893,15 +893,49 @@ function lookupMuniWebsite(muniNameWithTyp) {
  * UI rather than a "website" button. Extend as more come online.
  */
 const PD_WEBSITES = {
-  // From the Manitoba PD contact directory (websites or unmistakable
-  // PD-specific email-domain → website inferences):
-  // BROKENHEAD RIVER — no entry: brpd.ca exists but its nameservers are
-  // Microsoft 365's (ns*.bdm.microsoftonline.com) with no A record on the
-  // apex or www. The domain is registered for email only; there is no site.
-  // http only — port 443 on cdgplanning.com does not accept connections
-  // (port 80 serves the site fine). Same shape as CLANWILLIAM-ERICKSON above.
-  'CARMAN-DUFFERIN-GREY':              'http://www.cdgplanning.com/',
+  // Verified live 2026-09-07. Two kinds of entry live here: PDs with a
+  // site of their own, and PDs that publish through a member
+  // municipality's site — usually a /m/ or /p/ sub-site carrying the
+  // PD's own name and contact. Both count as "the PD's website" for the
+  // button; a link to a member RM's generic home page does not, and goes
+  // in the member-RM section further down.
+  //
+  // Read the omission notes below as claims about a DOMAIN, not about a
+  // PD: five PDs this list used to write off as siteless turned out to
+  // have a real site somewhere else. Re-check the PD by name before
+  // trusting a stale "no website" note.
+
+  // BROKENHEAD RIVER's site is the /m/brpd/ sub-site on the member RM's
+  // domain, not the brpd.ca this list used to look for — that domain no
+  // longer resolves at all (it was registered for M365 email only, and
+  // has since lapsed). The sub-site carries the PD's own permit forms,
+  // zoning memoranda and Beausejour office address.
+  'BROKENHEAD RIVER':                  'https://rmofbrokenhead.ca/m/brpd/',
+  // CARMAN-DUFFERIN and GREY-ST. CLAUDE are two separate PLANNINGDISTRICT
+  // values in the dev-plan layer (older, pre-amalgamation development
+  // plans) but ONE planning district today: "Our office provides planning
+  // and permitting services for the Town of Carman, RM of Dufferin and RM
+  // of Grey." St. Claude amalgamated into the RM of Grey in 2015, so it
+  // is inside that same office. Both point at the one CDG PD site.
+  //
+  // This replaces a 'CARMAN-DUFFERIN-GREY' key that matched nothing — the
+  // data never produced that spelling — and that pointed at
+  // cdgplanning.com, which is now a Hover parking page ("is a totally
+  // awesome idea still being worked on"). Prefer the carmandufferin.com
+  // vanity host over the carmanmb.web.catalisgov.ca vendor host it
+  // aliases; the RM of Grey links the vendor host, but both serve the
+  // identical page and the vanity name is the one that survives a CMS
+  // change.
+  'CARMAN-DUFFERIN':                   'https://carmandufferin.com/cdg-planning',
+  'GREY-ST. CLAUDE':                   'https://carmandufferin.com/cdg-planning',
+  // Belt-and-braces: normalizePdKey does NOT strip periods (unlike
+  // normalizeMuniKey), so a future period-less spelling would miss.
+  'GREY-ST CLAUDE':                    'https://carmandufferin.com/cdg-planning',
   'CYPRESS':                           'https://www.cypressplanningdistrict.com/',
+  // DENNIS COUNTY (Grassland, Pipestone, Sifton) is run out of the RM of
+  // Pipestone office — its directory email is @rmofpipestone.com, an RM
+  // domain rather than the generic host the old blanket note assumed.
+  'DENNIS COUNTY':                     'https://www.rmofpipestone.com/p/dennis-county-planning-district',
   // EASTERN INTERLAKE's site is at interlakeplanning.com, NOT the eipd.ca
   // this list used to look for and reject as email-only — that domain no
   // longer resolves at all. The EIPD is the planning authority for
@@ -909,6 +943,7 @@ const PD_WEBSITES = {
   // site (36 KB, 2025 template), not the stub pages the omissions above
   // are about. Reaching it also needed normalizePdKey taught to drop the
   // "(E.I.P.D.)" the dev-plan polygons append; see below.
+  // (interlakeplanning.ca resolves too, but 301s to the .com — keep .com.)
   'EASTERN INTERLAKE':                 'https://interlakeplanning.com/',
   // INLAND PORT SPECIAL PLANNING AREA is an area name, not a PD, but it
   // out-votes SOUTH INTERLAKE 17-to-7 in RM of Rosser's dev-plan polygons
@@ -919,36 +954,101 @@ const PD_WEBSITES = {
   'INLAND PORT SPECIAL PLANNING AREA': 'https://www.sipd.ca/',
   'KEYSTONE':                          'https://www.keystonepd.ca/',
   'MID-WEST':                          'https://www.midwestplanning.ca/',
+  // Only 'MSTW' is ever produced by the dev-plan layer; the two spelled-out
+  // spellings are kept as harmless aliases.
   'MORDEN/STANLEY/THOMPSON/WINKLER':   'https://www.mstw.ca/',
   'M.S.T.W':                           'https://www.mstw.ca/',
   'MSTW':                              'https://www.mstw.ca/',
-  'NEEPAWA & AREA':                    'https://www.neepawaareaplanning.com/',
+  // Was keyed 'NEEPAWA & AREA', which the data never produces — the
+  // dev-plan layer spells it out as "NEEPAWA AND AREA PLANNING DISTRICT".
+  'NEEPAWA AND AREA':                  'https://www.neepawaareaplanning.com/',
+  // PELICAN - ROCK LAKE (Cartwright-Roblin, Argyle, Prairie Lakes) does
+  // have its own site, despite prlpd*@gmail.com contact addresses — the
+  // generic-host email was never evidence that no site exists. NOTE the
+  // spaces around the hyphen: the dev-plan layer writes
+  // "PELICAN - ROCK LAKE PLANNING DISTRICT", and normalizePdKey collapses
+  // runs of whitespace but does not delete space around a hyphen, so the
+  // spaced form is the one that actually matches.
+  'PELICAN - ROCK LAKE':               'https://www.pelicanrocklakeplanningdistrict.com/',
+  'PELICAN-ROCK LAKE':                 'https://www.pelicanrocklakeplanningdistrict.com/',
   'PORTAGE LA PRAIRIE':                'https://www.ptgplanningdistrict.ca/',
-  // RHINELAND / PLUM COULEE / GRETNA / ALTONA (all three key spellings) —
-  // no entry: rpgamb.ca serves a bare "Index of /" directory listing. It
-  // returns HTTP 200, so only a content check catches it.
   'RED RIVER':                         'https://www.rrpd.ca/',
+  // RHINELAND, PLUM COULEE, GRETNA, ALTONA — rpgamb.ca is still a bare
+  // "Index of /" listing (one 2017 cgi-bin entry, HTTP 200, so only a
+  // content check catches it) and stays rejected. But the RPGA Planning
+  // District itself is real and publishes on the member municipality's
+  // site, with its own Altona office address and permit process. The
+  // source value ends in "P.D."; normalizePdKey strips that suffix.
+  'RHINELAND, PLUM COULEE, GRETNA, ALTONA': 'https://www.rmofrhineland.com/p/rpga-planning-district',
   'SOUTH CENTRAL':                     'https://www.scpd.ca/',
   'SOUTH INTERLAKE':                   'https://www.sipd.ca/',
-  // TRANS CANADA WEST — no entry: tcwpd.ca returns a 390-byte stub whose
-  // entire body is the string "TCWPD". Also HTTP 200.
+  // TANNER'S CROSSING has a full PD site of its own at tcpd.ca (Minnedosa,
+  // Minto-Odanah, plus building inspection for Clanwilliam-Erickson),
+  // last modified 2026-04. The old blanket "generic-host email only" note
+  // covered it; that was wrong.
+  "TANNER'S CROSSING":                 'https://tcpd.ca/',
+  // TRANS CANADA WEST — tcwpd.ca is NOT the stub the old note called it.
+  // Its 390-byte body is a <frameset> whose single frame loads the PD's
+  // real page on the RM of Wallace-Woodworth site (the PD is a
+  // Wallace-Woodworth / Town of Virden partnership). Link the framed page
+  // directly: framesets break under X-Frame-Options and give the button
+  // no usable address bar. The trailing hyphen in the path is real.
+  'TRANS CANADA WEST':                 'https://wallace-woodworth.com/m/trans-canada-west-planning-district-',
   'TRI-ROADS':                         'https://www.triroads.ca/',
+  // WESTERN INTERLAKE (St. Laurent, Coldwell, West Interlake) publishes at
+  // /wipd on the RM of West Interlake site. Grahamdale carries a WIPD page
+  // too; the West Interlake one is the district's own.
+  'WESTERN INTERLAKE':                 'https://rmofwestinterlake.com/wipd',
+  // WHITEMOUTH REYNOLDS is run out of the RM of Whitemouth office and its
+  // directory email is @rmwhitemouth.com — an RM domain, not the generic
+  // host the old note claimed. This page names the PD explicitly.
+  'WHITEMOUTH REYNOLDS':               'https://rmwhitemouth.com/building-construction',
+
   // PDs administered through a member RM rather than their own site —
-  // pointed at the RM's planning page so the button still reaches the
-  // right office:
+  // pointed at the RM's planning/permits page (or its home page where the
+  // RM publishes no planning page) so the button still reaches the right
+  // office:
+  // FISHER ARMSTRONG takes permit applications at either member office;
+  // the RM of Fisher's zoning page is the fuller of the two.
+  'FISHER ARMSTRONG':                  'https://rmoffisher.com/zoning',
+  'KELSEY':                            'https://www.townofthepas.ca/',
   'LAC DU BONNET':                     'https://www.lacdubonnet.com/',
   'LAKESHORE':                         'https://www.rmofdauphin.ca/',
+  // The dev-plan layer produces the no-space spelling; the spaced key is
+  // kept as a harmless alias.
   'MACDONALD - RITCHOT':               'https://www.ritchot.com/',
   'MACDONALD-RITCHOT':                 'https://www.ritchot.com/',
-  'MOUNTAIN VIEW':                     'https://www.gilbertplains.com/',
-  'KELSEY':                            'https://www.townofthepas.ca/',
+  // Was keyed 'MOUNTAIN VIEW' (two words), which the data never produces.
+  // The PD is Ethelbert / Gilbert Plains / Grandview; its own contact is a
+  // gmail address, so this stays a member-RM pointer.
+  'MOUNTAINVIEW':                      'https://www.gilbertplains.com/',
+  // NOR-MAC is North Norfolk + MacGregor, amalgamated into the
+  // Municipality of North Norfolk in 2015; that office issues the permits
+  // and hosts the Nor-Mac development plan.
+  'NOR-MAC':                           'https://www.northnorfolk.ca/p/building-permits',
+  // PEMBINA MANITOU: the Municipality of Pembina now routes building
+  // permits through MSTW in Morden, but its own zoning page is the page
+  // that explains that, so link it rather than mstw.ca.
+  'PEMBINA MANITOU':                   'https://pembina.ca/p/zoning-information-building-permits',
+  'ROSSBURN':                          'https://rossburn.ca/planningandzoning',
+  'SWAN VALLEY':                       'https://www.swanrivermanitoba.ca/p/building-permits',
   'THOMPSON':                          'https://www.thompson.ca/',
   'WHITE HORSE PLAINS':                'https://www.rmofcartier.ca/',
   'WINNIPEG RIVER':                    'https://www.rmalexander.com/',
-  // PDs whose contact is only a generic-host email (no PD-specific
-  // website on file): DENNIS COUNTY, FISHER ARMSTRONG, PELICAN-ROCK
-  // LAKE, SOUTHWEST, SWAN VALLEY, TANNER'S CROSSING, WESTERN INTERLAKE,
-  // WHITEMOUTH REYNOLDS. Add when a website is published.
+
+  // Still no entry after the 2026-09-07 re-check — each was chased to the
+  // member municipality, not just to a guessed PD domain:
+  //   AGASSIZ — the member (Municipality of McCreary) site is real, at
+  //     exploremccreary.com, but publishes no planning, zoning or permit
+  //     page at all, and 403s non-browser clients. Nothing to link.
+  //   SOUTHWEST — directory contact is still a bare gmail address. Melita
+  //     (a member town) has a building-permit page, but it never names the
+  //     Southwest Planning District, so it is a town page, not the PD's.
+  //   STE. ROSE — sterose.ca is a real municipal site with no planning or
+  //     zoning section anywhere in its navigation.
+  // Also unkeyed, and NOT re-checked here: YELLOWHEAD, "Municipality of
+  // Roblin" and "Oakland-Wawanesa", which the dev-plan layer emits as
+  // PLANNINGDISTRICT values but which were never in this list.
 };
 
 /** Normalize a PLANNINGDISTRICT value the way PD_WEBSITES is keyed.
