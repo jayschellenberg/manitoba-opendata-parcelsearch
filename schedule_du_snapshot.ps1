@@ -1,14 +1,16 @@
 # schedule_du_snapshot.ps1 -- register du-snapshot-wrapper.ps1 as a MONTHLY
 # Windows Task Scheduler entry (14th, 03:40 local).
 #
-# WHY MONTHLY, AND WHY IT MATTERS THAT IT NEVER MISSES. MAO publishes
-# dwelling_units as a CURRENT scalar: there is no DU column in the tax history
-# and no archived DU anywhere, so a unit-count delta CANNOT be reconstructed
-# for any period before the baseline taken on 2026-09-07. Every cycle this task
-# does not run is a permanent hole. That is the opposite of the other
-# registrars here, whose jobs rebuild a derived product that a later run simply
-# recomputes -- a missed basemap re-cut costs nothing but freshness, a missed DU
-# snapshot costs the observation itself.
+# WHY MONTHLY. MAO publishes dwelling_units as a CURRENT scalar: there is no DU
+# column in the tax history and no archived DU anywhere, so nothing before the
+# baseline taken on 2026-09-07 can ever be reconstructed. That is what makes
+# the series worth keeping at all.
+#
+# What a MISSED run costs is resolution, not the observation. The next run
+# diffs the current state against the REPLAYED state, so a skipped month still
+# records the change -- dated to the month it was finally seen, with any
+# intermediate states collapsed (a roll that went 4 -> 12 -> 6 between two
+# snapshots records as 4 -> 6). Worth avoiding, not worth paging anyone over.
 #
 # Monthly rather than semi-annual because municipalities re-scrape on a rolling
 # 6-month cadence (annual in the North), so a monthly stamp dates each change to
@@ -69,9 +71,8 @@ schtasks /Create `
 if ($LASTEXITCODE -ne 0) { Write-Error "schtasks /Create failed (exit $LASTEXITCODE)"; exit $LASTEXITCODE }
 
 # Battery + catch-up flags (schtasks doesn't expose these). StartWhenAvailable
-# carries more weight here than on the other tasks: a missed DU snapshot is an
-# observation that can never be recovered, so a machine that was off on the
-# 14th must still take one when it next wakes.
+# matters here because a machine that was off on the 14th should still take a
+# snapshot when it next wakes rather than coarsening that month's dating.
 $settings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
     -AllowStartIfOnBatteries `
@@ -143,8 +144,11 @@ Write-Host "Dry-run the decision:  powershell -ExecutionPolicy Bypass -File du-s
 Write-Host "Inspect the state:     Rscript r\snapshot_dwelling_units.R --replay"
 Write-Host "Cancel:                Unregister-ScheduledTask -TaskName $TaskName -Confirm:`$false"
 Write-Host ""
-Write-Host "NOTE: a missed run is a PERMANENT hole - MAO publishes no DU history, so"
-Write-Host "      nothing before the 2026-09-07 baseline can ever be reconstructed."
+Write-Host "NOTE: MAO publishes no DU history, so nothing before the 2026-09-07 baseline"
+Write-Host "      can ever be reconstructed. A missed run costs resolution, not the"
+Write-Host "      observation - the next run still records the change, dated later."
+Write-Host "      Overdue coverage comes from mb-parcelsearch-task-health, which reads"
+Write-Host "      this task's monthly trigger and flags it after 62 days."
 
 # The verdict, printed last so it is the thing left on screen. Based on what
 # Task Scheduler actually reports, not on what was requested.
@@ -159,9 +163,9 @@ if ($ActualLogonType -eq "S4U") {
     Write-Host "!!  lands on a logon screen silently costs every run until the next login -"
     Write-Host "!!  that is the 2026-08-12 incident (9.3 h lost, no alert possible)."
     Write-Host "!!"
-    Write-Host "!!  For THIS task that is worse than for the others: a skipped DU snapshot"
-    Write-Host "!!  is not stale output that the next run refreshes, it is an observation"
-    Write-Host "!!  that no later run can recover."
+    Write-Host "!!  For THIS task the cost is a coarser record: the next run still catches"
+    Write-Host "!!  the change, but dates it to whenever the task finally fired and loses"
+    Write-Host "!!  any intermediate unit counts along the way."
     if ($PriorLogonType -eq "S4U") {
     Write-Host "!!"
     Write-Host "!!  THIS RUN JUST DOWNGRADED IT. The task was S4U a moment ago; re-registering"

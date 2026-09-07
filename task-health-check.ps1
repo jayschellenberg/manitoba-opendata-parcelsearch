@@ -51,21 +51,53 @@
 #   5. LastRunTime not far past what its own trigger implies -- see below.
 #
 # THE OVERDUE CHECK IS DELIBERATELY BLUNT, AND SKIPS WHAT IT CANNOT READ
-#   The expected interval is derived ONLY from trigger types that state one
-#   outright: daily (DaysInterval) and weekly (WeeksInterval * 7). Monthly
-#   triggers, one-time triggers, and the bare MSFT_TaskTrigger that
-#   schtasks.exe /SC MONTHLY produces carry no interval this script can read
-#   without guessing, so those tasks get NO overdue check at all. A skipped
-#   check is listed in the report by name, so the gap is visible rather than
-#   silent -- an unreliable check that cries wolf would get the whole watchdog
-#   ignored, which costs more than the sub-check is worth.
+#   The expected interval comes from the trigger, in two passes.
 #
-#   Tolerance is 2x the interval, floor 2 days. That is loose on purpose. On
+#   PASS 1, the CIM properties: daily (DaysInterval) and weekly
+#   (WeeksInterval * 7). This is the original path and is unchanged.
+#
+#   PASS 2, the task XML, when pass 1 reads nothing. schtasks.exe /SC MONTHLY
+#   produces a trigger that surfaces over CIM as a bare MSFT_TaskTrigger with
+#   no monthly properties at all -- which is why monthly tasks used to get no
+#   overdue check. The XML behind that same trigger is explicit:
+#
+#     <CalendarTrigger><ScheduleByMonth>
+#       <Months><January /> ... <December /></Months>
+#       <DaysOfMonth><Day>14</Day></DaysOfMonth>
+#     </ScheduleByMonth></CalendarTrigger>
+#
+#   so the interval is 365.25 / (months x days-of-month), rounded up -- 31 days
+#   for a once-a-month task, 183 for a Jan+Jul semiannual one. No guessing:
+#   every number is stated in the document. ScheduleByMonthDayOfWeek ("first
+#   Monday") is read the same way, and ScheduleByDay / ScheduleByWeek are
+#   handled there too so a trigger CIM happens not to expose still resolves.
+#
+#   What still yields nothing, on purpose: TimeTrigger (one-shot), BootTrigger,
+#   LogonTrigger, and anything unrecognised. As before, ONE unreadable trigger
+#   disqualifies the whole task rather than letting a readable sibling trigger
+#   speak for it, and a skipped check is listed in the report by name so the
+#   gap stays visible rather than silent -- an unreliable check that cries wolf
+#   would get the whole watchdog ignored, which costs more than the sub-check
+#   is worth.
+#
+#   TOLERANCE. 2x the interval, floor 2 days, for intervals up to a month. On
 #   2026-08-12 mao-assembly-input-staleness (daily) last ran 08-11 07:15 with
 #   NumberOfMissedRuns=1 -- the machine was simply asleep at 07:15 and
 #   StartWhenAvailable had not caught it up yet. That is an ordinary morning,
 #   not a broken task, and it must not page anyone. A daily task that has not
 #   run in over two days is a different animal.
+#
+#   Past a month, 2x stops being loose and starts being useless: it would give
+#   a Jan+Jul task a 366-day rope, so a publish that silently stopped in
+#   January would not be questioned until the following January. Intervals over
+#   31 days get interval + 45 instead -- 228 days for semiannual. That branch is
+#   reachable ONLY through pass 2 (nothing CIM reads exceeds 7 days), so the
+#   daily and weekly verdicts are bit-for-bit what they were.
+#
+#   This is a BACKSTOP, not a replacement for the bespoke staleness checkers.
+#   history-staleness-check.ps1 fires at 215 days against the semiannual
+#   archive and knows what a good snapshot looks like; this only knows when a
+#   task last ran. Keep both -- they fail differently.
 #
 #   Repetition intervals (MAOSalesSearch repeats hourly) are ignored rather than
 #   used: repetition only makes a task run MORE often, so judging it by its base
@@ -256,7 +288,97 @@ function Get-TriggerIntervalDays($task) {
     } elseif ($null -ne $tr.WeeksInterval -and [int]$tr.WeeksInterval -gt 0) {
       $d = 7 * [int]$tr.WeeksInterval
     }
-    if ($null -eq $d) { return $null }   # one unreadable trigger disqualifies the task
+    if ($null -eq $d) {
+      # CIM told us nothing. Before disqualifying the task, ask the XML, which
+      # states the recurrence outright for the calendar trigger types.
+      return (Get-XmlIntervalDays $task)
+    }
+    if ($null -eq $max -or $d -gt $max) { $max = $d }
+  }
+  return $max
+}
+
+# Expected days between runs read from the task's XML definition, or $null.
+#
+# Exists because a trigger created by schtasks.exe /SC MONTHLY comes back over
+# CIM as a bare MSFT_TaskTrigger carrying no monthly properties -- the
+# recurrence is not absent, it is simply not projected onto the CIM object. The
+# XML has it in full, so this reads it there rather than guessing an interval
+# from NextRunTime (which would silently re-derive a wrong answer for any task
+# whose next occurrence had already been recalculated).
+#
+# Whole-task, not per-trigger: mapping CIM trigger objects onto XML trigger
+# elements by position is fragile, so when CIM cannot answer, EVERY trigger is
+# judged here instead and any one that stays unreadable disqualifies the task.
+function Get-XmlIntervalDays($task) {
+  if ($null -eq $task) { return $null }
+  $xml = $null
+  try {
+    $raw = Export-ScheduledTask -TaskName $task.TaskName -TaskPath $task.TaskPath -ErrorAction Stop
+    if (-not $raw) { return $null }
+    $xml = [xml]$raw
+  } catch {
+    # Unreadable definition is "cannot tell", exactly like an unknown trigger
+    # type. It must never be louder than the finding it is trying to support.
+    return $null
+  }
+  $trigNode = $xml.Task.Triggers
+  if ($null -eq $trigNode -or $trigNode.ChildNodes.Count -eq 0) { return $null }
+
+  # A year, in days, averaged over the leap cycle. Every figure below is
+  # occurrences-per-year turned into days-between-occurrences.
+  $YEAR = 365.25
+  $max = $null
+
+  foreach ($t in $trigNode.ChildNodes) {
+    if ($t.NodeType -ne 'Element') { continue }
+    # <Enabled>false</Enabled> on a trigger means it cannot fire; skipping it
+    # matches the CIM pass, which skips disabled triggers too.
+    if ($t.Enabled -eq 'false') { continue }
+
+    $d = $null
+    if ($t.LocalName -eq 'CalendarTrigger') {
+      foreach ($sched in $t.ChildNodes) {
+        if ($sched.NodeType -ne 'Element') { continue }
+        switch ($sched.LocalName) {
+          'ScheduleByDay' {
+            $n = [int]($sched.DaysInterval)
+            if ($n -gt 0) { $d = $n }
+          }
+          'ScheduleByWeek' {
+            $n = [int]($sched.WeeksInterval)
+            $dow = @($sched.DaysOfWeek.ChildNodes | Where-Object { $_.NodeType -eq 'Element' }).Count
+            if ($dow -lt 1) { $dow = 1 }
+            if ($n -gt 0) { $d = [int][Math]::Ceiling((7.0 * $n) / $dow) }
+          }
+          'ScheduleByMonth' {
+            # <Months> is optional in the schema; absent means every month.
+            $m = @($sched.Months.ChildNodes | Where-Object { $_.NodeType -eq 'Element' }).Count
+            if ($m -lt 1) { $m = 12 }
+            # <Day> may repeat, and may be the literal 'Last'. Either way the
+            # count is what sets the frequency.
+            $days = @($sched.DaysOfMonth.ChildNodes | Where-Object { $_.NodeType -eq 'Element' }).Count
+            if ($days -lt 1) { $days = 1 }
+            $d = [int][Math]::Ceiling($YEAR / ($m * $days))
+          }
+          'ScheduleByMonthDayOfWeek' {
+            $m = @($sched.Months.ChildNodes | Where-Object { $_.NodeType -eq 'Element' }).Count
+            if ($m -lt 1) { $m = 12 }
+            $weeks = @($sched.Weeks.ChildNodes | Where-Object { $_.NodeType -eq 'Element' }).Count
+            if ($weeks -lt 1) { $weeks = 1 }
+            $dow = @($sched.DaysOfWeek.ChildNodes | Where-Object { $_.NodeType -eq 'Element' }).Count
+            if ($dow -lt 1) { $dow = 1 }
+            $d = [int][Math]::Ceiling($YEAR / ($m * $weeks * $dow))
+          }
+        }
+        if ($null -ne $d) { break }
+      }
+    }
+    # TimeTrigger / BootTrigger / LogonTrigger / anything else: still $null.
+    # A one-shot has no recurrence to be late against, and check 4 already
+    # catches a spent one-shot through its empty NextRunTime.
+
+    if ($null -eq $d) { return $null }
     if ($null -eq $max -or $d -gt $max) { $max = $d }
   }
   return $max
@@ -397,7 +519,10 @@ foreach ($name in @($sources.Keys)) {
   } elseif (-not $ranEver) {
     [void]$skipped.Add(('  {0,-37} has never run, so there is no LastRunTime to age' -f $name))
   } else {
-    $allowed = [Math]::Max(2, $interval * 2)
+    # 2x up to a month; past that 2x is so loose it stops being a check at all
+    # (a Jan+Jul task would get a 366-day rope). Only pass 2 can produce an
+    # interval over 31, so daily and weekly verdicts are unchanged.
+    $allowed = if ($interval -gt 31) { $interval + 45 } else { [Math]::Max(2, $interval * 2) }
     $ageDays = (New-TimeSpan -Start $lastRun -End $now).TotalDays
     if ($ageDays -gt $allowed) {
       Add-Problem 'OVERDUE' $name ('last ran {0} ({1:N1} days ago); its trigger implies every {2} day(s), tolerance {3} days' -f `
