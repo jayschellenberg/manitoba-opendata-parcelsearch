@@ -1095,6 +1095,34 @@ scrape fault.
    `window empty` for a municipality that plainly sells, is an expired
    session. `logs/sales-staleness-last.log` only checks that the task RAN.
 
+**GOTCHA — no scrape log during weekday daytime is CORRECT, not a stall.**
+Read this before acting on (1) or (3). `run_sales_search_wrapper.ps1` runs
+`-Adaptive`: fast slots are **19:00-07:00 plus all Saturday and Sunday**
+(`$NIGHT_FROM = 19`, `$NIGHT_UNTIL = 7`). A weekday 07:00-19:00 slot skips
+*before credentials are ever decrypted* and exits 0 without creating a
+`sales_search_<stamp>.log` at all. So between those hours the newest log is
+legitimately many hours old, and a weekday shows ~7 night runs in the
+digest rather than 24. The tell that the slot fired and chose to skip is
+`checkpoints/last_skipped_slot.txt`, one line, overwritten every skip:
+
+    2026-09-07T12:35:01.9271522-05:00  adaptive weekday-quiet skip (Monday 12:35)
+
+Why this is easy to get wrong: Task Scheduler shows the task perfectly
+healthy while it does nothing — `State Ready`, `LastTaskResult 0`,
+`NumberOfMissedRuns 0` — because a skip IS a successful run. Nearly called
+a stall on 2026-09-07 at 13:27 on exactly this evidence (last log 06:47,
+six "missed" slots); the breadcrumb said Monday-quiet skip and everything
+was fine. Same shape, different cause: the **busy guard** also skips a slot
+outright when any other MAO scrape is running (sales OR the assessment
+`$Nrun_delta.R` / `$Nrun_full.R`), recording `busy skip - MAO scrape already
+running (pid …)` — that one protects the one-scraper-at-a-time invariant.
+
+This is also why `MAOSalesStaleness` fires at **07:25** specifically, with
+`-MaxHours 14`: it samples right after the overnight burst ends, so the
+12-hour quiet window can never trip it, while a genuinely failed night
+(last good run 24 h+ back) still does. If you want to judge liveness at any
+other hour, read the breadcrumb — not the log directory.
+
 If (1) is healthy and the date is still flat, MAO simply has not loaded the
 next batch. Nothing here alerts on that: `MAOSalesStaleness` watches the
 task, not MAO. If a batch is more than ~3 weeks late, log into MAO by hand
