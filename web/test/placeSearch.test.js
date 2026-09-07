@@ -13,14 +13,23 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { normalizePlaceName, searchPlaces, muniLabel } from '../src/lib/placeSearch.js';
+import {
+  normalizePlaceName, searchPlaces, muniLabel,
+  searchMunis, muniAliases, muniTypeLabel, muniPickHint, MUNI_TYPE_LABELS, muniShortName,
+} from '../src/lib/placeSearch.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PLACES = join(HERE, '..', 'public', 'mb-places.json');
+const BOUNDARIES = join(HERE, '..', 'public', 'mb-municipalities.geojson');
 
 // [name, type, rank, lat, lon, muni, near] — the mb-places.json row shape.
 const row = (name, type, rank, muni = 'TEST (RM)', near = 0) =>
   [name, type, rank, 49.5, -100.2, muni, near];
+
+// The municipality row shape main.js hands the control, derived from the
+// boundary file's MUNI_LIST_NAME_WITH_TYPE / MUNI_LIST_NAME / MUNI_TYPE.
+const muni = (shortName, type, selectable = true) =>
+  ({ name: `${shortName} (${type})`, shortName, type, selectable });
 
 // ---- normalizePlaceName -------------------------------------------
 
@@ -124,6 +133,99 @@ const row = (name, type, rank, muni = 'TEST (RM)', near = 0) =>
   assert.equal(muniLabel({ muni: null, near: false }), 'Unorganized territory');
 }
 
+// ---- municipality search -------------------------------------------
+
+{
+  // Abbreviations spell out; anything unknown title-cases rather than
+  // shouting the raw code.
+  assert.equal(muniTypeLabel('RM'), 'Rural Municipality');
+  assert.equal(muniTypeLabel('LGD'), 'Local Government District');
+  assert.equal(muniTypeLabel('NORTHERN COMMUNITY'), 'Northern Community');
+  assert.equal(muniTypeLabel('rm'), 'Rural Municipality');
+  assert.equal(muniTypeLabel('SOMETHING NEW'), 'Something New');
+  assert.equal(muniTypeLabel(''), 'Municipality');
+  assert.equal(muniTypeLabel(null), 'Municipality');
+}
+
+{
+  // All four spoken/written forms are matchable keys.
+  const keys = muniAliases(muni('HANOVER', 'RM'));
+  assert.ok(keys.includes('HANOVER RM'));
+  assert.ok(keys.includes('HANOVER'));
+  assert.ok(keys.includes('RM OF HANOVER'));
+  assert.ok(keys.includes('RURAL MUNICIPALITY OF HANOVER'));
+}
+
+{
+  // The bare name is an EXACT hit even though the stored name is longer,
+  // so a municipality typed plainly outranks one it merely prefixes.
+  const rows = [muni('ST ANDREWS', 'RM'), muni('ST', 'RM')];
+  assert.equal(searchMunis(rows, 'st andrews')[0].name, 'ST ANDREWS (RM)');
+}
+
+{
+  // "RM of Hanover" — the type leads, which matches nothing in a stored
+  // name that ends with it. This is the case the aliases exist for.
+  const rows = [muni('HANOVER', 'RM')];
+  assert.equal(searchMunis(rows, 'RM of Hanover').length, 1);
+  assert.equal(searchMunis(rows, 'rural municipality of hanover').length, 1);
+  assert.equal(searchMunis(rows, 'hanover (rm)').length, 1);
+}
+
+{
+  // Name collisions: the settlement type wins. All six real ones in the
+  // boundary file are city-or-town versus RM.
+  const rows = [muni('DAUPHIN', 'RM'), muni('DAUPHIN', 'CITY')];
+  assert.equal(searchMunis(rows, 'dauphin')[0].name, 'DAUPHIN (CITY)');
+
+  const morris = [muni('MORRIS', 'RM'), muni('MORRIS', 'TOWN')];
+  assert.equal(searchMunis(morris, 'morris')[0].name, 'MORRIS (TOWN)');
+}
+
+{
+  // A municipality with no parcel data is a dead end for a search and
+  // sorts below one that isn't — but only within a tier: an exact
+  // unsearchable hit still beats a searchable prefix hit.
+  const rows = [muni('BIFROST', 'RM', false), muni('BIFROST-RIVERTON', 'MUNICIPALITY', true)];
+  const hits = searchMunis(rows, 'bifrost');
+  assert.equal(hits[0].name, 'BIFROST (RM)');
+  assert.equal(hits[0].selectable, false);
+
+  const tied = [muni('ALPHA', 'RM', false), muni('ALPHA', 'RM', true)];
+  assert.equal(searchMunis(tied, 'alpha')[0].selectable, true);
+}
+
+{
+  // Accents and punctuation fold on this side too.
+  const rows = [muni('STE ANNE', 'RM')];
+  assert.equal(searchMunis(rows, 'ste. anne').length, 1);
+  assert.equal(searchMunis(rows, 'STE-ANNE').length, 1);
+}
+
+{
+  assert.deepEqual(searchMunis([muni('HANOVER', 'RM')], ''), []);
+  assert.deepEqual(searchMunis([muni('HANOVER', 'RM')], '  '), []);
+  assert.deepEqual(searchMunis(null, 'hanover'), []);
+  assert.deepEqual(searchMunis([{ shortName: 'no name' }], 'no name'), []);
+
+  // Cap honoured, default is the muni ration rather than the full list.
+  const many = Array.from({ length: 20 }, (_, i) => muni(`TEST ${i}`, 'RM'));
+  assert.equal(searchMunis(many, 'test').length, 4);
+  assert.equal(searchMunis(many, 'test', { limit: 8 }).length, 8);
+}
+
+{
+  // Every hit is tagged so the caller can tell the two halves apart —
+  // handlePlacePick branches on exactly this.
+  assert.equal(searchMunis([muni('HANOVER', 'RM')], 'hanover')[0].kind, 'muni');
+  assert.equal(searchPlaces([row('Souris', 'Town', 2)], 'souris')[0].kind, 'place');
+}
+
+{
+  assert.equal(muniPickHint({ selectable: true }), 'Selects in Property Search');
+  assert.equal(muniPickHint({ selectable: false }), 'No parcel data — map only');
+}
+
 // ---- generated data file ------------------------------------------
 
 if (!existsSync(PLACES)) {
@@ -174,6 +276,75 @@ if (!existsSync(PLACES)) {
   // as ordinary towns.
   assert.ok(data.rows.some((r) => r[1] === 'Indian Reserve'),
     'reserves should be included with their own label');
+}
+
+// ---- municipality rows, against the real boundary file --------------
+
+if (!existsSync(BOUNDARIES)) {
+  console.log('  (skipped boundary-file checks — mb-municipalities.geojson missing)');
+} else {
+  const fc = JSON.parse(readFileSync(BOUNDARIES, 'utf8'));
+  const props = fc.features.map((f) => f.properties || {});
+  // Exactly what main.js's muniSearchRows() builds — no shortName, because
+  // the live ArcGIS FC the app runs on doesn't carry MUNI_LIST_NAME and
+  // searchMunis derives it. `selectable` comes off the dropdown and has no
+  // meaning under node.
+  const munis = props
+    .filter((p) => p.MUNI_LIST_NAME_WITH_TYPE)
+    .map((p) => ({ name: p.MUNI_LIST_NAME_WITH_TYPE, type: p.MUNI_TYPE || '', selectable: true }));
+
+  assert.ok(munis.length > 150, `expected ~183 municipalities, got ${munis.length}`);
+  assert.equal(munis.length, fc.features.length,
+    'every boundary feature must carry MUNI_LIST_NAME_WITH_TYPE');
+
+  // The derivation the app depends on, checked against the authoritative
+  // field on all 183 rows. If a municipality is ever named with a trailing
+  // parenthetical of its own, this is what catches it.
+  //
+  // Compared against the TRIMMED field: the province ships one row with
+  // stray whitespace — "CARTWRIGHT-ROBLIN  (MUNICIPALITY)", double space,
+  // and a MUNI_LIST_NAME with a trailing one — and muniShortName trims,
+  // which is the behaviour we want rather than a mismatch to fix.
+  for (const p of props) {
+    assert.equal(muniShortName(p.MUNI_LIST_NAME_WITH_TYPE), p.MUNI_LIST_NAME.trim(),
+      `stripping the type off ${p.MUNI_LIST_NAME_WITH_TYPE} does not give MUNI_LIST_NAME`);
+  }
+  assert.equal(searchMunis(munis, 'hanover')[0].shortName, 'HANOVER',
+    'searchMunis must derive shortName when the caller supplies none');
+
+  // Every MUNI_TYPE in the file has a spelled-out label. A new code would
+  // still render (title-cased) but should be added deliberately, and this
+  // is where that gets noticed — "LGD" falling through to "Lgd" is not an
+  // answer.
+  const unlabelled = [...new Set(munis.map((m) => m.type))]
+    .filter((t) => !(t in MUNI_TYPE_LABELS));
+  assert.deepEqual(unlabelled, [], `MUNI_TYPE codes with no label: ${unlabelled}`);
+
+  // The worked example: having learned Souris is in SOURIS-GLENWOOD from
+  // the place half, typing that name finds the municipality itself.
+  assert.equal(searchMunis(munis, 'souris-glenwood')[0].name,
+    'SOURIS-GLENWOOD (MUNICIPALITY)');
+
+  // Typed the way people say them.
+  const spoken = [
+    ['RM of Hanover', 'HANOVER (RM)'],
+    ['City of Winkler', 'WINKLER (CITY)'],
+    ['Rural Municipality of Rockwood', 'ROCKWOOD (RM)'],
+    ['ste. anne', 'STE ANNE (TOWN)'],
+    ['portage la prairie', 'PORTAGE LA PRAIRIE (CITY)'],
+  ];
+  for (const [query, want] of spoken) {
+    const hit = searchMunis(munis, query)[0];
+    assert.ok(hit, `"${query}" found no municipality`);
+    assert.equal(hit.name, want, `"${query}" resolved to ${hit.name}`);
+  }
+
+  // Every municipality is findable by its own bare name.
+  for (const m of munis) {
+    const hits = searchMunis(munis, muniShortName(m.name), { limit: 200 });
+    assert.ok(hits.some((h) => h.name === m.name),
+      `${m.name} is not findable by its own name`);
+  }
 }
 
 console.log('placeSearch.test.js: all assertions passed');

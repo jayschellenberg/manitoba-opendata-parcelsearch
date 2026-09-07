@@ -222,6 +222,7 @@ import {
   setLandCoverRasterOpacity,
   flyToFeature,
   showPlacePin,
+  clearPlacePin,
   buildZoneCodePaint,
   parcelHtml,
   setSubjectData,
@@ -892,8 +893,14 @@ const PD_WEBSITES = {
   // (port 80 serves the site fine). Same shape as CLANWILLIAM-ERICKSON above.
   'CARMAN-DUFFERIN-GREY':              'http://www.cdgplanning.com/',
   'CYPRESS':                           'https://www.cypressplanningdistrict.com/',
-  // EASTERN INTERLAKE — no entry: eipd.ca is email-only, same Microsoft 365
-  // nameservers and no A record as BROKENHEAD RIVER above.
+  // EASTERN INTERLAKE's site is at interlakeplanning.com, NOT the eipd.ca
+  // this list used to look for and reject as email-only — that domain no
+  // longer resolves at all. The EIPD is the planning authority for
+  // Bifrost-Riverton, Arborg, Gimli and Winnipeg Beach, and serves a real
+  // site (36 KB, 2025 template), not the stub pages the omissions above
+  // are about. Reaching it also needed normalizePdKey taught to drop the
+  // "(E.I.P.D.)" the dev-plan polygons append; see below.
+  'EASTERN INTERLAKE':                 'https://interlakeplanning.com/',
   // INLAND PORT SPECIAL PLANNING AREA is an area name, not a PD, but it
   // out-votes SOUTH INTERLAKE 17-to-7 in RM of Rosser's dev-plan polygons
   // and updatePdWebsiteButton takes the most frequent PLANNINGDISTRICT
@@ -936,15 +943,28 @@ const PD_WEBSITES = {
 };
 
 /** Normalize a PLANNINGDISTRICT value the way PD_WEBSITES is keyed.
- *  Uppercase, drop a trailing " PLANNING DISTRICT", collapse whitespace.
- *  Returns the empty string for nullish input so the lookup fall-through
- *  is uniform. */
+ *  Uppercase, collapse whitespace, drop a trailing acronym in brackets,
+ *  then drop the district suffix in either spelling. Returns the empty
+ *  string for nullish input so the lookup fall-through is uniform.
+ *
+ *  The province does not write these values consistently. Four of the 42
+ *  distinct PLANNINGDISTRICT values in the dev-plan layer don't end in a
+ *  bare " PLANNING DISTRICT": two append their own acronym ("EASTERN
+ *  INTERLAKE PLANNING DISTRICT (E.I.P.D.)", "WESTERN INTERLAKE PLANNING
+ *  DISTRICT (W.I.P.D)") and two abbreviate the suffix itself ("Brokenhead
+ *  River P.D.", "RHINELAND, PLUM COULEE, GRETNA, ALTONA P.D."). All four
+ *  used to normalize to themselves and so could never match a key, which
+ *  is why Eastern Interlake dead-ended at "N/A" no matter what was added
+ *  to PD_WEBSITES. */
 function normalizePdKey(name) {
   if (!name) return '';
   return String(name)
     .toUpperCase()
-    .replace(/\s+PLANNING\s+DISTRICT\s*$/i, '')
     .replace(/\s+/g, ' ')
+    .trim()
+    // Acronym first, so the suffix strip below still sees a trailing suffix.
+    .replace(/\s*\([^()]*\)$/, '')
+    .replace(/\s+(?:PLANNING\s+DISTRICT|P\.?\s*D\.?)$/, '')
     .trim();
 }
 
@@ -1425,6 +1445,7 @@ function updateSortIndicators() {
 const { map, ready: mapReady } = initMap($mapEl, {
   onFeatureClick: scrollToRow,
   onPlacePick: handlePlacePick,
+  getMunis: muniSearchRows,
 });
 if (import.meta.env?.DEV) window.__map = map;   // dev-only handle for debugging
 
@@ -2816,6 +2837,103 @@ function zoomMapToSelectedMuni() {
 }
 
 /**
+ * The Property Search dropdown option for a municipality name, or null.
+ *
+ * The dropdown carries Roll-Entry's Muni_Name_With_Typ, which can differ
+ * from the boundary file's MUNI_LIST_NAME_WITH_TYPE in punctuation and
+ * accents, so an exact match is tried first and a normalized one second —
+ * the same tolerant pairing findMuniBoundaryFeature() does in the other
+ * direction. A null means the municipality has no parcels in the archive
+ * and therefore no option, which every caller treats as "leave the
+ * dropdown alone" rather than "blank it".
+ */
+function findMuniOption(muniName) {
+  if (!muniName) return null;
+  const key = normalizeMuniKey(muniName);
+  return Array.from($municipality.options)
+    .find((o) => o.value && (o.value === muniName || normalizeMuniKey(o.value) === key)) || null;
+}
+
+/**
+ * Municipality rows for the map's search box (lib/placeSearch.js).
+ *
+ * All 183 boundaries, not just the searchable ones: a municipality with no
+ * parcel data is still a real place on the map worth flying to, and telling
+ * the user it has no data is a better answer than silently not finding it.
+ * The row carries `selectable` so the box can say which is which.
+ *
+ * The geometry-free half is memoized — the boundary FC never changes within
+ * a session — but `selectable` is recomputed on every call, because the
+ * dropdown populates asynchronously after boot and a list cached on the
+ * first keystroke would mark all 183 unselectable for the rest of the
+ * session.
+ */
+let _muniSearchBase = null;
+async function muniSearchRows() {
+  if (!_muniSearchBase) {
+    const fc = muniBoundariesFc || await muniBoundariesPromise;
+    if (!fc?.features) return [];   // not cached: a later keystroke retries
+    _muniSearchBase = fc.features
+      .map((f) => f.properties || {})
+      .filter((p) => p.MUNI_LIST_NAME_WITH_TYPE)
+      // No shortName: searchMunis derives it from the name, which is the
+      // only form that works on BOTH boundary sources. The checked-in
+      // GeoJSON carries MUNI_LIST_NAME, but the live ArcGIS service this
+      // actually runs on does not request that field (see arcgis.js
+      // fetchMunicipalBoundaries outFields), so reading it here would look
+      // right in the test and fall back to "HANOVER (RM)" in the browser.
+      .map((p) => ({
+        name: p.MUNI_LIST_NAME_WITH_TYPE,
+        type: p.MUNI_TYPE || '',
+      }));
+  }
+  return _muniSearchBase.map((m) => ({ ...m, selectable: !!findMuniOption(m.name) }));
+}
+
+
+/**
+ * A municipality was chosen in the map's search box.
+ *
+ * Selecting it in the dropdown is the whole point — the box exists so a
+ * municipality can be reached by typing four letters instead of scrolling a
+ * 183-row select — and the dropdown's own change handler then does the rest
+ * of the work it always does: overlay swap, blue selection outline, URL
+ * state, and a fly to the municipality's bounds.
+ *
+ * The two cases that handler cannot cover are handled here:
+ *
+ *   * the municipality is ALREADY selected, so no change event fires and
+ *     nothing would move — but the user just asked to go there, so fly;
+ *   * the municipality has no parcel data and so no dropdown option. The
+ *     dropdown is left untouched (blanking a loaded selection because
+ *     somebody looked up Aghaming would be worse than doing nothing) and
+ *     the fly and the outline are done directly. That leaves the outline
+ *     naming a different municipality than the dropdown until the next
+ *     muni change repaints it, which is the honest reading: the outline
+ *     marks what was just looked up.
+ *
+ * Any place pin from an earlier search is cleared either way — the pin means
+ * "the place you just looked up", and that is now this municipality.
+ */
+function handleMuniPick(hit) {
+  const feat = findMuniBoundaryFeature(hit.name);
+  const opt = hit.selectable ? findMuniOption(hit.name) : null;
+  clearPlacePin();
+
+  if (opt && $municipality.value !== opt.value) {
+    $municipality.value = opt.value;
+    $municipality.dispatchEvent(new Event('change', { bubbles: true }));
+    return;   // the change handler flies and paints the outline
+  }
+
+  if (!feat) return;
+  mapReady.then(() => {
+    flyToFeature(map, feat);
+    if (!opt) setMuniBoundarySelected(map, feat.properties?.MUNI_LIST_NAME_WITH_TYPE || null);
+  });
+}
+
+/**
  * A place was chosen in the map's search box (lib/placeSearch.js).
  *
  * Three things happen, in this order:
@@ -2839,11 +2957,12 @@ function zoomMapToSelectedMuni() {
  */
 function handlePlacePick(hit, { zoom } = {}) {
   if (!hit) return;
+  // Municipality rows come through the same callback and mean something
+  // else entirely — no pin, and the frame is the whole municipality.
+  if (hit.kind === 'muni') { handleMuniPick(hit); return; }
 
   if (hit.muni) {
-    const key = normalizeMuniKey(hit.muni);
-    const opt = Array.from($municipality.options)
-      .find((o) => o.value && (o.value === hit.muni || normalizeMuniKey(o.value) === key));
+    const opt = findMuniOption(hit.muni);
     if (opt && $municipality.value !== opt.value) {
       $municipality.value = opt.value;
       $municipality.dispatchEvent(new Event('change', { bubbles: true }));

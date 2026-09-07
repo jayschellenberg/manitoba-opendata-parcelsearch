@@ -759,7 +759,7 @@ const PARCEL_FILL_OPACITY = [
   0.3,
 ];
 
-export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
+export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {}) {
   const map = new maplibregl.Map({
     container,
     style: BASEMAP_STYLE,
@@ -780,11 +780,15 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
   // from the stock control is lost by replacing it outright.
   map.addControl(new FineZoomControl(), 'top-right');
   map.addControl(new BasemapMenuControl(), 'top-right');
-  // Place search, top-LEFT — the only control on that side. Everything
-  // else stacks top-right and the legends sit bottom-right, so the box
-  // gets the empty corner and reads as a distinct kind of tool: it moves
-  // the map to a named place rather than changing what the map shows.
-  map.addControl(new PlaceSearchControl({ onPick: onPlacePick }), 'top-left');
+  // Place / municipality search, top-LEFT — the only control on that side.
+  // Everything else stacks top-right and the legends sit bottom-right, so
+  // the box gets the empty corner and reads as a distinct kind of tool: it
+  // moves the map to a named place rather than changing what the map shows.
+  //
+  // getMunis comes from the caller because the municipality half of the box
+  // is answered from state main.js owns — the boundary FeatureCollection it
+  // already fetched, and the Property Search dropdown.
+  map.addControl(new PlaceSearchControl({ onPick: onPlacePick, getMunis }), 'top-left');
   // Distance / area measurement tool. mapbox-gl-draw owns the drawing
   // state and renders the in-progress line/polygon; MeasureControl wraps
   // it in a small panel that exposes the mode switch and live readout.
