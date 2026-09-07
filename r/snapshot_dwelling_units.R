@@ -6,6 +6,7 @@
 #   Rscript r/snapshot_dwelling_units.R            # take a snapshot
 #   Rscript r/snapshot_dwelling_units.R --dry-run  # report the diff, write nothing
 #   Rscript r/snapshot_dwelling_units.R --replay   # print the reconstructed state
+#   Rscript r/snapshot_dwelling_units.R --force    # record a delta past the loss gate
 #
 # ---------------------------------------------------------------------------
 # WHY THIS EXISTS
@@ -68,6 +69,11 @@ has_flag <- function(name) any(commandArgs(TRUE) == paste0("--", name))
 
 DRY_RUN <- has_flag("dry-run")
 REPLAY  <- has_flag("replay")
+FORCE   <- has_flag("force")
+
+# Refuse to record a delta in which more than this share of the known rolls
+# lose their units. See the sanity gate below for why this is not optional.
+MAX_LOSS_SHARE <- as.numeric(parse_arg("max-loss-share", "0.05"))
 
 mao_root <- .path_default("MAO_SCRAPE_ROOT",
                           file.path(dirname(mb_parcelsearch_root), "mao-scrape"))
@@ -151,6 +157,42 @@ if (is.null(prev)) {
     cat("\n--- largest unit gains ---\n")
     print(as.data.frame(cmp |> mutate(gain = du - du_prev) |>
             arrange(desc(gain)) |> head(12)), row.names = FALSE)
+  }
+
+  # --- sanity gate -----------------------------------------------------------
+  # This log is append-only and SELF-REPLAYING: every future state is the
+  # baseline plus every delta in order, so one bad delta is not a bad file, it
+  # is a permanently wrong history that silently rewrites every later answer.
+  # That asymmetry is why this refuses rather than warns.
+  #
+  # The failure it guards is a truncated parcels.parquet - a partial sweep, an
+  # interrupted assembly - which presents as thousands of rolls dropping to
+  # du = 0 and would be recorded as a mass demolition. assemble_parquet.R has
+  # its own shrink guard upstream, but that protects the parquet, not this log,
+  # and this script is scheduled to run unattended against whatever it finds.
+  #
+  # Only LOSSES are gated. A genuine mass gain cannot come from truncation, and
+  # capping gains would be the one thing that suppresses a real construction
+  # wave - exactly the signal this whole exercise exists to catch.
+  lost  <- sum(cmp$du < cmp$du_prev)
+  share <- if (nrow(prev)) lost / nrow(prev) else 0
+  if (share > MAX_LOSS_SHARE && !FORCE) {
+    cat(sprintf(paste0(
+      "\n[du-snapshot] REFUSING to write: %s rolls (%.1f%% of the %s known) lost their\n",
+      "  units in one cycle, over the %.1f%% gate. That is the signature of a truncated\n",
+      "  parcels.parquet, not of demolition. Nothing was written and the replay chain is\n",
+      "  intact.\n\n",
+      "  Check the source first:  %s\n",
+      "  Then re-run. If the loss is real, repeat with --force (or raise\n",
+      "  --max-loss-share=<0-1>); a delta written in error cannot be undone by a later\n",
+      "  one, it can only be corrected by editing the log by hand.\n"),
+      format(lost, big.mark = ","), 100 * share, format(nrow(prev), big.mark = ","),
+      100 * MAX_LOSS_SHARE, pc_path))
+    quit(save = "no", status = 2)
+  }
+  if (share > MAX_LOSS_SHARE && FORCE) {
+    cat(sprintf("[du-snapshot] --force: recording %s unit losses (%.1f%%) past the %.1f%% gate\n",
+                format(lost, big.mark = ","), 100 * share, 100 * MAX_LOSS_SHARE))
   }
 
   if (DRY_RUN) { cat("\n[du-snapshot] --dry-run: nothing written\n"); quit(save = "no") }
