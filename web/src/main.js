@@ -9876,7 +9876,7 @@ function renderMfnbLegend(mode) {
     // than the swatch list by a long way and it, not the legend, set the box
     // width - which pushed the panel across the map on a narrow window.
     + `<small style="display:block;margin-top:4px;color:#6b7280;font-style:italic">`
-    + `${MFNB_MIN_DU}+ dwelling units, colonies excluded<br>`
+    + `${MFNB_MIN_DU}+ dwelling units (excluding colonies)<br>`
     + `from assessed building value ${MFNB_FROM_YEAR}+<br>`
     + `years are assessment years and trail completion by about a year</small>`;
 }
@@ -9921,7 +9921,7 @@ function showMfNewbuildResults(munis) {
   const where = munis.length === 1 ? munis[0] : `${munis.length} municipalities`;
   setCount(feats.length
     ? `${feats.length} multi-family construction record${feats.length === 1 ? '' : 's'} in ${where} · assessed ${MFNB_FROM_YEAR}+ · years are assessment years and trail completion by about a year`
-    : `No multi-family construction found in ${where} since ${MFNB_FROM_YEAR} (${MFNB_MIN_DU}+ dwelling units, colonies excluded)`);
+    : `No multi-family construction found in ${where} since ${MFNB_FROM_YEAR} (${MFNB_MIN_DU}+ dwelling units (excluding colonies))`);
   return feats.length;
 }
 
