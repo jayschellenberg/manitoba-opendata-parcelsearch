@@ -2309,12 +2309,64 @@ const salesImportModal = initSalesPasteImport({
 // paste and Recent-uploads paths already produce, so everything downstream
 // (parse, roll lookup, enrichment, charts) is unchanged. The archive lives only
 // in this browser and is never uploaded — see lib/salesStore.js for why.
+/*
+ * Live municipality narrowing for the Sales Analysis grid.
+ *
+ * The municipality checkboxes are a SEARCH input: Search reads the chosen
+ * shards out of the archive and fetches parcel geometry for every sale it
+ * finds. So ticking a municipality that was not loaded cannot be instant -
+ * the rows genuinely are not in memory, and the "hit Search to refresh"
+ * banner still owns that direction.
+ *
+ * UNTICKING one is different. Those rows ARE in memory, and removing them is
+ * pure narrowing - no fetch, no archive read, nothing to wait for. It is the
+ * same kind of operation as every other filter on this tab, so it goes through
+ * the same path: refilterCsvIfActive() re-renders the grid, re-narrows the map
+ * highlight and repaints the count line.
+ *
+ * `salesMuniSelection` is the panel's effective selection (explicit picks plus
+ * any adjacency additions - the same set Search would load). `salesMuniLoaded`
+ * is what the last Search actually put in the table. The narrowing applies
+ * ONLY where the selection is a strict subset of what was loaded, which is
+ * what keeps the two directions honest: untick and the grid follows
+ * immediately; tick and nothing is hidden, because hiding is not the problem
+ * there - the missing data is, and only a Search can fix that.
+ */
+let salesMuniSelection = null;   // Set<string> of muni_no, or null before any pick
+let salesMuniLoaded = null;      // Set<string> the last Search actually loaded
+
+/** The muni_no on a parcel row, as the string the picker keys on. */
+function rowMuniNo(row) {
+  const no = muniNoFromProps(row?.parcel?.properties || {});
+  return no == null ? null : String(no);
+}
+
+/**
+ * The set to narrow the grid to, or null for "do not narrow".
+ *
+ * Null whenever the selection is not a strict subset of what was loaded: no
+ * selection yet, nothing loaded yet, or the user has ticked something new -
+ * where the honest answer is the staleness banner, not a hidden row.
+ */
+function salesMuniNarrowSet() {
+  if (!salesMuniSelection || !salesMuniLoaded || !salesMuniLoaded.size) return null;
+  for (const no of salesMuniSelection) if (!salesMuniLoaded.has(no)) return null;
+  // Unticking the LAST municipality empties the grid rather than snapping
+  // every row back. Same rule either way - show the ticked municipalities -
+  // and re-ticking is instant, so an empty grid is never a dead end.
+  return salesMuniSelection.size < salesMuniLoaded.size ? salesMuniSelection : null;
+}
+
 const salesDbPanel = initSalesDbPanel({
   setStatus: setCount,
   // Shade the municipalities the current selection would load. Two tints:
   // explicit picks solid, adjacency-derived ones weaker — the same
   // distinction the checkbox list draws, so map and list never disagree.
   onSelectionChange: (effective, picked) => {
+    // Unticking a loaded municipality narrows the grid immediately; see
+    // salesMuniNarrowSet() for why ticking a new one deliberately does not.
+    salesMuniSelection = new Set([...effective].map(String));
+    refilterCsvIfActive();
     mapReady.then(async () => {
       try {
         await showMuniLayer(map, await listShardKeys());
@@ -2339,6 +2391,10 @@ const salesDbPanel = initSalesDbPanel({
   onLoad: async ({ name, text }) => {
     try {
       await handleSalesUpload({ name, text });
+      // The baseline the narrowing is measured against: what is in the table
+      // now IS the loaded set, so unticking any of it can narrow and ticking
+      // anything else cannot.
+      salesMuniLoaded = new Set(salesMuniSelection || []);
       setActiveTab('sales', { skipFocus: true });
     } catch (err) {
       console.error('Sales database load failed', err);
@@ -4221,6 +4277,10 @@ async function runSearch() {
   csvFullRows = null;
   csvFullBaseMsg = '';
   csvMatchedMunis = null;
+  // The narrowing baseline goes with the rows it described. Left standing,
+  // it would let the next result set be narrowed against a municipality set
+  // that search never loaded.
+  salesMuniLoaded = null;
   // A new result set is landing — the stashed pre-filter rows belong to
   // the old one, and unticking must not resurrect them.
   resetWaterFilterBase();
@@ -4678,6 +4738,12 @@ const $resultsTable = document.getElementById('results');
 async function handleSalesUpload(file) {
   // Same rule as runSearch: parcels on the map disarm the muni picker.
   disarmSearchPicker();
+  // Drop the narrowing baseline for the set being replaced. Every entry
+  // point lands here - dropzone, paste, Recent uploads, and the sales-database
+  // panel - but only the panel knows a municipality selection, and it re-sets
+  // this AFTER awaiting us. So a pasted CSV correctly ends up with no baseline
+  // and is never narrowed by checkboxes that do not describe it.
+  salesMuniLoaded = null;
   // …and the same rule for the snapshot: a new upload is a new result set, so
   // any image on the page is of the previous one. Covers every entry point
   // into this function — dropzone, paste modal and Recent uploads alike.
@@ -6515,8 +6581,21 @@ function filterCsvRowsByOtherSearches(rows) {
   // Nominal-sale exclusion — the ticked box beside Sales Coverage.
   const excludeNominal = !!$excludeNominal?.checked;
 
+  // Municipality ticks, applied only in the narrowing direction.
+  const muniNarrow = salesMuniNarrowSet();
+
   return rows.filter((row) => {
     const p = row.parcel?.properties || {};
+
+    // Unticked municipality. First test in the pass because it is the
+    // cheapest and the most decisive - a whole municipality's worth of rows
+    // leaves before any of the geometry-touching filters below look at them.
+    // A row whose muni_no cannot be read is KEPT: unknown is not excluded,
+    // the same rule the water filter follows.
+    if (muniNarrow) {
+      const no = rowMuniNo(row);
+      if (no != null && !muniNarrow.has(no)) return false;
+    }
 
     // Nominal sales — $0 / $1 family and corrective transfers, no market
     // evidence in them. Group-level like the price-range filter, so a
@@ -11352,6 +11431,10 @@ function clearSalesResults() {
   csvFullRows = null;
   csvFullBaseMsg = '';
   csvMatchedMunis = null;
+  // The narrowing baseline goes with the rows it described. Left standing,
+  // it would let the next result set be narrowed against a municipality set
+  // that search never loaded.
+  salesMuniLoaded = null;
   // These lists were derived from the results just dropped, so leaving them
   // up would offer zone codes and structure types nothing can match. Same
   // reasoning — and the same three calls — as runSearch's reset.

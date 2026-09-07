@@ -252,18 +252,39 @@ export function initSalesDbPanel({
    * dates is deliberately NOT stale: the sidebar filter still applies to
    * what is in memory, so a shorter window is honest without a reload.
    */
+  /**
+   * Has the municipality selection only NARROWED since the load?
+   *
+   * A pure removal needs no Search: main.js filters those rows straight out
+   * of the grid, because they are already in memory. Saying "hit Search to
+   * refresh" over a change that has already taken effect would be false, and
+   * would send the user off to re-run a slow load for nothing. Only an
+   * ADDITION is genuinely stale — that data was never loaded.
+   */
+  function muniOnlyNarrowed(nowMunis) {
+    if (!loadedState) return false;
+    const was = new Set(loadedState.munis ? loadedState.munis.split(',') : []);
+    const now = nowMunis ? nowMunis.split(',') : [];
+    // The empty selection counts as a narrowing, not an addition: unticking
+    // the last municipality empties the grid immediately, and re-ticking
+    // refills it from memory. Telling the user to hit Search there would be
+    // both wrong and slow.
+    return now.every((m) => was.has(m)) && now.length < was.size;
+  }
+
   function updateStaleness() {
     if (!$update) return;
     if (!loadedState) { $update.hidden = true; $update.classList.remove('is-stale'); return; }
     const now = stateKey();
     const widened = (loadedState.from && (!now.from || now.from < loadedState.from))
                  || (loadedState.to && (!now.to || now.to > loadedState.to));
-    const stale = now.munis !== loadedState.munis || now.type !== loadedState.type || widened;
+    const muniChanged = now.munis !== loadedState.munis && !muniOnlyNarrowed(now.munis);
+    const stale = muniChanged || now.type !== loadedState.type || widened;
     $update.hidden = !stale;
     $update.classList.toggle('is-stale', stale);
     if (stale) {
-      $update.textContent = now.munis !== loadedState.munis
-        ? 'Selected municipalities changed — hit Search to refresh the data.'
+      $update.textContent = muniChanged
+        ? 'Municipalities added — hit Search to load their sales.'
         : 'Date range or sale type changed — hit Search to refresh the data.';
     }
   }
