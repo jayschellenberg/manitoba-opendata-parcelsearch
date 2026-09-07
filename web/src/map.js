@@ -30,6 +30,10 @@ import {
   readLandfacts, yearRecords, croppedYears, observedYears, lastThree, lastObserved,
   wetlandClassNames, COVER_GROUPS,
 } from './lib/landfacts.js';
+import {
+  readMfnb, primaryYear, bestConfidence, totalGain, MFNB_KINDS, MFNB_CONFIDENCE,
+  mfnbFillColor,
+} from './lib/mfNewbuild.js';
 import { FLOOD_GROUPS, floodColorStops, floodZone } from './lib/flood.js';
 import { overlayGroupExpanded } from './lib/overlayToggle.js';
 import { formatRollSizeField } from './lib/acres.js';
@@ -759,7 +763,7 @@ const PARCEL_FILL_OPACITY = [
   0.3,
 ];
 
-export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
+export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {}) {
   const map = new maplibregl.Map({
     container,
     style: BASEMAP_STYLE,
@@ -780,11 +784,15 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
   // from the stock control is lost by replacing it outright.
   map.addControl(new FineZoomControl(), 'top-right');
   map.addControl(new BasemapMenuControl(), 'top-right');
-  // Place search, top-LEFT — the only control on that side. Everything
-  // else stacks top-right and the legends sit bottom-right, so the box
-  // gets the empty corner and reads as a distinct kind of tool: it moves
-  // the map to a named place rather than changing what the map shows.
-  map.addControl(new PlaceSearchControl({ onPick: onPlacePick }), 'top-left');
+  // Place / municipality search, top-LEFT — the only control on that side.
+  // Everything else stacks top-right and the legends sit bottom-right, so
+  // the box gets the empty corner and reads as a distinct kind of tool: it
+  // moves the map to a named place rather than changing what the map shows.
+  //
+  // getMunis comes from the caller because the municipality half of the box
+  // is answered from state main.js owns — the boundary FeatureCollection it
+  // already fetched, and the Property Search dropdown.
+  map.addControl(new PlaceSearchControl({ onPick: onPlacePick, getMunis }), 'top-left');
   // Distance / area measurement tool. mapbox-gl-draw owns the drawing
   // state and renders the in-progress line/polygon; MeasureControl wraps
   // it in a small panel that exposes the mode switch and live readout.
@@ -1846,6 +1854,31 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
           'fill-opacity': ['case', ['has', '_lfColor'], 0.6, 0],
         },
       });
+      // Multi-family new construction on the muni-wide fabric. Unlike the two
+      // choropleths above this paints a handful of parcels per municipality,
+      // so it carries an outline of its own — see the mfnb-outline note on the
+      // result layer.
+      map.addLayer({
+        id: 'muni-parcels-mfnb-fill',
+        type: 'fill',
+        source: 'muni-parcels',
+        layout: { visibility: 'none' },
+        paint: {
+          'fill-color': ['coalesce', ['get', '_mfnbColor'], 'rgba(0,0,0,0)'],
+          'fill-opacity': ['case', ['has', '_mfnbColor'], 0.7, 0],
+        },
+      });
+      map.addLayer({
+        id: 'muni-parcels-mfnb-outline',
+        type: 'line',
+        source: 'muni-parcels',
+        layout: { visibility: 'none' },
+        paint: {
+          'line-color': ['coalesce', ['get', '_mfnbColor'], 'rgba(0,0,0,0)'],
+          'line-width': ['case', ['has', '_mfnbColor'], 2, 0],
+          'line-opacity': 0.95,
+        },
+      });
       map.addLayer({
         id: 'muni-parcels-line',
         type: 'line',
@@ -2354,6 +2387,41 @@ export function initMap(container, { onFeatureClick, onPlacePick } = {}) {
         paint: {
           'line-color': ['coalesce', ['get', '_waterColor'], 'rgba(0,0,0,0)'],
           'line-width': ['case', ['has', '_waterColor'], 2.2, 0],
+          'line-opacity': 0.95,
+        },
+      });
+
+      // Multi-family new-construction overlay — colours each result parcel by
+      // the year an apartment-scale building landed on the assessment roll (or
+      // by its current unit count). Driven by `_mfnbColor`, stamped per parcel
+      // in main.js from the mf-newbuild shards; lib/mfNewbuild.js owns the two
+      // palettes.
+      //
+      // Sparser than the water overlay by an order of magnitude — about 600
+      // rolls province-wide — so it gets the same fill-plus-outline treatment
+      // and for a stronger version of the same reason: a single flagged
+      // apartment block in a town of 4,000 parcels has to be findable without
+      // knowing where to look. The outline is added with NO beforeId so it
+      // sits above `parcel-line`, matching water-outline; see the note there
+      // for why that ordering is deliberate.
+      map.addLayer({
+        id: 'mfnb-fill',
+        type: 'fill',
+        source: 'parcels',
+        layout: { visibility: 'none' },
+        paint: {
+          'fill-color': ['coalesce', ['get', '_mfnbColor'], 'rgba(0,0,0,0)'],
+          'fill-opacity': ['case', ['has', '_mfnbColor'], 0.7, 0],
+        },
+      }, 'parcel-line');
+      map.addLayer({
+        id: 'mfnb-outline',
+        type: 'line',
+        source: 'parcels',
+        layout: { visibility: 'none' },
+        paint: {
+          'line-color': ['coalesce', ['get', '_mfnbColor'], 'rgba(0,0,0,0)'],
+          'line-width': ['case', ['has', '_mfnbColor'], 2.2, 0],
           'line-opacity': 0.95,
         },
       });
@@ -4295,6 +4363,21 @@ export function setLandfactsVisible(map, on) {
 }
 
 /**
+ * Show / hide the multi-family new-construction overlay — result parcels and
+ * the muni fabric coloured by the year an apartment-scale building landed on
+ * the roll, each with a same-colour outline so a lone flagged block still
+ * reads at town-wide zoom. Colour comes from `_mfnbColor`, stamped in main.js
+ * from the mf-newbuild shards; this only flips visibility.
+ */
+export function setMfNewbuildVisible(map, on) {
+  const vis = on ? 'visible' : 'none';
+  for (const id of ['mfnb-fill', 'mfnb-outline',
+                    'muni-parcels-mfnb-fill', 'muni-parcels-mfnb-outline']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
+  }
+}
+
+/**
  * Show / hide the water-influence overlay (result parcels coloured by
  * waterfront classification, plus a same-colour outline so the parcel still
  * reads under a zoning or dev-plan fill). Colour comes from each parcel's
@@ -4923,6 +5006,7 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
   const landCoverTable = landCoverParcelHtml(p);
   const mascBox = mascRatingParcelHtml(p);
   const landfactsBox = landfactsParcelHtml(p);
+  const mfnbBox = mfnbParcelHtml(p);
 
   // Right column stacks Land cover (farmland parcels over the threshold),
   // then the MASC rating, then Soil composition (when the Soil Survey
@@ -4933,6 +5017,7 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
   if (landCoverTable) rightSections.push(`<strong>Land cover</strong>${landCoverTable}`);
   if (mascBox)        rightSections.push(`<strong>MASC rating</strong>${mascBox}`);
   if (landfactsBox)   rightSections.push(`<strong>Land facts</strong>${landfactsBox}`);
+  if (mfnbBox)        rightSections.push(`<strong>New multi-family</strong>${mfnbBox}`);
   if (soilTable)      rightSections.push(`<strong>Soil composition</strong>${soilTable}`);
   // Everything in this column is sampled against the parcel's CURRENT polygon.
   // When that boundary has been withheld because the parcel was reconfigured
@@ -5454,6 +5539,45 @@ export function landfactsParcelHtml(p) {
   }
   if (lf.gsw != null) lines.push(`<span style="color:#555">Open water</span> ${escapeHtml(String(lf.gsw))}% permanent \u00b7 ${escapeHtml(String(lf.gsi))}% intermittent`);
   return `<div style="margin-top:4px;font-size:12px;line-height:1.7">${lines.join('<br>')}</div>`;
+}
+
+/**
+ * Multi-family new-construction box for the parcel popup: one row per event,
+ * each with the year, what happened, the building value before and after, and
+ * a colour dot carrying the confidence. Returns null when the parcel carries
+ * no `_mfnb` stamp — no qualifying construction, or the muni shard never
+ * loaded.
+ *
+ * The unit count is labelled "today" and the years "on roll" on purpose. This
+ * layer is inferred from assessed value, so the popup has to keep saying what
+ * it actually knows: MAO publishes no dwelling-unit history, and an assessment
+ * year trails completion by about a year.
+ */
+export function mfnbParcelHtml(p) {
+  const m = readMfnb(p?._mfnb);
+  if (!m) return null;
+  const money = (n) => {
+    if (!Number.isFinite(n)) return '—';
+    if (n >= 1e6) return `$${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M`;
+    if (n >= 1e3) return `$${Math.round(n / 1e3)}k`;
+    return `$${Math.round(n)}`;
+  };
+  const rows = m.e.map((e) => {
+    const color = mfnbFillColor({ ...m, p: e.y }, 'year');
+    const dot = `<span title="${escapeHtml(MFNB_CONFIDENCE[e.c] || e.c)}" style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${escapeHtml(color || '#d0d0d0')};border:1px solid rgba(0,0,0,0.2);margin-right:6px;vertical-align:middle"></span>`;
+    return `<tr>
+      <td style="padding:3px 8px 3px 0;vertical-align:top">${dot}<strong>${escapeHtml(String(e.y))}</strong> <span style="color:#555" title="${escapeHtml(MFNB_KINDS[e.k] || '')}">${escapeHtml(e.k.replace('_', ' '))}</span></td>
+      <td style="padding:3px 0;vertical-align:top;text-align:right;white-space:nowrap"><strong>${escapeHtml(money(e.bp))} → ${escapeHtml(money(e.b))}</strong></td>
+    </tr>`;
+  }).join('');
+  const lines = [];
+  lines.push(`<span style="color:#555">Units today</span> ${escapeHtml(String(m.du))}${m.cl ? ' · class ' + escapeHtml(m.cl) : ''}`);
+  if (Array.isArray(m.sdu) && m.sdu.length) {
+    lines.push(`<span style="color:#555">At sale</span> ${escapeHtml(m.sdu.map(([yy, dd]) => `${yy}: ${dd} DU`).join(', '))}`);
+  }
+  lines.push(`<span style="color:#777;font-style:italic">Value created ${escapeHtml(money(totalGain(m)))} · assessment years, which trail completion by about a year</span>`);
+  return `<table style="margin-top:4px;font-size:12px;border-collapse:collapse;width:100%">${rows}</table>`
+    + `<div style="margin-top:4px;font-size:12px;line-height:1.7">${lines.join('<br>')}</div>`;
 }
 
 /**

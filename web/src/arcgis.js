@@ -1913,6 +1913,66 @@ export async function fetchLandfactsForMuni(muniNameWithTyp) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Multi-family new construction — per-muni shards from r/build_mf_newbuild.R:
+// the rolls where an apartment-scale building landed on the assessment roll,
+// dated off 20 years of assessed building value. Same family shape as
+// landfacts/; see the header of src/lib/mfNewbuild.js for the stamp.
+//
+// A far sparser layer than its siblings — roughly 600 rolls province-wide
+// against landfacts' 173,000 — so most munis have no shard at all and the
+// null return below is the common case, not the error case.
+// ---------------------------------------------------------------------------
+
+let mfNewbuildIndexPromise = null;
+
+/** MF new-build shard manifest: muni -> { file, count }, plus `_meta` with the
+ *  window, thresholds, exclusions and confidence rules (read by the Data
+ *  Status dialog). */
+export async function fetchMfNewbuildIndex() {
+  if (mfNewbuildIndexPromise) return mfNewbuildIndexPromise;
+  mfNewbuildIndexPromise = (async () => {
+    const cacheKey = `mb_mfnewbuild_index_v1_${MB_PARCEL_DATA_REVISION}`;
+    const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+    if (cached) return cached;
+    try {
+      const res = await fetch(`${MB_PARCEL_DATA_CDN}/mf-newbuild/_index.json`);
+      if (!res.ok) return null;
+      const idx = await res.json();
+      await writeCache(cacheKey, idx);
+      return idx;
+    } catch {
+      return null;
+    }
+  })();
+  return mfNewbuildIndexPromise;
+}
+
+/**
+ * MF new-build dictionary for one municipality, keyed by Roll_No_Txt, or null
+ * when the muni has no shard. null means "we do not know"; a muni WITH a shard
+ * and a roll absent from it had no qualifying multi-family construction.
+ */
+export async function fetchMfNewbuildForMuni(muniNameWithTyp) {
+  if (!muniNameWithTyp) return null;
+  const idx = await fetchMfNewbuildIndex();
+  const entry = lookupMuniManifestEntry(idx, muniNameWithTyp, { stripType: false });
+  if (!entry) return null;
+  const file = entry.file;
+  const cacheKey = `mb_mfnewbuild_${file}_v1_${MB_PARCEL_DATA_REVISION}`;
+  const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  if (cached) return cached;
+  try {
+    const res = await fetch(`${MB_PARCEL_DATA_CDN}/mf-newbuild/${file}`);
+    if (!res.ok) return null;
+    const dict = await res.json();
+    await writeCache(cacheKey, dict);
+    return dict;
+  } catch {
+    return null;
+  }
+}
+
 // Flood zone membership — per-muni shards from r/build_flood.R, served from
 // the mb-parcel-data CDN like the water and land-cover shards.
 //

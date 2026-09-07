@@ -6762,6 +6762,31 @@ body {
 
 .place-search-hit.is-active { background: var(--ui-accent-soft, #e4f1ef); }
 
+/* Section heading, shown only when municipalities and places both match.
+   Small caps and muted, so it reads as a divider between two kinds of
+   answer without competing with the rows it labels. The rule above it
+   does the separating; the first heading skips it since nothing sits
+   above it to separate from. */
+.place-search-group {
+  padding: 5px 8px 2px;
+  color: var(--ui-muted, #6d7771);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Any heading with rows above it, i.e. the "Places" one. */
+.place-search-hit ~ .place-search-group {
+  margin-top: 4px;
+  border-top: 1px solid var(--ui-line, #dbe3dd);
+}
+
+/* A municipality's name is the coarser answer and gets the accent colour
+   the place rows give to THEIR municipality line — the same fact, wearing
+   the same colour, whichever row it appears on. */
+.place-search-hit.is-muni .place-search-name { color: var(--ui-accent-dark, #1f5752); }
+
 .place-search-name {
   font-weight: 600;
   color: var(--ui-ink, #151916);
