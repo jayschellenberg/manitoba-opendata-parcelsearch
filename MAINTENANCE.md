@@ -751,7 +751,7 @@ outside Winnipeg there is no province-wide permit feed to read.
 
 | Artefact | Built by | Sources | Where it lives |
 |---|---|---|---|
-| **New MF** grid column + popup box + 6 CSV columns + the **New Multi-Family** map overlay (Year / Units views) | `npm run mf:shards` (`r/build_mf_newbuild.R`) | mao-scrape `tax_history.parquet` (2008–2027, every roll), `parcels.parquet`, `sales_archive.csv` | `mb-parcel-data/mf-newbuild/`, served via the CDN pin |
+| **New MF** grid column + popup box + 6 CSV columns + the **New Multi-Family** map overlay (Year / Units views) | `npm run mf:shards` (`r/build_mf_newbuild.R` — also emits the `mf-inventory` family, see §6f) | mao-scrape `tax_history.parquet` (2008–2027, every roll), `parcels.parquet`, `sales_archive.csv` | `mb-parcel-data/mf-newbuild/`, served via the CDN pin |
 | **DU snapshot** — one baseline plus monthly deltas | `mb-parcelsearch-du-snapshot` → `du-snapshot-wrapper.ps1` → `r/snapshot_dwelling_units.R` | `parcels.parquet` | `mb-parcel-history/du-snapshots/` |
 
 **Why value, and not the unit count you would expect.** MAO publishes
@@ -845,6 +845,100 @@ suppress exactly the construction wave the layer exists to catch.
 **Overdue coverage.** `mb-parcelsearch-task-health` reads this task's monthly
 trigger out of its XML and flags it after 62 days (interval 31, tolerance 2x).
 It needs no bespoke dead-man's switch of its own.
+
+### 6f. Multi-family inventory + new condo developments  (cadence: with §6e, after a scrape delta)
+
+The other two thirds of the multi-family trio. §6e answers "what was built
+recently"; these answer "what is standing" and "which new projects are
+ground-oriented". All three share ONE definition of multi-family — 3+ dwelling
+units with Hutterite colonies excluded — and all three live in the sidebar's
+collapsed **Multi-family** group, between Planning and Reference.
+
+| Artefact | Built by | Sources | Where it lives |
+|---|---|---|---|
+| **Multi-Family** map overlay + `DU ≥` threshold (no grid column — the DU column already carries it) | `npm run mf:shards` (`r/build_mf_newbuild.R`, second output) | mao-scrape `parcels.parquet`, `tax_history.parquet` | `mb-parcel-data/mf-inventory/` — 152 shards, 2,795 rolls |
+| **New Condo** grid column + popup + 6 CSV columns + the **New Condos** overlay (Type / Year views) | `npm run condo:shards` (`r/build_condo_dev.R`) | the same two parquets + `results/sales_search/by_muni/` | `mb-parcel-data/condo-dev/` — 22 shards, 56 developments, 1,269 units, 134 KB |
+
+**Why row housing needs a layer of its own, and cannot be a filter on §6e.**
+That layer gates on `dwelling_units >= 3`, which row housing never satisfies:
+of the rolls MAO itself labels row housing, **3,975 of 4,311 (92%) carry ONE
+dwelling unit**, because row housing is condo-titled — one roll per unit. Row
+housing is not under-represented in the multi-family layer, it is *absent* from
+it, which is why that layer is in practice already "the new apartments". A Row
+Housing state on its button would have rendered an empty map.
+
+**How a development is reassembled.** MAO writes a condo roll's legal
+description as `<unit>-<plan>` (`1-63538`, `2-63538`, …) and its `legal_detail`
+reverses that to `<plan>-<unit>`. The plan is the only handle that turns N
+single-unit rolls back into one project. A development is kept when *every* one
+of its rolls is new — the development's first year is the earliest tax year any
+roll appears — it has 3+ rolls, and it carries building value now.
+
+**How it is typed, and why 27 of 56 are blank.** Type comes from MAO's own
+Primary Property descriptor (the authenticated sales search), applied to a
+whole plan from whichever of its units have sold: a condo plan is one
+architectural project, and **98.7% of plans are internally consistent** in that
+labelling. Where no unit has ever sold with a descriptor the development is
+emitted as `unknown`. Current split: **24 apartment, 4 row housing, 1 mixed, 27
+not typed**. `kn` in the shard records how many rolls the type rests on — a
+development typed from 40 of 40 is a different proposition from one typed off
+4 of 122, and the popup says which.
+
+**Do not be tempted to fill the blanks.** Both obvious heuristics were
+measured against the 2,843 labelled condo rolls and both were rejected:
+
+| heuristic | accuracy | row-housing precision |
+|---|---|---|
+| civic address (`49 WHEATGRASS BAY` vs `Unit 105 - 3400 MCDONALD`) — per roll | 76.0% | **36.5%** |
+| the same, by whole-development majority vote | 72.9% | **61.7%** |
+| dwelling units per acre (apartments median 23.5, row housing 16.7) | 91.9% | below the 95.7% you get by always answering "apartment" |
+
+Nearly four in ten "row housing" labels would be wrong. A six-plex at 31 Main
+St and a six-unit row house at 31 Main St are genuinely identical in the
+address field. In an appraisal tool a confidently wrong label costs more than a
+blank one, so `unknown` is a first-class answer and the address is not used.
+
+**Why the inventory ships from §6e's script rather than its own.** It is the
+same universe — the multi-family set before event detection — so `MIN_DU` and
+the farm exclusion are defined once. Two scripts would be two places for them
+to drift, and the whole point of the pair is that "existing" and "new"
+describe one population at different times. `web/test/mfInventory.test.js`
+asserts every roll in `mf-newbuild/` is present in `mf-inventory/`; if that
+ever fails the two families have diverged and any comparison between the
+overlays is meaningless.
+
+**Why the inventory is a shard at all**, when `Dwelling_Units` already rides on
+every parcel via `PARCEL_OUTFIELDS`: the shard is what carries the **colony
+exclusion**. Filtering the fabric on unit count alone lights up 1,222 Hutterite
+colony rolls at 20–35 units each — multi-family in the arithmetic sense and
+useless as comparables. Membership of the shard is the definition; the `DU ≥`
+box narrows it from there.
+
+**The threshold.** It re-filters in place with no fetch — the shard holds every
+qualifying roll and the bar only ever moves *up*. It clamps to **3**, the floor
+the shards ship with, because 1- and 2-unit rolls were never published and the
+control must not imply they are being hidden. The legend drops bands entirely
+below the bar so it never promises a colour the map will not draw. Measured on
+Selkirk: 68 parcels / 1,866 units at 3+, 27 parcels / 1,493 units at 20+.
+
+**Rebuilding** (both, after a scrape delta):
+
+```
+cd web && npm run mf:shards       # ~2 min; also rewrites mf-inventory/
+cd web && npm run condo:shards    # ~1 min
+Rscript ../r/build_condo_dev.R --report-only   # summaries, writes nothing
+```
+
+then publish and repin exactly as §1b. Both families are pinned by the same
+SHA as everything else in `mb-parcel-data`, so one repin covers all of them.
+
+**Colours are shared on purpose.** The inventory paints on the *same* unit ramp
+the New Multi-Family "Units" view uses — imported, not restated — because the
+two layers are read against each other constantly and a 24-unit building must
+not change colour between them. The condo palette is a deliberately different
+hue set (green / purple / orange / grey), and `web/test/condoDev.test.js`
+asserts it never collides with the New Multi-Family ramps, because both
+overlays can be on at once.
 
 ### 7. MLI historical aerial basemap  (cadence: on-demand)
 The complete MLI Ortho Refresh source is built locally and deliberately not
