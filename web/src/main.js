@@ -1046,9 +1046,40 @@ const PD_WEBSITES = {
   //     Southwest Planning District, so it is a town page, not the PD's.
   //   STE. ROSE — sterose.ca is a real municipal site with no planning or
   //     zoning section anywhere in its navigation.
-  // Also unkeyed, and NOT re-checked here: YELLOWHEAD, "Municipality of
-  // Roblin" and "Oakland-Wawanesa", which the dev-plan layer emits as
-  // PLANNINGDISTRICT values but which were never in this list.
+  // Three PLANNINGDISTRICT values are not planning districts at all — they
+  // are MUNICIPALITY names sitting in the column, confirmed against
+  // mb-municipalities.geojson. They are keyed here rather than in
+  // MUNI_TO_PD because MUNI_TO_PD cannot reach them: that fallback only
+  // fires when the dev-plan layer returns NO features
+  // (updatePdWebsiteButton's `if (!best)`), and these three ARE features,
+  // so `best` is set and the fallback is skipped. Keyed here they resolve;
+  // keyed there they would never be consulted.
+  //
+  // Two of the three genuinely administer their own planning, so the
+  // municipality IS the planning authority and its planning page is the
+  // right destination — the same reasoning as the member-RM pointers
+  // above, with the member and the district being one body:
+  'YELLOWHEAD':                        'https://www.yellowheadmunicipality.ca/p/building-permit',
+  // Yellowhead is NOT a Neepawa & Area member (the NAPD names only
+  // Neepawa, Rosedale and Glenella-Lansdowne); it administers permits from
+  // its own Shoal Lake office under By-Law #12/23.
+  'MUNICIPALITY OF ROBLIN':            'https://roblin.ca/planning-development',
+  'ROBLIN':                            'https://roblin.ca/planning-development',
+  // Both spellings: normalizePdKey does not strip a leading "MUNICIPALITY
+  // OF", so the value as written is the key that actually matches; the
+  // bare name guards the spelling the province could switch to. Note
+  // roblinmanitoba.com (still in MUNI_WEBSITES) now redirects to roblin.ca.
+  //
+  // Oakland-Wawanesa is the odd one out: the column names the
+  // municipality, but the municipality has DELEGATED planning to Keystone
+  // — its own site says "administration of all planning functions
+  // including building permits will be received and available at the RM of
+  // Cornwallis office", a Keystone member, and it uses Keystone's
+  // CityReporter portal. So this points at the PD, not the muni.
+  // keystonepd.ca's own member list (Elton, Cornwallis, Souris-Glenwood,
+  // Whitehead) has simply not caught up; the municipality is the better
+  // authority on who does its planning.
+  'OAKLAND-WAWANESA':                  'https://www.keystonepd.ca/',
 };
 
 /** Normalize a PLANNINGDISTRICT value the way PD_WEBSITES is keyed.
