@@ -106,7 +106,7 @@ export function newestSnapshot(histIndex) {
  * @param {Date}   [opts.now]       injectable clock for the schedule rules
  */
 export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMeta,
-                                waterMeta, floodMeta, landfactsMeta, now = new Date() } = {}) {
+                                waterMeta, floodMeta, landfactsMeta, mfnbMeta, now = new Date() } = {}) {
   const rows = [];
   const ds = manifest?.datasets || {};
   // Schedules, as registered in Task Scheduler on the build machine:
@@ -201,6 +201,20 @@ export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMet
     detail: lfYears
       ? `AAFC crop inventory ${lfYears[0]}–${lfYears[lfYears.length - 1]}, MRDEM, wetland inventory, surface water — parcels over ${landfactsMeta?.min_acres ?? 20} ac with a MASC rating`
       : 'AAFC crop inventory, MRDEM, wetland inventory, surface water',
+    next: null,
+  });
+
+  // Multi-family new construction, built by r/build_mf_newbuild.R off the MAO
+  // scrape's assessed building-value history. The detail names the window and
+  // the unit gate because both are tunable at build time — a reader comparing
+  // two vintages needs to know whether the thresholds moved under them.
+  const mfWin = Array.isArray(mfnbMeta?.window) ? mfnbMeta.window : null;
+  rows.push({
+    label: 'MF new-build shards (CDN)',
+    vintage: dateLabel(datePart(mfnbMeta?.generated_at)),
+    detail: mfWin
+      ? `Assessed building-value events ${mfWin[0]}–${mfWin[1]} on rolls with ${mfnbMeta?.min_du ?? 3}+ dwelling units, colonies excluded — ${mfnbMeta?.roll_count ?? '?'} rolls, ${mfnbMeta?.event_count ?? '?'} events`
+      : 'Multi-family construction dated from assessed building value',
     next: null,
   });
 

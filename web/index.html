@@ -1093,6 +1093,13 @@
             <button id="water-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Water Influence — colours the result parcels by waterfront classification. DARK BLUE = actual frontage (Direct / Waterfront / Reserve separated); PALE BLUE = near water but no frontage, because a road or another parcel lies between (the 'second row', often a view). Reads the same pre-baked data as the Water column, so no extra fetch. Screening aid from provincial/federal mapping — not a survey.">
               <span class="overlay-btn-label">Water Influence</span>
             </button>
+            <!-- New Multi-Family colours the RESULT PARCELS themselves by
+                 when apartment-scale construction landed on their assessment
+                 roll, so it belongs with the parcel layers - not with the
+                 Agricultural overlays, whose gate is farmland acreage. -->
+            <button id="mfnb-toggle" type="button" class="overlay-btn" aria-pressed="false" title="New Multi-Family &mdash; tri-state cycle. 1st click &rarr; Year: every roll in the selected municipality where an apartment-scale building landed on the assessment roll since 2016, shaded red by how recently (pale = 2016-17, dark = 2026+). 2nd click &rarr; Units: the same rolls shaded blue by current dwelling units (3-5 up to 100+). 3rd click &rarr; off. Also turns on Assessment Parcels so each coloured parcel answers a click, and shows the New MF column. Detected from 20 years of assessed BUILDING VALUE, not permits &mdash; Manitoba freezes values between biennial reassessments, so a mid-cycle jump is physical change. 3+ dwelling units, Hutterite colonies excluded. Years are assessment years and trail completion by about a year.">
+              <span class="overlay-btn-label">New Multi-Family</span>
+            </button>
             <!-- Its two search filters sit directly beneath it: ticking one
                  also arms the overlay above, so keeping them adjacent makes
                  that coupling visible instead of surprising. Pure post-filters
@@ -1402,6 +1409,9 @@
       <!-- Filled by main.js renderLandfactsLegend() from COVER_GROUPS in
            lib/landfacts.js, so the map, popup strip and legend never drift. -->
       <div id="landfacts-legend" class="map-legend masc-legend" hidden></div>
+      <!-- Filled by main.js renderMfnbLegend() from YEAR_RAMP / UNITS_RAMP in
+           lib/mfNewbuild.js, so the map and the legend never drift. -->
+      <div id="mfnb-legend" class="map-legend masc-legend" hidden></div>
       <!-- Historical zoning / dev-plan keys. Separate boxes from #zoning-legend
            so the as-of layer and the current-day Zoning Layer can be read side
            by side without one clobbering the other's list — comparing the two
@@ -1798,6 +1808,11 @@
                  r/build_landfacts.R for parcels >20 acres with a MASC
                  rating. Hidden by default; surfaced by the Agricultural preset. -->
             <th data-col="landfacts" title="Crop history from the AAFC Annual Crop Inventory: the last observed year's dominant class and how many observed years since 2009 were at least half annual crop (e.g. Canola 2025 · 15/17). Hover for every year, relief and slope (MRDEM 30 m), mapped wetland (Canadian Wetland Inventory, 10 m) and open water (1984-2021). Satellite classification, not a cropping record — AAFC targets 85% accuracy nationally and publishes none per parcel. Only for parcels >20 acres with a MASC rating; blank means no data was loaded for that municipality.">Land Facts</th>
+            <!-- New MF - multi-family construction dated off assessed building
+                 value 2016+, pre-baked per muni by r/build_mf_newbuild.R for
+                 rolls with 3+ dwelling units. Hidden by default; surfaced by
+                 the New Multi-Family overlay. -->
+            <th data-col="mfnb" title="Multi-family construction on this roll: the year an apartment-scale building first appeared in the assessed BUILDING VALUE, how many further events the roll carries, and its current dwelling-unit count (e.g. 2017 +1 &middot; 270 DU). Hover for every event with the value before and after, and for at-sale unit counts where the roll sold. Detected from value history, not building permits - Manitoba freezes assessed values between biennial reassessments, so a mid-cycle jump is physical change. Dwelling units are TODAY's count, not the count at the event: MAO publishes no unit history. Years are assessment years and trail completion by about a year. Blank means no data was loaded for that municipality; a dash means no qualifying construction.">New MF</th>
             <th data-col="streetview" title="Open Google Street View at this parcel (nearest panorama to the parcel centre)">StreetView</th>
           </tr>
         </thead>

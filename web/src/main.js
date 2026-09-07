@@ -134,6 +134,7 @@ import {
   fetchFloodOverlay,
   fetchFloodForMuni,
   fetchLandfactsForMuni,
+  fetchMfNewbuildForMuni,
   fetchSurveyGridForMuni,
   fetchProvinceSectionGrid,
   fetchRiverLots,
@@ -213,6 +214,7 @@ import {
   setSurveyGridVisible,
   setLandCoverVisible,
   setLandfactsVisible,
+  setMfNewbuildVisible,
   setWaterInfluenceVisible,
   setHistoricalData,
   setHistoricalVisible,
@@ -255,6 +257,11 @@ import {
   landfactsCsvHeaders, landfactsCsvCells, cropRampStep, CROP_RAMP, COVER_GROUPS,
   LANDFACTS_MODES, landfactsFillColor, LANDFACTS_MIN_ACRES,
 } from './lib/landfacts.js';
+import {
+  mfnbCellText, mfnbTooltip, mfnbSortRank, mfnbCsvHeaders, mfnbCsvCells,
+  mfnbFillColor, mfnbLegendSteps, MFNB_MODES, MFNB_MIN_DU, MFNB_FROM_YEAR,
+  readMfnb, primaryYear, bestConfidence, MFNB_CONFIDENCE,
+} from './lib/mfNewbuild.js';
 import { resolveParcelAcres, formatRollSizeField, parseRollFrontageFeet } from './lib/acres.js';
 import { rollDisplay } from './lib/parcelLabelFields.js';
 import { createMuniParcelResolver } from './lib/muniParcelRecords.js';
@@ -576,6 +583,8 @@ const $waterToggle     = document.getElementById('water-toggle');
 const $landcoverLegend = document.getElementById('landcover-legend');
 const $landfactsToggle = document.getElementById('landfacts-toggle');
 const $landfactsLegend = document.getElementById('landfacts-legend');
+const $mfnbToggle      = document.getElementById('mfnb-toggle');
+const $mfnbLegend      = document.getElementById('mfnb-legend');
 const $gridToggle    = document.getElementById('grid-toggle');
 const $historicalToggle   = document.getElementById('historical-toggle');
 const $historicalYear     = document.getElementById('historical-year');
@@ -1327,6 +1336,9 @@ const SORT_KEYS = {
   flood:   (r) => floodSortRank(r.parcel.properties._flood),
   // Land facts — most-cropped first (share of observed years), unstamped last.
   landfacts: (r) => landfactsSortRank(r.parcel.properties._landfacts),
+  // MF new construction — most recent on the roll first, unit count breaking
+  // ties within a year, unstamped rows last.
+  mfnb:    (r) => mfnbSortRank(r.parcel.properties._mfnb),
   streetview: (r) => strKey(r.parcel.geometry ? '1' : ''),
   value:   (r) => finiteOrNeg(parseTotalValue(r.parcel.properties.Total_Value)),
   report:  (r) => strKey(r.parcel.properties.Asmt_Rpt_Url),
@@ -2439,6 +2451,7 @@ function refreshOverlayGroupCounts() {
 })();
 $mascToggle.addEventListener('click', () => toggleMascOverlay());
 if ($landfactsToggle) $landfactsToggle.addEventListener('click', () => toggleLandfactsOverlay());
+if ($mfnbToggle) $mfnbToggle.addEventListener('click', () => toggleMfNewbuildOverlay());
 $cliToggle.addEventListener('click', () => toggleCliOverlay());
 if ($landcoverToggle) $landcoverToggle.addEventListener('click', () => toggleLandCoverOverlay());
 if ($waterToggle) $waterToggle.addEventListener('click', () => toggleWaterInfluenceOverlay());
@@ -4393,7 +4406,7 @@ async function runSearch() {
       const waterRows = parcelFc.features.map((p) => ({ parcel: p, zoning: [], devPlan: [] }));
       // Flood zones ride along for the same reason and at the same cost —
       // another pre-baked per-muni dictionary, one lookup per row.
-      await Promise.all([stampWaterInfluence(waterRows), stampFloodZones(waterRows), stampLandfacts(waterRows)]);
+      await Promise.all([stampWaterInfluence(waterRows), stampFloodZones(waterRows), stampLandfacts(waterRows), stampMfNewbuild(waterRows)]);
       if (waterFilterActive()) {
         setCount(`${baseMsg} · Checking water-rights licences…`);
         const rows = waterRows;
@@ -6880,6 +6893,44 @@ async function stampLandfacts(rows) {
   }
 }
 
+/**
+ * Stamp `_mfnb` / `_mfnbLoaded` on every row from the per-muni multi-family
+ * new-construction shards (r/build_mf_newbuild.R). Same shape and reasons as
+ * stampLandfacts: the join is pre-baked, the client only looks each roll up.
+ *
+ * `_mfnbLoaded` matters more here than on the other overlays. Most munis have
+ * NO shard at all and most rolls inside a shard's muni are absent from it —
+ * about 600 rolls province-wide qualify. Without the loaded flag every one of
+ * those would be indistinguishable from a failed fetch, and "no multi-family
+ * construction here" would read the same as "we never looked".
+ */
+async function stampMfNewbuild(rows) {
+  try {
+    const muniNames = [...new Set(
+      (rows || []).map((r) => r?.parcel?.properties?.Muni_Name_With_Typ).filter(Boolean),
+    )];
+    if (!muniNames.length) return;
+    const dicts = await Promise.all(
+      muniNames.map((m) => fetchMfNewbuildForMuni(m).catch(() => null)),
+    );
+    const byMuni = new Map();
+    muniNames.forEach((m, i) => { if (dicts[i]) byMuni.set(m, dicts[i]); });
+    for (const row of rows) {
+      const p = row?.parcel?.properties;
+      const dict = p?.Muni_Name_With_Typ ? byMuni.get(p.Muni_Name_With_Typ) : null;
+      if (!dict) continue;
+      p._mfnbLoaded = true;
+      const hit = p?.Roll_No_Txt ? dict[p.Roll_No_Txt] : null;
+      if (hit) p._mfnb = hit;
+      const color = mfnbColorFor(hit);
+      if (color) p._mfnbColor = color;
+      else if (p._mfnbColor) delete p._mfnbColor;
+    }
+  } catch (err) {
+    console.warn('MF new-build enrichment failed (non-fatal):', err);
+  }
+}
+
 async function stampFloodZones(rows) {
   try {
     const muniNames = [...new Set(
@@ -7126,7 +7177,7 @@ async function enrichOverlays(parcelFc, inputs, baseMsg, { skipDevPlan = false }
     console.warn('land-cover enrichment failed (non-fatal):', err);
   }
 
-  await Promise.all([stampWaterInfluence(rows), stampFloodZones(rows), stampLandfacts(rows)]);
+  await Promise.all([stampWaterInfluence(rows), stampFloodZones(rows), stampLandfacts(rows), stampMfNewbuild(rows)]);
 
   // Stamp the most-common assessment year into the Total Value column
   // header so users can tell which assessment cycle the dollar figure
@@ -8857,6 +8908,13 @@ function resetMascAndGridToggles() {
     landfactsLoadedFor = null;
     if (landfactsOverlayOn) mapReady.then(() => turnLandfactsOff());
   }
+  // New Multi-Family: muni-scoped the same way, for the same reason — the
+  // previous municipality's flagged blocks must not stay painted over a
+  // scope that no longer contains them.
+  if (mfnbLoadedFor && mfnbLoadedFor !== desiredOverlayKey) {
+    mfnbLoadedFor = null;
+    if (mfnbOverlayOn) mapReady.then(() => turnMfnbOff());
+  }
   // Survey grid: same cache key as Zoning / Dev Plan / MASC / CLI in
   // sales-CSV mode — the joined matched-muni list, or the dropdown's
   // value, or the __PROVINCE__ sentinel for "any muni" loads. A
@@ -9577,6 +9635,187 @@ async function toggleLandfactsOverlay() {
   setColumnVisible('landfacts', true);
   renderLandfactsLegend(landfactsMode);
   if ($landfactsLegend) $landfactsLegend.hidden = false;
+}
+
+// ---------------------------------------------------------------------------
+// Multi-family new construction (r/build_mf_newbuild.R + lib/mfNewbuild.js).
+//
+// Same lifecycle as Crop History — muni-wide fabric for the current scope,
+// `_mfnbColor` from the shard, fill layers flipped, column surfaced — and the
+// same two-view cycle: Year on the roll, then Units, then off. Both views read
+// the one `_mfnb` stamp, so switching is a recolour and never a fetch.
+//
+// It does NOT fight Crop History or Land Cover for the fabric. Those two paint
+// every parcel and so must yield to each other; this paints roughly 600 rolls
+// province-wide, and an appraiser comparing a new apartment block against the
+// farmland around it has a real reason to run it over either. Leaving them all
+// on is legible because this layer is sparse and outlined.
+// ---------------------------------------------------------------------------
+let mfnbOverlayOn = false;
+let mfnbMode = null;          // null | 'year' | 'units'
+let mfnbLoadedFor = null;
+
+/** Fill colour under the CURRENT view (Year while the overlay is off, so a
+ *  later first turn-on needs no recolour). null when the roll has no events. */
+function mfnbColorFor(hit) {
+  return hit ? mfnbFillColor(hit, mfnbMode || 'year') : null;
+}
+
+function nextMfnbMode(current) {
+  if (current === null)   return 'year';
+  if (current === 'year') return 'units';
+  return null; // 'units' -> off
+}
+
+function mfnbButtonLabelFor(mode) {
+  return mode ? `New Multi-Family (${MFNB_MODES[mode].label})` : 'New Multi-Family';
+}
+
+/** Re-derive `_mfnbColor` under the current view for everything already
+ *  stamped — the muni fabric and the search-result parcels — and push both
+ *  sources again. No fetch: the stamp holds every event. */
+function recolorMfnb() {
+  const recolor = (fc) => {
+    let painted = 0;
+    for (const f of fc?.features || []) {
+      const p = f.properties;
+      if (!p?._mfnb) continue;
+      const color = mfnbColorFor(p._mfnb);
+      if (color) { p._mfnbColor = color; painted += 1; } else if (p._mfnbColor) delete p._mfnbColor;
+    }
+    return painted;
+  };
+  let painted = 0;
+  if (auxData.muniParcels?.features?.length) {
+    painted = recolor(auxData.muniParcels);
+    setMuniParcelsData(map, auxData.muniParcels);
+  }
+  const src = map.getSource('parcels');
+  const resultFc = src?._data;
+  if (resultFc && typeof resultFc === 'object' && Array.isArray(resultFc.features)) {
+    recolor(resultFc);
+    src.setData(resultFc);
+  }
+  return painted;
+}
+
+/** Stamp `_mfnbColor` (+ `_mfnb`) on every fabric parcel from each muni's
+ *  MF new-build shard. Returns how many parcels got a colour. */
+async function stampMfNewbuildOnFabric(fabricFc, munis) {
+  if (!fabricFc?.features?.length) return 0;
+  const dicts = await Promise.all(munis.map((m) => fetchMfNewbuildForMuni(m).catch(() => null)));
+  const byMuni = new Map();
+  munis.forEach((m, i) => { if (dicts[i]) byMuni.set(m, dicts[i]); });
+  let painted = 0;
+  for (const f of fabricFc.features) {
+    const p = f.properties || (f.properties = {});
+    const dict = p.Muni_Name_With_Typ ? byMuni.get(p.Muni_Name_With_Typ) : null;
+    if (dict) p._mfnbLoaded = true;
+    const hit = (dict && p.Roll_No_Txt) ? dict[p.Roll_No_Txt] : null;
+    const color = mfnbColorFor(hit);
+    if (color) {
+      p._mfnb = hit;
+      p._mfnbColor = color;
+      painted += 1;
+    } else if (p._mfnbColor) {
+      delete p._mfnbColor;
+    }
+  }
+  return painted;
+}
+
+function renderMfnbLegend(mode) {
+  if (!$mfnbLegend) return;
+  const items = mfnbLegendSteps(mode)
+    .map((b) => `<li><span class="swatch" style="background:${b.color}"></span>${b.label}</li>`)
+    .join('');
+  const title = (MFNB_MODES[mode] || MFNB_MODES.year).legend;
+  $mfnbLegend.innerHTML =
+    `<strong>${title}</strong><ul>${items}</ul>`
+    + `<small style="display:block;margin-top:4px;color:#6b7280;font-style:italic">`
+    + `${MFNB_MIN_DU}+ dwelling units, colonies excluded · from assessed building value ${MFNB_FROM_YEAR}+ · `
+    + `years are assessment years and trail completion by about a year</small>`;
+}
+
+function turnMfnbOff() {
+  mfnbOverlayOn = false;
+  mfnbMode = null;
+  setMfNewbuildVisible(map, false);
+  if ($mfnbToggle) {
+    setOverlayPressed($mfnbToggle, false);
+    setOverlayBtnLabel($mfnbToggle, mfnbButtonLabelFor(null));
+  }
+  if ($mfnbLegend) $mfnbLegend.hidden = true;
+}
+
+async function toggleMfNewbuildOverlay() {
+  if (!$mfnbToggle) return;
+  await mapReady;
+  const targetMode = nextMfnbMode(mfnbMode);
+  if (targetMode === null) { turnMfnbOff(); return; }
+
+  // Already on: the next view is a recolour of what is stamped, no load.
+  if (mfnbOverlayOn) {
+    mfnbMode = targetMode;
+    recolorMfnb();
+    setOverlayBtnLabel($mfnbToggle, mfnbButtonLabelFor(targetMode));
+    renderMfnbLegend(targetMode);
+    return;
+  }
+  mfnbMode = targetMode;
+
+  const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
+    ? csvMatchedMunis.slice()
+    : ($municipality.value ? [$municipality.value] : []);
+  const scopeKey = muniParcelsLoadKey();
+  if (munis.length > 0 && mfnbLoadedFor !== scopeKey) {
+    $mfnbToggle.disabled = true;
+    setOverlayBtnLabel($mfnbToggle, 'Loading…');
+    try {
+      if (!auxData.muniParcels?.features?.length || muniParcelsLoadedFor !== scopeKey) {
+        const fc = await fetchMuniParcelsForCurrentScope();
+        await enrichFcWithLegals(fc).catch((err) => {
+          console.warn('Legal enrichment for MF new-build fabric failed (non-fatal):', err);
+        });
+        auxData.muniParcels = fc;
+        auxLoaded.muniParcels = true;
+        muniParcelsLoadedFor = scopeKey;
+        // Same reason as the Crop History path: claiming auxLoaded.muniParcels
+        // is what scopes the vector-tile fabric to the municipality, and
+        // without it nothing renders and no click fires.
+        setMuniParcelsScope(map, scopedOverlayMunis());
+      }
+      await stampMfNewbuildOnFabric(auxData.muniParcels, munis);
+      setMuniParcelsData(map, auxData.muniParcels);
+      mfnbLoadedFor = scopeKey;
+    } catch (err) {
+      console.warn('New Multi-Family fabric load failed', err);
+      mfnbMode = null;
+      setOverlayBtnLabel($mfnbToggle, mfnbButtonLabelFor(null));
+      $mfnbToggle.disabled = false;
+      return;
+    } finally {
+      $mfnbToggle.disabled = false;
+    }
+  } else if (munis.length > 0) {
+    // Already stamped for this scope, but under whichever view was showing
+    // when the overlay last went off (Units, at the end of a full cycle).
+    recolorMfnb();
+  }
+
+  // A coloured parcel that does not answer a click is a trap — switch the
+  // fabric on through its own toggle if it is not already.
+  if ($muniParcelsToggle && !$muniParcelsToggle.classList.contains('active')) {
+    await toggleAuxOverlay('muniParcels');
+  }
+
+  mfnbOverlayOn = true;
+  setMfNewbuildVisible(map, true);
+  setOverlayPressed($mfnbToggle, true);
+  setOverlayBtnLabel($mfnbToggle, mfnbButtonLabelFor(mfnbMode));
+  setColumnVisible('mfnb', true);
+  renderMfnbLegend(mfnbMode);
+  if ($mfnbLegend) $mfnbLegend.hidden = false;
 }
 
 function nextLandCoverMode(current) {
@@ -10814,6 +11053,7 @@ function renderTable(rows, { resetPage = true } = {}) {
     tr.appendChild(walkCell(row));
     tr.appendChild(floodCell(row));
     tr.appendChild(landfactsCell(row));
+    tr.appendChild(mfnbCell(row));
     tr.appendChild(streetViewCell(row));
     frag.appendChild(tr);
   }
@@ -12071,6 +12311,44 @@ function landfactsCell(row) {
   }
   cell.appendChild(document.createTextNode(text));
   cell.title = landfactsTooltip(lf);
+  return cell;
+}
+
+/**
+ * "New MF" grid cell — the year an apartment-scale building landed on the
+ * roll, how many further events the roll carries, and its current unit count.
+ * Hover for every event with the value before and after, plus at-sale unit
+ * counts where the roll sold.
+ *
+ * Three states, as for Land Facts: shard never loaded -> blank; shard loaded
+ * but roll absent -> em dash in the empty style (no qualifying multi-family
+ * construction, which for most rolls is the truth, not an error); stamped ->
+ * the text.
+ */
+function mfnbCell(row) {
+  const cell = document.createElement('td');
+  cell.className = 'landfacts-cell';
+  const p = row.parcel.properties || {};
+  const m = readMfnb(p._mfnb);
+  const text = mfnbCellText(m);
+  if (!text) {
+    if (p._mfnbLoaded) { cell.textContent = '—'; cell.classList.add('empty'); }
+    return cell;
+  }
+  const color = mfnbFillColor(m, 'year');
+  if (color) {
+    const dot = document.createElement('span');
+    dot.className = 'water-dot';
+    dot.style.background = color;
+    // The dot carries the confidence, because that is the one thing a reader
+    // cannot infer from the year and the unit count, and it is what decides
+    // whether the row is evidence or a lead.
+    const conf = bestConfidence(m);
+    dot.title = `${primaryYear(m)} · ${conf ? MFNB_CONFIDENCE[conf] : ''}`;
+    cell.appendChild(dot);
+  }
+  cell.appendChild(document.createTextNode(text));
+  cell.title = mfnbTooltip(m);
   return cell;
 }
 
@@ -13378,6 +13656,7 @@ function exportCsv(explicitRows) {
     // on "Statutory", not on "RRV DFA 62% +1".
     'Flood Zone', 'Flood Zone Type', 'Flood Zone Coverage (%)', 'Flood Zones (all)',
     ...landfactsCsvHeaders(),
+    ...mfnbCsvHeaders(),
     // Tiled / Irrigated lead their groups so a sales spreadsheet can
     // filter or pivot on one column instead of testing whether a licence
     // string is blank.
@@ -13487,6 +13766,7 @@ function exportCsv(explicitRows) {
       ...waterCsvCells(p._water, !!p._waterLoaded),
       ...floodCsvCells(p._flood, !!p._floodLoaded),
       ...landfactsCsvCells(p._landfacts, !!p._landfactsLoaded),
+      ...mfnbCsvCells(p._mfnb, !!p._mfnbLoaded),
       ...tileDrainageCsvCells(p),
       ...irrigationCsvCells(p),
       formatChanges(row),
