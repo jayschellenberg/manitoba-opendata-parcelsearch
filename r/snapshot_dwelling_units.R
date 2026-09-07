@@ -221,7 +221,28 @@ man <- list(
     list(file = f, rows = n)
   })
 )
-jsonlite::write_json(man, man_path, auto_unbox = TRUE, pretty = TRUE)
+# Rewrite ONLY when the file list actually changed. This directory is a git
+# repo published by commit SHA, and a scheduled monthly run that touches
+# nothing but a `generated_at` stamp would leave it dirty after every quiet
+# cycle. A repo that is always dirty is a repo whose status nobody reads, and
+# the one thing that must stay noticeable here is an unexpected delta.
+write_manifest <- TRUE
+if (file.exists(man_path)) {
+  old_files <- tryCatch(
+    jsonlite::fromJSON(man_path, simplifyVector = FALSE)$files,
+    error = function(e) NULL)
+  same <- !is.null(old_files) && length(old_files) == length(man$files) &&
+    all(vapply(seq_along(man$files), function(i) {
+      identical(as.character(old_files[[i]]$file), as.character(man$files[[i]]$file)) &&
+      identical(as.integer(old_files[[i]]$rows), as.integer(man$files[[i]]$rows))
+    }, logical(1)))
+  if (isTRUE(same)) write_manifest <- FALSE
+}
+if (write_manifest) {
+  jsonlite::write_json(man, man_path, auto_unbox = TRUE, pretty = TRUE)
+} else {
+  cat("[du-snapshot] manifest unchanged - left alone\n")
+}
 
 st <- replay_state(snap_dir)
 cat(sprintf("\nDone. %d files in %s; state now %s rolls / %s units\n",
