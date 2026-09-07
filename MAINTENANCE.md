@@ -904,6 +904,37 @@ task, not MAO. If a batch is more than ~3 weeks late, log into MAO by hand
 and check a busy municipality (Brandon, Steinbach, Springfield) before
 touching the scrape.
 
+**When that manual check comes back empty, you are done — that is the
+answer, not the start of an investigation.** Walked for real on 2026-09-07,
+21 days after the 2026-08-17 cut: Jason checked Brandon by hand and MAO had
+nothing newer either. Two things follow. First, **the ~3-week figure is a
+prompt to look, not a fault threshold** — a clean manual check means the
+gap is real on MAO's side and the only correct action is to wait. Do not
+force a deep re-scrape, re-register the tasks, or clear the ledger to
+"unstick" it; there is nothing stuck, and a forced full sweep costs hours
+and risks the one-scraper-at-a-time invariant for no gain. Second, if you
+want to confirm it from the archive without logging in at all, compare
+volume against history: the province carries **~159 sales per weekday**
+(400-600/week, steady May-Aug 2026). Multiple weeks of zero is not the
+market pausing, it is MAO not publishing. A genuine scrape fault shows up
+in checks 1-3 above, never as a clean taper.
+
+**The last posted days are PARTIAL — "posted through" is a soft edge.**
+Sales reach MAO as they register, so the final days of any window are only
+fractionally filled and keep backfilling for weeks. Daily counts into the
+2026-08-17 cut: Aug 4 273, Aug 6 158, Aug 11 118, Aug 13 88, Aug 17 **34** —
+the last posted day sat at ~21% of the 159/day weekday mean. So the boundary
+date is where data *stops*, not where it is *complete*.
+
+Two consequences. For **comp selection**, treat roughly the last week before
+the "posted through" date as still filling in; a job that turns on very
+recent evidence should say so, or use a window that ends a week short.
+For **reading the digest**, expect the next batch to both extend past the
+cut AND backfill the tail, so it lands far larger than a normal week
+(~2,000+ rows after a 3-week gap). That spike is catch-up, not a bug — and
+it is why `new_sales` alone is a poor freshness signal: the number can be
+large while the newest *sale date* has not moved at all.
+
 ## Continuous integration
 
 GitHub Actions is enabled for the account (the earlier account-level
