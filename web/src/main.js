@@ -9870,9 +9870,10 @@ function mfnbColorFor(hit) {
 }
 
 function nextMfnbMode(current) {
-  if (current === null)   return 'year';
-  if (current === 'year') return 'units';
-  return null; // 'units' -> off
+  if (current === null)    return 'year';
+  if (current === 'year')  return 'units';
+  if (current === 'units') return 'type';
+  return null; // 'type' -> off
 }
 
 function mfnbButtonLabelFor(mode) {
@@ -9945,7 +9946,9 @@ function renderMfnbLegend(mode) {
     // width - which pushed the panel across the map on a narrow window.
     + `<small style="display:block;margin-top:4px;color:#6b7280;font-style:italic">`
     + `${MFNB_MIN_DU}+ dwelling units (excluding colonies)<br>`
-    + `from assessed building value ${MFNB_FROM_YEAR}+<br>`
+    + (mode === 'type'
+        ? `type is hand-labelled in mf-type-overrides.csv, never inferred<br>`
+        : `from assessed building value ${MFNB_FROM_YEAR}+<br>`)
     + `years are assessment years and trail completion by about a year</small>`;
 }
 

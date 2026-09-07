@@ -75,6 +75,33 @@
 # missed; the value series is the trigger and DU is only the filter.
 #
 # ---------------------------------------------------------------------------
+# BUILDING TYPE - row housing vs apartment - IS HAND-LABELLED, ON PURPOSE
+#
+# mf-type-overrides.csv beside this script carries `muni_no, roll_no_txt, type`
+# where type is row | apt | mixed, and it is the ONLY source of the `ty` field.
+# Nothing is inferred, because four separate signals were measured against
+# MAO's own structure descriptor and every one of them failed:
+#
+#   civic address "Unit N -" vs a street address   36.5% row-housing precision
+#   the same, by whole-development majority vote   61.7%
+#   a civic address that is a NUMBER RANGE
+#     ("147 - 153 CHAMPAGNE ST")                   20.0% at DU >= 3
+#   dwelling units per acre                        below always-guessing-apartment
+#
+# The range one is the most instructive: apartment blocks span two municipal
+# addresses just as readily as row houses do ("62 - 64 EVELINE ST" is 36 units),
+# and only one of the five known developments Jason supplied even has a range.
+#
+# The assessment CLASS cannot help either, and the reason is worth recording so
+# nobody re-tests it: RESIDENTIAL 1 vs 2 tracks UNIT COUNT (1-4 vs 5+), not
+# building form. Labelled row-housing rolls sit in R1 only because they are 3-
+# and 4-unit blocks; the 58-91 unit rental row housing Jason identified is
+# RESIDENTIAL 2, exactly like an apartment block of the same size.
+#
+# So `ty` is absent unless a human put it there. A roll with no override gets
+# no type, and the map shows it as "not typed" rather than guessing.
+#
+# ---------------------------------------------------------------------------
 # ASSESSMENT LAG — `y` is the first tax year the building is ASSESSED, which
 # trails physical completion, typically by about a year, and a partly built
 # structure can be assessed at part value first. Treat it as "on the roll by",
@@ -88,6 +115,8 @@
 #         du  current dwelling units
 #         ad  civic address
 #         cl  property classes in the latest year, abbreviated
+#         ty  "row" | "apt" | "mixed" - ONLY when hand-labelled in
+#             mf-type-overrides.csv; absent otherwise, never inferred
 #         e   every event, oldest first:
 #             {y year, k "appeared"|"expanded"|"new_roll",
 #              b building value at y, bp value the year before,
@@ -169,6 +198,44 @@ safe_filename <- function(x) {
 }
 
 `%||%` <- function(a, b) if (is.null(a) || length(a) == 0) b else a
+
+# --- hand-labelled building types --------------------------------------------
+# Absent file is normal, not an error: the layer works without any labels, it
+# simply types nothing. A bad `type` value is an error, though - silently
+# dropping a row Jason meant to label would be worse than stopping.
+ov_path <- parse_arg("overrides", file.path(mb_parcelsearch_root, "mf-type-overrides.csv"))
+overrides <- tibble(muni_no = integer(), roll_no_txt = character(), ty = character())
+if (file.exists(ov_path)) {
+  ov <- readr::read_csv(ov_path, show_col_types = FALSE, progress = FALSE,
+                        col_types = readr::cols(.default = readr::col_character()))
+  need <- c("muni_no", "roll_no_txt", "type")
+  miss <- setdiff(need, names(ov))
+  if (length(miss)) stop("mf-type-overrides.csv is missing column(s): ", paste(miss, collapse = ", "))
+  ov <- ov |>
+    transmute(muni_no = suppressWarnings(as.integer(muni_no)),
+              roll_no_txt = trimws(as.character(roll_no_txt)),
+              ty = tolower(trimws(as.character(type)))) |>
+    filter(!is.na(muni_no), nzchar(roll_no_txt), nzchar(ty))
+  bad <- setdiff(unique(ov$ty), c("row", "apt", "mixed"))
+  if (length(bad)) {
+    stop("mf-type-overrides.csv has unrecognised type(s): ", paste(bad, collapse = ", "),
+         " - expected row, apt or mixed")
+  }
+  # A roll labelled twice, differently, is a question for a human, not
+  # something to resolve by picking one.
+  dup <- ov |> count(muni_no, roll_no_txt) |> filter(n > 1)
+  if (nrow(dup)) {
+    stop("mf-type-overrides.csv labels the same roll more than once: ",
+         paste(dup$roll_no_txt, collapse = ", "))
+  }
+  # Roll numbers are written by hand; accept "104092" for "104092.000".
+  ov <- ov |> mutate(roll_no_txt = ifelse(grepl("[.]", roll_no_txt), roll_no_txt,
+                                          sprintf("%.3f", suppressWarnings(as.numeric(roll_no_txt)))))
+  overrides <- ov
+  cat(sprintf("[mf-newbuild] hand-labelled building types: %d (%s)\n", nrow(overrides),
+              paste(sprintf("%s %d", names(table(overrides$ty)), as.integer(table(overrides$ty))),
+                    collapse = ", ")))
+}
 
 cat("[mf-newbuild] reading", basename(th_path), "\n")
 th <- arrow::read_parquet(
@@ -391,6 +458,24 @@ rolls <- primary |>
            gsub(pattern = "INSTITUTIONAL PROPERTY", replacement = "INST", fixed = TRUE) |>
            gsub(pattern = "OTHER PROPERTY",         replacement = "OTHER", fixed = TRUE))
 
+rolls <- rolls |> left_join(overrides, by = c("muni_no", "roll_no_txt"))
+matched <- sum(!is.na(rolls$ty))
+if (nrow(overrides)) {
+  cat(sprintf("[mf-newbuild] overrides matched to flagged rolls: %d of %d\n",
+              matched, nrow(overrides)))
+  unmatched <- overrides |> anti_join(rolls, by = c("muni_no", "roll_no_txt"))
+  if (nrow(unmatched)) {
+    # Not fatal: a labelled roll may sit outside the event window (Niverville
+    # 46082 was built in 2015) yet still be in the inventory, where the label
+    # is applied below. Named so a genuine typo is visible rather than silent.
+    cat("[mf-newbuild] labelled rolls not in the flagged set (window or filter):\n")
+    for (i in seq_len(nrow(unmatched))) {
+      cat(sprintf("    muni %d roll %s (%s)\n", unmatched$muni_no[i],
+                  unmatched$roll_no_txt[i], unmatched$ty[i]))
+    }
+  }
+}
+
 cat("\n--- top 20 by building value at the primary event ---\n")
 print(as.data.frame(rolls |> arrange(desc(p_b)) |>
         transmute(y = p, k = p_k, c = p_c, municipality = substr(municipality, 1, 32),
@@ -444,6 +529,7 @@ unlink(list.files(output_dir, pattern = "^[^_].*[.]json$", full.names = TRUE))
 # it in the window. Same MIN_DU, same farm exclusion, same muni keys - see the
 # note in the header for why it lives here rather than in a script of its own.
 inv <- mf |>
+  left_join(overrides, by = c("muni_no", "roll_no_txt")) |>
   left_join(muni_map %||% tibble(muni_no = integer(), Muni_Name_With_Typ = character()),
             by = "muni_no") |>
   mutate(Muni_Name_With_Typ = coalesce(Muni_Name_With_Typ,
@@ -465,7 +551,8 @@ for (kk in sort(unique(inv$muni_key))) {
   rec <- list()
   for (i in seq_len(nrow(d))) {
     r <- d[i, ]
-    rec[[r$roll_no_txt]] <- list(du = r$dwelling_units, cl = r$cl, ad = r$civic_address)
+    rec[[r$roll_no_txt]] <- list(du = r$dwelling_units, cl = r$cl, ad = r$civic_address,
+                                 ty = if (!is.na(r$ty)) r$ty else NULL)
   }
   f <- file.path(inv_dir, paste0(kk, ".json"))
   jsonlite::write_json(rec, f, auto_unbox = TRUE, digits = NA, na = "null", null = "null")
@@ -505,6 +592,7 @@ for (kk in sort(unique(rolls$muni_key))) {
       ad = r$civic_address,
       cl = r$cl,
       p  = r$p,
+      ty = if (!is.na(r$ty)) r$ty else NULL,
       e  = lapply(seq_len(nrow(e)), function(j) list(
              y = e$y[j], k = e$k[j], b = round(e$b[j]), bp = round(e$bp[j]), c = e$c[j])))
     s <- sdu_key[[id]]
@@ -530,6 +618,12 @@ manifest[["_meta"]] <- list(
   excess_ratio    = EXCESS_RATIO,
   excludes        = "rolls carrying any FARM class in the latest year (Hutterite colonies)",
   roll_count      = nrow(rolls),
+  typed_count     = matched,
+  type_source     = paste("mf-type-overrides.csv - hand-labelled only. Row housing and",
+                          "apartments are indistinguishable in this data: address form,",
+                          "address ranges, unit density and assessment class were all",
+                          "measured against MAO's descriptor and all failed. Class in",
+                          "particular tracks UNIT COUNT (R1 = 1-4, R2 = 5+), not form."),
   event_count     = nrow(events),
   du_caveat   = paste("du is the CURRENT dwelling-unit count, not the count at any one",
                       "event; MAO publishes no DU history. sdu, where present, is at-sale",

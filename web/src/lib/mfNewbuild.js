@@ -47,6 +47,8 @@
  * two drift.
  */
 
+import { CONDO_TYPES } from './condoDev.js';
+
 // Minimum dwelling units in the shards. KEEP IN SYNC with MIN_DU in
 // r/build_mf_newbuild.R — the builder gates on the same value.
 export const MFNB_MIN_DU = 3;
@@ -91,10 +93,31 @@ export const UNITS_RAMP = Object.freeze([
   { max: Infinity, color: '#08306b', label: '100+' },
 ]);
 
+// Building type. Colours are the CONDO ones on purpose, imported rather than
+// restated: "row housing" must look the same whether the building is a rental
+// block in this layer or a condo development in that one, or the map teaches
+// the reader two different vocabularies for one idea.
+export const MFNB_TYPES = Object.freeze({
+  row:     { label: 'Row housing', color: CONDO_TYPES.row.color },
+  apt:     { label: 'Apartment',   color: CONDO_TYPES.apt.color },
+  mixed:   { label: 'Mixed',       color: CONDO_TYPES.mixed.color },
+  unknown: { label: 'Not typed',   color: CONDO_TYPES.unknown.color },
+});
+
 export const MFNB_MODES = Object.freeze({
   year:  { label: 'Year', legend: 'Multi-family on the roll by', ramp: YEAR_RAMP },
   units: { label: 'Units', legend: 'Dwelling units (current)', ramp: UNITS_RAMP },
+  type:  { label: 'Type', legend: 'Multi-family building type' },
 });
+
+/** The hand-labelled building type, or 'unknown'. NEVER inferred — see the
+ *  header of r/build_mf_newbuild.R for the four signals that were measured
+ *  and rejected, the assessment class among them. */
+export function mfnbType(m) {
+  const v = readMfnb(m);
+  if (!v) return null;
+  return MFNB_TYPES[v.ty] ? v.ty : 'unknown';
+}
 
 /** Tolerant read of the stamp — main.js may hand back a parsed object or
  *  nothing at all. Returns null for anything without at least one event. */
@@ -145,6 +168,7 @@ export function mfnbFillColor(m, mode) {
   const v = readMfnb(m);
   if (!v) return null;
   if (mode === 'units') return rampColor(UNITS_RAMP, v.du);
+  if (mode === 'type')  return MFNB_TYPES[mfnbType(v)].color;
   return rampColor(YEAR_RAMP, primaryYear(v));
 }
 
@@ -191,6 +215,9 @@ export function mfnbTooltip(m) {
     lines.push(`at sale: ${v.sdu.map(([yy, dd]) => `${yy}: ${dd} DU`).join(', ')}`);
   }
   lines.push(`${v.du} dwelling units today · class ${v.cl || '?'}`);
+  lines.push(v.ty
+    ? `Type: ${MFNB_TYPES[mfnbType(v)].label} (hand-labelled).`
+    : 'Type: not labelled. Row housing and apartments cannot be told apart from this data — see mf-type-overrides.csv.');
   lines.push('Years are assessment years and trail completion by about a year.');
   return lines.join('\n');
 }
@@ -218,6 +245,11 @@ export function mfnbCsvCells(m, loaded) {
 
 /** Legend rows for the active mode. */
 export function mfnbLegendSteps(mode) {
+  if (mode === 'type') {
+    return Object.keys(MFNB_TYPES).map((k) => ({
+      color: MFNB_TYPES[k].color, label: MFNB_TYPES[k].label,
+    }));
+  }
   return (MFNB_MODES[mode] || MFNB_MODES.year).ramp.map((s) => ({
     color: s.color, label: s.label,
   }));
