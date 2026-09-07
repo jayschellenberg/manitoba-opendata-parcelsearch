@@ -243,6 +243,36 @@ export function saleSizeState(props) {
 }
 
 /**
+ * Should this row report an area MEASURED FROM ITS POLYGON, on top of whatever
+ * the size line already said?
+ *
+ * True only where all three hold:
+ *
+ *   1. the pipeline resolved a size for the sale (so this is an export row,
+ *      not a pasted comp set already showing today's acreage), AND
+ *   2. that size carries no acreage — it is a frontage, a width, and
+ *      saleAcres refuses to convert one into the other, so the row currently
+ *      reports no area at all, AND
+ *   3. the boundary came back `confirmed` — verified_unchanged.
+ *
+ * (3) is what makes (2) safe to fill in. Everywhere else, measuring today's
+ * polygon for a sale would be substituting today's land for the land that
+ * sold, which is the whole error this module exists to prevent. On a verified-
+ * unchanged parcel the polygon on screen IS what sold, so measuring it is not
+ * a substitution — and 30% of every sale in the export sits in exactly this
+ * cell (verified_unchanged + FEET), showing no size whatever while the popup
+ * beside it says the parcel measures the same today as it did at the sale.
+ *
+ * The caller still has to label the figure as shape-derived: it is a
+ * measurement, not a quotation from the roll or the sales report.
+ */
+export function showMeasuredArea(props) {
+  return saleSizeState(props) === 'resolved'
+    && saleAcres(props) == null
+    && props?._geomTrust === 'confirmed';
+}
+
+/**
  * Plain-language source for the size this row displays, or '' when there is
  * nothing to attribute (a regular search or a pasted comp set, where the
  * acreage is simply today's and always has been).
