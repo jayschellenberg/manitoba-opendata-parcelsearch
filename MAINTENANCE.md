@@ -758,6 +758,14 @@ policy allows the Manitoba Vercel origin, and production's
 Add a new archive host to `vercel.json` `connect-src` if it is not already
 allowed. Review the current MLI terms before publishing.
 
+**Two copies, and why.** The R2 object is what production reads; the local
+master at `D:\MBOrtho\mb-mli-ortho-2007-2013.pmtiles` exists so that losing the
+R2 object costs one upload instead of an hours-long rebuild from 1,639 source
+rasters. Neither is in Git (16.17 GB), so neither is covered by any repo backup
+— if you clear `D:\MBOrtho`, restore it. Restore commands in either direction,
+and the SHA-256 to verify against, are in
+`docs/MLI-IMAGERY-BASEMAP.md` → "Copies and recovery".
+
 ### 7b. Streets basemap — Protomaps  (cadence: semi-annual, **scheduled**)
 The Streets basemap is a Manitoba cut of the Protomaps daily OpenStreetMap
 build, self-hosted as `basemap-manitoba.pmtiles` on the `mb-ortho` R2 bucket

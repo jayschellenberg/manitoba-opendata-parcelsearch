@@ -7,7 +7,8 @@ Manitoba Land Initiative (MLI) Ortho Refresh collection and uploaded to the
 dedicated Cloudflare R2 `mb-ortho` bucket. The bucket CORS policy allows the
 Manitoba Vercel origin, and production uses the public archive URL below.
 
-- Local archive: `D:\MBOrtho\mb-mli-ortho-2007-2013.pmtiles`
+- Local master: `D:\MBOrtho\mb-mli-ortho-2007-2013.pmtiles` (recovery copy — see
+  [Copies and recovery](#copies-and-recovery); NOT inside `D:\Dropbox`, and not synced)
 - Public archive: <https://pub-091058079bf6458da1681945177e1682.r2.dev/mb-mli-ortho-2007-2013.pmtiles>
 - Web configuration: `VITE_MLI_ORTHO_PMTILES_URL`
 - Acquisition-year coverage: `web/public/mli-imagery-years.geojson`
@@ -112,6 +113,44 @@ resolution (2.388657133911758 map metres/pixel, approximately 1.54 ground
 metres/pixel in southern Manitoba). This stays close to the nominal 1 m source
 while keeping both the intermediate MBTiles and PMTiles conversion copy within
 practical local storage.
+
+## Copies and recovery
+
+There are exactly two copies of this 16.17 GB archive, and they have different
+jobs. Rebuilding it from scratch means re-acquiring 1,639 source rasters
+(26.42 GB) and re-mosaicking — hours of work that also depends on the MLI
+catalogue still offering the same source set. Treat both copies as worth keeping.
+
+| Copy | Location | Role |
+|---|---|---|
+| Serving | `r2-mb:mb-ortho/mb-mli-ortho-2007-2013.pmtiles` | What production reads, via `VITE_MLI_ORTHO_PMTILES_URL` |
+| Master | `D:\MBOrtho\mb-mli-ortho-2007-2013.pmtiles` | Offline recovery source; restores the R2 object without a rebuild |
+
+Verify either copy against the SHA-256 in the build table above
+(`1947A496…B7CA480`) before trusting it:
+
+```powershell
+(Get-FileHash D:\MBOrtho\mb-mli-ortho-2007-2013.pmtiles -Algorithm SHA256).Hash
+```
+
+Restore in whichever direction is needed — the object name is stable, so a
+restore never changes `VITE_MLI_ORTHO_PMTILES_URL`:
+
+```powershell
+# R2 lost or corrupt -> push the local master back up
+rclone copyto D:\MBOrtho\mb-mli-ortho-2007-2013.pmtiles `
+  r2-mb:mb-ortho/mb-mli-ortho-2007-2013.pmtiles --s3-no-check-bucket --progress
+
+# Local master lost -> pull it back down
+rclone copyto r2-mb:mb-ortho/mb-mli-ortho-2007-2013.pmtiles `
+  D:\MBOrtho\mb-mli-ortho-2007-2013.pmtiles --s3-no-check-bucket --progress
+```
+
+A third copy used to sit in the Winnipeg app's `r2:wpg-ortho` bucket. Nothing
+read it — the Winnipeg app has no MLI layer, and this app reads the `mb-ortho`
+copy — so it was deleted on 2026-09-07 to stop paying ~$0.24/month to store it
+twice. Do not recreate it; keep the local master instead, which is free and
+protects against losing the R2 object itself rather than just one bucket.
 
 ## Production activation
 
