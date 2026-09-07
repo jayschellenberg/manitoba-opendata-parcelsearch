@@ -226,7 +226,7 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // fetchProvinceSectionGrid below). A stale, unread 40 MB copy is still
 // git-tracked in mb-parcel-data; nothing here points at it.
 export const MB_PARCEL_DATA_REVISION =
-  '047f0f478fb5008af5e66141ae1f7fabfd45de3c';
+  'c323bfaa37f76afa6833790d222b153fc1507c9a';
 // Origin-absolute rather than a bare /gh-data/... path: MapLibre tile
 // templates (map.js landcover-tiles) need absolute URLs. Node imports
 // this module in unit tests, where location is absent — the fallback
