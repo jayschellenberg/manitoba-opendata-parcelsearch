@@ -6902,7 +6902,16 @@ function toggleWaterInfluenceOverlay() {
   const painted = rows.filter((r) => r.parcel?.properties?._waterColor).length;
   const loaded  = rows.filter((r) => r.parcel?.properties?._waterLoaded).length;
   if (!rows.length) {
-    setCount('Water Influence on — run a search or import a list to colour parcels.');
+    // Name the action that actually works from here. With a municipality
+    // selected, ticking either box below IS the whole workflow - it runs the
+    // roll pre-filter and fills the grid without anything being typed or the
+    // Search button being pressed (Selkirk: 145 waterfront rolls). Telling the
+    // user to "run a search" instead points them at the long way round for
+    // something that is one click away and forty pixels below.
+    const muni = $municipality?.value?.trim();
+    setCount(muni
+      ? `Water Influence on — tick Waterfront only or Near water below to list them for ${muni}, or run a search.`
+      : 'Water Influence on — select a municipality and tick Waterfront only or Near water below, or run a search.');
   } else if (!loaded) {
     setCount('Water Influence on — water data has not loaded for these municipalities yet.');
   } else {
