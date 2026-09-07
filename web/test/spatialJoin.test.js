@@ -24,7 +24,7 @@ function makeFakeStorage() {
 globalThis.localStorage = makeFakeStorage();
 globalThis.sessionStorage = makeFakeStorage();
 
-const { joinTopNByArea } = await import('../src/arcgis.js');
+const { joinTopNByArea, touchOverlapJoin } = await import('../src/arcgis.js');
 
 // All rectangles share the latitude band [50, 50.01]; x positions are
 // longitude offsets (degrees) east of -97. The test parcel spans
@@ -127,6 +127,97 @@ test('each parcel keys its own matches by OBJECTID', () => {
 test('empty inputs return an empty Map', () => {
   assert.equal(joinTopNByArea(fc(), fc(ovA), 2).size, 0);
   assert.equal(joinTopNByArea(fc(parcel), fc(), 2).size, 0);
+});
+
+
+// ---------------------------------------------------------------------------
+// Stacked-blanket correction.
+//
+// Manitoba's zoning layer stacks a municipality-wide backdrop UNDER the
+// specific zones instead of carving it out, so the backdrop can cover a
+// parcel more completely than the zone that actually applies. Modelled here
+// with a wide blanket and a specific zone that nearly co-covers the parcel,
+// the way RA (117,638 ha) and MG sat over Woodlands roll 15650.
+
+// The parcel spans x in [0, 0.01]. `blanket` runs far past it in both
+// directions, so it covers 100%; `specific` covers ~99% and is ~1/700th the
+// size, well past the 100x ratio the correction requires.
+const blanket  = rect(-3.5, 3.5,     { OBJECTID: 201, ZONE: 'RA' });
+const specific = rect(-0.0001, 0.0099, { OBJECTID: 202, ZONE: 'MG' });
+// Only ~4x the specific zone: a mid-sized neighbour, not a municipal backdrop.
+const midsized = rect(-0.019, 0.0099,  { OBJECTID: 203, ZONE: 'AL' });
+
+console.log('joinTopNByArea - stacked blanket');
+
+test('the specific zone outranks a municipal blanket that covers more', () => {
+  const join = joinTopNByArea(fc(parcel), fc(blanket, specific), 2);
+  const m = join.get(1);
+  assert.equal(m[0].feature.properties.ZONE, 'MG',
+    'the zone that actually applies must come first');
+  assert.equal(m[1].feature.properties.ZONE, 'RA',
+    'the blanket is demoted, not dropped');
+  assert.ok(m[1].ratio >= m[0].ratio,
+    'and it still reports the larger share - only the ORDER changed');
+});
+
+test('a merely-larger neighbour does NOT displace the top match', () => {
+  // 4x is not a blanket. This is the case that keeps ordinary municipalities
+  // (and any base-zone/overlay-district pair) behaving exactly as before.
+  const join = joinTopNByArea(fc(parcel), fc(midsized, specific), 2);
+  assert.equal(join.get(1)[0].feature.properties.ZONE, 'AL',
+    'below the area ratio, plain coverage still wins');
+});
+
+test('a genuinely split parcel is untouched', () => {
+  // ovA 60% / ovB 45%: shares differ by far more than the tie epsilon, so
+  // no promotion can apply however the polygon sizes compare.
+  const join = joinTopNByArea(fc(parcel), fc(ovA, ovB), 2);
+  assert.equal(join.get(1)[0].feature.properties.ZONE, 'A');
+});
+
+test('a blanket alone is still reported', () => {
+  const join = joinTopNByArea(fc(parcel), fc(blanket), 2);
+  assert.equal(join.get(1)[0].feature.properties.ZONE, 'RA',
+    'with nothing more specific to promote, the blanket is the answer');
+});
+
+// ---------------------------------------------------------------------------
+// touchOverlapJoin - the Changes-column fallback.
+//
+// It used to test bounding boxes only, which put a neighbour's amendment on
+// unamended parcels: two bboxes overlap while the polygons are hundreds of
+// metres apart. Woodlands roll 15650 was reported as "RG to CG" from a
+// polygon 112 m away.
+
+console.log('touchOverlapJoin');
+
+// Shares the parcel's latitude band but sits east of it - bboxes DO overlap
+// in latitude, and this one is offset only in longitude, so it is the exact
+// shape of the false positive: near, bbox-overlapping, not touching.
+const nearMiss = rect(0.012, 0.02, { OBJECTID: 301, ZONE: 'CG',
+  AMENDMENT_DESCRIPTION: 'RG to CG' });
+
+test('a neighbour that does not touch the parcel is not a match', () => {
+  const join = touchOverlapJoin(fc(parcel), fc(nearMiss), 3);
+  assert.equal(join.size, 0,
+    "a nearby amendment is not this parcel's amendment");
+});
+
+test('an edge-touching polygon still matches', () => {
+  // Zero area of overlap - shares only the parcel's eastern edge. This is
+  // the case the fallback exists for, and @turf/intersect drops it.
+  const edge = rect(0.01, 0.02, { OBJECTID: 302, ZONE: 'CG' });
+  const join = touchOverlapJoin(fc(parcel), fc(edge), 3);
+  assert.equal(join.get(1)?.length, 1, 'edge contact is still contact');
+});
+
+test('a real overlap matches, and n caps the result', () => {
+  const join = touchOverlapJoin(fc(parcel), fc(ovA, ovB, ovC), 2);
+  assert.equal(join.get(1).length, 2);
+});
+
+test('a disjoint overlay never matches', () => {
+  assert.equal(touchOverlapJoin(fc(parcel), fc(ovX), 3).size, 0);
 });
 
 const failed = results.filter((r) => r.status === 'fail');

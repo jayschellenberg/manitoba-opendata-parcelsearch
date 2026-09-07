@@ -67,6 +67,7 @@ import { computeTopNMatches } from './lib/overlayJoinCore.js';
 import { resolveParcelAcres } from './lib/acres.js';
 import { rollDisplay, civicAddressOrEmpty } from './lib/parcelLabelFields.js';
 import { reconcileMuniSpelling } from './lib/muniIdentity.js';
+import booleanIntersects from '@turf/boolean-intersects';
 import { FLOOD_GROUPS } from './lib/flood.js';
 // Manitoba Water Rights Licensing (WALLAS) lives on a different host and
 // a different ArcGIS flavour (a 10.51 MapServer, not an AGOL hosted
@@ -1109,22 +1110,33 @@ export async function joinTopNByAreaAsync(parcelFc, overlayFc, n = 2) {
 }
 
 /**
- * Bbox-only fallback to joinTopNByArea. For each parcel, return overlay
- * features whose bbox overlaps the parcel's bbox — no @turf/intersect,
- * no area computation. Used by the "Changes" column when the
- * area-weighted join returned empty: ArcGIS server-side spatial
- * intersect counts edge-touching polygons as a match (so the parcel
- * lands in the Zoning-Changed result set), but @turf/intersect requires
- * actual area overlap and silently returns null. Bbox overlap mirrors
- * the server's looser semantics so the Changes cell shows the candidate
+ * Touch-level fallback to joinTopNByArea. For each parcel, return overlay
+ * features that genuinely intersect it — including the zero-area case
+ * joinTopNByArea drops. Used by the "Changes" column when the
+ * area-weighted join returned empty: ArcGIS server-side spatial intersect
+ * counts edge-touching polygons as a match (so the parcel lands in the
+ * Zoning-Changed result set), but @turf/intersect requires actual area
+ * overlap and silently returns null. booleanIntersects mirrors the
+ * server's looser semantics so the Changes cell shows the candidate
  * amendment that triggered the filter match.
  *
- * Less accurate than joinTopNByArea — a parcel's bbox can overlap an
- * overlay's bbox without actual geometric intersection. Caller should
- * prefer joinTopNByArea results and only fall back here when those are
- * empty.
+ * THIS USED TO BE A BBOX-ONLY TEST, and that is what put a neighbour's
+ * amendment on an unamended parcel. Two bboxes can overlap with the
+ * polygons hundreds of metres apart, and because the caller consults this
+ * fallback whenever the real changed-join is empty — the normal state for
+ * any parcel WITHOUT an amendment — every parcel in the vicinity of an
+ * amendment inherited its text. Measured over ~12,000 parcels in three
+ * municipalities: 408 parcels got an amendment they do not have (30-43% of
+ * every amendment the column showed), the nearest one a median 7-39 m away
+ * and one 313 m away; RM of Woodlands roll 15650 was reported as "RG to CG"
+ * from a polygon 112 m off (Jason, 2026-09-07).
+ *
+ * The same measurement found ZERO parcels in the edge-touching case this
+ * fallback exists for, so requiring a real intersection costs nothing that
+ * was ever being caught. The bbox test survives only as the cheap prefilter
+ * it should always have been.
  */
-export function bboxOverlapJoin(parcelFc, overlayFc, n = 3) {
+export function touchOverlapJoin(parcelFc, overlayFc, n = 3) {
   const result = new Map();
   if (!parcelFc.features.length || !overlayFc.features.length) return result;
 
@@ -1142,7 +1154,16 @@ export function bboxOverlapJoin(parcelFc, overlayFc, n = 3) {
     for (let i = 0; i < overlayFc.features.length; i++) {
       const ob = overlayBboxes[i];
       if (!ob) continue;
+      // Cheap reject first; the real test is the expensive one.
       if (!bboxesOverlap(pBbox, ob)) continue;
+      let touches;
+      try {
+        touches = booleanIntersects(parcel, overlayFc.features[i]);
+      } catch {
+        // A malformed overlay polygon is not evidence of a match.
+        continue;
+      }
+      if (!touches) continue;
       matches.push({ feature: overlayFc.features[i], ratio: null });
       if (matches.length >= n) break;
     }

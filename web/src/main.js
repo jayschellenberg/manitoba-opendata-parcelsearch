@@ -117,7 +117,7 @@ import {
   fetchZoningOverlap,
   fetchDevPlanOverlap,
   joinTopNByAreaAsync,
-  bboxOverlapJoin,
+  touchOverlapJoin,
   fetchMunicipalityList,
   fetchRollEntryCount,
   setRollEntrySnapshot,
@@ -7255,16 +7255,23 @@ async function enrichOverlays(parcelFc, inputs, baseMsg, { skipDevPlan = false }
     joinTopNByAreaAsync(parcelFc, zoningChangedFc, 3),
     joinTopNByAreaAsync(parcelFc, devPlanChangedFc, 3),
   ]);
-  // Bbox-overlap fallback: ArcGIS's server-side intersect counts
+  // Touch-level fallback: ArcGIS's server-side intersect counts
   // edge-touching polygons as a match, so a parcel can land in the
   // Zoning-Changed result on a sliver overlap that @turf/intersect
   // silently rejects (returns null because there's no area overlap).
-  // bboxOverlapJoin mirrors the server's looser semantics. We prefer
-  // joinTopNByArea results and only consult bbox-overlap when those
-  // are empty — keeps the Changes text accurate when turf succeeds,
-  // and surfaces the candidate amendment when turf fails.
-  const zoningChangesBbox  = bboxOverlapJoin(parcelFc, zoningChangedFc, 3);
-  const devPlanChangesBbox = bboxOverlapJoin(parcelFc, devPlanChangedFc, 3);
+  // touchOverlapJoin mirrors the server's looser semantics. We prefer
+  // joinTopNByArea results and only consult it when those are empty —
+  // keeps the Changes text accurate when turf succeeds, and surfaces
+  // the candidate amendment when turf fails.
+  //
+  // It tests a REAL intersection, not bbox overlap. Because this fallback
+  // is consulted for every parcel whose changed-join is empty — i.e.
+  // every parcel WITHOUT an amendment — a bbox test handed each of
+  // them the nearest amendment inside a bounding box, which is how roll
+  // 15650 in Woodlands came to report a "RG to CG" belonging to a
+  // property 112 m away (Jason, 2026-09-07). See touchOverlapJoin.
+  const zoningChangesTouch  = touchOverlapJoin(parcelFc, zoningChangedFc, 3);
+  const devPlanChangesTouch = touchOverlapJoin(parcelFc, devPlanChangedFc, 3);
 
   const rows = parcelFc.features.map((p) => {
     const oid = p.properties.OBJECTID;
@@ -7274,8 +7281,8 @@ async function enrichOverlays(parcelFc, inputs, baseMsg, { skipDevPlan = false }
       parcel: p,
       zoning:  zoningTop2.get(oid) || [],
       devPlan: devPlanTop2.get(oid) || [],
-      zoningChanges:  (zc && zc.length) ? zc : (zoningChangesBbox.get(oid) || []),
-      devPlanChanges: (dc && dc.length) ? dc : (devPlanChangesBbox.get(oid) || []),
+      zoningChanges:  (zc && zc.length) ? zc : (zoningChangesTouch.get(oid) || []),
+      devPlanChanges: (dc && dc.length) ? dc : (devPlanChangesTouch.get(oid) || []),
     };
   });
 
@@ -7687,13 +7694,13 @@ async function backfillDevPlanColumns(devPlanFc) {
       joinTopNByAreaAsync(parcelFc, devPlanFc, 2),
       joinTopNByAreaAsync(parcelFc, changedFc, 3),
     ]);
-    const changesBbox = bboxOverlapJoin(parcelFc, changedFc, 3);
+    const changesTouch = touchOverlapJoin(parcelFc, changedFc, 3);
     for (const row of rows) {
       const oid = row.parcel?.properties?.OBJECTID;
       if (oid == null) continue;
       const dc = changes.get(oid);
       row.devPlan = top2.get(oid) || [];
-      row.devPlanChanges = (dc && dc.length) ? dc : (changesBbox.get(oid) || []);
+      row.devPlanChanges = (dc && dc.length) ? dc : (changesTouch.get(oid) || []);
       // Changes text mixes zoning and dev-plan amendments, so it has to
       // be recomputed now that the dev-plan half exists.
       row.parcel.properties._changesText = formatChanges(row);
