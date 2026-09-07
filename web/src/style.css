@@ -6519,6 +6519,17 @@ body {
   gap: 5px;
   min-width: 0;
 }
+/* Numeric subcontrol (the multi-family dwelling-unit threshold). Narrow on
+   purpose: it holds two or three digits, and letting it stretch like the
+   select would make the threshold look like the primary control rather than a
+   qualifier on the button beside it. */
+.sidebar .overlay-group-body > .overlay-subcontrol input[type="number"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  padding: 2px 4px;
+  font-size: 12px;
+}
 .sidebar .overlay-group-body > .overlay-subcontrol select {
   flex: 1 1 auto;
   min-width: 0;

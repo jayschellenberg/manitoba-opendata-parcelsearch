@@ -1879,6 +1879,28 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
           'line-opacity': 0.95,
         },
       });
+      // Standing multi-family inventory on the muni-wide fabric.
+      map.addLayer({
+        id: 'muni-parcels-mfinv-fill',
+        type: 'fill',
+        source: 'muni-parcels',
+        layout: { visibility: 'none' },
+        paint: {
+          'fill-color': ['coalesce', ['get', '_mfInvColor'], 'rgba(0,0,0,0)'],
+          'fill-opacity': ['case', ['has', '_mfInvColor'], 0.7, 0],
+        },
+      });
+      map.addLayer({
+        id: 'muni-parcels-mfinv-outline',
+        type: 'line',
+        source: 'muni-parcels',
+        layout: { visibility: 'none' },
+        paint: {
+          'line-color': ['coalesce', ['get', '_mfInvColor'], 'rgba(0,0,0,0)'],
+          'line-width': ['case', ['has', '_mfInvColor'], 2, 0],
+          'line-opacity': 0.95,
+        },
+      });
       // New condo developments on the muni-wide fabric — same sparse-layer
       // treatment as the multi-family twin above.
       map.addLayer({
@@ -2445,6 +2467,31 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
         paint: {
           'line-color': ['coalesce', ['get', '_mfnbColor'], 'rgba(0,0,0,0)'],
           'line-width': ['case', ['has', '_mfnbColor'], 2.2, 0],
+          'line-opacity': 0.95,
+        },
+      });
+
+      // Standing multi-family inventory — every qualifying roll at or above
+      // the user's dwelling-unit threshold, coloured on the same unit ramp the
+      // New Multi-Family "Units" view uses. Driven by `_mfInvColor`.
+      map.addLayer({
+        id: 'mfinv-fill',
+        type: 'fill',
+        source: 'parcels',
+        layout: { visibility: 'none' },
+        paint: {
+          'fill-color': ['coalesce', ['get', '_mfInvColor'], 'rgba(0,0,0,0)'],
+          'fill-opacity': ['case', ['has', '_mfInvColor'], 0.7, 0],
+        },
+      }, 'parcel-line');
+      map.addLayer({
+        id: 'mfinv-outline',
+        type: 'line',
+        source: 'parcels',
+        layout: { visibility: 'none' },
+        paint: {
+          'line-color': ['coalesce', ['get', '_mfInvColor'], 'rgba(0,0,0,0)'],
+          'line-width': ['case', ['has', '_mfInvColor'], 2.2, 0],
           'line-opacity': 0.95,
         },
       });
@@ -4426,6 +4473,19 @@ export function setMfNewbuildVisible(map, on) {
   const vis = on ? 'visible' : 'none';
   for (const id of ['mfnb-fill', 'mfnb-outline',
                     'muni-parcels-mfnb-fill', 'muni-parcels-mfnb-outline']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
+  }
+}
+
+/**
+ * Show / hide the standing multi-family inventory overlay. Colour comes from
+ * `_mfInvColor`, stamped in main.js and re-stamped whenever the dwelling-unit
+ * threshold changes; this only flips visibility.
+ */
+export function setMfInventoryVisible(map, on) {
+  const vis = on ? 'visible' : 'none';
+  for (const id of ['mfinv-fill', 'mfinv-outline',
+                    'muni-parcels-mfinv-fill', 'muni-parcels-mfinv-outline']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
   }
 }

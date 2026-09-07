@@ -97,6 +97,20 @@
 #   <mb-parcel-data>/mf-newbuild/_index.json
 #       { "<Muni_Name_With_Typ>": {file, count}, "_meta": {...} }
 #   <mb-parcel-data>/mf-newbuild/_all-events.csv   flat table, every event
+#
+# SECOND OUTPUT - the standing INVENTORY, not just what is new:
+#
+#   <mb-parcel-data>/mf-inventory/<MUNI_KEY>.json
+#       { "<roll_no_txt>": {du, cl, ad} }   every qualifying roll, new or not
+#   <mb-parcel-data>/mf-inventory/_index.json
+#
+# It ships from THIS script rather than its own because it is the same
+# universe: the `mf` set below, before any event detection. Two scripts would
+# be two places for MIN_DU and the farm exclusion to drift, and the whole
+# point of the pair is that "existing multi-family" and "new multi-family"
+# describe the same population at different times. The web layer applies the
+# user's dwelling-unit threshold on top of MIN_DU, so the shard ships the
+# floor and the UI narrows it.
 
 suppressPackageStartupMessages({
   library(arrow)
@@ -424,6 +438,55 @@ dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 # A stale shard from a previous run for a municipality that no longer has any
 # event would otherwise survive and be served forever.
 unlink(list.files(output_dir, pattern = "^[^_].*[.]json$", full.names = TRUE))
+
+# --- 9b. the standing inventory ----------------------------------------------
+# Every roll in the multi-family universe, whether or not anything was built on
+# it in the window. Same MIN_DU, same farm exclusion, same muni keys - see the
+# note in the header for why it lives here rather than in a script of its own.
+inv <- mf |>
+  left_join(muni_map %||% tibble(muni_no = integer(), Muni_Name_With_Typ = character()),
+            by = "muni_no") |>
+  mutate(Muni_Name_With_Typ = coalesce(Muni_Name_With_Typ,
+                                       toupper(sub("^[0-9]+\\s*-\\s*", "", municipality))),
+         muni_key = safe_filename(Muni_Name_With_Typ),
+         cl = classes |>
+           gsub(pattern = "--CONDOS &amp; CO-OPS",  replacement = "", fixed = TRUE) |>
+           gsub(pattern = "RESIDENTIAL ",           replacement = "R", fixed = TRUE) |>
+           gsub(pattern = "INSTITUTIONAL PROPERTY", replacement = "INST", fixed = TRUE) |>
+           gsub(pattern = "OTHER PROPERTY",         replacement = "OTHER", fixed = TRUE))
+
+inv_dir <- file.path(dirname(output_dir), "mf-inventory")
+dir.create(inv_dir, showWarnings = FALSE, recursive = TRUE)
+unlink(list.files(inv_dir, pattern = "^[^_].*[.]json$", full.names = TRUE))
+
+inv_manifest <- list()
+for (kk in sort(unique(inv$muni_key))) {
+  d <- inv |> filter(muni_key == kk) |> arrange(desc(dwelling_units))
+  rec <- list()
+  for (i in seq_len(nrow(d))) {
+    r <- d[i, ]
+    rec[[r$roll_no_txt]] <- list(du = r$dwelling_units, cl = r$cl, ad = r$civic_address)
+  }
+  f <- file.path(inv_dir, paste0(kk, ".json"))
+  jsonlite::write_json(rec, f, auto_unbox = TRUE, digits = NA, na = "null", null = "null")
+  inv_manifest[[d$Muni_Name_With_Typ[1]]] <- list(file = basename(f), count = nrow(d))
+}
+inv_manifest[["_meta"]] <- list(
+  generated_at    = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+  source          = basename(pc_path),
+  source_modified = format(file.info(pc_path)$mtime, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+  min_du          = MIN_DU,
+  excludes        = "rolls carrying any FARM class in the latest year (Hutterite colonies)",
+  roll_count      = nrow(inv),
+  note = paste("The standing multi-family inventory - every roll at or above",
+               "min_du, new or not. The web layer applies the user's own",
+               "dwelling-unit threshold on top of this floor. Same universe as",
+               "the mf-newbuild family, before event detection.")
+)
+jsonlite::write_json(inv_manifest, file.path(inv_dir, "_index.json"),
+                     auto_unbox = TRUE, pretty = FALSE)
+cat(sprintf("[mf-inventory] %d shards, %s rolls -> %s\n",
+            length(inv_manifest) - 1L, format(nrow(inv), big.mark = ","), inv_dir))
 
 ev_key  <- split(events, paste(events$muni_no, events$roll_no_txt))
 sdu_key <- if (!is.null(sdu)) split(sdu, paste(sdu$muni_no, sdu$roll_no_txt)) else list()

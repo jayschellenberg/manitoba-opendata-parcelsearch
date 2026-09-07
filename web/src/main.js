@@ -136,6 +136,7 @@ import {
   fetchLandfactsForMuni,
   fetchMfNewbuildForMuni,
   fetchCondoDevForMuni,
+  fetchMfInventoryForMuni,
   fetchSurveyGridForMuni,
   fetchProvinceSectionGrid,
   fetchRiverLots,
@@ -217,6 +218,7 @@ import {
   setLandfactsVisible,
   setMfNewbuildVisible,
   setCondoDevVisible,
+  setMfInventoryVisible,
   setWaterInfluenceVisible,
   setHistoricalData,
   setHistoricalVisible,
@@ -269,6 +271,9 @@ import {
   condoTooltip, condoCsvHeaders, condoCsvCells, condoLegendSteps,
   CONDO_TYPES, CONDO_MODES, CONDO_MIN_UNITS, CONDO_FROM_YEAR,
 } from './lib/condoDev.js';
+import {
+  mfInvFillColor, mfInvPasses, mfInvLegendSteps, clampMinDu,
+} from './lib/mfInventory.js';
 import { resolveParcelAcres, formatRollSizeField, parseRollFrontageFeet } from './lib/acres.js';
 import { rollDisplay } from './lib/parcelLabelFields.js';
 import { createMuniParcelResolver } from './lib/muniParcelRecords.js';
@@ -594,6 +599,9 @@ const $mfnbToggle      = document.getElementById('mfnb-toggle');
 const $mfnbLegend      = document.getElementById('mfnb-legend');
 const $condoToggle     = document.getElementById('condodev-toggle');
 const $condoLegend     = document.getElementById('condodev-legend');
+const $mfinvToggle     = document.getElementById('mfinv-toggle');
+const $mfinvLegend     = document.getElementById('mfinv-legend');
+const $mfinvMinDu      = document.getElementById('mfinv-min-du');
 const $gridToggle    = document.getElementById('grid-toggle');
 const $historicalToggle   = document.getElementById('historical-toggle');
 const $historicalYear     = document.getElementById('historical-year');
@@ -2595,6 +2603,11 @@ $mascToggle.addEventListener('click', () => toggleMascOverlay());
 if ($landfactsToggle) $landfactsToggle.addEventListener('click', () => toggleLandfactsOverlay());
 if ($mfnbToggle) $mfnbToggle.addEventListener('click', () => toggleMfNewbuildOverlay());
 if ($condoToggle) $condoToggle.addEventListener('click', () => toggleCondoDevOverlay());
+if ($mfinvToggle) $mfinvToggle.addEventListener('click', () => toggleMfInventoryOverlay());
+if ($mfinvMinDu) {
+  $mfinvMinDu.addEventListener('input', onMfInvThresholdChange);
+  $mfinvMinDu.addEventListener('change', onMfInvThresholdChange);
+}
 $cliToggle.addEventListener('click', () => toggleCliOverlay());
 if ($landcoverToggle) $landcoverToggle.addEventListener('click', () => toggleLandCoverOverlay());
 if ($waterToggle) $waterToggle.addEventListener('click', () => toggleWaterInfluenceOverlay());
@@ -9105,6 +9118,11 @@ function resetMascAndGridToggles() {
     condoLoadedFor = null;
     if (condoOverlayOn) mapReady.then(() => turnCondoOff());
   }
+  // Multi-Family inventory: likewise.
+  if (mfInvLoadedFor && mfInvLoadedFor !== desiredOverlayKey) {
+    mfInvLoadedFor = null;
+    if (mfInvOverlayOn) mapReady.then(() => turnMfInvOff());
+  }
   // Survey grid: same cache key as Zoning / Dev Plan / MASC / CLI in
   // sales-CSV mode — the joined matched-muni list, or the dropdown's
   // value, or the __PROVINCE__ sentinel for "any muni" loads. A
@@ -10060,6 +10078,197 @@ async function toggleMfNewbuildOverlay() {
   // same rolls, and re-rendering there would throw away the user's paging and
   // any sort they had set since.
   if (munis.length > 0) showMfNewbuildResults(munis);
+}
+
+// ---------------------------------------------------------------------------
+// The standing multi-family inventory (r/build_mf_newbuild.R + lib/mfInventory.js).
+//
+// "What multi-family is standing here", against New Multi-Family's "what was
+// built recently". Both come from one definition emitted by one script, so the
+// two are directly comparable - that is the whole reason to have the pair.
+//
+// A plain on/off toggle rather than a mode cycle: there is one view, coloured
+// by unit count, and the DU threshold beside the button is what varies. The
+// threshold re-filters in place with no fetch, because the shard holds every
+// qualifying roll and the bar only ever moves up from its floor.
+// ---------------------------------------------------------------------------
+let mfInvOverlayOn = false;
+let mfInvLoadedFor = null;
+
+/** The active dwelling-unit threshold, clamped to the shard's own floor. */
+function mfInvMinDu() {
+  return clampMinDu($mfinvMinDu?.value);
+}
+
+/** Colour for a stamp under the CURRENT threshold — null when it does not
+ *  clear the bar, which is how raising the threshold un-paints parcels. */
+function mfInvColorFor(hit) {
+  if (!mfInvPasses(hit, mfInvMinDu())) return null;
+  return mfInvFillColor(hit);
+}
+
+function recolorMfInv() {
+  const recolor = (fc) => {
+    let painted = 0;
+    for (const f of fc?.features || []) {
+      const p = f.properties;
+      if (!p?._mfInv) continue;
+      const color = mfInvColorFor(p._mfInv);
+      if (color) { p._mfInvColor = color; painted += 1; } else if (p._mfInvColor) delete p._mfInvColor;
+    }
+    return painted;
+  };
+  let painted = 0;
+  if (auxData.muniParcels?.features?.length) {
+    painted = recolor(auxData.muniParcels);
+    setMuniParcelsData(map, auxData.muniParcels);
+  }
+  const src = map.getSource('parcels');
+  const resultFc = src?._data;
+  if (resultFc && typeof resultFc === 'object' && Array.isArray(resultFc.features)) {
+    recolor(resultFc);
+    src.setData(resultFc);
+  }
+  return painted;
+}
+
+async function stampMfInventoryOnFabric(fabricFc, munis) {
+  if (!fabricFc?.features?.length) return 0;
+  const dicts = await Promise.all(munis.map((m) => fetchMfInventoryForMuni(m).catch(() => null)));
+  const byMuni = new Map();
+  munis.forEach((m, i) => { if (dicts[i]) byMuni.set(m, dicts[i]); });
+  let painted = 0;
+  for (const f of fabricFc.features) {
+    const p = f.properties || (f.properties = {});
+    const dict = p.Muni_Name_With_Typ ? byMuni.get(p.Muni_Name_With_Typ) : null;
+    if (dict) p._mfInvLoaded = true;
+    const hit = (dict && p.Roll_No_Txt) ? dict[p.Roll_No_Txt] : null;
+    if (hit) p._mfInv = hit;
+    const color = mfInvColorFor(hit);
+    if (color) { p._mfInvColor = color; painted += 1; } else if (p._mfInvColor) delete p._mfInvColor;
+  }
+  return painted;
+}
+
+function renderMfInvLegend() {
+  if (!$mfinvLegend) return;
+  const min = mfInvMinDu();
+  const items = mfInvLegendSteps(min)
+    .map((b) => `<li><span class="swatch" style="background:${b.color}"></span>${b.label}</li>`)
+    .join('');
+  $mfinvLegend.innerHTML =
+    `<strong>Multi-family, ${min}+ dwelling units</strong><ul>${items}</ul>`
+    + `<small style="display:block;margin-top:4px;color:#6b7280;font-style:italic">`
+    + `standing inventory, not new construction<br>`
+    + `current unit counts (excluding colonies)</small>`;
+}
+
+function turnMfInvOff() {
+  mfInvOverlayOn = false;
+  setMfInventoryVisible(map, false);
+  if ($mfinvToggle) setOverlayPressed($mfinvToggle, false);
+  if ($mfinvLegend) $mfinvLegend.hidden = true;
+}
+
+/** Put the municipality's qualifying multi-family rolls into the grid. No new
+ *  column: the grid already has DU straight off the parcel record, and a
+ *  second one repeating it would be noise. */
+function showMfInventoryResults(munis) {
+  const feats = (auxData.muniParcels?.features || []).filter((f) => f.properties?._mfInvColor);
+  const fc = { type: 'FeatureCollection', features: feats };
+  if (feats.length > 1) {
+    assignParcelSeq(feats, { rollOrder: activeRollOrder() });
+  } else {
+    clearParcelSeq(feats);
+  }
+  // Largest first — the useful read for an inventory, and the DU column is
+  // already a sort key. Only from the default sort, so a chosen sort survives.
+  if (currentSort.col === 'roll' && currentSort.dir === 'asc') {
+    currentSort = { col: 'du', dir: 'desc' };
+    updateSortIndicators();
+  }
+  renderTable(fc.features.map((f) => ({ parcel: f, zoning: [], devPlan: [] })));
+  setMapData(fc, EMPTY_FC, EMPTY_FC);
+
+  const min = mfInvMinDu();
+  const units = feats.reduce((n, f) => n + (Number(f.properties._mfInv?.du) || 0), 0);
+  const where = munis.length === 1 ? munis[0] : `${munis.length} municipalities`;
+  setCount(feats.length
+    ? `${feats.length} multi-family parcel${feats.length === 1 ? '' : 's'} in ${where} · ${units.toLocaleString()} dwelling units · ${min}+ per parcel, colonies excluded`
+    : `No parcels with ${min}+ dwelling units in ${where} (colonies excluded)`);
+  return feats.length;
+}
+
+async function toggleMfInventoryOverlay() {
+  if (!$mfinvToggle) return;
+  await mapReady;
+  if (mfInvOverlayOn) { turnMfInvOff(); return; }
+
+  const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
+    ? csvMatchedMunis.slice()
+    : ($municipality.value ? [$municipality.value] : []);
+  const scopeKey = muniParcelsLoadKey();
+  if (munis.length > 0 && mfInvLoadedFor !== scopeKey) {
+    $mfinvToggle.disabled = true;
+    setOverlayBtnLabel($mfinvToggle, 'Loading…');
+    try {
+      if (!auxData.muniParcels?.features?.length || muniParcelsLoadedFor !== scopeKey) {
+        const fc = await fetchMuniParcelsForCurrentScope();
+        await enrichFcWithLegals(fc).catch((err) => {
+          console.warn('Legal enrichment for multi-family fabric failed (non-fatal):', err);
+        });
+        auxData.muniParcels = fc;
+        auxLoaded.muniParcels = true;
+        muniParcelsLoadedFor = scopeKey;
+        setMuniParcelsScope(map, scopedOverlayMunis());
+      }
+      await stampMfInventoryOnFabric(auxData.muniParcels, munis);
+      setMuniParcelsData(map, auxData.muniParcels);
+      mfInvLoadedFor = scopeKey;
+    } catch (err) {
+      console.warn('Multi-Family fabric load failed', err);
+      setOverlayBtnLabel($mfinvToggle, 'Multi-Family');
+      $mfinvToggle.disabled = false;
+      return;
+    } finally {
+      $mfinvToggle.disabled = false;
+      setOverlayBtnLabel($mfinvToggle, 'Multi-Family');
+    }
+  } else if (munis.length > 0) {
+    recolorMfInv();
+  }
+
+  if ($muniParcelsToggle && !$muniParcelsToggle.classList.contains('active')) {
+    await toggleAuxOverlay('muniParcels');
+  }
+
+  mfInvOverlayOn = true;
+  setMfInventoryVisible(map, true);
+  setOverlayPressed($mfinvToggle, true);
+  renderMfInvLegend();
+  if ($mfinvLegend) $mfinvLegend.hidden = false;
+  if (munis.length > 0) showMfInventoryResults(munis);
+}
+
+/** Threshold changed. Re-filter in place — no fetch, the shard already holds
+ *  every qualifying roll. Debounced because a number input fires `input` on
+ *  every keystroke, and re-rendering the grid per digit is visibly janky. */
+let mfInvThresholdTimer = null;
+function onMfInvThresholdChange() {
+  if (!$mfinvMinDu) return;
+  const clamped = clampMinDu($mfinvMinDu.value);
+  if (String(clamped) !== $mfinvMinDu.value) $mfinvMinDu.value = String(clamped);
+  if (!mfInvOverlayOn) return;
+  if (mfInvThresholdTimer) clearTimeout(mfInvThresholdTimer);
+  mfInvThresholdTimer = setTimeout(() => {
+    mfInvThresholdTimer = null;
+    recolorMfInv();
+    renderMfInvLegend();
+    const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
+      ? csvMatchedMunis.slice()
+      : ($municipality.value ? [$municipality.value] : []);
+    if (munis.length > 0) showMfInventoryResults(munis);
+  }, 250);
 }
 
 // ---------------------------------------------------------------------------

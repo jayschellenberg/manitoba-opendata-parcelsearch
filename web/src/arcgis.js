@@ -226,7 +226,7 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // fetchProvinceSectionGrid below). A stale, unread 40 MB copy is still
 // git-tracked in mb-parcel-data; nothing here points at it.
 export const MB_PARCEL_DATA_REVISION =
-  'c323bfaa37f76afa6833790d222b153fc1507c9a';
+  '623f0198b03016013e9da11f50d35c54b9b35561';
 // Origin-absolute rather than a bare /gh-data/... path: MapLibre tile
 // templates (map.js landcover-tiles) need absolute URLs. Node imports
 // this module in unit tests, where location is absent — the fallback
@@ -1964,6 +1964,57 @@ export async function fetchMfNewbuildForMuni(muniNameWithTyp) {
   if (cached) return cached;
   try {
     const res = await fetch(`${MB_PARCEL_DATA_CDN}/mf-newbuild/${file}`);
+    if (!res.ok) return null;
+    const dict = await res.json();
+    await writeCache(cacheKey, dict);
+    return dict;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The standing multi-family inventory — per-muni shards from the second half
+// of r/build_mf_newbuild.R: every roll at or above its MIN_DU, colonies
+// excluded, whether or not anything was built on it recently. See the header
+// of src/lib/mfInventory.js for why this is a shard rather than a filter on
+// the Dwelling_Units already riding on every parcel.
+// ---------------------------------------------------------------------------
+
+let mfInventoryIndexPromise = null;
+
+/** MF-inventory shard manifest: muni -> { file, count }, plus `_meta`. */
+export async function fetchMfInventoryIndex() {
+  if (mfInventoryIndexPromise) return mfInventoryIndexPromise;
+  mfInventoryIndexPromise = (async () => {
+    const cacheKey = `mb_mfinv_index_v1_${MB_PARCEL_DATA_REVISION}`;
+    const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+    if (cached) return cached;
+    try {
+      const res = await fetch(`${MB_PARCEL_DATA_CDN}/mf-inventory/_index.json`);
+      if (!res.ok) return null;
+      const idx = await res.json();
+      await writeCache(cacheKey, idx);
+      return idx;
+    } catch {
+      return null;
+    }
+  })();
+  return mfInventoryIndexPromise;
+}
+
+/** MF-inventory dictionary for one municipality, keyed by Roll_No_Txt. */
+export async function fetchMfInventoryForMuni(muniNameWithTyp) {
+  if (!muniNameWithTyp) return null;
+  const idx = await fetchMfInventoryIndex();
+  const entry = lookupMuniManifestEntry(idx, muniNameWithTyp, { stripType: false });
+  if (!entry) return null;
+  const file = entry.file;
+  const cacheKey = `mb_mfinv_${file}_v1_${MB_PARCEL_DATA_REVISION}`;
+  const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  if (cached) return cached;
+  try {
+    const res = await fetch(`${MB_PARCEL_DATA_CDN}/mf-inventory/${file}`);
     if (!res.ok) return null;
     const dict = await res.json();
     await writeCache(cacheKey, dict);
