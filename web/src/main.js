@@ -9868,6 +9868,50 @@ function renderMfnbLegend(mode) {
     + `years are assessment years and trail completion by about a year</small>`;
 }
 
+/**
+ * Put the municipality's flagged multi-family rolls into the results grid.
+ *
+ * Costs no fetch. stampMfNewbuildOnFabric has already hung `_mfnb` on the
+ * muni-wide fabric features, and those ARE parcel features - same shape the
+ * search path renders - so the grid is just the subset carrying a stamp.
+ *
+ * Deliberately parcels-only (`zoning: []`, `devPlan: []`), like the immediate
+ * render in the search path before enrichment runs. Zoning, flood, land facts
+ * and water are not stamped on the fabric, so those columns stay blank, which
+ * is the honest rendering of not having loaded them - running the full
+ * enrichment pipeline for a browse action would be minutes of work nobody
+ * asked for. Searching normally still enriches as always.
+ *
+ * Returns the number of rows shown.
+ */
+function showMfNewbuildResults(munis) {
+  const feats = (auxData.muniParcels?.features || []).filter((f) => f.properties?._mfnb);
+  const fc = { type: 'FeatureCollection', features: feats };
+
+  if (feats.length > 1) {
+    assignParcelSeq(feats, { rollOrder: activeRollOrder() });
+  } else {
+    clearParcelSeq(feats);
+  }
+
+  // Most recent construction first - that is what the layer is for. Only when
+  // the grid is still on its default sort, so a sort the user chose on purpose
+  // survives toggling the overlay.
+  if (currentSort.col === 'roll' && currentSort.dir === 'asc') {
+    currentSort = { col: 'mfnb', dir: 'desc' };
+    updateSortIndicators();
+  }
+
+  renderTable(fc.features.map((f) => ({ parcel: f, zoning: [], devPlan: [] })));
+  setMapData(fc, EMPTY_FC, EMPTY_FC);
+
+  const where = munis.length === 1 ? munis[0] : `${munis.length} municipalities`;
+  setCount(feats.length
+    ? `${feats.length} multi-family construction record${feats.length === 1 ? '' : 's'} in ${where} · assessed ${MFNB_FROM_YEAR}+ · years are assessment years and trail completion by about a year`
+    : `No multi-family construction found in ${where} since ${MFNB_FROM_YEAR} (${MFNB_MIN_DU}+ dwelling units, colonies excluded)`);
+  return feats.length;
+}
+
 function turnMfnbOff() {
   mfnbOverlayOn = false;
   mfnbMode = null;
@@ -9947,6 +9991,12 @@ async function toggleMfNewbuildOverlay() {
   setColumnVisible('mfnb', true);
   renderMfnbLegend(mfnbMode);
   if ($mfnbLegend) $mfnbLegend.hidden = false;
+
+  // Fill the grid with the flagged rolls. Only on the transition INTO the
+  // overlay, never on the Year -> Units recolour: that is a repaint of the
+  // same rolls, and re-rendering there would throw away the user's paging and
+  // any sort they had set since.
+  if (munis.length > 0) showMfNewbuildResults(munis);
 }
 
 function nextLandCoverMode(current) {
