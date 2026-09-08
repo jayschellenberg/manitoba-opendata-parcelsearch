@@ -3033,7 +3033,31 @@ async function generateStaticMap() {
     $staticMapBtn.textContent = originalLabel;
   }
 }
+/**
+ * Empty the Roll # field when a different municipality is picked.
+ *
+ * A roll number only means anything inside its municipality — roll 3600 is a
+ * different property in Woodlands than in Brandon — so rolls left over from
+ * the previous selection are not a narrower search, they are the wrong one.
+ * They either return nothing or, worse, return somebody else's parcel
+ * (Jason, 2026-09-08).
+ *
+ * Only on picking an actual municipality. Clearing the dropdown back to blank
+ * is how you widen a search, and wiping the rolls the user just typed would
+ * be taking work away rather than preventing a mistake.
+ *
+ * The hidden #roll input backs a chip-input UI whose values live in a closure
+ * (lib/chipInput.js), so setting .value alone would empty the search while
+ * leaving the chips on screen — the reseed event is what makes the two agree.
+ */
+function clearRollsOnMuniChange() {
+  if (!$municipality.value || !$roll || !$roll.value) return;
+  $roll.value = '';
+  $roll.dispatchEvent(new CustomEvent('chip-input:reseed', { bubbles: true }));
+}
+
 $municipality.addEventListener('change', () => {
+  clearRollsOnMuniChange();
   refilterCategoryDropdowns();
   resetMuniParcelsToggle();
   resetMascAndGridToggles();
