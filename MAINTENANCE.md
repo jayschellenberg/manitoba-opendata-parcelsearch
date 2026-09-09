@@ -1148,54 +1148,60 @@ market pausing, it is MAO not publishing. A genuine scrape fault shows up
 in checks 1-3 above, never as a clean taper.
 
 **The last posted days are PARTIAL — "posted through" is a soft edge.**
-Sales reach MAO as they register, so the final days of any window are only
-fractionally filled and keep backfilling for weeks. Daily counts into the
-2026-08-17 cut: Aug 4 273, Aug 6 158, Aug 11 118, Aug 13 88, Aug 17 **34** —
-the last posted day sat at ~21% of the 159/day weekday mean. So the boundary
-date is where data *stops*, not where it is *complete*.
+Sales reach MAO as titles register, not as sales happen, so the newest dates
+are only fractionally filled and keep growing for weeks afterwards. The
+boundary date is where the data *stops*, not where it is *complete* — on
+2026-09-09 the cut read 08-24 while that day held 16 rows against the
+100-plus it will eventually carry. How long filling takes, and what that
+means for a comp window, is measured below.
 
-Two consequences. For **comp selection**, treat roughly the last week before
-the "posted through" date as still filling in; a job that turns on very
-recent evidence should say so, or use a window that ends a week short.
 For **reading the digest**, `new_sales` alone is a poor freshness signal:
 the number can be large while the newest *sale date* has not moved at all
 (Sep 2-4 delivered 1,261 rows and did not advance the cut by one day).
 Judge freshness by the DATE, never by the row count.
 
-**CORRECTION 2026-09-08 — do NOT expect a big catch-up batch.** An earlier
-version of this section predicted that the next arrival would backfill the
-tail and land "~2,000+ rows after a 3-week gap." **Both halves were wrong**,
-and the correction matters because the wrong version would have you read a
-perfectly normal evening as a failure. What actually happened when the
-2026-08-17 cut finally broke, at 19:35 on 2026-09-08:
+**HOW ARRIVALS ACTUALLY BEHAVE (measured 2026-09-02 → 09-09).** This
+replaces two earlier wrong models: first a predicted "~2,000+ row catch-up
+batch" that never came, then an over-correction claiming there is no
+backfill at all. Three consecutive observations, each contradicting some
+part of the last:
 
-- **4 sales** (8 rows — every sale is stored twice, under its typed group
-  and again under `UNCATEGORIZED`), from Arborg, Dunnottar and Gilbert
-  Plains, the municipalities that slot happened to visit.
-- The cut moved **08-17 → 08-19**. Two days, not three weeks.
-- **Zero backfill.** Every earlier day was byte-identical: Aug 4 273,
-  Aug 6 158, Aug 11 118, Aug 13 88 — all unchanged. Only Aug 17 gained
-  2 rows.
+| When | Rows in | Frontier | Backfill |
+|---|---|---|---|
+| Sep 2-4 | 1,261 | **none** (stuck 08-17) | all of it |
+| Sep 8, 19:35 | 8 (= 4 sales) | +2 d (08-17 → 08-19) | **none** |
+| Sep 9, overnight | ~324 | +5 d (08-19 → 08-24) | heavy (Aug 17 **36 → 105**) |
 
-So **there is no backlog and no batch to wait for.** MAO publishes
-continuously as titles register; the frontier creeps a day or two at a time
-and each new day arrives nearly empty, then fills over the following weeks.
-Measured that same evening against the ~159/weekday mature figure:
+**The lesson is that volume, frontier movement and backfill are three
+INDEPENDENT things.** Every arrival is some mix of new frontier days and
+refill of older ones, in no fixed proportion, and you cannot predict any
+one from the others: a 1,261-row arrival moved the cut zero days, and an
+8-row arrival moved it two. Do not reason from the row count to freshness,
+or from a quiet night to a fault. (This is exactly why the thresholds below
+are two independent tests rather than one — Sep 2-4 would have slipped past
+a date-only rule, and Sep 8 past a volume-only one.)
 
-| Sale date | Rows | % of a mature weekday |
+Note also that a sale is stored **twice** — under its typed group and again
+under `UNCATEGORIZED` — so a headline row count is about double the sales.
+
+**A sale date keeps filling for roughly six weeks.** Rows do not arrive
+with the sale; they arrive as titles register, so a date is near-empty when
+first posted and grows for a long time afterwards. Growth on 2026-09-09,
+by how old each date was:
+
+| Age of sale date | Still gaining | Read it as |
 |---|---|---|
-| Aug 14 | 139 | 87% |
-| Aug 17 | 36 | 23% |
-| Aug 18 | 1 | 0.6% |
-| Aug 19 | 2 | 1.3% |
+| under ~3 weeks | +16 to +39 rows/day | badly incomplete |
+| ~4-5 weeks | +2 to +12 rows/day | usable, still moving |
+| over ~6 weeks | 0 to +2 rows/day | effectively settled |
 
-That is the taper caught mid-formation, and it explains a long flat stretch
-with no backlog behind it: the cut sits still until the rotation happens to
-reach whichever municipality holds the next sale. **A 4-sale evening is
-normal. Do not treat a small arrival as a fault, and do not wait for a
-spike that is never coming.** The weekly rhythm above describes *volume*
-(weekday-concentrated, quiet Sat-Mon), not the frontier — the frontier
-crawls regardless.
+**For comp selection**, that is the number that matters: a window ending
+inside the last three weeks is materially short of sales, and one ending
+~6 weeks back is as complete as it will get. **Do not use a fixed
+"sales per weekday" figure to judge completeness** — an earlier version of
+this section used ~159/weekday and it was misleading twice over, since real
+daily volume ranges 63-288 for reasons that have nothing to do with
+posting, and days keep growing past whatever you sampled.
 
 **So when IS a change worth acting on?** Two thresholds, measured
 cumulatively against wherever the archive stood last time you looked
@@ -1203,8 +1209,8 @@ cumulatively against wherever the archive stood last time you looked
 
 | Signal | Threshold | Why that number |
 |---|---|---|
-| Frontier advance | **≥ 4 days** | The ordinary crawl is 1-2 days (08-17 → 08-19 on 2026-09-08). Four days means MAO closed real ground, not another trickle. Four separate one-day creeps count too — that is still four days of progress. |
-| Archive growth | **≥ 400 rows** | A full busy day: Sep 2 / 3 / 4 landed 394 / 352 / 526. The 2026-09-08 trickle was 8. |
+| Frontier advance | **≥ 4 days** | Observed single moves run 0 to +5 days (0 across Sep 2-4, +2 on Sep 8, +5 on Sep 9). Four days separates real ground closed from another trickle. Four separate one-day creeps count too — that is still four days of progress. |
+| Archive growth | **≥ 400 rows** | A full busy day: Sep 2 / 3 / 4 landed 394 / 352 / 526. The Sep 8 trickle was 8, and Sep 9 was ~324 — deliberately just under, because Sep 9 already tripped the date test. |
 
 The row test deliberately fires **independently of the date**, because a
 large arrival that only backfills older days is exactly the pattern that
