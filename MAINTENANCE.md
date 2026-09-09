@@ -1075,10 +1075,13 @@ staleness check had said OK every morning, and `logs/refresh_digest.csv`
 showed 394 / 352 / 526 new sales landing on Sep 2 / 3 / 4 — **not one dated
 after Aug 17.** The newest date the refresh had ever seen stepped
 07-31 (seen 08-19) → 08-07 (08-20) → 08-10 (08-26) → 08-17 (08-27), then held
-flat for 9+ days. So MAO loads sales in roughly **weekly batches, each about
-10-14 days behind the sale date, and can skip a week.** A flat "posted
-through" date with new rows still arriving is MAO's posting lag, not a
-scrape fault.
+flat for 9+ days. So new rows **arrive weekday-concentrated (heavy Wed-Fri,
+quiet Sat-Mon) and run about 10-14 days behind the sale date.** A flat
+"posted through" date with new rows still arriving is MAO's posting lag,
+not a scrape fault. NOTE that this describes the VOLUME of arrivals, not
+the frontier: the cut advances a day or two at a time regardless, and there
+is no batch queued behind it — see the 2026-09-08 correction at the end of
+this section before you conclude anything from a quiet spell.
 
 **Telling MAO lag from a broken scrape** (all paths under
 `D:\Dropbox\ClaudeCode\MBOpenData\mao-scrape\`):
@@ -1154,11 +1157,45 @@ date is where data *stops*, not where it is *complete*.
 Two consequences. For **comp selection**, treat roughly the last week before
 the "posted through" date as still filling in; a job that turns on very
 recent evidence should say so, or use a window that ends a week short.
-For **reading the digest**, expect the next batch to both extend past the
-cut AND backfill the tail, so it lands far larger than a normal week
-(~2,000+ rows after a 3-week gap). That spike is catch-up, not a bug — and
-it is why `new_sales` alone is a poor freshness signal: the number can be
-large while the newest *sale date* has not moved at all.
+For **reading the digest**, `new_sales` alone is a poor freshness signal:
+the number can be large while the newest *sale date* has not moved at all
+(Sep 2-4 delivered 1,261 rows and did not advance the cut by one day).
+Judge freshness by the DATE, never by the row count.
+
+**CORRECTION 2026-09-08 — do NOT expect a big catch-up batch.** An earlier
+version of this section predicted that the next arrival would backfill the
+tail and land "~2,000+ rows after a 3-week gap." **Both halves were wrong**,
+and the correction matters because the wrong version would have you read a
+perfectly normal evening as a failure. What actually happened when the
+2026-08-17 cut finally broke, at 19:35 on 2026-09-08:
+
+- **4 sales** (8 rows — every sale is stored twice, under its typed group
+  and again under `UNCATEGORIZED`), from Arborg, Dunnottar and Gilbert
+  Plains, the municipalities that slot happened to visit.
+- The cut moved **08-17 → 08-19**. Two days, not three weeks.
+- **Zero backfill.** Every earlier day was byte-identical: Aug 4 273,
+  Aug 6 158, Aug 11 118, Aug 13 88 — all unchanged. Only Aug 17 gained
+  2 rows.
+
+So **there is no backlog and no batch to wait for.** MAO publishes
+continuously as titles register; the frontier creeps a day or two at a time
+and each new day arrives nearly empty, then fills over the following weeks.
+Measured that same evening against the ~159/weekday mature figure:
+
+| Sale date | Rows | % of a mature weekday |
+|---|---|---|
+| Aug 14 | 139 | 87% |
+| Aug 17 | 36 | 23% |
+| Aug 18 | 1 | 0.6% |
+| Aug 19 | 2 | 1.3% |
+
+That is the taper caught mid-formation, and it explains a long flat stretch
+with no backlog behind it: the cut sits still until the rotation happens to
+reach whichever municipality holds the next sale. **A 4-sale evening is
+normal. Do not treat a small arrival as a fault, and do not wait for a
+spike that is never coming.** The weekly rhythm above describes *volume*
+(weekday-concentrated, quiet Sat-Mon), not the frontier — the frontier
+crawls regardless.
 
 ## Continuous integration
 
