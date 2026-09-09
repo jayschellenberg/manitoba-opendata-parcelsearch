@@ -1197,6 +1197,32 @@ spike that is never coming.** The weekly rhythm above describes *volume*
 (weekday-concentrated, quiet Sat-Mon), not the frontier — the frontier
 crawls regardless.
 
+**So when IS a change worth acting on?** Two thresholds, measured
+cumulatively against wherever the archive stood last time you looked
+(`manifest.json`'s `newest_sale` and `sales`). Either one alone is enough:
+
+| Signal | Threshold | Why that number |
+|---|---|---|
+| Frontier advance | **≥ 4 days** | The ordinary crawl is 1-2 days (08-17 → 08-19 on 2026-09-08). Four days means MAO closed real ground, not another trickle. Four separate one-day creeps count too — that is still four days of progress. |
+| Archive growth | **≥ 400 rows** | A full busy day: Sep 2 / 3 / 4 landed 394 / 352 / 526. The 2026-09-08 trickle was 8. |
+
+The row test deliberately fires **independently of the date**, because a
+large arrival that only backfills older days is exactly the pattern that
+went unremarked for twelve days: Sep 2-4 delivered 1,261 rows without
+moving the cut at all. Watching the date alone would have stayed silent
+through it.
+
+Below both thresholds, nothing is wrong and nothing needs doing — that is
+the crawl. Sustained silence on BOTH for more than ~2 weeks is the case to
+escalate, and the manual-check path above is how.
+
+> **These are a decision rule, not an alarm.** Nothing in the repo watches
+> them. A Claude session can hold a poll against `manifest.json` for as long
+> as that session lives, and one did on 2026-09-08, but it dies with the
+> session and is not infrastructure — do not come back expecting to be
+> told. If a standing alert is ever wanted, this table is the spec for it,
+> and `sales-staleness-check.ps1` is the pattern to copy.
+
 ## Continuous integration
 
 GitHub Actions is enabled for the account (the earlier account-level
