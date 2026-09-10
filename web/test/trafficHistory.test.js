@@ -10,7 +10,9 @@
 // Run: cd web && node test/trafficHistory.test.js
 
 import assert from 'node:assert/strict';
-import { stationSeries, joinTrafficHistory } from '../src/arcgis.js';
+import {
+  stationSeries, joinTrafficHistory, joinFlowHistory, countLabels, latestStationCount,
+} from '../src/arcgis.js';
 
 const results = [];
 function test(name, fn) {
@@ -112,6 +114,84 @@ test('tolerates a malformed feature collection', () => {
   assert.doesNotThrow(() => joinTrafficHistory({ features: [] }, history));
   assert.doesNotThrow(() => joinTrafficHistory({}, history));
   assert.doesNotThrow(() => joinTrafficHistory({ features: [{}] }, history));
+});
+
+
+console.log('\narcgis.js — countLabels');
+
+test('formats with a thousands separator, and the year only when known', () => {
+  assert.deepEqual(countLabels(2110, 2024), { label: '2,110', labelYear: '2,110 (2024)' });
+  // No usable year: the plain number is honest, "(NaN)" is not.
+  assert.deepEqual(countLabels(400, null), { label: '400', labelYear: '400' });
+  assert.deepEqual(countLabels(400, 0), { label: '400', labelYear: '400' });
+});
+
+test('nothing to label yields empty strings, not "0" or "NaN"', () => {
+  assert.deepEqual(countLabels(null, 2024), { label: '', labelYear: '' });
+  assert.deepEqual(countLabels(0, 2024), { label: '', labelYear: '' });
+  assert.deepEqual(countLabels(undefined, undefined), { label: '', labelYear: '' });
+});
+
+console.log('\narcgis.js — latestStationCount');
+
+test('returns the newest published point', () => {
+  assert.deepEqual(latestStationCount({ y: { 2018: 1130, 2024: 1230, 2010: 1040 } }),
+                   { year: 2024, aadt: 1230 });
+  assert.equal(latestStationCount({ y: {} }), null);
+  assert.equal(latestStationCount(undefined), null);
+});
+
+console.log('\narcgis.js — joinFlowHistory');
+
+test('a segment takes its station\'s published count over the service column', () => {
+  // Station 73 on 2026-09-10: the service stops at 2024 (1,000) while the
+  // reports carry 2025 (1,040). Reading the service put a different number
+  // on the segment than on the station dot sitting on it.
+  const fc = { features: [{ properties: {
+    StationNum: 73, AADT: 1040, AADT_2023: 1020, AADT_2024: 1000, DateOfEsti: 2024, EYear: 2019,
+  } }] };
+  const p = joinFlowHistory(fc, { stations: { 73: { t: 0, y: { 2024: 1000, 2025: 1040 } } } })
+    .features[0].properties;
+  assert.equal(p._aadt, 1040);
+  assert.equal(p._aadtYear, 2025);
+  assert.equal(p._src, 'report');
+  assert.equal(p._label, '1,040');
+  assert.equal(p._labelYear, '1,040 (2025)');
+});
+
+test('falls back to the service columns when the station is not in the reports', () => {
+  const fc = { features: [{ properties: {
+    StationNum: 999, AADT: 900, AADT_2023: 950, AADT_2024: 980, DateOfEsti: 2024, EYear: 2019,
+  } }] };
+  const p = joinFlowHistory(fc, { stations: {} }).features[0].properties;
+  assert.equal(p._aadt, 980, 'newest service column');
+  assert.equal(p._aadtYear, 2024, 'DateOfEsti');
+  assert.equal(p._src, 'service');
+  assert.equal(p._labelYear, '980 (2024)');
+});
+
+test('a missing history file leaves the overlay on the service columns', () => {
+  const fc = { features: [{ properties: { StationNum: 73, AADT_2024: 1000, DateOfEsti: 2024 } }] };
+  const p = joinFlowHistory(fc, null).features[0].properties;
+  assert.equal(p._aadt, 1000);
+  assert.equal(p._src, 'service');
+});
+
+test('a segment and its station agree once both read the history', () => {
+  // The property this whole change exists to guarantee.
+  const history = { stations: { 73: { t: 0, y: { 2024: 1000, 2025: 1040 } } } };
+  const seg = joinFlowHistory({ features: [{ properties: { StationNum: 73, AADT_2024: 1000 } }] },
+                              history).features[0].properties;
+  const stn = joinTrafficHistory({ features: [{ properties: { StationNum: 73 } }] },
+                                 history).features[0].properties;
+  assert.equal(seg._aadt, stn._aadt);
+  assert.equal(seg._aadtYear, stn._aadtYear);
+});
+
+test('tolerates a malformed feature collection', () => {
+  assert.doesNotThrow(() => joinFlowHistory({ features: [] }, { stations: {} }));
+  assert.doesNotThrow(() => joinFlowHistory({}, { stations: {} }));
+  assert.doesNotThrow(() => joinFlowHistory({ features: [{}] }, { stations: {} }));
 });
 
 const passed = results.reduce((a, b) => a + b, 0);

@@ -129,6 +129,7 @@ import {
   fetchTrafficStations,
   fetchTrafficHistory,
   joinTrafficHistory,
+  joinFlowHistory,
   currentAadt,
   currentAadtYear,
   fetchManitobaHighways,
@@ -8444,9 +8445,12 @@ function updateFlowLegendTitle(fc) {
   let hi = -Infinity;
   for (const f of fc?.features || []) {
     const p = f.properties;
-    if (currentAadt(p) == null) continue;
-    const y = currentAadtYear(p);
-    if (y == null) continue;
+    // Read the same stamped values the paint and labels use, so the legend
+    // can never describe a vintage range the map isn't drawing.
+    const aadt = Number(p?._aadt) > 0 ? Number(p._aadt) : currentAadt(p);
+    if (aadt == null) continue;
+    const y = p?._aadt != null ? Number(p._aadtYear) : currentAadtYear(p);
+    if (!Number.isFinite(y) || y <= 1900) continue;
     if (y < lo) lo = y;
     if (y > hi) hi = y;
   }
@@ -8457,9 +8461,11 @@ function updateFlowLegendTitle(fc) {
   }
   el.textContent = 'AADT (latest per segment)';
   if (note) {
+    // The map only prints the year from zoom 11, so say where to find it
+    // rather than implying every label already carries one.
     note.textContent = lo === hi
       ? `All counts ${hi}. Click a segment for its details.`
-      : `Counts date ${lo}–${hi}. Click a segment for its year.`;
+      : `Counts date ${lo}–${hi}. Zoom in for the year on each label, or click a segment.`;
   }
 }
 
@@ -8483,6 +8489,26 @@ function syncStationLegendStacking() {
  * artefact, not a live service), so a missing one degrades to plain dots
  * that say "no published counts" rather than failing the whole overlay.
  */
+/**
+ * Traffic Flow segments, with each segment's count taken from the published
+ * report history rather than the service's own AADT columns.
+ *
+ * The two sources disagreed on 497 of 1,670 stations because the service
+ * stops at 2024 and the reports carry 2025 for 604 of them — so a segment
+ * and the station dot sitting on it showed different numbers for the same
+ * road. See joinFlowHistory().
+ */
+async function fetchFlowWithHistory() {
+  const [flow, history] = await Promise.all([
+    fetchTrafficFlow(),
+    fetchTrafficHistory().catch((err) => {
+      console.warn('traffic history unavailable; flow falls back to service columns', err);
+      return null;
+    }),
+  ]);
+  return joinFlowHistory(flow, history);
+}
+
 async function fetchStationsWithHistory() {
   const [stations, history] = await Promise.all([
     fetchTrafficStations(),
@@ -8502,7 +8528,7 @@ const AUX_META = {
                  setData: (m, fc) => setTrafficData(m, fc),
                  setVis: setTrafficVisible },
   flow:        { btn: () => $flowToggle,        on: 'Traffic flow', off: 'Traffic flow', busy: 'Loading…',
-                 fetch: () => fetchTrafficFlow(),
+                 fetch: () => fetchFlowWithHistory(),
                  setData: (m, fc) => { setTrafficFlowData(m, fc); updateFlowLegendTitle(fc); },
                  setVis: setTrafficFlowVisible },
   highways:    { btn: () => $highwaysToggle,    on: 'Manitoba Highways', off: 'Manitoba Highways', busy: 'Loading…',

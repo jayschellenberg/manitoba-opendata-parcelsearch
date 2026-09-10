@@ -47,6 +47,13 @@ function grabLayer(id) {
 const LAYER_IDS = ['traffic-circle', 'traffic-circle-town'];
 const layers = LAYER_IDS.map((id) => eval(`(${grabLayer(id)})`));
 
+// The two count-label layers: one along each flow segment, one under each
+// town station dot. Validated together because they must agree on the
+// zoom-gated text-field, and because a bad symbol expression fails exactly
+// as silently as a bad circle one.
+const LABEL_IDS = ['traffic-flow-label', 'traffic-town-label'];
+const labelLayers = LABEL_IDS.map((id) => eval(`(${grabLayer(id)})`));
+
 console.log('map.js — traffic station layers');
 
 test('both station layers are declared', () => {
@@ -91,6 +98,53 @@ test('the two markers are visually distinguishable', () => {
   assert.notEqual(town['circle-color'], hwy['circle-color']);
   assert.equal(town['circle-color'], hwy['circle-stroke-color']);
   assert.equal(town['circle-stroke-color'], hwy['circle-color']);
+});
+
+console.log('\nmap.js — count label layers');
+
+test('the style spec accepts both label layers', () => {
+  const errors = validateStyleMin({
+    version: 8,
+    // A symbol layer with a text-field is only valid in a style that
+    // declares glyphs; the real basemap style supplies them.
+    glyphs: 'https://example.invalid/{fontstack}/{range}.pbf',
+    sources: {
+      traffic: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+      'traffic-flow': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+    },
+    layers: labelLayers,
+  });
+  assert.deepEqual(errors.map((e) => e.message), [], 'style-spec validation errors');
+});
+
+test('both gate the year on zoom 11, and agree on how', () => {
+  // "2,110 (2024)" is ~50% wider than "2,110", and with text-allow-overlap
+  // false a wider label means fewer labels survive — so the year is spent
+  // only where the reader is looking at one property. The two layers must
+  // switch at the same zoom or the map contradicts itself mid-scroll.
+  const expected = [
+    'step', ['zoom'],
+    ['coalesce', ['get', '_label'], ''],
+    11, ['coalesce', ['get', '_labelYear'], ['get', '_label'], ''],
+  ];
+  for (const l of labelLayers) {
+    assert.deepEqual(l.layout['text-field'], expected, `${l.id} text-field`);
+  }
+});
+
+test('the town label is filtered to town stations and held back at low zoom', () => {
+  // It shares the station source with both circle layers, so without the
+  // filter every rural station would get a label restating its segment's.
+  const town = labelLayers.find((l) => l.id === 'traffic-town-label');
+  assert.deepEqual(town.filter, ['==', ['get', '_town'], 1]);
+  assert.equal(town.minzoom, 9, '328 labels do not belong on a province-wide view');
+  assert.equal(town.source, 'traffic');
+});
+
+test('both label layers start hidden', () => {
+  for (const l of labelLayers) {
+    assert.equal(l.layout.visibility, 'none', `${l.id} starts hidden`);
+  }
 });
 
 const passed = results.reduce((a, b) => a + b, 0);

@@ -2686,6 +2686,67 @@ export function stationSeries(entry) {
     .sort((a, b) => a.year - b.year);
 }
 
+/** The station's most recent published count, as `{year, aadt}` or null. */
+export function latestStationCount(entry) {
+  const series = stationSeries(entry);
+  return series.length ? series[series.length - 1] : null;
+}
+
+/**
+ * Map-label text for a count: "2,110" and "2,110 (2024)".
+ *
+ * Built here in JS rather than with MapLibre `number-format` expressions so
+ * the two label layers and the popup can never drift apart on formatting,
+ * and so the zoom-gated text-field stays a plain `['get']` of a precomputed
+ * string. Returns nulls when there is nothing to label.
+ */
+export function countLabels(aadt, year) {
+  if (!Number.isFinite(aadt) || aadt <= 0) return { label: '', labelYear: '' };
+  const n = Number(aadt).toLocaleString('en-US');
+  return {
+    label: n,
+    labelYear: Number.isFinite(year) && year > 1900 ? `${n} (${year})` : n,
+  };
+}
+
+/**
+ * Stamp the published count from the report history onto each TRAFFIC FLOW
+ * segment, in place, and return the FC.
+ *
+ * WHY THE SEGMENTS READ THE HISTORY TOO. Each segment carries the StationNum
+ * it was estimated from, so a segment and that station's dot describe the
+ * same measurement — but they disagreed on 30% of stations (497 of 1,670),
+ * because the ArcGIS service stops at 2024 while the reports carry 2025 for
+ * 604 stations. Station 73 read 1,000 from the service and 1,040 from the
+ * report. Two numbers for one road is worse than a slightly stale one, so
+ * the history is the single source for every count the app displays and the
+ * flow service supplies geometry.
+ *
+ * Falls back to the service's own columns for any segment whose station is
+ * absent from the reports, so the overlay degrades rather than blanking.
+ */
+export function joinFlowHistory(fc, history) {
+  const byStation = history?.stations || {};
+  for (const f of fc?.features || []) {
+    const p = f.properties;
+    if (!p) continue;
+    const latest = latestStationCount(byStation[String(p.StationNum)]);
+    if (latest) {
+      p._aadt = latest.aadt;
+      p._aadtYear = latest.year;
+      p._src = 'report';
+    } else {
+      p._aadt = currentAadt(p);
+      p._aadtYear = currentAadtYear(p);
+      p._src = 'service';
+    }
+    const { label, labelYear } = countLabels(p._aadt, p._aadtYear);
+    p._label = label;
+    p._labelYear = labelYear;
+  }
+  return fc;
+}
+
 /**
  * Stamp each station feature with its history, in place, and return the FC.
  *
@@ -2717,6 +2778,13 @@ export function joinTrafficHistory(fc, history) {
       p._aadtYear = null;
       p._series = '';
     }
+    // Town stations are the only ones the map labels: they have no flow
+    // segment, so nothing else on the map carries their number. Rural
+    // stations would just restate the label already drawn along their
+    // segment, from the same source, in the same place.
+    const { label, labelYear } = countLabels(p._aadt, p._aadtYear);
+    p._label = label;
+    p._labelYear = labelYear;
   }
   return fc;
 }

@@ -1083,15 +1083,16 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
         source: 'traffic-flow',
         layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-          // Newest AADT_<year> column first: the MHTIS layer accumulates a new
-          // year-stamped column per republish and keeps every stale one, so
-          // reading the obvious field name would paint the overlay with
-          // several-year-old volumes. Mirrors AADT_FIELDS/currentAadt() in
-          // arcgis.js — keep the two in step. Coalesce picks the first
-          // non-null BEFORE to-number, so an absent AADT_2024 falls through
-          // rather than being coerced to 0 and winning.
+          // `_aadt` is stamped by joinFlowHistory(): the station's most
+          // recent PUBLISHED count, which is fresher than anything the
+          // service carries for 604 stations. The AADT_<year> coalesce
+          // behind it is the fallback for a segment whose station is absent
+          // from the reports — newest column first, since the service keeps
+          // every stale one and the obvious field name is the oldest.
+          // Coalesce picks the first non-null BEFORE to-number, so an absent
+          // column falls through rather than being coerced to 0 and winning.
           'line-color': [
-            'step', ['to-number', ['coalesce', ['get', 'AADT_2024'], ['get', 'AADT_2023'], ['get', 'AADT'], 0]],
+            'step', ['to-number', ['coalesce', ['get', '_aadt'], ['get', 'AADT_2024'], ['get', 'AADT_2023'], ['get', 'AADT'], 0]],
             '#cccccc',
             500,    '#a8d8a8',
             2000,   '#f4d35e',
@@ -1121,7 +1122,17 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
         minzoom: 8,
         layout: {
           visibility: 'none',
-          'text-field': ['to-string', ['coalesce', ['get', 'AADT_2024'], ['get', 'AADT_2023'], ['get', 'AADT'], '']],
+          // Number alone when zoomed out, number + year from zoom 11 in.
+          // "2,110 (2024)" is ~50% wider than "2,110", and with
+          // text-allow-overlap false a wider label means FEWER labels
+          // survive — so the year is spent where the reader is looking at
+          // one property rather than the province. Both strings are
+          // precomputed by countLabels() so this stays a plain get.
+          'text-field': [
+            'step', ['zoom'],
+            ['coalesce', ['get', '_label'], ''],
+            11, ['coalesce', ['get', '_labelYear'], ['get', '_label'], ''],
+          ],
           'text-font': ['Open Sans Semibold'],
           'text-size': [
             'interpolate', ['linear'], ['zoom'],
@@ -1274,6 +1285,41 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
           'circle-stroke-width': 2,
           'circle-stroke-color': '#ffd166',
           'circle-opacity': 0.95,
+        },
+      });
+
+      // Town stations carry their count on the map; rural ones do not.
+      // A town station has no flow segment, so nothing else on the map
+      // shows its number — and it is the number an in-town commercial
+      // property is actually valued against. A rural station's segment
+      // already draws the identical figure from the same source along the
+      // road beside it, so labelling those too would just double it.
+      // minzoom 9 keeps 328 labels off the province-wide view.
+      map.addLayer({
+        id: 'traffic-town-label',
+        type: 'symbol',
+        source: 'traffic',
+        minzoom: 9,
+        filter: ['==', ['get', '_town'], 1],
+        layout: {
+          visibility: 'none',
+          'text-field': [
+            'step', ['zoom'],
+            ['coalesce', ['get', '_label'], ''],
+            11, ['coalesce', ['get', '_labelYear'], ['get', '_label'], ''],
+          ],
+          'text-font': ['Open Sans Semibold'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 9, 10, 12, 12, 15, 13],
+          'text-offset': [0, 1.1],
+          'text-anchor': 'top',
+          'text-allow-overlap': false,
+          'text-ignore-placement': false,
+          'text-optional': true,
+        },
+        paint: {
+          'text-color': '#1a1a1a',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.6,
         },
       });
 
@@ -3904,7 +3950,7 @@ export function setTrafficData(map, fc) {
 }
 export function setTrafficVisible(map, visible) {
   const v = visible ? 'visible' : 'none';
-  for (const id of ['traffic-circle', 'traffic-circle-town']) {
+  for (const id of ['traffic-circle', 'traffic-circle-town', 'traffic-town-label']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
   }
 }
@@ -5998,9 +6044,16 @@ function trafficFlowHtml(p) {
   const lines = [];
   const road = p.ROAD_IDENT || (p.ROAD_NO != null ? `Hwy ${p.ROAD_NO}` : null);
   if (road) lines.push(`<strong>${escapeHtml(road)}</strong>`);
-  const aadt = currentAadt(p);
+  // Prefer the count joinFlowHistory() stamped from the published reports;
+  // fall back to the service's own columns when that station isn't in them.
+  // Reading currentAadt() first would put a different number in this popup
+  // than the station dot on the same road shows — they disagreed on 30% of
+  // stations before the segments started reading the same source.
+  const aadt = Number.isFinite(Number(p._aadt)) && Number(p._aadt) > 0
+    ? Number(p._aadt) : currentAadt(p);
+  const year = p._aadt != null ? Number(p._aadtYear) : currentAadtYear(p);
   if (aadt != null) {
-    lines.push(`<strong>AADT${aadtYearSuffix(currentAadtYear(p))}</strong> ${aadt.toLocaleString('en-US')}`);
+    lines.push(`<strong>AADT${aadtYearSuffix(year)}</strong> ${aadt.toLocaleString('en-US')}`);
   }
   if (p.FlowDirect) lines.push(`Flow: ${escapeHtml(p.FlowDirect)}`);
   if (p.START_KM != null && p.END_KM != null) {
