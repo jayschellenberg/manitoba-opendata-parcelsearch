@@ -264,51 +264,6 @@
             </select>
             <span class="tip">Municipality</span>
           </span>
-          <!-- Civic-address search: From/To number + street substring.
-               How many number boxes are filled picks the mode — one is a
-               contains, both is exact (same) or a range (different).
-               Tabbing into "To" after "From" auto-fills for exact.
-
-               Sits above Roll # to match the Winnipeg ParcelSearch
-               sidebar: address is the everyday lookup, roll # the
-               precise one you reach for when you already have it. -->
-          <!-- One info icon per ROW from here down (Jason, 2026-08-22):
-               each grouping carries a single combined .tip on its last
-               field, so infoIcon.js renders one ⓘ at the end of the
-               line instead of one per box. -->
-          <div class="address-row">
-            <span class="field address-from-field">
-              <input id="address-from" type="text" placeholder="From #" autocomplete="off" />
-            </span>
-            <span class="field address-to-field">
-              <input id="address-to" type="text" placeholder="To #" autocomplete="off" />
-            </span>
-            <span class="field address-street-field">
-              <input id="address-street" type="text" placeholder="Street Name (contains)" />
-              <span class="tip">Civic-address search. From # on its own is a "contains" match — 1106 finds "1 106 E ROAD 71 N" however the number is spaced. Fill To # as well for an exact number (same value; tabbing into To auto-fills it) or an inclusive range (different values). Street Name is a substring match against Property_Address (e.g. 'MAIN ST', 'DRURY', 'ROAD 96W').</span>
-            </span>
-          </div>
-          <!-- Street Type + Direction, mirroring the dropdowns on MAO's
-               civic-address search. MAO decides these against structured
-               columns; here they're word-position matches against the
-               Property_Address text, applied client-side alongside the
-               civic-number filter. Options are filled from
-               civicRange.js's lists at boot so the dropdowns and the
-               matcher can't drift apart. -->
-          <div class="address-typedir-row">
-            <span class="field">
-              <select id="address-type">
-                <option value="">Street Type</option>
-              </select>
-            </span>
-            <span class="field">
-              <select id="address-dir">
-                <option value="">Direction</option>
-              </select>
-              <span class="tip">Street Type is matched in type position at the end of the address — 'ST' finds "100 MAIN ST N" but not "123 ST MARYS RD"; long forms match too (RD also finds "ROAD", HWY finds "HIGHWAY"). Direction matches as its own word ("MAIN ST N") or glued to a rural grid number ("ROAD 96W"). Both work best together with a street name.</span>
-            </span>
-          </div>
-
           <!-- Roll # — most precise lookup, one parcel per number.
                Phase 4 wraps the value in a chip-input shell: the
                hidden #roll input still holds the canonical comma-
@@ -361,12 +316,60 @@
               >×</button>
             </div>
           </div>
+
           <!-- Import multi-match notice. Filled by renderListPill() when a
                section-township-range row resolved to MORE than one parcel
                (a subdivided quarter, or a parcel spanning quarters) — the
                list quietly holding more parcels than input rows deserves an
                on-screen explanation, not just a bigger count in the pill. -->
           <div id="parcel-list-notice" class="parcel-list-notice" hidden></div>
+
+          <!-- Civic-address search: From/To number + street substring.
+               How many number boxes are filled picks the mode — one is a
+               contains, both is exact (same) or a range (different).
+               Tabbing into "To" after "From" auto-fills for exact.
+
+               Sits BELOW Roll # (Jason, 2026-09-10). It used to sit above,
+               matching the Winnipeg ParcelSearch sidebar on the reasoning
+               that address is the everyday lookup — but on this app the
+               roll number is what a job usually starts from, so it leads
+               and the address fields follow. -->
+          <!-- One info icon per ROW from here down (Jason, 2026-08-22):
+               each grouping carries a single combined .tip on its last
+               field, so infoIcon.js renders one ⓘ at the end of the
+               line instead of one per box. -->
+          <div class="address-row">
+            <span class="field address-from-field">
+              <input id="address-from" type="text" placeholder="From #" autocomplete="off" />
+            </span>
+            <span class="field address-to-field">
+              <input id="address-to" type="text" placeholder="To #" autocomplete="off" />
+            </span>
+            <span class="field address-street-field">
+              <input id="address-street" type="text" placeholder="Street Name (contains)" />
+              <span class="tip">Civic-address search. From # on its own is a "contains" match — 1106 finds "1 106 E ROAD 71 N" however the number is spaced. Fill To # as well for an exact number (same value; tabbing into To auto-fills it) or an inclusive range (different values). Street Name is a substring match against Property_Address (e.g. 'MAIN ST', 'DRURY', 'ROAD 96W').</span>
+            </span>
+          </div>
+          <!-- Street Type + Direction, mirroring the dropdowns on MAO's
+               civic-address search. MAO decides these against structured
+               columns; here they're word-position matches against the
+               Property_Address text, applied client-side alongside the
+               civic-number filter. Options are filled from
+               civicRange.js's lists at boot so the dropdowns and the
+               matcher can't drift apart. -->
+          <div class="address-typedir-row">
+            <span class="field">
+              <select id="address-type">
+                <option value="">Street Type</option>
+              </select>
+            </span>
+            <span class="field">
+              <select id="address-dir">
+                <option value="">Direction</option>
+              </select>
+              <span class="tip">Street Type is matched in type position at the end of the address — 'ST' finds "100 MAIN ST N" but not "123 ST MARYS RD"; long forms match too (RD also finds "ROAD", HWY finds "HIGHWAY"). Direction matches as its own word ("MAIN ST N") or glued to a rural grid number ("ROAD 96W"). Both work best together with a street name.</span>
+            </span>
+          </div>
 
           <!-- Phase 3: Advanced searches collapsible. Holds the less-
                frequently-touched controls (legal description, certificate
@@ -1125,36 +1128,6 @@
           </details>
 
 
-          <!-- Multi-family. Its own section because the three layers are read
-               together and against each other: what is standing now, what was
-               built recently, and which new projects are ground-oriented. They
-               share one definition of "multi-family" - 3+ dwelling units with
-               Hutterite colonies excluded - which r/build_mf_newbuild.R emits
-               once and both the inventory and new-build shards inherit.
-               Collapsed by default, like Reference and Agricultural. -->
-          <details class="overlay-group" data-group="multifamily">
-            <summary class="overlay-group-title">Multi-family<span class="overlay-group-count"></span></summary>
-            <div class="overlay-group-body">
-            <button id="mfinv-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Multi-Family &mdash; lights up EXISTING multi-family parcels in the selected municipality, shaded blue by dwelling units (3-5 up to 100+), and lists them in the grid. This is the standing inventory, not new construction: use New Multi-Family beside it for what was recently built. Set the threshold to the right to raise the bar (e.g. 20+ units for apartment-block comparables); 3 is the floor the data ships with. Hutterite colonies are excluded &mdash; 1,222 rolls carry 20-35 units each and would otherwise dominate every list. Also turns on Assessment Parcels so each coloured parcel answers a click.">
-              <span class="overlay-btn-label">Multi-Family</span>
-            </button>
-            <!-- The threshold rides in the second grid column, beside the
-                 button it qualifies, the same way the historical "As of"
-                 picker sits beside Show. -->
-            <span class="overlay-subcontrol">
-              <span class="overlay-subcontrol-label" title="Show only parcels with at least this many dwelling units. 3 is the floor the shards ship with; the control cannot go below it because 1- and 2-unit rolls were never published.">DU &ge;</span>
-              <input type="number" id="mfinv-min-du" min="3" max="9999" step="1" value="3"
-                     aria-label="Minimum dwelling units" />
-            </span>
-            <button id="mfnb-toggle" type="button" class="overlay-btn overlay-btn-wide" aria-pressed="false" title="New Multi-Family &mdash; tri-state cycle. 1st click &rarr; Year: every roll in the selected municipality where an apartment-scale building landed on the assessment roll since 2016, shaded red by how recently (pale = 2016-17, dark = 2026+). 2nd click &rarr; Units: the same rolls shaded blue by current dwelling units (3-5 up to 100+). 3rd click &rarr; off. Also turns on Assessment Parcels so each coloured parcel answers a click, and shows the New MF column. Detected from 20 years of assessed BUILDING VALUE, not permits &mdash; Manitoba freezes values between biennial reassessments, so a mid-cycle jump is physical change. 3+ dwelling units (excluding Hutterite colonies). Years are assessment years and trail completion by about a year.">
-              <span class="overlay-btn-label">New Multi-Family</span>
-            </button>
-            <button id="condodev-toggle" type="button" class="overlay-btn overlay-btn-wide" aria-pressed="false" title="New Condos &mdash; tri-state cycle. 1st click &rarr; Type: every new condo development in the selected municipality, coloured by what MAO says stands there (green = row housing / townhouse, purple = apartment, orange = mixed, grey = not typed). 2nd click &rarr; Year: the same developments shaded purple by when they first landed on the roll. 3rd click &rarr; off. Also turns on Assessment Parcels and shows the New Condo column. This is the companion to New Multi-Family, not a filter on it: 92% of row-housing rolls carry ONE dwelling unit because row housing is condo-titled, so it never appears in a 3+ unit layer. Units are reassembled into developments by their shared condo plan. Type comes from MAO&#39;s own structure descriptor and is left blank when absent &mdash; the address and density heuristics are not accurate enough to guess with. Years are assessment years and trail completion by about a year.">
-              <span class="overlay-btn-label">New Condos</span>
-            </button>
-            </div>
-          </details>
-
           <details class="overlay-group" data-group="reference">
             <summary class="overlay-group-title">Reference<span class="overlay-group-count"></span></summary>
             <div class="overlay-group-body">
@@ -1230,6 +1203,39 @@
             </div>
           </details>
 
+          <!-- Multi-family. Its own section because the three layers are read
+               together and against each other: what is standing now, what was
+               built recently, and which new projects are ground-oriented. They
+               share one definition of "multi-family" - 3+ dwelling units with
+               Hutterite colonies excluded - which r/build_mf_newbuild.R emits
+               once and both the inventory and new-build shards inherit.
+               Collapsed by default, like Reference and Agricultural.
+               Sits below Agricultural (Jason, 2026-09-10) — it used to come
+               third, ahead of both, which put a specialist section in front
+               of the ones read on most searches. -->
+          <details class="overlay-group" data-group="multifamily">
+            <summary class="overlay-group-title">Multi-family<span class="overlay-group-count"></span></summary>
+            <div class="overlay-group-body">
+            <button id="mfinv-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Multi-Family &mdash; lights up EXISTING multi-family parcels in the selected municipality, shaded blue by dwelling units (3-5 up to 100+), and lists them in the grid. This is the standing inventory, not new construction: use New Multi-Family beside it for what was recently built. Set the threshold to the right to raise the bar (e.g. 20+ units for apartment-block comparables); 3 is the floor the data ships with. Hutterite colonies are excluded &mdash; 1,222 rolls carry 20-35 units each and would otherwise dominate every list. Also turns on Assessment Parcels so each coloured parcel answers a click.">
+              <span class="overlay-btn-label">Multi-Family</span>
+            </button>
+            <!-- The threshold rides in the second grid column, beside the
+                 button it qualifies, the same way the historical "As of"
+                 picker sits beside Show. -->
+            <span class="overlay-subcontrol">
+              <span class="overlay-subcontrol-label" title="Show only parcels with at least this many dwelling units. 3 is the floor the shards ship with; the control cannot go below it because 1- and 2-unit rolls were never published.">DU &ge;</span>
+              <input type="number" id="mfinv-min-du" min="3" max="9999" step="1" value="3"
+                     aria-label="Minimum dwelling units" />
+            </span>
+            <button id="mfnb-toggle" type="button" class="overlay-btn overlay-btn-wide" aria-pressed="false" title="New Multi-Family &mdash; tri-state cycle. 1st click &rarr; Year: every roll in the selected municipality where an apartment-scale building landed on the assessment roll since 2016, shaded red by how recently (pale = 2016-17, dark = 2026+). 2nd click &rarr; Units: the same rolls shaded blue by current dwelling units (3-5 up to 100+). 3rd click &rarr; off. Also turns on Assessment Parcels so each coloured parcel answers a click, and shows the New MF column. Detected from 20 years of assessed BUILDING VALUE, not permits &mdash; Manitoba freezes values between biennial reassessments, so a mid-cycle jump is physical change. 3+ dwelling units (excluding Hutterite colonies). Years are assessment years and trail completion by about a year.">
+              <span class="overlay-btn-label">New Multi-Family</span>
+            </button>
+            <button id="condodev-toggle" type="button" class="overlay-btn overlay-btn-wide" aria-pressed="false" title="New Condos &mdash; tri-state cycle. 1st click &rarr; Type: every new condo development in the selected municipality, coloured by what MAO says stands there (green = row housing / townhouse, purple = apartment, orange = mixed, grey = not typed). 2nd click &rarr; Year: the same developments shaded purple by when they first landed on the roll. 3rd click &rarr; off. Also turns on Assessment Parcels and shows the New Condo column. This is the companion to New Multi-Family, not a filter on it: 92% of row-housing rolls carry ONE dwelling unit because row housing is condo-titled, so it never appears in a 3+ unit layer. Units are reassembled into developments by their shared condo plan. Type comes from MAO&#39;s own structure descriptor and is left blank when absent &mdash; the address and density heuristics are not accurate enough to guess with. Years are assessment years and trail completion by about a year.">
+              <span class="overlay-btn-label">New Condos</span>
+            </button>
+            </div>
+          </details>
+
           <!-- Flood. Five independently-toggled groups rather than one
                "flood" button, because they are different instruments and
                conflating them would be the one mistake this panel must not
@@ -1239,7 +1245,8 @@
                Geometry is simplified for display — the per-parcel verdict
                in the Flood Zone column is joined at full resolution.
                Collapsed by default: specialist, and five more buttons in an
-               already-tall panel. Sits below Agricultural (Jason, 2026-08-21)
+               already-tall panel. Sits below Agricultural and Multi-family
+               (Jason, 2026-08-21)
                — it started up with Planning, but it is reference context for
                a minority of searches rather than something read on every one.
                See src/lib/flood.js. -->
