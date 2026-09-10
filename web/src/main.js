@@ -2573,6 +2573,7 @@ $zoningToggle.addEventListener('click', () => toggleOverlay('zoning'));
 $devplanToggle.addEventListener('click', () => toggleOverlay('devplan'));
 $contamToggle.addEventListener('click', () => toggleAuxOverlay('contam'));
 $flowToggle.addEventListener('click', () => toggleAuxOverlay('flow'));
+$stationsToggle?.addEventListener('click', () => toggleAuxOverlay('stations'));
 $highwaysToggle.addEventListener('click', () => toggleAuxOverlay('highways'));
 $riskAreaToggle.addEventListener('click', () => toggleAuxOverlay('riskAreas'));
 for (const [key, btn] of $floodToggles) {
@@ -8523,7 +8524,9 @@ async function fetchStationsWithHistory() {
 const AUX_META = {
   contam:      { btn: () => $contamToggle,      on: 'Environmental sites', off: 'Environmental sites', busy: 'Loading…',
                  fetch: () => fetchContaminatedSites(),       setData: (m, fc) => setContamData(m, fc),      setVis: setContamVisible },
-  stations:    { btn: () => $stationsToggle,    on: 'Traffic counts', off: 'Traffic counts', busy: 'Loading…',
+  // Label matches index.html's casing exactly, so the button doesn't
+  // silently re-case itself on first click the way its neighbours do.
+  stations:    { btn: () => $stationsToggle,    on: 'Traffic Counts', off: 'Traffic Counts', busy: 'Loading…',
                  fetch: () => fetchStationsWithHistory(),
                  setData: (m, fc) => setTrafficData(m, fc),
                  setVis: setTrafficVisible },
