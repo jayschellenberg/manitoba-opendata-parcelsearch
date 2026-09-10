@@ -17,7 +17,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { validateStyleMin } from '@maplibre/maplibre-gl-style-spec';
+import {
+  validateStyleMin, createPropertyExpression, featureFilter, v8,
+} from '@maplibre/maplibre-gl-style-spec';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const src = fs.readFileSync(path.join(here, '..', 'src', 'map.js'), 'utf8');
@@ -145,6 +147,98 @@ test('both label layers start hidden', () => {
   for (const l of labelLayers) {
     assert.equal(l.layout.visibility, 'none', `${l.id} starts hidden`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// What the map would actually SAY.
+//
+// Validating a style means the expressions are well-formed, not that they
+// produce the right text. These evaluate them the way MapLibre does — same
+// compiler, same feature shape, same zoom argument — so the strings and the
+// feature selection are pinned even though nothing is painted. That matters
+// here because the map has not been seen rendered: Chrome was unavailable and
+// the in-app browser pane never composites, so MapLibre's style never
+// finishes loading in it.
+// ---------------------------------------------------------------------------
+
+console.log('\nmap.js — what the layers render for a real feature');
+
+/** Evaluate a layout property expression at a zoom against a feature. */
+function evalLayout(layerId, prop, zoom, properties) {
+  const layer = [...layers, ...labelLayers].find((l) => l.id === layerId);
+  assert.ok(layer, `layer ${layerId}`);
+  const spec = v8[`layout_${layer.type}`][prop];
+  const compiled = createPropertyExpression(layer.layout[prop], spec);
+  assert.equal(compiled.result, 'success',
+    `${layerId}.${prop} failed to compile: ${JSON.stringify(compiled.value)}`);
+  const out = compiled.value.evaluate({ zoom }, { properties });
+  // A `formatted` property evaluates to a Formatted object; take its text.
+  return typeof out === 'string' ? out : String(out);
+}
+
+// Arborg's town station 5023 and the PTH 68 segment beside it, with exactly
+// the properties joinTrafficHistory()/joinFlowHistory() stamp on.
+const TOWN_5023 = { _town: 1, _label: '3,620', _labelYear: '3,620 (2024)' };
+const SEG_1193 = { _label: '1,230', _labelYear: '1,230 (2024)' };
+
+test('the year appears at zoom 11 and not at 10', () => {
+  assert.equal(evalLayout('traffic-town-label', 'text-field', 10, TOWN_5023), '3,620');
+  assert.equal(evalLayout('traffic-town-label', 'text-field', 11, TOWN_5023), '3,620 (2024)');
+  assert.equal(evalLayout('traffic-flow-label', 'text-field', 10, SEG_1193), '1,230');
+  assert.equal(evalLayout('traffic-flow-label', 'text-field', 11, SEG_1193), '1,230 (2024)');
+});
+
+test('a station with no published count renders no label, not "undefined"', () => {
+  // joinTrafficHistory stamps empty strings for these; the coalesce must not
+  // let a missing property through as the literal word "undefined".
+  const blank = { _town: 1, _label: '', _labelYear: '' };
+  assert.equal(evalLayout('traffic-town-label', 'text-field', 12, blank), '');
+  assert.equal(evalLayout('traffic-town-label', 'text-field', 12, { _town: 1 }), '');
+});
+
+test('a label falls back to the bare number when only that is stamped', () => {
+  // Defends the inner coalesce: an older cached FC could carry _label without
+  // _labelYear, and zoom 11 must then still show something.
+  assert.equal(evalLayout('traffic-town-label', 'text-field', 12, { _town: 1, _label: '900' }), '900');
+});
+
+test('the circle filters select the right stations', () => {
+  const town = featureFilter(layers.find((l) => l.id === 'traffic-circle-town').filter);
+  const hwy = featureFilter(layers.find((l) => l.id === 'traffic-circle').filter);
+  const cases = [
+    ['town station', { _town: 1 }, true, false],
+    ['highway station', { _town: 0 }, false, true],
+    // A feature that never went through the join has no _town at all. It must
+    // still draw exactly once, as a highway station.
+    ['unjoined station', {}, false, true],
+  ];
+  for (const [name, properties, wantTown, wantHwy] of cases) {
+    const f = { properties, type: 1 };
+    assert.equal(town.filter({ zoom: 12 }, f), wantTown, `${name} → town layer`);
+    assert.equal(hwy.filter({ zoom: 12 }, f), wantHwy, `${name} → highway layer`);
+  }
+});
+
+test('the town label layer skips highway stations', () => {
+  const lbl = featureFilter(labelLayers.find((l) => l.id === 'traffic-town-label').filter);
+  assert.equal(lbl.filter({ zoom: 12 }, { properties: { _town: 1 }, type: 1 }), true);
+  assert.equal(lbl.filter({ zoom: 12 }, { properties: { _town: 0 }, type: 1 }), false);
+});
+
+test('segment colour steps on the joined count, falling back to the service', () => {
+  const flow = eval(`(${grabLayer('traffic-flow-line')})`);
+  const compiled = createPropertyExpression(flow.paint['line-color'], v8.paint_line['line-color']);
+  assert.equal(compiled.result, 'success');
+  const at = (properties) => compiled.value.evaluate({ zoom: 12 }, { properties }).toString();
+  // Breaks are <500, 500, 2000, 5000, 10000, 25000. Compare bands, not hexes.
+  const band = (p) => at(p);
+  assert.notEqual(band({ _aadt: 300 }), band({ _aadt: 3000 }), 'different bands differ');
+  assert.equal(band({ _aadt: 3000 }), band({ _aadt: 4999 }), 'same band matches');
+  // _aadt wins over the service columns...
+  assert.equal(band({ _aadt: 3000, AADT_2024: 300 }), band({ _aadt: 3000 }));
+  // ...and an absent _aadt falls through to them rather than scoring 0.
+  assert.equal(band({ AADT_2024: 3000 }), band({ _aadt: 3000 }));
+  assert.equal(band({ AADT: 3000 }), band({ _aadt: 3000 }));
 });
 
 const passed = results.reduce((a, b) => a + b, 0);
