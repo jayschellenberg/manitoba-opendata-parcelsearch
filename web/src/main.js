@@ -126,6 +126,8 @@ import {
   fetchZoneCategoryList,
   fetchContaminatedSites,
   fetchTrafficFlow,
+  currentAadt,
+  currentAadtYear,
   fetchManitobaHighways,
   fetchAllParcelsInMunicipality,
   fetchMunicipalBoundaries,
@@ -184,6 +186,7 @@ import {
   setTrafficFlowVisible,
   setMbHighwaysData,
   setMbHighwaysVisible,
+  setMbHighwayAadtProvider,
   setMuniParcelsData,
   parcelTilesUrl,
   probeParcelTiles,
@@ -560,10 +563,19 @@ const $numberingLabel  = document.getElementById('numbering-toggle-label');
 // by muni + Roll #. Only offered when the results came from a typed list.
 const $numberingOrderToggle = document.getElementById('numbering-order-toggle');
 const $numberingOrderLabel  = document.getElementById('numbering-order-label');
-// "Include legend in map image" — sits beside the numbering toggle and is
-// read by composeWithAttribution. Shown only while a legend is on screen.
-const $legendToggle    = document.getElementById('legend-toggle');
-const $legendLabel     = document.getElementById('legend-toggle-label');
+// Whether the capture currently being composed should carry the map's
+// legend. Set by generateStaticMap() for the duration of one capture and
+// read by composeWithAttribution, which has no other way to be told.
+// This replaced an "Include legend in map image" checkbox: the legend
+// decides a single capture rather than a persistent mode, so it is now
+// the "Map w/Legend" button beside Generate Map.
+let captureWithLegend = false;
+// True while a capture is composing. Both capture buttons are disabled for
+// the duration, and updateLegendAvailability has to respect that: it runs
+// from a MutationObserver on the map pane, and a legend appearing mid-capture
+// would otherwise re-enable "Map w/Legend" and let a second capture start on
+// top of the first.
+let captureInFlight = false;
 const $zoningToggle  = document.getElementById('zoning-toggle');
 const $devplanToggle = document.getElementById('devplan-toggle');
 const $muniWebsiteBtn = document.getElementById('muni-website-btn');
@@ -1694,7 +1706,7 @@ initSidebarTabs();
 initDataStatusDialog();
 
 /**
- * Park the map-options toggles (Number parcels, Include legend) at the
+ * Park the map-options toggles (Number parcels, Entry order) at the
  * right-hand end of the active tab's action row, beside its Clear
  * button.
  *
@@ -2681,10 +2693,16 @@ initHistoricalSnapshots();
 $gridToggle.addEventListener('click', () => toggleSurveyGridOverlay());
 setTimeout(() => restoreUrlOverlays(initialUrlState), 0);
 
-const $staticMapBtn     = document.getElementById('static-map-btn');
-const $staticMapOutput  = document.getElementById('static-map-output');
-const $staticMapSection = document.getElementById('static-map-section');
-if ($staticMapBtn) $staticMapBtn.addEventListener('click', generateStaticMap);
+const $staticMapBtn      = document.getElementById('static-map-btn');
+const $staticMapLegendBtn = document.getElementById('static-map-legend-btn');
+const $staticMapOutput   = document.getElementById('static-map-output');
+const $staticMapSection  = document.getElementById('static-map-section');
+if ($staticMapBtn) {
+  $staticMapBtn.addEventListener('click', () => generateStaticMap());
+}
+if ($staticMapLegendBtn) {
+  $staticMapLegendBtn.addEventListener('click', () => generateStaticMap({ withLegend: true }));
+}
 
 // Parcel Snapshots (ZIP) — render a 1600×900 satellite JPEG of each result
 // subject (highlighted, fit to 16:9) and download them all as one ZIP named
@@ -2897,7 +2915,7 @@ function composeWithAttribution(srcCanvas) {
   // the credit pill, in the same bottom-right corner it occupies on
   // screen. Drawn last so it sits over the map; the image keeps its
   // normal dimensions.
-  if ($legendToggle?.checked) drawMapLegends(ctx, w, h, y0 - 6, fontSize);
+  if (captureWithLegend) drawMapLegends(ctx, w, h, y0 - 6, fontSize);
 
   return out.toDataURL(OUTPUT_MIME, OUTPUT_QUALITY);
 }
@@ -2990,12 +3008,26 @@ function clearStaticMap() {
   if ($staticMapSection) $staticMapSection.hidden = true;
 }
 
-async function generateStaticMap() {
+/**
+ * Capture the current map view as a JPEG and render it under the table.
+ *
+ * `withLegend` drives the one difference between the two buttons that call
+ * this: Generate Map captures the view alone, Map w/Legend draws the visible
+ * legends into the bottom-right corner as well. Both buttons are disabled
+ * for the duration so a second click can't start a capture mid-compose.
+ */
+async function generateStaticMap({ withLegend = false } = {}) {
   if (!$staticMapOutput) return;
   await mapReady;
-  $staticMapBtn.disabled = true;
-  const originalLabel = $staticMapBtn.textContent;
-  $staticMapBtn.textContent = 'Capturing…';
+  if (captureInFlight) return;
+  const btn = withLegend && $staticMapLegendBtn ? $staticMapLegendBtn : $staticMapBtn;
+  const busyBtns = [$staticMapBtn, $staticMapLegendBtn].filter(Boolean);
+  const wasDisabled = busyBtns.map((b) => b.disabled);
+  captureInFlight = true;
+  for (const b of busyBtns) b.disabled = true;
+  const originalLabel = btn.textContent;
+  btn.textContent = 'Capturing…';
+  captureWithLegend = withLegend;
   try {
     // Force MapLibre to redraw and wait until it's idle so the canvas
     // contents fully match the on-screen view (otherwise a still-loading
@@ -3029,8 +3061,17 @@ async function generateStaticMap() {
     $staticMapOutput.hidden = false;
     $staticMapOutput.innerHTML = '<p style="color:#c0392b">Capture failed — try toggling the satellite basemap and re-trying. If it persists, check the browser console.</p>';
   } finally {
-    $staticMapBtn.disabled = false;
-    $staticMapBtn.textContent = originalLabel;
+    captureWithLegend = false;
+    captureInFlight = false;
+    // Restore each button's own prior state rather than blanket-enabling:
+    // Map w/Legend is disabled whenever no legend is on screen, and a
+    // capture must not be what switches it back on.
+    busyBtns.forEach((b, i) => { b.disabled = wasDisabled[i]; });
+    btn.textContent = originalLabel;
+    // A legend may have appeared or gone while the capture ran, so settle
+    // the button on what is actually on screen now rather than on the
+    // state we snapshotted before.
+    updateLegendAvailability();
   }
 }
 /**
@@ -3782,21 +3823,32 @@ function activeRollOrder() {
 }
 
 /**
- * Reveal "Include legend in map image" only while there's a legend to
- * include. Nothing to include means an unexplained no-op, so the control
- * stays out of the way until an overlay that has a legend is switched on.
+ * Enable "Map w/Legend" only while there's a legend to draw. With none on
+ * screen it would produce an image identical to Generate Map's, so the
+ * button goes flat and says why rather than looking broken. (The control
+ * this replaced — an "Include legend in map image" checkbox — hid itself
+ * outright for the same reason; a button that appears and disappears
+ * beside a fixed one is more jarring than one that greys out.)
  */
 function updateLegendAvailability() {
-  if ($legendLabel) $legendLabel.hidden = visibleMapLegends().length === 0;
-  updateMapOptionsRow();
+  if (!$staticMapLegendBtn) return;
+  // A capture owns the buttons until it finishes; it re-runs this itself.
+  if (captureInFlight) return;
+  const has = visibleMapLegends().length > 0;
+  $staticMapLegendBtn.disabled = !has;
+  if (!has) {
+    $staticMapLegendBtn.title =
+      'No legend on screen to include — turn on an overlay that has one (zoning, MASC, soil, land cover, traffic flow).';
+  } else {
+    $staticMapLegendBtn.title =
+      "Capture the current map view as a JPEG with the map's legend drawn into it, in the bottom-right corner just above the credit line — the same corner it occupies on screen. Every legend currently showing is included, stacked. The image keeps its normal dimensions, so the legend sits over the map rather than beside it.";
+  }
 }
 
-/** The shared row shows whenever either of its toggles does. */
+/** The map-options row shows whenever the numbering toggle does. */
 function updateMapOptionsRow() {
   if (!$numberingRow) return;
-  const anyVisible = ($numberingLabel && !$numberingLabel.hidden)
-                  || ($legendLabel && !$legendLabel.hidden);
-  $numberingRow.hidden = !anyVisible;
+  $numberingRow.hidden = !($numberingLabel && !$numberingLabel.hidden);
 }
 
 // Legends appear and disappear from a dozen different overlay handlers
@@ -8269,11 +8321,148 @@ const auxData   = { contam: null, flow: null, highways: null, riskAreas: null, m
 // we know whether to refetch when the user switches munis.
 let muniParcelsLoadedFor = null;
 
+// ---------- Traffic counts on the Manitoba Highways popup ----------
+//
+// Clicking a highway should answer "how busy is this road?", not just name
+// it. The counts live on a separate layer under a separate toggle (Traffic
+// Flow), which is easy to miss — a road popup that says only "Government of
+// Manitoba road network, current to 2023" reads like a statement ABOUT
+// traffic and sends people looking for counts that aren't there.
+//
+// So the highways popup resolves the count itself, whether or not Traffic
+// Flow is switched on. map.js asks; this owns the fetching and the cache.
+
+/** The Traffic Flow FC, fetched at most once per session. */
+let trafficFlowFcPromise = null;
+function trafficFlowFc() {
+  if (auxData.flow) return Promise.resolve(auxData.flow);
+  if (!trafficFlowFcPromise) {
+    trafficFlowFcPromise = fetchTrafficFlow()
+      .then((fc) => { auxData.flow = fc; return fc; })
+      .catch((err) => {
+        // Let a later click retry rather than caching the failure forever.
+        trafficFlowFcPromise = null;
+        throw err;
+      });
+  }
+  return trafficFlowFcPromise;
+}
+
+// Manitoba Road Network RteType → the Traffic Flow layer's ROAD_IDENT.
+// Only these two carry published volumes; access, service, winter roads,
+// ramps and loops are counted, if at all, under a town station rather than
+// a flow segment, so they correctly resolve to "no published count".
+const RTE_TYPE_TO_ROAD_IDENT = {
+  '-PTH': 'Provincial Trunk Highway',
+  '-PR': 'Provincial Road',
+};
+
+/** Smallest distance in km from `pt` to any vertex of a Line/MultiLineString.
+ *  Vertex-wise rather than true point-to-segment: MHTIS polylines are dense
+ *  enough that the difference is far below the spacing between the candidate
+ *  segments we're choosing among. Uses this module's own haversineKm, which
+ *  is hoisted from further down the file. */
+function minVertexDistanceKm(geometry, pt) {
+  const parts = geometry?.type === 'MultiLineString' ? geometry.coordinates
+              : geometry?.type === 'LineString' ? [geometry.coordinates]
+              : [];
+  let best = Infinity;
+  for (const line of parts) {
+    for (const [lng, lat] of line) {
+      const d = haversineKm(pt, { lng, lat });
+      if (d < best) best = d;
+    }
+  }
+  return best;
+}
+
+// Beyond this, the nearest same-road segment is somewhere else entirely —
+// a different stretch of the same highway tens of km away — and reporting
+// its count as this road's would be worse than reporting nothing.
+const HIGHWAY_AADT_MAX_KM = 3;
+
+/**
+ * AADT for the road the user clicked: nearest flow segment carrying the same
+ * road number and class. Returns null when the road has no published volume,
+ * when nothing matching sits within HIGHWAY_AADT_MAX_KM, or when the flow
+ * layer can't be fetched.
+ */
+async function highwayAadtAt(props, lngLat) {
+  const roadIdent = RTE_TYPE_TO_ROAD_IDENT[props?.RteType];
+  const roadNo = Number(String(props?.CommonRoadName_004 ?? '').trim());
+  if (!roadIdent || !Number.isFinite(roadNo)) return null;
+
+  const fc = await trafficFlowFc();
+  const pt = { lng: lngLat.lng, lat: lngLat.lat };
+  let best = null;
+  for (const f of fc?.features || []) {
+    const p = f.properties;
+    if (Number(p?.ROAD_NO) !== roadNo || p?.ROAD_IDENT !== roadIdent) continue;
+    const aadt = currentAadt(p);
+    if (aadt == null) continue;
+    const km = minVertexDistanceKm(f.geometry, pt);
+    if (km > HIGHWAY_AADT_MAX_KM) continue;
+    if (!best || km < best.km) {
+      best = { km, aadt, year: currentAadtYear(p), stationNum: p.StationNum ?? null };
+    }
+  }
+  return best;
+}
+
+setMbHighwayAadtProvider(highwayAadtAt);
+
+/**
+ * Label the AADT legend with the vintage it is actually showing.
+ *
+ * This layer is NOT one year, which is the thing the old hardcoded
+ * "AADT (2019)" title concealed twice over. Measured 2026-09-10 across all
+ * 2,067 segments, the year of each segment's CURRENT count breaks down as
+ * 2024: 805, 2023: 663, 2019: 448, 2016: 100, and a tail of ~47 reaching
+ * back to 1995 — station 77 on PTH 101 is still serving a 2004 count of
+ * 16,650 as current. A third of the network is therefore five years stale
+ * or worse, and for an appraisal that is a fact about the evidence, not a
+ * detail to round away.
+ *
+ * So: the title says the counts are per-segment latest rather than naming
+ * one year, the note under the swatches gives the real span, and the
+ * per-segment year lives in the popup where a specific number can be
+ * dated. Reads DateOfEsti via currentAadtYear — the year that belongs to
+ * whichever column currentAadt() actually returned.
+ */
+function updateFlowLegendTitle(fc) {
+  const el = document.getElementById('flow-legend-title');
+  const note = document.getElementById('flow-legend-note');
+  if (!el) return;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const f of fc?.features || []) {
+    const p = f.properties;
+    if (currentAadt(p) == null) continue;
+    const y = currentAadtYear(p);
+    if (y == null) continue;
+    if (y < lo) lo = y;
+    if (y > hi) hi = y;
+  }
+  if (!Number.isFinite(lo)) {
+    el.textContent = 'AADT';
+    if (note) note.textContent = '';
+    return;
+  }
+  el.textContent = 'AADT (latest per segment)';
+  if (note) {
+    note.textContent = lo === hi
+      ? `All counts ${hi}. Click a segment for its details.`
+      : `Counts date ${lo}–${hi}. Click a segment for its year.`;
+  }
+}
+
 const AUX_META = {
   contam:      { btn: () => $contamToggle,      on: 'Environmental sites', off: 'Environmental sites', busy: 'Loading…',
                  fetch: () => fetchContaminatedSites(),       setData: (m, fc) => setContamData(m, fc),      setVis: setContamVisible },
   flow:        { btn: () => $flowToggle,        on: 'Traffic flow', off: 'Traffic flow', busy: 'Loading…',
-                 fetch: () => fetchTrafficFlow(),             setData: (m, fc) => setTrafficFlowData(m, fc), setVis: setTrafficFlowVisible },
+                 fetch: () => fetchTrafficFlow(),
+                 setData: (m, fc) => { setTrafficFlowData(m, fc); updateFlowLegendTitle(fc); },
+                 setVis: setTrafficFlowVisible },
   highways:    { btn: () => $highwaysToggle,    on: 'Manitoba Highways', off: 'Manitoba Highways', busy: 'Loading…',
                  fetch: () => fetchManitobaHighways(),         setData: (m, fc) => setMbHighwaysData(m, fc), setVis: setMbHighwaysVisible },
   riskAreas:   { btn: () => $riskAreaToggle,    on: 'MASC risk areas', off: 'MASC risk areas', busy: 'Loading…',

@@ -874,6 +874,25 @@ header small a {
   color: #1e3a8a;
 }
 
+/* Generate Map / Map w/Legend share one row, half the width each. The
+   buttons keep their full-width styling for any other placement; the row
+   is what halves them. min-width:0 lets a long label ellipsis rather
+   than push its sibling narrower than half. */
+.sidebar .generate-map-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 5px;
+}
+.sidebar .generate-map-row .generate-map-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-top: 0;
+  padding-inline: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .sidebar .generate-map-btn {
   width: 100%;
   margin-top: 5px;
@@ -3496,6 +3515,22 @@ body.shape-drawing .maplibregl-canvas {
   border: 1px solid rgba(0, 0, 0, 0.2);
 }
 
+/* Vintage caveat under the AADT ramp. Quieter and narrower than the
+   swatch rows so it reads as a footnote rather than another entry, and
+   wraps instead of stretching the legend across the map. */
+.map-legend .legend-note {
+  margin-top: 5px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(0, 0, 0, 0.12);
+  max-width: 168px;
+  font-size: 10px;
+  line-height: 1.3;
+  color: #555;
+}
+.map-legend .legend-note:empty {
+  display: none;
+}
+
 .explainer {
   margin: 0;
   padding: 8px 20px;
@@ -5600,6 +5635,29 @@ body {
 .sidebar .generate-map-btn:hover {
   background: var(--ui-brand-hover);
   border-color: var(--ui-brand-hover);
+}
+
+/* "Map w/Legend" is blue so the pair reads as two distinct actions at a
+   glance instead of one button rendered twice. Literal blue rather than
+   --color-accent-500: that token is the app's teal (#2f6f6a), which is a
+   near-neighbour of the brand button and defeats the whole point.
+   Declared AFTER the brand rule above — both are single-class specificity
+   under .sidebar, so source order is what decides. */
+.sidebar .generate-map-btn-legend,
+.sidebar .generate-map-btn-legend:disabled {
+  background: #2563eb;
+  border-color: #1d4ed8;
+  color: #fff;
+}
+.sidebar .generate-map-btn-legend:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+/* No legend on screen means nothing to draw, so the button says so by
+   going flat rather than silently producing an identical image. */
+.sidebar .generate-map-btn-legend:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* .danger — a destructive reset. The Clear button on both tabs, which

@@ -1249,21 +1249,36 @@ const TRAFFIC_STATIONS_URL  = 'https://services6.arcgis.com/HQUud09zgy3Asw9X/arc
 // a 2023 one had been published and was 15 months fresher (last edited
 // 2026-02-10 vs 2024-11-21). Same 2,067 segments, so it is a drop-in.
 //
-// READ AADT_2023, NOT AADT. The new service keeps `AADT` as the carried-forward
-// PRIOR estimate — byte-identical to what the 2019 layer served — and puts the
-// current count in `AADT_2023`. Station 73 reads AADT 1040 / AADT_2023 1020;
-// station 533 reads 540 / 400. Swapping the URL alone would therefore have
-// changed nothing at all, which is the kind of "upgrade" that looks done and
-// isn't. `DateOfEsti` is the year of the NEW estimate (2023/2024); `EYear` is
-// the year of the old one.
+// READ THE NEWEST AADT_<year> COLUMN, NOT `AADT`. The service accumulates a
+// new year-stamped column on each republish and never renames the old ones,
+// so the obvious field name is always the stalest thing on the feature.
+// `AADT`'s own alias is literally "AADT 2019", and it still disagrees with
+// AADT_2023 on 729 of 2,067 segments.
 //
-// When a 2027-ish layer lands, expect the same shape: a new AADT_<year> column
-// beside a stale `AADT`. Check the field list before assuming a URL bump is enough.
+// The 2026-02-12 republish added AADT_2024 beside AADT_2023 — exactly the
+// shape the previous note here predicted — and it is non-null on all 2,067
+// segments. 748 of them (36%) carry a different 2024 value, so reading
+// AADT_2023 was quietly showing a stale vintage on over a third of the
+// network. That is why AADT_FIELDS is newest-first and why adding the next
+// column is the whole fix when a 2025/2026 layer lands: check the field list
+// on republish, don't assume a URL bump is enough.
+//
+// YEARS. `DateOfEsti` ("Estimation Year") is the year of the NEWEST published
+// count and pairs with whichever AADT_<year> column is newest; `EYear` is the
+// year of the older one and pairs with `AADT`. Verified against MHTIS's own
+// "Traffic on Manitoba Highways 2025" report: (DateOfEsti, newest column)
+// lands on a real published station-year in 1,649 of 1,655 stations (99.6%).
+//
+// The middle column has NO reliable year and must not be labelled with one.
+// AADT_2023 means "the number printed in the 2023 report", which for a
+// short-duration station is an older physical count carried forward —
+// station 1193 (PTH 68 at Arborg) reads AADT_2023 1130, but the report shows
+// that as a 2018 count, with 1230 counted in 2024.
 const TRAFFIC_FLOW_URL      = 'https://services6.arcgis.com/HQUud09zgy3Asw9X/arcgis/rest/services/MHTIS_Traffic_Flow_2023_(new)/FeatureServer/0';
-// Current-count field on the layer above, in preference order: the first one
-// present on a feature wins, so an older cached FC (or a future republish that
-// renames the column) still resolves to something sane.
-const AADT_FIELDS = ['AADT_2023', 'AADT'];
+// Current-count field on the layer above, NEWEST FIRST: the first one present
+// on a feature wins, so an older cached FC (or a future republish that renames
+// the column) still resolves to something sane.
+const AADT_FIELDS = ['AADT_2024', 'AADT_2023', 'AADT'];
 
 /**
  * The current AADT for a traffic-flow feature's attributes.
@@ -1278,6 +1293,25 @@ export function currentAadt(props) {
     if (Number.isFinite(v) && v > 0) return v;
   }
   return null;
+}
+
+/**
+ * The year to print beside currentAadt()'s number.
+ *
+ * `DateOfEsti` is the authority — it is the year of the newest published
+ * count, which is the one currentAadt() returns. It is only ignored when the
+ * feature has no usable count at all, or when the value came from the `AADT`
+ * fallback column, whose year is `EYear` instead.
+ *
+ * Returns null rather than guessing, so a caller with no year prints the
+ * count bare instead of asserting a wrong one.
+ */
+export function currentAadtYear(props) {
+  if (!props || currentAadt(props) == null) return null;
+  // Which column actually supplied the number decides which year describes it.
+  const usedFallback = !(Number(props.AADT_2024) > 0) && !(Number(props.AADT_2023) > 0);
+  const year = Number(usedFallback ? props.EYear : props.DateOfEsti);
+  return Number.isFinite(year) && year > 1900 ? year : null;
 }
 const MB_ROAD_NETWORK_URL   = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/Manitoba_Road_Network_2023/FeatureServer/0';
 const MUNICIPALITY_URL      = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/MUNICIPALITY/FeatureServer/0';
@@ -2604,11 +2638,13 @@ export async function fetchTrafficStations() {
  * into the station-click popup (joined on StationNum).
  */
 export async function fetchTrafficFlow() {
-  // v2: moved from the 2019 layer to the 2023 one and started reading
-  // AADT_2023. The key bump is essential — a v1 entry holds 2019-vintage
-  // counts under the old field, and those would otherwise sit in browsers
-  // until the cache aged out, hiding the upgrade behind stale data.
-  const cacheKey = 'mb_traffic_flow_v2';
+  // v3: picked up AADT_2024 (added by the 2026-02-12 republish) and EYear.
+  // The key bump is essential — a v2 entry has neither column, so
+  // currentAadt() would fall back to the 2023 vintage and currentAadtYear()
+  // would have no DateOfEsti to read, leaving stale counts sitting in
+  // browsers until the cache aged out and hiding the upgrade entirely.
+  // Bump this again whenever AADT_FIELDS or outFields changes.
+  const cacheKey = 'mb_traffic_flow_v3';
   const cached = await readCache(cacheKey);
   if (cached) return cached;
   // The MHTIS Traffic Flow layer's OID field is `FID`, not OBJECTID,
@@ -2617,7 +2653,7 @@ export async function fetchTrafficFlow() {
   // explicitly so paging works.
   const fc = await fetchAllPages(TRAFFIC_FLOW_URL, {
     where: '1=1',
-    outFields: 'StationNum,ROAD_NO,ROAD_IDENT,FlowDirect,AADT,AADT_2023,DateOfEsti,START_KM,END_KM,LENGTH_KM,REGION_NO',
+    outFields: 'StationNum,ROAD_NO,ROAD_IDENT,FlowDirect,AADT,AADT_2023,AADT_2024,DateOfEsti,EYear,START_KM,END_KM,LENGTH_KM,REGION_NO',
     returnGeometry: 'true',
     outSR: '4326',
     f: 'geojson',

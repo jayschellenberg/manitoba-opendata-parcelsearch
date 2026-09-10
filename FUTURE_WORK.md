@@ -151,3 +151,71 @@ it ever bites:
   returns geometry, so this costs wire size and browser memory.
 - Push a real civic-number column into the legal-index shard and range
   on it there (fits the "export parcels into the shard" idea above).
+
+## Traffic counts: annual-report PDFs are the real history (phase 2)
+
+2026-09-10. Phase 1 shipped the live-service fixes (read `AADT_2024`,
+date every count from `DateOfEsti`, put AADT on the Manitoba Highways
+popup, replace the hardcoded "AADT (2019)" legend). What it could not
+fix is that the ArcGIS service only carries three vintages, and only
+two of them have a trustworthy year.
+
+MHTIS publishes *Traffic on Manitoba Highways* as a PDF per year at
+`gov.mb.ca/mti/traffic/mhtis_traffic_reports.html` — 2008-2019, 2023,
+2024, 2025. The 2025 edition is NEWER than anything in the ArcGIS
+service. A prototype parse of it (530 pages, 40 MB, PyMuPDF
+`get_text('words')` grouped into rows by y) pulled **7,435 station-year
+rows across 2,097 stations, 2016-2025**, and every value reconciled
+against the live service.
+
+Three things only the PDF has:
+
+1. **Real per-station series.** Section III (PTH/PR). Continuous (ATR)
+   stations carry 8-10 annual values; short-duration (SDC) ones carry
+   only the years they were counted — 1,226 of 1,753 stations (70%)
+   have exactly 2, so a uniform "last 5 years" does not exist. Show
+   whatever the station has.
+
+2. **Town count stations.** Section IV — the 291 stations (StationNum
+   >= 5000) that have no flow segment and therefore no number in the
+   app today. For an in-town commercial property these are the counts
+   that matter: Arborg's are ~3x the rural segments on the same
+   highways (stn 5023, N. of PTH 68: 3,480 in 2018 -> 3,620 in 2024;
+   stn 5025, W. of PR 326: 3,100 -> 3,240, against PTH 68's 1,230).
+
+3. **Honest staleness.** Measured across all 2,067 segments, the year
+   of each segment's CURRENT count is 2024: 805, 2023: 663, 2019: 448,
+   2016: 100, plus ~47 reaching back to 1995. Station 77 on PTH 101 is
+   still serving a **2004** count of 16,650 as current.
+
+### The station layer is not wired up at all
+
+Worth knowing before starting: `fetchTrafficStations`, `setTrafficData`,
+`setTrafficVisible` and `buildAadtIndex` are all exported and none is
+imported by `main.js`. There is no station toggle in `index.html`, so
+the `traffic-circle` layer never receives data and `trafficHtml`'s
+"Toggle Show Flow for AADT" branch is unreachable dead code. Giving town
+stations "their own icon + real counts" therefore means building the
+station overlay, not adjusting one.
+
+### Shape of the work
+
+- Build-time parser (R or Python) over the report PDFs -> a per-station
+  JSON shard in `mb-parcel-data`, keyed on StationNum, holding
+  `{year: aadt}` plus Dir (keep `C`, the combined direction; ATR
+  stations also publish EB/WB/NB/SB rows that must not be summed in).
+- Older editions (2008-2019) will need per-year layout handling; the
+  2025 one alone already covers 2016-2025.
+- Then: station overlay + toggle, town stations on their own icon, and
+  a popup showing the station's full published series.
+
+### Field semantics, verified
+
+`DateOfEsti` ("Estimation Year") is the year of the NEWEST published
+count and pairs with the newest `AADT_<year>` column — verified at
+1,649/1,655 stations (99.6%) against the 2025 report. `EYear` is the
+year of the older count and pairs with `AADT`. The MIDDLE column has no
+reliable year: `AADT_2023` means "the number printed in the 2023
+report", which for a short-duration station is an older physical count
+carried forward (stn 1193, PTH 68 at Arborg: AADT_2023 = 1,130, which
+the report shows as a 2018 count). Never label it with a year.

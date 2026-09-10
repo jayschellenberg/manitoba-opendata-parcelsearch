@@ -1318,7 +1318,17 @@
             </div>
           </details>
 
-          <button id="static-map-btn" type="button" class="generate-map-btn" title="Capture the current map view as a JPEG. Right-click the rendered image below the table and Save Image As… to drop into a report.">📸 Generate Map</button>
+          <!-- Two ways to capture the same view, side by side at half width
+               each. "Map w/Legend" replaced a separate "Include legend in map
+               image" checkbox down in the status block: the legend is a
+               per-capture decision, not a mode, so making it a second button
+               turns a two-step (tick, then click) into one click. It disables
+               itself when no legend is on screen — the old checkbox hid
+               itself for the same reason. -->
+          <div class="generate-map-row">
+            <button id="static-map-btn" type="button" class="generate-map-btn" title="Capture the current map view as a JPEG. Right-click the rendered image below the table and Save Image As… to drop into a report.">📸 Generate Map</button>
+            <button id="static-map-legend-btn" type="button" class="generate-map-btn generate-map-btn-legend" title="Capture the current map view as a JPEG with the map's legend drawn into it, in the bottom-right corner just above the credit line — the same corner it occupies on screen. Every legend currently showing is included, stacked. The image keeps its normal dimensions, so the legend sits over the map rather than beside it.">📸 Map w/Legend</button>
+          </div>
         </section><!-- /map-layers-section -->
 
         <!-- ===================================================
@@ -1344,18 +1354,15 @@
             >Plan Route</button>
             <button id="snapshot-zip-btn" type="button" class="secondary" disabled title="Generate a 1600×900 satellite JPEG of each result parcel (highlighted, zoomed to fit 16:9) and download them all as a single ZIP, named muniCode-roll.jpg. Import a parcel list or run a search first.">Parcel Snapshots (ZIP)</button>
           </div>
-          <!-- Map options. Two independent toggles, each hidden until it
-               can do anything:
+          <!-- Map options. Toggles hidden until they can do anything:
                  - Number parcels: needs more than one parcel to number
                    (main.js unhides #numbering-toggle-label). Numbers them
                    1..N on the map as leader-line callouts and reveals the
                    matching "#" column in the grid.
-                 - Include legend: needs at least one .map-legend visible,
-                   i.e. an overlay that has one (main.js unhides
-                   #legend-toggle-label). Affects the Generate Map image
-                   only — the on-screen legends are already governed by
-                   their own overlay buttons.
-               The row itself shows whenever either toggle does. -->
+                 - Entry order: rides along with Number parcels.
+               The legend used to have a checkbox here too; it is now the
+               "Map w/Legend" button beside Generate Map, since it decided
+               one capture rather than a persistent mode. -->
           <div id="numbering-row" class="numbering-row" hidden>
             <label id="numbering-toggle-label" class="numbering-toggle" hidden title="Number the result parcels 1..N on the map (leader-line callouts) and show a matching # column in the grid. Sorted by municipality, then Roll #. The number stays fixed to each parcel and carries into the Generate Map image and the CSV export.">
               <input type="checkbox" id="numbering-toggle">
@@ -1368,10 +1375,6 @@
             <label id="numbering-order-label" class="numbering-toggle" hidden title="Number the parcels in the order you typed them into the Roll # field, instead of by municipality then Roll #. Entering 154350, 154345 makes 154350 #1 and 154345 #2. Rolls joined with + & | still share one number. Only offered when the results came from a typed roll list.">
               <input type="checkbox" id="numbering-order-toggle">
               <span>Entry order</span>
-            </label>
-            <label id="legend-toggle-label" class="numbering-toggle" hidden title="Draw the map's legend into the Generate Map image, in the bottom-right corner just above the credit line — the same corner it occupies on screen. Every legend currently showing is included, stacked. The image keeps its normal dimensions, so the legend sits over the map rather than beside it.">
-              <input type="checkbox" id="legend-toggle">
-              <span>Include legend in map image</span>
             </label>
           </div>
           <span id="count" class="count"></span>
@@ -1456,8 +1459,12 @@
            in lib/flood.js, listing only the groups currently toggled on —
            five groups at once would be a legend taller than the map. -->
       <div id="flood-legend" class="map-legend masc-legend" hidden></div>
+      <!-- Title is filled in by main.js from the years actually present in
+           the loaded Traffic Flow data. It used to be a hardcoded
+           "AADT (2019)" and stayed that way through two MHTIS republishes,
+           labelling 2023- and 2024-vintage counts as 2019. -->
       <div id="flow-legend" class="map-legend flow-legend" hidden>
-        <strong>AADT (2019)</strong>
+        <strong id="flow-legend-title">AADT</strong>
         <ul>
           <li><span class="swatch" style="background:#cccccc"></span>&lt; 500</li>
           <li><span class="swatch" style="background:#a8d8a8"></span>500 – 2,000</li>
@@ -1466,6 +1473,11 @@
           <li><span class="swatch" style="background:#d62828"></span>10,000 – 25,000</li>
           <li><span class="swatch" style="background:#6d191b"></span>&gt; 25,000</li>
         </ul>
+        <!-- Filled by main.js. The layer is NOT one vintage: 39% of segments
+             carry a 2024 count, 32% a 2023 one, 22% a 2019 one, and a tail
+             reaches back to 1995 — so the legend says so and points at the
+             popup, which carries each segment's own year. -->
+        <div id="flow-legend-note" class="legend-note"></div>
       </div>
     </div>
 

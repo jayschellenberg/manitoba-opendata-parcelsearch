@@ -56,7 +56,7 @@ import {
 import { polygonBboxMidpoint } from './lib/polygonCentroid.js';
 import { rollDisplay } from './lib/parcelLabelFields.js';
 import { WAYBACK_VERSIONS, waybackTileUrl } from './lib/wayback.js';
-import { MB_PARCEL_DATA_CDN, currentAadt } from './arcgis.js';
+import { MB_PARCEL_DATA_CDN, currentAadt, currentAadtYear } from './arcgis.js';
 import {
   MASC_PALETTE,
   MASC_RATING_LABEL_MIN_ZOOM,
@@ -1083,14 +1083,15 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
         source: 'traffic-flow',
         layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-          // AADT_2023 first: the MHTIS 2023 layer keeps a stale carried-forward
-          // `AADT` alongside the current count, so reading the obvious field
-          // name would paint the overlay with several-year-old volumes. Mirrors
-          // currentAadt() in arcgis.js — keep the two in step. Coalesce picks
-          // the first non-null BEFORE to-number, so an absent AADT_2023 falls
-          // through rather than being coerced to 0 and winning.
+          // Newest AADT_<year> column first: the MHTIS layer accumulates a new
+          // year-stamped column per republish and keeps every stale one, so
+          // reading the obvious field name would paint the overlay with
+          // several-year-old volumes. Mirrors AADT_FIELDS/currentAadt() in
+          // arcgis.js — keep the two in step. Coalesce picks the first
+          // non-null BEFORE to-number, so an absent AADT_2024 falls through
+          // rather than being coerced to 0 and winning.
           'line-color': [
-            'step', ['to-number', ['coalesce', ['get', 'AADT_2023'], ['get', 'AADT'], 0]],
+            'step', ['to-number', ['coalesce', ['get', 'AADT_2024'], ['get', 'AADT_2023'], ['get', 'AADT'], 0]],
             '#cccccc',
             500,    '#a8d8a8',
             2000,   '#f4d35e',
@@ -1120,7 +1121,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
         minzoom: 8,
         layout: {
           visibility: 'none',
-          'text-field': ['to-string', ['coalesce', ['get', 'AADT_2023'], ['get', 'AADT'], '']],
+          'text-field': ['to-string', ['coalesce', ['get', 'AADT_2024'], ['get', 'AADT_2023'], ['get', 'AADT'], '']],
           'text-font': ['Open Sans Semibold'],
           'text-size': [
             'interpolate', ['linear'], ['zoom'],
@@ -3466,11 +3467,34 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
       });
       map.on('mouseleave', 'traffic-flow-line', () => { setHoverCursor(''); });
 
+      // Clicking a highway used to answer only "what road is this?" — road
+      // name, class, "current to 2023" — which reads as an answer about
+      // traffic when it is nothing of the kind, and sent people looking for
+      // counts that were one toggle away on a differently-named layer.
+      // It now resolves the road's AADT too, whether or not Traffic Flow is
+      // switched on. Resolution is async (main.js may have to fetch the flow
+      // layer first), so the popup opens immediately with the road identity
+      // and fills the count in when it arrives.
       const highwaysPopup = new maplibregl.Popup({ closeButton: true });
+      let highwayPopupToken = 0;
       onLayerClick(map, 'mb-highways-line', (e) => {
         const p = e.features?.[0]?.properties;
         if (!p) return;
-        highwaysPopup.setLngLat(e.lngLat).setHTML(mbHighwayHtml(p)).addTo(map);
+        const token = ++highwayPopupToken;
+        const pending = Boolean(mbHighwayAadtProvider);
+        highwaysPopup.setLngLat(e.lngLat)
+          .setHTML(mbHighwayHtml(p, { traffic: pending ? 'pending' : null }))
+          .addTo(map);
+        if (!pending) return;
+        // A later click supersedes this one; so does closing the popup.
+        // Without the token an in-flight fetch could overwrite the popup
+        // belonging to a road the user has since clicked away from.
+        Promise.resolve(mbHighwayAadtProvider(p, e.lngLat))
+          .catch(() => null)
+          .then((hit) => {
+            if (token !== highwayPopupToken || !highwaysPopup.isOpen()) return;
+            highwaysPopup.setHTML(mbHighwayHtml(p, { traffic: hit || null }));
+          });
       });
       map.on('mouseenter', 'mb-highways-line', () => {
         if (map.getLayoutProperty('mb-highways-line', 'visibility') === 'visible') {
@@ -5870,6 +5894,14 @@ function formatSoilSurveyDate(value) {
   return d.toISOString().slice(0, 10);
 }
 
+/** " (2024)" for a known year, "" for an unknown one. Never invents a year —
+ *  an unlabelled count is honest, a wrongly-labelled one is not. */
+function aadtYearSuffix(year) {
+  return Number.isFinite(Number(year)) && Number(year) > 1900
+    ? ` (${Number(year)})`
+    : '';
+}
+
 function trafficHtml(p) {
   const lines = [];
   if (p.StationNum != null) lines.push(`<strong>Station #${escapeHtml(p.StationNum)}</strong>`);
@@ -5882,7 +5914,11 @@ function trafficHtml(p) {
   // Flow layer has been loaded and indexed; if it's missing, the user
   // hasn't toggled Show Traffic Flow yet, so prompt them.
   if (p._aadt != null) {
-    lines.push(`<strong>AADT (2019)</strong> ${Number(p._aadt).toLocaleString('en-US')}`);
+    // Year comes from the flow segment this count was joined from, never a
+    // literal — the column that supplies the number changes on every MHTIS
+    // republish, and a hardcoded year outlives it. This line read
+    // "AADT (2019)" against 2023- and 2024-vintage data.
+    lines.push(`<strong>AADT${aadtYearSuffix(p._aadtYear)}</strong> ${Number(p._aadt).toLocaleString('en-US')}`);
   } else {
     lines.push(`<em style="color:#666">Toggle <strong>Show Flow</strong> for AADT</em>`);
   }
@@ -5896,9 +5932,8 @@ function trafficFlowHtml(p) {
   if (road) lines.push(`<strong>${escapeHtml(road)}</strong>`);
   const aadt = currentAadt(p);
   if (aadt != null) {
-    lines.push(`<strong>AADT</strong> ${aadt.toLocaleString('en-US')}`);
+    lines.push(`<strong>AADT${aadtYearSuffix(currentAadtYear(p))}</strong> ${aadt.toLocaleString('en-US')}`);
   }
-  if (p.DateOfEsti != null) lines.push(`Estimate year: ${escapeHtml(p.DateOfEsti)}`);
   if (p.FlowDirect) lines.push(`Flow: ${escapeHtml(p.FlowDirect)}`);
   if (p.START_KM != null && p.END_KM != null) {
     lines.push(`km ${Number(p.START_KM).toFixed(1)} → ${Number(p.END_KM).toFixed(1)}`);
@@ -5907,7 +5942,23 @@ function trafficFlowHtml(p) {
   return `<div style="max-width:260px;line-height:1.4">${lines.join('<br>')}</div>`;
 }
 
-function mbHighwayHtml(p) {
+// Resolves a clicked highway feature to the AADT of the nearest matching
+// flow segment. Registered by main.js, which owns fetching and caching the
+// Traffic Flow layer; map.js only knows how to ask. Null until then, in
+// which case the highways popup simply omits the traffic line.
+let mbHighwayAadtProvider = null;
+
+/**
+ * Teach the Manitoba Highways popup how to look up a road's traffic count.
+ *
+ * `fn(props, lngLat)` returns (or resolves to) `{ aadt, year, stationNum }`
+ * for the nearest flow segment on the same road, or null when there is none.
+ */
+export function setMbHighwayAadtProvider(fn) {
+  mbHighwayAadtProvider = typeof fn === 'function' ? fn : null;
+}
+
+function mbHighwayHtml(p, { traffic } = {}) {
   const typeNames = {
     '-PTH': 'Provincial Trunk Highway',
     '-PR': 'Provincial Road',
@@ -5924,6 +5975,22 @@ function mbHighwayHtml(p) {
   const title = number ? `${type} ${number}` : (commonName || type);
   const lines = [`<strong>${escapeHtml(title)}</strong>`];
   if (commonName && commonName !== title) lines.push(escapeHtml(commonName));
+  if (traffic === 'pending') {
+    lines.push('<em style="color:#666">Traffic count…</em>');
+  } else if (traffic && traffic.aadt != null) {
+    lines.push(
+      `<strong>AADT${aadtYearSuffix(traffic.year)}</strong> ` +
+      `${Number(traffic.aadt).toLocaleString('en-US')}`
+    );
+    if (traffic.stationNum != null) {
+      lines.push(`<em>Source station #${escapeHtml(traffic.stationNum)}</em>`);
+    }
+  } else if (traffic === null) {
+    // Distinguish "MHTIS publishes no volume for this road" from "we didn't
+    // look" — an access road or service road genuinely has no count, and
+    // silence there reads like the old no-traffic-info popup.
+    lines.push('<em style="color:#666">No published traffic count</em>');
+  }
   lines.push('<em>Government of Manitoba road network, current to 2023</em>');
   return `<div style="max-width:280px;line-height:1.4">${lines.join('<br>')}</div>`;
 }
