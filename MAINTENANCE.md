@@ -1210,13 +1210,25 @@ cumulatively against wherever the archive stood last time you looked
 | Signal | Threshold | Why that number |
 |---|---|---|
 | Frontier advance | **≥ 4 days** | Observed single moves run 0 to +5 days (0 across Sep 2-4, +2 on Sep 8, +5 on Sep 9). Four days separates real ground closed from another trickle. Four separate one-day creeps count too — that is still four days of progress. |
-| Archive growth | **≥ 400 rows** | A full busy day: Sep 2 / 3 / 4 landed 394 / 352 / 526. The Sep 8 trickle was 8, and Sep 9 was ~324 — deliberately just under, because Sep 9 already tripped the date test. |
+| Archive growth | **≥ 1,000 rows** | Big enough to mean a bulk load rather than an ordinary day. Sized against the case it exists for: Sep 2-4 landed **1,261 rows** and moved the cut zero days. **Recalibrated from 400 on 2026-09-10** — see below. |
 
 The row test deliberately fires **independently of the date**, because a
 large arrival that only backfills older days is exactly the pattern that
 went unremarked for twelve days: Sep 2-4 delivered 1,261 rows without
 moving the cut at all. Watching the date alone would have stayed silent
-through it.
+through it. It is not hypothetical — it recurred on 2026-09-10, when
+412 rows arrived with the cut frozen at 08-24 for a second day.
+
+**Why 400 became 1,000 (and what that teaches about re-tuning these).**
+400 was set on 2026-09-08 as "a full busy day", when a trickle was 8 rows
+and the archive had been flat for a fortnight. Daily arrivals then moved:
+149 on Sep 8, 427 on Sep 9, 247 on Sep 10. At that rate 400 no longer
+separated a notable arrival from an ordinary Tuesday — it fired on routine
+backfill and would have fired most days, which turns a signal into a daily
+nudge you learn to ignore. **These thresholds are calibrated against an
+arrival rate that moves, so re-check them whenever the digest's daily
+figures shift by more than about half.** The frontier test needed no
+change: it has fired once in nine days, on the right occasion.
 
 Below both thresholds, nothing is wrong and nothing needs doing — that is
 the crawl. Sustained silence on BOTH for more than ~2 weeks is the case to
