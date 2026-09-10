@@ -586,6 +586,29 @@ Rscript r/build_landcover_tiles.R     # needs GDAL on PATH; ~15-45 min
 ```
 Commit the regenerated `web/public/data/landcover-tiles/`.
 
+### 6a. Traffic-count history  (cadence: annual, when MHTIS publishes)
+Feeds the **Traffic Counts** overlay: every MHTIS counting station with its
+full published AADT series. Rebuild from `web/`:
+```
+npm run traffic:history
+```
+Downloads each *Traffic on Manitoba Highways* edition from
+gov.mb.ca (editions are discovered off the index page, so a new year needs no
+code change), parses Sections III and IV, and writes
+`web/public/data/traffic-history.json` (~322 KB). Commit the regenerated file
+and rerun `npm run manifest`. The ~500 MB of source PDFs cache under
+`build-cache/` and are gitignored; `--offline` reparses what is already there.
+
+The script self-checks and **stops rather than publishing** if either gate
+trips: 13 spot values read by eye off the PDFs must still match, and editions
+must not disagree with each other on more than 2% of the station-years they
+share (genuine MHTIS restatements run ~0.29%; anything near 2% means a column
+misread). Expect two editions to contribute nothing and do not chase it: the
+2013 PDF parses partially and the 2017 PDF has broken font encodings. Each
+report restates a rolling window of prior years, so only the OLDEST and
+NEWEST editions carry unique data — every edition in between contributes 0-4
+station-years.
+
 ### 6b. Place names for the map search box  (cadence: ~annual, or never)
 Feeds the "Find a town…" box in the map's top-left corner — type `Souris`,
 get the town pinned and told it sits in SOURIS-GLENWOOD. Rebuild from `web/`:

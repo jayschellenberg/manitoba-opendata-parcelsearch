@@ -2611,23 +2611,113 @@ export async function fetchContaminatedSites() {
 
 /**
  * Fetch the MHTIS traffic-counting station locations. The published
- * FeatureServer carries point geometry and station metadata only — actual
- * AADT values are not in this layer (they live in private MHTIS map
- * services not published as open data). Each station's popup links out
- * to the MHTIS web app for full count history.
+ * FeatureServer carries point geometry and station metadata only — no AADT.
+ * The counts come from fetchTrafficHistory() and are joined on StationNum
+ * by joinTrafficHistory().
+ *
+ * This layer holds 2,096 stations, ~291 of them TOWN stations (StationNum
+ * >= 5000) which have no flow segment at all — for years they were the dots
+ * on the map that could never answer a click.
  */
 export async function fetchTrafficStations() {
   const cacheKey = 'mb_traffic_stations_v1';
   const cached = await readCache(cacheKey);
   if (cached) return cached;
+  // This layer's OID field is `FID`, not OBJECTID, so fetchAllPages's
+  // default `orderByFields: 'OBJECTID ASC'` returns HTTP 400 "'OBJECTID ASC'
+  // parameter is invalid" — the same trap the Traffic Flow fetch documents.
+  // It went unnoticed because nothing ever called this function: the station
+  // overlay was exported but never wired into main.js, so the very first
+  // real call was the one that lit the overlay up.
   const fc = await fetchAllPages(TRAFFIC_STATIONS_URL, {
     where: '1=1',
     outFields: 'StationNum,HighwayNum,HighwayAlt,LocationDe,Region,FlowDirect,StationTyp',
     returnGeometry: 'true',
     outSR: '4326',
     f: 'geojson',
+    orderByFields: 'FID ASC',
   }, 5000);
   await writeCache(cacheKey, fc);
+  return fc;
+}
+
+// ---------- Traffic-count history (per-station AADT series) ----------
+
+/**
+ * The per-station AADT series, built from MHTIS's annual report PDFs by
+ * r/build_traffic_history.R. Shape:
+ *
+ *   { version, metadata, stations: { "1193": { t, hwy, loc, y: {"2018":1130} } } }
+ *
+ * `t` is 1 for a town/access-road station, 0 for a PTH/PR one. Memoised for
+ * the session; a failure drops the memo so the next toggle retries rather
+ * than replaying the rejection.
+ */
+let trafficHistoryPromise = null;
+export function fetchTrafficHistory() {
+  if (trafficHistoryPromise) return trafficHistoryPromise;
+  trafficHistoryPromise = (async () => {
+    const res = await fetch('/data/traffic-history.json');
+    if (!res.ok) throw new Error(`traffic-history.json: HTTP ${res.status}`);
+    const doc = await res.json();
+    if (!doc?.stations || !Object.keys(doc.stations).length) {
+      throw new Error('traffic-history.json: no stations');
+    }
+    return doc;
+  })();
+  trafficHistoryPromise.catch(() => { trafficHistoryPromise = null; });
+  return trafficHistoryPromise;
+}
+
+/**
+ * The station's series as [{year, aadt}], oldest first.
+ *
+ * Exported so the popup, the map paint and any future export all read the
+ * same thing. Years arrive as object keys (strings) and must sort
+ * numerically — lexicographic ordering is right for 4-digit years today but
+ * silently wrong the moment anything else lands in there.
+ */
+export function stationSeries(entry) {
+  const y = entry?.y;
+  if (!y) return [];
+  return Object.keys(y)
+    .map((k) => ({ year: Number(k), aadt: Number(y[k]) }))
+    .filter((r) => Number.isFinite(r.year) && Number.isFinite(r.aadt) && r.aadt > 0)
+    .sort((a, b) => a.year - b.year);
+}
+
+/**
+ * Stamp each station feature with its history, in place, and return the FC.
+ *
+ * MapLibre flattens feature properties through the style/query round-trip,
+ * so the series rides as a JSON STRING in `_series` rather than an array —
+ * an array comes back as "[object Object]" once it has been through a
+ * GeoJSON source. `_aadt`/`_aadtYear` carry the latest point so the popup
+ * and any label expression can read it without parsing.
+ */
+export function joinTrafficHistory(fc, history) {
+  const byStation = history?.stations || {};
+  for (const f of fc?.features || []) {
+    const p = f.properties;
+    if (!p) continue;
+    const entry = byStation[String(p.StationNum)];
+    const series = stationSeries(entry);
+    // Town stations are identified by the report section they came from,
+    // falling back to the >= 5000 numbering when a station has no history
+    // at all — otherwise an unmatched town dot would render as a highway one.
+    p._town = entry ? (entry.t === 1 ? 1 : 0) : (Number(p.StationNum) >= 5000 ? 1 : 0);
+    p._count = series.length;
+    if (series.length) {
+      const latest = series[series.length - 1];
+      p._aadt = latest.aadt;
+      p._aadtYear = latest.year;
+      p._series = JSON.stringify(series.map((r) => [r.year, r.aadt]));
+    } else {
+      p._aadt = null;
+      p._aadtYear = null;
+      p._series = '';
+    }
+  }
   return fc;
 }
 

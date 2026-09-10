@@ -1164,6 +1164,9 @@
             <button id="flow-toggle" type="button" class="overlay-btn" aria-pressed="false" title="MHTIS Traffic Flow 2023 — segments coloured by AADT">
               <span class="overlay-btn-label">Traffic Flow</span>
             </button>
+            <button id="stations-toggle" type="button" class="overlay-btn" aria-pressed="false" title="MHTIS traffic-count stations, each carrying its full published AADT series (up to 23 years). Two markers: small dark dots are highway stations on a PTH or PR; larger amber dots are TOWN count stations, an in-town cross-section that typically reads 2-3x its neighbouring highway segment. Counts are parsed from MHTIS's annual 'Traffic on Manitoba Highways' reports, 2008 to 2025 — 2020-2022 are sparse because no report was published and only the permanent counters ran.">
+              <span class="overlay-btn-label">Traffic Counts</span>
+            </button>
             <button id="highways-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Manitoba Road Network 2023 — official PTH, PR, access, service, and winter-road geometry">
               <span class="overlay-btn-label">Manitoba Highways</span>
             </button>
@@ -1478,6 +1481,17 @@
              reaches back to 1995 — so the legend says so and points at the
              popup, which carries each segment's own year. -->
         <div id="flow-legend-note" class="legend-note"></div>
+      </div>
+      <!-- Key for the two station markers. Without it the amber dots read as
+           "some other kind of station" and a town count can be mistaken for
+           the highway count beside it — they differ by 2-3x. -->
+      <div id="stations-legend" class="map-legend stations-legend" hidden>
+        <strong>Traffic count stations</strong>
+        <ul>
+          <li><span class="swatch swatch-dot swatch-dot-highway"></span>Highway (PTH / PR)</li>
+          <li><span class="swatch swatch-dot swatch-dot-town"></span>Town count</li>
+        </ul>
+        <div class="legend-note">Click a station for its published AADT by year.</div>
       </div>
     </div>
 

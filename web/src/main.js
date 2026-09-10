@@ -126,6 +126,9 @@ import {
   fetchZoneCategoryList,
   fetchContaminatedSites,
   fetchTrafficFlow,
+  fetchTrafficStations,
+  fetchTrafficHistory,
+  joinTrafficHistory,
   currentAadt,
   currentAadtYear,
   fetchManitobaHighways,
@@ -184,6 +187,8 @@ import {
   setContamVisible,
   setTrafficFlowData,
   setTrafficFlowVisible,
+  setTrafficData,
+  setTrafficVisible,
   setMbHighwaysData,
   setMbHighwaysVisible,
   setMbHighwayAadtProvider,
@@ -582,6 +587,8 @@ const $muniWebsiteBtn = document.getElementById('muni-website-btn');
 const $pdWebsiteBtn   = document.getElementById('pd-website-btn');
 const $contamToggle  = document.getElementById('contam-toggle');
 const $flowToggle    = document.getElementById('flow-toggle');
+const $stationsToggle = document.getElementById('stations-toggle');
+const $stationsLegend = document.getElementById('stations-legend');
 const $highwaysToggle = document.getElementById('highways-toggle');
 const $muniParcelsToggle = document.getElementById('muni-parcels-toggle');
 const $mascToggle    = document.getElementById('masc-toggle');
@@ -8315,8 +8322,8 @@ async function refreshOverlayLayersForMuniChange() {
  * the segment AADT inline (and vice-versa: loading stations after flow
  * triggers the same join). Failures are non-fatal — the button reverts.
  */
-const auxLoaded = { contam: false, flow: false, highways: false, riskAreas: false, muniParcels: false, tileDrainage: false, tileNetwork: false, irrigation: false };
-const auxData   = { contam: null, flow: null, highways: null, riskAreas: null, muniParcels: null, tileDrainage: null, tileNetwork: null, irrigation: null };
+const auxLoaded = { contam: false, stations: false, flow: false, highways: false, riskAreas: false, muniParcels: false, tileDrainage: false, tileNetwork: false, irrigation: false };
+const auxData   = { contam: null, stations: null, flow: null, highways: null, riskAreas: null, muniParcels: null, tileDrainage: null, tileNetwork: null, irrigation: null };
 // Tracks which muni's parcels are currently in the muni-parcels source so
 // we know whether to refetch when the user switches munis.
 let muniParcelsLoadedFor = null;
@@ -8456,9 +8463,44 @@ function updateFlowLegendTitle(fc) {
   }
 }
 
+/** Lift the station key above the AADT ramp when both legends are showing;
+ *  they otherwise claim the same corner. Mirrors flow-legend's `.with-zoning`. */
+function syncStationLegendStacking() {
+  if (!$stationsLegend) return;
+  $stationsLegend.classList.toggle('with-flow', Boolean($flowLegend && !$flowLegend.hidden));
+}
+
+/**
+ * Traffic-count stations, with their published AADT series joined on.
+ *
+ * Two sources: the station POINTS come from the MHTIS FeatureServer, which
+ * carries no counts at all; the COUNTS come from traffic-history.json, built
+ * from the annual report PDFs by r/build_traffic_history.R. Neither is
+ * useful alone — the layer sat unwired for exactly that reason — so the
+ * fetch is the join.
+ *
+ * The history is the smaller and more likely to fail (it is our own build
+ * artefact, not a live service), so a missing one degrades to plain dots
+ * that say "no published counts" rather than failing the whole overlay.
+ */
+async function fetchStationsWithHistory() {
+  const [stations, history] = await Promise.all([
+    fetchTrafficStations(),
+    fetchTrafficHistory().catch((err) => {
+      console.warn('traffic history unavailable; stations will show no counts', err);
+      return null;
+    }),
+  ]);
+  return joinTrafficHistory(stations, history);
+}
+
 const AUX_META = {
   contam:      { btn: () => $contamToggle,      on: 'Environmental sites', off: 'Environmental sites', busy: 'Loading…',
                  fetch: () => fetchContaminatedSites(),       setData: (m, fc) => setContamData(m, fc),      setVis: setContamVisible },
+  stations:    { btn: () => $stationsToggle,    on: 'Traffic counts', off: 'Traffic counts', busy: 'Loading…',
+                 fetch: () => fetchStationsWithHistory(),
+                 setData: (m, fc) => setTrafficData(m, fc),
+                 setVis: setTrafficVisible },
   flow:        { btn: () => $flowToggle,        on: 'Traffic flow', off: 'Traffic flow', busy: 'Loading…',
                  fetch: () => fetchTrafficFlow(),
                  setData: (m, fc) => { setTrafficFlowData(m, fc); updateFlowLegendTitle(fc); },
@@ -11490,6 +11532,10 @@ async function toggleAuxOverlay(which) {
   // The AADT-colour legend rides along with the Flow toggle so the user
   // can read what each segment colour means. Only one place toggles it.
   if (which === 'flow' && $flowLegend) $flowLegend.hidden = !visible;
+  // Two station markers on the map need a key; the popup alone can't say
+  // what the other dot is without clicking it.
+  if (which === 'stations' && $stationsLegend) $stationsLegend.hidden = !visible;
+  if (which === 'flow' || which === 'stations') syncStationLegendStacking();
   // The flood legend lists every ACTIVE group, so any one of the five
   // changing state redraws the whole box rather than toggling a row.
   if (which.startsWith('flood:')) renderFloodLegend();

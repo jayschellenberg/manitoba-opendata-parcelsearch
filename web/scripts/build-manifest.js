@@ -46,6 +46,10 @@ const DATASETS = [
   // ledger — when each municipality's MAO rolls were last refreshed, month
   // precision. Feeds the Data Status tab.
   { name: 'muni_vintage',     file: 'muni-vintage.json',     hasMetadata: true,  schema_version: 1 },
+  // Per-station AADT series parsed from the MHTIS annual report PDFs by
+  // r/build_traffic_history.R. Small enough (~320 KB) to ship from this
+  // repo's deploy rather than the CDN, and it changes once a year.
+  { name: 'traffic_history',  file: 'traffic-history.json',  hasMetadata: true,  schema_version: 1 },
   // section-grid, river-lots, masc-riverlots, and every per-muni
   // shard set now ship from outside this repo: the two big indexes
   // above via GitHub Releases + edge functions; section-grid via the

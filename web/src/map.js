@@ -1227,10 +1227,37 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
       // ring — distinct from the contam circles so both can be visible
       // simultaneously without confusion.
       map.addSource('traffic', { type: 'geojson', data: emptyFc() });
+      // Town count stations get their own marker. They are a different
+      // measurement in a different place — an in-town cross-section rather
+      // than a rural highway one — and they routinely read 2-3x their
+      // neighbouring highway segment (Arborg: 3,620 in town vs 1,230 on
+      // PTH 68). Drawing both as one dot invites reading one as the other.
+      // Drawn first so the smaller highway dots stay on top where they
+      // overlap at a town's edge.
+      map.addLayer({
+        id: 'traffic-circle-town',
+        type: 'circle',
+        source: 'traffic',
+        filter: ['==', ['get', '_town'], 1],
+        layout: { visibility: 'none' },
+        paint: {
+          'circle-radius': [
+            'interpolate', ['linear'], ['zoom'],
+            8,  8,
+            12, 12,
+            16, 15,
+          ],
+          'circle-color': '#ffd166',
+          'circle-stroke-width': 2.5,
+          'circle-stroke-color': '#1a3a4a',
+          'circle-opacity': 0.95,
+        },
+      });
       map.addLayer({
         id: 'traffic-circle',
         type: 'circle',
         source: 'traffic',
+        filter: ['!=', ['get', '_town'], 1],
         layout: { visibility: 'none' },
         paint: {
           // Same zoom-graduated sizing as contam-circle (slightly
@@ -3440,17 +3467,19 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
       // and indexed; main.js stamps the matched AADT onto each station
       // feature's properties before pushing them to the source).
       const trafficPopup = new maplibregl.Popup({ closeButton: true });
-      onLayerClick(map, 'traffic-circle', (e) => {
-        const p = e.features?.[0]?.properties;
-        if (!p) return;
-        trafficPopup.setLngLat(e.lngLat).setHTML(trafficHtml(p)).addTo(map);
-      });
-      map.on('mouseenter', 'traffic-circle', () => {
-        if (map.getLayoutProperty('traffic-circle', 'visibility') === 'visible') {
-          setHoverCursor('pointer');
-        }
-      });
-      map.on('mouseleave', 'traffic-circle', () => { setHoverCursor(''); });
+      for (const layerId of ['traffic-circle', 'traffic-circle-town']) {
+        onLayerClick(map, layerId, (e) => {
+          const p = e.features?.[0]?.properties;
+          if (!p) return;
+          trafficPopup.setLngLat(e.lngLat).setHTML(trafficHtml(p)).addTo(map);
+        });
+        map.on('mouseenter', layerId, () => {
+          if (map.getLayoutProperty(layerId, 'visibility') === 'visible') {
+            setHoverCursor('pointer');
+          }
+        });
+        map.on('mouseleave', layerId, () => { setHoverCursor(''); });
+      }
 
       // Click an AADT flow segment → popup with the road / highway, the
       // segment kilometre range, and the AADT estimate for that segment.
@@ -3874,8 +3903,9 @@ export function setTrafficData(map, fc) {
   if (src) src.setData(fc);
 }
 export function setTrafficVisible(map, visible) {
-  if (map.getLayer('traffic-circle')) {
-    map.setLayoutProperty('traffic-circle', 'visibility', visible ? 'visible' : 'none');
+  const v = visible ? 'visible' : 'none';
+  for (const id of ['traffic-circle', 'traffic-circle-town']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
   }
 }
 
@@ -5902,25 +5932,63 @@ function aadtYearSuffix(year) {
     : '';
 }
 
+/** Parse the `_series` JSON string stamped on by joinTrafficHistory().
+ *  Feature properties survive the GeoJSON round-trip only as scalars, so
+ *  the series travels as a string. Returns [] on anything unexpected. */
+function readStationSeries(raw) {
+  if (!raw || typeof raw !== 'string') return [];
+  try {
+    const rows = JSON.parse(raw);
+    return Array.isArray(rows)
+      ? rows.filter((r) => Array.isArray(r) && r.length === 2)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * How many years the popup lists before collapsing the rest into a count.
+ * Continuous counters carry 23 years, which is a popup taller than most of
+ * the map; the recent ones are what an appraisal argues from.
+ */
+const STATION_SERIES_SHOWN = 6;
+
 function trafficHtml(p) {
   const lines = [];
-  if (p.StationNum != null) lines.push(`<strong>Station #${escapeHtml(p.StationNum)}</strong>`);
+  const isTown = Number(p._town) === 1;
+  if (p.StationNum != null) {
+    lines.push(`<strong>Station #${escapeHtml(p.StationNum)}</strong>` +
+               (isTown ? ' <em>(town count)</em>' : ''));
+  }
   const hwy = [p.HighwayNum, p.HighwayAlt].filter(Boolean).join(' / ');
   if (hwy)               lines.push(`Hwy ${escapeHtml(hwy)}`);
   if (p.LocationDe)      lines.push(escapeHtml(p.LocationDe));
-  if (p.FlowDirect)      lines.push(`<em>Flow: ${escapeHtml(p.FlowDirect)}</em>`);
   if (p.StationTyp)      lines.push(`<em>Type: ${escapeHtml(p.StationTyp)}</em>`);
-  // _aadt is stamped onto the station feature by main.js once the Traffic
-  // Flow layer has been loaded and indexed; if it's missing, the user
-  // hasn't toggled Show Traffic Flow yet, so prompt them.
-  if (p._aadt != null) {
-    // Year comes from the flow segment this count was joined from, never a
-    // literal — the column that supplies the number changes on every MHTIS
-    // republish, and a hardcoded year outlives it. This line read
-    // "AADT (2019)" against 2023- and 2024-vintage data.
-    lines.push(`<strong>AADT${aadtYearSuffix(p._aadtYear)}</strong> ${Number(p._aadt).toLocaleString('en-US')}`);
+
+  // The full published series, newest first. This used to read
+  // "Toggle Show Traffic Flow for AADT" -- a prompt pointing at a layer that
+  // could never answer for a town station, since town stations have no flow
+  // segment at all.
+  const series = readStationSeries(p._series);
+  if (series.length) {
+    const recent = series.slice(-STATION_SERIES_SHOWN).reverse();
+    const rows = recent.map(([year, aadt], i) => {
+      const val = Number(aadt).toLocaleString('en-US');
+      const cell = i === 0
+        ? ['<strong>', '</strong>']   // newest year is the headline
+        : ['<span style="color:#555">', '</span>'];
+      return `<tr><td style="padding-right:10px">${cell[0]}${escapeHtml(year)}${cell[1]}</td>` +
+             `<td style="text-align:right">${cell[0]}${val}${cell[1]}</td></tr>`;
+    }).join('');
+    lines.push(`<strong>AADT</strong><table style="border-collapse:collapse;margin-top:2px">${rows}</table>`);
+    const hidden = series.length - recent.length;
+    if (hidden > 0) {
+      lines.push(`<em style="color:#666">+${hidden} earlier year${hidden === 1 ? '' : 's'} ` +
+                 `back to ${escapeHtml(series[0][0])}</em>`);
+    }
   } else {
-    lines.push(`<em style="color:#666">Toggle <strong>Show Flow</strong> for AADT</em>`);
+    lines.push('<em style="color:#666">No published counts for this station</em>');
   }
   lines.push(`<a href="https://www.gov.mb.ca/mti/traffic/counts.html" target="_blank" rel="noreferrer">MHTIS web app →</a>`);
   return `<div style="max-width:280px;line-height:1.4">${lines.join('<br>')}</div>`;
