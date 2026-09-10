@@ -1,9 +1,9 @@
 {
  "version": 1,
  "metadata": {
-  "generated_at": "2026-08-22T20:34:39.865Z",
+  "generated_at": "2026-09-10T16:20:07.124Z",
   "source": "mao-scrape muni_refresh_ledger.csv (assessment cadence, month precision)",
-  "source_modified": "2026-08-17T00:52:28.703Z",
+  "source_modified": "2026-09-03T05:58:44.045Z",
   "precision": "month",
   "row_count": 186
  },
@@ -36,8 +36,8 @@
    "muni_no": "400",
    "name": "ALTONA (TOWN)",
    "region": "South-Central / Central Plains",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-08",
+   "last_refreshed_date": "2026-08-26",
    "cadence_months": 6
   },
   {
@@ -60,8 +60,8 @@
    "muni_no": "602",
    "name": "ARMSTRONG (RM)",
    "region": "Interlake",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
@@ -84,8 +84,8 @@
    "muni_no": "401",
    "name": "BEAUSEJOUR (TOWN)",
    "region": "Southeast",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
@@ -100,8 +100,8 @@
    "muni_no": "105",
    "name": "BIFROST-RIVERTON (MUNICIPALITY)",
    "region": "Interlake",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-01",
    "cadence_months": 6
   },
   {
@@ -116,8 +116,8 @@
    "muni_no": "153",
    "name": "BOISSEVAIN-MORTON (MUNICIPALITY)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
@@ -140,8 +140,8 @@
    "muni_no": "734",
    "name": "BROCHET (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 12
   },
   {
@@ -164,8 +164,8 @@
    "muni_no": "407",
    "name": "CARBERRY (TOWN)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-08",
+   "last_refreshed_date": "2026-08-26",
    "cadence_months": 6
   },
   {
@@ -204,16 +204,16 @@
    "muni_no": "114",
    "name": "CLANWILLIAM-ERICKSON (MUNICIPALITY)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-01",
    "cadence_months": 6
   },
   {
    "muni_no": "115",
    "name": "COLDWELL (RM)",
    "region": "Interlake",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
@@ -268,8 +268,8 @@
    "muni_no": "118",
    "name": "DAUPHIN (RM)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-08",
+   "last_refreshed_date": "2026-08-25",
    "cadence_months": 6
   },
   {
@@ -300,16 +300,16 @@
    "muni_no": "205",
    "name": "DELORAINE-WINCHESTER (MUNICIPALITY)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
    "muni_no": "786",
    "name": "DUCK BAY (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 12
   },
   {
@@ -324,16 +324,16 @@
    "muni_no": "311",
    "name": "DUNNOTTAR (VILLAGE)",
    "region": "Interlake",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
    "muni_no": "121",
    "name": "EAST ST PAUL (RM)",
    "region": "Winnipeg",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-01",
    "cadence_months": 6
   },
   {
@@ -357,7 +357,7 @@
    "name": "ELTON (RM)",
    "region": "West & Parkland",
    "last_refreshed": "2026-08",
-   "last_refreshed_date": "2026-08-01",
+   "last_refreshed_date": "2026-08-25",
    "cadence_months": 6
   },
   {
@@ -380,8 +380,8 @@
    "muni_no": "605",
    "name": "FISHER (RM)",
    "region": "Interlake",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-08",
+   "last_refreshed_date": "2026-08-26",
    "cadence_months": 6
   },
   {
@@ -468,8 +468,8 @@
    "muni_no": "132",
    "name": "GRANDVIEW  (MUNICIPALITY)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-01",
    "cadence_months": 6
   },
   {
@@ -492,8 +492,8 @@
    "muni_no": "331",
    "name": "HAMIOTA  (MUNICIPALITY)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
@@ -556,8 +556,8 @@
    "muni_no": "755",
    "name": "ISLAND LAKE (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 12
   },
   {
@@ -572,8 +572,8 @@
    "muni_no": "196",
    "name": "KILLARNEY TURTLE MOUNTAIN (MUNICIPALITY)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
@@ -604,8 +604,8 @@
    "muni_no": "143",
    "name": "LAKESHORE (RM)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-01",
    "cadence_months": 6
   },
   {
@@ -636,24 +636,24 @@
    "muni_no": "144",
    "name": "LORNE (MUNICIPALITY)",
    "region": "South-Central / Central Plains",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-08",
+   "last_refreshed_date": "2026-08-25",
    "cadence_months": 6
   },
   {
    "muni_no": "145",
    "name": "LOUISE (MUNICIPALITY)",
    "region": "South-Central / Central Plains",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-08",
+   "last_refreshed_date": "2026-08-25",
    "cadence_months": 6
   },
   {
    "muni_no": "614",
    "name": "LYNN LAKE (TOWN)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 12
   },
   {
@@ -724,8 +724,8 @@
    "muni_no": "431",
    "name": "MINNEDOSA (TOWN)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
@@ -740,8 +740,8 @@
    "muni_no": "151",
    "name": "MONTCALM (RM)",
    "region": "South-Central / Central Plains",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-01",
    "cadence_months": 6
   },
   {
@@ -764,8 +764,8 @@
    "muni_no": "152",
    "name": "MORRIS (RM)",
    "region": "South-Central / Central Plains",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-08",
+   "last_refreshed_date": "2026-08-25",
    "cadence_months": 6
   },
   {
@@ -788,8 +788,8 @@
    "muni_no": "617",
    "name": "MOUNTAIN (RM)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-08",
+   "last_refreshed_date": "2026-08-26",
    "cadence_months": 6
   },
   {
@@ -868,8 +868,8 @@
    "muni_no": "188",
    "name": "NORFOLK TREHERNE (MUNICIPALITY)",
    "region": "South-Central / Central Plains",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
@@ -885,7 +885,7 @@
    "name": "NORTH NORFOLK (MUNICIPALITY)",
    "region": "South-Central / Central Plains",
    "last_refreshed": "2026-08",
-   "last_refreshed_date": "2026-08-01",
+   "last_refreshed_date": "2026-08-25",
    "cadence_months": 6
   },
   {
@@ -900,8 +900,8 @@
    "muni_no": "157",
    "name": "OAKLAND-WAWANESA (MUNICIPALITY)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
@@ -932,8 +932,8 @@
    "muni_no": "712",
    "name": "PIKWITONEI (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 12
   },
   {
@@ -956,8 +956,8 @@
    "muni_no": "610",
    "name": "PINEY (RM)",
    "region": "Southeast",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-08",
+   "last_refreshed_date": "2026-08-26",
    "cadence_months": 6
   },
   {
@@ -980,8 +980,8 @@
    "muni_no": "163",
    "name": "PORTAGE LA PRAIRIE (RM)",
    "region": "South-Central / Central Plains",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-08",
+   "last_refreshed_date": "2026-08-26",
    "cadence_months": 6
   },
   {
@@ -1004,8 +1004,8 @@
    "muni_no": "403",
    "name": "PRAIRIE VIEW  (MUNICIPALITY)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
@@ -1037,7 +1037,7 @@
    "name": "RHINELAND (MUNICIPALITY)",
    "region": "South-Central / Central Plains",
    "last_refreshed": "2026-08",
-   "last_refreshed_date": "2026-08-01",
+   "last_refreshed_date": "2026-08-26",
    "cadence_months": 6
   },
   {
@@ -1052,8 +1052,8 @@
    "muni_no": "165",
    "name": "RITCHOT (RM)",
    "region": "Winnipeg",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-01",
    "cadence_months": 6
   },
   {
@@ -1068,8 +1068,8 @@
    "muni_no": "182",
    "name": "ROBLIN (MUNICIPALITY)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
@@ -1108,8 +1108,8 @@
    "muni_no": "353",
    "name": "ROSSBURN  (MUNICIPALITY)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
@@ -1140,8 +1140,8 @@
    "muni_no": "447",
    "name": "SELKIRK (CITY)",
    "region": "Interlake",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-03",
    "cadence_months": 6
   },
   {
@@ -1172,8 +1172,8 @@
    "muni_no": "448",
    "name": "SNOW LAKE (TOWN)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-08",
+   "last_refreshed_date": "2026-08-26",
    "cadence_months": 12
   },
   {
@@ -1204,16 +1204,16 @@
    "muni_no": "189",
    "name": "SPRINGFIELD (RM)",
    "region": "Winnipeg",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
    "muni_no": "174",
    "name": "ST ANDREWS (RM)",
    "region": "Interlake",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-01",
    "cadence_months": 6
   },
   {
@@ -1236,16 +1236,16 @@
    "muni_no": "178",
    "name": "ST LAURENT (RM)",
    "region": "Interlake",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
    "muni_no": "357",
    "name": "ST PIERRE-JOLYS (VILLAGE)",
    "region": "Southeast",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
@@ -1268,40 +1268,40 @@
    "muni_no": "351",
    "name": "STE ANNE (TOWN)",
    "region": "Southeast",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
    "muni_no": "359",
    "name": "STE. ROSE (MUNICIPALITY)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-08",
+   "last_refreshed_date": "2026-08-26",
    "cadence_months": 6
   },
   {
    "muni_no": "451",
    "name": "STEINBACH (CITY)",
    "region": "Southeast",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-03",
    "cadence_months": 6
   },
   {
    "muni_no": "453",
    "name": "STONEWALL (TOWN)",
    "region": "Interlake",
-   "last_refreshed": "2026-08",
-   "last_refreshed_date": "2026-08-01",
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-03",
    "cadence_months": 6
   },
   {
    "muni_no": "612",
    "name": "STUARTBURN (RM)",
    "region": "Southeast",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
@@ -1316,8 +1316,8 @@
    "muni_no": "193",
    "name": "SWAN VALLEY WEST (MUNICIPALITY)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-08",
+   "last_refreshed_date": "2026-08-26",
    "cadence_months": 6
   },
   {
@@ -1380,16 +1380,16 @@
    "muni_no": "197",
    "name": "VICTORIA (RM)",
    "region": "South-Central / Central Plains",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
    "muni_no": "198",
    "name": "VICTORIA BEACH (RM)",
    "region": "Southeast",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
@@ -1412,8 +1412,8 @@
    "muni_no": "199",
    "name": "WALLACE-WOODWORTH (RM)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
@@ -1452,8 +1452,8 @@
    "muni_no": "202",
    "name": "WHITEHEAD (RM)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
@@ -1468,8 +1468,8 @@
    "muni_no": "463",
    "name": "WINKLER (CITY)",
    "region": "South-Central / Central Plains",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-09",
+   "last_refreshed_date": "2026-09-02",
    "cadence_months": 6
   },
   {
@@ -1484,16 +1484,16 @@
    "muni_no": "206",
    "name": "WOODLANDS (RM)",
    "region": "Interlake",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-08",
+   "last_refreshed_date": "2026-08-26",
    "cadence_months": 6
   },
   {
    "muni_no": "183",
    "name": "YELLOWHEAD (MUNICIPALITY)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-08",
+   "last_refreshed_date": "2026-08-26",
    "cadence_months": 6
   }
  ]
