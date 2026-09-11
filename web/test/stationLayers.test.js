@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import {
   validateStyleMin, createPropertyExpression, featureFilter, v8,
 } from '@maplibre/maplibre-gl-style-spec';
+import { withAnnualizedChange } from '../src/arcgis.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const src = fs.readFileSync(path.join(here, '..', 'src', 'map.js'), 'utf8');
@@ -263,6 +264,71 @@ test('segment colour steps on the joined count, falling back to the service', ()
   // ...and an absent _aadt falls through to them rather than scoring 0.
   assert.equal(band({ AADT_2024: 3000 }), band({ _aadt: 3000 }));
   assert.equal(band({ AADT: 3000 }), band({ _aadt: 3000 }));
+});
+
+// ---------------------------------------------------------------------------
+// Hover reads, click pins.
+// ---------------------------------------------------------------------------
+
+console.log('\nmap.js — station hover vs pinned popup');
+
+/** Lift a top-level function out of map.js. They close with `}` at column 0. */
+function grabFn(name) {
+  const at = src.indexOf(`function ${name}(`);
+  assert.ok(at >= 0, `function ${name} not found in map.js`);
+  const end = src.indexOf('\n}', at);
+  assert.ok(end > at, `could not find the end of ${name}`);
+  return src.slice(at, end + 2);
+}
+
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+const trafficHtml = new Function(
+  'escapeHtml', 'withAnnualizedChange', 'STATION_SERIES_SHOWN',
+  `${[grabFn('readStationSeries'), grabFn('formatAnnualized'), grabFn('trafficHtml')].join('\n')}
+   ; return trafficHtml;`,
+)(escapeHtml, withAnnualizedChange, 6);
+
+// Arborg's town station 5023, real values.
+const STATION_PROPS = {
+  StationNum: 5023,
+  _town: 1,
+  HighwayNum: '326',
+  LocationDe: 'ARBORG - N. OF P.T.H. #68',
+  _series: JSON.stringify([[2018, 3480], [2024, 3620]]),
+};
+
+test('the hover popup drops the link the cursor could never reach', () => {
+  // A hover popup vanishes when the cursor leaves the dot, so a link inside
+  // it is an affordance that cannot be used. The pinned one keeps it.
+  const pinned = trafficHtml(STATION_PROPS);
+  const hover = trafficHtml(STATION_PROPS, { link: false });
+  assert.match(pinned, /MHTIS web app/, 'pinned popup keeps the link');
+  assert.doesNotMatch(hover, /MHTIS web app/, 'hover popup drops it');
+  assert.doesNotMatch(hover, /<a\s/i, 'hover popup has no anchors at all');
+});
+
+test('hover and pinned otherwise say exactly the same thing', () => {
+  const strip = (h) => h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const pinned = strip(trafficHtml(STATION_PROPS));
+  const hover = strip(trafficHtml(STATION_PROPS, { link: false }));
+  assert.equal(pinned.replace(/ MHTIS web app →$/, ''), hover);
+  // And both carry the numbers, not just chrome.
+  assert.match(hover, /2024/);
+  assert.match(hover, /3,620/);
+  // (3620/3480)^(1/6) - 1 = 0.66%/yr over this two-point fixture.
+  assert.match(hover, /\+0\.7%/, 'the annualized rate rides along on hover');
+});
+
+test('both station layers get a hover handler, not just mouseenter', () => {
+  // mouseenter does not re-fire when the cursor crosses between two features
+  // of the same layer, and these dots cluster — so a mouseenter-driven popup
+  // would keep showing the first station touched in a group.
+  assert.match(src, /map\.on\('mousemove', layerId/,
+    'station layers need a mousemove handler for hover');
+  assert.match(src, /map\.on\('mouseleave', layerId/,
+    'hover must be dismissed on mouseleave');
 });
 
 const passed = results.reduce((a, b) => a + b, 0);
