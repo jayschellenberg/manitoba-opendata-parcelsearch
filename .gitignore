@@ -74,6 +74,10 @@ web/public/data/masc-riverlots.json
 # new release and bump RELEASE_URL in api/section-grid.js.
 web/public/data/section-grid.json
 
+# Source PDFs cached by r/build_traffic_history.R (~500 MB of MHTIS annual
+# reports). Re-downloaded on demand; the parsed 320 KB result is what ships.
+build-cache/
+
 # Editor / tooling temp files
 *.tmp.*
 *.timestamp-*.mjs

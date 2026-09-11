@@ -44,7 +44,9 @@ import { encodeState, decodeState } from './lib/urlState.js';
 import { nextOverlayToggleState, setOverlayPressed } from './lib/overlayToggle.js';
 import { stalenessBannerState } from './lib/staleness.js';
 import { resolveDropdownSources, firstNonEmptyList, MUNI_PLACEHOLDER } from './lib/dropdownSources.js';
-import { readMapLegends, layoutMapLegends, paintMapLegends } from './lib/mapLegend.js';
+import {
+  readMapLegends, layoutMapLegends, paintMapLegends, stackedLegendBottom,
+} from './lib/mapLegend.js';
 import {
   computeSaleGroups, groupPosition, frontageRateState,
   isFarFlungSale, farFlungReason, DEFAULT_FAR_FLUNG_KM,
@@ -126,6 +128,10 @@ import {
   fetchZoneCategoryList,
   fetchContaminatedSites,
   fetchTrafficFlow,
+  fetchTrafficStations,
+  fetchTrafficHistory,
+  joinTrafficHistory,
+  joinFlowHistory,
   currentAadt,
   currentAadtYear,
   fetchManitobaHighways,
@@ -184,6 +190,8 @@ import {
   setContamVisible,
   setTrafficFlowData,
   setTrafficFlowVisible,
+  setTrafficData,
+  setTrafficVisible,
   setMbHighwaysData,
   setMbHighwaysVisible,
   setMbHighwayAadtProvider,
@@ -582,6 +590,8 @@ const $muniWebsiteBtn = document.getElementById('muni-website-btn');
 const $pdWebsiteBtn   = document.getElementById('pd-website-btn');
 const $contamToggle  = document.getElementById('contam-toggle');
 const $flowToggle    = document.getElementById('flow-toggle');
+const $stationsToggle = document.getElementById('stations-toggle');
+const $stationsLegend = document.getElementById('stations-legend');
 const $highwaysToggle = document.getElementById('highways-toggle');
 const $muniParcelsToggle = document.getElementById('muni-parcels-toggle');
 const $mascToggle    = document.getElementById('masc-toggle');
@@ -2565,6 +2575,7 @@ $zoningToggle.addEventListener('click', () => toggleOverlay('zoning'));
 $devplanToggle.addEventListener('click', () => toggleOverlay('devplan'));
 $contamToggle.addEventListener('click', () => toggleAuxOverlay('contam'));
 $flowToggle.addEventListener('click', () => toggleAuxOverlay('flow'));
+$stationsToggle?.addEventListener('click', () => toggleAuxOverlay('stations'));
 $highwaysToggle.addEventListener('click', () => toggleAuxOverlay('highways'));
 $riskAreaToggle.addEventListener('click', () => toggleAuxOverlay('riskAreas'));
 for (const [key, btn] of $floodToggles) {
@@ -8315,8 +8326,8 @@ async function refreshOverlayLayersForMuniChange() {
  * the segment AADT inline (and vice-versa: loading stations after flow
  * triggers the same join). Failures are non-fatal — the button reverts.
  */
-const auxLoaded = { contam: false, flow: false, highways: false, riskAreas: false, muniParcels: false, tileDrainage: false, tileNetwork: false, irrigation: false };
-const auxData   = { contam: null, flow: null, highways: null, riskAreas: null, muniParcels: null, tileDrainage: null, tileNetwork: null, irrigation: null };
+const auxLoaded = { contam: false, stations: false, flow: false, highways: false, riskAreas: false, muniParcels: false, tileDrainage: false, tileNetwork: false, irrigation: false };
+const auxData   = { contam: null, stations: null, flow: null, highways: null, riskAreas: null, muniParcels: null, tileDrainage: null, tileNetwork: null, irrigation: null };
 // Tracks which muni's parcels are currently in the muni-parcels source so
 // we know whether to refetch when the user switches munis.
 let muniParcelsLoadedFor = null;
@@ -8437,9 +8448,12 @@ function updateFlowLegendTitle(fc) {
   let hi = -Infinity;
   for (const f of fc?.features || []) {
     const p = f.properties;
-    if (currentAadt(p) == null) continue;
-    const y = currentAadtYear(p);
-    if (y == null) continue;
+    // Read the same stamped values the paint and labels use, so the legend
+    // can never describe a vintage range the map isn't drawing.
+    const aadt = Number(p?._aadt) > 0 ? Number(p._aadt) : currentAadt(p);
+    if (aadt == null) continue;
+    const y = p?._aadt != null ? Number(p._aadtYear) : currentAadtYear(p);
+    if (!Number.isFinite(y) || y <= 1900) continue;
     if (y < lo) lo = y;
     if (y > hi) hi = y;
   }
@@ -8450,17 +8464,109 @@ function updateFlowLegendTitle(fc) {
   }
   el.textContent = 'AADT (latest per segment)';
   if (note) {
+    // The map only prints the year from zoom 11, so say where to find it
+    // rather than implying every label already carries one.
     note.textContent = lo === hi
       ? `All counts ${hi}. Click a segment for its details.`
-      : `Counts date ${lo}–${hi}. Click a segment for its year.`;
+      : `Counts date ${lo}–${hi}. Zoom in for the year on each label, or click a segment.`;
   }
+  // Writing the note can change this legend's height by a whole line, which
+  // moves where the station key has to sit.
+  syncStationLegendStacking();
+}
+
+/**
+ * Lift the station key clear of the AADT ramp when both legends show.
+ *
+ * MEASURED, not a fixed offset. Both legends are absolutely positioned in
+ * the same bottom-right corner, and the first attempt at this hardcoded
+ * `bottom: 250px` — which overlapped, because the flow legend's height is
+ * not a constant: its vintage note wraps to a different number of lines as
+ * the map pane changes width, and its title and range change with the data.
+ * Reading the height back is the only version that cannot drift.
+ *
+ * The flow legend's own computed `bottom` is the base, so this composes with
+ * the `.with-zoning` rule that already lifts IT over the zoning legend.
+ */
+function syncStationLegendStacking() {
+  if (!$stationsLegend) return;
+  const flowShown = $flowLegend && !$flowLegend.hidden && $flowLegend.offsetParent !== null;
+  if (!flowShown) {
+    $stationsLegend.style.bottom = '';   // back to the stylesheet's own value
+    return;
+  }
+  const base = Number.parseFloat(getComputedStyle($flowLegend).bottom);
+  const bottom = stackedLegendBottom(base, $flowLegend.getBoundingClientRect().height);
+  if (bottom == null) return;            // not laid out yet; a later trigger re-runs
+  $stationsLegend.style.bottom = `${bottom}px`;
+}
+
+// The flow legend changes height without anything toggling: its note rewraps
+// when the map pane is resized, and its text changes when new data loads.
+// Three triggers rather than one, because they fail in different places — a
+// ResizeObserver is the precise one but its callbacks are delivered by the
+// rendering pipeline, so it is silent in an offscreen or non-compositing
+// context, which is exactly where this was first tested.
+if (typeof ResizeObserver !== 'undefined' && $flowLegend) {
+  new ResizeObserver(() => syncStationLegendStacking()).observe($flowLegend);
+}
+window.addEventListener('resize', () => syncStationLegendStacking());
+
+/**
+ * Traffic-count stations, with their published AADT series joined on.
+ *
+ * Two sources: the station POINTS come from the MHTIS FeatureServer, which
+ * carries no counts at all; the COUNTS come from traffic-history.json, built
+ * from the annual report PDFs by r/build_traffic_history.R. Neither is
+ * useful alone — the layer sat unwired for exactly that reason — so the
+ * fetch is the join.
+ *
+ * The history is the smaller and more likely to fail (it is our own build
+ * artefact, not a live service), so a missing one degrades to plain dots
+ * that say "no published counts" rather than failing the whole overlay.
+ */
+/**
+ * Traffic Flow segments, with each segment's count taken from the published
+ * report history rather than the service's own AADT columns.
+ *
+ * The two sources disagreed on 497 of 1,670 stations because the service
+ * stops at 2024 and the reports carry 2025 for 604 of them — so a segment
+ * and the station dot sitting on it showed different numbers for the same
+ * road. See joinFlowHistory().
+ */
+async function fetchFlowWithHistory() {
+  const [flow, history] = await Promise.all([
+    fetchTrafficFlow(),
+    fetchTrafficHistory().catch((err) => {
+      console.warn('traffic history unavailable; flow falls back to service columns', err);
+      return null;
+    }),
+  ]);
+  return joinFlowHistory(flow, history);
+}
+
+async function fetchStationsWithHistory() {
+  const [stations, history] = await Promise.all([
+    fetchTrafficStations(),
+    fetchTrafficHistory().catch((err) => {
+      console.warn('traffic history unavailable; stations will show no counts', err);
+      return null;
+    }),
+  ]);
+  return joinTrafficHistory(stations, history);
 }
 
 const AUX_META = {
   contam:      { btn: () => $contamToggle,      on: 'Environmental sites', off: 'Environmental sites', busy: 'Loading…',
                  fetch: () => fetchContaminatedSites(),       setData: (m, fc) => setContamData(m, fc),      setVis: setContamVisible },
+  // Label matches index.html's casing exactly, so the button doesn't
+  // silently re-case itself on first click the way its neighbours do.
+  stations:    { btn: () => $stationsToggle,    on: 'Traffic Counts', off: 'Traffic Counts', busy: 'Loading…',
+                 fetch: () => fetchStationsWithHistory(),
+                 setData: (m, fc) => setTrafficData(m, fc),
+                 setVis: setTrafficVisible },
   flow:        { btn: () => $flowToggle,        on: 'Traffic flow', off: 'Traffic flow', busy: 'Loading…',
-                 fetch: () => fetchTrafficFlow(),
+                 fetch: () => fetchFlowWithHistory(),
                  setData: (m, fc) => { setTrafficFlowData(m, fc); updateFlowLegendTitle(fc); },
                  setVis: setTrafficFlowVisible },
   highways:    { btn: () => $highwaysToggle,    on: 'Manitoba Highways', off: 'Manitoba Highways', busy: 'Loading…',
@@ -11490,6 +11596,10 @@ async function toggleAuxOverlay(which) {
   // The AADT-colour legend rides along with the Flow toggle so the user
   // can read what each segment colour means. Only one place toggles it.
   if (which === 'flow' && $flowLegend) $flowLegend.hidden = !visible;
+  // Two station markers on the map need a key; the popup alone can't say
+  // what the other dot is without clicking it.
+  if (which === 'stations' && $stationsLegend) $stationsLegend.hidden = !visible;
+  if (which === 'flow' || which === 'stations') syncStationLegendStacking();
   // The flood legend lists every ACTIVE group, so any one of the five
   // changing state redraws the whole box rather than toggling a row.
   if (which.startsWith('flood:')) renderFloodLegend();

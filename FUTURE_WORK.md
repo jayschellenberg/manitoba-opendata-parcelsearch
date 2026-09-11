@@ -152,7 +152,19 @@ it ever bites:
 - Push a real civic-number column into the legal-index shard and range
   on it there (fits the "export parcels into the shard" idea above).
 
-## Traffic counts: annual-report PDFs are the real history (phase 2)
+## Traffic counts: annual-report PDFs are the real history — SHIPPED
+
+2026-09-10: built and wired. `r/build_traffic_history.R` parses every
+edition into `web/public/data/traffic-history.json` (322 KB, 2,102 stations,
+17,465 station-years, 2003-2025), and the Traffic Counts overlay joins it
+onto the station points. Kept below as the rationale; the notes on field
+semantics and edition behaviour still hold and the build script repeats the
+important ones where they matter.
+
+One correction to what follows: the station layer being unwired hid a real
+bug. `fetchTrafficStations` passed the default `orderByFields: OBJECTID ASC`,
+but that service's OID field is `FID`, so the very first real call returned
+HTTP 400. Dead code does not prove itself.
 
 2026-09-10. Phase 1 shipped the live-service fixes (read `AADT_2024`,
 date every count from `DateOfEsti`, put AADT on the Manitoba Highways

@@ -14,6 +14,8 @@ import {
   paintMapLegends,
   LEGEND_MAX_HEIGHT_RATIO,
   LEGEND_MAX_WIDTH_RATIO,
+  stackedLegendBottom,
+  LEGEND_STACK_GAP_PX,
 } from '../src/lib/mapLegend.js';
 
 const results = [];
@@ -252,6 +254,41 @@ test('nothing to paint is a no-op', () => {
   const ctx = fakeCtx();
   paintMapLegends(ctx, [], {});
   assert.equal(ctx.calls.length, 0);
+});
+
+// --- stackedLegendBottom -----------------------------------------------------
+// Two on-screen legends share the bottom-right corner. Stacking one over the
+// other by hardcoding an offset was tried and overlapped, because the lower
+// legend's height moves with how its note wraps at the current map width.
+
+test('stacks clear of the legend below it', () => {
+  // Measured on 2026-09-11: the AADT legend sat at bottom:70 and rendered
+  // 390 px tall — the hand-picked offset it replaced was 250.
+  assert.equal(stackedLegendBottom(70, 390), 70 + 390 + LEGEND_STACK_GAP_PX);
+  assert.equal(stackedLegendBottom(70, 390), 468);
+});
+
+test('a taller lower legend pushes the upper one further up', () => {
+  // The property a fixed offset cannot have.
+  assert.ok(stackedLegendBottom(70, 420) > stackedLegendBottom(70, 390));
+  // And it composes with whatever the lower legend's own offset is, so the
+  // rule lifting THAT one over the zoning legend still applies.
+  assert.ok(stackedLegendBottom(300, 390) > stackedLegendBottom(70, 390));
+});
+
+test('returns null when there is nothing to stack over', () => {
+  // A hidden or not-yet-laid-out legend measures 0; the caller then leaves
+  // the stylesheet's own value alone rather than pinning it to the gap.
+  assert.equal(stackedLegendBottom(70, 0), null);
+  assert.equal(stackedLegendBottom(70, NaN), null);
+  assert.equal(stackedLegendBottom(70, undefined), null);
+  assert.equal(stackedLegendBottom(70, -5), null);
+});
+
+test('a missing base offset is treated as zero, not NaN', () => {
+  // getComputedStyle().bottom parses to NaN for `auto`.
+  assert.equal(stackedLegendBottom(NaN, 100), 100 + LEGEND_STACK_GAP_PX);
+  assert.equal(stackedLegendBottom(undefined, 100), 100 + LEGEND_STACK_GAP_PX);
 });
 
 const failed = results.filter((r) => r.status === 'fail');

@@ -10,6 +10,7 @@
     "manifest": "node scripts/build-manifest.js",
     "places": "node scripts/build-places.js",
     "flood:overlay": "node scripts/build-flood-overlay.js",
+    "traffic:history": "Rscript ../r/build_traffic_history.R",
     "flood:shards": "Rscript ../r/build_flood.R",
     "landfacts:shards": "Rscript ../r/build_landfacts.R",
     "mf:shards": "Rscript ../r/build_mf_newbuild.R",

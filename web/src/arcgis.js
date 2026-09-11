@@ -2611,23 +2611,223 @@ export async function fetchContaminatedSites() {
 
 /**
  * Fetch the MHTIS traffic-counting station locations. The published
- * FeatureServer carries point geometry and station metadata only — actual
- * AADT values are not in this layer (they live in private MHTIS map
- * services not published as open data). Each station's popup links out
- * to the MHTIS web app for full count history.
+ * FeatureServer carries point geometry and station metadata only — no AADT.
+ * The counts come from fetchTrafficHistory() and are joined on StationNum
+ * by joinTrafficHistory().
+ *
+ * This layer holds 2,096 stations, ~291 of them TOWN stations (StationNum
+ * >= 5000) which have no flow segment at all — for years they were the dots
+ * on the map that could never answer a click.
  */
 export async function fetchTrafficStations() {
   const cacheKey = 'mb_traffic_stations_v1';
   const cached = await readCache(cacheKey);
   if (cached) return cached;
+  // This layer's OID field is `FID`, not OBJECTID, so fetchAllPages's
+  // default `orderByFields: 'OBJECTID ASC'` returns HTTP 400 "'OBJECTID ASC'
+  // parameter is invalid" — the same trap the Traffic Flow fetch documents.
+  // It went unnoticed because nothing ever called this function: the station
+  // overlay was exported but never wired into main.js, so the very first
+  // real call was the one that lit the overlay up.
   const fc = await fetchAllPages(TRAFFIC_STATIONS_URL, {
     where: '1=1',
     outFields: 'StationNum,HighwayNum,HighwayAlt,LocationDe,Region,FlowDirect,StationTyp',
     returnGeometry: 'true',
     outSR: '4326',
     f: 'geojson',
+    orderByFields: 'FID ASC',
   }, 5000);
   await writeCache(cacheKey, fc);
+  return fc;
+}
+
+// ---------- Traffic-count history (per-station AADT series) ----------
+
+/**
+ * The per-station AADT series, built from MHTIS's annual report PDFs by
+ * r/build_traffic_history.R. Shape:
+ *
+ *   { version, metadata, stations: { "1193": { t, hwy, loc, y: {"2018":1130} } } }
+ *
+ * `t` is 1 for a town/access-road station, 0 for a PTH/PR one. Memoised for
+ * the session; a failure drops the memo so the next toggle retries rather
+ * than replaying the rejection.
+ */
+let trafficHistoryPromise = null;
+export function fetchTrafficHistory() {
+  if (trafficHistoryPromise) return trafficHistoryPromise;
+  trafficHistoryPromise = (async () => {
+    const res = await fetch('/data/traffic-history.json');
+    if (!res.ok) throw new Error(`traffic-history.json: HTTP ${res.status}`);
+    const doc = await res.json();
+    if (!doc?.stations || !Object.keys(doc.stations).length) {
+      throw new Error('traffic-history.json: no stations');
+    }
+    return doc;
+  })();
+  trafficHistoryPromise.catch(() => { trafficHistoryPromise = null; });
+  return trafficHistoryPromise;
+}
+
+/**
+ * The station's series as [{year, aadt}], oldest first.
+ *
+ * Exported so the popup, the map paint and any future export all read the
+ * same thing. Years arrive as object keys (strings) and must sort
+ * numerically — lexicographic ordering is right for 4-digit years today but
+ * silently wrong the moment anything else lands in there.
+ */
+export function stationSeries(entry) {
+  const y = entry?.y;
+  if (!y) return [];
+  return Object.keys(y)
+    .map((k) => ({ year: Number(k), aadt: Number(y[k]) }))
+    .filter((r) => Number.isFinite(r.year) && Number.isFinite(r.aadt) && r.aadt > 0)
+    .sort((a, b) => a.year - b.year);
+}
+
+/**
+ * Annualized change between each published count and the one before it.
+ *
+ * WHY ANNUALIZED AND NOT A PLAIN PERCENTAGE. MHTIS counts a short-duration
+ * station whenever it gets to it, so the gaps are irregular — station 1193
+ * runs 2004, 2006, 2008, 2010, 2012, 2015, 2018, 2024. A raw "+8.8%" would
+ * mean something different on the 2-year steps than on the 6-year one, and
+ * the two would sit in the same column inviting comparison. Compounding it
+ * to a per-year rate makes the column mean one thing throughout:
+ *
+ *     ((curr / prev) ** (1 / years)) - 1
+ *
+ * `pct` is null for the oldest row (nothing to compare against) and for any
+ * pair that cannot produce a meaningful rate — a zero or negative prior, or
+ * a non-positive gap. Callers print nothing rather than a fabricated 0%.
+ *
+ * @param {Array<[number, number]>} rows  [year, aadt] pairs, oldest first
+ * @returns {Array<{year, aadt, pct: number|null, years: number|null}>}
+ */
+export function withAnnualizedChange(rows) {
+  const out = [];
+  let prev = null;
+  for (const row of rows || []) {
+    const year = Number(Array.isArray(row) ? row[0] : row?.year);
+    const aadt = Number(Array.isArray(row) ? row[1] : row?.aadt);
+    if (!Number.isFinite(year) || !Number.isFinite(aadt) || aadt <= 0) continue;
+    let pct = null;
+    let years = null;
+    if (prev) {
+      const span = year - prev.year;
+      if (span > 0 && prev.aadt > 0) {
+        years = span;
+        pct = (Math.pow(aadt / prev.aadt, 1 / span) - 1) * 100;
+        if (!Number.isFinite(pct)) pct = null;
+      }
+    }
+    out.push({ year, aadt, pct, years });
+    prev = { year, aadt };
+  }
+  return out;
+}
+
+/** The station's most recent published count, as `{year, aadt}` or null. */
+export function latestStationCount(entry) {
+  const series = stationSeries(entry);
+  return series.length ? series[series.length - 1] : null;
+}
+
+/**
+ * Map-label text for a count: "2,110" and "2,110 (2024)".
+ *
+ * Built here in JS rather than with MapLibre `number-format` expressions so
+ * the two label layers and the popup can never drift apart on formatting,
+ * and so the zoom-gated text-field stays a plain `['get']` of a precomputed
+ * string. Returns nulls when there is nothing to label.
+ */
+export function countLabels(aadt, year) {
+  if (!Number.isFinite(aadt) || aadt <= 0) return { label: '', labelYear: '' };
+  const n = Number(aadt).toLocaleString('en-US');
+  return {
+    label: n,
+    labelYear: Number.isFinite(year) && year > 1900 ? `${n} (${year})` : n,
+  };
+}
+
+/**
+ * Stamp the published count from the report history onto each TRAFFIC FLOW
+ * segment, in place, and return the FC.
+ *
+ * WHY THE SEGMENTS READ THE HISTORY TOO. Each segment carries the StationNum
+ * it was estimated from, so a segment and that station's dot describe the
+ * same measurement — but they disagreed on 30% of stations (497 of 1,670),
+ * because the ArcGIS service stops at 2024 while the reports carry 2025 for
+ * 604 stations. Station 73 read 1,000 from the service and 1,040 from the
+ * report. Two numbers for one road is worse than a slightly stale one, so
+ * the history is the single source for every count the app displays and the
+ * flow service supplies geometry.
+ *
+ * Falls back to the service's own columns for any segment whose station is
+ * absent from the reports, so the overlay degrades rather than blanking.
+ */
+export function joinFlowHistory(fc, history) {
+  const byStation = history?.stations || {};
+  for (const f of fc?.features || []) {
+    const p = f.properties;
+    if (!p) continue;
+    const latest = latestStationCount(byStation[String(p.StationNum)]);
+    if (latest) {
+      p._aadt = latest.aadt;
+      p._aadtYear = latest.year;
+      p._src = 'report';
+    } else {
+      p._aadt = currentAadt(p);
+      p._aadtYear = currentAadtYear(p);
+      p._src = 'service';
+    }
+    const { label, labelYear } = countLabels(p._aadt, p._aadtYear);
+    p._label = label;
+    p._labelYear = labelYear;
+  }
+  return fc;
+}
+
+/**
+ * Stamp each station feature with its history, in place, and return the FC.
+ *
+ * MapLibre flattens feature properties through the style/query round-trip,
+ * so the series rides as a JSON STRING in `_series` rather than an array —
+ * an array comes back as "[object Object]" once it has been through a
+ * GeoJSON source. `_aadt`/`_aadtYear` carry the latest point so the popup
+ * and any label expression can read it without parsing.
+ */
+export function joinTrafficHistory(fc, history) {
+  const byStation = history?.stations || {};
+  for (const f of fc?.features || []) {
+    const p = f.properties;
+    if (!p) continue;
+    const entry = byStation[String(p.StationNum)];
+    const series = stationSeries(entry);
+    // Town stations are identified by the report section they came from,
+    // falling back to the >= 5000 numbering when a station has no history
+    // at all — otherwise an unmatched town dot would render as a highway one.
+    p._town = entry ? (entry.t === 1 ? 1 : 0) : (Number(p.StationNum) >= 5000 ? 1 : 0);
+    p._count = series.length;
+    if (series.length) {
+      const latest = series[series.length - 1];
+      p._aadt = latest.aadt;
+      p._aadtYear = latest.year;
+      p._series = JSON.stringify(series.map((r) => [r.year, r.aadt]));
+    } else {
+      p._aadt = null;
+      p._aadtYear = null;
+      p._series = '';
+    }
+    // Town stations are the only ones the map labels: they have no flow
+    // segment, so nothing else on the map carries their number. Rural
+    // stations would just restate the label already drawn along their
+    // segment, from the same source, in the same place.
+    const { label, labelYear } = countLabels(p._aadt, p._aadtYear);
+    p._label = label;
+    p._labelYear = labelYear;
+  }
   return fc;
 }
 

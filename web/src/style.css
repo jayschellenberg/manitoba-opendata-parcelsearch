@@ -3515,6 +3515,30 @@ body.shape-drawing .maplibregl-canvas {
   border: 1px solid rgba(0, 0, 0, 0.2);
 }
 
+/* Station-marker key. Sits above the AADT legend when both are on, the
+   same order the overlay buttons appear in. Its swatches are round and
+   ringed so they read as the map markers rather than as colour bands. */
+.map-legend.stations-legend {
+  bottom: 70px;
+}
+/* Traffic Counts and Traffic Flow are the pair most likely to be on
+   together, and both legends claim the 70px slot. When both show,
+   syncStationLegendStacking() in main.js sets an inline `bottom` measured
+   from the flow legend's actual rendered height — a fixed offset was tried
+   first and overlapped, because that height moves with the note's wrapping. */
+.map-legend .swatch-dot {
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+.map-legend .swatch-dot-highway {
+  background: #1a3a4a;
+  border: 2px solid #ffd166;
+}
+.map-legend .swatch-dot-town {
+  background: #ffd166;
+  border: 2px solid #1a3a4a;
+}
+
 /* Vintage caveat under the AADT ramp. Quieter and narrower than the
    swatch rows so it reads as a footnote rather than another entry, and
    wraps instead of stretching the legend across the map. */
