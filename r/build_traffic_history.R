@@ -418,7 +418,14 @@ payload <- list(
     built = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
     source = "MHTIS \"Traffic on Manitoba Highways\" annual reports",
     source_url = INDEX_URL,
+    # Editions that CONTRIBUTED rows. 2017 is absent because its PDF has two
+    # broken font encodings and yields nothing; 2013 parses only partially.
     editions = as.integer(sort(unique(df$report))),
+    # Editions this build LOOKED AT, whether or not they parsed. The monthly
+    # freshness check compares MHTIS's published list against this one — it
+    # cannot use `editions` above, or the un-parseable 2017 would read as a
+    # new report every month and trigger an endless rebuild loop.
+    editions_seen = as.integer(sort(unique(editions))),
     stations = length(stations),
     station_years = nrow(merged),
     years = range(merged$year),
