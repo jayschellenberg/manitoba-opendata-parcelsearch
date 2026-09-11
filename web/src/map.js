@@ -3518,19 +3518,55 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
       // location and the AADT (when the Traffic Flow layer has been loaded
       // and indexed; main.js stamps the matched AADT onto each station
       // feature's properties before pushing them to the source).
+      // Hover reads, click pins — the same split the muni-parcels layer
+      // uses. Reading a station's history is a scanning task (which of
+      // these dots is the busy one?), and making that cost a click and a
+      // dismiss per dot is the wrong trade. But the popup ends in a link
+      // to the MHTIS web app, and you cannot reach a link inside a popup
+      // that disappears when the cursor leaves the dot — so the pinned
+      // version carries it and the hover version leaves it off rather
+      // than showing an affordance that cannot be used.
       const trafficPopup = new maplibregl.Popup({ closeButton: true });
+      const trafficHoverPopup = new maplibregl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        offset: 10,
+      });
       for (const layerId of ['traffic-circle', 'traffic-circle-town']) {
         onLayerClick(map, layerId, (e) => {
           const p = e.features?.[0]?.properties;
           if (!p) return;
+          // Hand off cleanly: the pinned popup is about to say the same
+          // thing, and two copies of it stacked at the cursor is noise.
+          trafficHoverPopup.remove();
           trafficPopup.setLngLat(e.lngLat).setHTML(trafficHtml(p)).addTo(map);
         });
-        map.on('mouseenter', layerId, () => {
-          if (map.getLayoutProperty(layerId, 'visibility') === 'visible') {
-            setHoverCursor('pointer');
+        // mousemove, not mouseenter: these dots cluster, and mouseenter
+        // does not re-fire when the cursor crosses from one feature to
+        // another within the same layer — the popup would keep showing
+        // the first station you touched.
+        map.on('mousemove', layerId, (e) => {
+          if (map.getLayoutProperty(layerId, 'visibility') !== 'visible') return;
+          // Stand down while the measuring tool owns the cursor, same as
+          // the other hover popups.
+          if (isMeasuring()) {
+            trafficHoverPopup.remove();
+            setHoverCursor('');
+            return;
           }
+          if (trafficPopup.isOpen()) { trafficHoverPopup.remove(); return; }
+          const p = e.features?.[0]?.properties;
+          if (!p) return;
+          setHoverCursor('pointer');
+          trafficHoverPopup
+            .setLngLat(e.lngLat)
+            .setHTML(trafficHtml(p, { link: false }))
+            .addTo(map);
         });
-        map.on('mouseleave', layerId, () => { setHoverCursor(''); });
+        map.on('mouseleave', layerId, () => {
+          trafficHoverPopup.remove();
+          setHoverCursor('');
+        });
       }
 
       // Click an AADT flow segment → popup with the road / highway, the
@@ -6017,7 +6053,14 @@ function formatAnnualized(pct) {
   return `${rounded > 0 ? '+' : '−'}${Math.abs(rounded).toFixed(1)}%`;
 }
 
-function trafficHtml(p) {
+/**
+ * @param {Object} p                station feature properties
+ * @param {Object} [opts]
+ * @param {boolean} [opts.link]     include the MHTIS web-app link. False for
+ *   the hover popup, which vanishes the moment the cursor leaves the dot, so
+ *   the link could never be reached from it.
+ */
+function trafficHtml(p, { link = true } = {}) {
   const lines = [];
   const isTown = Number(p._town) === 1;
   if (p.StationNum != null) {
@@ -6063,7 +6106,9 @@ function trafficHtml(p) {
   } else {
     lines.push('<em style="color:#666">No published counts for this station</em>');
   }
-  lines.push(`<a href="https://www.gov.mb.ca/mti/traffic/counts.html" target="_blank" rel="noreferrer">MHTIS web app →</a>`);
+  if (link) {
+    lines.push(`<a href="https://www.gov.mb.ca/mti/traffic/counts.html" target="_blank" rel="noreferrer">MHTIS web app →</a>`);
+  }
   return `<div style="max-width:280px;line-height:1.4">${lines.join('<br>')}</div>`;
 }
 
