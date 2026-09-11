@@ -90,6 +90,30 @@ test('both start hidden and share the traffic source', () => {
   }
 });
 
+test('dots stay small, and town stays the larger of the two', () => {
+  // Jason, 2026-09-11: the first sizing read as blobs at municipal zoom and
+  // was halved. Pinning the exact stops would just restate the code, so pin
+  // what the feedback actually established — an upper bound that keeps them
+  // dots, and the size ordering that makes the two kinds tellable apart.
+  const stops = (id) => {
+    const expr = layers.find((l) => l.id === id).paint['circle-radius'];
+    const out = [];
+    for (let i = 3; i < expr.length; i += 2) out.push([expr[i], expr[i + 1]]);
+    return out;
+  };
+  const town = stops('traffic-circle-town');
+  const hwy = stops('traffic-circle');
+  assert.equal(town.length, hwy.length, 'same number of zoom stops');
+  for (let i = 0; i < town.length; i++) {
+    const [tz, tr] = town[i];
+    const [hz, hr] = hwy[i];
+    assert.equal(tz, hz, `zoom stop ${i} matches`);
+    assert.ok(tr > hr, `town ${tr} must exceed highway ${hr} at zoom ${tz}`);
+    assert.ok(tr <= 8, `town radius ${tr} at zoom ${tz} is back into blob territory`);
+    assert.ok(hr >= 3, `highway radius ${hr} at zoom ${tz} is too small to hit`);
+  }
+});
+
 test('the two markers are visually distinguishable', () => {
   // The whole point of a second layer is that a town count cannot be
   // mistaken for the highway count beside it — they differ by 2-3x at the

@@ -56,7 +56,9 @@ import {
 import { polygonBboxMidpoint } from './lib/polygonCentroid.js';
 import { rollDisplay } from './lib/parcelLabelFields.js';
 import { WAYBACK_VERSIONS, waybackTileUrl } from './lib/wayback.js';
-import { MB_PARCEL_DATA_CDN, currentAadt, currentAadtYear } from './arcgis.js';
+import {
+  MB_PARCEL_DATA_CDN, currentAadt, currentAadtYear, withAnnualizedChange,
+} from './arcgis.js';
 import {
   MASC_PALETTE,
   MASC_RATING_LABEL_MIN_ZOOM,
@@ -1252,14 +1254,17 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
         filter: ['==', ['get', '_town'], 1],
         layout: { visibility: 'none' },
         paint: {
+          // Halved from 8/12/15 (Jason, 2026-09-11) — they read as blobs at
+          // municipal zoom. Strokes scale with them, or a 2.5 px ring on a
+          // 4 px dot is more outline than fill.
           'circle-radius': [
             'interpolate', ['linear'], ['zoom'],
-            8,  8,
-            12, 12,
-            16, 15,
+            8,  4,
+            12, 6,
+            16, 7.5,
           ],
           'circle-color': '#ffd166',
-          'circle-stroke-width': 2.5,
+          'circle-stroke-width': 1.25,
           'circle-stroke-color': '#1a3a4a',
           'circle-opacity': 0.95,
         },
@@ -1271,18 +1276,19 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
         filter: ['!=', ['get', '_town'], 1],
         layout: { visibility: 'none' },
         paint: {
-          // Same zoom-graduated sizing as contam-circle (slightly
-          // smaller so the two stay tellable-apart when both are on):
-          // a fixed 5 px station dot disappeared against satellite
-          // imagery at municipal zooms.
+          // Halved from 7/10/13 (Jason, 2026-09-11). Still zoom-graduated
+          // rather than fixed — a fixed-size station dot disappeared
+          // against satellite imagery at municipal zooms — and still a
+          // touch smaller than its town counterpart so the two stay
+          // tellable-apart at a glance.
           'circle-radius': [
             'interpolate', ['linear'], ['zoom'],
-            8,  7,
-            12, 10,
-            16, 13,
+            8,  3.5,
+            12, 5,
+            16, 6.5,
           ],
           'circle-color': '#1a3a4a',
-          'circle-stroke-width': 2,
+          'circle-stroke-width': 1,
           'circle-stroke-color': '#ffd166',
           'circle-opacity': 0.95,
         },
@@ -6000,6 +6006,17 @@ function readStationSeries(raw) {
  */
 const STATION_SERIES_SHOWN = 6;
 
+/** "+1.5%" / "−2.3%" / "" for the oldest row, which has nothing to compare
+ *  against. A true minus sign rather than a hyphen, since these sit in a
+ *  right-aligned numeric column. Sub-0.05% rounds to "0.0%" rather than
+ *  showing a sign that implies a direction the data does not support. */
+function formatAnnualized(pct) {
+  if (pct == null || !Number.isFinite(pct)) return '';
+  const rounded = Math.round(pct * 10) / 10;
+  if (rounded === 0) return '0.0%';
+  return `${rounded > 0 ? '+' : '−'}${Math.abs(rounded).toFixed(1)}%`;
+}
+
 function trafficHtml(p) {
   const lines = [];
   const isTown = Number(p._town) === 1;
@@ -6018,16 +6035,26 @@ function trafficHtml(p) {
   // segment at all.
   const series = readStationSeries(p._series);
   if (series.length) {
-    const recent = series.slice(-STATION_SERIES_SHOWN).reverse();
-    const rows = recent.map(([year, aadt], i) => {
+    // Growth is computed over the WHOLE series, then sliced — so the oldest
+    // visible row still shows its rate against the count before it, even
+    // when that count is one of the earlier years collapsed below.
+    const growth = withAnnualizedChange(series);
+    const recent = growth.slice(-STATION_SERIES_SHOWN).reverse();
+    const rows = recent.map(({ year, aadt, pct, years }, i) => {
       const val = Number(aadt).toLocaleString('en-US');
       const cell = i === 0
         ? ['<strong>', '</strong>']   // newest year is the headline
         : ['<span style="color:#555">', '</span>'];
       return `<tr><td style="padding-right:10px">${cell[0]}${escapeHtml(year)}${cell[1]}</td>` +
-             `<td style="text-align:right">${cell[0]}${val}${cell[1]}</td></tr>`;
+             `<td style="text-align:right;padding-right:10px">${cell[0]}${val}${cell[1]}</td>` +
+             `<td style="text-align:right;color:#777;font-size:11px" ` +
+             `title="${pct == null ? '' : `compounded over ${years} year${years === 1 ? '' : 's'} since the previous count`}">` +
+             `${formatAnnualized(pct)}</td></tr>`;
     }).join('');
-    lines.push(`<strong>AADT</strong><table style="border-collapse:collapse;margin-top:2px">${rows}</table>`);
+    lines.push(
+      `<strong>AADT</strong> <span style="color:#777;font-size:11px">(change is %/yr)</span>` +
+      `<table style="border-collapse:collapse;margin-top:2px">${rows}</table>`
+    );
     const hidden = series.length - recent.length;
     if (hidden > 0) {
       lines.push(`<em style="color:#666">+${hidden} earlier year${hidden === 1 ? '' : 's'} ` +

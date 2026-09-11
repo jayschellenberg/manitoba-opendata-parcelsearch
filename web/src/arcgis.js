@@ -2686,6 +2686,48 @@ export function stationSeries(entry) {
     .sort((a, b) => a.year - b.year);
 }
 
+/**
+ * Annualized change between each published count and the one before it.
+ *
+ * WHY ANNUALIZED AND NOT A PLAIN PERCENTAGE. MHTIS counts a short-duration
+ * station whenever it gets to it, so the gaps are irregular — station 1193
+ * runs 2004, 2006, 2008, 2010, 2012, 2015, 2018, 2024. A raw "+8.8%" would
+ * mean something different on the 2-year steps than on the 6-year one, and
+ * the two would sit in the same column inviting comparison. Compounding it
+ * to a per-year rate makes the column mean one thing throughout:
+ *
+ *     ((curr / prev) ** (1 / years)) - 1
+ *
+ * `pct` is null for the oldest row (nothing to compare against) and for any
+ * pair that cannot produce a meaningful rate — a zero or negative prior, or
+ * a non-positive gap. Callers print nothing rather than a fabricated 0%.
+ *
+ * @param {Array<[number, number]>} rows  [year, aadt] pairs, oldest first
+ * @returns {Array<{year, aadt, pct: number|null, years: number|null}>}
+ */
+export function withAnnualizedChange(rows) {
+  const out = [];
+  let prev = null;
+  for (const row of rows || []) {
+    const year = Number(Array.isArray(row) ? row[0] : row?.year);
+    const aadt = Number(Array.isArray(row) ? row[1] : row?.aadt);
+    if (!Number.isFinite(year) || !Number.isFinite(aadt) || aadt <= 0) continue;
+    let pct = null;
+    let years = null;
+    if (prev) {
+      const span = year - prev.year;
+      if (span > 0 && prev.aadt > 0) {
+        years = span;
+        pct = (Math.pow(aadt / prev.aadt, 1 / span) - 1) * 100;
+        if (!Number.isFinite(pct)) pct = null;
+      }
+    }
+    out.push({ year, aadt, pct, years });
+    prev = { year, aadt };
+  }
+  return out;
+}
+
 /** The station's most recent published count, as `{year, aadt}` or null. */
 export function latestStationCount(entry) {
   const series = stationSeries(entry);

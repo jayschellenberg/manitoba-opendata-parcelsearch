@@ -12,6 +12,7 @@
 import assert from 'node:assert/strict';
 import {
   stationSeries, joinTrafficHistory, joinFlowHistory, countLabels, latestStationCount,
+  withAnnualizedChange,
 } from '../src/arcgis.js';
 
 const results = [];
@@ -192,6 +193,60 @@ test('tolerates a malformed feature collection', () => {
   assert.doesNotThrow(() => joinFlowHistory({ features: [] }, { stations: {} }));
   assert.doesNotThrow(() => joinFlowHistory({}, { stations: {} }));
   assert.doesNotThrow(() => joinFlowHistory({ features: [{}] }, { stations: {} }));
+});
+
+console.log('\narcgis.js — withAnnualizedChange');
+
+test('compounds over the real gap, not per published row', () => {
+  // The whole reason this is annualized: MHTIS counts a short-duration
+  // station whenever it gets to it, so a +8.8% step can span 2 years or 6.
+  // Station 1193 (PTH 68 at Arborg): 1,130 in 2018 -> 1,230 in 2024.
+  const rows = withAnnualizedChange([[2018, 1130], [2024, 1230]]);
+  assert.equal(rows[0].pct, null, 'oldest row has nothing to compare against');
+  assert.equal(rows[1].years, 6);
+  // (1230/1130)^(1/6) - 1 = 1.4233%/yr, NOT the raw 8.85%.
+  assert.ok(Math.abs(rows[1].pct - 1.4233) < 0.001, `got ${rows[1].pct}`);
+});
+
+test('the same total change over a shorter span reads as a faster rate', () => {
+  const slow = withAnnualizedChange([[2018, 1000], [2024, 1200]])[1].pct;
+  const fast = withAnnualizedChange([[2022, 1000], [2024, 1200]])[1].pct;
+  assert.ok(fast > slow, `2-year ${fast} should exceed 6-year ${slow}`);
+  // A single-year gap is just the raw percentage.
+  assert.ok(Math.abs(withAnnualizedChange([[2023, 1000], [2024, 1200]])[1].pct - 20) < 1e-9);
+});
+
+test('handles decline', () => {
+  const rows = withAnnualizedChange([[2018, 1200], [2020, 1000]]);
+  assert.ok(rows[1].pct < 0, 'declining traffic is negative');
+  // sqrt(1000/1200) - 1 = -8.7129%/yr
+  assert.ok(Math.abs(rows[1].pct - -8.7129) < 0.001, `got ${rows[1].pct}`);
+});
+
+test('returns null rather than a fabricated rate', () => {
+  // A zero prior makes the ratio infinite; a repeated year makes the
+  // exponent infinite. Both must print nothing, not "Infinity%" or "0%".
+  const withZero = withAnnualizedChange([[2018, 0], [2024, 1230]]);
+  assert.equal(withZero.length, 1, 'the zero row is dropped, not carried as a prior');
+  assert.equal(withZero[0].pct, null, 'the survivor then has nothing to compare against');
+  const sameYear = withAnnualizedChange([[2024, 1000], [2024, 1200]]);
+  assert.equal(sameYear[1].pct, null, 'a zero-year gap cannot be annualized');
+  for (const r of withAnnualizedChange([[2018, 1130]])) assert.equal(r.pct, null);
+});
+
+test('drops unusable rows and survives junk', () => {
+  const rows = withAnnualizedChange([[2018, 1130], [2020, null], ['x', 5], [2024, 1230]]);
+  assert.deepEqual(rows.map((r) => r.year), [2018, 2024]);
+  assert.deepEqual(withAnnualizedChange([]), []);
+  assert.deepEqual(withAnnualizedChange(null), []);
+  assert.deepEqual(withAnnualizedChange(undefined), []);
+});
+
+test('accepts the {year, aadt} shape as well as pairs', () => {
+  // stationSeries() emits objects; the popup parses pairs out of _series.
+  const fromObjects = withAnnualizedChange([{ year: 2018, aadt: 1130 }, { year: 2024, aadt: 1230 }]);
+  const fromPairs = withAnnualizedChange([[2018, 1130], [2024, 1230]]);
+  assert.deepEqual(fromObjects, fromPairs);
 });
 
 const passed = results.reduce((a, b) => a + b, 0);
