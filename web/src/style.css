@@ -3522,12 +3522,10 @@ body.shape-drawing .maplibregl-canvas {
   bottom: 70px;
 }
 /* Traffic Counts and Traffic Flow are the pair most likely to be on
-   together, and both legends claim the 70px slot. Stack the station key
-   above the AADT ramp, mirroring how flow-legend steps up over the zoning
-   legend. Toggled by syncStationLegendStacking() in main.js. */
-.map-legend.stations-legend.with-flow {
-  bottom: 250px;
-}
+   together, and both legends claim the 70px slot. When both show,
+   syncStationLegendStacking() in main.js sets an inline `bottom` measured
+   from the flow legend's actual rendered height — a fixed offset was tried
+   first and overlapped, because that height moves with the note's wrapping. */
 .map-legend .swatch-dot {
   border-radius: 50%;
   box-sizing: border-box;

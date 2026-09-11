@@ -23,6 +23,34 @@ export const LEGEND_MAX_HEIGHT_RATIO = 0.62;
 /** Widest a single legend box may get, as a share of image width. */
 export const LEGEND_MAX_WIDTH_RATIO = 0.42;
 
+/** Gap left between two on-screen legends stacked in the same corner. */
+export const LEGEND_STACK_GAP_PX = 8;
+
+/**
+ * Where to anchor a legend stacked directly above another one.
+ *
+ * The on-screen legends are absolutely positioned by `bottom`, several of
+ * them in the same corner. Stacking one over another by hardcoding an offset
+ * does not hold: the AADT legend's height moves with how its vintage note
+ * wraps, which depends on the map pane's width — it measured 390 px where a
+ * hand-picked 250 px had been assumed, so the two overlapped.
+ *
+ * Returns null when there is nothing to stack over (the lower legend is
+ * hidden, or has not been laid out yet), meaning "leave the stylesheet's own
+ * value alone".
+ *
+ * @param {number} baseBottom  the lower legend's own computed `bottom`, px
+ * @param {number} height      the lower legend's rendered height, px
+ * @param {number} [gap]
+ * @returns {number|null} px for the upper legend's `bottom`
+ */
+export function stackedLegendBottom(baseBottom, height, gap = LEGEND_STACK_GAP_PX) {
+  const base = Number(baseBottom);
+  const h = Number(height);
+  if (!Number.isFinite(h) || h <= 0) return null;
+  return Math.round((Number.isFinite(base) ? base : 0) + h + gap);
+}
+
 /**
  * Read whatever legends are on screen inside `root`.
  *
