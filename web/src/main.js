@@ -195,6 +195,7 @@ import {
   setMbHighwaysData,
   setMbHighwaysVisible,
   setMbHighwayAadtProvider,
+  setMbHighwayAadtPeek,
   setMuniParcelsData,
   parcelTilesUrl,
   probeParcelTiles,
@@ -8348,7 +8349,12 @@ let trafficFlowFcPromise = null;
 function trafficFlowFc() {
   if (auxData.flow) return Promise.resolve(auxData.flow);
   if (!trafficFlowFcPromise) {
-    trafficFlowFcPromise = fetchTrafficFlow()
+    // fetchFlowWithHistory, NOT the bare fetchTrafficFlow: this feeds the
+    // Manitoba Highways popup, and the bare service columns would put a
+    // different number there than the flow segment and the station dot on
+    // the same road already show. Same slot as the Traffic Flow overlay's
+    // own load, so whichever happens first serves both.
+    trafficFlowFcPromise = fetchFlowWithHistory()
       .then((fc) => { auxData.flow = fc; return fc; })
       .catch((err) => {
         // Let a later click retry rather than caching the failure forever.
@@ -8398,29 +8404,62 @@ const HIGHWAY_AADT_MAX_KM = 3;
  * when nothing matching sits within HIGHWAY_AADT_MAX_KM, or when the flow
  * layer can't be fetched.
  */
-async function highwayAadtAt(props, lngLat) {
+function findHighwayAadt(fc, props, lngLat) {
   const roadIdent = RTE_TYPE_TO_ROAD_IDENT[props?.RteType];
   const roadNo = Number(String(props?.CommonRoadName_004 ?? '').trim());
   if (!roadIdent || !Number.isFinite(roadNo)) return null;
 
-  const fc = await trafficFlowFc();
   const pt = { lng: lngLat.lng, lat: lngLat.lat };
   let best = null;
   for (const f of fc?.features || []) {
     const p = f.properties;
     if (Number(p?.ROAD_NO) !== roadNo || p?.ROAD_IDENT !== roadIdent) continue;
-    const aadt = currentAadt(p);
+    // The count joinFlowHistory() stamped, falling back to the service's own
+    // columns for a station the reports don't carry — the same precedence
+    // the segment's own paint, label and popup use.
+    const aadt = Number(p?._aadt) > 0 ? Number(p._aadt) : currentAadt(p);
     if (aadt == null) continue;
+    const year = p?._aadt != null ? Number(p._aadtYear) : currentAadtYear(p);
     const km = minVertexDistanceKm(f.geometry, pt);
     if (km > HIGHWAY_AADT_MAX_KM) continue;
     if (!best || km < best.km) {
-      best = { km, aadt, year: currentAadtYear(p), stationNum: p.StationNum ?? null };
+      best = { km, aadt, year, stationNum: p.StationNum ?? null };
     }
   }
   return best;
 }
 
+async function highwayAadtAt(props, lngLat) {
+  return findHighwayAadt(await trafficFlowFc(), props, lngLat);
+}
+
+/**
+ * The same lookup, synchronously, for the hover popup.
+ *
+ * Hover must never await — the cursor has moved on by the time a fetch
+ * resolves, and a "loading…" line that flickers under a moving pointer is
+ * worse than no line. So this answers only from data already in hand, the
+ * way the muni-parcels hover peeks rather than resolving.
+ *
+ * Three distinct answers, and the difference matters to what the popup says:
+ *   undefined — not loaded yet, so we have not looked. Say nothing.
+ *   null      — looked, and MHTIS publishes no count for this road.
+ *   object    — the count.
+ *
+ * The first hover also primes the fetch, unawaited. It is memoised, so this
+ * costs one request per session — the same one a click would make a moment
+ * later — and every hover after it answers immediately.
+ */
+function highwayAadtPeek(props, lngLat) {
+  if (!auxData.flow) {
+    trafficFlowFc().catch(() => {});   // prime; failures retry on click
+    return undefined;
+  }
+  return findHighwayAadt(auxData.flow, props, lngLat);
+}
+
 setMbHighwayAadtProvider(highwayAadtAt);
+setMbHighwayAadtPeek(highwayAadtPeek);
 
 /**
  * Label the AADT legend with the vintage it is actually showing.

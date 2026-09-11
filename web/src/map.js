@@ -3599,9 +3599,16 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
         if (!p) return;
         const token = ++highwayPopupToken;
         const pending = Boolean(mbHighwayAadtProvider);
+        highwaysHoverPopup.remove();   // hand off; don't stack two copies
+        // Open on whatever hover already knows, so a road whose count is
+        // loaded pins instantly instead of flashing "Traffic count…" and
+        // then settling on the number it was already showing.
+        const known = mbHighwayAadtPeek ? mbHighwayAadtPeek(p, e.lngLat) : undefined;
+        const initial = known === undefined ? (pending ? 'pending' : null) : known;
         highwaysPopup.setLngLat(e.lngLat)
-          .setHTML(mbHighwayHtml(p, { traffic: pending ? 'pending' : null }))
+          .setHTML(mbHighwayHtml(p, { traffic: initial }))
           .addTo(map);
+        if (known !== undefined) return;   // already resolved; nothing to await
         if (!pending) return;
         // A later click supersedes this one; so does closing the popup.
         // Without the token an in-flight fetch could overwrite the popup
@@ -3613,12 +3620,39 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
             highwaysPopup.setHTML(mbHighwayHtml(p, { traffic: hit || null }));
           });
       });
-      map.on('mouseenter', 'mb-highways-line', () => {
-        if (map.getLayoutProperty('mb-highways-line', 'visibility') === 'visible') {
-          setHoverCursor('pointer');
-        }
+      // Hover reads the road and, when the flow data is already in hand,
+      // its count too — same split as the station dots. This one cannot
+      // await: the popup's count is resolved asynchronously on click, and a
+      // "Traffic count…" line flickering under a moving cursor is worse
+      // than no line, so hover peeks instead. mbHighwayAadtPeek returning
+      // undefined (not loaded) leaves the traffic line off entirely, which
+      // is honest — "we have not looked" is not "there is no count".
+      const highwaysHoverPopup = new maplibregl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        offset: 10,
       });
-      map.on('mouseleave', 'mb-highways-line', () => { setHoverCursor(''); });
+      map.on('mousemove', 'mb-highways-line', (e) => {
+        if (map.getLayoutProperty('mb-highways-line', 'visibility') !== 'visible') return;
+        if (isMeasuring()) {
+          highwaysHoverPopup.remove();
+          setHoverCursor('');
+          return;
+        }
+        if (highwaysPopup.isOpen()) { highwaysHoverPopup.remove(); return; }
+        const p = e.features?.[0]?.properties;
+        if (!p) return;
+        setHoverCursor('pointer');
+        const traffic = mbHighwayAadtPeek ? mbHighwayAadtPeek(p, e.lngLat) : undefined;
+        highwaysHoverPopup
+          .setLngLat(e.lngLat)
+          .setHTML(mbHighwayHtml(p, { traffic }))
+          .addTo(map);
+      });
+      map.on('mouseleave', 'mb-highways-line', () => {
+        highwaysHoverPopup.remove();
+        setHoverCursor('');
+      });
 
       } catch (err) {
         // Usually "Style is not done loading" — setup ran ahead of the
@@ -6149,6 +6183,16 @@ let mbHighwayAadtProvider = null;
  */
 export function setMbHighwayAadtProvider(fn) {
   mbHighwayAadtProvider = typeof fn === 'function' ? fn : null;
+}
+
+// The synchronous counterpart, for hover. Returns undefined when the data
+// isn't loaded (so the popup says nothing about traffic rather than claiming
+// there is none), null when there genuinely is no published count.
+let mbHighwayAadtPeek = null;
+
+/** Teach the hover popup how to look up a count WITHOUT awaiting. */
+export function setMbHighwayAadtPeek(fn) {
+  mbHighwayAadtPeek = typeof fn === 'function' ? fn : null;
 }
 
 function mbHighwayHtml(p, { traffic } = {}) {
