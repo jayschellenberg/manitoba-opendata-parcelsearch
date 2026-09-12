@@ -3330,10 +3330,16 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
         // zoning lookup landing after the record lookup does not wipe it.
         let shownProps = muniParcelPropsNow(p);
         let shownZoning = overlay.zoning || muniParcelResolver?.peekZoning?.(p) || null;
+        // Soil composition (top 3 soils by share of the parcel), computed on
+        // demand while the CLI / Soil Type overlay is on. `undefined` = not
+        // wanted (overlay off), 'pending' = computing, null = no soil data,
+        // array = rows.
+        let shownSoil = muniParcelResolver?.soilWanted?.() ? 'pending' : undefined;
         const render = () => {
           muniClickPopup.setHTML(muniParcelHtml(shownProps, {
             withReportLink: true,
             overlay: overlay.zoning ? overlay : { ...overlay, zoning: shownZoning },
+            soil: shownSoil,
           }));
           wireCoordsCopy(muniClickPopup, center);
         };
@@ -3346,6 +3352,23 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
         // earlier version bumped it inside the record path and silently
         // killed every zoning re-render that was already in flight.
         const token = ++muniPopupToken;
+
+        if (shownSoil === 'pending' && muniParcelResolver?.resolveSoilComposition) {
+          Promise.resolve(muniParcelResolver.resolveSoilComposition(p))
+            .then((composition) => {
+              if (token !== muniPopupToken || !muniClickPopup.isOpen()) return;
+              shownSoil = composition === undefined ? undefined : (composition || null);
+              render();
+            })
+            .catch((err) => {
+              // Non-fatal: drop the placeholder rather than leave "Computing…"
+              // on screen forever.
+              console.warn('Assessment Parcels soil composition failed', err);
+              if (token !== muniPopupToken || !muniClickPopup.isOpen()) return;
+              shownSoil = undefined;
+              render();
+            });
+        }
 
         // Zoning, when the overlay is off so the popup has nothing to read.
         if (!overlay.zoning && muniParcelResolver?.resolveZoning && !shownZoning) {
@@ -5938,6 +5961,41 @@ export function soilSurveyParcelHtml(composition) {
 }
 
 /**
+ * Compact soil-composition table for the Assessment Parcels click popup:
+ * one line per soil — swatch, name (code), CLI chip — with acres and
+ * percent of the parcel on the right, plus the "Other mapped soils"
+ * remainder row the stamp appends past its top-3 cap. No texture, map
+ * unit or land-feature descriptors: the full form (soilSurveyParcelHtml)
+ * is for search results, where the user asked for the detail; here the
+ * question is "what is this parcel, mostly". Null when nothing to show.
+ */
+function soilCompositionCompactHtml(composition) {
+  const rows = readSoilComposition(composition);
+  if (!rows.length) return null;
+  const html = rows.map((c) => {
+    const swatchColor = c.isOther ? '#bfbfbf' : (c.paintColor || cliCapabilitySwatchColor(c.agcapCls));
+    const swatch = `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${escapeHtml(swatchColor)};border:1px solid rgba(0,0,0,0.2);margin-right:6px;vertical-align:middle"></span>`;
+    const name = c.soilName || 'Mapped soil';
+    const nameHtml = c.soilCode
+      ? `<strong>${escapeHtml(name)}</strong> <span style="color:#888">(${escapeHtml(c.soilCode)})</span>`
+      : `<strong>${escapeHtml(name)}</strong>`;
+    const firstChar = c.agcapCls?.[0] || c.agriCap?.[0] || '?';
+    const chipLabel = c.agriCap || c.agcapCls || '';
+    const chip = chipLabel
+      ? `<span style="display:inline-block;min-width:1.6em;padding:1px 6px;border-radius:4px;background:${CLI_CLASS_COLORS[firstChar] || '#bfbfbf'};color:${CLI_WHITE_TEXT_CLASSES.has(firstChar) ? '#fff' : '#1a1a1a'};font-weight:600;text-align:center;font-size:11px;margin-left:6px;vertical-align:middle">${escapeHtml(chipLabel)}</span>`
+      : '';
+    const areaText = Number.isFinite(c.areaAcres) ? formatSoilAcres(c.areaAcres) : null;
+    const pctText = Number.isFinite(c.parcelPct) ? formatSoilExtent(c.parcelPct) : '';
+    const right = [areaText, pctText].filter(Boolean).join(' · ');
+    return `<tr>
+      <td style="padding:3px 8px 3px 0;vertical-align:top;white-space:nowrap">${swatch}${nameHtml}${chip}</td>
+      <td style="padding:3px 0;vertical-align:top;text-align:right;white-space:nowrap"><strong>${escapeHtml(right)}</strong></td>
+    </tr>`;
+  }).join('');
+  return `<table style="margin-top:4px;font-size:12px;border-collapse:collapse;width:100%">${html}</table>`;
+}
+
+/**
  * Land-cover breakdown box for the parcel popup. Renders the farmland
  * buckets (Cultivated / Pasture-Grass / Bush-Treed / Wetland-Water /
  * Other) stamped onto the parcel as `_landCover` by main.js, each with
@@ -6752,7 +6810,7 @@ let muniPopupToken = 0;
  * — same behaviour as the search-result hover, but for arbitrary muni
  * parcels.
  */
-function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
+function muniParcelHtml(p, { withReportLink = false, overlay = null, soil = undefined } = {}) {
   const lines = [];
   if (p.Roll_No_Txt) {
     // Roll # is hyperlinked to the Manitoba Assessment Online report
@@ -6853,14 +6911,29 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
   // composition isn't loaded for this parcel, and gated on the same
   // Agricultural panel: the same parcel showing soil from the muni-parcels
   // layer but not from a search result would read as a bug.
-  const soilTable = overlayGroupExpanded('agricultural')
-    ? soilSurveyParcelHtml(p._soilComposition)
-    : null;
+  //
+  // The CLICK popup goes further while the CLI / Soil Type overlay is on:
+  // `soil` carries a composition computed on demand for this one parcel
+  // (see resolveSoilComposition in main.js) — the top 3 soils by share of
+  // the parcel, each with its CLI chip, acres and percent, in the compact
+  // form. 'pending' shows a placeholder so the block appears at once and
+  // fills in; null says the survey has nothing here.
+  let soilTable = null;
+  let soilTitle = 'Soil composition';
+  if (soil !== undefined) {
+    soilTitle = 'Soil composition (top 3)';
+    soilTable = soil === 'pending'
+      ? '<div style="color:#888;font-size:12px;margin-top:4px"><em>Computing…</em></div>'
+      : (soilCompositionCompactHtml(soil)
+        || '<div style="color:#888;font-size:12px;margin-top:4px"><em>No soil-survey data on this parcel.</em></div>');
+  } else if (overlayGroupExpanded('agricultural')) {
+    soilTable = soilSurveyParcelHtml(p._soilComposition);
+  }
   if (soilTable) {
     return `<div class="parcel-popup parcel-popup-2col">
   <div class="parcel-popup-cols">
     <div class="parcel-popup-main">${lines.join('<br>')}</div>
-    <div class="parcel-popup-soil"><strong>Soil composition</strong>${soilTable}</div>
+    <div class="parcel-popup-soil"><strong>${soilTitle}</strong>${soilTable}</div>
   </div>
 </div>`;
   }

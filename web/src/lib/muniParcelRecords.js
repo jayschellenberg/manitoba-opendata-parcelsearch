@@ -99,12 +99,15 @@ export function createMuniParcelResolver({
           onWarn('Legal enrichment for the parcel popup failed', err);
         }
       }
+      // Keyed by roll, holding the whole FEATURE: the popup reads the
+      // properties, but the on-click soil composition needs the geometry
+      // too (the tile polygon under the cursor is clipped at tile edges).
       const byRoll = new Map();
       for (const feat of fc?.features || []) {
         const roll = canonicalRoll(feat?.properties?.Roll_No_Txt);
-        if (roll) byRoll.set(roll, feat.properties);
+        if (roll) byRoll.set(roll, feat);
       }
-      for (const [roll, props] of byRoll) ready.set(`${muniName}|${roll}`, props);
+      for (const [roll, feat] of byRoll) ready.set(`${muniName}|${roll}`, feat.properties);
       return byRoll;
     })();
     inFlight.set(muniName, promise);
@@ -125,6 +128,16 @@ export function createMuniParcelResolver({
      *  once if needed. Null when the tile props are unusable or the
      *  roll isn't in the fabric. */
     async resolve(props) {
+      const muni = props?.Muni_Name_With_Typ;
+      const roll = canonicalRoll(props?.Roll_No_Txt);
+      if (!muni || !roll) return null;
+      const byRoll = await load(muni);
+      return byRoll.get(roll)?.properties || null;
+    },
+    /** Resolve this parcel's full FEATURE (properties + geometry), fetching
+     *  its municipality once if needed. The geometry is what the on-click
+     *  soil composition joins against. Null when not in the fabric. */
+    async resolveFeature(props) {
       const muni = props?.Muni_Name_With_Typ;
       const roll = canonicalRoll(props?.Roll_No_Txt);
       if (!muni || !roll) return null;

@@ -297,6 +297,22 @@ await test('without a fetchZoningAt dependency zoning is simply unavailable', as
   assert.equal(resolver.peekZoning(tileProps(1)), null);
 });
 
+await test('resolveFeature returns the whole cached feature, geometry included', async () => {
+  const geom = { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] };
+  let fetches = 0;
+  const { resolver } = harness({
+    fetchFabric: async (muni) => { fetches += 1; return fabric({ ...fabricFeature(1, muni), geometry: geom }, fabricFeature(2, muni)); },
+  });
+  const feat = await resolver.resolveFeature(tileProps(1));
+  assert.equal(feat.geometry, geom);
+  assert.equal(feat.properties.Property_Address, '1 MAIN ST');
+  // Same object the props path hands out, so a stamp on one is seen by both.
+  assert.equal(await resolver.resolve(tileProps(1)), feat.properties);
+  assert.equal(resolver.peek(tileProps(1)), feat.properties);
+  assert.equal(fetches, 1, 'one fetch for both calls');
+  assert.equal(await resolver.resolveFeature(tileProps(9)), null);
+});
+
 const failed = results.filter((r) => r.status === 'fail');
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length) process.exit(1);
