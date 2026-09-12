@@ -3173,12 +3173,16 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
         // popups already carry a rolled-up `Soil composition` right
         // column from parcelHtml, so showing the polygon-under-cursor
         // breakdown again below would just duplicate the same info.
-        // For muni-parcels-fill (Assessment Parcels layer), the
-        // muniHoverPopup shows above-cursor in its own handler and
-        // this cliHoverPopup shows below — the stacked layout the
-        // user asked for.
+        // Also suppressed while the Assessment Parcels layer is ON: its
+        // hover tooltip now carries the parcel's own top-3 soil
+        // composition, so the polygon-under-cursor breakdown stacked
+        // beneath it was the same duplication (the user asked for it to
+        // go). With that layer off there is no parcel tooltip, so the
+        // breakdown is the only soil readout and stays.
+        const muniParcelsOn = map.getLayer('muni-parcels-fill')
+          && map.getLayoutProperty('muni-parcels-fill', 'visibility') === 'visible';
         const cli = hits.find((h) => h.layer.id === 'cli-agr-fill');
-        if (cli && !subject && !parcel) {
+        if (cli && !subject && !parcel && !muniParcelsOn) {
           const soil = soilSurveyHoverHtml(cli.properties);
           if (soil) {
             cliHoverPopup
@@ -6495,7 +6499,16 @@ function mbHighwayHtml(p, { traffic } = {}) {
  *  on the parcel under the cursor. Returns the first hit's properties for
  *  each layer, or null if the layer is hidden / nothing's there. */
 function readOverlaysAt(map, point) {
-  const out = { zoning: null, devplan: null, cli: null, cliMode: null };
+  const out = { zoning: null, devplan: null, cli: null, cliMode: null, masc: null };
+  // MASC rating polygon under the cursor (quarter-section grid, or a rated
+  // river lot) while the MASC Rating overlay is on. Read so the Assessment
+  // Parcels tooltip can print the rating ahead of the CLI line.
+  for (const id of ['masc-riverlots-fill', 'masc-fill']) {
+    if (map.getLayer(id) && map.getLayoutProperty(id, 'visibility') === 'visible') {
+      const hit = map.queryRenderedFeatures(point, { layers: [id] })[0];
+      if (hit) { out.masc = hit.properties; break; }
+    }
+  }
   if (map.getLayer('zoning-fill') &&
       map.getLayoutProperty('zoning-fill', 'visibility') === 'visible') {
     const hit = map.queryRenderedFeatures(point, { layers: ['zoning-fill'] })[0];
@@ -6766,6 +6779,23 @@ function descriptorsFromPolygonSlot(p, slot) {
  * per-feature `_paintColor` that applyIdentityPalette stamps on every
  * polygon.
  */
+/**
+ * One-line MASC rating for the polygon under the cursor — chip coloured by
+ * the rating code (the overlay's own palette), the full label when the
+ * quarter carries more than one rating ("C/F"), and the quarter it comes
+ * from. Null when the overlay is off or the cursor is over an unrated area.
+ */
+function mascOverlayLine(mascProps) {
+  if (!mascProps) return null;
+  const code = mascProps.rating;
+  if (code == null || String(code).trim() === '') return null;
+  const label = mascProps.ratings || code;
+  const chip = `<span style="display:inline-block;min-width:1.6em;padding:1px 6px;border-radius:4px;font-weight:600;text-align:center;font-size:11px;`
+    + `background:${escapeHtml(masccolor(code))};color:${escapeHtml(mascTextColor(code))};border:1px solid rgba(0,0,0,0.2);margin-right:6px;vertical-align:middle">${escapeHtml(String(label))}</span>`;
+  const from = mascProps.label ? ` <span style="color:#777">${escapeHtml(mascProps.label)}</span>` : '';
+  return `${chip}<strong>MASC</strong>${from}`;
+}
+
 function cliOverlayLine(cliProps, cliMode) {
   if (!cliProps || !cliMode) return null;
   if (cliMode === 'capability') {
@@ -6944,6 +6974,13 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null, soil = unde
   // it's in "Soil Type" mode. Sits right after Total Value so the user
   // sees the agriculture context inline with the parcel's headline
   // numbers. Skipped when the CLI overlay is off.
+  // MASC rating under the cursor comes FIRST — the coarser, citable
+  // crop-insurance rating ahead of the finer soil-survey line — while the
+  // MASC Rating overlay is on.
+  // Skipped when the fabric parcel already carries a stamped rating line
+  // above (mascRatingParcelHtml) — one MASC line, not two.
+  const mascUnderCursor = mascLine ? null : mascOverlayLine(overlay?.masc);
+  if (mascUnderCursor) lines.push(mascUnderCursor);
   const cliLine = cliOverlayLine(overlay?.cli, overlay?.cliMode);
   if (cliLine) lines.push(cliLine);
   if (overlay?.zoning) {

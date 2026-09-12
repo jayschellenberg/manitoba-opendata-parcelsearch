@@ -336,7 +336,13 @@ true })` from the global mousemove), read straight off the `_soilComposition`
 stamp `scheduleSoilCompositionStamp` left on the feature — no per-hover
 compute; the block is omitted until the stamp lands. The search-result CLICK
 popup keeps the full descriptor form, gated on the Agricultural panel as
-before.
+before. The below-cursor **"Soil under cursor"** breakdown (`cliHoverPopup`)
+is suppressed while the Assessment Parcels layer is on — the parcel tooltip
+now carries the composition, so the stacked breakdown was a duplicate — and
+still shows with that layer off, when it is the only soil readout. With the
+**MASC Rating** overlay on, the Assessment Parcels hover / click popup prints
+the rating polygon under the cursor (`readOverlaysAt` → `masc`,
+`mascOverlayLine`: chip + quarter label) on the line **before** the CLI line.
 
 **Changes pill — Off / Show / Filter** (under the Zoning / Development Plan
 buttons; `.changes-mode-pill`, same segmented control as the vacant-threshold
