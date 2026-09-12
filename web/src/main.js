@@ -3415,6 +3415,8 @@ function loadFarFlungExclude() {
   // Defaults OFF. Only an explicit '1' turns it on, so a corrupt or
   // absent value can never start a session hiding sales.
   $farFlungExclude.checked = stored === '1';
+  // Set without a change event, so repaint the Keep / Exclude pill by hand.
+  pillPainters.farflung?.();
 }
 
 function saveFarFlungExclude() {

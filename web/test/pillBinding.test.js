@@ -17,9 +17,10 @@ test('every mode round-trips through checked and back', () => {
   }
 });
 
-test('every spec has one input per pattern slot and an off mode first', () => {
+test('every spec has one input per pattern slot and its default (all-unticked) mode first', () => {
   for (const [name, spec] of Object.entries(PILL_SPECS)) {
-    assert.equal(Object.keys(spec.modes)[0], 'off', name);
+    const first = Object.keys(spec.modes)[0];
+    assert.ok(spec.modes[first].every((v) => v === false), `: first mode  must be all-unticked`);
     for (const [mode, pattern] of Object.entries(spec.modes)) {
       assert.equal(pattern.length, spec.inputs.length, `${name}:${mode}`);
     }
