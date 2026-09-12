@@ -4,7 +4,9 @@
 // Run: cd web && node test/amendment.test.js
 
 import assert from 'node:assert/strict';
-import { zoningBylawText, devPlanBylawText } from '../src/lib/amendment.js';
+import {
+  zoningBylawText, devPlanBylawText, rowPassesChangesFilter, changesFilterInert, CHANGES_MODES,
+} from '../src/lib/amendment.js';
 
 let failed = 0;
 function test(name, fn) {
@@ -67,6 +69,37 @@ test('dev plan: unamended', () => {
   assert.deepEqual(devPlanBylawText({ DP_BYLAW: '7392', DPA_BYLAW: '<Null>' }),
     { base: '7392', bylaw: 'By-law 7392', amendment: null });
   assert.deepEqual(devPlanBylawText({}), { base: null, bylaw: null, amendment: null });
+});
+
+// ---- Changes pill predicates ----
+
+test('filter: passes everything when mode is off or show', () => {
+  for (const mode of ['off', 'show', undefined]) {
+    assert.equal(rowPassesChangesFilter({ _changesText: null }, mode), true, String(mode));
+    assert.equal(rowPassesChangesFilter({}, mode), true, String(mode));
+  }
+});
+
+test('filter: keeps amended rows and drops unamended ones', () => {
+  assert.equal(rowPassesChangesFilter({ _changesText: 'Z: AG to CH' }, 'filter'), true);
+  assert.equal(rowPassesChangesFilter({ _changesText: null }, 'filter'), false);
+  assert.equal(rowPassesChangesFilter({ _changesText: '' }, 'filter'), false);
+});
+
+test('filter: a row never joined to zoning is unknown, not excluded', () => {
+  assert.equal(rowPassesChangesFilter({ Roll_No_Txt: '1' }, 'filter'), true);
+  assert.equal(rowPassesChangesFilter(null, 'filter'), true);
+});
+
+test('inert: only when filtering and no row carries the stamp', () => {
+  assert.equal(changesFilterInert([{ Roll_No_Txt: '1' }, {}], 'filter'), true);
+  assert.equal(changesFilterInert([{ _changesText: null }], 'filter'), false);
+  assert.equal(changesFilterInert([{ Roll_No_Txt: '1' }], 'show'), false);
+  assert.equal(changesFilterInert([], 'filter'), true);
+});
+
+test('modes list is off / show / filter', () => {
+  assert.deepEqual(CHANGES_MODES, ['off', 'show', 'filter']);
 });
 
 console.log(failed ? `\n${failed} failed` : '\nall passed');

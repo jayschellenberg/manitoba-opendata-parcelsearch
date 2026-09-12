@@ -6932,3 +6932,48 @@ body {
 @media (max-width: 640px) {
   .place-search-input { width: 150px; }
 }
+
+/* Changes pill (Off / Show / Filter) under the Zoning / Development Plan
+   buttons. Full-width row in the two-column group grid, styled like the
+   vacant-threshold % / $ pill so the sidebar has one segmented-control
+   look. `.active` is the pressed segment; Off is a real state, not "no
+   state", so it is pressed too when nothing else is. */
+.sidebar .overlay-group-body > .changes-mode-row {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0 1px 2px;
+  font-size: 12px;
+  color: var(--ui-ink-soft, #64748b);
+}
+.sidebar .changes-mode-pill {
+  display: inline-flex;
+  flex: 0 0 auto;
+  border: 1px solid var(--ui-line-strong, var(--color-neutral-300, #d4d4d8));
+  border-radius: var(--ui-radius, 4px);
+  overflow: hidden;
+  background: #fff;
+}
+.sidebar .changes-mode-btn {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--ui-ink, var(--color-neutral-600, #52525b));
+  cursor: pointer;
+  line-height: 1;
+}
+.sidebar .changes-mode-btn + .changes-mode-btn {
+  border-left: 1px solid var(--ui-line-strong, var(--color-neutral-300, #d4d4d8));
+}
+.sidebar .changes-mode-btn:hover {
+  background: var(--color-neutral-100, #f4f4f5);
+}
+.sidebar .changes-mode-btn.active {
+  background: var(--color-accent-500, #2563eb);
+  color: #fff;
+}

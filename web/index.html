@@ -1124,16 +1124,23 @@
             <button id="devplan-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Dev Plan — Manitoba Development Plan Designations">
               <span class="overlay-btn-label">Development Plan</span>
             </button>
-            <!-- Changes only: highlights the RESULT PARCELS that carry a zoning or
-                 development-plan amendment (amber fill + outline, driven by the
-                 `_changesText` stamp the Changes column already reads), and
-                 narrows the Zoning / Dev Plan overlays above to amended polygons
-                 only while ticked. No fetch, no municipality dependency — the
-                 same pattern as Waterfront only under Water Influence. -->
-            <label class="overlay-check" title="Changes only — highlight parcels whose zoning or development plan was amended (amber), and show only the amended polygons when the Zoning / Development Plan overlays are on. Hover or click a parcel or polygon for the amending by-law number. The province publishes no amendment date, so the by-law number is the pointer to verify with the municipality.">
-              <input type="checkbox" id="changes-only" />
-              <span>Changes only</span>
-            </label>
+            <!-- Changes pill — Off / Show / Filter. SHOW highlights the RESULT
+                 PARCELS that carry a zoning or development-plan amendment
+                 (amber fill + outline, driven by the `_changesText` stamp the
+                 Changes column already reads) and narrows the Zoning / Dev Plan
+                 overlays above to amended polygons. FILTER does all of that AND
+                 keeps only amended rows in the grid — composing with Waterfront /
+                 Near water and, on Sales Analysis, with the sales filters. No
+                 fetch, no municipality dependency. Same segmented-pill pattern
+                 as the vacant-threshold % / $ control. -->
+            <div class="changes-mode-row" title="Changes — Off: nothing. Show: highlight parcels whose zoning or development plan was amended (amber) and show only the amended polygons when the Zoning / Development Plan overlays are on. Filter: Show, plus keep only amended parcels in the results below; combines with Waterfront only / Near water and the sales filters. Hover or click a parcel or polygon for the amending by-law number. The province publishes no amendment date, so the by-law number is the pointer to verify with the municipality.">
+              <span class="changes-mode-prefix">Changes:</span>
+              <div class="changes-mode-pill" role="radiogroup" aria-label="Zoning / development-plan changes mode">
+                <button type="button" class="changes-mode-btn active" data-mode="off" aria-pressed="true">Off</button>
+                <button type="button" class="changes-mode-btn" data-mode="show" aria-pressed="false">Show</button>
+                <button type="button" class="changes-mode-btn" data-mode="filter" aria-pressed="false">Filter</button>
+              </div>
+            </div>
             </div>
           </details>
 

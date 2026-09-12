@@ -51,3 +51,30 @@ function amendmentText(amendedBy, desc) {
   const head = amendedBy ? `Amended by ${amendedBy}` : 'Amended';
   return desc ? `${head} (${desc})` : head;
 }
+
+// ---- Changes pill (Off / Show / Filter) ----------------------------------
+
+export const CHANGES_MODES = ['off', 'show', 'filter'];
+
+/**
+ * Grid predicate for Changes = Filter, applied per parcel to the
+ * `_changesText` stamp enrichOverlays writes (null when nothing is amended).
+ *
+ * A parcel that was never joined to zoning has NO stamp at all. That is
+ * "unknown", not "unchanged": it passes through, and the caller says the
+ * filter was not applied (see changesFilterInert). Excluding it would empty
+ * the grid on a set that was simply never enriched — the same failure the
+ * waterfront filter guards against with its `_waterLoaded` flag.
+ */
+export function rowPassesChangesFilter(props, mode) {
+  if (mode !== 'filter') return true;
+  if (!props || !('_changesText' in props)) return true;
+  return !!props._changesText;
+}
+
+/** True when Filter is on but not one row carries the stamp — the filter is
+ *  inert and the count line must say so rather than imply every row changed. */
+export function changesFilterInert(propsList, mode) {
+  if (mode !== 'filter') return false;
+  return !(propsList || []).some((p) => p && '_changesText' in p);
+}

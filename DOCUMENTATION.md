@@ -311,20 +311,31 @@ the search-result hover, the Assessment Parcels hover + click popups, and
 the historical (as-of) popups. The province publishes **no amendment date** —
 the by-law number is the pointer to follow up with the municipality.
 
-**Changes only** (checkbox under the Zoning / Development Plan buttons) makes
-the changes visible without hovering. Ticked, it (1) paints every result
-parcel whose `_changesText` stamp is non-null — the same stamp the Changes
-column reads — with an amber fill + outline (`changes-fill` /
-`changes-outline` on the `parcels` source, `setChangesHighlightVisible`), and
-(2) narrows the Zoning / Dev Plan overlays, live **and** historical, to their
-amended polygons via a layer filter on `_amended`, which `setZoningData` /
-`setDevPlanData` / `setHistoricalData` stamp on every polygon through
-`lib/amendment.js` (`setOverlayChangesOnly`). Pure visibility + filter, no
-fetch — the same shape as *Waterfront only*, and it works on an imported
-sales list. The status line reports how many parcels lit up, and says when
-zoning has not been loaded yet (above `ENRICHMENT_THRESHOLD`), so an empty
-map cannot be mistaken for a broken layer. Re-asserted on every `setMapData`
-push like the water overlay. ArcGIS spatial queries here take an
+**Changes pill — Off / Show / Filter** (under the Zoning / Development Plan
+buttons; `.changes-mode-pill`, same segmented control as the vacant-threshold
+% / $ pill; `getChangesMode()` is the one reader). **Show** makes the changes
+visible without hovering: (1) every result parcel whose `_changesText` stamp
+is non-null — the same stamp the Changes column reads — gets an amber fill +
+outline (`changes-fill` / `changes-outline` on the `parcels` source,
+`setChangesHighlightVisible`), and (2) the Zoning / Dev Plan overlays, live
+**and** historical, narrow to their amended polygons via a layer filter on
+`_amended`, which `setZoningData` / `setDevPlanData` / `setHistoricalData`
+stamp on every polygon through `lib/amendment.js` (`setOverlayChangesOnly`).
+Pure visibility + filter, no fetch. **Filter** is Show plus a grid filter:
+`rowPassesChangesFilter` (lib/amendment.js, unit-tested) runs inside BOTH
+existing passes — `rowPassesWaterFilter` for a property search (the stash-
+based live view filter the tile / irrigation boxes use, never a re-search)
+and `filterCsvRowsByOtherSearches` for a sales import — so it ANDs with
+Waterfront / Near water and with the sales filters; the count line reads
+`47 of 166 shown · 119 hidden by the zoning / dev-plan changes filter`.
+Filter implies Show, so amber on the map is exactly what is in the grid. It is
+re-applied after a search and after "Load zoning + dev-plan" (the stamps only
+exist then), and after the deferred dev-plan backfill on a sales import. A set
+never joined to zoning passes through untouched and the count line says the
+filter was not applied (`changesFilterInert`) — the same unknown ≠ excluded
+rule the waterfront filter follows. Off restores the count line Show
+overwrote. The Planning group badge counts Show / Filter as "on". Not carried
+in shared-link URL state (the writer only round-trips `*-toggle` buttons). ArcGIS spatial queries here take an
 ENVELOPE, so the parcel bbox can catch neighbouring zones; a point-in-polygon
 test picks the zone actually under the click. A resolved *null* is cached (many
 rural parcels genuinely have no zoning polygon); a *failed* lookup is not.
