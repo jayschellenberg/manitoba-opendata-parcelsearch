@@ -2673,11 +2673,13 @@ function refreshOverlayGroupCounts() {
     // invisible: a collapsed Agricultural group with "Licensed tile
     // drainage only" ticked would otherwise silently narrow every search.
     // 'mixed' is the tri-state overlays' second mode — still on.
-    // The Changes pill counts when it is on Show or Filter — Off is a real
-    // pressed segment but not an active setting.
+    // A pill counts as ONE setting when it is on any segment but Off — Off
+    // is a real pressed segment but not an active setting. Counted on the
+    // pill, not its hidden backing boxes, so Water = Any (which ticks both
+    // boxes) reads "1 on" like every other pill.
     const on = el.querySelectorAll(
       '.overlay-btn[aria-pressed="true"], .overlay-btn[aria-pressed="mixed"], .overlay-check input:checked, '
-      + 'input.pill-backing:checked, .changes-mode-btn.active:not([data-mode="off"])',
+      + '.mode-btn.active:not([data-mode="off"])',
     ).length;
     badge.textContent = on > 0 ? `${on} on` : '';
     badge.title = on > 0 ? `${on} active setting${on === 1 ? '' : 's'} in this group` : '';

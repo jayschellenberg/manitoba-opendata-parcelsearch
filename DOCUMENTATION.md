@@ -354,7 +354,9 @@ directly. `Any` = both water boxes ticked, exactly the old "tick both" case;
 tile drainage and irrigation stay two pills because both On means both must
 hold. The Entry order segment carries `#numbering-order-label` so the existing
 "only for a typed roll list" hiding still applies to it. The mode ↔ checked
-tables are unit-tested (`test/pillBinding.test.js`). The Sales-tab boxes
+tables are unit-tested (`test/pillBinding.test.js`). The group badge counts a
+pill as ONE setting whenever it is off Off (`.mode-btn.active:not([data-mode="off"])`),
+not its backing boxes — so Water = Any reads "1 on", not "2 on". The Sales-tab boxes
 (adjacent regions, nominal sales, far-flung), the route planner's Round trip
 and the Verify-this checklist are deliberately still checkboxes. ArcGIS spatial queries here take an
 ENVELOPE, so the parcel bbox can catch neighbouring zones; a point-in-polygon
