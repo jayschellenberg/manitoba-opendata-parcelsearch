@@ -266,6 +266,7 @@ import {
   waterColor, waterCellText, waterTooltip, waterSortRank,
   waterCsvCells, isWaterfront, isNearWater, WATER_CLASSES,
 } from './lib/water.js';
+import { rowPassesChangesFilter, changesFilterInert } from './lib/amendment.js';
 import {
   FLOOD_GROUPS, floodCellText, floodTooltip, floodSortRank,
   floodCsvCells, floodColor,
@@ -614,7 +615,14 @@ const $tileOnly          = document.getElementById('tile-only');
 const $irrigationOnly    = document.getElementById('irrigation-only');
 const $waterfrontOnly    = document.getElementById('waterfront-only');
 const $nearWaterOnly     = document.getElementById('near-water-only');
-const $changesOnly       = document.getElementById('changes-only');
+// Changes pill (Off / Show / Filter) under the Zoning / Development Plan
+// buttons. `.active` marks the pressed segment; getChangesMode() is the
+// single reader so the map highlight, the two grid filter passes and the
+// status line can never disagree about which mode is on.
+const $changesModePill   = document.querySelector('.changes-mode-pill');
+function getChangesMode() {
+  return $changesModePill?.querySelector('.changes-mode-btn.active')?.dataset.mode || 'off';
+}
 const $cliToggle     = document.getElementById('cli-toggle');
 const $cliLegend     = document.getElementById('cli-legend');
 const $landcoverToggle = document.getElementById('landcover-toggle');
@@ -2659,8 +2667,11 @@ function refreshOverlayGroupCounts() {
     // invisible: a collapsed Agricultural group with "Licensed tile
     // drainage only" ticked would otherwise silently narrow every search.
     // 'mixed' is the tri-state overlays' second mode — still on.
+    // The Changes pill counts when it is on Show or Filter — Off is a real
+    // pressed segment but not an active setting.
     const on = el.querySelectorAll(
-      '.overlay-btn[aria-pressed="true"], .overlay-btn[aria-pressed="mixed"], .overlay-check input:checked',
+      '.overlay-btn[aria-pressed="true"], .overlay-btn[aria-pressed="mixed"], .overlay-check input:checked, '
+      + '.changes-mode-btn.active:not([data-mode="off"])',
     ).length;
     badge.textContent = on > 0 ? `${on} on` : '';
     badge.title = on > 0 ? `${on} active setting${on === 1 ? '' : 's'} in this group` : '';
@@ -2699,7 +2710,20 @@ if ($mfinvMinDu) {
 $cliToggle.addEventListener('click', () => toggleCliOverlay());
 if ($landcoverToggle) $landcoverToggle.addEventListener('click', () => toggleLandCoverOverlay());
 if ($waterToggle) $waterToggle.addEventListener('click', () => toggleWaterInfluenceOverlay());
-if ($changesOnly) $changesOnly.addEventListener('change', () => applyChangesOnly());
+if ($changesModePill) {
+  $changesModePill.addEventListener('click', (e) => {
+    const btn = e.target?.closest?.('.changes-mode-btn');
+    if (!btn || !$changesModePill.contains(btn)) return;
+    const prev = getChangesMode();
+    for (const b of $changesModePill.querySelectorAll('.changes-mode-btn')) {
+      const on = b === btn;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    refreshOverlayGroupCounts();
+    applyChangesMode(prev);
+  });
+}
 if ($historicalToggle) $historicalToggle.addEventListener('click', () => toggleHistoricalOverlay());
 if ($historicalYear) $historicalYear.addEventListener('change', () => onHistoricalYearChange());
 for (const [key, btn] of Object.entries($historicalLayerBtns)) {
@@ -4739,6 +4763,10 @@ async function runSearch() {
       renderEnrichButton(parcelFc, inputs, deferredMsg);
     } else {
       await enrichOverlays(parcelFc, inputs, baseMsg);
+      // Changes = Filter is a view filter over the enriched rows, so it is
+      // applied here, once the `_changesText` stamps exist — the same
+      // moment the waterfront boxes' post-search view filter would run.
+      if (getChangesMode() === 'filter') await onChangesFilterToggle();
       // Property-list imports should arrive with the same agricultural
       // analysis fields as Sales Analysis. Load Manitoba Soil Survey/CLI
       // polygons for every represented municipality, stamp the dominant
@@ -6447,6 +6475,10 @@ function refilterCsvIfActive() {
   const waterNote = waterInfluenceFilterInert(csvFullRows)
     ? " · water-influence data hasn't loaded for these municipalities, so that filter was not applied"
     : '';
+  // Same rule for Changes = Filter before the zoning join has run.
+  const changesNote = changesFilterInert(csvFullRows.map((r) => r?.parcel?.properties), getChangesMode())
+    ? ' · zoning not loaded for these sales yet, so the Changes filter was not applied — use "Load zoning + dev-plan"'
+    : getChangesMode() === 'filter' ? ' · Changes: Filter (amended parcels only)' : '';
   // Name the Additional filters that are set, for the same reason: the
   // disclosure is collapsed and the eye is up here when the results look
   // thin. The badge in the summary repeats the list (repainted here so
@@ -6459,7 +6491,7 @@ function refilterCsvIfActive() {
     : '';
   const msg = (filtered.length === total
     ? `${csvFullBaseMsg}${ffNote}`
-    : `${filtered.length} of ${total} sales shown (filtered)${ffNote}`) + afNote + waterNote;
+    : `${filtered.length} of ${total} sales shown (filtered)${ffNote}`) + afNote + waterNote + changesNote;
   setCount(msg);
   renderTable(filtered);
   // Re-narrow the map's parcel highlight to the filtered subset.
@@ -6709,6 +6741,11 @@ function filterCsvRowsByOtherSearches(rows) {
               || (wantNear  && isNearWater(p._water));
       if (!ok) return false;
     }
+
+    // Changes = Filter — same stamped-property shape as water influence,
+    // ANDed with it and with everything else here. Unknown (never joined
+    // to zoning) passes; refilterCsvIfActive says so in the count line.
+    if (!rowPassesChangesFilter(p, getChangesMode())) return false;
 
     // Plan # filter — runs before the other CSV-mode checks because
     // it's the cheapest predicate. Substring-matches against both
@@ -7015,6 +7052,8 @@ function renderEnrichButton(parcelFc, inputs, baseMsg) {
     btn.textContent = 'Loading zoning + dev-plan…';
     try {
       await enrichOverlays(parcelFc, inputs, baseMsg);
+      // Stamps exist now, so a pending Changes = Filter can finally cut.
+      if (getChangesMode() === 'filter') await onChangesFilterToggle();
     } catch (err) {
       btn.disabled = false;
       btn.textContent = `Retry zoning + dev-plan (${err.message})`;
@@ -7079,39 +7118,78 @@ function renderEnrichButton(parcelFc, inputs, baseMsg) {
  * waterfront", not silently widen to every waterfront parcel in the muni.
  */
 /**
- * Changes only — amber highlight on every result parcel that carries a zoning
- * or development-plan amendment, and the Zoning / Dev Plan overlays (live and
- * historical) narrowed to their amended polygons while ticked.
+ * Changes pill — Off / Show / Filter.
  *
- * A visibility + filter flip, like Water Influence, not a search: `_changesText`
- * is stamped on every row by enrichOverlays during the search (it is what the
- * Changes column reads), and `_amended` on every overlay polygon in
- * setZoningData / setDevPlanData. No fetch, no municipality dependency, and it
- * works on an imported sales list. The status line reports how many parcels
- * lit up, so an empty map reads as "none of these changed" rather than as a
- * broken layer. Above ENRICHMENT_THRESHOLD the stamp only exists once "Load
- * zoning + dev-plan" has run, and the status line says so.
+ * SHOW: amber highlight on every result parcel that carries a zoning or
+ * development-plan amendment, and the Zoning / Dev Plan overlays (live and
+ * historical) narrowed to their amended polygons. A visibility + filter flip,
+ * like Water Influence, not a search: `_changesText` is stamped on every row
+ * by enrichOverlays during the search (it is what the Changes column reads),
+ * and `_amended` on every overlay polygon in setZoningData / setDevPlanData.
+ * No fetch, no municipality dependency, and it works on an imported sales
+ * list. The status line reports how many parcels lit up, so an empty map
+ * reads as "none of these changed" rather than as a broken layer. Above
+ * ENRICHMENT_THRESHOLD the stamp only exists once "Load zoning + dev-plan"
+ * has run, and the status line says so.
+ *
+ * FILTER: everything Show does, plus the grid keeps only amended rows —
+ * through the same two passes the waterfront boxes use (rowPassesWaterFilter
+ * for a property search, filterCsvRowsByOtherSearches for a sales import),
+ * so it ANDs with Waterfront / Near water and with the sales filters. Filter
+ * implies Show: what reads amber on the map is exactly what is in the grid.
  */
-function applyChangesOnly() {
-  const on = !!$changesOnly?.checked;
+// Count-line text from before Show overwrote it; restored on Off.
+let changesShowPrevMsg = null;
+
+function applyChangesMode(prev = 'off') {
+  const mode = getChangesMode();
+  const on = mode !== 'off';
   mapReady.then(() => {
     setChangesHighlightVisible(map, on);
     setOverlayChangesOnly(map, on);
   });
-  if (!on) return;
+  // Entering or leaving Filter re-runs the grid pass; Off <-> Show only
+  // changes the map and the status line.
+  if (mode === 'filter' || prev === 'filter') {
+    onChangesFilterToggle();
+    if (mode === 'filter') { setColumnVisible('changes', true); return; }
+  }
+  if (!on) {
+    // Off after Show: put back whatever the count line said before Show
+    // wrote over it, so a stale "47 of 166 carry an amendment" doesn't
+    // outlive the highlight it described.
+    if (prev === 'show' && changesShowPrevMsg != null) setCount(changesShowPrevMsg);
+    changesShowPrevMsg = null;
+    return;
+  }
   setColumnVisible('changes', true);
   const rows = currentRows || [];
   const n = rows.filter((r) => r.parcel?.properties?._changesText).length;
   const stamped = rows.some((r) => r.parcel?.properties && '_changesText' in r.parcel.properties);
+  const cur = $count.textContent || '';
+  if (!cur.startsWith('Changes: Show')) changesShowPrevMsg = cur;
   if (!rows.length) {
-    setCount('Changes only — run a search to highlight parcels with a zoning / development-plan amendment.');
+    setCount('Changes: Show — run a search to highlight parcels with a zoning / development-plan amendment.');
   } else if (!stamped) {
-    setCount(`Changes only — zoning / dev-plan not loaded for these ${rows.length} parcels yet; use "Load zoning + dev-plan" to find the amended ones.`);
+    setCount(`Changes: Show — zoning / dev-plan not loaded for these ${rows.length} parcels yet; use "Load zoning + dev-plan" to find the amended ones.`);
   } else if (n > 0) {
-    setCount(`Changes only — ${n} of ${rows.length} parcel${rows.length === 1 ? '' : 's'} carry a zoning / development-plan amendment (amber). Hover or click a parcel for the by-law number.`);
+    setCount(`Changes: Show — ${n} of ${rows.length} parcel${rows.length === 1 ? '' : 's'} carry a zoning / development-plan amendment (amber). Hover or click a parcel for the by-law number.`);
   } else {
-    setCount(`Changes only — none of these ${rows.length} parcels carry a zoning / development-plan amendment on record.`);
+    setCount(`Changes: Show — none of these ${rows.length} parcels carry a zoning / development-plan amendment on record.`);
   }
+}
+
+/**
+ * Re-run whichever grid pass owns the rows in hand. Sales-CSV mode: the
+ * loaded sales are the universe, so the pill joins the sales filter pass
+ * (never a re-search, which would destroy the upload). Otherwise the
+ * stash-based live view filter the tile / irrigation boxes use — a view
+ * filter, never a re-search, because amendments have no per-roll shard to
+ * push into the query (the Amendments dropdown is the server-side route).
+ */
+function onChangesFilterToggle() {
+  if (csvFullRows != null) { refilterCsvIfActive(); return; }
+  return onWaterFilterToggle();
 }
 
 // Whether the Water Influence map overlay is currently on.
@@ -7700,8 +7778,8 @@ function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
     // parcels coloured" over a map showing none of them. Re-applying on every
     // data push keeps the layer state and the UI state agreeing.
     setWaterInfluenceVisible(map, waterOverlayOn);
-    // Same for the Changes-only highlight, for the same reason.
-    setChangesHighlightVisible(map, !!$changesOnly?.checked);
+    // Same for the Changes highlight (Show / Filter), for the same reason.
+    setChangesHighlightVisible(map, getChangesMode() !== 'off');
   });
   // Stamps run on the FULL set (every sale row), not the deduped map
   // set, so a repeat sale's extra rows carry soil data into the table
@@ -7918,6 +7996,9 @@ async function backfillDevPlanColumns(devPlanFc) {
     devPlanDeferred = false;
     renderTable(currentRows, { resetPage: false });
     setCount(csvFullBaseMsg || '');
+    // The stamp just changed, so a Changes = Filter grid has to be re-cut:
+    // a sale amended only by its development plan joins the set now.
+    if (getChangesMode() === 'filter') onChangesFilterToggle();
   } catch (err) {
     console.warn('dev-plan backfill failed', err);
     setCount(`${csvFullBaseMsg || ''} · Development plan failed to load: ${err.message}`.trim());
@@ -12778,6 +12859,7 @@ function waterFilterNames() {
     $irrigationOnly?.checked ? 'licensed irrigation' : null,
     $waterfrontOnly?.checked ? 'waterfront' : null,
     $nearWaterOnly?.checked ? 'near-water' : null,
+    getChangesMode() === 'filter' ? 'zoning / dev-plan changes' : null,
   ].filter(Boolean).join(' + ') || 'water';
 }
 
@@ -12811,7 +12893,8 @@ let waterFilterBaseMsg = '';
 
 function waterFilterActive() {
   return !!($tileOnly?.checked || $irrigationOnly?.checked
-    || $waterfrontOnly?.checked || $nearWaterOnly?.checked);
+    || $waterfrontOnly?.checked || $nearWaterOnly?.checked
+    || getChangesMode() === 'filter');
 }
 
 /** Forget the stashed unfiltered set. Called wherever a new result set
@@ -12848,6 +12931,9 @@ function rowPassesWaterFilter(row) {
             || (wantNear  && isNearWater(q._water));
     if (!ok) return false;
   }
+  // Changes = Filter — ANDs with the water boxes. Same unknown ≠ excluded
+  // rule: a row never joined to zoning has no stamp and passes through.
+  if (!rowPassesChangesFilter(q, getChangesMode())) return false;
   return true;
 }
 
@@ -12923,10 +13009,16 @@ function renderWaterFilteredView(rows, base, baseMsg) {
   // ticks "Waterfront only", sees the untouched result set, and reasonably
   // concludes every parcel is waterfront.
   const waterInert = waterInfluenceFilterInert(rows);
+  // Same honesty rule for Changes = Filter on a set that was never joined to
+  // zoning (above ENRICHMENT_THRESHOLD): every row passes, and the line says
+  // the filter is waiting on "Load zoning + dev-plan".
+  const changesInert = changesFilterInert(rows.map((r) => r?.parcel?.properties), getChangesMode());
   setCount(hidden > 0
     ? `${rows.length} of ${base.length} shown · ${hidden} hidden by the ${waterFilterNames()} filter`
     : waterInert
       ? `${rows.length} parcel${rows.length === 1 ? '' : 's'} shown · water-influence data hasn't loaded for these municipalities, so that filter was not applied`
+      : changesInert
+      ? `${rows.length} parcel${rows.length === 1 ? '' : 's'} shown · zoning / dev-plan not loaded for these parcels yet, so the Changes filter was not applied — use "Load zoning + dev-plan"`
       : shortOfList
         ? `${rows.length} of ${listParcelKeys.length} imported parcels in hand — press Search to refetch the full list`
         : (baseMsg || `${rows.length} parcel${rows.length === 1 ? '' : 's'} shown`));
