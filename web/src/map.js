@@ -3145,10 +3145,10 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
         const blocks = [];
         const subject = hits.find((h) => h.layer.id === 'subject-fill');
         if (subject) {
-          blocks.push(`<div><strong style="color:#1e6fd9">Subject</strong><br>${parcelHtml(subject.properties)}</div>`);
+          blocks.push(`<div><strong style="color:#1e6fd9">Subject</strong><br>${parcelHtml(subject.properties, { hoverSoil: true })}</div>`);
         }
         const parcel = hits.find(isParcelHit);
-        if (parcel && !subject) blocks.push(`<div><strong style="color:#7a5c00">Parcel</strong><br>${parcelHtml(parcel.properties)}</div>`);
+        if (parcel && !subject) blocks.push(`<div><strong style="color:#7a5c00">Parcel</strong><br>${parcelHtml(parcel.properties, { hoverSoil: true })}</div>`);
         const zone = hits.find((h) => h.layer.id === 'zoning-fill');
         if (zone) blocks.push(`<div><strong style="color:#1a2a4a">Zoning</strong><br>${zoningHtml(zone.properties)}</div>`);
         const dev = hits.find((h) => h.layer.id === 'devplan-fill');
@@ -5146,7 +5146,7 @@ export function setLandCoverRasterOpacity(map, opacity) {
 
 // ---------- popup builders ----------
 
-export function parcelHtml(p, { showJumpToList = false } = {}) {
+export function parcelHtml(p, { showJumpToList = false, hoverSoil = false } = {}) {
   const lines = [];
   // Subject parcel gets a distinctive blue header above the standard
   // identity block. _isSubject is stamped onto the subject feature by
@@ -5517,9 +5517,24 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
   // "don't show it while collapsed" isn't much of a rule if a click
   // brings it straight back. The consequence is that expanding the
   // group won't refresh a popup already on screen — re-click the parcel.
-  const soilTable = overlayGroupExpanded('agricultural')
-    ? soilSurveyParcelHtml(p._soilComposition)
-    : null;
+  //
+  // HOVER with the CLI / Soil Type overlay on (`hoverSoil`, set by the
+  // global mousemove) shows the compact top-3 table whatever the panel
+  // state — the same block the Assessment Parcels tooltip carries, so the
+  // two fabrics read alike under the cursor. The stamp is what
+  // scheduleSoilCompositionStamp left on the feature: an array → rows,
+  // null → "no soil data", missing → the join has not landed yet (or was
+  // skipped above the enrichment cap), so the block is simply omitted.
+  let soilTable = null;
+  let soilTitle = 'Soil composition';
+  if (hoverSoil && currentCliPaintMode != null) {
+    soilTitle = 'Soil composition (top 3)';
+    soilTable = (p._soilComposition === null || p._soilComposition === 'null')
+      ? '<div style="color:#888;font-size:12px;margin-top:4px"><em>No soil-survey data on this parcel.</em></div>'
+      : soilCompositionCompactHtml(p._soilComposition);
+  } else if (overlayGroupExpanded('agricultural')) {
+    soilTable = soilSurveyParcelHtml(p._soilComposition);
+  }
   const landCoverTable = landCoverParcelHtml(p);
   const mascBox = mascRatingParcelHtml(p);
   const landfactsBox = landfactsParcelHtml(p);
@@ -5535,7 +5550,7 @@ export function parcelHtml(p, { showJumpToList = false } = {}) {
   if (mascBox)        rightSections.push(`<strong>MASC rating</strong>${mascBox}`);
   if (landfactsBox)   rightSections.push(`<strong>Land facts</strong>${landfactsBox}`);
   if (mfnbBox)        rightSections.push(`<strong>New multi-family</strong>${mfnbBox}`);
-  if (soilTable)      rightSections.push(`<strong>Soil composition</strong>${soilTable}`);
+  if (soilTable)      rightSections.push(`<strong>${soilTitle}</strong>${soilTable}`);
   // Everything in this column is sampled against the parcel's CURRENT polygon.
   // When that boundary has been withheld because the parcel was reconfigured
   // after the sale (lib/withheldGeometry.js), these describe a different piece
