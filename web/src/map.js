@@ -55,6 +55,7 @@ import {
 } from './lib/muniParcelsStyle.js';
 import { polygonBboxMidpoint } from './lib/polygonCentroid.js';
 import { rollDisplay } from './lib/parcelLabelFields.js';
+import { zoningBylawText, devPlanBylawText } from './lib/amendment.js';
 import { WAYBACK_VERSIONS, waybackTileUrl } from './lib/wayback.js';
 import {
   MB_PARCEL_DATA_CDN, currentAadt, currentAadtYear, withAnnualizedChange,
@@ -2517,6 +2518,35 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
         },
       });
 
+      // Changes-only highlight — amber fill + outline on each result parcel
+      // that carries a zoning or dev-plan amendment. Driven by `_changesText`,
+      // the per-parcel stamp main.js's enrichOverlays writes for the Changes
+      // column (null when nothing is amended), so the map can never disagree
+      // with the grid about which parcels changed. Same fill-below /
+      // outline-above arrangement as the water overlay, for the same reason:
+      // the yellow selection outline swallows narrow lots at browsing zoom.
+      map.addLayer({
+        id: 'changes-fill',
+        type: 'fill',
+        source: 'parcels',
+        layout: { visibility: 'none' },
+        paint: {
+          'fill-color': CHANGES_HIGHLIGHT_COLOR,
+          'fill-opacity': ['case', ['to-boolean', ['get', '_changesText']], 0.55, 0],
+        },
+      }, 'parcel-line');
+      map.addLayer({
+        id: 'changes-outline',
+        type: 'line',
+        source: 'parcels',
+        layout: { visibility: 'none' },
+        paint: {
+          'line-color': CHANGES_HIGHLIGHT_COLOR,
+          'line-width': ['case', ['to-boolean', ['get', '_changesText']], 2.4, 0],
+          'line-opacity': 0.95,
+        },
+      });
+
       // Multi-family new-construction overlay — colours each result parcel by
       // the year an apartment-scale building landed on the assessment roll (or
       // by its current unit count). Driven by `_mfnbColor`, stamped per parcel
@@ -3373,6 +3403,40 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
       wireHist('historical-zoning-fill',  historicalZoningHtml,  ['historical-parcels-fill']);
       wireHist('historical-devplan-fill', historicalDevplanHtml, ['historical-parcels-fill', 'historical-zoning-fill']);
 
+      // Hover tooltips for the historical zoning / dev-plan fills, so the
+      // as-of by-law and any amendment read on hover the way the live
+      // layers do, not only on click. Anchored BELOW the cursor: every
+      // parcel tooltip (search result, subject, fabric) and the live zoning
+      // block sit above it, so hovering a parcel with an as-of layer on
+      // reads as "the parcel, and what it was zoned then" rather than one
+      // popup hiding the other. Only the two historical fills defer to each
+      // other (zoning over dev-plan), matching the click priority above.
+      const histHoverPopup = new maplibregl.Popup({
+        closeButton: false, closeOnClick: false, anchor: 'top', maxWidth: '320px',
+      });
+      const wireHistHover = (layerId, htmlFn, deferTo = []) => {
+        map.on('mousemove', layerId, (e) => {
+          if (map.getLayoutProperty(layerId, 'visibility') !== 'visible' || isMeasuring() || isShapeDrawing()) {
+            histHoverPopup.remove();
+            return;
+          }
+          for (const other of deferTo) {
+            if (map.getLayer(other) &&
+                map.getLayoutProperty(other, 'visibility') === 'visible' &&
+                map.queryRenderedFeatures(e.point, { layers: [other] }).length > 0) {
+              histHoverPopup.remove();
+              return;
+            }
+          }
+          const p = e.features?.[0]?.properties;
+          if (!p) { histHoverPopup.remove(); return; }
+          histHoverPopup.setLngLat(e.lngLat).setHTML(htmlFn(p, historicalYear ?? '')).addTo(map);
+        });
+        map.on('mouseleave', layerId, () => { histHoverPopup.remove(); });
+      };
+      wireHistHover('historical-zoning-fill',  historicalZoningHtml);
+      wireHistHover('historical-devplan-fill', historicalDevplanHtml, ['historical-zoning-fill']);
+
       // Bare CLI-polygon click — sticky popup for "Parcel Boundaries
       // off, CLI on" workflows where the user wants to click a polygon
       // and keep its soil info on screen. Hover for bare CLI polygons
@@ -3942,7 +4006,7 @@ export function clearPlacePin() {
 
 export function setZoningData(map, fc) {
   const src = map.getSource('zoning');
-  if (src) src.setData(fc);
+  if (src) src.setData(stampAmended(fc, zoningBylawText));
 }
 
 /**
@@ -3994,7 +4058,54 @@ export function setZoningPaint(map, pairs) {
 }
 export function setDevPlanData(map, fc) {
   const src = map.getSource('devplan');
-  if (src) src.setData(fc);
+  if (src) src.setData(stampAmended(fc, devPlanBylawText));
+}
+
+// Amber used for every "this changed" mark on the map — the changes-only
+// parcel highlight and the amendment line in the popups (amendmentHtml).
+const CHANGES_HIGHLIGHT_COLOR = '#b45309';
+
+/**
+ * Stamp `_amended` (true / false) on every polygon of a zoning or dev-plan
+ * FeatureCollection, using the same by-law reading the popups show, so the
+ * changes-only filter below can select amended polygons with one cheap
+ * expression instead of re-deriving the null-sentinel rules in style JSON.
+ * Mutates and returns the FC — these collections are built per search and
+ * pushed straight to the map, so there is nothing else to preserve.
+ */
+function stampAmended(fc, bylawText) {
+  for (const f of fc?.features || []) {
+    if (!f.properties) f.properties = {};
+    f.properties._amended = bylawText(f.properties).amendment != null;
+  }
+  return fc;
+}
+
+const CHANGES_ONLY_OVERLAY_LAYERS = [
+  'zoning-fill', 'zoning-line', 'zoning-label',
+  'devplan-fill', 'devplan-line', 'devplan-label',
+  'historical-zoning-fill', 'historical-devplan-fill',
+];
+
+/**
+ * Changes-only mode for the zoning / dev-plan overlays: while on, only the
+ * polygons stamped `_amended` draw, so a rezoned block stands out against an
+ * otherwise empty overlay instead of being one colour among many. A filter,
+ * not a data swap — it survives every setData and every visibility flip, so
+ * turning an overlay on later still comes up narrowed.
+ */
+export function setOverlayChangesOnly(map, on) {
+  for (const id of CHANGES_ONLY_OVERLAY_LAYERS) {
+    if (map.getLayer(id)) map.setFilter(id, on ? ['==', ['get', '_amended'], true] : null);
+  }
+}
+
+/** Show / hide the amber changes-only highlight on the result parcels. */
+export function setChangesHighlightVisible(map, on) {
+  const vis = on ? 'visible' : 'none';
+  for (const id of ['changes-fill', 'changes-outline']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
+  }
 }
 
 export function setZoningVisible(map, visible) {
@@ -4734,8 +4845,10 @@ export function setHistoricalData(map, data = {}) {
   if ('currentUrls' in data) historicalCurrentUrls = data.currentUrls;
   const set = (srcId, fc) => { const s = map.getSource(srcId); if (s) s.setData(fc || emptyFc()); };
   set('historical-parcels', data.parcels);
-  set('historical-zoning',  data.zoning);
-  set('historical-devplan', data.devplan);
+  // Same `_amended` stamp as the live overlays, so Changes only narrows the
+  // as-of layers too (the shards carry ZBL_A / AMENDMENT_DESCRIPTION / DPA_BYLAW).
+  set('historical-zoning',  stampAmended(data.zoning,  zoningBylawText));
+  set('historical-devplan', stampAmended(data.devplan, devPlanBylawText));
   // Colour each polygon by its own category, so the layer shows the muni's
   // actual mix instead of one flat wash. Returned for the legend.
   historicalZoningLegend  = setHistoricalCategoryPaint(map, 'historical-zoning-fill',  data.zoning,  'ZONE',     '#7c3aed');
@@ -4912,7 +5025,12 @@ function historicalZoningHtml(p, year) {
   const lines = [`<strong style="color:#7c3aed">Historical zoning${year ? ` (${escapeHtml(year)})` : ''}</strong>`];
   if (p.ZONE || p.ZONE_NAME) lines.push(`<strong>${escapeHtml(p.ZONE || '')}</strong>${p.ZONE_NAME ? ' — ' + escapeHtml(p.ZONE_NAME) : ''}`);
   if (p.ZONE_CATEGORY)       lines.push(`<em>${escapeHtml(p.ZONE_CATEGORY)}</em>`);
-  if (p.ZBL)                 lines.push(`<strong>By-law</strong> ${escapeHtml(p.ZBL)}`);
+  // Same by-law + amendment reading as the live layer: the shards carry
+  // ZBL / ZBL_A / AMENDMENT_DESCRIPTION as of the snapshot date, so this
+  // says which by-law had rezoned the polygon by then.
+  const zb = zoningBylawText(p);
+  if (zb.base)      lines.push(`<strong>By-law</strong> ${escapeHtml(zb.base)}`);
+  if (zb.amendment) lines.push(amendmentHtml(zb.amendment));
   lines.push('<small style="color:#888">Pointer only — verify the by-law as of this date with the municipality / planning district.</small>');
   return `<div class="parcel-popup">${lines.join('<br>')}</div>`;
 }
@@ -4921,7 +5039,9 @@ function historicalDevplanHtml(p, year) {
   const lines = [`<strong style="color:#0d9488">Historical dev-plan${year ? ` (${escapeHtml(year)})` : ''}</strong>`];
   if (p.DES_NAME)     lines.push(`<strong>${escapeHtml(p.DES_NAME)}</strong>`);
   if (p.DES_CATEGORY) lines.push(`<em>${escapeHtml(p.DES_CATEGORY)}</em>`);
-  if (p.DP_BYLAW)     lines.push(`<strong>By-law</strong> ${escapeHtml(p.DP_BYLAW)}`);
+  const db = devPlanBylawText(p);
+  if (db.base)      lines.push(`<strong>By-law</strong> ${escapeHtml(db.base)}`);
+  if (db.amendment) lines.push(amendmentHtml(db.amendment));
   lines.push('<small style="color:#888">Pointer only — verify the designation as of this date with the planning district.</small>');
   return `<div class="parcel-popup">${lines.join('<br>')}</div>`;
 }
@@ -5385,12 +5505,22 @@ function formatLandSize(rawAcres) {
   return `${acFmt} ac · ${sf} sf`;
 }
 
+// Amendment line for a zoning / dev-plan polygon ("Amended by 19-2023
+// (AG to CH)"). Amber so a rezoned polygon stands out from an unamended
+// one whose tooltip otherwise reads the same. The province publishes no
+// amendment date, so the by-law number is the pointer to follow up.
+function amendmentHtml(text) {
+  return `<strong style="color:#b45309">${escapeHtml(text)}</strong>`;
+}
+
 function zoningHtml(p) {
   const lines = [];
   if (p.ZONE)          lines.push(`<strong>${escapeHtml(p.ZONE)}</strong>`);
   if (p.ZONE_NAME && p.ZONE_NAME !== p.ZONE) lines.push(escapeHtml(p.ZONE_NAME));
   if (p.ZONE_CATEGORY) lines.push(`<em>${escapeHtml(p.ZONE_CATEGORY)}</em>`);
-  if (p.ZBL)           lines.push(`By-law ${escapeHtml(p.ZBL)}`);
+  const { bylaw, amendment } = zoningBylawText(p);
+  if (bylaw)     lines.push(escapeHtml(bylaw));
+  if (amendment) lines.push(amendmentHtml(amendment));
   return lines.join('<br>');
 }
 
@@ -5398,7 +5528,9 @@ function devPlanHtml(p) {
   const lines = [];
   if (p.DES_NAME)     lines.push(`<strong>${escapeHtml(p.DES_NAME)}</strong>`);
   if (p.DES_CATEGORY) lines.push(`<em>${escapeHtml(p.DES_CATEGORY)}</em>`);
-  if (p.DP_BYLAW)     lines.push(`By-law ${escapeHtml(p.DP_BYLAW)}`);
+  const { bylaw, amendment } = devPlanBylawText(p);
+  if (bylaw)     lines.push(escapeHtml(bylaw));
+  if (amendment) lines.push(amendmentHtml(amendment));
   if (p.PLANNINGDISTRICT) lines.push(escapeHtml(p.PLANNINGDISTRICT));
   return lines.join('<br>');
 }
@@ -6696,7 +6828,9 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
     const bits = [];
     if (code) bits.push(`<strong>${escapeHtml(code)}</strong>`);
     if (name) bits.push(escapeHtml(name));
-    if (z.ZBL) bits.push(`By-law ${escapeHtml(z.ZBL)}`);
+    const zb = zoningBylawText(z);
+    if (zb.bylaw)     bits.push(escapeHtml(zb.bylaw));
+    if (zb.amendment) bits.push(amendmentHtml(zb.amendment));
     if (bits.length) lines.push(`<strong style="color:#1a3a4a">Zoning</strong>: ${bits.join(' &middot; ')}`);
   }
   if (overlay?.devplan) {
@@ -6704,7 +6838,9 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null } = {}) {
     const bits = [];
     if (d.DES_NAME)     bits.push(`<strong>${escapeHtml(d.DES_NAME)}</strong>`);
     if (d.DES_CATEGORY) bits.push(escapeHtml(d.DES_CATEGORY));
-    if (d.DP_BYLAW)     bits.push(`By-law ${escapeHtml(d.DP_BYLAW)}`);
+    const db = devPlanBylawText(d);
+    if (db.bylaw)     bits.push(escapeHtml(db.bylaw));
+    if (db.amendment) bits.push(amendmentHtml(db.amendment));
     if (bits.length) lines.push(`<strong style="color:#1a3a4a">Dev Plan</strong>: ${bits.join(' &middot; ')}`);
   }
   // (Assessment Report + GPS Coordinates links now live inline in the

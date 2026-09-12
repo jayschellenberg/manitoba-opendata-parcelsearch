@@ -295,7 +295,36 @@ and warms the municipality in the background. Fetching on hover would fire one
 request per parcel crossed.
 
 **Zoning** is read off the rendered layer when the zoning overlay is on, and
-fetched per parcel when it is off. ArcGIS spatial queries here take an
+fetched per parcel when it is off.
+
+**Amendments show on the map, not just in the table.** A zoning polygon
+carries its parent by-law (`ZBL`), the by-law that amended it into its
+current zone (`ZBL_A`) and usually a from→to text (`AMENDMENT_DESCRIPTION`,
+e.g. `AG to CH`); a dev-plan polygon carries `DP_BYLAW` + `DPA_BYLAW`.
+`lib/amendment.js` (`zoningBylawText` / `devPlanBylawText`, unit-tested)
+turns those into `By-law 08-2023` + an amber `Amended by 19-2023 (AG to CH)`
+line, using the SAME "changed" rule as the results table's Changes column
+and the *Zoning changed* search filter (`ZBL_A ≠ ZBL` or a description
+present; `DPA_BYLAW ≠ DP_BYLAW`), so map and table can never disagree about
+which polygons changed. Every zoning / dev-plan renderer goes through it:
+the search-result hover, the Assessment Parcels hover + click popups, and
+the historical (as-of) popups. The province publishes **no amendment date** —
+the by-law number is the pointer to follow up with the municipality.
+
+**Changes only** (checkbox under the Zoning / Development Plan buttons) makes
+the changes visible without hovering. Ticked, it (1) paints every result
+parcel whose `_changesText` stamp is non-null — the same stamp the Changes
+column reads — with an amber fill + outline (`changes-fill` /
+`changes-outline` on the `parcels` source, `setChangesHighlightVisible`), and
+(2) narrows the Zoning / Dev Plan overlays, live **and** historical, to their
+amended polygons via a layer filter on `_amended`, which `setZoningData` /
+`setDevPlanData` / `setHistoricalData` stamp on every polygon through
+`lib/amendment.js` (`setOverlayChangesOnly`). Pure visibility + filter, no
+fetch — the same shape as *Waterfront only*, and it works on an imported
+sales list. The status line reports how many parcels lit up, and says when
+zoning has not been loaded yet (above `ENRICHMENT_THRESHOLD`), so an empty
+map cannot be mistaken for a broken layer. Re-asserted on every `setMapData`
+push like the water overlay. ArcGIS spatial queries here take an
 ENVELOPE, so the parcel bbox can catch neighbouring zones; a point-in-polygon
 test picks the zone actually under the click. A resolved *null* is cached (many
 rural parcels genuinely have no zoning polygon); a *failed* lookup is not.
@@ -501,7 +530,14 @@ auto-invalidate on the next load.
   + `setHistoricalLayerVisible` (one layer), `setHistoricalVisible` (master
   off) + per-layer click tooltips. Parcel tooltips show **lineage** (`← from` /
   `→ became`, with confidence) and a "verify" note; zoning/dev-plan tooltips
-  carry a "pointer only — verify" line.
+  show the as-of by-law plus any **amendment** (`Amended by <by-law> (<from>
+  to <to>)`, via `lib/amendment.js` — the shards carry `ZBL_A` /
+  `AMENDMENT_DESCRIPTION` / `DPA_BYLAW`) and a "pointer only — verify" line.
+  Zoning / dev-plan also get a **hover** tooltip (`wireHistHover`), anchored
+  below the cursor so it sits under the parcel / live-zoning tooltip rather
+  than fighting it — hovering a parcel with an as-of layer on reads as "the
+  parcel, and what it was zoned then". Zoning defers to dev-plan the same way
+  the click popups do.
 - **main.js**: the **Historical** toggle + **"As of"** snapshot-date picker
   (under Parcel layers, dates grouped by year via `<optgroup>`),
   muni→muni_no resolution from the snapshot manifest, the
