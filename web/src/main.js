@@ -186,6 +186,8 @@ import {
   setDevPlanData,
   setZoningVisible,
   setDevPlanVisible,
+  setChangesHighlightVisible,
+  setOverlayChangesOnly,
   setContamData,
   setContamVisible,
   setTrafficFlowData,
@@ -612,6 +614,7 @@ const $tileOnly          = document.getElementById('tile-only');
 const $irrigationOnly    = document.getElementById('irrigation-only');
 const $waterfrontOnly    = document.getElementById('waterfront-only');
 const $nearWaterOnly     = document.getElementById('near-water-only');
+const $changesOnly       = document.getElementById('changes-only');
 const $cliToggle     = document.getElementById('cli-toggle');
 const $cliLegend     = document.getElementById('cli-legend');
 const $landcoverToggle = document.getElementById('landcover-toggle');
@@ -2696,6 +2699,7 @@ if ($mfinvMinDu) {
 $cliToggle.addEventListener('click', () => toggleCliOverlay());
 if ($landcoverToggle) $landcoverToggle.addEventListener('click', () => toggleLandCoverOverlay());
 if ($waterToggle) $waterToggle.addEventListener('click', () => toggleWaterInfluenceOverlay());
+if ($changesOnly) $changesOnly.addEventListener('change', () => applyChangesOnly());
 if ($historicalToggle) $historicalToggle.addEventListener('click', () => toggleHistoricalOverlay());
 if ($historicalYear) $historicalYear.addEventListener('change', () => onHistoricalYearChange());
 for (const [key, btn] of Object.entries($historicalLayerBtns)) {
@@ -7074,6 +7078,42 @@ function renderEnrichButton(parcelFc, inputs, baseMsg) {
  * search for one roll plus "Waterfront only" must answer "is this parcel
  * waterfront", not silently widen to every waterfront parcel in the muni.
  */
+/**
+ * Changes only — amber highlight on every result parcel that carries a zoning
+ * or development-plan amendment, and the Zoning / Dev Plan overlays (live and
+ * historical) narrowed to their amended polygons while ticked.
+ *
+ * A visibility + filter flip, like Water Influence, not a search: `_changesText`
+ * is stamped on every row by enrichOverlays during the search (it is what the
+ * Changes column reads), and `_amended` on every overlay polygon in
+ * setZoningData / setDevPlanData. No fetch, no municipality dependency, and it
+ * works on an imported sales list. The status line reports how many parcels
+ * lit up, so an empty map reads as "none of these changed" rather than as a
+ * broken layer. Above ENRICHMENT_THRESHOLD the stamp only exists once "Load
+ * zoning + dev-plan" has run, and the status line says so.
+ */
+function applyChangesOnly() {
+  const on = !!$changesOnly?.checked;
+  mapReady.then(() => {
+    setChangesHighlightVisible(map, on);
+    setOverlayChangesOnly(map, on);
+  });
+  if (!on) return;
+  setColumnVisible('changes', true);
+  const rows = currentRows || [];
+  const n = rows.filter((r) => r.parcel?.properties?._changesText).length;
+  const stamped = rows.some((r) => r.parcel?.properties && '_changesText' in r.parcel.properties);
+  if (!rows.length) {
+    setCount('Changes only — run a search to highlight parcels with a zoning / development-plan amendment.');
+  } else if (!stamped) {
+    setCount(`Changes only — zoning / dev-plan not loaded for these ${rows.length} parcels yet; use "Load zoning + dev-plan" to find the amended ones.`);
+  } else if (n > 0) {
+    setCount(`Changes only — ${n} of ${rows.length} parcel${rows.length === 1 ? '' : 's'} carry a zoning / development-plan amendment (amber). Hover or click a parcel for the by-law number.`);
+  } else {
+    setCount(`Changes only — none of these ${rows.length} parcels carry a zoning / development-plan amendment on record.`);
+  }
+}
+
 // Whether the Water Influence map overlay is currently on.
 let waterOverlayOn = false;
 
@@ -7660,6 +7700,8 @@ function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
     // parcels coloured" over a map showing none of them. Re-applying on every
     // data push keeps the layer state and the UI state agreeing.
     setWaterInfluenceVisible(map, waterOverlayOn);
+    // Same for the Changes-only highlight, for the same reason.
+    setChangesHighlightVisible(map, !!$changesOnly?.checked);
   });
   // Stamps run on the FULL set (every sale row), not the deduped map
   // set, so a repeat sale's extra rows carry soil data into the table

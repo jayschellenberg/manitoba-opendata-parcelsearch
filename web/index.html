@@ -1124,6 +1124,16 @@
             <button id="devplan-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Dev Plan — Manitoba Development Plan Designations">
               <span class="overlay-btn-label">Development Plan</span>
             </button>
+            <!-- Changes only: highlights the RESULT PARCELS that carry a zoning or
+                 development-plan amendment (amber fill + outline, driven by the
+                 `_changesText` stamp the Changes column already reads), and
+                 narrows the Zoning / Dev Plan overlays above to amended polygons
+                 only while ticked. No fetch, no municipality dependency — the
+                 same pattern as Waterfront only under Water Influence. -->
+            <label class="overlay-check" title="Changes only — highlight parcels whose zoning or development plan was amended (amber), and show only the amended polygons when the Zoning / Development Plan overlays are on. Hover or click a parcel or polygon for the amending by-law number. The province publishes no amendment date, so the by-law number is the pointer to verify with the municipality.">
+              <input type="checkbox" id="changes-only" />
+              <span>Changes only</span>
+            </label>
             </div>
           </details>
 
