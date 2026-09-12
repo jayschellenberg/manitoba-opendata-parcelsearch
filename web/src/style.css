@@ -6933,13 +6933,17 @@ body {
   .place-search-input { width: 150px; }
 }
 
-/* Changes pill (Off / Show / Filter) under the Zoning / Development Plan
-   buttons. Full-width row in the two-column group grid, styled like the
-   vacant-threshold % / $ pill so the sidebar has one segmented-control
-   look. `.active` is the pressed segment; Off is a real state, not "no
-   state", so it is pressed too when nothing else is. */
-.sidebar .overlay-group-body > .changes-mode-row {
+/* Segmented pills — the Changes pill (Off / Show / Filter) and the
+   checkbox-backed filter pills (Water, Tile drainage, Irrigation,
+   Numbering; lib/pillBinding.js). Styled like the vacant-threshold % / $
+   pill so the sidebar has one segmented-control look. `.active` is the
+   pressed segment; Off is a real state, not "no state", so it is pressed
+   too when nothing else is. Inside an overlay group the row spans the
+   two-column grid. */
+.sidebar .overlay-group-body > .mode-pill-row {
   grid-column: 1 / -1;
+}
+.sidebar .mode-pill-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -6947,7 +6951,7 @@ body {
   font-size: 12px;
   color: var(--ui-ink-soft, #64748b);
 }
-.sidebar .changes-mode-pill {
+.sidebar .mode-pill {
   display: inline-flex;
   flex: 0 0 auto;
   border: 1px solid var(--ui-line-strong, var(--color-neutral-300, #d4d4d8));
@@ -6955,7 +6959,7 @@ body {
   overflow: hidden;
   background: #fff;
 }
-.sidebar .changes-mode-btn {
+.sidebar .mode-btn {
   appearance: none;
   background: transparent;
   border: none;
@@ -6967,13 +6971,18 @@ body {
   cursor: pointer;
   line-height: 1;
 }
-.sidebar .changes-mode-btn + .changes-mode-btn {
+.sidebar .mode-btn + .mode-btn {
   border-left: 1px solid var(--ui-line-strong, var(--color-neutral-300, #d4d4d8));
 }
-.sidebar .changes-mode-btn:hover {
+.sidebar .mode-btn:hover {
   background: var(--color-neutral-100, #f4f4f5);
 }
-.sidebar .changes-mode-btn.active {
+.sidebar .mode-btn.active {
   background: var(--color-accent-500, #2563eb);
   color: #fff;
 }
+.sidebar .mode-pill-row[hidden] { display: none; }
+.sidebar .mode-btn[hidden] { display: none; }
+/* The numbering pill sits in the Search / Clear action row, right-aligned;
+   the row already stacks under the buttons when the sidebar is narrow. */
+.sidebar .action-row .mode-pill-row.numbering-toggle { padding: 0; }
