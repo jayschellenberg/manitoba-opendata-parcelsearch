@@ -9009,6 +9009,16 @@ const muniParcelPopupResolver = createMuniParcelResolver({
 // over the parcel, else the composition rows.
 const soilCompositionByParcel = new Map();
 muniParcelPopupResolver.soilWanted = () => cliMode != null && !!lastCliFc?.features?.length;
+// Synchronous peek for the hover tooltip: undefined when not wanted
+// (overlay off), { composition } when this parcel has been composed against
+// the CURRENT soil set, null when it has not — the hover then shows a
+// placeholder and schedules the join once the cursor rests.
+muniParcelPopupResolver.peekSoilComposition = (props) => {
+  if (!muniParcelPopupResolver.soilWanted()) return undefined;
+  const key = recordKey(props);
+  const cached = key ? soilCompositionByParcel.get(key) : null;
+  return cached && cached.soilFc === lastCliFc ? { composition: cached.composition } : null;
+};
 muniParcelPopupResolver.resolveSoilComposition = async (props) => {
   if (!muniParcelPopupResolver.soilWanted()) return undefined;
   const key = recordKey(props);

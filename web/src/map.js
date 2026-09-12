@@ -3252,6 +3252,43 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
         closeButton: false,
         closeOnClick: false,
       });
+      // Rest-triggered soil composition for the hover tooltip. One timer and
+      // one key: moving to another parcel cancels the pending timer, and a
+      // result that lands after the cursor has moved on is dropped (the
+      // resolver still caches it, so coming back shows it instantly). The
+      // re-render re-uses the props + overlay captured by the last mousemove
+      // so the tooltip keeps the same content the cursor position produced.
+      let hoverSoilTimer = null;
+      let hoverSoilKey = null;
+      let lastHoverProps = null;
+      let lastHoverOverlay = null;
+      const hoverSoilKeyOf = (p) => `${p?.Muni_Name_With_Typ || ''}|${p?.Roll_No_Txt || ''}`;
+      const cancelHoverSoil = () => {
+        if (hoverSoilTimer) clearTimeout(hoverSoilTimer);
+        hoverSoilTimer = null;
+        hoverSoilKey = null;
+      };
+      const scheduleHoverSoil = (p) => {
+        const key = hoverSoilKeyOf(p);
+        if (hoverSoilKey === key) return;   // already scheduled or in flight for this parcel
+        cancelHoverSoil();
+        hoverSoilKey = key;
+        hoverSoilTimer = setTimeout(() => {
+          hoverSoilTimer = null;
+          if (!muniParcelResolver?.resolveSoilComposition) { hoverSoilKey = null; return; }
+          Promise.resolve(muniParcelResolver.resolveSoilComposition(p))
+            .then((composition) => {
+              if (hoverSoilKey !== key || !muniHoverPopup.isOpen() || !lastHoverProps) return;
+              if (hoverSoilKeyOf(lastHoverProps) !== key) return;
+              muniHoverPopup.setHTML(muniParcelHtml(muniParcelPropsNow(lastHoverProps), {
+                overlay: lastHoverOverlay,
+                soil: composition === undefined ? undefined : (composition || null),
+              }));
+            })
+            .catch((err) => { console.warn('Assessment Parcels hover soil composition failed', err); })
+            .finally(() => { if (hoverSoilKey === key) hoverSoilKey = null; });
+        }, 180);
+      };
       map.on('mousemove', 'muni-parcels-fill', (e) => {
         if (map.getLayoutProperty('muni-parcels-fill', 'visibility') !== 'visible') return;
         // Stands down with the rest of the hover while measuring — this
@@ -3283,11 +3320,25 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
         const hoverOverlay = overlay.zoning
           ? overlay
           : { ...overlay, zoning: muniParcelResolver?.peekZoning?.(p) || null };
+        // Soil composition (top 3) while the CLI / Soil Type overlay is on.
+        // A parcel already composed (by a click, or an earlier rest of the
+        // cursor) shows at once from the cache; otherwise the tooltip says
+        // "Computing…" and the join is scheduled only once the cursor has
+        // RESTED on this parcel (see scheduleHoverSoil) — sweeping across a
+        // fabric must not fan out one worker join per parcel crossed.
+        const soilPeek = muniParcelResolver?.peekSoilComposition?.(p);
+        const hoverSoil = soilPeek === undefined ? undefined
+          : soilPeek ? (soilPeek.composition || null)
+          : 'pending';
+        lastHoverProps = p;
+        lastHoverOverlay = hoverOverlay;
         muniHoverPopup
           .setLngLat(e.lngLat)
-          .setHTML(muniParcelHtml(muniParcelPropsNow(p), { overlay: hoverOverlay }))
+          .setHTML(muniParcelHtml(muniParcelPropsNow(p), { overlay: hoverOverlay, soil: hoverSoil }))
           .addTo(map);
         setHoverCursor('pointer');
+        if (hoverSoil === 'pending') scheduleHoverSoil(p);
+        else cancelHoverSoil();
         // Warm this municipality in the background on first hover. Nothing
         // awaits it and this popup does not re-render, but a moment later
         // every parcel in the muni is peekable, so hovering across the
@@ -3301,6 +3352,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
       map.on('mouseleave', 'muni-parcels-fill', () => {
         muniHoverPopup.remove();
         setHoverCursor('');
+        cancelHoverSoil();
       });
 
       // Click on a muni-parcel polygon → sticky popup (so the user can

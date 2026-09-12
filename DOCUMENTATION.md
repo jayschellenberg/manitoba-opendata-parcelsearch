@@ -324,7 +324,13 @@ worker join + rollup the search-result stamp uses
 on the overlay being on (`soilWanted`), cached per parcel until the loaded
 soil set changes, rendered by `soilCompositionCompactHtml` (no descriptors —
 the full form stays on search results). The popup opens at once with a
-"Computing…" placeholder and fills in; hover never computes.
+"Computing…" placeholder and fills in. The **hover** tooltip carries the same
+block: a parcel already composed shows it instantly from the cache
+(`peekSoilComposition`, synchronous); an uncomposed one shows "Computing…"
+and `scheduleHoverSoil` (map.js) starts the join only once the cursor has
+rested ~180 ms on that parcel — one timer, one key, so sweeping across the
+fabric never fans out a join per parcel crossed, and a result landing after
+the cursor moved on is dropped (but cached).
 
 **Changes pill — Off / Show / Filter** (under the Zoning / Development Plan
 buttons; `.changes-mode-pill`, same segmented control as the vacant-threshold
