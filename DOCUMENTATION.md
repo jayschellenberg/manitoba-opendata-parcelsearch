@@ -330,7 +330,13 @@ block: a parcel already composed shows it instantly from the cache
 and `scheduleHoverSoil` (map.js) starts the join only once the cursor has
 rested ~180 ms on that parcel — one timer, one key, so sweeping across the
 fabric never fans out a join per parcel crossed, and a result landing after
-the cursor moved on is dropped (but cached).
+the cursor moved on is dropped (but cached). **Search-result hover** carries
+the same compact block whenever the overlay is on (`parcelHtml(..., { hoverSoil:
+true })` from the global mousemove), read straight off the `_soilComposition`
+stamp `scheduleSoilCompositionStamp` left on the feature — no per-hover
+compute; the block is omitted until the stamp lands. The search-result CLICK
+popup keeps the full descriptor form, gated on the Agricultural panel as
+before.
 
 **Changes pill — Off / Show / Filter** (under the Zoning / Development Plan
 buttons; `.changes-mode-pill`, same segmented control as the vacant-threshold
