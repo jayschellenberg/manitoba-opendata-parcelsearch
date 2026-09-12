@@ -268,6 +268,7 @@ import {
 } from './lib/water.js';
 import { rowPassesChangesFilter, changesFilterInert } from './lib/amendment.js';
 import { PILL_SPECS, modeFromChecked, checkedFromMode } from './lib/pillBinding.js';
+import { cliClassRollup } from './lib/cliRollup.js';
 import {
   FLOOD_GROUPS, floodCellText, floodTooltip, floodSortRank,
   floodCsvCells, floodColor,
@@ -9017,22 +9018,27 @@ muniParcelPopupResolver.peekSoilComposition = (props) => {
   if (!muniParcelPopupResolver.soilWanted()) return undefined;
   const key = recordKey(props);
   const cached = key ? soilCompositionByParcel.get(key) : null;
-  return cached && cached.soilFc === lastCliFc ? { composition: cached.composition } : null;
+  return cached && cached.soilFc === lastCliFc ? cached.soil : null;
 };
+// Resolves to `{ composition, cliRollup }` (either may be null when the
+// survey has nothing here), or undefined when not wanted.
 muniParcelPopupResolver.resolveSoilComposition = async (props) => {
   if (!muniParcelPopupResolver.soilWanted()) return undefined;
   const key = recordKey(props);
   const soilFc = lastCliFc;
   const cached = key ? soilCompositionByParcel.get(key) : null;
-  if (cached && cached.soilFc === soilFc) return cached.composition;
+  if (cached && cached.soilFc === soilFc) return cached.soil;
   const feature = await muniParcelPopupResolver.resolveFeature?.(props);
-  if (!feature?.geometry) return null;
+  if (!feature?.geometry) return { composition: null, cliRollup: null };
   // The stamp mutates feature.properties in place; the fabric feature is
   // cached by the resolver, so the result stays on it too.
   await stampSoilCompositionOnParcels({ type: 'FeatureCollection', features: [feature] }, soilFc);
-  const composition = feature.properties._soilComposition ?? null;
-  if (key) soilCompositionByParcel.set(key, { soilFc, composition });
-  return composition;
+  const soil = {
+    composition: feature.properties._soilComposition ?? null,
+    cliRollup: feature.properties._cliRollup ?? null,
+  };
+  if (key) soilCompositionByParcel.set(key, { soilFc, soil });
+  return soil;
 };
 
 // Installed at module scope, immediately after the const it needs — the
@@ -13451,13 +13457,21 @@ async function stampSoilCompositionOnParcels(parcelFc, soilFc) {
       // Explicit null so the popup builder can distinguish "no
       // soil-survey data" from "soil survey not loaded".
       parcel.properties._soilComposition = null;
+      parcel.properties._cliRollup = null;
       continue;
     }
+    const acres = parcelAcres(parcel);
     const composition = soilSurveyComponentsFromMatches(matches, {
       maxRows: 3,
-      parcelAreaAcres: parcelAcres(parcel),
+      parcelAreaAcres: acres,
     });
     parcel.properties._soilComposition = composition.length ? composition : null;
+    // Per-CLI-class rollup from the UNCAPPED rows, so a class that only
+    // appears in soils folded into "Other" above still counts. Same
+    // aggregation, second pass — the matches are already in hand.
+    const full = soilSurveyComponentsFromMatches(matches, { maxRows: Infinity, parcelAreaAcres: acres });
+    const rollup = cliClassRollup(full);
+    parcel.properties._cliRollup = rollup.length ? rollup : null;
   }
 }
 

@@ -344,6 +344,16 @@ still shows with that layer off, when it is the only soil readout. With the
 the rating polygon under the cursor (`readOverlaysAt` → `masc`,
 `mascOverlayLine`: chip + quarter label) on the line **before** the CLI line.
 
+**By CLI class.** Every soil table (compact and full) ends with a per-
+capability-class rollup: `stampSoilCompositionOnParcels` runs the
+composition a second time uncapped and `lib/cliRollup.js` (`cliClassRollup`,
+unit-tested) sums parcel share and acres by `agriCap` across soils, sorted
+by share, top 5 + "Other classes". Stamped as `_cliRollup` beside
+`_soilComposition`; the on-demand resolver returns `{ composition,
+cliRollup }` and `cliRollupHtml` renders it. Computed uncapped so a class
+present only in soils folded into the top-3 "Other" row still counts —
+which is why its total can exceed the visible rows' sum.
+
 **Changes pill — Off / Show / Filter** (under the Zoning / Development Plan
 buttons; `.changes-mode-pill`, same segmented control as the vacant-threshold
 % / $ pill; `getChangesMode()` is the one reader). **Show** makes the changes
