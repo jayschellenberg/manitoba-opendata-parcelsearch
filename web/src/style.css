@@ -6986,3 +6986,9 @@ body {
 /* The numbering pill sits in the Search / Clear action row, right-aligned;
    the row already stacks under the buttons when the sidebar is narrow. */
 .sidebar .action-row .mode-pill-row.numbering-toggle { padding: 0; }
+/* Compact pills for the Sales tab's tighter rows (adjacent regions, nominal
+   sales, far-flung Exclude beside the km box). */
+.sidebar .mode-pill.compact .mode-btn { padding: 3px 7px; font-size: 11.5px; }
+.sidebar .mode-pill-row.far-flung-exclude,
+.sidebar .mode-pill-row.sales-nominal-exclude,
+.sidebar .mode-pill-row.sales-db-adjacent { gap: 6px; }

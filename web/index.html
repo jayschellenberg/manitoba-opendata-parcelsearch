@@ -581,10 +581,16 @@
               <label class="sales-db-label" for="sales-db-muni-search">Municipalities</label>
               <input id="sales-db-muni-search" type="search" class="sales-db-search"
                      placeholder="Filter municipalities…" aria-label="Filter municipalities" />
-              <label class="sales-db-adjacent">
-                <input type="checkbox" id="sales-db-adjacent" />
-                <span>Also select adjacent regions</span>
-              </label>
+              <!-- Hidden box stays the source of truth (lib/salesDbPanel.js reads
+                   it); the pill is a view — lib/pillBinding.js. -->
+              <input type="checkbox" id="sales-db-adjacent" class="pill-backing" hidden />
+              <div class="mode-pill-row sales-db-adjacent" title="Also select every municipality sharing a boundary with the ones you tick.">
+                <span class="mode-pill-prefix">Adjacent regions:</span>
+                <div class="mode-pill compact" role="radiogroup" aria-label="Also select adjacent regions" data-pill="adjacent">
+                  <button type="button" class="mode-btn active" data-mode="off" aria-pressed="true">Off</button>
+                  <button type="button" class="mode-btn" data-mode="on" aria-pressed="false">On</button>
+                </div>
+              </div>
               <!-- Region groups + per-municipality checkboxes, built by
                    lib/salesDbPanel.js from the manifest. A flat 186-entry
                    <select multiple> was unusable at that length, and its
@@ -640,11 +646,14 @@
                      filter still applies to uploaded sales. It sat below the
                      panel, and before that beside Clear, for exactly that
                      reason. Move it back out if CSV-only work ever needs it. -->
-                <label class="sales-nominal-exclude" for="exclude-nominal"
-                   title="Sales where consideration &lt;$1000 — the $0 / $1 nominal transfers (family conveyances, corrective transfers) that are not market evidence. Applies to both the MAO database and an uploaded CSV. Tested against the whole sale's consideration, so a multi-parcel sale drops as one; a sale with no readable consideration is kept.">
-                  <input type="checkbox" id="exclude-nominal" />
-                  <span>Exclude Nominal Sales</span>
-                </label>
+                <input type="checkbox" id="exclude-nominal" class="pill-backing" hidden />
+                <div class="mode-pill-row sales-nominal-exclude" title="Sales where consideration &lt;$1000 — the $0 / $1 nominal transfers (family conveyances, corrective transfers) that are not market evidence. Applies to both the MAO database and an uploaded CSV. Tested against the whole sale's consideration, so a multi-parcel sale drops as one; a sale with no readable consideration is kept.">
+                  <span class="mode-pill-prefix">Nominal sales:</span>
+                  <div class="mode-pill compact" role="radiogroup" aria-label="Nominal sales" data-pill="nominal">
+                    <button type="button" class="mode-btn active" data-mode="include" aria-pressed="true">Include</button>
+                    <button type="button" class="mode-btn" data-mode="exclude" aria-pressed="false">Exclude</button>
+                  </div>
+                </div>
               </div>
               <p class="sales-db-update" id="sales-db-update" hidden></p>
             </div>
@@ -1017,10 +1026,14 @@
                 <span class="far-flung-unit">km</span>
               </span>
               <span class="field far-flung-exclude-field">
-                <label class="far-flung-exclude" title="Remove the flagged sales from the results table, the map and the CSV export. Off by default — nothing is hidden until you ask for it. Sales whose spread can't be measured (a parcel with no geometry) are never excluded.">
-                  <input type="checkbox" id="far-flung-exclude" />
-                  <span>Exclude</span>
-                </label>
+                <input type="checkbox" id="far-flung-exclude" class="pill-backing" hidden />
+                <div class="mode-pill-row far-flung-exclude" title="Remove the flagged sales from the results table, the map and the CSV export. Off by default — nothing is hidden until you ask for it. Sales whose spread can't be measured (a parcel with no geometry) are never excluded.">
+                  <span class="mode-pill-prefix">Flagged:</span>
+                  <div class="mode-pill compact" role="radiogroup" aria-label="Far-flung sales" data-pill="farflung">
+                    <button type="button" class="mode-btn active" data-mode="keep" aria-pressed="true">Keep</button>
+                    <button type="button" class="mode-btn" data-mode="exclude" aria-pressed="false">Exclude</button>
+                  </div>
+                </div>
                 <span class="tip">Far-Flung marks multi-parcel sales whose parcels lie farther apart than the km threshold, measured between parcel centroids. Portfolio and estate sales sweep up land across a wide area, so their blended $/Acre is not a local comparable. Blank or 0 turns the marking off, and marking alone removes nothing — tick Exclude to drop the flagged sales from the table, the map and the CSV export. Sales whose spread can't be measured (a parcel with no geometry) are never excluded.</span>
               </span>
             </div>

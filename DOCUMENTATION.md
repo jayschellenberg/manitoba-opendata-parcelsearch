@@ -356,7 +356,13 @@ hold. The Entry order segment carries `#numbering-order-label` so the existing
 "only for a typed roll list" hiding still applies to it. The mode ↔ checked
 tables are unit-tested (`test/pillBinding.test.js`). The group badge counts a
 pill as ONE setting whenever it is off Off (`.mode-btn.active:not([data-mode="off"])`),
-not its backing boxes — so Water = Any reads "1 on", not "2 on". The Sales-tab boxes
+not its backing boxes — so Water = Any reads "1 on", not "2 on". The Sales
+tab's boxes are pills on the same binder: **Adjacent regions: Off / On**
+(sales-database picker), **Nominal sales: Include / Exclude**, and
+**Flagged: Keep / Exclude** beside the Far-Flung km box (its persisted value
+is restored in `loadFarFlungExclude`, which repaints the pill by hand). A
+spec's first mode is its all-unticked default, named for the question the
+control asks (`include`, `keep`) rather than always `off`. The Sales-tab boxes
 (adjacent regions, nominal sales, far-flung), the route planner's Round trip
 and the Verify-this checklist are deliberately still checkboxes. ArcGIS spatial queries here take an
 ENVELOPE, so the parcel bbox can catch neighbouring zones; a point-in-polygon

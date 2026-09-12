@@ -33,19 +33,24 @@ export const PILL_SPECS = {
     inputs: ['numbering-toggle', 'numbering-order-toggle'],
     modes: { off: [false, false], muni: [true, false], entry: [true, true] },
   },
+  // Sales tab. The first mode is always the all-unticked (default) state;
+  // its name follows the question the control asks rather than "off".
+  adjacent: { inputs: ['sales-db-adjacent'], modes: { off: [false], on: [true] } },
+  nominal:  { inputs: ['exclude-nominal'],   modes: { include: [false], exclude: [true] } },
+  farflung: { inputs: ['far-flung-exclude'], modes: { keep: [false], exclude: [true] } },
 };
 
 const same = (a, b) => a.length === b.length && a.every((v, i) => !!v === !!b[i]);
 
 /** The mode whose checked pattern matches `checked` exactly; the first
- *  mode (Off) when nothing matches — e.g. numbering [false, true], an
+ *  mode (the all-unticked default) when nothing matches — e.g. numbering [false, true], an
  *  "entry order without numbering" state the UI never offers. */
 export function modeFromChecked(spec, checked) {
   const names = Object.keys(spec.modes);
   return names.find((m) => same(spec.modes[m], checked)) || names[0];
 }
 
-/** Checked pattern for `mode`; an unknown mode reads as the first (Off). */
+/** Checked pattern for `mode`; an unknown mode reads as the first (default). */
 export function checkedFromMode(spec, mode) {
   return spec.modes[mode] || spec.modes[Object.keys(spec.modes)[0]];
 }
