@@ -3286,7 +3286,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
               if (hoverSoilKeyOf(lastHoverProps) !== key) return;
               muniHoverPopup.setHTML(muniParcelHtml(muniParcelPropsNow(lastHoverProps), {
                 overlay: lastHoverOverlay,
-                soil: composition === undefined ? undefined : (composition || null),
+                soil: composition === undefined ? undefined : (composition || { composition: null, cliRollup: null }),
               }));
             })
             .catch((err) => { console.warn('Assessment Parcels hover soil composition failed', err); })
@@ -3332,7 +3332,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
         // fabric must not fan out one worker join per parcel crossed.
         const soilPeek = muniParcelResolver?.peekSoilComposition?.(p);
         const hoverSoil = soilPeek === undefined ? undefined
-          : soilPeek ? (soilPeek.composition || null)
+          : soilPeek ? soilPeek
           : 'pending';
         lastHoverProps = p;
         lastHoverOverlay = hoverOverlay;
@@ -3413,7 +3413,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
           Promise.resolve(muniParcelResolver.resolveSoilComposition(p))
             .then((composition) => {
               if (token !== muniPopupToken || !muniClickPopup.isOpen()) return;
-              shownSoil = composition === undefined ? undefined : (composition || null);
+              shownSoil = composition === undefined ? undefined : (composition || { composition: null, cliRollup: null });
               render();
             })
             .catch((err) => {
@@ -5536,8 +5536,10 @@ export function parcelHtml(p, { showJumpToList = false, hoverSoil = false } = {}
     soilTable = (p._soilComposition === null || p._soilComposition === 'null')
       ? '<div style="color:#888;font-size:12px;margin-top:4px"><em>No soil-survey data on this parcel.</em></div>'
       : soilCompositionCompactHtml(p._soilComposition);
+    if (soilTable) soilTable += cliRollupHtml(p._cliRollup) || '';
   } else if (overlayGroupExpanded('agricultural')) {
     soilTable = soilSurveyParcelHtml(p._soilComposition);
+    if (soilTable) soilTable += cliRollupHtml(p._cliRollup) || '';
   }
   const landCoverTable = landCoverParcelHtml(p);
   const mascBox = mascRatingParcelHtml(p);
@@ -6064,6 +6066,37 @@ function soilCompositionCompactHtml(composition) {
     </tr>`;
   }).join('');
   return `<table style="margin-top:4px;font-size:12px;border-collapse:collapse;width:100%">${html}</table>`;
+}
+
+/**
+ * "By CLI class" rollup under a soil table: one line per capability class
+ * (chip in the CLI palette) with acres and percent of the parcel, from the
+ * `_cliRollup` stamp (lib/cliRollup.js — summed across soils on the
+ * uncapped composition, so it can differ from adding up the visible top-3
+ * rows). Accepts the array or its JSON-string form off a rendered feature.
+ * Null when there is nothing to show.
+ */
+function cliRollupHtml(raw) {
+  const rows = readSoilComposition(raw);
+  if (!rows.length) return null;
+  const html = rows.map((c) => {
+    const firstChar = String(c.agcapCls || c.cls || '?')[0];
+    // "$ZZ" is the survey's urban / water placeholder — the legend calls
+    // the $ class "urban / water", so the chip does too.
+    const label = /^\$/.test(String(c.cls)) ? 'Urban / water' : c.cls;
+    const chip = c.isOther
+      ? `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#bfbfbf;border:1px solid rgba(0,0,0,0.2);margin-right:6px;vertical-align:middle"></span>${escapeHtml(c.cls)}`
+      : `<span style="display:inline-block;min-width:1.6em;padding:1px 6px;border-radius:4px;background:${CLI_CLASS_COLORS[firstChar] || '#bfbfbf'};color:${CLI_WHITE_TEXT_CLASSES.has(firstChar) ? '#fff' : '#1a1a1a'};font-weight:600;text-align:center;font-size:11px;vertical-align:middle">${escapeHtml(label)}</span>`;
+    const areaText = Number.isFinite(c.areaAcres) ? formatSoilAcres(c.areaAcres) : null;
+    const pctText = Number.isFinite(c.parcelPct) ? formatSoilExtent(c.parcelPct) : '';
+    const right = [areaText, pctText].filter(Boolean).join(' · ');
+    return `<tr>
+      <td style="padding:2px 8px 2px 0;vertical-align:top;white-space:nowrap">${chip}</td>
+      <td style="padding:2px 0;vertical-align:top;text-align:right;white-space:nowrap"><strong>${escapeHtml(right)}</strong></td>
+    </tr>`;
+  }).join('');
+  return `<div style="margin-top:6px"><strong style="font-size:12px">By CLI class</strong>`
+    + `<table style="margin-top:2px;font-size:12px;border-collapse:collapse;width:100%">${html}</table></div>`;
 }
 
 /**
@@ -7022,16 +7055,19 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null, soil = unde
   // the parcel, each with its CLI chip, acres and percent, in the compact
   // form. 'pending' shows a placeholder so the block appears at once and
   // fills in; null says the survey has nothing here.
+  // `soil` is undefined (not wanted), 'pending', or { composition, cliRollup }.
   let soilTable = null;
   let soilTitle = 'Soil composition';
   if (soil !== undefined) {
     soilTitle = 'Soil composition (top 3)';
     soilTable = soil === 'pending'
       ? '<div style="color:#888;font-size:12px;margin-top:4px"><em>Computing…</em></div>'
-      : (soilCompositionCompactHtml(soil)
-        || '<div style="color:#888;font-size:12px;margin-top:4px"><em>No soil-survey data on this parcel.</em></div>');
+      : ((soilCompositionCompactHtml(soil?.composition)
+        || '<div style="color:#888;font-size:12px;margin-top:4px"><em>No soil-survey data on this parcel.</em></div>')
+        + (cliRollupHtml(soil?.cliRollup) || ''));
   } else if (overlayGroupExpanded('agricultural')) {
     soilTable = soilSurveyParcelHtml(p._soilComposition);
+    if (soilTable) soilTable += cliRollupHtml(p._cliRollup) || '';
   }
   if (soilTable) {
     return `<div class="parcel-popup parcel-popup-2col">
