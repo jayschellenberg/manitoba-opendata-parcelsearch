@@ -587,7 +587,7 @@
               <div class="mode-pill-row sales-db-adjacent" title="Also select every municipality sharing a boundary with the ones you tick.">
                 <span class="mode-pill-prefix">Adjacent regions:</span>
                 <div class="mode-pill compact" role="radiogroup" aria-label="Also select adjacent regions" data-pill="adjacent">
-                  <button type="button" class="mode-btn active" data-mode="off" aria-pressed="true">Off</button>
+                  <button type="button" class="mode-btn active mode-btn-off" data-mode="off" aria-pressed="true">Off</button>
                   <button type="button" class="mode-btn" data-mode="on" aria-pressed="false">On</button>
                 </div>
               </div>
@@ -650,7 +650,7 @@
                 <div class="mode-pill-row sales-nominal-exclude" title="Sales where consideration &lt;$1000 — the $0 / $1 nominal transfers (family conveyances, corrective transfers) that are not market evidence. Applies to both the MAO database and an uploaded CSV. Tested against the whole sale's consideration, so a multi-parcel sale drops as one; a sale with no readable consideration is kept.">
                   <span class="mode-pill-prefix">Nominal sales:</span>
                   <div class="mode-pill compact" role="radiogroup" aria-label="Nominal sales" data-pill="nominal">
-                    <button type="button" class="mode-btn active" data-mode="include" aria-pressed="true">Include</button>
+                    <button type="button" class="mode-btn active mode-btn-off" data-mode="include" aria-pressed="true">Include</button>
                     <button type="button" class="mode-btn" data-mode="exclude" aria-pressed="false">Exclude</button>
                   </div>
                 </div>
@@ -1030,7 +1030,7 @@
                 <div class="mode-pill-row far-flung-exclude" title="Remove the flagged sales from the results table, the map and the CSV export. Off by default — nothing is hidden until you ask for it. Sales whose spread can't be measured (a parcel with no geometry) are never excluded.">
                   <span class="mode-pill-prefix">Flagged:</span>
                   <div class="mode-pill compact" role="radiogroup" aria-label="Far-flung sales" data-pill="farflung">
-                    <button type="button" class="mode-btn active" data-mode="keep" aria-pressed="true">Keep</button>
+                    <button type="button" class="mode-btn active mode-btn-off" data-mode="keep" aria-pressed="true">Keep</button>
                     <button type="button" class="mode-btn" data-mode="exclude" aria-pressed="false">Exclude</button>
                   </div>
                 </div>
@@ -1125,7 +1125,7 @@
             <div class="mode-pill-row" title="Return only parcels with a water influence. Pure post-filter on the pre-baked water shards (or, with a municipality selected, a roll-list pre-filter so the result cap can't hide matches) — no extra fetch. Works on an imported sales list too.">
               <span class="mode-pill-prefix">Water:</span>
               <div class="mode-pill" role="radiogroup" aria-label="Water influence filter" data-pill="water">
-                <button type="button" class="mode-btn active" data-mode="off" aria-pressed="true" title="No water filter.">Off</button>
+                <button type="button" class="mode-btn active mode-btn-off" data-mode="off" aria-pressed="true" title="No water filter.">Off</button>
                 <button type="button" class="mode-btn" data-mode="waterfront" aria-pressed="false" title="Only parcels with actual water FRONTAGE — the detection's Direct, Waterfront and Reserve-separated classes. Reserve-separated means a narrow public reserve strip sits between the lot and the water, which is normal in Manitoba lake communities and still counts as waterfront.">Waterfront</button>
                 <button type="button" class="mode-btn" data-mode="near" aria-pressed="false" title="Only parcels NEAR water but WITHOUT frontage — across a developed road, or with another parcel between them and the water. The 'second row': often a view, but not comparable to true waterfront.">Near water</button>
                 <button type="button" class="mode-btn" data-mode="any" aria-pressed="false" title="Any water influence — waterfront or near water.">Any</button>
@@ -1155,7 +1155,7 @@
             <div class="mode-pill-row changes-mode-row" title="Changes — Off: nothing. Show: highlight parcels whose zoning or development plan was amended (amber) and show only the amended polygons when the Zoning / Development Plan overlays are on. Filter: Show, plus keep only amended parcels in the results below; combines with Waterfront only / Near water and the sales filters. Hover or click a parcel or polygon for the amending by-law number. The province publishes no amendment date, so the by-law number is the pointer to verify with the municipality.">
               <span class="mode-pill-prefix">Changes:</span>
               <div class="mode-pill changes-mode-pill" role="radiogroup" aria-label="Zoning / development-plan changes mode">
-                <button type="button" class="mode-btn changes-mode-btn active" data-mode="off" aria-pressed="true">Off</button>
+                <button type="button" class="mode-btn changes-mode-btn active mode-btn-off" data-mode="off" aria-pressed="true">Off</button>
                 <button type="button" class="mode-btn changes-mode-btn" data-mode="show" aria-pressed="false">Show</button>
                 <button type="button" class="mode-btn changes-mode-btn" data-mode="filter" aria-pressed="false">Filter</button>
               </div>
@@ -1236,14 +1236,14 @@
             <div class="mode-pill-row" title="Return only parcels overlapped by a licensed tile-drainage area from Manitoba's Water Rights Licensing (WALLAS). Narrow by municipality first — a province-wide run has to test every licensed tile footprint. Licensed works only, and the source polygons run to Aug 2024, so this finds known-tiled land rather than proving the rest is undrained.">
               <span class="mode-pill-prefix">Tile drainage:</span>
               <div class="mode-pill" role="radiogroup" aria-label="Licensed tile drainage filter" data-pill="tile">
-                <button type="button" class="mode-btn active" data-mode="off" aria-pressed="true">Off</button>
+                <button type="button" class="mode-btn active mode-btn-off" data-mode="off" aria-pressed="true">Off</button>
                 <button type="button" class="mode-btn" data-mode="on" aria-pressed="false">On</button>
               </div>
             </div>
             <div class="mode-pill-row" title="Return only parcels overlapped by a licensed irrigation point of use — the location where water is applied. Points of diversion are excluded, matching the Irrigation column. Narrow by municipality first: there are ~2,500 licensed points of use province-wide, so an unscoped run is slow.">
               <span class="mode-pill-prefix">Irrigation:</span>
               <div class="mode-pill" role="radiogroup" aria-label="Licensed irrigation filter" data-pill="irrigation">
-                <button type="button" class="mode-btn active" data-mode="off" aria-pressed="true">Off</button>
+                <button type="button" class="mode-btn active mode-btn-off" data-mode="off" aria-pressed="true">Off</button>
                 <button type="button" class="mode-btn" data-mode="on" aria-pressed="false">On</button>
               </div>
             </div>
@@ -1431,7 +1431,7 @@
             <div id="numbering-toggle-label" class="mode-pill-row numbering-toggle" hidden title="Number the result parcels 1..N on the map (leader-line callouts) and show a matching # column in the grid. Sorted by municipality, then Roll #. The number stays fixed to each parcel and carries into the Generate Map image and the CSV export.">
               <span class="mode-pill-prefix">Numbering:</span>
               <div class="mode-pill" role="radiogroup" aria-label="Parcel numbering" data-pill="numbering">
-                <button type="button" class="mode-btn active" data-mode="off" aria-pressed="true">Off</button>
+                <button type="button" class="mode-btn active mode-btn-off" data-mode="off" aria-pressed="true">Off</button>
                 <button type="button" class="mode-btn" data-mode="muni" aria-pressed="false" title="Number the parcels by municipality, then Roll #.">By muni</button>
                 <button id="numbering-order-label" type="button" class="mode-btn" data-mode="entry" aria-pressed="false" hidden title="Number the parcels in the order you typed them into the Roll # field, instead of by municipality then Roll #. Entering 154350, 154345 makes 154350 #1 and 154345 #2. Rolls joined with + & | still share one number. Only offered when the results came from a typed roll list.">Entry order</button>
               </div>

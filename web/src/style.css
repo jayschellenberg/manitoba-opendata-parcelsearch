@@ -6977,9 +6977,17 @@ body {
 .sidebar .mode-btn:hover {
   background: var(--color-neutral-100, #f4f4f5);
 }
+/* Selected segment: BLACK when it is the pill's default / off state (Off,
+   Include, Keep — `.mode-btn-off`), BLUE for any other selection, so a
+   glance down the sidebar shows which pills are actually doing something.
+   Fixed colours, not the theme accent: the accent is green here and read
+   as "on" even for Off. */
 .sidebar .mode-btn.active {
-  background: var(--color-accent-500, #2563eb);
+  background: #111827;
   color: #fff;
+}
+.sidebar .mode-btn.active:not(.mode-btn-off) {
+  background: #2563eb;
 }
 .sidebar .mode-pill-row[hidden] { display: none; }
 .sidebar .mode-btn[hidden] { display: none; }
