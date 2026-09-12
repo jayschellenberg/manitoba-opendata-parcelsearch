@@ -335,7 +335,28 @@ never joined to zoning passes through untouched and the count line says the
 filter was not applied (`changesFilterInert`) — the same unknown ≠ excluded
 rule the waterfront filter follows. Off restores the count line Show
 overwrote. The Planning group badge counts Show / Filter as "on". Not carried
-in shared-link URL state (the writer only round-trips `*-toggle` buttons). ArcGIS spatial queries here take an
+in shared-link URL state (the writer only round-trips `*-toggle` buttons).
+
+**Checkbox-backed pills** (`lib/pillBinding.js`, `bindBackedPill` in main.js).
+The sidebar's on/off filters are segmented pills too — **Water: Off /
+Waterfront / Near water / Any**, **Tile drainage: Off / On**, **Irrigation:
+Off / On**, and **Numbering: Off / By muni / Entry order** in the Search
+action row — but the original `<input type="checkbox">` elements stay in the
+DOM, hidden (`.pill-backing`), and remain the source of truth: every handler
+(the water-influence re-search, the WALLAS roll pre-filter, the numbering sort
++ callouts), the URL-state writer and the overlay-group badge read them
+unchanged. A pill is a *view*: clicking a segment sets the backing boxes to
+that mode's pattern and fires `change` on the ones that flipped, all boxes set
+before any event fires so an OR'd pair (waterfront + near water) is read
+settled; any `change` on a box repaints the pill, and the one programmatic
+set without an event (`updateNumberingAvailability`) calls the painter
+directly. `Any` = both water boxes ticked, exactly the old "tick both" case;
+tile drainage and irrigation stay two pills because both On means both must
+hold. The Entry order segment carries `#numbering-order-label` so the existing
+"only for a typed roll list" hiding still applies to it. The mode ↔ checked
+tables are unit-tested (`test/pillBinding.test.js`). The Sales-tab boxes
+(adjacent regions, nominal sales, far-flung), the route planner's Round trip
+and the Verify-this checklist are deliberately still checkboxes. ArcGIS spatial queries here take an
 ENVELOPE, so the parcel bbox can catch neighbouring zones; a point-in-polygon
 test picks the zone actually under the click. A resolved *null* is cached (many
 rural parcels genuinely have no zoning polygon); a *failed* lookup is not.

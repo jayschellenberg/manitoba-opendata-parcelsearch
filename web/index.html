@@ -1104,14 +1104,20 @@
                  matches) — no municipality scoping needed and no extra fetch.
                  Ticking both gives "any water influence".
                  Full-width rows: the labels don't fit a half column. -->
-            <label class="overlay-check overlay-check-half" title="Return only parcels with actual water FRONTAGE — the detection's Direct, Waterfront and Reserve-separated classes. Reserve-separated means a narrow public reserve strip sits between the lot and the water, which is normal in Manitoba lake communities and still counts as waterfront. Works on an imported sales list too.">
-              <input type="checkbox" id="waterfront-only" />
-              <span>Waterfront only</span>
-            </label>
-            <label class="overlay-check overlay-check-half" title="Return only parcels NEAR water but WITHOUT frontage — across a developed road, or with another parcel between them and the water. The 'second row': often a view, but not comparable to true waterfront. Tick alongside Waterfront only to get every parcel with any water influence.">
-              <input type="checkbox" id="near-water-only" />
-              <span>Near water (no frontage)</span>
-            </label>
+            <!-- The two boxes are still the source of truth (every handler,
+                 the URL state and the group badge read them); the pill is a
+                 view of them — see lib/pillBinding.js. Any = both ticked. -->
+            <input type="checkbox" id="waterfront-only" class="pill-backing" hidden />
+            <input type="checkbox" id="near-water-only" class="pill-backing" hidden />
+            <div class="mode-pill-row" title="Return only parcels with a water influence. Pure post-filter on the pre-baked water shards (or, with a municipality selected, a roll-list pre-filter so the result cap can't hide matches) — no extra fetch. Works on an imported sales list too.">
+              <span class="mode-pill-prefix">Water:</span>
+              <div class="mode-pill" role="radiogroup" aria-label="Water influence filter" data-pill="water">
+                <button type="button" class="mode-btn active" data-mode="off" aria-pressed="true" title="No water filter.">Off</button>
+                <button type="button" class="mode-btn" data-mode="waterfront" aria-pressed="false" title="Only parcels with actual water FRONTAGE — the detection's Direct, Waterfront and Reserve-separated classes. Reserve-separated means a narrow public reserve strip sits between the lot and the water, which is normal in Manitoba lake communities and still counts as waterfront.">Waterfront</button>
+                <button type="button" class="mode-btn" data-mode="near" aria-pressed="false" title="Only parcels NEAR water but WITHOUT frontage — across a developed road, or with another parcel between them and the water. The 'second row': often a view, but not comparable to true waterfront.">Near water</button>
+                <button type="button" class="mode-btn" data-mode="any" aria-pressed="false" title="Any water influence — waterfront or near water.">Any</button>
+              </div>
+            </div>
             </div>
           </details>
 
@@ -1133,12 +1139,12 @@
                  Near water and, on Sales Analysis, with the sales filters. No
                  fetch, no municipality dependency. Same segmented-pill pattern
                  as the vacant-threshold % / $ control. -->
-            <div class="changes-mode-row" title="Changes — Off: nothing. Show: highlight parcels whose zoning or development plan was amended (amber) and show only the amended polygons when the Zoning / Development Plan overlays are on. Filter: Show, plus keep only amended parcels in the results below; combines with Waterfront only / Near water and the sales filters. Hover or click a parcel or polygon for the amending by-law number. The province publishes no amendment date, so the by-law number is the pointer to verify with the municipality.">
-              <span class="changes-mode-prefix">Changes:</span>
-              <div class="changes-mode-pill" role="radiogroup" aria-label="Zoning / development-plan changes mode">
-                <button type="button" class="changes-mode-btn active" data-mode="off" aria-pressed="true">Off</button>
-                <button type="button" class="changes-mode-btn" data-mode="show" aria-pressed="false">Show</button>
-                <button type="button" class="changes-mode-btn" data-mode="filter" aria-pressed="false">Filter</button>
+            <div class="mode-pill-row changes-mode-row" title="Changes — Off: nothing. Show: highlight parcels whose zoning or development plan was amended (amber) and show only the amended polygons when the Zoning / Development Plan overlays are on. Filter: Show, plus keep only amended parcels in the results below; combines with Waterfront only / Near water and the sales filters. Hover or click a parcel or polygon for the amending by-law number. The province publishes no amendment date, so the by-law number is the pointer to verify with the municipality.">
+              <span class="mode-pill-prefix">Changes:</span>
+              <div class="mode-pill changes-mode-pill" role="radiogroup" aria-label="Zoning / development-plan changes mode">
+                <button type="button" class="mode-btn changes-mode-btn active" data-mode="off" aria-pressed="true">Off</button>
+                <button type="button" class="mode-btn changes-mode-btn" data-mode="show" aria-pressed="false">Show</button>
+                <button type="button" class="mode-btn changes-mode-btn" data-mode="filter" aria-pressed="false">Filter</button>
               </div>
             </div>
             </div>
@@ -1209,14 +1215,25 @@
                  OBJECTID IN (...) clause) rather than as post-filters, so
                  the result cap can't hide matches. Ticking both ANDs them.
                  Full-width rows: the labels don't fit a half column. -->
-            <label class="overlay-check" title="Return only parcels overlapped by a licensed tile-drainage area from Manitoba's Water Rights Licensing (WALLAS). Narrow by municipality first — a province-wide run has to test every licensed tile footprint. Licensed works only, and the source polygons run to Aug 2024, so this finds known-tiled land rather than proving the rest is undrained.">
-              <input type="checkbox" id="tile-only" />
-              <span>Licensed tile drainage only</span>
-            </label>
-            <label class="overlay-check" title="Return only parcels overlapped by a licensed irrigation point of use — the location where water is applied. Points of diversion are excluded, matching the Irrigation column. Narrow by municipality first: there are ~2,500 licensed points of use province-wide, so an unscoped run is slow.">
-              <input type="checkbox" id="irrigation-only" />
-              <span>Licensed irrigation only</span>
-            </label>
+            <!-- Hidden boxes remain the source of truth; the pills are views
+                 of them (lib/pillBinding.js). Two pills, not one, because
+                 both On means BOTH must hold. -->
+            <input type="checkbox" id="tile-only" class="pill-backing" hidden />
+            <input type="checkbox" id="irrigation-only" class="pill-backing" hidden />
+            <div class="mode-pill-row" title="Return only parcels overlapped by a licensed tile-drainage area from Manitoba's Water Rights Licensing (WALLAS). Narrow by municipality first — a province-wide run has to test every licensed tile footprint. Licensed works only, and the source polygons run to Aug 2024, so this finds known-tiled land rather than proving the rest is undrained.">
+              <span class="mode-pill-prefix">Tile drainage:</span>
+              <div class="mode-pill" role="radiogroup" aria-label="Licensed tile drainage filter" data-pill="tile">
+                <button type="button" class="mode-btn active" data-mode="off" aria-pressed="true">Off</button>
+                <button type="button" class="mode-btn" data-mode="on" aria-pressed="false">On</button>
+              </div>
+            </div>
+            <div class="mode-pill-row" title="Return only parcels overlapped by a licensed irrigation point of use — the location where water is applied. Points of diversion are excluded, matching the Irrigation column. Narrow by municipality first: there are ~2,500 licensed points of use province-wide, so an unscoped run is slow.">
+              <span class="mode-pill-prefix">Irrigation:</span>
+              <div class="mode-pill" role="radiogroup" aria-label="Licensed irrigation filter" data-pill="irrigation">
+                <button type="button" class="mode-btn active" data-mode="off" aria-pressed="true">Off</button>
+                <button type="button" class="mode-btn" data-mode="on" aria-pressed="false">On</button>
+              </div>
+            </div>
             </div>
           </details>
 
@@ -1391,18 +1408,21 @@
                "Map w/Legend" button beside Generate Map, since it decided
                one capture rather than a persistent mode. -->
           <div id="numbering-row" class="numbering-row" hidden>
-            <label id="numbering-toggle-label" class="numbering-toggle" hidden title="Number the result parcels 1..N on the map (leader-line callouts) and show a matching # column in the grid. Sorted by municipality, then Roll #. The number stays fixed to each parcel and carries into the Generate Map image and the CSV export.">
-              <input type="checkbox" id="numbering-toggle">
-              <span>Number parcels</span>
-            </label>
-            <!-- Entry order. Only meaningful when the result set came from
-                 a typed Roll # list, so it stays hidden otherwise: for a
-                 muni-wide or address search there is no entry order to
-                 follow. Shown only alongside "Number parcels". -->
-            <label id="numbering-order-label" class="numbering-toggle" hidden title="Number the parcels in the order you typed them into the Roll # field, instead of by municipality then Roll #. Entering 154350, 154345 makes 154350 #1 and 154345 #2. Rolls joined with + & | still share one number. Only offered when the results came from a typed roll list.">
-              <input type="checkbox" id="numbering-order-toggle">
-              <span>Entry order</span>
-            </label>
+            <!-- One pill over the two hidden boxes (lib/pillBinding.js):
+                 Off / By muni / Entry order. main.js hides the whole row
+                 (#numbering-toggle-label) until there is more than one
+                 parcel, and the Entry order segment (#numbering-order-label)
+                 unless the results came from a typed roll list. -->
+            <input type="checkbox" id="numbering-toggle" class="pill-backing" hidden>
+            <input type="checkbox" id="numbering-order-toggle" class="pill-backing" hidden>
+            <div id="numbering-toggle-label" class="mode-pill-row numbering-toggle" hidden title="Number the result parcels 1..N on the map (leader-line callouts) and show a matching # column in the grid. Sorted by municipality, then Roll #. The number stays fixed to each parcel and carries into the Generate Map image and the CSV export.">
+              <span class="mode-pill-prefix">Numbering:</span>
+              <div class="mode-pill" role="radiogroup" aria-label="Parcel numbering" data-pill="numbering">
+                <button type="button" class="mode-btn active" data-mode="off" aria-pressed="true">Off</button>
+                <button type="button" class="mode-btn" data-mode="muni" aria-pressed="false" title="Number the parcels by municipality, then Roll #.">By muni</button>
+                <button id="numbering-order-label" type="button" class="mode-btn" data-mode="entry" aria-pressed="false" hidden title="Number the parcels in the order you typed them into the Roll # field, instead of by municipality then Roll #. Entering 154350, 154345 makes 154350 #1 and 154345 #2. Rolls joined with + & | still share one number. Only offered when the results came from a typed roll list.">Entry order</button>
+              </div>
+            </div>
           </div>
           <span id="count" class="count"></span>
           <details id="unmatched-panel" class="unmatched-panel" hidden>

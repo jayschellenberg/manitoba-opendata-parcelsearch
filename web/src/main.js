@@ -267,6 +267,7 @@ import {
   waterCsvCells, isWaterfront, isNearWater, WATER_CLASSES,
 } from './lib/water.js';
 import { rowPassesChangesFilter, changesFilterInert } from './lib/amendment.js';
+import { PILL_SPECS, modeFromChecked, checkedFromMode } from './lib/pillBinding.js';
 import {
   FLOOD_GROUPS, floodCellText, floodTooltip, floodSortRank,
   floodCsvCells, floodColor,
@@ -623,6 +624,11 @@ const $changesModePill   = document.querySelector('.changes-mode-pill');
 function getChangesMode() {
   return $changesModePill?.querySelector('.changes-mode-btn.active')?.dataset.mode || 'off';
 }
+// Repaint functions for the checkbox-backed pills (Water / Tile drainage /
+// Irrigation / Numbering), keyed by data-pill; filled in by bindBackedPill.
+// Declared up here so any init-time caller (updateNumberingAvailability)
+// finds it initialised.
+const pillPainters = {};
 const $cliToggle     = document.getElementById('cli-toggle');
 const $cliLegend     = document.getElementById('cli-legend');
 const $landcoverToggle = document.getElementById('landcover-toggle');
@@ -2671,7 +2677,7 @@ function refreshOverlayGroupCounts() {
     // pressed segment but not an active setting.
     const on = el.querySelectorAll(
       '.overlay-btn[aria-pressed="true"], .overlay-btn[aria-pressed="mixed"], .overlay-check input:checked, '
-      + '.changes-mode-btn.active:not([data-mode="off"])',
+      + 'input.pill-backing:checked, .changes-mode-btn.active:not([data-mode="off"])',
     ).length;
     badge.textContent = on > 0 ? `${on} on` : '';
     badge.title = on > 0 ? `${on} active setting${on === 1 ? '' : 's'} in this group` : '';
@@ -2723,6 +2729,54 @@ if ($changesModePill) {
     refreshOverlayGroupCounts();
     applyChangesMode(prev);
   });
+}
+
+/**
+ * Checkbox-backed pills — Water (Off / Waterfront / Near water / Any), Tile
+ * drainage, Irrigation, Numbering (Off / By muni / Entry order).
+ *
+ * The original <input type="checkbox"> elements stay in the DOM, hidden,
+ * and remain the source of truth: every handler below (the water-influence
+ * re-search, the WALLAS roll pre-filter, the numbering sort + callouts), the
+ * URL-state writer and the group badge keep reading them unchanged. A pill
+ * is a VIEW: clicking a segment sets the backing boxes to that mode's
+ * pattern (lib/pillBinding.js) and fires `change` on the ones that flipped —
+ * all boxes are set BEFORE any event fires, so a handler that reads its
+ * sibling (the water pair is OR'd) sees the settled state. Any `change` on a
+ * backing box repaints the pill, so a programmatic `.checked =` followed by
+ * a change event, or a user-driven one, can never leave the pill stale.
+ * Programmatic sets WITHOUT an event (updateNumberingAvailability) call the
+ * returned painter directly.
+ */
+function bindBackedPill(pillEl, spec) {
+  const inputs = spec.inputs.map((id) => document.getElementById(id));
+  const paint = () => {
+    const mode = modeFromChecked(spec, inputs.map((el) => !!el?.checked));
+    for (const b of pillEl.querySelectorAll('.mode-btn')) {
+      const on = b.dataset.mode === mode;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+  };
+  pillEl.addEventListener('click', (e) => {
+    const btn = e.target?.closest?.('.mode-btn');
+    if (!btn || !pillEl.contains(btn)) return;
+    const want = checkedFromMode(spec, btn.dataset.mode);
+    const flipped = [];
+    inputs.forEach((el, i) => {
+      if (el && el.checked !== !!want[i]) { el.checked = !!want[i]; flipped.push(el); }
+    });
+    paint();
+    for (const el of flipped) el.dispatchEvent(new Event('change', { bubbles: true }));
+    refreshOverlayGroupCounts();
+  });
+  for (const el of inputs) el?.addEventListener('change', paint);
+  paint();
+  return paint;
+}
+for (const pillEl of document.querySelectorAll('.mode-pill[data-pill]')) {
+  const spec = PILL_SPECS[pillEl.dataset.pill];
+  if (spec) pillPainters[pillEl.dataset.pill] = bindBackedPill(pillEl, spec);
 }
 if ($historicalToggle) $historicalToggle.addEventListener('click', () => toggleHistoricalOverlay());
 if ($historicalYear) $historicalYear.addEventListener('change', () => onHistoricalYearChange());
@@ -3825,6 +3879,8 @@ function updateNumberingAvailability() {
   if (!orderAvail && numberingEntryOrder) numberingEntryOrder = false;
   if ($numberingOrderLabel) $numberingOrderLabel.hidden = !orderAvail;
   if ($numberingOrderToggle) $numberingOrderToggle.checked = numberingEntryOrder;
+  // The boxes were set without a change event, so repaint the pill by hand.
+  pillPainters.numbering?.();
   updateMapOptionsRow();
 }
 
