@@ -7000,3 +7000,18 @@ body {
 .sidebar .mode-pill-row.far-flung-exclude,
 .sidebar .mode-pill-row.sales-nominal-exclude,
 .sidebar .mode-pill-row.sales-db-adjacent { gap: 6px; }
+/* Vacant-threshold % / $ pill — same colours as the other pills: the
+   default (%) segment paints black when selected, $ paints blue. Placed
+   after the theme block so it overrides the green accent there, hover
+   included. */
+.sidebar .vacant-mode-btn.active,
+.sidebar .vacant-mode-btn.active:hover {
+  background: #111827;
+  border-color: #111827;
+  box-shadow: none;
+}
+.sidebar .vacant-mode-btn.active[data-mode="dollar"],
+.sidebar .vacant-mode-btn.active[data-mode="dollar"]:hover {
+  background: #2563eb;
+  border-color: #2563eb;
+}
