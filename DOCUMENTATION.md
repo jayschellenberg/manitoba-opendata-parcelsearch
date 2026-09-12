@@ -311,6 +311,21 @@ the search-result hover, the Assessment Parcels hover + click popups, and
 the historical (as-of) popups. The province publishes **no amendment date** —
 the by-law number is the pointer to follow up with the municipality.
 
+**Soil composition on click.** With the CLI / Soil Type overlay on, clicking
+an Assessment Parcel adds a *Soil composition (top 3)* column to the popup:
+the three soils covering the most of the parcel, each with its swatch, name
+(code), CLI chip, acres and percent, plus the "Other mapped soils" remainder.
+The fabric is a vector-tile archive so nothing is pre-stamped; instead
+`resolveSoilComposition` (main.js, hung on the popup resolver) resolves the
+parcel's full feature via `resolveFeature` — geometry included, because the
+tile polygon under the cursor is clipped at tile edges — and runs the same
+worker join + rollup the search-result stamp uses
+(`stampSoilCompositionOnParcels`, top 3 + Other) against `lastCliFc`. Gated
+on the overlay being on (`soilWanted`), cached per parcel until the loaded
+soil set changes, rendered by `soilCompositionCompactHtml` (no descriptors —
+the full form stays on search results). The popup opens at once with a
+"Computing…" placeholder and fills in; hover never computes.
+
 **Changes pill — Off / Show / Filter** (under the Zoning / Development Plan
 buttons; `.changes-mode-pill`, same segmented control as the vacant-threshold
 % / $ pill; `getChangesMode()` is the one reader). **Show** makes the changes

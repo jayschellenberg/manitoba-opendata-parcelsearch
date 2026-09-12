@@ -292,7 +292,7 @@ import {
 } from './lib/mfInventory.js';
 import { resolveParcelAcres, formatRollSizeField, parseRollFrontageFeet } from './lib/acres.js';
 import { rollDisplay } from './lib/parcelLabelFields.js';
-import { createMuniParcelResolver } from './lib/muniParcelRecords.js';
+import { createMuniParcelResolver, recordKey } from './lib/muniParcelRecords.js';
 import {
   saleSizeStamp, saleSizeState, saleAcres, sizeSourceLabel, showsCurrentRollSize,
   shapeDerivedNote, boundaryTrustLabel, boundaryTrustRank,
@@ -8991,6 +8991,39 @@ const muniParcelPopupResolver = createMuniParcelResolver({
   getLoadedFabric: () => auxData.muniParcels,
   onWarn: (msg, err) => console.warn(`${msg} (non-fatal):`, err),
 });
+
+// Soil composition for ONE clicked Assessment Parcel, on demand.
+//
+// The fabric is a vector-tile archive, so nothing can be pre-stamped on it
+// (see the NOTE above toggleOverlay). Instead the click resolves the parcel's
+// full feature — geometry included, because the tile polygon under the
+// cursor is clipped at tile edges — and runs the same worker join +
+// rollup the search-result stamp uses (stampSoilCompositionOnParcels,
+// top 3 + "Other"), against the soil polygons the CLI / Soil Type overlay
+// has loaded for the municipality. Gated on that overlay being ON: with no
+// soil drawn there is nothing to join against and nothing the user asked
+// to see. Cached per parcel until the loaded soil set changes (a muni
+// switch), so re-clicking is free.
+//
+// Returns undefined when not wanted, null when the survey has no polygon
+// over the parcel, else the composition rows.
+const soilCompositionByParcel = new Map();
+muniParcelPopupResolver.soilWanted = () => cliMode != null && !!lastCliFc?.features?.length;
+muniParcelPopupResolver.resolveSoilComposition = async (props) => {
+  if (!muniParcelPopupResolver.soilWanted()) return undefined;
+  const key = recordKey(props);
+  const soilFc = lastCliFc;
+  const cached = key ? soilCompositionByParcel.get(key) : null;
+  if (cached && cached.soilFc === soilFc) return cached.composition;
+  const feature = await muniParcelPopupResolver.resolveFeature?.(props);
+  if (!feature?.geometry) return null;
+  // The stamp mutates feature.properties in place; the fabric feature is
+  // cached by the resolver, so the result stays on it too.
+  await stampSoilCompositionOnParcels({ type: 'FeatureCollection', features: [feature] }, soilFc);
+  const composition = feature.properties._soilComposition ?? null;
+  if (key) soilCompositionByParcel.set(key, { soilFc, composition });
+  return composition;
+};
 
 // Installed at module scope, immediately after the const it needs — the
 // map's click handler reads it through a module variable in map.js, so it
