@@ -4478,6 +4478,18 @@ async function runSearch() {
   // Drop the subject parcel — a fresh Search shouldn't inherit a
   // previous upload's subject highlight on the map.
   clearSubjectParcel();
+  // Drop the Parcel Summary panel with it. Without this the panel kept
+  // showing a parcel from the PREVIOUS result set: its "export this parcel"
+  // button exported that parcel, and readCurrentUrlState put its roll in the
+  // shared link, both while a different search sat in the table.
+  // clearSelectedParcel() existed for this and had never been called from
+  // anywhere — it was dead code, which is why nothing caught it.
+  clearSelectedParcel();
+  // The Changes pill stashes the count line it wrote over so turning Show
+  // off can put it back. Across a search that restore reinstated the PREVIOUS
+  // result set's tally ("47 of 166 carry an amendment") over the new one —
+  // the exact staleness the stash exists to prevent, one scope up.
+  changesShowPrevMsg = null;
   // Hide the subject muni picker since it's CSV-only.
   if ($subjectMuniRow) $subjectMuniRow.hidden = true;
   // Hide the unmatched-records panel — sales-upload-specific. When
