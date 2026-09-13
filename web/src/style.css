@@ -1865,7 +1865,7 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 #results .fav-col { width: 28px; text-align: center; padding: 2px 4px; }
 
 /* Row-selection checkbox column. Narrow and centered like the star beside
-   it, and hidden outside sales mode by the same .sales-only rule. A row the
+   it, but shown on BOTH tabs — unlike the star, which stays sales-only. A row the
    user has unticked stays on the grid but reads as withdrawn — dimmed, with
    the sale itself struck through, so "still listed" and "not in my analysis"
    are visibly different states. Dimming only; no display:none, because a

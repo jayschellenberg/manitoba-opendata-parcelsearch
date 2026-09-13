@@ -1371,7 +1371,13 @@ function saveFavorites() {
 // and must be cullable one at a time. parcelLegalKey alone would flip both.
 let deselectedSaleKeys = new Set();
 
-/** Identity of one sale row: the parcel, plus which of its sales this is. */
+/**
+ * Identity of one grid row: the parcel, plus which of its sales this is.
+ *
+ * On a property search there is one row per parcel and _saleSeq is absent, so
+ * this degrades to the parcel key. On the Sales tab a parcel that sold twice
+ * is two rows, and they must be cullable one at a time.
+ */
 function saleRowKey(props) {
   const base = parcelLegalKey(props || {});
   if (!base) return '';
@@ -12056,7 +12062,13 @@ function renderResultsStatus() {
   // quietly narrower than the row count sitting right next to them.
   const culled = deselectedCount(currentRows);
   if (culled > 0 && text) {
-    text += ` · ${culled} unticked, hidden from map/export/charts`;
+    // Name only the consumers actually in play: a property search has no
+    // charts, and listing one would send the reader looking for a tab that
+    // is not there.
+    const where = $resultsTable?.classList.contains('sales-mode')
+      ? 'map/export/charts'
+      : 'map/export';
+    text += ` · ${culled} unticked, hidden from ${where}`;
   }
   el.textContent = text;
   el.hidden = text === '';
@@ -14448,12 +14460,16 @@ function formatGroupPpl(p) {
  * itself stays on the grid, dimmed, because a culled comp you cannot see is
  * a comp you cannot put back.
  *
- * Like the star, the cell is always emitted so the column count stays stable
- * across modes, and .sales-only hides it outside sales mode.
+ * Unlike the star beside it, this column shows on BOTH tabs (Jason,
+ * 2026-09-13: "this functionality should work on both property search and
+ * sales analysis"). Culling a noisy parcel off the map is just as useful on a
+ * plain search, and every consumer it feeds — setMapData, exportCsv — is
+ * shared between the two tabs already. The charts are the one sales-only
+ * consumer, and they are simply not in play on a property search.
  */
 function selectCell(row) {
   const cell = document.createElement('td');
-  cell.classList.add('sales-only', 'sel-col');
+  cell.classList.add('sel-col');
   const key = saleRowKey(row?.parcel?.properties);
   if (!key) return cell;
   const box = document.createElement('input');

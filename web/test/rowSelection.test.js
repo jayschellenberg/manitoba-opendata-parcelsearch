@@ -74,8 +74,24 @@ test('the column exists in the header, pinned and ungearable', () => {
   assert.match(th[0], /data-no-gear/,
     'the select column must be data-no-gear: a control column that a preset '
     + 'could hide would strand unticked rows with no way to tick them back');
-  assert.match(th[0], /sales-only/, 'the column should only show in sales mode');
   assert.match(html, /id="select-all-rows"/, 'the header tick-all box is missing');
+});
+
+test('the column shows on BOTH tabs, unlike the star', () => {
+  // Jason, 2026-09-13: "this functionality should work on both property search
+  // and sales analysis". The star stays sales-only; this one does not, so
+  // neither the <th> nor the cell may carry the .sales-only gate.
+  const th = /<th data-col="select"[^>]*>/.exec(html);
+  assert.ok(!/sales-only/.test(th[0]),
+    'the select <th> is gated to sales mode — it would vanish on a property search');
+  const cell = fnBody('selectCell');
+  assert.ok(cell, 'selectCell is not defined');
+  assert.ok(!/'sales-only'/.test(cell),
+    'the select cell is gated to sales mode — the column would be empty on a property search');
+  // The star, by contrast, must stay sales-only: starring is a comparables
+  // concept and has no meaning on a plain search.
+  assert.match(fnBody('favoriteCell'), /'sales-only'/,
+    'the star column should remain sales-only');
 });
 
 test('renderTable actually appends the cell', () => {
