@@ -53,25 +53,80 @@ schtasks /Create `
 
 if ($LASTEXITCODE -ne 0) { Write-Error "schtasks /Create failed (exit $LASTEXITCODE)"; exit 1 }
 
-Write-Host ""
-Write-Host "Registered '$TaskName' - monthly, 16th at 05:30."
-Write-Host "  checks:  new MHTIS annual report -> rebuild + commit + push"
-Write-Host "           new AADT_<year> column  -> alert (needs a code change)"
-Write-Host ""
+# Battery + catch-up flags (schtasks doesn't expose these). StartWhenAvailable
+# matters more here than on the daily watchdogs: a MONTHLY task that misses its
+# trigger because the machine was off waits a full month for the next one.
+$settings = New-ScheduledTaskSettingsSet `
+    -StartWhenAvailable `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -ExecutionTimeLimit (New-TimeSpan -Hours 2)   # a cold rebuild downloads ~35 MB per new report and parses 15 PDFs
+Set-ScheduledTask -TaskName $TaskName -Settings $settings | Out-Null
 
-# The S4U trap, same as the other schedulers here: a task created this way runs
-# only when the user is LOGGED ON. If the machine is at the lock screen on the
-# 16th, it never fires and nothing says so. Report the logon type plainly
-# rather than letting it look registered-and-working.
-$now = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-$logon = [string]$now.Principal.LogonType
-Write-Host "Logon type: $logon"
-if ($logon -ne 'S4U' -and $logon -ne 'Password') {
-    Write-Host ""
-    Write-Host "NOTE: this task runs only while you are logged on (LogonType=$logon)."
-    if ($PriorLogonType -eq 'S4U' -or $PriorLogonType -eq 'Password') {
-        Write-Host "WARNING: it was previously '$PriorLogonType' and this run DOWNGRADED it."
+# ---- own the task PRINCIPAL, don't leave it Interactive ---------------------
+# schtasks.exe (above) can only ever create an INTERACTIVE task, which does not
+# run unless Jason is logged on. That cost 9.3 h on 2026-08-12 when a Windows
+# Update reboot left the machine at the logon screen: every task was
+# Interactive, so even the watchdogs were down and nothing could report it.
+# All 14 tasks were converted to S4U, and every registrar here now re-asserts
+# that itself -- otherwise re-running one for an unrelated reason silently
+# reverts its task to Interactive and quietly re-opens the gap.
+#
+# Set-ScheduledTask -Principal requires ELEVATION; unelevated it throws
+# "Access is denied." That is caught rather than fatal -- the task is already
+# registered above and stays usable -- but it is reported loudly below,
+# because an Interactive task nobody noticed is the whole failure mode.
+$S4UError = $null
+$principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" `
+    -LogonType S4U -RunLevel Limited
+try {
+    Set-ScheduledTask -TaskName $TaskName -Principal $principal -ErrorAction Stop | Out-Null
+} catch {
+    $S4UError = ([string]$_.Exception.Message).Trim()
+}
+
+# Ask Windows what it actually stored - do not assert it.
+$ActualLogonType = "unknown"
+try {
+    $ActualLogonType = [string](Get-ScheduledTask -TaskName $TaskName).Principal.LogonType
+} catch {
+    $ActualLogonType = "unreadable"
+}
+
+Write-Host ""
+Write-Host "Scheduled task '$TaskName' registered:"
+Write-Host "  Runs:        traffic-refresh-check.ps1 monthly on the 16th at 05:30 local"
+Write-Host "  Does:        new MHTIS annual report -> rebuild + manifest + commit + push"
+Write-Host "               new AADT_<year> column  -> alert only (needs a code change)"
+Write-Host "               nothing new             -> quiet exit"
+Write-Host "  Channels:    email (alert-email.local.txt) + ntfy push (mbps-traffic-refresh-jks)"
+Write-Host "  LogonType:   $ActualLogonType  (S4U = runs while logged off; Interactive = does NOT)"
+Write-Host "  StartWhenAvailable enabled (catches up if the machine was off on the 16th)"
+Write-Host ""
+Write-Host "Test the alert path now:  powershell -ExecutionPolicy Bypass -File traffic-refresh-check.ps1 -TestAlert"
+Write-Host "Dry-run the decision:     powershell -ExecutionPolicy Bypass -File traffic-refresh-check.ps1 -DryRun"
+Write-Host "Cancel:                   Unregister-ScheduledTask -TaskName $TaskName -Confirm:`$false"
+
+Write-Host ""
+if ($ActualLogonType -eq "S4U") {
+    Write-Host "Runs whether you are logged on or not - a logon screen no longer stalls it."
+} else {
+    Write-Host "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    Write-Host "!!  WARNING: '$TaskName' is LogonType=$ActualLogonType, NOT S4U."
+    Write-Host "!!"
+    Write-Host "!!  IT WILL NOT RUN WHILE YOU ARE LOGGED OFF. On a monthly trigger that"
+    Write-Host "!!  costs a whole month per miss, and the traffic data quietly keeps"
+    Write-Host "!!  looking authoritative the entire time."
+    if ($PriorLogonType -eq "S4U") {
+    Write-Host "!!"
+    Write-Host "!!  THIS RUN JUST DOWNGRADED IT. The task was S4U a moment ago; re-registering"
+    Write-Host "!!  it unelevated put it back to $ActualLogonType. Re-run elevated NOW."
     }
-    Write-Host "To make it run regardless, convert it to 'Run whether user is logged on or not'"
-    Write-Host "in Task Scheduler, or re-register it the way the sales tasks are converted."
+    if ($S4UError) {
+    Write-Host "!!"
+    Write-Host "!!  Set-ScheduledTask -Principal said: $S4UError"
+    }
+    Write-Host "!!"
+    Write-Host "!!  FIX: re-run this script from an ELEVATED PowerShell (Run as administrator)."
+    Write-Host "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
 }
