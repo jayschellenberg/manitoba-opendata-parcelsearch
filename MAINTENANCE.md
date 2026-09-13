@@ -609,6 +609,41 @@ report restates a rolling window of prior years, so only the OLDEST and
 NEWEST editions carry unique data — every edition in between contributes 0-4
 station-years.
 
+#### Automated: the monthly new-report check
+You should not have to remember the above. `traffic-refresh-check.ps1` runs
+monthly (16th, 05:30) as **mb-parcelsearch-traffic-refresh**, registered by:
+```
+powershell -ExecutionPolicy Bypass -File schedule_traffic_check.ps1
+```
+It compares MHTIS's published report list against `metadata.editions_seen` in
+`traffic-history.json`. On a new edition it rebuilds, regenerates the
+manifest, commits both files and pushes -- Vercel deploys. On nothing new it
+exits quietly (two HTTP requests).
+
+It compares against `editions_seen`, NOT `editions`: two reports parse badly
+and contribute no rows (2017's PDF has two broken font encodings, 2013 parses
+partially), so comparing against `editions` would see them missing every
+month and rebuild forever.
+
+It also checks something a rebuild cannot fix: whether the ArcGIS Traffic
+Flow service has grown a new `AADT_<year>` column that `AADT_FIELDS` in
+`web/src/arcgis.js` does not know about. That needs a code change, so it only
+alerts. This is the exact failure that started the traffic work -- the app sat
+on `AADT_2023` for months while `AADT_2024` existed, showing a stale count on
+36% of the network with no error anywhere.
+
+Three ways it deliberately refuses to publish: the R build's own gates trip
+(bad parse -> previous data stays live), the repo is not on `main` (would
+push someone's work in progress), or the MHTIS index is unreachable (an
+unreadable index is not "nothing new"). Each alerts. Success alerts too --
+an unattended job that succeeds silently is indistinguishable from one that
+never fired.
+
+Dry-run it any time without waiting for the 16th:
+```
+powershell -ExecutionPolicy Bypass -File traffic-refresh-check.ps1 -DryRun
+```
+
 ### 6b. Place names for the map search box  (cadence: ~annual, or never)
 Feeds the "Find a town…" box in the map's top-left corner — type `Souris`,
 get the town pinned and told it sits in SOURIS-GLENWOOD. Rebuild from `web/`:
