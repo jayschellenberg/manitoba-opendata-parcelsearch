@@ -2107,6 +2107,23 @@ function readCurrentUrlState() {
     }
   }
   if (pressedOverlays.length > 0) state.overlays = pressedOverlays;
+  // Segmented pills. Read generically off the DOM — every pill marks its
+  // selected segment with aria-pressed, the same contract the overlay
+  // buttons use — so a pill added later round-trips without touching this.
+  // The FIRST segment of each pill is its default (see PILL_SPECS), and
+  // defaults are skipped so an untouched session still produces a clean URL.
+  const pills = {};
+  for (const pill of document.querySelectorAll('[data-pill]')) {
+    const name = pill.dataset.pill;
+    const segments = [...pill.querySelectorAll('[data-mode]')];
+    if (!name || segments.length === 0) continue;
+    const selected = segments.find((s) => s.getAttribute('aria-pressed') === 'true');
+    if (!selected) continue;
+    const mode = selected.dataset.mode;
+    if (!mode || mode === segments[0].dataset.mode) continue;   // default
+    pills[name] = mode;
+  }
+  if (Object.keys(pills).length > 0) state.pills = pills;
   return state;
 }
 
@@ -2166,6 +2183,21 @@ function restoreUrlOverlays(state) {
       const btn = document.getElementById(`${code}-toggle`);
       if (!btn || btn.disabled) continue;
       if (btn.getAttribute('aria-pressed') !== 'true') btn.click();
+    }
+  }
+  // Pills are restored by CLICKING the segment rather than setting the
+  // backing checkboxes directly: the click path is what fires the change
+  // handlers the filters actually listen to (the water re-search, the WALLAS
+  // roll pre-filter, the numbering sort). Setting state silently would leave
+  // the pill looking right and filtering nothing — which is the same shape as
+  // the shared-link bug this exists to fix.
+  if (state.pills && typeof state.pills === 'object') {
+    for (const [name, mode] of Object.entries(state.pills)) {
+      const pill = document.querySelector(`[data-pill="${CSS.escape(name)}"]`);
+      if (!pill) continue;   // a pill this build doesn't have; ignore quietly
+      const seg = pill.querySelector(`[data-mode="${CSS.escape(mode)}"]`);
+      if (!seg || seg.disabled) continue;
+      if (seg.getAttribute('aria-pressed') !== 'true') seg.click();
     }
   }
 }
@@ -2780,6 +2812,13 @@ function bindBackedPill(pillEl, spec) {
 for (const pillEl of document.querySelectorAll('.mode-pill[data-pill]')) {
   const spec = PILL_SPECS[pillEl.dataset.pill];
   if (spec) pillPainters[pillEl.dataset.pill] = bindBackedPill(pillEl, spec);
+  // Keep the URL in step. The pills' backing checkboxes are deliberately NOT
+  // in URL_INPUT_BINDINGS (they are hidden implementation, not fields the
+  // user types into), so without this the pill state is readable by
+  // readCurrentUrlState and nothing ever asks it to write — the filter would
+  // round-trip in theory and never appear in a real shared link.
+  // Attached per pill rather than per input so a pill added later is covered.
+  pillEl.addEventListener('click', queueUrlWrite);
 }
 if ($historicalToggle) $historicalToggle.addEventListener('click', () => toggleHistoricalOverlay());
 if ($historicalYear) $historicalYear.addEventListener('change', () => onHistoricalYearChange());
