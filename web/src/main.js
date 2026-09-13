@@ -2676,7 +2676,7 @@ function refreshOverlayGroupCounts() {
     // 'mixed' is the tri-state overlays' second mode — still on.
     // A pill counts as ONE setting when it is on any segment but Off — Off
     // is a real pressed segment but not an active setting. Counted on the
-    // pill, not its hidden backing boxes, so Water = Any (which ticks both
+    // pill, not its hidden backing boxes, so Water Proximity = Both (which ticks both
     // boxes) reads "1 on" like every other pill.
     const on = el.querySelectorAll(
       '.overlay-btn[aria-pressed="true"], .overlay-btn[aria-pressed="mixed"], .overlay-check input:checked, '
@@ -6539,7 +6539,7 @@ function refilterCsvIfActive() {
   // Same rule for Changes = Filter before the zoning join has run.
   const changesNote = changesFilterInert(csvFullRows.map((r) => r?.parcel?.properties), getChangesMode())
     ? ' · zoning not loaded for these sales yet, so the Changes filter was not applied — use "Load zoning + dev-plan"'
-    : getChangesMode() === 'filter' ? ' · Changes: Filter (amended parcels only)' : '';
+    : getChangesMode() === 'filter' ? ' · Zoning/Dev Plan Changes: Filter (amended parcels only)' : '';
   // Name the Additional filters that are set, for the same reason: the
   // disclosure is collapsed and the eye is up here when the results look
   // thin. The badge in the summary repeats the list (repainted here so
@@ -7230,13 +7230,13 @@ function applyChangesMode(prev = 'off') {
   const cur = $count.textContent || '';
   if (!cur.startsWith('Changes: Show')) changesShowPrevMsg = cur;
   if (!rows.length) {
-    setCount('Changes: Show — run a search to highlight parcels with a zoning / development-plan amendment.');
+    setCount('Zoning/Dev Plan Changes: Show — run a search to highlight parcels with a zoning / development-plan amendment.');
   } else if (!stamped) {
-    setCount(`Changes: Show — zoning / dev-plan not loaded for these ${rows.length} parcels yet; use "Load zoning + dev-plan" to find the amended ones.`);
+    setCount(`Zoning/Dev Plan Changes: Show — zoning / dev-plan not loaded for these ${rows.length} parcels yet; use "Load zoning + dev-plan" to find the amended ones.`);
   } else if (n > 0) {
-    setCount(`Changes: Show — ${n} of ${rows.length} parcel${rows.length === 1 ? '' : 's'} carry a zoning / development-plan amendment (amber). Hover or click a parcel for the by-law number.`);
+    setCount(`Zoning/Dev Plan Changes: Show — ${n} of ${rows.length} parcel${rows.length === 1 ? '' : 's'} carry a zoning / development-plan amendment (amber). Hover or click a parcel for the by-law number.`);
   } else {
-    setCount(`Changes: Show — none of these ${rows.length} parcels carry a zoning / development-plan amendment on record.`);
+    setCount(`Zoning/Dev Plan Changes: Show — none of these ${rows.length} parcels carry a zoning / development-plan amendment on record.`);
   }
 }
 

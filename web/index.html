@@ -1130,12 +1130,12 @@
             <input type="checkbox" id="waterfront-only" class="pill-backing" hidden />
             <input type="checkbox" id="near-water-only" class="pill-backing" hidden />
             <div class="mode-pill-row" title="Return only parcels with a water influence. Pure post-filter on the pre-baked water shards (or, with a municipality selected, a roll-list pre-filter so the result cap can't hide matches) — no extra fetch. Works on an imported sales list too.">
-              <span class="mode-pill-prefix">Water:</span>
+              <span class="mode-pill-prefix">Water Proximity:</span>
               <div class="mode-pill" role="radiogroup" aria-label="Water influence filter" data-pill="water">
                 <button type="button" class="mode-btn active mode-btn-off" data-mode="off" aria-pressed="true" title="No water filter.">Off</button>
                 <button type="button" class="mode-btn" data-mode="waterfront" aria-pressed="false" title="Only parcels with actual water FRONTAGE — the detection's Direct, Waterfront and Reserve-separated classes. Reserve-separated means a narrow public reserve strip sits between the lot and the water, which is normal in Manitoba lake communities and still counts as waterfront.">Waterfront</button>
                 <button type="button" class="mode-btn" data-mode="near" aria-pressed="false" title="Only parcels NEAR water but WITHOUT frontage — across a developed road, or with another parcel between them and the water. The 'second row': often a view, but not comparable to true waterfront.">Near water</button>
-                <button type="button" class="mode-btn" data-mode="any" aria-pressed="false" title="Any water influence — waterfront or near water.">Any</button>
+                <button type="button" class="mode-btn" data-mode="any" aria-pressed="false" title="Both — waterfront or near water.">Both</button>
               </div>
             </div>
             </div>
@@ -1160,7 +1160,7 @@
                  fetch, no municipality dependency. Same segmented-pill pattern
                  as the vacant-threshold % / $ control. -->
             <div class="mode-pill-row changes-mode-row" title="Changes — Off: nothing. Show: highlight parcels whose zoning or development plan was amended (amber) and show only the amended polygons when the Zoning / Development Plan overlays are on. Filter: Show, plus keep only amended parcels in the results below; combines with Waterfront only / Near water and the sales filters. Hover or click a parcel or polygon for the amending by-law number. The province publishes no amendment date, so the by-law number is the pointer to verify with the municipality.">
-              <span class="mode-pill-prefix">Changes:</span>
+              <span class="mode-pill-prefix">Zoning/Dev Plan Changes:</span>
               <div class="mode-pill changes-mode-pill" role="radiogroup" aria-label="Zoning / development-plan changes mode">
                 <button type="button" class="mode-btn changes-mode-btn active mode-btn-off" data-mode="off" aria-pressed="true">Off</button>
                 <button type="button" class="mode-btn changes-mode-btn" data-mode="show" aria-pressed="false">Show</button>
