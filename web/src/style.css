@@ -6545,7 +6545,7 @@ body {
 }
 .sidebar .overlay-group[data-group="agricultural"] .overlay-btn,
 .sidebar .overlay-group[data-group="agricultural"] .overlay-btn:hover:not(:disabled) {
-  color: #b45309;        /* amber */
+  color: #166534;        /* dark green, same as Planning */
 }
 .sidebar .overlay-group[data-group="historical"] .overlay-btn,
 .sidebar .overlay-group[data-group="historical"] .overlay-btn:hover:not(:disabled) {
@@ -6611,10 +6611,19 @@ body {
   width: 100%;
   padding: 2px 4px;
   font-size: 12px;
+  /* .controls input/select carry a 36px min-height for the search form; a
+     qualifier beside a 28px overlay button must not, or its row towers over
+     the buttons around it (the Multi-Family / DU and Historical / As-of rows). */
+  min-height: 0;
+  height: 26px;
 }
 .sidebar .overlay-group-body > .overlay-subcontrol select {
   flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
+  height: 26px;
+  padding: 1px 4px;
+  font-size: 12px;
 }
 .sidebar .overlay-group-body > .overlay-subcontrol .overlay-subcontrol-label {
   flex: 0 0 auto;
@@ -6746,7 +6755,7 @@ body {
 .sidebar .overlay-group[data-group="parcels"] .overlay-group-count     { background: #0f172a; }
 .sidebar .overlay-group[data-group="planning"] .overlay-group-count    { background: #166534; }
 .sidebar .overlay-group[data-group="reference"] .overlay-group-count   { background: #1d4ed8; }
-.sidebar .overlay-group[data-group="agricultural"] .overlay-group-count { background: #b45309; }
+.sidebar .overlay-group[data-group="agricultural"] .overlay-group-count { background: #166534; }
 .sidebar .overlay-group[data-group="historical"] .overlay-group-count   { background: #0f172a; }
 .overlay-group-count:empty,
 .sidebar .overlay-group[open] > .overlay-group-title > .overlay-group-count {
