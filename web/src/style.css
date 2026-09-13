@@ -1863,6 +1863,20 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
    on click is in JS so the parent row's flyToFeature listener
    doesn't fire when the user just wants to star. */
 #results .fav-col { width: 28px; text-align: center; padding: 2px 4px; }
+
+/* Row-selection checkbox column. Narrow and centered like the star beside
+   it, and hidden outside sales mode by the same .sales-only rule. A row the
+   user has unticked stays on the grid but reads as withdrawn — dimmed, with
+   the sale itself struck through, so "still listed" and "not in my analysis"
+   are visibly different states. Dimming only; no display:none, because a
+   culled comp you cannot see is a comp you cannot put back. */
+#results .sel-col { width: 26px; text-align: center; padding: 2px 4px; }
+#results th.sel-col input { cursor: pointer; margin: 0; vertical-align: middle; }
+.row-select { cursor: pointer; margin: 0; vertical-align: middle; }
+.row-select:focus-visible { outline: 2px solid #4a90e2; outline-offset: 2px; }
+#results tr.deselected > td { opacity: 0.42; }
+#results tr.deselected > td.sel-col { opacity: 1; }
+#results tr.deselected > td:not(.sel-col):not(.fav-col) { text-decoration: line-through; }
 .fav-star {
   background: transparent;
   border: none;

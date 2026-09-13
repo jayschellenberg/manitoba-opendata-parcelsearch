@@ -113,6 +113,7 @@ const PER_RESULT = [
   'subjectFeature', 'subjectCentroid',
   'devPlanDeferred', 'searchHasRun', 'salesExportEnrichmentComplete',
   'selectedParcelRow',    // the 2026-09-13 leak
+  'deselectedSaleKeys',   // row culling belongs to the result set it was done on
   'changesShowPrevMsg',   // the 2026-09-13 leak
 ];
 

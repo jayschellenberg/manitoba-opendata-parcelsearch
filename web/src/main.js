@@ -1357,6 +1357,40 @@ function saveFavorites() {
   } catch { /* quota / private mode — best-effort, the in-memory Set still works */ }
 }
 
+// Row selection — the opposite polarity to favourites, and deliberately so.
+//
+// A star is opt-IN and durable: "this is a comparable", persisted, drives the
+// starred-only export and Route starred. Selection is opt-OUT and transient:
+// every row arrives checked, and unchecking one drops it from the map, the
+// CSV export and the charts for THIS session only. Nothing is persisted —
+// a cull belongs to the job in front of you, not to the browser, and a
+// remembered exclusion is exactly the silent-row-dropping bug that the
+// far-flung exclusion turned out to be (2026-09-13).
+//
+// Keyed per SALE ROW, not per parcel: a parcel that sold twice is two comps
+// and must be cullable one at a time. parcelLegalKey alone would flip both.
+let deselectedSaleKeys = new Set();
+
+/** Identity of one sale row: the parcel, plus which of its sales this is. */
+function saleRowKey(props) {
+  const base = parcelLegalKey(props || {});
+  if (!base) return '';
+  return base + '#' + (props?._saleSeq ?? 0);
+}
+
+function rowIsSelected(row) {
+  const key = saleRowKey(row?.parcel?.properties);
+  return !key || !deselectedSaleKeys.has(key);
+}
+
+/** How many of the CURRENT rows are culled. Drives the count line and the
+ *  export / charts warnings — computed rather than stored so it can never
+ *  disagree with the checkboxes on screen. */
+function deselectedCount(rows) {
+  if (deselectedSaleKeys.size === 0) return 0;
+  return (rows || currentRows).filter((r) => !rowIsSelected(r)).length;
+}
+
 // Tracks which muni's zoning / dev-plan polygons are currently loaded
 // in each map source. Lets a Zoning Layer / Dev Plan Layer toggle
 // short-circuit when the displayed muni already matches the dropdown
@@ -4497,6 +4531,12 @@ async function runSearch() {
   // result set's tally ("47 of 166 carry an amendment") over the new one —
   // the exact staleness the stash exists to prevent, one scope up.
   changesShowPrevMsg = null;
+  // Row culling belongs to the result set it was done on. Carrying it into
+  // the next search would hide rows the user never looked at, and the keys
+  // (muni|roll#seq) can collide across sets — so a stale cull would not even
+  // hide a predictable row. Not persisted anywhere, so this is the whole
+  // reset.
+  deselectedSaleKeys = new Set();
   // Hide the subject muni picker since it's CSV-only.
   if ($subjectMuniRow) $subjectMuniRow.hidden = true;
   // Hide the unmatched-records panel — sales-upload-specific. When
@@ -7855,9 +7895,20 @@ function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
   // `_soilComposition` lazily on click; deferring the stamp means the
   // map appears immediately and the composition section fills in
   // shortly after.
+  // Drop culled sale rows before the per-parcel dedupe, not after. A parcel
+  // that sold twice contributes two features here; unchecking ONE of those
+  // sales must not remove the parcel while its other sale is still on the
+  // grid. Filtering first and deduping second gives that for free: the
+  // parcel survives as long as any of its sales is still checked.
+  const selectedFc = deselectedSaleKeys.size === 0 ? parcelFc : {
+    type: 'FeatureCollection',
+    features: (parcelFc?.features || []).filter(
+      (f) => !deselectedSaleKeys.has(saleRowKey(f?.properties)),
+    ),
+  };
   // Geometry is drawn once per parcel even when the result set carries
   // one feature per sale — see dedupeParcelFeaturesForMap().
-  const mapFc = dedupeParcelFeaturesForMap(parcelFc);
+  const mapFc = dedupeParcelFeaturesForMap(selectedFc);
   // Under an active as-of date the highlight must trace the parcel as it stood
   // THEN, not now — see asOfHighlight(). Applied here so both pushes a search
   // makes (the immediate one and the post-enrichment repush) get it.
@@ -11997,9 +12048,16 @@ function renderResultsStatus() {
   // static ring next to a finished-looking sentence is decoration, not a
   // signal. The label also names the work rather than making the reader
   // guess how long a bare spinner means.
-  const text = busy && !saysSoAlready && base && resultsSettlingLabel
+  let text = busy && !saysSoAlready && base && resultsSettlingLabel
     ? `${base} · ${resultsSettlingLabel}`
     : base;
+  // Culled rows are stated, always. The grid still lists them (dimmed), so
+  // without this line the map, the export and the charts would all be
+  // quietly narrower than the row count sitting right next to them.
+  const culled = deselectedCount(currentRows);
+  if (culled > 0 && text) {
+    text += ` · ${culled} unticked, hidden from map/export/charts`;
+  }
   el.textContent = text;
   el.hidden = text === '';
   el.classList.toggle('results-status-error', looksLikeError);
@@ -12178,6 +12236,7 @@ function renderTable(rows, { resetPage = true } = {}) {
     // the FC reaches the source.
     const favKey = parcelLegalKey(p);
     if (favKey && favoriteKeys.has(favKey)) tr.classList.add('starred');
+    if (!rowIsSelected(row)) tr.classList.add('deselected');
     tr.classList.add('clickable');
     if (!tr.title) tr.title = 'Click to zoom map to this parcel';
     tr.addEventListener('click', () => {
@@ -12228,6 +12287,7 @@ function renderTable(rows, { resetPage = true } = {}) {
     const seqCellEl = td(p._seq != null ? String(p._seq) : null, 'num');
     seqCellEl.classList.add('seq-col');
     tr.appendChild(seqCellEl);
+    tr.appendChild(selectCell(row));
     tr.appendChild(favoriteCell(row));
     tr.appendChild(rollNumberCell(p));
     // Muni code (the integer authority prefix in Municipality, e.g.
@@ -12492,6 +12552,10 @@ function renderTable(rows, { resetPage = true } = {}) {
   // so publishing here is what makes that tab track the filters rather
   // than freeze at whatever was on screen when it opened.
   publishSalesCharts();
+  // The header tick reflects the whole result set, so it has to be recomputed
+  // whenever the set changes — a filter that removes the only unticked row
+  // should leave the header solidly checked, not stuck indeterminate.
+  syncSelectAllBox();
 }
 
 /**
@@ -14376,6 +14440,118 @@ function formatGroupPpl(p) {
   return fmtCurrency(p._saleGroupPpl);
 }
 
+/**
+ * Build the selection checkbox cell for a row.
+ *
+ * Checked = shown. Unchecking re-pushes the map source and republishes the
+ * charts immediately, so the effect is visible without a re-render; the row
+ * itself stays on the grid, dimmed, because a culled comp you cannot see is
+ * a comp you cannot put back.
+ *
+ * Like the star, the cell is always emitted so the column count stays stable
+ * across modes, and .sales-only hides it outside sales mode.
+ */
+function selectCell(row) {
+  const cell = document.createElement('td');
+  cell.classList.add('sales-only', 'sel-col');
+  const key = saleRowKey(row?.parcel?.properties);
+  if (!key) return cell;
+  const box = document.createElement('input');
+  box.type = 'checkbox';
+  box.className = 'row-select';
+  box.checked = !deselectedSaleKeys.has(key);
+  box.title = 'Show this sale on the map, in the CSV export and in the charts. '
+    + 'Unticking hides it from all three for this session.';
+  box.dataset.selKey = key;
+  box.addEventListener('click', (e) => e.stopPropagation());
+  box.addEventListener('change', () => {
+    if (box.checked) deselectedSaleKeys.delete(key);
+    else deselectedSaleKeys.add(key);
+    box.closest('tr')?.classList.toggle('deselected', !box.checked);
+    applySelectionToMapAndCharts();
+    syncSelectAllBox();
+  });
+  cell.appendChild(box);
+  return cell;
+}
+
+/**
+ * Warn before an action that will silently carry fewer sales than the grid
+ * shows. Returns true to proceed.
+ *
+ * Jason asked for this explicitly (2026-09-13) when choosing to have unticking
+ * reach the export and the charts as well as the map: the further a cull
+ * travels, the more places a number can quietly change.
+ */
+function confirmCulledExport(culled, total, what) {
+  const rowWord = culled === 1 ? 'row is' : 'rows are';
+  return window.confirm(
+    culled + ' of ' + total + ' ' + rowWord + ' unticked and will be EXCLUDED from this '
+    + what + '.' + String.fromCharCode(10) + String.fromCharCode(10)
+    + 'Tick them back on in the grid first if you want them included.'
+    + String.fromCharCode(10) + String.fromCharCode(10)
+    + 'Continue without them?',
+  );
+}
+
+/**
+ * The header checkbox: tick all / untick all, across the WHOLE result set
+ * rather than the current page — a cull that silently stopped at the page
+ * boundary would be worse than no button at all.
+ *
+ * Indeterminate when the selection is mixed, so the header reports the real
+ * state instead of implying "none" whenever one row is off.
+ */
+function syncSelectAllBox() {
+  const box = document.getElementById('select-all-rows');
+  if (!box) return;
+  const total = currentRows.length;
+  const culled = deselectedCount(currentRows);
+  box.checked = total > 0 && culled === 0;
+  box.indeterminate = culled > 0 && culled < total;
+  box.title = culled > 0
+    ? culled + ' of ' + total + ' rows unticked — tick to restore all'
+    : 'Untick to hide every row from the map, export and charts';
+}
+
+function wireSelectAllBox() {
+  const box = document.getElementById('select-all-rows');
+  if (!box) return;
+  // The <th> is a sort target; without this a tick would also re-sort.
+  box.addEventListener('click', (e) => e.stopPropagation());
+  box.addEventListener('change', () => {
+    if (box.checked) {
+      deselectedSaleKeys = new Set();
+    } else {
+      for (const r of currentRows) {
+        const key = saleRowKey(r?.parcel?.properties);
+        if (key) deselectedSaleKeys.add(key);
+      }
+    }
+    // Every visible checkbox and row class has to follow, and there can be
+    // hundreds — a re-render is cheaper to reason about than walking the DOM.
+    if (currentRows.length > 0) renderTable(currentRows, { resetPage: false });
+    applySelectionToMapAndCharts();
+    syncSelectAllBox();
+  });
+}
+wireSelectAllBox();
+
+/** Re-push the map source and the charts from the current rows. Both read
+ *  the selection themselves, so this is just "tell them to look again". */
+function applySelectionToMapAndCharts() {
+  if (currentRows.length > 0) {
+    setMapData(
+      { type: 'FeatureCollection', features: currentRows.map((r) => r.parcel) },
+      lastZoningFc || EMPTY_FC,
+      lastDevPlanFc || EMPTY_FC,
+      { fit: false },
+    );
+  }
+  publishSalesCharts();
+  renderResultsStatus();
+}
+
 /** Build the favourites star cell for a row. Click toggles the
  *  in-memory + localStorage favourite state and stops the click
  *  from bubbling up to the row-click handler (which would otherwise
@@ -14925,7 +15101,9 @@ function publishSalesCharts() {
   // set on a plain Property Search is deliberate: it clears the tab
   // instead of leaving stale sales on screen next to unrelated results.
   const inSalesMode = $resultsTable?.classList.contains('sales-mode');
-  const rows = inSalesMode ? currentRows : [];
+  // Culled rows are excluded from the plots, so the charts tab and the map
+  // always agree about which sales are in play.
+  const rows = inSalesMode ? currentRows.filter(rowIsSelected) : [];
   let records = [];
   try {
     records = saleRecordsFromRows(rows, {
@@ -14961,7 +15139,17 @@ function publishSalesCharts() {
   }
 }
 
-document.getElementById('charts-open')?.addEventListener('click', () => {
+document.getElementById('charts-open')?.addEventListener('click', (e) => {
+  // Same warning as the CSV export, for the same reason: the charts read the
+  // ticked rows only, so a cull moves the medians and the scatter without
+  // saying so. Asked here rather than on every republish — publishSalesCharts
+  // also runs on ordinary re-renders, and a confirm on those would be a
+  // dialog every time the grid moved.
+  const culled = deselectedCount(currentRows);
+  if (culled > 0 && !confirmCulledExport(culled, currentRows.length, 'chart')) {
+    e.preventDefault();
+    return;
+  }
   // A named target so clicking twice focuses the existing tab instead of
   // piling up windows that all listen on the same channel.
   let tab = null;
@@ -15008,6 +15196,16 @@ function exportCsv(explicitRows) {
     setCount('Export blocked: soil enrichment did not complete. Retry the sales import.');
     return;
   }
+  // Unticked rows leave the spreadsheet. Say so BEFORE writing the file —
+  // an export that silently holds fewer sales than the grid shows is the
+  // failure shape this whole feature could otherwise introduce, and the
+  // recipient of the CSV has no way to notice. The confirm is deliberately
+  // on the user-initiated export only; the parcel-summary card's one-row
+  // "Export selected" passes explicitRows and is never culled or warned.
+  if (!Array.isArray(explicitRows)) {
+    const culled = deselectedCount(sourceRows);
+    if (culled > 0 && !confirmCulledExport(culled, sourceRows.length, 'CSV export')) return;
+  }
   // Starred-only mode — if any row's parcel is in the favourites
   // set, export only those rows AND every sibling parcel in the
   // same sale group. Starring one half of a 2-parcel sale should
@@ -15016,7 +15214,9 @@ function exportCsv(explicitRows) {
   // No starred rows -> fall through to the original full-export.
   // Explicit subsets (Phase 5 Export selected) skip the starred-only
   // expansion — the caller has already chosen the exact set.
-  let exportRows = sourceRows;
+  let exportRows = Array.isArray(explicitRows)
+    ? sourceRows
+    : sourceRows.filter(rowIsSelected);
   let starredOnly = false;
   const allowStarredExpansion = !Array.isArray(explicitRows);
   if (allowStarredExpansion && inSalesMode && favoriteKeys.size > 0) {
@@ -15035,7 +15235,11 @@ function exportCsv(explicitRows) {
       // member gets included. Falls back to the per-row key check
       // for rows that aren't part of a sale group (single-parcel
       // searches starred from a non-CSV path).
+      // Still honours the checkboxes: starring pulls a sale group in, but an
+      // explicitly unticked row stays out. Unticking is the more specific
+      // instruction — the user looked at that row and said no.
       exportRows = currentRows.filter((r) => {
+        if (!rowIsSelected(r)) return false;
         const k = parcelLegalKey(r?.parcel?.properties || {});
         if (k && starredKeys.has(k)) return true;
         const gid = r.parcel?.properties?._saleGroupId;
