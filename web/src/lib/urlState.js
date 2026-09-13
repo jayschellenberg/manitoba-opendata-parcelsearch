@@ -104,6 +104,46 @@ function formatOverlaysParam(v) {
   return [...new Set(valid)].slice(0, 20).join(',');
 }
 
+// Segmented-pill state, as `name:mode` pairs — `water:near,tile:on`.
+//
+// These are FILTERS, not decoration: Water Proximity, Tile drainage,
+// Irrigation, Nominal sales, Far-flung sales and Adjacent regions each change
+// which parcels come back. A shared link that carried the municipality and the
+// roll list but silently dropped "Waterfront only" showed the recipient a
+// LARGER result set than the sender saw, with nothing on screen to say so —
+// the worst kind of wrong, because it looks like it worked.
+//
+// Deliberately name/mode pairs rather than a fixed key per pill, so a pill
+// added later round-trips without touching this file. Same reasoning as
+// `overlays` reading every `button.overlay-btn[id$="-toggle"]`.
+const PILL_TOKEN = /^[a-z][a-z0-9]{0,20}:[a-z][a-z0-9]{0,20}$/;
+
+function parsePillsParam(raw) {
+  if (typeof raw !== 'string') return undefined;
+  const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
+  const valid = parts.filter((p) => PILL_TOKEN.test(p));
+  if (valid.length === 0) return undefined;
+  // Last write wins on a duplicated name, so a hand-edited URL cannot make
+  // one pill claim two modes.
+  const byName = new Map();
+  for (const p of valid) {
+    const [name, mode] = p.split(':');
+    byName.set(name, mode);
+  }
+  return Object.fromEntries([...byName].slice(0, 20));
+}
+
+function formatPillsParam(v) {
+  if (!v || typeof v !== 'object') return null;
+  // Re-validate in the formatter too, so a bug in caller state cannot
+  // smuggle garbage into the URL.
+  const pairs = Object.entries(v)
+    .map(([name, mode]) => `${name}:${mode}`)
+    .filter((p) => PILL_TOKEN.test(p));
+  if (pairs.length === 0) return null;
+  return pairs.slice(0, 20).join(',');
+}
+
 export const SCHEMA = {
   muni:        { param: 'm',  validate: cleanString,           format: (v) => v },
   roll:        { param: 'r',  validate: cleanString,           format: (v) => v },
@@ -148,6 +188,7 @@ export const SCHEMA = {
   sort:        { param: 's',  validate: parseSortParam,        format: formatSortParam },
   page:        { param: 'p',  validate: cleanInt(1, 10000),    format: (v) => String(v) },
   overlays:    { param: 'o',  validate: parseOverlaysParam,    format: formatOverlaysParam },
+  pills:       { param: 'pl', validate: parsePillsParam,       format: formatPillsParam },
 };
 
 const PARAM_TO_KEY = Object.fromEntries(

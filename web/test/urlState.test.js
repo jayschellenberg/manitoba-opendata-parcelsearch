@@ -355,6 +355,48 @@ test('SCHEMA — param keys are unique', () => {
   }
 });
 
+
+// --- pills -----------------------------------------------------------------
+// These are FILTERS. A shared link that carried the municipality and the roll
+// list but dropped "Waterfront only" showed the recipient a LARGER result set
+// than the sender saw, with nothing on screen saying so.
+
+test('pills round-trip through encode/decode', () => {
+  const state = { muni: 'ARBORG', pills: { water: 'near', tile: 'on' } };
+  const round = decodeState(encodeState(state));
+  assert.deepEqual(round.pills, { water: 'near', tile: 'on' });
+});
+
+test('pills ride in one compact param', () => {
+  const qs = encodeState({ pills: { water: 'waterfront' } });
+  assert.equal(new URLSearchParams(qs).get('pl'), 'water:waterfront');
+});
+
+test('an absent or empty pill set adds no param', () => {
+  assert.equal(new URLSearchParams(encodeState({})).has('pl'), false);
+  assert.equal(new URLSearchParams(encodeState({ pills: {} })).has('pl'), false);
+});
+
+test('malformed pill tokens are dropped, not trusted', () => {
+  // A hand-edited or truncated URL must not put junk into a filter.
+  assert.equal(decodeState('pl=water').pills, undefined, 'no mode');
+  assert.equal(decodeState('pl=:near').pills, undefined, 'no name');
+  assert.equal(decodeState('pl=' + encodeURIComponent('water:<script>')).pills, undefined);
+  assert.deepEqual(decodeState('pl=' + encodeURIComponent('water:near,GARBAGE,tile:on')).pills,
+    { water: 'near', tile: 'on' }, 'valid pairs survive alongside junk');
+});
+
+test('a duplicated pill name cannot claim two modes', () => {
+  assert.deepEqual(decodeState('pl=' + encodeURIComponent('water:near,water:waterfront')).pills,
+    { water: 'waterfront' }, 'last write wins');
+});
+
+test('a pill name this build does not know still decodes safely', () => {
+  // Forward compatibility: an older build opening a newer link must not throw.
+  assert.deepEqual(decodeState('pl=' + encodeURIComponent('futurepill:mode')).pills,
+    { futurepill: 'mode' });
+});
+
 console.log('');
 console.log(`${passed}/${passed + failed} passed`);
 if (failed > 0) process.exit(1);
