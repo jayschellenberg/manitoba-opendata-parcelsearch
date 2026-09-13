@@ -3414,9 +3414,11 @@ $duMode.addEventListener('change', () => {
 // CSV-upload mode: when csvFullRows is populated, changing any of the
 // ---------- Far-flung sale flagging (phase 2: flag only) ----------
 
-// Persisted so a threshold tuned for one job carries into the next —
-// the same reasoning as the column presets. Phase 2 only MARKS these
-// sales; nothing is removed from the table, map or export.
+// The THRESHOLD is persisted so a value tuned for one job carries into the
+// next — the same reasoning as the column presets — because marking alone
+// removes nothing. The EXCLUDE toggle is deliberately NOT persisted; the key
+// below survives only so an already-stored value can be cleared away. See
+// resetFarFlungExclude.
 const FAR_FLUNG_STORAGE_KEY = 'mbps_far_flung_km_v1';
 const FAR_FLUNG_EXCLUDE_KEY = 'mbps_far_flung_exclude_v1';
 
@@ -3448,21 +3450,27 @@ function saveFarFlungThreshold() {
   try { localStorage.setItem(FAR_FLUNG_STORAGE_KEY, $farFlungKm?.value ?? ''); } catch {}
 }
 
-function loadFarFlungExclude() {
+/**
+ * Start every session with Exclude OFF.
+ *
+ * This used to persist under FAR_FLUNG_EXCLUDE_KEY, on the same reasoning as
+ * the threshold beside it. That reasoning does not carry: the threshold only
+ * MARKS sales, so keeping it between jobs costs nothing, while Exclude
+ * REMOVES rows from the table, the map and the CSV export. Persisted, it was
+ * a filter that silently dropped comparables months after it was switched on
+ * — and it rode into every shared pl= link, so a recipient saw a different
+ * set of sales with nothing on screen saying why. Found 2026-09-13 when a
+ * production URL carried farflung:exclude that nobody had set that day.
+ *
+ * The stored key is removed rather than merely ignored, so a browser already
+ * holding '1' cannot resurrect the setting later.
+ */
+function resetFarFlungExclude() {
   if (!$farFlungExclude) return;
-  let stored = null;
-  try { stored = localStorage.getItem(FAR_FLUNG_EXCLUDE_KEY); } catch {}
-  // Defaults OFF. Only an explicit '1' turns it on, so a corrupt or
-  // absent value can never start a session hiding sales.
-  $farFlungExclude.checked = stored === '1';
+  try { localStorage.removeItem(FAR_FLUNG_EXCLUDE_KEY); } catch {}
+  $farFlungExclude.checked = false;
   // Set without a change event, so repaint the Keep / Exclude pill by hand.
   pillPainters.farflung?.();
-}
-
-function saveFarFlungExclude() {
-  try {
-    localStorage.setItem(FAR_FLUNG_EXCLUDE_KEY, $farFlungExclude?.checked ? '1' : '0');
-  } catch {}
 }
 
 /**
@@ -3539,10 +3547,9 @@ function countFarFlung(rows, threshold) {
 
 if ($farFlungKm) {
   loadFarFlungThreshold();
-  loadFarFlungExclude();
+  resetFarFlungExclude();
   const onFarFlungChange = () => {
     saveFarFlungThreshold();
-    saveFarFlungExclude();
     // In CSV mode the threshold is a real filter input, so route through
     // the same path every other sales filter uses — it re-filters,
     // re-renders, re-pushes the map source and rewrites the count line.
