@@ -8,6 +8,14 @@
       "cwd": "web",
       "port": 5173,
       "autoPort": true
+    },
+    {
+      "name": "web-rstudio-node",
+      "runtimeExecutable": "C:/Program Files/RStudio/resources/app/bin/node/node.exe",
+      "runtimeArgs": ["node_modules/vite/bin/vite.js"],
+      "cwd": "web",
+      "port": 5173,
+      "autoPort": true
     }
   ]
 }

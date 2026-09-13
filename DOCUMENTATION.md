@@ -381,8 +381,7 @@ overwrote. The Planning group badge counts Show / Filter as "on". Not carried
 in shared-link URL state (the writer only round-trips `*-toggle` buttons).
 
 **Checkbox-backed pills** (`lib/pillBinding.js`, `bindBackedPill` in main.js).
-The sidebar's on/off filters are segmented pills too — **Water: Off /
-Waterfront / Near water / Any**, **Tile drainage: Off / On**, **Irrigation:
+The sidebar's on/off filters are segmented pills too — **Water Proximity: Off / Waterfront / Near water / Both**, **Tile drainage: Off / On**, **Irrigation:
 Off / On**, and **Numbering: Off / By muni / Entry order** in the Search
 action row — but the original `<input type="checkbox">` elements stay in the
 DOM, hidden (`.pill-backing`), and remain the source of truth: every handler
@@ -393,13 +392,13 @@ that mode's pattern and fires `change` on the ones that flipped, all boxes set
 before any event fires so an OR'd pair (waterfront + near water) is read
 settled; any `change` on a box repaints the pill, and the one programmatic
 set without an event (`updateNumberingAvailability`) calls the painter
-directly. `Any` = both water boxes ticked, exactly the old "tick both" case;
+directly. `Both` = both water boxes ticked, exactly the old "tick both" case;
 tile drainage and irrigation stay two pills because both On means both must
 hold. The Entry order segment carries `#numbering-order-label` so the existing
 "only for a typed roll list" hiding still applies to it. The mode ↔ checked
 tables are unit-tested (`test/pillBinding.test.js`). The group badge counts a
 pill as ONE setting whenever it is off Off (`.mode-btn.active:not([data-mode="off"])`),
-not its backing boxes — so Water = Any reads "1 on", not "2 on". The Sales
+not its backing boxes — so Water Proximity = Both reads "1 on", not "2 on". The Sales
 tab's boxes are pills on the same binder: **Adjacent regions: Off / On**
 (sales-database picker), **Nominal sales: Include / Exclude**, and
 **Flagged: Keep / Exclude** beside the Far-Flung km box (its persisted value
