@@ -231,3 +231,35 @@ reliable year: `AADT_2023` means "the number printed in the 2023
 report", which for a short-duration station is an older physical count
 carried forward (stn 1193, PTH 68 at Arborg: AADT_2023 = 1,130, which
 the report shows as a 2018 count). Never label it with a year.
+
+## Hover / pills / soil composition follow-ups (from the 2026-09-12 session)
+
+Shipped that day, all on production (PRs #70–#84): zoning + dev-plan
+amendments on hover/click (live and historical), the Zoning/Dev Plan
+Changes pill (Off / Show / Filter), every sidebar and Sales-tab checkbox as a
+pill (Off black, any other selection blue), top-3 soil composition with a
+per-CLI-class rollup on the Assessment Parcel hover/click and the
+search-result hover, MASC-before-CLI in that tooltip, "Soil under cursor"
+suppressed while Assessment Parcels is on, and the MAO Login top-bar link.
+Feature detail is in DOCUMENTATION.md §3.6.1. What is still open:
+
+- **Pill states in shared links.** `readCurrentUrlState` only round-trips
+  `button.overlay-btn[id$="-toggle"]`, so a shared URL carries none of the
+  pill settings (Water Proximity, Tile / Irrigation, Zoning/Dev Plan
+  Changes, Numbering, the Sales-tab three). Adding them means a new key in
+  the URL schema plus a repaint of each pill after `applyUrlStateToInputs`
+  — the backing checkboxes are the thing to restore; `pillPainters[name]()`
+  then redraws the pill.
+- **Changes = Filter on a sales CSV** is verified by code reading only:
+  `rowPassesChangesFilter` sits in `filterCsvRowsByOtherSearches` beside the
+  waterfront test, and `backfillDevPlanColumns` re-cuts the grid when the
+  deferred dev-plan join lands. One manual check with a real sales file
+  would close it.
+- **New Multi-Family label at half width.** The button now shares a row
+  with New Condos; its tri-state "(Year)" / "(Units)" suffix may wrap to a
+  second line once the layer is on. Nothing is clipped, but shorter
+  suffixes would keep the row at one line.
+- **Per-class rollup vs. visible rows.** "By CLI class" is summed over the
+  UNCAPPED composition, so a class can read higher than the top-3 rows
+  above it suggest (a 2W soil folded into "Other" still counts). That is
+  the intended, citable figure — documented, but easy to mistake for a bug.
