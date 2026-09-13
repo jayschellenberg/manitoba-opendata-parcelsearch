@@ -1299,6 +1299,27 @@ escalate, and the manual-check path above is how.
 > told. If a standing alert is ever wanted, this table is the spec for it,
 > and `sales-staleness-check.ps1` is the pattern to copy.
 
+## Local dev + tests on the Dropbox working copy: online-only placeholders
+
+The working copy under Dropbox is not a git clone, and several files in it
+are Dropbox *online-only* placeholders (reparse points that hydrate on
+first read): `web/public/mb-municipalities.geojson`,
+`web/public/basemap-sprites/light.png`, `web/.env.example`, and some of the
+`mb-parcel-data` index files. A process that cannot trigger hydration gets
+`EACCES` — the unit tests that read those files fail, and `vite` dies the
+first time the browser requests one uncached. Marking `web/public` (and the
+repo root) **Available offline** in Dropbox fixes both.
+
+Until then, the workaround that works: run vite from a **git clone**
+(real files), junction its `node_modules` to the Dropbox one, hard-link the
+hydrated `web/public/parcels.pmtiles` (381 MB, not in git) into the clone,
+copy `.env.local` across, and serve on **port 5173** — the R2 basemap
+bucket's CORS allows that origin and not others. `npm` / `node` are not
+on PATH for automated sessions on this machine; RStudio's bundled node
+(`C:/Program Files/RStudio/resources/app/bin/node/node.exe`, v22) runs
+vite and the tests. Vercel *preview* deployments are behind Vercel login,
+so they cannot stand in for a local build.
+
 ## Continuous integration
 
 GitHub Actions is enabled for the account (the earlier account-level
