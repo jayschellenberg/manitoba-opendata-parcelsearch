@@ -6946,6 +6946,7 @@ body {
 .sidebar .mode-pill-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 2px 0 1px 2px;
   font-size: 12px;
@@ -6963,13 +6964,17 @@ body {
   appearance: none;
   background: transparent;
   border: none;
-  padding: 4px 10px;
+  padding: 4px 9px;
+  /* .controls button sets min-height: 36px for the big action buttons;
+     a pill segment is a compact control and must not inherit it. */
+  min-height: 0;
+  height: auto;
   font-size: 12px;
   font-weight: 600;
   font-family: inherit;
   color: var(--ui-ink, var(--color-neutral-600, #52525b));
   cursor: pointer;
-  line-height: 1;
+  line-height: 1.2;
 }
 .sidebar .mode-btn + .mode-btn {
   border-left: 1px solid var(--ui-line-strong, var(--color-neutral-300, #d4d4d8));
