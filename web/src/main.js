@@ -45,7 +45,7 @@ import { nextOverlayToggleState, setOverlayPressed } from './lib/overlayToggle.j
 import { stalenessBannerState } from './lib/staleness.js';
 import { resolveDropdownSources, firstNonEmptyList, MUNI_PLACEHOLDER } from './lib/dropdownSources.js';
 import {
-  readMapLegends, layoutMapLegends, paintMapLegends, stackedLegendBottom,
+  readMapLegends, layoutMapLegends, paintMapLegends,
 } from './lib/mapLegend.js';
 import {
   computeSaleGroups, groupPosition, frontageRateState,
@@ -597,7 +597,6 @@ const $pdWebsiteBtn   = document.getElementById('pd-website-btn');
 const $contamToggle  = document.getElementById('contam-toggle');
 const $flowToggle    = document.getElementById('flow-toggle');
 const $stationsToggle = document.getElementById('stations-toggle');
-const $stationsLegend = document.getElementById('stations-legend');
 const $highwaysToggle = document.getElementById('highways-toggle');
 const $muniParcelsToggle = document.getElementById('muni-parcels-toggle');
 const $mascToggle    = document.getElementById('masc-toggle');
@@ -8808,47 +8807,7 @@ function updateFlowLegendTitle(fc) {
       ? `All counts ${hi}. Click a segment for its details.`
       : `Counts date ${lo}–${hi}. Zoom in for the year on each label, or click a segment.`;
   }
-  // Writing the note can change this legend's height by a whole line, which
-  // moves where the station key has to sit.
-  syncStationLegendStacking();
 }
-
-/**
- * Lift the station key clear of the AADT ramp when both legends show.
- *
- * MEASURED, not a fixed offset. Both legends are absolutely positioned in
- * the same bottom-right corner, and the first attempt at this hardcoded
- * `bottom: 250px` — which overlapped, because the flow legend's height is
- * not a constant: its vintage note wraps to a different number of lines as
- * the map pane changes width, and its title and range change with the data.
- * Reading the height back is the only version that cannot drift.
- *
- * The flow legend's own computed `bottom` is the base, so this composes with
- * the `.with-zoning` rule that already lifts IT over the zoning legend.
- */
-function syncStationLegendStacking() {
-  if (!$stationsLegend) return;
-  const flowShown = $flowLegend && !$flowLegend.hidden && $flowLegend.offsetParent !== null;
-  if (!flowShown) {
-    $stationsLegend.style.bottom = '';   // back to the stylesheet's own value
-    return;
-  }
-  const base = Number.parseFloat(getComputedStyle($flowLegend).bottom);
-  const bottom = stackedLegendBottom(base, $flowLegend.getBoundingClientRect().height);
-  if (bottom == null) return;            // not laid out yet; a later trigger re-runs
-  $stationsLegend.style.bottom = `${bottom}px`;
-}
-
-// The flow legend changes height without anything toggling: its note rewraps
-// when the map pane is resized, and its text changes when new data loads.
-// Three triggers rather than one, because they fail in different places — a
-// ResizeObserver is the precise one but its callbacks are delivered by the
-// rendering pipeline, so it is silent in an offscreen or non-compositing
-// context, which is exactly where this was first tested.
-if (typeof ResizeObserver !== 'undefined' && $flowLegend) {
-  new ResizeObserver(() => syncStationLegendStacking()).observe($flowLegend);
-}
-window.addEventListener('resize', () => syncStationLegendStacking());
 
 /**
  * Traffic-count stations, with their published AADT series joined on.
@@ -11982,10 +11941,9 @@ async function toggleAuxOverlay(which) {
   // The AADT-colour legend rides along with the Flow toggle so the user
   // can read what each segment colour means. Only one place toggles it.
   if (which === 'flow' && $flowLegend) $flowLegend.hidden = !visible;
-  // Two station markers on the map need a key; the popup alone can't say
-  // what the other dot is without clicking it.
-  if (which === 'stations' && $stationsLegend) $stationsLegend.hidden = !visible;
-  if (which === 'flow' || which === 'stations') syncStationLegendStacking();
+  // Traffic Counts ('stations') has no legend on purpose: the highway/town
+  // marker distinction is covered by the toggle tooltip and the station
+  // popup, and a key for it added little (removed 2026-09-14).
   // The flood legend lists every ACTIVE group, so any one of the five
   // changing state redraws the whole box rather than toggling a row.
   if (which.startsWith('flood:')) renderFloodLegend();

@@ -1546,17 +1546,10 @@
              popup, which carries each segment's own year. -->
         <div id="flow-legend-note" class="legend-note"></div>
       </div>
-      <!-- Key for the two station markers. Without it the amber dots read as
-           "some other kind of station" and a town count can be mistaken for
-           the highway count beside it — they differ by 2-3x. -->
-      <div id="stations-legend" class="map-legend stations-legend" hidden>
-        <strong>Traffic count stations</strong>
-        <ul>
-          <li><span class="swatch swatch-dot swatch-dot-highway"></span>Highway (PTH / PR)</li>
-          <li><span class="swatch swatch-dot swatch-dot-town"></span>Town count</li>
-        </ul>
-        <div class="legend-note">Click a station for its published AADT by year.</div>
-      </div>
+      <!-- Traffic Counts deliberately has NO legend. The two station markers
+           (highway vs town count) are explained in the toggle's tooltip and
+           by the station popup; a key for that distinction was removed
+           2026-09-14 as adding little over the popup. -->
     </div>
 
     <!-- Draggable horizontal divider between map and table inside the
