@@ -261,6 +261,7 @@ import { generateParcelSnapshotsZip } from './snapshotExport.js';
 import { getShapes as getMapShapes, clearShapes as clearMapShapes, onShapesChanged } from './drawShapes.js';
 import { passesShapeFilter } from './lib/shapeFilter.js';
 import { countSnapshotFrames } from './lib/snapshotGroups.js';
+import { waitForMapIdle, MapRenderTimeoutError } from './lib/snapshotCapture.js';
 import { OUTPUT_MIME, OUTPUT_QUALITY, MAX_OUTPUT_DIM } from './lib/imageOutput.js';
 import { dominantBucket, cultFraction, LAND_COVER_BUCKETS, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
 import {
@@ -591,6 +592,11 @@ let captureWithLegend = false;
 // would otherwise re-enable "Map w/Legend" and let a second capture start on
 // top of the first.
 let captureInFlight = false;
+// How long a capture waits for the map to go idle before giving up and
+// shooting the frame that is on screen. Shorter than the bulk snapshot
+// export's 9 s: this one is a button the user is watching, and it counts
+// visible time only (waitForMapIdle stops its clock on a hidden tab).
+const STATIC_MAP_IDLE_TIMEOUT_MS = 6000;
 const $zoningToggle  = document.getElementById('zoning-toggle');
 const $devplanToggle = document.getElementById('devplan-toggle');
 const $muniWebsiteBtn = document.getElementById('muni-website-btn');
@@ -3208,11 +3214,30 @@ async function generateStaticMap({ withLegend = false } = {}) {
     // Force MapLibre to redraw and wait until it's idle so the canvas
     // contents fully match the on-screen view (otherwise a still-loading
     // tile or mid-animation frame can show up in the snapshot).
-    await new Promise((resolve) => {
-      const onIdle = () => { map.off('idle', onIdle); resolve(); };
-      map.on('idle', onIdle);
-      map.triggerRepaint();
-    });
+    //
+    // BOUNDED. 'idle' only fires once every source has finished loading,
+    // so one overlay tile that never resolves — a stalled PMTiles range
+    // request, an ArcGIS layer retrying — means it never fires at all, and
+    // an unbounded wait here hung the button on "Capturing…" with
+    // captureInFlight stuck true, i.e. dead until a page reload. The
+    // legend button is the one that showed it, because it is only enabled
+    // when an overlay (and therefore an extra source) is on.
+    //
+    // waitForMapIdle stops its clock while the page is hidden, so the
+    // budget is visible time and switching tabs mid-capture doesn't
+    // manufacture a timeout. A timeout is NOT fatal here the way it is for
+    // the bulk snapshot export: preserveDrawingBuffer keeps the last
+    // rendered frame readable, and that frame is the view the user is
+    // looking at right now. Capturing it beats refusing to capture; the
+    // only cost is a tile that may still have been loading.
+    let staleFrame = false;
+    try {
+      await waitForMapIdle(map, STATIC_MAP_IDLE_TIMEOUT_MS);
+    } catch (err) {
+      if (!(err instanceof MapRenderTimeoutError)) throw err;
+      staleFrame = true;
+      console.warn('static map: map never went idle, capturing current frame', err);
+    }
     const canvas = map.getCanvas();
     const dataUrl = composeWithAttribution(canvas);
     if ($staticMapSection) $staticMapSection.hidden = false;
@@ -3223,7 +3248,11 @@ async function generateStaticMap({ withLegend = false } = {}) {
     // without prompting).
     const hint = document.createElement('p');
     hint.className = 'static-map-hint';
-    hint.textContent = 'Right click and Copy or Save image:';
+    hint.textContent = staleFrame
+      // Say so rather than passing off a possibly half-drawn frame as a
+      // finished one — the user can re-click once the map settles.
+      ? 'Right click and Copy or Save image (the map was still loading — re-generate if a layer looks incomplete):'
+      : 'Right click and Copy or Save image:';
     $staticMapOutput.appendChild(hint);
     const img = document.createElement('img');
     img.src = dataUrl;
