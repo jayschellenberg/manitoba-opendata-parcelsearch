@@ -43,7 +43,10 @@ import {
 import { encodeState, decodeState } from './lib/urlState.js';
 import { nextOverlayToggleState, setOverlayPressed } from './lib/overlayToggle.js';
 import { stalenessBannerState } from './lib/staleness.js';
-import { resolveDropdownSources, firstNonEmptyList, MUNI_PLACEHOLDER } from './lib/dropdownSources.js';
+import {
+  resolveDropdownSources, firstNonEmptyList, MUNI_PLACEHOLDER,
+  muniNumberIndex, muniOptionLabel,
+} from './lib/dropdownSources.js';
 import {
   readMapLegends, layoutMapLegends, paintMapLegends,
 } from './lib/mapLegend.js';
@@ -4108,6 +4111,33 @@ document.addEventListener('click', (e) => {
   queueMicrotask(queueUrlWrite);
 });
 
+/*
+ * Municipality numbers for the picker's labels.
+ *
+ * The MAO municipality number (Arborg (Town) = 300) is how a municipality
+ * is identified everywhere off this screen — MAO itself, roll lists, the
+ * assessment and legal shards — so the picker shows it beside the name:
+ * "ARBORG (TOWN) - 300". It is label-only; the option's value stays the
+ * name, which is what every query, the URL state and the map picker read.
+ *
+ * Filled from the Roll Entry snapshot manifest, the one list that carries
+ * muni_no. Missing numbers degrade to bare names rather than blocking the
+ * paint, because the manifest lands on its own schedule and the picker is
+ * deliberately painted from whichever list arrives first.
+ */
+let muniNumbers = new Map();
+
+/** Adopt a manifest's muni numbers. A manifest without any is ignored, so
+ *  a failed probe can't blank numbers that an earlier one supplied. */
+function setMuniNumbers(manifest) {
+  const next = muniNumberIndex(manifest);
+  if (next.size > 0) muniNumbers = next;
+}
+
+/** Label mapper for the municipality select — reads whatever numbers are
+ *  known at paint time. */
+const muniLabel = (name) => muniOptionLabel(name, muniNumbers);
+
 // Populate the three dropdowns in parallel — the muni list is the slow one
 // (~190 distinct values), the categories are short and quick.
 populateDropdowns().finally(() => {
@@ -4204,6 +4234,10 @@ async function populateDropdowns() {
       return null;
     });
     const snapshotProbe = probeRollEntrySnapshot();
+    // Adopt the muni numbers the moment the manifest lands (rather than
+    // after all four probes settle) so the early paint below can carry
+    // them when the manifest is what won the race.
+    snapshotProbe.then(setMuniNumbers);
     const countProbe = fetchRollEntryCount();
 
     // Early paint. The municipality picker is the one control every search
@@ -4217,7 +4251,7 @@ async function populateDropdowns() {
       muniProbe,
       snapshotProbe.then((m) => (m?.munis ? Object.keys(m.munis).sort() : null)),
     ]).then((early) => {
-      if (early && $municipality.disabled) repaintSelect($municipality, early, MUNI_PLACEHOLDER);
+      if (early && $municipality.disabled) repaintSelect($municipality, early, MUNI_PLACEHOLDER, muniLabel);
     });
 
     const [liveMunis, zoneCats, snapshotManifest, liveRecordCount] = await Promise.all([
@@ -4241,7 +4275,8 @@ async function populateDropdowns() {
     }
     // repaintSelect (not fillSelect): the early paint above may already
     // have filled the picker AND the user may have chosen from it.
-    repaintSelect($municipality, sources.munis, sources.muniPlaceholder);
+    setMuniNumbers(snapshotManifest);
+    repaintSelect($municipality, sources.munis, sources.muniPlaceholder, muniLabel);
     fillSelect($zoneCategory, sources.zoneCats, sources.zonePlaceholder);
     updateRollEntryBanner({
       liveCount, liveRecordCount, snapshotManifest,
@@ -4344,7 +4379,8 @@ async function recheckRollEntrySnapshotAfterBoot() {
   if (!manifest || Object.keys(manifest.munis || {}).length === 0) return;
   if (!liveRollEntryIncomplete(liveMuniCount, liveRecordCount, manifest)) return;
   setRollEntrySnapshot(manifest);
-  repaintSelect($municipality, Object.keys(manifest.munis).sort(), MUNI_PLACEHOLDER);
+  setMuniNumbers(manifest);
+  repaintSelect($municipality, Object.keys(manifest.munis).sort(), MUNI_PLACEHOLDER, muniLabel);
   updateRollEntryBanner({
     liveCount: liveMuniCount, liveRecordCount, snapshotManifest: manifest, snapshotActive: true,
   });
@@ -4434,7 +4470,7 @@ async function refilterCategoryDropdowns() {
   }
 }
 
-function fillSelect(sel, values, blankLabel) {
+function fillSelect(sel, values, blankLabel, labelFor = null) {
   sel.innerHTML = '';
   // Multi-select dropdowns don't get a "blank" option — the empty
   // selection itself is the no-filter state, so a blank entry would
@@ -4450,7 +4486,10 @@ function fillSelect(sel, values, blankLabel) {
   for (const v of values) {
     const opt = document.createElement('option');
     opt.value = v;
-    opt.textContent = v;
+    // The VALUE is always the raw list entry — every read of this select
+    // is a .value, and the municipality picker's value is the query key.
+    // labelFor only changes what the option reads as on screen.
+    opt.textContent = labelFor ? labelFor(v) : v;
     sel.appendChild(opt);
   }
   sel.disabled = false;
@@ -4469,14 +4508,20 @@ function fillSelect(sel, values, blankLabel) {
  * probes fully settle; without this the second paint would throw away
  * a selection made in between.
  */
-function repaintSelect(sel, values, blankLabel) {
+function repaintSelect(sel, values, blankLabel, labelFor = null) {
   const offset = sel.multiple ? 0 : 1;
+  // Labels are compared as well as values: the municipality picker is
+  // painted early from whichever list lands first, before the snapshot
+  // manifest has supplied the muni numbers. That early paint has the same
+  // values as the final one, so a value-only comparison would call it
+  // "same" and the numbers would never appear.
   const same = !sel.disabled
     && sel.options.length === values.length + offset
-    && values.every((v, i) => sel.options[i + offset].value === v);
+    && values.every((v, i) => sel.options[i + offset].value === v
+      && sel.options[i + offset].textContent === (labelFor ? labelFor(v) : v));
   if (same) return;
   const prev = sel.value;
-  fillSelect(sel, values, blankLabel);
+  fillSelect(sel, values, blankLabel, labelFor);
   if (prev && values.includes(prev)) sel.value = prev;
 }
 

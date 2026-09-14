@@ -13,6 +13,8 @@ import assert from 'node:assert/strict';
 import {
   resolveDropdownSources,
   firstNonEmptyList,
+  muniNumberIndex,
+  muniOptionLabel,
   MUNI_PLACEHOLDER,
   MUNI_FAILED_PLACEHOLDER,
   ZONE_PLACEHOLDER,
@@ -159,6 +161,64 @@ await atest('null when every probe fails or comes back empty', async () => {
 await atest('no probes at all resolves to null', async () => {
   assert.equal(await firstNonEmptyList([]), null);
   assert.equal(await firstNonEmptyList(), null);
+});
+
+console.log('municipality numbers on the labels');
+
+const MANIFEST = {
+  snapshot_date: '2026-09-06',
+  munis: {
+    'ARBORG (TOWN)': { file: 'ARBORG_TOWN.json', count: 656, muni_no: 300 },
+    'ALEXANDER (RM)': { file: 'ALEXANDER_RM.json', count: 7242, muni_no: 600 },
+  },
+};
+
+test('the number comes off the snapshot manifest, keyed by picker name', () => {
+  const numbers = muniNumberIndex(MANIFEST);
+  assert.equal(numbers.get('ARBORG (TOWN)'), 300);
+  assert.equal(numbers.get('ALEXANDER (RM)'), 600);
+  assert.equal(numbers.size, 2);
+});
+
+test('no manifest, or a shape we do not recognise, yields no numbers', () => {
+  for (const bad of [null, undefined, {}, { munis: null }, { munis: 'x' }]) {
+    assert.equal(muniNumberIndex(bad).size, 0);
+  }
+});
+
+test('an entry without a usable muni_no is skipped, not stored as NaN', () => {
+  const numbers = muniNumberIndex({ munis: {
+    'GOOD (TOWN)': { muni_no: 12 },
+    'NO NUMBER (RM)': { count: 5 },
+    'JUNK (RM)': { muni_no: 'not a number' },
+  } });
+  assert.deepEqual([...numbers], [['GOOD (TOWN)', 12]]);
+});
+
+test('muni_no 0 survives — it is a number, not an absence', () => {
+  assert.equal(muniNumberIndex({ munis: { 'ZERO (RM)': { muni_no: 0 } } }).get('ZERO (RM)'), 0);
+  assert.equal(muniOptionLabel('ZERO (RM)', muniNumberIndex({ munis: { 'ZERO (RM)': { muni_no: 0 } } })), 'ZERO (RM) - 0');
+});
+
+test('the label appends the number: "ARBORG (TOWN) - 300"', () => {
+  assert.equal(muniOptionLabel('ARBORG (TOWN)', muniNumberIndex(MANIFEST)), 'ARBORG (TOWN) - 300');
+});
+
+test('the name leads, so the select type-ahead still matches on it', () => {
+  // Typing "ARB" in a focused <select> jumps to the first option whose text
+  // STARTS with it; a leading number would break that and the sort order.
+  assert.ok(muniOptionLabel('ARBORG (TOWN)', muniNumberIndex(MANIFEST)).startsWith('ARBORG (TOWN)'));
+});
+
+test('an unknown municipality reads as its bare name', () => {
+  const numbers = muniNumberIndex(MANIFEST);
+  assert.equal(muniOptionLabel('SOMEWHERE (RM)', numbers), 'SOMEWHERE (RM)');
+});
+
+test('no numbers at all (manifest never landed) reads as bare names', () => {
+  assert.equal(muniOptionLabel('ARBORG (TOWN)', new Map()), 'ARBORG (TOWN)');
+  assert.equal(muniOptionLabel('ARBORG (TOWN)', null), 'ARBORG (TOWN)');
+  assert.equal(muniOptionLabel('ARBORG (TOWN)'), 'ARBORG (TOWN)');
 });
 
 const failed = results.filter((r) => r.status === 'fail');
