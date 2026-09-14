@@ -10,7 +10,12 @@
 // look. This is the same failure mode overlayWiring.test.js was written
 // for: every piece individually right, the wire between them missing.
 //
-// Checks, against comment-stripped main.js source:
+// The Sales tab's municipality checkboxes are the same story with a
+// different list: they build their own row labels, so they can quietly go
+// on reading bare names while the picker shows numbers. Both lists are
+// checked here, against comment-stripped source.
+//
+// Checks, in main.js:
 //   1. every repaintSelect/fillSelect call that paints $municipality with
 //      a non-empty list passes the muniLabel mapper;
 //   2. the numbers are adopted from the snapshot manifest (setMuniNumbers
@@ -18,6 +23,11 @@
 //   3. repaintSelect compares option TEXT as well as value, or the early
 //      bare-name paint would be mistaken for the final numbered one and
 //      never repainted.
+//
+// and in lib/salesDbPanel.js:
+//   4. the checkbox row label goes through the shared formatter;
+//   5. the filter box goes through the shared matcher, so the number it
+//      now displays is also a number you can type.
 //
 // Run: cd web && node test/muniNumberWiring.test.js
 
@@ -28,6 +38,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const raw = fs.readFileSync(path.join(here, '..', 'src', 'main.js'), 'utf8');
+const rawSales = fs.readFileSync(path.join(here, '..', 'src', 'lib', 'salesDbPanel.js'), 'utf8');
 
 /**
  * Strip comments so a call that only appears in prose (this file's own
@@ -43,6 +54,7 @@ function stripComments(src) {
     .replace(/(^|[^:])\/\/[^\r\n]*$/gm, '$1');
 }
 const main = stripComments(raw);
+const sales = stripComments(rawSales);
 
 const results = [];
 function test(name, fn) {
@@ -109,6 +121,39 @@ test('repaintSelect compares option text, so the early bare paint is replaced', 
   assert.match(body, /textContent/,
     'repaintSelect compares values only — the early, number-less paint of '
     + 'the same muni list would count as "same" and never be repainted');
+});
+
+console.log('sales tab municipality list shows the same numbers');
+
+test('the sales panel imports the shared label module', () => {
+  assert.match(sales, /from\s+'\.\/muniLabel\.js'/,
+    'salesDbPanel.js does not import lib/muniLabel.js — its rows will format '
+    + 'the name their own way and drift from the Property Search picker');
+});
+
+test('the checkbox row label is built by the shared formatter', () => {
+  const at = sales.indexOf('function renderMuniList()');
+  assert.ok(at >= 0, 'renderMuniList not found in salesDbPanel.js');
+  // renderMuniList runs to the listener that re-renders on a filter
+  // keystroke; that is the end of the window we care about.
+  const end = sales.indexOf("$search?.addEventListener('input', renderMuniList)", at);
+  assert.ok(end > at, 'could not find the end of renderMuniList');
+  const body = sales.slice(at, end);
+  assert.match(body, /formatMuniWithNumber\(/,
+    'renderMuniList builds its row text without formatMuniWithNumber — the '
+    + 'Sales tab will list bare names');
+  // The old literal, straight off m.label, must be gone: leaving it behind
+  // is exactly how one of two lists keeps showing the old text.
+  assert.doesNotMatch(body, /textContent\s*=\s*m\.sales\s*\?\s*`\$\{m\.label\}/,
+    'the row still formats m.label directly');
+});
+
+test('the filter box matches on the number it now shows', () => {
+  assert.match(sales, /muniMatchesFilter\(/,
+    'the sales muni filter does not use muniMatchesFilter — typing a muni '
+    + 'number would find nothing despite the number being on screen');
+  assert.doesNotMatch(sales, /const match = \(m\) => !q \|\| m\.label/,
+    'the old name-only filter is still in place');
 });
 
 const failed = results.filter((r) => r === 0).length;

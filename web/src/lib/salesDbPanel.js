@@ -19,6 +19,7 @@ import {
   coverageRows, coverageSummary, statusLabel, nextFullScrape, refreshNote,
 } from './salesCoverage.js';
 import { dateLabel } from './dataStatus.js';
+import { formatMuniWithNumber, muniMatchesFilter } from './muniLabel.js';
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 
@@ -322,7 +323,9 @@ export function initSalesDbPanel({
   function renderMuniList() {
     if (!$munis) return;
     const q = ($search?.value || '').trim().toLowerCase();
-    const match = (m) => !q || m.label.toLowerCase().includes(q);
+    // Name or number — the muni number is in every row now, so the filter
+    // has to answer to it. lib/muniLabel.js.
+    const match = (m) => muniMatchesFilter(q, m);
     const eff = effectiveSelection();
 
     const byRegion = new Map();
@@ -394,7 +397,12 @@ export function initSalesDbPanel({
           updateSelCount();
         });
         const txt = document.createElement('span');
-        txt.textContent = m.sales ? `${m.label} (${fmt(m.sales)})` : m.label;
+        // "ARBORG (TOWN) - 300 (2,181)" — the muni number reads with the
+        // name, the way the Property Search picker shows it; the trailing
+        // count stays the row's own decoration. m.no IS the muni number
+        // here, so unlike the picker there is nothing to look it up in.
+        const named = formatMuniWithNumber(m.label, m.no);
+        txt.textContent = m.sales ? `${named} (${fmt(m.sales)})` : named;
         if (viaAdjacency) txt.title = 'Included because it borders a selected municipality';
         row.append(cb, txt);
         wrap.appendChild(row);

@@ -43,10 +43,8 @@ import {
 import { encodeState, decodeState } from './lib/urlState.js';
 import { nextOverlayToggleState, setOverlayPressed } from './lib/overlayToggle.js';
 import { stalenessBannerState } from './lib/staleness.js';
-import {
-  resolveDropdownSources, firstNonEmptyList, MUNI_PLACEHOLDER,
-  muniNumberIndex, muniOptionLabel,
-} from './lib/dropdownSources.js';
+import { resolveDropdownSources, firstNonEmptyList, MUNI_PLACEHOLDER } from './lib/dropdownSources.js';
+import { muniNumberIndex, muniOptionLabel } from './lib/muniLabel.js';
 import {
   readMapLegends, layoutMapLegends, paintMapLegends,
 } from './lib/mapLegend.js';
