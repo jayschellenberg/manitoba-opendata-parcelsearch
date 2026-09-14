@@ -118,8 +118,9 @@ test('dots stay small, and town stays the larger of the two', () => {
 test('the two markers are visually distinguishable', () => {
   // The whole point of a second layer is that a town count cannot be
   // mistaken for the highway count beside it — they differ by 2-3x at the
-  // same place. Swapped fill/stroke is what makes them tellable apart, and
-  // index.html's legend swatches restate these exact colours.
+  // same place. Swapped fill/stroke is what makes them tellable apart; the
+  // stations-toggle tooltip in index.html describes the two markers (there
+  // is no on-map legend for them by design).
   const town = layers.find((l) => l.id === 'traffic-circle-town').paint;
   const hwy = layers.find((l) => l.id === 'traffic-circle').paint;
   assert.notEqual(town['circle-color'], hwy['circle-color']);
