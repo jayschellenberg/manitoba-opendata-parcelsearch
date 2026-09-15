@@ -25,6 +25,7 @@ import {
   wetlandClassNames,
   landfactsCellText,
   landfactsSortRank,
+  landfactsTooltip,
   landfactsCsvCells,
   landfactsCsvHeaders,
   CROP_RAMP,
@@ -35,6 +36,13 @@ import {
   landUseColor,
   landfactsFillColor,
   LANDFACTS_MODES,
+  LANDFACTS_WINDOW,
+  CULT_MIN_YEARS,
+  CULT_RECENT_OVERRIDE,
+  MIX_OBS_CAVEAT,
+  landMix,
+  mixObserved,
+  cultivatedShare,
 } from '../src/lib/landfacts.js';
 
 const N = LANDFACTS_YEARS.length;
@@ -148,6 +156,42 @@ for (let i = 1; i < CROP_RAMP.length; i++) {
   assert.ok(lum(CROP_RAMP[i].color) < lum(CROP_RAMP[i - 1].color), `ramp step ${i} is not darker than ${i - 1}`);
 }
 
+// --- land mix: the per-pixel window rule --------------------------------------
+// A real Hanover parcel from the 2026-09-15 trial build: 83% crop in 2025
+// after years of pasture, so the recent-year override is what makes it 83%
+// cultivated rather than the 2-of-5 count alone.
+const mixed = {
+  ...cropland,
+  mix: { cult: 0.8301, past: 0.0301, bush: 0.1196, wet: 0, other: 0.0202 },
+  cc: [16, 9, 13, 46, 15, 1], cn: [8, 12, 46, 15, 1], obs: 1,
+};
+assert.equal(LANDFACTS_WINDOW.length, 5);
+assert.equal(LANDFACTS_WINDOW[LANDFACTS_WINDOW.length - 1], LANDFACTS_YEARS[N - 1], 'window ends on the latest year');
+assert.deepEqual(landMix(mixed), mixed.mix);
+assert.equal(landMix(cropland), null, 'a pre-mix shard has no mix, not a zero mix');
+assert.equal(landMix({ ...cropland, mix: { cult: 0.5 } }), null, 'a partial mix is no mix');
+assert.equal(mixObserved(mixed), 1);
+assert.equal(mixObserved(cropland), null);
+assert.ok(MIX_OBS_CAVEAT > 0 && MIX_OBS_CAVEAT < 1);
+// The builder's own rule reproduces mix.cult from the counts: cc[2..5] plus
+// the part of cc[1] cropped in the latest year (cn[0]).
+assert.equal(CULT_MIN_YEARS, 2); assert.equal(CULT_RECENT_OVERRIDE, true);
+assert.ok(Math.abs(cultivatedShare(mixed) - mixed.mix.cult) < 0.015, 'default rule matches the baked cult');
+// Other rules read straight off the counts, no rebuild.
+assert.equal(cultivatedShare(mixed, { minYears: 1, recentOverride: false }), (9 + 13 + 46 + 15 + 1) / 100);
+assert.equal(cultivatedShare(mixed, { minYears: 3, recentOverride: false }), (46 + 15 + 1) / 100);
+assert.equal(cultivatedShare(mixed, { minYears: 3, recentOverride: true }), (46 + 15 + 1 + 8 + 12) / 100);
+assert.equal(cultivatedShare(cropland), null, 'no counts, no share');
+assert.equal(cultivatedShare({ ...mixed, cc: [1, 2, 3] }), null, 'counts must span the window');
+// The mix rides through the MapLibre string round-trip like the rest.
+assert.deepEqual(landMix(JSON.stringify(mixed)), mixed.mix);
+// The tooltip leads with the mix when there is one, and the caveat only
+// when the window saw too little of the parcel.
+assert.match(landfactsTooltip(mixed), /^Land mix 2021–2025, per pixel: cultivated 83%/);
+assert.doesNotMatch(landfactsTooltip(mixed), /read with care/);
+assert.match(landfactsTooltip({ ...mixed, obs: 0.5 }), /only 50% of pixel-years observed/);
+assert.doesNotMatch(landfactsTooltip(cropland), /Land mix/);
+
 // --- MapLibre string round-trip ---------------------------------------------
 assert.deepEqual(readLandfacts(JSON.stringify(bush)), bush);
 assert.equal(readLandfacts('not json'), null);
@@ -168,7 +212,17 @@ if (idxPath) {
   const meta = JSON.parse(readFileSync(idxPath, 'utf8'))._meta || {};
   assert.equal(meta.min_acres, LANDFACTS_MIN_ACRES, 'MIN_ACRES drifted from r/build_landfacts.R');
   assert.deepEqual(meta.years, LANDFACTS_YEARS, 'year range drifted from r/build_landfacts.R');
-  console.log(`landfacts: checked against ${idxPath}`);
+  // The land-mix rule is recorded in the index from the first build that
+  // carries it; an index built before that has no `window` and is left
+  // alone, so this check does not block until the shards are rebuilt.
+  if (meta.window) {
+    assert.deepEqual(meta.window, LANDFACTS_WINDOW, 'land-mix window drifted from r/build_landfacts.R');
+    assert.equal(meta.cult_rule?.min_years, CULT_MIN_YEARS, 'CULT_MIN_YEARS drifted from r/build_landfacts.R');
+    assert.equal(!!meta.cult_rule?.recent_override, CULT_RECENT_OVERRIDE, 'CULT_RECENT_OVERRIDE drifted from r/build_landfacts.R');
+    console.log(`landfacts: checked against ${idxPath} (with land-mix rule)`);
+  } else {
+    console.log(`landfacts: checked against ${idxPath} (index predates the land mix)`);
+  }
 } else {
   console.log('landfacts: no local mb-parcel-data clone; drift check skipped');
 }

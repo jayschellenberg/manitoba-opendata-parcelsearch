@@ -92,6 +92,35 @@ export function newestSnapshot(histIndex) {
 }
 
 /**
+ * The land-cover base raster, as one place both the Data Status row and the
+ * Data Sources panel copy can be checked against. It is a fixed EDITION, not
+ * a feed, and two dates matter five years apart:
+ *
+ *   referenceYear  what the pixels describe — 2020 ground conditions. This is
+ *                  the number the Cultivated / Bush / Wetland percentages
+ *                  actually mean, and it does not move when StatCan reissues.
+ *   published      when StatCan released THIS edition — 2025-03-27. Named
+ *                  because earlier Canadian land-cover vintages are in
+ *                  circulation (NRCan's NALCMS 2010 / 2015 / 2020, the LCR's
+ *                  own input), so "2020" alone does not identify the file.
+ *
+ * Verified against catalogue 16-510-X, product 16-510-x2025002, on
+ * 2026-09-15: 30 m, 11 classes, reference period 2020, released 2025-03-27,
+ * update frequency "Occasional" — hence no next-update date to promise. When
+ * a newer edition lands, change this constant and re-run the two builders in
+ * r/ that name the .tif; nothing else hard-codes the vintage.
+ */
+export const LAND_COVER_SOURCE = {
+  product: 'Statistics Canada Land Cover Register (catalogue 16-510-X)',
+  referenceYear: '2020',
+  published: '2025-03-27',
+  resolution: '30 m',
+  file: 'LCR_RCT_2020_MB.tif',
+  frequency: 'occasional',
+  url: 'https://www150.statcan.gc.ca/n1/pub/16-510-x/16-510-x2025002-eng.htm',
+};
+
+/**
  * Rows for the "Published site data" table. Every input is optional — a
  * fetch that failed contributes a row with vintage null rather than
  * disappearing, so the table always says what it could not learn.
@@ -157,14 +186,15 @@ export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMet
     next: mascNextLabel(mascMeta),
   });
 
-  // Land cover's base file is fixed: the Canada Lands Cover Register 2020
-  // (Jason, 2026-08-17). A pipeline timestamp would only say when the shards
-  // were re-cut; the data's vintage is the register itself.
+  // Land cover's base file is fixed (Jason, 2026-08-17): a pipeline timestamp
+  // would only say when the shards were re-cut, so the vintage is the register
+  // itself. Both of its dates are shown because they are five years apart and
+  // earlier Canadian land-cover vintages exist — see LAND_COVER_SOURCE.
   rows.push({
-    label: 'Land cover',
-    vintage: '2020',
-    detail: 'Canada Lands Cover Register 2020 (base file)',
-    next: 'static',
+    label: 'Land cover (register, cross-check)',
+    vintage: `${LAND_COVER_SOURCE.referenceYear} (published ${dateLabel(LAND_COVER_SOURCE.published)})`,
+    detail: `${LAND_COVER_SOURCE.product}, ${LAND_COVER_SOURCE.resolution} — ${LAND_COVER_SOURCE.file}. Headline only for parcels without a crop-inventory land mix (see Land facts)`,
+    next: LAND_COVER_SOURCE.frequency,
   });
 
   // Like the MASC row, the run date embedded in the source parquet's name
@@ -194,13 +224,21 @@ export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMet
   // Land facts: crop history + relief + wetland + water from federal rasters,
   // built by r/build_landfacts.R. The vintage is the build date; the crop
   // inventory's own year range is in the detail so a reader can see how far
-  // the series runs without opening a shard.
+  // the series runs without opening a shard. When the index records the
+  // land-mix window and rule, the detail says so — that is the Land Cover
+  // headline, and a reader checking "which years, what rule" should find it
+  // here rather than in a source file.
   const lfYears = Array.isArray(landfactsMeta?.years) ? landfactsMeta.years : null;
+  const lfWin = Array.isArray(landfactsMeta?.window) && landfactsMeta.window.length ? landfactsMeta.window : null;
+  const rule = landfactsMeta?.cult_rule;
+  const mixNote = lfWin
+    ? `; land mix per pixel ${lfWin[0]}–${lfWin[lfWin.length - 1]}, cultivated = crop in ${rule?.min_years ?? '?'}+ years${rule?.recent_override ? ` or in ${lfWin[lfWin.length - 1]}` : ''}`
+    : '';
   rows.push({
     label: 'Land facts shards (CDN)',
     vintage: dateLabel(datePart(landfactsMeta?.generated_at)),
     detail: lfYears
-      ? `AAFC crop inventory ${lfYears[0]}–${lfYears[lfYears.length - 1]}, MRDEM, wetland inventory, surface water — parcels over ${landfactsMeta?.min_acres ?? 20} ac with a MASC rating`
+      ? `AAFC crop inventory ${lfYears[0]}–${lfYears[lfYears.length - 1]}, MRDEM, wetland inventory, surface water — parcels over ${landfactsMeta?.min_acres ?? 20} ac with a MASC rating${mixNote}`
       : 'AAFC crop inventory, MRDEM, wetland inventory, surface water',
     next: null,
   });

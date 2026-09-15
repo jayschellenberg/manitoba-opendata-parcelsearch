@@ -18,6 +18,57 @@
 #   water         JRC Global Surface Water 1984-2021 (30 m): share of the
 #                 parcel where open water was detected in >=75% of
 #                 observations (permanent) and in 5-75% (intermittent).
+#   land mix      The crop inventory again, but read PER PIXEL across the
+#                 recent WINDOW (2021-2025) rather than per year: what share
+#                 of the parcel is cultivated land, and what the rest is.
+#                 See CULTIVATED, AT PIXEL LEVEL below.
+#
+# CULTIVATED, AT PIXEL LEVEL
+# --------------------------
+# Jason's primary question of a farmland parcel is "how much of it is
+# cropland, and what is the rest" (2026-09-15). The per-year `cp` cannot
+# answer the second half — it keeps only the annual-crop share and one
+# dominant class — and answers the first half in the wrong units: `cp` is
+# land COVER (annual crop grew here THIS year), while cultivated acres are
+# land USE (this is a farmed field, including the years it sits in forage,
+# fallow or too wet to seed). Measured across 173,671 parcels, the StatCan
+# Land Cover Register's cropland share matches the five-year MAXIMUM of
+# `cp` to a median 0.0 pp and any single year to a mean +10 pp — a quarter
+# in hay this year is still cultivated land, and a single-year read would
+# understate it by about 16 acres.
+#
+# A parcel-level maximum still understates a multi-field parcel whose
+# halves rotate in different years, so the rule is applied per PIXEL over
+# the aligned window stack:
+#
+#   cultivated  = annual crop (codes 130-199) in >= CULT_MIN_YEARS of the
+#                 window years, OR in the latest window year regardless
+#                 (CULT_RECENT_OVERRIDE) — the override is what catches
+#                 bush cleared or new ground broken since the window began
+#                 (Jason, 2026-09-15).
+#   otherwise   = the pixel's modal non-crop group across the window:
+#                 past 110 122 · bush 50 60 200-230 (shrubland folded into
+#                 bush, Jason 2026-09-15) · wet 20 80 85 · other, everything
+#                 else. A pixel observed in no window year is left out of
+#                 the denominator.
+#
+# The bucket keys and fractions are the SAME SHAPE as the Land Cover
+# Register shards (`cult past bush wet other`, fractions of the parcel) on
+# purpose: the app reads both with one set of helpers and shows the
+# register as a cross-check. The register cannot split its "grassland &
+# shrubland" class, so the two will legitimately differ on shrub-heavy
+# ground.
+#
+# Alongside the rule's answer the shard carries the raw material for any
+# other rule — `cc`, the share of the parcel cropped in exactly k window
+# years, and `cn`, the part of each `cc` bin that was cropped in the latest
+# year — so the threshold can be re-read in the browser without a rebuild.
+# Only the non-crop split is baked to the rule.
+#
+# Every ACI year since 2011 is on one 30 m grid (identical origin and pixel
+# size; verified 2026-09-15 against the cached 2020-2025 files). They differ
+# only in northern extent, so the window years align by crop/extend with no
+# resampling. The latest year reaches furthest north and is the reference.
 #
 # WHY THE FULL YEARLY SERIES SHIPS, NOT A SUMMARY
 # ----------------------------------------------
@@ -70,12 +121,25 @@
 #             "dom": [110,110,110,122,...],  dominant ACI class code per year
 #             "rel": 5.9, "slp": 0.63, "z": [345,351],
 #             "wet": 0.19, "wc": "1",        wetland %, CWIM classes present
-#             "gsw": 0.0,  "gsi": 0.0        permanent %, intermittent %
+#             "gsw": 0.0,  "gsi": 0.0,       permanent %, intermittent %
+#             "mix": { "cult": 0.62, "past": 0.11, "bush": 0.19,
+#                      "wet": 0.06, "other": 0.02 },
+#                                            window rule, fractions of parcel
+#             "cc":  [21,4,3,5,9,58],        % of parcel cropped in exactly
+#                                            0..5 window years
+#             "cn":  [1,2,4,8,57],           of cc[1..5], the % cropped in
+#                                            the latest window year
+#             "obs": 0.98                    share of pixel-years observed
 #           }, ... }
+#       `mix`, `cc`, `cn`, `obs` are absent when fewer than half the
+#       parcel's pixels were observed in any window year. Shards written
+#       before 2026-09-15 lack them entirely; the app falls back to the
+#       Land Cover Register for those.
 #   <mb-parcel-data>/landfacts/_index.json
 #       { "<Muni_Name_With_Typ>": { file, count }, "_meta": {...} } — same
 #       shape as flood/landcover so lookupMuniManifestEntry() resolves it.
-#       `_meta` carries years, sources, thresholds and the ACI cache vintage.
+#       `_meta` carries years, the window and cultivated rule, sources,
+#       thresholds and the ACI cache vintage.
 #
 # HOW IT RUNS
 # -----------
@@ -88,12 +152,28 @@
 # so an interrupted run picks up where it stopped. The index is rebuilt from
 # whatever shards exist at the end of every run.
 #
+# --crop-only rebuilds the crop-inventory fields (cp, dom, mix, cc, cn, obs)
+# for every requested muni and CARRIES relief, wetland and water over from
+# the shard already in mb-parcel-data. Those three read remote COGs and are
+# the slow part; the crop inventory is local. It rebuilds whether or not the
+# shard exists, so it needs no --force.
+#
+# --out <dir> writes shards and index somewhere other than mb-parcel-data.
+# Use it for any trial run: the 04:30 auto-publish (auto-publish-indexes.ps1
+# -> update-cdn-pin.ps1) commits and pins EVERYTHING in mb-parcel-data, so a
+# --limit shard written there would go live as a 40-parcel municipality.
+#
+# Shards are written to a temp file and renamed into place, and the byte
+# count is checked, because in-place overwrites under Dropbox can report
+# success and change nothing.
+#
 # Usage:
 #   Rscript r/build_landfacts.R                   # all munis, skip done ones
 #   Rscript r/build_landfacts.R --muni PINEY      # one muni (substring match)
 #   Rscript r/build_landfacts.R --muni 610        # ... or by MuniCode
 #   Rscript r/build_landfacts.R --force           # rebuild even if present
-#   Rscript r/build_landfacts.R --limit 50        # first 50 parcels/muni (test)
+#   Rscript r/build_landfacts.R --crop-only       # crop fields only, carry the rest
+#   Rscript r/build_landfacts.R --limit 50 --out <dir>   # trial run, safely
 #   Rscript r/build_landfacts.R --index-only      # rebuild _index.json only
 
 suppressPackageStartupMessages({
@@ -125,16 +205,43 @@ ONLY_MUNI  <- arg_val("--muni")
 LIMIT      <- as.integer(arg_val("--limit") %||% NA)
 FORCE      <- "--force" %in% args
 INDEX_ONLY <- "--index-only" %in% args
+CROP_ONLY  <- "--crop-only" %in% args
+OUT_DIR    <- arg_val("--out")
 
 MIN_ACRES <- 20        # KEEP IN SYNC with LANDFACTS_MIN_ACRES in web/src/lib/landfacts.js
 YEARS     <- 2009:2025
 CROP_MIN_OBSERVED <- 0.5   # a year less than half observed is null, not data
 
+# The pixel-level cultivated rule (see CULTIVATED, AT PIXEL LEVEL above).
+# KEEP IN SYNC with LANDFACTS_WINDOW / CULT_MIN_YEARS / CULT_RECENT_OVERRIDE
+# in web/src/lib/landfacts.js — the index `_meta` records all three and
+# web/test/landfacts.test.js fails when they drift.
+WINDOW               <- 2021:2025
+CULT_MIN_YEARS       <- 2L
+CULT_RECENT_OVERRIDE <- TRUE
+
 source_dir   <- mb_parcelsearch_root
 assembly_dir <- file.path(mao_assembly_root, "results")
-output_dir   <- file.path(mb_parcel_data_root, "landfacts")
+# Where finished shards live and where --crop-only carries the slow layers
+# from. --out redirects the WRITE only, so a trial run still carries from
+# the real shards and never lands in the published set.
+carry_dir    <- file.path(mb_parcel_data_root, "landfacts")
+output_dir   <- if (!is.null(OUT_DIR)) OUT_DIR else carry_dir
 index_path   <- file.path(output_dir, "_index.json")
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+
+# Temp-then-rename with a byte check. In-place overwrites under Dropbox can
+# report success and leave the old bytes in place (seen 2026-08); a rename
+# is atomic and the size check catches the silent case.
+write_json_safe <- function(x, path, ...) {
+  tmp <- paste0(path, ".tmp")
+  jsonlite::write_json(x, tmp, ...)
+  want <- file.size(tmp)
+  if (file.exists(path)) unlink(path)
+  if (!file.rename(tmp, path) || !isTRUE(file.size(path) == want))
+    stop("write failed or was silently dropped: ", path)
+  invisible(path)
+}
 
 # safe_filename is byte-identical to build_water.R / build_landcover.R /
 # build_flood.R so every family's shard filenames line up.
@@ -217,6 +324,104 @@ crop_year <- function(rpath, parcels) {
     list(cp  = round(100 * sum(d$share[d$value >= 130 & d$value < 200])),
          dom = as.integer(d$value[which.max(d$share)]))
   })
+}
+
+# --- land mix: the cultivated rule, per pixel, over the window --------------
+# Non-crop groups, coded for the modal raster. Shrubland (50) and burnt
+# area (60) ride with the forest codes as bush; 120/121 (agriculture
+# undifferentiated / cropland) fall to "other" so that "crop" means one
+# thing here and in crop_year — they occur 23 and 0 times in 2.94M
+# Manitoba parcel-years, so nothing rides on it.
+GROUP_FROM <- c(110, 122, 50, 60, 200, 210, 220, 230, 20, 80, 85)
+GROUP_TO   <- c(  1,   1,  2,  2,   2,   2,   2,   2,  3,  3,  3)
+GROUP_KEYS <- c("past", "bush", "wet", "other")   # code 1..4; cult is cls 1
+
+# Turn the per-parcel (cls, cnt, rec, nobs, weight) table from the stack
+# into the shard fields, or NULL when fewer than half the parcel's pixels
+# were observed in any window year — the same "not seen is not zero" rule
+# crop_year applies to a single year.
+summarise_mix <- function(d, w) {
+  if (is.null(d) || !nrow(d)) return(NULL)
+  ok <- !is.na(d$cls); d <- d[ok, ]; w <- w[ok]
+  tot_all <- sum(w)
+  if (!tot_all) return(NULL)
+  obs_c <- sum(d$nobs * w) / tot_all / length(WINDOW)
+  seen <- d$cls > 0
+  tot <- sum(w[seen])
+  if (!tot || tot / tot_all < CROP_MIN_OBSERVED) return(NULL)
+  d <- d[seen, ]; w <- w[seen]
+  share <- function(sel) sum(w[sel]) / tot
+  mix <- list(cult = round(share(d$cls == 1), 4))
+  for (k in seq_along(GROUP_KEYS)) mix[[GROUP_KEYS[k]]] <- round(share(d$cls == k + 1), 4)
+  n <- length(WINDOW)
+  list(mix = mix,
+       cc  = vapply(0:n, function(k) round(100 * share(d$cnt == k)), numeric(1)),
+       cn  = vapply(1:n, function(k) round(100 * share(d$cnt == k & d$rec == 1)), numeric(1)),
+       obs = round(obs_c, 2))
+}
+
+# Per parcel -> list(mix, cc, cn, obs) or NULL. Builds the aligned window
+# stack once for the parcel set and extracts it in one call.
+window_mix <- function(parcels) {
+  paths <- vapply(WINDOW, function(y) {
+    u <- aci_url(y)
+    if (is.na(u) || grepl("^/vsizip//vsicurl/", u)) NA_character_ else u
+  }, character(1))
+  if (anyNA(paths))
+    stop("crop inventory not cached for window year(s) ", paste(WINDOW[is.na(paths)], collapse = ", "),
+         " — run bash rural-report/fetch_aci.sh")
+
+  # Reference grid: the latest window year cropped to the parcels (see the
+  # header on why every year aligns onto it with no resampling).
+  ref <- crop_to(terra::rast(paths[length(paths)]), parcels)
+  v <- ref$v; ref <- ref$r
+  blank <- function() { r <- terra::rast(ref); terra::values(r) <- NA_integer_; r }
+  align <- function(path) {
+    r <- tryCatch(terra::crop(terra::rast(path), terra::ext(ref), snap = "out"),
+                  error = function(e) NULL)
+    if (is.null(r)) return(blank())                 # muni outside this year's extent
+    r <- terra::crop(terra::extend(r, ref), ref)
+    if (!terra::compareGeom(r, ref, stopOnError = FALSE)) r <- terra::resample(r, ref, method = "near")
+    r
+  }
+  yrs <- lapply(paths, align)
+
+  # Per year: observed (not background 0 / cloud 10), annual crop 1/0 with NA
+  # where unobserved, and the non-crop group with NA where crop or unobserved.
+  obs_l  <- lapply(yrs, function(r) !is.na(r) & r != 0 & r != 10)
+  crop_l <- Map(function(r, o) terra::ifel(o, r >= 130 & r < 200, NA), yrs, obs_l)
+  grp_l  <- Map(function(r, o, cr) {
+    g <- terra::subst(r, from = GROUP_FROM, to = GROUP_TO, others = 4L)
+    terra::ifel(o & !cr, g, NA)
+  }, yrs, obs_l, crop_l)
+
+  cnt  <- sum(terra::rast(crop_l), na.rm = TRUE)          # window years cropped
+  nobs <- sum(terra::rast(obs_l))                         # window years observed
+  last <- crop_l[[length(crop_l)]]
+  rec  <- terra::ifel(is.na(last), 0L, last)              # cropped in the latest year
+  cult <- (cnt >= CULT_MIN_YEARS) | (CULT_RECENT_OVERRIDE & rec == 1)
+
+  gs   <- terra::rast(grp_l)
+  gcnt <- terra::rast(lapply(seq_along(GROUP_KEYS), function(k) sum(gs == k, na.rm = TRUE)))
+  gtot <- sum(gcnt)
+  mode <- terra::ifel(gtot == 0, NA, terra::which.max(gcnt))   # ties -> first listed group
+  # cls: 0 unobserved · 1 cult · 2 past · 3 bush · 4 wet · 5 other. A pixel
+  # that fails the rule but was only ever seen as crop (one cloudy-window
+  # observation) has no non-crop group and lands in other.
+  cls <- terra::ifel(nobs == 0, 0L,
+           terra::ifel(cult, 1L,
+             terra::ifel(is.na(mode), 5L, mode + 1L)))
+  st <- c(cls, cnt, rec, nobs)
+  names(st) <- c("cls", "cnt", "rec", "nobs")
+
+  if (HAVE_EXACT) {
+    out <- exactextractr::exact_extract(st, v, progress = FALSE)
+    lapply(out, function(d) summarise_mix(d, d$coverage_fraction))
+  } else {
+    x <- terra::extract(st, terra::vect(v), exact = TRUE, ID = TRUE)
+    sp <- split(x, factor(x$ID, levels = seq_len(nrow(v))))
+    lapply(sp, function(d) summarise_mix(d, d$fraction))
+  }
 }
 
 # CWIM3A: wetland % of the parcel and the classes present (1 Bog 2 Fen
@@ -344,7 +549,7 @@ if (!INDEX_ONLY) {
   # --- 2. per-muni shards -----------------------------------------------------
   for (key in muni_keys) {
     fname <- file.path(output_dir, paste0(key, ".json"))
-    if (file.exists(fname) && !FORCE) { cat("  skip  ", key, "(exists)\n"); next }
+    if (file.exists(fname) && !FORCE && !CROP_ONLY) { cat("  skip  ", key, "(exists)\n"); next }
     p <- parcels[parcels$muni_key == key, ]
     if (!is.na(LIMIT)) p <- head(p, LIMIT)
     t0 <- Sys.time()
@@ -360,21 +565,45 @@ if (!INDEX_ONLY) {
       if (is.null(yr)) next
       for (i in seq_len(nrow(p))) if (!is.null(yr[[i]])) { cp[i, j] <- yr[[i]]$cp; dom[i, j] <- yr[[i]]$dom }
     }
-    wet <- tryCatch(wetland_all(p), error = function(e) rep(list(list(wet = NA, wc = "")), nrow(p)))
-    wat <- tryCatch(water_all(p),   error = function(e) rep(list(list(gsw = NA, gsi = NA)), nrow(p)))
-    rel <- tryCatch(relief_all(p),  error = function(e) rep(list(list(rel = NA, z = c(NA, NA), slp = NA)), nrow(p)))
+    mx <- tryCatch(window_mix(p), error = function(e) {
+      cat(" [land mix failed:", conditionMessage(e), "]"); NULL
+    })
+    if (is.null(mx)) mx <- rep(list(NULL), nrow(p))
+
+    # The slow, remote layers: carried from the existing shard under
+    # --crop-only, computed otherwise. A parcel new since that shard was
+    # built gets NA rather than a stale neighbour's number.
+    carry <- file.path(carry_dir, paste0(key, ".json"))
+    old <- if (CROP_ONLY && file.exists(carry)) jsonlite::fromJSON(carry, simplifyVector = FALSE) else NULL
+    if (!is.null(old)) {
+      pick <- function(o, k, n = 1L) { v <- unlist(o[[k]]); if (is.null(v)) rep(NA, n) else v }
+      rel <- lapply(p$Roll_No_Txt, function(r) { o <- old[[r]]
+        list(rel = pick(o, "rel"), z = pick(o, "z", 2L), slp = pick(o, "slp")) })
+      wet <- lapply(p$Roll_No_Txt, function(r) { o <- old[[r]]
+        list(wet = pick(o, "wet"), wc = o$wc %||% "") })
+      wat <- lapply(p$Roll_No_Txt, function(r) { o <- old[[r]]
+        list(gsw = pick(o, "gsw"), gsi = pick(o, "gsi")) })
+    } else {
+      wet <- tryCatch(wetland_all(p), error = function(e) rep(list(list(wet = NA, wc = "")), nrow(p)))
+      wat <- tryCatch(water_all(p),   error = function(e) rep(list(list(gsw = NA, gsi = NA)), nrow(p)))
+      rel <- tryCatch(relief_all(p),  error = function(e) rep(list(list(rel = NA, z = c(NA, NA), slp = NA)), nrow(p)))
+    }
 
     for (i in seq_len(nrow(p))) {
-      res[[i]] <- list(
+      rec <- list(
         cp = as.list(ifelse(is.na(cp[i, ]), NA, cp[i, ])),
         dom = as.list(ifelse(is.na(dom[i, ]), NA, dom[i, ])),
         rel = rel[[i]]$rel, slp = rel[[i]]$slp, z = rel[[i]]$z,
         wet = wet[[i]]$wet, wc = wet[[i]]$wc,
         gsw = wat[[i]]$gsw, gsi = wat[[i]]$gsi
       )
+      if (!is.null(mx[[i]])) rec <- c(rec, mx[[i]])
+      res[[i]] <- rec
     }
-    jsonlite::write_json(res, fname, auto_unbox = TRUE, digits = NA, na = "null", null = "null")
-    cat(sprintf(" %6.0f s\n", as.numeric(difftime(Sys.time(), t0, units = "secs"))))
+    write_json_safe(res, fname, auto_unbox = TRUE, digits = NA, na = "null", null = "null")
+    n_mix <- sum(!vapply(mx, is.null, logical(1)))
+    cat(sprintf(" %6.0f s  (%d/%d with land mix)\n",
+                as.numeric(difftime(Sys.time(), t0, units = "secs")), n_mix, nrow(p)))
   }
 }
 
@@ -401,15 +630,24 @@ manifest[["_meta"]] <- list(
   min_acres    = MIN_ACRES,
   requires     = "MASC rating",
   years        = YEARS,
+  # The land-mix rule, recorded so the app can assert it has not drifted
+  # from its own constants and the Data Status dialog can say what it is.
+  window       = WINDOW,
+  cult_rule    = list(min_years = CULT_MIN_YEARS, recent_override = CULT_RECENT_OVERRIDE),
   layers = list(
     crop    = "AAFC Annual Crop Inventory 2009-2025, 30 m (56 m 2009-2010); null = year not observed",
+    mix     = paste0("Per-pixel over the window: cultivated = annual crop (130-199) in >= ", CULT_MIN_YEARS,
+                     " window years", if (CULT_RECENT_OVERRIDE) " or in the latest year" else "",
+                     "; other pixels take their modal non-crop group (past 110 122; bush 50 60 200-230; wet 20 80 85; other). ",
+                     "mix = fractions of the observed parcel; cc[k] = % cropped in exactly k window years (k = 0..n); ",
+                     "cn[k] = the part of cc[k] cropped in the latest year (k = 1..n); obs = share of pixel-years observed"),
     relief  = "NRCan MRDEM-30 (CanElevation)",
     wetland = "Canadian Wetland Inventory Map v3A, 10 m (DUC/NRCan); classes 1 Bog 2 Fen 3 Swamp 4 Marsh 5 Water",
     water   = "JRC Global Surface Water v1.4 occurrence 1984-2021; gsw >=75% of observations, gsi 5-75%"
   ),
   aci_cache_files = length(aci_cached)
 )
-jsonlite::write_json(manifest, index_path, auto_unbox = TRUE, pretty = FALSE)
+write_json_safe(manifest, index_path, auto_unbox = TRUE, pretty = FALSE)
 total_mb <- sum(file.info(list.files(output_dir, full.names = TRUE))$size) / 1024 / 1024
 cat(sprintf("Done. %d shards, %.1f MB, manifest %s\n",
             length(manifest) - 1L, total_mb, index_path))

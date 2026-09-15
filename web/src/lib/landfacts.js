@@ -8,12 +8,32 @@
  *     dom: [110,110,110,122,...], dominant AAFC class code, one per year
  *     rel: 5.9, slp: 0.63, z: [345,351],   relief m, mean slope deg, elevation m
  *     wet: 0.19, wc: '1',         wetland % (CWIM3A, 10 m) and classes present
- *     gsw: 0.0, gsi: 0.0 }        permanent / intermittent open water %
+ *     gsw: 0.0, gsi: 0.0,         permanent / intermittent open water %
+ *     mix: { cult: 0.62, past: 0.11, bush: 0.19, wet: 0.06, other: 0.02 },
+ *                                 land mix over LANDFACTS_WINDOW, per pixel
+ *     cc:  [21,4,3,5,9,58],       % of parcel cropped in exactly 0..5 window years
+ *     cn:  [1,2,4,8,57],          of cc[1..5], the % also cropped in the latest year
+ *     obs: 0.98 }                 share of pixel-years the window observed
  *
  * The years are LANDFACTS_YEARS in order. A year the crop inventory did not
  * observe is null — never 0. Zero would read as "nothing grew"; null reads
  * as "not seen". Every derivation here skips nulls and says how many years
  * it actually had.
+ *
+ * THE LAND MIX is the primary farmland read (Jason, 2026-09-15): what share
+ * of the parcel is cultivated land, and what the rest is. It is built per
+ * PIXEL over the recent window rather than per year, because cultivated
+ * acres are land USE — a quarter in hay this year is still cultivated —
+ * while `cp` is land COVER for one year and understates by ~10 pp on
+ * average. The builder's rule: a pixel is cultivated when annual crop in
+ * at least CULT_MIN_YEARS window years, or in the latest window year
+ * regardless (the override catches newly broken ground); every other pixel
+ * takes its modal non-crop group. `mix` uses the SAME keys as the Land
+ * Cover Register stamp so lib/landcover.js reads both, and the register is
+ * shown as a cross-check. `cc` / `cn` carry the raw counts so another
+ * threshold can be read here without a rebuild — cultivatedShare() below —
+ * though only the non-crop split is baked to the rule. Shards built before
+ * 2026-09-15 have no `mix`; readers must treat it as optional.
  *
  * WHY THE WHOLE SERIES SHIPS. The everyday read is the last year or the last
  * three; retrospective work wants the run. Both come out of the same 17
@@ -43,6 +63,18 @@ export const LANDFACTS_YEARS = Object.freeze([2009, 2010, 2011, 2012, 2013, 2014
 
 // A year counts as cropped when annual crop covered at least this share.
 export const CROP_YEAR_MIN_PCT = 50;
+
+// The land-mix window and cultivated rule. KEEP IN SYNC with WINDOW,
+// CULT_MIN_YEARS and CULT_RECENT_OVERRIDE in r/build_landfacts.R — the shard
+// index's `_meta` records them and the drift test compares.
+export const LANDFACTS_WINDOW = Object.freeze([2021, 2022, 2023, 2024, 2025]);
+export const CULT_MIN_YEARS = 2;
+export const CULT_RECENT_OVERRIDE = true;
+
+// Below this share of pixel-years observed, the mix is shown with a caveat:
+// four of five window years seen is the norm in southern Manitoba; a parcel
+// well under that had cloud or edge-of-coverage over much of the window.
+export const MIX_OBS_CAVEAT = 0.8;
 
 // AAFC Annual Crop Inventory class codes -> labels, from AAFC's own legend
 // (aci_crop_classifications_iac_classifications_des_cultures.csv). Generated
@@ -261,6 +293,50 @@ export function lastObserved(lf) {
   return seen.length ? seen[seen.length - 1] : null;
 }
 
+/**
+ * The land mix over the window — { cult, past, bush, wet, other } fractions
+ * of the parcel, the same shape as a Land Cover Register stamp — or null when
+ * the shard predates the mix or the window observed too little of the parcel.
+ */
+export function landMix(lf) {
+  lf = readLandfacts(lf);
+  const m = lf?.mix;
+  if (!m || typeof m !== 'object') return null;
+  const out = {};
+  for (const k of ['cult', 'past', 'bush', 'wet', 'other']) {
+    const v = Number(m[k]);
+    if (!Number.isFinite(v)) return null;
+    out[k] = v;
+  }
+  return out;
+}
+
+/** Share of pixel-years the window observed, 0..1, or null without a mix. */
+export function mixObserved(lf) {
+  lf = readLandfacts(lf);
+  const v = Number(lf?.obs);
+  return landMix(lf) && Number.isFinite(v) ? v : null;
+}
+
+/**
+ * Cultivated share of the parcel (0..1) under an arbitrary rule, from the
+ * `cc` / `cn` counts: cropped in at least `minYears` of the window years,
+ * or — when `recentOverride` — in the latest year regardless. With the
+ * builder's own rule this reproduces `mix.cult` to rounding; it exists so
+ * the threshold can be re-read without a rebuild. Null without the counts.
+ */
+export function cultivatedShare(lf, { minYears = CULT_MIN_YEARS, recentOverride = CULT_RECENT_OVERRIDE } = {}) {
+  lf = readLandfacts(lf);
+  const cc = lf?.cc; const cn = lf?.cn;
+  if (!Array.isArray(cc) || !Array.isArray(cn) || cc.length !== LANDFACTS_WINDOW.length + 1) return null;
+  let pct = 0;
+  for (let k = 0; k < cc.length; k++) {
+    if (k >= minYears) pct += Number(cc[k]) || 0;
+    else if (recentOverride && k >= 1) pct += Number(cn[k - 1]) || 0;
+  }
+  return Math.min(1, pct / 100);
+}
+
 /** Up to the last three observed years, newest first. */
 export function lastThree(lf) {
   return yearRecords(lf).filter((r) => r.crop != null).slice(-3).reverse();
@@ -303,6 +379,15 @@ export function landfactsTooltip(lf) {
   if (!lf) return '';
   const recs = yearRecords(lf).filter((r) => r.crop != null);
   const lines = [];
+  const mix = landMix(lf);
+  if (mix) {
+    const w = `${LANDFACTS_WINDOW[0]}–${LANDFACTS_WINDOW[LANDFACTS_WINDOW.length - 1]}`;
+    const pct = (v) => `${Math.round(v * 100)}%`;
+    lines.push(`Land mix ${w}, per pixel: cultivated ${pct(mix.cult)}, pasture/grass ${pct(mix.past)}, bush ${pct(mix.bush)}, wetland/water ${pct(mix.wet)}, other ${pct(mix.other)}`);
+    lines.push(`  cultivated = crop in ${CULT_MIN_YEARS}+ of ${LANDFACTS_WINDOW.length} years${CULT_RECENT_OVERRIDE ? `, or in ${LANDFACTS_WINDOW[LANDFACTS_WINDOW.length - 1]}` : ''}`);
+    const obs = mixObserved(lf);
+    if (obs != null && obs < MIX_OBS_CAVEAT) lines.push(`  only ${Math.round(obs * 100)}% of pixel-years observed — read with care`);
+  }
   lines.push(`Crop inventory, ${recs.length} of ${LANDFACTS_YEARS.length} years observed`);
   for (const r of recs.slice().reverse()) lines.push(`  ${r.year}  ${r.label}  (crop ${r.crop}%)`);
   if (lf.rel != null) lines.push(`Relief ${lf.rel} m, mean slope ${lf.slp}°, ${lf.z?.[0]}–${lf.z?.[1]} m (MRDEM 30 m)`);

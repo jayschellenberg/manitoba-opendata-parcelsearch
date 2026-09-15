@@ -764,6 +764,23 @@ picks up where it stopped; `--force` rebuilds. Publishing is the normal CDN
 dance in §1b. Until that runs the column stays blank rather than saying
 "None", which is the correct rendering of not knowing.
 
+Two more flags, added 2026-09-15:
+
+```
+npm run landfacts:shards -- --crop-only            # crop fields only; carries relief/wetland/water from the existing shard (~4 s per 60 parcels)
+npm run landfacts:shards -- --muni 610 --limit 40 --out <dir>   # a trial run, written OUTSIDE mb-parcel-data
+```
+
+`--crop-only` is the one to reach for when a new inventory year lands or the
+land-mix rule changes: the crop inventory is local and fast, while the other
+three layers read remote COGs and are the ~2 h. It rebuilds every requested
+municipality without `--force`. `--out` exists because the 04:30
+auto-publish (`auto-publish-indexes.ps1` → `update-cdn-pin.ps1`) commits and
+pins **everything** in `mb-parcel-data` — a `--limit` shard written there
+would go live as a 40-parcel municipality. Shards are written temp-then-rename
+with a byte check, since in-place overwrites under Dropbox can report success
+and change nothing.
+
 **What a record means.** Per year, the dominant crop-inventory class and the
 share of the parcel under annual crop; `null` is a year the inventory did not
 observe (raster background or cloud over more than half the parcel) and is
@@ -774,6 +791,38 @@ Both of those were bugs caught before the family shipped, by
 `rural-report/tests/crosscheck_shards.py`, which compares the shards against
 rural-report's slower per-parcel path for a fixed set of rolls — run it after
 touching the extraction.
+
+**The land mix (2026-09-15).** Alongside the per-year series each record now
+carries `mix` — `{ cult, past, bush, wet, other }` fractions of the parcel —
+read PER PIXEL over the window 2021–2025, and it is the **headline** for the
+Land Cover / Cult % columns, popup and Dominant overlay wherever a parcel has
+one (the 2020 register in `landcover/` is the fallback and the standing
+cross-check; §3.4 of DOCUMENTATION.md). The rule, per Jason: a pixel is
+cultivated when annual crop in **at least 2 of the 5 years, or in 2025
+regardless** — the override is what catches bush cleared or new ground broken
+since the window opened. Every other pixel takes the non-crop group it showed
+most often (pasture 110/122; bush 50/60/200–230, shrubland folded in; wet
+20/80/85; other). Why per pixel and not `max(cp)`: cultivated acres are land
+USE, and a parcel-level maximum still understates a multi-field parcel whose
+halves rotate in different years. Why not a single year: `cp` is land COVER
+for one year and runs ~10 pp low — the register's cropland tracks the
+five-year MAXIMUM of annual crop to a median 0.0 pp across 173,671 parcels.
+
+The window and both rule constants live in three places that must agree —
+`WINDOW` / `CULT_MIN_YEARS` / `CULT_RECENT_OVERRIDE` in the builder,
+`LANDFACTS_WINDOW` / `CULT_MIN_YEARS` / `CULT_RECENT_OVERRIDE` in
+`web/src/lib/landfacts.js`, and the index's `_meta.window` / `_meta.cult_rule`
+— and `web/test/landfacts.test.js` fails when the lib and the built index
+drift. Changing the threshold needs **no rebuild** for the cultivated figure:
+`cc[k]` (share cropped in exactly k window years) and `cn[k]` (the part of
+each also cropped in 2025) ship with the record, and `cultivatedShare()` in
+the lib reads any rule off them. Only the non-crop split is baked, so a rule
+change shows in Cult % immediately and in Pasture/Bush after the next
+`--crop-only` run. Every ACI year since 2011 sits on one 30 m grid (same
+origin and pixel size; they differ only in northern extent), so the window
+stacks by crop/extend with no resampling — if AAFC ever shifts the grid,
+`window_mix()`'s `align()` falls back to nearest-neighbour resampling and the
+build gets slower, not wrong.
 
 **On the map.** The Crop History button (Agricultural layers) cycles
 Off → **Years Cropped** → **Land Use** → Off over the muni-wide parcel

@@ -137,9 +137,18 @@ assert.equal(serviceEditDate({ editingInfo: { dataLastEditDate: 0 } }), null);
   // about the data's age).
   assert.equal(byLabel.get('MASC soil productivity ratings').vintage, 'Jul 30, 2026');
   assert.equal(byLabel.get('MASC soil productivity ratings').detail, 'scrape run_20260730_093059');
-  // Land cover's vintage is the fixed base register, not a pipeline stamp.
-  assert.equal(byLabel.get('Land cover').vintage, '2020');
-  assert.equal(byLabel.get('Land cover').detail, 'Canada Lands Cover Register 2020 (base file)');
+  // Land cover's vintage is the fixed base register, not a pipeline stamp —
+  // and it must carry BOTH dates. The reference year says what the pixels
+  // describe; the publication date says which edition was read, which is the
+  // only thing separating this file from the earlier land-cover vintages in
+  // circulation. Asserting on both guards against a future edit dropping one.
+  const lcRow = byLabel.get('Land cover (register, cross-check)');
+  assert.equal(lcRow.vintage, '2020 (published Mar 27, 2025)');
+  assert.match(lcRow.detail, /Land Cover Register \(catalogue 16-510-X\)/);
+  assert.match(lcRow.detail, /LCR_RCT_2020_MB\.tif/);
+  // The register is no longer the headline where a land mix exists; the row
+  // must say so, or the dialog implies the 2020 file drives the column.
+  assert.match(lcRow.detail, /cross-check|Headline only/);
   assert.equal(byLabel.get('Water shards (CDN)').detail, 'pinned at revision fcbaa29');
   // Water's vintage is the assembly run date embedded in the source parquet's
   // name, not the shard rebuild day.
@@ -152,7 +161,24 @@ assert.equal(serviceEditDate({ editingInfo: { dataLastEditDate: 0 } }), null);
   assert.equal(byLabel.get('Roll Entry snapshot (offline fallback)').next, 'September 2026');
   assert.equal(byLabel.get('Zoning by-laws (archived snapshot)').next, 'January 2027');
   assert.equal(byLabel.get('MASC soil productivity ratings').next, '~July 2027');
-  assert.equal(byLabel.get('Land cover').next, 'static');
+  // StatCan lists the Register's update frequency as "Occasional", so there
+  // is no next date to promise — but the cell must not be blank either, or it
+  // renders as "unknown" beside sources whose schedule really is unknown.
+  assert.equal(byLabel.get('Land cover (register, cross-check)').next, 'occasional');
+
+  // Land facts: when the index carries the land-mix window and rule, the
+  // detail states them; an older index without them still renders.
+  const lfRows = publishedRows({
+    landfactsMeta: { generated_at: '2026-09-16T02:00:00Z', years: [2009, 2025], min_acres: 20,
+                     window: [2021, 2022, 2023, 2024, 2025],
+                     cult_rule: { min_years: 2, recent_override: true } },
+  });
+  const lfRow = lfRows.find((r) => r.label === 'Land facts shards (CDN)');
+  assert.match(lfRow.detail, /land mix per pixel 2021–2025/);
+  assert.match(lfRow.detail, /crop in 2\+ years or in 2025/);
+  const lfOld = publishedRows({ landfactsMeta: { generated_at: '2026-09-02T00:00:00Z', years: [2009, 2025] } })
+    .find((r) => r.label === 'Land facts shards (CDN)');
+  assert.doesNotMatch(lfOld.detail, /land mix/);
   assert.equal(byLabel.get('Water shards (CDN)').next, null);
 
   // Flood's vintage is the OLDEST layer fetch date, not the shard rebuild —
@@ -174,7 +200,7 @@ assert.equal(serviceEditDate({ editingInfo: { dataLastEditDate: 0 } }), null);
   // kept. Land cover is the one exception: its vintage is a constant.
   const empty = publishedRows({});
   assert.equal(empty.length, rows.length);
-  assert.ok(empty.every((r) => r.label === 'Land cover' || r.vintage == null));
+  assert.ok(empty.every((r) => r.label.startsWith('Land cover') || r.vintage == null));
 }
 
 // ---- mascRunDate -----------------------------------------------------------

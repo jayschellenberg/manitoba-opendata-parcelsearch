@@ -25,7 +25,7 @@ import turfArea from '@turf/area';
 import turfLength from '@turf/length';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
-import { landCoverBreakdown, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
+import { landCoverBreakdown, headlineCover, LAND_COVER_SOURCES } from './lib/landcover.js';
 import {
   readLandfacts, yearRecords, croppedYears, observedYears, lastThree, lastObserved,
   wetlandClassNames, COVER_GROUPS,
@@ -6102,15 +6102,19 @@ function cliRollupHtml(raw) {
 /**
  * Land-cover breakdown box for the parcel popup. Renders the farmland
  * buckets (Cultivated / Pasture-Grass / Bush-Treed / Wetland-Water /
- * Other) stamped onto the parcel as `_landCover` by main.js, each with
- * a colour swatch, its share of the parcel, and the implied acreage
- * (parcel acres × share, so the numbers reconcile with the Land Size
- * line above). Returns null when the parcel is ≤ LAND_COVER_MIN_ACRES
- * or carries no land-cover data — matching the build's acreage gate.
+ * Other) from the headline source — the crop-inventory mix on
+ * `_landfacts` where the parcel has one, else the register on `_landCover`
+ * (headlineCover) — each with a colour swatch, its share of the parcel, and
+ * the implied acreage (parcel acres × share, so the numbers reconcile with
+ * the Land Size line above). Names the source underneath, gives the
+ * register's cultivated share as the cross-check, and warns in amber when
+ * the two disagree past COVER_DISAGREE_MIN. Returns null when neither
+ * source has anything for the parcel.
  */
 export function landCoverParcelHtml(p) {
-  if (!(Number(p?._acres) > LAND_COVER_MIN_ACRES)) return null;
-  const rows = landCoverBreakdown(readLandCover(p?._landCover));
+  const hc = headlineCover(p?._landfacts, p?._landCover, p?._acres);
+  if (!hc) return null;
+  const rows = landCoverBreakdown(hc.lc);
   if (!rows) return null;
   const acres = Number(p._acres);
   const html = rows.map((b) => {
@@ -6124,7 +6128,18 @@ export function landCoverParcelHtml(p) {
       <td style="padding:3px 0;vertical-align:top;text-align:right;white-space:nowrap"><strong>${escapeHtml(acLabel + pctLabel)}</strong></td>
     </tr>`;
   }).join('');
-  return `<table style="margin-top:4px;font-size:12px;border-collapse:collapse;width:100%">${html}</table>`;
+  const lines = [`<span style="color:#555">${escapeHtml(LAND_COVER_SOURCES[hc.source].label)}</span>`];
+  if (hc.other) {
+    const oc = Math.round(Number(hc.other.cult) * 100);
+    const d = hc.disagreement;
+    const gap = d ? `, largest gap ${escapeHtml(d.label)} ${Math.round(d.diff * 100)} pp` : '';
+    lines.push(`<span style="color:#555">Cross-check, ${escapeHtml(LAND_COVER_SOURCES.lcr.label)}:</span> cultivated ${oc}%${gap}`);
+    if (hc.flagged) {
+      lines.push(`<span style="color:#b45309;font-weight:600">⚠ Sources disagree by ${Math.round(d.diff * 100)} pp on ${escapeHtml(d.label)} — verify on imagery</span>`);
+    }
+  }
+  return `<table style="margin-top:4px;font-size:12px;border-collapse:collapse;width:100%">${html}</table>`
+    + `<div style="margin-top:2px;font-size:11px;line-height:1.6">${lines.join('<br>')}</div>`;
 }
 
 /**
@@ -6254,21 +6269,25 @@ export function mascRatingParcelHtml(p) {
 /**
  * One-line top-2 land-cover summary for the muni-fabric (Roll Layer) popup
  * — the two largest buckets with their share (e.g. "Cultivated 61% ·
- * Wetland 16%"), each with its colour swatch. Null when the parcel is
- * ≤ LAND_COVER_MIN_ACRES or carries no land-cover data (same gate as
- * landCoverParcelHtml). The full breakdown lives on the search-result
- * popup; this is the concise inline version for the fabric popup.
+ * Wetland 16%"), each with its colour swatch, from the same headline source
+ * as landCoverParcelHtml, with a ⚠ when the two sources disagree. Null when
+ * neither source has anything for the parcel. The full breakdown lives on
+ * the search-result popup; this is the concise inline version.
  */
 export function landCoverTopTwoLine(p) {
-  if (!(Number(p?._acres) > LAND_COVER_MIN_ACRES)) return null;
-  const rows = landCoverBreakdown(readLandCover(p?._landCover));
+  const hc = headlineCover(p?._landfacts, p?._landCover, p?._acres);
+  if (!hc) return null;
+  const rows = landCoverBreakdown(hc.lc);
   if (!rows) return null;
   const parts = rows.slice(0, 2).map((b) => {
     const swatch = `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${escapeHtml(b.color)};border:1px solid rgba(0,0,0,0.2);margin-right:4px;vertical-align:middle"></span>`;
     const pctLabel = b.pct < 0.005 ? '<1%' : `${Math.round(b.pct * 100)}%`;
     return `${swatch}${escapeHtml(b.label)} ${pctLabel}`;
   });
-  return `<strong>Land cover</strong> ${parts.join(' &middot; ')}`;
+  const flag = hc.flagged
+    ? ` <span title="Crop inventory and Land Cover Register disagree by ${Math.round(hc.disagreement.diff * 100)} pp on ${escapeHtml(hc.disagreement.label)}" style="color:#b45309">⚠</span>`
+    : '';
+  return `<strong>Land cover</strong> ${parts.join(' &middot; ')}${flag}`;
 }
 
 function readSoilComposition(raw) {
@@ -6284,25 +6303,9 @@ function readSoilComposition(raw) {
   return [];
 }
 
-/**
- * Coerce a parcel's `_landCover` stamp to an object. MapLibre serializes
- * nested-object feature properties to JSON strings when read from rendered
- * features (the popup path), so the stamp can arrive either as the original
- * object or as a JSON string — same dual shape readSoilComposition handles
- * for `_soilComposition`. Returns null when there's no usable object.
- */
-function readLandCover(raw) {
-  if (raw && typeof raw === 'object') return raw;
-  if (typeof raw === 'string' && raw.trim().startsWith('{')) {
-    try {
-      const parsed = JSON.parse(raw);
-      return (parsed && typeof parsed === 'object') ? parsed : null;
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
+// `_landCover` coercion (object-or-JSON-string, the same dual shape
+// readSoilComposition handles) now lives in lib/landcover.js as
+// readLandCover, inside headlineCover — both popups go through that.
 
 function formatSoilExtent(value) {
   if (value == null || value === '') return '';

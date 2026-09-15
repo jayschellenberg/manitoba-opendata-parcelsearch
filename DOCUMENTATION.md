@@ -152,6 +152,23 @@ labels/colours. The tooltip box (`map.js`), the grid columns **Land Cover**
 + **Cult %** (`main.js`, `index.html`, `columns.js` "Agricultural" preset),
 and the map overlay all read from it.
 
+**Two sources, one headline (2026-09-15).** The five fractions can come from
+either the register shard above (`_landCover`) or the crop-inventory land
+mix on the land-facts shard (`_landfacts.mix`, §6d of MAINTENANCE.md), and
+`headlineCover()` in `lib/landcover.js` is the ONE place that chooses: the
+mix whenever the parcel has one (farmland of 20 ac+ with a MASC rating),
+the register otherwise, and the register kept as the cross-check with a ⚠
+(`COVER_DISAGREE_MIN`, 20 pp on any bucket) when the two disagree. The grid
+cells and sort keys, both popups, the CSV (three extra columns: source,
+register Cult %, disagreement pp) and both Dominant-overlay stamps go
+through it; `web/test/landcover.test.js` reads the source text to prove no
+reader bypasses it, because a bypass shows the register beside a mix
+headline and nothing fails. Why the crop inventory leads and why the
+register stays are in the module header; the measurement behind it (the
+register's cropland tracks the five-year MAXIMUM of annual crop, median
+0.0 pp across 173,671 parcels, a single year runs ~10 pp low) is in
+`r/build_landfacts.R`.
+
 ### 3.5 Land-cover **Detailed** tiles — `r/build_landcover_tiles.R`
 A z6–z12 XYZ raster pyramid of the 2020 raster for the overlay's "Detailed"
 pixel view. **Lossless WebP** (`--tiledriver WEBP --webp-lossless`), ~84 MB
