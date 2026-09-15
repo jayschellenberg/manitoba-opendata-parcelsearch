@@ -110,7 +110,7 @@
 #   stops covering new work is the same silent hole in a new place.
 #
 #   Two patterns are matched, which between them cover every registrar in the
-#   repo: `$TaskName = 'literal'` (12 registrars) and `Register-... -Name
+#   repo: `$TaskName = 'literal'` (13 registrars) and `Register-... -Name
 #   'literal'` (mao-assembly\schedule_refresh.ps1, which registers three tasks
 #   through a helper function). $LegacyTaskNames entries are NOT matched --
 #   those are pre-rename names the registrars delete, so looking for them would
@@ -203,6 +203,7 @@ $KnownTasks = @(
   'mb-parcelsearch-basemap-refresh', 'mb-parcelsearch-basemap-staleness',
   'mb-parcelsearch-du-snapshot', 'mb-parcelsearch-history-staleness',
   'mb-parcelsearch-hpi-download', 'mb-parcelsearch-hpi-staleness',
+  'mb-parcelsearch-landfacts-refresh',
   'mb-parcelsearch-monthly-refresh', 'mb-parcelsearch-parcel-tiles',
   'mb-parcelsearch-post-refresh-report', 'mb-parcelsearch-publish-indexes',
   'mb-parcelsearch-semiannual-archive', 'mb-parcelsearch-task-health',
