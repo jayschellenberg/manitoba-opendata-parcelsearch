@@ -240,7 +240,10 @@ export function publishedRows({ manifest, rollSnap, histIndex, revision, mascMet
     detail: lfYears
       ? `AAFC crop inventory ${lfYears[0]}–${lfYears[lfYears.length - 1]}, MRDEM, wetland inventory, surface water — parcels over ${landfactsMeta?.min_acres ?? 20} ac with a MASC rating${mixNote}`
       : 'AAFC crop inventory, MRDEM, wetland inventory, surface water',
-    next: null,
+    // The crop fields rebuild on the 14th (mb-parcelsearch-landfacts-refresh)
+    // and the 15th 04:30 publish pins them — the same month label the
+    // indexes show, since that publish is what makes either live.
+    next: monthly,
   });
 
   // Multi-family new construction, built by r/build_mf_newbuild.R off the MAO

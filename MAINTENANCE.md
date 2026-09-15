@@ -722,7 +722,20 @@ rather than a URL swap (DataMB merges both DFAs into one 2-feature layer keyed
 on `Designated_Flood_Area_Zone`). The Data Status dialog's "Flood zone shards"
 row says so on the face of it.
 
-### 6d. Land facts — crop history, relief, wetland, water  (cadence: annual, after AAFC releases the new crop-inventory year)
+### 6d. Land facts — crop history, relief, wetland, water  (cadence: crop fields **monthly, scheduled** — 14th 22:00, published the 15th 04:30; a new inventory year enters the month AAFC publishes it; relief/wetland/water by hand, rarely)
+
+**Scheduled since 2026-09-15.** `schedule_landfacts.ps1` registers
+`mb-parcelsearch-landfacts-refresh` (monthly, 14th 22:00, S4U — register it
+**elevated**, same rule as every other task here). The wrapper,
+`landfacts-refresh-wrapper.ps1`, runs `../rural-report/fetch_aci.sh` (idempotent
+— a no-op eleven months a year, picks up the new inventory the month AAFC
+publishes it; the loop is open-ended on the year) and then
+`r/build_landfacts.R --crop-only` (~2 h), so the 15th 04:30 publish pins the
+rebuilt shards. Logs in `logs\landfacts-refresh-*.log`; overdue coverage from
+`mb-parcelsearch-task-health`, which discovers the registrar. Only the crop
+fields rebuild on this schedule; relief, wetland and water are carried from
+the existing shard and are re-read only by a hand run without `--crop-only`
+(their sources move on a scale of years).
 
 One artefact, four federal rasters, one number per parcel per layer — the
 open-data land record for every farmland parcel, pre-baked so the grid and

@@ -176,6 +176,11 @@ assert.equal(serviceEditDate({ editingInfo: { dataLastEditDate: 0 } }), null);
   const lfRow = lfRows.find((r) => r.label === 'Land facts shards (CDN)');
   assert.match(lfRow.detail, /land mix per pixel 2021–2025/);
   assert.match(lfRow.detail, /crop in 2\+ years or in 2025/);
+  // Scheduled since 2026-09-15: the crop fields rebuild on the 14th and the
+  // 15th publish pins them, so the row carries the same next-month label as
+  // the indexes rather than reading "unknown".
+  assert.equal(byLabel.get('Land facts shards (CDN)').next, 'September 2026');
+  assert.match(lfRow.next, /^[A-Z][a-z]+ \d{4}$/);
   const lfOld = publishedRows({ landfactsMeta: { generated_at: '2026-09-02T00:00:00Z', years: [2009, 2025] } })
     .find((r) => r.label === 'Land facts shards (CDN)');
   assert.doesNotMatch(lfOld.detail, /land mix/);
