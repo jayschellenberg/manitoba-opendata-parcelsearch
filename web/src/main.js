@@ -10991,6 +10991,7 @@ function showMfNewbuildResults(munis) {
   setCount(feats.length
     ? `${feats.length} multi-family construction record${feats.length === 1 ? '' : 's'} in ${where} · assessed ${MFNB_FROM_YEAR}+ · years are assessment years and trail completion by about a year`
     : `No multi-family construction found in ${where} since ${MFNB_FROM_YEAR} (${MFNB_MIN_DU}+ dwelling units (excluding colonies))`);
+  overlayGridOwner = 'mfnb';
   return feats.length;
 }
 
@@ -11004,6 +11005,7 @@ function turnMfnbOff() {
     setOverlayBtnLabel($mfnbToggle, mfnbButtonLabelFor(null));
   }
   renderMfLegends();
+  regrantResultsGrid('mfnb');
 }
 
 /**
@@ -11042,9 +11044,7 @@ async function toggleMfNewbuildOverlay() {
   }
   mfnbMode = targetMode;
 
-  const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
-    ? csvMatchedMunis.slice()
-    : ($municipality.value ? [$municipality.value] : []);
+  const munis = overlayResultMunis();
   const scopeKey = muniParcelsLoadKey();
   if (munis.length > 0 && mfnbLoadedFor !== scopeKey) {
     $mfnbToggle.disabled = true;
@@ -11171,6 +11171,65 @@ function syncActiveOverlays() {
   setActiveOverlays(map, keys);
 }
 
+/** The municipalities the themed overlays are scoped to: the sales-CSV
+ *  matched list when an import is driving, otherwise the dropdown. */
+function overlayResultMunis() {
+  return (csvMatchedMunis && csvMatchedMunis.length > 0)
+    ? csvMatchedMunis.slice()
+    : ($municipality.value ? [$municipality.value] : []);
+}
+
+/**
+ * Which themed overlay filled the results grid, if any — 'mfinv' | 'mfnb' |
+ * 'condo' | null.
+ *
+ * renderTable() clears it on every fresh fill and each show*Results() sets it
+ * back on the next line, so anything else that fills the grid (a search, a CSV
+ * import, a filter change) owns it by default and is left alone below.
+ */
+let overlayGridOwner = null;
+
+/**
+ * Hand the results grid back when the overlay that filled it is switched off.
+ *
+ * THE BUG THIS FIXES (Jason, 2026-09-15). Turning an overlay on takes the
+ * grid; turning it off used to leave its rolls sitting there. With New
+ * Multi-Family on, switching Multi-Family on and off again left the whole
+ * standing inventory in the results — and a result parcel wears the yellow
+ * selection kit, which only yields where an overlay is PAINTING (see
+ * lib/overlayHighlight.js). So every inventory parcel the new-build layer had
+ * not painted came back yellow, on a map where no such layer was on. The
+ * unit-count labels had already stopped following those parcels, so they were
+ * yellow blanks beside the coloured, numbered ones.
+ *
+ * The grid goes to whichever themed overlay is still on — the inventory
+ * first, because it is the superset (every new build is standing inventory)
+ * and the same precedence the "DU ≥" change uses. Its rolls are exactly the
+ * rolls that overlay paints, so nothing in the results is unpainted and the
+ * yellow has nothing to land on.
+ *
+ * ONLY WHEN THE OFF-GOING OVERLAY OWNED THE GRID. A search run while two
+ * overlays were on owns its own results, and handing those to the survivor
+ * would throw away what the user actually asked for.
+ *
+ * ONLY FOR A SURVIVOR LOADED FOR THIS SCOPE. A municipality change switches
+ * these overlays off one by one after clearing their load keys, and a grid
+ * full of the previous muni's parcels is not an improvement on a stale one.
+ *
+ * With no survivor the results stand as they are: no overlay is painting, so
+ * the list reads as what it now is — an ordinary set of search results, all
+ * of it highlighted, which is honest.
+ */
+function regrantResultsGrid(offKey) {
+  if (overlayGridOwner !== offKey) return;
+  const munis = overlayResultMunis();
+  if (munis.length === 0) return;
+  const scopeKey = muniParcelsLoadKey();
+  if (mfInvOverlayOn && mfInvLoadedFor === scopeKey) { showMfInventoryResults(munis); return; }
+  if (mfnbOverlayOn && mfnbLoadedFor === scopeKey) { showMfNewbuildResults(munis); return; }
+  if (condoOverlayOn && condoLoadedFor === scopeKey) { showCondoDevResults(munis); }
+}
+
 /**
  * Stamp — or clear — everything the overlay draws for one parcel: the fill
  * colour and the dwelling-unit count map.js labels the polygon with.
@@ -11259,6 +11318,7 @@ function turnMfInvOff() {
   syncActiveOverlays();
   if ($mfinvToggle) setOverlayPressed($mfinvToggle, false);
   renderMfLegends();
+  regrantResultsGrid('mfinv');
 }
 
 /** Put the municipality's qualifying multi-family rolls into the grid. No new
@@ -11287,6 +11347,7 @@ function showMfInventoryResults(munis) {
   setCount(feats.length
     ? `${feats.length} multi-family parcel${feats.length === 1 ? '' : 's'} in ${where} · ${units.toLocaleString()} dwelling units · ${min}+ per parcel, colonies excluded`
     : `No parcels with ${min}+ dwelling units in ${where} (colonies excluded)`);
+  overlayGridOwner = 'mfinv';
   return feats.length;
 }
 
@@ -11295,9 +11356,7 @@ async function toggleMfInventoryOverlay() {
   await mapReady;
   if (mfInvOverlayOn) { turnMfInvOff(); return; }
 
-  const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
-    ? csvMatchedMunis.slice()
-    : ($municipality.value ? [$municipality.value] : []);
+  const munis = overlayResultMunis();
   const scopeKey = muniParcelsLoadKey();
   if (munis.length > 0 && mfInvLoadedFor !== scopeKey) {
     $mfinvToggle.disabled = true;
@@ -11368,9 +11427,7 @@ function onMfThresholdChange() {
     if (mfInvOverlayOn || inventoryContextWanted()) recolorMfInv();
     if (mfnbOverlayOn) recolorMfnb();
     renderMfLegends();
-    const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
-      ? csvMatchedMunis.slice()
-      : ($municipality.value ? [$municipality.value] : []);
+    const munis = overlayResultMunis();
     if (munis.length === 0) return;
     // One grid, one owner. The inventory wins when both are on: it is the
     // superset (every new build is standing inventory), so its list contains
@@ -11531,6 +11588,7 @@ function turnCondoOff() {
     setOverlayBtnLabel($condoToggle, condoButtonLabelFor(null));
   }
   if ($condoLegend) $condoLegend.hidden = true;
+  regrantResultsGrid('condo');
 }
 
 /** Put the municipality's condo-development unit rolls into the grid. Same
@@ -11558,6 +11616,7 @@ function showCondoDevResults(munis) {
   setCount(feats.length
     ? `${plans.size} new condo development${plans.size === 1 ? '' : 's'} in ${where} · ${feats.length} unit${feats.length === 1 ? '' : 's'} · first assessed ${CONDO_FROM_YEAR}+`
     : `No new condo developments found in ${where} since ${CONDO_FROM_YEAR} (${CONDO_MIN_UNITS}+ units)`);
+  overlayGridOwner = 'condo';
   return feats.length;
 }
 
@@ -11577,9 +11636,7 @@ async function toggleCondoDevOverlay() {
   }
   condoMode = targetMode;
 
-  const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
-    ? csvMatchedMunis.slice()
-    : ($municipality.value ? [$municipality.value] : []);
+  const munis = overlayResultMunis();
   const scopeKey = muniParcelsLoadKey();
   if (munis.length > 0 && condoLoadedFor !== scopeKey) {
     $condoToggle.disabled = true;
@@ -12494,6 +12551,9 @@ function clearAll() {
 function clearTable() {
   $tbody.innerHTML = '';
   currentRows = [];
+  // Whatever an overlay had put here is gone, so it no longer has a grid to
+  // hand back when it is switched off (regrantResultsGrid).
+  overlayGridOwner = null;
   setExportEnabled(false);
 }
 
@@ -12549,7 +12609,12 @@ function renderTable(rows, { resetPage = true } = {}) {
   if ($resultsTable) $resultsTable.classList.toggle('water-mode', wantsWaterRightsEnrichment());
   currentRows = rows;
   rowFeatureMap.clear();
-  if (resetPage) currentPage = 0;
+  // A fresh fill takes the grid away from whichever overlay had it, so
+  // switching that overlay off no longer hands these rows to another one (see
+  // regrantResultsGrid). The show*Results() paths claim it back on the line
+  // after their own render. A re-render in place — a sort, a page, an
+  // enrichment pass — is not a new set and leaves ownership where it is.
+  if (resetPage) { overlayGridOwner = null; currentPage = 0; }
   const sorted = sortRows(rows);
   // Clamp currentPage in case the row set shrank below it (filter
   // change, sales-CSV reload, etc).

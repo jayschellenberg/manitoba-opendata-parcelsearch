@@ -191,6 +191,70 @@ test('silenced, not hidden', () => {
     + "hidden layer stops hit-testing and the parcel's popup goes with it");
 });
 
+// --- the grid goes back when the overlay that took it is switched off -------
+//
+// THE SECOND REPORT (Jason, 2026-09-15). "Toggle Multi-Family on, and off, and
+// on again, and I see yellow highlighted parcels if New Multi-Family is on."
+// They were the standing inventory's. Turning an overlay on takes the results
+// grid; turning it off used to leave its rolls in it. A result parcel wears
+// the selection kit, and the kit only yields where an overlay is PAINTING —
+// so every inventory roll the new-build layer had not painted came back
+// yellow, under a layer nobody had switched on. The labels had already been
+// taught to follow the active overlays (above), which is why they came back
+// as yellow BLANKS beside the coloured, numbered ones.
+
+test('an overlay that is switched off hands the grid to one that is still on', () => {
+  const regrant = fnBody(main, 'regrantResultsGrid');
+  assert.ok(regrant, 'regrantResultsGrid() is gone from main.js');
+  // Inventory first: it is the superset (every new build is standing
+  // inventory), the same precedence the "DU >=" change already uses.
+  const order = [...regrant.matchAll(/show(MfInventory|MfNewbuild|CondoDev)Results\(/g)]
+    .map((m) => m[1]);
+  assert.deepEqual(order, ['MfInventory', 'MfNewbuild', 'CondoDev'],
+    'the survivor is asked for in superset-first order');
+  assert.match(regrant, /mfInvOverlayOn && mfInvLoadedFor === scopeKey/,
+    'a survivor whose shards are not loaded for THIS scope would fill the '
+    + "grid with the previous municipality's parcels — a muni change switches "
+    + 'these overlays off one by one after clearing their load keys');
+  assert.match(regrant, /mfnbOverlayOn && mfnbLoadedFor === scopeKey/);
+  assert.match(regrant, /condoOverlayOn && condoLoadedFor === scopeKey/);
+});
+
+test('only the overlay that OWNED the grid may give it away', () => {
+  // A search run while two overlays were on owns its own results; handing
+  // those to the survivor would throw away what the user actually asked for.
+  const regrant = fnBody(main, 'regrantResultsGrid');
+  assert.match(regrant, /overlayGridOwner !== offKey/,
+    'the hand-back must be gated on who filled the grid');
+  // Ownership: cleared on every fresh fill, claimed back by the three
+  // show*Results() on the line after their own render.
+  assert.match(main, /if \(resetPage\) \{ overlayGridOwner = null;/,
+    'renderTable must drop ownership on a fresh fill, so a search owns its '
+    + 'own rows — and must NOT drop it on a re-render in place (a sort, a '
+    + 'page, an enrichment pass), which is not a new set');
+  for (const [fn, key] of [['showMfInventoryResults', 'mfinv'],
+                           ['showMfNewbuildResults', 'mfnb'],
+                           ['showCondoDevResults', 'condo']]) {
+    const body = fnBody(main, fn);
+    assert.ok(body, `${fn}() is gone from main.js`);
+    assert.match(body, new RegExp(`overlayGridOwner = '${key}'`),
+      `${fn} must claim the grid, or switching its overlay off hands nothing back`);
+  }
+});
+
+test('every off-path hands back, and names itself doing it', () => {
+  // The bug was in turnMfInvOff; the other two had exactly the same shape.
+  for (const [fn, key] of [['turnMfInvOff', 'mfinv'],
+                           ['turnMfnbOff', 'mfnb'],
+                           ['turnCondoOff', 'condo']]) {
+    const body = fnBody(main, fn);
+    assert.ok(body, `${fn}() is gone from main.js`);
+    assert.match(body, new RegExp(`regrantResultsGrid\\('${key}'\\)`),
+      `${fn} leaves its rolls in the grid — they will wear the yellow `
+      + 'selection kit under whichever overlay is still painting');
+  }
+});
+
 // --- the unit-count labels belong to the overlays that are ON ---------------
 
 test('no overlay painting means no unit-count labels', () => {
