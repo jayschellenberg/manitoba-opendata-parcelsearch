@@ -172,6 +172,30 @@ export function mfnbFillColor(m, mode) {
   return rampColor(YEAR_RAMP, primaryYear(v));
 }
 
+/**
+ * Does this roll clear the user's dwelling-unit bar?
+ *
+ * The SAME bar the standing inventory uses — one "DU ≥" box in the sidebar
+ * governs both multi-family layers, because "show me 20+ unit buildings" is a
+ * question about buildings, not about which of the two layers is switched on.
+ * MFNB_MIN_DU and MFINV_MIN_DU are both 3, so the floor means the same thing
+ * on either side and the default filters nothing out.
+ *
+ * A stamp with NO usable count passes at the floor and fails above it. Every
+ * roll in the shard qualified at 3+ units when it was built, so at the floor a
+ * missing count is a data gap and the roll still belongs on the map; once the
+ * user asks for 20+, a roll that cannot show it clears 20 is not an answer to
+ * that question.
+ */
+export function mfnbPasses(m, minDu) {
+  const v = readMfnb(m);
+  if (!v) return false;
+  const floor = Number.isFinite(Number(minDu)) ? Number(minDu) : MFNB_MIN_DU;
+  const du = mfnbDu(v);
+  if (du === null) return floor <= MFNB_MIN_DU;
+  return du >= floor;
+}
+
 /** The roll's current dwelling-unit count — what map.js prints on the parcel
  *  while this overlay is on. Null where the stamp carries no usable count, so
  *  a roll flagged by its value history but missing a unit count is coloured
@@ -255,13 +279,19 @@ export function mfnbCsvCells(m, loaded) {
 }
 
 /** Legend rows for the active mode. */
-export function mfnbLegendSteps(mode) {
+export function mfnbLegendSteps(mode, minDu) {
   if (mode === 'type') {
     return Object.keys(MFNB_TYPES).map((k) => ({
       color: MFNB_TYPES[k].color, label: MFNB_TYPES[k].label,
     }));
   }
-  return (MFNB_MODES[mode] || MFNB_MODES.year).ramp.map((s) => ({
-    color: s.color, label: s.label,
-  }));
+  const ramp = (MFNB_MODES[mode] || MFNB_MODES.year).ramp;
+  // The Units key drops the bands entirely below the active threshold, the
+  // same way the inventory's does: nothing in them can be on screen, and two
+  // keys over one ramp have to agree or the pair reads as two scales.
+  const floor = Number(minDu);
+  const shown = (mode === 'units' && Number.isFinite(floor))
+    ? ramp.filter((s) => s.max >= floor)
+    : ramp;
+  return shown.map((s) => ({ color: s.color, label: s.label }));
 }

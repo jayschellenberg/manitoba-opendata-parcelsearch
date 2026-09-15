@@ -288,7 +288,7 @@ import {
 import {
   mfnbCellText, mfnbTooltip, mfnbSortRank, mfnbCsvHeaders, mfnbCsvCells,
   mfnbFillColor, mfnbLegendSteps, MFNB_MODES, MFNB_MIN_DU, MFNB_FROM_YEAR,
-  readMfnb, primaryYear, bestConfidence, MFNB_CONFIDENCE, mfnbDu,
+  readMfnb, primaryYear, bestConfidence, MFNB_CONFIDENCE, mfnbDu, mfnbPasses,
 } from './lib/mfNewbuild.js';
 import {
   readCondoDev, condoType, condoFillColor, condoCellText, condoSortRank,
@@ -2798,8 +2798,8 @@ if ($mfnbToggle) $mfnbToggle.addEventListener('click', () => toggleMfNewbuildOve
 if ($condoToggle) $condoToggle.addEventListener('click', () => toggleCondoDevOverlay());
 if ($mfinvToggle) $mfinvToggle.addEventListener('click', () => toggleMfInventoryOverlay());
 if ($mfinvMinDu) {
-  $mfinvMinDu.addEventListener('input', onMfInvThresholdChange);
-  $mfinvMinDu.addEventListener('change', onMfInvThresholdChange);
+  $mfinvMinDu.addEventListener('input', onMfThresholdChange);
+  $mfinvMinDu.addEventListener('change', onMfThresholdChange);
 }
 $cliToggle.addEventListener('click', () => toggleCliOverlay());
 if ($landcoverToggle) $landcoverToggle.addEventListener('click', () => toggleLandCoverOverlay());
@@ -10778,7 +10778,8 @@ let mfnbLoadedFor = null;
 /** Fill colour under the CURRENT view (Year while the overlay is off, so a
  *  later first turn-on needs no recolour). null when the roll has no events. */
 function mfnbColorFor(hit) {
-  return hit ? mfnbFillColor(hit, mfnbMode || 'year') : null;
+  if (!mfnbPasses(hit, mfMinDu())) return null;
+  return mfnbFillColor(hit, mfnbMode || 'year');
 }
 
 /**
@@ -10860,13 +10861,13 @@ async function stampMfNewbuildOnFabric(fabricFc, munis) {
     const dict = p.Muni_Name_With_Typ ? byMuni.get(p.Muni_Name_With_Typ) : null;
     if (dict) p._mfnbLoaded = true;
     const hit = (dict && p.Roll_No_Txt) ? dict[p.Roll_No_Txt] : null;
-    // `_mfnb` is stamped only where the roll actually painted, because it is
-    // what showMfNewbuildResults() filters the grid on — stamping every hit
-    // would put rolls in the grid that are not on the map.
-    if (paintMfnbFeature(p, hit)) {
-      p._mfnb = hit;
-      painted += 1;
-    }
+    // Every hit is stamped, painted or not, because the "DU ≥" bar moves BOTH
+    // ways: a roll below the current bar has to still be here when the user
+    // lowers it, or recolouring could only ever shrink the set and lowering
+    // the bar would need a refetch to undo. What is on the map is
+    // `_mfnbColor`, and that is what the grid filters on.
+    if (hit) p._mfnb = hit;
+    if (paintMfnbFeature(p, hit)) painted += 1;
   }
   return painted;
 }
@@ -10893,7 +10894,8 @@ function mfLegendRows(steps) {
  */
 function mfLegendsShareOneRamp() {
   if (!(mfnbOverlayOn && mfInvOverlayOn && mfnbMode === 'units')) return false;
-  return sameLegendSteps(mfnbLegendSteps('units'), mfInvLegendSteps(mfInvMinDu()));
+  const min = mfMinDu();
+  return sameLegendSteps(mfnbLegendSteps('units', min), mfInvLegendSteps(min));
 }
 
 /**
@@ -10915,7 +10917,8 @@ function renderMfLegends() {
 
 function renderMfnbLegend(mode, merged = false) {
   if (!$mfnbLegend) return;
-  const items = mfLegendRows(mfnbLegendSteps(mode));
+  const min = mfMinDu();
+  const items = mfLegendRows(mfnbLegendSteps(mode, min));
   const title = (MFNB_MODES[mode] || MFNB_MODES.year).legend;
   $mfnbLegend.innerHTML =
     `<strong>${title}</strong>`
@@ -10927,7 +10930,7 @@ function renderMfnbLegend(mode, merged = false) {
     // than the swatch list by a long way and it, not the legend, set the box
     // width - which pushed the panel across the map on a narrow window.
     + `<small style="display:block;margin-top:4px;color:#6b7280;font-style:italic">`
-    + `${MFNB_MIN_DU}+ dwelling units (excluding colonies)<br>`
+    + `${min}+ dwelling units (excluding colonies)<br>`
     + (mode === 'type'
         ? `type is hand-labelled in mf-type-overrides.csv, never inferred<br>`
         : `from assessed building value ${MFNB_FROM_YEAR}+<br>`)
@@ -10954,7 +10957,7 @@ function renderMfnbLegend(mode, merged = false) {
  * Returns the number of rows shown.
  */
 function showMfNewbuildResults(munis) {
-  const feats = (auxData.muniParcels?.features || []).filter((f) => f.properties?._mfnb);
+  const feats = (auxData.muniParcels?.features || []).filter((f) => f.properties?._mfnbColor);
   const fc = { type: 'FeatureCollection', features: feats };
 
   if (feats.length > 1) {
@@ -11087,15 +11090,23 @@ async function toggleMfNewbuildOverlay() {
 let mfInvOverlayOn = false;
 let mfInvLoadedFor = null;
 
-/** The active dwelling-unit threshold, clamped to the shard's own floor. */
-function mfInvMinDu() {
+/**
+ * The active dwelling-unit threshold, clamped to the shards' own floor.
+ *
+ * ONE BOX FOR BOTH multi-family layers (Jason, 2026-09-15): "show me 20+ unit
+ * buildings" is a question about buildings, not about which layer happens to
+ * be switched on, and two thresholds that could disagree would be a trap. The
+ * two shards publish the same floor (MFINV_MIN_DU === MFNB_MIN_DU === 3), so
+ * the clamp means the same thing on either side.
+ */
+function mfMinDu() {
   return clampMinDu($mfinvMinDu?.value);
 }
 
 /** Colour for a stamp under the CURRENT threshold — null when it does not
  *  clear the bar, which is how raising the threshold un-paints parcels. */
 function mfInvColorFor(hit) {
-  if (!mfInvPasses(hit, mfInvMinDu())) return null;
+  if (!mfInvPasses(hit, mfMinDu())) return null;
   return mfInvFillColor(hit);
 }
 
@@ -11182,7 +11193,7 @@ function renderMfInvLegend(merged = false) {
   // Nothing to build when the New Multi-Family box is carrying this ramp for
   // both layers — renderMfLegends() hides this one in the same pass.
   if (merged) return;
-  const min = mfInvMinDu();
+  const min = mfMinDu();
   const items = mfLegendRows(mfInvLegendSteps(min));
   $mfinvLegend.innerHTML =
     `<strong>Multi-family, ${min}+ dwelling units</strong><ul>${items}</ul>`
@@ -11222,7 +11233,7 @@ function showMfInventoryResults(munis) {
   renderTable(fc.features.map((f) => ({ parcel: f, zoning: [], devPlan: [] })));
   setMapData(fc, EMPTY_FC, EMPTY_FC);
 
-  const min = mfInvMinDu();
+  const min = mfMinDu();
   const units = feats.reduce((n, f) => n + (Number(f.properties._mfInv?.du) || 0), 0);
   const where = munis.length === 1 ? munis[0] : `${munis.length} municipalities`;
   setCount(feats.length
@@ -11291,20 +11302,29 @@ async function toggleMfInventoryOverlay() {
  *  every qualifying roll. Debounced because a number input fires `input` on
  *  every keystroke, and re-rendering the grid per digit is visibly janky. */
 let mfInvThresholdTimer = null;
-function onMfInvThresholdChange() {
+function onMfThresholdChange() {
   if (!$mfinvMinDu) return;
   const clamped = clampMinDu($mfinvMinDu.value);
   if (String(clamped) !== $mfinvMinDu.value) $mfinvMinDu.value = String(clamped);
-  if (!mfInvOverlayOn) return;
+  if (!mfInvOverlayOn && !mfnbOverlayOn) return;
   if (mfInvThresholdTimer) clearTimeout(mfInvThresholdTimer);
   mfInvThresholdTimer = setTimeout(() => {
     mfInvThresholdTimer = null;
-    recolorMfInv();
+    // Whichever of the two is on gets repainted — the bar governs both, so
+    // leaving the other showing its old set would be the inconsistency this
+    // single control exists to avoid.
+    if (mfInvOverlayOn) recolorMfInv();
+    if (mfnbOverlayOn) recolorMfnb();
     renderMfLegends();
     const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
       ? csvMatchedMunis.slice()
       : ($municipality.value ? [$municipality.value] : []);
-    if (munis.length > 0) showMfInventoryResults(munis);
+    if (munis.length === 0) return;
+    // One grid, one owner. The inventory wins when both are on: it is the
+    // superset (every new build is standing inventory), so its list contains
+    // the other's, and re-rendering twice would just flicker.
+    if (mfInvOverlayOn) showMfInventoryResults(munis);
+    else showMfNewbuildResults(munis);
   }, 250);
 }
 

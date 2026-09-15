@@ -252,6 +252,53 @@ test('every stamping path goes through those', () => {
   }
 });
 
+// --- one threshold, both layers ---------------------------------------------
+
+test('the "DU >=" box filters New Multi-Family too', () => {
+  // It used to filter only the standing inventory, so with both layers on the
+  // map showed 20+ unit buildings in one and 3+ in the other (Jason,
+  // 2026-09-15).
+  const colorFor = fnBody(main, 'mfnbColorFor');
+  assert.ok(colorFor, 'mfnbColorFor() is gone from main.js');
+  assert.match(colorFor, /mfnbPasses\(hit, mfMinDu\(\)\)/,
+    'New Multi-Family must gate on the shared threshold before colouring');
+  const invColorFor = fnBody(main, 'mfInvColorFor');
+  assert.match(invColorFor, /mfMinDu\(\)/,
+    'and the inventory must read the same box, not a second one');
+  // One reader of the input, so the two can never diverge.
+  const readers = [...main.matchAll(/\$mfinvMinDu\??\.value/g)].length;
+  const inMinDu = [...(fnBody(main, 'mfMinDu') || '').matchAll(/\$mfinvMinDu\??\.value/g)].length;
+  const inHandler = [...(fnBody(main, 'onMfThresholdChange') || '').matchAll(/\$mfinvMinDu\??\.value/g)].length;
+  assert.equal(readers, inMinDu + inHandler,
+    'the threshold input is read outside mfMinDu() and its change handler');
+});
+
+test('moving the bar repaints whichever layers are on', () => {
+  const h = fnBody(main, 'onMfThresholdChange');
+  assert.ok(h, 'onMfThresholdChange() is gone from main.js');
+  assert.match(h, /if \(mfInvOverlayOn\) recolorMfInv\(\)/);
+  assert.match(h, /if \(mfnbOverlayOn\) recolorMfnb\(\)/,
+    'a bar that governs both layers has to repaint both');
+  assert.match(h, /!mfInvOverlayOn && !mfnbOverlayOn/,
+    'and do nothing while neither is on');
+  assert.match(h, /showMfNewbuildResults\(munis\)/,
+    'the grid has to follow too when New Multi-Family is the layer on');
+});
+
+test('the bar moves both ways', () => {
+  // A roll below the current bar must still be stamped, or lowering the bar
+  // could not bring it back without a refetch.
+  const stamp = fnBody(main, 'stampMfNewbuildOnFabric');
+  assert.match(stamp, /if \(hit\) p\._mfnb = hit;/,
+    'every hit is stamped, painted or not');
+  const grid = fnBody(main, 'showMfNewbuildResults');
+  assert.match(grid, /_mfnbColor/,
+    'and the grid lists what is PAINTED, not what is stamped, or rolls below '
+    + 'the bar stay in the list after they leave the map');
+  assert.ok(!/properties\?\._mfnb\b(?!Color)/.test(grid),
+    'the grid must not filter on the raw stamp any more');
+});
+
 // --- the two multi-family legends -------------------------------------------
 
 test('the legends are rendered as a pair, never one alone', () => {
