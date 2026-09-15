@@ -25,6 +25,7 @@ import {
   condoCsvHeaders,
   condoCsvCells,
   condoLegendSteps,
+  condoDuLabelPoints,
 } from '../src/lib/condoDev.js';
 
 // Brandon plan 57857 — the largest new row-housing development, and the case
@@ -167,5 +168,46 @@ if (existsSync(idxPath)) {
 } else {
   console.log('condoDev: no local mb-parcel-data clone; drift check skipped');
 }
+
+// --- condoDuLabelPoints: one label per development, not per unit roll -------
+// Row housing is condo-titled — one roll per unit — so the map must not print
+// the roll's own "1" forty times across one project. The plan's `u` is the
+// number, and it gets one position.
+const planA = [
+  { plan: '57857', units: 122, center: [-97.0, 49.8] },
+  { plan: '57857', units: 122, center: [-97.2, 49.8] },
+  { plan: '57857', units: 122, center: [-97.1, 50.2] },
+];
+const oneA = condoDuLabelPoints(planA);
+assert.equal(oneA.length, 1, 'three rolls of one plan are ONE label');
+assert.equal(oneA[0].du, 122, 'the development unit count, not the roll count');
+assert.equal(oneA[0].rolls, 3);
+// Mean of the centroids, not a bbox midpoint: a development wrapped around a
+// park puts the bbox centre on the park.
+assert.ok(Math.abs(oneA[0].center[0] - (-97.1)) < 1e-9);
+assert.ok(Math.abs(oneA[0].center[1] - 49.933333333333) < 1e-9);
+
+const two = condoDuLabelPoints([
+  { plan: 'A', units: 4, center: [0, 0] },
+  { plan: 'B', units: 9, center: [2, 2] },
+]);
+assert.equal(two.length, 2, 'two plans are two labels');
+assert.deepEqual(two.map((t) => t.du).sort((a, b) => a - b), [4, 9]);
+
+// Junk in, nothing out — a label reading NaN over a real building is worse
+// than no label.
+assert.deepEqual(condoDuLabelPoints([]), []);
+assert.deepEqual(condoDuLabelPoints(null), []);
+assert.deepEqual(condoDuLabelPoints([{ units: 5, center: [0, 0] }]), [],
+                 'no plan, no group to label');
+assert.deepEqual(condoDuLabelPoints([{ plan: 'A', units: 'lots', center: [0, 0] }]), []);
+assert.deepEqual(condoDuLabelPoints([{ plan: 'A', units: 5, center: null }]), [],
+                 'a parcel with no centroid cannot place a label');
+assert.deepEqual(condoDuLabelPoints([{ plan: 'A', units: 5, center: [NaN, 1] }]), []);
+// A plan number is a string key — 57857 and '57857' are one development.
+assert.equal(condoDuLabelPoints([
+  { plan: 57857, units: 12, center: [1, 1] },
+  { plan: '57857', units: 12, center: [3, 3] },
+]).length, 1);
 
 console.log('condoDev tests passed');

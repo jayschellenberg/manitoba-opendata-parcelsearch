@@ -768,15 +768,28 @@ const PARCEL_FILL_OPACITY = [
 ];
 
 /**
- * The dwelling-unit count drawn on each parcel the standing multi-family
- * overlay has highlighted. Two identical layers ride the two sources the
- * overlay paints (search results and the muni-wide fabric), so this builds the
- * spec once rather than restating forty lines twice and letting them drift.
+ * The dwelling-unit count drawn on each parcel a multi-family overlay has
+ * highlighted. Two identical layers ride the two sources those overlays paint
+ * (search results and the muni-wide fabric), so this builds the spec once
+ * rather than restating forty lines twice and letting them drift.
  *
- * `_mfInvDu` is stamped in main.js beside `_mfInvColor` and deleted with it, so
- * the label set is exactly the highlighted set: raise the "DU ≥" threshold and
+ * ONE LAYER FOR TWO OVERLAYS. The standing inventory and New Multi-Family can
+ * be on together and largely paint the same rolls; a label layer each would
+ * print the same number twice, on top of itself, since these labels never
+ * yield (see below). So the two stamps are coalesced here: `_mfInvDu` first
+ * because the inventory is the "what is standing" reading and the one the
+ * "DU ≥" box filters, `_mfnbDu` where only New Multi-Family painted the roll.
+ * Both are current unit counts off the same assessment record, so where both
+ * exist they agree and the order is a formality.
+ *
+ * Each stamp is written and cleared in main.js next to its overlay's colour,
+ * so the labelled set is exactly the highlighted set: raise the threshold and
  * the numbers that stop being painted stop being labelled in the same pass. No
  * separate filter here can disagree with the colouring.
+ *
+ * Condo developments are NOT here — their rolls are one dwelling unit each and
+ * a "1" on every unit of a 122-unit project says nothing. That layer labels the
+ * project instead; see condoDuLabelLayer().
  *
  * ALWAYS DRAWN, NEVER CULLED. `text-allow-overlap` is on because the whole
  * point of the layer is that every highlighted parcel states its count — a
@@ -789,16 +802,16 @@ const PARCEL_FILL_OPACITY = [
  * mean anything; province-wide they would be a smear of digits over a map you
  * cannot read anyway.
  */
-function mfInvDuLabelLayer(id, source) {
+function duLabelLayer(id, source) {
   return {
     id,
     type: 'symbol',
     source,
     minzoom: 12,
-    filter: ['has', '_mfInvDu'],
+    filter: ['any', ['has', '_mfInvDu'], ['has', '_mfnbDu']],
     layout: {
       visibility: 'none',
-      'text-field': ['to-string', ['get', '_mfInvDu']],
+      'text-field': ['to-string', ['coalesce', ['get', '_mfInvDu'], ['get', '_mfnbDu']]],
       // The SAME stack the roll-number labels use, and not a heavier one: the
       // glyph endpoint in BASEMAP_STYLE serves 'Open Sans Semibold' and
       // 404s on 'Open Sans Bold'. A missing fontstack is not an error you can
@@ -817,6 +830,49 @@ function mfInvDuLabelLayer(id, source) {
       'text-color': '#111827',
       'text-halo-color': '#ffffff',
       'text-halo-width': 2,
+    },
+  };
+}
+
+/**
+ * The dwelling-unit count of a condo DEVELOPMENT, drawn once at the middle of
+ * the development.
+ *
+ * GROUPED BY CONDO PLAN, because that is the only handle that reassembles a
+ * project: row housing is condo-titled, one roll per unit, so 92% of the rolls
+ * MAO labels row housing carry dwelling_units = 1. Labelling those parcels the
+ * way the multi-family layers are labelled would print "1" forty times across
+ * one development and call it a unit count. The number worth reading is the
+ * plan's — 40 — and there is one place to put it.
+ *
+ * Fed from its own point source (`setCondoDuLabelData`) rather than the parcel
+ * fabric: one feature per plan, positioned at the average of its parcels'
+ * centroids, so the count renders exactly once no matter how many unit rolls
+ * the development holds.
+ *
+ * Purple, not the near-black the parcel counts use — the same hue family as
+ * the condo fills, so a project total and a parcel's own count are
+ * distinguishable at a glance rather than by inference.
+ */
+function condoDuLabelLayer(id, source) {
+  return {
+    id,
+    type: 'symbol',
+    source,
+    minzoom: 12,
+    layout: {
+      visibility: 'none',
+      'text-field': ['to-string', ['get', 'du']],
+      'text-font': ['Open Sans Semibold'],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 12, 11, 15, 14, 18, 17],
+      'text-allow-overlap': true,
+      'text-ignore-placement': false,
+      'symbol-placement': 'point',
+    },
+    paint: {
+      'text-color': '#4a1486',
+      'text-halo-color': '#ffffff',
+      'text-halo-width': 2.2,
     },
   };
 }
@@ -2037,7 +2093,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
           'line-opacity': 0.95,
         },
       });
-      map.addLayer(mfInvDuLabelLayer('muni-parcels-mfinv-du-label', 'muni-parcels'));
+      map.addLayer(duLabelLayer('muni-parcels-du-label', 'muni-parcels'));
       // New condo developments on the muni-wide fabric — same sparse-layer
       // treatment as the multi-family twin above.
       map.addLayer({
@@ -2661,7 +2717,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
           'line-opacity': 0.95,
         },
       });
-      map.addLayer(mfInvDuLabelLayer('mfinv-du-label', 'parcels'));
+      map.addLayer(duLabelLayer('du-label', 'parcels'));
 
       // New condo developments — colours each result parcel by its
       // development's type (row housing / apartment / mixed / not typed) or by
@@ -2692,6 +2748,12 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
           'line-opacity': 0.95,
         },
       });
+      // One point per condo plan, carrying that development's unit count —
+      // its own source rather than a filter over the parcels, because the
+      // thing being labelled is the project and the project has no polygon.
+      // Filled by setCondoDuLabelData() from main.js.
+      map.addSource('condo-du-labels', { type: 'geojson', data: emptyFc() });
+      map.addLayer(condoDuLabelLayer('condo-du-label', 'condo-du-labels'));
 
       // ---- Parcel numbering (leader-line callouts) -------------------
       // When a multi-parcel result set is numbered (main.js stamps a
@@ -3051,8 +3113,9 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
       // is on, "how many units" is the question being asked of the map, and a
       // count hidden behind a roll number would be the one number you turned
       // the layer on to read.
-      if (map.getLayer('muni-parcels-mfinv-du-label')) map.moveLayer('muni-parcels-mfinv-du-label');
-      if (map.getLayer('mfinv-du-label'))              map.moveLayer('mfinv-du-label');
+      if (map.getLayer('muni-parcels-du-label')) map.moveLayer('muni-parcels-du-label');
+      if (map.getLayer('du-label'))             map.moveLayer('du-label');
+      if (map.getLayer('condo-du-label'))       map.moveLayer('condo-du-label');
       // Parcel-number callouts ride ABOVE the roll-number labels — the
       // whole point is that the number is the thing you can always read.
       // Order within the group: casing → leader → dot → badge → text,
@@ -4917,9 +4980,23 @@ export function setMfNewbuildVisible(map, on) {
  */
 export function setMfInventoryVisible(map, on) {
   const vis = on ? 'visible' : 'none';
-  for (const id of ['mfinv-fill', 'mfinv-outline', 'mfinv-du-label',
-                    'muni-parcels-mfinv-fill', 'muni-parcels-mfinv-outline',
-                    'muni-parcels-mfinv-du-label']) {
+  for (const id of ['mfinv-fill', 'mfinv-outline',
+                    'muni-parcels-mfinv-fill', 'muni-parcels-mfinv-outline']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
+  }
+}
+
+/**
+ * Show / hide the per-parcel dwelling-unit counts.
+ *
+ * Its own setter rather than a line inside one overlay's, because the layer
+ * serves BOTH the standing inventory and New Multi-Family: it belongs on
+ * screen while EITHER is painting, and off only when neither is. main.js owns
+ * that `||` because main.js is where the two toggles live.
+ */
+export function setDuLabelsVisible(map, on) {
+  const vis = on ? 'visible' : 'none';
+  for (const id of ['du-label', 'muni-parcels-du-label']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
   }
 }
@@ -4933,9 +5010,21 @@ export function setMfInventoryVisible(map, on) {
 export function setCondoDevVisible(map, on) {
   const vis = on ? 'visible' : 'none';
   for (const id of ['condodev-fill', 'condodev-outline',
-                    'muni-parcels-condodev-fill', 'muni-parcels-condodev-outline']) {
+                    'muni-parcels-condodev-fill', 'muni-parcels-condodev-outline',
+                    'condo-du-label']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
   }
+}
+
+/**
+ * Feed the condo plan-total labels — one point per condo plan, `du` carrying
+ * the development's unit count. main.js groups the painted unit rolls by plan
+ * and hands the result here; see condoDuLabelLayer() for why the count is
+ * drawn per development rather than per roll.
+ */
+export function setCondoDuLabelData(map, fc) {
+  const src = map.getSource('condo-du-labels');
+  if (src) src.setData(fc || emptyFc());
 }
 
 /**

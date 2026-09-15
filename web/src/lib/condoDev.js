@@ -164,6 +164,49 @@ export function condoCsvCells(c, loaded) {
   ];
 }
 
+/**
+ * Collapse painted unit rolls into ONE labelled point per condo plan.
+ *
+ * WHY GROUPED. A development is one project spread over N single-unit rolls —
+ * 92% of the rolls MAO labels row housing carry dwelling_units = 1, because row
+ * housing is condo-titled. Labelling those parcels individually prints "1"
+ * forty times and calls it a unit count. The number that means something is the
+ * plan's `u`, and it wants one place on the map.
+ *
+ * Every roll of a development carries the DEVELOPMENT's stamp, so `u` is the
+ * same on all of them; it is read from the first roll seen and the rest only
+ * contribute position. Position is the mean of the rolls' centroids — not a
+ * bounding-box midpoint over the whole plan, which for a development wrapped
+ * around a park or split across a street lands the label outside every parcel
+ * it describes.
+ *
+ * @param {Array<{plan: string, units: number, center: [number, number]}>} entries
+ *        one per painted roll; `center` is that parcel's centroid.
+ * @returns {Array<{plan: string, du: number, center: [number, number], rolls: number}>}
+ */
+export function condoDuLabelPoints(entries) {
+  const byPlan = new Map();
+  for (const e of entries || []) {
+    if (!e || !e.plan) continue;
+    const du = Number(e.units);
+    if (!Number.isFinite(du)) continue;
+    const c = e.center;
+    if (!Array.isArray(c) || !Number.isFinite(c[0]) || !Number.isFinite(c[1])) continue;
+    const key = String(e.plan);
+    const acc = byPlan.get(key) || { plan: key, du, x: 0, y: 0, rolls: 0 };
+    acc.x += c[0];
+    acc.y += c[1];
+    acc.rolls += 1;
+    byPlan.set(key, acc);
+  }
+  return [...byPlan.values()].map((a) => ({
+    plan: a.plan,
+    du: a.du,
+    center: [a.x / a.rolls, a.y / a.rolls],
+    rolls: a.rolls,
+  }));
+}
+
 /** Legend rows for the active mode. */
 export function condoLegendSteps(mode) {
   if (mode === 'year') {

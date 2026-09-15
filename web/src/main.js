@@ -233,7 +233,9 @@ import {
   setLandfactsVisible,
   setMfNewbuildVisible,
   setCondoDevVisible,
+  setCondoDuLabelData,
   setMfInventoryVisible,
+  setDuLabelsVisible,
   setWaterInfluenceVisible,
   setHistoricalData,
   setHistoricalVisible,
@@ -286,13 +288,14 @@ import {
 import {
   mfnbCellText, mfnbTooltip, mfnbSortRank, mfnbCsvHeaders, mfnbCsvCells,
   mfnbFillColor, mfnbLegendSteps, MFNB_MODES, MFNB_MIN_DU, MFNB_FROM_YEAR,
-  readMfnb, primaryYear, bestConfidence, MFNB_CONFIDENCE,
+  readMfnb, primaryYear, bestConfidence, MFNB_CONFIDENCE, mfnbDu,
 } from './lib/mfNewbuild.js';
 import {
   readCondoDev, condoType, condoFillColor, condoCellText, condoSortRank,
   condoTooltip, condoCsvHeaders, condoCsvCells, condoLegendSteps,
-  CONDO_TYPES, CONDO_MODES, CONDO_MIN_UNITS, CONDO_FROM_YEAR,
+  CONDO_TYPES, CONDO_MODES, CONDO_MIN_UNITS, CONDO_FROM_YEAR, condoDuLabelPoints,
 } from './lib/condoDev.js';
+import { polygonBboxMidpoint } from './lib/polygonCentroid.js';
 import {
   mfInvFillColor, mfInvPasses, mfInvLegendSteps, clampMinDu, mfInvDu, sameLegendSteps,
 } from './lib/mfInventory.js';
@@ -7688,10 +7691,11 @@ async function stampMfNewbuild(rows) {
       if (!dict) continue;
       p._mfnbLoaded = true;
       const hit = p?.Roll_No_Txt ? dict[p.Roll_No_Txt] : null;
+      // Unlike the fabric path, `_mfnb` is stamped for every hit: this is the
+      // search-result enrichment, and the grid's New MF column describes the
+      // roll whether or not the current view paints it.
       if (hit) p._mfnb = hit;
-      const color = mfnbColorFor(hit);
-      if (color) p._mfnbColor = color;
-      else if (p._mfnbColor) delete p._mfnbColor;
+      paintMfnbFeature(p, hit);
     }
   } catch (err) {
     console.warn('MF new-build enrichment failed (non-fatal):', err);
@@ -10724,6 +10728,11 @@ async function toggleLandfactsOverlay() {
   // Parcels layer is visible. A coloured parcel that does not answer a
   // click is a trap, so switch the fabric on through its own toggle (which
   // keeps that button's state honest) if it is not already.
+  //
+  // Unlike the three multi-family overlays, this one needs it: Crop History
+  // paints the whole fabric rather than a handful of flagged rolls, and does
+  // not put what it paints into the results, so the fabric's own handlers are
+  // the only thing that answers a click here.
   if ($muniParcelsToggle && !$muniParcelsToggle.classList.contains('active')) {
     await toggleAuxOverlay('muniParcels');
   }
@@ -10772,6 +10781,34 @@ function mfnbColorFor(hit) {
   return hit ? mfnbFillColor(hit, mfnbMode || 'year') : null;
 }
 
+/**
+ * Stamp - or clear - everything this overlay draws for one parcel: the fill
+ * colour and the dwelling-unit count map.js labels the polygon with. Same
+ * contract as paintMfInvFeature, and for the same reason: the colour and the
+ * number are one claim about one parcel, and written from two places they
+ * drift into a highlight with no count or a count with no highlight.
+ *
+ * The count can legitimately be missing where the colour is not - a roll
+ * flagged by its building-value history that carries no unit count is painted
+ * in Year and Type view and simply not labelled. Better an unlabelled parcel
+ * than a confident "NaN".
+ *
+ * Returns whether the parcel is painted.
+ */
+function paintMfnbFeature(p, hit) {
+  const color = mfnbColorFor(hit);
+  if (color) {
+    p._mfnbColor = color;
+    const du = mfnbDu(hit);
+    if (du === null) { if (p._mfnbDu !== undefined) delete p._mfnbDu; }
+    else p._mfnbDu = du;
+    return true;
+  }
+  if (p._mfnbColor !== undefined) delete p._mfnbColor;
+  if (p._mfnbDu !== undefined) delete p._mfnbDu;
+  return false;
+}
+
 function nextMfnbMode(current) {
   if (current === null)    return 'year';
   if (current === 'year')  return 'units';
@@ -10792,8 +10829,7 @@ function recolorMfnb() {
     for (const f of fc?.features || []) {
       const p = f.properties;
       if (!p?._mfnb) continue;
-      const color = mfnbColorFor(p._mfnb);
-      if (color) { p._mfnbColor = color; painted += 1; } else if (p._mfnbColor) delete p._mfnbColor;
+      if (paintMfnbFeature(p, p._mfnb)) painted += 1;
     }
     return painted;
   };
@@ -10824,13 +10860,12 @@ async function stampMfNewbuildOnFabric(fabricFc, munis) {
     const dict = p.Muni_Name_With_Typ ? byMuni.get(p.Muni_Name_With_Typ) : null;
     if (dict) p._mfnbLoaded = true;
     const hit = (dict && p.Roll_No_Txt) ? dict[p.Roll_No_Txt] : null;
-    const color = mfnbColorFor(hit);
-    if (color) {
+    // `_mfnb` is stamped only where the roll actually painted, because it is
+    // what showMfNewbuildResults() filters the grid on — stamping every hit
+    // would put rolls in the grid that are not on the map.
+    if (paintMfnbFeature(p, hit)) {
       p._mfnb = hit;
-      p._mfnbColor = color;
       painted += 1;
-    } else if (p._mfnbColor) {
-      delete p._mfnbColor;
     }
   }
   return painted;
@@ -10896,8 +10931,9 @@ function renderMfnbLegend(mode, merged = false) {
     + (mode === 'type'
         ? `type is hand-labelled in mf-type-overrides.csv, never inferred<br>`
         : `from assessed building value ${MFNB_FROM_YEAR}+<br>`)
-    + `years are assessment years and trail completion by about a year`
-    + (merged ? `<br>Multi-Family is the standing inventory, labelled with its unit count` : '')
+    + `years are assessment years and trail completion by about a year<br>`
+    + `unit count labels each parcel (zoom in to read them)`
+    + (merged ? `<br>Multi-Family is the standing inventory over the same ramp` : '')
     + `</small>`;
 }
 
@@ -10949,6 +10985,7 @@ function turnMfnbOff() {
   mfnbOverlayOn = false;
   mfnbMode = null;
   setMfNewbuildVisible(map, false);
+  setDuLabelsVisible(map, duLabelsWanted());
   if ($mfnbToggle) {
     setOverlayPressed($mfnbToggle, false);
     setOverlayBtnLabel($mfnbToggle, mfnbButtonLabelFor(null));
@@ -11011,14 +11048,18 @@ async function toggleMfNewbuildOverlay() {
     recolorMfnb();
   }
 
-  // A coloured parcel that does not answer a click is a trap — switch the
-  // fabric on through its own toggle if it is not already.
-  if ($muniParcelsToggle && !$muniParcelsToggle.classList.contains('active')) {
-    await toggleAuxOverlay('muniParcels');
-  }
+  // The Assessment Parcels fabric is deliberately NOT switched on here.
+  // It used to be, so that clicking a coloured parcel answered - but every
+  // parcel this overlay paints is also put into the results (see the
+  // show*Results call below), and the results source has its own click
+  // handling, so the click was never actually at risk. What forcing the
+  // fabric on DID do was bury the highlight under every other parcel in the
+  // municipality. Jason asked for it off; the button is still there to turn
+  // on by hand.
 
   mfnbOverlayOn = true;
   setMfNewbuildVisible(map, true);
+  setDuLabelsVisible(map, duLabelsWanted());
   setOverlayPressed($mfnbToggle, true);
   setOverlayBtnLabel($mfnbToggle, mfnbButtonLabelFor(mfnbMode));
   setColumnVisible('mfnb', true);
@@ -11056,6 +11097,19 @@ function mfInvMinDu() {
 function mfInvColorFor(hit) {
   if (!mfInvPasses(hit, mfInvMinDu())) return null;
   return mfInvFillColor(hit);
+}
+
+/**
+ * Should the per-parcel unit counts be on screen?
+ *
+ * One layer serves both multi-family overlays (see duLabelLayer in map.js), so
+ * the answer is an OR, and it has to be re-asked every time either toggle
+ * moves — turning one off while the other is still on must not take the
+ * numbers with it. New Condos is not in here: its counts are a separate,
+ * plan-grouped layer that rides its own overlay.
+ */
+function duLabelsWanted() {
+  return mfInvOverlayOn || mfnbOverlayOn;
 }
 
 /**
@@ -11143,6 +11197,7 @@ function renderMfInvLegend(merged = false) {
 function turnMfInvOff() {
   mfInvOverlayOn = false;
   setMfInventoryVisible(map, false);
+  setDuLabelsVisible(map, duLabelsWanted());
   if ($mfinvToggle) setOverlayPressed($mfinvToggle, false);
   renderMfLegends();
 }
@@ -11215,12 +11270,18 @@ async function toggleMfInventoryOverlay() {
     recolorMfInv();
   }
 
-  if ($muniParcelsToggle && !$muniParcelsToggle.classList.contains('active')) {
-    await toggleAuxOverlay('muniParcels');
-  }
+  // The Assessment Parcels fabric is deliberately NOT switched on here.
+  // It used to be, so that clicking a coloured parcel answered - but every
+  // parcel this overlay paints is also put into the results (see the
+  // show*Results call below), and the results source has its own click
+  // handling, so the click was never actually at risk. What forcing the
+  // fabric on DID do was bury the highlight under every other parcel in the
+  // municipality. Jason asked for it off; the button is still there to turn
+  // on by hand.
 
   mfInvOverlayOn = true;
   setMfInventoryVisible(map, true);
+  setDuLabelsVisible(map, duLabelsWanted());
   setOverlayPressed($mfinvToggle, true);
   renderMfLegends();
   if (munis.length > 0) showMfInventoryResults(munis);
@@ -11270,6 +11331,44 @@ let condoLoadedFor = null;
 
 function condoColorFor(hit) {
   return hit ? condoFillColor(hit, condoMode || 'type') : null;
+}
+
+/**
+ * Rebuild the condo plan-total labels from whatever is currently painted.
+ *
+ * Grouped by condo plan, one point per development, because a development is
+ * one project spread over N single-unit rolls - see condoDuLabelPoints() for
+ * the why. Called after every stamp and recolour, and with the overlay off it
+ * clears the source rather than leaving last municipality's totals floating
+ * over an empty map.
+ *
+ * Reads the muni fabric, not the results source: the fabric is the complete
+ * set of painted rolls for the scope, so a development does not drift its
+ * label because half its units fell off a paged grid.
+ */
+function refreshCondoDuLabels() {
+  if (!condoOverlayOn) {
+    setCondoDuLabelData(map, EMPTY_FC);
+    return 0;
+  }
+  const entries = [];
+  for (const f of auxData.muniParcels?.features || []) {
+    const p = f.properties;
+    if (!p?._condoColor || !p._condoDev) continue;
+    const center = polygonBboxMidpoint(f.geometry);
+    if (!center) continue;
+    entries.push({ plan: p._condoDev.p, units: p._condoDev.u, center });
+  }
+  const points = condoDuLabelPoints(entries);
+  setCondoDuLabelData(map, {
+    type: 'FeatureCollection',
+    features: points.map((pt) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: pt.center },
+      properties: { plan: pt.plan, du: pt.du, rolls: pt.rolls },
+    })),
+  });
+  return points.length;
 }
 
 function nextCondoMode(current) {
@@ -11345,7 +11444,8 @@ function renderCondoLegend(mode) {
     + `<small style="display:block;margin-top:4px;color:#6b7280;font-style:italic">`
     + `${CONDO_MIN_UNITS}+ unit developments, first assessed ${CONDO_FROM_YEAR}+<br>`
     + `type is MAO's own descriptor, never inferred<br>`
-    + `years are assessment years and trail completion by about a year</small>`;
+    + `years are assessment years and trail completion by about a year<br>`
+    + `unit count labels each development, grouped by condo plan</small>`;
 }
 
 function turnCondoOff() {
@@ -11396,6 +11496,7 @@ async function toggleCondoDevOverlay() {
   if (condoOverlayOn) {
     condoMode = targetMode;
     recolorCondo();
+    refreshCondoDuLabels();
     setOverlayBtnLabel($condoToggle, condoButtonLabelFor(targetMode));
     renderCondoLegend(targetMode);
     return;
@@ -11436,12 +11537,18 @@ async function toggleCondoDevOverlay() {
     recolorCondo();
   }
 
-  if ($muniParcelsToggle && !$muniParcelsToggle.classList.contains('active')) {
-    await toggleAuxOverlay('muniParcels');
-  }
+  // The Assessment Parcels fabric is deliberately NOT switched on here.
+  // It used to be, so that clicking a coloured parcel answered - but every
+  // parcel this overlay paints is also put into the results (see the
+  // show*Results call below), and the results source has its own click
+  // handling, so the click was never actually at risk. What forcing the
+  // fabric on DID do was bury the highlight under every other parcel in the
+  // municipality. Jason asked for it off; the button is still there to turn
+  // on by hand.
 
   condoOverlayOn = true;
   setCondoDevVisible(map, true);
+  refreshCondoDuLabels();
   setOverlayPressed($condoToggle, true);
   setOverlayBtnLabel($condoToggle, condoButtonLabelFor(condoMode));
   setColumnVisible('condodev', true);
