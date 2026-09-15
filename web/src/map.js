@@ -2933,7 +2933,11 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
         layout: {
           // `rank` is the 1-based visit order stamped by setRouteData().
           'text-field': ['to-string', ['get', 'rank']],
-          'text-font': ['Open Sans Bold'],
+          // Same stack as muni-parcels-label, and for the same reason: the
+          // glyph endpoint in BASEMAP_STYLE 404s on "Open Sans Bold". That
+          // 404 fails the whole route-stops tile in the worker, so the badge
+          // AND the circle under it vanish — see fontStacks.test.js.
+          'text-font': ['Open Sans Semibold'],
           'text-size': 12,
           'text-allow-overlap': true,
           'text-ignore-placement': true,
