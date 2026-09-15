@@ -169,6 +169,34 @@ function readCsv(filePath) {
   });
 }
 
+/** A copy of a dataset payload with its build timestamp removed. */
+function withoutGeneratedAt(payload) {
+  if (!payload || typeof payload !== 'object' || !payload.metadata) return payload;
+  const metadata = { ...payload.metadata };
+  delete metadata.generated_at;
+  return { ...payload, metadata };
+}
+
+/**
+ * Does `prevText` already hold `next`, apart from its `generated_at` stamp?
+ *
+ * Compares the PARSED objects, not the text: the file on disk may have been
+ * checked out with CRLF line endings, and a byte comparison would then call
+ * every file different and rewrite it — reintroducing exactly the churn this
+ * exists to stop.
+ *
+ * Anything unreadable, absent, or shaped differently (an older schema, a
+ * hand-edit) answers false and gets rewritten. The safe default is to write.
+ *
+ * Exported for the unit tests.
+ */
+export function sameExceptGeneratedAt(prevText, next) {
+  if (typeof prevText !== 'string' || prevText.length === 0) return false;
+  let prev;
+  try { prev = JSON.parse(prevText); } catch { return false; }
+  return JSON.stringify(withoutGeneratedAt(prev)) === JSON.stringify(withoutGeneratedAt(next));
+}
+
 /**
  * Build DATA_DIR/muni-vintage.json from the mao-scrape ledger. Skips (keeping
  * any previously built file in place) when mao-scrape isn't reachable — a
@@ -231,7 +259,24 @@ function buildMuniVintage(warnings) {
     },
     rows,
   };
-  fs.writeFileSync(path.join(DATA_DIR, 'muni-vintage.json'), JSON.stringify(out, null, 1) + '\n');
+  // Write ONLY when something other than the clock moved.
+  //
+  // This step re-derives the file on every manifest build, and the ledger it
+  // reads changes a few times a year — so an unconditional write rewrote
+  // `generated_at` and nothing else, every run. auto-publish-indexes.ps1
+  // stages manifest.json but not this file, so the effect was a working tree
+  // that went dirty on every scheduled run and stayed that way (Jason,
+  // 2026-09-15: five days of it), plus a manifest claiming a fresh
+  // modified_at for a file nobody had published.
+  //
+  // Skipping the write also keeps the file's mtime honest, which is what the
+  // manifest records: `generated_at` now means "when this content was
+  // produced", and `source_modified` still says when the ledger itself last
+  // moved. Both are more useful than "when the build last ran".
+  const outPath = path.join(DATA_DIR, 'muni-vintage.json');
+  const prev = fs.existsSync(outPath) ? fs.readFileSync(outPath, 'utf8') : null;
+  if (sameExceptGeneratedAt(prev, out)) return;
+  fs.writeFileSync(outPath, JSON.stringify(out, null, 1) + '\n');
 }
 
 function buildManifest() {

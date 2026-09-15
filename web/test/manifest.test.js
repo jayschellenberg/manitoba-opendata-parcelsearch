@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { extractMetadataBlock, validateManifest } from '../scripts/build-manifest.js';
+import { extractMetadataBlock, validateManifest, sameExceptGeneratedAt } from '../scripts/build-manifest.js';
 
 const results = [];
 async function test(name, fn) {
@@ -211,6 +211,67 @@ await test('manifest.js — getOverallFreshness picks the newest generated_at', 
   const mod = await import(`../src/manifest.js?t=${Date.now()}-${Math.random()}`);
   const latest = await mod.getOverallFreshness();
   assert.equal(latest, '2026-05-09T00:00:00Z');
+});
+
+// --- muni-vintage is rewritten only when something other than the clock moved
+
+// WHY. buildMuniVintage() re-derives the file on every manifest build, and the
+// ledger it reads changes a few times a year. An unconditional write rewrote
+// `generated_at` and nothing else, every run — and auto-publish-indexes.ps1
+// stages manifest.json but NOT this file, so the working tree went dirty on
+// every scheduled run and stayed that way (Jason, 2026-09-15: five days of a
+// one-line diff), while the manifest advertised a fresh modified_at for a file
+// nobody had published.
+
+const VINTAGE = {
+  version: 1,
+  metadata: {
+    generated_at: '2026-09-10T16:20:07.124Z',
+    source: 'mao-scrape muni_refresh_ledger.csv (assessment cadence, month precision)',
+    source_modified: '2026-09-03T05:58:44.045Z',
+    precision: 'month',
+    row_count: 2,
+  },
+  rows: [
+    { muni_no: '340', name: 'Niverville', region: 'South', last_refreshed: '2026-07', cadence_months: 6 },
+    { muni_no: '451', name: 'Steinbach', region: 'South', last_refreshed: '2026-07', cadence_months: 6 },
+  ],
+};
+const asText = (o) => JSON.stringify(o, null, 1) + '\n';
+const withClock = (t) => ({ ...VINTAGE, metadata: { ...VINTAGE.metadata, generated_at: t } });
+
+await test('a new build timestamp alone is not a change', () => {
+  assert.equal(
+    sameExceptGeneratedAt(asText(VINTAGE), withClock('2026-09-15T09:36:02.331Z')),
+    true,
+    'this is the churn: same rows, same source, five days of clock');
+});
+
+await test('anything else IS a change', () => {
+  const moved = { ...VINTAGE, metadata: { ...VINTAGE.metadata, source_modified: '2026-09-14T00:00:00.000Z' } };
+  assert.equal(sameExceptGeneratedAt(asText(VINTAGE), moved), false,
+    'the ledger itself moving must reach the file');
+  const rows = { ...VINTAGE, rows: [{ ...VINTAGE.rows[0], last_refreshed: '2027-01' }, VINTAGE.rows[1]] };
+  assert.equal(sameExceptGeneratedAt(asText(VINTAGE), rows), false, 'a refreshed muni');
+  const count = { ...VINTAGE, metadata: { ...VINTAGE.metadata, row_count: 3 } };
+  assert.equal(sameExceptGeneratedAt(asText(VINTAGE), count), false, 'a muni added or dropped');
+});
+
+await test('CRLF on disk is not a change either', () => {
+  // The file is checked out with CRLF on Windows. A byte comparison would
+  // call every file different and rewrite it — reintroducing the churn this
+  // exists to stop. The comparison is over the PARSED objects.
+  const crlf = asText(VINTAGE).replace(/\n/g, '\r\n');
+  assert.equal(sameExceptGeneratedAt(crlf, withClock('2026-09-15T09:36:02.331Z')), true);
+});
+
+await test('when in doubt, write', () => {
+  assert.equal(sameExceptGeneratedAt(null, VINTAGE), false, 'no file yet');
+  assert.equal(sameExceptGeneratedAt('', VINTAGE), false);
+  assert.equal(sameExceptGeneratedAt('{ not json', VINTAGE), false, 'a truncated write');
+  assert.equal(sameExceptGeneratedAt('{"version":1,"rows":[]}', VINTAGE), false,
+    'an older shape with no metadata block');
+  assert.equal(sameExceptGeneratedAt(asText(VINTAGE), { version: 1 }), false);
 });
 
 const failed = results.filter((r) => r.status === 'fail');
