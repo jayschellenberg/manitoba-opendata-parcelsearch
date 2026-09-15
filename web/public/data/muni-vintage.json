@@ -1,7 +1,7 @@
 {
  "version": 1,
  "metadata": {
-  "generated_at": "2026-09-10T16:20:07.124Z",
+  "generated_at": "2026-09-15T09:36:02.331Z",
   "source": "mao-scrape muni_refresh_ledger.csv (assessment cadence, month precision)",
   "source_modified": "2026-09-03T05:58:44.045Z",
   "precision": "month",
