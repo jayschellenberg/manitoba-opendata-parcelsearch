@@ -234,6 +234,7 @@ import {
   setMfNewbuildVisible,
   setCondoDevVisible,
   setCondoDuLabelData,
+  setOverlayHighlightOwners,
   setMfInventoryVisible,
   setDuLabelsVisible,
   setWaterInfluenceVisible,
@@ -10989,6 +10990,7 @@ function turnMfnbOff() {
   mfnbMode = null;
   setMfNewbuildVisible(map, false);
   setDuLabelsVisible(map, duLabelsWanted());
+  syncOverlayHighlight();
   if ($mfnbToggle) {
     setOverlayPressed($mfnbToggle, false);
     setOverlayBtnLabel($mfnbToggle, mfnbButtonLabelFor(null));
@@ -11063,6 +11065,7 @@ async function toggleMfNewbuildOverlay() {
   mfnbOverlayOn = true;
   setMfNewbuildVisible(map, true);
   setDuLabelsVisible(map, duLabelsWanted());
+  syncOverlayHighlight();
   setOverlayPressed($mfnbToggle, true);
   setOverlayBtnLabel($mfnbToggle, mfnbButtonLabelFor(mfnbMode));
   setColumnVisible('mfnb', true);
@@ -11121,6 +11124,24 @@ function mfInvColorFor(hit) {
  */
 function duLabelsWanted() {
   return mfInvOverlayOn || mfnbOverlayOn;
+}
+
+/**
+ * Tell the map which themed overlays are painting, so the yellow selection
+ * highlight yields under them.
+ *
+ * Every one of these overlays puts what it paints into the results, so its
+ * parcels wear the selection kit as well as the ramp — and over the pale end
+ * of a ramp that yellow is not invisible, it is the colour you see. Re-asked
+ * on every on/off transition rather than derived from the stamps, which
+ * outlive their overlay on purpose.
+ */
+function syncOverlayHighlight() {
+  const keys = [];
+  if (mfInvOverlayOn) keys.push('mfinv');
+  if (mfnbOverlayOn) keys.push('mfnb');
+  if (condoOverlayOn) keys.push('condo');
+  setOverlayHighlightOwners(map, keys);
 }
 
 /**
@@ -11209,6 +11230,7 @@ function turnMfInvOff() {
   mfInvOverlayOn = false;
   setMfInventoryVisible(map, false);
   setDuLabelsVisible(map, duLabelsWanted());
+  syncOverlayHighlight();
   if ($mfinvToggle) setOverlayPressed($mfinvToggle, false);
   renderMfLegends();
 }
@@ -11293,6 +11315,7 @@ async function toggleMfInventoryOverlay() {
   mfInvOverlayOn = true;
   setMfInventoryVisible(map, true);
   setDuLabelsVisible(map, duLabelsWanted());
+  syncOverlayHighlight();
   setOverlayPressed($mfinvToggle, true);
   renderMfLegends();
   if (munis.length > 0) showMfInventoryResults(munis);
@@ -11472,6 +11495,8 @@ function turnCondoOff() {
   condoOverlayOn = false;
   condoMode = null;
   setCondoDevVisible(map, false);
+  refreshCondoDuLabels();
+  syncOverlayHighlight();
   if ($condoToggle) {
     setOverlayPressed($condoToggle, false);
     setOverlayBtnLabel($condoToggle, condoButtonLabelFor(null));
@@ -11569,6 +11594,7 @@ async function toggleCondoDevOverlay() {
   condoOverlayOn = true;
   setCondoDevVisible(map, true);
   refreshCondoDuLabels();
+  syncOverlayHighlight();
   setOverlayPressed($condoToggle, true);
   setOverlayBtnLabel($condoToggle, condoButtonLabelFor(condoMode));
   setColumnVisible('condodev', true);

@@ -54,6 +54,7 @@ import {
   applyMuniParcelsBasemapStyle,
 } from './lib/muniParcelsStyle.js';
 import { polygonBboxMidpoint } from './lib/polygonCentroid.js';
+import { yieldToOverlay } from './lib/overlayHighlight.js';
 import { rollDisplay } from './lib/parcelLabelFields.js';
 import { zoningBylawText, devPlanBylawText } from './lib/amendment.js';
 import { WAYBACK_VERSIONS, waybackTileUrl } from './lib/wayback.js';
@@ -766,6 +767,37 @@ const PARCEL_FILL_OPACITY = [
   0.5,
   0.3,
 ];
+
+// ---- the result-selection highlight, and what makes it stand down ---------
+//
+// THREE THINGS WRITE `parcel-fill`'s opacity — the zone-colouring switch
+// (0.55, zone fills carry meaning and need more body), the water overlay
+// (0, its own colours were muddied by yellow underneath), and the themed
+// overlays added later, which need it silenced only on the parcels THEY are
+// painting. The first two rewrite the whole property on every render, so an
+// overlay that simply called setPaintProperty once had its rule wiped by the
+// next table render — which is exactly how this shipped broken the first
+// time (Jason, 2026-09-15: pale multi-family bands rendering apricot).
+//
+// So the two pieces are held apart and re-combined on every write: `base` is
+// what the selection itself wants, `owners` is which overlays are painting.
+// Nothing sets the paint property directly any more.
+let parcelFillBase = PARCEL_FILL_OPACITY;
+let highlightOwners = [];
+
+function applySelectionOpacity(map) {
+  if (!map) return;
+  const kit = [
+    ['parcel-fill', 'fill-opacity', parcelFillBase],
+    // The dashed black/yellow border, and its black under-stroke. Constant
+    // bases: nothing else rewrites these.
+    ['parcel-line', 'line-opacity', 0.75],
+    ['parcel-line-underlay', 'line-opacity', 0.75],
+  ];
+  for (const [id, prop, base] of kit) {
+    if (map.getLayer(id)) map.setPaintProperty(id, prop, yieldToOverlay(base, highlightOwners));
+  }
+}
 
 /**
  * The dwelling-unit count drawn on each parcel a multi-family overlay has
@@ -4243,9 +4275,10 @@ export function setParcelZoneColoring(map, pairs) {
          ['match', ['coalesce', ['get', '_zoneCode'], ''], ...pairs, '#cccccc']]
       : ['case', starred, '#8b0000', '#ffea00']);
   // Zone fills need more body than the highlight yellow: they carry meaning
-  // rather than just marking a selection.
-  map.setPaintProperty('parcel-fill', 'fill-opacity',
-    (pairs && pairs.length) ? 0.55 : PARCEL_FILL_OPACITY);
+  // rather than just marking a selection. Written through the applier so a
+  // themed overlay's stand-down survives this call.
+  parcelFillBase = (pairs && pairs.length) ? 0.55 : PARCEL_FILL_OPACITY;
+  applySelectionOpacity(map);
 }
 
 /**
@@ -4987,6 +5020,20 @@ export function setMfInventoryVisible(map, on) {
 }
 
 /**
+ * Which themed overlays currently own the result highlight.
+ *
+ * Re-writes the selection kit's three opacities so a parcel an overlay is
+ * painting stops also wearing the yellow — see lib/overlayHighlight.js for
+ * why (the pale end of a ramp over 40% yellow renders apricot, and the layer
+ * ends up looking like two different things). Called from main.js every time
+ * one of those overlays goes on or off; `keys` is whichever are painting now.
+ */
+export function setOverlayHighlightOwners(map, keys) {
+  highlightOwners = [...(keys || [])];
+  applySelectionOpacity(map);
+}
+
+/**
  * Show / hide the per-parcel dwelling-unit counts.
  *
  * Its own setter rather than a line inside one overlay's, because the layer
@@ -5053,9 +5100,8 @@ export function setWaterInfluenceVisible(map, on) {
   // hover and click (queryRenderedFeatures against 'parcel-fill' in several
   // handlers below), and `visibility: none` would drop it out of those
   // queries and kill the popups. A zero-opacity layer still hit-tests.
-  if (map.getLayer('parcel-fill')) {
-    map.setPaintProperty('parcel-fill', 'fill-opacity', on ? 0 : PARCEL_FILL_OPACITY);
-  }
+  parcelFillBase = on ? 0 : PARCEL_FILL_OPACITY;
+  applySelectionOpacity(map);
 }
 
 // Year the historical layers are currently showing — read by the historical
