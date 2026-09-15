@@ -30,9 +30,26 @@
 # is true:
 #
 #   download-missing   CREA has it, we do not      -> action needed, here is how
+#   parser-broken      CREA has a zip we cannot read -> action needed, fix the parser
 #   upstream-late      we have all CREA has        -> FYI only, nothing to do
 #   upstream-regressed CREA's newest is OLDER      -> odd, worth a human look
 #   upstream-unknown   could not reach either      -> say so, do not guess
+#
+# WHY parser-broken EXISTS (2026-09-15). This check used to run "the same page
+# and the same regex hpi-download.ps1 uses -- deliberately, so the two scripts
+# can never disagree about what 'newest on the page' means." That sentence was
+# the bug. When CREA renamed the zip to MLS_HPI_Sept_2026.zip, the shared parser
+# could not read 'Sept', so the downloader hard-failed AND this backstop -- using
+# the identical parser -- concluded the page held nothing, reported
+# 'upstream-unknown', and could not reach the actionable download-missing branch
+# at all. Two layers of defence, one shared blind spot, zero useful alarms.
+#
+# A backstop that shares the primary's parser is not a backstop. So the upstream
+# probe now looks for MLS_HPI*.zip links of ANY shape (hpi-lib.ps1,
+# Get-HpiZipLinks) and treats "links present, none readable" as its own
+# actionable state -- a judgement that needs no agreement about month spellings,
+# which is exactly why it survives the parser being wrong. It fires immediately,
+# not on GraceDay: a stopped pipeline should not wait ten days to be mentioned.
 #
 # Robustness:
 #   * Staleness is judged from the FOLDER NAME (month+year), NOT the timestamp.
@@ -85,18 +102,10 @@ param(
 $ErrorActionPreference = 'Continue'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $root 'alert-lib.ps1')
+. (Join-Path $root 'hpi-lib.ps1')   # Get-HpiMonthNumber / Get-HpiZipLinks
 $NtfyTopic = 'mbps-hpi-staleness-jks'   # public namespace; carries no secrets
 $StampFile = Join-Path $root 'logs\hpi-alert-stamp.txt'
 $DlLogFile = Join-Path $root 'logs\hpi-download.log'
-
-# Month-name -> number, accepting full ("May","June") and 3-letter ("Jun")
-# forms, case-insensitive.
-$months = @{}
-1..12 | ForEach-Object {
-  $ci = [System.Globalization.CultureInfo]::InvariantCulture
-  $months[$ci.DateTimeFormat.GetMonthName($_).ToLower()]            = $_
-  $months[$ci.DateTimeFormat.GetAbbreviatedMonthName($_).ToLower()] = $_
-}
 
 # ---- Month arithmetic on the year*12+month key -------------------------------
 # Inverse of ($year * 12 + $month). Written out because ($ym % 12) maps December
@@ -125,9 +134,9 @@ if ($TestAlert) {
 $best = $null
 Get-ChildItem -Path $HpiDir -Directory -Filter 'MLS_HPI_*' -ErrorAction SilentlyContinue | ForEach-Object {
   if ($_.Name -match '^MLS_HPI_([A-Za-z]+)_(\d{4})$') {
-    $mkey = $Matches[1].ToLower(); $yr = [int]$Matches[2]
-    if ($months.ContainsKey($mkey)) {
-      $ym = $yr * 12 + $months[$mkey]
+    $mn = Get-HpiMonthNumber $Matches[1]
+    if ($mn -gt 0) {
+      $ym = [int]$Matches[2] * 12 + $mn
       if (-not $best -or $ym -gt $best.YM) { $best = @{ YM = $ym } }
     }
   }
@@ -140,42 +149,62 @@ Get-ChildItem -Path $HpiDir -Directory -Filter 'MLS_HPI_*' -ErrorAction Silently
 # missing or has gone stale (downloader task disabled, machine asleep, ...).
 function Get-UpstreamRelease {
   if (Test-Path $DlLogFile) {
-    $hit = $null
+    # Both the last good answer AND the last hard failure, with their times. A
+    # "Newest on page" line older than the newest HARD FAIL is a cached answer
+    # from before the downloader broke -- trusting it on 2026-09-15 would have
+    # reported August as CREA's newest (matching what is on disk) and produced a
+    # cheerful "nothing to do" while the pipeline was down. The freshness window
+    # alone does not catch this: that stale line was only a day old.
+    $hit    = $null
+    $failAt = [datetime]::MinValue
     foreach ($line in (Get-Content $DlLogFile -ErrorAction SilentlyContinue)) {
       if ($line -match '^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+Newest on page:\s+([A-Za-z]+)\s+(\d{4})') {
         $hit = @{ When = $Matches[1]; Mon = $Matches[2]; Yr = [int]$Matches[3] }
       }
+      elseif ($line -match '^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+HARD FAIL:') {
+        $t = [datetime]::MinValue
+        if ([datetime]::TryParseExact($Matches[1], 'yyyy-MM-dd HH:mm:ss',
+              [System.Globalization.CultureInfo]::InvariantCulture,
+              [System.Globalization.DateTimeStyles]::None, [ref]$t)) { $failAt = $t }
+      }
     }
-    if ($hit -and $months.ContainsKey($hit.Mon.ToLower())) {
-      $when = [datetime]::MinValue
-      if ([datetime]::TryParseExact($hit.When, 'yyyy-MM-dd HH:mm:ss',
-            [System.Globalization.CultureInfo]::InvariantCulture,
-            [System.Globalization.DateTimeStyles]::None, [ref]$when)) {
-        if (((Get-Date) - $when).TotalDays -le $LogMaxAgeDays) {
-          return @{ YM     = $hit.Yr * 12 + $months[$hit.Mon.ToLower()]
-                    Source = "hpi-download.log, checked $($hit.When)" }
+    if ($hit) {
+      $mn = Get-HpiMonthNumber $hit.Mon
+      if ($mn -gt 0) {
+        $when = [datetime]::MinValue
+        if ([datetime]::TryParseExact($hit.When, 'yyyy-MM-dd HH:mm:ss',
+              [System.Globalization.CultureInfo]::InvariantCulture,
+              [System.Globalization.DateTimeStyles]::None, [ref]$when)) {
+          if ((((Get-Date) - $when).TotalDays -le $LogMaxAgeDays) -and ($when -gt $failAt)) {
+            return @{ YM     = $hit.Yr * 12 + $mn
+                      Source = "hpi-download.log, checked $($hit.When)" }
+          }
         }
       }
     }
   }
 
-  # Same page and same regex hpi-download.ps1 uses -- deliberately, so the two
-  # scripts can never disagree about what "newest on the page" means.
+  # Read the page INDEPENDENTLY of the downloader's month parsing. Every
+  # MLS_HPI*.zip href counts as a link here, readable or not: "CREA published
+  # something we cannot parse" is a conclusion this script must be able to reach
+  # on its own, and it cannot reach it through the same filter that just failed.
   try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     $page = Invoke-WebRequest -Uri $PageUrl -UseBasicParsing -TimeoutSec 60
   } catch {
     return @{ YM = 0; Source = $null; Error = $_.Exception.Message }
   }
-  $up = $null
-  foreach ($m in ([regex]'href="([^"]*MLS_HPI[-_]([A-Za-z]+)[-_](\d{4})(?:_EN)?\.zip)"').Matches($page.Content)) {
-    $mkey = $m.Groups[2].Value.ToLower()
-    if (-not $months.ContainsKey($mkey)) { continue }
-    $ym = [int]$m.Groups[3].Value * 12 + $months[$mkey]
-    if (-not $up -or $ym -gt $up.YM) { $up = @{ YM = $ym; Source = "crea.ca, checked just now" } }
+  $links = @(Get-HpiZipLinks $page.Content $PageUrl)
+  $up    = Get-HpiNewestReadable $links
+  if ($up) { return @{ YM = $up.YM; Source = "crea.ca, checked just now" } }
+  if ($links.Count -gt 0) {
+    return @{ YM           = 0
+              Source       = $null
+              ParserBroken = $true
+              Unreadable   = (($links | ForEach-Object { $_.Name }) -join ', ')
+              Error        = "$($links.Count) MLS_HPI zip link(s) on the page, none with a readable month and year" }
   }
-  if (-not $up) { return @{ YM = 0; Source = $null; Error = "no MLS_HPI[-_]<Month>[-_]<Year>[_EN].zip link found on $PageUrl" } }
-  return $up
+  return @{ YM = 0; Source = $null; Error = "no MLS_HPI*.zip link of any shape found on $PageUrl" }
 }
 
 $upstream = Get-UpstreamRelease
@@ -201,8 +230,12 @@ $upTxt    = if ($upYM)    { Get-ReleaseLabel $upYM }    else { '(could not deter
 $staleByCalendar = ($localYM -lt $expYM)
 $behindUpstream  = ($upYM -gt 0 -and $upYM -gt $localYM)
 $aheadOfUpstream = ($upYM -gt 0 -and $upYM -lt $localYM)
+# Independent of all three, and of the calendar: CREA is publishing a zip whose
+# name we cannot parse. The download is stopped NOW, whatever day of the month
+# it is, so this trigger does not wait for GraceDay.
+$parserBroken    = [bool]$upstream.ParserBroken
 
-if (-not $staleByCalendar -and -not $behindUpstream -and -not $aheadOfUpstream) {
+if (-not $staleByCalendar -and -not $behindUpstream -and -not $aheadOfUpstream -and -not $parserBroken) {
   Write-Host "HPI current: newest folder = $localTxt; expected through $(Get-ReleaseLabel $expYM); CREA's newest = $upTxt. No reminder."
   exit 0
 }
@@ -236,7 +269,47 @@ $facts = @"
   Location              : $HpiDir
 "@
 
-if ($upYM -eq 0) {
+if ($parserBroken) {
+  $reason = 'parser-broken'
+  $title  = 'Action needed: CREA renamed the MLS HPI zip and the download parser cannot read it'
+  $body   = @"
+CREA IS publishing an MLS HPI zip -- this check can see the link -- but neither
+this script nor hpi-download.ps1 can read a release month out of its file name,
+so the daily download is stopped until the parser is taught the new shape.
+
+Link(s) found, none readable:
+  $($upstream.Unreadable)
+
+$facts
+
+This is a code fix, not a CREA outage and not a missed run. The name shape
+hpi-lib.ps1 accepts is MLS_HPI<-or_><Month><-or_><Year>[_EN].zip, where <Month>
+is any unambiguous prefix of a month name (Sep, Sept and September all work).
+Something outside that shape is on the page now.
+
+  1. Look at the name(s) above and widen Get-HpiZipLinks / Get-HpiMonthNumber in
+     $root\hpi-lib.ps1 to cover it.
+  2. hpi-lib.tests.ps1 is where the new shape gets pinned so it cannot regress.
+  3. Then:  powershell -ExecutionPolicy Bypass -File "$root\hpi-download.ps1"
+
+Meanwhile the data itself is published and fine to take by hand. Do NOT use the
+release month this script guesses from the calendar -- it cannot read the real
+one. Use the month in the file name above:
+
+  1. Download that zip from
+     $PageUrl
+     and take BOTH 'Not Seasonally Adjusted (M).xlsx' and
+     'Seasonally Adjusted (M).xlsx' out of it.
+  2. Create a folder named  MLS_HPI_<FullMonth>_<Year>  -- full month name, e.g.
+     MLS_HPI_September_2026 for a zip named MLS_HPI_Sept_2026.zip -- in
+     $HpiDir
+     and put the two .xlsx files in it. That folder name is CREA's RELEASE
+     month; the numbers inside it run through the month before.
+  3. Re-render the residential dashboard (ResCharts.qmd, or ResChartsStatic.qmd
+     for the exhibit) -- the loader auto-selects the newest folder.
+"@
+}
+elseif ($upYM -eq 0) {
   $reason = 'upstream-unknown'
   $title  = "Reminder: Winnipeg MLS HPI is stale (need the $(Get-YmLabel $wantYM) release)"
   $body   = @"
@@ -263,7 +336,7 @@ $facts
 
 First place to look: $DlLogFile
 (and logs\hpi-download-alert-stamp.txt, which suppresses that script's own alerts
-to one per calendar month). Common causes: the mb-parcelsearch-hpi-download task
+to one per calendar month PER REASON). Common causes: the mb-parcelsearch-hpi-download task
 is disabled or the machine was asleep at 08:45, a run of transient network
 failures, or Dropbox holding a lock on the target folder during the move.
 
@@ -339,7 +412,7 @@ $suppressed = ($stampPrior -eq $stampValue)
 if ($Preview) {
   Write-Host "---- PREVIEW (nothing sent, no stamp written) ----"
   Write-Host "reason      : $reason"
-  Write-Host "stale (cal) : $staleByCalendar    behind upstream: $behindUpstream"
+  Write-Host "stale (cal) : $staleByCalendar    behind upstream: $behindUpstream    parser broken: $parserBroken"
   Write-Host "stamp now   : '$stampPrior'   would write: '$stampValue'   -> $(if ($suppressed) { 'SUPPRESSED' } else { 'WOULD SEND' })"
   Write-Host "title       : $title"
   Write-Host "---- body ----"

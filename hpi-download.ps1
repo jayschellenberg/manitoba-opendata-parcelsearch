@@ -8,13 +8,21 @@
 # link (CREA publishes ~the 10th of each month), downloads it, validates it,
 # and extracts it under the folder-name convention
 #
-# 2026-09-04: CREA's zip file name DRIFTS month to month -- MLS_HPI_May_2026.zip,
-# MLS_HPI-July-2026_EN.zip and MLS_HPI_Aug_2026.zip have all been seen -- and
-# the original exact-format regex (hyphens + _EN) found no link at all on the
-# August page. The parser now accepts hyphen or underscore, full or 3-letter
-# month, with or without an _EN suffix, and the local folder is ALWAYS named
-# with the full month (MLS_HPI_August_2026) whatever token the link used.
-# The zip's contents have not changed.
+# CREA's zip file name DRIFTS month to month -- MLS_HPI_May_2026.zip,
+# MLS_HPI-July-2026_EN.zip, MLS_HPI_Aug_2026.zip and MLS_HPI_Sept_2026.zip have
+# all been seen. Since 2026-09-15 the page parsing lives in hpi-lib.ps1, shared
+# with the watchdog: separators may be hyphen or underscore, _EN is optional,
+# and the month token resolves by unambiguous PREFIX so Sep / Sept / September
+# are all month 9. The local folder is ALWAYS named with the full month
+# (MLS_HPI_September_2026) whatever token the link used. Zip contents unchanged.
+#
+# 2026-09-15: the 2026-09-04 fix loosened the separators but kept a fixed month
+# vocabulary (full + 3-letter only), so MLS_HPI_Sept_2026.zip matched the regex,
+# failed the month lookup, was silently skipped, and this script hard-failed
+# with "found NO link" while the link was right there. Two consequences, both
+# fixed: the parser no longer enumerates spellings (see hpi-lib.ps1), and a link
+# that is FOUND but UNREADABLE is now its own failure mode, reported with the
+# file name in the alert instead of being flattened into "no link on the page".
 #
 # The folder-name convention is the one
 # BOTH the dashboard glob (MLS_HPI_*) and the watchdog regex
@@ -34,8 +42,8 @@
 #     only on HARD failures: page parse finds no zip link, invalid zip, or
 #     extract/move errors. A transient network failure just logs and exits 1 --
 #     the daily retry plus the day-25 staleness watchdog are the backstop.
-#   * Alert dedupe: at most one alert per calendar month
-#     (logs\hpi-download-alert-stamp.txt).
+#   * Alert dedupe: at most one alert per calendar month PER REASON
+#     (logs\hpi-download-alert-stamp.txt, "<yyyyMM> <reason>").
 #
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File hpi-download.ps1            # real run
@@ -57,17 +65,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $root 'alert-lib.ps1')
+. (Join-Path $root 'hpi-lib.ps1')   # Get-HpiZipLinks / Get-HpiNewestReadable
 $NtfyTopic = 'mbps-hpi-staleness-jks'   # same channel as the HPI watchdog
 $LogFile   = Join-Path $root 'logs\hpi-download.log'
 $StampFile = Join-Path $root 'logs\hpi-download-alert-stamp.txt'
-
-# Month-name -> number (full + 3-letter, invariant culture, case-insensitive).
-$months = @{}
-1..12 | ForEach-Object {
-  $ci = [System.Globalization.CultureInfo]::InvariantCulture
-  $months[$ci.DateTimeFormat.GetMonthName($_).ToLower()]            = $_
-  $months[$ci.DateTimeFormat.GetAbbreviatedMonthName($_).ToLower()] = $_
-}
 
 # Append to the rolling log with retries -- Dropbox can hold a transient lock.
 function Write-Log([string]$msg) {
@@ -82,7 +83,22 @@ function Write-Log([string]$msg) {
   Write-Warning "Could not append to $LogFile after 3 tries."
 }
 
-# Hard-failure alert, deduped to one per calendar month.
+# Hard-failure alert, deduped to one per calendar month PER REASON.
+#
+# 2026-09-15 -- WHY THE REASON IS PART OF THE STAMP. This used to dedupe on the
+# bare month, so the FIRST hard failure in a month silenced every later one,
+# however different. That is exactly what happened on 2026-09-15: the 09-04
+# page-parse failure had already written '202609', so when CREA renamed the zip
+# to MLS_HPI_Sept_2026.zip and broke the parser a second time -- a new break,
+# with a new cause, needing a new fix -- the alert was suppressed and nobody was
+# told for the rest of the month. 'the page moved' turning into 'the download
+# arrived but would not extract' is likewise a new and actionable condition, not
+# a repeat. hpi-staleness-check.ps1 has stamped per-reason since 2026-08-25 and
+# documents the same reasoning; this is the half that never got the fix.
+#
+# A legacy bare-month stamp reads back as reason 'unknown' and therefore matches
+# nothing, so the first run after this change re-sends once -- deliberate: the
+# outage it was swallowing is still live.
 #
 # 2026-08-12: the month stamp is written only on VERIFIED delivery. It used to
 # be gated on Send-FailureAlert's boolean, which is true when EITHER channel
@@ -94,10 +110,16 @@ function Write-Log([string]$msg) {
 # email configured but failed -> no stamp, so the next daily run alerts again.
 # Either way the outcome goes into hpi-download.log, which previously recorded
 # nothing about whether the email half worked.
-function Send-HardFailure([string]$title, [string]$body) {
-  $ym = (Get-Date).ToString('yyyyMM')
-  if ((Test-Path $StampFile) -and ((Get-Content $StampFile -Raw).Trim() -eq $ym)) {
-    Write-Log "ALERT SUPPRESSED (already alerted $ym): $title"
+function Send-HardFailure([string]$reason, [string]$title, [string]$body) {
+  $ym    = (Get-Date).ToString('yyyyMM')
+  $stamp = "$ym $reason"
+  $prior = ''
+  if (Test-Path $StampFile) {
+    $raw   = (Get-Content $StampFile -Raw).Trim()
+    $prior = if ($raw -match '^\s*(\d+)\s*$') { "$($Matches[1]) unknown" } else { $raw }
+  }
+  if ($prior -eq $stamp) {
+    Write-Log "ALERT SUPPRESSED (already alerted $ym / $reason): $title"
     return
   }
   $sent = Send-FailureAlert $root $NtfyTopic $title $body
@@ -105,12 +127,12 @@ function Send-HardFailure([string]$title, [string]$body) {
   $ch = "email=$($s.Emailed) push=$($s.Pushed) emailConfigured=$($s.EmailConfigured)"
   if (Test-AlertDelivered) {
     New-Item -ItemType Directory -Force -Path (Split-Path $StampFile) | Out-Null
-    Set-Content -Path $StampFile -Value $ym
-    Write-Log "ALERT DELIVERED ($ch): $title -- month stamp $ym written."
+    Set-Content -Path $StampFile -Value $stamp
+    Write-Log "ALERT DELIVERED ($ch): $title -- stamp '$stamp' written."
   } elseif ($sent) {
-    Write-Log "ALERT PUSH-ONLY ($ch): $title -- email configured but FAILED, month stamp NOT written so the next run retries."
+    Write-Log "ALERT PUSH-ONLY ($ch): $title -- email configured but FAILED, stamp NOT written so the next run retries."
   } else {
-    Write-Log "ALERT FAILED on every channel ($ch): $title -- month stamp NOT written."
+    Write-Log "ALERT FAILED on every channel ($ch): $title -- stamp NOT written."
   }
 }
 
@@ -125,32 +147,34 @@ try {
   exit 1
 }
 
-$best = $null
-$rx = [regex]'href="([^"]*MLS_HPI[-_]([A-Za-z]+)[-_](\d{4})(?:_EN)?\.zip)"'
-$inv = [System.Globalization.CultureInfo]::InvariantCulture
-foreach ($m in $rx.Matches($page.Content)) {
-  $mkey = $m.Groups[2].Value.ToLower()
-  if (-not $months.ContainsKey($mkey)) { continue }
-  $ym = [int]$m.Groups[3].Value * 12 + $months[$mkey]
-  if (-not $best -or $ym -gt $best.YM) {
-    $url = $m.Groups[1].Value
-    if ($url -notmatch '^https?://') { $url = (New-Object System.Uri((New-Object System.Uri($PageUrl)), $url)).AbsoluteUri }
-    # Month is normalized to the FULL invariant name so the folder is
-    # MLS_HPI_August_2026 whether the link said 'Aug' or 'August'.
-    $best = @{ YM = $ym; Url = $url; Month = $inv.DateTimeFormat.GetMonthName($months[$mkey]); Year = $m.Groups[3].Value; Link = (Split-Path $url -Leaf) }
-  }
-}
+# Month normalization to the FULL invariant name happens in the lib, so the
+# folder is MLS_HPI_September_2026 whether the link said 'Sep', 'Sept' or
+# 'September'.
+$links = @(Get-HpiZipLinks $page.Content $PageUrl)
+$best  = Get-HpiNewestReadable $links
 
+# Two different failures, two different alerts. Collapsing them into one
+# "no link found" is what made 2026-09-15 read as "CREA redesigned the page"
+# when in truth the link was sitting there and only its month token was new.
 if (-not $best) {
-  $msg = "hpi-download.ps1 found NO MLS_HPI[-_]<Month>[-_]<Year>[_EN].zip link on $PageUrl -- CREA may have redesigned the page or renamed the file again. Manual download + a script fix needed."
+  if ($links.Count -gt 0) {
+    $names  = ($links | ForEach-Object { $_.Name }) -join ', '
+    $reason = 'links-unreadable'
+    $msg    = "hpi-download.ps1 FOUND $($links.Count) MLS_HPI zip link(s) on $PageUrl but could not read a month and year from any of them: $names. CREA has renamed the file into a shape hpi-lib.ps1 does not parse. The data is published and downloadable BY HAND right now; the parser needs the fix."
+  } else {
+    $reason = 'no-links'
+    $msg    = "hpi-download.ps1 found NO MLS_HPI*.zip link of any shape on $PageUrl -- CREA has redesigned the page or moved the download. Manual download + a script fix needed."
+  }
   Write-Log "HARD FAIL: $msg"
-  if (-not $DryRun) { Send-HardFailure 'HPI download: page parse failed' $msg }
+  if (-not $DryRun) { Send-HardFailure $reason 'HPI download: page parse failed' $msg }
   exit 2
 }
 
 $folderName = "MLS_HPI_$($best.Month)_$($best.Year)"
 $target     = Join-Path $HpiDir $folderName
-Write-Log "Newest on page: $($best.Month) $($best.Year) ($($best.Link)) -> $($best.Url)"
+# Format is load-bearing: hpi-staleness-check.ps1 reads the month and year back
+# out of this exact line as its cheap upstream probe.
+Write-Log "Newest on page: $($best.Month) $($best.Year) ($($best.Name)) -> $($best.Url)"
 
 # ---- 2. No-op if that month is already extracted ------------------------------
 $need = @('Not Seasonally Adjusted (M).xlsx', 'Seasonally Adjusted (M).xlsx')
@@ -210,6 +234,6 @@ try {
 } catch {
   $msg = "hpi-download.ps1 downloaded $($best.Url) but failed to validate/extract/install it: $($_.Exception.Message). Staging left at $staging for inspection."
   Write-Log "HARD FAIL: $msg"
-  Send-HardFailure 'HPI download: extract/install failed' $msg
+  Send-HardFailure 'extract-install' 'HPI download: extract/install failed' $msg
   exit 2
 }
