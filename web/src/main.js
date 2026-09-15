@@ -263,7 +263,10 @@ import { passesShapeFilter } from './lib/shapeFilter.js';
 import { countSnapshotFrames } from './lib/snapshotGroups.js';
 import { waitForMapIdle, MapRenderTimeoutError } from './lib/snapshotCapture.js';
 import { OUTPUT_MIME, OUTPUT_QUALITY, MAX_OUTPUT_DIM } from './lib/imageOutput.js';
-import { dominantBucket, cultFraction, LAND_COVER_BUCKETS, LAND_COVER_MIN_ACRES } from './lib/landcover.js';
+import {
+  dominantBucket, cultFraction, LAND_COVER_BUCKETS, LAND_COVER_MIN_ACRES,
+  headlineCover, LAND_COVER_SOURCES,
+} from './lib/landcover.js';
 import {
   waterColor, waterCellText, waterTooltip, waterSortRank,
   waterCsvCells, isWaterfront, isNearWater, WATER_CLASSES,
@@ -1531,11 +1534,12 @@ const SORT_KEYS = {
     return slopeSortRank(range.steepestCode) + range.min / 1000;
   },
   // Land cover sorts by the dominant bucket's label; Cult % sorts on
-  // the numeric cultivated fraction. Both read the per-parcel
-  // `_landCover` stamp (only present on farmland parcels over the threshold);
-  // parcels without it sort last (strKey sentinel / finiteOrNeg -1).
-  landcover: (r) => strKey(dominantBucket(r.parcel.properties._landCover)?.label),
-  cultpct:   (r) => finiteOrNeg(cultFraction(r.parcel.properties._landCover)),
+  // the numeric cultivated fraction. Both read the HEADLINE source
+  // (headlineCover: the crop-inventory mix where present, else the Land
+  // Cover Register), so the sort matches what the cell shows; parcels
+  // without either sort last (strKey sentinel / finiteOrNeg -1).
+  landcover: (r) => strKey(dominantBucket(headlineCover(r.parcel.properties._landfacts, r.parcel.properties._landCover, r.parcel.properties._acres)?.lc)?.label),
+  cultpct:   (r) => finiteOrNeg(cultFraction(headlineCover(r.parcel.properties._landfacts, r.parcel.properties._landCover, r.parcel.properties._acres)?.lc)),
   // Water sorts by class severity (Direct first, then Waterfront, Reserve,
   // Road Separated, Corridor Blocked, Unconfirmed), so the frontage parcels
   // group together at the top rather than being scattered alphabetically by
@@ -7579,6 +7583,12 @@ async function stampLandfacts(rows) {
       const color = landfactsColorFor(hit);
       if (color) p._lfColor = color;
       else if (p._lfColor) delete p._lfColor;
+      // The Land Cover headline may now be this stamp's mix rather than the
+      // register stamped earlier in enrichment — recolour the overlay fill
+      // so map and grid name the same dominant bucket.
+      const hc = headlineCover(hit, p._landCover, p._acres);
+      const lcColor = hc ? dominantBucket(hc.lc)?.color : null;
+      if (lcColor) p._lcColor = lcColor;
     }
   } catch (err) {
     console.warn('land-facts enrichment failed (non-fatal):', err);
@@ -11443,24 +11453,34 @@ function landCoverButtonLabelFor(mode) {
   return 'Land Cover';
 }
 
-/** Stamp `_lcColor` (+ `_landCover`) on every fabric parcel from each muni's
- *  land-cover shard, matched by Muni_Name_With_Typ + Roll_No_Txt. Returns
- *  the count of parcels that got a colour (farmland over the threshold). */
+/** Stamp `_lcColor` (+ `_landCover` / `_landfacts`) on every fabric parcel
+ *  from each muni's land-cover AND land-facts shards, matched by
+ *  Muni_Name_With_Typ + Roll_No_Txt, coloured by the same headlineCover()
+ *  rule as the grid so the Dominant overlay and the Land Cover column can
+ *  never name different buckets. Returns the count of parcels that got a
+ *  colour (farmland over the threshold). */
 async function stampLandCoverOnFabric(fabricFc, munis) {
   if (!fabricFc?.features?.length) return 0;
-  const dicts = await Promise.all(
-    munis.map((m) => fetchLandCoverForMuni(m).catch(() => null)),
-  );
-  const byMuni = new Map();
-  munis.forEach((m, i) => { if (dicts[i]) byMuni.set(m, dicts[i]); });
+  const [lcDicts, lfDicts] = await Promise.all([
+    Promise.all(munis.map((m) => fetchLandCoverForMuni(m).catch(() => null))),
+    Promise.all(munis.map((m) => fetchLandfactsForMuni(m).catch(() => null))),
+  ]);
+  const lcByMuni = new Map(); const lfByMuni = new Map();
+  munis.forEach((m, i) => {
+    if (lcDicts[i]) lcByMuni.set(m, lcDicts[i]);
+    if (lfDicts[i]) lfByMuni.set(m, lfDicts[i]);
+  });
   let painted = 0;
   for (const f of fabricFc.features) {
     const p = f.properties || (f.properties = {});
-    const dict = p.Muni_Name_With_Typ ? byMuni.get(p.Muni_Name_With_Typ) : null;
-    const hit = (dict && p.Roll_No_Txt) ? dict[p.Roll_No_Txt] : null;
-    const color = hit ? dominantBucket(hit)?.color : null;
+    const muni = p.Muni_Name_With_Typ; const roll = p.Roll_No_Txt;
+    const lc = (muni && roll) ? lcByMuni.get(muni)?.[roll] : null;
+    const lf = (muni && roll) ? lfByMuni.get(muni)?.[roll] : null;
+    const hc = headlineCover(lf, lc, p._acres);
+    const color = hc ? dominantBucket(hc.lc)?.color : null;
     if (color) {
-      p._landCover = hit;
+      if (lc) p._landCover = lc;
+      if (lf && !p._landfacts) p._landfacts = lf;
       p._lcColor = color;
       painted += 1;
     } else if (p._lcColor) {
@@ -12526,16 +12546,24 @@ function renderTable(rows, { resetPage = true } = {}) {
     const slopeCell = td(slopeRangeText(slopeRange) || null, null, SLOPE_EMPTY_HINT);
     if (slopeRange) slopeCell.title = slopeSummaryText(p, '\n');
     tr.appendChild(slopeCell);
-    // Land Cover (dominant farmland bucket + share) and Cult % — both
-    // populated only for over-threshold parcels from the pre-baked
-    // _landCover stamp; blank otherwise. Cult % is right-aligned
-    // numeric so it sorts/scans with the other rate columns. When the
-    // parcel IS over the acreage threshold but the stamp is missing,
-    // the empty-cell hint explains how land cover loads.
-    tr.appendChild(landCoverCell(p, ac));
-    const cultPct = Number(ac) > LAND_COVER_MIN_ACRES ? cultFraction(p._landCover) : null;
+    // Land Cover (dominant farmland bucket + share) and Cult % — both read
+    // the headline source (headlineCover: the crop-inventory mix where the
+    // parcel has one, else the Land Cover Register); blank otherwise.
+    // Cult % is right-aligned numeric so it sorts/scans with the other rate
+    // columns. Both carry the cross-check on hover and the ⚠ class when the
+    // two sources disagree past COVER_DISAGREE_MIN. When the parcel IS over
+    // the acreage threshold but neither stamp is present, the empty-cell
+    // hint explains how land cover loads.
+    const hc = headlineCover(p._landfacts, p._landCover, ac);
+    tr.appendChild(landCoverCell(p, ac, hc));
+    const cultPct = hc ? cultFraction(hc.lc) : null;
     const cultHint = (cultPct == null && Number(ac) > LAND_COVER_MIN_ACRES) ? LANDCOVER_EMPTY_HINT : undefined;
-    tr.appendChild(td(cultPct != null ? formatPercent(cultPct) : null, 'num', cultHint));
+    const cultCell = td(cultPct != null ? formatPercent(cultPct) : null, 'num', cultHint);
+    if (hc) {
+      cultCell.title = coverCellTitle(hc);
+      if (hc.flagged) cultCell.classList.add('lc-flagged');
+    }
+    tr.appendChild(cultCell);
     // Water influence is a pre-baked per-muni shard like land cover, NOT an
     // overlay-gated live fetch — so no .water-only class here. That class
     // belongs to the WALLAS tile/irrigation pair below, which really is gated
@@ -12799,10 +12827,10 @@ function soilCell(p) {
  * the threshold; the webapp gates on its own computed acreage too
  * for consistency).
  */
-function landCoverCell(p, ac) {
+function landCoverCell(p, ac, hc = headlineCover(p?._landfacts, p?._landCover, ac)) {
   const cell = document.createElement('td');
   const eligible = Number(ac) > LAND_COVER_MIN_ACRES;
-  const dom = eligible ? dominantBucket(p?._landCover) : null;
+  const dom = hc ? dominantBucket(hc.lc) : null;
   if (!dom) {
     if (eligible) {
       // Over the threshold but no land-cover stamp → show the em-dash +
@@ -12820,7 +12848,37 @@ function landCoverCell(p, ac) {
   dot.style.backgroundColor = dom.color;
   cell.appendChild(dot);
   cell.appendChild(document.createTextNode(`${dom.label} ${Math.round(dom.pct * 100)}%`));
+  if (hc.flagged) {
+    const flag = document.createElement('span');
+    flag.className = 'lc-flag';
+    flag.textContent = ' ⚠';
+    flag.setAttribute('aria-label', 'sources disagree');
+    cell.appendChild(flag);
+    cell.classList.add('lc-flagged');
+  }
+  cell.title = coverCellTitle(hc);
   return cell;
+}
+
+/**
+ * Hover text shared by the Land Cover and Cult % cells: which source the
+ * numbers come from, the register's cultivated share as the cross-check, and
+ * a plain warning when the two are far enough apart that neither should be
+ * relied on without looking at the imagery.
+ */
+function coverCellTitle(hc) {
+  const src = LAND_COVER_SOURCES[hc.source];
+  const lines = [`Source: ${src.detail}`];
+  if (hc.other) {
+    const oc = Number(hc.other.cult);
+    const d = hc.disagreement;
+    lines.push(`Cross-check, ${LAND_COVER_SOURCES.lcr.detail}: cultivated ${Math.round(oc * 100)}%`
+      + (d ? ` (largest gap ${d.label} ${Math.round(d.diff * 100)} pp)` : ''));
+    if (hc.flagged) lines.push(`⚠ The two sources disagree by ${Math.round(d.diff * 100)} pp on ${d.label} — neither is authoritative here; verify on imagery.`);
+  } else if (hc.source === 'lcr') {
+    lines.push('No crop-inventory mix for this parcel (under 20 acres, no MASC rating, or the shard predates the mix).');
+  }
+  return lines.join('\n');
 }
 
 /**
@@ -13506,20 +13564,28 @@ async function restampIrrigation() {
 }
 
 /**
- * CSV cells for the land-cover columns: dominant bucket label followed
- * by each bucket's share as a one-decimal percent. All blank for
- * parcels ≤ LAND_COVER_MIN_ACRES or with no `_landCover` stamp, mirroring
- * the grid.
+ * CSV cells for the land-cover columns: dominant bucket label, each
+ * bucket's share as a one-decimal percent, then which source those came
+ * from, the register's cultivated share as the cross-check, and the largest
+ * bucket gap between the two in points. All blank when headlineCover() has
+ * nothing for the parcel, mirroring the grid. Count must match the header
+ * list in the export (nine).
  */
 function landCoverCsvCells(p, ac) {
-  const lc = Number(ac) > LAND_COVER_MIN_ACRES ? p?._landCover : null;
-  if (!lc) return ['', '', '', '', '', ''];
-  const dom = dominantBucket(lc);
-  const pct = (k) => {
-    const v = Number(lc[k]);
+  const hc = headlineCover(p?._landfacts, p?._landCover, ac);
+  if (!hc) return ['', '', '', '', '', '', '', '', ''];
+  const dom = dominantBucket(hc.lc);
+  const pct = (o, k) => {
+    const v = Number(o?.[k]);
     return Number.isFinite(v) ? (v * 100).toFixed(1) : '';
   };
-  return [dom ? dom.label : '', pct('cult'), pct('past'), pct('bush'), pct('wet'), pct('other')];
+  return [
+    dom ? dom.label : '',
+    pct(hc.lc, 'cult'), pct(hc.lc, 'past'), pct(hc.lc, 'bush'), pct(hc.lc, 'wet'), pct(hc.lc, 'other'),
+    LAND_COVER_SOURCES[hc.source].short,
+    pct(hc.source === 'aci' ? hc.other : hc.lc, 'cult'),
+    hc.disagreement ? (hc.disagreement.diff * 100).toFixed(1) : '',
+  ];
 }
 
 /** Licence / % / status / applied-date for the tile-drainage columns.
@@ -15318,6 +15384,10 @@ function exportCsv(explicitRows) {
     'Slope Range', 'Slope Min %', 'Slope Max %', 'Slope Summary',
     ...soilCsvHeaders(),
     'Land Cover', 'Cult %', 'Pasture %', 'Bush %', 'Wetland %', 'Other %',
+    // Which source the five shares came from (crop inventory 2021-25 per
+    // pixel, or the 2020 register), the register's cultivated share as the
+    // standing cross-check, and the largest bucket gap between them.
+    'Land Cover Source', 'LCR 2020 Cult %', 'Cover Disagreement pp',
     // Water sits between Land Cover and Tiled, matching the grid's column
     // order. 'Water' is the frontage verdict so a spreadsheet can filter
     // comps on it directly; distance is a bare number for sorting.
@@ -15787,7 +15857,7 @@ const SOIL_EMPTY_HINT =
 const SLOPE_EMPTY_HINT =
   'Pick the Agricultural column preset, or turn on the Soil Productivity/Soil Name overlay, to load the soil survey’s slope class for this municipality.';
 const LANDCOVER_EMPTY_HINT =
-  `Loads automatically on a municipality-scoped search (select the municipality, then search) for parcels over ${LAND_COVER_MIN_ACRES} acres.`;
+  `Loads automatically on a municipality-scoped search (select the municipality, then search) for parcels over ${LAND_COVER_MIN_ACRES} acres — the crop inventory read per pixel over 2021–2025 for farmland of 20 acres or more, the 2020 Land Cover Register otherwise.`;
 const TILE_EMPTY_HINT =
   'Pick the Agricultural column preset, or turn on the Tile Drainage overlay, to check these parcels against Manitoba’s licensed tile-drainage areas.';
 const IRRIGATION_EMPTY_HINT =

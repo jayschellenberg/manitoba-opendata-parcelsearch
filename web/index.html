@@ -160,6 +160,45 @@
                 Both are the crop inventory read per parcel, with the same
                 accuracy caveat.
               </p>
+              <p>
+                <strong>Land Cover</strong> (the Land Cover and Cult %
+                columns, the parcel popup breakdown, and the Land Cover map
+                overlay) answers one question of a farmland parcel: what share
+                of it is cultivated land, and what the rest is &mdash;
+                Cultivated, Pasture/Grass, Bush/Treed, Wetland/Water, Other.
+                Two sources feed it, and both are shown. The
+                <strong>headline</strong>, for every parcel of 20 acres or more
+                with a MASC rating, is the crop inventory above read
+                <em>per pixel</em> over 2021&ndash;2025: a pixel counts as
+                cultivated when it grew annual crop in at least two of those
+                five years, or in 2025 regardless (so ground broken or bush
+                cleared recently is caught), and every other pixel takes the
+                cover it showed most often. That is a land-<em>use</em> reading
+                &mdash; a quarter in hay this year is still cultivated land
+                &mdash; which is why it is not simply the latest year's crop
+                share, a figure that runs about ten points low. The
+                <strong>cross-check</strong>, and the headline for parcels of
+                10&ndash;20 acres, is
+                <a href="https://www150.statcan.gc.ca/n1/pub/16-510-x/16-510-x2025002-eng.htm" target="_blank" rel="noreferrer">Statistics Canada's Land Cover Register</a>
+                (catalogue 16-510-X, 30 m, Statistics Canada Open Licence):
+                its pixels describe <strong>2020</strong>, the edition in use
+                was published <strong>March 27, 2025</strong>, and nothing
+                newer has been issued &mdash; earlier Canadian land-cover
+                vintages (NRCan's 2010, 2015 and 2020) are in circulation, so
+                both dates are given. Across 173,671 parcels the two sources
+                agree on cultivated share to a median of 0.0 points; where
+                they differ by 20 points or more on any bucket the parcel is
+                marked <strong>&#9888;</strong> in the grid and popup, because at
+                that gap neither classifier is authoritative and the imagery
+                is. The register cannot separate its grassland-and-shrubland
+                class, so the two will legitimately differ on shrub-heavy
+                ground; shrubland is counted as bush here. Bush versus pasture
+                is the softest line in either source &mdash; a Manitoba
+                crown-land assessment found forest under-read and shrubland
+                over-read by roughly a fifth each &mdash; while crop versus
+                not is the firm one, and firmest in the Central Plains and
+                Southeast.
+              </p>
             </section>
 
             <!-- Data-refresh row, populated by populateDataRefreshFooter()
@@ -1213,7 +1252,7 @@
             <button id="cli-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled title="Soil Productivity and Soil Name from Manitoba Soil Survey (AGCAP_CLS / SOILNAME) — the same dataset Manitoba's AgriMaps treats as authoritative. Click cycles through three states: 1st click → Soil Productivity (capability 1=prime → 7=no agricultural capability; O=organic; $=urban/water); 2nd click → Soil Type (coloured by the top-20 most common soil associations across the current municipality or imported list); 3rd click → off. Select a municipality or import a parcel list first.">
               <span class="overlay-btn-label">Soil Productivity/Soil Name</span>
             </button>
-            <button id="landcover-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Land Cover — tri-state cycle. 1st click → Dominant (per-parcel headline colour, every parcel in the selected municipality > 20 acres). 2nd click → Detailed (pixel-level 2020 mosaic from the static tile pyramid, when built). 3rd click → off. Populates the Land Cover and Cult % columns. The Detailed branch is skipped when the tile pyramid hasn't been built (build via Rscript r/build_landcover_tiles.R).">
+            <button id="landcover-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Land Cover — tri-state cycle. 1st click → Dominant (per-parcel headline colour for every farmland parcel in the selected municipality: the crop inventory read per pixel over 2021–2025 where the parcel has it, the 2020 Land Cover Register otherwise — the same rule as the Land Cover column). 2nd click → Detailed (pixel-level mosaic of the 2020 Land Cover Register from the static tile pyramid, when built). 3rd click → off. Populates the Land Cover and Cult % columns. The Detailed branch is skipped when the tile pyramid hasn't been built (build via Rscript r/build_landcover_tiles.R).">
               <span class="overlay-btn-label">Land Cover</span>
             </button>
             <button id="landfacts-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Crop History — tri-state cycle. 1st click → Years Cropped: every parcel in the selected municipality shaded gold by the share of its observed years since 2009 that were at least half annual crop in the AAFC Annual Crop Inventory (pale = never, dark = >75% of years). 2nd click → Land Use: the cover group of the last observed year (annual crop, grass/pasture, trees/shrub, water/wetland, barren/built). 3rd click → off. Also turns on Assessment Parcels so each coloured parcel answers a click with its crop history and MASC rating, and shows the Land Facts column. Parcels >20 acres with a MASC rating. Satellite classification, not a cropping record.">
@@ -1896,8 +1935,8 @@
                  pre-baked per-muni by r/build_landcover.R. Only populated
                  for parcels over 10 acres. Hidden by default; surfaced by
                  the Agricultural column preset. -->
-            <th data-col="landcover" title="Dominant 2020 land-cover bucket for this parcel and its share — Cultivated / Pasture-Grass / Bush-Treed / Wetland-Water / Other. Derived from the LCR_RCT_2020 raster via the mao-assembly pipeline. Shown only for parcels over 10 acres.">Land Cover</th>
-            <th data-col="cultpct" title="Cultivated (cropland) share of the parcel from the 2020 land-cover raster. Shown only for parcels over 10 acres.">Cult %</th>
+            <th data-col="landcover" title="Dominant land-cover bucket for this parcel and its share — Cultivated / Pasture-Grass / Bush-Treed / Wetland-Water / Other. From the AAFC crop inventory read per pixel over 2021–2025 for farmland of 20 acres or more with a MASC rating; from the 2020 Land Cover Register where that is not available, and the register is the cross-check otherwise. ⚠ marks a parcel where the two sources differ by 20 points or more on a bucket — hover for both figures. Shown only for parcels over 10 acres.">Land Cover</th>
+            <th data-col="cultpct" title="Cultivated share of the parcel: pixels in annual crop in at least 2 of the years 2021–2025, or in 2025 regardless (so newly broken ground counts). AAFC crop inventory; the 2020 Land Cover Register where the crop inventory is not available. Hover for the register's figure as a cross-check. Shown only for parcels over 10 acres.">Cult %</th>
             <th data-col="water" title="Water influence — is this parcel on or near a lake, river, stream or retention pond? Shows the water body name with a colour dot: DARK BLUE = actual frontage (Direct / Waterfront / Reserve separated), PALE BLUE = near water but no frontage, because a road or another parcel lies between (the 'second row', often a view). 'No water' means the check ran and found nothing within 164 ft. Blank means the data hasn't loaded for this municipality yet. Screening aid from provincial/federal mapping — not a survey.">Water</th>
             <!-- Tile Drainage — populated when the Tile Drainage overlay
                  has loaded, by clipping the licensed tile footprints to

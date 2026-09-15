@@ -6,8 +6,24 @@
 # the ground" — cultivated vs pasture vs bush vs wetland — in the
 # parcel popup and results grid without any raster work at render time.
 #
-# The heavy lifting (zonal extraction of the 2020 Land Cover raster,
-# LCR_RCT_2020_MB.tif, against every Manitoba parcel polygon) is ALREADY
+# SOURCE RASTER (the vintage every number below inherits):
+#   Statistics Canada, Land Cover Register, catalogue 16-510-X
+#   (product 16-510-x2025002), 30 m, 11 classes, reference year 2020,
+#   published 2025-03-27, update frequency "Occasional".
+#   https://www150.statcan.gc.ca/n1/pub/16-510-x/16-510-x2025002-eng.htm
+#   Local, clipped to Manitoba: mao-assembly/inputs/LCR_RCT_2020_MB.tif
+#   Both dates are recorded on purpose — the pixels describe 2020, but the
+#   EDITION is the 2025-03-27 one, and earlier Canadian land-cover vintages
+#   (NRCan NALCMS 2010/2015/2020, this register's own input) are in
+#   circulation, so the reference year alone does not identify the file.
+#   Same constant is mirrored for the UI in
+#   web/src/lib/dataStatus.js (LAND_COVER_SOURCE) and in the Data Sources
+#   panel copy in web/index.html — change all three together.
+#   Background on why this register and not a 10 m global product:
+#   mao-assembly/docs/land_cover_dataset_review-20260603.md
+#
+# The heavy lifting (zonal extraction of that raster against every
+# Manitoba parcel polygon) is ALREADY
 # done by the sister mao-assembly pipeline — its output Parquet carries
 # a per-parcel percentage for each of the 12 land-cover classes. This
 # script just BRIDGES that Parquet into the webapp's per-muni shard

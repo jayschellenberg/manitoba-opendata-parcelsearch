@@ -1,24 +1,38 @@
 /*
- * Farmland land-cover buckets.
+ * Farmland land-cover buckets, and which of two sources is the headline.
  *
- * r/build_landcover.R collapses the 12 classes of the 2020 Land Cover
- * raster (LCR_RCT_2020_MB.tif, extracted per parcel by the mao-assembly
- * pipeline) into five appraisal-oriented buckets and ships them as
- * per-muni shards. Each parcel's `_landCover` stamp (set in main.js from
- * the shard) is a plain object of fractions (0-1) that sum to ~1:
+ * Two per-parcel stamps carry the same five fractions of the parcel,
+ * { cult, past, bush, wet, other }, summing to ~1:
  *
- *   { cult: 0.78, past: 0.10, bush: 0.08, wet: 0.03, other: 0.01 }
+ *   `_landfacts.mix`  the CROP INVENTORY read per pixel over 2021-2025 by
+ *                     r/build_landfacts.R (see lib/landfacts.js) — the
+ *                     headline whenever it is present. Parcels of 20 acres
+ *                     or more with a MASC rating.
+ *   `_landCover`      the STATCAN LAND COVER REGISTER, reference year 2020,
+ *                     collapsed from its 11 classes by r/build_landcover.R
+ *                     via the mao-assembly pipeline. Parcels over
+ *                     LAND_COVER_MIN_ACRES. The headline only where the mix
+ *                     is absent; otherwise the cross-check.
  *
- * Only parcels over MIN_ACRES are in the shards (see r/build_landcover.R's
- * ACRES_THRESHOLD — kept in sync with the constant below), so `_landCover`
- * is undefined on urban/residential rolls. Callers gate display on the
- * parcel's own computed acreage with the same constant so the webapp and
- * the pipeline stay aligned.
+ * WHY THE CROP INVENTORY LEADS (Jason, 2026-09-15): it is five years
+ * fresher, annual, and trained on Manitoba crop-insurance ground truth,
+ * and its cultivated figure is a pixel-level land-use rule rather than a
+ * fixed 2020 epoch. WHY THE REGISTER STAYS: measured across 173,671
+ * parcels the two agree on cultivated share to a median 0.0 pp, and where
+ * they disagree by more than COVER_DISAGREE_MIN neither is authoritative —
+ * that flag is worth more to an appraiser than either number alone. The
+ * register also cannot split its "grassland & shrubland" class, so the
+ * two legitimately differ on shrub-heavy ground.
  *
- * This module is the single source of truth for the bucket order,
- * labels, and colours, shared by the results grid (main.js) and the
- * map popup (map.js) so the two never drift.
+ * headlineCover() is the one place that choice is made; the grid, both
+ * popups, the CSV and the Land Cover map overlay all go through it.
+ *
+ * This module is the single source of truth for the bucket order, labels
+ * and colours, shared by the results grid (main.js) and the map popup
+ * (map.js) so the two never drift.
  */
+
+import { landMix, readLandfacts } from './landfacts.js';
 
 // Minimum parcel acreage that gets land-cover data. Below this, the
 // pipeline drops the parcel from the per-muni shards (urban/residential
@@ -89,4 +103,77 @@ export function cultFraction(lc) {
   if (!lc || typeof lc !== 'object') return null;
   const v = Number(lc.cult);
   return Number.isFinite(v) ? v : null;
+}
+
+/**
+ * Coerce a `_landCover` stamp to an object. MapLibre serialises nested
+ * feature properties to JSON strings when read back from rendered features
+ * (the popup path), so the stamp arrives either way.
+ */
+export function readLandCover(raw) {
+  if (raw && typeof raw === 'object') return raw;
+  if (typeof raw === 'string' && raw.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(raw);
+      return (parsed && typeof parsed === 'object') ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+// The two sources, keyed as headlineCover() reports them.
+export const LAND_COVER_SOURCES = Object.freeze({
+  aci: { label: 'Crop inventory 2021–25', short: 'ACI 21–25',
+         detail: 'AAFC Annual Crop Inventory read per pixel over 2021–2025' },
+  lcr: { label: 'Land Cover Register 2020', short: 'LCR 2020',
+         detail: 'Statistics Canada Land Cover Register, reference year 2020' },
+});
+
+// Two sources further apart than this on any one bucket are flagged: at
+// 20 pp of a quarter section they differ by 32 acres, past anything either
+// classifier's accuracy supports, and the honest reading is "go look".
+export const COVER_DISAGREE_MIN = 0.20;
+
+/**
+ * The largest gap between two fraction objects across the five buckets,
+ * as { key, label, diff } with diff in 0..1 — or null unless both exist.
+ */
+export function coverDisagreement(a, b) {
+  if (!a || !b) return null;
+  let worst = null;
+  for (const bk of LAND_COVER_BUCKETS) {
+    const va = Number(a[bk.key]) || 0; const vb = Number(b[bk.key]) || 0;
+    const diff = Math.abs(va - vb);
+    if (!worst || diff > worst.diff) worst = { key: bk.key, label: bk.label, diff };
+  }
+  return worst;
+}
+
+/**
+ * Which fractions a parcel shows as its land cover, from its two stamps.
+ * Returns null when neither is usable, else
+ *   { lc, source, other, disagreement, flagged }
+ * where `lc` is the headline fraction object, `source` 'aci' | 'lcr',
+ * `other` the cross-check fractions (null without one), `disagreement` from
+ * coverDisagreement() and `flagged` whether it clears COVER_DISAGREE_MIN.
+ * `acres` gates the register the way its shards were built (over
+ * LAND_COVER_MIN_ACRES); an unknown acreage (a fabric feature carries none)
+ * does not gate, since the shard itself was built above the line. The mix
+ * carries its own gate in the builder.
+ */
+export function headlineCover(landfacts, landCover, acres) {
+  const mix = landMix(readLandfacts(landfacts));
+  const lcrAllowed = acres == null || acres === '' || Number(acres) > LAND_COVER_MIN_ACRES;
+  const lcr = lcrAllowed ? readLandCover(landCover) : null;
+  const lcrOk = lcr && cultFraction(lcr) != null ? lcr : null;
+  if (!mix && !lcrOk) return null;
+  const lc = mix || lcrOk;
+  const other = mix ? lcrOk : null;
+  const disagreement = coverDisagreement(lc, other);
+  return {
+    lc, source: mix ? 'aci' : 'lcr', other, disagreement,
+    flagged: !!disagreement && disagreement.diff >= COVER_DISAGREE_MIN,
+  };
 }

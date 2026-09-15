@@ -3425,6 +3425,14 @@ body.shape-drawing .maplibregl-canvas {
   border: 1px solid rgba(0, 0, 0, 0.2);
 }
 
+/* The Land Cover / Cult % cells when the crop inventory and the Land Cover
+   Register disagree past COVER_DISAGREE_MIN (lib/landcover.js). Amber, not
+   red: it is "go look", not an error, and it must stay readable next to
+   the bucket dot. The ⚠ glyph is the accessible marker; the tint is so a
+   scan down the column finds the flagged rows without reading. */
+.lc-flag { color: #b45309; font-size: 0.9em; }
+#results td.lc-flagged { background: rgba(217, 119, 6, 0.08); }
+
 /* Flood cell's deep-link to the standalone screening tool. Muted and small
    on purpose: the cell's text is now the answer, and the link is the way to
    the fuller treatment (appraisal paragraph, static exhibit) rather than the

@@ -1,8 +1,15 @@
 # build_landcover_tiles.R
 #
 # Builds a static XYZ raster-tile pyramid of the 2020 Manitoba land-cover
-# raster (LCR_RCT_2020_MB.tif) for the webapp's Land Cover overlay's
-# "Detailed" mode. The result is a directory of lossless WebP tiles served
+# raster for the webapp's Land Cover overlay's "Detailed" mode.
+#
+# SOURCE RASTER: Statistics Canada, Land Cover Register, catalogue 16-510-X
+#   (product 16-510-x2025002), 30 m, reference year 2020, published
+#   2025-03-27, update frequency "Occasional".
+#   https://www150.statcan.gc.ca/n1/pub/16-510-x/16-510-x2025002-eng.htm
+#   Local, clipped to Manitoba: mao-assembly/inputs/LCR_RCT_2020_MB.tif
+#   Vintage and provenance are documented once in build_landcover.R's header
+#   and mirrored for the UI in web/src/lib/dataStatus.js (LAND_COVER_SOURCE). The result is a directory of lossless WebP tiles served
 # from web/public/data/landcover-tiles/{z}/{x}/{y}.webp — MapLibre reads
 # them as a plain raster source, no tile server needed.
 #
@@ -56,8 +63,9 @@
 # On Windows install via OSGeo4W or `conda install -c conda-forge gdal`.
 #
 # Runtime: 15-45 minutes depending on CPU. Re-run only when a new
-# LCR_RCT_*.tif lands (the 2020 raster is the latest provincial release;
-# years between updates).
+# LCR_RCT_*.tif lands. The 2020 raster is the latest FEDERAL release (not
+# provincial — StatCan, not MLI), and the register updates only
+# occasionally, so that is years apart.
 
 suppressPackageStartupMessages({
   library(jsonlite)
