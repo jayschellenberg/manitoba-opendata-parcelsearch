@@ -54,10 +54,12 @@
 # Robustness:
 #   * Staleness is judged from the FOLDER NAME (month+year), NOT the timestamp.
 #     Dropbox re-syncs reset mtimes, so a timestamp check would be unreliable.
-#     (Note: the dashboard's own resolvers DO sort by file.mtime -- see
-#     ResChartsStatic.qmd resolve_hpi_dir() and ResCharts_engine.R res_load_hpi().
-#     Harmless while exactly one MLS_HPI_* folder is kept; keep two and a resync
-#     could hand the dashboard the older month.)
+#     (The dashboard's own resolvers sorted by file.mtime until 2026-09-15 --
+#     the exposure this note used to describe -- and now rank by folder name
+#     through one shared res_hpi_newest_dir() in appraisal-templates'
+#     ResCharts_engine.R, called by both it and ResChartsStatic.qmd. Pinned by
+#     residential/tests/test_res_hpi_resolver.R. So more than one MLS_HPI_*
+#     folder on disk is no longer a hazard here or there.)
 #   * A stamp file (logs\hpi-alert-stamp.txt) dedupes so it sends at most ONE
 #     reminder per expected month PER REASON. The reason is part of the stamp on
 #     purpose: "CREA is late" turning into "the download failed" is a new and
