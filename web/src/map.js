@@ -2125,6 +2125,32 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
           'line-opacity': 0.95,
         },
       });
+      // Standing multi-family that is NOT new construction, drawn as context
+      // under New Multi-Family: a thin muted outline, no fill, no number.
+      //
+      // It answers the question the new-build layer raises and cannot answer —
+      // "what else multi-family is here?" — without competing with it. No fill
+      // because a fill would read as a second data layer; no label because the
+      // counts on screen belong to the layer you switched on. Slate rather
+      // than a ramp colour so it cannot be mistaken for a band of either
+      // scale, and thin enough to sit under the counts.
+      //
+      // `_mfInvDu` carries the standing-inventory stamp and is only written
+      // for rolls that clear the "DU >=" bar, so this respects the threshold
+      // for free. `_mfnbColor` is excluded: a roll the new-build layer has
+      // already painted does not need outlining as well.
+      map.addLayer({
+        id: 'muni-parcels-mfinv-context-line',
+        type: 'line',
+        source: 'muni-parcels',
+        layout: { visibility: 'none' },
+        filter: ['all', ['has', '_mfInvDu'], ['!', ['has', '_mfnbColor']]],
+        paint: {
+          'line-color': '#64748b',
+          'line-width': 1.2,
+          'line-opacity': 0.85,
+        },
+      });
       map.addLayer(duLabelLayer('muni-parcels-du-label', 'muni-parcels'));
       // New condo developments on the muni-wide fabric — same sparse-layer
       // treatment as the multi-family twin above.
@@ -5032,6 +5058,30 @@ export function setActiveOverlays(map, keys) {
   activeOverlays = [...(keys || [])];
   applySelectionOpacity(map);
   applyDuLabels(map);
+  applyInventoryContext(map);
+}
+
+/**
+ * Show the standing-inventory context outline only where it adds something:
+ * New Multi-Family on, Multi-Family off.
+ *
+ * With the inventory layer ON those same parcels are filled by it, and an
+ * outline as well would be the same fact drawn twice. With New Multi-Family
+ * OFF there is no foreground to give context TO — the outlines would be a
+ * layer nobody switched on.
+ */
+function applyInventoryContext(map) {
+  const id = 'muni-parcels-mfinv-context-line';
+  if (!map.getLayer(id)) return;
+  const wanted = activeOverlays.includes('mfnb') && !activeOverlays.includes('mfinv');
+  map.setLayoutProperty(id, 'visibility', wanted ? 'visible' : 'none');
+}
+
+/** Is the inventory context outline currently asked for? main.js reads this
+ *  to decide whether the inventory stamps are worth loading and re-stamping
+ *  while that overlay's own button is off. */
+export function inventoryContextWanted() {
+  return activeOverlays.includes('mfnb') && !activeOverlays.includes('mfinv');
 }
 
 /**

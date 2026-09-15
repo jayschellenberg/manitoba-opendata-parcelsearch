@@ -276,7 +276,10 @@ test('the "DU >=" box filters New Multi-Family too', () => {
 test('moving the bar repaints whichever layers are on', () => {
   const h = fnBody(main, 'onMfThresholdChange');
   assert.ok(h, 'onMfThresholdChange() is gone from main.js');
-  assert.match(h, /if \(mfInvOverlayOn\) recolorMfInv\(\)/);
+  // Widened when the context outline landed: the inventory stamps are also
+  // re-stamped while that overlay is off but drawing context under the
+  // new-build layer.
+  assert.match(h, /if \(mfInvOverlayOn \|\| inventoryContextWanted\(\)\) recolorMfInv\(\)/);
   assert.match(h, /if \(mfnbOverlayOn\) recolorMfnb\(\)/,
     'a bar that governs both layers has to repaint both');
   assert.match(h, /!mfInvOverlayOn && !mfnbOverlayOn/,

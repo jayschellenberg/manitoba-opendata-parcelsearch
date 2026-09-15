@@ -248,6 +248,68 @@ test('the label layer is re-pointed, not just re-shown', () => {
   }
 });
 
+// --- the standing-inventory context outline ---------------------------------
+
+test('the context outline draws inventory parcels the new-build layer did not', () => {
+  const at = mapJs.indexOf("id: 'muni-parcels-mfinv-context-line'");
+  assert.ok(at > 0, 'the context outline layer is gone from map.js');
+  const spec = mapJs.slice(at - 200, at + 700);
+  assert.match(spec, /type: 'line'/, 'an outline, not a fill — a fill would read as a second data layer');
+  assert.match(spec, /\['all', \['has', '_mfInvDu'\], \['!', \['has', '_mfnbColor'\]\]\]/,
+    'standing inventory that the new-build layer has NOT already painted; '
+    + '_mfInvDu is only stamped above the "DU >=" bar, so the threshold '
+    + 'comes along for free');
+  assert.match(spec, /visibility: 'none'/, 'it starts hidden like every overlay layer');
+});
+
+test('it shows only where it adds something', () => {
+  // Inventory ON and those parcels are filled by it — an outline as well is
+  // the same fact twice. New Multi-Family OFF and there is no foreground to
+  // give context to.
+  const body = fnBody(mapJs, 'applyInventoryContext');
+  assert.ok(body, 'applyInventoryContext() is gone from map.js');
+  assert.match(body, /includes\('mfnb'\) && !activeOverlays\.includes\('mfinv'\)/,
+    'the rule is: New Multi-Family on, Multi-Family off');
+  assert.match(fnBody(mapJs, 'setActiveOverlays'), /applyInventoryContext\(map\)/,
+    'it has to follow the same overlay list as everything else');
+  const wanted = fnBody(mapJs, 'inventoryContextWanted');
+  assert.ok(wanted, 'inventoryContextWanted() is gone — main.js reads it');
+  assert.match(wanted, /includes\('mfnb'\) && !activeOverlays\.includes\('mfinv'\)/,
+    'the exported test must state the same rule the layer is switched on by');
+});
+
+test('the stamps it draws from are loaded, not hoped for', () => {
+  // `_mfInvDu` only exists once the inventory shards have been fetched. Left
+  // to chance, the outline would appear or not depending on whether the user
+  // had happened to press the other button first.
+  const ensure = fnBody(main, 'ensureMfInventoryStamps');
+  assert.ok(ensure, 'ensureMfInventoryStamps() is gone from main.js');
+  assert.match(ensure, /mfInvLoadedFor === scopeKey/,
+    'it must share the inventory toggle\'s cache key, so whichever path gets '
+    + 'there first pays for the fetch');
+  assert.match(ensure, /stampMfInventoryOnFabric\(/);
+  const toggle = fnBody(main, 'toggleMfNewbuildOverlay');
+  const calls = [...toggle.matchAll(/ensureMfInventoryStamps\(/g)].length;
+  assert.equal(calls, 2,
+    'both paths into the overlay need it — the first load AND the re-entry '
+    + `branch for a scope already stamped; found ${calls}`);
+});
+
+test('the bar governs the outline too', () => {
+  const h = fnBody(main, 'onMfThresholdChange');
+  assert.match(h, /mfInvOverlayOn \|\| inventoryContextWanted\(\)/,
+    'the inventory stamps must be re-stamped at the new bar even while that '
+    + 'overlay is off, or the outlines keep describing the old threshold');
+});
+
+test('the outline is in the key', () => {
+  const legend = fnBody(main, 'renderMfnbLegend');
+  assert.match(legend, /inventoryContextWanted\(\)/,
+    'the row shows only in the combination that draws the outline');
+  assert.match(legend, /existing multi-family/,
+    'and it has to say what the outline means');
+});
+
 const passed = results.reduce((a, b) => a + b, 0);
 console.log(`\n${passed}/${results.length} passed`);
 if (passed !== results.length) process.exit(1);
