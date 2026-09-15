@@ -8,6 +8,7 @@
 // `_meta` carries both, so when a local mb-parcel-data clone is present the
 // two are compared.
 import assert from 'node:assert/strict';
+import { MFINV_MIN_DU } from '../src/lib/mfInventory.js';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -32,6 +33,7 @@ import {
   mfnbCsvCells,
   mfnbLegendSteps,
   mfnbDu,
+  mfnbPasses,
 } from '../src/lib/mfNewbuild.js';
 
 // Selkirk 1027 Manitoba Ave — the two-phase case the builder is written
@@ -204,5 +206,43 @@ assert.equal(mfnbDu({ ...oneEvent, du: undefined }), null);
 assert.equal(mfnbDu({ ...oneEvent, du: 'many' }), null);
 assert.equal(mfnbDu(null), null);
 assert.equal(mfnbDu({ e: [], du: 24 }), null, 'no event is not a new-build stamp');
+
+// --- mfnbPasses: the shared "DU >=" bar ------------------------------------
+// ONE box in the sidebar governs this layer and the standing inventory both
+// (Jason, 2026-09-15): "show me 20+ unit buildings" is a question about
+// buildings, not about which layer is switched on.
+const big = { e: [{ y: 2019, b: 900000, bp: 100000 }], du: 60 };
+const small = { e: [{ y: 2019, b: 900000, bp: 100000 }], du: 4 };
+assert.equal(mfnbPasses(big, 50), true);
+assert.equal(mfnbPasses(big, 60), true, 'the bar is inclusive');
+assert.equal(mfnbPasses(big, 61), false);
+assert.equal(mfnbPasses(small, MFNB_MIN_DU), true);
+assert.equal(mfnbPasses(small, 20), false);
+assert.equal(mfnbPasses(null, 3), false);
+assert.equal(mfnbPasses({ e: [], du: 99 }, 3), false, 'no event is not a stamp');
+// The premise of sharing one control: both shards publish the same floor, so
+// the clamp means the same thing on either side of it.
+assert.equal(MFNB_MIN_DU, MFINV_MIN_DU,
+             'the two multi-family shards must share a floor, or one "DU >=" '
+             + 'box cannot honestly govern both layers');
+// A missing count passes at the floor and fails above it: every roll in the
+// shard qualified at 3+ when it was built, so at the floor a gap is a gap --
+// but it is not an answer to "show me 20+".
+const noCount = { e: [{ y: 2019, b: 900000, bp: 100000 }] };
+assert.equal(mfnbPasses(noCount, MFNB_MIN_DU), true);
+assert.equal(mfnbPasses(noCount, undefined), true, 'no bar given falls to the floor');
+assert.equal(mfnbPasses(noCount, 4), false);
+assert.equal(mfnbPasses(noCount, 50), false);
+
+// --- the Units key drops what the bar excludes ------------------------------
+const allBands = mfnbLegendSteps('units');
+assert.deepEqual(mfnbLegendSteps('units', MFNB_MIN_DU), allBands,
+                 'at the floor the key is the whole ramp');
+const raised = mfnbLegendSteps('units', 50);
+assert.ok(raised.length < allBands.length, 'a raised bar drops bands');
+assert.deepEqual(raised.map((b) => b.label), ['50-99', '100+']);
+assert.deepEqual(mfnbLegendSteps('year', 50), mfnbLegendSteps('year'),
+                 'the Year key is not a unit ramp and must not be filtered');
+assert.deepEqual(mfnbLegendSteps('type', 50), mfnbLegendSteps('type'));
 
 console.log('mfNewbuild tests passed');
