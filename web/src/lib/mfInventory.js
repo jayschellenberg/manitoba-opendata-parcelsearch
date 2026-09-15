@@ -46,6 +46,13 @@ export function readMfInv(v) {
   return v;
 }
 
+/** The unit count itself — what map.js prints on the parcel. Null for a stamp
+ *  that does not parse, so a bad record labels nothing rather than "NaN". */
+export function mfInvDu(v) {
+  const r = readMfInv(v);
+  return r ? Number(r.du) : null;
+}
+
 /** Colour by unit count, on New Multi-Family's ramp. */
 export function mfInvFillColor(v) {
   const r = readMfInv(v);
@@ -82,6 +89,15 @@ export function mfInvLegendSteps(minDu) {
   return UNITS_RAMP
     .filter((s) => s.max >= floor)
     .map((s) => ({ color: s.color, label: s.label }));
+}
+
+/** Would two legends print the same key? Used to decide whether the standing
+ *  inventory's legend is saying anything New Multi-Family's "Units" legend has
+ *  not already said — both draw from UNITS_RAMP, so with both layers on and
+ *  the threshold at the floor they are the same six swatches twice. */
+export function sameLegendSteps(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  return a.every((s, i) => s?.color === b[i]?.color && s?.label === b[i]?.label);
 }
 
 /** Sanitise the threshold input. Anything unparseable, or below the shard's

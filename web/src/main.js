@@ -294,7 +294,7 @@ import {
   CONDO_TYPES, CONDO_MODES, CONDO_MIN_UNITS, CONDO_FROM_YEAR,
 } from './lib/condoDev.js';
 import {
-  mfInvFillColor, mfInvPasses, mfInvLegendSteps, clampMinDu,
+  mfInvFillColor, mfInvPasses, mfInvLegendSteps, clampMinDu, mfInvDu, sameLegendSteps,
 } from './lib/mfInventory.js';
 import { resolveParcelAcres, formatRollSizeField, parseRollFrontageFeet } from './lib/acres.js';
 import { rollDisplay } from './lib/parcelLabelFields.js';
@@ -4071,15 +4071,80 @@ function updateMapOptionsRow() {
   $numberingRow.hidden = !($numberingLabel && !$numberingLabel.hidden);
 }
 
+/**
+ * Stack the on-screen legends up the map's bottom-right corner instead of
+ * letting them pile on one spot.
+ *
+ * WHY THIS EXISTS. Every legend box is `position:absolute; bottom:12px;
+ * right:12px` (the two exceptions had hand-tuned bottoms), so any two showing
+ * at once landed on top of each other — the narrower one covering the wider
+ * one's title. Jason hit it with the two multi-family layers on together, but
+ * it was every pair: MASC + Land Cover, flood + historical, condo + anything.
+ * The CSS answer that was there — a `.with-zoning` class that bumped the AADT
+ * legend up by one legend's height — only ever fixed the one pair somebody
+ * noticed, and needed a new class for the next pair.
+ *
+ * The static-map export already stacks properly (layoutMapLegends), so this
+ * also makes the screen agree with the picture of it.
+ *
+ * REACHES A FIXED POINT. It runs off the same MutationObserver that watches
+ * for legends appearing, and it writes inline styles — which the observer
+ * sees. The guard is that a value only gets written when it actually differs:
+ * the second pass is a no-op, mutates nothing, and the loop ends there.
+ *
+ * A legend that scrolls (the zoning list) goes last, at the top of the stack,
+ * and is capped to the room left above everything below it — it is the one box
+ * that can be taller than the map, so it is the one that must absorb the
+ * stack's height rather than push the others off the top.
+ */
+function restackMapLegends() {
+  if (!$mapEl) return;
+  const GAP = 6;
+  const BASE = 12;      // matches .map-legend's own bottom
+  const TOP_MARGIN = 12;
+  const mapH = $mapEl.clientHeight || 0;
+
+  const showing = [...$mapEl.querySelectorAll('.map-legend')]
+    .filter((el) => !el.hidden && el.offsetParent !== null);
+  const scrolls = (el) => getComputedStyle(el).overflowY === 'auto';
+  const ordered = [...showing.filter((el) => !scrolls(el)), ...showing.filter(scrolls)];
+
+  let bottom = BASE;
+  for (const el of ordered) {
+    const want = `${Math.round(bottom)}px`;
+    if (el.style.bottom !== want) el.style.bottom = want;
+    if (scrolls(el) && mapH > 0) {
+      // Only the scrollable box gets capped; capping a plain one would clip
+      // rows it has no way to scroll to.
+      const cap = `${Math.max(80, Math.round(mapH - bottom - TOP_MARGIN))}px`;
+      if (el.style.maxHeight !== cap) el.style.maxHeight = cap;
+    }
+    bottom += el.offsetHeight + GAP;
+  }
+}
+
 // Legends appear and disappear from a dozen different overlay handlers
 // (zoning, MASC, CLI's tri-state cycle, land cover, traffic flow). Rather
 // than call updateLegendAvailability from each one — and miss the next one
 // somebody adds — watch the map pane for the `hidden` flips that reveal
 // them. Attribute-only, so it costs nothing until a legend actually toggles.
 if ($mapEl) {
-  new MutationObserver(() => updateLegendAvailability())
+  new MutationObserver(() => { updateLegendAvailability(); restackMapLegends(); })
     .observe($mapEl, { attributes: true, attributeFilter: ['hidden', 'style'], subtree: true });
   updateLegendAvailability();
+  restackMapLegends();
+  // A legend's height depends on the width it wraps to, and the map's height
+  // is what caps the scrolling one — both move with the window.
+  window.addEventListener('resize', restackMapLegends);
+  // Content changes resize a legend without touching an attribute the
+  // observer above watches — raising the "DU ≥" threshold drops bands off the
+  // multi-family key, a muni change rewrites the zoning list. Watching the
+  // boxes themselves catches every one of those without listening to the
+  // whole map pane's DOM, which MapLibre churns constantly.
+  if (typeof ResizeObserver === 'function') {
+    const ro = new ResizeObserver(() => restackMapLegends());
+    for (const el of $mapEl.querySelectorAll('.map-legend')) ro.observe(el);
+  }
 }
 
 if ($numberingToggle) {
@@ -8610,13 +8675,13 @@ async function toggleOverlay(which) {
 }
 
 /** Apply the visible/hidden styling for the zoning or dev-plan overlay
- *  layers, including the floating zoning legend and the AADT-legend
- *  bump-up class that keeps the two legends from overlapping. */
+ *  layers, including the floating zoning legend. Where that legend sits
+ *  relative to the others is restackMapLegends()' job — this only decides
+ *  whether it is on screen. */
 function applyOverlayVisibility(which, visible) {
   if (which === 'zoning') {
     setZoningVisible(map, visible);
     if ($zoningLegend) $zoningLegend.hidden = !visible;
-    if ($flowLegend) $flowLegend.classList.toggle('with-zoning', visible);
   } else {
     setDevPlanVisible(map, visible);
     // Mirror the Dev Plan Layer's visibility on the table so the
@@ -10771,14 +10836,58 @@ async function stampMfNewbuildOnFabric(fabricFc, munis) {
   return painted;
 }
 
-function renderMfnbLegend(mode) {
-  if (!$mfnbLegend) return;
-  const items = mfnbLegendSteps(mode)
+/** Swatch rows as `<li>`s, from either layer's legend steps. */
+function mfLegendRows(steps) {
+  return steps
     .map((b) => `<li><span class="swatch" style="background:${b.color}"></span>${b.label}</li>`)
     .join('');
+}
+
+/**
+ * Are the two multi-family legends about to print the same thing?
+ *
+ * New Multi-Family's "Units" view and the standing inventory share ONE colour
+ * ramp on purpose — a 24-unit building must not change colour between them —
+ * so with both layers on, their two legends were the identical six swatches
+ * twice, stacked one above the other. Two keys for one ramp reads as two
+ * different scales until you compare them row by row and find they aren't.
+ *
+ * Only when the rows actually match: raise the "DU ≥" threshold and the
+ * inventory drops the bands below it, at which point the two keys really do
+ * describe different things and both earn their place.
+ */
+function mfLegendsShareOneRamp() {
+  if (!(mfnbOverlayOn && mfInvOverlayOn && mfnbMode === 'units')) return false;
+  return sameLegendSteps(mfnbLegendSteps('units'), mfInvLegendSteps(mfInvMinDu()));
+}
+
+/**
+ * Render both multi-family legends as a pair, and decide which boxes show.
+ *
+ * Together rather than one each, because whether either can print its own
+ * swatch list depends on what the other is doing — see mfLegendsShareOneRamp.
+ * Every place that used to call one of the two render functions calls this.
+ */
+function renderMfLegends() {
+  const merged = mfLegendsShareOneRamp();
+  renderMfnbLegend(mfnbMode, merged);
+  renderMfInvLegend(merged);
+  if ($mfnbLegend) $mfnbLegend.hidden = !mfnbOverlayOn;
+  // When the two share a ramp the new-build box carries both, so the second
+  // box would be a duplicate of it — it stands down rather than repeat itself.
+  if ($mfinvLegend) $mfinvLegend.hidden = !mfInvOverlayOn || merged;
+}
+
+function renderMfnbLegend(mode, merged = false) {
+  if (!$mfnbLegend) return;
+  const items = mfLegendRows(mfnbLegendSteps(mode));
   const title = (MFNB_MODES[mode] || MFNB_MODES.year).legend;
   $mfnbLegend.innerHTML =
-    `<strong>${title}</strong><ul>${items}</ul>`
+    `<strong>${title}</strong>`
+    // Says whose ramp this is when it is standing in for both layers, so the
+    // reader is not left wondering where the Multi-Family key went.
+    + (merged ? `<div class="legend-sub">New Multi-Family and Multi-Family — one ramp</div>` : '')
+    + `<ul>${items}</ul>`
     // Three lines, not one run-on. As a single line the footnote was wider
     // than the swatch list by a long way and it, not the legend, set the box
     // width - which pushed the panel across the map on a narrow window.
@@ -10787,7 +10896,9 @@ function renderMfnbLegend(mode) {
     + (mode === 'type'
         ? `type is hand-labelled in mf-type-overrides.csv, never inferred<br>`
         : `from assessed building value ${MFNB_FROM_YEAR}+<br>`)
-    + `years are assessment years and trail completion by about a year</small>`;
+    + `years are assessment years and trail completion by about a year`
+    + (merged ? `<br>Multi-Family is the standing inventory, labelled with its unit count` : '')
+    + `</small>`;
 }
 
 /**
@@ -10842,7 +10953,7 @@ function turnMfnbOff() {
     setOverlayPressed($mfnbToggle, false);
     setOverlayBtnLabel($mfnbToggle, mfnbButtonLabelFor(null));
   }
-  if ($mfnbLegend) $mfnbLegend.hidden = true;
+  renderMfLegends();
 }
 
 async function toggleMfNewbuildOverlay() {
@@ -10856,7 +10967,7 @@ async function toggleMfNewbuildOverlay() {
     mfnbMode = targetMode;
     recolorMfnb();
     setOverlayBtnLabel($mfnbToggle, mfnbButtonLabelFor(targetMode));
-    renderMfnbLegend(targetMode);
+    renderMfLegends();
     return;
   }
   mfnbMode = targetMode;
@@ -10911,8 +11022,7 @@ async function toggleMfNewbuildOverlay() {
   setOverlayPressed($mfnbToggle, true);
   setOverlayBtnLabel($mfnbToggle, mfnbButtonLabelFor(mfnbMode));
   setColumnVisible('mfnb', true);
-  renderMfnbLegend(mfnbMode);
-  if ($mfnbLegend) $mfnbLegend.hidden = false;
+  renderMfLegends();
 
   // Fill the grid with the flagged rolls. Only on the transition INTO the
   // overlay, never on the Year -> Units recolour: that is a repaint of the
@@ -10948,14 +11058,37 @@ function mfInvColorFor(hit) {
   return mfInvFillColor(hit);
 }
 
+/**
+ * Stamp — or clear — everything the overlay draws for one parcel: the fill
+ * colour and the dwelling-unit count map.js labels the polygon with.
+ *
+ * ONE FUNCTION ON PURPOSE. The colour and the label are the same claim about
+ * the same parcel, and they are written from two places (the initial stamp and
+ * every threshold change). Set separately they could drift by one edit, and a
+ * parcel wearing "24" with no highlight — or a highlight with no count — is a
+ * map saying two different things at once.
+ *
+ * Returns whether the parcel is painted.
+ */
+function paintMfInvFeature(p, hit) {
+  const color = mfInvColorFor(hit);
+  if (color) {
+    p._mfInvColor = color;
+    p._mfInvDu = mfInvDu(hit);
+    return true;
+  }
+  if (p._mfInvColor !== undefined) delete p._mfInvColor;
+  if (p._mfInvDu !== undefined) delete p._mfInvDu;
+  return false;
+}
+
 function recolorMfInv() {
   const recolor = (fc) => {
     let painted = 0;
     for (const f of fc?.features || []) {
       const p = f.properties;
       if (!p?._mfInv) continue;
-      const color = mfInvColorFor(p._mfInv);
-      if (color) { p._mfInvColor = color; painted += 1; } else if (p._mfInvColor) delete p._mfInvColor;
+      if (paintMfInvFeature(p, p._mfInv)) painted += 1;
     }
     return painted;
   };
@@ -10985,30 +11118,33 @@ async function stampMfInventoryOnFabric(fabricFc, munis) {
     if (dict) p._mfInvLoaded = true;
     const hit = (dict && p.Roll_No_Txt) ? dict[p.Roll_No_Txt] : null;
     if (hit) p._mfInv = hit;
-    const color = mfInvColorFor(hit);
-    if (color) { p._mfInvColor = color; painted += 1; } else if (p._mfInvColor) delete p._mfInvColor;
+    if (paintMfInvFeature(p, hit)) painted += 1;
   }
   return painted;
 }
 
-function renderMfInvLegend() {
+function renderMfInvLegend(merged = false) {
   if (!$mfinvLegend) return;
+  // Nothing to build when the New Multi-Family box is carrying this ramp for
+  // both layers — renderMfLegends() hides this one in the same pass.
+  if (merged) return;
   const min = mfInvMinDu();
-  const items = mfInvLegendSteps(min)
-    .map((b) => `<li><span class="swatch" style="background:${b.color}"></span>${b.label}</li>`)
-    .join('');
+  const items = mfLegendRows(mfInvLegendSteps(min));
   $mfinvLegend.innerHTML =
     `<strong>Multi-family, ${min}+ dwelling units</strong><ul>${items}</ul>`
     + `<small style="display:block;margin-top:4px;color:#6b7280;font-style:italic">`
     + `standing inventory, not new construction<br>`
-    + `current unit counts (excluding colonies)</small>`;
+    + `current unit counts (excluding colonies)<br>`
+    // The map prints the count on each highlighted parcel from zoom 12 — say
+    // so, or the numbers vanishing on zoom-out reads as a glitch.
+    + `unit count labels each parcel (zoom in to read them)</small>`;
 }
 
 function turnMfInvOff() {
   mfInvOverlayOn = false;
   setMfInventoryVisible(map, false);
   if ($mfinvToggle) setOverlayPressed($mfinvToggle, false);
-  if ($mfinvLegend) $mfinvLegend.hidden = true;
+  renderMfLegends();
 }
 
 /** Put the municipality's qualifying multi-family rolls into the grid. No new
@@ -11086,8 +11222,7 @@ async function toggleMfInventoryOverlay() {
   mfInvOverlayOn = true;
   setMfInventoryVisible(map, true);
   setOverlayPressed($mfinvToggle, true);
-  renderMfInvLegend();
-  if ($mfinvLegend) $mfinvLegend.hidden = false;
+  renderMfLegends();
   if (munis.length > 0) showMfInventoryResults(munis);
 }
 
@@ -11104,7 +11239,7 @@ function onMfInvThresholdChange() {
   mfInvThresholdTimer = setTimeout(() => {
     mfInvThresholdTimer = null;
     recolorMfInv();
-    renderMfInvLegend();
+    renderMfLegends();
     const munis = (csvMatchedMunis && csvMatchedMunis.length > 0)
       ? csvMatchedMunis.slice()
       : ($municipality.value ? [$municipality.value] : []);
