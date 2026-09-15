@@ -74,28 +74,31 @@ function test(name, fn) {
 
 console.log('multi-family DU labels + legend stacking');
 
-const LABEL_LAYERS = ['mfinv-du-label', 'muni-parcels-mfinv-du-label'];
+const LABEL_LAYERS = ['du-label', 'muni-parcels-du-label'];
 
 // --- the labels are registered, on both sources ------------------------------
 
-test('a label layer is registered for each source the overlay paints', () => {
-  const spec = fnBody(mapJs, 'mfInvDuLabelLayer');
-  assert.ok(spec, 'mfInvDuLabelLayer() is gone from map.js');
+test('a label layer is registered for each source the overlays paint', () => {
+  const spec = fnBody(mapJs, 'duLabelLayer');
+  assert.ok(spec, 'duLabelLayer() is gone from map.js');
   for (const id of LABEL_LAYERS) {
-    assert.ok(mapJs.includes(`mfInvDuLabelLayer('${id}'`),
-      `${id} is never added — the overlay paints two sources (search results `
+    assert.ok(mapJs.includes(`duLabelLayer('${id}'`),
+      `${id} is never added — the overlays paint two sources (search results `
       + 'and the muni-wide fabric) and a label layer on only one of them '
       + 'leaves half the highlighted parcels unlabelled');
   }
-  assert.match(mapJs, /mfInvDuLabelLayer\('mfinv-du-label', 'parcels'\)/);
-  assert.match(mapJs, /mfInvDuLabelLayer\('muni-parcels-mfinv-du-label', 'muni-parcels'\)/);
+  assert.match(mapJs, /duLabelLayer\('du-label', 'parcels'\)/);
+  assert.match(mapJs, /duLabelLayer\('muni-parcels-du-label', 'muni-parcels'\)/);
 });
 
-test('the label reads the stamp, and only paints where the fill does', () => {
-  const spec = fnBody(mapJs, 'mfInvDuLabelLayer');
-  assert.match(spec, /'text-field':[^\n]*_mfInvDu/,
-    'the label must print _mfInvDu — the count main.js stamps beside the colour');
-  assert.match(spec, /filter:\s*\['has', '_mfInvDu'\]/,
+test('ONE layer carries both multi-family overlays, not one each', () => {
+  // The standing inventory and New Multi-Family largely paint the same rolls,
+  // and these labels never yield (allow-overlap). A layer each would print the
+  // same number twice, on top of itself.
+  const spec = fnBody(mapJs, 'duLabelLayer');
+  assert.match(spec, /'text-field':[^\n]*coalesce[^\n]*_mfInvDu[^\n]*_mfnbDu/,
+    'the label must coalesce both stamps, inventory first');
+  assert.match(spec, /filter:\s*\['any', \['has', '_mfInvDu'\], \['has', '_mfnbDu'\]\]/,
     'without the filter every parcel in the fabric carries a label slot, '
     + 'and unhighlighted parcels get an empty one');
   assert.match(spec, /'text-allow-overlap':\s*true/,
@@ -105,68 +108,147 @@ test('the label reads the stamp, and only paints where the fill does', () => {
     + 'overprinted by them');
 });
 
-test('the label uses a fontstack the glyph server actually serves', () => {
+test('both label layers use a fontstack the glyph server actually serves', () => {
   // Shipped once with 'Open Sans Bold' and drew nothing: the glyphs endpoint
   // in BASEMAP_STYLE 404s on that stack, and a missing fontstack is silent —
   // no error, no text, indistinguishable from an overlay with no data. The
   // roll-number labels are the proof of what resolves.
-  const spec = fnBody(mapJs, 'mfInvDuLabelLayer');
-  const font = /'text-font':\s*\[([^\]]*)\]/.exec(spec);
-  assert.ok(font, 'the label layer must name a font stack');
   const rollLabel = mapJs.slice(mapJs.indexOf("id: 'muni-parcels-label'"));
   const rollFont = /'text-font':\s*\[([^\]]*)\]/.exec(rollLabel);
   assert.ok(rollFont, 'muni-parcels-label no longer names a font to copy');
-  assert.equal(font[1].trim(), rollFont[1].trim(),
-    'use the same stack as the roll-number labels — that one is known to '
-    + 'resolve against the style\'s glyph endpoint');
-});
-
-test('the labels are switched on and off with the overlay', () => {
-  const body = fnBody(mapJs, 'setMfInventoryVisible');
-  assert.ok(body, 'setMfInventoryVisible() is gone from map.js');
-  for (const id of LABEL_LAYERS) {
-    assert.ok(body.includes(`'${id}'`),
-      `${id} is not in setMfInventoryVisible's list — it is registered with `
-      + "visibility 'none' and nothing would ever show it");
+  for (const fn of ['duLabelLayer', 'condoDuLabelLayer']) {
+    const font = /'text-font':\s*\[([^\]]*)\]/.exec(fnBody(mapJs, fn) || '');
+    assert.ok(font, `${fn} must name a font stack`);
+    assert.equal(font[1].trim(), rollFont[1].trim(),
+      `${fn} must use the same stack as the roll-number labels — that one is `
+      + "known to resolve against the style's glyph endpoint");
   }
 });
 
+test('the parcel labels follow EITHER multi-family overlay', () => {
+  // One layer, two toggles: turning one off while the other is still on must
+  // not take the numbers with it.
+  const body = fnBody(mapJs, 'setDuLabelsVisible');
+  assert.ok(body, 'setDuLabelsVisible() is gone from map.js');
+  for (const id of LABEL_LAYERS) {
+    assert.ok(body.includes(`'${id}'`),
+      `${id} is not in setDuLabelsVisible's list — it is registered with `
+      + "visibility 'none' and nothing would ever show it");
+  }
+  // And nobody else may flip them, or the OR is bypassed.
+  for (const other of ['setMfInventoryVisible', 'setMfNewbuildVisible']) {
+    const b = fnBody(mapJs, other) || '';
+    for (const id of LABEL_LAYERS) {
+      assert.ok(!b.includes(`'${id}'`),
+        `${other} must not switch ${id} — that is setDuLabelsVisible's job, `
+        + 'because the layer belongs to both overlays');
+    }
+  }
+  const wanted = fnBody(main, 'duLabelsWanted');
+  assert.ok(wanted, 'duLabelsWanted() is gone from main.js');
+  assert.match(wanted, /mfInvOverlayOn \|\| mfnbOverlayOn/,
+    'the labels show while EITHER overlay is painting');
+  // Every place either overlay changes state has to re-ask.
+  const calls = [...main.matchAll(/setDuLabelsVisible\(map, duLabelsWanted\(\)\)/g)].length;
+  assert.equal(calls, 4,
+    'expected the four on/off transitions (two overlays x on and off) to '
+    + `re-ask; found ${calls}`);
+});
+
+test('condo counts are per DEVELOPMENT, not per unit roll', () => {
+  // Row housing is condo-titled — one roll per unit, dwelling_units = 1 — so
+  // labelling the parcels prints "1" forty times across one project.
+  assert.ok(fnBody(mapJs, 'condoDuLabelLayer'), 'condoDuLabelLayer() is gone');
+  assert.match(mapJs, /addSource\('condo-du-labels'/,
+    'the plan totals need their own point source: a development has no polygon');
+  assert.match(mapJs, /condoDuLabelLayer\('condo-du-label', 'condo-du-labels'\)/);
+  const vis = fnBody(mapJs, 'setCondoDevVisible');
+  assert.ok(vis.includes("'condo-du-label'"),
+    'the plan totals must switch with the condo overlay that explains them');
+  const refresh = fnBody(main, 'refreshCondoDuLabels');
+  assert.ok(refresh, 'refreshCondoDuLabels() is gone from main.js');
+  assert.match(refresh, /condoDuLabelPoints\(/,
+    'the grouping lives in lib/condoDev.js where it is unit-tested');
+  assert.match(refresh, /_condoColor/,
+    'only painted rolls may contribute — the labels must match the map');
+  assert.ok([...main.matchAll(/refreshCondoDuLabels\(\)/g)].length >= 3,
+    'rebuild on turning the overlay on and on every recolour, or the totals '
+    + 'describe the last municipality');
+});
+
 test('the labels draw above the roll numbers', () => {
-  // Both are symbol layers on the same corner of the same parcels. While the
+  // Both are symbol layers on the same corner of the same parcels. While a
   // multi-family overlay is on, the unit count is the number being asked for.
   const ordering = mapJs.slice(mapJs.indexOf("moveLayer('muni-parcels-label')"));
-  assert.ok(ordering.includes("moveLayer('mfinv-du-label')"),
-    'mfinv-du-label must be re-anchored AFTER muni-parcels-label');
-  assert.ok(ordering.includes("moveLayer('muni-parcels-mfinv-du-label')"),
-    'muni-parcels-mfinv-du-label must be re-anchored AFTER muni-parcels-label');
+  for (const id of [...LABEL_LAYERS, 'condo-du-label']) {
+    assert.ok(ordering.includes(`moveLayer('${id}')`),
+      `${id} must be re-anchored AFTER muni-parcels-label`);
+  }
+});
+
+// --- the Assessment Parcels fabric stays the user's choice -------------------
+
+test('no multi-family overlay switches the parcel fabric on', () => {
+  // It used to, so a coloured parcel would answer a click — but each of these
+  // overlays also puts what it paints into the results, which have their own
+  // click handling, so nothing was at risk. Forcing the fabric on just buried
+  // the highlight under every other parcel in the municipality (Jason,
+  // 2026-09-15). Crop History is the exception and keeps it: it paints the
+  // whole fabric and does not fill the grid.
+  for (const fn of ['toggleMfInventoryOverlay', 'toggleMfNewbuildOverlay',
+                    'toggleCondoDevOverlay']) {
+    const body = fnBody(main, fn);
+    assert.ok(body, `${fn}() is gone from main.js`);
+    assert.ok(!/toggleAuxOverlay\(\s*'muniParcels'\s*\)/.test(body),
+      `${fn} switches the Assessment Parcels layer on — that is the user's `
+      + 'choice, and forcing it buries the highlight it just drew');
+  }
+  const landfacts = fnBody(main, 'toggleLandfactsOverlay') || '';
+  assert.match(landfacts, /toggleAuxOverlay\(\s*'muniParcels'\s*\)/,
+    'Crop History still needs the fabric: it paints every parcel and puts '
+    + 'none of them in the grid, so the fabric answers the only click there is');
 });
 
 // --- the count and the colour are one decision -------------------------------
 
-test('colour and count are stamped in exactly one place', () => {
-  const body = fnBody(main, 'paintMfInvFeature');
-  assert.ok(body, 'paintMfInvFeature() is gone from main.js');
-  assert.match(body, /_mfInvColor = /, 'it must set the colour');
-  assert.match(body, /_mfInvDu = /, 'it must set the count');
-  assert.match(body, /delete p\._mfInvColor/, 'and clear the colour');
-  assert.match(body, /delete p\._mfInvDu/, 'and clear the count with it');
+// Each overlay's colour and count are one decision, written in one place.
+// A highlight with no count, or a count on a parcel that is no longer
+// highlighted, is the map saying two things about the same roll.
+for (const [paint, prefix, why] of [
+  ['paintMfInvFeature', '_mfInv',
+   'or raising the "DU \u2265" threshold un-paints a parcel that keeps its count'],
+  ['paintMfnbFeature', '_mfnb',
+   'or switching view repaints the roll and leaves the old count behind'],
+]) {
+  test(`${prefix} colour and count are stamped in exactly one place`, () => {
+    const body = fnBody(main, paint);
+    assert.ok(body, `${paint}() is gone from main.js`);
+    assert.ok(body.includes(`${prefix}Color = `), 'it must set the colour');
+    assert.ok(body.includes(`${prefix}Du = `), 'it must set the count');
+    assert.ok(body.includes(`delete p.${prefix}Color`), 'and clear the colour');
+    assert.ok(body.includes(`delete p.${prefix}Du`), 'and clear the count with it');
 
-  // Nowhere else may write either one: that is what keeps them in step.
-  const writes = [...main.matchAll(/_mfInv(?:Color|Du)\s*=\s*/g)].length;
-  const inPaint = [...body.matchAll(/_mfInv(?:Color|Du)\s*=\s*/g)].length;
-  assert.equal(writes, inPaint,
-    `${writes - inPaint} assignment(s) to _mfInvColor/_mfInvDu outside `
-    + 'paintMfInvFeature — the highlight and the number it carries have to be '
-    + 'one decision, or raising the threshold un-paints a parcel that keeps '
-    + 'its count');
-});
+    // Nowhere else may write either one: that is what keeps them in step.
+    const rx = new RegExp(`${prefix}(?:Color|Du)\\s*=\\s*`, 'g');
+    const writes = [...main.matchAll(rx)].length;
+    const inPaint = [...body.matchAll(rx)].length;
+    assert.equal(writes, inPaint,
+      `${writes - inPaint} assignment(s) to ${prefix}Color/${prefix}Du outside `
+      + `${paint} \u2014 the highlight and the number it carries have to be one `
+      + `decision, ${why}`);
+  });
+}
 
-test('both stamping paths go through it', () => {
-  for (const fn of ['recolorMfInv', 'stampMfInventoryOnFabric']) {
+test('every stamping path goes through those', () => {
+  for (const [fn, paint] of [
+    ['recolorMfInv', 'paintMfInvFeature'],
+    ['stampMfInventoryOnFabric', 'paintMfInvFeature'],
+    ['recolorMfnb', 'paintMfnbFeature'],
+    ['stampMfNewbuildOnFabric', 'paintMfnbFeature'],
+  ]) {
     const body = fnBody(main, fn);
     assert.ok(body, `${fn}() is gone from main.js`);
-    assert.match(body, /paintMfInvFeature\(/,
-      `${fn} must paint through paintMfInvFeature`);
+    assert.ok(body.includes(`${paint}(`), `${fn} must paint through ${paint}`);
   }
 });
 

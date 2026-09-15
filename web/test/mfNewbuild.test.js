@@ -31,6 +31,7 @@ import {
   mfnbCsvHeaders,
   mfnbCsvCells,
   mfnbLegendSteps,
+  mfnbDu,
 } from '../src/lib/mfNewbuild.js';
 
 // Selkirk 1027 Manitoba Ave — the two-phase case the builder is written
@@ -191,5 +192,17 @@ if (idxPath) {
 } else {
   console.log('mfNewbuild: no local mb-parcel-data clone; drift check skipped');
 }
+
+// --- mfnbDu: the number map.js prints on the parcel ------------------------
+// Stamped into `_mfnbDu` beside the fill colour. A roll flagged by its
+// building-value history but carrying no usable unit count must yield null, so
+// it is coloured and left unlabelled rather than labelled "NaN".
+const oneEvent = { e: [{ y: 2019, b: 900000, bp: 100000 }], du: 24 };
+assert.equal(mfnbDu(oneEvent), 24);
+assert.equal(mfnbDu({ ...oneEvent, du: '24' }), 24, 'a numeric string is a count');
+assert.equal(mfnbDu({ ...oneEvent, du: undefined }), null);
+assert.equal(mfnbDu({ ...oneEvent, du: 'many' }), null);
+assert.equal(mfnbDu(null), null);
+assert.equal(mfnbDu({ e: [], du: 24 }), null, 'no event is not a new-build stamp');
 
 console.log('mfNewbuild tests passed');

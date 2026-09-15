@@ -172,6 +172,17 @@ export function mfnbFillColor(m, mode) {
   return rampColor(YEAR_RAMP, primaryYear(v));
 }
 
+/** The roll's current dwelling-unit count — what map.js prints on the parcel
+ *  while this overlay is on. Null where the stamp carries no usable count, so
+ *  a roll flagged by its value history but missing a unit count is coloured
+ *  and left unlabelled rather than labelled "NaN". */
+export function mfnbDu(m) {
+  const v = readMfnb(m);
+  if (!v) return null;
+  const du = Number(v.du);
+  return Number.isFinite(du) ? du : null;
+}
+
 /** Total building value created across every event on the roll. Two phases
  *  seven years apart are two buildings, so their gains add. */
 export function totalGain(m) {
