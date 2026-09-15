@@ -127,31 +127,31 @@ test('both label layers use a fontstack the glyph server actually serves', () =>
 
 test('the parcel labels follow EITHER multi-family overlay', () => {
   // One layer, two toggles: turning one off while the other is still on must
-  // not take the numbers with it.
-  const body = fnBody(mapJs, 'setDuLabelsVisible');
-  assert.ok(body, 'setDuLabelsVisible() is gone from map.js');
+  // not take the numbers with it — and turning BOTH off must.
+  const apply = fnBody(mapJs, 'applyDuLabels');
+  assert.ok(apply, 'applyDuLabels() is gone from map.js');
   for (const id of LABEL_LAYERS) {
-    assert.ok(body.includes(`'${id}'`),
-      `${id} is not in setDuLabelsVisible's list — it is registered with `
-      + "visibility 'none' and nothing would ever show it");
+    assert.ok(apply.includes(`'${id}'`),
+      `${id} is not in applyDuLabels — it is registered with visibility 'none' `
+      + 'and nothing would ever show it');
   }
-  // And nobody else may flip them, or the OR is bypassed.
+  // Nobody else may flip them, or the layer can disagree with the overlays.
   for (const other of ['setMfInventoryVisible', 'setMfNewbuildVisible']) {
     const b = fnBody(mapJs, other) || '';
     for (const id of LABEL_LAYERS) {
       assert.ok(!b.includes(`'${id}'`),
-        `${other} must not switch ${id} — that is setDuLabelsVisible's job, `
-        + 'because the layer belongs to both overlays');
+        `${other} must not switch ${id} — that is applyDuLabels' job, because `
+        + 'the layer belongs to both overlays');
     }
   }
-  const wanted = fnBody(main, 'duLabelsWanted');
-  assert.ok(wanted, 'duLabelsWanted() is gone from main.js');
-  assert.match(wanted, /mfInvOverlayOn \|\| mfnbOverlayOn/,
-    'the labels show while EITHER overlay is painting');
+  const sync = fnBody(main, 'syncActiveOverlays');
+  assert.ok(sync, 'syncActiveOverlays() is gone from main.js');
+  assert.match(sync, /mfInvOverlayOn/);
+  assert.match(sync, /mfnbOverlayOn/);
   // Every place either overlay changes state has to re-ask.
-  const calls = [...main.matchAll(/setDuLabelsVisible\(map, duLabelsWanted\(\)\)/g)].length;
-  assert.equal(calls, 4,
-    'expected the four on/off transitions (two overlays x on and off) to '
+  const calls = [...main.matchAll(/syncActiveOverlays\(\)/g)].length;
+  assert.ok(calls >= 6,
+    `expected the six on/off transitions (three overlays x on and off) to `
     + `re-ask; found ${calls}`);
 });
 

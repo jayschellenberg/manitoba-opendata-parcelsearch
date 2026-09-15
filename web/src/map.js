@@ -54,7 +54,7 @@ import {
   applyMuniParcelsBasemapStyle,
 } from './lib/muniParcelsStyle.js';
 import { polygonBboxMidpoint } from './lib/polygonCentroid.js';
-import { yieldToOverlay } from './lib/overlayHighlight.js';
+import { yieldToOverlay, duLabelFilter, duLabelTextField } from './lib/overlayHighlight.js';
 import { rollDisplay } from './lib/parcelLabelFields.js';
 import { zoningBylawText, devPlanBylawText } from './lib/amendment.js';
 import { WAYBACK_VERSIONS, waybackTileUrl } from './lib/wayback.js';
@@ -783,7 +783,7 @@ const PARCEL_FILL_OPACITY = [
 // what the selection itself wants, `owners` is which overlays are painting.
 // Nothing sets the paint property directly any more.
 let parcelFillBase = PARCEL_FILL_OPACITY;
-let highlightOwners = [];
+let activeOverlays = [];
 
 function applySelectionOpacity(map) {
   if (!map) return;
@@ -795,7 +795,7 @@ function applySelectionOpacity(map) {
     ['parcel-line-underlay', 'line-opacity', 0.75],
   ];
   for (const [id, prop, base] of kit) {
-    if (map.getLayer(id)) map.setPaintProperty(id, prop, yieldToOverlay(base, highlightOwners));
+    if (map.getLayer(id)) map.setPaintProperty(id, prop, yieldToOverlay(base, activeOverlays));
   }
 }
 
@@ -5028,23 +5028,31 @@ export function setMfInventoryVisible(map, on) {
  * ends up looking like two different things). Called from main.js every time
  * one of those overlays goes on or off; `keys` is whichever are painting now.
  */
-export function setOverlayHighlightOwners(map, keys) {
-  highlightOwners = [...(keys || [])];
+export function setActiveOverlays(map, keys) {
+  activeOverlays = [...(keys || [])];
   applySelectionOpacity(map);
+  applyDuLabels(map);
 }
 
 /**
- * Show / hide the per-parcel dwelling-unit counts.
+ * Point the per-parcel unit-count layers at the overlays currently painting,
+ * and switch them off when none is.
  *
- * Its own setter rather than a line inside one overlay's, because the layer
- * serves BOTH the standing inventory and New Multi-Family: it belongs on
- * screen while EITHER is painting, and off only when neither is. main.js owns
- * that `||` because main.js is where the two toggles live.
+ * Filter AND text-field, not just visibility: the stamps outlive their
+ * overlay on purpose (a re-toggle is a repaint, not a refetch), so a layer
+ * asking only "has a DU stamp" labels parcels whose overlay was switched off
+ * — 13 bare numbers over unpainted parcels in Niverville, some of them stale,
+ * since nothing re-stamps a roll while its overlay is off.
  */
-export function setDuLabelsVisible(map, on) {
-  const vis = on ? 'visible' : 'none';
+function applyDuLabels(map) {
+  const on = duLabelFilter(activeOverlays);
+  const field = duLabelTextField(activeOverlays);
+  const vis = field === '' ? 'none' : 'visible';
   for (const id of ['du-label', 'muni-parcels-du-label']) {
-    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
+    if (!map.getLayer(id)) continue;
+    map.setFilter(id, on);
+    map.setLayoutProperty(id, 'text-field', field);
+    map.setLayoutProperty(id, 'visibility', vis);
   }
 }
 
