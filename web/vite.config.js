@@ -47,18 +47,21 @@ export default defineConfig({
     // is comfortably under 500 kB.
     chunkSizeWarningLimit: 900,
     rollupOptions: {
-      // Two pages, not one. charts.html is the Sales Charts tab, and it
+      // Three pages, not one. charts.html is the Sales Charts tab, and it
       // has to be a real same-origin entry rather than a document written
       // into a popup: the production CSP is `script-src 'self'` (so no
       // inline script and no blob: document), and the BroadcastChannel
       // that feeds it only reaches same-origin windows.
+      // data-sources.html is the data-sources & methods reference the
+      // topbar's Data Sources panel links out to.
       //
-      // Without this input map Vite would build index.html alone and
-      // charts.html would 404 in production while working perfectly in
-      // dev, where every HTML file is served straight off disk.
+      // EVERY HTML PAGE MUST BE LISTED HERE. Without its entry Vite builds
+      // index.html alone and the page 404s in production while working
+      // perfectly in dev, where every HTML file is served straight off disk.
       input: {
         main: fileURLToPath(new URL('./index.html', import.meta.url)),
         charts: fileURLToPath(new URL('./charts.html', import.meta.url)),
+        dataSources: fileURLToPath(new URL('./data-sources.html', import.meta.url)),
       },
       output: {
         // Split heavy third-party deps into named vendor chunks so a

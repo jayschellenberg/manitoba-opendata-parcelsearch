@@ -92,152 +92,81 @@
         <button type="button" class="topbar-link" id="data-status-open"><span aria-hidden="true">📅</span> Property Data Status</button>
         <details class="topbar-details" id="data-sources-details">
           <summary class="topbar-summary">Data Sources</summary>
+          <!-- A short index, not the reference itself. This panel used to hold
+               the whole 1,000-word account of every source and method, in six
+               paragraphs, inside a 640px dropdown - unreadable, and the one
+               thing anyone actually opens it for (when was this refreshed?)
+               was buried in the middle of it. The full text now lives on
+               data-sources.html, where it has headings, tables and a contents
+               list; what stays here is the summary plus the live refresh row.
+               Nothing is duplicated between the two - keep it that way. -->
           <div class="topbar-panel" id="data-sources-panel">
             <section class="topbar-panel-section">
               <h2>About this tool</h2>
               <p>
-                Search Manitoba properties (excluding Winnipeg, which has its
-                <a href="https://winnipeg-opendata-parcelsearch.vercel.app/" target="_blank" rel="noreferrer">own portal</a>)
-                by civic address, municipality, roll #, legal description, or
-                certificate of title. Each result is enriched with its top-2
-                zoning districts (with coverage %) and its primary
-                development-plan designation, plus the bylaw numbers behind
-                each. Legal description and certificate-of-title search are
-                backed by a generated MAO scrape index; substring matches
-                resolve to live parcel records via Roll Entry, so geometry
-                and assessment fields are always current.
+                Search every Manitoba property except Winnipeg, which has its
+                <a href="https://winnipeg-opendata-parcelsearch.vercel.app/" target="_blank" rel="noreferrer">own portal</a>,
+                by civic address, municipality, roll #, legal description or
+                certificate of title. Each result carries its top-2 zoning
+                districts with coverage %, its primary development-plan
+                designation, and the by-law numbers behind each.
               </p>
+              <ul class="topbar-panel-list">
+                <li>
+                  <strong>Live on every search:</strong> parcel geometry and
+                  assessment fields, from the province's Roll Entry service.
+                </li>
+                <li>
+                  <strong>Nightly:</strong> assessed values, addresses and
+                  areas, for every municipality.
+                </li>
+                <li>
+                  <strong>Within ~3 days of a sale:</strong> that parcel's
+                  title number and legal description.
+                </li>
+                <li>
+                  <strong>Every 6 months</strong> (12 in the North): every
+                  municipality's rolls in full — which is what catches legal
+                  and title changes on parcels that did not sell.
+                </li>
+                <li>
+                  <strong>Monthly:</strong> Land Facts and Land Cover, rebuilt
+                  on the 14th and published on the 15th.
+                </li>
+              </ul>
               <p>
-                That scrape index is kept current on three clocks: assessed
-                values, addresses and areas are re-checked nightly for every
-                municipality; a parcel that sells has its title number and
-                legal description re-read within about three days; and every
-                municipality's rolls are re-read in full every 6 months (12 in
-                the North), which is what catches legal and title changes on
-                parcels that did not sell. Per-municipality dates are in
-                <strong>Property Data Status</strong> above.
-              </p>
-              <p>
-                Roll Entry is queried live for parcel geometry and current
-                assessment fields on every search. The live parcel source is
-                <a href="https://geoportal.gov.mb.ca/datasets/manitoba::roll-entry/about" target="_blank" rel="noreferrer">Roll Entry</a>;
-                enrichment comes from
-                <a href="https://geoportal.gov.mb.ca/datasets/manitoba::manitoba-zoning-by-laws/about" target="_blank" rel="noreferrer">Zoning By-Laws</a>, and
-                <a href="https://geoportal.gov.mb.ca/datasets/manitoba::manitoba-development-plan-designations/about" target="_blank" rel="noreferrer">Development Plan Designations</a>.
-                Municipality + category dropdowns and the overlay layers
-                (zoning, dev-plan, contaminated sites, traffic flow, full muni
-                parcel fabric) are cached in your browser for up to 7 days so
-                repeat work in the same area stays snappy. The Clear button
-                wipes that cache.
-              </p>
-              <p>
-                <strong>Land Facts</strong> (Agricultural column preset, parcel
-                popup and CSV) are pre-computed for every parcel of 20 acres or
-                more with a MASC rating, from four federal open datasets:
-                crop history 2009&ndash;2025 from the
-                <a href="https://open.canada.ca/data/en/dataset/ba2645d5-4458-414d-b196-6303ac06c1c9" target="_blank" rel="noreferrer">AAFC Annual Crop Inventory</a>
-                (30 m; 56 m in 2009&ndash;10), elevation and slope from the
-                <a href="https://open.canada.ca/data/en/dataset/18752265-bda3-498c-a4ba-9dfe68cb98da" target="_blank" rel="noreferrer">NRCan Medium Resolution DEM</a>
-                (30 m), mapped wetland from the
-                <a href="https://open.canada.ca/data/en/dataset/87127901-bd6d-46de-9142-e1362d980174" target="_blank" rel="noreferrer">Canadian Wetland Inventory v3A</a>
-                (Ducks Unlimited Canada / NRCan, 10 m), and open water from the
-                <a href="https://global-surface-water.appspot.com/" target="_blank" rel="noreferrer">JRC Global Surface Water</a>
-                record (1984&ndash;2021). The first three are Open Government
-                Licence &ndash; Canada. The crop history is rebuilt monthly
-                (the 14th, published the 15th) and gains a year when AAFC
-                publishes one; elevation, wetland and water are refreshed by
-                hand, since their sources move on a scale of years. The crop
-                inventory is a satellite
-                classification, not a cropping record: AAFC targets 85%
-                overall accuracy nationally and publishes none per parcel, so
-                read the pattern across years rather than any single year, and
-                a year shown as not observed means the inventory did not see
-                the land that year, not that nothing grew. Nothing in Land
-                Facts is a wetland delineation, a drainage opinion or a survey.
-                The same record drives the <strong>Crop History</strong> map
-                overlay (Agricultural layers), which cycles through two views
-                of the parcel fabric: <em>Years Cropped</em> shades each parcel
-                by the share of its observed years that were at least half
-                annual crop, and <em>Land Use</em> colours it by the cover
-                group of its most recently observed year (annual crop,
-                grass/pasture, trees/shrub, water/wetland, barren/built).
-                Both are the crop inventory read per parcel, with the same
-                accuracy caveat.
-              </p>
-              <p>
-                <strong>Land Cover</strong> (the Land Cover and Cult %
-                columns, the parcel popup breakdown, and the Land Cover map
-                overlay) answers one question of a farmland parcel: what share
-                of it is cultivated land, and what the rest is &mdash;
-                Cultivated, Pasture/Grass, Bush/Treed, Wetland/Water, Other.
-                Two sources feed it, and both are shown. The
-                <strong>headline</strong>, for every parcel of 20 acres or more
-                with a MASC rating, is the crop inventory above read
-                <em>per pixel</em> over 2021&ndash;2025: a pixel counts as
-                cultivated when it grew annual crop in at least two of those
-                five years, or in 2025 regardless (so ground broken or bush
-                cleared recently is caught), and every other pixel takes the
-                cover it showed most often. That is a land-<em>use</em> reading
-                &mdash; a quarter in hay this year is still cultivated land
-                &mdash; which is why it is not simply the latest year's crop
-                share, a figure that runs about ten points low. The
-                <strong>cross-check</strong>, and the headline for parcels of
-                10&ndash;20 acres, is
-                <a href="https://www150.statcan.gc.ca/n1/pub/16-510-x/16-510-x2025002-eng.htm" target="_blank" rel="noreferrer">Statistics Canada's Land Cover Register</a>
-                (catalogue 16-510-X, 30 m, Statistics Canada Open Licence):
-                its pixels describe <strong>2020</strong>, the edition in use
-                was published <strong>March 27, 2025</strong>, and nothing
-                newer has been issued &mdash; earlier Canadian land-cover
-                vintages (NRCan's 2010, 2015 and 2020) are in circulation, so
-                both dates are given. Across 173,671 parcels the two sources
-                agree on cultivated share to a median of 0.0 points; where
-                they differ by 20 points or more on any bucket the parcel is
-                marked <strong>&#9888;</strong> in the grid and popup, because at
-                that gap neither classifier is authoritative and the imagery
-                is. The register cannot separate its grassland-and-shrubland
-                class, so the two will legitimately differ on shrub-heavy
-                ground; shrubland is counted as bush here. Bush versus pasture
-                is the softest line in either source &mdash; a Manitoba
-                crown-land assessment found forest under-read and shrubland
-                over-read by roughly a fifth each &mdash; while crop versus
-                not is the firm one, and firmest in the Central Plains and
-                Southeast. The headline is rebuilt on the 14th of every
-                month and published on the 15th, reading every parcel from the
-                newest weekly assembly, so a newly created parcel waits at most
-                a month for its figures; a new crop-inventory year enters the
-                five-year window the month AAFC publishes it, typically late
-                summer. The register has no schedule &mdash; Statistics Canada
-                updates it occasionally and the 2020 edition is the current
-                one.
+                Dates per municipality are in <strong>Property Data Status</strong>
+                above. Dropdowns and overlay layers are cached in your browser
+                for up to 7 days; <strong>Clear</strong> wipes that cache.
               </p>
             </section>
 
             <!-- Data-refresh row, populated by populateDataRefreshFooter()
                  once each shard's metadata is available. Hidden until at
                  least one freshness timestamp lands so a fresh load doesn't
-                 flash an empty row. Kept here so all data-source detail
-                 lives behind a single disclosure. -->
+                 flash an empty row. This is the line people open the panel
+                 for, so it sits above the fold rather than under an essay. -->
             <aside id="data-refresh-footer" class="data-refresh-footer" hidden>
               <strong>Data refreshed:</strong>
               <span id="data-refresh-list"></span>
             </aside>
 
-            <section class="topbar-panel-section disclaimer-section">
-              <h2 id="disclaimer">Disclaimer</h2>
+            <section class="topbar-panel-section">
+              <h2>Sources &amp; methods</h2>
               <p>
-                This site is provided without warranty and is for general
-                information only. Data is queried live from the Province of
-                Manitoba's open data portal and may be incomplete, out of
-                date, or inaccurate. Zoning and development-plan designations
-                are matched to each parcel by spatial overlap; coverage
-                percentages are computed client-side and assume both layers
-                are spatially aligned to the parcel polygons (in practice
-                they are usually but not always, since bylaw amendments
-                occasionally land in the source data weeks behind the actual
-                zoning change). Do not rely on these results without
-                independent verification from Manitoba Assessment Online,
-                the municipality's planning office, or a qualified
-                professional.
+                Every dataset behind the site, how current each one is, how the
+                cultivated-share figures are computed and how far they can be
+                trusted — with the full disclaimer:
+              </p>
+              <p>
+                <a class="topbar-panel-cta" href="./data-sources.html" target="_blank" rel="noreferrer">Data sources &amp; methods &rarr;</a>
+              </p>
+              <p class="topbar-panel-fineprint">
+                Provided without warranty, for general information only. Data
+                is queried live from the Province of Manitoba's open data
+                portal and may be incomplete, out of date or inaccurate. Do not
+                rely on it without independent verification —
+                <a href="./data-sources.html#disclaimer" target="_blank" rel="noreferrer">full disclaimer</a>.
               </p>
             </section>
           </div>

@@ -137,6 +137,41 @@ button.topbar-link {
 }
 .topbar-panel-section a { color: var(--color-accent-600, #1d4ed8); }
 .topbar-panel-section .disclaimer-section { font-size: 12px; }
+/* The refresh-cadence summary. One line per clock, because "how current is
+   this?" is a list of four different answers and prose made the reader hold
+   all four at once. */
+.topbar-panel-list {
+  margin: 6px 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+  /* A reset elsewhere strips markers from every ul; restate it here, or the
+     five cadences read as one indented block of prose — the exact thing this
+     list exists to break up. */
+  list-style: disc outside;
+}
+.topbar-panel-list li { margin: 3px 0; }
+/* Link out to the full data-sources page. Sized as a control rather than a
+   sentence so it is findable at a glance in a panel of small text. */
+.topbar-panel-cta {
+  display: inline-block;
+  padding: 5px 10px;
+  /* currentColor, not a literal: the theme layer further down re-colours
+     `.topbar-panel-section a` and a hardcoded border would drift off it. */
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.topbar-panel-cta:hover {
+  background: var(--ui-panel-muted, #f4f4f5);
+  text-decoration: underline;
+}
+.topbar-panel-fineprint {
+  font-size: 11.5px;
+  color: var(--color-neutral-600, #52525b);
+}
 .topbar-panel .data-refresh-footer {
   margin: 10px 0 0;
   padding: 8px 10px;
