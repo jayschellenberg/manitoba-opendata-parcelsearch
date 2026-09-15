@@ -25,8 +25,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   OVERLAY_HIGHLIGHT_PROPS,
+  OVERLAY_DU_PROPS,
   ownedByOverlay,
   yieldToOverlay,
+  duLabelProps,
+  duLabelFilter,
+  duLabelTextField,
 } from '../src/lib/overlayHighlight.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -124,7 +128,7 @@ test('a starred parcel keeps its marker under every overlay', () => {
 test('ONE applier writes the selection opacities', () => {
   const applier = fnBody(mapJs, 'applySelectionOpacity');
   assert.ok(applier, 'applySelectionOpacity() is gone from map.js');
-  assert.match(applier, /yieldToOverlay\(base, highlightOwners\)/,
+  assert.match(applier, /yieldToOverlay\(base, activeOverlays\)/,
     'it must fold the overlay owners into whatever base the selection wants');
   for (const id of ['parcel-fill', 'parcel-line', 'parcel-line-underlay']) {
     assert.ok(applier.includes(`'${id}'`), `${id} is not in the applier's kit`);
@@ -157,21 +161,23 @@ test('the other two writers set the base instead of the property', () => {
     'the zone-colouring switch is the writer that wiped the fix last time');
 });
 
-test('the owners are re-asked on every overlay transition', () => {
-  const setter = fnBody(mapJs, 'setOverlayHighlightOwners');
-  assert.ok(setter, 'setOverlayHighlightOwners() is gone from map.js');
-  assert.match(setter, /highlightOwners = /);
+test('the active overlays are re-asked on every transition', () => {
+  const setter = fnBody(mapJs, 'setActiveOverlays');
+  assert.ok(setter, 'setActiveOverlays() is gone from map.js');
+  assert.match(setter, /activeOverlays = /);
   assert.match(setter, /applySelectionOpacity\(map\)/);
+  assert.match(setter, /applyDuLabels\(map\)/,
+    'the unit-count labels follow the same list, or they outlive their layer');
 
-  const sync = fnBody(main, 'syncOverlayHighlight');
-  assert.ok(sync, 'syncOverlayHighlight() is gone from main.js');
+  const sync = fnBody(main, 'syncActiveOverlays');
+  assert.ok(sync, 'syncActiveOverlays() is gone from main.js');
   for (const [key, flag] of [['mfinv', 'mfInvOverlayOn'], ['mfnb', 'mfnbOverlayOn'],
                              ['condo', 'condoOverlayOn']]) {
     assert.ok(sync.includes(flag) && sync.includes(`'${key}'`),
       `${key} is missing from syncOverlayHighlight — its parcels keep the yellow`);
   }
   // Six transitions: three overlays, on and off.
-  const calls = [...main.matchAll(/syncOverlayHighlight\(\)/g)].length;
+  const calls = [...main.matchAll(/syncActiveOverlays\(\)/g)].length;
   assert.ok(calls >= 6,
     `expected the six on/off transitions to re-ask; found ${calls}`);
 });
@@ -183,6 +189,63 @@ test('silenced, not hidden', () => {
   assert.ok(!/visibility/.test(applier),
     'the selection must be silenced by opacity, never by visibility — a '
     + "hidden layer stops hit-testing and the parcel's popup goes with it");
+});
+
+// --- the unit-count labels belong to the overlays that are ON ---------------
+
+test('no overlay painting means no unit-count labels', () => {
+  assert.deepEqual(duLabelProps([]), []);
+  assert.equal(duLabelTextField([]), '', 'an empty field is how the layer goes dark');
+  // A filter that matches nothing, not one that matches everything.
+  const f = duLabelFilter([]);
+  assert.deepEqual(f, ['==', ['literal', 1], 0]);
+});
+
+test('each overlay labels from its OWN stamp', () => {
+  assert.deepEqual(duLabelProps(['mfnb']), ['_mfnbDu']);
+  assert.deepEqual(duLabelFilter(['mfnb']), ['has', '_mfnbDu']);
+  assert.deepEqual(duLabelTextField(['mfnb']), ['to-string', ['get', '_mfnbDu']]);
+  assert.deepEqual(duLabelProps(['mfinv']), ['_mfInvDu']);
+  assert.deepEqual(duLabelFilter(['mfinv']), ['has', '_mfInvDu']);
+});
+
+test('THE GHOST LABELS: a stamp whose overlay is off labels nothing', () => {
+  // `_mfInvDu` outlives the inventory overlay on purpose — a re-toggle is a
+  // repaint, not a refetch. Before this, the label layer asked only "has a DU
+  // stamp", so with the inventory switched OFF and New Multi-Family on,
+  // Niverville drew 10 painted parcels and 13 bare numbers floating over
+  // parcels with no fill at all (Jason, 2026-09-15). Stale ones, too: nothing
+  // re-stamps a roll while its overlay is off, so a raised "DU >=" left them
+  // reading their old value.
+  const only = duLabelFilter(['mfnb']);
+  assert.ok(JSON.stringify(only).indexOf('_mfInvDu') < 0,
+    'with only New Multi-Family on, the inventory stamp must not be matched');
+  const both = duLabelFilter(['mfinv', 'mfnb']);
+  assert.deepEqual(both, ['any', ['has', '_mfInvDu'], ['has', '_mfnbDu']]);
+  assert.deepEqual(duLabelTextField(['mfinv', 'mfnb']),
+    ['to-string', ['coalesce', ['get', '_mfInvDu'], ['get', '_mfnbDu']]],
+    'both on: the inventory reading leads, and the two agree anyway');
+  // Condo never joins: its rolls are one unit each and its count is drawn per
+  // development from a separate source.
+  assert.deepEqual(duLabelProps(['condo']), []);
+  assert.deepEqual(duLabelProps(['condo', 'mfnb']), ['_mfnbDu']);
+});
+
+test('the DU props are the ones main.js actually stamps', () => {
+  for (const prop of Object.values(OVERLAY_DU_PROPS)) {
+    assert.ok(main.includes(`${prop} = `),
+      `${prop} is never assigned in main.js — the stamp was renamed`);
+  }
+});
+
+test('the label layer is re-pointed, not just re-shown', () => {
+  const apply = fnBody(mapJs, 'applyDuLabels');
+  assert.ok(apply, 'applyDuLabels() is gone from map.js');
+  assert.match(apply, /setFilter\(/, 'the filter has to narrow to the active overlays');
+  assert.match(apply, /'text-field'/, 'and so does the field it prints');
+  for (const id of ['du-label', 'muni-parcels-du-label']) {
+    assert.ok(apply.includes(`'${id}'`), `${id} is not re-pointed`);
+  }
 });
 
 const passed = results.reduce((a, b) => a + b, 0);

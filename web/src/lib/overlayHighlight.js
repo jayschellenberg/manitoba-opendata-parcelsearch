@@ -35,6 +35,58 @@ export const OVERLAY_HIGHLIGHT_PROPS = Object.freeze({
 });
 
 /**
+ * Overlay key → the dwelling-unit count it stamps, in the order the label
+ * prefers them. The inventory leads because it is the "what is standing"
+ * reading and the one the "DU ≥" box was built around; where both stamps
+ * exist they are the same number off the same assessment record.
+ *
+ * New Condos is absent on purpose: its rolls are one unit each and its count
+ * is drawn per DEVELOPMENT, from its own point source.
+ */
+export const OVERLAY_DU_PROPS = Object.freeze({
+  mfinv: '_mfInvDu',
+  mfnb: '_mfnbDu',
+});
+
+/** The DU stamps worth reading, for the overlays currently painting. */
+export function duLabelProps(keys) {
+  const set = new Set(keys || []);
+  return Object.entries(OVERLAY_DU_PROPS)
+    .filter(([k]) => set.has(k))
+    .map(([, prop]) => prop);
+}
+
+/**
+ * Filter for the per-parcel unit-count layer.
+ *
+ * KEYED ON THE OVERLAYS THAT ARE ON, not on the stamps alone — the same rule
+ * as the highlight above, and for the same reason, except here it was not a
+ * cosmetic problem. `_mfInvDu` outlives the inventory overlay (so re-toggling
+ * is a repaint, not a refetch), so a filter that asked only `has _mfInvDu`
+ * kept labelling inventory parcels after that layer was switched off: with
+ * New Multi-Family on, Niverville drew 10 painted parcels and 13 bare numbers
+ * floating over nothing (Jason, 2026-09-15). Worse than untidy — those
+ * numbers could be stale, since nothing re-stamps them while their overlay is
+ * off, so a raised "DU ≥" left them reading their old value.
+ *
+ * With no overlay painting, nothing matches.
+ */
+export function duLabelFilter(keys) {
+  const props = duLabelProps(keys);
+  if (props.length === 0) return ['==', ['literal', 1], 0];
+  if (props.length === 1) return ['has', props[0]];
+  return ['any', ...props.map((p) => ['has', p])];
+}
+
+/** text-field for the same layer: the first stamp an active overlay wrote. */
+export function duLabelTextField(keys) {
+  const props = duLabelProps(keys);
+  if (props.length === 0) return '';
+  if (props.length === 1) return ['to-string', ['get', props[0]]];
+  return ['to-string', ['coalesce', ...props.map((p) => ['get', p])]];
+}
+
+/**
  * A MapLibre expression: is this feature painted by one of the overlays that
  * currently own the highlight? Returns the literal `false` when none do, so
  * callers can skip wrapping entirely.

@@ -234,9 +234,8 @@ import {
   setMfNewbuildVisible,
   setCondoDevVisible,
   setCondoDuLabelData,
-  setOverlayHighlightOwners,
+  setActiveOverlays,
   setMfInventoryVisible,
-  setDuLabelsVisible,
   setWaterInfluenceVisible,
   setHistoricalData,
   setHistoricalVisible,
@@ -10989,8 +10988,7 @@ function turnMfnbOff() {
   mfnbOverlayOn = false;
   mfnbMode = null;
   setMfNewbuildVisible(map, false);
-  setDuLabelsVisible(map, duLabelsWanted());
-  syncOverlayHighlight();
+  syncActiveOverlays();
   if ($mfnbToggle) {
     setOverlayPressed($mfnbToggle, false);
     setOverlayBtnLabel($mfnbToggle, mfnbButtonLabelFor(null));
@@ -11064,8 +11062,7 @@ async function toggleMfNewbuildOverlay() {
 
   mfnbOverlayOn = true;
   setMfNewbuildVisible(map, true);
-  setDuLabelsVisible(map, duLabelsWanted());
-  syncOverlayHighlight();
+  syncActiveOverlays();
   setOverlayPressed($mfnbToggle, true);
   setOverlayBtnLabel($mfnbToggle, mfnbButtonLabelFor(mfnbMode));
   setColumnVisible('mfnb', true);
@@ -11114,19 +11111,6 @@ function mfInvColorFor(hit) {
 }
 
 /**
- * Should the per-parcel unit counts be on screen?
- *
- * One layer serves both multi-family overlays (see duLabelLayer in map.js), so
- * the answer is an OR, and it has to be re-asked every time either toggle
- * moves — turning one off while the other is still on must not take the
- * numbers with it. New Condos is not in here: its counts are a separate,
- * plan-grouped layer that rides its own overlay.
- */
-function duLabelsWanted() {
-  return mfInvOverlayOn || mfnbOverlayOn;
-}
-
-/**
  * Tell the map which themed overlays are painting, so the yellow selection
  * highlight yields under them.
  *
@@ -11136,12 +11120,12 @@ function duLabelsWanted() {
  * on every on/off transition rather than derived from the stamps, which
  * outlive their overlay on purpose.
  */
-function syncOverlayHighlight() {
+function syncActiveOverlays() {
   const keys = [];
   if (mfInvOverlayOn) keys.push('mfinv');
   if (mfnbOverlayOn) keys.push('mfnb');
   if (condoOverlayOn) keys.push('condo');
-  setOverlayHighlightOwners(map, keys);
+  setActiveOverlays(map, keys);
 }
 
 /**
@@ -11229,8 +11213,7 @@ function renderMfInvLegend(merged = false) {
 function turnMfInvOff() {
   mfInvOverlayOn = false;
   setMfInventoryVisible(map, false);
-  setDuLabelsVisible(map, duLabelsWanted());
-  syncOverlayHighlight();
+  syncActiveOverlays();
   if ($mfinvToggle) setOverlayPressed($mfinvToggle, false);
   renderMfLegends();
 }
@@ -11314,8 +11297,7 @@ async function toggleMfInventoryOverlay() {
 
   mfInvOverlayOn = true;
   setMfInventoryVisible(map, true);
-  setDuLabelsVisible(map, duLabelsWanted());
-  syncOverlayHighlight();
+  syncActiveOverlays();
   setOverlayPressed($mfinvToggle, true);
   renderMfLegends();
   if (munis.length > 0) showMfInventoryResults(munis);
@@ -11496,7 +11478,7 @@ function turnCondoOff() {
   condoMode = null;
   setCondoDevVisible(map, false);
   refreshCondoDuLabels();
-  syncOverlayHighlight();
+  syncActiveOverlays();
   if ($condoToggle) {
     setOverlayPressed($condoToggle, false);
     setOverlayBtnLabel($condoToggle, condoButtonLabelFor(null));
@@ -11594,7 +11576,7 @@ async function toggleCondoDevOverlay() {
   condoOverlayOn = true;
   setCondoDevVisible(map, true);
   refreshCondoDuLabels();
-  syncOverlayHighlight();
+  syncActiveOverlays();
   setOverlayPressed($condoToggle, true);
   setOverlayBtnLabel($condoToggle, condoButtonLabelFor(condoMode));
   setColumnVisible('condodev', true);
