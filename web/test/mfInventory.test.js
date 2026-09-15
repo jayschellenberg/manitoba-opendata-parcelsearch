@@ -13,6 +13,8 @@ import {
   mfInvTooltip,
   mfInvLegendSteps,
   clampMinDu,
+  mfInvDu,
+  sameLegendSteps,
 } from '../src/lib/mfInventory.js';
 import { UNITS_RAMP } from '../src/lib/mfNewbuild.js';
 
@@ -116,5 +118,39 @@ if (existsSync(idxPath)) {
 } else {
   console.log('mfInventory: no local mb-parcel-data clone; drift check skipped');
 }
+
+// --- mfInvDu: the number the map prints on the parcel ------------------------
+// map.js stamps this into `_mfInvDu` and draws it as the parcel's label, so a
+// record that cannot be read must yield nothing rather than "NaN" painted over
+// a building.
+assert.equal(mfInvDu(small), 4);
+assert.equal(mfInvDu(block), 128);
+assert.equal(mfInvDu({ du: '24' }), 24, 'a numeric string is a count');
+assert.equal(mfInvDu(null), null);
+assert.equal(mfInvDu({ du: 'lots' }), null);
+assert.equal(mfInvDu({ cl: 'R2' }), null);
+// The label and the colour must agree on what is a paintable record: a
+// highlighted parcel with no number, or a number with no highlight, is the map
+// saying two things at once.
+for (const rec of [small, block, { du: 3 }, { du: 3000 }]) {
+  assert.equal(mfInvFillColor(rec) !== null, mfInvDu(rec) !== null,
+               'colour and label must qualify the same records');
+}
+
+// --- sameLegendSteps: the duplicate-legend test -----------------------------
+// New Multi-Family's "Units" view and this layer share UNITS_RAMP, so with
+// both overlays on at the default threshold their legends are the identical
+// six swatches printed twice. main.js merges them only when this says so.
+const unitsSteps = UNITS_RAMP.map((s) => ({ color: s.color, label: s.label }));
+assert.equal(sameLegendSteps(unitsSteps, mfInvLegendSteps(MFINV_MIN_DU)), true,
+             'at the floor the two keys ARE the same key');
+assert.equal(sameLegendSteps(unitsSteps, mfInvLegendSteps(50)), false,
+             'a raised threshold drops bands, and then the two keys differ');
+assert.equal(sameLegendSteps(unitsSteps, unitsSteps.slice(0, -1)), false);
+assert.equal(sameLegendSteps(unitsSteps, unitsSteps.map((s, i) => (
+  i === 0 ? { color: '#ff0000', label: s.label } : s))), false,
+  'same labels with a different colour is not the same key');
+assert.equal(sameLegendSteps(null, unitsSteps), false);
+assert.equal(sameLegendSteps([], []), true);
 
 console.log('mfInventory tests passed');

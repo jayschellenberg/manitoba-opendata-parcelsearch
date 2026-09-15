@@ -767,6 +767,60 @@ const PARCEL_FILL_OPACITY = [
   0.3,
 ];
 
+/**
+ * The dwelling-unit count drawn on each parcel the standing multi-family
+ * overlay has highlighted. Two identical layers ride the two sources the
+ * overlay paints (search results and the muni-wide fabric), so this builds the
+ * spec once rather than restating forty lines twice and letting them drift.
+ *
+ * `_mfInvDu` is stamped in main.js beside `_mfInvColor` and deleted with it, so
+ * the label set is exactly the highlighted set: raise the "DU ≥" threshold and
+ * the numbers that stop being painted stop being labelled in the same pass. No
+ * separate filter here can disagree with the colouring.
+ *
+ * ALWAYS DRAWN, NEVER CULLED. `text-allow-overlap` is on because the whole
+ * point of the layer is that every highlighted parcel states its count — a
+ * label silently dropped for want of room reads as "no units here", which is
+ * worse than two numbers sitting close together. `text-ignore-placement` stays
+ * OFF, so these counts still push the roll-number and civic-address labels out
+ * of the way instead of being overprinted by them.
+ *
+ * minzoom 12 is where a municipality's blocks separate enough for the counts to
+ * mean anything; province-wide they would be a smear of digits over a map you
+ * cannot read anyway.
+ */
+function mfInvDuLabelLayer(id, source) {
+  return {
+    id,
+    type: 'symbol',
+    source,
+    minzoom: 12,
+    filter: ['has', '_mfInvDu'],
+    layout: {
+      visibility: 'none',
+      'text-field': ['to-string', ['get', '_mfInvDu']],
+      // The SAME stack the roll-number labels use, and not a heavier one: the
+      // glyph endpoint in BASEMAP_STYLE serves 'Open Sans Semibold' and
+      // 404s on 'Open Sans Bold'. A missing fontstack is not an error you can
+      // see — MapLibre just draws no text, which looks exactly like an
+      // overlay with no data behind it.
+      'text-font': ['Open Sans Semibold'],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 12, 10, 15, 13, 18, 16],
+      'text-allow-overlap': true,
+      'text-ignore-placement': false,
+      'symbol-placement': 'point',
+    },
+    paint: {
+      // Near-black on a fat white halo: the fills underneath run from a very
+      // pale blue to near-navy, and one text colour has to stay readable on
+      // both ends of that ramp.
+      'text-color': '#111827',
+      'text-halo-color': '#ffffff',
+      'text-halo-width': 2,
+    },
+  };
+}
+
 export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {}) {
   const map = new maplibregl.Map({
     container,
@@ -1983,6 +2037,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
           'line-opacity': 0.95,
         },
       });
+      map.addLayer(mfInvDuLabelLayer('muni-parcels-mfinv-du-label', 'muni-parcels'));
       // New condo developments on the muni-wide fabric — same sparse-layer
       // treatment as the multi-family twin above.
       map.addLayer({
@@ -2606,6 +2661,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
           'line-opacity': 0.95,
         },
       });
+      map.addLayer(mfInvDuLabelLayer('mfinv-du-label', 'parcels'));
 
       // New condo developments — colours each result parcel by its
       // development's type (row housing / apartment / mixed / not typed) or by
@@ -2987,6 +3043,12 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
       if (map.getLayer('survey-grid-label'))         map.moveLayer('survey-grid-label');
       if (map.getLayer('muni-parcels-civic-label'))  map.moveLayer('muni-parcels-civic-label');
       if (map.getLayer('muni-parcels-label'))        map.moveLayer('muni-parcels-label');
+      // Multi-family unit counts go above the roll numbers: while that overlay
+      // is on, "how many units" is the question being asked of the map, and a
+      // count hidden behind a roll number would be the one number you turned
+      // the layer on to read.
+      if (map.getLayer('muni-parcels-mfinv-du-label')) map.moveLayer('muni-parcels-mfinv-du-label');
+      if (map.getLayer('mfinv-du-label'))              map.moveLayer('mfinv-du-label');
       // Parcel-number callouts ride ABOVE the roll-number labels — the
       // whole point is that the number is the thing you can always read.
       // Order within the group: casing → leader → dot → badge → text,
@@ -4851,8 +4913,9 @@ export function setMfNewbuildVisible(map, on) {
  */
 export function setMfInventoryVisible(map, on) {
   const vis = on ? 'visible' : 'none';
-  for (const id of ['mfinv-fill', 'mfinv-outline',
-                    'muni-parcels-mfinv-fill', 'muni-parcels-mfinv-outline']) {
+  for (const id of ['mfinv-fill', 'mfinv-outline', 'mfinv-du-label',
+                    'muni-parcels-mfinv-fill', 'muni-parcels-mfinv-outline',
+                    'muni-parcels-mfinv-du-label']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
   }
 }
