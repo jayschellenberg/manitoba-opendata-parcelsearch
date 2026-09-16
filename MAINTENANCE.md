@@ -1589,21 +1589,41 @@ Every scheduled wrapper in this repo and in `mao-assembly` writes its log to a
 `logs\` directory under `D:\Dropbox`. Dropbox opens files it has just seen in
 order to hash and upload them, and that briefly locks them.
 
-**This has already cost a cycle.** On 2026-08-09 `mao-assembly`'s
+**This has already cost two cycles.** On 2026-08-09 `mao-assembly`'s
 `refresh-monthly-wrapper.ps1` died on its *second* log line with "the process
 cannot access the file ... because it is being used by another process". The
 scheduled task reported only a numeric failure code, nobody was watching it, and
 the refresh silently did nothing for two days until it was found on 2026-08-11.
 
+Then on 2026-09-16 `mb-parcelsearch-parcel-tiles` died the same way, four lines
+in, on the first scheduled run that actually had a new gpkg to tile — the task
+recorded `exit 1` and no alert went out, because `Fail()` logs before it alerts
+and so died in the same place. The evidence is in
+`Microsoft-Windows-PowerShell/Operational` 4100, not in the log (the log is what
+could not be written): *"The running command stopped because ...
+ErrorActionPreference ... is set to Stop: The process cannot access the file
+...parcel-tiles-20260916-030001.log because it is being used by another
+process."* The archive stayed on `RollEntry_20260811.gpkg` and the next
+unattended attempt was a month out.
+
 Mitigations in place:
 
 - `Write-Log` / `Log` retries with backoff (10 attempts, ~5.5 s total) in
-  `auto-publish-indexes.ps1` and in both `mao-assembly` refresh wrappers. The
+  `auto-publish-indexes.ps1`, `hpi-download.ps1`, `rebuild-basemap.ps1`,
+  `traffic-refresh-check.ps1`, `rebuild-parcel-tiles.ps1`,
+  `landfacts-refresh-wrapper.ps1` and both `mao-assembly` refresh wrappers. The
   dangerous moment is right after file *creation*, so those scripts create the
   log and write their first line inside the retry.
+- `web/test/wrapperLogging.test.js` (part of `npm test`) fails on any `.ps1` in
+  this repo that runs under `$ErrorActionPreference = 'Stop'` and writes a log
+  line with an unretried `Add-Content`. Five wrappers were fixed one at a time,
+  each after it failed; that test is what stops the sixth being found the same
+  way.
 - `mao-assembly/input-staleness-check.ps1` checks `LastTaskResult` on the
   refresh tasks, so a silently-failing task is reported the next morning rather
   than waiting for its inputs to age past a 45-day limit.
+- `task-health-check.ps1` does the same across all 28 tasks — it is what caught
+  the 2026-09-16 failure, the morning after.
 
 **Not covered:** the `*>> $log` append redirections in
 `auto-publish-indexes.ps1` (nine of them) cannot be individually retried without
@@ -1611,10 +1631,19 @@ rewriting call sites in a script that git-pushes unattended. They run well after
 creation, so the race has passed by then. `semiannual-publish-wrapper.ps1` uses
 several unprotected `Add-Content` calls but runs under
 `$ErrorActionPreference = 'Continue'`, so a lock there costs a log line, not the
-run.
+run. Three wrappers in `mao-scrape` (`refresh-sales-changes-wrapper.ps1`,
+`run_backfill_capped.ps1`, `run_sales_search_wrapper.ps1`) each have one
+unretried `Add-Content` under `'Stop'`. They are single writes well after
+creation rather than a logger, and they sit in a repo the scrape runs from
+live, so they have been left alone deliberately — but they are the same hole.
 
-**Done 2026-08-11 — the log directories are now Dropbox-ignored**, which removes
-the cause rather than retrying around it:
+**Done 2026-08-11 — the log directories are Dropbox-ignored.** This was
+described here as removing the cause rather than retrying around it. It does
+not: on 2026-09-16 the flag on `mb-parcelsearch\logs` was set and verified, and
+a lock killed the run anyway. Dropbox is therefore not the only process opening
+these files — Defender's real-time scan is the likelier candidate for that one,
+the same suspicion the `.git` note at the end of this section raises. Keep the
+flag (it removes one cause and costs nothing); do not treat it as protection.
 
 ```powershell
 Set-Content -Path '<repo>\logs' -Stream com.dropbox.ignored -Value 1
@@ -1625,7 +1654,7 @@ Current state across the four repos (check with the `Get-Content` line above):
 
 | Path | Dropbox-ignored |
 |---|---|
-| `mao-assembly\logs`, `mb-parcelsearch\logs` | yes — set 2026-08-11 |
+| `mao-assembly\logs`, `mb-parcelsearch\logs` | yes — set 2026-08-11, re-verified 2026-09-16 |
 | `mao-scrape\logs`, `mao-scrape\checkpoints` | yes — already was |
 | `mao-scrape\.git`, `mb-parcelsearch\.git` | yes — already was |
 | `mao-assembly\.git`, `mb-parcel-data\.git` | **no** — inconsistent with the other two |

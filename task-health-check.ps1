@@ -263,7 +263,12 @@ function Get-TaskResultText([int64]$code, [string]$taskName) {
     267010     { return ('{0} SCHED_S_TASK_DISABLED - the task is disabled' -f $hex) }
     267011     { return ('{0} SCHED_S_TASK_HAS_NOT_RUN - registered but never fired' -f $hex) }
     267012     { return ('{0} SCHED_S_TASK_NO_MORE_RUNS - trigger exhausted; it will never run again' -f $hex) }
-    267014     { return ('{0} SCHED_S_TASK_TERMINATED - killed at its ExecutionTimeLimit, or ended by hand' -f $hex) }
+    # Three causes, and the first one named is the one that is usually WRONG.
+    # 2026-09-15: MAOChunkedDelta reported this 56 minutes into a run whose
+    # limit is 23 hours -- the machine was restarted under it (System log 1074,
+    # Explorer.EXE / "restart"). Compare the run's length against the limit and
+    # check the System log for a shutdown before reading this as a timeout.
+    267014     { return ('{0} SCHED_S_TASK_TERMINATED - hit its ExecutionTimeLimit, or the machine shut down / restarted under it, or it was stopped by hand' -f $hex) }
     267015     { return ('{0} SCHED_S_TASK_NO_VALID_TRIGGERS - registered with no usable trigger' -f $hex) }
     2147750687 { return ('{0} SCHED_E_ALREADY_RUNNING - a previous instance was still going' -f $hex) }
     2147943645 { return ('{0} ERROR_SERVICE_REQUEST_TIMEOUT - the action did not respond to the start request' -f $hex) }

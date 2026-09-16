@@ -83,10 +83,28 @@ $logDir = Join-Path $root 'logs'
 if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out-Null }
 $log = Join-Path $logDir ("parcel-tiles-{0}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
 
+# The log lives under D:\Dropbox and something on this machine briefly opens a
+# file it has just seen -- Dropbox's hasher, or Defender's real-time scan. Under
+# $ErrorActionPreference = 'Stop' an unprotected Add-Content is not a lost log
+# line, it is a dead run: on 2026-09-16, the FIRST scheduled run that actually
+# had a new gpkg to tile, this script died four lines in with "the process
+# cannot access the file ... because it is being used by another process". The
+# task recorded exit 1 and nothing else, no alert went out (Fail logs before it
+# alerts, so it died in the same place), and the month's rebuild was lost.
+#
+# Retry with backoff, and never let logging be the thing that fails the job.
+# Same shape as auto-publish-indexes.ps1 and the mao-assembly wrappers; the
+# `logs\` directory is ALSO marked com.dropbox.ignored, and was on the day this
+# happened, so that flag is not a substitute for this (MAINTENANCE.md,
+# "Scheduled tasks: logs live inside Dropbox").
 function Write-Log([string]$msg) {
     $line = "[{0}] {1}" -f (Get-Date -Format 'HH:mm:ss'), $msg
     Write-Output $line
-    Add-Content -Path $log -Value $line
+    for ($i = 1; $i -le 10; $i++) {
+        try { Add-Content -Path $log -Value $line -ErrorAction Stop; return }
+        catch { Start-Sleep -Milliseconds (100 * $i) }
+    }
+    Write-Warning "could not write to log after 10 tries: $line"
 }
 
 function Fail([string]$what, [string]$detail) {

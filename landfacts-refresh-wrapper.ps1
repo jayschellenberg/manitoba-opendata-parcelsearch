@@ -63,10 +63,27 @@ $BashExe   = 'C:\Program Files\Git\bin\bash.exe'
 if (-not (Test-Path $RFile)) { Write-Error "Not found: $RFile"; exit 1 }
 if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir | Out-Null }
 
+# The log lives under D:\Dropbox and something on this machine briefly opens a
+# file it has just seen -- Dropbox's hasher, or Defender's real-time scan. Under
+# $ErrorActionPreference = 'Stop' an unprotected Add-Content is not a lost log
+# line, it is a dead run: that is how mb-parcelsearch-parcel-tiles was lost on
+# 2026-09-16, four lines in, reporting nothing but exit 1. This wrapper had the
+# identical hole and had simply never been unlucky -- it fires monthly and its
+# first scheduled run is 2026-10-14. See MAINTENANCE.md, "Scheduled tasks: logs
+# live inside Dropbox"; the com.dropbox.ignored flag on `logs\` was set and
+# verified on the day it happened, so it is not a substitute for this.
+function Write-LogLine([string]$line) {
+    for ($i = 1; $i -le 10; $i++) {
+        try { Add-Content -Path $LogFile -Value $line -ErrorAction Stop; return }
+        catch { Start-Sleep -Milliseconds (100 * $i) }
+    }
+    Write-Warning ('could not write to log after 10 tries: {0}' -f $line)
+}
+
 function Write-Log([string]$msg) {
     $line = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $msg
     Write-Host $line
-    Add-Content -Path $LogFile -Value $line
+    Write-LogLine $line
 }
 
 # ---- Rscript: version-sorted, never a hardcoded path ------------------------
@@ -101,7 +118,7 @@ if ($SkipFetch) {
 } else {
     Write-Log ('fetch: {0} {1}' -f $BashExe, $FetchSh)
     $fetchOut = & $BashExe ($FetchSh -replace '\\', '/') 2>&1
-    $fetchOut | ForEach-Object { Add-Content -Path $LogFile -Value ('    ' + $_) }
+    $fetchOut | ForEach-Object { Write-LogLine ('    ' + $_) }
     $new = @($fetchOut | Where-Object { $_ -match '^\d{4}: aci_' })
     if ($new.Count) { Write-Log ('fetch: NEW inventory year(s) cached: {0}' -f ($new -join '; ')) }
     elseif ($fetchOut -match 'CACHE COMPLETE') { Write-Log 'fetch: nothing new (all years cached)' }
