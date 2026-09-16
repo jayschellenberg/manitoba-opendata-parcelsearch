@@ -115,6 +115,10 @@ const PER_RESULT = [
   'selectedParcelRow',    // the 2026-09-13 leak
   'deselectedSaleKeys',   // row culling belongs to the result set it was done on
   'changesShowPrevMsg',   // the 2026-09-13 leak
+  // Which themed overlay filled the grid. A search takes the grid from it, and
+  // an overlay that still believed it owned these rows would hand the search's
+  // results to another overlay on its way off (regrantResultsGrid).
+  'overlayGridOwner',
 ];
 
 // State that SURVIVES a search on purpose. Listed with the reason, so the

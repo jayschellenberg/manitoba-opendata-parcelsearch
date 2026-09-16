@@ -869,6 +869,12 @@ Where apartment-scale buildings landed on the assessment roll, dated from 20
 years of assessed **building value** rather than from building permits —
 outside Winnipeg there is no province-wide permit feed to read.
 
+The method behind all three multi-family layers — the biennium trick, the
+revaluation factor, the event shapes and confidences, the plan-number condo
+grouping, and what of it should and should not be carried into the Winnipeg
+project — is written up in
+[`docs/NEW-MF-AND-CONDO-METHOD.md`](docs/NEW-MF-AND-CONDO-METHOD.md).
+
 | Artefact | Built by | Sources | Where it lives |
 |---|---|---|---|
 | **New MF** grid column + popup box + 6 CSV columns + the **New Multi-Family** map overlay (Year / Units views) | `npm run mf:shards` (`r/build_mf_newbuild.R` — also emits the `mf-inventory` family, see §6f) | mao-scrape `tax_history.parquet` (2008–2027, every roll), `parcels.parquet`, `sales_archive.csv` | `mb-parcel-data/mf-newbuild/`, served via the CDN pin |

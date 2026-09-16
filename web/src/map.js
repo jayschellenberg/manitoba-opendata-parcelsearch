@@ -799,6 +799,88 @@ function applySelectionOpacity(map) {
   }
 }
 
+/*
+ * The disc a unit count is drawn on.
+ *
+ * WHY AN ICON AND NOT A CIRCLE LAYER. These counts ride the two POLYGON
+ * sources the overlays paint, and a circle layer on a polygon draws one circle
+ * per vertex — a parcel would wear a necklace, not a badge. A symbol layer
+ * puts exactly one anchor on a polygon, and its icon draws under its own text,
+ * so the disc and the number stay welded together at every zoom and through
+ * every collision decision. (The condo total, which already rides a point
+ * source, gets a real circle layer instead — see condoDuLabelLayer.)
+ *
+ * THREE IMAGES, NOT ONE STRETCHED ONE. `icon-text-fit` would stretch a circle
+ * into a pill as soon as the count reached two digits, so there is one disc per
+ * digit-width and `icon-image` picks by the length of the number — the same
+ * step the result-number badges use for their radius (parcel-num-badge).
+ *
+ * Slate, not the ramp colour. The fill under the badge already carries the
+ * data; a badge that repeated it would be a second scale to read, and over the
+ * pale end of either ramp white digits on a pale disc would vanish. One dark
+ * disc with a white ring reads on every band of both ramps and on satellite.
+ */
+const DU_BADGE_COLOR = '#1f2937';
+/** The condo total keeps the purple it has always been drawn in: a project's
+ *  total and a single parcel's own count have to stay distinguishable at a
+ *  glance, and now that both are badges the colour is the only thing left to
+ *  tell them apart. */
+const CONDO_BADGE_COLOR = '#4a1486';
+/** Radius in CSS px at icon-size 1, by digit-width. */
+const DU_BADGE_PX = Object.freeze([13, 15.5, 18.5]);
+/** Text size the discs above are drawn for; icon-size scales both together. */
+const DU_BADGE_TEXT_PX = 16;
+
+/**
+ * Register the three discs. Canvas-drawn at 2x and handed over as ImageData,
+ * so there is no image file to ship, 404, or wait on before the first badge
+ * can draw. Idempotent — MapLibre throws on a duplicate image id, and this is
+ * called from a style setup that can run again after a basemap switch.
+ */
+function addDuBadgeImages(map) {
+  const families = [['du-badge', DU_BADGE_COLOR], ['condo-du-badge', CONDO_BADGE_COLOR]];
+  for (const [prefix, color] of families) {
+    DU_BADGE_PX.forEach((r, i) => {
+      const id = `${prefix}-${i + 1}`;
+      if (map.hasImage && map.hasImage(id)) return;
+      const ratio = 2;
+      const size = Math.ceil(r * 2 * ratio) + 4;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      const mid = size / 2;
+      ctx.beginPath();
+      ctx.arc(mid, mid, r * ratio, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      // The white ring is what keeps the disc off the fill it sits on —
+      // without it a slate badge on a dark-red 2024-25 parcel is a smudge.
+      ctx.lineWidth = 1.6 * ratio;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+      map.addImage(id, ctx.getImageData(0, 0, size, size), { pixelRatio: ratio });
+    });
+  }
+}
+
+/** `icon-image`: one disc per digit-width of the number being drawn. Takes the
+ *  layer's own text-field expression, so the disc is sized from exactly the
+ *  string that will be printed on it. */
+function duBadgeImageExpr(textExpr, prefix = 'du-badge') {
+  return ['step', ['length', textExpr],
+    `${prefix}-1`,
+    2, `${prefix}-2`,
+    3, `${prefix}-3`];
+}
+
+/**
+ * Keep the disc and the digits in step. Both scale off the same zoom ramp —
+ * the text sizes are DU_BADGE_TEXT_PX × these factors — so the number never
+ * grows out of its badge.
+ */
+const DU_BADGE_SIZE_EXPR = ['interpolate', ['linear'], ['zoom'], 12, 0.62, 15, 0.81, 18, 1];
+
 /**
  * The dwelling-unit count drawn on each parcel a multi-family overlay has
  * highlighted. Two identical layers ride the two sources those overlays paint
@@ -850,18 +932,31 @@ function duLabelLayer(id, source) {
       // see — MapLibre just draws no text, which looks exactly like an
       // overlay with no data behind it.
       'text-font': ['Open Sans Semibold'],
-      'text-size': ['interpolate', ['linear'], ['zoom'], 12, 10, 15, 13, 18, 16],
+      'text-size': [
+        'interpolate', ['linear'], ['zoom'],
+        12, DU_BADGE_TEXT_PX * 0.62,
+        15, DU_BADGE_TEXT_PX * 0.81,
+        18, DU_BADGE_TEXT_PX,
+      ],
       'text-allow-overlap': true,
       'text-ignore-placement': false,
       'symbol-placement': 'point',
+      // The disc. Re-pointed with the text-field in applyDuLabels(), because
+      // which stamp is being printed decides how wide the number is.
+      'icon-image': duBadgeImageExpr(
+        ['to-string', ['coalesce', ['get', '_mfInvDu'], ['get', '_mfnbDu']]]),
+      'icon-size': DU_BADGE_SIZE_EXPR,
+      // The badge goes wherever its number goes, always — the text is
+      // allow-overlap, and an icon culled on its own would leave digits
+      // floating off their disc.
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': false,
+      'icon-optional': false,
     },
     paint: {
-      // Near-black on a fat white halo: the fills underneath run from a very
-      // pale blue to near-navy, and one text colour has to stay readable on
-      // both ends of that ramp.
-      'text-color': '#111827',
-      'text-halo-color': '#ffffff',
-      'text-halo-width': 2,
+      // White on the slate disc. No halo: the disc IS the contrast now, and a
+      // white halo inside a dark badge reads as a printing error.
+      'text-color': '#ffffff',
     },
   };
 }
@@ -896,15 +991,25 @@ function condoDuLabelLayer(id, source) {
       visibility: 'none',
       'text-field': ['to-string', ['get', 'du']],
       'text-font': ['Open Sans Semibold'],
-      'text-size': ['interpolate', ['linear'], ['zoom'], 12, 11, 15, 14, 18, 17],
+      'text-size': [
+        'interpolate', ['linear'], ['zoom'],
+        12, DU_BADGE_TEXT_PX * 0.62,
+        15, DU_BADGE_TEXT_PX * 0.81,
+        18, DU_BADGE_TEXT_PX,
+      ],
       'text-allow-overlap': true,
       'text-ignore-placement': false,
       'symbol-placement': 'point',
+      // The same disc the parcel counts wear, in the condo purple. Fixed
+      // field — this layer prints one thing and always has.
+      'icon-image': duBadgeImageExpr(['to-string', ['get', 'du']], 'condo-du-badge'),
+      'icon-size': DU_BADGE_SIZE_EXPR,
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': false,
+      'icon-optional': false,
     },
     paint: {
-      'text-color': '#4a1486',
-      'text-halo-color': '#ffffff',
-      'text-halo-width': 2.2,
+      'text-color': '#ffffff',
     },
   };
 }
@@ -975,6 +1080,10 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
       if (setupDone) return;
       setupDone = true;
       try {
+      // The unit-count discs, registered before any layer names one — a
+      // symbol layer whose icon-image is missing draws its text with no badge
+      // and says nothing about why.
+      addDuBadgeImages(map);
       // Municipal boundaries — a stable reference layer that's on by
       // default. Drawn first so every other overlay (zoning, dev-plan,
       // muni parcels, search results) renders above. Light grey fill
@@ -5102,6 +5211,11 @@ function applyDuLabels(map) {
     if (!map.getLayer(id)) continue;
     map.setFilter(id, on);
     map.setLayoutProperty(id, 'text-field', field);
+    // The disc is sized from the string being printed, so it moves with the
+    // field — point it at the old stamp and a two-digit count from the other
+    // overlay would sit on a one-digit badge. Nothing to re-point when no
+    // overlay is painting; the layer is going dark in the same pass.
+    if (field !== '') map.setLayoutProperty(id, 'icon-image', duBadgeImageExpr(field));
     map.setLayoutProperty(id, 'visibility', vis);
   }
 }

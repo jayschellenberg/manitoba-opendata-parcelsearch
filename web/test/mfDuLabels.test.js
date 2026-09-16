@@ -155,6 +155,84 @@ test('the parcel labels follow EITHER multi-family overlay', () => {
     + `re-ask; found ${calls}`);
 });
 
+// --- the counts sit on a disc ----------------------------------------------
+
+test('the count rides a badge, and the badge is an icon', () => {
+  // A circle LAYER on these sources would draw one circle per polygon vertex —
+  // a necklace round the parcel, not a badge on it. The disc has to be the
+  // symbol's own icon, which is why there are images at all.
+  const spec = fnBody(mapJs, 'duLabelLayer');
+  assert.match(spec, /'icon-image':\s*duBadgeImageExpr\(/,
+    'the label layer draws no disc');
+  assert.match(spec, /'icon-size':\s*DU_BADGE_SIZE_EXPR/,
+    'the disc must scale off the same zoom ramp as the digits, or the number '
+    + 'grows out of its badge');
+  assert.match(spec, /'icon-allow-overlap':\s*true/,
+    'the text is allow-overlap; an icon culled on its own leaves digits '
+    + 'floating off their disc');
+  assert.ok(!/'text-halo-width'/.test(spec),
+    'white digits on a slate disc need no halo — a white halo inside a dark '
+    + 'badge reads as a printing error');
+  assert.match(spec, /'text-color':\s*'#ffffff'/);
+});
+
+test('the discs are registered, not merely defined', () => {
+  // The failure this repo has paid for twice: a thing that is fully built and
+  // never called. A missing icon-image is silent — MapLibre draws the text and
+  // no badge, which looks like a design decision.
+  const add = fnBody(mapJs, 'addDuBadgeImages');
+  assert.ok(add, 'addDuBadgeImages() is gone from map.js');
+  assert.match(add, /map\.addImage\(/, 'it must actually register the images');
+  assert.match(add, /hasImage/,
+    'addImage throws on a duplicate id, and style setup can run twice');
+  const calls = [...mapJs.matchAll(/addDuBadgeImages\(map\)/g)].length;
+  assert.ok(calls >= 1,
+    'addDuBadgeImages() is never called — every badge would be a blank');
+  // Before the layers that name the images.
+  const at = mapJs.indexOf('addDuBadgeImages(map)');
+  assert.ok(at > 0 && at < mapJs.indexOf("duLabelLayer('"),
+    'the images have to exist before a layer asks for one');
+});
+
+test('every image the expression names is one the registrar makes', () => {
+  const expr = fnBody(mapJs, 'duBadgeImageExpr');
+  const widths = /DU_BADGE_PX\s*=\s*Object\.freeze\(\[([^\]]*)\]\)/.exec(mapJs);
+  assert.ok(widths, 'DU_BADGE_PX is gone — the radii the discs are drawn at');
+  const count = widths[1].split(',').filter((s) => s.trim()).length;
+  const named = [...expr.matchAll(/\$\{prefix\}-(\d)/g)].map((m) => Number(m[1]));
+  assert.deepEqual(named, [1, 2, 3],
+    'one disc per digit-width, and the step must name them in order');
+  assert.equal(count, named.length,
+    `the expression names ${named.length} discs and DU_BADGE_PX draws ${count}`);
+  // Both families come off the same list of radii, so they cannot drift.
+  const add = fnBody(mapJs, 'addDuBadgeImages');
+  assert.match(add, /DU_BADGE_PX\.forEach/);
+  assert.match(add, /\['du-badge', DU_BADGE_COLOR\], \['condo-du-badge', CONDO_BADGE_COLOR\]/,
+    'the parcel count and the condo total are the two badge families');
+});
+
+test('the disc follows the field, not the stamp it was built with', () => {
+  // applyDuLabels re-points text-field at whichever overlay is painting. A
+  // disc still sized from the other overlay's stamp would put a two-digit
+  // count on a one-digit badge.
+  const apply = fnBody(mapJs, 'applyDuLabels');
+  assert.match(apply, /'icon-image', duBadgeImageExpr\(field\)/,
+    'the badge must be re-pointed in the same pass as the text');
+  assert.match(apply, /field !== ''/,
+    "nothing to point at when no overlay is painting — an empty icon-image is "
+    + 'not a valid image name');
+});
+
+test('the condo total keeps its own colour', () => {
+  // Both are badges now, so the colour is the only thing left that says
+  // "this is a development total, not this parcel's own count".
+  const spec = fnBody(mapJs, 'condoDuLabelLayer');
+  assert.match(spec, /duBadgeImageExpr\(\[[^\]]*'du'\]\], 'condo-du-badge'\)/,
+    'the condo total must draw from the condo badge family');
+  assert.match(mapJs, /CONDO_BADGE_COLOR = '#4a1486'/,
+    'the purple the condo totals have always been drawn in');
+});
+
 test('condo counts are per DEVELOPMENT, not per unit roll', () => {
   // Row housing is condo-titled — one roll per unit, dwelling_units = 1 — so
   // labelling the parcels prints "1" forty times across one project.
