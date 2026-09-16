@@ -1646,6 +1646,27 @@ inline form. `wrapperLogging.test.js` carries the matching rule.
 File redirection (`*>> $log`, as in `auto-publish-indexes.ps1`) does **not** have
 this problem — only the `2>&1` merge does. Do not "fix" the redirections.
 
+### And a third: logging the capture cost longer than building it
+
+Past both of those, the 2026-09-16 rebuild built its archive in 73 minutes and
+then spent **11:13 to 17:36 writing the log** — 964,440 lines of tippecanoe
+progress at roughly 40 lines/second, one `Add-Content` open/close each, on a
+path Defender scans. The filter meant to drop that spam matched `\d+%`, and
+tippecanoe prints `59.2%`, so it dropped nothing.
+
+The task's `ExecutionTimeLimit` is 4 hours. An unattended run would have been
+killed at 07:00 with `0x41306`, holding a finished, unpublished archive and
+looking exactly like a timeout — which is the third way this task could report
+failure while nothing was actually wrong with the tiling.
+
+Both halves are fixed in `rebuild-parcel-tiles.ps1`: the pattern matches
+decimals (964,482 captured lines → 42 kept, all signal), and `Write-LogBlock`
+writes what survives in ONE `Add-Content` instead of one per line — measured at
+0.01 s per 5,000 lines against 3.1 s for the per-line loop, on a temp path that
+is already ~30× faster than the real one. **When you capture a tool's output,
+log it as a block.** A per-line loop over a capture is thousands of open/close
+cycles, and it is what turns logging into the longest phase of the job.
+
 **Not covered:** the `*>> $log` append redirections in
 `auto-publish-indexes.ps1` (nine of them) cannot be individually retried without
 rewriting call sites in a script that git-pushes unattended. They run well after

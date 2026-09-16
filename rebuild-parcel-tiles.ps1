@@ -107,6 +107,20 @@ function Write-Log([string]$msg) {
     Write-Warning "could not write to log after 10 tries: $line"
 }
 
+# A captured block of a tool's output, written in ONE Add-Content rather than
+# one per line. Add-Content opens, writes and closes the file on every call, so
+# a per-line loop over a large capture is thousands of open/close cycles -- see
+# the note at step 2 for what that cost. Same retry, for the same reason.
+function Write-LogBlock([string[]]$lines) {
+    if (-not $lines -or $lines.Count -eq 0) { return }
+    $lines | ForEach-Object { Write-Output $_ }
+    for ($i = 1; $i -le 10; $i++) {
+        try { Add-Content -Path $log -Value $lines -ErrorAction Stop; return }
+        catch { Start-Sleep -Milliseconds (100 * $i) }
+    }
+    Write-Warning "could not write $($lines.Count) log line(s) after 10 tries"
+}
+
 # Run a native command and hand back everything it printed, stderr included.
 #
 # Every tool this script drives writes ordinary progress to STDERR -- R's
@@ -202,10 +216,28 @@ try {
 } finally {
     Pop-Location
 }
-# Tippecanoe's progress is a carriage-return redraw; keep the log readable by
-# dropping the percentage spam and keeping the summary lines the script prints.
-$out | Where-Object { $_ -notmatch '^\s*(Reordering|Reading|Merging|\d+%)' } |
-    ForEach-Object { Write-Log "  $_" }
+# Tippecanoe's progress is a carriage-return redraw, and the whole redraw
+# arrives here as separate lines. Keep the log readable by dropping it and
+# keeping the summary lines the script prints.
+#
+# THIS IS NOT COSMETIC -- it is the third thing that stopped this task working.
+# The old pattern was `\d+%`, which does not match tippecanoe's `59.2%`, so
+# nothing was dropped: the 2026-09-16 run captured 964,352 progress lines and
+# spent 11:13 to 17:36 -- SIX AND A HALF HOURS -- writing them out one
+# retry-wrapped Add-Content at a time, after the archive was already built in
+# 73 minutes. The scheduled task's ExecutionTimeLimit is 4 hours, so an
+# unattended run would have been killed mid-replay with 0x41306, holding a
+# finished archive it never got to publish. Hence both halves below: the
+# pattern matches decimals, and what survives it goes out in ONE write, so no
+# future chatty tool can turn logging back into the longest phase of the job.
+$progressNoise = '^\s*([\d.]+%|Read [\d.]+ million features|Reordering|Reading|Merging)'
+$kept = @($out | Where-Object { "$_" -notmatch $progressNoise })
+$dropped = @($out).Count - $kept.Count
+# Raw, not one Write-Log per line: these lines have their own chronology, and
+# stamping them with the time they were REPLAYED reads as though tiling
+# happened in the second the capture was flushed. It did not.
+if ($kept.Count) { Write-LogBlock ($kept | ForEach-Object { "    $_" }) }
+if ($dropped) { Write-Log ("  ({0:N0} progress lines suppressed)" -f $dropped) }
 if ($code -ne 0) { Fail "build-parcel-tiles.js exited $code" ($out | Select-Object -Last 20 | Out-String) }
 
 $archive = Join-Path $root 'web\public\parcels.pmtiles'
