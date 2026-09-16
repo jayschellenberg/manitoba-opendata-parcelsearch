@@ -1625,6 +1625,27 @@ Mitigations in place:
 - `task-health-check.ps1` does the same across all 28 tasks — it is what caught
   the 2026-09-16 failure, the morning after.
 
+### The same failure shape, one step further in: native stderr
+
+Fixing the log write let the tile rebuild reach step 2, where it died again.
+`$ErrorActionPreference = 'Stop'` also makes Windows PowerShell turn the first
+line a native command writes to **stderr** into a terminating
+`NativeCommandError`, so `$out = & tool ... 2>&1` ends the script on a run where
+nothing is wrong. Tippecanoe's `Read 0.00 million features` did it. R's
+`message()`, curl's meter and rclone's `--stats` line are the same hazard, and
+`powershell.exe` in every task action is 5.1, where
+`$PSNativeCommandUseErrorActionPreference = $false` is a no-op — dropping the
+preference around the call is the only fix that works there.
+
+So the scheduled tile rebuild could never have completed: two independent walls,
+and the 2026-08-23 archive was built by hand around the wrapper, which is why
+neither was visible. `Invoke-Native` in `rebuild-parcel-tiles.ps1` and
+`landfacts-refresh-wrapper.ps1` is the guard; `du-snapshot-wrapper.ps1` has the
+inline form. `wrapperLogging.test.js` carries the matching rule.
+
+File redirection (`*>> $log`, as in `auto-publish-indexes.ps1`) does **not** have
+this problem — only the `2>&1` merge does. Do not "fix" the redirections.
+
 **Not covered:** the `*>> $log` append redirections in
 `auto-publish-indexes.ps1` (nine of them) cannot be individually retried without
 rewriting call sites in a script that git-pushes unattended. They run well after
