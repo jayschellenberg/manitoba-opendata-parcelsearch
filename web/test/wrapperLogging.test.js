@@ -99,6 +99,69 @@ test('every Add-Content in an EAP=Stop wrapper is inside a retry', () => {
     + bare.join('\n      '));
 });
 
+// ---------------------------------------------------------------------------
+// Second rule, same failure shape: a native command's ordinary progress must
+// not be able to kill the run either.
+//
+// R's message(), tippecanoe's "Read 0.00 million features", curl's meter and
+// rclone's --stats all go to STDERR. Under `$ErrorActionPreference = 'Stop'`
+// Windows PowerShell 5.1 -- which is what `powershell.exe` in every registered
+// task action means -- turns the FIRST such line into a terminating
+// NativeCommandError. So `$out = & tool ... 2>&1` ends the script on a run
+// where nothing is wrong.
+//
+// Found on 2026-09-16: with the logging fix above in place, the tile rebuild
+// got as far as step 2 and died on tippecanoe's first progress line. The
+// scheduled tile rebuild had therefore never once been able to complete. The
+// same two calls sit in landfacts-refresh-wrapper.ps1 and du-snapshot-wrapper.ps1.
+//
+// Guarded means EAP is dropped to 'Continue' around the call and restored after
+// -- the house Invoke-Native / Invoke-Step shape. $LASTEXITCODE is what these
+// scripts gate on, so nothing is lost by it. Note that `*>> $log` file
+// redirection does NOT have this problem (auto-publish-indexes.ps1 has used it
+// unattended for months); only the `2>&1` merge does.
+function unguardedNativeCaptures(lines) {
+  const bad = [];
+  lines.forEach((line, i) => {
+    if (!/2>&1/.test(line)) return;
+    if (!/(^|\s|=)&\s*[$\w'"]/.test(line)) return;      // an invocation, not prose
+    if (/Invoke-Native/.test(line)) return;             // routed through the guard
+    const before = lines.slice(Math.max(0, i - 12), i).join('\n');
+    if (/\$ErrorActionPreference\s*=\s*['"]Continue['"]/.test(before)) return;
+    bad.push(i + 1);
+  });
+  return bad;
+}
+
+test('the native-stderr detector flags what it is meant to flag', () => {
+  const unguarded = [
+    "$ErrorActionPreference = 'Stop'",
+    "$out = & Rscript 'r\\export.R' 2>&1",
+  ];
+  const guarded = [
+    "$ErrorActionPreference = 'Stop'",
+    '$prevEAP = $ErrorActionPreference',
+    "$ErrorActionPreference = 'Continue'",
+    'try { & $Exe @Arguments 2>&1 }',
+    'finally { $ErrorActionPreference = $prevEAP }',
+  ];
+  assert.deepEqual(unguardedNativeCaptures(unguarded), [2],
+    'the detector missed a bare `& tool ... 2>&1` under Stop -- it would pass anything');
+  assert.deepEqual(unguardedNativeCaptures(guarded), [],
+    'the detector flagged the house guard -- it would have to be worked around, and would be');
+});
+
+test('every native 2>&1 capture in an EAP=Stop wrapper drops the preference', () => {
+  const bare = [];
+  for (const s of eapStop) {
+    for (const n of unguardedNativeCaptures(s.lines)) bare.push(`${s.name}:${n}`);
+  }
+  assert.deepEqual(bare, [],
+    `native command capture(s) under $ErrorActionPreference='Stop' -- the tool's first\n`
+    + `    line of progress on STDERR would kill the run:\n      `
+    + bare.join('\n      '));
+});
+
 // The scan above passes trivially if it finds nothing, and a renamed wrapper or
 // a logger rewritten onto Out-File would empty it silently. Pin the two scripts
 // whose unattended runs this test was written for, and the shape of the scan.

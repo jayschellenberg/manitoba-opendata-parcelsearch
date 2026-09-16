@@ -86,6 +86,30 @@ function Write-Log([string]$msg) {
     Write-LogLine $line
 }
 
+# Run a native command and hand back everything it printed, stderr included.
+#
+# fetch_aci.sh drives curl and gdal, and build_landfacts.R reports progress with
+# message() -- all of which is STDERR. Under $ErrorActionPreference = 'Stop',
+# Windows PowerShell turns the FIRST such line into a TERMINATING
+# NativeCommandError, so `& tool ... 2>&1` ends the wrapper on a healthy run.
+# rebuild-parcel-tiles.ps1 died exactly that way on 2026-09-16 (tippecanoe's
+# first progress line); this wrapper had the same two calls and has simply
+# never reached them unattended -- its first scheduled run is 2026-10-14.
+#
+# $LASTEXITCODE is what decides success, so drop the preference for the call and
+# put it back. The call must happen INSIDE this function, not in a scriptblock
+# passed to it: a scriptblock resolves $ErrorActionPreference in the scope it
+# was DEFINED in, which would find 'Stop' again and quietly undo this.
+function Invoke-Native([string]$Exe, [string[]]$Arguments = @()) {
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    # PS7's second route to the same failure; harmless no-op on 5.1, which is
+    # what the scheduled task runs.
+    $PSNativeCommandUseErrorActionPreference = $false
+    try { & $Exe @Arguments 2>&1 }
+    finally { $ErrorActionPreference = $prevEAP }
+}
+
 # ---- Rscript: version-sorted, never a hardcoded path ------------------------
 # Same helper as the other wrappers. $RFile is the script and $RscriptExe the
 # interpreter -- PowerShell variable names are case-insensitive, and $RScript /
@@ -117,7 +141,7 @@ if ($SkipFetch) {
     Write-Log ('fetch: WARNING bash not found, continuing with cached years: {0}' -f $BashExe)
 } else {
     Write-Log ('fetch: {0} {1}' -f $BashExe, $FetchSh)
-    $fetchOut = & $BashExe ($FetchSh -replace '\\', '/') 2>&1
+    $fetchOut = Invoke-Native $BashExe @(($FetchSh -replace '\\', '/'))
     $fetchOut | ForEach-Object { Write-LogLine ('    ' + $_) }
     $new = @($fetchOut | Where-Object { $_ -match '^\d{4}: aci_' })
     if ($new.Count) { Write-Log ('fetch: NEW inventory year(s) cached: {0}' -f ($new -join '; ')) }
@@ -131,11 +155,18 @@ if ($Muni) { $rArgs += @('--muni', $Muni) }
 Write-Log ('build: {0} {1}' -f $RscriptExe, ($rArgs -join ' '))
 
 Push-Location $ScriptDir
+# Same stderr-is-terminating guard as Invoke-Native, inline because this call
+# tees to the log as it goes rather than returning its output. R's message()
+# progress would otherwise kill the build on its first line.
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+$PSNativeCommandUseErrorActionPreference = $false
 try {
     & $RscriptExe @rArgs 2>&1 | Tee-Object -FilePath $LogFile -Append
     $code = $LASTEXITCODE
 }
 finally {
+    $ErrorActionPreference = $prevEAP
     Pop-Location
 }
 

@@ -107,6 +107,33 @@ function Write-Log([string]$msg) {
     Write-Warning "could not write to log after 10 tries: $line"
 }
 
+# Run a native command and hand back everything it printed, stderr included.
+#
+# Every tool this script drives writes ordinary progress to STDERR -- R's
+# message(), tippecanoe's "Read 0.00 million features", rclone's --stats line.
+# Under $ErrorActionPreference = 'Stop', Windows PowerShell turns the FIRST such
+# line into a TERMINATING NativeCommandError, so `& tool ... 2>&1` ends the
+# script on a perfectly healthy run. That is what killed the 2026-09-16 re-run
+# the moment the logging fix above let it reach step 2: tippecanoe had read its
+# first features and said so.
+#
+# $LASTEXITCODE is what decides success here (every call site gates on it), so
+# drop the preference for the duration of the call and put it back. Same guard,
+# for the same reason, as mao-assembly's Invoke-Step.
+#
+# The call must happen INSIDE this function, not in a scriptblock passed to it:
+# a scriptblock resolves $ErrorActionPreference in the scope it was DEFINED in,
+# which would find the script's 'Stop' again and quietly undo this.
+function Invoke-Native([string]$Exe, [string[]]$Arguments = @()) {
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    # PS7's second route to the same failure; harmless no-op on 5.1, which is
+    # what the scheduled task runs.
+    $PSNativeCommandUseErrorActionPreference = $false
+    try { & $Exe @Arguments 2>&1 }
+    finally { $ErrorActionPreference = $prevEAP }
+}
+
 function Fail([string]$what, [string]$detail) {
     Write-Log "FAILED: $what"
     Write-Log $detail
@@ -160,7 +187,7 @@ if ($SkipExport) {
     Write-Log "Step 1 SKIPPED (-SkipExport); reusing tiles-build/rollentry.geojsons"
 } else {
     Write-Log "Step 1: export RollEntry to newline-delimited GeoJSON"
-    $out = & Rscript (Join-Path $root 'r\export_rollentry_geojson.R') 2>&1
+    $out = Invoke-Native 'Rscript' @((Join-Path $root 'r\export_rollentry_geojson.R'))
     $out | ForEach-Object { Write-Log "  $_" }
     if ($LASTEXITCODE -ne 0) { Fail "r/export_rollentry_geojson.R exited $LASTEXITCODE" ($out -join "`n") }
 }
@@ -170,7 +197,7 @@ if ($SkipExport) {
 Write-Log "Step 2: derive fields, run tippecanoe, promote"
 Push-Location (Join-Path $root 'web')
 try {
-    $out = & node 'scripts/build-parcel-tiles.js' '--run' 2>&1
+    $out = Invoke-Native 'node' @('scripts/build-parcel-tiles.js', '--run')
     $code = $LASTEXITCODE
 } finally {
     Pop-Location
@@ -202,7 +229,7 @@ if (-not $Publish) {
 
 # --- Step 3: publish -----------------------------------------------------
 Write-Log "Publishing to $R2Remote ..."
-$rcloneOut = & rclone copyto $archive $R2Remote --s3-no-check-bucket --stats-one-line --stats 60s 2>&1
+$rcloneOut = Invoke-Native 'rclone' @('copyto', $archive, $R2Remote, '--s3-no-check-bucket', '--stats-one-line', '--stats', '60s')
 $rcloneCode = $LASTEXITCODE
 $rcloneOut | ForEach-Object { Write-Log "  $_" }
 if ($rcloneCode -ne 0) {
@@ -213,7 +240,7 @@ if ($rcloneCode -ne 0) {
 # Verify the object rather than trusting the exit code: a partial upload that
 # reported success would leave a corrupt archive serving every user.
 $localBytes = (Get-Item $archive).Length
-$remoteJson = & rclone lsjson $R2Remote 2>&1
+$remoteJson = Invoke-Native 'rclone' @('lsjson', $R2Remote)
 $remoteBytes = $null
 try { $remoteBytes = ([string]::Join('', $remoteJson) | ConvertFrom-Json)[0].Size } catch { $remoteBytes = $null }
 if ($remoteBytes -ne $localBytes) {

@@ -75,11 +75,22 @@ Write-Host ("[du-snapshot] log: {0}" -f $LogFile)
 
 # Run from the repo root so the R script's own r/config.R bootstrap resolves.
 Push-Location $ScriptDir
+# R writes message() to STDERR, and under $ErrorActionPreference = 'Stop'
+# Windows PowerShell turns the first such line into a TERMINATING
+# NativeCommandError -- `2>&1` here would end the wrapper on a healthy run. This
+# has survived only because r/build_du_snapshot.R happens to report with cat();
+# one message() added to it would have killed the monthly snapshot silently.
+# rebuild-parcel-tiles.ps1 was killed this way on 2026-09-16. $LASTEXITCODE
+# below is what decides success, so drop the preference and put it back.
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+$PSNativeCommandUseErrorActionPreference = $false
 try {
     & $RscriptExe @rArgs 2>&1 | Tee-Object -FilePath $LogFile
     $code = $LASTEXITCODE
 }
 finally {
+    $ErrorActionPreference = $prevEAP
     Pop-Location
 }
 
