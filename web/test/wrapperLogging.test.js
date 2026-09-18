@@ -221,18 +221,35 @@ test('the scan actually covers the wrappers it was written for', () => {
 test('the scan still reaches the siblings and subdirectories it was widened for', () => {
   const covered = eapStop.map((s) => s.name);
 
-  // mao-assembly has no runner of its own. If this stops reaching it, the repo
-  // where the 2026-08-09 failure actually happened goes back to being unguarded
-  // -- and nothing else in the fleet would notice.
-  assert.ok(covered.includes('mao-assembly/refresh-monthly-wrapper.ps1'),
-    'mao-assembly/refresh-monthly-wrapper.ps1 is not being scanned. Is mao-assembly still '
-    + 'checked out beside this repo? It has no test runner of its own, so this scan is the '
-    + 'only thing standing between it and a repeat of 2026-08-09.');
+  // mao-assembly has no runner of its own, so this scan is the only thing
+  // guarding it -- but it is a SEPARATE repo, and a build checks out only this
+  // one. vercel.json runs `npm test` before `npm run build`, so making its
+  // absence fatal broke the production deploy on 2026-09-18 over a condition
+  // that is structurally guaranteed there and says nothing about this repo.
+  //
+  // So absence is REPORTED, not failed. What is failed is the case that can
+  // actually regress: the sibling is sitting right there and has dropped out of
+  // the scan anyway -- which is what a rename or a lost EAP='Stop' looks like.
+  for (const s of SIBLINGS_WITHOUT_A_RUNNER) {
+    if (!fs.existsSync(path.join(repo, '..', s))) {
+      console.log(`      - ${s} is not beside this repo (standalone checkout); its wrappers were NOT scanned`);
+      continue;
+    }
+    assert.ok(covered.some((n) => n.startsWith(`${s}/`)),
+      `${s} IS checked out beside this repo, but not one of its wrappers is being scanned. `
+      + `Did they lose $ErrorActionPreference='Stop', or get renamed? It has no test runner `
+      + `of its own, so this scan is all that stands between it and a repeat of 2026-08-09.`);
+  }
 
   // One level down, which is exactly where r\build_ortho_tiles.ps1 sat unguarded.
-  assert.ok(covered.some((n) => /[\\/]/.test(n) && !n.startsWith('mao-assembly')),
+  // Always required, unlike the sibling: these files are in THIS repo, so they are
+  // present in every checkout, the build's included.
+  assert.ok(
+    covered.some((n) => /[\\/]/.test(n)
+      && !SIBLINGS_WITHOUT_A_RUNNER.some((s) => n.startsWith(`${s}/`))),
     'the scan is no longer reaching any subdirectory of this repo -- a wrapper moved into '
-    + 'r\\ would go unguarded, which is how r\\build_ortho_tiles.ps1 was missed until 2026-09-18.');
+    + 'r\\ would go unguarded, which is how r\\build_ortho_tiles.ps1 was missed until 2026-09-18.',
+  );
 });
 
 const passed = results.reduce((a, b) => a + b, 0);
