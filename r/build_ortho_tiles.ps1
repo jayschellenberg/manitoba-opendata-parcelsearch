@@ -128,7 +128,13 @@ Write-Host "  source raster: $($src.FullName)  ($([math]::Round($src.Length/1GB,
 
 # ECW driver is only needed for .ecw sources.
 if ($srcExt -eq '.ecw') {
-  $fmts = & $gdalinfo --formats 2>&1
+  # gdalinfo lists its drivers on stdout but chatters on stderr, and under
+  # EAP='Stop' the first such line is a terminating NativeCommandError -- so this
+  # probe would throw before it could ever report a MISSING driver, which is the
+  # one thing it exists to detect. Same guard as rebuild-parcel-tiles.ps1.
+  $prevEAP = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try { $fmts = & $gdalinfo --formats 2>&1 } finally { $ErrorActionPreference = $prevEAP }
   if (-not ($fmts -match '(?i)\bECW\b')) {
     throw "source is .ecw but GDAL has no ECW driver. Install it once:`n" +
           "  C:\OSGeo4W\bin\osgeo4w-setup.exe -q -k -P gdal-ecw`n" +
@@ -163,7 +169,14 @@ if (Test-Path $pm) { Remove-Item $pm -Force }
 & $PmtilesExe convert $mbt $pm
 if ($LASTEXITCODE -ne 0) { throw "pmtiles convert failed ($LASTEXITCODE)" }
 Write-Host "  PMTiles: $([math]::Round((Get-Item $pm).Length/1GB,2)) GB  -> $pm"
-& $PmtilesExe show $pm 2>&1 | Select-String -Pattern 'tile type|min zoom|max zoom|bounds' | ForEach-Object { "    $_" }
+# Same guard: this is a cosmetic summary of the archive just built, and pmtiles
+# writes some of it to stderr. Without the drop it can throw AFTER an hours-long
+# convert has already succeeded.
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+  & $PmtilesExe show $pm 2>&1 | Select-String -Pattern 'tile type|min zoom|max zoom|bounds' | ForEach-Object { "    $_" }
+} finally { $ErrorActionPreference = $prevEAP }
 
 # --- 4. upload to Cloudflare R2 + wire the app (you run this) ---------------
 Step "Next: upload to Cloudflare R2, then wire the app"

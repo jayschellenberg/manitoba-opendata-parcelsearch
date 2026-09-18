@@ -62,9 +62,47 @@ function stripPsComments(text) {
   }).join('\n');
 }
 
-const scripts = fs.readdirSync(repo)
-  .filter((f) => f.endsWith('.ps1'))
-  .map((f) => ({ name: f, lines: stripPsComments(fs.readFileSync(path.join(repo, f), 'utf8')).split('\n') }));
+/** WHAT THIS SCAN COVERS.
+ *
+ *  The home repo, plus sibling repos under MBOpenData that run scheduled tasks
+ *  and have no test runner of their own to carry this rule. mao-assembly is why
+ *  that clause exists: its refresh-monthly-wrapper.ps1 is where the 2026-08-09
+ *  failure above actually happened, and nothing had guarded it since.
+ *
+ *  NOT mao-scrape: it has tests/testthat/test-wrapper-logging.R, the same two
+ *  rules in its own runner, so scanning it here would report one finding in two
+ *  places. NOT MBFloodMapping: both its scripts deliberately run under
+ *  'Continue' (schtasks reports "task not found" on stderr), so they pay a lost
+ *  line instead of a lost run and the rule does not apply.
+ *
+ *  And one level of subdirectories, because a wrapper that moves into r\ is
+ *  still a wrapper. r\build_ortho_tiles.ps1 carried two unguarded captures
+ *  until 2026-09-18 purely because this scan used to stop at the repo root. */
+const SIBLINGS_WITHOUT_A_RUNNER = ['mao-assembly'];
+
+function ps1sIn(dir) {
+  if (!fs.existsSync(dir)) return [];
+  const out = [];
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (e.isFile() && e.name.endsWith('.ps1')) out.push(e.name);
+    else if (e.isDirectory() && !['node_modules', '.git', 'logs'].includes(e.name)) {
+      try {
+        for (const f of fs.readdirSync(path.join(dir, e.name))) {
+          if (f.endsWith('.ps1')) out.push(path.join(e.name, f));
+        }
+      } catch { /* unreadable directory -- not this test's business */ }
+    }
+  }
+  return out;
+}
+
+const scripts = [
+  { label: '', dir: repo },
+  ...SIBLINGS_WITHOUT_A_RUNNER.map((s) => ({ label: `${s}/`, dir: path.join(repo, '..', s) })),
+].flatMap(({ label, dir }) => ps1sIn(dir).map((f) => ({
+  name: label + f,
+  lines: stripPsComments(fs.readFileSync(path.join(dir, f), 'utf8')).split('\n'),
+})));
 
 /** A wrapper is in scope when a failed log write would be TERMINATING for it.
  *  Scripts running under 'Continue' pay a lost line instead of a lost run --
@@ -176,6 +214,25 @@ test('the scan actually covers the wrappers it was written for', () => {
       `${f} no longer writes its log with Add-Content -- if it moved to a redirection or `
       + `Out-File, this test no longer guards it and the rule above needs to cover that form.`);
   }
+});
+
+// The two rules above are only worth as much as the scan's reach, and the reach
+// is the part that has silently shrunk before. Pin both widenings.
+test('the scan still reaches the siblings and subdirectories it was widened for', () => {
+  const covered = eapStop.map((s) => s.name);
+
+  // mao-assembly has no runner of its own. If this stops reaching it, the repo
+  // where the 2026-08-09 failure actually happened goes back to being unguarded
+  // -- and nothing else in the fleet would notice.
+  assert.ok(covered.includes('mao-assembly/refresh-monthly-wrapper.ps1'),
+    'mao-assembly/refresh-monthly-wrapper.ps1 is not being scanned. Is mao-assembly still '
+    + 'checked out beside this repo? It has no test runner of its own, so this scan is the '
+    + 'only thing standing between it and a repeat of 2026-08-09.');
+
+  // One level down, which is exactly where r\build_ortho_tiles.ps1 sat unguarded.
+  assert.ok(covered.some((n) => /[\\/]/.test(n) && !n.startsWith('mao-assembly')),
+    'the scan is no longer reaching any subdirectory of this repo -- a wrapper moved into '
+    + 'r\\ would go unguarded, which is how r\\build_ortho_tiles.ps1 was missed until 2026-09-18.');
 });
 
 const passed = results.reduce((a, b) => a + b, 0);
