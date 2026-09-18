@@ -1201,13 +1201,40 @@ staleness check had said OK every morning, and `logs/refresh_digest.csv`
 showed 394 / 352 / 526 new sales landing on Sep 2 / 3 / 4 — **not one dated
 after Aug 17.** The newest date the refresh had ever seen stepped
 07-31 (seen 08-19) → 08-07 (08-20) → 08-10 (08-26) → 08-17 (08-27), then held
-flat for 9+ days. So new rows **arrive weekday-concentrated (heavy Wed-Fri,
-quiet Sat-Mon) and run about 10-14 days behind the sale date.** A flat
-"posted through" date with new rows still arriving is MAO's posting lag,
-not a scrape fault. NOTE that this describes the VOLUME of arrivals, not
-the frontier: the cut advances a day or two at a time regardless, and there
-is no batch queued behind it — see the 2026-09-08 correction at the end of
-this section before you conclude anything from a quiet spell.
+flat for 9+ days. A flat "posted through" date with new rows still arriving
+is MAO's posting lag, not a scrape fault.
+
+**THE MECHANISM (measured 2026-09-18, and this supersedes the guesses).**
+Take every recent sale date and ask what day we FIRST saw it. The answer is
+not a drip — it is a weekly release of a whole week at once:
+
+| Sale week | Entire week first seen on | Lag |
+|---|---|---|
+| Aug 11-14 | **Sep 1** | 18-21 d |
+| Aug 18-21 | **Sep 8** | 18-21 d |
+| Aug 25-28 | **Sep 16** | 19-22 d |
+| Aug 31 | **Sep 17** | 17 d |
+
+**MAO publishes a full Mon-Fri week of sales in one release, roughly weekly,
+about 19 days after that week ends** (measured range 16-22, median 19;
+Mondays sometimes land a day early, giving the occasional 10 d outlier).
+Release events: Aug 26, Sep 1, Sep 8, Sep 16 — **6 to 8 days apart.**
+
+Everything else in this section falls out of that one fact:
+
+- A **flat cut for a week is the normal gap between releases**, not a stall.
+- The Wed-Fri arrival rhythm in the digest is **our rotation discovering a
+  release over a few days**, not MAO dribbling it out.
+- The lag **climbs steadily to ~21 days and then drops** when the next
+  release lands — that sawtooth is the cadence, not a slowdown.
+- It is **predictive**: after a release, the next is due in 6-8 days and
+  will carry the following week. Sep 16 carried Aug 25-28, so the week of
+  Sep 1-4 was due around Sep 22-23.
+
+Two earlier models in this section were wrong and are gone: a "~2,000+ row
+catch-up batch" that never came, and a flat denial that MAO batches at all,
+written off a single 4-sale evening. The weekly-batch framing was right the
+first time; only the lag number (originally "10-14 days") was wrong.
 
 **Telling MAO lag from a broken scrape** (all paths under
 `D:\Dropbox\ClaudeCode\MBOpenData\mao-scrape\`):
@@ -1254,9 +1281,24 @@ other hour, read the breadcrumb — not the log directory.
 
 If (1) is healthy and the date is still flat, MAO simply has not loaded the
 next batch. Nothing here alerts on that: `MAOSalesStaleness` watches the
-task, not MAO. If a batch is more than ~3 weeks late, log into MAO by hand
-and check a busy municipality (Brandon, Steinbach, Springfield) before
-touching the scrape.
+task, not MAO.
+
+**Escalate on a MISSED RELEASE, not on raw lag.** Releases run 6-8 days
+apart, so count from the last one rather than from today's lag:
+
+| Days since last release | Read it as |
+|---|---|
+| 0-8 | Normal cadence. Do nothing. |
+| 9-10 | Late but within reason. Still do nothing. |
+| **> 10** | A release has been missed — log into MAO by hand and check a busy municipality (Brandon, Steinbach, Springfield) before touching the scrape. |
+
+**Do NOT use the lag for this, which an earlier version of this section told
+you to do.** It said to check by hand once a batch was "more than ~3 weeks
+late", but the lag reaches 21 days at the end of EVERY ordinary gap — so
+that rule fires weekly by construction and cries wolf every time. It did
+exactly that on 2026-09-14: the lag hit 21 days, Jason checked Brandon by
+hand, and MAO was simply mid-gap. The next release landed two days later,
+on schedule. The lag is a sawtooth; the release interval is the signal.
 
 **When that manual check comes back empty, you are done — that is the
 answer, not the start of an investigation.** Walked for real on 2026-09-07,
@@ -1578,8 +1620,12 @@ then delete the old token.
   (and the in-app historical view flags it) when the newest archived
   snapshot is > 12 months old.
 - **Sales archive:** the "MAO posted through" date on the Sales Analysis
-  panel is MAO's cap, not ours. Expect it 10-14 days behind today, and up to
-  ~3 weeks when MAO skips a batch. Read #9 before suspecting the scrape.
+  panel is MAO's cap, not ours. MAO releases a whole week of sales at once,
+  every 6-8 days, ~19 days after that week ends — so the date sits **16-22
+  days behind today and sawtooths**, climbing through each gap and dropping
+  when the next release lands. A flat week is the gap, not a stall. Escalate
+  only when a release is >10 days overdue. Read #9 before suspecting the
+  scrape.
 
 If you see any of these, the fix is the matching task above.
 
