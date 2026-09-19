@@ -19,6 +19,7 @@
 // plan polygon while its overlay is visible pops up a small description.
 
 import maplibregl from 'maplibre-gl';
+import { addLocateControl } from './lib/locateControl.js';
 import bbox from '@turf/bbox';
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
 import turfArea from '@turf/area';
@@ -1035,6 +1036,13 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
   // ±1 (see FineZoomControl). Compass was already disabled, so nothing
   // from the stock control is lost by replacing it outright.
   map.addControl(new FineZoomControl(), 'top-right');
+  // "Use my location": flies to the GPS fix and fires the map's own click
+  // there, so a result parcel opens its card (phone) or popup, and a
+  // municipality parcel opens its popup. Result layers first.
+  addLocateControl(map, {
+    hitLayers: [...PARCEL_HIT_LAYERS, 'muni-parcels-fill'],
+    missText: 'No parcel is drawn here. Search this municipality, or pick it in the dropdown and turn on Assessment Parcels, then try again.',
+  });
   map.addControl(new BasemapMenuControl(), 'top-right');
   // Place / municipality search, top-LEFT — the only control on that side.
   // Everything else stacks top-right and the legends sit bottom-right, so
