@@ -224,23 +224,48 @@ test('sales mode on the phone: draw tools on the map, star proxy, no-folder impo
   assert.ok(html.includes('id="sales-db-nofs-hint"'), 'index.html has no #sales-db-nofs-hint');
 });
 
-test('"use my location" is on the map and reuses the parcel click', () => {
+test('"use my location" follows the user and switches the parcel fabric on', () => {
   const mapSrc = stripJs(read('src', 'map.js'));
   const locate = stripJs(read('src', 'lib', 'locateControl.js'));
   assert.match(mapSrc, /import\s*\{[^}]*\baddLocateControl\b[^}]*\}\s*from\s*'\.\/lib\/locateControl\.js'/,
     'map.js does not import addLocateControl');
-  const call = mapSrc.match(/addLocateControl\(map,\s*\{([\s\S]*?)\}\);/);
-  assert.ok(call, 'map.js never calls addLocateControl');
-  assert.match(call[1], /hitLayers:\s*\[\.\.\.PARCEL_HIT_LAYERS,\s*'muni-parcels-fill'\]/,
-    'the locate control does not hit-test the result parcels first, then the municipality fabric');
-  assert.match(call[1], /missText:/, 'a fix on no parcel would be silent');
-  // The control opens the parcel by firing the map's own click, so the
-  // phone card reveal and every popup keep one code path.
-  assert.match(locate, /new MapMouseEvent\('click', map, mouse\)/, 'locateControl.js does not fire a real MapMouseEvent at the fix');
-  assert.match(locate, /preventDefault\(\) \{\}/, 'the fallback event lacks preventDefault(), which the draw tools call');
-  assert.match(locate, /map\.once\('idle'/, 'the hit test must wait for the fly-to to settle');
+  assert.match(mapSrc, /addLocateControl\(map,\s*\{\s*onLocated:\s*onLocate\s*\}\)/, 'the locate control does not hand the fix to main.js');
+  assert.match(mapSrc, /export function initMap\([^)]*\bonLocate\b/, 'initMap does not accept onLocate');
+  assert.match(main, /onLocate:\s*handleLocate/, 'main.js does not pass handleLocate to initMap');
+  // The phone use case is finding an address nearby: the handler names the
+  // municipality under the fix (the parcel overlay is scoped to the
+  // dropdown), selects it, switches the overlay on, and peeks the sheet.
+  const handler = main.slice(main.indexOf('async function handleLocate('));
+  const body = handler.slice(0, handler.indexOf('\n}\n'));
+  assert.match(body, /municipalityAt\(lngLat\)/, 'handleLocate never asks which municipality the fix is in');
+  assert.match(body, /\$municipality\.dispatchEvent\(new Event\('change'/, 'selecting the municipality must fire change, or the overlay scope never updates');
+  assert.match(body, /\$muniParcelsToggle\.click\(\)/, 'handleLocate never switches on Assessment Parcels');
+  assert.match(body, /setSheetState\('peek'\)/, 'handleLocate never peeks the sheet so the map has the screen');
+  assert.match(main, /import\s*\{[^}]*\bmunicipalityAt\b[^}]*\}\s*from\s*'\.\/lib\/muniAt\.js'/, 'municipalityAt not imported');
+  assert.match(locate, /trackUserLocation: true/, 'the control must follow the user while they walk');
+  assert.match(locate, /takeFix\(latch\)/, 'the one-shot latch is not used');
+  assert.match(locate, /map\.once\('idle'/, 'the hand-off must wait for the fly-to to settle');
   assert.match(locate, /new maplibregl\.GeolocateControl\(/, 'the built-in GeolocateControl is not used');
   assert.ok(css.includes('body.phone .maplibregl-ctrl-group button'), 'phone map control buttons are not thumb-sized');
+});
+
+test('the site can be added to the home screen, and geolocation is allowed by the headers', () => {
+  const raw = read('index.html');
+  assert.match(raw, /<link rel="manifest" href="\/manifest\.webmanifest" \/>/, 'no manifest link');
+  assert.match(raw, /<link rel="apple-touch-icon" href="\/icons\/apple-touch-icon\.png" \/>/, 'no apple-touch-icon');
+  assert.match(raw, /apple-mobile-web-app-capable" content="yes"/, 'iOS will not open it standalone');
+  const manifest = JSON.parse(read('public', 'manifest.webmanifest'));
+  assert.equal(manifest.display, 'standalone');
+  assert.equal(manifest.start_url, '/');
+  for (const icon of manifest.icons) {
+    assert.ok(fs.existsSync(path.join(here, '..', 'public', icon.src)), `manifest icon missing on disk: ${icon.src}`);
+  }
+  assert.ok(fs.existsSync(path.join(here, '..', 'public', 'icons', 'apple-touch-icon.png')), 'apple-touch-icon.png missing');
+  // The locate button is dead if the response headers deny the API.
+  const vercel = JSON.parse(fs.readFileSync(path.join(here, '..', '..', 'vercel.json'), 'utf8'));
+  const pp = vercel.headers.flatMap((h) => h.headers).find((h) => h.key === 'Permissions-Policy');
+  assert.ok(pp, 'no Permissions-Policy header');
+  assert.match(pp.value, /geolocation=\(self\)/, `Permissions-Policy denies geolocation: ${pp.value}`);
 });
 
 test('the JS breakpoint and the desktop split breakpoint agree', () => {

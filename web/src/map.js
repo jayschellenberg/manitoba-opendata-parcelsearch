@@ -1016,7 +1016,7 @@ function condoDuLabelLayer(id, source) {
   };
 }
 
-export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {}) {
+export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLocate } = {}) {
   const map = new maplibregl.Map({
     container,
     style: BASEMAP_STYLE,
@@ -1036,13 +1036,10 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
   // ±1 (see FineZoomControl). Compass was already disabled, so nothing
   // from the stock control is lost by replacing it outright.
   map.addControl(new FineZoomControl(), 'top-right');
-  // "Use my location": flies to the GPS fix and fires the map's own click
-  // there, so a result parcel opens its card (phone) or popup, and a
-  // municipality parcel opens its popup. Result layers first.
-  addLocateControl(map, {
-    hitLayers: [...PARCEL_HIT_LAYERS, 'muni-parcels-fill'],
-    missText: 'No parcel is drawn here. Search this municipality, or pick it in the dropdown and turn on Assessment Parcels, then try again.',
-  });
+  // "Use my location": flies to the GPS fix, follows the user, and hands
+  // the fix to main.js once so it can switch on the parcel fabric for
+  // that municipality and tuck the phone sheet away.
+  addLocateControl(map, { onLocated: onLocate });
   map.addControl(new BasemapMenuControl(), 'top-right');
   // Place / municipality search, top-LEFT — the only control on that side.
   // Everything else stacks top-right and the legends sit bottom-right, so
