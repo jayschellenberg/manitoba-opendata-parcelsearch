@@ -171,6 +171,38 @@ test('result cards are wired: container, observer, phone-mode call, CSS swap', (
   }
 });
 
+test('a parcel tap on the map reaches its card, with a popup fallback', () => {
+  const mapSrc = stripJs(read('src', 'map.js'));
+  const cards = stripJs(read('src', 'lib', 'resultCards.js'));
+  assert.match(mapSrc, /import\s*\{[^}]*\bisPhone\b[^}]*\}\s*from\s*'\.\/lib\/phoneMode\.js'/,
+    'map.js does not import isPhone');
+  // The gate sits inside the parcel click handler and defers to the
+  // popup unless the callback reports the card was found.
+  const click = mapSrc.slice(mapSrc.indexOf('const onParcelClick = (e) => {'));
+  const body = click.slice(0, click.indexOf('\n      };'));
+  assert.match(body, /isPhone\(\)[^\n]*onFeatureClick\(key\) === true/, 'onParcelClick is not gated on the phone card reveal');
+  assert.match(body, /parcelClickPopup/, 'the popup fallback is gone from onParcelClick');
+  // main.js answers that callback with the card on the phone.
+  const scroll = main.slice(main.indexOf('function scrollToRow('));
+  const scrollBody = scroll.slice(0, scroll.indexOf('\n}\n'));
+  assert.match(scrollBody, /if \(isPhone\(\)\) return revealResultCard\(key\);/, 'scrollToRow does not route to the card on phone');
+  assert.match(scrollBody, /return true;/, 'scrollToRow must report success for the popup fallback to work');
+  assert.match(mode, /export function revealResultCard\(key\)[\s\S]*cards\.reveal\(key\)/, 'phoneMode.revealResultCard does not use cards.reveal');
+  assert.match(cards, /return \{ render: schedule, reveal \}/, 'resultCards does not expose reveal()');
+  assert.match(cards, /scrollIntoView\(/, 'reveal never scrolls the card into view');
+  // Every hover popup is tagged, and the tag hides it on the phone.
+  // A hover popup is one with no close button (the place-search `popup`
+  // near the end of map.js has one, and is a click popup).
+  const hovers = [...mapSrc.matchAll(/const (\w*[hH]over\w*|popup) = new maplibregl\.Popup\(\{([^}]*)\}/g)]
+    .filter((m) => /closeButton: false/.test(m[2]));
+  assert.ok(hovers.length >= 6, `expected the hover popups, found ${hovers.length}`);
+  for (const m of hovers) {
+    assert.match(m[2], /className: 'hover-popup'/, `${m[1]} lacks className: 'hover-popup'`);
+  }
+  assert.ok(css.includes('body.phone .maplibregl-popup.hover-popup'), 'style.css does not hide .hover-popup on phone');
+  assert.ok(css.includes('.result-card.card-highlight'), 'style.css has no card-highlight rule');
+});
+
 test('the JS breakpoint and the desktop split breakpoint agree', () => {
   const q = mode.match(/PHONE_QUERY\s*=\s*'\(max-width:\s*(\d+)px\)'/);
   assert.ok(q, 'PHONE_QUERY not found');

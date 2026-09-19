@@ -211,9 +211,30 @@ export function initResultCards({ table, container, isPhone, onTap }) {
     queued = requestAnimationFrame(render);
   };
 
+  /**
+   * Open and scroll to the card for a row key — a parcel tapped on the
+   * map. Returns false when there is no such card (another page, or a
+   * parcel outside the results) so the caller can fall back to a popup.
+   */
+  const reveal = (key) => {
+    if (!isPhone() || key == null) return false;
+    if (queued) { cancelAnimationFrame(queued); render(); }
+    const esc = window.CSS?.escape ? CSS.escape(String(key)) : String(key).replace(/["\\]/g, '\\$&');
+    const card = container.querySelector(`.result-card[data-row-key="${esc}"]`);
+    if (!card) return false;
+    if (!card.classList.contains('open')) card.querySelector('.result-card-more')?.click();
+    for (const prev of container.querySelectorAll('.result-card.card-highlight')) {
+      prev.classList.remove('card-highlight');
+    }
+    void card.offsetWidth;
+    card.classList.add('card-highlight');
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return true;
+  };
+
   new MutationObserver(schedule).observe(table, {
     childList: true, subtree: true, attributes: true, characterData: true,
   });
   schedule();
-  return { render: schedule };
+  return { render: schedule, reveal };
 }
