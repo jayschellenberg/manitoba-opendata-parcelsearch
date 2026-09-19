@@ -203,6 +203,27 @@ test('a parcel tap on the map reaches its card, with a popup fallback', () => {
   assert.ok(css.includes('.result-card.card-highlight'), 'style.css has no card-highlight rule');
 });
 
+test('sales mode on the phone: draw tools on the map, star proxy, no-folder import copy', () => {
+  const cards = stripJs(read('src', 'lib', 'resultCards.js'));
+  const panel = stripJs(read('src', 'lib', 'salesDbPanel.js'));
+  // Draw tools: moved into #map by phone mode, shown by CSS only in sales mode.
+  assert.match(mode, /function relocateShapeTools\(phone\)[\s\S]*getElementById\('shape-tools'\)[\s\S]*mapEl\.appendChild\(tools\)/,
+    'phoneMode.js does not move #shape-tools into the map');
+  assert.match(mode, /relocateResults\(phone\);\s*relocateShapeTools\(phone\);/, 'relocateShapeTools is not called from apply()');
+  assert.ok(html.includes('id="shape-tools"'), 'index.html has no #shape-tools');
+  assert.ok(css.includes('body.phone.sales-mode #map .shape-tools { display: flex; }'), 'CSS never shows the relocated draw tools in sales mode');
+  assert.ok(css.includes('body.phone #map .shape-tool-btn'), 'CSS has no phone styling for the draw buttons');
+  // Star: the card forwards to the row's button, which owns the Set.
+  assert.match(cards, /rowStar\.click\(\)/, 'the card star does not forward to the row star');
+  assert.match(cards, /td\.fav-col button\.fav-star/, 'the card star is not read from the row');
+  assert.match(main, /className = isFav \? 'fav-star active' : 'fav-star'/, 'main.js no longer renders button.fav-star — update the card proxy');
+  assert.ok(css.includes('.result-card-star'), 'CSS has no card star rule');
+  // Import: no File System Access -> the button must not promise a folder.
+  assert.match(panel, /if \(\$import && !fsAccessSupported\(\)\) \{[\s\S]*Choose export files/, 'salesDbPanel.js keeps "Choose export folder" without File System Access');
+  assert.match(panel, /getElementById\('sales-db-nofs-hint'\)/, 'salesDbPanel.js never reveals the no-folder hint');
+  assert.ok(html.includes('id="sales-db-nofs-hint"'), 'index.html has no #sales-db-nofs-hint');
+});
+
 test('the JS breakpoint and the desktop split breakpoint agree', () => {
   const q = mode.match(/PHONE_QUERY\s*=\s*'\(max-width:\s*(\d+)px\)'/);
   assert.ok(q, 'PHONE_QUERY not found');

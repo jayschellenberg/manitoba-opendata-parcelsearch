@@ -66,6 +66,26 @@ function relocateResults(phone) {
   }
 }
 
+// The area-selection draw tools live in the top bar, which folds into a
+// menu on the phone. They move onto the map instead (a floating column
+// at the bottom-left, CSS under body.phone.sales-mode) and back to their
+// exact top-bar position on a widen. drawShapes.js wires the buttons by
+// id, so the move is invisible to it.
+let shapeToolsHome = null;   // { parent, next } in the top bar
+function relocateShapeTools(phone) {
+  const tools = document.getElementById('shape-tools');
+  const mapEl = document.getElementById('map');
+  if (!tools || !mapEl) return;
+  if (phone) {
+    if (tools.parentElement === mapEl) return;
+    shapeToolsHome = { parent: tools.parentElement, next: tools.nextSibling };
+    mapEl.appendChild(tools);
+  } else if (tools.parentElement === mapEl && shapeToolsHome?.parent) {
+    const { parent, next } = shapeToolsHome;
+    parent.insertBefore(tools, next && next.parentNode === parent ? next : null);
+  }
+}
+
 function sidebarEl() {
   return document.querySelector('.sidebar');
 }
@@ -197,6 +217,7 @@ export function initPhoneMode({ onChange } = {}) {
     const phone = mql.matches;
     document.body.classList.toggle('phone', phone);
     relocateResults(phone);
+    relocateShapeTools(phone);
     if (phone && !getSheetState()) setSheetState(DEFAULT_SHEET);
     cards?.render();
     if (typeof onChange === 'function') onChange(phone);
