@@ -6,6 +6,8 @@ import './lib/tailwind.css';
 // Phase 3 sidebar tabs.
 import { initSidebarTabs, setActiveTab, getActiveTab, onTabChange } from './lib/tabs.js';
 import { initDataStatusDialog } from './dataStatusDialog.js';
+// Phone mode: map-first shell + bottom sheet below 768px.
+import { initPhoneMode, ensureSheetVisible } from './lib/phoneMode.js';
 
 // Phase 4 form controls.
 import { initChipInput } from './lib/chipInput.js';
@@ -1785,6 +1787,12 @@ if ($mapExpandBtn) {
 // Sidebar tabs. Restores the last-active tab from localStorage so a
 // refresh keeps the user where they left off.
 initSidebarTabs();
+// Phone mode (body.phone below 768px). The map container changes size
+// when the mode flips — full viewport on a phone, 16:9 pane on desktop —
+// so MapLibre has to recompute its canvas each way. The Hide / Expand
+// map preferences above still apply their classes; the body.phone CSS
+// simply outranks them while the phone layout is on.
+initPhoneMode({ onChange: () => { mapReady.then(() => map.resize()); } });
 // Data Status dialog (top-bar button) — loads its data on first open.
 initDataStatusDialog();
 
@@ -12615,6 +12623,10 @@ function renderTable(rows, { resetPage = true } = {}) {
   // after their own render. A re-render in place — a sort, a page, an
   // enrichment pass — is not a new set and leaves ownership where it is.
   if (resetPage) { overlayGridOwner = null; currentPage = 0; }
+  // A new result set on a phone: the sheet may be peeked down to show the
+  // map, and results that land under a 64px strip look like no results at
+  // all. No-op on desktop and on a sort/page re-render in place.
+  if (resetPage && rows.length) ensureSheetVisible();
   const sorted = sortRows(rows);
   // Clamp currentPage in case the row set shrank below it (filter
   // change, sales-CSV reload, etc).
