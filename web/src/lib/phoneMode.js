@@ -19,6 +19,8 @@
 //   half  — the search form, map still visible above (default)
 //   full  — the whole sidebar, for long result lists and the layer groups
 
+import { initSheetDrag } from './sheetDrag.js';
+
 export const PHONE_QUERY = '(max-width: 767px)';
 export const SHEET_STATES = ['peek', 'half', 'full'];
 const DEFAULT_SHEET = 'half';
@@ -66,6 +68,10 @@ export function setSheetState(state) {
   if (!s) return;
   for (const name of SHEET_STATES) s.classList.toggle(`sheet-${name}`, name === state);
   s.dataset.sheet = state;
+  // A drag leaves the sheet sized and translated inline (sheetDrag.js);
+  // the state class is the resting truth, so the inline pair goes.
+  s.style.height = '';
+  s.style.transform = '';
   const handle = document.getElementById('sheet-handle');
   if (handle) {
     const next = SHEET_STATES[(SHEET_STATES.indexOf(state) + 1) % SHEET_STATES.length];
@@ -75,6 +81,35 @@ export function setSheetState(state) {
   // pull it back to the top so the next expand shows the tab strip and
   // search fields, not the middle of the layer list.
   if (state === 'peek') s.scrollTop = 0;
+}
+
+/**
+ * Every snap height in px at the current viewport, read from the CSS
+ * state classes themselves so the numbers live in one place. Transitions
+ * are switched off (the sheet-dragging class) for the measurement, so
+ * offsetHeight reports each class's target rather than a mid-animation
+ * value; nothing paints between the toggles.
+ */
+export function measureSnapHeights() {
+  const s = sidebarEl();
+  if (!s) return null;
+  const cur = getSheetState();
+  const hadDragging = s.classList.contains('sheet-dragging');
+  s.classList.add('sheet-dragging');
+  const out = {};
+  for (const name of SHEET_STATES) {
+    for (const n of SHEET_STATES) s.classList.toggle(`sheet-${n}`, n === name);
+    out[name] = s.offsetHeight;
+  }
+  for (const n of SHEET_STATES) s.classList.toggle(`sheet-${n}`, n === cur);
+  // Force the restored height to be computed while transitions are still
+  // off. Otherwise the browser's last computed height is the final state
+  // measured above, and switching transitions back on animates from
+  // there — the sheet would visibly slide in from `full` after every
+  // measurement.
+  void s.offsetHeight;
+  if (!hadDragging) s.classList.remove('sheet-dragging');
+  return out;
 }
 
 export function cycleSheetState() {
@@ -120,10 +155,21 @@ export function initPhoneMode({ onChange } = {}) {
   }
   mql = window.matchMedia(PHONE_QUERY);
   initTopbarMenu();
-  document.getElementById('sheet-handle')?.addEventListener('click', cycleSheetState);
+  const handle = document.getElementById('sheet-handle');
+  const tabs = document.querySelector('.sidebar-tabs');
+  handle?.addEventListener('click', cycleSheetState);
   // The tab strip is visible in the peek state; picking a tab there means
   // "show me that tab", so bring the sheet up with it.
-  document.querySelector('.sidebar-tabs')?.addEventListener('click', ensureSheetVisible);
+  tabs?.addEventListener('click', ensureSheetVisible);
+  // Drag the handle or the tab strip to any snap; a tap still reaches the
+  // click handlers above (sheetDrag.js swallows the click only after a
+  // real drag).
+  initSheetDrag({
+    sheet: sidebarEl(),
+    grabbers: [handle, tabs],
+    measure: measureSnapHeights,
+    onSnap: setSheetState,
+  });
   const apply = () => {
     const phone = mql.matches;
     document.body.classList.toggle('phone', phone);

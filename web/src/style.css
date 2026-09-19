@@ -7246,7 +7246,7 @@ body.phone .sidebar.sheet-peek {
    peek state and while a long result list scrolls. */
 body.phone .sidebar-tabs {
   position: sticky;
-  top: 28px;
+  top: 36px;
   z-index: 2;
   background: inherit;
 }
@@ -7268,17 +7268,22 @@ body.phone .sidebar .mode-pill { min-height: 36px; }
 body.phone .phone-results-slot .table-pane { padding: 6px 0 12px; }
 body.phone .phone-results-slot .table-scroll { max-height: none; }
 
-/* Grab bar. Last so its fixed height beats the generic button rule. */
+/* Grab bar. Named with .sidebar so it outranks the generic
+   `body.phone .sidebar button` min-height above; 36px is a thumb-sized
+   strip, and .sidebar-tabs sticks just below it. */
 .sheet-handle { display: none; }
-body.phone .sheet-handle {
+body.phone .sidebar .sheet-handle {
   display: flex;
+  /* The sidebar is an overflowing column flex box: with min-height 0
+     the handle would shrink to nothing, so it may not flex. */
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   position: sticky;
   top: 0;
   z-index: 3;
   width: calc(100% + 28px);
-  height: 28px;
+  height: 36px;
   min-height: 0;
   margin: 0 -14px 2px;
   padding: 0;
@@ -7293,4 +7298,23 @@ body.phone .sheet-handle span {
   height: 5px;
   border-radius: 3px;
   background: var(--ui-line-strong, #b8c3ba);
+}
+
+/* Drag-to-snap (lib/sheetDrag.js). touch-action: none on the grab
+   surfaces so the browser hands the gesture to script instead of
+   scrolling the sheet. While a finger is down the sheet is sized to
+   full and moved in transform space, with no transition; on release it
+   glides to the snap in transform, and the state class takes over
+   only after that glide, while transitions are still off, so the
+   hand-over never shows. */
+body.phone .sheet-handle,
+body.phone .sidebar-tabs { touch-action: none; }
+body.phone .sidebar.sheet-dragging {
+  transition: none;
+  overflow: hidden;
+  will-change: transform;
+}
+body.phone .sidebar.sheet-settling {
+  transition: transform 0.2s ease;
+  overflow: hidden;
 }
