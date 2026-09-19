@@ -20,6 +20,7 @@
 //   full  — the whole sidebar, for long result lists and the layer groups
 
 import { initSheetDrag } from './sheetDrag.js';
+import { initResultCards } from './resultCards.js';
 
 export const PHONE_QUERY = '(max-width: 767px)';
 export const SHEET_STATES = ['peek', 'half', 'full'];
@@ -170,11 +171,21 @@ export function initPhoneMode({ onChange } = {}) {
     measure: measureSnapHeights,
     onSnap: setSheetState,
   });
+  // Result cards mirror the table while phone mode is on. A tapped card
+  // has flown the map to its parcel, so a full-height sheet drops to
+  // half to show it.
+  const cards = initResultCards({
+    table: document.getElementById('results'),
+    container: document.getElementById('result-cards'),
+    isPhone,
+    onTap: () => { if (getSheetState() === 'full') setSheetState(DEFAULT_SHEET); },
+  });
   const apply = () => {
     const phone = mql.matches;
     document.body.classList.toggle('phone', phone);
     relocateResults(phone);
     if (phone && !getSheetState()) setSheetState(DEFAULT_SHEET);
+    cards?.render();
     if (typeof onChange === 'function') onChange(phone);
   };
   apply();

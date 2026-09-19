@@ -7318,3 +7318,110 @@ body.phone .sidebar.sheet-settling {
   transition: transform 0.2s ease;
   overflow: hidden;
 }
+
+/* --- Result cards (lib/resultCards.js) ------------------------------
+   The phone face of #results. The table stays in the DOM — it is the
+   data the cards are read from — but only the cards are shown. The
+   selected-parcel summary card is hidden too: the tapped card carries
+   its own detail list, and the summary would open at the top of the
+   sheet where the user is not looking. */
+.result-cards { display: none; }
+body.phone .phone-results-slot .table-scroll { display: none; }
+body.phone .phone-results-slot .result-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0 8px;
+}
+body.phone .phone-results-slot .parcel-summary { display: none; }
+.result-card {
+  padding: 10px 12px;
+  border: 1px solid var(--ui-line, #d7ded9);
+  border-radius: var(--ui-radius, 8px);
+  background: var(--ui-panel, #fff);
+  box-shadow: var(--ui-shadow-soft, 0 1px 2px rgba(0, 0, 0, 0.06));
+  cursor: pointer;
+}
+.result-card.deselected { opacity: 0.55; }
+.result-card.starred { border-color: #d4a017; background: #fffbea; }
+.result-card.outlier { border-left: 4px solid #d62828; }
+.result-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.result-card-check {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  margin: 1px 0 0;
+}
+.result-card-text { min-width: 0; flex: 1 1 auto; }
+.result-card-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--ui-ink, #151916);
+  overflow-wrap: anywhere;
+}
+.result-card-seq {
+  display: inline-block;
+  min-width: 22px;
+  margin-right: 6px;
+  padding: 0 6px;
+  border-radius: 11px;
+  background: var(--ui-ink, #151916);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 20px;
+}
+.result-card-sub {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--ui-ink-soft, #4d5752);
+}
+.result-card-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.result-card-facts li { font-size: 13.5px; color: var(--ui-ink, #151916); }
+.result-card-facts b {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ui-ink-soft, #4d5752);
+}
+body.phone .sidebar .result-card-more {
+  display: block;
+  margin: 6px 0 0;
+  padding: 6px 0;
+  min-height: 36px;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--ui-accent, #2f6f6a);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.result-card-detail { display: none; }
+.result-card.open .result-card-detail {
+  display: grid;
+  grid-template-columns: minmax(96px, 36%) 1fr;
+  gap: 5px 10px;
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+.result-card-detail dt { color: var(--ui-ink-soft, #4d5752); }
+.result-card-detail dd { margin: 0; overflow-wrap: anywhere; }
+.result-card-detail a { color: var(--ui-accent, #2f6f6a); }
