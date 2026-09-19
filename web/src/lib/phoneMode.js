@@ -30,6 +30,19 @@ let mql = null;
 // Where #results-wrap sat in the workspace before the first move. A text
 // node is fine: insertBefore only needs it to still be a workspace child.
 let desktopAnchor = null;
+// The result-cards instance (lib/resultCards.js), once initPhoneMode ran.
+let cards = null;
+
+/**
+ * A parcel tapped on the map: open and scroll to its card, and bring a
+ * peeked sheet up so the card is on screen. Returns false when there is
+ * no card for the key, so map.js can fall back to its popup.
+ */
+export function revealResultCard(key) {
+  if (!cards || !cards.reveal(key)) return false;
+  if (getSheetState() === 'peek') setSheetState(DEFAULT_SHEET);
+  return true;
+}
 
 export function isPhone() {
   return typeof document !== 'undefined'
@@ -174,7 +187,7 @@ export function initPhoneMode({ onChange } = {}) {
   // Result cards mirror the table while phone mode is on. A tapped card
   // has flown the map to its parcel, so a full-height sheet drops to
   // half to show it.
-  const cards = initResultCards({
+  cards = initResultCards({
     table: document.getElementById('results'),
     container: document.getElementById('result-cards'),
     isPhone,

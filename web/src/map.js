@@ -26,6 +26,7 @@ import turfLength from '@turf/length';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import { landCoverBreakdown, headlineCover, LAND_COVER_SOURCES } from './lib/landcover.js';
+import { isPhone } from './lib/phoneMode.js';
 import {
   readLandfacts, yearRecords, croppedYears, observedYears, lastThree, lastObserved,
   wetlandClassNames, COVER_GROUPS,
@@ -3301,7 +3302,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
       // wrapping the per-soil "Land features" sub-lines (slope / stones
       // / salinity / etc.) — see parcelHtml + .parcel-popup-2col CSS.
       // Single-column popups still constrain via CSS.
-      const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, maxWidth: '760px' });
+      const popup = new maplibregl.Popup({ className: 'hover-popup', closeButton: false, closeOnClick: false, maxWidth: '760px' });
       // Soil-under-cursor hover popup, anchored to open BELOW the
       // cursor (anchor='top' = top edge of the popup at lngLat). The
       // main hover popup above (for parcels / subject / zoning /
@@ -3312,7 +3313,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
       // is kept narrow (340 px) so the descriptor block reads as a
       // single column. Offset 14 px keeps the popup's tip clear of
       // the cursor icon itself.
-      const cliHoverPopup = new maplibregl.Popup({
+      const cliHoverPopup = new maplibregl.Popup({ className: 'hover-popup',
         closeButton: false,
         closeOnClick: false,
         maxWidth: '340px',
@@ -3514,6 +3515,14 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
         const f = e.features?.[0];
         if (!f) return;
         const key = f.properties?._rowKey;
+        // Phone: a 760px popup has no room on a 375px map, and the parcel's
+        // card in the sheet is the detail surface. onFeatureClick answers
+        // true when it found and revealed the card; otherwise (another
+        // page, a parcel outside the results) the popup below still opens.
+        if (isPhone() && key != null && typeof onFeatureClick === 'function' && onFeatureClick(key) === true) {
+          popup.remove();
+          return;
+        }
         // Hide the hover popup so the sticky popup doesn't render on top
         // of itself when the user hovers back over the same parcel.
         popup.remove();
@@ -3547,7 +3556,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
       // hover. Only attaches when the muni-parcels layer is visible — when
       // search-result parcels also sit at the cursor those win (queried
       // first in the layer list).
-      const muniHoverPopup = new maplibregl.Popup({
+      const muniHoverPopup = new maplibregl.Popup({ className: 'hover-popup',
         maxWidth: '760px',
         closeButton: false,
         closeOnClick: false,
@@ -3786,7 +3795,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
       // reads as "the parcel, and what it was zoned then" rather than one
       // popup hiding the other. Only the two historical fills defer to each
       // other (zoning over dev-plan), matching the click priority above.
-      const histHoverPopup = new maplibregl.Popup({
+      const histHoverPopup = new maplibregl.Popup({ className: 'hover-popup',
         closeButton: false, closeOnClick: false, anchor: 'top', maxWidth: '320px',
       });
       const wireHistHover = (layerId, htmlFn, deferTo = []) => {
@@ -3966,7 +3975,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
       // version carries it and the hover version leaves it off rather
       // than showing an affordance that cannot be used.
       const trafficPopup = new maplibregl.Popup({ closeButton: true });
-      const trafficHoverPopup = new maplibregl.Popup({
+      const trafficHoverPopup = new maplibregl.Popup({ className: 'hover-popup',
         closeButton: false,
         closeOnClick: false,
         offset: 10,
@@ -4066,7 +4075,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis } = {
       // than no line, so hover peeks instead. mbHighwayAadtPeek returning
       // undefined (not loaded) leaves the traffic line off entirely, which
       // is honest — "we have not looked" is not "there is no count".
-      const highwaysHoverPopup = new maplibregl.Popup({
+      const highwaysHoverPopup = new maplibregl.Popup({ className: 'hover-popup',
         closeButton: false,
         closeOnClick: false,
         offset: 10,

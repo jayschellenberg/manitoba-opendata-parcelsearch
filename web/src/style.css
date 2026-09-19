@@ -7425,3 +7425,17 @@ body.phone .sidebar .result-card-more {
 .result-card-detail dt { color: var(--ui-ink-soft, #4d5752); }
 .result-card-detail dd { margin: 0; overflow-wrap: anywhere; }
 .result-card-detail a { color: var(--ui-accent, #2f6f6a); }
+
+/* --- Parcel tap -> card (map.js onParcelClick, phoneMode.js) --------
+   Hover popups have no meaning under a finger and would flash before
+   the tap lands, so every hover popup carries .hover-popup and is
+   hidden on the phone. The revealed card scrolls to the top of the
+   sheet, under the sticky handle + tab strip, and flashes its outline
+   the way a desktop row flashes .row-highlight. */
+body.phone .maplibregl-popup.hover-popup { display: none; }
+.result-card { scroll-margin-top: 92px; }
+.result-card.card-highlight { animation: card-highlight 1.6s ease-out; }
+@keyframes card-highlight {
+  0%, 35% { outline: 3px solid var(--ui-accent, #2f6f6a); outline-offset: 0; }
+  100% { outline: 3px solid transparent; outline-offset: 0; }
+}
