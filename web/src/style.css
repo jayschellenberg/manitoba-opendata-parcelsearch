@@ -7052,3 +7052,241 @@ body {
   background: #2563eb;
   border-color: #2563eb;
 }
+
+
+/* =================================================================
+   Phone mode — body.phone, which lib/phoneMode.js sets below 768px.
+   Map-first: the map fills the viewport under a compact fixed top
+   bar, the sidebar becomes a bottom sheet (peek / half / full), and
+   #results-wrap is moved inside the sheet. Everything is keyed on
+   body.phone rather than a bare media query so the JS that moves
+   the results and resizes the map and the CSS that lays them out
+   can never disagree about which mode is on.
+   ================================================================= */
+body.phone {
+  --topbar-height: 48px;
+  --sheet-peek: 64px;
+  --sheet-half: 46dvh;
+  --sheet-full: calc(100dvh - var(--topbar-height));
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* --- Top bar: title + menu button; the nav folds into a drop-down -- */
+body.phone .topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  height: var(--topbar-height);
+  min-height: 0;
+  padding: 0 10px 0 14px;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+}
+body.phone .topbar-title {
+  font-size: 14px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.topbar-menu-btn { display: none; }
+body.phone .topbar-menu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--ui-radius, 6px);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f7f8f4;
+  cursor: pointer;
+}
+body.phone .topbar-menu-btn svg { width: 20px; height: 20px; }
+body.phone .topbar.menu-open .topbar-menu-btn { background: rgba(255, 255, 255, 0.18); }
+body.phone .topbar-nav {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  width: auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 8px 12px 12px;
+  max-height: calc(100dvh - var(--topbar-height));
+  overflow-y: auto;
+  background: #0e120f;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+}
+body.phone .topbar.menu-open .topbar-nav { display: flex; }
+/* Hide / Expand map and the draw tools are desktop affordances: the
+   phone map is always full-screen, and the draw tools come back with
+   the sales-analysis pass. */
+body.phone .topbar .topbar-map-btn,
+body.phone .topbar .shape-tools { display: none !important; }
+body.phone .topbar-link,
+body.phone .topbar-summary {
+  min-height: 44px;
+  padding: 8px 10px;
+  font-size: 15px;
+}
+body.phone .topbar-details { position: static; }
+body.phone .topbar-panel {
+  position: static;
+  width: auto;
+  max-height: 50dvh;
+  margin-top: 6px;
+}
+body.phone .data-staleness-banner {
+  position: fixed;
+  top: var(--topbar-height);
+  left: 0;
+  right: 0;
+  z-index: 35;
+}
+
+/* --- Shell: the map fills the viewport under the bar --------------- */
+body.phone .app-shell {
+  display: block;
+  min-height: 0;
+}
+body.phone .workspace {
+  position: fixed;
+  top: var(--topbar-height);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: block;
+  background: #dfe6e2;
+}
+/* #map is an id rule (position: relative) elsewhere, so the id is
+   named here too — a class-only selector loses to it. */
+body.phone #map,
+body.phone .workspace .map-pane,
+body.phone .workspace.map-collapsed .map-pane,
+body.phone .workspace.map-expanded .map-pane {
+  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  height: auto;
+  min-height: 0;
+  aspect-ratio: auto;
+  border-bottom: 0;
+}
+/* Legends sat bottom-right, which is under the sheet now. Top-right
+   below MapLibre's zoom control, capped so a long zoning key scrolls
+   instead of running under the sheet. !important because
+   main.js's restackMapLegends() writes `bottom` inline. */
+body.phone .map-pane .map-legend {
+  top: 112px !important;
+  right: 8px;
+  bottom: auto !important;
+  max-height: calc(54dvh - 130px);
+  overflow-y: auto;
+  font-size: 11px;
+}
+body.phone .place-search-input {
+  width: 180px;
+  max-width: 52vw;
+  font-size: 16px;
+}
+/* MapLibre popups are sized for a 760px desktop map. Until the phone
+   pass routes a parcel tap into the sheet, keep them on screen. */
+body.phone .maplibregl-popup { max-width: calc(100vw - 24px) !important; }
+body.phone .maplibregl-popup-content { max-height: 40dvh; overflow-y: auto; }
+
+/* --- Sidebar as a bottom sheet ------------------------------------- */
+body.phone .sidebar {
+  position: fixed;
+  top: auto;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  flex: none;
+  align-self: auto;
+  height: var(--sheet-half);
+  max-height: none;
+  max-width: none;
+  min-width: 0;
+  padding: 0 14px calc(16px + env(safe-area-inset-bottom));
+  border-right: 0;
+  border-top: 1px solid var(--ui-line, #d7ded9);
+  border-radius: 14px 14px 0 0;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.18);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  transition: height 0.2s ease;
+}
+body.phone .sidebar.sheet-full {
+  height: var(--sheet-full);
+  border-radius: 0;
+}
+body.phone .sidebar.sheet-peek {
+  height: var(--sheet-peek);
+  overflow: hidden;
+}
+/* The tab strip stays pinned under the handle so it is visible in the
+   peek state and while a long result list scrolls. */
+body.phone .sidebar-tabs {
+  position: sticky;
+  top: 28px;
+  z-index: 2;
+  background: inherit;
+}
+
+/* Touch targets. 16px inputs stop iOS Safari zooming the page on
+   focus; 44px is Apple's minimum tap height. */
+body.phone .sidebar input:not([type="checkbox"]):not([type="radio"]),
+body.phone .sidebar select,
+body.phone .sidebar textarea {
+  min-height: 44px;
+  font-size: 16px;
+}
+body.phone .sidebar button { min-height: 40px; }
+body.phone .sidebar .mode-pill { min-height: 36px; }
+
+/* Results moved into the sheet: drop the desktop gutter and the inner
+   scroll cap — the sheet itself is the scroll container, the table only
+   scrolls sideways. */
+body.phone .phone-results-slot .table-pane { padding: 6px 0 12px; }
+body.phone .phone-results-slot .table-scroll { max-height: none; }
+
+/* Grab bar. Last so its fixed height beats the generic button rule. */
+.sheet-handle { display: none; }
+body.phone .sheet-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  width: calc(100% + 28px);
+  height: 28px;
+  min-height: 0;
+  margin: 0 -14px 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: inherit;
+  cursor: pointer;
+}
+body.phone .sheet-handle span {
+  display: block;
+  width: 40px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--ui-line-strong, #b8c3ba);
+}

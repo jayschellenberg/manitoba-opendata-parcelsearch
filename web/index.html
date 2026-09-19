@@ -30,7 +30,20 @@
          <details> semantics are fine for this lightweight use). -->
     <header class="topbar" role="banner">
       <h1 class="topbar-title">Manitoba Parcel Search</h1>
-      <nav class="topbar-nav" aria-label="App navigation">
+      <!-- Phone only (body.phone, lib/phoneMode.js): the nav below folds
+           into a menu behind this button so the bar fits a 375px screen
+           instead of overflowing sideways. display:none on desktop. -->
+      <button
+        type="button"
+        id="topbar-menu-btn"
+        class="topbar-menu-btn"
+        aria-expanded="false"
+        aria-controls="topbar-nav"
+        aria-label="Menu"
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12M2 8h12M2 12h12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+      <nav class="topbar-nav" id="topbar-nav" aria-label="App navigation">
         <!-- Map workspace toggles. Hide collapses the map so the
              results table claims the full workspace; Expand drops
              the 16:9 ratio + width cap so the map fills the
@@ -207,6 +220,10 @@
          the eventual mobile pass without a rewrite. -->
     <div class="app-shell" id="app-shell">
       <aside class="controls sidebar" aria-label="Search and overlay controls">
+        <!-- Phone only: the sidebar is a bottom sheet over the map and
+             this is its grab bar. Tapping cycles peek / half / full
+             (lib/phoneMode.js). display:none on desktop. -->
+        <button type="button" id="sheet-handle" class="sheet-handle" aria-label="Resize the search panel"><span aria-hidden="true"></span></button>
 
         <!-- Tab strip. Two tabs split the sidebar by workflow:
              Property search (default) and Sales analysis. Map layers live
@@ -1065,6 +1082,11 @@
             <button id="sales-clear" type="button" class="danger" title="Reset the page — clears any uploaded sales CSV, search results, subject, and filters.">Clear</button>
           </div>
         </section><!-- /tab-panel-sales -->
+
+        <!-- Phone only: lib/phoneMode.js moves #results-wrap (the
+             results toolbar, table and paginator) in here so a search
+             and its results share the bottom sheet. Empty on desktop. -->
+        <div id="phone-results-slot" class="phone-results-slot"></div>
 
         <!-- ===================================================
              Map layers — always visible below the active tab.
