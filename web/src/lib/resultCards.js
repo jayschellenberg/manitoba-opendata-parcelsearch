@@ -149,7 +149,26 @@ export function initResultCards({ table, container, isPhone, onTap }) {
     text.appendChild(title);
     if (m.sub) text.appendChild(el('p', 'result-card-sub', m.sub));
     head.appendChild(text);
+    // Comparable star (sales mode). The row's button owns the favourites
+    // Set and repaints every row sharing the parcel; the proxy only
+    // forwards the click. Shown only while the star column is shown.
+    const rowStar = tr.querySelector('td.fav-col button.fav-star');
+    if (rowStar && getComputedStyle(rowStar.closest('td')).display !== 'none') {
+      const star = el('button', 'result-card-star', rowStar.textContent);
+      star.type = 'button';
+      star.title = rowStar.title;
+      star.classList.toggle('active', rowStar.classList.contains('active'));
+      star.setAttribute('aria-pressed', rowStar.getAttribute('aria-pressed') || 'false');
+      star.addEventListener('click', (e) => { e.stopPropagation(); rowStar.click(); });
+      head.appendChild(star);
+    }
     card.appendChild(head);
+    // Multi-parcel sale: the table connects sibling rows with a stripe;
+    // a card says it in words.
+    const groupSize = Number(tr.dataset.groupSize);
+    if (Number.isFinite(groupSize) && groupSize > 1) {
+      card.appendChild(el('p', 'result-card-note', `Part of a ${groupSize}-parcel sale`));
+    }
 
     if (m.facts.length) {
       const ul = el('ul', 'result-card-facts');

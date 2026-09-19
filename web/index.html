@@ -576,6 +576,10 @@
                  uploading a CSV each time. Choose the export folder once —
                  it stays on this device.</p>
               <button type="button" id="sales-db-import" class="parcel-list-modal-btn primary">Choose export folder…</button>
+              <!-- Unhidden by salesDbPanel.js when the browser has no File
+                   System Access (Safari, Firefox, every phone): the button
+                   then opens a multi-file picker instead of a folder. -->
+              <p class="sales-db-nofs-hint" id="sales-db-nofs-hint" hidden>This browser cannot open a folder. Pick every <code>muni_*.csv</code> plus <code>manifest.json</code> from the export folder — on a phone, from the Files app — and it is imported the same way, without auto-refresh.</p>
               <input id="sales-db-folder-input" type="file" webkitdirectory directory multiple hidden />
             </div>
 

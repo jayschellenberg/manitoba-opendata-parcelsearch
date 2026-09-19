@@ -52,6 +52,15 @@ export function initSalesDbPanel({
   const $ready   = document.getElementById('sales-db-ready');
   const $import  = document.getElementById('sales-db-import');
   const $folder  = document.getElementById('sales-db-folder-input');
+  // No File System Access (Safari, Firefox, every phone): onChooseFolder
+  // falls back to the multi-file <input>, so the button must not promise a
+  // folder. Same import, no auto-refresh.
+  if ($import && !fsAccessSupported()) {
+    $import.textContent = 'Choose export files…';
+    $import.title = 'Select every muni_*.csv plus manifest.json from the sales export folder';
+    const hint = document.getElementById('sales-db-nofs-hint');
+    if (hint) hint.hidden = false;
+  }
   const $munis   = document.getElementById('sales-db-munis');
   const $load    = document.getElementById('sales-db-load');
   const $refresh = document.getElementById('sales-db-refresh');
