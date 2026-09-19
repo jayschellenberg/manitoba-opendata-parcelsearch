@@ -144,6 +144,33 @@ test('the gesture never takes pointer capture, so a tap still clicks the button'
   }
 });
 
+test('result cards are wired: container, observer, phone-mode call, CSS swap', () => {
+  const cards = stripJs(read('src', 'lib', 'resultCards.js'));
+  assert.match(mode, /import\s*\{[^}]*\binitResultCards\b[^}]*\}\s*from\s*'\.\/resultCards\.js'/,
+    'phoneMode.js does not import initResultCards');
+  const call = mode.match(/initResultCards\(\{([\s\S]*?)\}\)/);
+  assert.ok(call, 'phoneMode.js never calls initResultCards');
+  assert.match(call[1], /getElementById\('results'\)/, 'cards are not read from #results');
+  assert.match(call[1], /getElementById\('result-cards'\)/, 'cards do not render into #result-cards');
+  assert.match(mode, /cards\?\.render\(\)/, 'a phone-mode change never re-renders the cards');
+  // The container must sit inside #results-wrap, which is what moves
+  // into the sheet.
+  const wrap = html.indexOf('id="results-wrap"');
+  const slot = html.indexOf('id="result-cards"');
+  const table = html.indexOf('id="results"');
+  assert.ok(wrap >= 0 && slot > wrap && slot < table, '#result-cards is not inside #results-wrap ahead of the table');
+  // The observer is the only thing keeping cards in step with the table.
+  assert.match(cards, /new MutationObserver\([\s\S]*?\)\.observe\(table,/, 'resultCards.js does not observe the table');
+  assert.match(cards, /tr\.click\(\)/, 'a card tap never forwards to its row (no map fly-to)');
+  for (const sel of [
+    'body.phone .phone-results-slot .table-scroll',
+    'body.phone .phone-results-slot .result-cards',
+    'body.phone .phone-results-slot .parcel-summary',
+  ]) {
+    assert.ok(css.includes(sel), `style.css has no rule for "${sel}"`);
+  }
+});
+
 test('the JS breakpoint and the desktop split breakpoint agree', () => {
   const q = mode.match(/PHONE_QUERY\s*=\s*'\(max-width:\s*(\d+)px\)'/);
   assert.ok(q, 'PHONE_QUERY not found');

@@ -1751,6 +1751,12 @@
            toolbar above and the paginator below stay fixed in
            the table-pane (which is no longer the scrollable
            element). -->
+      <!-- Phone only: lib/resultCards.js mirrors every row of #results
+           into a card here and keeps them in step through a
+           MutationObserver; the table-scroll below is hidden while
+           body.phone is on. Empty on desktop. -->
+      <div id="result-cards" class="result-cards"></div>
+
       <div class="table-scroll">
       <table id="results">
         <thead>
