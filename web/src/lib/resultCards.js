@@ -12,55 +12,82 @@
 // so main.js needs no second call site and nothing can drift.
 //
 // Tapping a card forwards the click to its <tr>, which is the one place
-// that knows how to fly the map to the parcel. The card's checkbox
-// forwards to the row's, so selection stays one Set in main.js.
+// that knows how to fly the map to the parcel. The card's checkbox and
+// star forward to the row's, so selection and favourites stay one Set.
+//
+// This module is shared byte-for-byte with the Winnipeg portal, whose
+// columns carry different keys. Which keys make the headline is read
+// from the container's data-card-keys attribute (JSON, merged over
+// DEFAULT_KEYS), so the key map lives in each app's markup and the
+// module stays identical.
 
-/** Column keys shown as the card's fact strip, in this order. */
-export const FACT_KEYS = ['value', 'zone1', 'saledate', 'saleprice', 'acres', 'du'];
-/** Keys the headline already covers, so the detail list skips them. */
-const HEADLINE_KEYS = new Set(['address', 'roll', 'muniname', 'zone1pct', 'seq', 'select', 'favorite', ...FACT_KEYS]);
+/** Manitoba's key map; Winnipeg overrides it from data-card-keys. */
+export const DEFAULT_KEYS = Object.freeze({
+  title: ['address', 'legal'],           // first non-empty wins
+  sub: ['roll', 'muniname'],             // roll is prefixed "Roll "
+  facts: ['value', 'zone1', 'saledate', 'saleprice', 'acres', 'du'],
+  pct: { zone1: 'zone1pct' },            // fact key -> coverage column folded in
+  seq: 'seq',                            // the on-map callout number
+  skip: ['select', 'favorite'],          // controls, never detail rows
+});
+
+/** Column keys shown as the card's fact strip, in this order (default map). */
+export const FACT_KEYS = DEFAULT_KEYS.facts;
+
+/** Merge a partial key map (from JSON) over the defaults. */
+export function resolveKeys(partial) {
+  if (!partial || typeof partial !== 'object') return DEFAULT_KEYS;
+  return Object.freeze({ ...DEFAULT_KEYS, ...partial });
+}
 
 /**
  * Pure: from one row's columns build what the card shows.
- *   columns  [{ key, label, text, hidden, empty }]  in table order
- * Returns { title, sub, seq, facts: [{key,label,text}], rest: [column] }.
+ *   columns  [{ key, label, text, hidden, empty, href? }]  in table order
+ *   keys     a key map (see DEFAULT_KEYS)
+ * Returns { title, sub, seq, facts: [{key,label,text,href}], rest: [column] }.
  * Headline fields ignore `hidden` (they are the phone's fixed summary);
  * the detail list honours it, so the column gear still governs the
  * expanded view.
  */
-export function cardModel(columns) {
+export function cardModel(columns, keys = DEFAULT_KEYS) {
   const by = new Map();
   for (const c of columns) if (c.key && !by.has(c.key)) by.set(c.key, c);
   const filled = (k) => {
     const c = by.get(k);
     return c && !c.empty ? c : null;
   };
-  const address = filled('address');
-  const legal = filled('legal');
-  const roll = filled('roll');
-  const title = address?.text || legal?.text || (roll ? `Roll ${roll.text}` : 'Parcel');
+  const rollKey = keys.sub[0];
+  const roll = rollKey ? filled(rollKey) : null;
+  let titleCol = null;
+  for (const k of keys.title) { titleCol = filled(k); if (titleCol) break; }
+  const title = titleCol?.text || (roll ? `Roll ${roll.text}` : 'Parcel');
   const sub = [
-    roll && title !== `Roll ${roll.text}` ? `Roll ${roll.text}` : null,
-    filled('muniname')?.text || null,
+    roll && titleCol ? `Roll ${roll.text}` : null,
+    ...keys.sub.slice(1).map((k) => filled(k)?.text || null),
   ].filter(Boolean).join(' · ');
-  const seqCol = by.get('seq');
+  const seqCol = keys.seq ? by.get(keys.seq) : null;
   const seq = seqCol && !seqCol.hidden && !seqCol.empty ? seqCol.text : null;
   const facts = [];
-  for (const k of FACT_KEYS) {
+  for (const k of keys.facts) {
     const c = filled(k);
     if (!c) continue;
     let text = c.text;
-    if (k === 'zone1') {
-      const pct = filled('zone1pct');
-      if (pct) text = `${text} (${pct.text})`;
-    }
-    // The Assessment cell links to the parcel's MAO report; a fact keeps
+    const pctKey = keys.pct?.[k];
+    const pct = pctKey ? filled(pctKey) : null;
+    if (pct) text = `${text} (${pct.text})`;
+    // The Assessment cell links to the parcel's report; a fact keeps
     // that link, it is the one thing a field lookup most often opens.
     facts.push({ key: k, label: c.label, text, href: c.href || null, linkText: c.href ? text : null });
   }
+  // Only the title column actually used leaves the detail list: a
+  // fallback title key that did not win (the legal description under an
+  // address) is still worth a row.
+  const headline = new Set([
+    titleCol?.key, ...keys.sub, ...keys.facts,
+    ...Object.values(keys.pct || {}), keys.seq, ...keys.skip,
+  ]);
   const rest = columns.filter((c) =>
-    c.key && !c.hidden && !c.empty && !HEADLINE_KEYS.has(c.key)
-    && (title !== c.text || c.key !== 'legal'));
+    c.key && !c.hidden && !c.empty && !headline.has(c.key));
   return { title, sub, seq, facts, rest };
 }
 
@@ -107,22 +134,33 @@ function valueNode(col) {
   return a;
 }
 
+function readContainerKeys(container) {
+  try {
+    return resolveKeys(JSON.parse(container.dataset.cardKeys || 'null'));
+  } catch {
+    return DEFAULT_KEYS;
+  }
+}
+
 /**
  * Wire the cards.
  *   table      the results <table>
- *   container  where the cards render (inside #results-wrap)
+ *   container  where the cards render (inside #results-wrap); its
+ *              data-card-keys attribute may override DEFAULT_KEYS
  *   isPhone()  cards only render while it returns true
  *   onTap()    called after a card forwards its click to the row
- * Returns { render } so phone-mode changes can force a rebuild.
+ * Returns { render, reveal } so phone-mode changes can force a rebuild
+ * and a map tap can open a card.
  */
 export function initResultCards({ table, container, isPhone, onTap }) {
   if (!table || !container || typeof MutationObserver === 'undefined') return null;
+  const keys = readContainerKeys(container);
   const open = new Set();   // rowKeys whose detail is expanded
   let queued = 0;
 
   const buildCard = (tr, heads) => {
     const cols = readRow(tr, heads);
-    const m = cardModel(cols);
+    const m = cardModel(cols, keys);
     const key = tr.dataset.rowKey || '';
     const card = el('article', 'result-card');
     if (key) card.dataset.rowKey = key;
