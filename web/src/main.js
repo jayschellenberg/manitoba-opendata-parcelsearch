@@ -7,7 +7,8 @@ import './lib/tailwind.css';
 import { initSidebarTabs, setActiveTab, getActiveTab, onTabChange } from './lib/tabs.js';
 import { initDataStatusDialog } from './dataStatusDialog.js';
 // Phone mode: map-first shell + bottom sheet below 768px.
-import { initPhoneMode, ensureSheetVisible, isPhone, revealResultCard } from './lib/phoneMode.js';
+import { initPhoneMode, ensureSheetVisible, isPhone, revealResultCard, setSheetState } from './lib/phoneMode.js';
+import { municipalityAt } from './lib/muniAt.js';
 
 // Phase 4 form controls.
 import { initChipInput } from './lib/chipInput.js';
@@ -1710,7 +1711,33 @@ const { map, ready: mapReady } = initMap($mapEl, {
   onFeatureClick: scrollToRow,
   onPlacePick: handlePlacePick,
   getMunis: muniSearchRows,
+  onLocate: handleLocate,
 });
+
+// "Use my location" (lib/locateControl.js) hands the GPS fix here once per
+// press, after the map has settled on it. The phone use case is finding
+// an address nearby, so: name the municipality under the fix and select
+// it (the Assessment Parcels overlay is scoped to the dropdown), switch
+// that overlay on so the parcel fabric and its civic labels draw around
+// the dot, and peek the sheet so the map has the screen. Nothing opens.
+async function handleLocate(lngLat) {
+  // Sheet first: the boundary lookup and the overlay load take a moment,
+  // and the map should be showing while they do.
+  if (isPhone()) setSheetState('peek');
+  const muni = await municipalityAt(lngLat);
+  if (muni?.listName && $municipality) {
+    const has = [...$municipality.options].some((o) => o.value === muni.listName);
+    if (has && $municipality.value !== muni.listName) {
+      $municipality.value = muni.listName;
+      $municipality.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+  if ($muniParcelsToggle && !$muniParcelsToggle.disabled
+      && !$muniParcelsToggle.classList.contains('active')) {
+    $muniParcelsToggle.click();
+  }
+}
+if (import.meta.env?.DEV) window.__handleLocate = handleLocate;   // dev-only handle for driving it without GPS
 if (import.meta.env?.DEV) window.__map = map;   // dev-only handle for debugging
 
 // Hide-map toggle. Collapses the map-pane via the .map-collapsed
