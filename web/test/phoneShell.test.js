@@ -108,6 +108,30 @@ test('every sheet state phoneMode.js can set has a CSS rule', () => {
   }
 });
 
+test('the drag gesture is wired, not just written', () => {
+  const drag = stripJs(read('src', 'lib', 'sheetDrag.js'));
+  assert.match(mode, /import\s*\{[^}]*\binitSheetDrag\b[^}]*\}\s*from\s*'\.\/sheetDrag\.js'/,
+    'phoneMode.js does not import initSheetDrag');
+  const call = mode.match(/initSheetDrag\(\{([\s\S]*?)\}\)/);
+  assert.ok(call, 'phoneMode.js never calls initSheetDrag');
+  assert.match(call[1], /measure:\s*measureSnapHeights/, 'drag has no measure()');
+  assert.match(call[1], /onSnap:\s*setSheetState/, 'drag has no onSnap()');
+  assert.match(call[1], /grabbers:\s*\[handle,\s*tabs\]/, 'drag grabbers are not the handle and tab strip');
+  // The classes the gesture toggles must exist in CSS, and the grab
+  // surfaces must opt out of browser panning.
+  for (const cls of ['sheet-dragging', 'sheet-settling']) {
+    assert.ok(drag.includes(`'${cls}'`), `sheetDrag.js never toggles ${cls}`);
+    assert.ok(css.includes(`body.phone .sidebar.${cls}`), `style.css has no rule for .${cls}`);
+  }
+  const touch = css.match(/body\.phone \.sheet-handle,\s*body\.phone \.sidebar-tabs \{[^}]*touch-action: none/);
+  assert.ok(touch, 'handle and tab strip lack touch-action: none');
+  // Measurement relies on transitions being off under sheet-dragging.
+  const rule = css.match(/body\.phone \.sidebar\.sheet-dragging \{([^}]*)\}/);
+  assert.match(rule[1], /transition: none/, 'sheet-dragging must switch transitions off');
+  assert.match(mode, /classList\.add\('sheet-dragging'\)[\s\S]*offsetHeight/,
+    'measureSnapHeights must measure under sheet-dragging');
+});
+
 test('the JS breakpoint and the desktop split breakpoint agree', () => {
   const q = mode.match(/PHONE_QUERY\s*=\s*'\(max-width:\s*(\d+)px\)'/);
   assert.ok(q, 'PHONE_QUERY not found');
