@@ -7184,18 +7184,22 @@ body.phone .workspace.map-expanded .map-pane {
   aspect-ratio: auto;
   border-bottom: 0;
 }
-/* Legends sat bottom-right, which is under the sheet now. Top-right
-   below MapLibre's zoom control, capped so a long zoning key scrolls
-   instead of running under the sheet. !important because
-   main.js's restackMapLegends() writes `bottom` inline. */
+/* Legends anchor bottom-right of the map, and restackMapLegends() in
+   main.js stacks them by writing `bottom` inline — so the phone rule
+   must not touch `bottom` (mfDuLabels.test.js enforces that). Instead
+   the whole stack is lifted by the sheet's height, which the :has()
+   rules below track per snap state; in the full state the map is
+   covered anyway, so the legends hide. */
+body.phone { --sheet-lift: var(--sheet-half); }
+body.phone:has(.sidebar.sheet-peek) { --sheet-lift: var(--sheet-peek); }
 body.phone .map-pane .map-legend {
-  top: 112px !important;
   right: 8px;
-  bottom: auto !important;
-  max-height: calc(54dvh - 130px);
+  max-height: calc(54dvh - 100px);
   overflow-y: auto;
   font-size: 11px;
+  transform: translateY(calc(-1 * var(--sheet-lift)));
 }
+body.phone:has(.sidebar.sheet-full) .map-pane .map-legend { visibility: hidden; }
 body.phone .place-search-input {
   width: 180px;
   max-width: 52vw;

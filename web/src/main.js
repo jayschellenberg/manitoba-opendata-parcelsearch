@@ -12622,14 +12622,11 @@ function renderTable(rows, { resetPage = true } = {}) {
   // regrantResultsGrid). The show*Results() paths claim it back on the line
   // after their own render. A re-render in place — a sort, a page, an
   // enrichment pass — is not a new set and leaves ownership where it is.
-  if (resetPage) {
-    overlayGridOwner = null;
-    currentPage = 0;
-    // A new result set on a phone: the sheet may be peeked down to show
-    // the map, and results that land under a 56px strip look like no
-    // results at all. No-op on desktop and on a sort/page re-render.
-    if (rows.length) ensureSheetVisible();
-  }
+  if (resetPage) { overlayGridOwner = null; currentPage = 0; }
+  // A new result set on a phone: the sheet may be peeked down to show the
+  // map, and results that land under a 64px strip look like no results at
+  // all. No-op on desktop and on a sort/page re-render in place.
+  if (resetPage && rows.length) ensureSheetVisible();
   const sorted = sortRows(rows);
   // Clamp currentPage in case the row set shrank below it (filter
   // change, sales-CSV reload, etc).
