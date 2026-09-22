@@ -53,14 +53,14 @@
 #       "soils": { "<OBJECTID>": { n1,c1,e1,a1,g1,t1, n2,..., n3,... } },
 #       "rolls": { "<Roll_No_Txt>": [[oid, ratio], ...] } }
 #
-# Slug matches the other shard sets: Muni_Name_With_Typ with non-alphanumerics
-# collapsed to "_" (PINEY (RM) -> PINEY_RM), NOT Municipality.
+# Slug is safe_filename() below, byte-identical to the other shard builders,
+# over Muni_Name_With_Typ (PINEY (RM) -> PINEY_RM), NOT Municipality.
 #
 # Run:  Rscript r/build_soilfacts.R [MUNI_NAME_WITH_TYP ...]
 #       with no arguments, every municipality.
 
 suppressPackageStartupMessages({
-  library(sf); library(dplyr); library(arrow); library(jsonlite); library(httr)
+  library(sf); library(dplyr); library(arrow); library(jsonlite); library(httr); library(stringi)
 })
 
 script_dir <- tryCatch({
@@ -90,7 +90,23 @@ dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 cache_dir <- file.path(mb_parcelsearch_root, "build-cache", "soilfacts")
 dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
 
-slug_of <- function(x) toupper(gsub("_+$", "", gsub("[^A-Za-z0-9]+", "_", x)))
+# Byte-identical to build_landfacts.R / build_flood.R / build_water.R /
+# build_landcover.R / build_condo_dev.R, which all say the same of each
+# other. Keeping it identical is the point: every shard set names its files
+# the same way, so a reader who derives one from a municipality name gets the
+# same answer whichever set they are looking at. An earlier version here
+# collapsed hyphens to underscores (WALLACE_WOODWORTH_RM vs the sibling sets'
+# WALLACE-WOODWORTH_RM), which lookups survived only because they go through
+# _index.json — a derived filename would have 404'd into a silent "no soil".
+safe_filename <- function(x) {
+  x |>
+    stringi::stri_trans_general(id = "Latin-ASCII") |>
+    toupper() |>
+    gsub(pattern = "[^A-Z0-9._-]+", replacement = "_") |>
+    gsub(pattern = "_+",            replacement = "_") |>
+    gsub(pattern = "^_|_$",         replacement = "")
+}
+slug_of <- safe_filename
 
 # --- soil polygons for one municipality -----------------------------------
 #
