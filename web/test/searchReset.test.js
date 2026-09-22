@@ -200,6 +200,9 @@ test('new module state forces a decision', () => {
     /^soilStampWanted/, /^waterOverlayOn$/, /^waterInfluenceRerunTimer$/,
     /^landCoverOpacity$/, /^landCoverRasterAvailable$/, /^gridMode$/, /^cliMode$/,
     /^lastCliFc$/, /^selectedParcelRow$/, /^muniPicker$/, /^searchHasRun$/,
+    // The CLI overlay's identity palette, carried across to the measurement
+    // FC by soil code. Owned by the overlay mode, cleared when it changes.
+    /^cliIdentityColorByCode$/,
   ];
   const unclassified = declared.filter((v) =>
     !PER_RESULT.includes(v)

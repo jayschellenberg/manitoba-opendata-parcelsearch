@@ -84,14 +84,21 @@ let cacheKeys = Array.from(
   { length: globalThis.localStorage.length },
   (_, i) => globalThis.localStorage.key(i),
 );
+// The point is the INVALIDATION, not the number: a payload whose shape has
+// changed must land under a key no earlier version ever wrote, or browsers
+// carrying the old one serve it for the next 30 days. v8 was the complete-
+// OBJECTID fix; v9 is the display-simplified overlay geometry (composition
+// moved to its own full-resolution parcel-scoped fetch). Bump both together.
 assert.ok(
-  cacheKeys.some((key) => key.includes('mb_cli_agr_ROCKWOOD (RM)_v8')),
-  'expected the corrected payload to use a fresh v8 cache key',
+  cacheKeys.some((key) => key.includes('mb_cli_agr_ROCKWOOD (RM)_v9')),
+  'expected the corrected payload to use a fresh v9 cache key',
 );
-assert.ok(
-  cacheKeys.every((key) => !key.includes('mb_cli_agr_ROCKWOOD (RM)_v7')),
-  'must not reuse the incomplete v7 cache key',
-);
+for (const stale of ['v7', 'v8']) {
+  assert.ok(
+    cacheKeys.every((key) => !key.includes(`mb_cli_agr_ROCKWOOD (RM)_${stale}`)),
+    `must not reuse the superseded ${stale} cache key`,
+  );
+}
 
 // The dedicated polygon and label paths must use the same complete policy,
 // not drift back to their former independent fixed caps.

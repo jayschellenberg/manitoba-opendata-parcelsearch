@@ -162,7 +162,6 @@ import {
   fetchMascRiverlots,
   fetchCliAgrForMuni,
   fetchSoilSurveyForParcels,
-  cachedCliAgrForMuni,
   parseRollList,
   missingRollsFromResults,
   canonicalRoll,
@@ -8294,29 +8293,25 @@ function parcelSetKey(parcelFc) {
 }
 
 async function soilFcForParcels(parcelFc, { onProgress } = {}) {
-  if (lastCliFc?.features?.length) return lastCliFc;
   const key = parcelSetKey(parcelFc);
   if (key && key === gridSoilKey && gridSoilFc?.features?.length) return gridSoilFc;
 
-  // Free superset first. The overlay caches each municipality's soil in
-  // IDB for 30 days, so once it has been on for these munis there is
-  // nothing to fetch — and without this check the scoped path would trade
-  // an instant warm load for a fresh ~2 s fetch on every single search.
-  // Only counts when EVERY muni in scope is cached; a partial union would
-  // silently leave one municipality's parcels unstamped.
-  const munis = scopedOverlayMunis();
-  if (munis.length > 0) {
-    const cached = await Promise.all(munis.map((m) => cachedCliAgrForMuni(m)));
-    if (cached.every((fc) => fc?.features)) {
-      const union = { type: 'FeatureCollection', features: cached.flatMap((fc) => fc.features) };
-      if (union.features.length) {
-        gridSoilFc = union;
-        gridSoilKey = key;
-        return union;
-      }
-    }
-  }
-
+  // Deliberately does NOT reuse the overlay's `lastCliFc`, and no longer
+  // reuses the IDB municipal cache either. Both were true supersets and
+  // both were tempting, and both are wrong here for the same two reasons:
+  //
+  //   Measurement. The overlay's fetch is display-simplified now (see
+  //   fetchCliAgrForMuni). Simplified boundaries are fine to paint and
+  //   wrong to measure, and a composition percentage quoted in an
+  //   appraisal must come from the survey's own geometry.
+  //
+  //   Memory. Macdonald plus its five neighbours is 4,693 municipal soil
+  //   polygons / ~1.58M vertices; the comps under 1,141 sales are a few
+  //   hundred. joinTopNByAreaAsync structured-clones every overlay
+  //   geometry into the worker, so handing it the municipal set was tens
+  //   of megabytes of clone for polygons no parcel touches — which is
+  //   where a big multi-municipality run was dying (Jason, 2026-09-22:
+  //   "soil draws, then it dies").
   const fc = await fetchSoilSurveyForParcels(parcelFc, { onProgress });
   if (!fc) return null;
   // An incomplete set is not worth remembering: memoising it would pin the
@@ -9342,11 +9337,19 @@ muniParcelPopupResolver.peekSoilComposition = (props) => {
 muniParcelPopupResolver.resolveSoilComposition = async (props) => {
   if (!muniParcelPopupResolver.soilWanted()) return undefined;
   const key = recordKey(props);
-  const soilFc = lastCliFc;
   const cached = key ? soilCompositionByParcel.get(key) : null;
-  if (cached && cached.soilFc === soilFc) return cached.soil;
+  if (cached && cached.soilFc === lastCliFc) return cached.soil;
   const feature = await muniParcelPopupResolver.resolveFeature?.(props);
   if (!feature?.geometry) return { composition: null, cliRollup: null };
+  // Measured against survey geometry for THIS parcel, not against the
+  // overlay's display-simplified municipal set — a popup that reports
+  // "62% Red River clay" is a measurement like any other. One clicked
+  // parcel is one small scoped fetch. The cache still keys on lastCliFc
+  // because that is what a muni change replaces, and it is the signal
+  // that a cached composition belongs to a scope the user has left.
+  const soilFc = await soilFcForParcels({ type: 'FeatureCollection', features: [feature] });
+  if (!soilFc?.features?.length) return { composition: null, cliRollup: null };
+  applyCliColorsTo(soilFc);
   // The stamp mutates feature.properties in place; the fabric feature is
   // cached by the resolver, so the result stays on it too.
   await stampSoilCompositionOnParcels({ type: 'FeatureCollection', features: [feature] }, soilFc);
@@ -9354,7 +9357,12 @@ muniParcelPopupResolver.resolveSoilComposition = async (props) => {
     composition: feature.properties._soilComposition ?? null,
     cliRollup: feature.properties._cliRollup ?? null,
   };
-  if (key) soilCompositionByParcel.set(key, { soilFc, soil });
+  // Keyed on the OVERLAY set, not on the scoped set that did the
+  // measuring: lastCliFc is what a municipality change replaces, so it is
+  // the thing that says "this cached composition is from a scope you have
+  // left". Storing the scoped set here would never match the read above,
+  // and every hover would silently refetch and rejoin.
+  if (key) soilCompositionByParcel.set(key, { soilFc: lastCliFc, soil });
   return soil;
 };
 
@@ -10007,6 +10015,35 @@ function applyIdentityPalette(fc, target) {
     title: legendTitle,
     sub: legendSub,
   });
+
+  // Returned so the SAME colours can be put on a different set of soil
+  // features — the parcel-scoped set the composition join runs against,
+  // which is no longer the set that got painted. Keyed by SOIL_CODE1, so
+  // this survives the two sets holding different polygon objects.
+  return colorByCode;
+}
+
+// SOIL_CODE1 -> swatch colour for the CLI overlay's identity mode, or null
+// when identity mode is off. Set by applyCliIdentityMode.
+let cliIdentityColorByCode = null;
+
+/**
+ * Put the identity palette's colours on an arbitrary soil FC, so the popup's
+ * per-soil swatches match the map.
+ *
+ * componentsForFeature reads `_paintColor` off each soil polygon at rollup
+ * time. The painted polygons and the measured polygons used to be the same
+ * objects, so the stamp came free; now that paint and measurement have
+ * separate sources, the colour has to be carried across by soil code.
+ * No-op outside identity mode, where the popup shows a capability chip
+ * rather than an association swatch.
+ */
+function applyCliColorsTo(fc) {
+  if (!cliIdentityColorByCode || !fc?.features?.length) return;
+  for (const f of fc.features) {
+    const code = f.properties?.SOIL_CODE1;
+    f.properties._paintColor = cliIdentityColorByCode.get(code) || SOIL_SURVEY_FALLBACK_COLOR;
+  }
 }
 
 function renderIdentityLegend(legendEl, ranked, nameByCode, hasOther, { title, sub }) {
@@ -10312,6 +10349,10 @@ const CLI_CAPABILITY_LEGEND_HTML = (
 );
 
 function applyCliCapabilityMode() {
+  // Capability mode paints from AGCAP_CLS1, not from a per-polygon colour,
+  // so there is no identity palette in force and nothing to carry over to
+  // the composition set.
+  cliIdentityColorByCode = null;
   if (map.getLayer('cli-agr-fill')) {
     map.setPaintProperty('cli-agr-fill', 'fill-color', CLI_CAPABILITY_FILL_COLOR);
   }
@@ -10325,7 +10366,7 @@ function applyCliIdentityMode(cliFc) {
   // Top-N-by-area soil-association palette, recomputed against the
   // currently-loaded muni FC so each muni gets its own most-common
   // soils with distinct colours.
-  applyIdentityPalette(cliFc, {
+  cliIdentityColorByCode = applyIdentityPalette(cliFc, {
     fillLayerId: 'cli-agr-fill',
     legendEl: $cliLegend,
     legendTitle: 'Soil Type — top 20 in selected municipality',
@@ -10347,7 +10388,8 @@ function applyCliIdentityMode(cliFc) {
   // load) carries paintColor:null on every row and renders the popup
   // swatches grey. Re-stamping here pulls in the new colours so the
   // popup's left-side swatches match the legend / map polygons.
-  restampSoilCompositionForActiveSources(cliFc);
+  restampSoilCompositionForActiveSources()
+    .catch((err) => console.warn('soil re-colour after palette swap failed', err));
   // Identity-mode labels show the soil-survey map-unit symbol (e.g.
   // "ALMv-S2") rather than the capability code ("2W"). MAPUNITNOM is
   // already on every feature.
@@ -10365,19 +10407,31 @@ function applyCliIdentityMode(cliFc) {
  * polygons. Pushes the updated parcel sources back to the map so the
  * popup click handler reads the enriched properties.
  */
-function restampSoilCompositionForActiveSources(soilFc) {
-  if (!soilFc?.features?.length) return;
+async function restampSoilCompositionForActiveSources() {
+  // The palette changed, not the geometry. Re-colour the measurement set
+  // in place and re-run the rollup so the popup swatches follow the map;
+  // the join itself reuses whatever soilFcForParcels already has, so a
+  // mode swap costs no fetch.
   if (currentRows.length > 0) {
     const parcelFc = { type: 'FeatureCollection', features: currentRows.map((r) => r.parcel) };
-    stampSoilCompositionOnParcels(parcelFc, soilFc);
-    setMapData(parcelFc, lastZoningFc || EMPTY_FC, lastDevPlanFc || EMPTY_FC, { fit: false });
-    // Refresh the table so the CLI / Soil Type columns pick up the
-    // newly-stamped composition.
-    refreshResultsTableAfterCompositionStamp();
+    const soil = await soilFcForParcels(parcelFc);
+    if (soil?.features?.length) {
+      applyCliColorsTo(soil);
+      await stampSoilCompositionOnParcels(parcelFc, soil);
+      setMapData(parcelFc, lastZoningFc || EMPTY_FC, lastDevPlanFc || EMPTY_FC, { fit: false });
+      // Refresh the table so the CLI / Soil Type columns pick up the
+      // newly-stamped composition.
+      refreshResultsTableAfterCompositionStamp();
+    }
   }
   if (auxData.muniParcels?.features?.length) {
-    stampSoilCompositionOnParcels(auxData.muniParcels, soilFc);
-    mapReady.then(() => setMuniParcelsData(map, auxData.muniParcels));
+    const soil = await soilFcForParcels(auxData.muniParcels);
+    if (soil?.features?.length) {
+      applyCliColorsTo(soil);
+      await stampSoilCompositionOnParcels(auxData.muniParcels, soil);
+      await mapReady;
+      setMuniParcelsData(map, auxData.muniParcels);
+    }
   }
 }
 
@@ -10499,10 +10553,58 @@ function ensureCliSourcePushed() {
  * overlay toggle hands it. The Agricultural preset passes its own
  * parcel-scoped set instead — see soilFcForParcels.
  */
-async function stampSoilCompositionForRows(rows, soilFc = lastCliFc) {
-  if (!rows?.length || !soilFc?.features?.length) return;
+// Parcels per composition pass. The join is ~30 ms per parcel against the
+// survey's larger polygons, so a thousand-sale run is half a minute of work
+// no amount of indexing removes — measured, and the reason this is chunked
+// rather than tuned. One page's worth lands in about three seconds, which is
+// the difference between a grid that fills and one that looks hung.
+const SOIL_STAMP_CHUNK = PAGE_SIZE;
+
+/**
+ * Order rows so the ones the user is looking at are composed first.
+ * Everything still gets stamped; this only decides what fills in first.
+ */
+function rowsVisibleFirst(rows) {
+  const onScreen = new Set(
+    currentRows.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE)
+      .map((r) => r?.parcel).filter(Boolean),
+  );
+  if (onScreen.size === 0) return rows;
+  const first = []; const rest = [];
+  for (const row of rows) (onScreen.has(row?.parcel) ? first : rest).push(row);
+  return first.concat(rest);
+}
+
+async function stampSoilCompositionForRows(rows, soilFc = null) {
+  if (!rows?.length) return;
   const parcelFc = { type: 'FeatureCollection', features: rows.map((r) => r.parcel) };
-  await stampSoilCompositionOnParcels(parcelFc, soilFc);
+  // Default to the parcel-scoped set, NOT the overlay's municipal one. The
+  // overlay's geometry is display-simplified and covers whole
+  // municipalities; this needs survey geometry over these parcels only.
+  const soil = soilFc || await soilFcForParcels(parcelFc);
+  if (!soil?.features?.length) return;
+  applyCliColorsTo(soil);
+
+  const ordered = rowsVisibleFirst(rows);
+  const total = ordered.length;
+  for (let i = 0; i < total; i += SOIL_STAMP_CHUNK) {
+    const slice = ordered.slice(i, i + SOIL_STAMP_CHUNK);
+    await stampSoilCompositionOnParcels(
+      { type: 'FeatureCollection', features: slice.map((r) => r.parcel) },
+      soil,
+    );
+    // Re-render after each pass so the columns fill visibly rather than all
+    // at the end. The rows share parcel objects with currentRows, so this
+    // picks up whatever has been stamped so far.
+    refreshResultsTableAfterCompositionStamp();
+    if (i + SOIL_STAMP_CHUNK < total) {
+      setCount(`Matching soils to parcels… ${Math.min(i + SOIL_STAMP_CHUNK, total)} of ${total}`);
+      // Yield to the event loop between passes. The join runs in a worker,
+      // but the rollup and the re-render do not, and a thousand parcels of
+      // them back to back is what made the tab stop answering.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
   if (currentRows.length > 0) {
     // Only the visible rows go back to the map source; the stamp above
     // covered the superset and both share the same parcel objects.

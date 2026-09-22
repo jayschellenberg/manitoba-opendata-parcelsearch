@@ -1510,8 +1510,30 @@ const CLI_AGR_CAP_OUTFIELDS = [
   'Shape__Area',
 ].join(',');
 
+/**
+ * Whole-municipality soil for the MAP OVERLAY. Display geometry only.
+ *
+ * Nothing measures from this any more. The parcel-area composition that
+ * fills the grid columns and the popups is joined against
+ * fetchSoilSurveyForParcels, which is scoped to the result parcels and
+ * keeps every vertex Manitoba publishes. That separation is what lets this
+ * one be simplified: the overlay paints across a whole RM, MapLibre's own
+ * tiler already simplifies it below zoom 14, and a boundary drawn half a
+ * metre out is not something a map reader can see or an appraisal quotes.
+ *
+ * It matters because the overlay's payload is the memory: Macdonald plus
+ * its five neighbours is 4,693 polygons / ~1.58M vertices at full
+ * resolution, and a 1,141-sale run across them was loading all of it.
+ */
 export async function fetchCliAgrForMuni(muniNameWithTyp, muniBoundaryFeature) {
   if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
+  // v9 (2026-09-22): display-simplified again via maxAllowableOffset, now
+  //   that composition has its own full-resolution parcel-scoped fetch.
+  //   This is the setting v7 removed — see the note on v4/v7 below. The
+  //   objection then was that it "materially altered some small polygons"
+  //   for parcel-scale AREA COMPOSITION; that use is gone from this path,
+  //   so the objection no longer applies to it. Anything that measures
+  //   must use fetchSoilSurveyForParcels, never this.
   // v8 (2026-07-20): fetches the complete matching OBJECTID set before
   //   loading polygons in batches. This invalidates incomplete v7 payloads
   //   cached for municipalities such as Rockwood that exceed 2,000 polygons.
@@ -1535,6 +1557,10 @@ export async function fetchCliAgrForMuni(muniNameWithTyp, muniBoundaryFeature) {
 
   const fc = await fetchCompleteFeatureSet(CLI_AGR_CAP_URL, {
     where: '1=1',
+    // ~0.5 m at this latitude. Chosen to sit an order of magnitude below
+    // the survey's own 1:20,000-and-coarser mapping accuracy, so it can
+    // only ever drop vertices the source never claimed to place precisely.
+    maxAllowableOffset: '0.000005',
     geometry: JSON.stringify(esriGeom),
     geometryType: 'esriGeometryPolygon',
     inSR: '4326',
@@ -1549,22 +1575,8 @@ export async function fetchCliAgrForMuni(muniNameWithTyp, muniBoundaryFeature) {
 
 // One place the whole-muni soil cache key is spelled, so the peek below
 // and the fetch above can never drift onto different versions.
-const cliAgrCacheKey = (muniNameWithTyp) => `mb_cli_agr_${muniNameWithTyp}_v8`;
+const cliAgrCacheKey = (muniNameWithTyp) => `mb_cli_agr_${muniNameWithTyp}_v9`;
 
-/**
- * Whole-municipality soil already sitting in the IDB cache, or null.
- * NEVER fetches.
- *
- * Exists so the parcel-scoped path can spend nothing at all when the
- * overlay has already pulled these municipalities: the muni payload is a
- * superset of anything the parcels need, it is cached for 30 days, and
- * reading it keeps the warm path instant instead of paying a fresh
- * scoped fetch on every search.
- */
-export async function cachedCliAgrForMuni(muniNameWithTyp) {
-  if (!muniNameWithTyp) return null;
-  return (await readCache(cliAgrCacheKey(muniNameWithTyp), MUNI_BOUNDARIES_TTL_MS)) || null;
-}
 
 // Parcel bounding boxes per spatial query when fetching soil for a set of
 // parcels rather than a whole municipality. Each batch goes out as ONE
@@ -1584,11 +1596,26 @@ const SOIL_PARCEL_BATCH_SIZE = 50;
  * touches a small fraction of that ground. The map overlay still loads
  * whole municipalities — it paints across the RM, so it has to.
  *
- * Each parcel contributes its BOUNDING BOX, not its outline. Any soil
- * polygon that intersects the parcel also intersects the parcel's bbox,
- * so the result is a superset of what the join needs — and the join
- * clips precisely anyway, so the extra polygons cost nothing but a few
- * bbox tests. Outlines would multiply the POST body for no gain.
+ * Each parcel contributes the GRID CELLS its bounding box touches, not its
+ * outline and not the bbox itself. Any soil polygon that intersects the
+ * parcel also intersects those cells, so the result is a superset of what
+ * the join needs — and the join clips precisely anyway, so the extra
+ * polygons cost nothing but a few bbox tests.
+ *
+ * The grid is not a tidiness measure, it is the correctness of the batch.
+ * Batching sends many rings as ONE Esri polygon, and Esri resolves a
+ * multi-ring polygon by winding/parity: where two same-direction outer
+ * rings OVERLAP, the overlap reads as a hole. Raw parcel bboxes in a comp
+ * set overlap constantly (measured: 69 overlapping pairs in a single batch
+ * of 50), and a soil polygon reaching only into one of those holes was
+ * never returned. That silently cost parcel 37865 a 6.35% share of
+ * class-1 Fort Garry — a real component, missing, with nothing to show
+ * for it. Snapping to a fixed grid makes the rings disjoint by
+ * construction, so parity has nothing to resolve.
+ *
+ * (polygonsToEsriGeometry's own note records it was verified against WALLAS
+ * irrigation footprints, which are disjoint. That verification did not
+ * carry over to overlapping input, and this is where it broke.)
  *
  * Two phases, mirroring fetchCompleteFeatureSet: the spatial filter runs
  * ID-only (cheap, no geometry crosses the wire), then the features come
@@ -1597,24 +1624,41 @@ const SOIL_PARCEL_BATCH_SIZE = 50;
  *
  * Returns a FeatureCollection, or null when there are no usable parcels.
  */
-export async function fetchSoilSurveyForParcels(parcelFc, { onProgress } = {}) {
-  const parcels = (parcelFc?.features || []).filter((f) => f?.geometry);
-  if (parcels.length === 0) return null;
+// ~0.01 degrees: about 730 m of longitude and 1.1 km of latitude in
+// southern Manitoba, so a quarter section lands in one to four cells. Small
+// enough that the over-fetch stays slight, large enough that a scattered
+// thousand-parcel comp set still collapses to a manageable number of rings.
+const SOIL_CELL_DEG = 0.01;
 
-  const boxes = [];
+export function soilCellRings(parcels) {
+  const cells = new Set();
   for (const parcel of parcels) {
     let b;
     try { b = bbox(parcel); } catch { continue; }
     const [w, s, e, n] = b;
     if (![w, s, e, n].every(Number.isFinite)) continue;
-    boxes.push({
-      type: 'Feature',
-      geometry: {
-        type: 'Polygon',
-        coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]],
-      },
-    });
+    const ix0 = Math.floor(w / SOIL_CELL_DEG); const ix1 = Math.floor(e / SOIL_CELL_DEG);
+    const iy0 = Math.floor(s / SOIL_CELL_DEG); const iy1 = Math.floor(n / SOIL_CELL_DEG);
+    for (let ix = ix0; ix <= ix1; ix++) {
+      for (let iy = iy0; iy <= iy1; iy++) cells.add(`${ix},${iy}`);
+    }
   }
+  return [...cells].map((k) => {
+    const [ix, iy] = k.split(',').map(Number);
+    const w = ix * SOIL_CELL_DEG; const e = (ix + 1) * SOIL_CELL_DEG;
+    const s = iy * SOIL_CELL_DEG; const n = (iy + 1) * SOIL_CELL_DEG;
+    return {
+      type: 'Feature',
+      geometry: { type: 'Polygon', coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]] },
+    };
+  });
+}
+
+export async function fetchSoilSurveyForParcels(parcelFc, { onProgress } = {}) {
+  const parcels = (parcelFc?.features || []).filter((f) => f?.geometry);
+  if (parcels.length === 0) return null;
+
+  const boxes = soilCellRings(parcels);
   if (boxes.length === 0) return null;
 
   const batches = [];
