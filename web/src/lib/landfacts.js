@@ -396,10 +396,17 @@ export function landfactsTooltip(lf) {
   return lines.join('\n');
 }
 
-/** CSV headers, in the order of landfactsCsvCells(). */
+/**
+ * CSV headers, in the order of landfactsCsvCells(). The wetland pair carries
+ * a CWIM prefix because the land-cover block already exports a `Wetland %`
+ * (the mix share), and readers look columns up by name: two headers of one
+ * name resolve by column order, so a reorder silently swaps the measure.
+ * The land-cover one keeps the plain name because downstream readers (the
+ * LandV3 engine's pick(MAO, "Wetland %")) ask for it by that name.
+ */
 export function landfactsCsvHeaders() {
   return ['Crop Last Yr', 'Crop Last Class', 'Crop Last %', 'Yrs Cropped', 'Yrs Observed',
-    'Cover 2009-25', 'Relief m', 'Slope deg', 'Wetland %', 'Wetland Classes',
+    'Cover 2009-25', 'Relief m', 'Slope deg', 'CWIM Wetland %', 'CWIM Wetland Classes',
     'Water Perm %', 'Water Interm %'];
 }
 
