@@ -162,6 +162,7 @@ import {
   fetchMascRiverlots,
   fetchCliAgrForMuni,
   fetchSoilSurveyForParcels,
+  fetchSoilfactsForMuni,
   parseRollList,
   missingRollsFromResults,
   canonicalRoll,
@@ -346,6 +347,7 @@ import {
   formatPercent as fmtPercent,
 } from './lib/format.js';
 import { soilSurveyComponentsFromMatches } from './soilSurvey.js';
+import { soilMatchesFromShard, soilRollKey } from './lib/soilfacts.js';
 
 // Civic-address search is now a 3-input row: a numeric range (From / To)
 // plus a Street Name substring. The single legacy `#address` input was
@@ -10578,14 +10580,35 @@ function rowsVisibleFirst(rows) {
 async function stampSoilCompositionForRows(rows, soilFc = null) {
   if (!rows?.length) return;
   const parcelFc = { type: 'FeatureCollection', features: rows.map((r) => r.parcel) };
+
+  // Pre-baked shards first. On a farmland comp set in built municipalities
+  // this covers everything and the fetch and join below never run at all.
+  let pending = parcelFc;
+  if (!soilFc) {
+    const shardPass = await stampSoilFromShards(parcelFc);
+    pending = shardPass.missFc;
+    if (shardPass.hit > 0) refreshResultsTableAfterCompositionStamp();
+    if (!pending.features.length) {
+      if (currentRows.length > 0) {
+        const visibleFc = { type: 'FeatureCollection', features: currentRows.map((r) => r.parcel) };
+        setMapData(visibleFc, lastZoningFc || EMPTY_FC, lastDevPlanFc || EMPTY_FC, { fit: false });
+      }
+      refreshResultsTableAfterCompositionStamp();
+      return;
+    }
+  }
+
   // Default to the parcel-scoped set, NOT the overlay's municipal one. The
   // overlay's geometry is display-simplified and covers whole
   // municipalities; this needs survey geometry over these parcels only.
-  const soil = soilFc || await soilFcForParcels(parcelFc);
+  // Scoped to what the shards could NOT cover.
+  const soil = soilFc || await soilFcForParcels(pending);
   if (!soil?.features?.length) return;
   applyCliColorsTo(soil);
 
-  const ordered = rowsVisibleFirst(rows);
+  const pendingSet = soilFc ? null : new Set(pending.features);
+  const ordered = rowsVisibleFirst(rows)
+    .filter((r) => !pendingSet || pendingSet.has(r.parcel));
   const total = ordered.length;
   for (let i = 0; i < total; i += SOIL_STAMP_CHUNK) {
     const slice = ordered.slice(i, i + SOIL_STAMP_CHUNK);
@@ -14329,26 +14352,84 @@ async function stampSoilCompositionOnParcels(parcelFc, soilFc) {
   for (const parcel of parcelFc.features) {
     const oid = parcel.properties?.OBJECTID;
     const matches = (oid != null) ? join.get(oid) : null;
-    if (!matches || matches.length === 0) {
-      // Explicit null so the popup builder can distinguish "no
-      // soil-survey data" from "soil survey not loaded".
-      parcel.properties._soilComposition = null;
-      parcel.properties._cliRollup = null;
-      continue;
-    }
-    const acres = parcelAcres(parcel);
-    const composition = soilSurveyComponentsFromMatches(matches, {
-      maxRows: 3,
-      parcelAreaAcres: acres,
-    });
-    parcel.properties._soilComposition = composition.length ? composition : null;
-    // Per-CLI-class rollup from the UNCAPPED rows, so a class that only
-    // appears in soils folded into "Other" above still counts. Same
-    // aggregation, second pass — the matches are already in hand.
-    const full = soilSurveyComponentsFromMatches(matches, { maxRows: Infinity, parcelAreaAcres: acres });
-    const rollup = cliClassRollup(full);
-    parcel.properties._cliRollup = rollup.length ? rollup : null;
+    applySoilMatches(parcel, matches);
   }
+}
+
+/**
+ * Stamp one parcel from its `{ feature, ratio }` soil matches.
+ *
+ * The single place the composition rules are applied, so the live join and
+ * the pre-baked shard cannot answer differently — they arrive here with the
+ * same pairs and leave with the same properties. Splitting this out is the
+ * point of shipping ratios in the shard rather than finished rows.
+ */
+function applySoilMatches(parcel, matches) {
+  if (!matches || matches.length === 0) {
+    // Explicit null so the popup builder can distinguish "no
+    // soil-survey data" from "soil survey not loaded".
+    parcel.properties._soilComposition = null;
+    parcel.properties._cliRollup = null;
+    return;
+  }
+  const acres = parcelAcres(parcel);
+  const composition = soilSurveyComponentsFromMatches(matches, {
+    maxRows: 3,
+    parcelAreaAcres: acres,
+  });
+  parcel.properties._soilComposition = composition.length ? composition : null;
+  // Per-CLI-class rollup from the UNCAPPED rows, so a class that only
+  // appears in soils folded into "Other" above still counts. Same
+  // aggregation, second pass — the matches are already in hand.
+  const full = soilSurveyComponentsFromMatches(matches, { maxRows: Infinity, parcelAreaAcres: acres });
+  const rollup = cliClassRollup(full);
+  parcel.properties._cliRollup = rollup.length ? rollup : null;
+}
+
+/**
+ * Stamp whatever the pre-baked shards can cover, and return the parcels they
+ * could not — the ones that still need a live fetch and join.
+ *
+ * This is the whole payoff of r/build_soilfacts.R. The clip is ~30 ms per
+ * parcel and does not tune away; a shard hit turns it into a dictionary
+ * lookup. A thousand-sale farmland run over covered municipalities does no
+ * geometry at all.
+ *
+ * A miss is NOT "no soil". The builder covers rural parcels above its
+ * threshold, so a town lot, a municipality not yet built, and a parcel whose
+ * roll does not match all look identical here — and all three must fall
+ * through to the join rather than be stamped as having nothing. Returning
+ * the misses rather than a boolean is what keeps that honest: the caller
+ * fetches soil for exactly those.
+ */
+async function stampSoilFromShards(parcelFc) {
+  const features = parcelFc?.features || [];
+  if (!features.length) return { hit: 0, missFc: parcelFc };
+  const munis = [...new Set(
+    features.map((f) => f?.properties?.Muni_Name_With_Typ).filter(Boolean),
+  )];
+  if (!munis.length) return { hit: 0, missFc: parcelFc };
+
+  const shards = new Map();
+  await Promise.all(munis.map(async (m) => {
+    shards.set(m, await fetchSoilfactsForMuni(m).catch(() => null));
+  }));
+  if ([...shards.values()].every((s) => !s)) return { hit: 0, missFc: parcelFc };
+
+  const misses = [];
+  let hit = 0;
+  for (const parcel of features) {
+    const shard = shards.get(parcel?.properties?.Muni_Name_With_Typ);
+    const matches = shard ? soilMatchesFromShard(shard, soilRollKey(parcel.properties)) : null;
+    if (!matches) { misses.push(parcel); continue; }
+    // Identity mode colours by soil code, and the shard's rebuilt features
+    // are not the ones applyIdentityPalette stamped, so carry the palette
+    // across here the same way the fetched set gets it.
+    applyCliColorsTo({ type: 'FeatureCollection', features: matches.map((m) => m.feature) });
+    applySoilMatches(parcel, matches);
+    hit++;
+  }
+  return { hit, missFc: { type: 'FeatureCollection', features: misses } };
 }
 
 function stampOfficialRiskAreas(rows, riskAreaFc) {
