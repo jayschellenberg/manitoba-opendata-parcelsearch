@@ -2766,7 +2766,51 @@ $irrigationToggle?.addEventListener('click', async () => {
 // zoom-driven case where a fetch was skipped below the zoom threshold.
 mapReady.then(() => {
   map.on('idle', refreshTileNetworkForViewport);
+  map.on('moveend', extendSoilScopeToViewport);
 });
+
+/**
+ * Load soil for a municipality the user has panned the overlay into.
+ *
+ * The soil overlay paints the municipalities the visible results are in
+ * (soilPaintMunis), which is what stopped a single far-flung sale dragging a
+ * whole RM into the load. The cost of that is real: pan to a far-flung comp
+ * and it would sit on blank ground. So panning there says "I am looking at
+ * this one too", and it joins the scope.
+ *
+ * Deliberately cheap to be wrong about: it only runs while the overlay is
+ * ON, it asks for the municipality under the map CENTRE (one point-in-polygon
+ * against a 183-polygon file already in memory), and a municipality already
+ * in scope is a no-op. Nothing happens on an ordinary pan inside the
+ * municipalities already painted.
+ */
+let soilScopeExtendPending = false;
+async function extendSoilScopeToViewport() {
+  if (cliMode == null || soilScopeExtendPending) return;
+  const centre = map.getCenter();
+  if (!centre) return;
+  soilScopeExtendPending = true;
+  try {
+    const hit = await municipalityAt([centre.lng, centre.lat]);
+    const name = hit?.listName;
+    if (!name || soilPaintMunis().includes(name)) return;
+    soilPannedMunis.add(name);
+    const munis = soilPaintMunis();
+    setCount(`Loading soil for ${name}…`);
+    const fc = await loadSoilSurveyFcForScope(munis, { onProblem: (m) => setCount(m) });
+    if (!fc) { soilPannedMunis.delete(name); return; }
+    // Re-apply whichever mode is showing so the new municipality paints like
+    // the rest: identity re-ranks and re-pushes, capability just needs the
+    // source to hold the larger set.
+    if (cliMode === 'identity') applyCliIdentityMode(fc);
+    else { ensureCliSourcePushed(); applyCliCapabilityMode(); }
+    setCount('');
+  } catch (err) {
+    console.warn('soil scope extend failed', err);
+  } finally {
+    soilScopeExtendPending = false;
+  }
+}
 
 // ---------- Collapsible overlay groups ----------
 //
@@ -4689,6 +4733,12 @@ async function runSearch() {
   // thing the scoped fetch exists to avoid.
   gridSoilFc = null;
   gridSoilKey = null;
+  // Municipalities painted only because the user panned the soil overlay
+  // into them belong to the result set they were looking at. A new search is
+  // a new set, and carrying them over would quietly re-load RMs that have
+  // nothing to do with it — the same over-painting this scope narrowing
+  // exists to stop.
+  soilPannedMunis = new Set();
   // Drop the sales-mode column reveal if a previous run came from a
   // sales CSV upload — a normal search shouldn't carry those columns.
   if ($resultsTable) $resultsTable.classList.remove('sales-mode');
@@ -10097,6 +10147,41 @@ function scopedOverlayMunis() {
   return imported ? imported.slice() : ($municipality.value ? [$municipality.value] : []);
 }
 
+// Municipalities the user has panned the soil overlay into, on top of the
+// ones the results imply. Cleared with the overlay and on a muni change.
+let soilPannedMunis = new Set();
+
+/**
+ * Municipalities the SOIL overlay should paint.
+ *
+ * Not scopedOverlayMunis(), and the difference is the whole point.
+ * csvMatchedMunis is fixed at IMPORT time from every municipality that had a
+ * matched parcel, and nothing narrows it afterwards — not the far-flung
+ * exclude, not the date range, not any filter. So one stray sale in a distant
+ * RM made the overlay load and paint that entire RM, and kept painting it
+ * after the sale had been filtered off the screen (Jason, 2026-09-22: "the
+ * soils layer still is painting a lot more than the main munis ... maybe this
+ * is due to far-flung sales").
+ *
+ * The visible rows are the honest scope: paint what the user is looking at.
+ * Plus anywhere they have since panned to, because a comp you scroll the map
+ * to is one you are looking at too — see the moveend handler.
+ *
+ * Falls back to the import scope when there are no rows yet, so turning the
+ * overlay on before a search still paints the picked municipality.
+ */
+function soilPaintMunis() {
+  const fromRows = new Set();
+  for (const row of currentRows || []) {
+    const m = row?.parcel?.properties?.Muni_Name_With_Typ;
+    if (m) fromRows.add(m);
+  }
+  for (const m of soilPannedMunis) fromRows.add(m);
+  if (fromRows.size === 0) return scopedOverlayMunis();
+  // Sorted so the loadKey is stable across re-renders that reorder rows.
+  return [...fromRows].sort();
+}
+
 /** Enable/disable MASC and Sec-Twp Grid toggles based on whether a
  *  muni is selected, and clear stale data + active state if the muni
  *  changed since the layers were last loaded. Mirrors the
@@ -10129,11 +10214,16 @@ function resetMascAndGridToggles() {
       });
     }
   }
-  // CLI: same off-on-muni-change logic as MASC.
-  if (cliLoadedFor && cliLoadedFor !== desiredOverlayKey) {
+  // CLI: same off-on-muni-change logic as MASC, but against the SOIL scope
+  // (the visible rows plus wherever the user has panned), not the import
+  // scope — see soilPaintMunis. Comparing against the import scope here
+  // would tear the overlay down every time a filter changed which
+  // municipalities are on screen.
+  if (cliLoadedFor && cliLoadedFor !== soilPaintMunis().join('|')) {
     cliLoadedFor = null;
     setCliMode(null);
     lastCliFc = EMPTY_FC;
+    soilPannedMunis = new Set();
     // Drop the previous municipality's soil out of the map source too.
     // Clearing lastCliFc alone left the geojson-vt tile index — and every
     // full-vertex tile it had cached for the old muni — alive in the
@@ -10742,7 +10832,7 @@ async function ensureAgriculturalGridData() {
  */
 async function toggleCliOverlay() {
   if (!$cliToggle) return;
-  const munis = scopedOverlayMunis();
+  const munis = soilPaintMunis();
   if (munis.length === 0) {
     setCliMode(null);
     setOverlayPressed($cliToggle, false);
