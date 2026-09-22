@@ -2200,8 +2200,18 @@ function readCurrentUrlState() {
   // Segmented pills. Read generically off the DOM — every pill marks its
   // selected segment with aria-pressed, the same contract the overlay
   // buttons use — so a pill added later round-trips without touching this.
-  // The FIRST segment of each pill is its default (see PILL_SPECS), and
-  // defaults are skipped so an untouched session still produces a clean URL.
+  // The default segment is skipped so an untouched session still produces a
+  // clean URL.
+  //
+  // "Default" means the state the PAGE LOADS IN, which is usually the first
+  // segment but is not the same thing. Nominal sales loads on Exclude while
+  // Include is still segment one, and assuming first-means-default there
+  // would drop `include` from the URL — so a link shared by someone who had
+  // deliberately turned the filter OFF would come back with it ON, filtering
+  // comps out of a set the recipient never asked to filter. Silent, and
+  // exactly the shape of the shared-link bug the restore path opposite was
+  // written to fix. A segment marks itself with `data-default` when it is
+  // not the first; everything else keeps the old behaviour untouched.
   const pills = {};
   for (const pill of document.querySelectorAll('[data-pill]')) {
     const name = pill.dataset.pill;
@@ -2210,7 +2220,8 @@ function readCurrentUrlState() {
     const selected = segments.find((s) => s.getAttribute('aria-pressed') === 'true');
     if (!selected) continue;
     const mode = selected.dataset.mode;
-    if (!mode || mode === segments[0].dataset.mode) continue;   // default
+    const defaultSeg = segments.find((s) => s.hasAttribute('data-default')) || segments[0];
+    if (!mode || mode === defaultSeg.dataset.mode) continue;   // default
     pills[name] = mode;
   }
   if (Object.keys(pills).length > 0) state.pills = pills;

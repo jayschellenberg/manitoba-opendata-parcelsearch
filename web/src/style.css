@@ -508,11 +508,35 @@ header small a {
   border-radius: 4px;
   padding: 2px;
 }
+/* Filter municipalities. This had no border of its own and sat directly on
+   top of #sales-db-munis, which does have one — so it read as part of the
+   list's chrome rather than as a field you type in (Jason, 2026-09-22:
+   "it blends in too much"). Same border and radius as the list below it and
+   as the topbar panels, plus an explicit white background so it separates
+   from the sidebar, and a little more breathing room under it so the two
+   boxes read as two things. */
 .sales-db-search {
   width: 100%;
   font-size: 0.8rem;
-  padding: 3px 6px;
-  margin-bottom: 4px;
+  padding: 5px 8px;
+  margin-bottom: 6px;
+  border: 1px solid var(--color-neutral-300, #d4d4d8);
+  border-radius: 4px;
+  background: #fff;
+  color: inherit;
+  /* Safari styles type="search" as a rounded pill and ignores the padding
+     otherwise, so the field would look different on the iPad than here. */
+  -webkit-appearance: none;
+  appearance: none;
+}
+.sales-db-search::placeholder {
+  color: var(--color-neutral-600, #52525b);
+  opacity: 0.75;
+}
+.sales-db-search:focus-visible {
+  outline: 2px solid var(--color-accent-500, #2563eb);
+  outline-offset: 1px;
+  border-color: var(--color-accent-500, #2563eb);
 }
 .sales-db-adjacent {
   display: flex;

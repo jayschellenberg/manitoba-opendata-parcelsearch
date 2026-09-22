@@ -665,12 +665,18 @@
                      filter still applies to uploaded sales. It sat below the
                      panel, and before that beside Clear, for exactly that
                      reason. Move it back out if CSV-only work ever needs it. -->
-                <input type="checkbox" id="exclude-nominal" class="pill-backing" hidden />
+                <!-- Checked by default (Jason, 2026-09-22): nominal transfers
+                     are not market evidence, so excluding them is the normal
+                     starting point for an analysis rather than something to
+                     remember to tick. `data-default` on the Exclude segment
+                     below is what keeps shared links honest — see the URL
+                     writer in main.js. -->
+                <input type="checkbox" id="exclude-nominal" class="pill-backing" hidden checked />
                 <div class="mode-pill-row sales-nominal-exclude" title="Sales where consideration &lt;$1000 — the $0 / $1 nominal transfers (family conveyances, corrective transfers) that are not market evidence. Applies to both the MAO database and an uploaded CSV. Tested against the whole sale's consideration, so a multi-parcel sale drops as one; a sale with no readable consideration is kept.">
                   <span class="mode-pill-prefix">Nominal sales:</span>
                   <div class="mode-pill compact" role="radiogroup" aria-label="Nominal sales" data-pill="nominal">
-                    <button type="button" class="mode-btn active mode-btn-off" data-mode="include" aria-pressed="true">Include</button>
-                    <button type="button" class="mode-btn" data-mode="exclude" aria-pressed="false">Exclude</button>
+                    <button type="button" class="mode-btn mode-btn-off" data-mode="include" aria-pressed="false">Include</button>
+                    <button type="button" class="mode-btn active" data-mode="exclude" aria-pressed="true" data-default>Exclude</button>
                   </div>
                 </div>
               </div>
