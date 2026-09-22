@@ -7,7 +7,8 @@
 # external check can notice that the publish never started at all.
 # Idempotent -- re-run to update; the existing task is replaced.
 #
-# Usage (normal user privileges, no admin needed):
+# Usage (run from an ELEVATED prompt - the S4U principal set below needs admin;
+# unelevated it registers as Interactive and warns):
 #   powershell -ExecutionPolicy Bypass -File schedule_history_check.ps1
 #
 # Manage:
