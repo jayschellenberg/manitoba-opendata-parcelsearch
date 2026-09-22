@@ -161,6 +161,8 @@ import {
   fetchHistoricalLineage,
   fetchMascRiverlots,
   fetchCliAgrForMuni,
+  fetchSoilSurveyForParcels,
+  cachedCliAgrForMuni,
   parseRollList,
   missingRollsFromResults,
   canonicalRoll,
@@ -4669,6 +4671,12 @@ async function runSearch() {
   disarmSearchPicker();
   const searchGeneration = ++salesEnrichmentGeneration;
   salesExportEnrichmentComplete = true;
+  // The grid's parcel-scoped soil belongs to the result set that asked for
+  // it. Its key would miss on a new set anyway, so this is about not
+  // holding tens of megabytes of the previous search's polygons — the very
+  // thing the scoped fetch exists to avoid.
+  gridSoilFc = null;
+  gridSoilKey = null;
   // Drop the sales-mode column reveal if a previous run came from a
   // sales CSV upload — a normal search shouldn't carry those columns.
   if ($resultsTable) $resultsTable.classList.remove('sales-mode');
@@ -8250,7 +8258,74 @@ function agSoilRequested() {
 }
 
 function soilStampWanted() {
-  return Boolean(lastCliFc?.features?.length) && agSoilRequested();
+  return agSoilRequested();
+}
+
+/**
+ * The soil polygons to join a given parcel set against.
+ *
+ * Two suppliers, and which one answers is the whole point of the split:
+ *
+ *   - The OVERLAY, when it is on. It has already loaded whole
+ *     municipalities because it paints across the RM, and that is a
+ *     superset of anything these parcels need — so this costs nothing.
+ *   - A PARCEL-SCOPED fetch otherwise. The grid columns only ever need
+ *     soil where the result parcels are, and a farm-sales search touches
+ *     a small fraction of a municipality's ground. Fetching whole munis
+ *     to fill four columns was 55 MB per muni for a few hundred parcels.
+ *
+ * Deliberately does NOT write `lastCliFc` on the scoped path. That
+ * variable is the overlay's whole-muni cache; letting a partial set
+ * masquerade as it would paint soil in patches around the comps the next
+ * time the overlay was switched on, with nothing to say why.
+ *
+ * Memoised on the parcel set, so the preset, a later search and an
+ * export don't each refetch the same ground.
+ */
+let gridSoilFc = null;
+let gridSoilKey = null;
+
+function parcelSetKey(parcelFc) {
+  const oids = (parcelFc?.features || [])
+    .map((f) => f?.properties?.OBJECTID)
+    .filter((v) => v != null)
+    .sort((a, b) => a - b);
+  return oids.length ? `${oids.length}:${oids[0]}:${oids[oids.length - 1]}` : '';
+}
+
+async function soilFcForParcels(parcelFc, { onProgress } = {}) {
+  if (lastCliFc?.features?.length) return lastCliFc;
+  const key = parcelSetKey(parcelFc);
+  if (key && key === gridSoilKey && gridSoilFc?.features?.length) return gridSoilFc;
+
+  // Free superset first. The overlay caches each municipality's soil in
+  // IDB for 30 days, so once it has been on for these munis there is
+  // nothing to fetch — and without this check the scoped path would trade
+  // an instant warm load for a fresh ~2 s fetch on every single search.
+  // Only counts when EVERY muni in scope is cached; a partial union would
+  // silently leave one municipality's parcels unstamped.
+  const munis = scopedOverlayMunis();
+  if (munis.length > 0) {
+    const cached = await Promise.all(munis.map((m) => cachedCliAgrForMuni(m)));
+    if (cached.every((fc) => fc?.features)) {
+      const union = { type: 'FeatureCollection', features: cached.flatMap((fc) => fc.features) };
+      if (union.features.length) {
+        gridSoilFc = union;
+        gridSoilKey = key;
+        return union;
+      }
+    }
+  }
+
+  const fc = await fetchSoilSurveyForParcels(parcelFc, { onProgress });
+  if (!fc) return null;
+  // An incomplete set is not worth remembering: memoising it would pin the
+  // gap in place for every later caller instead of letting a retry close it.
+  if (!fc._failedBatches) {
+    gridSoilFc = fc;
+    gridSoilKey = key;
+  }
+  return fc;
 }
 
 function scheduleSoilCompositionStamp(parcelFc, { repush } = {}) {
@@ -8289,7 +8364,13 @@ function scheduleSoilCompositionStamp(parcelFc, { repush } = {}) {
   beginCliOp('Composing…');
   const run = async () => {
     try {
-      await stampSoilCompositionOnParcels(parcelFc, lastCliFc);
+      // Whole-muni when the overlay is on, parcel-scoped otherwise. The
+      // fetch is what used to be "already loaded or nothing happens" —
+      // with the scoped path a later search in a latched Agricultural
+      // preset can fill its own columns without the overlay ever being on.
+      const soilFc = await soilFcForParcels(parcelFc);
+      if (!soilFc?.features?.length) return;
+      await stampSoilCompositionOnParcels(parcelFc, soilFc);
       doRepush();
       // Re-render the results table so the CLI / Soil Type columns
       // pick up the freshly-stamped _soilComposition[0]. The cells
@@ -8403,14 +8484,20 @@ function refreshResultsTableAfterCompositionStamp() {
  * nudges the user to pick a muni.
  */
 /**
- * Load Manitoba Soil Survey/CLI polygons for every municipality in a sales
- * or property-list import and stamp the area-weighted top soil components
- * onto each parcel. The polygons are cached and pushed to the hidden CLI
- * source so turning the visual layer on later is instant; loading data does
- * not force the overlay to become visible.
+ * Load Manitoba Soil Survey/CLI polygons covering a sales or property-list
+ * import's parcels and stamp the area-weighted top soil components onto
+ * each one.
+ *
+ * Scoped to the PARCELS, not to their municipalities. This used to fan out
+ * one whole-municipality fetch per represented muni — RM of Ritchot alone
+ * is 2,715 polygons / 55 MB — to fill four columns for a few hundred
+ * comps. The map overlay still loads whole municipalities when it is
+ * switched on, because it paints across the RM; the grid never needed to.
+ *
+ * `munis` is now only used to name the scope in a failure message.
  *
  * Returns a structured completion result so callers can distinguish valid
- * zero-coverage from a failed municipality and avoid exporting silent blanks.
+ * zero-coverage from a failed fetch and avoid exporting silent blanks.
  */
 async function enrichImportedSoilComposition(parcelFc, munis, generation, mode) {
   const emptyResult = {
@@ -8419,91 +8506,57 @@ async function enrichImportedSoilComposition(parcelFc, munis, generation, mode) 
     failures: [],
     featureCount: 0,
   };
-  if (!parcelFc?.features?.length || !Array.isArray(munis) || munis.length === 0) {
-    return emptyResult;
-  }
-  const boundaries = muniBoundariesFc || await muniBoundariesPromise;
-  if (!boundaries?.features?.length) {
+  if (!parcelFc?.features?.length) return emptyResult;
+  const scopeLabel = Array.isArray(munis) && munis.length
+    ? munis.join(', ')
+    : 'the imported parcels';
+
+  let soilFc;
+  try {
+    // Through soilFcForParcels rather than the raw fetch, so an import
+    // reuses the overlay's in-memory or IDB-cached municipal soil when it
+    // is there and only pays a scoped fetch when it isn't.
+    soilFc = await soilFcForParcels(parcelFc);
+  } catch (err) {
+    console.warn('Imported soil enrichment failed:', err);
     return {
       ...emptyResult,
-      failures: munis.map((muni) => ({ muni, message: 'Municipal boundaries unavailable' })),
+      failures: [{ muni: scopeLabel, message: err.message || String(err) }],
     };
   }
 
-  const scoped = munis.map((muni) => {
-    const exact = boundaries.features.find(
-      (f) => f.properties?.MUNI_LIST_NAME_WITH_TYPE === muni,
-    );
-    const normalized = exact || boundaries.features.find(
-      (f) => normalizeMuniKey(f.properties?.MUNI_LIST_NAME_WITH_TYPE) === normalizeMuniKey(muni),
-    );
-    return { muni, boundary: normalized || null };
-  });
-  const missing = scoped.filter((entry) => !entry.boundary).map((entry) => entry.muni);
-  if (missing.length) {
-    console.warn(`Imported soil enrichment: no municipal boundary for ${missing.join(', ')}`);
-  }
-
-  // Bound concurrency so a long multi-municipality import does not burst
-  // dozens of ID + feature requests at ArcGIS simultaneously. Each failure
-  // remains associated with its municipality instead of becoming EMPTY_FC.
-  const failures = missing.map((muni) => ({ muni, message: 'Municipal boundary unavailable' }));
-  const fcs = [];
-  const loadable = scoped.filter((entry) => entry.boundary);
-  const SOIL_IMPORT_CONCURRENCY = 4;
-  for (let i = 0; i < loadable.length; i += SOIL_IMPORT_CONCURRENCY) {
-    const batch = await Promise.all(loadable.slice(i, i + SOIL_IMPORT_CONCURRENCY)
-      .map(async ({ muni, boundary }) => {
-        try {
-          return { muni, fc: await fetchCliAgrForMuni(muni, boundary), error: null };
-        } catch (err) {
-          console.warn(`Imported soil enrichment failed for ${muni}:`, err);
-          return { muni, fc: null, error: err };
-        }
-      }));
-    for (const result of batch) {
-      if (result.error) {
-        failures.push({
-          muni: result.muni,
-          message: result.error.message || String(result.error),
-        });
-      } else if (result.fc) {
-        fcs.push(result.fc);
-      }
-    }
-  }
   const modeStillActive = () => mode === 'sales'
     ? document.body.classList.contains('sales-mode')
     : Array.isArray(listParcelKeys) && listParcelKeys.length > 0;
   if (generation !== salesEnrichmentGeneration || !modeStillActive()) {
     return { ...emptyResult, superseded: true };
   }
+  if (!soilFc) return { ...emptyResult, complete: true };
 
-  const cliFc = {
-    type: 'FeatureCollection',
-    features: fcs.flatMap((fc) => fc?.features || []),
-  };
-  stampSoilCompositionOnParcels(parcelFc, cliFc);
-  lastCliFc = cliFc;
-  // Mark the visual overlay cache complete when every requested municipality
-  // resolved, including valid zero-coverage results. A failed municipality
-  // leaves the key unset so a later manual toggle can retry it.
-  cliLoadedFor = failures.length === 0
-    ? munis.slice().sort().join('|')
-    : null;
-  await mapReady;
+  // A batch that failed its ID query leaves a hole in the soil set with no
+  // outward sign — those parcels simply stamp as "no soil". That is the
+  // silent blank the export guard exists to catch, so it counts as
+  // incomplete even though features did come back for everything else.
+  const failures = soilFc._failedBatches > 0
+    ? [{
+      muni: scopeLabel,
+      message: `${soilFc._failedBatches} of ${soilFc._batchCount} parcel groups could not be queried`,
+    }]
+    : [];
+
+  // soilFcForParcels has already memoised this for the grid (and
+  // deliberately NOT as lastCliFc / cliLoadedFor — a parcel-shaped subset
+  // masquerading as the overlay's municipal cache would paint soil in
+  // patches around the comps the next time the overlay was turned on).
+  await stampSoilCompositionOnParcels(parcelFc, soilFc);
   if (generation !== salesEnrichmentGeneration || !modeStillActive()) {
     return { ...emptyResult, superseded: true };
   }
-  // Same deal as loadSoilSurveyFcForScope: an import enriches the grid
-  // columns, which needs the FC in hand but nothing in the map source.
-  // Tiling waits until the overlay is switched on.
-  if (cliMode != null) pushCliSource(cliFc, cliLoadedFor);
   return {
     complete: failures.length === 0,
     superseded: false,
     failures,
-    featureCount: cliFc.features.length,
+    featureCount: soilFc.features.length,
   };
 }
 
@@ -10441,11 +10494,15 @@ function ensureCliSourcePushed() {
  * Stamps the FULL row set (csvFullRows when a sales CSV is loaded) rather
  * than what's on screen, so clearing a filter later doesn't reveal blank
  * rows — same reasoning as backfillDevPlanColumns.
+ *
+ * `soilFc` defaults to the overlay's whole-muni set, which is what the
+ * overlay toggle hands it. The Agricultural preset passes its own
+ * parcel-scoped set instead — see soilFcForParcels.
  */
-async function stampSoilCompositionForRows(rows) {
-  if (!rows?.length || !lastCliFc?.features?.length) return;
+async function stampSoilCompositionForRows(rows, soilFc = lastCliFc) {
+  if (!rows?.length || !soilFc?.features?.length) return;
   const parcelFc = { type: 'FeatureCollection', features: rows.map((r) => r.parcel) };
-  await stampSoilCompositionOnParcels(parcelFc, lastCliFc);
+  await stampSoilCompositionOnParcels(parcelFc, soilFc);
   if (currentRows.length > 0) {
     // Only the visible rows go back to the map source; the stamp above
     // covered the superset and both share the same parcel objects.
@@ -10468,10 +10525,13 @@ async function stampSoilCompositionForRows(rows) {
  * stamped by normal enrichment.
  *
  * Deliberately does NOT paint the map: picking a column preset is a
- * request about the grid, not the map. The soil polygons still land in
- * the CLI source and cache under `cliLoadedFor`, and the WALLAS
- * collections are IDB-cached for a week, so later clicks on either
- * overlay render with no second fetch.
+ * request about the grid, not the map. Which is also why the soil half
+ * now fetches only the ground the RESULT PARCELS sit on rather than
+ * whole municipalities — see soilFcForParcels. It does not warm the
+ * overlay's cache, because a partial set is not what the overlay needs;
+ * turning the overlay on afterwards still loads its municipalities. The
+ * WALLAS collections are IDB-cached for a week, so the water-rights
+ * overlays do still render with no second fetch.
  *
  * The two halves are independent — a muni with no CLI coverage still
  * gets its water-rights columns, and vice versa.
@@ -10482,10 +10542,12 @@ async function ensureAgriculturalGridData() {
   const stamped = (key) => rows.every((r) => r?.parcel?.properties?.[key] !== undefined);
   // A stamped value of null still counts as done — it means "checked,
   // nothing here", which is exactly what the cells render.
-  const munis = scopedOverlayMunis();
-  // Soil needs a muni or import scope to fetch against; the overlay
-  // button is disabled in that state too.
-  const needsSoil = munis.length > 0 && !stamped('_soilComposition');
+  // Soil no longer needs a municipality to fetch against: the result
+  // parcels ARE the scope now. That lifts a real limitation — an imported
+  // list spanning municipalities the picker can't express used to get no
+  // soil columns at all. The overlay button stays muni-gated, because
+  // painting across an RM does still need to know which RM.
+  const needsSoil = !stamped('_soilComposition');
   const needsWater = !stamped('_tileDrainage') || !stamped('_irrigation');
   if (!needsSoil && !needsWater) return;
 
@@ -10496,13 +10558,20 @@ async function ensureAgriculturalGridData() {
   beginCliOp('Loading ag data…');
   try {
     if (needsSoil) {
-      withNote('Loading soil survey…');
-      const soilFc = await loadSoilSurveyFcForScope(munis, { onProblem: withNote });
-      // A soil problem is already on the count line and mustn't abort the
-      // water-rights half — the two datasets are unrelated.
-      if (soilFc) {
-        withNote('Matching soils to parcels…');
-        await stampSoilCompositionForRows(rows);
+      // A soil problem must not abort the water-rights half — the two
+      // datasets are unrelated — so this stays inside its own try.
+      try {
+        const parcelFc = { type: 'FeatureCollection', features: rows.map((r) => r.parcel) };
+        const soilFc = await soilFcForParcels(parcelFc, { onProgress: withNote });
+        if (soilFc?.features?.length) {
+          withNote('Matching soils to parcels…');
+          await stampSoilCompositionForRows(rows, soilFc);
+        } else {
+          withNote('No soil-survey coverage over these parcels.');
+        }
+      } catch (err) {
+        console.warn('Agricultural preset soil load failed', err);
+        withNote(`Soil survey failed to load: ${err.message}`);
       }
     }
     if (needsWater) {

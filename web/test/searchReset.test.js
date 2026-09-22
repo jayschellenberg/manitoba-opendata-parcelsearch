@@ -119,6 +119,11 @@ const PER_RESULT = [
   // an overlay that still believed it owned these rows would hand the search's
   // results to another overlay on its way off (regrantResultsGrid).
   'overlayGridOwner',
+  // The grid's parcel-scoped soil and the parcel set it was fetched for.
+  // Keyed on the result parcels, so a stale one would miss rather than
+  // mislead — but it is tens of megabytes of polygons belonging to a result
+  // set that is gone, which is the cost the scoped fetch exists to avoid.
+  'gridSoilFc', 'gridSoilKey',
 ];
 
 // State that SURVIVES a search on purpose. Listed with the reason, so the
