@@ -3591,6 +3591,10 @@ $duMode.addEventListener('change', () => {
 // resetFarFlungExclude.
 const FAR_FLUNG_STORAGE_KEY = 'mbps_far_flung_km_v1';
 const FAR_FLUNG_EXCLUDE_KEY = 'mbps_far_flung_exclude_v1';
+// The state every session starts in. Mirrors the `checked` attribute and the
+// `data-default` segment in index.html; all three have to agree or the pill,
+// the filter and the shared link disagree about what the default is.
+const FAR_FLUNG_EXCLUDE_DEFAULT = true;
 
 /** Is the exclude toggle on? Off unless explicitly enabled — an upload
  *  never hides sales until the user asks it to. */
@@ -3621,24 +3625,34 @@ function saveFarFlungThreshold() {
 }
 
 /**
- * Start every session with Exclude OFF.
+ * Start every session at the Exclude DEFAULT, never at a remembered value.
  *
- * This used to persist under FAR_FLUNG_EXCLUDE_KEY, on the same reasoning as
- * the threshold beside it. That reasoning does not carry: the threshold only
- * MARKS sales, so keeping it between jobs costs nothing, while Exclude
- * REMOVES rows from the table, the map and the CSV export. Persisted, it was
- * a filter that silently dropped comparables months after it was switched on
- * — and it rode into every shared pl= link, so a recipient saw a different
- * set of sales with nothing on screen saying why. Found 2026-09-13 when a
- * production URL carried farflung:exclude that nobody had set that day.
+ * Exclude ships on since 2026-09-22 (Jason): a portfolio or estate sale
+ * spread across a wide area has a blended $/Acre that is not a local
+ * comparable, so leaving those out is the normal starting point.
  *
- * The stored key is removed rather than merely ignored, so a browser already
- * holding '1' cannot resurrect the setting later.
+ * What this function is actually for is unchanged by that, and is worth
+ * keeping straight because the two look similar and are not. Exclude used to
+ * PERSIST under FAR_FLUNG_EXCLUDE_KEY, on the same reasoning as the threshold
+ * beside it. That reasoning does not carry: the threshold only MARKS sales,
+ * so keeping it between jobs costs nothing, while Exclude REMOVES rows from
+ * the table, the map and the CSV export. Persisted, it was a filter that
+ * silently dropped comparables months after it was switched on — and it rode
+ * into every shared pl= link, so a recipient saw a different set of sales
+ * with nothing on screen saying why. Found 2026-09-13 when a production URL
+ * carried farflung:exclude that nobody had set that day.
+ *
+ * A fixed default is not that bug. It is the same every session, the pill
+ * shows it, the filter chips name it, and the URL writer records the state
+ * when the user moves OFF it — see the `data-default` marking on the Exclude
+ * segment. What must never come back is the REMEMBERED value, so the stored
+ * key is still removed rather than merely ignored: a browser holding '1' (or
+ * '0') from the old build cannot resurrect or suppress the setting.
  */
 function resetFarFlungExclude() {
   if (!$farFlungExclude) return;
   try { localStorage.removeItem(FAR_FLUNG_EXCLUDE_KEY); } catch {}
-  $farFlungExclude.checked = false;
+  $farFlungExclude.checked = FAR_FLUNG_EXCLUDE_DEFAULT;
   // Set without a change event, so repaint the Keep / Exclude pill by hand.
   pillPainters.farflung?.();
 }

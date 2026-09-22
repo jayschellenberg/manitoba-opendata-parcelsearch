@@ -88,6 +88,31 @@ test('the URL writer compares against data-default, not segments[0]', () => {
     'comparing to segments[0] drops a non-first default from shared links');
 });
 
+test('far-flung sales also default to Exclude, marked the same way', () => {
+  // Same shape as nominal, and the same trap: `keep` is the first segment, so
+  // without data-default the URL writer would drop it, and a link from
+  // someone who had deliberately KEPT far-flung sales would arrive excluding
+  // them. That exact failure already happened here once in the other
+  // direction — 2026-09-13, a production URL carrying farflung:exclude that
+  // nobody had set — so it is worth pinning on this pill specifically.
+  const m = /<input[^>]*id="far-flung-exclude"[^>]*>/.exec(html);
+  assert.ok(m, 'no #far-flung-exclude input in index.html');
+  assert.match(m[0], /\bchecked\b/, 'far-flung Exclude should ship on');
+
+  const pill = pillMarkup('farflung');
+  const exclude = /<button[^>]*data-mode="exclude"[^>]*>/.exec(pill)[0];
+  const keep = /<button[^>]*data-mode="keep"[^>]*>/.exec(pill)[0];
+  assert.match(exclude, /aria-pressed="true"/, 'Exclude should be selected on load');
+  assert.match(keep, /aria-pressed="false"/, 'Keep should not be selected on load');
+  assert.match(exclude, /\bdata-default\b/,
+    'the segment the page loads in must say so, or shared links lose the off state');
+
+  // Markup and code must agree, or the pill shows one thing and the filter
+  // does another after resetFarFlungExclude runs.
+  assert.match(main, /const FAR_FLUNG_EXCLUDE_DEFAULT\s*=\s*true\s*;/,
+    'FAR_FLUNG_EXCLUDE_DEFAULT must match the checked attribute above');
+});
+
 test('exactly one segment claims to be the default', () => {
   // Two would make the winner depend on document order, which is the kind of
   // thing that works until someone reorders the buttons.
