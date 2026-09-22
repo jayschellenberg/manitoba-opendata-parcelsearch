@@ -33,8 +33,15 @@ export const PILL_SPECS = {
     inputs: ['numbering-toggle', 'numbering-order-toggle'],
     modes: { off: [false, false], muni: [true, false], entry: [true, true] },
   },
-  // Sales tab. The first mode is always the all-unticked (default) state;
-  // its name follows the question the control asks rather than "off".
+  // Sales tab. The first mode is always the ALL-UNTICKED state; its name
+  // follows the question the control asks rather than "off".
+  //
+  // All-unticked is not the same as "what the page loads in". Nominal sales
+  // ships with its backing checkbox `checked`, so it loads on `exclude` —
+  // the first mode here is still the unticked one, which is what this table
+  // describes. The DOM carries the page default separately (`data-default`
+  // on the segment), because that is what the URL writer has to compare
+  // against. Keep the two ideas apart when adding a pill.
   adjacent: { inputs: ['sales-db-adjacent'], modes: { off: [false], on: [true] } },
   nominal:  { inputs: ['exclude-nominal'],   modes: { include: [false], exclude: [true] } },
   farflung: { inputs: ['far-flung-exclude'], modes: { keep: [false], exclude: [true] } },
