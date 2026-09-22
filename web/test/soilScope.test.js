@@ -3,28 +3,35 @@
 // WHY THIS EXISTS. There are two soil suppliers and they are not
 // interchangeable:
 //
-//   whole-municipality  fetchCliAgrForMuni / loadSoilSurveyFcForScope
-//                       Every polygon in the RM. The map overlay needs it —
-//                       it paints soil across the whole municipality.
-//   parcel-scoped       fetchSoilSurveyForParcels, via soilFcForParcels
-//                       Only the ground the result parcels sit on. The grid's
-//                       CLI / Soil Type columns never needed more than this.
+//   PAINT        fetchCliAgrForMuni / loadSoilSurveyFcForScope
+//                Every polygon in the RM, display-simplified. The map
+//                overlay needs the coverage and only ever draws it.
+//   MEASURE      fetchSoilSurveyForParcels, via soilFcForParcels
+//                Only the ground the result parcels sit on, at full survey
+//                resolution. Everything that reports a number — the grid's
+//                CLI / Soil Type / Slope columns, the popups, the CSV.
 //
-// Before 2026-09-22 the GRID used the municipal fetch: filling four columns
-// for a few hundred comps pulled every soil polygon in each represented
-// municipality (RM of Ritchot: 805 polygons, 203,558 vertices, 8.2 MB), and a
-// multi-municipality sales analysis did it once per muni.
+// They were one fetch until 2026-09-22, and it failed from both ends.
+// Filling four columns for a few hundred comps pulled every polygon in each
+// represented municipality; and a 1,141-sale run over Macdonald plus five
+// neighbours handed the join all 4,693 of them (~1.58M vertices), which is
+// what ran the tab out of memory after the soil had already drawn.
 //
-// The failure mode this guards is a quiet re-wiring — someone reaching for
-// the muni fetch in a column path because it is the one they found first.
-// Nothing would look broken: the columns fill either way. The only visible
-// symptom is the page getting heavy again, which is what took a week to
-// diagnose the first time.
+// Two quiet failure modes, which is why this is pinned rather than trusted:
 //
-// The mirror-image mistake is just as quiet: letting the parcel-scoped set
-// become `lastCliFc`. That variable is the OVERLAY's cache. A parcel-shaped
-// subset sitting in it paints soil in patches around the comps the next time
-// the overlay is switched on, with nothing on screen to say why.
+//   Re-wiring a MEASURE path to the muni fetch. Nothing looks broken — the
+//   columns fill either way — and the only symptom is the page getting
+//   heavy again. That is the bug that took three rounds to pin down.
+//
+//   Measuring against the simplified geometry. Also invisible: a
+//   composition percentage comes out slightly wrong and nothing says so.
+//   Hence the assertions that the two fetches keep opposite geometry
+//   settings.
+//
+// The mirror-image mistake: letting the parcel-scoped set become
+// `lastCliFc`. That variable is the OVERLAY's cache. A parcel-shaped subset
+// sitting in it paints soil in patches around the comps the next time the
+// overlay is switched on, with nothing on screen to say why.
 //
 // This is a source-text check. It proves what calls what, not what runs.
 //
@@ -95,6 +102,7 @@ const BODIES = {
   enrichImportedSoilComposition: fnBody(main, 'enrichImportedSoilComposition'),
   soilFcForParcels: fnBody(main, 'soilFcForParcels'),
   toggleCliOverlay: fnBody(main, 'toggleCliOverlay'),
+  fetchCliAgrForMuni: fnBody(arcgis, 'fetchCliAgrForMuni'),
   loadSoilSurveyFcForScope: fnBody(main, 'loadSoilSurveyFcForScope'),
   fetchSoilSurveyForParcels: fnBody(arcgis, 'fetchSoilSurveyForParcels'),
 };
@@ -130,17 +138,35 @@ test('the map overlay still loads whole municipalities', () => {
     'the municipal path must still reach the municipal fetch');
 });
 
-test('the parcel-scoped set never becomes the overlay cache', () => {
+test('the overlay FC and the measurement FC stay separate', () => {
   const body = BODIES.soilFcForParcels;
   for (const v of ['lastCliFc', 'cliLoadedFor', 'cliPushedFor']) {
     assert.ok(!new RegExp(`(^|[^.\\w])${v}\\s*=[^=]`).test(body),
       `soilFcForParcels assigns ${v} — a parcel-shaped subset must not stand in `
       + 'for the overlay\'s municipal cache');
   }
-  // Reading lastCliFc is the point: when the overlay HAS loaded the munis,
-  // that superset is free and the scoped fetch should be skipped entirely.
-  assert.match(body, /lastCliFc/,
-    'soilFcForParcels should reuse the overlay FC when it is already loaded');
+  // It must not READ the overlay FC either, which it used to do as a free
+  // superset. Since 2026-09-22 the overlay's geometry is display-simplified
+  // (fetchCliAgrForMuni sets maxAllowableOffset), so measuring against it
+  // would quote a composition percentage off simplified boundaries — and it
+  // would hand the join every polygon in the municipality, which is what ran
+  // a 1,141-sale multi-muni run out of memory.
+  assert.ok(!/lastCliFc/.test(body),
+    'soilFcForParcels must not measure against the overlay\'s simplified municipal FC');
+});
+
+test('the overlay fetch is display-only and says so', () => {
+  const body = BODIES.fetchCliAgrForMuni;
+  assert.match(body, /maxAllowableOffset/,
+    'the overlay payload is the memory cost; it should be simplified for display');
+  // The guard that keeps the two apart: if anything ever measures from this
+  // fetch again, the simplification silently becomes an accuracy bug. So the
+  // measurement fetch must carry the un-simplified query and never this flag.
+  const measure = BODIES.fetchSoilSurveyForParcels;
+  assert.match(measure, /SOIL_SURVEY_GEOMETRY_QUERY/,
+    'the measurement fetch must keep the un-simplified geometry query');
+  assert.ok(!/maxAllowableOffset/.test(measure),
+    'the measurement fetch must never simplify');
 });
 
 test('the scoped fetch is two-phase: IDs under the spatial filter, then features', () => {
