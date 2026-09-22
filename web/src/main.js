@@ -8495,7 +8495,10 @@ async function enrichImportedSoilComposition(parcelFc, munis, generation, mode) 
   if (generation !== salesEnrichmentGeneration || !modeStillActive()) {
     return { ...emptyResult, superseded: true };
   }
-  setCliAgrData(map, cliFc);
+  // Same deal as loadSoilSurveyFcForScope: an import enriches the grid
+  // columns, which needs the FC in hand but nothing in the map source.
+  // Tiling waits until the overlay is switched on.
+  if (cliMode != null) pushCliSource(cliFc, cliLoadedFor);
   return {
     complete: failures.length === 0,
     superseded: false,
@@ -9800,6 +9803,17 @@ function updateHistoricalBanner(snap) {
 let mascLoadedFor = null;
 let surveyGridLoadedFor = null;
 let cliLoadedFor = null;
+// Which soil load is actually sitting in the map's 'cli-agr' source.
+// Distinct from cliLoadedFor, which only says what has been FETCHED.
+//
+// Pushing an FC at a MapLibre GeoJSON source is not free: the source
+// re-tiles it in the worker and caches every tile it builds (see
+// SOIL_SURVEY_MAP_SOURCE_OPTIONS). A soil load that nobody asked to see
+// on the map — the Agricultural column preset, and the sales/list import
+// enrichment — used to pay that anyway. Now the push is deferred until
+// the overlay is actually turned on, and this records what got pushed so
+// turning it on later knows whether it still has to.
+let cliPushedFor = null;
 // Land Cover overlay state. Tri-state cycle when the raster pyramid is
 // available, dominant↔off when it isn't (probed once at boot):
 //   null      → off
@@ -10017,6 +10031,15 @@ function resetMascAndGridToggles() {
     cliLoadedFor = null;
     setCliMode(null);
     lastCliFc = EMPTY_FC;
+    // Drop the previous municipality's soil out of the map source too.
+    // Clearing lastCliFc alone left the geojson-vt tile index — and every
+    // full-vertex tile it had cached for the old muni — alive in the
+    // worker for the rest of the session, on top of whatever the new
+    // municipality is about to load.
+    if (cliPushedFor != null) {
+      cliPushedFor = null;
+      mapReady.then(() => setCliAgrData(map, EMPTY_FC));
+    }
     if ($cliToggle && $cliToggle.classList.contains('active')) {
       setOverlayPressed($cliToggle, false);
       setOverlayBtnLabel($cliToggle, cliButtonLabelFor(null));
@@ -10261,7 +10284,9 @@ function applyCliIdentityMode(cliFc) {
   // setCliAgrData ran at fetch time, so it doesn't see the post-hoc
   // mutation — we have to re-push the FC for the paint to find the
   // new field. Without this every polygon paints the fallback grey.
-  setCliAgrData(map, cliFc);
+  // Routed through pushCliSource so cliPushedFor stays honest and a
+  // later capability-mode toggle doesn't re-tile what is already there.
+  pushCliSource(cliFc, cliLoadedFor);
   // Re-stamp parcel composition so the popup's per-soil swatches pick
   // up the freshly-assigned _paintColor. componentsForFeature reads
   // each polygon's _paintColor at rollup time, so a composition stamp
@@ -10373,10 +10398,34 @@ async function loadSoilSurveyFcForScope(munis, { onProblem } = {}) {
 
   const cliFc = { type: 'FeatureCollection', features };
   await mapReady;
-  setCliAgrData(map, cliFc);
   lastCliFc = cliFc;
   cliLoadedFor = loadKey;
+  // Only tile it when something is drawing it. The Agricultural column
+  // preset reaches here too, and it wants the columns, not the paint.
+  if (cliMode != null) pushCliSource(cliFc, loadKey);
   return cliFc;
+}
+
+/**
+ * Push a soil FC at the map's 'cli-agr' source and record that it is
+ * there. Everything that makes the overlay visible goes through
+ * ensureCliSourcePushed() rather than calling setCliAgrData directly, so
+ * a load taken purely for the grid columns never pays the re-tile.
+ */
+function pushCliSource(cliFc, loadKey) {
+  setCliAgrData(map, cliFc);
+  cliPushedFor = loadKey ?? cliLoadedFor;
+}
+
+/**
+ * Make sure the currently-loaded soil FC is in the map source before the
+ * overlay is shown. A no-op when this load is already pushed — which is
+ * the normal case once the overlay has been on once for this scope.
+ */
+function ensureCliSourcePushed() {
+  if (!lastCliFc?.features?.length) return;
+  if (cliPushedFor === cliLoadedFor) return;
+  pushCliSource(lastCliFc, cliLoadedFor);
 }
 
 /**
@@ -10539,10 +10588,15 @@ async function toggleCliOverlay() {
     }
   }
 
-  // Apply the new mode. Paint + legend + label expression all swap
-  // here; no source re-push needed.
+  // Apply the new mode. Paint + legend + label expression all swap here.
+  // The source push is conditional: capability mode paints straight from
+  // the FC's own fields, so it needs whatever is loaded to actually be in
+  // the source — which, after a column-preset or import load, it is not
+  // yet. Identity mode re-pushes for its own reasons (applyIdentityPalette
+  // mutates `_paintColor` after the fact), so it covers itself.
   setCliMode(targetMode);
   if (targetMode === 'capability') {
+    ensureCliSourcePushed();
     applyCliCapabilityMode();
   } else {
     applyCliIdentityMode(lastCliFc);
