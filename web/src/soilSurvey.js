@@ -4,12 +4,37 @@
 // parcel/map-unit intersection by EXTENT1/2/3 rather than treating the
 // dominant component as 100 percent of the overlapped polygon.
 
-// Soil boundaries are used for parcel-area composition. Preserve every
-// vertex delivered by Manitoba instead of applying MapLibre's display
-// simplification a second time.
+// DISPLAY tiling for the two soil GeoJSON sources ('cli-agr' and
+// 'soil-survey'). These govern MapLibre's display tiles only. Parcel-area
+// composition runs in JS (stampSoilCompositionOnParcels) against the
+// fetched FeatureCollection that main.js holds in `lastCliFc`, and never
+// against anything the map source contains — so what is set here cannot
+// affect a composition percentage.
+//
+// This was `{ maxzoom: 24, tolerance: 0 }` until 2026-09-22, on the stated
+// reasoning that the map source fed the composition. It does not, and the
+// setting was the largest single memory cost in the app:
+//
+//   geojson-vt caches every tile it builds in an unbounded map and never
+//   evicts one. Serving a tile at zoom Z drills down from the index (zoom
+//   5), creating and permanently caching all FOUR children at every level
+//   in between. maxzoom 24 meant up to 19 such levels per view, and
+//   tolerance 0 meant every one of those clipped tiles kept every source
+//   vertex — so panning around a soil load grew the cache without bound.
+//   Measured 2026-09-22: RM of Ritchot + RM of Macdonald is ~3,800
+//   polygons, ~720,000 vertices, ~29 MB of GeoJSON, which is what the app
+//   was re-clipping at full fidelity across a dozen-plus cached levels.
+//
+// maxzoom 14 stops the drill-down nine levels earlier and lets MapLibre
+// overzoom the rest, which is free. Detail at high zoom is UNCHANGED:
+// geojson-vt forces tolerance to 0 at the source maxzoom (see its
+// tile.js), so the z14 tiles an overzoomed view is drawn from carry every
+// vertex, exactly as before. tolerance 0.375 (MapLibre's own default)
+// applies only to the overview tiles below z14, where soil map units
+// surveyed at 1:20,000 and coarser are a few pixels wide anyway.
 export const SOIL_SURVEY_MAP_SOURCE_OPTIONS = Object.freeze({
-  maxzoom: 24,
-  tolerance: 0,
+  maxzoom: 14,
+  tolerance: 0.375,
 });
 
 function clean(value) {

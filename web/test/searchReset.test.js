@@ -184,8 +184,10 @@ test('new module state forces a decision', () => {
   // surfacing as a stale panel months later.
   const declared = [...src.matchAll(/^let ([a-zA-Z_$][\w$]*)\s*[=;]/gm)].map((m) => m[1]);
   const CATEGORY_RULES = [
-    // muni/overlay-scoped: reset by resetMascAndGridToggles on muni change
-    /LoadedFor$/, /OverlayOn$/, /Mode$/, /Cache$/, /^historical/, /^muni/, /^_muni/,
+    // muni/overlay-scoped: reset by resetMascAndGridToggles on muni change.
+    // PushedFor is the LoadedFor twin — what has been fetched vs what is
+    // actually sitting in a map source — and shares its lifecycle exactly.
+    /LoadedFor$/, /PushedFor$/, /OverlayOn$/, /Mode$/, /Cache$/, /^historical/, /^muni/, /^_muni/,
     // transient plumbing: timers, generations, in-flight guards, UI bookkeeping
     /Timer$/, /Generation$/, /Seq$/, /Pending$/, /Ops$/, /Running$/, /Abort$/,
     /^capture/, /^route/, /^sales/, /^chartsChannel$/, /^urlWritePending$/,

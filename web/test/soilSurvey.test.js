@@ -10,10 +10,19 @@ assert.deepEqual(SOIL_SURVEY_GEOMETRY_QUERY, {
   outSR: '4326',
 });
 assert.equal('maxAllowableOffset' in SOIL_SURVEY_GEOMETRY_QUERY, false);
+// The FETCH keeps every vertex Manitoba publishes (the assertion above) —
+// that is what parcel-area composition joins against. The DISPLAY source
+// is capped so MapLibre's tile cache can't grow without bound; the two
+// are independent, and conflating them is what made a two-municipality
+// soil load run the tab out of memory. See SOIL_SURVEY_MAP_SOURCE_OPTIONS.
 assert.deepEqual(SOIL_SURVEY_MAP_SOURCE_OPTIONS, {
-  maxzoom: 24,
-  tolerance: 0,
+  maxzoom: 14,
+  tolerance: 0.375,
 });
+// geojson-vt forces tolerance to 0 at the source maxzoom, so overzoomed
+// views still draw full-fidelity geometry. A maxzoom of 20+ is the
+// regression this guards: it restores the deep per-level tile cache.
+assert.ok(SOIL_SURVEY_MAP_SOURCE_OPTIONS.maxzoom <= 16);
 
 function soilFeature(props) {
   return {
