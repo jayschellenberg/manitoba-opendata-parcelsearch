@@ -227,7 +227,7 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // fetchProvinceSectionGrid below). A stale, unread 40 MB copy is still
 // git-tracked in mb-parcel-data; nothing here points at it.
 export const MB_PARCEL_DATA_REVISION =
-  '6d50bdbc2babfea57d6ae708c566d43c8d01ee68';
+  'b57d2a1da00660e5d26d6c4057898b0d46f26b8f';
 // Origin-absolute rather than a bare /gh-data/... path: MapLibre tile
 // templates (map.js landcover-tiles) need absolute URLs. Node imports
 // this module in unit tests, where location is absent — the fallback
@@ -1510,72 +1510,7 @@ const CLI_AGR_CAP_OUTFIELDS = [
   'Shape__Area',
 ].join(',');
 
-/**
- * Whole-municipality soil for the MAP OVERLAY. Display geometry only.
- *
- * Nothing measures from this any more. The parcel-area composition that
- * fills the grid columns and the popups is joined against
- * fetchSoilSurveyForParcels, which is scoped to the result parcels and
- * keeps every vertex Manitoba publishes. That separation is what lets this
- * one be simplified: the overlay paints across a whole RM, MapLibre's own
- * tiler already simplifies it below zoom 14, and a boundary drawn half a
- * metre out is not something a map reader can see or an appraisal quotes.
- *
- * It matters because the overlay's payload is the memory: Macdonald plus
- * its five neighbours is 4,693 polygons / ~1.58M vertices at full
- * resolution, and a 1,141-sale run across them was loading all of it.
- */
-export async function fetchCliAgrForMuni(muniNameWithTyp, muniBoundaryFeature) {
-  if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
-  // v9 (2026-09-22): display-simplified again via maxAllowableOffset, now
-  //   that composition has its own full-resolution parcel-scoped fetch.
-  //   This is the setting v7 removed — see the note on v4/v7 below. The
-  //   objection then was that it "materially altered some small polygons"
-  //   for parcel-scale AREA COMPOSITION; that use is gone from this path,
-  //   so the objection no longer applies to it. Anything that measures
-  //   must use fetchSoilSurveyForParcels, never this.
-  // v8 (2026-07-20): fetches the complete matching OBJECTID set before
-  //   loading polygons in batches. This invalidates incomplete v7 payloads
-  //   cached for municipalities such as Rockwood that exceed 2,000 polygons.
-  //   v7 (2026-07-15): restored Manitoba's full source geometry for
-  //   parcel-scale area composition. v6 (2026-05-21): added per-slot
-  //   Manitoba Soil Survey descriptors
-  //   (TOPO, STONE, SALINITY, EROSION, DRAINAGE, SURFTEXTM, MANCON,
-  //   GEN_RATIN, SPUD_RTNG × 3 slots) so the soil popups can render
-  //   "Land features" lines and the CSV can carry dominant-soil
-  //   descriptor columns. v5 (2026-05-21): added Shape__Area to
-  //   outFields so the Soil Type palette can rank by server-
-  //   precomputed area instead of the slow turfArea fallback.
-  //   v4 (2026-05-20): added maxAllowableOffset for smaller payloads;
-  //   v7 removes it because it materially altered some small polygons.
-  const cacheKey = cliAgrCacheKey(muniNameWithTyp);
-  const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
-  if (cached) return cached;
 
-  const esriGeom = polygonToEsriGeometry(muniBoundaryFeature);
-  if (!esriGeom) return null;
-
-  const fc = await fetchCompleteFeatureSet(CLI_AGR_CAP_URL, {
-    where: '1=1',
-    // ~0.5 m at this latitude. Chosen to sit an order of magnitude below
-    // the survey's own 1:20,000-and-coarser mapping accuracy, so it can
-    // only ever drop vertices the source never claimed to place precisely.
-    maxAllowableOffset: '0.000005',
-    geometry: JSON.stringify(esriGeom),
-    geometryType: 'esriGeometryPolygon',
-    inSR: '4326',
-    spatialRel: 'esriSpatialRelIntersects',
-    outFields: CLI_AGR_CAP_OUTFIELDS,
-    ...SOIL_SURVEY_GEOMETRY_QUERY,
-    f: 'geojson',
-  }, `Soil Survey for ${muniNameWithTyp}`);
-  await writeCache(cacheKey, fc);
-  return fc;
-}
-
-// One place the whole-muni soil cache key is spelled, so the peek below
-// and the fetch above can never drift onto different versions.
-const cliAgrCacheKey = (muniNameWithTyp) => `mb_cli_agr_${muniNameWithTyp}_v9`;
 
 
 // Parcel bounding boxes per spatial query when fetching soil for a set of
@@ -2102,6 +2037,37 @@ export async function fetchWaterForMuni(muniNameWithTyp) {
 // header of src/lib/soilfacts.js for what a shard holds and why it holds
 // ratios rather than finished composition rows.
 // ---------------------------------------------------------------------------
+
+let soilPalettePromise = null;
+
+/**
+ * Per-municipality soil-association ranking for the tiled Soil Type overlay
+ * (r/build_soil_palette.R). Muni -> [{ c: SOIL_CODE1, n: SOILNAME1 }, ...],
+ * best first, capped at the palette length.
+ *
+ * Separate from the soilfacts shards on purpose: this is derived from the
+ * soil survey, which is static between revisions, while the shards track the
+ * parcel roll and move every refresh. Folding it in would mean republishing
+ * tens of megabytes of shards to change a legend.
+ */
+export async function fetchSoilPalette() {
+  if (soilPalettePromise) return soilPalettePromise;
+  soilPalettePromise = (async () => {
+    const cacheKey = `mb_soil_palette_v1_${MB_PARCEL_DATA_REVISION}`;
+    const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+    if (cached) return cached;
+    try {
+      const res = await fetch(`${MB_PARCEL_DATA_CDN}/soilfacts/_palette.json`);
+      if (!res.ok) return null;
+      const pal = await res.json();
+      await writeCache(cacheKey, pal);
+      return pal;
+    } catch {
+      return null;
+    }
+  })();
+  return soilPalettePromise;
+}
 
 let soilfactsIndexPromise = null;
 

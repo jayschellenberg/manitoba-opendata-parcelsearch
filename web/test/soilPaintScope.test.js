@@ -1,24 +1,27 @@
-// The soil overlay paints what is on screen, not what was imported.
+// What the soil overlay paints, and where the municipality scope still bites.
 //
-// WHY THIS EXISTS. Jason, 2026-09-22: "the soils layer still is painting a lot
-// more than the main munis (but maybe this is due to far-flung sales when i
-// select Macdonald and adjacent farm land from 2023 to present)". He was
-// right about the cause and it was broader than far-flung.
+// HISTORY, because this file has changed meaning once and the old meaning is
+// still the obvious one to reach for.
 //
-// scopedOverlayMunis() returns csvMatchedMunis, which is fixed at IMPORT time
-// from every municipality that had a matched parcel and is narrowed by
-// nothing afterwards — not the far-flung exclude, not the date range, not any
-// filter. One stray sale in a distant RM therefore made the overlay load and
-// paint that entire RM, and keep painting it after the sale had been filtered
-// off the screen. On "Macdonald and adjacent" that was six RMs before any
-// far-flung comps: 4,693 soil polygons, ~1.58M vertices.
+// Until 2026-09-22 the overlay FETCHED soil per municipality and painted what
+// it fetched, scoped from csvMatchedMunis — fixed at IMPORT time and narrowed
+// by nothing afterwards. One stray far-flung sale therefore loaded and
+// painted an entire RM, and kept painting it after that sale had been
+// filtered off the screen. On "Macdonald and adjacent" that was six RMs:
+// 4,693 polygons, ~1.58M vertices. Narrowing the scope to the visible rows
+// fixed it, and this file existed to pin that narrowing.
 //
-// soilPaintMunis() is the fix, and it is easy to undo by accident — reaching
-// for scopedOverlayMunis() in the CLI overlay is the obvious thing to type,
-// every other overlay does it, and nothing about the result looks wrong. It
-// is just slow again, which is how this took three rounds to find.
+// The overlay now renders from the province-wide PMTiles archive
+// (rebuild-soil-tiles.ps1), which makes that whole class of bug impossible:
+// there is no per-municipality payload to over-fetch, and coverage is the
+// province whatever the result set is. So the narrowing is no longer what
+// protects against over-painting — the tiles are.
 //
-// Source-text check: it proves which scope each caller asks for.
+// What the municipality scope still decides is the Soil Type PALETTE. The
+// top-20 ranking is per municipality (r/build_soil_palette.R), so
+// soilPaintMunis() picks whose ranking colours the map and titles the legend.
+// Get that wrong and the legend says "top 20 in selected municipality" over
+// somebody else's soils.
 //
 // Run: cd web && node test/soilPaintScope.test.js
 
@@ -28,10 +31,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const raw = fs.readFileSync(path.join(here, '..', 'src', 'main.js'), 'utf8');
+const read = (f) => fs.readFileSync(path.join(here, '..', 'src', f), 'utf8');
 
-/** Comments stripped — this file names every function it asserts about, so
- *  reading the raw text would let the prose satisfy the assertions. */
 function stripComments(text) {
   const noBlocks = text.replace(/\/\*[\s\S]*?\*\//g, ' ');
   return noBlocks.split('\n').map((line) => {
@@ -49,10 +50,11 @@ function stripComments(text) {
     return line;
   }).join('\n');
 }
-const src = stripComments(raw);
+const main = stripComments(read('main.js'));
+const map = stripComments(read('map.js'));
 
-function fnBody(name) {
-  const m = new RegExp(`^(async )?function ${name}\\(`, 'm').exec(src);
+function fnBody(src, name) {
+  const m = new RegExp(`^(export )?(async )?function ${name}\\(`, 'm').exec(src);
   if (!m) return null;
   const end = src.indexOf('\n}', m.index);
   return end < 0 ? null : src.slice(m.index, end + 2);
@@ -64,13 +66,12 @@ function test(name, fn) {
   catch (err) { results.push(0); console.log(`  ✗ ${name}\n    ${err.message}`); }
 }
 
-console.log('soil paint scope — the overlay follows the visible rows');
+console.log('soil paint scope — tiles paint, the scope picks the palette');
 
 const BODIES = {
-  soilPaintMunis: fnBody('soilPaintMunis'),
-  toggleCliOverlay: fnBody('toggleCliOverlay'),
-  scopedOverlayMunis: fnBody('scopedOverlayMunis'),
-  extendSoilScopeToViewport: fnBody('extendSoilScopeToViewport'),
+  soilPaintMunis: fnBody(main, 'soilPaintMunis'),
+  toggleCliOverlay: fnBody(main, 'toggleCliOverlay'),
+  applyTiledIdentityPalette: fnBody(main, 'applyTiledIdentityPalette'),
 };
 
 test('every function under test still exists', () => {
@@ -78,48 +79,52 @@ test('every function under test still exists', () => {
   assert.deepEqual(missing, [], `renamed or removed: ${missing.join(', ')}`);
 });
 
-test('soilPaintMunis reads the visible rows', () => {
-  assert.match(BODIES.soilPaintMunis, /currentRows/,
-    'the scope must come from the rows on screen');
-  assert.match(BODIES.soilPaintMunis, /Muni_Name_With_Typ/,
-    'municipality comes off each visible parcel');
+test('the soil layers render from the tile archive, not a GeoJSON source', () => {
+  // The thing that makes over-painting impossible. A layer pointed back at a
+  // per-municipality GeoJSON source reintroduces the entire 2026-09-22 bug:
+  // a fetch per muni, a scope to get wrong, and megabytes of polygons for
+  // ground nobody asked about.
+  const fill = /id: 'cli-agr-fill',[\s\S]{0,200}?source: '([^']+)'/.exec(map);
+  const label = /id: 'cli-agr-label',[\s\S]{0,200}?source: '([^']+)'/.exec(map);
+  assert.ok(fill && label, 'soil fill/label layers not found');
+  assert.equal(fill[1], 'soil-tiles', 'the soil fill must read the tile archive');
+  assert.equal(label[1], 'soil-tiles', 'the soil labels must read the tile archive');
+  assert.match(map, /addSource\('soil-tiles',\s*\{\s*type: 'vector'/,
+    'soil-tiles must be a vector (tile) source');
 });
 
-test('soilPaintMunis falls back to the import scope when there are no rows', () => {
-  // Turning the overlay on before a search still has to paint the picked
-  // municipality; an empty scope would silently disable it.
-  assert.match(BODIES.soilPaintMunis, /scopedOverlayMunis\s*\(/,
-    'with no rows yet there is nothing else to scope to');
-});
-
-test('the CLI overlay asks for the soil scope, not the import scope', () => {
+test('turning the overlay on fetches no polygons', () => {
   const body = BODIES.toggleCliOverlay;
-  assert.match(body, /soilPaintMunis\s*\(/,
-    'toggleCliOverlay must scope to the visible rows');
-  assert.ok(!/scopedOverlayMunis\s*\(/.test(body),
-    'toggleCliOverlay using scopedOverlayMunis is the regression: it paints every '
-    + 'municipality the import touched, including ones filtered off the screen');
+  assert.ok(!/loadSoilSurveyFcForScope/.test(body),
+    'the overlay must not fetch soil per municipality any more — that is what tiles removed');
+  // It should still refuse to claim it is on when the archive is unreachable.
+  assert.match(body, /probeSoilTiles/,
+    'a tiled layer that cannot reach its archive renders nothing; probe and say so');
 });
 
-test('panning extends the scope rather than reloading everything', () => {
-  const body = BODIES.extendSoilScopeToViewport;
-  assert.match(body, /cliMode\s*==\s*null/,
-    'must do nothing while the overlay is off');
-  assert.match(body, /municipalityAt/,
-    'resolves the municipality under the map centre');
-  assert.match(body, /soilPannedMunis/,
-    'the panned-into municipality joins the scope');
-  // A municipality already painted must not trigger a reload on every pan.
-  assert.match(body, /includes\s*\(/,
-    'an already-scoped municipality has to be a no-op');
+test('the municipality scope drives the palette', () => {
+  assert.match(BODIES.toggleCliOverlay, /soilPaintMunis\s*\(/,
+    'the scope still decides whose ranking colours the map');
+  assert.match(BODIES.applyTiledIdentityPalette, /fetchSoilPalette/,
+    'identity mode must read the precomputed per-municipality ranking');
 });
 
-test('the scope is sorted, so the cache key is stable', () => {
-  // loadSoilSurveyFcForScope keys its cache on munis.join("|"). An unsorted
-  // scope would produce a different key every time the grid re-ordered, and
-  // refetch the same municipalities under a new name.
-  assert.match(BODIES.soilPaintMunis, /\.sort\s*\(/,
-    'soilPaintMunis must return a stable order');
+test('soilPaintMunis reads the visible rows, and is stable', () => {
+  const body = BODIES.soilPaintMunis;
+  assert.match(body, /currentRows/, 'the scope comes from the rows on screen');
+  assert.match(body, /Muni_Name_With_Typ/, 'municipality comes off each visible parcel');
+  assert.match(body, /scopedOverlayMunis\s*\(/,
+    'with no rows yet there is nothing else to scope to');
+  // loadKey and the composition cache key are both built from this, so an
+  // unsorted result would churn them on every re-render.
+  assert.match(body, /\.sort\s*\(/, 'soilPaintMunis must return a stable order');
+});
+
+test('identity mode still swaps the labels to the map-unit symbol', () => {
+  // Painted by soil association and labelled by capability class reads as a
+  // bug. The GeoJSON path did this swap; the tiled path has to as well.
+  assert.match(BODIES.applyTiledIdentityPalette, /CLI_IDENTITY_LABEL_FIELD/,
+    'identity mode must set the map-unit label field');
 });
 
 const passed = results.reduce((a, b) => a + b, 0);

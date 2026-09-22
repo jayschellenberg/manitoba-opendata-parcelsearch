@@ -124,9 +124,6 @@ const PER_RESULT = [
   // mislead — but it is tens of megabytes of polygons belonging to a result
   // set that is gone, which is the cost the scoped fetch exists to avoid.
   'gridSoilFc', 'gridSoilKey',
-  // Municipalities the user panned the soil overlay into. Scoped to the
-  // result set that was on screen when they panned.
-  'soilPannedMunis',
 ];
 
 // State that SURVIVES a search on purpose. Listed with the reason, so the

@@ -3,9 +3,10 @@
 // WHY THIS EXISTS. There are two soil suppliers and they are not
 // interchangeable:
 //
-//   PAINT        fetchCliAgrForMuni / loadSoilSurveyFcForScope
-//                Every polygon in the RM, display-simplified. The map
-//                overlay needs the coverage and only ever draws it.
+//   PAINT        the province-wide PMTiles archive (rebuild-soil-tiles.ps1),
+//                generalised at export and again per zoom by tippecanoe. The
+//                map overlay reads it and only ever draws it. Since
+//                2026-09-22 it no longer fetches polygons at all.
 //   MEASURE      fetchSoilSurveyForParcels, via soilFcForParcels
 //                Only the ground the result parcels sit on, at full survey
 //                resolution. Everything that reports a number — the grid's
@@ -102,8 +103,6 @@ const BODIES = {
   enrichImportedSoilComposition: fnBody(main, 'enrichImportedSoilComposition'),
   soilFcForParcels: fnBody(main, 'soilFcForParcels'),
   toggleCliOverlay: fnBody(main, 'toggleCliOverlay'),
-  fetchCliAgrForMuni: fnBody(arcgis, 'fetchCliAgrForMuni'),
-  loadSoilSurveyFcForScope: fnBody(main, 'loadSoilSurveyFcForScope'),
   fetchSoilSurveyForParcels: fnBody(arcgis, 'fetchSoilSurveyForParcels'),
 };
 
@@ -128,14 +127,17 @@ test('a sales / property-list import takes the parcel-scoped path', () => {
     'an import fanned one whole-municipality fetch out per represented muni');
 });
 
-test('the map overlay still loads whole municipalities', () => {
-  // The other half of the split, and the reason it is a split rather than a
-  // replacement: the overlay paints across the RM, so patches around the
-  // comps would be wrong for it.
-  assert.ok(calls(BODIES.toggleCliOverlay, 'loadSoilSurveyFcForScope'),
-    'the overlay must keep its municipal fetch or it paints in patches');
-  assert.ok(calls(BODIES.loadSoilSurveyFcForScope, 'fetchCliAgrForMuni'),
-    'the municipal path must still reach the municipal fetch');
+test('the map overlay paints from tiles and fetches nothing', () => {
+  // The other half of the split. It used to be "the overlay keeps its
+  // municipal fetch, or it paints in patches"; tiles removed the fetch
+  // entirely and made patchiness impossible, so the assertion is now that
+  // the fetch is GONE from the paint path. soilPaintScope.test.js covers the
+  // layer wiring; this covers the separation.
+  assert.ok(!calls(BODIES.toggleCliOverlay, 'loadSoilSurveyFcForScope'),
+    'the overlay must not fetch soil per municipality — that is what tiles replaced');
+  assert.ok(!/fetchCliAgrForMuni/.test(main),
+    'the municipal soil fetch is dead once the overlay is tiled; leaving it is '
+    + 'the "exists and is never called" bug this repo keeps re-finding');
 });
 
 test('the overlay FC and the measurement FC stay separate', () => {
@@ -155,10 +157,7 @@ test('the overlay FC and the measurement FC stay separate', () => {
     'soilFcForParcels must not measure against the overlay\'s simplified municipal FC');
 });
 
-test('the overlay fetch is display-only and says so', () => {
-  const body = BODIES.fetchCliAgrForMuni;
-  assert.match(body, /maxAllowableOffset/,
-    'the overlay payload is the memory cost; it should be simplified for display');
+test('the measurement fetch never simplifies', () => {
   // The guard that keeps the two apart: if anything ever measures from this
   // fetch again, the simplification silently becomes an accuracy bug. So the
   // measurement fetch must carry the un-simplified query and never this flag.

@@ -160,9 +160,9 @@ import {
   fetchHistoricalShard,
   fetchHistoricalLineage,
   fetchMascRiverlots,
-  fetchCliAgrForMuni,
   fetchSoilSurveyForParcels,
   fetchSoilfactsForMuni,
+  fetchSoilPalette,
   parseRollList,
   missingRollsFromResults,
   canonicalRoll,
@@ -207,6 +207,8 @@ import {
   setMuniParcelsData,
   parcelTilesUrl,
   probeParcelTiles,
+  probeSoilTiles,
+  soilTilesUrl,
   setMuniParcelResolver,
   setMuniParcelsScope,
   setMuniParcelsVisible,
@@ -218,7 +220,6 @@ import {
   setMascData,
   setMascRiverlotsData,
   setMascVisible,
-  setCliAgrData,
   setCliAgrVisible,
   setCliPaintMode,
   decodeSoilDescriptor,
@@ -2766,51 +2767,11 @@ $irrigationToggle?.addEventListener('click', async () => {
 // zoom-driven case where a fetch was skipped below the zoom threshold.
 mapReady.then(() => {
   map.on('idle', refreshTileNetworkForViewport);
-  map.on('moveend', extendSoilScopeToViewport);
+  // No moveend handler for soil. The overlay renders from province-wide
+  // tiles, so panning to a far-flung comp needs no load at all — the
+  // scope-extension that used to live here existed only because the paint
+  // was fetched per municipality.
 });
-
-/**
- * Load soil for a municipality the user has panned the overlay into.
- *
- * The soil overlay paints the municipalities the visible results are in
- * (soilPaintMunis), which is what stopped a single far-flung sale dragging a
- * whole RM into the load. The cost of that is real: pan to a far-flung comp
- * and it would sit on blank ground. So panning there says "I am looking at
- * this one too", and it joins the scope.
- *
- * Deliberately cheap to be wrong about: it only runs while the overlay is
- * ON, it asks for the municipality under the map CENTRE (one point-in-polygon
- * against a 183-polygon file already in memory), and a municipality already
- * in scope is a no-op. Nothing happens on an ordinary pan inside the
- * municipalities already painted.
- */
-let soilScopeExtendPending = false;
-async function extendSoilScopeToViewport() {
-  if (cliMode == null || soilScopeExtendPending) return;
-  const centre = map.getCenter();
-  if (!centre) return;
-  soilScopeExtendPending = true;
-  try {
-    const hit = await municipalityAt([centre.lng, centre.lat]);
-    const name = hit?.listName;
-    if (!name || soilPaintMunis().includes(name)) return;
-    soilPannedMunis.add(name);
-    const munis = soilPaintMunis();
-    setCount(`Loading soil for ${name}…`);
-    const fc = await loadSoilSurveyFcForScope(munis, { onProblem: (m) => setCount(m) });
-    if (!fc) { soilPannedMunis.delete(name); return; }
-    // Re-apply whichever mode is showing so the new municipality paints like
-    // the rest: identity re-ranks and re-pushes, capability just needs the
-    // source to hold the larger set.
-    if (cliMode === 'identity') applyCliIdentityMode(fc);
-    else { ensureCliSourcePushed(); applyCliCapabilityMode(); }
-    setCount('');
-  } catch (err) {
-    console.warn('soil scope extend failed', err);
-  } finally {
-    soilScopeExtendPending = false;
-  }
-}
 
 // ---------- Collapsible overlay groups ----------
 //
@@ -4747,12 +4708,6 @@ async function runSearch() {
   // thing the scoped fetch exists to avoid.
   gridSoilFc = null;
   gridSoilKey = null;
-  // Municipalities painted only because the user panned the soil overlay
-  // into them belong to the result set they were looking at. A new search is
-  // a new set, and carrying them over would quietly re-load RMs that have
-  // nothing to do with it — the same over-painting this scope narrowing
-  // exists to stop.
-  soilPannedMunis = new Set();
   // Drop the sales-mode column reveal if a previous run came from a
   // sales CSV upload — a normal search shouldn't carry those columns.
   if ($resultsTable) $resultsTable.classList.remove('sales-mode');
@@ -9429,8 +9384,26 @@ const muniParcelPopupResolver = createMuniParcelResolver({
 //
 // Returns undefined when not wanted, null when the survey has no polygon
 // over the parcel, else the composition rows.
+/**
+ * What a cached per-parcel soil composition belongs to.
+ *
+ * A composition is measured against the survey for one municipality scope;
+ * change the scope and a cached answer may be from ground the user has left.
+ * Municipality is the granularity that matters — the parcel itself does not
+ * move — so the scope key is the painted municipality list.
+ */
+function cliCompositionScopeKey() {
+  return soilPaintMunis().join('|');
+}
+
 const soilCompositionByParcel = new Map();
-muniParcelPopupResolver.soilWanted = () => cliMode != null && !!lastCliFc?.features?.length;
+// Soil is available whenever the overlay is on. This used to also require
+// lastCliFc to hold features, because the overlay's own municipal fetch was
+// what made a composition possible. The paint comes from tiles now and
+// lastCliFc is never populated, so keeping that clause would have left this
+// false forever — the popup would quietly stop showing soil with the overlay
+// plainly on. The composition itself is fetched per clicked parcel below.
+muniParcelPopupResolver.soilWanted = () => cliMode != null;
 // Synchronous peek for the hover tooltip: undefined when not wanted
 // (overlay off), { composition } when this parcel has been composed against
 // the CURRENT soil set, null when it has not — the hover then shows a
@@ -9439,7 +9412,7 @@ muniParcelPopupResolver.peekSoilComposition = (props) => {
   if (!muniParcelPopupResolver.soilWanted()) return undefined;
   const key = recordKey(props);
   const cached = key ? soilCompositionByParcel.get(key) : null;
-  return cached && cached.soilFc === lastCliFc ? cached.soil : null;
+  return cached && cached.scope === cliCompositionScopeKey() ? cached.soil : null;
 };
 // Resolves to `{ composition, cliRollup }` (either may be null when the
 // survey has nothing here), or undefined when not wanted.
@@ -9447,7 +9420,7 @@ muniParcelPopupResolver.resolveSoilComposition = async (props) => {
   if (!muniParcelPopupResolver.soilWanted()) return undefined;
   const key = recordKey(props);
   const cached = key ? soilCompositionByParcel.get(key) : null;
-  if (cached && cached.soilFc === lastCliFc) return cached.soil;
+  if (cached && cached.scope === cliCompositionScopeKey()) return cached.soil;
   const feature = await muniParcelPopupResolver.resolveFeature?.(props);
   if (!feature?.geometry) return { composition: null, cliRollup: null };
   // Measured against survey geometry for THIS parcel, not against the
@@ -9466,12 +9439,13 @@ muniParcelPopupResolver.resolveSoilComposition = async (props) => {
     composition: feature.properties._soilComposition ?? null,
     cliRollup: feature.properties._cliRollup ?? null,
   };
-  // Keyed on the OVERLAY set, not on the scoped set that did the
-  // measuring: lastCliFc is what a municipality change replaces, so it is
-  // the thing that says "this cached composition is from a scope you have
-  // left". Storing the scoped set here would never match the read above,
-  // and every hover would silently refetch and rejoin.
-  if (key) soilCompositionByParcel.set(key, { soilFc: lastCliFc, soil });
+  // Keyed on the SCOPE the composition was measured for, not on the set that
+  // measured it. It has to be something that changes exactly when the answer
+  // would — a municipality change — and storing the scoped set itself would
+  // never match the read above, so every hover would silently refetch and
+  // rejoin. This was lastCliFc until the paint moved to tiles and that stopped
+  // being populated.
+  if (key) soilCompositionByParcel.set(key, { scope: cliCompositionScopeKey(), soil });
   return soil;
 };
 
@@ -9983,7 +9957,6 @@ let cliLoadedFor = null;
 // enrichment — used to pay that anyway. Now the push is deferred until
 // the overlay is actually turned on, and this records what got pushed so
 // turning it on later knows whether it still has to.
-let cliPushedFor = null;
 // Land Cover overlay state. Tri-state cycle when the raster pyramid is
 // available, dominant↔off when it isn't (probed once at boot):
 //   null      → off
@@ -10028,7 +10001,6 @@ function setCliMode(value) {
 }
 // Last loaded CLI FC, kept so cycling between modes can re-rank the
 // palette / re-stamp _paintColor without re-fetching.
-let lastCliFc = EMPTY_FC;
 
 /**
  * Categorical palette used by the CLI "Soil Type" mode to colour
@@ -10057,84 +10029,102 @@ const SOIL_SURVEY_PALETTE = [
 ];
 const SOIL_SURVEY_FALLBACK_COLOR = '#bfbfbf';
 
-/**
- * Stamp `_paintColor` on every polygon in `fc` based on its
- * SOIL_CODE1's rank by total area within the loaded muni FC, then
- * update the named map fill layer's paint expression to read that
- * colour and re-render the supplied legend element with the top-N
- * soil names.
- *
- * Used by the CLI overlay's identity ("Soil Type") mode — the top-N
- * is computed PER MUNI off the same Soil_Survey_MB polygons the
- * capability mode paints, so each muni gets its own most-common-soils
- * palette rather than a global one.
- */
-function applyIdentityPalette(fc, target) {
-  const {
-    fillLayerId,
-    legendEl,
-    legendTitle,
-    legendSub = 'Coloured by dominant soil association',
-  } = target;
-
-  // 1. Tally area per SOIL_CODE1. Server-precomputed Shape__Area
-  //    (uppercase in GeoJSON output) means we can skip the per-polygon
-  //    turfArea calls that used to block the main thread for several
-  //    seconds on a busy muni. Falls back to turfArea if Shape__Area
-  //    is missing.
-  const areaByCode = new Map();
-  const nameByCode = new Map();
-  for (const f of fc.features || []) {
-    const code = f.properties?.SOIL_CODE1;
-    if (!code) continue;
-    const p = f.properties || {};
-    const serverArea = Number(p.SHAPE__Area ?? p.Shape__Area ?? p.shape__Area);
-    let a = Number.isFinite(serverArea) && serverArea > 0 ? serverArea : 0;
-    if (a <= 0) {
-      try { a = turfArea(f); } catch { /* skip topology errors */ }
-    }
-    if (!Number.isFinite(a) || a <= 0) continue;
-    areaByCode.set(code, (areaByCode.get(code) || 0) + a);
-    if (!nameByCode.has(code)) nameByCode.set(code, f.properties?.SOILNAME1 || code);
-  }
-
-  // 2. Rank top-N by area; assign palette in that order.
-  const N = SOIL_SURVEY_PALETTE.length;
-  const ranked = [...areaByCode.entries()].sort((a, b) => b[1] - a[1]).slice(0, N);
-  const colorByCode = new Map();
-  ranked.forEach(([code], i) => { colorByCode.set(code, SOIL_SURVEY_PALETTE[i]); });
-
-  // 3. Stamp the resolved colour onto every polygon so the popup chip
-  //    can match the map without map.js needing a copy of the palette.
-  for (const f of fc.features || []) {
-    const code = f.properties?.SOIL_CODE1;
-    f.properties._paintColor = colorByCode.get(code) || SOIL_SURVEY_FALLBACK_COLOR;
-  }
-
-  // 4. Rebuild the named fill layer's paint to read the stamped colour.
-  if (map.getLayer(fillLayerId)) {
-    map.setPaintProperty(fillLayerId, 'fill-color', [
-      'coalesce', ['get', '_paintColor'], SOIL_SURVEY_FALLBACK_COLOR,
-    ]);
-  }
-
-  // 5. Render the legend (top-N soils + "Other" if anything fell off
-  //    the bottom of the palette).
-  renderIdentityLegend(legendEl, ranked, nameByCode, areaByCode.size > N, {
-    title: legendTitle,
-    sub: legendSub,
-  });
-
-  // Returned so the SAME colours can be put on a different set of soil
-  // features — the parcel-scoped set the composition join runs against,
-  // which is no longer the set that got painted. Keyed by SOIL_CODE1, so
-  // this survives the two sets holding different polygon objects.
-  return colorByCode;
-}
 
 // SOIL_CODE1 -> swatch colour for the CLI overlay's identity mode, or null
 // when identity mode is off. Set by applyCliIdentityMode.
 let cliIdentityColorByCode = null;
+
+/**
+ * Identity ("Soil Type") palette for the TILED soil overlay.
+ *
+ * applyIdentityPalette ranks SOIL_CODE1 by area over a loaded
+ * FeatureCollection and stamps `_paintColor` on each polygon. A vector-tile
+ * source only ever holds the viewport, so there is nothing to rank and
+ * nothing to stamp — the ranking has to arrive precomputed and the colour
+ * has to be decided by the paint expression instead.
+ *
+ * The ranking is per municipality, not province-wide: the legend says "top 20
+ * in selected municipality" and that is the useful statement for an
+ * appraiser. r/build_soil_palette.R computes it from the same basis
+ * applyIdentityPalette used — full polygon area per SOIL_CODE1 over the
+ * polygons intersecting the municipality — so the legend does not silently
+ * reorder against an older screenshot.
+ *
+ * Several municipalities in scope means several rankings, so they are merged
+ * by summed rank position: a soil that is second in two RMs outranks one
+ * that is first in neither. Codes beyond the palette take the fallback grey,
+ * exactly as they did before.
+ */
+async function applyTiledIdentityPalette(munis) {
+  const palette = await fetchSoilPalette().catch(() => null);
+  const scoped = (munis || []).map((m) => palette?.[m]).filter(Boolean);
+  if (!scoped.length) {
+    // No ranking for these municipalities. Paint everything the fallback and
+    // say so in the legend rather than showing twenty arbitrary colours.
+    cliIdentityColorByCode = null;
+    if (map.getLayer('cli-agr-fill')) {
+      map.setPaintProperty('cli-agr-fill', 'fill-color', SOIL_SURVEY_FALLBACK_COLOR);
+    }
+    renderIdentityLegend($cliLegend, [], new Map(), false, {
+      title: 'Soil Type',
+      sub: 'No soil ranking published for this municipality',
+    });
+    return;
+  }
+
+  const score = new Map();
+  const nameByCode = new Map();
+  for (const list of scoped) {
+    list.forEach((entry, i) => {
+      const code = entry?.c;
+      if (!code) return;
+      // Lower is better; a code absent from a list is charged the full length
+      // of that list so it cannot win on a single appearance.
+      score.set(code, (score.get(code) ?? 0) + i);
+      if (!nameByCode.has(code) && entry.n) nameByCode.set(code, entry.n);
+    });
+  }
+  for (const code of score.keys()) {
+    const absent = scoped.filter((l) => !l.some((e) => e.c === code)).length;
+    score.set(code, score.get(code) + absent * SOIL_SURVEY_PALETTE.length);
+  }
+
+  const ranked = [...score.entries()]
+    .sort((a, b) => a[1] - b[1] || String(a[0]).localeCompare(String(b[0])))
+    .slice(0, SOIL_SURVEY_PALETTE.length);
+
+  cliIdentityColorByCode = new Map();
+  const match = ['match', ['coalesce', ['get', 'SOIL_CODE1'], '']];
+  ranked.forEach(([code], i) => {
+    cliIdentityColorByCode.set(code, SOIL_SURVEY_PALETTE[i]);
+    match.push(code, SOIL_SURVEY_PALETTE[i]);
+  });
+  match.push(SOIL_SURVEY_FALLBACK_COLOR);
+  if (map.getLayer('cli-agr-fill')) {
+    map.setPaintProperty('cli-agr-fill', 'fill-color', match);
+  }
+
+  // Identity-mode labels show the soil-survey map-unit symbol (e.g.
+  // "ALMv-S2") rather than the capability code ("2W"). The GeoJSON path did
+  // this too; dropping it would have left identity mode painted by soil and
+  // labelled by capability, which reads as a bug.
+  if (map.getLayer('cli-agr-label')) {
+    map.setLayoutProperty('cli-agr-label', 'text-field', CLI_IDENTITY_LABEL_FIELD);
+  }
+
+  renderIdentityLegend(
+    $cliLegend,
+    ranked.map(([code]) => [code, 0]),
+    nameByCode,
+    score.size > ranked.length,
+    {
+      title: munis.length === 1
+        ? 'Soil Type — top 20 in selected municipality'
+        : `Soil Type — top 20 across ${munis.length} municipalities`,
+      sub: 'Coloured by dominant soil association',
+    },
+  );
+}
 
 /**
  * Put the identity palette's colours on an arbitrary soil FC, so the popup's
@@ -10193,10 +10183,6 @@ function scopedOverlayMunis() {
   return imported ? imported.slice() : ($municipality.value ? [$municipality.value] : []);
 }
 
-// Municipalities the user has panned the soil overlay into, on top of the
-// ones the results imply. Cleared with the overlay and on a muni change.
-let soilPannedMunis = new Set();
-
 /**
  * Municipalities the SOIL overlay should paint.
  *
@@ -10222,7 +10208,6 @@ function soilPaintMunis() {
     const m = row?.parcel?.properties?.Muni_Name_With_Typ;
     if (m) fromRows.add(m);
   }
-  for (const m of soilPannedMunis) fromRows.add(m);
   if (fromRows.size === 0) return scopedOverlayMunis();
   // Sorted so the loadKey is stable across re-renders that reorder rows.
   return [...fromRows].sort();
@@ -10268,17 +10253,16 @@ function resetMascAndGridToggles() {
   if (cliLoadedFor && cliLoadedFor !== soilPaintMunis().join('|')) {
     cliLoadedFor = null;
     setCliMode(null);
-    lastCliFc = EMPTY_FC;
-    soilPannedMunis = new Set();
-    // Drop the previous municipality's soil out of the map source too.
-    // Clearing lastCliFc alone left the geojson-vt tile index — and every
-    // full-vertex tile it had cached for the old muni — alive in the
-    // worker for the rest of the session, on top of whatever the new
-    // municipality is about to load.
-    if (cliPushedFor != null) {
-      cliPushedFor = null;
-      mapReady.then(() => setCliAgrData(map, EMPTY_FC));
-    }
+    // Nothing to drop out of a map source any more. This used to push an
+    // empty FC because the GeoJSON source kept the previous municipality's
+    // full-vertex tile index alive in the worker for the rest of the
+    // session. The overlay renders from the province-wide PMTiles archive
+    // now, so there is no per-municipality payload to strand — MapLibre
+    // evicts tiles on its own.
+    //
+    // What still matters here is the composition SCOPE: a municipality
+    // change invalidates cached per-parcel compositions, which
+    // cliCompositionScopeKey() keys on.
     if ($cliToggle && $cliToggle.classList.contains('active')) {
       setOverlayPressed($cliToggle, false);
       setOverlayBtnLabel($cliToggle, cliButtonLabelFor(null));
@@ -10511,82 +10495,7 @@ function applyCliCapabilityMode() {
   if ($cliLegend) $cliLegend.innerHTML = CLI_CAPABILITY_LEGEND_HTML;
 }
 
-function applyCliIdentityMode(cliFc) {
-  // Top-N-by-area soil-association palette, recomputed against the
-  // currently-loaded muni FC so each muni gets its own most-common
-  // soils with distinct colours.
-  cliIdentityColorByCode = applyIdentityPalette(cliFc, {
-    fillLayerId: 'cli-agr-fill',
-    legendEl: $cliLegend,
-    legendTitle: 'Soil Type — top 20 in selected municipality',
-    legendSub: 'Coloured by dominant soil association',
-  });
-  // applyIdentityPalette mutates `_paintColor` on the in-memory feature
-  // properties and rewires the fill-color expression to `['get',
-  // '_paintColor']`. MapLibre's GeoJSON source took a copy when
-  // setCliAgrData ran at fetch time, so it doesn't see the post-hoc
-  // mutation — we have to re-push the FC for the paint to find the
-  // new field. Without this every polygon paints the fallback grey.
-  // Routed through pushCliSource so cliPushedFor stays honest and a
-  // later capability-mode toggle doesn't re-tile what is already there.
-  pushCliSource(cliFc, cliLoadedFor);
-  // Re-stamp parcel composition so the popup's per-soil swatches pick
-  // up the freshly-assigned _paintColor. componentsForFeature reads
-  // each polygon's _paintColor at rollup time, so a composition stamp
-  // taken BEFORE the palette ran (e.g. during the first capability-mode
-  // load) carries paintColor:null on every row and renders the popup
-  // swatches grey. Re-stamping here pulls in the new colours so the
-  // popup's left-side swatches match the legend / map polygons.
-  restampSoilCompositionForActiveSources()
-    .catch((err) => console.warn('soil re-colour after palette swap failed', err));
-  // Identity-mode labels show the soil-survey map-unit symbol (e.g.
-  // "ALMv-S2") rather than the capability code ("2W"). MAPUNITNOM is
-  // already on every feature.
-  if (map.getLayer('cli-agr-label')) {
-    map.setLayoutProperty('cli-agr-label', 'text-field', CLI_IDENTITY_LABEL_FIELD);
-  }
-}
 
-/**
- * Re-stamp `_soilComposition` on every parcel source that's currently
- * loaded (search-result parcels in currentRows, plus the Roll Layer's
- * muni-parcels FC when it's loaded). Used whenever the CLI overlay's
- * paint mode swaps so the per-parcel composition rollup picks up the
- * fresh `_paintColor` that applyIdentityPalette stamped on the soil
- * polygons. Pushes the updated parcel sources back to the map so the
- * popup click handler reads the enriched properties.
- */
-async function restampSoilCompositionForActiveSources() {
-  // The palette changed, not the geometry. Re-colour the measurement set
-  // in place and re-run the rollup so the popup swatches follow the map;
-  // the join itself reuses whatever soilFcForParcels already has, so a
-  // mode swap costs no fetch.
-  if (currentRows.length > 0) {
-    // `viewFc`, not `parcelFc`: everywhere else in this module parcelFc is
-    // the set CAPTURED when a search or import began, and pushing that back
-    // late is the bug latePushFilter.test.js exists for. This one is built
-    // from the rendered rows, so it is safe — the name should say which.
-    const viewFc = { type: 'FeatureCollection', features: currentRows.map((r) => r.parcel) };
-    const soil = await soilFcForParcels(viewFc);
-    if (soil?.features?.length) {
-      applyCliColorsTo(soil);
-      await stampSoilCompositionOnParcels(viewFc, soil);
-      setMapData(viewFc, lastZoningFc || EMPTY_FC, lastDevPlanFc || EMPTY_FC, { fit: false });
-      // Refresh the table so the CLI / Soil Type columns pick up the
-      // newly-stamped composition.
-      refreshResultsTableAfterCompositionStamp();
-    }
-  }
-  if (auxData.muniParcels?.features?.length) {
-    const soil = await soilFcForParcels(auxData.muniParcels);
-    if (soil?.features?.length) {
-      applyCliColorsTo(soil);
-      await stampSoilCompositionOnParcels(auxData.muniParcels, soil);
-      await mapReady;
-      setMuniParcelsData(map, auxData.muniParcels);
-    }
-  }
-}
 
 function nextCliMode(current) {
   if (current === null)         return 'capability';
@@ -10604,89 +10513,8 @@ function cliButtonLabelFor(mode) {
   return 'Soil Productivity/Soil Name';
 }
 
-/**
- * Fetch the soil-survey polygons that back BOTH the CLI overlay's paint
- * and the grid's CLI / Soil Type columns, for every municipality
- * currently in scope, and push them onto the map's CLI source.
- *
- * Returns the FC, or null when the load can't proceed — a missing muni
- * boundary, no polygons in scope, or a network failure. `onProblem`
- * receives a user-facing sentence in that case so each caller decides
- * where to put it (the toggle reverts its button; the preset just
- * annotates the count line).
- *
- * Cached against `cliLoadedFor`, so whichever entry point runs first
- * pays the fetch and the other is instant. It does NOT make the layer
- * visible — that's the toggle's business.
- */
-async function loadSoilSurveyFcForScope(munis, { onProblem } = {}) {
-  if (!munis?.length) return null;
-  const loadKey = munis.join('|');
-  if (cliLoadedFor === loadKey && lastCliFc?.features?.length) return lastCliFc;
-  const report = (msg) => { if (onProblem) onProblem(msg); };
 
-  const muniBoundaries = munis.map((m) => ({
-    muni: m,
-    feat: muniBoundariesFc?.features?.find(
-      (f) => f.properties?.MUNI_LIST_NAME_WITH_TYPE === m,
-    ) || null,
-  }));
-  const missing = muniBoundaries.filter((mb) => !mb.feat).map((mb) => mb.muni);
-  if (missing.length > 0) {
-    report(`Couldn't locate boundary for ${missing.join(', ')}; can't load CLI.`);
-    return null;
-  }
 
-  let features;
-  try {
-    const fcs = await Promise.all(
-      muniBoundaries.map((mb) => fetchCliAgrForMuni(mb.muni, mb.feat)),
-    );
-    features = fcs.flatMap((fc) => fc?.features || []);
-  } catch (err) {
-    console.warn('CLI fetch failed', err);
-    report(`Failed to load CLI soil capability: ${err.message}`);
-    return null;
-  }
-  if (features.length === 0) {
-    const label = munis.length === 1
-      ? munis[0]
-      : `${munis.length} matched munis (${munis.join(', ')})`;
-    report(`No CLI soil-capability polygons in ${label}.`);
-    return null;
-  }
-
-  const cliFc = { type: 'FeatureCollection', features };
-  await mapReady;
-  lastCliFc = cliFc;
-  cliLoadedFor = loadKey;
-  // Only tile it when something is drawing it. The Agricultural column
-  // preset reaches here too, and it wants the columns, not the paint.
-  if (cliMode != null) pushCliSource(cliFc, loadKey);
-  return cliFc;
-}
-
-/**
- * Push a soil FC at the map's 'cli-agr' source and record that it is
- * there. Everything that makes the overlay visible goes through
- * ensureCliSourcePushed() rather than calling setCliAgrData directly, so
- * a load taken purely for the grid columns never pays the re-tile.
- */
-function pushCliSource(cliFc, loadKey) {
-  setCliAgrData(map, cliFc);
-  cliPushedFor = loadKey ?? cliLoadedFor;
-}
-
-/**
- * Make sure the currently-loaded soil FC is in the map source before the
- * overlay is shown. A no-op when this load is already pushed — which is
- * the normal case once the overlay has been on once for this scope.
- */
-function ensureCliSourcePushed() {
-  if (!lastCliFc?.features?.length) return;
-  if (cliPushedFor === cliLoadedFor) return;
-  pushCliSource(lastCliFc, cliLoadedFor);
-}
 
 /**
  * Run the parcel × soil-polygon join over `rows`, then re-push the map
@@ -10902,25 +10730,27 @@ async function toggleCliOverlay() {
     return;
   }
 
-  // First click after off (or after muni change) — make sure data is
-  // loaded. Subsequent capability→identity transition reuses cached
-  // FC, so this branch only runs once per muni. The Agricultural column
-  // preset warms the same cache, so this is often already a no-op.
+  // No fetch for the PAINT any more. The overlay renders from the
+  // province-wide PMTiles archive, so the polygons arrive as tiles for
+  // whatever is on screen — there is nothing to load per municipality and
+  // nothing to go stale. What remains is the COMPOSITION for the grid
+  // columns, which is a different dataset at a different resolution
+  // (soilfacts shards, or the parcel-scoped survey fetch) and is what the
+  // work below kicks off.
   if (cliLoadedFor !== loadKey) {
-    $cliToggle.disabled = true;
-    setOverlayBtnLabel($cliToggle, 'Loading…');
-    let problem = null;
-    const cliFc = await loadSoilSurveyFcForScope(munis, {
-      onProblem: (msg) => { problem = msg; },
-    });
-    $cliToggle.disabled = false;
-    if (!cliFc) {
+    // Probe the archive before claiming the overlay is on. Same contract as
+    // the Assessment Parcels tiles: a tiled layer that cannot reach its
+    // archive renders nothing, and an overlay button reading "Soil
+    // Productivity" over an empty map is the failure this avoids.
+    const probe = await probeSoilTiles();
+    if (!probe.ok) {
       setCliMode(null);
       setOverlayPressed($cliToggle, false);
       setOverlayBtnLabel($cliToggle, cliButtonLabelFor(null));
-      if (problem) setCount(problem);
+      setCount(`Soil tiles unavailable at ${soilTilesUrl()} — ${probe.reason}`);
       return;
     }
+    cliLoadedFor = loadKey;
     const rows = csvFullRows || currentRows;
     if (rows.length > 0) {
       // Composition join stays off the paint path — the helper awaits the
@@ -10933,18 +10763,16 @@ async function toggleCliOverlay() {
     }
   }
 
-  // Apply the new mode. Paint + legend + label expression all swap here.
-  // The source push is conditional: capability mode paints straight from
-  // the FC's own fields, so it needs whatever is loaded to actually be in
-  // the source — which, after a column-preset or import load, it is not
-  // yet. Identity mode re-pushes for its own reasons (applyIdentityPalette
-  // mutates `_paintColor` after the fact), so it covers itself.
+  // Apply the new mode. Both paint straight off tile attributes now, so
+  // neither needs anything pushed at a source: capability matches on
+  // AGCAP_CLS1, identity on SOIL_CODE1 against the precomputed per-muni
+  // ranking. Verified against the published archive — a z12 tile over
+  // Macdonald carries both fields on 61 of 61 features.
   setCliMode(targetMode);
   if (targetMode === 'capability') {
-    ensureCliSourcePushed();
     applyCliCapabilityMode();
   } else {
-    applyCliIdentityMode(lastCliFc);
+    await applyTiledIdentityPalette(munis);
   }
   setCliAgrVisible(map, true);
   setOverlayPressed($cliToggle, true);

@@ -477,6 +477,21 @@ const PARCEL_TILES_URL =
   import.meta.env?.VITE_PARCEL_TILES_URL || '/parcels.pmtiles';
 
 /**
+ * The province-wide Manitoba Soil Survey vector-tile archive
+ * (rebuild-soil-tiles.ps1). Same arrangement as the parcel archive above.
+ *
+ * DISPLAY ONLY. The overlay paints from these tiles; nothing measured comes
+ * from them. Parcel soil composition is joined against the full-resolution
+ * parcel-scoped fetch or read from the pre-baked soilfacts shards, and these
+ * tiles are simplified twice over (at export, then per zoom by tippecanoe).
+ * A composition percentage must never be derived from a rendered tile
+ * feature — see the split in web/src/arcgis.js.
+ */
+export const SOIL_TILES_URL =
+  import.meta.env?.VITE_SOIL_TILES_URL
+  || 'https://pub-091058079bf6458da1681945177e1682.r2.dev/soil.pmtiles';
+
+/**
  * The archive holds every municipality, so each parcel layer carries a
  * filter narrowing it to the municipalities in scope. This is the
  * nothing-selected form: a filter that matches no feature, which is also
@@ -533,6 +548,38 @@ export function probeParcelTiles() {
 
 /** Where the archive is expected, for error messages. */
 export function parcelTilesUrl() { return PARCEL_TILES_URL; }
+
+/**
+ * Same probe for the soil archive. Mirrors probeParcelTiles deliberately:
+ * this repo's pattern for a tiled layer is probe-and-fail-loudly, not fall
+ * back to a GeoJSON path kept alive for the purpose. A blank overlay with no
+ * explanation is the outcome worth spending a range request to avoid.
+ */
+let soilTilesProbe = null;
+export function probeSoilTiles() {
+  if (soilTilesProbe) return soilTilesProbe;
+  soilTilesProbe = (async () => {
+    try {
+      const res = await fetch(SOIL_TILES_URL, { headers: { Range: 'bytes=0-15' } });
+      if (!res.ok) return { ok: false, reason: `HTTP ${res.status}` };
+      const buf = await res.arrayBuffer();
+      const magic = String.fromCharCode(...new Uint8Array(buf).slice(0, 7));
+      if (magic !== 'PMTiles') {
+        return { ok: false, reason: 'not a PMTiles archive (wrong file, or the host returned an error page)' };
+      }
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, reason: err?.message || 'network error' };
+    }
+  })().then((r) => {
+    if (!r.ok) soilTilesProbe = null;   // let the next toggle retry
+    return r;
+  });
+  return soilTilesProbe;
+}
+
+/** Where the soil archive is expected, for error messages. */
+export function soilTilesUrl() { return SOIL_TILES_URL; }
 
 /**
  * Narrow every Assessment Parcels layer to `muniNames`. Pass an empty
@@ -1900,15 +1947,24 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
       // Manitoba's Soil_Survey_MB on 2026-05-20 (per AgriMaps'
       // authoritative source). See arcgis.js fetchCliAgrForMuni for
       // the source-switch context.
-      map.addSource('cli-agr', {
-        type: 'geojson',
-        data: emptyFc(),
-        ...SOIL_SURVEY_MAP_SOURCE_OPTIONS,
+      // The soil overlay renders from the province-wide PMTiles archive
+      // (rebuild-soil-tiles.ps1). MapLibre range-requests only the tiles on
+      // screen, so there is no per-municipality fetch, nothing parsed on the
+      // main thread, and no scope to get wrong — which is what the whole
+      // soil-overlay effort of 2026-09-22 was chasing. Verified against the
+      // published archive: a z12 tile over Macdonald carries AGCAP_CLS1 and
+      // SOIL_CODE1 on 61 of 61 features, which is what both paints read.
+      //
+      map.addSource('soil-tiles', {
+        type: 'vector',
+        url: `pmtiles://${SOIL_TILES_URL}`,
+        promoteId: { soil: 'OBJECTID' },
       });
       map.addLayer({
         id: 'cli-agr-fill',
         type: 'fill',
-        source: 'cli-agr',
+        source: 'soil-tiles',
+        'source-layer': 'soil',
         layout: { visibility: 'none' },
         paint: {
           'fill-color': [
@@ -1932,7 +1988,8 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
       map.addLayer({
         id: 'cli-agr-label',
         type: 'symbol',
-        source: 'cli-agr',
+        source: 'soil-tiles',
+        'source-layer': 'soil',
         minzoom: 11,
         layout: {
           visibility: 'none',
@@ -4696,10 +4753,6 @@ export function setIrrigationVisible(map, visible) {
   }
 }
 
-export function setCliAgrData(map, fc) {
-  const src = map.getSource('cli-agr');
-  if (src) src.setData(fc);
-}
 export function setCliAgrVisible(map, visible) {
   const v = visible ? 'visible' : 'none';
   for (const id of ['cli-agr-fill', 'cli-agr-label']) {
