@@ -5150,7 +5150,16 @@ async function runSearch() {
         if (soilResult.superseded) return;
         if (soilResult.featureCount > 0) {
           refreshResultsTableAfterCompositionStamp();
-          setMapData(parcelFc, lastZoningFc, lastDevPlanFc, { fit: false });
+          // Same late-push rule as the sales tail below: push what is on the
+          // map now, not the set captured before a soil load that can run for
+          // tens of seconds. The stamps are on the shared parcel objects, so
+          // a narrowed view carries them.
+          setMapData(
+            currentRows.length > 0
+              ? { type: 'FeatureCollection', features: currentRows.map((r) => r.parcel) }
+              : parcelFc,
+            lastZoningFc, lastDevPlanFc, { fit: false },
+          );
         }
         // Recompute against what actually survived. enrichOverlays runs
         // dropSliverOnlyMatches after baseMsg was built, so the original
@@ -5816,9 +5825,32 @@ async function handleSalesUpload(file) {
     // but both fired BEFORE computeSaleGroupTotals stamped the group
     // properties — so the source still held the pre-stamp shape and the
     // multi-parcel-sale sibling highlight never fired on hover. Pushing
-    // again here syncs the map source with the now-stamped parcelFc;
+    // again here syncs the map source with the now-stamped features;
     // `fit: false` keeps the viewport where the user already is.
-    setMapData(parcelFc, lastZoningFc || EMPTY_FC, lastDevPlanFc || EMPTY_FC, { fit: false });
+    //
+    // Push what is on the map NOW, not the `parcelFc` captured when the
+    // upload began. The enrichment tail runs for tens of seconds, which is
+    // plenty of time for the user to set a subject, type a radius or tick a
+    // filter — and handing the captured full set back silently undid it,
+    // leaving the grid on the shortlist and the map on every sale, with the
+    // count line still reading "123 of 1375 sales shown (filtered)" over it
+    // (Jason, 2026-09-22, a 20 km radius around roll 141300). `fit: false`
+    // is what makes it invisible: the camera never moves, so nothing on
+    // screen says the map stopped agreeing with the table.
+    //
+    // This is the same bug scheduleSoilCompositionStamp documents a few
+    // hundred lines down and fixed for its own re-push — Lac du Bonnet,
+    // Exclude Nominal Sales, map correct at 6.2 s and back to the full set
+    // at 27.2 s. Same shape, same cause, one site missed.
+    //
+    // Nothing is lost by narrowing: a filtered view reuses the SAME parcel
+    // objects, so computeSaleGroupTotals' stamps are already on them and the
+    // hover highlight this push exists to fix works either way. Clearing the
+    // filter re-pushes from csvFullRows and the rest come back stamped.
+    const livePushFc = currentRows.length > 0
+      ? { type: 'FeatureCollection', features: currentRows.map((r) => r.parcel) }
+      : parcelFc;
+    setMapData(livePushFc, lastZoningFc || EMPTY_FC, lastDevPlanFc || EMPTY_FC, { fit: false });
 
     // Re-apply starred feature-state for any parcels in the existing
     // favourites Set. Lets a user re-upload a CSV they've already
@@ -10426,12 +10458,16 @@ async function restampSoilCompositionForActiveSources() {
   // the join itself reuses whatever soilFcForParcels already has, so a
   // mode swap costs no fetch.
   if (currentRows.length > 0) {
-    const parcelFc = { type: 'FeatureCollection', features: currentRows.map((r) => r.parcel) };
-    const soil = await soilFcForParcels(parcelFc);
+    // `viewFc`, not `parcelFc`: everywhere else in this module parcelFc is
+    // the set CAPTURED when a search or import began, and pushing that back
+    // late is the bug latePushFilter.test.js exists for. This one is built
+    // from the rendered rows, so it is safe — the name should say which.
+    const viewFc = { type: 'FeatureCollection', features: currentRows.map((r) => r.parcel) };
+    const soil = await soilFcForParcels(viewFc);
     if (soil?.features?.length) {
       applyCliColorsTo(soil);
-      await stampSoilCompositionOnParcels(parcelFc, soil);
-      setMapData(parcelFc, lastZoningFc || EMPTY_FC, lastDevPlanFc || EMPTY_FC, { fit: false });
+      await stampSoilCompositionOnParcels(viewFc, soil);
+      setMapData(viewFc, lastZoningFc || EMPTY_FC, lastDevPlanFc || EMPTY_FC, { fit: false });
       // Refresh the table so the CLI / Soil Type columns pick up the
       // newly-stamped composition.
       refreshResultsTableAfterCompositionStamp();
