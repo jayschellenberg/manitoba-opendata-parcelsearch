@@ -3606,6 +3606,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
         const center = polygonBboxMidpoint(rendered?.geometry)
           ?? [e.lngLat.lng, e.lngLat.lat];
         wireCoordsCopy(parcelClickPopup, center);
+        wireRollCopy(parcelClickPopup);
         wireN1Copy(parcelClickPopup);
       };
       for (const layerId of PARCEL_HIT_LAYERS) onLayerClick(map, layerId, onParcelClick);
@@ -3765,6 +3766,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
             soil: shownSoil,
           }));
           wireCoordsCopy(muniClickPopup, center);
+          wireRollCopy(muniClickPopup);
         };
         muniClickPopup.setLngLat(e.lngLat);
         render();
@@ -5092,6 +5094,39 @@ function wireCoordsCopy(popup, lngLat) {
 }
 
 /**
+ * Wire every `.parcel-roll-copy` anchor in a mounted popup. The roll comes
+ * off the anchor's own data-roll (same pattern as wireN1Copy and the
+ * Winnipeg sister app's wireRollCopy), so the call site never has to be
+ * told which parcel the popup drew.
+ */
+function wireRollCopy(popup) {
+  for (const anchor of popup?.getElement?.()?.querySelectorAll('.parcel-roll-copy') || []) {
+    wireCopyAnchor(anchor, anchor.dataset.roll || '');
+  }
+}
+
+/**
+ * The Copy Roll anchor. Copies the roll exactly as the popup displays it
+ * (rollDisplayFor — the trailing ".000" dropped), so what lands on the
+ * clipboard is what the user just read. Mirrors Winnipeg's rollCopyLink.
+ */
+function rollCopyLink(p) {
+  const roll = rollDisplayFor(p);
+  if (!roll) return null;
+  const safe = escapeHtml(roll);
+  return `<a href="#" class="parcel-roll-copy" role="button" data-roll="${safe}"`
+    + ` title="Copy roll number ${safe} to the clipboard">Copy Roll</a>`;
+}
+
+/** Copy Roll + GPS Coordinates on one action row, Winnipeg's layout.
+ *  nowrap on GPS so a narrow popup breaks between the links, not inside one. */
+function copyActionsLine(p) {
+  const gps = '<a href="#" class="parcel-coords-copy" role="button" style="white-space:nowrap" title="Copy parcel centroid (lat, lng) to clipboard">GPS Coordinates</a>';
+  const roll = rollCopyLink(p);
+  return roll ? `${roll} &nbsp;·&nbsp; ${gps}` : gps;
+}
+
+/**
  * Wire the N1 ID copy link(s) in a click popup. The value comes off the
  * anchor's own data-n1 rather than being threaded through the call site,
  * because the popup HTML is the only thing that knows which sale it drew.
@@ -5857,8 +5892,9 @@ export function parcelHtml(p, { showJumpToList = false, hoverSoil = false } = {}
   // copy the parcel centroid to the clipboard; the hover popup
   // renders the same line but mouse-out closes the popup before the
   // user can click, so it's effectively click-only — same UX as the
-  // previous bottom-of-popup placement.
-  lines.push(`<a href="#" class="parcel-coords-copy" role="button" title="Copy parcel centroid (lat, lng) to clipboard">GPS Coordinates</a>`);
+  // previous bottom-of-popup placement. Copy Roll shares the row
+  // (.parcel-roll-copy, wired by the same click handler).
+  lines.push(copyActionsLine(p));
   if (showJumpToList) {
     lines.push(`<a href="#" class="parcel-jump-to-list" role="button" title="Scroll to this parcel in the results table">Jump to parcel in list</a>`);
   }
@@ -7431,7 +7467,7 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null, soil = unde
   // variant — the hover popup closes on mouse-out before the user
   // can click, so showing a dead link there would just add noise.
   if (withReportLink) {
-    lines.push(`<a href="#" class="parcel-coords-copy" role="button" title="Copy parcel centroid (lat, lng) to clipboard">GPS Coordinates</a>`);
+    lines.push(copyActionsLine(p));
   }
   // Land size — _acres is computed and stamped onto each feature in
   // arcgis.js when the muni-parcels FC is fetched. Show both ac and sf.
