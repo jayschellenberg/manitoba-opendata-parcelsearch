@@ -2096,6 +2096,62 @@ export async function fetchWaterForMuni(muniNameWithTyp) {
 // landcover/; see the header of src/lib/landfacts.js for the stamp.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Soil facts — the pre-baked parcel x soil-survey overlap (r/build_soilfacts.R,
+// mb-parcel-data/soilfacts/). Same family shape as landfacts below; see the
+// header of src/lib/soilfacts.js for what a shard holds and why it holds
+// ratios rather than finished composition rows.
+// ---------------------------------------------------------------------------
+
+let soilfactsIndexPromise = null;
+
+/** Soil-facts shard manifest: Muni_Name_With_Typ -> { file, count }. */
+export async function fetchSoilfactsIndex() {
+  if (soilfactsIndexPromise) return soilfactsIndexPromise;
+  soilfactsIndexPromise = (async () => {
+    const cacheKey = `mb_soilfacts_index_v1_${MB_PARCEL_DATA_REVISION}`;
+    const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+    if (cached) return cached;
+    try {
+      const res = await fetch(`${MB_PARCEL_DATA_CDN}/soilfacts/_index.json`);
+      if (!res.ok) return null;
+      const idx = await res.json();
+      await writeCache(cacheKey, idx);
+      return idx;
+    } catch {
+      return null;
+    }
+  })();
+  return soilfactsIndexPromise;
+}
+
+/**
+ * One municipality's soil-facts shard, or null.
+ *
+ * null is "no shard", never "no soil": the caller must fall back to the live
+ * scoped fetch and join, because a municipality outside the builder's
+ * coverage looks exactly like one whose parcels genuinely have no mapped
+ * soil, and only one of those may be shown as an answer.
+ */
+export async function fetchSoilfactsForMuni(muniNameWithTyp) {
+  if (!muniNameWithTyp) return null;
+  const idx = await fetchSoilfactsIndex();
+  const entry = lookupMuniManifestEntry(idx, muniNameWithTyp, { stripType: false });
+  if (!entry) return null;
+  const cacheKey = `mb_soilfacts_${entry.file}_v1_${MB_PARCEL_DATA_REVISION}`;
+  const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+  if (cached) return cached;
+  try {
+    const res = await fetch(`${MB_PARCEL_DATA_CDN}/soilfacts/${entry.file}`);
+    if (!res.ok) return null;
+    const shard = await res.json();
+    await writeCache(cacheKey, shard);
+    return shard;
+  } catch {
+    return null;
+  }
+}
+
 let landfactsIndexPromise = null;
 
 /** Land-facts shard manifest: muni -> { file, count }, plus `_meta` with the
