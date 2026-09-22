@@ -1526,7 +1526,7 @@ export async function fetchCliAgrForMuni(muniNameWithTyp, muniBoundaryFeature) {
   //   precomputed area instead of the slow turfArea fallback.
   //   v4 (2026-05-20): added maxAllowableOffset for smaller payloads;
   //   v7 removes it because it materially altered some small polygons.
-  const cacheKey = `mb_cli_agr_${muniNameWithTyp}_v8`;
+  const cacheKey = cliAgrCacheKey(muniNameWithTyp);
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
   if (cached) return cached;
 
@@ -1545,6 +1545,138 @@ export async function fetchCliAgrForMuni(muniNameWithTyp, muniBoundaryFeature) {
   }, `Soil Survey for ${muniNameWithTyp}`);
   await writeCache(cacheKey, fc);
   return fc;
+}
+
+// One place the whole-muni soil cache key is spelled, so the peek below
+// and the fetch above can never drift onto different versions.
+const cliAgrCacheKey = (muniNameWithTyp) => `mb_cli_agr_${muniNameWithTyp}_v8`;
+
+/**
+ * Whole-municipality soil already sitting in the IDB cache, or null.
+ * NEVER fetches.
+ *
+ * Exists so the parcel-scoped path can spend nothing at all when the
+ * overlay has already pulled these municipalities: the muni payload is a
+ * superset of anything the parcels need, it is cached for 30 days, and
+ * reading it keeps the warm path instant instead of paying a fresh
+ * scoped fetch on every search.
+ */
+export async function cachedCliAgrForMuni(muniNameWithTyp) {
+  if (!muniNameWithTyp) return null;
+  return (await readCache(cliAgrCacheKey(muniNameWithTyp), MUNI_BOUNDARIES_TTL_MS)) || null;
+}
+
+// Parcel bounding boxes per spatial query when fetching soil for a set of
+// parcels rather than a whole municipality. Each batch goes out as ONE
+// multi-ring polygon (see polygonsToEsriGeometry), so this is the divisor
+// on request count: 1,000 sale parcels become 20 ID queries, not 1,000.
+// A bbox ring is 5 points, so even 50 of them is a ~6 KB POST body —
+// nothing like the WALLAS footprints that set that batch size at 25.
+const SOIL_PARCEL_BATCH_SIZE = 50;
+
+/**
+ * Soil polygons covering a SET OF PARCELS instead of whole municipalities.
+ *
+ * The grid's CLI / Soil Type columns need soil only where the result
+ * parcels are. Fetching every polygon in each municipality to fill them
+ * is what made a multi-municipality sales analysis so heavy: RM of
+ * Ritchot alone is 2,715 polygons / 55 MB, and a farm-sales search
+ * touches a small fraction of that ground. The map overlay still loads
+ * whole municipalities — it paints across the RM, so it has to.
+ *
+ * Each parcel contributes its BOUNDING BOX, not its outline. Any soil
+ * polygon that intersects the parcel also intersects the parcel's bbox,
+ * so the result is a superset of what the join needs — and the join
+ * clips precisely anyway, so the extra polygons cost nothing but a few
+ * bbox tests. Outlines would multiply the POST body for no gain.
+ *
+ * Two phases, mirroring fetchCompleteFeatureSet: the spatial filter runs
+ * ID-only (cheap, no geometry crosses the wire), then the features come
+ * back by OBJECTID with no geometry filter attached. That keeps one
+ * verified retrieval path for soil rather than two that can drift.
+ *
+ * Returns a FeatureCollection, or null when there are no usable parcels.
+ */
+export async function fetchSoilSurveyForParcels(parcelFc, { onProgress } = {}) {
+  const parcels = (parcelFc?.features || []).filter((f) => f?.geometry);
+  if (parcels.length === 0) return null;
+
+  const boxes = [];
+  for (const parcel of parcels) {
+    let b;
+    try { b = bbox(parcel); } catch { continue; }
+    const [w, s, e, n] = b;
+    if (![w, s, e, n].every(Number.isFinite)) continue;
+    boxes.push({
+      type: 'Feature',
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]],
+      },
+    });
+  }
+  if (boxes.length === 0) return null;
+
+  const batches = [];
+  for (let i = 0; i < boxes.length; i += SOIL_PARCEL_BATCH_SIZE) {
+    batches.push(boxes.slice(i, i + SOIL_PARCEL_BATCH_SIZE));
+  }
+  if (onProgress) onProgress(`Locating soils for ${parcels.length} parcels…`);
+
+  // Each batch reports ok/failed rather than just its IDs. An empty ID
+  // list is a perfectly good answer — unsurveyed ground — so "[] came
+  // back" cannot stand in for "the request failed". The sales export
+  // gates on completeness, and a silently short soil set is exactly the
+  // blank-column export that guard exists to prevent.
+  const results = await runParallelBatched(batches, SPATIAL_CONCURRENCY, async (batch) => {
+    const esriGeom = polygonsToEsriGeometry(batch);
+    if (!esriGeom) return { ok: true, ids: [] };
+    try {
+      const res = await fetchPage(CLI_AGR_CAP_URL, {
+        where: '1=1',
+        geometry: JSON.stringify(esriGeom),
+        geometryType: 'esriGeometryPolygon',
+        inSR: '4326',
+        spatialRel: 'esriSpatialRelIntersects',
+        returnIdsOnly: 'true',
+        returnGeometry: 'false',
+        f: 'json',
+      });
+      if (!Array.isArray(res?.objectIds)) return { ok: false, ids: [] };
+      return { ok: true, ids: res.objectIds };
+    } catch (err) {
+      console.warn('Soil ID batch failed', err);
+      return { ok: false, ids: [] };
+    }
+  });
+  // runParallelBatched substitutes [] for anything that threw past the
+  // catch above, so a non-object slot counts as a failure too.
+  const failedBatches = results.filter((r) => !r || r.ok !== true).length;
+
+  const ids = [...new Set(results.flatMap((r) => r?.ids || []).filter((v) => v != null))]
+    .sort((a, b) => (Number(a) - Number(b)) || String(a).localeCompare(String(b)));
+  if (ids.length === 0) {
+    return {
+      type: 'FeatureCollection', features: [], _failedBatches: failedBatches, _batchCount: batches.length,
+    };
+  }
+
+  const features = [];
+  for (let i = 0; i < ids.length; i += PAGE_SIZE) {
+    if (onProgress) onProgress(`Loading ${ids.length} soil polygons…`);
+    const fc = await fetchPage(CLI_AGR_CAP_URL, {
+      where: '1=1',
+      objectIds: ids.slice(i, i + PAGE_SIZE).join(','),
+      orderByFields: 'OBJECTID ASC',
+      outFields: CLI_AGR_CAP_OUTFIELDS,
+      ...SOIL_SURVEY_GEOMETRY_QUERY,
+      f: 'geojson',
+    });
+    features.push(...(fc?.features || []));
+  }
+  return {
+    type: 'FeatureCollection', features, _failedBatches: failedBatches, _batchCount: batches.length,
+  };
 }
 
 /**
