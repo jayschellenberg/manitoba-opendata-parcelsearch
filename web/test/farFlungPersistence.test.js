@@ -1,4 +1,11 @@
-// Far-flung exclusion must NOT survive a session.
+// Far-flung exclusion must come from a fixed default, never from storage.
+//
+// (It ships ON since 2026-09-22 — a portfolio or estate sale spread across a
+// wide area has a blended $/Acre that is not a local comparable. That is a
+// DEFAULT: identical every session, shown on the pill, named in the filter
+// chips, and written into the URL when the user moves off it. What follows is
+// about the other thing, which is indistinguishable in the code and is not
+// the same at all.)
 //
 // WHY THIS EXISTS. Jason, 2026-09-13. A production URL was carrying
 // `pl=farflung:exclude` on a page nobody had touched that day. It was not a
@@ -77,11 +84,19 @@ test('the stale key is actively cleared, not just ignored', () => {
     'resetFarFlungExclude must removeItem the old key');
 });
 
-test('startup forces the toggle off, and is actually called', () => {
+test('startup forces the fixed DEFAULT, and is actually called', () => {
   const m = /function resetFarFlungExclude\(\)[\s\S]*?\n}/.exec(src);
   assert.ok(m, 'resetFarFlungExclude not found');
-  assert.match(m[0], /\$farFlungExclude\.checked\s*=\s*false/,
-    'reset must force the checkbox off');
+  // Not "must be false" any more — Exclude ships ON since 2026-09-22. This
+  // guard was never about WHICH value it is; it is about where the value
+  // comes FROM. A named constant is the same every session and the pill shows
+  // it. A remembered value is the bug this file exists for: invisible, months
+  // stale, and it rode into shared links. So: assign from the default, and
+  // from nothing else.
+  assert.match(m[0], /\$farFlungExclude\.checked\s*=\s*FAR_FLUNG_EXCLUDE_DEFAULT/,
+    'reset must assign the named default, not a literal and not a stored value');
+  assert.match(src, /const FAR_FLUNG_EXCLUDE_DEFAULT\s*=\s*(?:true|false)\s*;/,
+    'the default must be one named constant, so markup and code can be checked against it');
   assert.match(m[0], /pillPainters\.farflung/,
     'the Keep/Exclude pill is painted from the checkbox and must be repainted');
   // The repo's recurring bug is a function that exists and is never called:

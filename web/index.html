@@ -1051,12 +1051,18 @@
                 <span class="far-flung-unit">km</span>
               </span>
               <span class="field far-flung-exclude-field">
-                <input type="checkbox" id="far-flung-exclude" class="pill-backing" hidden />
-                <div class="mode-pill-row far-flung-exclude" title="Remove the flagged sales from the results table, the map and the CSV export. Off by default — nothing is hidden until you ask for it. Sales whose spread can't be measured (a parcel with no geometry) are never excluded.">
+                <!-- Checked by default (Jason, 2026-09-22): a portfolio or estate sale
+                     spread across a wide area has a blended $/Acre that is not a
+                     local comparable, so dropping them is the normal starting
+                     point. `data-default` on Exclude below is what keeps shared
+                     links honest — see the URL writer in main.js, and the note on
+                     resetFarFlungExclude for why that matters here specifically. -->
+                <input type="checkbox" id="far-flung-exclude" class="pill-backing" hidden checked />
+                <div class="mode-pill-row far-flung-exclude" title="Remove the flagged sales from the results table, the map and the CSV export. On by default — a sale spread across a wide area has a blended $/Acre that is not a local comparable. Switch to Keep to bring them back. Sales whose spread can't be measured (a parcel with no geometry) are never excluded.">
                   <span class="mode-pill-prefix">Flagged:</span>
                   <div class="mode-pill compact" role="radiogroup" aria-label="Far-flung sales" data-pill="farflung">
-                    <button type="button" class="mode-btn active mode-btn-off" data-mode="keep" aria-pressed="true">Keep</button>
-                    <button type="button" class="mode-btn" data-mode="exclude" aria-pressed="false">Exclude</button>
+                    <button type="button" class="mode-btn mode-btn-off" data-mode="keep" aria-pressed="false">Keep</button>
+                    <button type="button" class="mode-btn active" data-mode="exclude" aria-pressed="true" data-default>Exclude</button>
                   </div>
                 </div>
                 <span class="tip">Far-Flung marks multi-parcel sales whose parcels lie farther apart than the km threshold, measured between parcel centroids. Portfolio and estate sales sweep up land across a wide area, so their blended $/Acre is not a local comparable. Blank or 0 turns the marking off, and marking alone removes nothing — tick Exclude to drop the flagged sales from the table, the map and the CSV export. Sales whose spread can't be measured (a parcel with no geometry) are never excluded.</span>
