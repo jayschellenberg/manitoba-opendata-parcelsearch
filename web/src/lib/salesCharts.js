@@ -568,12 +568,3 @@ export function saleAsmtFlag(ratio) {
   if (r > SALE_ASMT_TIERS.high) return 'High';
   return '';
 }
-
-/** Dot radius encoding parcel count. Single-parcel sales sit at r=4 (an
- *  8px mark, the spec floor); assemblies grow logarithmically and cap at
- *  7 so one 18-parcel portfolio can't dominate the plot. */
-export function dotRadius(parcelCount) {
-  const c = Number(parcelCount);
-  if (!Number.isFinite(c) || c <= 1) return 4;
-  return Math.min(7, 4 + Math.log2(c) * 1.6);
-}

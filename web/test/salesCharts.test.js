@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import {
   saleRecordsFromRows, fitLinear, fitPoly, fitPower, median, marketConditions,
-  timeAdjust, normalizeOverrideRate, topZones, dotRadius, haversineKm,
+  timeAdjust, normalizeOverrideRate, topZones, haversineKm,
   msToDays, WINNIPEG_CENTRE,
 } from '../src/lib/salesCharts.js';
 
@@ -429,13 +429,6 @@ assert.equal(normalizeOverrideRate(null), null);
   const top = topZones([{ zone: 'RR' }, { zone: 'AG' }], 3);
   assert.deepEqual(top.map((t) => t.key), ['AG', 'RR']);
 }
-
-// ---------- dotRadius ----------------------------------------------
-
-assert.equal(dotRadius(1), 4, 'single-parcel sale sits at the 8px mark floor');
-assert.ok(dotRadius(3) > dotRadius(1), 'assemblies read larger');
-assert.ok(dotRadius(200) <= 7, 'one portfolio sale cannot dominate the plot');
-assert.equal(dotRadius(undefined), 4);
 
 // ---------- haversineKm / misc -------------------------------------
 

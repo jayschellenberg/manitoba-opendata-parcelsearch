@@ -23,12 +23,12 @@
 import './charts.css';
 import {
   median, marketConditions, timeAdjust, fitLinear, fitPoly, fitPower,
-  normalizeOverrideRate, topZones, dotRadius, haversineKm, WINNIPEG_CENTRE,
+  normalizeOverrideRate, topZones, haversineKm, WINNIPEG_CENTRE,
   percentileTrim, saleAsmtFlag, TRIM_MIN_SALES,
 } from '../lib/salesCharts.js';
 import {
-  drawChart, SERIES_COLORS, OTHER_COLOR, INK, slugify,
-  fmtMoney0, fmtMoney2, fmtNum, fmtDate, fmtAxisMoney, fmtAxisNum,
+  drawChart, ZONE_COLORS, OTHER_COLOR, INK, R_STYLE, slugify,
+  fmtMoney0, fmtMoney2, fmtNum, fmtDate, fmtAxisDollar, fmtAxisComma, fmtMonYear,
 } from '../lib/chartRender.js';
 
 export const CHANNEL_NAME = 'mbps-sales-charts';
@@ -182,19 +182,21 @@ function effectiveMs() {
  * $/SF runs to cents; $/acre, $/front foot and $/lot are whole dollars.
  */
 const UNITS = {
+  // `perUnit` is the Title-Case unit in chart titles ("Price per Acre"),
+  // `axis` the template's x-axis title, `range` the unit in the criteria line.
   acres: {
-    metric: 'ppa', size: 'lotAcres', short: 'Acre', perUnit: 'acre',
-    axis: 'Lot size (acres)', sizeText: (v) => `${fmtNum(v)} ac`, money: fmtMoney0,
+    metric: 'ppa', size: 'lotAcres', short: 'Acre', perUnit: 'Acre', range: 'acres',
+    axis: 'Parcel Size (Acres)', sizeText: (v) => `${fmtNum(v)} ac`, money: fmtMoney0,
     subjectSize: (s) => (Number(s?.acres) > 0 ? Number(s.acres) : null),
   },
   sf: {
-    metric: 'ppsf', size: 'lotSf', short: 'SF', perUnit: 'sf',
-    axis: 'Lot size (sq ft)', sizeText: (v) => `${fmtNum(v)} sf`, money: fmtMoney2,
+    metric: 'ppsf', size: 'lotSf', short: 'SF', perUnit: 'SF', range: 'sq ft',
+    axis: 'Parcel Size (Sq Ft)', sizeText: (v) => `${fmtNum(v)} sf`, money: fmtMoney2,
     subjectSize: (s) => (Number(s?.acres) > 0 ? Number(s.acres) * 43560 : null),
   },
   ff: {
-    metric: 'ppff', size: 'lotFrontFt', short: 'FF', perUnit: 'front foot',
-    axis: 'Lot frontage (feet)', sizeText: (v) => `${fmtNum(v)} ft`, money: fmtMoney0,
+    metric: 'ppff', size: 'lotFrontFt', short: 'FF', perUnit: 'Front Foot', range: 'ft frontage',
+    axis: 'Lot Frontage (Feet)', sizeText: (v) => `${fmtNum(v)} ft`, money: fmtMoney0,
     subjectSize: (s) => (Number(s?.frontFt) > 0 ? Number(s.frontFt) : null),
   },
 };
@@ -325,7 +327,7 @@ function trimWords() {
 function stateLegend(pts) {
   const out = [];
   if (pts.some((p) => p.state === 'trimmed')) {
-    out.push({ label: `Trimmed (outside ${trimWords()})`, dot: 'hollow', color: SERIES_COLORS[0] });
+    out.push({ label: `Trimmed (outside ${trimWords()})`, dot: 'hollow', color: R_STYLE.pointStroke });
   }
   if (pts.some((p) => p.state === 'excluded')) {
     out.push({ label: 'Excluded (unticked)', dot: 'pale' });
@@ -364,7 +366,9 @@ function distContext() {
   const ref = activeDistRef();
   return {
     refName: ref === 'subject' ? 'the subject parcel' : 'Portage & Main',
-    distLabel: `Distance from ${ref === 'subject' ? 'subject' : 'Winnipeg'} (km)`,
+    // Title-case, as the template names it: "…by Distance from Winnipeg".
+    refTitle: ref === 'subject' ? 'Subject' : 'Winnipeg',
+    distLabel: `Distance from ${ref === 'subject' ? 'Subject' : 'Winnipeg'} (km)`,
     distEmpty: ref === 'subject'
       ? 'No subject distance available. Set a subject roll in the main window, or measure from Winnipeg.'
       : 'No sales in the current filter have usable parcel geometry to measure from.',
@@ -394,10 +398,14 @@ function pointsFor(cms, xOf, yOf, colorOf) {
     const y = yOf(rec);
     if (!Number.isFinite(x) || !Number.isFinite(y) || y <= 0) continue;
     const flag = saleAsmtFlag(rec.flagRatio);
+    // One dot size for every sale, as in the R template (symbolSize 9):
+    // it does not size assemblies up. Colour only on the zoning chart,
+    // which also takes the template's darker edge and heavier alpha.
     out.push({
       x, y, rec,
-      r: dotRadius(rec.parcelCount),
-      color: colorOf ? colorOf(rec) : SERIES_COLORS[0],
+      ...(colorOf
+        ? { color: colorOf(rec), stroke: R_STYLE.zoneStroke, opacity: R_STYLE.zoneOpacity }
+        : {}),
       state: cms.stateOf(rec),
       flagged: flag !== '' && flag !== 'No assessment',
     });
@@ -408,9 +416,11 @@ function pointsFor(cms, xOf, yOf, colorOf) {
 /** The points the fits and stats are taken over. */
 const inOnly = (pts) => pts.filter((p) => p.state === 'in');
 
-const LINEAR_FIT = { color: INK.primary, label: 'Linear trend' };
-const CUBIC_FIT = { color: SERIES_COLORS[1], dash: '6 4', label: 'Cubic trend' };
-const POWER_FIT = { color: SERIES_COLORS[1], dash: '6 4', label: 'Power trend' };
+// The template's trend lines: linear black solid, cubic red4 dashed, power
+// darkorchid dotted — all width 2.
+const LINEAR_FIT = { color: R_STYLE.linear, label: 'Linear trend' };
+const CUBIC_FIT = { color: R_STYLE.cubic, dash: '6 4', label: 'Cubic trend' };
+const POWER_FIT = { color: R_STYLE.power, dash: '1 4', label: 'Power trend' };
 
 /**
  * Fit the trend lines a chart shows.
@@ -531,7 +541,7 @@ function spreadStats(points, { xName, xFormat, adjusted, yFormat }) {
   return stats;
 }
 
-const STATED_FIT = { color: INK.primary };
+const STATED_FIT = { color: R_STYLE.linear };
 
 /**
  * The market path a stated (judgement) rate asserts, as a curve over
@@ -633,7 +643,7 @@ function subjectRef() {
   return [{
     x,
     label: 'Subject',
-    color: SERIES_COLORS[0],
+    color: R_STYLE.subject,
   }];
 }
 
@@ -652,7 +662,7 @@ function subjectDistanceRef() {
   if (!Number.isFinite(s?.lat) || !Number.isFinite(s?.lng)) return [];
   const km = haversineKm(WINNIPEG_CENTRE, { lat: s.lat, lng: s.lng });
   if (!Number.isFinite(km)) return [];
-  return [{ x: km, label: 'Subject', color: SERIES_COLORS[0] }];
+  return [{ x: km, label: 'Subject', color: R_STYLE.subject }];
 }
 
 /**
@@ -737,14 +747,45 @@ function chart(spec) {
   });
 }
 
-/** Join subtitle fragments, skipping the empty ones. */
+/** Join note fragments, skipping the empty ones. */
 const sub = (...parts) => parts.filter(Boolean).join(' ');
+
+/** "12" / "0.35" — a range end, at the precision the value needs. */
+const rangeNum = (v) => v.toLocaleString('en-US', { maximumFractionDigits: v < 10 ? 2 : 0 });
+
+/**
+ * The template's criteria subtitle (land_subtitles):
+ *   "CMS; 0-35 km from Winnipeg; 0.2-120 acres; Jan-2018 to Aug-2026"
+ * built from the sales the chart's fits actually use, with "CMS (Time-
+ * Adjusted)" on the charts that carry rates to the effective date. The
+ * template states the FILTER bounds; the page has no single set of those
+ * (the main window's filters are open-ended by default), so it states the
+ * span of the evidence instead, which is what those bounds describe.
+ */
+function criteriaLine(cms, adjusted) {
+  const recs = cms.fitted;
+  const parts = [adjusted ? 'CMS (Time-Adjusted)' : 'CMS'];
+  const span = (vals) => {
+    const v = vals.filter((x) => Number.isFinite(x));
+    return v.length ? [Math.min(...v), Math.max(...v)] : null;
+  };
+  const d = span(recs.map(distanceFor));
+  if (d) parts.push(`${rangeNum(d[0])}-${rangeNum(d[1])} km from ${distContext().refTitle}`);
+  const s = span(recs.map((r) => r[sizeField()]));
+  if (s) parts.push(`${rangeNum(s[0])}-${rangeNum(s[1])} ${unitSpec().range}`);
+  const t = span(recs.map((r) => r.dateMs));
+  if (t) parts.push(`${fmtMonYear(t[0])} to ${fmtMonYear(t[1])}`);
+  return parts.join('; ');
+}
+
+/** The y-axis tick formatter for a measure: full dollars, cents on $/SF. */
+const axisDollar = fmtAxisDollar;
 
 function buildRateCharts() {
   const records = activeRecords();
   const metric = areaMetric();
   const areaFmt = areaMoneyFmt();
-  // How the rate reads in a title: "Price per acre" / "per sf" / "per front foot".
+  // The unit as the template's titles name it: "Price per Acre".
   const perUnit = unitSpec().perUnit;
 
   // One comparable set per measure — CMS1, and CMS2 when the trim is on —
@@ -764,8 +805,10 @@ function buildRateCharts() {
     ? 'No sales in the current filter carry a $/front foot. Every parcel in a sale must state '
       + 'a frontage on the roll; most rural parcels state an area instead.'
     : undefined;
+  // "Adjusted Price per Acre", as the template labels a time-adjusted axis.
+  const yAdj = (adj, what) => (adj.adjusted ? `Adjusted ${what}` : what);
 
-  const { refName, distLabel, distEmpty, distStats } = distContext();
+  const { refName, refTitle, distLabel, distEmpty, distStats } = distContext();
 
   // Charts are grouped by RATE, not by question: every price-per-area
   // chart first, then every price-per-lot chart. Reading down a column
@@ -774,7 +817,7 @@ function buildRateCharts() {
   // card to work out which rate you are looking at.
   const charts = [];
 
-  // ---- Price per acre (or per SF) --------------------------------
+  // ---- Price per acre (or per SF / front foot) --------------------
 
   // Over time. Raw rates; the fitted line IS the trend, and a cubic is
   // legitimate here because multi-year turns in the market do happen.
@@ -782,29 +825,30 @@ function buildRateCharts() {
     const pts = pointsFor(cmsArea, (r) => r.dateMs, (r) => r[metric]);
     const trend = timeTrend(cmsArea, pts, areaFmt);
     charts.push(chart({
-      title: `Price per ${perUnit} over time`,
-      subtitle: sub('Rates as sold — the Nominal/Time-adjusted toggle does not apply here.',
+      title: `Land Price per ${perUnit} Over Time`,
+      subtitle: criteriaLine(cmsArea, false),
+      note: sub('Rates as sold — the Nominal/Time-adjusted toggle does not apply here.',
         trend.note, trimSkipNote(cmsArea)),
       points: pts, xIsDate: true,
-      xLabel: 'Sale date', yLabel: `Price per ${perUnit}`,
-      yFormat: areaFmt, yAxisFormat: fmtAxisMoney,
+      xLabel: 'Sale Date', yLabel: `Price per ${perUnit}`,
+      yFormat: areaFmt, yAxisFormat: axisDollar,
       fits: trend.fits, legend: legendFor(trend.fits, pts),
-      refLines: cmsArea.mc?.median != null ? [{ y: cmsArea.mc.median, label: 'median' }] : [],
       stats: trend.stats,
       empty: unitEmpty,
     }));
   }
 
-  // By lot size, time-adjusted. Power curve, not cubic — see fitPower.
+  // By lot size. Power curve, not cubic — see fitPower.
   {
     const pts = pointsFor(cmsArea, size, adjArea);
     const fits = fitsFor(pts, { curve: 'power' });
     charts.push(chart({
-      title: `Price per ${perUnit} by lot size`,
-      subtitle: sub(areaAdj.note, trimSkipNote(cmsArea)),
+      title: `Price per ${perUnit} by Size`,
+      subtitle: criteriaLine(cmsArea, areaAdj.adjusted),
+      note: sub(areaAdj.note, trimSkipNote(cmsArea)),
       points: pts,
-      xLabel: sizeAxisLabel(), yLabel: `Price per ${perUnit}${areaAdj.suffix}`,
-      yFormat: areaFmt, yAxisFormat: fmtAxisMoney, xAxisFormat: fmtAxisNum,
+      xLabel: sizeAxisLabel(), yLabel: yAdj(areaAdj, `Price per ${perUnit}`),
+      yFormat: areaFmt, yAxisFormat: axisDollar, xAxisFormat: fmtAxisComma,
       fits, legend: legendFor(fits, pts),
       refLines: subjectRef(),
       stats: [...sizeStats(pts, areaAdj.adjusted, areaFmt), ...powerStat(fits)],
@@ -812,31 +856,32 @@ function buildRateCharts() {
     }));
   }
 
-  // The same by-size view split by zoning. Colour is the variable here,
-  // so this chart drops the curve entirely: its orange would collide
-  // with a zone's hue, and the question is "do these zones price
-  // differently", not "how does the rate decay with size".
+  // The same by-size view split by zoning, in the template's Set2 palette
+  // over its top eight zones. Colour is the variable here, so this chart
+  // keeps only the straight line: a curve's hue would collide with a
+  // zone's, and the question is "do these zones price differently".
   {
-    const zones = topZones(records, SERIES_COLORS.length);
-    const colorByZone = new Map(zones.map((z, i) => [z.key, SERIES_COLORS[i]]));
+    const zones = topZones(records, ZONE_COLORS.length);
+    const colorByZone = new Map(zones.map((z, i) => [z.key, ZONE_COLORS[i]]));
     const pts = pointsFor(cmsArea, size, adjArea,
       (r) => colorByZone.get(String(r.zone || '').trim()) || OTHER_COLOR);
     const fits = fitsFor(pts, { curve: 'none' });
     const zoneKeys = new Set(colorByZone.keys());
     const hasOther = records.some((r) => !zoneKeys.has(String(r.zone || '').trim()));
     const legend = [
-      ...zones.map((z) => ({ label: `${z.key} (${z.count})`, color: colorByZone.get(z.key) })),
-      ...(hasOther ? [{ label: 'Other / none', color: OTHER_COLOR }] : []),
+      ...zones.map((z) => ({ label: `${z.key} (${z.count})`, color: colorByZone.get(z.key), dot: 'swatch' })),
+      ...(hasOther ? [{ label: 'Other', color: OTHER_COLOR, dot: 'swatch' }] : []),
       ...fits.map((f) => ({ label: f.label, color: f.color, dash: !!f.dash })),
       ...stateLegend(pts),
     ];
     charts.push(chart({
-      title: `Price per ${perUnit} by size and zoning`,
-      subtitle: sub(areaAdj.note, 'The three most common zones are coloured; the rest fold into Other.',
+      title: `Price per ${perUnit} by Size and Zoning`,
+      subtitle: criteriaLine(cmsArea, areaAdj.adjusted),
+      note: sub(areaAdj.note, `The ${ZONE_COLORS.length} most common zones are coloured; the rest fold into Other.`,
         trimSkipNote(cmsArea)),
       points: pts,
-      xLabel: sizeAxisLabel(), yLabel: `Price per ${perUnit}${areaAdj.suffix}`,
-      yFormat: areaFmt, yAxisFormat: fmtAxisMoney, xAxisFormat: fmtAxisNum,
+      xLabel: sizeAxisLabel(), yLabel: yAdj(areaAdj, `Price per ${perUnit}`),
+      yFormat: areaFmt, yAxisFormat: axisDollar, xAxisFormat: fmtAxisComma,
       fits, legend: legend.length > 1 ? legend : null,
       refLines: subjectRef(),
       stats: sizeStats(pts, areaAdj.adjusted, areaFmt),
@@ -852,11 +897,12 @@ function buildRateCharts() {
     const pts = pointsFor(cmsArea, distanceFor, adjArea);
     const fits = fitsFor(pts, { curve: 'cubic' });
     charts.push(chart({
-      title: `Price per ${perUnit} by distance`,
-      subtitle: sub(`Measured from ${refName}.`, areaAdj.note, trimSkipNote(cmsArea)),
+      title: `Price per ${perUnit} by Distance from ${refTitle}`,
+      subtitle: criteriaLine(cmsArea, areaAdj.adjusted),
+      note: sub(`Measured from ${refName}.`, areaAdj.note, trimSkipNote(cmsArea)),
       points: pts,
-      xLabel: distLabel, yLabel: `Price per ${perUnit}${areaAdj.suffix}`,
-      yFormat: areaFmt, yAxisFormat: fmtAxisMoney, xAxisFormat: fmtAxisNum,
+      xLabel: distLabel, yLabel: yAdj(areaAdj, `Price per ${perUnit}`),
+      yFormat: areaFmt, yAxisFormat: axisDollar, xAxisFormat: fmtAxisComma,
       fits, legend: legendFor(fits, pts),
       refLines: subjectDistanceRef(),
       stats: distStats(pts, areaAdj.adjusted, areaFmt),
@@ -870,14 +916,14 @@ function buildRateCharts() {
     const pts = pointsFor(cmsLot, (r) => r.dateMs, (r) => r.ppl);
     const trend = timeTrend(cmsLot, pts, fmtMoney0);
     charts.push(chart({
-      title: 'Price per lot over time',
-      subtitle: sub('Prices as sold. One point per sale; larger dots are multi-parcel assemblies.',
+      title: 'Land Price per Lot Over Time',
+      subtitle: criteriaLine(cmsLot, false),
+      note: sub('Prices as sold. One point per sale; a multi-parcel sale is priced per lot.',
         trend.note, trimSkipNote(cmsLot)),
       points: pts, xIsDate: true,
-      xLabel: 'Sale date', yLabel: 'Price per lot',
-      yFormat: fmtMoney0, yAxisFormat: fmtAxisMoney,
+      xLabel: 'Sale Date', yLabel: 'Price per Lot',
+      yFormat: fmtMoney0, yAxisFormat: axisDollar,
       fits: trend.fits, legend: legendFor(trend.fits, pts),
-      refLines: cmsLot.mc?.median != null ? [{ y: cmsLot.mc.median, label: 'median' }] : [],
       stats: trend.stats,
     }));
   }
@@ -886,11 +932,12 @@ function buildRateCharts() {
     const pts = pointsFor(cmsLot, size, adjLot);
     const fits = fitsFor(pts, { curve: 'power' });
     charts.push(chart({
-      title: 'Price per lot by lot size',
-      subtitle: sub(lotAdj.note, trimSkipNote(cmsLot)),
+      title: 'Price per Lot by Size',
+      subtitle: criteriaLine(cmsLot, lotAdj.adjusted),
+      note: sub(lotAdj.note, trimSkipNote(cmsLot)),
       points: pts,
-      xLabel: sizeAxisLabel(), yLabel: `Price per lot${lotAdj.suffix}`,
-      yFormat: fmtMoney0, yAxisFormat: fmtAxisMoney, xAxisFormat: fmtAxisNum,
+      xLabel: sizeAxisLabel(), yLabel: yAdj(lotAdj, 'Price per Lot'),
+      yFormat: fmtMoney0, yAxisFormat: axisDollar, xAxisFormat: fmtAxisComma,
       fits, legend: legendFor(fits, pts),
       refLines: subjectRef(),
       stats: [...sizeStats(pts, lotAdj.adjusted, fmtMoney0), ...powerStat(fits)],
@@ -901,11 +948,12 @@ function buildRateCharts() {
     const pts = pointsFor(cmsLot, distanceFor, adjLot);
     const fits = fitsFor(pts, { curve: 'cubic' });
     charts.push(chart({
-      title: 'Price per lot by distance',
-      subtitle: sub(`Measured from ${refName}.`, lotAdj.note, trimSkipNote(cmsLot)),
+      title: `Price per Lot by Distance from ${refTitle}`,
+      subtitle: criteriaLine(cmsLot, lotAdj.adjusted),
+      note: sub(`Measured from ${refName}.`, lotAdj.note, trimSkipNote(cmsLot)),
       points: pts,
-      xLabel: distLabel, yLabel: `Price per lot${lotAdj.suffix}`,
-      yFormat: fmtMoney0, yAxisFormat: fmtAxisMoney, xAxisFormat: fmtAxisNum,
+      xLabel: distLabel, yLabel: yAdj(lotAdj, 'Price per Lot'),
+      yFormat: fmtMoney0, yAxisFormat: axisDollar, xAxisFormat: fmtAxisComma,
       fits, legend: legendFor(fits, pts),
       refLines: subjectDistanceRef(),
       stats: distStats(pts, lotAdj.adjusted, fmtMoney0),
@@ -938,13 +986,14 @@ function buildRateCharts() {
  * table view sitting underneath it.
  */
 function buildTotalCharts() {
-  const { refName, distLabel, distEmpty, distStats } = distContext();
+  const { refName, refTitle, distLabel, distEmpty, distStats } = distContext();
 
   // One comparable set on total price, shared by the over-time caption and
   // the time adjustment, so the two never state different trends.
   const cmsPrice = cmsFor('price');
   const priceAdj = adjusterFor(cmsPrice);
   const adjPrice = priceAdj.adjust;
+  const yAdj = (what) => (priceAdj.adjusted ? `Adjusted ${what}` : what);
 
   const charts = [];
 
@@ -954,14 +1003,13 @@ function buildTotalCharts() {
     const pts = pointsFor(cmsPrice, (r) => r.dateMs, (r) => r.price);
     const trend = timeTrend(cmsPrice, pts, fmtMoney0);
     charts.push(chart({
-      title: 'Total price over time',
-      subtitle: sub('Prices as sold. One point per sale; larger dots are multi-parcel assemblies.',
-        trend.note, trimSkipNote(cmsPrice)),
+      title: 'Total Price Over Time',
+      subtitle: criteriaLine(cmsPrice, false),
+      note: sub('Prices as sold. One point per sale.', trend.note, trimSkipNote(cmsPrice)),
       points: pts, xIsDate: true,
-      xLabel: 'Sale date', yLabel: 'Total sale price',
-      yFormat: fmtMoney0, yAxisFormat: fmtAxisMoney,
+      xLabel: 'Sale Date', yLabel: 'Sale Price',
+      yFormat: fmtMoney0, yAxisFormat: axisDollar,
       fits: trend.fits, legend: legendFor(trend.fits, pts),
-      refLines: cmsPrice.mc?.median != null ? [{ y: cmsPrice.mc.median, label: 'median' }] : [],
       stats: trend.stats,
     }));
   }
@@ -972,11 +1020,12 @@ function buildTotalCharts() {
     const pts = pointsFor(cmsPrice, distanceFor, adjPrice);
     const fits = fitsFor(pts, { curve: 'cubic' });
     charts.push(chart({
-      title: 'Total price by distance',
-      subtitle: sub(`Measured from ${refName}.`, priceAdj.note, trimSkipNote(cmsPrice)),
+      title: `Total Price by Distance from ${refTitle}`,
+      subtitle: criteriaLine(cmsPrice, priceAdj.adjusted),
+      note: sub(`Measured from ${refName}.`, priceAdj.note, trimSkipNote(cmsPrice)),
       points: pts,
-      xLabel: distLabel, yLabel: `Total sale price${priceAdj.suffix}`,
-      yFormat: fmtMoney0, yAxisFormat: fmtAxisMoney, xAxisFormat: fmtAxisNum,
+      xLabel: distLabel, yLabel: yAdj('Sale Price'),
+      yFormat: fmtMoney0, yAxisFormat: axisDollar, xAxisFormat: fmtAxisComma,
       fits, legend: legendFor(fits, pts),
       refLines: subjectDistanceRef(),
       stats: distStats(pts, priceAdj.adjusted, fmtMoney0),
@@ -1007,12 +1056,13 @@ function buildTotalCharts() {
       { predict: (x) => x, color: INK.muted, dash: '4 3', label: 'Sale = assessed (1:1)' },
     ];
     charts.push(chart({
-      title: 'Total price against assessed value',
-      subtitle: sub('Points above the 1:1 line sold over their assessment.', priceAdj.note,
+      title: 'Total Price vs Assessed Value',
+      subtitle: criteriaLine(cmsPrice, priceAdj.adjusted),
+      note: sub('Points above the 1:1 line sold over their assessment.', priceAdj.note,
         trimSkipNote(cmsPrice)),
       points: pts,
-      xLabel: 'Total assessed value', yLabel: `Total sale price${priceAdj.suffix}`,
-      yFormat: fmtMoney0, yAxisFormat: fmtAxisMoney, xAxisFormat: fmtAxisMoney,
+      xLabel: 'Total Assessed Value', yLabel: yAdj('Sale Price'),
+      yFormat: fmtMoney0, yAxisFormat: axisDollar, xAxisFormat: axisDollar,
       fits, legend: legendFor(fits, pts),
       stats: spreadStats(pts, {
         xName: 'Median assessed',
