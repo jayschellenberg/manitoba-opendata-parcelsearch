@@ -112,6 +112,26 @@ test('without the new deps it behaves as before (nothing excluded)', () => {
   assert.deepEqual(rec.keys, []);
 });
 
+console.log('saleRecordsFromRows — front feet');
+test('$/FF and per-lot frontage ride through from the sale group', () => {
+  const props = {
+    _saleGroupId: 7, _saleSeq: 0, _saleDate: '2025-01-01', _saleGroupTotalPriceNum: 240000,
+    _saleGroupSize: 2, _saleGroupTotalFrontageFt: 120, _saleGroupPpff: 2000,
+  };
+  const [rec] = saleRecordsFromRows([row(props), row({ ...props, _saleSeq: 1 })]);
+  assert.equal(rec.ppff, 2000);
+  assert.equal(rec.lotFrontFt, 60, 'per lot = group frontage / parcel count, like lotAcres');
+});
+test('an incomplete group frontage gives no lot frontage and no $/FF', () => {
+  const [rec] = saleRecordsFromRows([row({
+    _saleGroupId: 8, _saleDate: '2025-01-01', _saleGroupTotalPriceNum: 240000,
+    _saleGroupSize: 2, _saleGroupTotalFrontageFt: 60, _saleGroupFrontageIncomplete: true,
+    _saleGroupPpff: null,
+  })]);
+  assert.equal(rec.lotFrontFt, null);
+  assert.equal(rec.ppff, null);
+});
+
 console.log('buildSalesWaterfall');
 const LABELS = ['Municipality', 'Size range', 'Sale date range'];
 test('counts SALES, crediting each to the step its last row fell at', () => {

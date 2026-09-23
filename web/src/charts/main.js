@@ -44,6 +44,7 @@ const els = {
   grid: $('charts-grid'),
   unitAcres: $('unit-acres'),
   unitSf: $('unit-sf'),
+  unitFf: $('unit-ff'),
   ctlUnit: $('ctl-unit'),
   ratesHint: $('rates-hint'),
   tabRates: $('tab-rates'),
@@ -171,15 +172,38 @@ function effectiveMs() {
   return Number.isFinite(d.valueOf()) ? d.getTime() : null;
 }
 
-const isAcres = () => opts.unit === 'acres';
-/** The per-area rate field and the size field move together — plotting
- *  $/acre against a square-foot x-axis would be unreadable. */
-const areaMetric = () => (isAcres() ? 'ppa' : 'ppsf');
-const sizeField = () => (isAcres() ? 'lotAcres' : 'lotSf');
-const areaUnitLabel = () => (isAcres() ? 'Acre' : 'SF');
-const sizeAxisLabel = () => (isAcres() ? 'Lot size (acres)' : 'Lot size (sq ft)');
-/** $/SF runs to cents; $/acre and $/lot are whole dollars. */
-const areaMoneyFmt = () => (isAcres() ? fmtMoney0 : fmtMoney2);
+/**
+ * The size unit, as one table. The rate field and the size field move
+ * together — plotting $/acre against a square-foot x-axis would be
+ * unreadable — and front feet is the land template's third unit (AcOrSF =
+ * "ff"): $/front foot against frontage, the way an urban lot is compared.
+ *
+ * `perUnit` names the rate ("Price per acre"); `short` its column/table form.
+ * $/SF runs to cents; $/acre, $/front foot and $/lot are whole dollars.
+ */
+const UNITS = {
+  acres: {
+    metric: 'ppa', size: 'lotAcres', short: 'Acre', perUnit: 'acre',
+    axis: 'Lot size (acres)', sizeText: (v) => `${fmtNum(v)} ac`, money: fmtMoney0,
+    subjectSize: (s) => (Number(s?.acres) > 0 ? Number(s.acres) : null),
+  },
+  sf: {
+    metric: 'ppsf', size: 'lotSf', short: 'SF', perUnit: 'sf',
+    axis: 'Lot size (sq ft)', sizeText: (v) => `${fmtNum(v)} sf`, money: fmtMoney2,
+    subjectSize: (s) => (Number(s?.acres) > 0 ? Number(s.acres) * 43560 : null),
+  },
+  ff: {
+    metric: 'ppff', size: 'lotFrontFt', short: 'FF', perUnit: 'front foot',
+    axis: 'Lot frontage (feet)', sizeText: (v) => `${fmtNum(v)} ft`, money: fmtMoney0,
+    subjectSize: (s) => (Number(s?.frontFt) > 0 ? Number(s.frontFt) : null),
+  },
+};
+const unitSpec = () => UNITS[opts.unit] || UNITS.acres;
+const areaMetric = () => unitSpec().metric;
+const sizeField = () => unitSpec().size;
+const areaUnitLabel = () => unitSpec().short;
+const sizeAxisLabel = () => unitSpec().axis;
+const areaMoneyFmt = () => unitSpec().money;
 
 /** Which reference point the distance chart measures from, falling back
  *  to Winnipeg when no subject roll is set in the main window. */
@@ -215,12 +239,13 @@ function tooltipRows(rec, pt) {
     [rec.parcelCount > 1 ? `${rec.parcelCount}-parcel sale` : 'Sale', fmtMoney0(rec.price)],
     ['Sold', rec.dateText || fmtDate(rec.dateMs)],
   );
-  if (rec.lotAcres != null) {
-    rows.push(['Lot size', isAcres()
-      ? `${fmtNum(rec.lotAcres)} ac`
-      : `${fmtNum(rec.lotSf)} sf`]);
-  }
+  const lotSize = rec[sizeField()];
+  if (lotSize != null) rows.push(['Lot size', unitSpec().sizeText(lotSize)]);
+  // Frontage alongside an area unit too: it is the other half of how an
+  // urban lot is described, and the roll only states one or the other.
+  if (opts.unit !== 'ff' && rec.lotFrontFt != null) rows.push(['Frontage', `${fmtNum(rec.lotFrontFt)} ft`]);
   if (rec.ppl != null) rows.push(['$/Lot', fmtMoney0(rec.ppl)]);
+  if (rec.ppff != null) rows.push(['$/FF', fmtMoney0(rec.ppff)]);
   if (rec.ppa != null) rows.push(['$/Acre', fmtMoney0(rec.ppa)]);
   if (rec.ppsf != null) rows.push(['$/SF', fmtMoney2(rec.ppsf)]);
   const d = distanceFor(rec);
@@ -590,7 +615,7 @@ function trimSkipNote(cms) {
 function sizeStats(points, adjusted, yFormat) {
   return spreadStats(points, {
     xName: 'Median size',
-    xFormat: (v) => (isAcres() ? `${fmtNum(v)} ac` : `${fmtNum(v)} sf`),
+    xFormat: (v) => unitSpec().sizeText(v),
     adjusted,
     yFormat,
   });
@@ -598,10 +623,10 @@ function sizeStats(points, adjusted, yFormat) {
 
 /** Subject size as a vertical reference, when the main window knows it. */
 function subjectRef() {
-  const ac = Number(data.meta?.subject?.acres);
-  if (!Number.isFinite(ac) || ac <= 0) return [];
+  const x = unitSpec().subjectSize(data.meta?.subject);
+  if (!Number.isFinite(x) || x <= 0) return [];
   return [{
-    x: isAcres() ? ac : ac * 43560,
+    x,
     label: 'Subject',
     color: SERIES_COLORS[0],
   }];
@@ -714,7 +739,8 @@ function buildRateCharts() {
   const records = activeRecords();
   const metric = areaMetric();
   const areaFmt = areaMoneyFmt();
-  const unit = areaUnitLabel();
+  // How the rate reads in a title: "Price per acre" / "per sf" / "per front foot".
+  const perUnit = unitSpec().perUnit;
 
   // One comparable set per measure — CMS1, and CMS2 when the trim is on —
   // reused by the over-time chart's caption and by every time-adjusted
@@ -727,6 +753,12 @@ function buildRateCharts() {
   const adjLot = lotAdj.adjust;
   const adjArea = areaAdj.adjust;
   const size = (rec) => rec[sizeField()];
+  // Front feet is the one unit a large share of sales cannot carry, so an
+  // empty chart has to say why rather than look broken.
+  const unitEmpty = opts.unit === 'ff'
+    ? 'No sales in the current filter carry a $/front foot. Every parcel in a sale must state '
+      + 'a frontage on the roll; most rural parcels state an area instead.'
+    : undefined;
 
   const { refName, distLabel, distEmpty, distStats } = distContext();
 
@@ -745,15 +777,16 @@ function buildRateCharts() {
     const pts = pointsFor(cmsArea, (r) => r.dateMs, (r) => r[metric]);
     const trend = timeTrend(cmsArea, pts, areaFmt);
     charts.push(chart({
-      title: `Price per ${unit.toLowerCase()} over time`,
+      title: `Price per ${perUnit} over time`,
       subtitle: sub('Rates as sold — the Nominal/Time-adjusted toggle does not apply here.',
         trend.note, trimSkipNote(cmsArea)),
       points: pts, xIsDate: true,
-      xLabel: 'Sale date', yLabel: `Price per ${unit.toLowerCase()}`,
+      xLabel: 'Sale date', yLabel: `Price per ${perUnit}`,
       yFormat: areaFmt, yAxisFormat: fmtAxisMoney,
       fits: trend.fits, legend: legendFor(trend.fits, pts),
       refLines: cmsArea.mc?.median != null ? [{ y: cmsArea.mc.median, label: 'median' }] : [],
       stats: trend.stats,
+      empty: unitEmpty,
     }));
   }
 
@@ -762,14 +795,15 @@ function buildRateCharts() {
     const pts = pointsFor(cmsArea, size, adjArea);
     const fits = fitsFor(pts, { curve: 'power' });
     charts.push(chart({
-      title: `Price per ${unit.toLowerCase()} by lot size`,
+      title: `Price per ${perUnit} by lot size`,
       subtitle: sub(areaAdj.note, trimSkipNote(cmsArea)),
       points: pts,
-      xLabel: sizeAxisLabel(), yLabel: `Price per ${unit.toLowerCase()}${areaAdj.suffix}`,
+      xLabel: sizeAxisLabel(), yLabel: `Price per ${perUnit}${areaAdj.suffix}`,
       yFormat: areaFmt, yAxisFormat: fmtAxisMoney, xAxisFormat: fmtAxisNum,
       fits, legend: legendFor(fits, pts),
       refLines: subjectRef(),
       stats: [...sizeStats(pts, areaAdj.adjusted, areaFmt), ...powerStat(fits)],
+      empty: unitEmpty,
     }));
   }
 
@@ -792,11 +826,11 @@ function buildRateCharts() {
       ...stateLegend(pts),
     ];
     charts.push(chart({
-      title: `Price per ${unit.toLowerCase()} by size and zoning`,
+      title: `Price per ${perUnit} by size and zoning`,
       subtitle: sub(areaAdj.note, 'The three most common zones are coloured; the rest fold into Other.',
         trimSkipNote(cmsArea)),
       points: pts,
-      xLabel: sizeAxisLabel(), yLabel: `Price per ${unit.toLowerCase()}${areaAdj.suffix}`,
+      xLabel: sizeAxisLabel(), yLabel: `Price per ${perUnit}${areaAdj.suffix}`,
       yFormat: areaFmt, yAxisFormat: fmtAxisMoney, xAxisFormat: fmtAxisNum,
       fits, legend: legend.length > 1 ? legend : null,
       refLines: subjectRef(),
@@ -813,10 +847,10 @@ function buildRateCharts() {
     const pts = pointsFor(cmsArea, distanceFor, adjArea);
     const fits = fitsFor(pts, { curve: 'cubic' });
     charts.push(chart({
-      title: `Price per ${unit.toLowerCase()} by distance`,
+      title: `Price per ${perUnit} by distance`,
       subtitle: sub(`Measured from ${refName}.`, areaAdj.note, trimSkipNote(cmsArea)),
       points: pts,
-      xLabel: distLabel, yLabel: `Price per ${unit.toLowerCase()}${areaAdj.suffix}`,
+      xLabel: distLabel, yLabel: `Price per ${perUnit}${areaAdj.suffix}`,
       yFormat: areaFmt, yAxisFormat: fmtAxisMoney, xAxisFormat: fmtAxisNum,
       fits, legend: legendFor(fits, pts),
       refLines: subjectDistanceRef(),
@@ -1016,6 +1050,8 @@ const TABLE_COLS = [
   ['$/Lot', (r) => (r.ppl != null ? fmtMoney0(r.ppl) : '—')],
   ['$/Acre', (r) => (r.ppa != null ? fmtMoney0(r.ppa) : '—')],
   ['$/SF', (r) => (r.ppsf != null ? fmtMoney2(r.ppsf) : '—')],
+  ['Lot frontage (ft)', (r) => (r.lotFrontFt != null ? fmtNum(r.lotFrontFt) : '—')],
+  ['$/FF', (r) => (r.ppff != null ? fmtMoney0(r.ppff) : '—')],
   ['Sale/Asmt', (r) => (r.saleToAsmt != null ? r.saleToAsmt.toFixed(2) : '—')],
   ['Zoning', (r) => r.zone || '—'],
   ['Distance (km)', (r) => { const d = distanceFor(r); return d != null ? fmtNum(d) : '—'; }],
@@ -1187,10 +1223,11 @@ function syncControls() {
     ? 'Applies to the by-distance and assessed-value charts.'
     : 'Applies to the by-size and by-distance charts.';
 
-  els.unitAcres.setAttribute('aria-checked', String(isAcres()));
-  els.unitSf.setAttribute('aria-checked', String(!isAcres()));
-  els.unitAcres.classList.toggle('is-on', isAcres());
-  els.unitSf.classList.toggle('is-on', !isAcres());
+  const unit = UNITS[opts.unit] ? opts.unit : 'acres';
+  for (const [key, btn] of [['acres', els.unitAcres], ['sf', els.unitSf], ['ff', els.unitFf]]) {
+    btn.setAttribute('aria-checked', String(unit === key));
+    btn.classList.toggle('is-on', unit === key);
+  }
   els.freeze.checked = opts.frozen;
   els.showTable.checked = opts.showTable;
   els.showExcluded.checked = opts.showExcluded;
@@ -1258,6 +1295,7 @@ els.tabRates.addEventListener('click', () => setOpt({ tab: 'rates' }));
 els.tabTotal.addEventListener('click', () => setOpt({ tab: 'total' }));
 els.unitAcres.addEventListener('click', () => setOpt({ unit: 'acres' }));
 els.unitSf.addEventListener('click', () => setOpt({ unit: 'sf' }));
+els.unitFf.addEventListener('click', () => setOpt({ unit: 'ff' }));
 // Both 'input' and 'change': a date field fires 'change' only once the
 // whole date is valid, and on some platforms not until blur. Listening to
 // 'input' as well means the charts follow as soon as a usable date

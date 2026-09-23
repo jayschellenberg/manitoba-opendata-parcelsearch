@@ -101,6 +101,15 @@ export function saleRecordsFromRows(rows, { parseDate, centroid, rowKey, isSelec
         ppl: pos(p._saleGroupPpl),
         ppa: pos(p._saleGroupPpa),
         ppsf: pos(p._saleGroupPpsf),
+        // $/front foot, withheld upstream (computeSaleGroups) whenever any
+        // member states an area rather than a frontage — dividing the whole
+        // price by half the frontage would read as a plausible, doubled rate.
+        ppff: pos(p._saleGroupPpff),
+        // Per-lot frontage, the frontage twin of lotAcres, and only when the
+        // group's frontage is complete for the same reason.
+        lotFrontFt: !p._saleGroupFrontageIncomplete && pos(p._saleGroupTotalFrontageFt) != null
+          ? pos(p._saleGroupTotalFrontageFt) / count
+          : null,
         saleToAsmt: pos(p._saleGroupSaleToAsmt),
         zone: p._zoneCode || '',
         muni: p.Muni_Name_With_Typ || p.Municipality || '',
