@@ -16004,6 +16004,9 @@ function publishSalesCharts() {
               lng: subjectCentroid.lng,
               roll: displayRoll(subjectFeature?.properties?.Roll_No_Txt) || '',
               acres: Number.isFinite(subjectAcres) && subjectAcres > 0 ? subjectAcres : null,
+              // The roll's own frontage, for the $/front-foot charts' subject
+              // line; null when the roll states an area instead.
+              frontFt: parseRollFrontageFeet(subjectFeature?.properties?.Frontage_or_Area) ?? null,
             }
           : null,
         ts: Date.now(),
