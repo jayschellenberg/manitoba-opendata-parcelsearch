@@ -257,6 +257,8 @@ export function createSalesMap({ onPick, popupRows }) {
       else pending = data;
     },
     resize() { map.resize(); },
+    /** The MapLibre map, for linkMaps. */
+    map,
   };
   pngBtn.addEventListener('click', () => {
     api.exportPng(pngFile).catch((err) => {
@@ -266,4 +268,24 @@ export function createSalesMap({ onPick, popupRows }) {
     });
   });
   return api;
+}
+
+/**
+ * Keep two sales maps on the same view: pan or zoom either and the other
+ * follows, so a spot on one reads straight across to the other. The lock
+ * stops the follower's own move event echoing back.
+ */
+export function linkMaps(a, b) {
+  let lock = false;
+  const follow = (from, to) => from.map.on('move', () => {
+    if (lock) return;
+    lock = true;
+    to.map.jumpTo({
+      center: from.map.getCenter(), zoom: from.map.getZoom(),
+      bearing: from.map.getBearing(), pitch: from.map.getPitch(),
+    });
+    lock = false;
+  });
+  follow(a, b);
+  follow(b, a);
 }

@@ -10,6 +10,11 @@
  *  ramp the template's heatmap reads as "cheap to dear". */
 export const PRICE_RAMP = ['#ffffb2', '#fecc5c', '#fd8d3c', '#f03b20', '#bd0026'];
 
+/** Five lot-size buckets, small to large: RColorBrewer YlGnBu. A different
+ *  hue family from the price ramp, so the two heatmaps drawn side by side
+ *  cannot be read as the same measure. */
+export const SIZE_RAMP = ['#ffffcc', '#a1dab4', '#41b6c4', '#2c7fb8', '#253494'];
+
 /** Sale year ramp: pale to deep orange-red, older to newer (the template's
  *  "Map by Year of Sale" orange-red ramp). */
 export const YEAR_LO = [254, 232, 200]; // #fee8c8
@@ -20,9 +25,10 @@ export const YEAR_HI = [179, 0, 0];     // #b30000
  * percentiles (R type 7, as the template's quantile()), so each colour holds
  * about a fifth of the sales. Returns {breaks, colorOf(v), legend} or null
  * when there are no values. Ties collapse duplicate breaks rather than
- * inventing empty buckets.
+ * inventing empty buckets. `ramp` swaps the colours (SIZE_RAMP for the
+ * lot-size map).
  */
-export function priceBuckets(values, fmt = (v) => String(Math.round(v))) {
+export function priceBuckets(values, fmt = (v) => String(Math.round(v)), ramp = PRICE_RAMP) {
   const v = (values || []).filter((x) => Number.isFinite(x) && x > 0).sort((a, b) => a - b);
   if (!v.length) return null;
   const q = (p) => {
@@ -31,7 +37,7 @@ export function priceBuckets(values, fmt = (v) => String(Math.round(v))) {
     return v[lo] + (h - lo) * (v[Math.ceil(h)] - v[lo]);
   };
   const breaks = [...new Set([0.2, 0.4, 0.6, 0.8].map(q))];
-  const colorFor = (i) => PRICE_RAMP[Math.round((i * (PRICE_RAMP.length - 1)) / Math.max(1, breaks.length))];
+  const colorFor = (i) => ramp[Math.round((i * (ramp.length - 1)) / Math.max(1, breaks.length))];
   const colorOf = (x) => {
     if (!Number.isFinite(x)) return null;
     let i = 0;

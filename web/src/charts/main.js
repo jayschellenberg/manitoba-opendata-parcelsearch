@@ -30,8 +30,8 @@ import {
   saleWaterFacts, boxStats, waterPremium, pairedSales, WATER_GROUPS,
 } from '../lib/salesWater.js';
 import { WATER_CLASSES, WATER_DETECTION_LIMIT_FT } from '../lib/water.js';
-import { priceBuckets, yearColors } from '../lib/salesMapColors.js';
-import { createSalesMap } from './chartMap.js';
+import { priceBuckets, yearColors, SIZE_RAMP } from '../lib/salesMapColors.js';
+import { createSalesMap, linkMaps } from './chartMap.js';
 import { criteriaText } from '../lib/criteriaLine.js';
 import { masccolor } from '../masc.js';
 import { LAND_COVER_BUCKETS } from '../lib/landcover.js';
@@ -210,17 +210,17 @@ const UNITS = {
   // `axis` the template's x-axis title, `range` the unit in the criteria line.
   acres: {
     metric: 'ppa', size: 'lotAcres', short: 'Acre', perUnit: 'Acre', range: 'acres',
-    axis: 'Parcel Size (Acres)', sizeText: (v) => `${fmtNum(v)} ac`, money: fmtMoney0,
+    axis: 'Parcel Size (Acres)', sizeTitle: 'Lot Size (Acres)', sizeText: (v) => `${fmtNum(v)} ac`, money: fmtMoney0,
     subjectSize: (s) => (Number(s?.acres) > 0 ? Number(s.acres) : null),
   },
   sf: {
     metric: 'ppsf', size: 'lotSf', short: 'SF', perUnit: 'SF', range: 'sq ft',
-    axis: 'Parcel Size (Sq Ft)', sizeText: (v) => `${fmtNum(v)} sf`, money: fmtMoney2,
+    axis: 'Parcel Size (Sq Ft)', sizeTitle: 'Lot Size (Sq Ft)', sizeText: (v) => `${fmtNum(v)} sf`, money: fmtMoney2,
     subjectSize: (s) => (Number(s?.acres) > 0 ? Number(s.acres) * 43560 : null),
   },
   ff: {
     metric: 'ppff', size: 'lotFrontFt', short: 'FF', perUnit: 'Front Foot', range: 'ft frontage',
-    axis: 'Lot Frontage (Feet)', sizeText: (v) => `${fmtNum(v)} ft`, money: fmtMoney0,
+    axis: 'Lot Frontage (Feet)', sizeTitle: 'Lot Frontage (Feet)', sizeText: (v) => `${fmtNum(v)} ft`, money: fmtMoney0,
     subjectSize: (s) => (Number(s?.frontFt) > 0 ? Number(s.frontFt) : null),
   },
 };
@@ -1712,8 +1712,13 @@ function buildAgCharts() {
 
 // ---------- map tab ------------------------------------------------
 
-/** The page's one map, created the first time the Map tab is shown. */
+/** The page's two maps, created the first time the Map tab is shown: the
+ *  colour-by map, and beside it the lot-size heatmap (Jason, 2026-09-23 —
+ *  for residential work, where lot size drives the rate). One wrapper holds
+ *  both so they sit side by side in the grid. */
 let salesMap = null;
+let sizeMap = null;
+let mapPair = null;
 
 /** The template's map titles, per colouring. */
 const MAP_MODES = {
@@ -1734,10 +1739,16 @@ const MAP_MODES = {
 function buildMapTab() {
   if (!salesMap) {
     const find = (id) => (data.records || []).find((r) => String(r.saleId) === String(id));
-    salesMap = createSalesMap({
+    const handlers = {
       onPick: (id) => { const rec = find(id); if (rec) onPointClick(rec); },
       popupRows: (id) => { const rec = find(id); return rec ? tooltipRows(rec, null).filter(([l]) => l !== '') : []; },
-    });
+    };
+    salesMap = createSalesMap(handlers);
+    sizeMap = createSalesMap(handlers);
+    linkMaps(salesMap, sizeMap);
+    mapPair = document.createElement('div');
+    mapPair.className = 'map-pair';
+    mapPair.append(salesMap.figure, sizeMap.figure);
   }
   const metric = areaMetric();
   const areaFmt = areaMoneyFmt();
@@ -1809,11 +1820,42 @@ function buildMapTab() {
     subject ? '' : 'Set a subject roll in the main window to mark it on the map.',
     unticked ? `${unticked} unticked sale${unticked === 1 ? '' : 's'} not shown.` : '',
     recs.length < activeRecords().length ? `${activeRecords().length - recs.length} sales without a parcel location are not shown.` : ''));
-  salesMap.setData({ fc, subject, rings, fitKey: recs.map((r) => r.saleId).join('|') });
-  // The figure is re-appended on every render; the map must re-measure
-  // once it is back in the document.
-  requestAnimationFrame(() => salesMap.resize());
-  return [salesMap.figure];
+  const fitKey = recs.map((r) => r.saleId).join('|');
+  salesMap.setData({ fc, subject, rings, fitKey });
+
+  // The lot-size heatmap: quintiles of the sale's size in the chosen unit
+  // (acres, square feet or front feet), on its own blue ramp so it is never
+  // mistaken for the price map beside it. Size is not time-adjusted.
+  const spec = unitSpec();
+  const sizeOf = (r) => { const v = Number(r[sizeField()]); return v > 0 ? v : null; };
+  const sb = priceBuckets(recs.map(sizeOf), spec.sizeText, SIZE_RAMP);
+  const sizeless = recs.filter((r) => sizeOf(r) == null).length;
+  const NO_SIZE = '#dddddd';
+  const sizeTitle = `CMS Heatmap – ${spec.sizeTitle}`;
+  sizeMap.setHeader(sizeTitle, criteriaLine(cms, adj.adjusted));
+  sizeMap.setPngName(pngName(sizeTitle));
+  sizeMap.setMunisVisible(opts.mapMunis !== false);
+  sizeMap.setLegend([...(sb ? sb.legend : []),
+    ...(sizeless ? [{ label: opts.unit === 'ff' ? 'No frontage' : 'No size', color: NO_SIZE }] : [])]);
+  sizeMap.setNote(sub(
+    `Quintiles of ${opts.unit === 'ff' ? 'lot frontage' : 'lot size'}; each colour holds about a fifth of the sales.`,
+    sizeless ? `${sizeless} sale${sizeless === 1 ? '' : 's'} without a ${opts.unit === 'ff' ? 'frontage' : 'size'} drawn grey.` : '',
+    'Pans and zooms with the map beside it.'));
+  sizeMap.setData({
+    fc: {
+      type: 'FeatureCollection',
+      features: recs.map((r) => ({
+        type: 'Feature',
+        properties: { saleId: String(r.saleId), excluded: false, color: (sb && sb.colorOf(sizeOf(r))) || NO_SIZE },
+        geometry: { type: 'Point', coordinates: [r.lng, r.lat] },
+      })),
+    },
+    subject, rings, fitKey,
+  });
+  // The figures are re-appended on every render; the maps must re-measure
+  // once they are back in the document.
+  requestAnimationFrame(() => { salesMap.resize(); sizeMap.resize(); });
+  return [mapPair];
 }
 
 // ---------- table view ---------------------------------------------

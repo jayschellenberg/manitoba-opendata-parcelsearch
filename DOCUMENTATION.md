@@ -1035,12 +1035,15 @@ selection, so the charts, the map and the CSV export always agree.
 **Tabs** (order set by Jason): **Land Price/Unit** · **Map** · **Agricultural** ·
 **Total/Per Lot Price** · **Water**.
 - *Land Price/Unit*: $/unit over time, by size, by size + zoning, by distance.
-- *Map*: one MapLibre map (`web/src/charts/chartMap.js`), coloured by price
+- *Map*: a MapLibre map (`web/src/charts/chartMap.js`), coloured by price
   quintile, sale year, zoning or water influence, with municipal boundaries
   (toggle), the subject, and ONE labelled ring at the Sales Analysis distance
   filter (none when no filter is set). Only ticked sales are drawn; unticked
-  ones are left off the map (they stay clickable on the charts). It is created once and re-appended
-  on each render, and refits only when the set of sales changes.
+  ones are left off the map (they stay clickable on the charts). Beside it, a
+  second map — the lot-size heatmap: quintiles of lot size in the chosen unit
+  (acres / sq ft / front feet) on a blue YlGnBu ramp (`SIZE_RAMP`), sales with
+  no size grey. The two are camera-linked (`linkMaps`). Both are created once
+  and re-appended on each render, and refit only when the set of sales changes.
 - *Agricultural*: price over time by MASC; by cultivation ratio; box plots by
   MASC, soil, CLI class and dominant cover; cover mix by MASC and by soil; the
   S/A ratio over time, by MASC and as a histogram. If the size unit is Front ft,
