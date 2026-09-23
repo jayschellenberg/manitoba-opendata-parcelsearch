@@ -15998,6 +15998,18 @@ function publishSalesCharts() {
         // How the loaded sales were narrowed to the ones on screen. Only
         // meaningful in sales mode, where csvFullRows is what was filtered.
         waterfall: inSalesMode ? lastSalesWaterfall : null,
+        // The filter SETTINGS the chart subtitles state, as the land
+        // template's criteria line does ("CMS; 0-35 km from subject; 1-10
+        // acres; Jan-2021 to Sep-2026"). Raw input values; the charts page
+        // falls back to the span of the charted sales for any left open.
+        criteria: inSalesMode ? {
+          dateFrom: $saleDateFrom?.value || '',
+          dateTo: $saleDateTo?.value || '',
+          sizeUom: getSizeUom(),
+          sizeLow: $sizeLow?.value || '',
+          sizeHigh: $sizeHigh?.value || '',
+          distanceMax: subjectCentroid ? ($distanceMax?.value || '') : '',
+        } : null,
         subject: subjectCentroid
           ? {
               lat: subjectCentroid.lat,
