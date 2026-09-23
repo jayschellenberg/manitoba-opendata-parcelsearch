@@ -529,3 +529,24 @@ main { padding: 18px 20px 0; }
 .table-card .table-scroll { max-height: 420px; overflow: auto; }
 .card-table { white-space: nowrap; }
 .card-table th { position: sticky; top: 0; background: #ffffff; }
+
+/* ---------- map tab ---------- */
+.map-card { grid-column: 1 / -1; }
+.sales-map {
+  height: 600px;
+  margin-top: 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.map-popup { font: 12px/1.45 Arial, Helvetica, sans-serif; min-width: 180px; }
+.map-popup-btn {
+  margin-top: 6px;
+  padding: 3px 9px;
+  font: 600 11.5px/1.5 Arial, Helvetica, sans-serif;
+  color: #8B0000;
+  background: #ffffff;
+  border: 1px solid #8B0000;
+  border-radius: 5px;
+  cursor: pointer;
+}
