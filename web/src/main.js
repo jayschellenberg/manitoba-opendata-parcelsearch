@@ -6778,10 +6778,9 @@ function downloadUnmatchedCsv(unmatched) {
   }
   const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
-  const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 16);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `unmatched-sales-${stamp}.csv`;
+  a.download = csvExportFilename('unmatched-sales');
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -16313,8 +16312,7 @@ function exportCsv(explicitRows) {
   a.href = url;
   // Filename advertises whether the export is starred-only so the
   // file's purpose reads at-a-glance in the user's downloads folder.
-  const suffix = starredOnly ? `-starred-${exportRows.length}` : '';
-  a.download = `manitoba-parcels${suffix}-${today()}.csv`;
+  a.download = csvExportFilename(starredOnly ? `starred-${exportRows.length}` : '');
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -16547,6 +16545,19 @@ function today() {
   const d = new Date();
   const pad = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
+ * Filename for every CSV export: MAOADF[-qualifier]-YYYY-MM-DD-HHMM.csv, in
+ * LOCAL time (Jason, 2026-09-22). The minutes keep two exports from one day
+ * apart in the downloads folder; local rather than UTC so the stamp matches
+ * the clock on the wall — an evening export in UTC lands on tomorrow's date.
+ */
+function csvExportFilename(qualifier = '') {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const stamp = `${today()}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+  return `MAOADF${qualifier ? `-${qualifier}` : ''}-${stamp}.csv`;
 }
 
 // Hover hints shown on empty (em-dash) cells whose data isn't loaded by a
