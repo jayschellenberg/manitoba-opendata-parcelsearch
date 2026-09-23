@@ -383,6 +383,16 @@ function stateLegend(pts) {
  * disagree about which sales are in. Off while frozen — a frozen tab
  * ignores the republish, so the click would appear to do nothing.
  */
+/**
+ * The "Restore N unticked sales" link under a chart: re-tick exactly those
+ * sales in the grid, in one message. Off while frozen, like a dot click.
+ */
+function restoreSales(recs) {
+  if (opts.frozen) return;
+  const keys = (recs || []).flatMap((r) => r.keys || []);
+  if (keys.length) channel.postMessage({ type: 'set-excluded', keys, excluded: false });
+}
+
 function onPointClick(rec) {
   if (opts.frozen || !rec?.keys?.length) return;
   channel.postMessage({ type: 'set-excluded', keys: rec.keys, excluded: !rec.excluded });
@@ -802,6 +812,7 @@ function chart(spec) {
   return drawChart({
     tooltipRows,
     onPointClick: opts.frozen ? null : onPointClick,
+    onRestore: opts.frozen ? null : restoreSales,
     pngName: pngName(spec.title),
     ...spec,
   });
@@ -1247,6 +1258,7 @@ function buildWaterCharts() {
   const box = (spec) => drawBoxChart({
     tooltipRows,
     onPointClick: opts.frozen ? null : onPointClick,
+    onRestore: opts.frozen ? null : restoreSales,
     pngName: pngName(spec.title),
     valueFormat: areaFmt,
     axisFormat: fmtAxisDollar,
@@ -1488,6 +1500,7 @@ function buildAgCharts() {
   const box = (spec) => drawBoxChart({
     tooltipRows,
     onPointClick: opts.frozen ? null : onPointClick,
+    onRestore: opts.frozen ? null : restoreSales,
     pngName: pngName(spec.title),
     valueFormat: areaFmt,
     axisFormat: fmtAxisDollar,

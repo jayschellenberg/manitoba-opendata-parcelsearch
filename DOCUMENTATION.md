@@ -1071,6 +1071,9 @@ first suspect when a tab "has no data".**
 **CMS tools.**
 - *Click-to-exclude*: clicking a dot unticks the sale in the grid; a pale dot
   can be clicked back in.
+  The axes fit only the sales in use, so excluding an outlier rescales the
+  chart; an unticked sale outside that range is not drawn. Under any chart
+  with unticked sales, a **Restore N unticked sales** link re-ticks them.
 - *CMS2 percentile trim*:
   - trims to the 5–95th percentile by default, using R type 7 quantiles, and only
     when there are 6 or more sales;

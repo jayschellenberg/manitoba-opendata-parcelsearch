@@ -484,6 +484,8 @@ export function drawChart(spec) {
     tooltipRows = () => [],
     empty = 'No sales in the current filter carry the values this chart needs.',
     onPointClick = null,
+    // (recs) => void: re-tick the chart's unticked sales. Omitted = no link.
+    onRestore = null,
     pngName = '',
     // Explanatory notes (adjustment basis, trim, what the toggle reaches).
     // Kept OUT of the subtitle, which carries the template's criteria line.
@@ -538,16 +540,25 @@ export function drawChart(spec) {
   // ---- domains. y always includes 0, matching the QMD's
   // limits = c(0, NA): a $/acre axis that starts at $8,000 exaggerates
   // every wiggle into a trend.
+  // The axes fit the sales the chart USES — excluded (unticked) ones do not
+  // stretch them (Jason, 2026-09-23: excluding a $400k/ac outlier left the
+  // rest flattened along the bottom). An excluded sale inside the range is
+  // still drawn pale and clickable; one outside it is simply not drawn, and
+  // is re-ticked from the grid. Trimmed sales DO count: they are evidence the
+  // reader is meant to see beside the band. Everything excluded → fit all.
+  const scaled = usable.some((p) => p.state !== 'excluded')
+    ? usable.filter((p) => p.state !== 'excluded')
+    : usable;
   let xLo = Infinity, xHi = -Infinity, yHi = -Infinity;
-  for (const p of usable) {
+  for (const p of scaled) {
     if (p.x < xLo) xLo = p.x;
     if (p.x > xHi) xHi = p.x;
     if (p.y > yHi) yHi = p.y;
   }
   // The span the fitted curves may cover: the points they were fitted TO.
-  // An excluded or trimmed sale out at the edge widens the axis so it can
-  // be seen and clicked back in, but a curve carried out to it would be an
-  // extrapolation over evidence the fit deliberately left out.
+  // A trimmed sale out at the edge widens the axis so it can be seen, but a
+  // curve carried out to it would be an extrapolation over evidence the fit
+  // deliberately left out.
   let fitLo = Infinity, fitHi = -Infinity;
   for (const p of usable) {
     if ((p.state || 'in') !== 'in') continue;
@@ -723,7 +734,11 @@ export function drawChart(spec) {
   // is never hidden under a dot it ignored.
   const dots = el('g');
   const LAYER = { excluded: 0, trimmed: 1, in: 2 };
-  const placed = usable.map((p) => ({ ...p, cx: sx(p.x), cy: sy(p.y) }));
+  // An excluded sale beyond the axes the kept sales set is left undrawn (see
+  // the domain note above) rather than pinned to an edge.
+  const inView = (p) => p.state !== 'excluded'
+    || (p.x >= xScaleInfo.lo && p.x <= xScaleInfo.hi && p.y <= yScaleInfo.hi);
+  const placed = usable.filter(inView).map((p) => ({ ...p, cx: sx(p.x), cy: sy(p.y) }));
   const paintOrder = placed.slice()
     .sort((a, b) => (LAYER[a.state || 'in'] ?? 2) - (LAYER[b.state || 'in'] ?? 2));
   for (const p of paintOrder) {
@@ -767,6 +782,7 @@ export function drawChart(spec) {
   figure.appendChild(svg);
   appendChartFooter(figure, {
     svg, title, subtitle, legend, stats, note, pngName, strip: statStrip(),
+    restore: excludedRecs(usable), onRestore,
   });
   wirePointInteraction({ figure, svg, cap, placed, tooltipRows, onPointClick });
   return figure;
@@ -777,7 +793,7 @@ export function drawChart(spec) {
  * scatter (drawChart) and the box plot (drawBoxChart) so the two read, and
  * export, alike.
  */
-function appendChartFooter(figure, { svg, title, subtitle, legend, stats, note, pngName, strip }) {
+function appendChartFooter(figure, { svg, title, subtitle, legend, stats, note, pngName, strip, restore = [], onRestore = null }) {
   if (legend && legend.length > 1) {
     const key = document.createElement('ul');
     key.className = 'chart-legend';
@@ -818,6 +834,18 @@ function appendChartFooter(figure, { svg, title, subtitle, legend, stats, note, 
   }
 
   if (strip) figure.appendChild(strip);
+  // A way back for sales unticked on this chart (Jason, 2026-09-23) — the
+  // one that matters once an excluded outlier sits off the rescaled axes and
+  // has no dot left to click. On screen only; not part of the PNG.
+  if (restore.length && typeof onRestore === 'function') {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'chart-restore';
+    btn.textContent = `Restore ${restore.length} unticked sale${restore.length === 1 ? '' : 's'}`;
+    btn.title = 'Tick these sales back in, in the grid, the map and every chart';
+    btn.addEventListener('click', () => onRestore(restore));
+    figure.appendChild(btn);
+  }
   if (chartCompany) {
     const firm = document.createElement('p');
     firm.className = 'chart-firm';
@@ -992,7 +1020,7 @@ export function drawBoxChart(spec) {
   const {
     title, subtitle = '', note = '', stats = [], legend = null, pngName = '',
     groups = [], valueLabel = '', valueFormat = fmtMoney0, axisFormat = fmtAxisDollar,
-    tooltipRows = () => [], onPointClick = null,
+    tooltipRows = () => [], onPointClick = null, onRestore = null,
     empty = 'No sales in the current filter carry the values this chart needs.',
   } = spec;
 
@@ -1033,7 +1061,15 @@ export function drawBoxChart(spec) {
   const plotW = VB_W - LEFT - PAD.right;
 
   let vHi = 0;
-  for (const g of rows) for (const p of g.points) if (p.v > vHi) vHi = p.v;
+  // As the scatter: the value axis fits the sales the chart uses, so an
+  // excluded outlier does not squeeze every box against the left edge.
+  const anyKept = rows.some((g) => g.points.some((p) => p.state !== 'excluded'));
+  for (const g of rows) {
+    for (const p of g.points) {
+      if (anyKept && p.state === 'excluded') continue;
+      if (p.v > vHi) vHi = p.v;
+    }
+  }
   // Four ticks, not six: the value axis is narrower than a scatter's (the
   // labels take its left), and full-dollar labels like "$1,200,000" collide
   // at six.
@@ -1110,6 +1146,7 @@ export function drawBoxChart(spec) {
     // re-render on every filter keystroke does not make the dots dance.
     for (const p of g.points) {
       const jitter = (hashUnit(String(p.rec?.saleId ?? p.v)) - 0.5) * Math.min(ROW_H * 0.45, 40);
+      if (p.state === 'excluded' && p.v > scale.hi) continue;  // beyond the kept range: undrawn
       placed.push({ ...p, cx: sx(p.v), cy: cy + jitter });
     }
   });
@@ -1142,9 +1179,19 @@ export function drawBoxChart(spec) {
   figure.appendChild(svg);
   appendChartFooter(figure, {
     svg, title, subtitle, legend, stats, note, pngName, strip: statStripEl(stats),
+    restore: excludedRecs(rows.flatMap((g) => g.points)), onRestore,
   });
   wirePointInteraction({ figure, svg, cap, placed, tooltipRows, onPointClick });
   return figure;
+}
+
+/** The distinct unticked sales among a chart's points (drawn or not). */
+function excludedRecs(points) {
+  const seen = new Map();
+  for (const p of points || []) {
+    if (p?.state === 'excluded' && p.rec && !seen.has(p.rec.saleId)) seen.set(p.rec.saleId, p.rec);
+  }
+  return [...seen.values()];
 }
 
 /** A stable pseudo-random number in [0, 1) from a string (FNV-1a). */
