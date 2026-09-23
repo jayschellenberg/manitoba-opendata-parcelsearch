@@ -101,6 +101,23 @@ therefore retained when present in the source, but parcel-level decisions and
 area measurements should still be verified against the authoritative survey
 and field evidence.
 
+**Soil in the results table without the overlay.** Two paths fill the grid's
+Soil Type / CLI / soil columns, and they differ a lot in cost:
+- **Pre-baked soilfacts shards (automatic since 2026-09-23).** Every sales load
+  runs `stampSoilFromShards()`, whatever the preset.
+  - The shards are built by `r/build_soilfacts.R`: 130 rural municipalities,
+    covering parcels of 20 acres or more.
+  - Each is a ~200 KB per-muni dictionary; lookup is per parcel.
+  - Measured: about 0.6 s for 10 municipalities in parallel, against a 38 s
+    upload.
+- **The live parcel × soil-polygon join**, for shard misses (town lots, small
+  parcels, the north).
+  - About 30 ms per parcel, plus the ArcGIS fetch.
+  - Still waits for the Agricultural column preset or the Soil overlay.
+
+A miss stays unstamped, and the grid and charts read that as "not loaded",
+never as "no soil".
+
 ---
 
 ## 3. Land-cover layer
@@ -832,6 +849,16 @@ was pulled, by *which build*, from *what sources*, with *what caveats*.
 - Wired in `main.js`: `exportCsv()` (the parcels/sales CSV) and
   `handleSnapshotExport()` (the snapshot ZIP). The unmatched-sales CSV is a QA
   diagnostic and intentionally excluded.
+- **Filenames** (`csvExportFilename()`, since 2026-09-22):
+  - `MAOADF-YYYY-MM-DD-HHMM.csv`, in local time.
+  - `MAOADF-starred-<n>-…` for a starred-only export, and
+    `MAOADF-unmatched-sales-…` for the unmatched list.
+  - The R land template finds these by pattern and ranks them by the date, then
+    the time, in the name (`land_find_mao_exports()` in the appraisal-templates
+    `base-files/helpers.R`). Renaming the pattern means changing that too.
+  - Its assessment column is found as `Assess-<year> ($)` / `Assessment ($)`
+    (`land_mao_assess_col()`), so the CSV's assessment header may change with
+    the assessment year.
 
 ---
 
@@ -912,6 +939,11 @@ provincial download becoming the archived source-of-record.
 | `web/src/map.js` | land-cover + historical map layers, setters, tooltips (+ lineage) | — |
 | `web/src/main.js` | toggles, handlers, banners, CSV export, snapshot export, wiring | — |
 | `web/src/snapshotExport.js` | parcel satellite-snapshot ZIP (+ `PROVENANCE.txt`) | — |
+| `web/charts.html` + `web/src/charts/main.js` | the Sales Charts page (§10.0.2): tabs, controls, chart builders | — |
+| `web/src/charts/chartMap.js` | the charts page's MapLibre map (boundaries, subject rings, PNG) | — |
+| `web/src/lib/chartRender.js` | SVG renderers (scatter, box plot, stacked bars, histogram, table card), `R_STYLE`, the 6.5×3.5 PNG export | — |
+| `web/src/lib/salesCharts.js` | sale records, regressions, CMS2 trim, S/A flag, ag roll-up | — |
+| `web/src/lib/salesWater.js` / `salesWaterfall.js` / `salesMapColors.js` / `criteriaLine.js` / `basemapStyle.js` | water analysis; filter waterfall; map colouring; subtitle criteria line; the charts map's basemap (held to `map.js` by `basemapStyle.test.js`) | — |
 | `r/export_rollentry_geojson.R` | gpkg → newline-delimited GeoJSON for the tile build (GDAL vectortranslate, ~12s) | `tiles-build/rollentry.geojsons` |
 | `web/scripts/build-parcel-tiles.js` | derives `_rollDisplay`/`_civicAddress`/`_acres`, writes both tile layers, runs tippecanoe, band-checks and promotes. `--promote-only` finishes a run whose tiling already succeeded | `web/public/parcels.pmtiles` + `parcels-pmtiles-meta.json` |
 | `rebuild-parcel-tiles.ps1` | both steps with logging + failure alerts. `-IfStale` skips when the gpkg is unchanged, `-Publish` uploads to R2 and size-verifies, `-TestAlert` proves the alert path | `logs/parcel-tiles-*.log` |
@@ -979,6 +1011,109 @@ running past the pane's bottom edge. `_fitToMap()` caps the list per render
 to the room actually left below the input, which is why the cap is computed
 rather than a CSS constant: the workspace splitter resizes the map at
 runtime.
+
+### 10.0.2 Sales Charts page (`charts.html`)
+
+Sales Analysis → **Charts** opens a second page that plots whatever the grid is
+showing, tracked live. It ports the CMS / CMS Charts / Ag-CMS pages of Jason's R
+land template (`D:\Dropbox\Appraisal\RProjects\appraisal-templates\land\`), and
+is styled to look like those charts. Built 2026-09-22/23, PRs #128–#138.
+
+**How it gets its data.** The main window projects its rows to one record per
+SALE (`saleRecordsFromRows`, `web/src/lib/salesCharts.js`) and posts them over a
+`BroadcastChannel` (`mbps-sales-charts`) on every grid render. Every row goes
+over, unticked ones included, flagged `excluded`. Each record carries its grid
+row keys, rates ($/lot, $/acre, $/SF, $/front foot), sizes, the S/A ratio, member
+water and flood stamps, and a farmland roll-up (`saleAgFacts`: acre-weighted mode
+for MASC / CLI / soil / cover, acre-weighted mean for cover shares). The message's
+`meta` carries the subject (location, acres, frontage, cultivated %, distance to
+water, total assessment), the filter waterfall, and the filter settings that the
+subtitle states. Clicking a dot sends `set-excluded` back, and the main window
+unticks those rows (`applyChartsExclusion`): the grid stays the one source of the
+selection, so the charts, the map and the CSV export always agree.
+
+**Tabs** (order set by Jason): **Land Price/Unit** · **Map** · **Agricultural** ·
+**Total/Per Lot Price** · **Water**.
+- *Land Price/Unit*: $/unit over time, by size, by size + zoning, by distance.
+- *Map*: one MapLibre map (`web/src/charts/chartMap.js`), coloured by price
+  quintile, sale year, zoning or water influence, with municipal boundaries
+  (toggle), the subject and distance rings. It is created once and re-appended
+  on each render, and refits only when the set of sales changes.
+- *Agricultural*: price over time by MASC; by cultivation ratio; box plots by
+  MASC, soil, CLI class and dominant cover; cover mix by MASC and by soil; the
+  S/A ratio over time, by MASC and as a histogram. If the size unit is Front ft,
+  this tab draws per acre instead (farmland has no frontage), and says so.
+- *Total/Per Lot Price*: total price over time, by distance, vs assessed; price
+  per lot (the price divided by the parcels in the sale) over time, by size, by
+  distance. A note under the tabs explains the difference.
+- *Water*: box plots by water group, class, flood status and water body; scatters
+  by size and by distance to water; summary, water-premium
+  (`lm(log rate ~ log size + group)`, checked against R) and paired-sales tables
+  (`web/src/lib/salesWater.js`).
+
+**Controls.**
+- Size unit: Acres / Sq ft / Front ft.
+- Nominal / Time-adjusted rates.
+- Fitted trend, or a stated %/yr.
+- Effective date.
+- Distance from the subject or from Winnipeg.
+- Trim to percentiles (the template's CMS2).
+- Freeze, Table view, Show excluded.
+- Map colouring and a municipal-boundaries checkbox.
+- **Company** (signs every caption and PNG).
+
+All options persist in `localStorage` (`mbps_charts_opts_v2`), except Freeze and
+the effective date. **A stale persisted setting (the unit especially) is the
+first suspect when a tab "has no data".**
+
+**CMS tools.**
+- *Click-to-exclude*: clicking a dot unticks the sale in the grid; a pale dot
+  can be clicked back in.
+- *CMS2 percentile trim*:
+  - trims to the 5–95th percentile by default, using R type 7 quantiles, and only
+    when there are 6 or more sales;
+  - trims per measure;
+  - refits the rate on the trimmed set and shows the untrimmed rate beside it.
+- *Sale/assessment review flag*: the template's grades.
+  - Bare-land sales are graded against the **land** assessment only.
+  - Other sales are graded against the total, which on bare land would include a
+    house built since the sale.
+- *Filter waterfall*: every `fail('…')` label in `filterCsvRowsByOtherSearches`
+  must be listed in `SALES_FILTER_STEPS` (guarded by `salesChartsCms.test.js`).
+
+**Look and export.** One table, `R_STYLE` in `web/src/lib/chartRender.js`, holds
+the template's styling:
+- Arial, red4 bold titles.
+- Steel-blue points, all one size.
+- Trend lines: linear black, cubic red4 dashed, power purple dotted.
+- Set2 colours for the top 8 zones.
+- A dashed blue Subject line on every scatter where the subject has an x value.
+
+The subtitle is the template's criteria line, `CMS; <km> from <ref>; <size>;
+<Mon-YYYY> to <Mon-YYYY>`. Each part states the Sales Analysis filter where one
+is set, and the span of the charted sales where it is left open
+(`web/src/lib/criteriaLine.js`).
+
+The caption lists the figures (no R²; per-day rate to 4 decimals) and ends
+`| <Company>`. Every chart card and the map keep the template's **6.5 × 3.5 in**
+shape, and the PNG export composes to exactly **1950 × 1050 px**
+(`exportChartPng`). The grey notes under each chart are on screen only; they are
+not part of the PNG.
+
+**Where to change what.**
+
+| To change… | Edit |
+|---|---|
+| Colours, fonts, line styles | `R_STYLE` in `chartRender.js` |
+| A chart's content | `buildRateCharts` / `buildMapTab` / `buildAgCharts` / `buildTotalCharts` / `buildWaterCharts` in `web/src/charts/main.js` |
+| What reaches the charts | `saleRecordsFromRows` and `publishSalesCharts` |
+
+**Caveats.**
+- The map was never seen painting during development: automation tabs run
+  hidden, so MapLibre doesn't draw. Its data, legends and export size were
+  verified; the drawn result was not.
+- The charts page receives no parcel geometry, so the map shows sales as points,
+  not parcel outlines.
 
 ### 10.1 Basemaps
 `map.js` `BASEMAP_STYLE` stacks the basemaps; the top-right menu selects them:

@@ -147,8 +147,10 @@ The page splits into a fixed-width left sidebar holding all controls and a fluid
 - Zoning Category dropdown (per-muni narrowed)
 - Status dropdown — `Any` / `Zoning Changed` / `Dev Plan Changed` / `Both Changed`
 - DU mode + Min # input — `Any DU` / `0 DU only` (vacant) / `Min DU N` (≥ N units)
-- Search · Clear · Export CSV
+- Search · Clear · Export CSV — saved as `MAOADF-YYYY-MM-DD-HHMM.csv` (local time), the name the R land template looks for
 - Result count badge
+- Parcel click popups carry **Copy Roll · GPS Coordinates** (as in the Winnipeg app); clicking the roll number itself still opens the MAO report
+- Sales Analysis → **Charts** opens the Sales Charts page (land-template CMS charts, map, Agricultural and Water tabs, 6.5×3.5 PNGs) — see DOCUMENTATION.md §10.0.2
 
 **Sidebar — Map overlays section**. Each category is a collapsible
 `<details>` group, with the toggles laid out two-up inside an inner
