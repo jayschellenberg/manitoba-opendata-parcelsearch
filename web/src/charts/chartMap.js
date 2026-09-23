@@ -17,7 +17,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Protocol as PMTilesProtocol } from 'pmtiles';
 import { streetsStyle } from '../lib/basemapStyle.js';
-import { R_STYLE } from '../lib/chartRender.js';
+import { R_STYLE, exportChartPng } from '../lib/chartRender.js';
 import { circleRing } from '../lib/salesMapColors.js';
 
 let protocolAdded = false;
@@ -49,6 +49,17 @@ export function createSalesMap({ onPick, popupRows }) {
   const legendEl = document.createElement('ul');
   legendEl.className = 'chart-legend';
   figure.appendChild(legendEl);
+  let munisOn = true;
+  let legendItems = [];
+  // PNG, top-right like every chart card. The filename comes from the page
+  // (its pngName rule), set through setPngName.
+  let pngFile = 'sales-map';
+  const pngBtn = document.createElement('button');
+  pngBtn.type = 'button';
+  pngBtn.className = 'chart-png-btn';
+  pngBtn.textContent = 'PNG';
+  pngBtn.title = 'Download this map as a PNG image (6.5 x 3.5 in)';
+  figure.appendChild(pngBtn);
   const note = document.createElement('p');
   note.className = 'chart-note';
   figure.appendChild(note);
@@ -56,11 +67,29 @@ export function createSalesMap({ onPick, popupRows }) {
   const map = new maplibregl.Map({
     container: box,
     style: streetsStyle(),
+    // Keeps the last frame readable, so the PNG export can copy the canvas
+    // without waiting for (or racing) the next render.
+    preserveDrawingBuffer: true,
     center: [-97.14, 49.9],
     zoom: 7,
     attributionControl: { compact: true },
   });
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+
+  // Municipal boundaries, fetched on the page and handed over as data, as
+  // lib/muniLayer.js does for the main map: a URL given to a geojson source
+  // is fetched from MapLibre's worker, where a page-relative path does not
+  // resolve against the page. Started now so it overlaps the style load.
+  const munisFc = fetch(new URL('mb-municipalities.geojson', window.location.href))
+    .then((r) => (r.ok ? r.json() : null))
+    .catch((err) => { console.warn('Municipal boundaries failed to load', err); return null; });
+
+  function applyMunis() {
+    if (!ready) return;
+    for (const id of ['munis-line', 'munis-label']) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', munisOn ? 'visible' : 'none');
+    }
+  }
 
   let pending = null;   // data that arrived before the style finished loading
   let lastFitKey = null;
@@ -71,6 +100,25 @@ export function createSalesMap({ onPick, popupRows }) {
 
   map.on('load', () => {
     ready = true;
+    // Municipal boundaries (Jason, 2026-09-23), the same file the main map's
+    // muni layer and click-to-pick use. Under the sales, over the basemap.
+    map.addSource('munis', { type: 'geojson', data: EMPTY });
+    munisFc.then((fc) => { if (fc) map.getSource('munis')?.setData(fc); });
+    map.addLayer({
+      id: 'munis-line', type: 'line', source: 'munis',
+      paint: { 'line-color': '#5b5b5b', 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 0.8, 12, 1.8], 'line-opacity': 0.8 },
+    });
+    map.addLayer({
+      id: 'munis-label', type: 'symbol', source: 'munis', minzoom: 8,
+      layout: {
+        'text-field': ['get', 'MUNI_LIST_NAME_WITH_TYPE'],
+        // The one stack the glyph server serves (see fontStacks.test.js).
+        'text-font': ['Open Sans Semibold'],
+        'text-size': 12,
+      },
+      paint: { 'text-color': '#3a3a3a', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 },
+    });
+    applyMunis();
     map.addSource('rings', { type: 'geojson', data: EMPTY });
     map.addSource('sales', { type: 'geojson', data: EMPTY });
     map.addSource('subject', { type: 'geojson', data: EMPTY });
@@ -154,11 +202,13 @@ export function createSalesMap({ onPick, popupRows }) {
     }
   }
 
-  return {
+  const api = {
     figure,
+    setPngName(name) { pngFile = name; },
     setHeader(title, subtitle) { h.textContent = title; sub.textContent = subtitle || ''; },
     setNote(text) { note.textContent = text || ''; },
     setLegend(items) {
+      legendItems = (items || []).map((it) => ({ label: it.label, color: it.color, dot: 'swatch' }));
       legendEl.textContent = '';
       for (const item of items || []) {
         const li = document.createElement('li');
@@ -172,10 +222,32 @@ export function createSalesMap({ onPick, popupRows }) {
         legendEl.appendChild(li);
       }
     },
+    /** Show or hide the municipal boundaries. */
+    setMunisVisible(on) { munisOn = !!on; applyMunis(); },
+    /** Download the map as the template-sized PNG (6.5 x 3.5 in), with the
+     *  card's title, criteria line, legend and note around it. */
+    exportPng(filename) {
+      return exportChartPng({
+        raster: map.getCanvas(),
+        title: h.textContent,
+        subtitle: sub.textContent,
+        legend: legendItems.length > 1 ? legendItems : null,
+        note: note.textContent,
+        filename,
+      });
+    },
     setData(data) {
       if (ready) apply(data);
       else pending = data;
     },
     resize() { map.resize(); },
   };
+  pngBtn.addEventListener('click', () => {
+    api.exportPng(pngFile).catch((err) => {
+      console.warn('Map PNG export failed', err);
+      pngBtn.textContent = 'Failed';
+      setTimeout(() => { pngBtn.textContent = 'PNG'; }, 2000);
+    });
+  });
+  return api;
 }

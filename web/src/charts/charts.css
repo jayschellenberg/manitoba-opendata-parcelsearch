@@ -533,7 +533,10 @@ main { padding: 18px 20px 0; }
 /* ---------- map tab ---------- */
 .map-card { grid-column: 1 / -1; }
 .sales-map {
-  height: 600px;
+  /* The plot band of a 6.5 x 3.5 in card, so the map on screen frames what
+     its PNG will show. */
+  aspect-ratio: 760 / 290;
+  max-height: 70vh;
   margin-top: 10px;
   border: 1px solid var(--rule);
   border-radius: 6px;

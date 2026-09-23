@@ -15983,6 +15983,22 @@ function publishSalesCharts() {
       centroid: parcelCentrePoint,
       rowKey: (row) => saleRowKey(row?.parcel?.properties),
       isSelected: rowIsSelected,
+      // The Agricultural tab's per-parcel facts, through the same helpers
+      // the grid cells and CSV columns use, so the charts cannot disagree
+      // with the table beside them.
+      agOf: (row) => {
+        const p = row?.parcel?.properties || {};
+        const hc = headlineCover(p._landfacts, p._landCover, p._acres);
+        return {
+          masc: p._soilRating || null,
+          cli: dominantCliLabel(p),
+          soil: dominantSoilTypeLabel(p),
+          soilLoaded: Array.isArray(p._soilComposition),
+          cover: hc?.lc || null,
+          coverLabel: dominantBucket(hc?.lc)?.label || null,
+          acres: Number(p._acres),
+        };
+      },
     });
   } catch (err) {
     console.warn('Sales charts projection failed', err);
