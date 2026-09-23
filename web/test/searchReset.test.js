@@ -105,7 +105,7 @@ const isAssignedIn = (v, text) => new RegExp(`(^|[^.\\w])${v}\\s*=[^=]`).test(te
 const PER_RESULT = [
   'currentRows', 'currentPage',
   'lastResultFc', 'lastZoningFc', 'lastDevPlanFc',
-  'lastAsOfHighlight', 'lastWithheldGeometry',
+  'lastAsOfHighlight', 'lastWithheldGeometry', 'pinPoint',
   'csvFullRows', 'csvFullBaseMsg', 'csvMatchedMunis', 'lastSalesWaterfall',
   'basicFullRows', 'basicFullMsg',
   'enteredRollOrder', 'salesMuniLoaded',
@@ -138,6 +138,7 @@ const PERSISTENT = {
   currentSort: "the user's sort preference, not a property of the results",
   numberingOn: 'a display preference that should carry across searches',
   numberingEntryOrder: 'travels with numberingOn',
+  pinOn: 'the one-parcel Locator choice (Shape or Pin), a display preference like numberingOn',
   trafficFlowFcPromise: 'session memo for the Traffic Flow FC; refetching it per search would be pure waste',
   tileNetworkLastKey: 'cache key for the loaded tile-network scope, invalidated by scope not by search',
 };

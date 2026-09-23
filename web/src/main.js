@@ -260,6 +260,7 @@ import {
   setSubjectRadius,
   setParcelNumberData,
   setParcelNumbersVisible,
+  setResultPin,
 } from './map.js';
 import {
   fetchTileDrainageAreas,
@@ -590,6 +591,9 @@ const $export        = document.getElementById('export');
 const $numberingRow    = document.getElementById('numbering-row');
 const $numberingToggle = document.getElementById('numbering-toggle');
 const $numberingLabel  = document.getElementById('numbering-toggle-label');
+// "Locator: Shape | Pin" — numbering's counterpart for a one-parcel result.
+const $pinToggle       = document.getElementById('pin-toggle');
+const $pinLabel        = document.getElementById('pin-toggle-label');
 // "Entry order" — number by the sequence the rolls were typed rather than
 // by muni + Roll #. Only offered when the results came from a typed list.
 const $numberingOrderToggle = document.getElementById('numbering-order-toggle');
@@ -1457,6 +1461,15 @@ let currentSort = { col: 'roll', dir: 'asc' };
 // parcel at search time (lib/parcelNumbering.js), so re-sorting or
 // filtering the grid never renumbers them.
 let numberingOn = false;
+
+// "Locator: Pin" — for a ONE-parcel result, a Google-style pin in place of
+// the parcel shape, which vanishes at muni or province zoom (Jason,
+// 2026-09-23; the Winnipeg app has the same control). `pinOn` is the user's
+// choice and carries across searches like numberingOn; `pinPoint` is where
+// the single result sits, or null whenever the map is not showing exactly
+// one parcel.
+let pinOn = false;
+let pinPoint = null;
 
 // Number in the order the rolls were TYPED, rather than by muni + roll #
 // (the "Entry order" checkbox beside "Number parcels"). Opt-in, and only
@@ -4154,10 +4167,11 @@ function updateLegendAvailability() {
   }
 }
 
-/** The map-options row shows whenever the numbering toggle does. */
+/** The map-options row shows whenever the numbering or locator toggle does. */
 function updateMapOptionsRow() {
   if (!$numberingRow) return;
-  $numberingRow.hidden = !($numberingLabel && !$numberingLabel.hidden);
+  const shown = (el) => el && !el.hidden;
+  $numberingRow.hidden = !(shown($numberingLabel) || shown($pinLabel));
 }
 
 /**
@@ -4254,6 +4268,13 @@ if ($numberingToggle) {
     mapReady.then(() => setParcelNumbersVisible(map, active));
     if (currentRows.length > 0) renderTable(currentRows);
     queueUrlWrite();
+  });
+}
+
+if ($pinToggle) {
+  $pinToggle.addEventListener('change', () => {
+    pinOn = $pinToggle.checked;
+    mapReady.then(() => setResultPin(map, pinOn ? pinPoint : null));
   });
 }
 
@@ -8229,8 +8250,16 @@ function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
   // reports back. Null whenever no as-of date is in force.
   lastAsOfHighlight = asOf;
   lastWithheldGeometry = withheld;
+  // Exactly one parcel on the map: offer the locator pin. Taken from the
+  // HIGHLIGHT set, so an as-of boundary or a withheld one pins where it is
+  // actually drawn, and a culled or filtered-out parcel takes the pin away.
+  const onlyOne = (highlightFc.features?.length || 0) === 1 ? highlightFc.features[0] : null;
+  pinPoint = onlyOne ? parcelCentrePoint(onlyOne) : null;
+  if ($pinLabel) $pinLabel.hidden = !pinPoint;
+  updateMapOptionsRow();
   mapReady.then(() => {
     showResults(map, highlightFc, opts);
+    setResultPin(map, pinOn ? pinPoint : null);
     setZoningData(map, zoningFc);
     setDevPlanData(map, devPlanFc);
     // Parcel-number callouts. The `_seq` values are assigned once per

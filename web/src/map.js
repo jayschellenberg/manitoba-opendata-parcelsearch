@@ -3236,6 +3236,21 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
         },
         paint: { 'text-color': '#ffffff' },
       });
+      // The single-result locator pin (setResultPin): a Google-style pin
+      // standing in for the one parcel found, so it still reads at muni or
+      // province zoom. A GL symbol rather than a maplibregl.Marker so
+      // Generate Map (a canvas copy) captures it, as it does the callouts.
+      map.addImage('result-pin', resultPinImage(), { pixelRatio: 2 });
+      map.addSource('result-pin', { type: 'geojson', data: emptyFc() });
+      map.addLayer({
+        id: 'result-pin', type: 'symbol', source: 'result-pin',
+        layout: {
+          'icon-image': 'result-pin',
+          'icon-anchor': 'bottom',
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+        },
+      });
       // Area-selection shapes draw above everything a filter can act
       // on — the user just drew them, they must never hide under a
       // fill. Sources + fill/line/label + dashed preview.
@@ -8164,4 +8179,71 @@ export function pickStartFromMap(map) {
     map.on('click', onClick);
     window.addEventListener('keydown', onKey);
   });
+}
+
+// ---- Single-result locator pin -------------------------------------
+// The Winnipeg app's setResultPin, carried over with Manitoba's layer ids.
+
+/** The result layers the pin stands in for, and the opacity properties
+ *  each carries. parcel-pin is the withheld-boundary circle — the locator
+ *  pin replaces that too, rather than stacking on it. */
+const PIN_HIDDEN_PAINT = [
+  ['parcel-fill', 'fill-opacity'],
+  ['parcel-line-underlay', 'line-opacity'],
+  ['parcel-line', 'line-opacity'],
+  ['parcel-pin', 'circle-opacity'],
+  ['parcel-pin', 'circle-stroke-opacity'],
+];
+
+/**
+ * A Google-Maps-style map pin (red teardrop, dark red dot), drawn on a
+ * canvas at 2x: 32 x 44 CSS px, the tip at bottom centre. Drawn in code so
+ * it is ready synchronously inside the style load and needs no asset.
+ */
+function resultPinImage() {
+  const W = 32, H = 44, R = 2;
+  const c = document.createElement('canvas');
+  c.width = W * R;
+  c.height = H * R;
+  const g = c.getContext('2d');
+  g.scale(R, R);
+  const body = new Path2D('M16 1.5C8 1.5 1.5 7.9 1.5 15.8c0 10.6 12.6 24.4 14.5 26.5 1.9-2.1 14.5-15.9 14.5-26.5C30.5 7.9 24 1.5 16 1.5z');
+  g.fillStyle = '#ea4335';
+  g.fill(body);
+  g.lineWidth = 1.5;
+  g.strokeStyle = '#a52714';
+  g.stroke(body);
+  g.beginPath();
+  g.arc(16, 15.5, 5.5, 0, 2 * Math.PI);
+  g.fillStyle = '#7a0c0c';
+  g.fill();
+  const img = g.getImageData(0, 0, c.width, c.height);
+  return { width: c.width, height: c.height, data: new Uint8Array(img.data.buffer) };
+}
+
+/**
+ * Show the locator pin at `point` ({lng, lat}) in place of the result
+ * parcel's shape, or pass null to take it away and bring the shape back.
+ * The shapes are faded to 0 rather than hidden, so a click on the parcel
+ * still opens it; their own opacities are saved and put back as they were.
+ */
+export function setResultPin(map, point) {
+  const src = map.getSource('result-pin');
+  if (!src) return;
+  const on = !!point;
+  src.setData(on ? {
+    type: 'FeatureCollection',
+    features: [{ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [point.lng, point.lat] } }],
+  } : emptyFc());
+  if (on === !!map._resultPinOn) return;
+  if (on) {
+    map._resultPinSaved = PIN_HIDDEN_PAINT
+      .filter(([id]) => map.getLayer(id))
+      .map(([id, prop]) => [id, prop, map.getPaintProperty(id, prop)]);
+    for (const [id, prop] of map._resultPinSaved) map.setPaintProperty(id, prop, 0);
+  } else {
+    for (const [id, prop, v] of map._resultPinSaved || []) map.setPaintProperty(id, prop, v ?? 1);
+    map._resultPinSaved = null;
+  }
+  map._resultPinOn = on;
 }
