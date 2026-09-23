@@ -33,6 +33,9 @@ export const PILL_SPECS = {
     inputs: ['numbering-toggle', 'numbering-order-toggle'],
     modes: { off: [false, false], muni: [true, false], entry: [true, true] },
   },
+  // One-parcel results: the parcel shape (default) or a locator pin in its
+  // place, for reading the location at muni or province zoom.
+  locator: { inputs: ['pin-toggle'], modes: { shape: [false], pin: [true] } },
   // Sales tab. The first mode is always the ALL-UNTICKED state; its name
   // follows the question the control asks rather than "off".
   //
