@@ -279,7 +279,7 @@ import {
 } from './lib/landcover.js';
 import {
   waterColor, waterCellText, waterTooltip, waterSortRank,
-  waterCsvCells, isWaterfront, isNearWater, WATER_CLASSES,
+  waterCsvCells, isWaterfront, isNearWater, WATER_CLASSES, waterDistance,
 } from './lib/water.js';
 import { rowPassesChangesFilter, changesFilterInert } from './lib/amendment.js';
 import { PILL_SPECS, modeFromChecked, checkedFromMode } from './lib/pillBinding.js';
@@ -15962,6 +15962,27 @@ function getChartsChannel() {
   return chartsChannel;
 }
 
+/**
+ * The subject's cultivated share, distance to water and total assessment,
+ * for its reference lines on the charts page. The subject feature may be a
+ * bare lookup without the enrichment stamps, so a grid row for the same
+ * roll is read too when there is one. Each is null when unknown.
+ */
+function subjectChartFacts() {
+  const own = subjectFeature?.properties || {};
+  const roll = own.Roll_No_Txt;
+  const row = roll ? currentRows.find((r) => r?.parcel?.properties?.Roll_No_Txt === roll) : null;
+  const p = { ...(row?.parcel?.properties || {}), ...own };
+  const pick = (k) => (own[k] != null ? own[k] : row?.parcel?.properties?.[k]);
+  const hc = headlineCover(pick('_landfacts'), pick('_landCover'), p._acres);
+  const asmt = Number(pick('_asmtTotal'));
+  return {
+    cultPct: hc?.lc && Number.isFinite(Number(hc.lc.cult)) ? Number(hc.lc.cult) * 100 : null,
+    waterFt: pick('_water') ? waterDistance(pick('_water')) : null,
+    asmtTotal: Number.isFinite(asmt) && asmt > 0 ? asmt : null,
+  };
+}
+
 function publishSalesCharts() {
   const channel = getChartsChannel();
   if (!channel) return;
@@ -16035,6 +16056,9 @@ function publishSalesCharts() {
               // The roll's own frontage, for the $/front-foot charts' subject
               // line; null when the roll states an area instead.
               frontFt: parseRollFrontageFeet(subjectFeature?.properties?.Frontage_or_Area) ?? null,
+              // The subject's x on the other scatters (Jason, 2026-09-23: a
+              // subject line on every chart where it has a value).
+              ...subjectChartFacts(),
             }
           : null,
         ts: Date.now(),

@@ -536,7 +536,12 @@ main { padding: 18px 20px 0; }
   /* The plot band of a 6.5 x 3.5 in card, so the map on screen frames what
      its PNG will show. */
   aspect-ratio: 760 / 290;
-  max-height: 70vh;
+  /* Sized from the screen height, so the whole card fits on a typical monitor
+     (Jason, 2026-09-23) — the WIDTH is capped, not the height, so the shape
+     never changes. 52vh tall at most: about 560 px on a 1080p screen. */
+  width: min(100%, calc(52vh * 760 / 290));
+  margin-left: auto;
+  margin-right: auto;
   margin-top: 10px;
   border: 1px solid var(--rule);
   border-radius: 6px;
@@ -559,4 +564,28 @@ main { padding: 18px 20px 0; }
   margin: -4px 0 14px;
   font-size: 12.5px;
   color: var(--ink-2);
+}
+
+/* Company name: header box, and the signature under each chart (the
+   R template caption ends "| Company", red4 bold, right-aligned). */
+.charts-firm {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.charts-firm input {
+  width: 16em;
+  padding: 3px 7px;
+  font: inherit;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+}
+.chart-firm {
+  margin: 4px 0 0;
+  text-align: right;
+  font: 700 11px/1.4 Arial, Helvetica, sans-serif;
+  color: #8B0000;
 }

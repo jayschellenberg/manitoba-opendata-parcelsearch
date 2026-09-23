@@ -75,6 +75,16 @@ export const OTHER_COLOR = '#9e9e9e';
 /** A sale unticked in the grid: drawn, clickable, fitted by nothing. */
 export const EXCLUDED_COLOR = R_STYLE.excludedFill;
 
+/**
+ * The company name that signs every chart (Jason, 2026-09-23), as the R
+ * template ends its caption "… | {Company}" and housing-economic-data signs
+ * its indicator charts. Set once for the page by the charts header box;
+ * empty = unsigned.
+ */
+let chartCompany = '';
+export function setChartCompany(name) { chartCompany = String(name ?? '').trim(); }
+export function getChartCompany() { return chartCompany; }
+
 const VB_W = 760;
 // 290, not 400 (Jason, 2026-09-23): a chart card, and its PNG, keeps the
 // template's 6.5 x 3.5 in shape once the title and footer are added.
@@ -317,7 +327,11 @@ export function exportChartPng({ svg = null, raster = null, title, subtitle, leg
     if (row.length) legendRows.push(row);
   }
   const noteLines = note ? wrapText(note, 10, W - 2 * M).slice(0, 2) : [];
-  const statLine = (stats || []).map((s) => `${s.label}: ${s.value}`).join('; ');
+  // The template's caption: the figures, then " | {Company}".
+  const statLine = [
+    (stats || []).map((s) => `${s.label}: ${s.value}`).join('; '),
+    chartCompany,
+  ].filter(Boolean).join(' | ');
   const capLines = statLine ? wrapText(statLine, 10, W - 2 * M).slice(0, 2) : [];
   const footerH = legendRows.length * 17 + noteLines.length * 13 + capLines.length * 14
     + (legendRows.length || noteLines.length || capLines.length ? 6 : 0);
@@ -551,8 +565,14 @@ export function drawChart(spec) {
   const plotH = VB_H - PAD.top - PAD.bottom;
   const xSpan = (xScaleInfo.hi - xScaleInfo.lo) || 1;
   const ySpan = (yScaleInfo.hi - yScaleInfo.lo) || 1;
-  const sx = (x) => PAD.left + ((x - xScaleInfo.lo) / xSpan) * plotW;
-  const sy = (y) => PAD.top + plotH - ((y - yScaleInfo.lo) / ySpan) * plotH;
+  // The data plots INSIDE a small margin from the axes (Jason, 2026-09-23:
+  // points at the left edge ran into the y-axis labels) — ggplot expands its
+  // scales the same way. Gridlines and ticks use the same mapping, so they
+  // still line up with the points.
+  const INSET_X = 12;
+  const INSET_Y = 6;
+  const sx = (x) => PAD.left + INSET_X + ((x - xScaleInfo.lo) / xSpan) * (plotW - 2 * INSET_X);
+  const sy = (y) => PAD.top + plotH - INSET_Y - ((y - yScaleInfo.lo) / ySpan) * (plotH - INSET_Y);
 
   const svg = el('svg', {
     viewBox: `0 0 ${VB_W} ${VB_H}`,
@@ -793,6 +813,12 @@ function appendChartFooter(figure, { svg, title, subtitle, legend, stats, note, 
   }
 
   if (strip) figure.appendChild(strip);
+  if (chartCompany) {
+    const firm = document.createElement('p');
+    firm.className = 'chart-firm';
+    firm.textContent = chartCompany;
+    figure.appendChild(firm);
+  }
 
   // ---- PNG export (the land template's per-chart PNG, for a report).
   if (pngName) {
