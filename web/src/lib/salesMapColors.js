@@ -65,21 +65,6 @@ export function yearColors(years) {
   };
 }
 
-/**
- * Distance rings around the subject: up to four round distances that fall
- * inside the spread of the sales, so the rings mark real steps in the comp
- * set instead of a fixed 5/10/25 that is either empty or off the map.
- */
-export function ringDistances(maxKm) {
-  const ladder = [0.5, 1, 2, 5, 10, 15, 25, 50, 75, 100, 150, 200, 300];
-  if (!(maxKm > 0)) return [];
-  const inside = ladder.filter((d) => d <= maxKm);
-  if (inside.length <= 4) return inside;
-  // Spread four across what fits, always keeping the largest.
-  const step = (inside.length - 1) / 3;
-  return [0, 1, 2, 3].map((i) => inside[Math.round(i * step)]);
-}
-
 /** A circle of `km` around {lat,lng} as a GeoJSON ring (64 steps). */
 export function circleRing(center, km, steps = 64) {
   const R = 6371;

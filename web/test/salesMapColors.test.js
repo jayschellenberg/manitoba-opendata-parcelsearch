@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict';
 import {
-  priceBuckets, yearColors, ringDistances, circleRing, PRICE_RAMP,
+  priceBuckets, yearColors, circleRing, PRICE_RAMP,
 } from '../src/lib/salesMapColors.js';
 
 let passed = 0;
@@ -36,16 +36,6 @@ test('one colour per year, oldest palest', () => {
   assert.equal(y.colorOf(2019), '#fee8c8');
   assert.equal(y.colorOf(2024), '#b30000');
   assert.equal(y.colorOf(2020), null);
-});
-
-console.log('ringDistances');
-test('rings fall inside the spread and keep the largest', () => {
-  assert.deepEqual(ringDistances(3), [0.5, 1, 2]);
-  const r = ringDistances(120);
-  assert.equal(r.length, 4);
-  assert.equal(r[r.length - 1], 100);
-  assert.ok(r.every((d) => d <= 120));
-  assert.deepEqual(ringDistances(0), []);
 });
 
 console.log('circleRing');

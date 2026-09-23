@@ -1037,7 +1037,9 @@ selection, so the charts, the map and the CSV export always agree.
 - *Land Price/Unit*: $/unit over time, by size, by size + zoning, by distance.
 - *Map*: one MapLibre map (`web/src/charts/chartMap.js`), coloured by price
   quintile, sale year, zoning or water influence, with municipal boundaries
-  (toggle), the subject and distance rings. It is created once and re-appended
+  (toggle), the subject, and ONE labelled ring at the Sales Analysis distance
+  filter (none when no filter is set). Only ticked sales are drawn; unticked
+  ones are left off the map (they stay clickable on the charts). It is created once and re-appended
   on each render, and refits only when the set of sales changes.
 - *Agricultural*: price over time by MASC; by cultivation ratio; box plots by
   MASC, soil, CLI class and dominant cover; cover mix by MASC and by soil; the
