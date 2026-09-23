@@ -124,7 +124,21 @@ export function createSalesMap({ onPick, popupRows }) {
     map.addSource('subject', { type: 'geojson', data: EMPTY });
     map.addLayer({
       id: 'rings-line', type: 'line', source: 'rings',
-      paint: { 'line-color': R_STYLE.subject, 'line-width': 1.25, 'line-dasharray': [3, 3], 'line-opacity': 0.7 },
+      paint: { 'line-color': R_STYLE.subject, 'line-width': 1.5, 'line-dasharray': [3, 3], 'line-opacity': 0.8 },
+    });
+    // The ring's distance, written along it — an unlabelled circle was the
+    // confusing part.
+    map.addLayer({
+      id: 'rings-label', type: 'symbol', source: 'rings',
+      layout: {
+        'symbol-placement': 'line',
+        'symbol-spacing': 300,
+        'text-field': ['get', 'label'],
+        // The one stack the glyph server serves (see fontStacks.test.js).
+        'text-font': ['Open Sans Semibold'],
+        'text-size': 12,
+      },
+      paint: { 'text-color': R_STYLE.subject, 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 },
     });
     // Excluded sales under the rest, pale, as on the charts.
     map.addLayer({
@@ -187,7 +201,7 @@ export function createSalesMap({ onPick, popupRows }) {
     map.getSource('rings').setData(subject && rings?.length ? {
       type: 'FeatureCollection',
       features: rings.map((km) => ({
-        type: 'Feature', properties: { km },
+        type: 'Feature', properties: { km, label: `${km} km` },
         geometry: { type: 'LineString', coordinates: circleRing(subject, km) },
       })),
     } : EMPTY);
@@ -198,6 +212,8 @@ export function createSalesMap({ onPick, popupRows }) {
       const b = new maplibregl.LngLatBounds();
       for (const f of fc.features) b.extend(f.geometry.coordinates);
       if (subject) b.extend([subject.lng, subject.lat]);
+      // The whole distance-filter ring in view, not cut off at the edges.
+      if (subject) for (const km of rings || []) for (const c of circleRing(subject, km, 16)) b.extend(c);
       map.fitBounds(b, { padding: 40, maxZoom: 13, duration: 0 });
     }
   }

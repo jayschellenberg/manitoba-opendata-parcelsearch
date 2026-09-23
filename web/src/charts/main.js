@@ -30,7 +30,7 @@ import {
   saleWaterFacts, boxStats, waterPremium, pairedSales, WATER_GROUPS,
 } from '../lib/salesWater.js';
 import { WATER_CLASSES, WATER_DETECTION_LIMIT_FT } from '../lib/water.js';
-import { priceBuckets, yearColors, ringDistances } from '../lib/salesMapColors.js';
+import { priceBuckets, yearColors } from '../lib/salesMapColors.js';
 import { createSalesMap } from './chartMap.js';
 import { criteriaText } from '../lib/criteriaLine.js';
 import { masccolor } from '../masc.js';
@@ -1730,8 +1730,13 @@ function buildMapTab() {
   const areaFmt = areaMoneyFmt();
   const cms = cmsFor(metric);
   const adj = adjusterFor(cms);
-  const recs = drawnRecords().filter((r) => Number.isFinite(r.lat) && Number.isFinite(r.lng));
-  const live = recs.filter((r) => !r.excluded);
+  // Only the ticked sales (Jason, 2026-09-23): an unticked sale drawn pale
+  // beside the pale end of the price ramp read as a real, cheap sale. It can
+  // still be clicked back in on the other charts or ticked in the grid.
+  const located = (r) => Number.isFinite(r.lat) && Number.isFinite(r.lng);
+  const recs = activeRecords().filter(located);
+  const live = recs;
+  const unticked = (data.records || []).filter((r) => r.excluded).length;
   const mode = MAP_MODES[opts.mapColor] ? opts.mapColor : 'price';
 
   let colorOf = () => null;
@@ -1765,8 +1770,8 @@ function buildMapTab() {
       type: 'Feature',
       properties: {
         saleId: String(r.saleId),
-        excluded: !!r.excluded,
-        color: r.excluded ? R_STYLE.excludedFill : (colorOf(r) || R_STYLE.pointFill),
+        excluded: false,
+        color: colorOf(r) || R_STYLE.pointFill,
       },
       geometry: { type: 'Point', coordinates: [r.lng, r.lat] },
     })),
@@ -1774,8 +1779,12 @@ function buildMapTab() {
 
   const s = data.meta?.subject;
   const subject = Number.isFinite(s?.lat) && Number.isFinite(s?.lng) ? { lat: s.lat, lng: s.lng } : null;
-  const maxKm = subject ? Math.max(0, ...live.map((r) => haversineKm(subject, { lat: r.lat, lng: r.lng }))) : 0;
-  const rings = subject ? ringDistances(maxKm) : [];
+  // One ring, at the Sales Analysis distance filter ("Within 10 km of …"),
+  // labelled — the same circle the main map draws. The earlier automatic
+  // rings (0.5 / 1 / 2 / 5 km…) carried no labels and no meaning of their
+  // own, and read as noise (Jason, 2026-09-23). No filter set, no ring.
+  const filterKm = Number(data.meta?.criteria?.distanceMax);
+  const rings = subject && Number.isFinite(filterKm) && filterKm > 0 ? [filterKm] : [];
 
   const mapTitle = MAP_MODES[mode](unitSpec().perUnit);
   salesMap.setHeader(mapTitle, criteriaLine(cms, adj.adjusted));
@@ -1783,8 +1792,10 @@ function buildMapTab() {
   salesMap.setMunisVisible(opts.mapMunis !== false);
   salesMap.setLegend(legend);
   salesMap.setNote(sub(note,
-    rings.length ? `Rings at ${rings.join(', ')} km from the subject.` : (subject ? '' : 'Set a subject roll in the main window to mark it and draw distance rings.'),
-    recs.length < drawnRecords().length ? `${drawnRecords().length - recs.length} sales without a parcel location are not shown.` : ''));
+    rings.length ? `The circle is the ${fmtNum(rings[0])} km distance filter set in Sales Analysis.` : '',
+    subject ? '' : 'Set a subject roll in the main window to mark it on the map.',
+    unticked ? `${unticked} unticked sale${unticked === 1 ? '' : 's'} not shown.` : '',
+    recs.length < activeRecords().length ? `${activeRecords().length - recs.length} sales without a parcel location are not shown.` : ''));
   salesMap.setData({ fc, subject, rings, fitKey: recs.map((r) => r.saleId).join('|') });
   // The figure is re-appended on every render; the map must re-measure
   // once it is back in the document.
