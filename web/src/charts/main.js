@@ -60,6 +60,7 @@ const els = {
   tabTotal: $('tab-total'),
   tabWater: $('tab-water'),
   tabMap: $('tab-map'),
+  tabNote: $('tab-note'),
   tabAg: $('tab-ag'),
   ctlMapColor: $('ctl-mapcolor'),
   mapColor: $('map-color'),
@@ -784,6 +785,9 @@ function chart(spec) {
   });
 }
 
+/** What "total price" means, said on the Total price tab and in its charts' notes. */
+const TOTAL_PRICE_NOTE = 'Total price is the whole consideration: a multi-parcel sale is one point at its full price, not split across its lots.';
+
 /** Join note fragments, skipping the empty ones. */
 const sub = (...parts) => parts.filter(Boolean).join(' ');
 
@@ -994,7 +998,7 @@ function buildTotalCharts() {
     charts.push(chart({
       title: 'Total Price Over Time',
       subtitle: criteriaLine(cmsPrice, false),
-      note: sub('Prices as sold. One point per sale.', trend.note, trimSkipNote(cmsPrice)),
+      note: sub('Prices as sold.', TOTAL_PRICE_NOTE, trend.note, trimSkipNote(cmsPrice)),
       points: pts, xIsDate: true,
       xLabel: 'Sale Date', yLabel: 'Sale Price',
       yFormat: fmtMoney0, yAxisFormat: axisDollar,
@@ -1011,7 +1015,7 @@ function buildTotalCharts() {
     charts.push(chart({
       title: `Total Price by Distance from ${refTitle}`,
       subtitle: criteriaLine(cmsPrice, priceAdj.adjusted),
-      note: sub(`Measured from ${refName}.`, priceAdj.note, trimSkipNote(cmsPrice)),
+      note: sub(`Measured from ${refName}.`, TOTAL_PRICE_NOTE, priceAdj.note, trimSkipNote(cmsPrice)),
       points: pts,
       xLabel: distLabel, yLabel: yAdj(priceAdj, 'Sale Price'),
       yFormat: fmtMoney0, yAxisFormat: axisDollar, xAxisFormat: fmtAxisComma,
@@ -1076,7 +1080,7 @@ function buildTotalCharts() {
     charts.push(chart({
       title: 'Land Price per Lot Over Time',
       subtitle: criteriaLine(cmsLot, false),
-      note: sub('Prices as sold. One point per sale; a multi-parcel sale is priced per lot.',
+      note: sub('Prices as sold. Price per lot = the sale price divided by the parcels in the sale; a single-parcel sale is the same as its total.',
         trend.note, trimSkipNote(cmsLot)),
       points: pts, xIsDate: true,
       xLabel: 'Sale Date', yLabel: 'Price per Lot',
@@ -1958,6 +1962,13 @@ function syncControls() {
   // The size unit shows on every tab now: the Total price tab's Price per
   // Lot by Size chart takes its x-axis from it.
   els.ctlUnit.hidden = false;
+  // The Total price tab's measure, spelled out where it is chosen.
+  els.tabNote.hidden = tab !== 'total';
+  els.tabNote.textContent = tab === 'total'
+    ? `${TOTAL_PRICE_NOTE} Price per lot divides that price by the number of parcels in the sale, `
+      + 'so a $600,000 sale of 3 lots shows as $600,000 on the Total price charts and $200,000 on the '
+      + 'Price per Lot charts. For a single-parcel sale the two are the same.'
+    : '';
   // Name the charts the Nominal/Time-adjusted toggle actually reaches on
   // THIS tab.
   els.ratesHint.textContent = onTotal
