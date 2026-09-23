@@ -505,3 +505,27 @@ main { padding: 18px 20px 0; }
 .chart-key-dot-hollow { background: #ffffff; }
 .chart-key-dot-ring { background: #63B8FF; border-color: #000000 !important; }
 .chart-key-dot-swatch { width: 10px; height: 10px; }
+
+/* ---------- water tab tables ---------- */
+.table-card .table-scroll { margin-top: 10px; }
+.card-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.card-table th,
+.card-table td { padding: 4px 10px 4px 0; text-align: left; border-bottom: 1px solid var(--rule); }
+.card-table th {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+.card-table .num { text-align: right; }
+/* Tables need width, not a third of the row; long ones scroll. */
+.table-card { grid-column: 1 / -1; }
+.table-card .table-scroll { max-height: 420px; overflow: auto; }
+.card-table { white-space: nowrap; }
+.card-table th { position: sticky; top: 0; background: #ffffff; }
