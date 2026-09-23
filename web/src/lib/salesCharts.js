@@ -69,7 +69,7 @@ function pos(n) {
  * 3-lot assembly was buying three ~5-acre lots, not one 15-acre parcel,
  * and the $/lot on the y-axis is per-lot too.
  */
-export function saleRecordsFromRows(rows, { parseDate, centroid } = {}) {
+export function saleRecordsFromRows(rows, { parseDate, centroid, rowKey, isSelected } = {}) {
   const byGroup = new Map();
 
   for (const row of rows || []) {
@@ -114,15 +114,31 @@ export function saleRecordsFromRows(rows, { parseDate, centroid } = {}) {
         distanceKm: Number.isFinite(Number(p._distanceKm)) ? Number(p._distanceKm) : null,
         lat: null,
         lng: null,
+        // The grid's per-row selection keys for every member, so a click on
+        // this sale's dot in the charts tab can untick (or re-tick) exactly
+        // the rows it stands for.
+        keys: [],
+        // Excluded = EVERY member row is unticked in the grid. A sale with
+        // one member still ticked stays in: that is how the charts behaved
+        // before exclusions were drawn at all (a group reached them if any
+        // member did), and the group's price and rates describe the whole
+        // sale either way.
+        excluded: false,
         _pts: [],
+        _anySelected: false,
       });
     }
+
+    const rec = byGroup.get(gid);
+    const key = rowKey ? rowKey(row) : '';
+    if (key) rec.keys.push(key);
+    if (!isSelected || isSelected(row)) rec._anySelected = true;
 
     // Sale position = mean of its members' centroids, so a multi-parcel
     // assembly plots at the middle of the deal rather than at whichever
     // parcel the CSV happened to list first.
     const c = centroid ? centroid(row.parcel) : null;
-    if (c && Number.isFinite(c.lat) && Number.isFinite(c.lng)) byGroup.get(gid)._pts.push(c);
+    if (c && Number.isFinite(c.lat) && Number.isFinite(c.lng)) rec._pts.push(c);
   }
 
   const out = [];
@@ -131,7 +147,9 @@ export function saleRecordsFromRows(rows, { parseDate, centroid } = {}) {
       rec.lat = rec._pts.reduce((s, c) => s + c.lat, 0) / rec._pts.length;
       rec.lng = rec._pts.reduce((s, c) => s + c.lng, 0) / rec._pts.length;
     }
+    rec.excluded = !rec._anySelected;
     delete rec._pts;
+    delete rec._anySelected;
     out.push(rec);
   }
   // Chronological, so anything that walks the array (the table view,
@@ -436,6 +454,82 @@ export function topZones(records, max = 3) {
     .sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0]))
     .slice(0, max)
     .map(([key, count]) => ({ key, count }));
+}
+
+/**
+ * Sample quantile, R's default (type 7): linear interpolation between order
+ * statistics at h = (n-1)p. The land template trims with
+ * `stats::quantile(x, probs)`, so matching its type is what makes a trimmed
+ * set here and one there contain the same sales.
+ */
+export function quantile7(values, p) {
+  const xs = (values || [])
+    .filter((v) => v != null && v !== '')
+    .map(Number)
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+  if (!xs.length || !Number.isFinite(p)) return null;
+  const q = Math.min(1, Math.max(0, p));
+  const h = (xs.length - 1) * q;
+  const lo = Math.floor(h);
+  const hi = Math.ceil(h);
+  return xs[lo] + (h - lo) * (xs[hi] - xs[lo]);
+}
+
+/** Fewer sales than this and the percentile trim does nothing — the land
+ *  template's `nrow(CMS1) > 5` gate. Trimming 5% off each end of five sales
+ *  is not a trim, it is deleting evidence. */
+export const TRIM_MIN_SALES = 6;
+
+/**
+ * The template's CMS2: the sales whose NOMINAL `metric` sits inside the
+ * [loPct, hiPct] percentile band of the whole set.
+ *
+ * Trimmed on the rate as sold, not the time-adjusted one, as
+ * land_time_adjust() does — the adjustment is refitted on the trimmed set,
+ * so trimming on adjusted values would make the trim depend on itself.
+ *
+ * Returns {applied, keep:Set<saleId>, qLo, qHi, n, removed}. `applied` is
+ * false (and `keep` holds every sale carrying the metric) below
+ * TRIM_MIN_SALES or for a band that is not a band.
+ */
+export function percentileTrim(records, metric, loPct, hiPct) {
+  const withMetric = (records || []).filter((r) => pos(r?.[metric]) != null);
+  const all = new Set(withMetric.map((r) => r.saleId));
+  const lo = Number(loPct);
+  const hi = Number(hiPct);
+  const bandOk = Number.isFinite(lo) && Number.isFinite(hi) && lo >= 0 && hi <= 100 && lo < hi;
+  if (withMetric.length < TRIM_MIN_SALES || !bandOk) {
+    return { applied: false, keep: all, qLo: null, qHi: null, n: withMetric.length, removed: 0 };
+  }
+  const vals = withMetric.map((r) => pos(r[metric]));
+  const qLo = quantile7(vals, lo / 100);
+  const qHi = quantile7(vals, hi / 100);
+  const keep = new Set(withMetric
+    .filter((r) => { const v = pos(r[metric]); return v >= qLo && v <= qHi; })
+    .map((r) => r.saleId));
+  return { applied: true, keep, qLo, qHi, n: withMetric.length, removed: withMetric.length - keep.size };
+}
+
+/**
+ * The land template's PossibleOutlier grade from a sale-to-assessment ratio
+ * (Land_engine.R, "a graded REVIEW flag, never a filter"). Fixed tiers
+ * rather than an IQR fence: the ratio is right-skewed around ~0.99, so a
+ * Tukey low fence goes negative and flags nothing — the very tail that
+ * matters. Worst label wins.
+ *
+ * '' = unremarkable; 'No assessment' when there is no ratio to grade.
+ */
+export const SALE_ASMT_TIERS = { nominal: 0.10, veryLow: 0.25, low: 0.50, high: 2.50 };
+
+export function saleAsmtFlag(ratio) {
+  const r = Number(ratio);
+  if (ratio == null || ratio === '' || !Number.isFinite(r) || r <= 0) return 'No assessment';
+  if (r < SALE_ASMT_TIERS.nominal) return 'Nominal';
+  if (r < SALE_ASMT_TIERS.veryLow) return 'Very low';
+  if (r < SALE_ASMT_TIERS.low) return 'Low';
+  if (r > SALE_ASMT_TIERS.high) return 'High';
+  return '';
 }
 
 /** Dot radius encoding parcel count. Single-parcel sales sit at r=4 (an

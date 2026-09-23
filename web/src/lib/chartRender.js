@@ -34,6 +34,9 @@ export const INK = {
 /** Categorical slots 1-3 plus the fold-to-Other gray. */
 export const SERIES_COLORS = ['#2a78d6', '#eb6834', '#1baf7a'];
 export const OTHER_COLOR = '#898781';
+/** A sale unticked in the grid: drawn, clickable, fitted by nothing. Lighter
+ *  than OTHER_COLOR so an excluded dot never reads as the "Other" series. */
+export const EXCLUDED_COLOR = '#c3c2b7';
 
 const VB_W = 760;
 const VB_H = 400;
@@ -157,6 +160,154 @@ export function fmtAxisNum(n) {
   return n.toLocaleString('en-US', { maximumFractionDigits: abs < 10 ? 2 : 0 });
 }
 
+// ---------- PNG export -----------------------------------------------
+
+/**
+ * Greedy word wrap by estimated width. SVG text does not wrap, and the
+ * export has no layout engine to ask, so this budgets ~0.55em per
+ * character — generous for system-ui, so a line never runs off the image.
+ */
+export function wrapText(str, fontPx, maxW) {
+  const words = String(str || '').split(/\s+/).filter(Boolean);
+  const maxChars = Math.max(10, Math.floor(maxW / (fontPx * 0.55)));
+  const lines = [];
+  let line = '';
+  for (const w of words) {
+    const next = line ? `${line} ${w}` : w;
+    if (next.length > maxChars && line) { lines.push(line); line = w; } else line = next;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+/** A file-name stem from a chart title: "Price per acre by lot size" →
+ *  "price-per-acre-by-lot-size". */
+export function slugify(str) {
+  return String(str || 'chart').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'chart';
+}
+
+const EXPORT_STYLE = [
+  'text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }',
+  '.chart-tick { font-size: 10.5px; }',
+  '.chart-axis-title { font-size: 11.5px; font-weight: 600; }',
+  '.chart-ref-label { font-size: 10.5px; }',
+].join('\n');
+
+/**
+ * Compose one chart as a standalone SVG — title, subtitle, the plot, legend
+ * and stat figures — and rasterize it to a PNG download at 2x.
+ *
+ * Built from the chart's own spec rather than by screenshotting the card, so
+ * the image carries no hover ring, tooltip or PNG button, and every string
+ * goes in through textContent: addresses and zone codes are pasted-CSV text.
+ */
+export function exportChartPng({ svg, title, subtitle, legend, stats, filename }) {
+  const W = VB_W;
+  const M = 16;
+  const root = el('svg', { xmlns: SVG_NS, width: W, viewBox: '' });
+  const style = el('style');
+  style.textContent = EXPORT_STYLE;
+  root.appendChild(style);
+  const bg = el('rect', { x: 0, y: 0, width: W, fill: INK.surface });
+  root.appendChild(bg);
+
+  let y = M + 14;
+  root.appendChild(text(title || '', {
+    x: M, y, 'font-size': 16, 'font-weight': 600, fill: INK.primary,
+  }));
+  for (const line of wrapText(subtitle, 11, W - 2 * M)) {
+    y += 16;
+    root.appendChild(text(line, { x: M, y, 'font-size': 11, fill: INK.muted }));
+  }
+  y += 8;
+
+  // The plot itself, cloned so the live chart keeps its listeners, minus
+  // the hover highlight ring (the last circle with pointer-events none).
+  const plot = svg.cloneNode(true);
+  for (const n of plot.querySelectorAll('[pointer-events="none"]')) n.remove();
+  plot.removeAttribute('class');
+  plot.removeAttribute('tabindex');
+  plot.setAttribute('x', '0');
+  plot.setAttribute('y', String(y));
+  plot.setAttribute('width', String(VB_W));
+  plot.setAttribute('height', String(VB_H));
+  root.appendChild(plot);
+  y += VB_H + 6;
+
+  if (legend && legend.length > 1) {
+    let x = M;
+    y += 14;
+    for (const item of legend) {
+      const w = 28 + String(item.label).length * 6.2;
+      if (x + w > W - M && x > M) { x = M; y += 18; }
+      if (item.dot) {
+        const pale = item.dot === 'pale';
+        root.appendChild(el('circle', {
+          cx: x + 6, cy: y - 4, r: 4.5,
+          fill: pale ? EXCLUDED_COLOR : item.dot === 'hollow' ? INK.surface : SERIES_COLORS[0],
+          stroke: item.dot === 'ring' ? INK.primary : item.color || EXCLUDED_COLOR,
+          'stroke-width': 1.5,
+        }));
+      } else {
+        root.appendChild(el('line', {
+          x1: x, x2: x + 14, y1: y - 4, y2: y - 4,
+          stroke: item.color || INK.primary, 'stroke-width': 3,
+          'stroke-dasharray': item.dash ? '4 3' : null,
+        }));
+      }
+      root.appendChild(text(item.label, { x: x + 20, y, 'font-size': 11.5, fill: INK.secondary }));
+      x += w;
+    }
+  }
+
+  if (stats && stats.length) {
+    const statLine = stats.map((s) => `${s.label}: ${s.value}`).join('   ·   ');
+    y += 8;
+    for (const line of wrapText(statLine, 12, W - 2 * M)) {
+      y += 17;
+      root.appendChild(text(line, { x: M, y, 'font-size': 12, 'font-weight': 600, fill: INK.primary }));
+    }
+  }
+
+  const H = Math.ceil(y + M);
+  root.setAttribute('height', String(H));
+  root.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  bg.setAttribute('height', String(H));
+
+  const xml = new XMLSerializer().serializeToString(root);
+  const url = URL.createObjectURL(new Blob([xml], { type: 'image/svg+xml;charset=utf-8' }));
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = 2;
+        const canvas = document.createElement('canvas');
+        canvas.width = W * scale;
+        canvas.height = H * scale;
+        const ctx = canvas.getContext('2d');
+        ctx.scale(scale, scale);
+        ctx.drawImage(img, 0, 0, W, H);
+        URL.revokeObjectURL(url);
+        canvas.toBlob((png) => {
+          if (!png) { reject(new Error('canvas produced no image')); return; }
+          const a = document.createElement('a');
+          const href = URL.createObjectURL(png);
+          a.href = href;
+          a.download = `${filename}.png`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(href), 2000);
+          resolve();
+        }, 'image/png');
+      } catch (err) { URL.revokeObjectURL(url); reject(err); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('SVG failed to load as an image')); };
+    img.src = url;
+  });
+}
+
 // ---------- the chart ----------------------------------------------
 
 /**
@@ -173,8 +324,17 @@ export function fmtAxisNum(n) {
  *   fits                  — [{predict, color, dash, label}] drawn as paths
  *   refLines              — [{x|y, label}] dashed annotations
  *   legend                — [{label, color}] (omitted for a single series)
- *   tooltipRows(rec)      — [[label, value], …] for the hover readout
+ *   tooltipRows(rec, pt)  — [[label, value], …] for the hover readout
  *   empty                 — message shown when there's nothing to plot
+ *   onPointClick(rec, pt) — click / Enter on a point; omitted = not clickable
+ *   pngName               — file stem for the PNG button; omitted = no button
+ *
+ * A point may carry `state`: 'in' (default — fitted), 'trimmed' (outside
+ * the percentile band: drawn hollow, fitted by nothing) or 'excluded'
+ * (unticked in the grid: drawn pale). And `flagged`: a dark ring, for a
+ * sale whose sale/assessment ratio is out of line. The CALLER fits only
+ * the 'in' points; this only draws them differently, and keeps the fitted
+ * curves inside the span of the 'in' points.
  *
  * Returns a <figure> element. The caller appends it; nothing here
  * touches the document outside the returned subtree.
@@ -188,6 +348,8 @@ export function drawChart(spec) {
     fits = [], refLines = [], legend = null, stats = [],
     tooltipRows = () => [],
     empty = 'No sales in the current filter carry the values this chart needs.',
+    onPointClick = null,
+    pngName = '',
   } = spec;
 
   /** The figures the QMD puts in its caption (median, daily change,
@@ -244,6 +406,17 @@ export function drawChart(spec) {
     if (p.x > xHi) xHi = p.x;
     if (p.y > yHi) yHi = p.y;
   }
+  // The span the fitted curves may cover: the points they were fitted TO.
+  // An excluded or trimmed sale out at the edge widens the axis so it can
+  // be seen and clicked back in, but a curve carried out to it would be an
+  // extrapolation over evidence the fit deliberately left out.
+  let fitLo = Infinity, fitHi = -Infinity;
+  for (const p of usable) {
+    if ((p.state || 'in') !== 'in') continue;
+    if (p.x < fitLo) fitLo = p.x;
+    if (p.x > fitHi) fitHi = p.x;
+  }
+  if (!(fitHi >= fitLo)) { fitLo = xLo; fitHi = xHi; }
   for (const r of refLines) {
     if (Number.isFinite(r?.x)) { xLo = Math.min(xLo, r.x); xHi = Math.max(xHi, r.x); }
     if (Number.isFinite(r?.y)) yHi = Math.max(yHi, r.y);
@@ -372,9 +545,9 @@ export function drawChart(spec) {
     let run = [];
     for (let i = 0; i <= STEPS; i++) {
       const x = xScaleInfo.lo + (xSpan * i) / STEPS;
-      // Only draw across the span the DATA covers — extrapolating a
-      // cubic into the empty margin invents a trend nobody measured.
-      if (x < xLo || x > xHi) { if (run.length > 1) segs.push(run); run = []; continue; }
+      // Only draw across the span the FITTED data covers — extrapolating
+      // a cubic into the empty margin invents a trend nobody measured.
+      if (x < fitLo || x > fitHi) { if (run.length > 1) segs.push(run); run = []; continue; }
       const y = fit.predict(x);
       if (!Number.isFinite(y) || y < yScaleInfo.lo || y > yScaleInfo.hi) {
         if (run.length > 1) segs.push(run);
@@ -399,15 +572,34 @@ export function drawChart(spec) {
 
   // ---- points. A 2px ring in the surface colour keeps overlapping
   // dots legible without drawing a border around each mark.
+  // Painted excluded → trimmed → in, so the evidence the fit actually used
+  // is never hidden under a dot it ignored.
   const dots = el('g');
+  const LAYER = { excluded: 0, trimmed: 1, in: 2 };
   const placed = usable.map((p) => ({ ...p, cx: sx(p.x), cy: sy(p.y) }));
-  for (const p of placed) {
+  const paintOrder = placed.slice()
+    .sort((a, b) => (LAYER[a.state || 'in'] ?? 2) - (LAYER[b.state || 'in'] ?? 2));
+  for (const p of paintOrder) {
+    const state = p.state || 'in';
+    const color = p.color || SERIES_COLORS[0];
+    let attrs;
+    if (state === 'excluded') {
+      attrs = { fill: EXCLUDED_COLOR, 'fill-opacity': 0.55, stroke: INK.surface, 'stroke-width': 1.5 };
+    } else if (state === 'trimmed') {
+      // Hollow in the series colour: still the same kind of sale, but
+      // outside the band the fit was taken over.
+      attrs = { fill: INK.surface, 'fill-opacity': 1, stroke: color, 'stroke-width': 1.75 };
+    } else {
+      attrs = { fill: color, 'fill-opacity': 0.72, stroke: INK.surface, 'stroke-width': 2 };
+    }
+    // A flagged sale keeps its fill and trades the surface ring for a dark
+    // one — visible at a glance without a fourth colour.
+    if (p.flagged && state !== 'excluded') {
+      attrs.stroke = INK.primary;
+      attrs['stroke-width'] = 1.5;
+    }
     const c = el('circle', {
-      cx: p.cx.toFixed(2), cy: p.cy.toFixed(2), r: p.r || 4,
-      fill: p.color || SERIES_COLORS[0],
-      'fill-opacity': 0.72,
-      stroke: INK.surface,
-      'stroke-width': 2,
+      cx: p.cx.toFixed(2), cy: p.cy.toFixed(2), r: p.r || 4, ...attrs,
     });
     dots.appendChild(c);
     p.node = c;
@@ -432,7 +624,14 @@ export function drawChart(spec) {
       const li = document.createElement('li');
       const swatch = document.createElement('span');
       swatch.className = 'chart-key';
-      swatch.style.background = item.color;
+      if (item.dot) {
+        // A point-state key ('pale' / 'hollow' / 'ring') — drawn as the dot
+        // it describes rather than as a line.
+        swatch.classList.add('chart-key-dot', `chart-key-dot-${item.dot}`);
+        if (item.color) swatch.style.borderColor = item.color;
+      } else {
+        swatch.style.background = item.color;
+      }
       if (item.dash) swatch.classList.add('chart-key-dashed');
       const label = document.createElement('span');
       label.textContent = item.label;
@@ -445,6 +644,24 @@ export function drawChart(spec) {
 
   const strip = statStrip();
   if (strip) figure.appendChild(strip);
+
+  // ---- PNG export (the land template's per-chart PNG, for a report).
+  if (pngName) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'chart-png-btn';
+    btn.textContent = 'PNG';
+    btn.title = 'Download this chart as a PNG image';
+    btn.addEventListener('click', () => {
+      exportChartPng({ svg, title, subtitle, legend, stats, filename: pngName })
+        .catch((err) => {
+          console.warn('Chart PNG export failed', err);
+          btn.textContent = 'Failed';
+          setTimeout(() => { btn.textContent = 'PNG'; }, 2000);
+        });
+    });
+    figure.appendChild(btn);
+  }
 
   // ---- hover / focus readout.
   //
@@ -469,7 +686,7 @@ export function drawChart(spec) {
     highlight.setAttribute('opacity', '1');
 
     tip.textContent = '';
-    for (const [label, value] of tooltipRows(p.rec)) {
+    for (const [label, value] of tooltipRows(p.rec, p)) {
       const rowEl = document.createElement('div');
       rowEl.className = 'chart-tip-row';
       const v = document.createElement('strong');
@@ -503,9 +720,10 @@ export function drawChart(spec) {
     tip.hidden = true;
   }
 
-  svg.addEventListener('pointermove', (e) => {
-    const rect = svg.getBoundingClientRect();
-    if (!rect.width) return;
+  /** Index into byX of the point nearest the pointer, or -1 beyond the
+   *  slack. Shared by hover and click so a click always acts on the point
+   *  the tooltip is showing. */
+  function nearest(e, rect) {
     const scale = VB_W / rect.width;
     const mx = (e.clientX - rect.left) * scale;
     const my = (e.clientY - rect.top) * scale;
@@ -517,13 +735,32 @@ export function drawChart(spec) {
     }
     // ~40 viewBox units of slack: close enough to be aiming at a point,
     // far enough that sweeping empty plot area doesn't flash a tooltip.
-    if (best >= 0 && bestD <= 40 * 40) showPoint(best, rect);
+    return best >= 0 && bestD <= 40 * 40 ? best : -1;
+  }
+
+  svg.addEventListener('pointermove', (e) => {
+    const rect = svg.getBoundingClientRect();
+    if (!rect.width) return;
+    const idx = nearest(e, rect);
+    if (idx >= 0) showPoint(idx, rect);
     else hide();
   });
+  if (typeof onPointClick === 'function') {
+    svg.classList.add('is-clickable');
+    svg.addEventListener('click', (e) => {
+      const rect = svg.getBoundingClientRect();
+      if (!rect.width) return;
+      const idx = nearest(e, rect);
+      if (idx >= 0) onPointClick(byX[idx].rec, byX[idx]);
+    });
+  }
   svg.addEventListener('pointerleave', hide);
   svg.addEventListener('blur', hide);
   svg.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+    if ((e.key === 'Enter' || e.key === ' ') && activeIdx >= 0 && typeof onPointClick === 'function') {
+      e.preventDefault();
+      onPointClick(byX[activeIdx].rec, byX[activeIdx]);
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
       e.preventDefault();
       const next = activeIdx < 0
         ? 0
