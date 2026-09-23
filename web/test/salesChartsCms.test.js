@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import {
-  quantile7, percentileTrim, saleAsmtFlag, saleRecordsFromRows, TRIM_MIN_SALES,
+  quantile7, percentileTrim, saleAsmtFlag, saleRecordsFromRows, TRIM_MIN_SALES, saleAgFacts,
 } from '../src/lib/salesCharts.js';
 import { buildSalesWaterfall } from '../src/lib/salesWaterfall.js';
 import { wrapText, slugify } from '../src/lib/chartRender.js';
@@ -155,6 +155,27 @@ test('a bare-land assembly missing a member land value falls back to total', () 
   const b = bare({ _saleGroupSize: 2, _saleSeq: 1, _asmtLand: null });
   const [rec] = saleRecordsFromRows([row(a), row(b)]);
   assert.equal(rec.flagBasis, 'total');
+});
+
+console.log('saleAgFacts (the template collapses parcels to a sale)');
+test('categories take the value covering the most acres; cover is acre-weighted', () => {
+  const f = saleAgFacts([
+    { masc: 'C', cli: '3W', soil: 'Red River', soilLoaded: true, cover: { cult: 1, past: 0, bush: 0, wet: 0, other: 0 }, coverLabel: 'Cultivated', acres: 120 },
+    { masc: 'F', cli: '5T', soil: 'Osborne', soilLoaded: true, cover: { cult: 0, past: 0, bush: 1, wet: 0, other: 0 }, coverLabel: 'Bush/Treed', acres: 40 },
+  ]);
+  assert.equal(f.masc, 'C');
+  assert.equal(f.cli, '3W');
+  assert.equal(f.cliClass, '3', 'the class is the leading digit, as the template');
+  assert.equal(f.soil, 'Red River');
+  assert.equal(f.coverLabel, 'Cultivated');
+  assert.equal(f.cover.cult, 0.75);
+  assert.equal(f.cover.bush, 0.25);
+  assert.equal(f.soilLoaded, true);
+});
+test('soil not joined on any member reads as not loaded, not as "no soil"', () => {
+  const f = saleAgFacts([{ masc: 'B', soilLoaded: true, acres: 1 }, { masc: 'B', soilLoaded: false, acres: 1 }]);
+  assert.equal(f.soilLoaded, false);
+  assert.equal(f.cover, null);
 });
 
 console.log('buildSalesWaterfall');

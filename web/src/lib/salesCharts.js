@@ -69,7 +69,7 @@ function pos(n) {
  * 3-lot assembly was buying three ~5-acre lots, not one 15-acre parcel,
  * and the $/lot on the y-axis is per-lot too.
  */
-export function saleRecordsFromRows(rows, { parseDate, centroid, rowKey, isSelected } = {}) {
+export function saleRecordsFromRows(rows, { parseDate, centroid, rowKey, isSelected, agOf } = {}) {
   const byGroup = new Map();
 
   for (const row of rows || []) {
@@ -151,6 +151,10 @@ export function saleRecordsFromRows(rows, { parseDate, centroid, rowKey, isSelec
         waterLoaded: true,
         floods: [],
         floodLoaded: true,
+        // Farmland facts for the Agricultural tab, rolled up from the
+        // members below (saleAgFacts). null when no `agOf` dep is given.
+        ag: null,
+        _ag: [],
       });
     }
 
@@ -164,6 +168,7 @@ export function saleRecordsFromRows(rows, { parseDate, centroid, rowKey, isSelec
     if (!p._waterLoaded) rec.waterLoaded = false;
     if (p._flood && typeof p._flood === 'object') rec.floods.push(p._flood);
     if (!p._floodLoaded) rec.floodLoaded = false;
+    if (agOf) rec._ag.push(agOf(row));
 
     // Sale position = mean of its members' centroids, so a multi-parcel
     // assembly plots at the middle of the deal rather than at whichever
@@ -195,6 +200,8 @@ export function saleRecordsFromRows(rows, { parseDate, centroid, rowKey, isSelec
       rec.flagRatio = rec.saleToAsmt;
       rec.flagBasis = 'total';
     }
+    if (agOf) rec.ag = saleAgFacts(rec._ag);
+    delete rec._ag;
     delete rec._pts;
     delete rec._anySelected;
     delete rec._landSum;
@@ -205,6 +212,59 @@ export function saleRecordsFromRows(rows, { parseDate, centroid, rowKey, isSelec
   // the tooltip's tie-breaking) sees a stable, meaningful order.
   out.sort((a, b) => (a.dateMs ?? 0) - (b.dateMs ?? 0));
   return out;
+}
+
+/** The five land-cover shares, in the template's Cover Mix order. */
+export const COVER_KEYS = ['cult', 'past', 'bush', 'wet', 'other'];
+
+/**
+ * A sale's farmland facts from its member parcels, as the land template
+ * collapses parcels to a sale (LandStatic.qmd ~1701-1723): categories —
+ * MASC rating, CLI class, soil type, dominant land cover — take the value
+ * covering the most ACRES; the five cover shares are acre-weighted means.
+ * A member with no acres weighs 1, so a sale is never dropped for it.
+ *
+ * members: [{masc, cli, soil, soilLoaded, cover:{cult,…}|null, coverLabel, acres}]
+ * cli is the CLI capability label ("3W"); the class is its leading digit,
+ * as the template's CLIClass.
+ */
+export function saleAgFacts(members) {
+  const list = (members || []).filter(Boolean);
+  const weight = (m) => (Number(m.acres) > 0 ? Number(m.acres) : 1);
+  const mode = (key) => {
+    const by = new Map();
+    for (const m of list) {
+      const v = m[key];
+      if (v == null || v === '') continue;
+      by.set(v, (by.get(v) || 0) + weight(m));
+    }
+    let best = null;
+    let bestW = -1;
+    for (const [v, w] of by) if (w > bestW) { best = v; bestW = w; }
+    return best;
+  };
+  const withCover = list.filter((m) => m.cover && COVER_KEYS.some((k) => Number.isFinite(Number(m.cover[k]))));
+  let cover = null;
+  if (withCover.length) {
+    const tw = withCover.reduce((s, m) => s + weight(m), 0);
+    cover = {};
+    for (const k of COVER_KEYS) {
+      cover[k] = withCover.reduce((s, m) => s + (Number(m.cover[k]) || 0) * weight(m), 0) / tw;
+    }
+  }
+  const cli = mode('cli');
+  const cliDigit = cli != null ? /^\s*([1-7])/.exec(String(cli)) : null;
+  return {
+    masc: mode('masc'),
+    cli,
+    cliClass: cliDigit ? cliDigit[1] : null,
+    soil: mode('soil'),
+    // Soil and CLI come from a separate join that only runs with the
+    // Agricultural preset (or the CLI overlay): "not loaded" is not "none".
+    soilLoaded: list.length > 0 && list.every((m) => m.soilLoaded),
+    cover,
+    coverLabel: mode('coverLabel'),
+  };
 }
 
 /**

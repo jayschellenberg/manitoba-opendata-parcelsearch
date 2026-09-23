@@ -39,4 +39,12 @@ test('same Noto Sans Medium remap target', () => {
   assert.equal(one(copy, re, 'copy remap'), one(mapJs, re, 'map.js remap'));
 });
 
+test('the charts map labels (municipal names) use that same one stack', () => {
+  const mapMod = strip(fs.readFileSync(path.join(root, 'src', 'charts', 'chartMap.js'), 'utf8'));
+  const target = one(mapJs, /\.replaceAll\('"Noto Sans Medium"', '"([^"]+)"'\)/, 'map.js remap');
+  const stacks = [...mapMod.matchAll(/'text-font':\s*\[([^\]]*)\]/g)].map((m) => m[1].trim());
+  assert.ok(stacks.length > 0, 'no text-font in chartMap.js');
+  for (const st of stacks) assert.equal(st, `'${target}'`);
+});
+
 console.log(`\n${passed}/${passed} passed`);

@@ -24,7 +24,7 @@ import './charts.css';
 import {
   median, marketConditions, timeAdjust, fitLinear, fitPoly, fitPower,
   normalizeOverrideRate, topZones, haversineKm, WINNIPEG_CENTRE,
-  percentileTrim, saleAsmtFlag, TRIM_MIN_SALES,
+  percentileTrim, saleAsmtFlag, TRIM_MIN_SALES, SALE_ASMT_TIERS, COVER_KEYS,
 } from '../lib/salesCharts.js';
 import {
   saleWaterFacts, boxStats, waterPremium, pairedSales, WATER_GROUPS,
@@ -33,8 +33,10 @@ import { WATER_CLASSES, WATER_DETECTION_LIMIT_FT } from '../lib/water.js';
 import { priceBuckets, yearColors, ringDistances } from '../lib/salesMapColors.js';
 import { createSalesMap } from './chartMap.js';
 import { criteriaText } from '../lib/criteriaLine.js';
+import { masccolor } from '../masc.js';
+import { LAND_COVER_BUCKETS } from '../lib/landcover.js';
 import {
-  drawChart, drawBoxChart, drawTableCard, ZONE_COLORS, OTHER_COLOR, INK, R_STYLE, slugify,
+  drawChart, drawBoxChart, drawTableCard, drawStackedBars, drawHistogram, ZONE_COLORS, OTHER_COLOR, INK, R_STYLE, slugify,
   fmtMoney0, fmtMoney2, fmtNum, fmtDate, fmtAxisDollar, fmtAxisComma, fmtMonYear,
 } from '../lib/chartRender.js';
 
@@ -58,8 +60,10 @@ const els = {
   tabTotal: $('tab-total'),
   tabWater: $('tab-water'),
   tabMap: $('tab-map'),
+  tabAg: $('tab-ag'),
   ctlMapColor: $('ctl-mapcolor'),
   mapColor: $('map-color'),
+  mapMunis: $('map-munis'),
   effDate: $('eff-date'),
   ratesNominal: $('rates-nominal'),
   ratesAdjusted: $('rates-adjusted'),
@@ -129,6 +133,8 @@ const opts = {
   trimHi: 95,
   // What colours the sales on the Map tab: price | year | zoning | water.
   mapColor: 'price',
+  // Municipal boundaries on the Map tab.
+  mapMunis: true,
   ...readOpts(),
 };
 
@@ -274,6 +280,13 @@ function tooltipRows(rec, pt) {
       `${fmtNum(d)} km`]);
   }
   if (rec.zone) rows.push(['Zoning', rec.zone]);
+  if (opts.tab === 'ag' && rec.ag) {
+    if (rec.ag.masc) rows.push(['MASC', rec.ag.masc]);
+    if (rec.ag.cli) rows.push(['CLI', rec.ag.cli]);
+    if (rec.ag.soil) rows.push(['Soil', rec.ag.soil]);
+    if (rec.ag.cover) rows.push(['Cultivated', `${Math.round(rec.ag.cover.cult * 100)}%`]);
+    if (rec.ag.coverLabel) rows.push(['Cover', rec.ag.coverLabel]);
+  }
   if (opts.tab === 'water' || (opts.tab === 'map' && opts.mapColor === 'water')) {
     const w = waterOf(rec);
     if (w.group) rows.push(['Water', w.cls && w.cls !== w.group ? `${w.group} · ${w.cls}` : w.group]);
@@ -406,6 +419,7 @@ function buildCharts() {
   if (opts.tab === 'total') return buildTotalCharts();
   if (opts.tab === 'water') return buildWaterCharts();
   if (opts.tab === 'map') return buildMapTab();
+  if (opts.tab === 'ag') return buildAgCharts();
   return buildRateCharts();
 }
 
@@ -820,12 +834,8 @@ function buildRateCharts() {
   // One comparable set per measure — CMS1, and CMS2 when the trim is on —
   // reused by the over-time chart's caption and by every time-adjusted
   // chart of that measure, so the two never disagree.
-  const cmsLot = cmsFor('ppl');
   const cmsArea = cmsFor(metric);
-
-  const lotAdj = adjusterFor(cmsLot);
   const areaAdj = adjusterFor(cmsArea);
-  const adjLot = lotAdj.adjust;
   const adjArea = areaAdj.adjust;
   const size = (rec) => rec[sizeField()];
   // Front feet is the one unit a large share of sales cannot carry, so an
@@ -939,7 +949,126 @@ function buildRateCharts() {
     }));
   }
 
-  // ---- Price per lot ---------------------------------------------
+  return charts;
+}
+
+/**
+ * Total-price charts — the second tab.
+ *
+ * Every y-axis here is the WHOLE consideration, undivided. That is the point
+ * of the tab: on a land-and-building sale a per-acre rate divides a price
+ * that is mostly building by the land the building happens to sit on, and
+ * two properties with identical houses on quarter-acre and half-acre lots
+ * come out an implausible factor apart. Total price asks the question the
+ * improved market actually answers.
+ *
+ * No TOTAL-price-by-size chart, deliberately (Jason, 2026-08-18): MAO carries
+ * no size for rural residential sales, so the x-axis would be empty for
+ * exactly the population this tab exists to serve. The price-per-LOT charts
+ * moved here from Land rates on 2026-09-23 (Jason), by-size one included —
+ * a lot price is a whole-lot consideration, which is this tab's subject.
+ *
+ * This set does NOT filter to residential land-and-building. It plots whatever
+ * the main window's filters are showing, the same records the rates tab gets —
+ * sale type is already selectable at load time and through the Primary
+ * Property filter, and a tab that silently re-filtered would disagree with the
+ * table view sitting underneath it.
+ */
+function buildTotalCharts() {
+  const { refName, refTitle, distLabel, distEmpty, distStats } = distContext();
+
+  // One comparable set on total price, shared by the over-time caption and
+  // the time adjustment, so the two never state different trends.
+  const cmsPrice = cmsFor('price');
+  const priceAdj = adjusterFor(cmsPrice);
+  const adjPrice = priceAdj.adjust;
+  const yAdj = (adj, what) => (adj.adjusted ? `Adjusted ${what}` : what);
+
+  const charts = [];
+
+  // Over time. Prices as sold — carrying them to one date is precisely what
+  // would flatten the trend this chart exists to show.
+  {
+    const pts = pointsFor(cmsPrice, (r) => r.dateMs, (r) => r.price);
+    const trend = timeTrend(cmsPrice, pts, fmtMoney0);
+    charts.push(chart({
+      title: 'Total Price Over Time',
+      subtitle: criteriaLine(cmsPrice, false),
+      note: sub('Prices as sold. One point per sale.', trend.note, trimSkipNote(cmsPrice)),
+      points: pts, xIsDate: true,
+      xLabel: 'Sale Date', yLabel: 'Sale Price',
+      yFormat: fmtMoney0, yAxisFormat: axisDollar,
+      fits: trend.fits, legend: legendFor(trend.fits, pts),
+      stats: trend.stats,
+    }));
+  }
+
+  // By distance. Cubic for the same reason the rate charts use one — a lake
+  // or a second town further out puts real humps in the curve.
+  {
+    const pts = pointsFor(cmsPrice, distanceFor, adjPrice);
+    const fits = fitsFor(pts, { curve: 'cubic' });
+    charts.push(chart({
+      title: `Total Price by Distance from ${refTitle}`,
+      subtitle: criteriaLine(cmsPrice, priceAdj.adjusted),
+      note: sub(`Measured from ${refName}.`, priceAdj.note, trimSkipNote(cmsPrice)),
+      points: pts,
+      xLabel: distLabel, yLabel: yAdj(priceAdj, 'Sale Price'),
+      yFormat: fmtMoney0, yAxisFormat: axisDollar, xAxisFormat: fmtAxisComma,
+      fits, legend: legendFor(fits, pts),
+      refLines: subjectDistanceRef(),
+      stats: distStats(pts, priceAdj.adjusted, fmtMoney0),
+      empty: distEmpty,
+    }));
+  }
+
+  // Against assessed value.
+  //
+  // The record carries the RATIO (saleToAsmt), not the assessed total, so the
+  // total is recovered as price / ratio — exact, since the ratio was computed
+  // from that same price. Sales missing either drop out, which is the usual
+  // "missing = exclude" rule and here means no assessment on file.
+  //
+  // The 1:1 line is supplied as a FIT rather than a refLine because refLines
+  // are horizontal or vertical only; a diagonal cannot be expressed as one.
+  // It is the line that matters: above it the sale beat its assessment, below
+  // it the sale went under, and a cluster hard below is the shape a
+  // non-arms-length transfer makes.
+  {
+    const assessedOf = (r) => (
+      r.saleToAsmt != null && r.saleToAsmt > 0 && r.price != null
+        ? r.price / r.saleToAsmt
+        : null);
+    const pts = pointsFor(cmsPrice, assessedOf, adjPrice);
+    const fits = [
+      ...fitsFor(pts, { curve: 'none' }),
+      { predict: (x) => x, color: INK.muted, dash: '4 3', label: 'Sale = assessed (1:1)' },
+    ];
+    charts.push(chart({
+      title: 'Total Price vs Assessed Value',
+      subtitle: criteriaLine(cmsPrice, priceAdj.adjusted),
+      note: sub('Points above the 1:1 line sold over their assessment.', priceAdj.note,
+        trimSkipNote(cmsPrice)),
+      points: pts,
+      xLabel: 'Total Assessed Value', yLabel: yAdj(priceAdj, 'Sale Price'),
+      yFormat: fmtMoney0, yAxisFormat: axisDollar, xAxisFormat: axisDollar,
+      fits, legend: legendFor(fits, pts),
+      stats: spreadStats(pts, {
+        xName: 'Median assessed',
+        xFormat: fmtMoney0,
+        adjusted: priceAdj.adjusted,
+        yFormat: fmtMoney0,
+      }),
+      empty: 'No sales in the current filter carry an assessed value to compare against.',
+    }));
+  }
+
+  // ---- Price per lot (moved here from Land rates, Jason 2026-09-23) --
+  // A lot price is a whole-lot consideration, which is what this tab is about.
+  const cmsLot = cmsFor('ppl');
+  const lotAdj = adjusterFor(cmsLot);
+  const adjLot = lotAdj.adjust;
+  const size = (rec) => rec[sizeField()];
 
   {
     const pts = pointsFor(cmsLot, (r) => r.dateMs, (r) => r.ppl);
@@ -993,117 +1122,50 @@ function buildRateCharts() {
   return charts;
 }
 
+// ---------- box-plot groups (Water and Agricultural tabs) ----------
+
 /**
- * Total-price charts — the second tab.
+ * Box-plot groups from a key function: every drawn sale becomes a point in
+ * its key's row, and the box is fitted to the 'in' points only.
  *
- * Every y-axis here is the WHOLE consideration, undivided. That is the point
- * of the tab: on a land-and-building sale a per-acre rate divides a price
- * that is mostly building by the land the building happens to sit on, and
- * two properties with identical houses on quarter-acre and half-acre lots
- * come out an implausible factor apart. Total price asks the question the
- * improved market actually answers.
+ *   cms        the comparable set whose states the points take
+ *   keyOf      rec → group key, or null to leave the sale out
+ *   valueOf    rec → the value plotted (a rate, a ratio)
+ *   order      explicit row order (keys not listed sort last); else by count
+ *   minN       rows need this many 'in' sales (the template's AgMinGroup)
+ *   maxGroups  cap (the template's AgTopN)
+ *   colorOf    key → box fill
  *
- * NO by-size chart, deliberately (Jason, 2026-08-18): MAO carries no size for
- * rural residential sales, so the x-axis would be empty for exactly the
- * population this tab exists to serve. The size question is on the rates tab,
- * where the data supports it.
- *
- * This set does NOT filter to residential land-and-building. It plots whatever
- * the main window's filters are showing, the same records the rates tab gets —
- * sale type is already selectable at load time and through the Primary
- * Property filter, and a tab that silently re-filtered would disagree with the
- * table view sitting underneath it.
+ * Returns {groups, dropped}: `dropped` counts groups left out by either rule.
  */
-function buildTotalCharts() {
-  const { refName, refTitle, distLabel, distEmpty, distStats } = distContext();
-
-  // One comparable set on total price, shared by the over-time caption and
-  // the time adjustment, so the two never state different trends.
-  const cmsPrice = cmsFor('price');
-  const priceAdj = adjusterFor(cmsPrice);
-  const adjPrice = priceAdj.adjust;
-  const yAdj = (what) => (priceAdj.adjusted ? `Adjusted ${what}` : what);
-
-  const charts = [];
-
-  // Over time. Prices as sold — carrying them to one date is precisely what
-  // would flatten the trend this chart exists to show.
-  {
-    const pts = pointsFor(cmsPrice, (r) => r.dateMs, (r) => r.price);
-    const trend = timeTrend(cmsPrice, pts, fmtMoney0);
-    charts.push(chart({
-      title: 'Total Price Over Time',
-      subtitle: criteriaLine(cmsPrice, false),
-      note: sub('Prices as sold. One point per sale.', trend.note, trimSkipNote(cmsPrice)),
-      points: pts, xIsDate: true,
-      xLabel: 'Sale Date', yLabel: 'Sale Price',
-      yFormat: fmtMoney0, yAxisFormat: axisDollar,
-      fits: trend.fits, legend: legendFor(trend.fits, pts),
-      stats: trend.stats,
-    }));
+function boxGroupsFor(cms, keyOf, valueOf, { order = null, minN = 2, maxGroups = Infinity, colorOf = () => null } = {}) {
+  const by = new Map();
+  for (const rec of drawnRecords()) {
+    const key = keyOf(rec);
+    const v = valueOf(rec);
+    if (key == null || !Number.isFinite(v) || v <= 0) continue;
+    const flag = saleAsmtFlag(rec.flagRatio);
+    if (!by.has(key)) by.set(key, []);
+    by.get(key).push({
+      v, rec, state: cms.stateOf(rec), flagged: flag !== '' && flag !== 'No assessment',
+    });
   }
-
-  // By distance. Cubic for the same reason the rate charts use one — a lake
-  // or a second town further out puts real humps in the curve.
-  {
-    const pts = pointsFor(cmsPrice, distanceFor, adjPrice);
-    const fits = fitsFor(pts, { curve: 'cubic' });
-    charts.push(chart({
-      title: `Total Price by Distance from ${refTitle}`,
-      subtitle: criteriaLine(cmsPrice, priceAdj.adjusted),
-      note: sub(`Measured from ${refName}.`, priceAdj.note, trimSkipNote(cmsPrice)),
-      points: pts,
-      xLabel: distLabel, yLabel: yAdj('Sale Price'),
-      yFormat: fmtMoney0, yAxisFormat: axisDollar, xAxisFormat: fmtAxisComma,
-      fits, legend: legendFor(fits, pts),
-      refLines: subjectDistanceRef(),
-      stats: distStats(pts, priceAdj.adjusted, fmtMoney0),
-      empty: distEmpty,
-    }));
-  }
-
-  // Against assessed value.
-  //
-  // The record carries the RATIO (saleToAsmt), not the assessed total, so the
-  // total is recovered as price / ratio — exact, since the ratio was computed
-  // from that same price. Sales missing either drop out, which is the usual
-  // "missing = exclude" rule and here means no assessment on file.
-  //
-  // The 1:1 line is supplied as a FIT rather than a refLine because refLines
-  // are horizontal or vertical only; a diagonal cannot be expressed as one.
-  // It is the line that matters: above it the sale beat its assessment, below
-  // it the sale went under, and a cluster hard below is the shape a
-  // non-arms-length transfer makes.
-  {
-    const assessedOf = (r) => (
-      r.saleToAsmt != null && r.saleToAsmt > 0 && r.price != null
-        ? r.price / r.saleToAsmt
-        : null);
-    const pts = pointsFor(cmsPrice, assessedOf, adjPrice);
-    const fits = [
-      ...fitsFor(pts, { curve: 'none' }),
-      { predict: (x) => x, color: INK.muted, dash: '4 3', label: 'Sale = assessed (1:1)' },
-    ];
-    charts.push(chart({
-      title: 'Total Price vs Assessed Value',
-      subtitle: criteriaLine(cmsPrice, priceAdj.adjusted),
-      note: sub('Points above the 1:1 line sold over their assessment.', priceAdj.note,
-        trimSkipNote(cmsPrice)),
-      points: pts,
-      xLabel: 'Total Assessed Value', yLabel: yAdj('Sale Price'),
-      yFormat: fmtMoney0, yAxisFormat: axisDollar, xAxisFormat: axisDollar,
-      fits, legend: legendFor(fits, pts),
-      stats: spreadStats(pts, {
-        xName: 'Median assessed',
-        xFormat: fmtMoney0,
-        adjusted: priceAdj.adjusted,
-        yFormat: fmtMoney0,
-      }),
-      empty: 'No sales in the current filter carry an assessed value to compare against.',
-    }));
-  }
-
-  return charts;
+  const all = [...by.keys()];
+  const inCount = (k) => by.get(k).filter((p) => p.state === 'in').length;
+  let keys = all.filter((k) => inCount(k) >= minN);
+  const rank = (k) => { const i = order ? order.indexOf(k) : -1; return i < 0 ? Infinity : i; };
+  if (order) keys.sort((a, b) => rank(a) - rank(b) || String(a).localeCompare(String(b)));
+  else keys.sort((a, b) => inCount(b) - inCount(a) || String(a).localeCompare(String(b)));
+  keys = keys.slice(0, maxGroups);
+  return {
+    groups: keys.map((k) => ({
+      label: k,
+      color: colorOf(k),
+      points: by.get(k),
+      stats: boxStats(by.get(k).filter((p) => p.state === 'in').map((p) => p.v)),
+    })),
+    dropped: all.length - keys.length,
+  };
 }
 
 // ---------- water tab ----------------------------------------------
@@ -1153,36 +1215,8 @@ function buildWaterCharts() {
       + 'main window, or no water data is published for the municipality.'
     : '';
 
-  /** Box-plot groups from a key function, 'in' points fitting the box. */
-  const boxGroups = (keyOf, order = null, minN = 2, maxGroups = Infinity) => {
-    const by = new Map();
-    for (const rec of drawnRecords()) {
-      const key = keyOf(rec);
-      const v = rate(rec);
-      if (key == null || !Number.isFinite(v) || v <= 0) continue;
-      const flag = saleAsmtFlag(rec.flagRatio);
-      if (!by.has(key)) by.set(key, []);
-      by.get(key).push({
-        v, rec, state: cms.stateOf(rec), flagged: flag !== '' && flag !== 'No assessment',
-      });
-    }
-    let keys = [...by.keys()];
-    const inCount = (k) => by.get(k).filter((p) => p.state === 'in').length;
-    keys = keys.filter((k) => inCount(k) >= minN);
-    if (order) keys.sort((a, b) => order.indexOf(a) - order.indexOf(b));
-    else keys.sort((a, b) => inCount(b) - inCount(a) || String(a).localeCompare(String(b)));
-    const dropped = [...by.keys()].length - keys.length;
-    keys = keys.slice(0, maxGroups);
-    return {
-      groups: keys.map((k) => ({
-        label: k,
-        color: WATER_GROUP_COLORS[k],
-        points: by.get(k),
-        stats: boxStats(by.get(k).filter((p) => p.state === 'in').map((p) => p.v)),
-      })),
-      dropped: dropped + Math.max(0, [...by.keys()].length - dropped - maxGroups),
-    };
-  };
+  const boxGroups = (keyOf, order = null, minN = 2, maxGroups = Infinity) => boxGroupsFor(
+    cms, keyOf, rate, { order, minN, maxGroups, colorOf: (k) => WATER_GROUP_COLORS[k] });
   const box = (spec) => drawBoxChart({
     tooltipRows,
     onPointClick: opts.frozen ? null : onPointClick,
@@ -1372,6 +1406,260 @@ function buildWaterCharts() {
 
 const fmtNumOr = (v) => (Number.isFinite(v) ? fmtNum(v) : '—');
 
+// ---------- agricultural tab ---------------------------------------
+
+const MASC_ORDER = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+const UNRATED = 'Unrated';
+/** A sale's MASC rating as a group key: a single letter A-J, or Unrated.
+ *  A split quarter ("C/F") keeps its label — it is its own market. */
+const mascKey = (rec) => {
+  const m = String(rec.ag?.masc || '').trim().toUpperCase();
+  return m || UNRATED;
+};
+const mascFill = (key) => (MASC_ORDER.includes(key) ? masccolor(key) : OTHER_COLOR);
+const COVER_COLORS = Object.fromEntries(LAND_COVER_BUCKETS.map((b) => [b.label, b.color]));
+
+/**
+ * The land template's Ag-CMS page (LandStatic.qmd ~15416-15992): farmland
+ * price by MASC rating, cultivation, soil, CLI class and land cover; the
+ * land-cover mix by MASC and by soil; and the sale-to-assessment ratio over
+ * time, by MASC and as a distribution. On the current size unit's rate,
+ * time-adjusted per the toggle, over the same CMS1/CMS2 set as the other
+ * tabs. Groups need 2 sales and the top 8 are shown, the template's
+ * AgMinGroup / AgTopN defaults.
+ *
+ * Not ported: the template's separate Ag consistency filters (CMSAG1 and its
+ * own rate). Narrow the sales in the main window instead — the cultivation,
+ * CLI and MASC ticks there are the same filters.
+ */
+function buildAgCharts() {
+  const metric = areaMetric();
+  const areaFmt = areaMoneyFmt();
+  const perUnit = unitSpec().perUnit;
+  const cms = cmsFor(metric);
+  const adj = adjusterFor(cms);
+  const rate = adj.adjust;
+  const yWord = adj.adjusted ? `Adjusted Price per ${perUnit}` : `Price per ${perUnit}`;
+  const criteria = criteriaLine(cms, adj.adjusted);
+  const MIN_N = 2;
+  const TOP_N = 8;
+  const charts = [];
+
+  const soilMissing = activeRecords().some((r) => !r.ag?.soilLoaded);
+  const soilNote = soilMissing
+    ? 'Soil and CLI load with the Agricultural column preset (or the CLI overlay) in the main window; '
+      + 'sales without them are left out.'
+    : '';
+  const box = (spec) => drawBoxChart({
+    tooltipRows,
+    onPointClick: opts.frozen ? null : onPointClick,
+    pngName: pngName(spec.title),
+    valueFormat: areaFmt,
+    axisFormat: fmtAxisDollar,
+    valueLabel: yWord,
+    subtitle: criteria,
+    ...spec,
+  });
+  const groupNote = (dropped) => (dropped
+    ? `${dropped} group${dropped === 1 ? '' : 's'} with fewer than ${MIN_N} sales, or past the top ${TOP_N}, left out.`
+    : '');
+  const mascLegend = (pts) => {
+    const keys = [...new Set(pts.map((p) => mascKey(p.rec)))]
+      .sort((a, b) => (MASC_ORDER.indexOf(a) + 1 || 99) - (MASC_ORDER.indexOf(b) + 1 || 99));
+    return keys.map((k) => ({ label: k, color: mascFill(k), dot: 'swatch' }));
+  };
+
+  // 1. Price over time, coloured by MASC rating.
+  {
+    const pts = pointsFor(cms, (r) => r.dateMs, (r) => r[metric], (r) => mascFill(mascKey(r)));
+    const trend = timeTrend(cms, pts, areaFmt);
+    charts.push(chart({
+      title: `Land Price per ${perUnit} Over Time by MASC Rating`,
+      subtitle: criteriaLine(cms, false),
+      note: sub('Rates as sold, coloured by the MASC rating covering the most of each sale.', trend.note),
+      points: pts, xIsDate: true,
+      xLabel: 'Sale Date', yLabel: `Price per ${perUnit}`,
+      yFormat: areaFmt, yAxisFormat: fmtAxisDollar,
+      fits: trend.fits,
+      legend: [...mascLegend(pts), ...trend.fits.map((f) => ({ label: f.label, color: f.color, dash: !!f.dash })), ...stateLegend(pts)],
+      stats: trend.stats,
+    }));
+  }
+
+  // 2. Price by cultivation ratio.
+  {
+    const pts = pointsFor(cms, (r) => (r.ag?.cover ? r.ag.cover.cult * 100 : null), rate);
+    const fits = fitsFor(pts, { curve: 'cubic' });
+    charts.push(chart({
+      title: `Price per ${perUnit} by Cultivation Ratio`,
+      subtitle: criteria,
+      note: sub('Share of each sale under cultivation (crop inventory 2021-25, or the 2020 Land Cover Register).', adj.note),
+      points: pts,
+      xLabel: 'Cultivated (%)', yLabel: yWord,
+      yFormat: areaFmt, yAxisFormat: fmtAxisDollar, xAxisFormat: fmtAxisComma,
+      fits, legend: legendFor(fits, pts),
+      stats: spreadStats(pts, { xName: 'Median cultivated', xFormat: (v) => `${Math.round(v)}%`, adjusted: adj.adjusted, yFormat: areaFmt }),
+      empty: 'No sales in the current filter carry land-cover data (parcels under 10 acres have none).',
+    }));
+  }
+
+  // 3. MASC rating.
+  {
+    const { groups, dropped } = boxGroupsFor(cms, mascKey, rate,
+      { order: [...MASC_ORDER, UNRATED], minN: MIN_N, colorOf: mascFill });
+    charts.push(box({
+      title: `Farmland Price per ${perUnit} by MASC Rating`,
+      note: sub(groupNote(dropped), adj.note),
+      groups,
+      empty: 'No MASC rating has 2 or more sales in the current filter.',
+    }));
+  }
+
+  // 4. Soil type (top 8).
+  {
+    const { groups, dropped } = boxGroupsFor(cms, (r) => r.ag?.soil || null, rate,
+      { minN: MIN_N, maxGroups: TOP_N });
+    charts.push(box({
+      title: `Price per ${perUnit} by Soil Type`,
+      note: sub(groupNote(dropped), soilNote, adj.note),
+      groups,
+      empty: 'No soil data for these sales. Pick the Agricultural column preset in the main window to load it.',
+    }));
+  }
+
+  // 5. CLI capability class.
+  {
+    const { groups, dropped } = boxGroupsFor(cms,
+      (r) => (r.ag?.cliClass ? `Class ${r.ag.cliClass}` : null), rate,
+      { order: ['1', '2', '3', '4', '5', '6', '7'].map((c) => `Class ${c}`), minN: MIN_N });
+    charts.push(box({
+      title: `Price per ${perUnit} by CLI Capability Class`,
+      note: sub(groupNote(dropped), soilNote, adj.note),
+      groups,
+      empty: 'No CLI data for these sales. Pick the Agricultural column preset in the main window to load it.',
+    }));
+  }
+
+  // 6. Dominant land cover, ordered by median (the template sorts descending).
+  {
+    const { groups, dropped } = boxGroupsFor(cms, (r) => r.ag?.coverLabel || null, rate,
+      { minN: MIN_N, colorOf: (k) => COVER_COLORS[k] || null });
+    groups.sort((a, b) => (b.stats?.median ?? 0) - (a.stats?.median ?? 0));
+    charts.push(box({
+      title: `Price per ${perUnit} by Dominant Land Cover`,
+      note: sub(groupNote(dropped), adj.note),
+      groups,
+      empty: 'No sales in the current filter carry land-cover data.',
+    }));
+  }
+
+  // 7-8. Land-cover mix by MASC and by soil type.
+  const mixRows = (keyOf, order = null) => {
+    const by = new Map();
+    for (const r of cms.fitted) {
+      const k = keyOf(r);
+      if (k == null || !r.ag?.cover) continue;
+      if (!by.has(k)) by.set(k, []);
+      by.get(k).push(r.ag.cover);
+    }
+    let keys = [...by.keys()].filter((k) => by.get(k).length >= MIN_N);
+    if (order) keys.sort((a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99));
+    else keys.sort((a, b) => by.get(b).length - by.get(a).length);
+    return keys.slice(0, TOP_N).map((k) => {
+      const covers = by.get(k);
+      const shares = {};
+      for (const c of COVER_KEYS) shares[c] = covers.reduce((s, x) => s + (Number(x[c]) || 0), 0) / covers.length;
+      return { label: k, n: covers.length, shares };
+    });
+  };
+  const segments = LAND_COVER_BUCKETS.map((b) => ({ key: b.key, label: b.label, color: b.color }));
+  charts.push(drawStackedBars({
+    title: 'Land Cover Mix by MASC Rating',
+    subtitle: criteria,
+    note: 'Mean share of each cover type across the sales in each rating.',
+    pngName: pngName('Land Cover Mix by MASC Rating'),
+    segments,
+    rows: mixRows(mascKey, [...MASC_ORDER, UNRATED]),
+    empty: 'No MASC rating has 2 or more sales with land-cover data.',
+  }));
+  charts.push(drawStackedBars({
+    title: 'Land Cover Mix by Soil Type',
+    subtitle: criteria,
+    note: sub('Mean share of each cover type across the sales on each soil (top 8).', soilNote),
+    pngName: pngName('Land Cover Mix by Soil Type'),
+    segments,
+    rows: mixRows((r) => r.ag?.soil || null),
+    empty: 'No soil data for these sales. Pick the Agricultural column preset in the main window to load it.',
+  }));
+
+  // 9-11. Sale-to-assessment ratio: over time, by MASC, distribution. The
+  // template's SaleAsmt: price over the sale's summed total assessment.
+  const ratio = (r) => r.saleToAsmt;
+  {
+    const pts = pointsFor(cms, (r) => r.dateMs, ratio, (r) => mascFill(mascKey(r)));
+    const fits = fitsFor(pts, { curve: 'none' });
+    charts.push(chart({
+      title: 'Sale-to-Assessment Ratio Over Time',
+      subtitle: criteriaLine(cms, false),
+      note: 'Sale price over total assessed value; 1 = sold at assessment.',
+      points: pts, xIsDate: true,
+      xLabel: 'Sale Date', yLabel: 'Sale / Assessment',
+      yFormat: (v) => v.toFixed(2), yAxisFormat: (v) => v.toFixed(1),
+      fits, refLines: [{ y: 1, label: '1.0' }],
+      legend: [...mascLegend(pts), ...fits.map((f) => ({ label: f.label, color: f.color })), ...stateLegend(pts)],
+      stats: (() => {
+        const fitted = inOnly(pts);
+        const med = median(fitted.map((p) => p.y));
+        return [
+          { label: 'Sales', value: String(fitted.length) },
+          ...(med != null ? [{ label: 'Median ratio', value: med.toFixed(2) }] : []),
+        ];
+      })(),
+      empty: 'No sales in the current filter carry an assessed value.',
+    }));
+  }
+  {
+    const { groups, dropped } = boxGroupsFor(cms, mascKey, ratio,
+      { order: [...MASC_ORDER, UNRATED], minN: MIN_N, colorOf: mascFill });
+    charts.push(box({
+      title: 'Sale-to-Assessment Ratio by MASC Rating',
+      note: groupNote(dropped),
+      groups,
+      valueFormat: (v) => v.toFixed(2),
+      axisFormat: (v) => v.toFixed(1),
+      valueLabel: 'Sale / Assessment',
+      subtitle: criteriaLine(cms, false),
+      empty: 'No MASC rating has 2 or more sales with an assessed value.',
+    }));
+  }
+  {
+    const vals = cms.fitted.map(ratio).filter((v) => Number.isFinite(v) && v > 0);
+    charts.push(drawHistogram({
+      title: 'Sale-to-Assessment Ratio Distribution',
+      subtitle: criteriaLine(cms, false),
+      note: 'Reference lines at 1 and at the review-flag thresholds (0.25 very low, 0.50 low, 2.50 high).',
+      pngName: pngName('Sale-to-Assessment Ratio Distribution'),
+      values: vals,
+      bins: 20,
+      refLines: [
+        { x: 1, label: '1.0', color: R_STYLE.linear },
+        { x: SALE_ASMT_TIERS.veryLow, color: INK.muted },
+        { x: SALE_ASMT_TIERS.low, color: INK.muted },
+        { x: SALE_ASMT_TIERS.high, color: INK.muted },
+      ],
+      xLabel: 'Sale / Assessment',
+      axisFormat: (v) => v.toFixed(1),
+      stats: vals.length ? [
+        { label: 'Sales', value: String(vals.length) },
+        { label: 'Median', value: median(vals).toFixed(2) },
+      ] : [],
+      empty: 'No sales in the current filter carry an assessed value.',
+    }));
+  }
+
+  return charts;
+}
+
 // ---------- map tab ------------------------------------------------
 
 /** The page's one map, created the first time the Map tab is shown. */
@@ -1452,7 +1740,10 @@ function buildMapTab() {
   const maxKm = subject ? Math.max(0, ...live.map((r) => haversineKm(subject, { lat: r.lat, lng: r.lng }))) : 0;
   const rings = subject ? ringDistances(maxKm) : [];
 
-  salesMap.setHeader(MAP_MODES[mode](unitSpec().perUnit), criteriaLine(cms, adj.adjusted));
+  const mapTitle = MAP_MODES[mode](unitSpec().perUnit);
+  salesMap.setHeader(mapTitle, criteriaLine(cms, adj.adjusted));
+  salesMap.setPngName(pngName(mapTitle));
+  salesMap.setMunisVisible(opts.mapMunis !== false);
   salesMap.setLegend(legend);
   salesMap.setNote(sub(note,
     rings.length ? `Rings at ${rings.join(', ')} km from the subject.` : (subject ? '' : 'Set a subject roll in the main window to mark it and draw distance rings.'),
@@ -1468,9 +1759,9 @@ function buildMapTab() {
 
 /** The measures a tab trims on, for the table's Trimmed column. */
 function trimMetricsForTab() {
-  if (opts.tab === 'total') return [['price', 'Price']];
-  if (opts.tab === 'water' || opts.tab === 'map') return [[areaMetric(), `$/${areaUnitLabel()}`]];
-  return [[areaMetric(), `$/${areaUnitLabel()}`], ['ppl', '$/Lot']];
+  if (opts.tab === 'total') return [['price', 'Price'], ['ppl', '$/Lot']];
+  if (['water', 'map', 'ag'].includes(opts.tab)) return [[areaMetric(), `$/${areaUnitLabel()}`]];
+  return [[areaMetric(), `$/${areaUnitLabel()}`]];
 }
 
 const TABLE_COLS = [
@@ -1654,24 +1945,25 @@ function render() {
 }
 
 function syncControls() {
-  // Tab state. The size-unit control picks between $/acre and $/SF, so it
-  // governs nothing on the total-price tab; showing it there would be an
-  // inert switch inviting a click that changes no chart on screen.
+  // Tab state.
   const onTotal = opts.tab === 'total';
-  const tab = ['rates', 'total', 'water', 'map'].includes(opts.tab) ? opts.tab : 'rates';
-  for (const [key, btn] of [['rates', els.tabRates], ['total', els.tabTotal], ['water', els.tabWater], ['map', els.tabMap]]) {
+  const tab = ['rates', 'total', 'water', 'ag', 'map'].includes(opts.tab) ? opts.tab : 'rates';
+  for (const [key, btn] of [['rates', els.tabRates], ['total', els.tabTotal], ['water', els.tabWater], ['ag', els.tabAg], ['map', els.tabMap]]) {
     btn.setAttribute('aria-selected', String(tab === key));
     btn.classList.toggle('is-on', tab === key);
   }
   els.ctlMapColor.hidden = tab !== 'map';
   els.mapColor.value = MAP_MODES[opts.mapColor] ? opts.mapColor : 'price';
-  els.ctlUnit.hidden = onTotal;
+  els.mapMunis.checked = opts.mapMunis !== false;
+  // The size unit shows on every tab now: the Total price tab's Price per
+  // Lot by Size chart takes its x-axis from it.
+  els.ctlUnit.hidden = false;
   // Name the charts the Nominal/Time-adjusted toggle actually reaches on
-  // THIS tab — the total set has no by-size chart to speak of.
+  // THIS tab.
   els.ratesHint.textContent = onTotal
-    ? 'Applies to the by-distance and assessed-value charts.'
-    : tab === 'water'
-      ? 'Applies to every chart and table on this tab.'
+    ? 'Applies to the by-size, by-distance and assessed-value charts.'
+    : tab === 'water' || tab === 'ag'
+      ? 'Applies to every price chart on this tab.'
       : tab === 'map'
         ? 'Applies to the price colouring.'
         : 'Applies to the by-size and by-distance charts.';
@@ -1748,7 +2040,9 @@ els.tabRates.addEventListener('click', () => setOpt({ tab: 'rates' }));
 els.tabTotal.addEventListener('click', () => setOpt({ tab: 'total' }));
 els.tabWater.addEventListener('click', () => setOpt({ tab: 'water' }));
 els.tabMap.addEventListener('click', () => setOpt({ tab: 'map' }));
+els.tabAg.addEventListener('click', () => setOpt({ tab: 'ag' }));
 els.mapColor.addEventListener('change', () => setOpt({ mapColor: els.mapColor.value }));
+els.mapMunis.addEventListener('change', () => setOpt({ mapMunis: els.mapMunis.checked }));
 els.unitAcres.addEventListener('click', () => setOpt({ unit: 'acres' }));
 els.unitSf.addEventListener('click', () => setOpt({ unit: 'sf' }));
 els.unitFf.addEventListener('click', () => setOpt({ unit: 'ff' }));

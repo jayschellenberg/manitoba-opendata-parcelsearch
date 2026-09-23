@@ -76,7 +76,9 @@ export const OTHER_COLOR = '#9e9e9e';
 export const EXCLUDED_COLOR = R_STYLE.excludedFill;
 
 const VB_W = 760;
-const VB_H = 400;
+// 290, not 400 (Jason, 2026-09-23): a chart card, and its PNG, keeps the
+// template's 6.5 x 3.5 in shape once the title and footer are added.
+const VB_H = 290;
 // Room for the template-sized axis text (ggplot 10pt at the 6.5in export
 // width is ~15 viewBox units) and full-dollar tick labels.
 const PAD = { top: 16, right: 20, bottom: 56, left: 96 };
@@ -258,65 +260,94 @@ const EXPORT_STYLE = [
   '.chart-ref-label { font-size: 14px; }',
 ].join('\n');
 
-/** The template exports at 6.5in wide x 300 dpi; the image is rasterized
- *  to that width. */
+/** The template exports every chart at 6.5 x 3.5 in, 300 dpi. */
 const EXPORT_PX_WIDTH = 1950;
+const EXPORT_PX_HEIGHT = 1050;
+/** The export's height in viewBox units at the chart's 760-unit width. */
+const EXPORT_H = Math.round((VB_W * EXPORT_PX_HEIGHT) / EXPORT_PX_WIDTH);
 
 /**
- * Compose one chart as a standalone SVG — title, subtitle, the plot, legend
- * and stat figures — and rasterize it to a PNG download at 2x.
+ * Compose one chart as a standalone 6.5 x 3.5 in image (1950 x 1050 px, the
+ * land template's ggsave size) — title, criteria subtitle, the plot, legend,
+ * note and the figures as a caption — and download it as a PNG.
  *
- * Built from the chart's own spec rather than by screenshotting the card, so
- * the image carries no hover ring, tooltip or PNG button, and every string
- * goes in through textContent: addresses and zone codes are pasted-CSV text.
+ * Laid out top-down for the header and bottom-up for the footer, so the plot
+ * takes exactly the space left between them and the image is always the
+ * template's size, whatever the chart. The plot is either the chart's own SVG
+ * (cloned, fitted without distortion) or a `raster` canvas — the map — drawn
+ * straight onto the output canvas, cropped from its centre to fill the space.
+ *
+ * Built from the chart's spec rather than by screenshotting the card, so the
+ * image carries no hover ring, tooltip or button, and every string goes in
+ * through textContent: addresses and zone codes are pasted-CSV text.
  */
-export function exportChartPng({ svg, title, subtitle, legend, stats, note, filename }) {
+export function exportChartPng({ svg = null, raster = null, title, subtitle, legend, stats, note, filename }) {
   const W = VB_W;
-  const M = 16;
-  const root = el('svg', { xmlns: SVG_NS, width: W, viewBox: '' });
+  const H = EXPORT_H;
+  const M = 14;
+  const root = el('svg', { xmlns: SVG_NS, width: W, height: H, viewBox: `0 0 ${W} ${H}` });
   const style = el('style');
   style.textContent = EXPORT_STYLE;
   root.appendChild(style);
-  const bg = el('rect', { x: 0, y: 0, width: W, fill: R_STYLE.bg });
-  root.appendChild(bg);
+  root.appendChild(el('rect', { x: 0, y: 0, width: W, height: H, fill: R_STYLE.bg }));
 
-  // The template's title and subtitle: red4 bold, then the criteria line.
+  // ---- header: the template's red4 bold title, then the criteria line.
   let y = M + 14;
   root.appendChild(text(title || '', {
     x: M, y, 'font-size': 16, 'font-weight': 700, fill: R_STYLE.title,
   }));
-  for (const line of wrapText(subtitle, 12, W - 2 * M)) {
-    y += 17;
+  for (const line of wrapText(subtitle, 12, W - 2 * M).slice(0, 2)) {
+    y += 16;
     root.appendChild(text(line, { x: M, y, 'font-size': 12, fill: R_STYLE.subtitle }));
   }
-  y += 8;
+  const plotTop = y + 6;
 
-  // The plot itself, cloned so the live chart keeps its listeners, minus
-  // the hover highlight ring (the last circle with pointer-events none).
-  const plot = svg.cloneNode(true);
-  for (const n of plot.querySelectorAll('[pointer-events="none"]')) n.remove();
-  plot.removeAttribute('class');
-  plot.removeAttribute('tabindex');
-  plot.setAttribute('x', '0');
-  plot.setAttribute('y', String(y));
-  plot.setAttribute('width', String(VB_W));
-  // The plot's own height: scatters are VB_H tall, box plots grow a row per
-  // group. Forcing VB_H would squash a box plot into the wrong aspect.
-  const plotH = Number(String(svg.getAttribute('viewBox') || '').split(/\s+/)[3]) || VB_H;
-  plot.setAttribute('height', String(plotH));
-  root.appendChild(plot);
-  y += plotH + 6;
-
-  if (legend && legend.length > 1) {
+  // ---- footer, measured first so the plot gets what is left.
+  const legendItems = legend && legend.length > 1 ? legend : [];
+  const legendRows = [];
+  {
+    let row = [];
     let x = M;
-    y += 14;
-    for (const item of legend) {
+    for (const item of legendItems) {
       const w = 28 + String(item.label).length * 6.2;
-      if (x + w > W - M && x > M) { x = M; y += 18; }
+      if (x + w > W - M && row.length) { legendRows.push(row); row = []; x = M; }
+      row.push({ item, x });
+      x += w;
+    }
+    if (row.length) legendRows.push(row);
+  }
+  const noteLines = note ? wrapText(note, 10, W - 2 * M).slice(0, 2) : [];
+  const statLine = (stats || []).map((s) => `${s.label}: ${s.value}`).join('; ');
+  const capLines = statLine ? wrapText(statLine, 10, W - 2 * M).slice(0, 2) : [];
+  const footerH = legendRows.length * 17 + noteLines.length * 13 + capLines.length * 14
+    + (legendRows.length || noteLines.length || capLines.length ? 6 : 0);
+  const plotBottom = H - M - footerH;
+  const plotH = Math.max(80, plotBottom - plotTop);
+
+  if (svg) {
+    // The plot fitted into the space without distortion (meet), minus the
+    // hover highlight ring (the circle with pointer-events none).
+    const plot = svg.cloneNode(true);
+    for (const n of plot.querySelectorAll('[pointer-events="none"]')) n.remove();
+    plot.removeAttribute('class');
+    plot.removeAttribute('tabindex');
+    plot.setAttribute('x', '0');
+    plot.setAttribute('y', String(plotTop));
+    plot.setAttribute('width', String(W));
+    plot.setAttribute('height', String(plotH));
+    plot.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    root.appendChild(plot);
+  }
+
+  // ---- footer, drawn bottom-up from the reserved band.
+  let fy = plotBottom + 6;
+  for (const row of legendRows) {
+    fy += 14;
+    for (const { item, x } of row) {
       if (item.dot) {
         const pale = item.dot === 'pale';
         root.appendChild(el('circle', {
-          cx: x + 6, cy: y - 4, r: 4.5,
+          cx: x + 6, cy: fy - 4, r: 4.5,
           fill: pale ? R_STYLE.excludedFill
             : item.dot === 'hollow' ? R_STYLE.bg
               : item.dot === 'swatch' ? item.color : R_STYLE.pointFill,
@@ -326,41 +357,26 @@ export function exportChartPng({ svg, title, subtitle, legend, stats, note, file
         }));
       } else {
         root.appendChild(el('line', {
-          x1: x, x2: x + 14, y1: y - 4, y2: y - 4,
+          x1: x, x2: x + 14, y1: fy - 4, y2: fy - 4,
           stroke: item.color || INK.primary, 'stroke-width': 3,
           'stroke-dasharray': item.dash ? '4 3' : null,
         }));
       }
-      root.appendChild(text(item.label, { x: x + 20, y, 'font-size': 11.5, fill: INK.secondary }));
-      x += w;
+      root.appendChild(text(item.label, { x: x + 20, y: fy, 'font-size': 11.5, fill: INK.secondary }));
     }
+    fy += 3;
   }
-
-  if (note) {
-    y += 6;
-    for (const line of wrapText(note, 10, W - 2 * M)) {
-      y += 14;
-      root.appendChild(text(line, { x: M, y, 'font-size': 10, fill: INK.muted }));
-    }
+  for (const line of noteLines) {
+    fy += 13;
+    root.appendChild(text(line, { x: M, y: fy, 'font-size': 10, fill: INK.muted }));
   }
-
-  // The figures as the template's caption: red4 bold, right-aligned,
-  // "Label: value; Label: value".
-  if (stats && stats.length) {
-    const statLine = stats.map((s) => `${s.label}: ${s.value}`).join('; ');
-    y += 8;
-    for (const line of wrapText(statLine, 10, W - 2 * M)) {
-      y += 15;
-      root.appendChild(text(line, {
-        x: W - M, y, 'font-size': 10, 'font-weight': 700, 'text-anchor': 'end', fill: R_STYLE.caption,
-      }));
-    }
+  // The figures as the template's caption: red4 bold, right-aligned.
+  for (const line of capLines) {
+    fy += 14;
+    root.appendChild(text(line, {
+      x: W - M, y: fy, 'font-size': 10, 'font-weight': 700, 'text-anchor': 'end', fill: R_STYLE.caption,
+    }));
   }
-
-  const H = Math.ceil(y + M);
-  root.setAttribute('height', String(H));
-  root.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  bg.setAttribute('height', String(H));
 
   const xml = new XMLSerializer().serializeToString(root);
   const url = URL.createObjectURL(new Blob([xml], { type: 'image/svg+xml;charset=utf-8' }));
@@ -370,11 +386,24 @@ export function exportChartPng({ svg, title, subtitle, legend, stats, note, file
       try {
         const scale = EXPORT_PX_WIDTH / W;
         const canvas = document.createElement('canvas');
-        canvas.width = W * scale;
-        canvas.height = H * scale;
+        canvas.width = EXPORT_PX_WIDTH;
+        canvas.height = EXPORT_PX_HEIGHT;
         const ctx = canvas.getContext('2d');
         ctx.scale(scale, scale);
         ctx.drawImage(img, 0, 0, W, H);
+        if (raster) {
+          // Crop the raster's centre to the plot band's aspect, so the map
+          // fills the band edge to edge rather than letterboxing.
+          const dw = W - 2 * M;
+          const dh = plotH;
+          const want = dw / dh;
+          let sw = raster.width;
+          let sh = raster.height;
+          if (sw / sh > want) sw = sh * want; else sh = sw / want;
+          const sx = (raster.width - sw) / 2;
+          const sy = (raster.height - sh) / 2;
+          ctx.drawImage(raster, sx, sy, sw, sh, M, plotTop, dw, dh);
+        }
         URL.revokeObjectURL(url);
         canvas.toBlob((png) => {
           if (!png) { reject(new Error('canvas produced no image')); return; }
@@ -964,10 +993,12 @@ export function drawBoxChart(spec) {
   // hover card names the full water body for every point.
   const MAX_LABEL = 22;
   const clip = (s) => (s.length > MAX_LABEL ? `${s.slice(0, MAX_LABEL - 1)}…` : s);
-  const ROW_H = 46;
+  // A fixed height shared by the rows (Jason, 2026-09-23: "too short"), the
+  // same as a scatter's, so every card and PNG keeps the 6.5 x 3.5 in shape.
   const TOP = 20;
   const BOTTOM = 56;
-  const H = TOP + rows.length * ROW_H + BOTTOM;
+  const H = VB_H;
+  const ROW_H = (H - TOP - BOTTOM) / rows.length;
   const plotW = VB_W - LEFT - PAD.right;
 
   let vHi = 0;
@@ -1017,7 +1048,7 @@ export function drawBoxChart(spec) {
     }));
     const st = g.stats;
     if (st) {
-      const bh = ROW_H * 0.5;
+      const bh = Math.min(ROW_H * 0.5, 34);
       // Whisker line and caps.
       svg.appendChild(el('line', {
         x1: sx(st.whiskerLo), x2: sx(st.whiskerHi), y1: cy, y2: cy,
@@ -1047,7 +1078,7 @@ export function drawBoxChart(spec) {
     // Jittered sale points. Deterministic jitter (from the sale id) so a
     // re-render on every filter keystroke does not make the dots dance.
     for (const p of g.points) {
-      const jitter = (hashUnit(String(p.rec?.saleId ?? p.v)) - 0.5) * ROW_H * 0.45;
+      const jitter = (hashUnit(String(p.rec?.saleId ?? p.v)) - 0.5) * Math.min(ROW_H * 0.45, 40);
       placed.push({ ...p, cx: sx(p.v), cy: cy + jitter });
     }
   });
@@ -1173,5 +1204,196 @@ export function drawTableCard({ title, subtitle = '', note = '', columns = [], r
     p.textContent = note;
     figure.appendChild(p);
   }
+  return figure;
+}
+
+// ---------- chart card shell (bars, histogram) -----------------------
+
+/** Figure + figcaption (title, subtitle), the part every chart shares. */
+function chartShell(title, subtitle) {
+  const figure = document.createElement('figure');
+  figure.className = 'chart-card';
+  const cap = document.createElement('figcaption');
+  const h = document.createElement('h3');
+  h.textContent = title || '';
+  cap.appendChild(h);
+  if (subtitle) {
+    const sub = document.createElement('p');
+    sub.className = 'chart-sub';
+    sub.textContent = subtitle;
+    cap.appendChild(sub);
+  }
+  figure.appendChild(cap);
+  return { figure, cap };
+}
+
+function emptyNote(figure, message) {
+  const none = document.createElement('p');
+  none.className = 'chart-empty';
+  none.textContent = message;
+  figure.appendChild(none);
+  return figure;
+}
+
+// ---------- 100% stacked bars ----------------------------------------
+
+/**
+ * Horizontal 100% stacked bars, one per group — the land template's Cover
+ * Mix charts (ag_mix_bar): the mean land-cover shares of the sales in each
+ * MASC rating or soil type.
+ *
+ * spec: title, subtitle, note, pngName,
+ *       segments [{key, label, color}]   in stacking order
+ *       rows     [{label, n, shares: {key: 0-1}}]
+ *       empty
+ */
+export function drawStackedBars(spec) {
+  const {
+    title, subtitle = '', note = '', pngName = '', segments = [], rows = [],
+    empty = 'No groups in the current filter have enough sales.',
+  } = spec;
+  const { figure } = chartShell(title, subtitle);
+  if (!rows.length) return emptyNote(figure, empty);
+
+  const LEFT = 170;
+  const TOP = 12;
+  const BOTTOM = 40;
+  const H = VB_H;
+  const plotW = VB_W - LEFT - PAD.right;
+  const rowH = (H - TOP - BOTTOM) / rows.length;
+  const barH = Math.min(rowH * 0.62, 32);
+  const svg = el('svg', {
+    viewBox: `0 0 ${VB_W} ${H}`, class: 'chart-svg', role: 'img',
+    'aria-label': `${title}. ${rows.length} groups.`,
+  });
+  svg.appendChild(el('rect', { x: 0, y: 0, width: VB_W, height: H, fill: R_STYLE.bg }));
+  for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+    const x = LEFT + t * plotW;
+    svg.appendChild(el('line', {
+      x1: x, x2: x, y1: TOP, y2: H - BOTTOM, stroke: R_STYLE.grid, 'stroke-width': 0.75,
+    }));
+    svg.appendChild(text(`${Math.round(t * 100)}%`, {
+      x, y: H - BOTTOM + 20, 'text-anchor': t === 1 ? 'end' : 'middle', class: 'chart-tick', fill: R_STYLE.tick,
+    }));
+  }
+  rows.forEach((r, i) => {
+    const cy = TOP + i * rowH + rowH / 2;
+    const label = String(r.label);
+    svg.appendChild(text(`${label.length > 20 ? `${label.slice(0, 19)}…` : label} (${r.n})`, {
+      x: LEFT - 10, y: cy + 5, 'text-anchor': 'end', class: 'chart-tick', fill: R_STYLE.axisTitle,
+    }));
+    const total = segments.reduce((s, g) => s + (Number(r.shares?.[g.key]) || 0), 0) || 1;
+    let x = LEFT;
+    for (const g of segments) {
+      const share = (Number(r.shares?.[g.key]) || 0) / total;
+      if (share <= 0) continue;
+      const w = share * plotW;
+      svg.appendChild(el('rect', {
+        x, y: cy - barH / 2, width: w, height: barH, fill: g.color,
+        stroke: R_STYLE.bg, 'stroke-width': 0.75,
+      }));
+      if (share >= 0.08) {
+        svg.appendChild(text(`${Math.round(share * 100)}%`, {
+          x: x + w / 2, y: cy + 5, 'text-anchor': 'middle', class: 'chart-ref-label',
+          fill: g.key === 'bush' || g.key === 'wet' ? '#ffffff' : '#222222',
+        }));
+      }
+      x += w;
+    }
+  });
+  figure.appendChild(svg);
+  const legend = segments.map((g) => ({ label: g.label, color: g.color, dot: 'swatch' }));
+  appendChartFooter(figure, { svg, title, subtitle, legend, stats: [], note, pngName, strip: null });
+  return figure;
+}
+
+// ---------- histogram ------------------------------------------------
+
+/**
+ * A histogram — the template's Sale/Asmt Distribution (20 bins, reference
+ * lines at 1 and at the review-flag thresholds).
+ *
+ * spec: title, subtitle, note, stats, pngName,
+ *       values     numbers
+ *       bins       count (default 20)
+ *       refLines   [{x, label, color}]
+ *       xLabel, axisFormat (x ticks)
+ *       empty
+ */
+export function drawHistogram(spec) {
+  const {
+    title, subtitle = '', note = '', stats = [], pngName = '',
+    values = [], bins = 20, refLines = [], xLabel = '', axisFormat = fmtAxisComma,
+    empty = 'No sales in the current filter carry this value.',
+  } = spec;
+  const { figure } = chartShell(title, subtitle);
+  const v = values.filter((x) => Number.isFinite(x));
+  if (!v.length) return emptyNote(figure, empty);
+
+  let lo = Math.min(...v);
+  let hi = Math.max(...v);
+  for (const r of refLines) if (Number.isFinite(r.x)) { lo = Math.min(lo, r.x); hi = Math.max(hi, r.x); }
+  const xs = niceTicks(lo, hi, 6);
+  const width = (xs.hi - xs.lo) / bins || 1;
+  const counts = new Array(bins).fill(0);
+  for (const x of v) counts[Math.min(bins - 1, Math.max(0, Math.floor((x - xs.lo) / width)))] += 1;
+  const ys = niceTicks(0, Math.max(...counts), 5);
+
+  const plotW = VB_W - PAD.left - PAD.right;
+  const plotH = VB_H - PAD.top - PAD.bottom;
+  const sx = (x) => PAD.left + ((x - xs.lo) / ((xs.hi - xs.lo) || 1)) * plotW;
+  const sy = (y) => PAD.top + plotH - (y / ((ys.hi - ys.lo) || 1)) * plotH;
+  const svg = el('svg', {
+    viewBox: `0 0 ${VB_W} ${VB_H}`, class: 'chart-svg', role: 'img',
+    'aria-label': `${title}. ${v.length} sales.`,
+  });
+  svg.appendChild(el('rect', { x: 0, y: 0, width: VB_W, height: VB_H, fill: R_STYLE.bg }));
+  for (const t of ys.ticks) {
+    svg.appendChild(el('line', {
+      x1: PAD.left, x2: PAD.left + plotW, y1: sy(t), y2: sy(t), stroke: R_STYLE.grid, 'stroke-width': 0.75,
+    }));
+    svg.appendChild(text(String(t), {
+      x: PAD.left - 8, y: sy(t) + 5, 'text-anchor': 'end', class: 'chart-tick', fill: R_STYLE.tick,
+    }));
+  }
+  for (const t of xs.ticks) {
+    svg.appendChild(text(axisFormat(t), {
+      x: sx(t), y: PAD.top + plotH + 22, 'text-anchor': sx(t) > VB_W - PAD.right - 30 ? 'end' : 'middle',
+      class: 'chart-tick', fill: R_STYLE.tick,
+    }));
+  }
+  counts.forEach((c, i) => {
+    if (!c) return;
+    const x0 = sx(xs.lo + i * width);
+    const x1 = sx(xs.lo + (i + 1) * width);
+    svg.appendChild(el('rect', {
+      x: x0, y: sy(c), width: Math.max(1, x1 - x0), height: sy(0) - sy(c),
+      fill: R_STYLE.pointFill, 'fill-opacity': 0.75, stroke: R_STYLE.pointStroke, 'stroke-width': 0.75,
+    }));
+  });
+  for (const r of refLines) {
+    if (!Number.isFinite(r.x)) continue;
+    const x = sx(r.x);
+    svg.appendChild(el('line', {
+      x1: x, x2: x, y1: PAD.top, y2: PAD.top + plotH,
+      stroke: r.color || R_STYLE.cubic, 'stroke-width': 1.5, 'stroke-dasharray': '6 4',
+    }));
+    if (r.label) {
+      svg.appendChild(text(r.label, {
+        x: x + 4, y: PAD.top + 12, class: 'chart-ref-label', 'font-weight': 700, fill: r.color || R_STYLE.cubic,
+      }));
+    }
+  }
+  if (xLabel) {
+    svg.appendChild(text(xLabel, {
+      x: PAD.left + plotW / 2, y: VB_H - 10, 'text-anchor': 'middle', class: 'chart-axis-title', fill: R_STYLE.axisTitle,
+    }));
+  }
+  svg.appendChild(text('Sales', {
+    x: 18, y: PAD.top + plotH / 2, 'text-anchor': 'middle', class: 'chart-axis-title', fill: R_STYLE.axisTitle,
+    transform: `rotate(-90 18 ${PAD.top + plotH / 2})`,
+  }));
+  figure.appendChild(svg);
+  appendChartFooter(figure, { svg, title, subtitle, legend: null, stats, note, pngName, strip: statStripEl(stats) });
   return figure;
 }
