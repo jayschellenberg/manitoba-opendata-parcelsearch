@@ -562,7 +562,6 @@ function trendStats(points, cms, fmt) {
           + (cms.applied ? `, fitted on the ${trimWords()} set.` : '.'),
       });
     }
-    stats.push({ label: 'R²', value: mc.r2.toFixed(2) });
   }
   if (cms.applied && pctWords(cms.mc1)) {
     stats.push({
@@ -635,8 +634,7 @@ function statedRateFit(records, metric, ovr, effMs) {
  * With a stated rate in force the fitted lines are dropped entirely, not
  * shown alongside: the user has declared the market's movement, and a
  * regression drawn next to it invites reading the chart as though the
- * data still decided. The stat strip drops R² for the same reason —
- * there is no regression to report the fit of.
+ * data still decided.
  */
 function timeTrend(cms, points, fmt) {
   const ovr = overrideRate();
@@ -728,20 +726,20 @@ function subjectDistanceRef() {
 }
 
 /**
- * A per-day money rate at enough precision to say something.
+ * A per-day money rate, unsigned (callers add the sign), to four decimals
+ * (Jason, 2026-09-23): "$0.9512", "$23.4500".
  *
- * The $/acre trend runs to dollars a day; the $/SF trend is ~$0.00004,
- * which a fixed 2-decimal format renders as "$0.00" — a real number
- * reported as nothing. Scale the decimals to keep two significant
- * digits, capped at six.
+ * The one exception: a $/SF trend can be ~$0.00004 a day, which four
+ * decimals would print as "$0.0000" — a real rate reported as none — so a
+ * value that small keeps two significant digits instead.
  */
 function fmtRate(v) {
   if (!Number.isFinite(v)) return '—';
   const a = Math.abs(v);
   if (a === 0) return '$0';
-  if (a >= 1) return fmtMoney0(v);
-  const dp = Math.min(6, Math.max(2, -Math.floor(Math.log10(a)) + 1));
-  return `$${v.toFixed(dp)}`;
+  if (a >= 0.0001) return `$${a.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+  const dp = Math.min(8, -Math.floor(Math.log10(a)) + 1);
+  return `$${a.toFixed(dp)}`;
 }
 
 /** The judgement rate, or null when the fitted trend is in charge. */

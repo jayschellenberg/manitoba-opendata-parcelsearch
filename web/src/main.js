@@ -5781,6 +5781,23 @@ async function handleSalesUpload(file) {
       // the CSV on every non-agricultural search would be a far worse
       // regression than blank soil columns.
       salesExportEnrichmentComplete = true;
+      // The pre-baked soil shards ARE cheap, though (Jason, 2026-09-23: soil
+      // name and productivity without toggling the map first): one ~200 KB
+      // per-muni dictionary and a lookup per parcel — not the 30 ms/parcel
+      // polygon clip the comment above defers. So every sales load stamps
+      // soil for the parcels the shards cover (rural, >= 20 ac, 130 munis),
+      // and only the MISSES — town lots, small parcels, the north — still
+      // wait for the Agricultural preset's live join. A miss stays
+      // unstamped, which the grid and charts read as "not loaded", never as
+      // "no soil".
+      try {
+        setCount(`${baseMsg} · Loading soil…`);
+        await stampSoilFromShards(parcelFc);
+      } catch (err) {
+        console.warn('soil shard pass failed (non-fatal):', err);
+      }
+      // A newer upload started while the shards loaded: leave the rest to it.
+      if (uploadGeneration !== salesEnrichmentGeneration) return;
     }
 
     // Compute multi-parcel sale group totals AFTER the enrichment
