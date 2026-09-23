@@ -30,6 +30,8 @@ import {
   saleWaterFacts, boxStats, waterPremium, pairedSales, WATER_GROUPS,
 } from '../lib/salesWater.js';
 import { WATER_CLASSES, WATER_DETECTION_LIMIT_FT } from '../lib/water.js';
+import { priceBuckets, yearColors, ringDistances } from '../lib/salesMapColors.js';
+import { createSalesMap } from './chartMap.js';
 import {
   drawChart, drawBoxChart, drawTableCard, ZONE_COLORS, OTHER_COLOR, INK, R_STYLE, slugify,
   fmtMoney0, fmtMoney2, fmtNum, fmtDate, fmtAxisDollar, fmtAxisComma, fmtMonYear,
@@ -54,6 +56,9 @@ const els = {
   tabRates: $('tab-rates'),
   tabTotal: $('tab-total'),
   tabWater: $('tab-water'),
+  tabMap: $('tab-map'),
+  ctlMapColor: $('ctl-mapcolor'),
+  mapColor: $('map-color'),
   effDate: $('eff-date'),
   ratesNominal: $('rates-nominal'),
   ratesAdjusted: $('rates-adjusted'),
@@ -121,6 +126,8 @@ const opts = {
   trim: false,
   trimLo: 5,
   trimHi: 95,
+  // What colours the sales on the Map tab: price | year | zoning | water.
+  mapColor: 'price',
   ...readOpts(),
 };
 
@@ -266,7 +273,7 @@ function tooltipRows(rec, pt) {
       `${fmtNum(d)} km`]);
   }
   if (rec.zone) rows.push(['Zoning', rec.zone]);
-  if (opts.tab === 'water') {
+  if (opts.tab === 'water' || (opts.tab === 'map' && opts.mapColor === 'water')) {
     const w = waterOf(rec);
     if (w.group) rows.push(['Water', w.cls && w.cls !== w.group ? `${w.group} · ${w.cls}` : w.group]);
     if (w.body) rows.push(['Water body', w.body]);
@@ -397,6 +404,7 @@ function distContext() {
 function buildCharts() {
   if (opts.tab === 'total') return buildTotalCharts();
   if (opts.tab === 'water') return buildWaterCharts();
+  if (opts.tab === 'map') return buildMapTab();
   return buildRateCharts();
 }
 
@@ -1357,12 +1365,104 @@ function buildWaterCharts() {
 
 const fmtNumOr = (v) => (Number.isFinite(v) ? fmtNum(v) : '—');
 
+// ---------- map tab ------------------------------------------------
+
+/** The page's one map, created the first time the Map tab is shown. */
+let salesMap = null;
+
+/** The template's map titles, per colouring. */
+const MAP_MODES = {
+  price: (unit) => `CMS Heatmap – Price per ${unit}`,
+  year: () => 'CMS – Map by Year of Sale',
+  zoning: () => 'CMS – Map by Zoning',
+  water: () => 'CMS – Map by Water Influence',
+};
+
+/**
+ * The land template's CMS maps (LandStatic.qmd ~6798-7303) as one map with
+ * a colour-by switch: price-per-unit quintiles, sale year, zoning, or water
+ * influence. Sales are points at the mean of their parcels' centres (the
+ * charts page receives no parcel geometry); the subject is marked, with
+ * distance rings spanning the comps. Click a sale to open it, and to
+ * exclude or include it — the same grid untick as a click on a chart.
+ */
+function buildMapTab() {
+  if (!salesMap) {
+    const find = (id) => (data.records || []).find((r) => String(r.saleId) === String(id));
+    salesMap = createSalesMap({
+      onPick: (id) => { const rec = find(id); if (rec) onPointClick(rec); },
+      popupRows: (id) => { const rec = find(id); return rec ? tooltipRows(rec, null).filter(([l]) => l !== '') : []; },
+    });
+  }
+  const metric = areaMetric();
+  const areaFmt = areaMoneyFmt();
+  const cms = cmsFor(metric);
+  const adj = adjusterFor(cms);
+  const recs = drawnRecords().filter((r) => Number.isFinite(r.lat) && Number.isFinite(r.lng));
+  const live = recs.filter((r) => !r.excluded);
+  const mode = MAP_MODES[opts.mapColor] ? opts.mapColor : 'price';
+
+  let colorOf = () => null;
+  let legend = [];
+  let note = '';
+  if (mode === 'price') {
+    const b = priceBuckets(live.map(adj.adjust), areaFmt);
+    if (b) { colorOf = (r) => b.colorOf(adj.adjust(r)); legend = b.legend; }
+    note = sub(`Quintiles of ${adj.adjusted ? 'adjusted ' : ''}price per ${unitSpec().perUnit.toLowerCase()}; `
+      + 'each colour holds about a fifth of the sales.', adj.note);
+  } else if (mode === 'year') {
+    const yearOf = (r) => (Number.isFinite(r.dateMs) ? new Date(r.dateMs).getFullYear() : null);
+    const y = yearColors(live.map(yearOf));
+    colorOf = (r) => y.colorOf(yearOf(r));
+    legend = y.legend;
+  } else if (mode === 'zoning') {
+    const zones = topZones(live, ZONE_COLORS.length);
+    const byZone = new Map(zones.map((z, i) => [z.key, ZONE_COLORS[i]]));
+    colorOf = (r) => byZone.get(String(r.zone || '').trim()) || OTHER_COLOR;
+    legend = [...zones.map((z) => ({ label: `${z.key} (${z.count})`, color: byZone.get(z.key) })),
+      ...(live.some((r) => !byZone.has(String(r.zone || '').trim())) ? [{ label: 'Other', color: OTHER_COLOR }] : [])];
+  } else if (mode === 'water') {
+    colorOf = (r) => WATER_GROUP_COLORS[waterOf(r).group] || '#dddddd';
+    legend = [...WATER_GROUPS.map((g) => ({ label: g, color: WATER_GROUP_COLORS[g] })),
+      ...(live.some((r) => !waterOf(r).group) ? [{ label: 'No water data', color: '#dddddd' }] : [])];
+  }
+
+  const fc = {
+    type: 'FeatureCollection',
+    features: recs.map((r) => ({
+      type: 'Feature',
+      properties: {
+        saleId: String(r.saleId),
+        excluded: !!r.excluded,
+        color: r.excluded ? R_STYLE.excludedFill : (colorOf(r) || R_STYLE.pointFill),
+      },
+      geometry: { type: 'Point', coordinates: [r.lng, r.lat] },
+    })),
+  };
+
+  const s = data.meta?.subject;
+  const subject = Number.isFinite(s?.lat) && Number.isFinite(s?.lng) ? { lat: s.lat, lng: s.lng } : null;
+  const maxKm = subject ? Math.max(0, ...live.map((r) => haversineKm(subject, { lat: r.lat, lng: r.lng }))) : 0;
+  const rings = subject ? ringDistances(maxKm) : [];
+
+  salesMap.setHeader(MAP_MODES[mode](unitSpec().perUnit), criteriaLine(cms, adj.adjusted));
+  salesMap.setLegend(legend);
+  salesMap.setNote(sub(note,
+    rings.length ? `Rings at ${rings.join(', ')} km from the subject.` : (subject ? '' : 'Set a subject roll in the main window to mark it and draw distance rings.'),
+    recs.length < drawnRecords().length ? `${drawnRecords().length - recs.length} sales without a parcel location are not shown.` : ''));
+  salesMap.setData({ fc, subject, rings, fitKey: recs.map((r) => r.saleId).join('|') });
+  // The figure is re-appended on every render; the map must re-measure
+  // once it is back in the document.
+  requestAnimationFrame(() => salesMap.resize());
+  return [salesMap.figure];
+}
+
 // ---------- table view ---------------------------------------------
 
 /** The measures a tab trims on, for the table's Trimmed column. */
 function trimMetricsForTab() {
   if (opts.tab === 'total') return [['price', 'Price']];
-  if (opts.tab === 'water') return [[areaMetric(), `$/${areaUnitLabel()}`]];
+  if (opts.tab === 'water' || opts.tab === 'map') return [[areaMetric(), `$/${areaUnitLabel()}`]];
   return [[areaMetric(), `$/${areaUnitLabel()}`], ['ppl', '$/Lot']];
 }
 
@@ -1551,11 +1651,13 @@ function syncControls() {
   // governs nothing on the total-price tab; showing it there would be an
   // inert switch inviting a click that changes no chart on screen.
   const onTotal = opts.tab === 'total';
-  const tab = ['rates', 'total', 'water'].includes(opts.tab) ? opts.tab : 'rates';
-  for (const [key, btn] of [['rates', els.tabRates], ['total', els.tabTotal], ['water', els.tabWater]]) {
+  const tab = ['rates', 'total', 'water', 'map'].includes(opts.tab) ? opts.tab : 'rates';
+  for (const [key, btn] of [['rates', els.tabRates], ['total', els.tabTotal], ['water', els.tabWater], ['map', els.tabMap]]) {
     btn.setAttribute('aria-selected', String(tab === key));
     btn.classList.toggle('is-on', tab === key);
   }
+  els.ctlMapColor.hidden = tab !== 'map';
+  els.mapColor.value = MAP_MODES[opts.mapColor] ? opts.mapColor : 'price';
   els.ctlUnit.hidden = onTotal;
   // Name the charts the Nominal/Time-adjusted toggle actually reaches on
   // THIS tab — the total set has no by-size chart to speak of.
@@ -1563,7 +1665,9 @@ function syncControls() {
     ? 'Applies to the by-distance and assessed-value charts.'
     : tab === 'water'
       ? 'Applies to every chart and table on this tab.'
-      : 'Applies to the by-size and by-distance charts.';
+      : tab === 'map'
+        ? 'Applies to the price colouring.'
+        : 'Applies to the by-size and by-distance charts.';
 
   const unit = UNITS[opts.unit] ? opts.unit : 'acres';
   for (const [key, btn] of [['acres', els.unitAcres], ['sf', els.unitSf], ['ff', els.unitFf]]) {
@@ -1636,6 +1740,8 @@ function setOpt(patch) {
 els.tabRates.addEventListener('click', () => setOpt({ tab: 'rates' }));
 els.tabTotal.addEventListener('click', () => setOpt({ tab: 'total' }));
 els.tabWater.addEventListener('click', () => setOpt({ tab: 'water' }));
+els.tabMap.addEventListener('click', () => setOpt({ tab: 'map' }));
+els.mapColor.addEventListener('change', () => setOpt({ mapColor: els.mapColor.value }));
 els.unitAcres.addEventListener('click', () => setOpt({ unit: 'acres' }));
 els.unitSf.addEventListener('click', () => setOpt({ unit: 'sf' }));
 els.unitFf.addEventListener('click', () => setOpt({ unit: 'ff' }));

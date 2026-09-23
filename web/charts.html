@@ -63,6 +63,16 @@
           <span class="ctl-hint">Comps are carried to this date.</span>
         </div>
 
+        <div class="ctl" id="ctl-mapcolor" hidden>
+          <label class="ctl-label" for="map-color">Colour sales by</label>
+          <select id="map-color">
+            <option value="price">Price per unit (quintiles)</option>
+            <option value="year">Year of sale</option>
+            <option value="zoning">Zoning</option>
+            <option value="water">Water influence</option>
+          </select>
+        </div>
+
         <div class="ctl">
           <label class="ctl-label" for="dist-ref">Distance from</label>
           <select id="dist-ref">
@@ -139,6 +149,9 @@
         <button type="button" id="tab-water" role="tab" aria-selected="false"
                 aria-controls="charts-grid"
                 title="Waterfront, near-water and dry sales compared: box plots, the water premium and paired sales.">Water</button>
+        <button type="button" id="tab-map" role="tab" aria-selected="false"
+                aria-controls="charts-grid"
+                title="The charted sales on a map, coloured by price, sale year, zoning or water influence.">Map</button>
       </div>
 
       <div id="charts-grid" class="charts-grid" hidden></div>
