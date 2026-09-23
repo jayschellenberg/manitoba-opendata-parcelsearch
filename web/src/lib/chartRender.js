@@ -326,7 +326,12 @@ export function exportChartPng({ svg = null, raster = null, title, subtitle, leg
     }
     if (row.length) legendRows.push(row);
   }
-  const noteLines = note ? wrapText(note, 10, W - 2 * M).slice(0, 2) : [];
+  // The chart's notes (adjustment basis, which toggle applies, trim) stay on
+  // screen and are NOT printed into the PNG (Jason, 2026-09-23): they are
+  // working guidance for the page, not part of the exhibit. `note` is still
+  // accepted so callers need not change.
+  void note;
+  const noteLines = [];
   // The template's caption: the figures, then " | {Company}".
   const statLine = [
     (stats || []).map((s) => `${s.label}: ${s.value}`).join('; '),
