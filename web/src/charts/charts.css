@@ -589,3 +589,17 @@ main { padding: 18px 20px 0; }
   font: 700 11px/1.4 Arial, Helvetica, sans-serif;
   color: #8B0000;
 }
+
+/* "Restore N unticked sales" under a chart (on screen only). */
+.chart-restore {
+  display: block;
+  margin: 6px 0 0;
+  padding: 0;
+  font: 600 11.5px/1.5 Arial, Helvetica, sans-serif;
+  color: #1C86EE;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.chart-restore:hover { color: #0b5cad; }
