@@ -15,6 +15,12 @@
              so a chart can be read (or screenshotted) while the filters
              keep moving next door. -->
         <p id="charts-status" class="charts-status">Waiting for the Sales Analysis tab…</p>
+        <!-- Signs every chart's caption and PNG, as the R template ends its
+             caption "… | {Company}". Saved in this browser; empty = unsigned. -->
+        <label class="charts-firm">
+          <span>Company (signs your charts)</span>
+          <input id="company" type="text" maxlength="60" placeholder="Your firm name" autocomplete="organization" />
+        </label>
       </div>
 
       <!-- One filter row, above everything it scopes. Every chart and the

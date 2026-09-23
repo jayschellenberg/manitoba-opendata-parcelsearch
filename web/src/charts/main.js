@@ -36,7 +36,7 @@ import { criteriaText } from '../lib/criteriaLine.js';
 import { masccolor } from '../masc.js';
 import { LAND_COVER_BUCKETS } from '../lib/landcover.js';
 import {
-  drawChart, drawBoxChart, drawTableCard, drawStackedBars, drawHistogram, ZONE_COLORS, OTHER_COLOR, INK, R_STYLE, slugify,
+  drawChart, drawBoxChart, drawTableCard, drawStackedBars, drawHistogram, setChartCompany, ZONE_COLORS, OTHER_COLOR, INK, R_STYLE, slugify,
   fmtMoney0, fmtMoney2, fmtNum, fmtDate, fmtAxisDollar, fmtAxisComma, fmtMonYear,
 } from '../lib/chartRender.js';
 
@@ -61,6 +61,7 @@ const els = {
   tabWater: $('tab-water'),
   tabMap: $('tab-map'),
   tabNote: $('tab-note'),
+  company: $('company'),
   tabAg: $('tab-ag'),
   ctlMapColor: $('ctl-mapcolor'),
   mapColor: $('map-color'),
@@ -136,6 +137,9 @@ const opts = {
   mapColor: 'price',
   // Municipal boundaries on the Map tab.
   mapMunis: true,
+  // The company name that signs every chart caption and PNG (Jason,
+  // 2026-09-23). Persisted with the rest of opts, so it is typed once.
+  company: '',
   ...readOpts(),
 };
 
@@ -420,7 +424,16 @@ function buildCharts() {
   if (opts.tab === 'total') return buildTotalCharts();
   if (opts.tab === 'water') return buildWaterCharts();
   if (opts.tab === 'map') return buildMapTab();
-  if (opts.tab === 'ag') return buildAgCharts();
+  if (opts.tab === 'ag') {
+    // Front feet means nothing for farmland — almost no farm roll states a
+    // frontage — and left on it the whole tab went empty with messages that
+    // blamed the MASC and land-cover data instead (Jason, 2026-09-23). The
+    // tab draws per acre instead; the unit control keeps its setting for the
+    // other tabs, and the note under the tabs says what happened.
+    if (opts.unit !== 'ff') return buildAgCharts();
+    opts.unit = 'acres';
+    try { return buildAgCharts(); } finally { opts.unit = 'ff'; }
+  }
   return buildRateCharts();
 }
 
@@ -683,6 +696,17 @@ function subjectRef() {
     label: 'Subject',
     color: R_STYLE.subject,
   }];
+}
+
+/**
+ * A subject line at `x` on any other scatter — cultivated share, distance to
+ * water, assessed value (Jason, 2026-09-23: the subject on every chart where
+ * it has a value). Empty when there is no subject or the value is unknown.
+ */
+function subjectAt(x) {
+  const n = Number(x);
+  if (!data.meta?.subject || x == null || !Number.isFinite(n)) return [];
+  return [{ x: n, label: 'Subject', color: R_STYLE.subject }];
 }
 
 /**
@@ -1057,6 +1081,7 @@ function buildTotalCharts() {
       xLabel: 'Total Assessed Value', yLabel: yAdj(priceAdj, 'Sale Price'),
       yFormat: fmtMoney0, yAxisFormat: axisDollar, xAxisFormat: axisDollar,
       fits, legend: legendFor(fits, pts),
+      refLines: subjectAt(data.meta?.subject?.asmtTotal),
       stats: spreadStats(pts, {
         xName: 'Median assessed',
         xFormat: fmtMoney0,
@@ -1322,6 +1347,7 @@ function buildWaterCharts() {
       xLabel: 'Distance to Water (ft)', yLabel: yWord,
       yFormat: areaFmt, yAxisFormat: fmtAxisDollar, xAxisFormat: fmtAxisComma,
       fits, legend: legendFor(fits, pts),
+      refLines: subjectAt(data.meta?.subject?.waterFt),
       stats: spreadStats(pts, {
         xName: 'Median distance', xFormat: (v) => `${fmtNum(v)} ft`, adjusted: adj.adjusted, yFormat: areaFmt,
       }),
@@ -1448,6 +1474,13 @@ function buildAgCharts() {
   const MIN_N = 2;
   const TOP_N = 8;
   const charts = [];
+  // When no ticked sale carries a price in the chosen unit, every chart is
+  // empty for THAT reason — say so, instead of a message about MASC or land
+  // cover that sends the reader looking for missing data that is there.
+  const noRate = cms.active.some((r) => Number(rate(r)) > 0)
+    ? null
+    : `No sales in the current filter carry a price per ${perUnit.toLowerCase()}. Try the Acres size unit.`;
+  const emptyOr = (msg) => noRate || msg;
 
   const soilMissing = activeRecords().some((r) => !r.ag?.soilLoaded);
   const soilNote = soilMissing
@@ -1487,6 +1520,7 @@ function buildAgCharts() {
       fits: trend.fits,
       legend: [...mascLegend(pts), ...trend.fits.map((f) => ({ label: f.label, color: f.color, dash: !!f.dash })), ...stateLegend(pts)],
       stats: trend.stats,
+      empty: noRate || undefined,
     }));
   }
 
@@ -1502,8 +1536,9 @@ function buildAgCharts() {
       xLabel: 'Cultivated (%)', yLabel: yWord,
       yFormat: areaFmt, yAxisFormat: fmtAxisDollar, xAxisFormat: fmtAxisComma,
       fits, legend: legendFor(fits, pts),
+      refLines: subjectAt(data.meta?.subject?.cultPct),
       stats: spreadStats(pts, { xName: 'Median cultivated', xFormat: (v) => `${Math.round(v)}%`, adjusted: adj.adjusted, yFormat: areaFmt }),
-      empty: 'No sales in the current filter carry land-cover data (parcels under 10 acres have none).',
+      empty: emptyOr('No sales in the current filter carry land-cover data (parcels under 10 acres have none).'),
     }));
   }
 
@@ -1515,7 +1550,7 @@ function buildAgCharts() {
       title: `Farmland Price per ${perUnit} by MASC Rating`,
       note: sub(groupNote(dropped), adj.note),
       groups,
-      empty: 'No MASC rating has 2 or more sales in the current filter.',
+      empty: emptyOr('No MASC rating has 2 or more sales in the current filter.'),
     }));
   }
 
@@ -1527,7 +1562,7 @@ function buildAgCharts() {
       title: `Price per ${perUnit} by Soil Type`,
       note: sub(groupNote(dropped), soilNote, adj.note),
       groups,
-      empty: 'No soil data for these sales. Pick the Agricultural column preset in the main window to load it.',
+      empty: emptyOr('No soil data for these sales. Pick the Agricultural column preset in the main window to load it.'),
     }));
   }
 
@@ -1540,7 +1575,7 @@ function buildAgCharts() {
       title: `Price per ${perUnit} by CLI Capability Class`,
       note: sub(groupNote(dropped), soilNote, adj.note),
       groups,
-      empty: 'No CLI data for these sales. Pick the Agricultural column preset in the main window to load it.',
+      empty: emptyOr('No CLI data for these sales. Pick the Agricultural column preset in the main window to load it.'),
     }));
   }
 
@@ -1553,7 +1588,7 @@ function buildAgCharts() {
       title: `Price per ${perUnit} by Dominant Land Cover`,
       note: sub(groupNote(dropped), adj.note),
       groups,
-      empty: 'No sales in the current filter carry land-cover data.',
+      empty: emptyOr('No sales in the current filter carry land-cover data.'),
     }));
   }
 
@@ -1924,6 +1959,7 @@ function render() {
   // render; a cached trim from the last one would describe other sales.
   cmsCache = new Map();
   waterCache = new Map();
+  setChartCompany(opts.company);
   renderStatus();
 
   const has = data.records.length > 0;
@@ -1962,13 +1998,17 @@ function syncControls() {
   // The size unit shows on every tab now: the Total price tab's Price per
   // Lot by Size chart takes its x-axis from it.
   els.ctlUnit.hidden = false;
+  if (document.activeElement !== els.company) els.company.value = opts.company || '';
   // The Total price tab's measure, spelled out where it is chosen.
-  els.tabNote.hidden = tab !== 'total';
+  const agOnAcres = tab === 'ag' && opts.unit === 'ff';
+  els.tabNote.hidden = !(tab === 'total' || agOnAcres);
   els.tabNote.textContent = tab === 'total'
     ? `${TOTAL_PRICE_NOTE} Price per lot divides that price by the number of parcels in the sale, `
       + 'so a $600,000 sale of 3 lots shows as $600,000 on the Total price charts and $200,000 on the '
       + 'Price per Lot charts. For a single-parcel sale the two are the same.'
-    : '';
+    : agOnAcres
+      ? 'Front feet does not apply to farmland, so the Agricultural charts are shown per acre.'
+      : '';
   // Name the charts the Nominal/Time-adjusted toggle actually reaches on
   // THIS tab.
   els.ratesHint.textContent = onTotal
@@ -2051,6 +2091,7 @@ els.tabRates.addEventListener('click', () => setOpt({ tab: 'rates' }));
 els.tabTotal.addEventListener('click', () => setOpt({ tab: 'total' }));
 els.tabWater.addEventListener('click', () => setOpt({ tab: 'water' }));
 els.tabMap.addEventListener('click', () => setOpt({ tab: 'map' }));
+els.company.addEventListener('input', () => setOpt({ company: els.company.value.trim() }));
 els.tabAg.addEventListener('click', () => setOpt({ tab: 'ag' }));
 els.mapColor.addEventListener('change', () => setOpt({ mapColor: els.mapColor.value }));
 els.mapMunis.addEventListener('change', () => setOpt({ mapMunis: els.mapMunis.checked }));
