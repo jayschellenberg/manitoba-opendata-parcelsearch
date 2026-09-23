@@ -263,3 +263,27 @@ Feature detail is in DOCUMENTATION.md §3.6.1. What is still open:
   UNCAPPED composition, so a class can read higher than the top-3 rows
   above it suggest (a 2W soil folded into "Other" still counts). That is
   the intended, citable figure — documented, but easy to mistake for a bug.
+
+## Sales Charts page follow-ups (from the 2026-09-22/23 session)
+
+See DOCUMENTATION.md §10.0.2 for what shipped. Still open:
+
+- **The Map tab has never been seen drawing.** Automation tabs run hidden, so
+  MapLibre never paints there. Its data, legends, boundary-file load and PNG
+  size were verified; the dots, rings and municipal lines on screen were not.
+  One look on a real screen closes it.
+- **Parcel outlines on the charts map.** The page receives no geometry (kept
+  out of the BroadcastChannel message on purpose, for size), so sales are
+  points. The template's parcel heatmap would need a slimmed outline per sale.
+- **Ag consistency filters (the template's CMSAG1 and its own rate)** were not
+  ported; the Agricultural tab uses the same comparable set as the other tabs.
+  The main window's MASC / CLI / cultivation filters cover most of it.
+- **$/usable area** (the template's area net of water %) needs a per-parcel
+  water-share figure the site does not carry.
+- **A municipality with no flood shard reads "unknown", not "None"** on the
+  Water tab, as in the grid's Flood column. If absence from the flood index
+  reliably means "no flood layer reaches it", both could say None; confirm
+  against `r/build_flood.R` before changing.
+- **Soil for shard misses** (town lots, parcels under 20 ac, the north) still
+  needs the Agricultural preset's live join; every other sale gets soil
+  automatically from the shards.
