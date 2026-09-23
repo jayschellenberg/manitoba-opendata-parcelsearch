@@ -11,10 +11,12 @@
  * Everything is drawn into a fixed 760x400 viewBox scaled to the
  * container width, so one set of type sizes works at any card width.
  *
- * Colours come from the validated categorical palette; only the first
- * THREE series slots are used, because a scatter puts every pair of
- * series adjacent to every other and only those three clear the
- * colourblind-separation floor under that all-pairs test.
+ * The look — fonts, point size and colour, line styles, the zoning Set2
+ * palette — follows Jason's R land template (see R_STYLE), by his choice
+ * (2026-09-22), so the website and the report charts read as one. That
+ * palette puts up to eight zone colours on one scatter, more than a
+ * colourblind all-pairs test passes; the tooltip and table carry the
+ * zone code for every point.
  *
  * Untrusted text — addresses, zone codes, municipality names, all of it
  * out of a pasted CSV — is inserted with textContent, never innerHTML.
@@ -31,16 +33,53 @@ export const INK = {
   axis: '#c3c2b7',
 };
 
-/** Categorical slots 1-3 plus the fold-to-Other gray. */
-export const SERIES_COLORS = ['#2a78d6', '#eb6834', '#1baf7a'];
-export const OTHER_COLOR = '#898781';
-/** A sale unticked in the grid: drawn, clickable, fitted by nothing. Lighter
- *  than OTHER_COLOR so an excluded dot never reads as the "Other" series. */
-export const EXCLUDED_COLOR = '#c3c2b7';
+/**
+ * The look of Jason's R land template (Jason, 2026-09-22: "resemble the R
+ * project charts as much as possible"). The template shows its echarts
+ * build on screen and uses ggplot for PNGs; values are the echarts ones,
+ * with ggplot's filling the places echarts leaves at library defaults
+ * (gridlines, tick labels, axis titles). Sources, all in
+ * appraisal-templates: base-files/helpers.R ec_live_scatter (~5792-6047)
+ * and land/LandStatic.qmd theme_custom / point themes (788-902).
+ */
+export const R_STYLE = {
+  font: 'Arial, Helvetica, sans-serif',
+  bg: '#ffffff',
+  title: '#8B0000',          // red4, bold
+  subtitle: '#333333',
+  tick: '#4D4D4D',           // grey30, theme_minimal's tick text
+  axisTitle: '#000000',      // bold
+  grid: '#D3D3D3',           // lightgray hairlines
+  pointFill: '#63B8FF',      // steelblue1
+  pointStroke: '#36648B',    // steelblue4
+  pointOpacity: 0.6,
+  pointR: 4.5,               // echarts symbolSize 9
+  zoneStroke: '#404040',     // grey25, on the zoning-coloured chart
+  zoneOpacity: 0.75,
+  excludedFill: '#cccccc',   // a clicked-off point
+  excludedStroke: '#bbbbbb',
+  excludedOpacity: 0.4,
+  linear: '#000000',
+  cubic: '#8B0000',
+  power: '#9932CC',          // darkorchid, dotted
+  subject: '#1C86EE',        // dodgerblue2
+  caption: '#8B0000',        // the ggplot caption: red4 bold, right-aligned
+};
+
+/** Zoning palette: RColorBrewer Set2, in rank order, as the template's
+ *  top-8 ZoningTop; everything past eight folds into Other. */
+export const ZONE_COLORS = ['#66C2A5', '#FC8D62', '#8DA0CB', '#E78AC3', '#A6D854', '#FFD92F', '#E5C494', '#B3B3B3'];
+/** Default series colour first, so `SERIES_COLORS[0]` still means "a point". */
+export const SERIES_COLORS = [R_STYLE.pointFill, ...ZONE_COLORS];
+export const OTHER_COLOR = '#9e9e9e';
+/** A sale unticked in the grid: drawn, clickable, fitted by nothing. */
+export const EXCLUDED_COLOR = R_STYLE.excludedFill;
 
 const VB_W = 760;
 const VB_H = 400;
-const PAD = { top: 16, right: 18, bottom: 46, left: 74 };
+// Room for the template-sized axis text (ggplot 10pt at the 6.5in export
+// width is ~15 viewBox units) and full-dollar tick labels.
+const PAD = { top: 16, right: 20, bottom: 56, left: 96 };
 
 function el(name, attrs = {}) {
   const node = document.createElementNS(SVG_NS, name);
@@ -151,6 +190,31 @@ export function fmtAxisMoney(n) {
   return `$${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
 }
 
+/** Full-dollar axis labels, the template's scales::dollar: "$12,345", no
+ *  K/M. Cents only where the steps need them ($/SF). */
+export function fmtAxisDollar(n) {
+  if (!Number.isFinite(n)) return '';
+  const abs = Math.abs(n);
+  const cents = abs > 0 && abs < 10 && !Number.isInteger(n);
+  return `$${n.toLocaleString('en-US', {
+    minimumFractionDigits: cents ? 2 : 0, maximumFractionDigits: cents ? 2 : 0,
+  })}`;
+}
+
+/** Comma-grouped axis numbers, the template's number_format(big.mark=","). */
+export function fmtAxisComma(n) {
+  if (!Number.isFinite(n)) return '';
+  return n.toLocaleString('en-US', { maximumFractionDigits: Math.abs(n) < 10 ? 1 : 0 });
+}
+
+/** ggplot's %b-%Y date label: "Jan-2024". */
+const MON_FMT = new Intl.DateTimeFormat('en-CA', { month: 'short', timeZone: 'UTC' });
+export function fmtMonYear(ms) {
+  if (!Number.isFinite(ms)) return '';
+  const d = new Date(ms);
+  return `${MON_FMT.format(d).replace('.', '')}-${d.getUTCFullYear()}`;
+}
+
 /** Compact axis count: 1.2M / 450K / 85. */
 export function fmtAxisNum(n) {
   if (!Number.isFinite(n)) return '';
@@ -188,11 +252,15 @@ export function slugify(str) {
 }
 
 const EXPORT_STYLE = [
-  'text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }',
-  '.chart-tick { font-size: 10.5px; }',
-  '.chart-axis-title { font-size: 11.5px; font-weight: 600; }',
-  '.chart-ref-label { font-size: 10.5px; }',
+  `text { font-family: ${R_STYLE.font}; }`,
+  '.chart-tick { font-size: 14px; }',
+  '.chart-axis-title { font-size: 15px; font-weight: 700; }',
+  '.chart-ref-label { font-size: 14px; }',
 ].join('\n');
+
+/** The template exports at 6.5in wide x 300 dpi; the image is rasterized
+ *  to that width. */
+const EXPORT_PX_WIDTH = 1950;
 
 /**
  * Compose one chart as a standalone SVG — title, subtitle, the plot, legend
@@ -202,23 +270,24 @@ const EXPORT_STYLE = [
  * the image carries no hover ring, tooltip or PNG button, and every string
  * goes in through textContent: addresses and zone codes are pasted-CSV text.
  */
-export function exportChartPng({ svg, title, subtitle, legend, stats, filename }) {
+export function exportChartPng({ svg, title, subtitle, legend, stats, note, filename }) {
   const W = VB_W;
   const M = 16;
   const root = el('svg', { xmlns: SVG_NS, width: W, viewBox: '' });
   const style = el('style');
   style.textContent = EXPORT_STYLE;
   root.appendChild(style);
-  const bg = el('rect', { x: 0, y: 0, width: W, fill: INK.surface });
+  const bg = el('rect', { x: 0, y: 0, width: W, fill: R_STYLE.bg });
   root.appendChild(bg);
 
+  // The template's title and subtitle: red4 bold, then the criteria line.
   let y = M + 14;
   root.appendChild(text(title || '', {
-    x: M, y, 'font-size': 16, 'font-weight': 600, fill: INK.primary,
+    x: M, y, 'font-size': 16, 'font-weight': 700, fill: R_STYLE.title,
   }));
-  for (const line of wrapText(subtitle, 11, W - 2 * M)) {
-    y += 16;
-    root.appendChild(text(line, { x: M, y, 'font-size': 11, fill: INK.muted }));
+  for (const line of wrapText(subtitle, 12, W - 2 * M)) {
+    y += 17;
+    root.appendChild(text(line, { x: M, y, 'font-size': 12, fill: R_STYLE.subtitle }));
   }
   y += 8;
 
@@ -245,9 +314,12 @@ export function exportChartPng({ svg, title, subtitle, legend, stats, filename }
         const pale = item.dot === 'pale';
         root.appendChild(el('circle', {
           cx: x + 6, cy: y - 4, r: 4.5,
-          fill: pale ? EXCLUDED_COLOR : item.dot === 'hollow' ? INK.surface : SERIES_COLORS[0],
-          stroke: item.dot === 'ring' ? INK.primary : item.color || EXCLUDED_COLOR,
-          'stroke-width': 1.5,
+          fill: pale ? R_STYLE.excludedFill
+            : item.dot === 'hollow' ? R_STYLE.bg
+              : item.dot === 'swatch' ? item.color : R_STYLE.pointFill,
+          stroke: item.dot === 'ring' ? INK.primary
+            : pale ? R_STYLE.excludedStroke : item.stroke || R_STYLE.pointStroke,
+          'stroke-width': item.dot === 'ring' ? 1.75 : 1,
         }));
       } else {
         root.appendChild(el('line', {
@@ -261,12 +333,24 @@ export function exportChartPng({ svg, title, subtitle, legend, stats, filename }
     }
   }
 
+  if (note) {
+    y += 6;
+    for (const line of wrapText(note, 10, W - 2 * M)) {
+      y += 14;
+      root.appendChild(text(line, { x: M, y, 'font-size': 10, fill: INK.muted }));
+    }
+  }
+
+  // The figures as the template's caption: red4 bold, right-aligned,
+  // "Label: value; Label: value".
   if (stats && stats.length) {
-    const statLine = stats.map((s) => `${s.label}: ${s.value}`).join('   ·   ');
+    const statLine = stats.map((s) => `${s.label}: ${s.value}`).join('; ');
     y += 8;
-    for (const line of wrapText(statLine, 12, W - 2 * M)) {
-      y += 17;
-      root.appendChild(text(line, { x: M, y, 'font-size': 12, 'font-weight': 600, fill: INK.primary }));
+    for (const line of wrapText(statLine, 10, W - 2 * M)) {
+      y += 15;
+      root.appendChild(text(line, {
+        x: W - M, y, 'font-size': 10, 'font-weight': 700, 'text-anchor': 'end', fill: R_STYLE.caption,
+      }));
     }
   }
 
@@ -281,7 +365,7 @@ export function exportChartPng({ svg, title, subtitle, legend, stats, filename }
     const img = new Image();
     img.onload = () => {
       try {
-        const scale = 2;
+        const scale = EXPORT_PX_WIDTH / W;
         const canvas = document.createElement('canvas');
         canvas.width = W * scale;
         canvas.height = H * scale;
@@ -350,6 +434,9 @@ export function drawChart(spec) {
     empty = 'No sales in the current filter carry the values this chart needs.',
     onPointClick = null,
     pngName = '',
+    // Explanatory notes (adjustment basis, trim, what the toggle reaches).
+    // Kept OUT of the subtitle, which carries the template's criteria line.
+    note = '',
   } = spec;
 
   /** The figures the QMD puts in its caption (median, daily change,
@@ -424,7 +511,9 @@ export function drawChart(spec) {
 
   const xScaleInfo = xIsDate ? dateTicks(xLo, xHi) : niceTicks(xLo, xHi, 6);
   const yScaleInfo = niceTicks(0, yHi, 6);
-  const xFmtTick = xIsDate ? xScaleInfo.format : xAxisFormat;
+  // Dates as the template's ggplot labels them ("Jan-2024"); dateTicks still
+  // decides WHERE the breaks fall.
+  const xFmtTick = xIsDate ? fmtMonYear : xAxisFormat;
 
   const plotW = VB_W - PAD.left - PAD.right;
   const plotH = VB_H - PAD.top - PAD.bottom;
@@ -443,56 +532,55 @@ export function drawChart(spec) {
 
   // ---- gridlines: solid hairlines one step off the surface. Never
   // dashed — a dashed grid reads as a threshold when it is just a grid.
+  // White plot panel, as both template builds draw on white.
+  svg.appendChild(el('rect', {
+    x: 0, y: 0, width: VB_W, height: VB_H, fill: R_STYLE.bg,
+  }));
+  // Gridlines: the template's theme_custom — lightgray hairlines both ways,
+  // no axis lines.
   const grid = el('g');
   for (const t of yScaleInfo.ticks) {
     grid.appendChild(el('line', {
       x1: PAD.left, x2: PAD.left + plotW, y1: sy(t), y2: sy(t),
-      stroke: INK.grid, 'stroke-width': 1,
+      stroke: R_STYLE.grid, 'stroke-width': 0.75,
     }));
   }
   for (const t of xScaleInfo.ticks) {
     if (t < xScaleInfo.lo || t > xScaleInfo.hi) continue;
     grid.appendChild(el('line', {
       x1: sx(t), x2: sx(t), y1: PAD.top, y2: PAD.top + plotH,
-      stroke: INK.grid, 'stroke-width': 1,
+      stroke: R_STYLE.grid, 'stroke-width': 0.75,
     }));
   }
   svg.appendChild(grid);
 
-  // ---- axes
-  svg.appendChild(el('line', {
-    x1: PAD.left, x2: PAD.left + plotW, y1: PAD.top + plotH, y2: PAD.top + plotH,
-    stroke: INK.axis, 'stroke-width': 1,
-  }));
-  svg.appendChild(el('line', {
-    x1: PAD.left, x2: PAD.left, y1: PAD.top, y2: PAD.top + plotH,
-    stroke: INK.axis, 'stroke-width': 1,
-  }));
-
   for (const t of yScaleInfo.ticks) {
     svg.appendChild(text(yAxisFormat(t), {
-      x: PAD.left - 8, y: sy(t) + 4, 'text-anchor': 'end',
-      class: 'chart-tick', fill: INK.muted,
+      x: PAD.left - 8, y: sy(t) + 5, 'text-anchor': 'end',
+      class: 'chart-tick', fill: R_STYLE.tick,
     }));
   }
   for (const t of xScaleInfo.ticks) {
     if (t < xScaleInfo.lo || t > xScaleInfo.hi) continue;
+    // A label on the last tick sits at the right edge of the viewBox; centred
+    // there, "Jan-2028" runs half off the image. Anchor it inward instead.
+    const atRightEdge = sx(t) > VB_W - PAD.right - 30;
     svg.appendChild(text(xFmtTick(t), {
-      x: sx(t), y: PAD.top + plotH + 18, 'text-anchor': 'middle',
-      class: 'chart-tick', fill: INK.muted,
+      x: sx(t), y: PAD.top + plotH + 22, 'text-anchor': atRightEdge ? 'end' : 'middle',
+      class: 'chart-tick', fill: R_STYLE.tick,
     }));
   }
   if (xLabel) {
     svg.appendChild(text(xLabel, {
-      x: PAD.left + plotW / 2, y: VB_H - 8, 'text-anchor': 'middle',
-      class: 'chart-axis-title', fill: INK.secondary,
+      x: PAD.left + plotW / 2, y: VB_H - 10, 'text-anchor': 'middle',
+      class: 'chart-axis-title', fill: R_STYLE.axisTitle,
     }));
   }
   if (yLabel) {
     svg.appendChild(text(yLabel, {
-      x: 14, y: PAD.top + plotH / 2, 'text-anchor': 'middle',
-      class: 'chart-axis-title', fill: INK.secondary,
-      transform: `rotate(-90 14 ${PAD.top + plotH / 2})`,
+      x: 18, y: PAD.top + plotH / 2, 'text-anchor': 'middle',
+      class: 'chart-axis-title', fill: R_STYLE.axisTitle,
+      transform: `rotate(-90 18 ${PAD.top + plotH / 2})`,
     }));
   }
 
@@ -517,13 +605,15 @@ export function drawChart(spec) {
     if (Number.isFinite(ref?.x)) {
       const x = sx(ref.x);
       if (x < PAD.left || x > PAD.left + plotW) continue;
+      // The template's subject markLine: dashed, width 2, bold label in
+      // the line's own colour.
       svg.appendChild(el('line', {
         x1: x, x2: x, y1: PAD.top, y2: PAD.top + plotH,
-        stroke: ref.color || INK.muted, 'stroke-width': 1.5, 'stroke-dasharray': '5 3',
+        stroke: ref.color || INK.muted, 'stroke-width': 2, 'stroke-dasharray': '6 4',
       }));
       if (ref.label) {
         svg.appendChild(text(ref.label, {
-          x: x + 5, y: PAD.top + 12, 'text-anchor': 'start',
+          x: x + 5, y: PAD.top + 12, 'text-anchor': 'start', 'font-weight': 700,
           class: 'chart-ref-label', fill: ref.color || INK.muted,
         }));
       }
@@ -581,25 +671,34 @@ export function drawChart(spec) {
     .sort((a, b) => (LAYER[a.state || 'in'] ?? 2) - (LAYER[b.state || 'in'] ?? 2));
   for (const p of paintOrder) {
     const state = p.state || 'in';
-    const color = p.color || SERIES_COLORS[0];
+    const color = p.color || R_STYLE.pointFill;
+    const stroke = p.stroke || R_STYLE.pointStroke;
     let attrs;
     if (state === 'excluded') {
-      attrs = { fill: EXCLUDED_COLOR, 'fill-opacity': 0.55, stroke: INK.surface, 'stroke-width': 1.5 };
+      // The template's greyed-out clicked point.
+      attrs = {
+        fill: R_STYLE.excludedFill, stroke: R_STYLE.excludedStroke,
+        'stroke-width': 0.75, opacity: R_STYLE.excludedOpacity,
+      };
     } else if (state === 'trimmed') {
-      // Hollow in the series colour: still the same kind of sale, but
-      // outside the band the fit was taken over.
-      attrs = { fill: INK.surface, 'fill-opacity': 1, stroke: color, 'stroke-width': 1.75 };
+      // Hollow: still the same kind of sale, but outside the band the fit
+      // was taken over. (The template has no drawn state for this.)
+      attrs = { fill: R_STYLE.bg, 'fill-opacity': 1, stroke, 'stroke-width': 1.5 };
     } else {
-      attrs = { fill: color, 'fill-opacity': 0.72, stroke: INK.surface, 'stroke-width': 2 };
+      // The template's point: steelblue1 fill, steelblue4 edge, 0.6 alpha.
+      attrs = {
+        fill: color, 'fill-opacity': p.opacity ?? R_STYLE.pointOpacity,
+        stroke, 'stroke-width': 0.75,
+      };
     }
-    // A flagged sale keeps its fill and trades the surface ring for a dark
-    // one — visible at a glance without a fourth colour.
+    // A flagged sale keeps its fill and trades its edge for a heavy dark
+    // ring — visible at a glance without another colour.
     if (p.flagged && state !== 'excluded') {
       attrs.stroke = INK.primary;
-      attrs['stroke-width'] = 1.5;
+      attrs['stroke-width'] = 1.75;
     }
     const c = el('circle', {
-      cx: p.cx.toFixed(2), cy: p.cy.toFixed(2), r: p.r || 4, ...attrs,
+      cx: p.cx.toFixed(2), cy: p.cy.toFixed(2), r: p.r || R_STYLE.pointR, ...attrs,
     });
     dots.appendChild(c);
     p.node = c;
@@ -628,7 +727,14 @@ export function drawChart(spec) {
         // A point-state key ('pale' / 'hollow' / 'ring') — drawn as the dot
         // it describes rather than as a line.
         swatch.classList.add('chart-key-dot', `chart-key-dot-${item.dot}`);
-        if (item.color) swatch.style.borderColor = item.color;
+        if (item.dot === 'swatch') {
+          // A category's own dot (the zoning chart), as the template's
+          // legend keys are points, not lines.
+          swatch.style.background = item.color;
+          swatch.style.borderColor = item.stroke || R_STYLE.zoneStroke;
+        } else if (item.color) {
+          swatch.style.borderColor = item.color;
+        }
       } else {
         swatch.style.background = item.color;
       }
@@ -642,6 +748,13 @@ export function drawChart(spec) {
     figure.appendChild(key);
   }
 
+  if (note) {
+    const p = document.createElement('p');
+    p.className = 'chart-note';
+    p.textContent = note;
+    figure.appendChild(p);
+  }
+
   const strip = statStrip();
   if (strip) figure.appendChild(strip);
 
@@ -653,7 +766,7 @@ export function drawChart(spec) {
     btn.textContent = 'PNG';
     btn.title = 'Download this chart as a PNG image';
     btn.addEventListener('click', () => {
-      exportChartPng({ svg, title, subtitle, legend, stats, filename: pngName })
+      exportChartPng({ svg, title, subtitle, legend, stats, note, filename: pngName })
         .catch((err) => {
           console.warn('Chart PNG export failed', err);
           btn.textContent = 'Failed';

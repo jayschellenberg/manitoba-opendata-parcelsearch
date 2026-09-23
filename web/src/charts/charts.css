@@ -470,3 +470,38 @@ main { padding: 18px 20px 0; }
 
 /* Excluded sales in the table view. */
 #sales-table tr.is-excluded td { color: var(--ink-muted); }
+
+/* ---------- R template look (2026-09-22) ----------
+   Matches Jason's land template: Arial, a red4 bold title, a #333
+   criteria subtitle, white cards, 10px tick/axis text. Values live in
+   chartRender.js R_STYLE; these are the HTML-side twins. */
+.chart-card {
+  background: #ffffff;
+  font-family: Arial, Helvetica, sans-serif;
+}
+.chart-card figcaption h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #8B0000;
+}
+.chart-sub {
+  font-size: 11.5px;
+  color: #333333;
+}
+/* SVG user units: the chart is drawn in a 760-wide viewBox, so these
+   scale with the card. 14-15 units is ggplot 10pt at the export width. */
+.chart-tick { font-size: 14px; }
+.chart-axis-title { font-size: 15px; font-weight: 700; }
+.chart-ref-label { font-size: 14px; }
+.chart-note {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+/* The figures as the template's caption: red4, bold. */
+.chart-stats dd { color: #8B0000; font-weight: 700; }
+.chart-legend { font-size: 11px; color: #333333; }
+.chart-key-dot-pale { background: #cccccc; border-color: #bbbbbb; }
+.chart-key-dot-hollow { background: #ffffff; }
+.chart-key-dot-ring { background: #63B8FF; border-color: #000000 !important; }
+.chart-key-dot-swatch { width: 10px; height: 10px; }
