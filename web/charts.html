@@ -69,6 +69,21 @@
           </select>
         </div>
 
+        <!-- The land template's CMS2: trim each chart's measure to a
+             percentile band and refit the time trend on what is left. -->
+        <div class="ctl">
+          <label class="ctl-check ctl-label-check">
+            <input type="checkbox" id="trim-on" />
+            <span class="ctl-label">Trim to percentiles</span>
+          </label>
+          <div class="ctl-pair">
+            <input type="number" id="trim-lo" min="0" max="100" step="1" aria-label="Low percentile" />
+            <span class="ctl-dash">–</span>
+            <input type="number" id="trim-hi" min="0" max="100" step="1" aria-label="High percentile" />
+          </div>
+          <span class="ctl-hint" id="trim-hint"></span>
+        </div>
+
         <div class="ctl ctl-checks">
           <label class="ctl-check">
             <input type="checkbox" id="freeze" />
@@ -77,6 +92,10 @@
           <label class="ctl-check">
             <input type="checkbox" id="show-table" />
             <span>Table view</span>
+          </label>
+          <label class="ctl-check" title="Sales unticked in the grid, drawn pale. Click one to tick it back in.">
+            <input type="checkbox" id="show-excluded" />
+            <span>Show excluded</span>
           </label>
         </div>
       </div>
@@ -94,6 +113,20 @@
            promise a narrowing it does not do. Total price is the view for
            land-and-building sales, where a rate per acre divides a price
            that is mostly building by land the building sits on. -->
+      <!-- How the loaded sales were narrowed to the ones fitted — the land
+           template's filter waterfall. Collapsed by default; the summary
+           line alone answers "how many did I start with". -->
+      <details id="waterfall-panel" class="waterfall-panel" hidden>
+        <summary id="waterfall-summary">Filter waterfall</summary>
+        <table class="waterfall-table">
+          <thead>
+            <tr><th>Step</th><th class="num">Removed</th><th class="num">Sales left</th><th></th></tr>
+          </thead>
+          <tbody id="waterfall-body"></tbody>
+        </table>
+        <p class="waterfall-foot">Click any dot on a chart to untick that sale in the grid; click a pale one to tick it back in.</p>
+      </details>
+
       <div class="charts-tabs" role="tablist" aria-label="Chart set">
         <button type="button" id="tab-rates" role="tab" aria-selected="true"
                 aria-controls="charts-grid"

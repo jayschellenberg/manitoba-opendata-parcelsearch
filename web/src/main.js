@@ -63,6 +63,7 @@ import {
 } from './lib/salesDedupe.js';
 import { parseSalesCsv } from './lib/salesCsvParse.js';
 import { saleRecordsFromRows } from './lib/salesCharts.js';
+import { buildSalesWaterfall } from './lib/salesWaterfall.js';
 import { initMultiSelect } from './lib/multiSelect.js';
 import {
   primaryPropertyTree,
@@ -1242,6 +1243,22 @@ let lastWithheldGeometry = null;
 // nothing in that state, matching the old runSearch-only behaviour.
 let csvFullRows = null;
 let csvFullBaseMsg = '';
+// The filter waterfall of the last sales filter pass — how many sales each
+// filter removed, in SALES_FILTER_STEPS order. Sent to the charts tab with
+// the sale records; null until a sales pass has run.
+let lastSalesWaterfall = null;
+// The steps of filterCsvRowsByOtherSearches, in the order its tests run.
+// Every fail('…') label there must be one of these; a label missing here
+// would make indexOf -1 and the row would count as passing.
+const SALES_FILTER_STEPS = [
+  'Municipality', 'Nominal sales', 'Far-flung sales', 'Water influence',
+  'Zoning/Dev Plan changes', 'Plan #', 'Street name', 'N1 match',
+  'Parcels per sale', '$/Acre range', 'Sale price range', 'Dwelling units',
+  'Drawn area', 'Vacant / improved', 'Max Sale/Asmt', 'Size range',
+  'Sale date range', 'Assessment class', 'Zoning code', 'Distance from subject',
+  'Zoning type', 'Primary property / sale type', 'Zone category',
+  'Zoning/Dev Plan status',
+];
 // Invalidates in-flight sales enrichment when a newer upload or a regular
 // property search replaces the displayed parcel set.
 let salesEnrichmentGeneration = 0;
@@ -4776,6 +4793,7 @@ async function runSearch() {
   csvFullRows = null;
   csvFullBaseMsg = '';
   csvMatchedMunis = null;
+  lastSalesWaterfall = null;
   // The narrowing baseline goes with the rows it described. Left standing,
   // it would let the next result set be narrowed against a municipality set
   // that search never loaded.
@@ -7122,8 +7140,12 @@ function filterCsvRowsByOtherSearches(rows) {
   // Municipality ticks, applied only in the narrowing direction.
   const muniNarrow = salesMuniNarrowSet();
 
-  return rows.filter((row) => {
+  // Which step dropped each row, for the filter waterfall. Labels are the
+  // SALES_FILTER_STEPS names, in the order the tests below run.
+  const stepOfRow = new Array(rows.length).fill(-1);
+  const kept = rows.filter((row, rowIdx) => {
     const p = row.parcel?.properties || {};
+    const fail = (label) => { stepOfRow[rowIdx] = SALES_FILTER_STEPS.indexOf(label); return false; };
 
     // Unticked municipality. First test in the pass because it is the
     // cheapest and the most decisive - a whole municipality's worth of rows
@@ -7132,7 +7154,7 @@ function filterCsvRowsByOtherSearches(rows) {
     // the same rule the water filter follows.
     if (muniNarrow) {
       const no = rowMuniNo(row);
-      if (no != null && !muniNarrow.has(no)) return false;
+      if (no != null && !muniNarrow.has(no)) return fail('Municipality');
     }
 
     // Nominal sales — $0 / $1 family and corrective transfers, no market
@@ -7141,25 +7163,25 @@ function filterCsvRowsByOtherSearches(rows) {
     // unparseable consideration: "SEE DOCUMENT" is unknown, not nominal,
     // and silently dropping unknowns from a comp set would be worse than
     // leaving one nominal sale in view.
-    if (excludeNominal && isNominalSale(p)) return false;
+    if (excludeNominal && isNominalSale(p)) return fail('Nominal sales');
 
     // Far-flung sales — a portfolio or estate transaction whose blended
     // rate isn't a local comparable. isFarFlungSale fails open on an
     // unmeasurable span, so a parcel whose geometry didn't load is
     // never dropped by this filter.
-    if (farFlungThreshold != null && isFarFlungSale(p, farFlungThreshold)) return false;
+    if (farFlungThreshold != null && isFarFlungSale(p, farFlungThreshold)) return fail('Far-flung sales');
 
     // Water influence — cheap stamped-property test, no fetch.
     if ((wantFront || wantNear) && p._waterLoaded) {
       const ok = (wantFront && isWaterfront(p._water))
               || (wantNear  && isNearWater(p._water));
-      if (!ok) return false;
+      if (!ok) return fail('Water influence');
     }
 
     // Changes = Filter — same stamped-property shape as water influence,
     // ANDed with it and with everything else here. Unknown (never joined
     // to zoning) passes; refilterCsvIfActive says so in the count line.
-    if (!rowPassesChangesFilter(p, getChangesMode())) return false;
+    if (!rowPassesChangesFilter(p, getChangesMode())) return fail('Zoning/Dev Plan changes');
 
     // Plan # filter — runs before the other CSV-mode checks because
     // it's the cheapest predicate. Substring-matches against both
@@ -7172,12 +7194,12 @@ function filterCsvRowsByOtherSearches(rows) {
     if (planFilter) {
       const plan = String(p._plan || '').toUpperCase();
       const csvLegal = String(p._csvLegal || '').toUpperCase();
-      if (!plan.includes(planFilter) && !csvLegal.includes(planFilter)) return false;
+      if (!plan.includes(planFilter) && !csvLegal.includes(planFilter)) return fail('Plan #');
     }
 
     // Street Name filter — same shape as the Plan # filter above.
     if (streetVariants.length > 0) {
-      if (!addressMatchesVariants(p.Property_Address, streetVariants)) return false;
+      if (!addressMatchesVariants(p.Property_Address, streetVariants)) return fail('Street name');
     }
 
     // N1 match filter — row-level, not group-level: a multi-parcel sale
@@ -7185,7 +7207,7 @@ function filterCsvRowsByOtherSearches(rows) {
     // and the unmatched rows are exactly the queue being asked for.
     if (n1Mode !== 'any') {
       const hasN1 = !!p._n1Id;
-      if (n1Mode === 'matched' ? !hasN1 : hasN1) return false;
+      if (n1Mode === 'matched' ? !hasN1 : hasN1) return fail('N1 match');
     }
 
     // Parcels-per-sale filter. Group-level by construction: _saleGroupSize is
@@ -7201,7 +7223,7 @@ function filterCsvRowsByOtherSearches(rows) {
     // the two options always account for every sale on the table.
     if (groupSizeMode !== 'any') {
       const isMulti = Number(p._saleGroupSize) > 1;
-      if (groupSizeMode === 'multi' ? !isMulti : isMulti) return false;
+      if (groupSizeMode === 'multi' ? !isMulti : isMulti) return fail('Parcels per sale');
     }
 
     // $/Acre filter — bounds against the sale-group rate. Rows
@@ -7210,7 +7232,7 @@ function filterCsvRowsByOtherSearches(rows) {
     // the size-range and date "missing = exclude" semantics.
     if (ppaActive) {
       const ppa = Number(p._saleGroupPpa);
-      if (!Number.isFinite(ppa) || ppa < ppaLo || ppa > ppaHi) return false;
+      if (!Number.isFinite(ppa) || ppa < ppaLo || ppa > ppaHi) return fail('$/Acre range');
     }
 
     // Total sale price filter. A sale whose Consideration didn't parse
@@ -7220,16 +7242,16 @@ function filterCsvRowsByOtherSearches(rows) {
     // user has asked for a price range.
     if (priceActive) {
       const price = Number(p._saleGroupTotalPriceNum);
-      if (!Number.isFinite(price) || price < priceLo || price > priceHi) return false;
+      if (!Number.isFinite(price) || price < priceLo || price > priceHi) return fail('Sale price range');
     }
 
     // DU filter — directly on the parcel field, no enrichment needed.
     if (duMode === 'zero') {
       const du = Number(p.Dwelling_Units);
-      if (!(Number.isFinite(du) && du === 0)) return false;
+      if (!(Number.isFinite(du) && du === 0)) return fail('Dwelling units');
     } else if (duMode === 'min' && Number.isFinite(duMin) && duMin > 0) {
       const du = Number(p.Dwelling_Units);
-      if (!(Number.isFinite(du) && du >= duMin)) return false;
+      if (!(Number.isFinite(du) && du >= duMin)) return fail('Dwelling units');
     }
 
     // Drawn-shape area filter. A row must have a placeable centroid
@@ -7238,7 +7260,7 @@ function filterCsvRowsByOtherSearches(rows) {
     // passesShapeFilter for the include/exclude semantics).
     if (drawnShapes.length > 0) {
       const c = computeCentroid(row.parcel);
-      if (!passesShapeFilter(c, drawnShapes)) return false;
+      if (!passesShapeFilter(c, drawnShapes)) return fail('Drawn area');
     }
 
     // Vacant/improved selector (sales-CSV mode only — the control is
@@ -7252,7 +7274,7 @@ function filterCsvRowsByOtherSearches(rows) {
     // rather than being guessed into one side.
     const vacantMode = $vacantImproved?.value || 'all';
     if (vacantMode === 'vacant') {
-      if (p._saleGroupAllVacant !== true) return false;
+      if (p._saleGroupAllVacant !== true) return fail('Vacant / improved');
       // Max Sale/Asmt ratio cap. Gated by Vacant Land Only because
       // the use-case is "buildings sold before the assessment
       // caught up", which is part of the vacant-proxy workflow.
@@ -7262,10 +7284,10 @@ function filterCsvRowsByOtherSearches(rows) {
         : parseFloat(saleAsmtMaxRaw);
       if (saleAsmtMax != null && Number.isFinite(saleAsmtMax) && saleAsmtMax > 0) {
         const ratio = Number(p._saleGroupSaleToAsmt);
-        if (Number.isFinite(ratio) && ratio > saleAsmtMax) return false;
+        if (Number.isFinite(ratio) && ratio > saleAsmtMax) return fail('Max Sale/Asmt');
       }
     } else if (vacantMode === 'improved') {
-      if (p._saleGroupAnyImproved !== true) return false;
+      if (p._saleGroupAnyImproved !== true) return fail('Vacant / improved');
     }
 
     // Size range filter (sales-CSV mode only — the row is hidden by
@@ -7289,14 +7311,14 @@ function filterCsvRowsByOtherSearches(rows) {
       // area instead (about 63% of them) drops out entirely, which is
       // the point: an area row has no frontage to filter on.
       const ff = parseRollFrontageFeet(p.Frontage_or_Area);
-      if (ff == null || ff < sizeLoAc || ff > sizeHiAc) return false;
+      if (ff == null || ff < sizeLoAc || ff > sizeHiAc) return fail('Size range');
     } else if (sizeActive) {
       const groupAc = Number(p._saleGroupTotalAcres);
       const parcelAc = Number.isFinite(groupAc) && groupAc > 0
         ? groupAc
         : parcelAcres(row.parcel);
-      if (p._saleGroupAcresIncomplete) return false;
-      if (!Number.isFinite(parcelAc) || parcelAc < sizeLoAc || parcelAc > sizeHiAc) return false;
+      if (p._saleGroupAcresIncomplete) return fail('Size range');
+      if (!Number.isFinite(parcelAc) || parcelAc < sizeLoAc || parcelAc > sizeHiAc) return fail('Size range');
     }
 
     // Sale-date range. Parses the CSV's date string fresh each time;
@@ -7305,16 +7327,16 @@ function filterCsvRowsByOtherSearches(rows) {
     // imperceptible.
     if (dateActive) {
       const d = parseSaleDate(p._saleDate);
-      if (!d) return false;  // missing/malformed date excluded when filter is on
+      if (!d) return fail('Sale date range');  // missing/malformed date excluded when filter is on
       const t = d.getTime();
-      if (t < dateFromMs || t > dateToMs) return false;
+      if (t < dateFromMs || t > dateToMs) return fail('Sale date range');
     }
 
     // Class filter (multi-select). Drops rows whose dominant class
     // isn't in the selected Set; rows with no assessment data fail
     // when at least one class is selected.
     if (classFilterSet.size > 0) {
-      if (!p._asmtClass || !classFilterSet.has(p._asmtClass)) return false;
+      if (!p._asmtClass || !classFilterSet.has(p._asmtClass)) return fail('Assessment class');
     }
 
     // Zoning-code filter (multi-select). Matches on EITHER of the
@@ -7336,7 +7358,7 @@ function filterCsvRowsByOtherSearches(rows) {
           || (Number.isFinite(z.ratio) && z.ratio >= ZONE2_MIN_RATIO))
         .map((z) => formatZoneCode(z.feature?.properties))
         .filter(Boolean);
-      if (!codes.some((c) => zoneCodeFilterSet.has(String(c).trim()))) return false;
+      if (!codes.some((c) => zoneCodeFilterSet.has(String(c).trim()))) return fail('Zoning code');
     }
 
     // Distance-from-subject filter. Sales without a computed
@@ -7344,20 +7366,20 @@ function filterCsvRowsByOtherSearches(rows) {
     // ambiguous and the safe default is "exclude unknown."
     if (distActive) {
       const d = Number(p._distanceKm);
-      if (!Number.isFinite(d) || d > distMaxRaw) return false;
+      if (!Number.isFinite(d) || d > distMaxRaw) return fail('Distance from subject');
     }
 
     // Zoning Type ticks (the sales-tab multi-select). Any of the row's
     // zones matching is enough — a parcel straddling two zones genuinely
     // is both. Rows with no zoning join read as "(no category)", so they
     // are findable rather than silently dropped.
-    if (!rowMatchesZoneCategories(row.zoning, zoneCatFilterSet)) return false;
+    if (!rowMatchesZoneCategories(row.zoning, zoneCatFilterSet)) return fail('Zoning type');
 
     // Primary Property ticks. The work was done in the pre-pass above;
     // this is a Set membership test on the row's sale group. Sales with no
     // descriptor are not dropped — they are bare land, 56.4% of the
     // archive, and reachable via their family's "(no primary structure)".
-    if (!rowPassesPrimaryProperty(row, primaryPropGroups, primaryPropAccessors)) return false;
+    if (!rowPassesPrimaryProperty(row, primaryPropGroups, primaryPropAccessors)) return fail('Primary property / sale type');
 
     // Zone category — needs zoning enrichment. If the row has no
     // zoning matches at all (enrichment skipped via the >250 button
@@ -7367,21 +7389,24 @@ function filterCsvRowsByOtherSearches(rows) {
       const cats = (row.zoning || [])
         .map((z) => z.feature?.properties?.ZONE_CATEGORY)
         .filter(Boolean);
-      if (!cats.includes(zoneCat)) return false;
+      if (!cats.includes(zoneCat)) return fail('Zone category');
     }
 
     // Status filter — same realStr / different-bylaw logic the SQL
     // path uses in arcgis.js's resolveOverlayFilter. Reads off the
     // top zoning / dev-plan polygon of each row.
     if (status === 'zoning' || status === 'both') {
-      if (!isZoningChanged(row.zoning?.[0]?.feature?.properties || {})) return false;
+      if (!isZoningChanged(row.zoning?.[0]?.feature?.properties || {})) return fail('Zoning/Dev Plan status');
     }
     if (status === 'devplan' || status === 'both') {
-      if (!isDevPlanChanged(row.devPlan?.[0]?.feature?.properties || {})) return false;
+      if (!isDevPlanChanged(row.devPlan?.[0]?.feature?.properties || {})) return fail('Zoning/Dev Plan status');
     }
 
     return true;
   });
+  lastSalesWaterfall = buildSalesWaterfall(rows, (i) => stepOfRow[i], SALES_FILTER_STEPS,
+    (r) => r.parcel?.properties?._saleGroupId);
+  return kept;
 }
 
 function isZoningChanged(z) {
@@ -12841,6 +12866,7 @@ function clearSalesResults() {
   csvFullRows = null;
   csvFullBaseMsg = '';
   csvMatchedMunis = null;
+  lastSalesWaterfall = null;
   // The narrowing baseline goes with the rows it described. Left standing,
   // it would let the next result set be narrowed against a municipality set
   // that search never loaded.
@@ -15373,6 +15399,26 @@ function applySelectionToMapAndCharts() {
   renderResultsStatus();
 }
 
+/**
+ * A dot clicked in the charts tab: untick (or re-tick) that sale's rows in
+ * the grid. The charts tab sends the row keys it was given, and only keys
+ * that name a row on the grid right now are acted on — a message from a
+ * tab still showing an older result set must not cull rows it never saw.
+ */
+function applyChartsExclusion(msg) {
+  if (!Array.isArray(msg?.keys) || typeof msg.excluded !== 'boolean') return;
+  const live = new Set(currentRows.map((r) => saleRowKey(r?.parcel?.properties)).filter(Boolean));
+  const keys = msg.keys.filter((k) => typeof k === 'string' && live.has(k));
+  if (!keys.length) return;
+  for (const k of keys) {
+    if (msg.excluded) deselectedSaleKeys.add(k);
+    else deselectedSaleKeys.delete(k);
+  }
+  renderTable(currentRows, { resetPage: false });
+  applySelectionToMapAndCharts();
+  syncSelectAllBox();
+}
+
 /** Build the favourites star cell for a row. Click toggles the
  *  in-memory + localStorage favourite state and stops the click
  *  from bubbling up to the row-click handler (which would otherwise
@@ -15908,6 +15954,7 @@ function getChartsChannel() {
     // than waiting for the next filter change.
     chartsChannel.addEventListener('message', (e) => {
       if (e.data?.type === 'request') publishSalesCharts();
+      else if (e.data?.type === 'set-excluded') applyChartsExclusion(e.data);
     });
   } catch {
     chartsChannel = null; // no BroadcastChannel — the button just won't feed
@@ -15922,14 +15969,20 @@ function publishSalesCharts() {
   // set on a plain Property Search is deliberate: it clears the tab
   // instead of leaving stale sales on screen next to unrelated results.
   const inSalesMode = $resultsTable?.classList.contains('sales-mode');
-  // Culled rows are excluded from the plots, so the charts tab and the map
-  // always agree about which sales are in play.
-  const rows = inSalesMode ? currentRows.filter(rowIsSelected) : [];
+  // Every row goes over, culled ones included: the charts tab draws an
+  // unticked sale as a greyed-out dot, left out of every fit and median, so
+  // it can be clicked back in (Jason, 2026-09-22 — the land template's
+  // click-to-exclude). Which sales are IN still comes from the grid's ticks
+  // alone, so the charts, the map and the CSV export agree about it.
+  const rows = inSalesMode ? currentRows : [];
+  const selectedRows = inSalesMode ? currentRows.filter(rowIsSelected).length : 0;
   let records = [];
   try {
     records = saleRecordsFromRows(rows, {
       parseDate: parseSaleDate,
       centroid: parcelCentrePoint,
+      rowKey: (row) => saleRowKey(row?.parcel?.properties),
+      isSelected: rowIsSelected,
     });
   } catch (err) {
     console.warn('Sales charts projection failed', err);
@@ -15941,7 +15994,10 @@ function publishSalesCharts() {
       type: 'sales',
       records,
       meta: {
-        parcelCount: rows.length,
+        parcelCount: selectedRows,
+        // How the loaded sales were narrowed to the ones on screen. Only
+        // meaningful in sales mode, where csvFullRows is what was filtered.
+        waterfall: inSalesMode ? lastSalesWaterfall : null,
         subject: subjectCentroid
           ? {
               lat: subjectCentroid.lat,

@@ -399,3 +399,74 @@ main { padding: 18px 20px 0; }
   font-weight: 600;
 }
 #sales-table tbody tr:hover { background: var(--plane); }
+
+/* ---------- land-template CMS tools (2026-09-22) ---------- */
+
+.ctl-label-check { gap: 6px; }
+.ctl-label-check .ctl-label { margin: 0; }
+.ctl-dash { align-self: center; color: var(--ink-muted); }
+#trim-lo, #trim-hi { width: 4.2em; }
+
+/* Dots are clickable (untick / re-tick the sale in the grid). */
+.chart-svg.is-clickable { cursor: pointer; }
+
+/* Point-state legend keys, drawn as the dot they describe. */
+.chart-key-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid transparent;
+  background: none;
+}
+.chart-key-dot-pale { background: #c3c2b7; border-color: #c3c2b7; }
+.chart-key-dot-hollow { background: var(--surface); }
+.chart-key-dot-ring { background: #2a78d6; border-color: var(--ink) !important; }
+
+/* Per-chart PNG download, top-right of the card. */
+.chart-png-btn {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  padding: 2px 8px;
+  font: 600 11px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--ink-2);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.chart-png-btn:hover { color: var(--ink); border-color: var(--ink-muted); }
+.chart-png-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chart-card figcaption { padding-right: 52px; }
+
+/* Filter waterfall. */
+.waterfall-panel {
+  margin: 0 0 14px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+.waterfall-panel summary { cursor: pointer; font-weight: 600; }
+.waterfall-table {
+  margin: 10px 0 4px;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.waterfall-table th,
+.waterfall-table td { padding: 3px 18px 3px 0; text-align: left; border-bottom: 1px solid var(--rule); }
+.waterfall-table th {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+.waterfall-table .num { text-align: right; }
+.waterfall-table .note { color: var(--ink-muted); }
+.waterfall-table tr.is-total td { font-weight: 600; }
+.waterfall-foot { margin: 6px 0 0; color: var(--ink-muted); font-size: 11.5px; }
+
+/* Excluded sales in the table view. */
+#sales-table tr.is-excluded td { color: var(--ink-muted); }
