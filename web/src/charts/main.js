@@ -27,7 +27,11 @@ import {
   percentileTrim, saleAsmtFlag, TRIM_MIN_SALES,
 } from '../lib/salesCharts.js';
 import {
-  drawChart, ZONE_COLORS, OTHER_COLOR, INK, R_STYLE, slugify,
+  saleWaterFacts, boxStats, waterPremium, pairedSales, WATER_GROUPS,
+} from '../lib/salesWater.js';
+import { WATER_CLASSES, WATER_DETECTION_LIMIT_FT } from '../lib/water.js';
+import {
+  drawChart, drawBoxChart, drawTableCard, ZONE_COLORS, OTHER_COLOR, INK, R_STYLE, slugify,
   fmtMoney0, fmtMoney2, fmtNum, fmtDate, fmtAxisDollar, fmtAxisComma, fmtMonYear,
 } from '../lib/chartRender.js';
 
@@ -49,6 +53,7 @@ const els = {
   ratesHint: $('rates-hint'),
   tabRates: $('tab-rates'),
   tabTotal: $('tab-total'),
+  tabWater: $('tab-water'),
   effDate: $('eff-date'),
   ratesNominal: $('rates-nominal'),
   ratesAdjusted: $('rates-adjusted'),
@@ -261,6 +266,13 @@ function tooltipRows(rec, pt) {
       `${fmtNum(d)} km`]);
   }
   if (rec.zone) rows.push(['Zoning', rec.zone]);
+  if (opts.tab === 'water') {
+    const w = waterOf(rec);
+    if (w.group) rows.push(['Water', w.cls && w.cls !== w.group ? `${w.group} · ${w.cls}` : w.group]);
+    if (w.body) rows.push(['Water body', w.body]);
+    if (w.distFt != null) rows.push(['To water', `${fmtNum(w.distFt)} ft`]);
+    if (w.flood) rows.push(['Flood', w.flood]);
+  }
   const who = rec.address || (rec.rolls || []).join(', ');
   if (who) rows.push([rec.muni || 'Parcel', who]);
   if (!opts.frozen && rec.keys?.length) {
@@ -383,7 +395,9 @@ function distContext() {
 
 /** Dispatch to the active tab's builder. */
 function buildCharts() {
-  return opts.tab === 'total' ? buildTotalCharts() : buildRateCharts();
+  if (opts.tab === 'total') return buildTotalCharts();
+  if (opts.tab === 'water') return buildWaterCharts();
+  return buildRateCharts();
 }
 
 /**
@@ -1077,13 +1091,279 @@ function buildTotalCharts() {
   return charts;
 }
 
+// ---------- water tab ----------------------------------------------
+
+/** Per-render cache of each sale's water facts (lib/salesWater.js). */
+let waterCache = new Map();
+function waterOf(rec) {
+  if (!waterCache.has(rec.saleId)) waterCache.set(rec.saleId, saleWaterFacts(rec));
+  return waterCache.get(rec.saleId);
+}
+
+/** Colours for the three water groups: the grid's water ramp for the two
+ *  water groups, the template's Other grey for dry land. */
+const WATER_GROUP_COLORS = {
+  Waterfront: WATER_CLASSES[1].color,
+  'Near water': WATER_CLASSES[3].color,
+  'No water': OTHER_COLOR,
+};
+
+const pct1 = (v) => (Number.isFinite(v) ? `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)}%` : '—');
+
+/**
+ * The land template's water tabs (LandStatic.qmd ~8313-8760): sales grouped
+ * Waterfront / Near water / No water, box plots by group, class, flood status
+ * and water body, scatters by size and by distance to water, and the summary,
+ * water-premium and paired-sales tables.
+ *
+ * Everything is on the current size unit's rate ($/acre, $/SF or $/front
+ * foot), time-adjusted when the toggle says so, over the same comparable set
+ * (CMS1, or CMS2 when the trim is on) as the Land rates tab.
+ */
+function buildWaterCharts() {
+  const metric = areaMetric();
+  const areaFmt = areaMoneyFmt();
+  const perUnit = unitSpec().perUnit;
+  const cms = cmsFor(metric);
+  const adj = adjusterFor(cms);
+  const rate = adj.adjust;
+  const size = (rec) => rec[sizeField()];
+  const yWord = adj.adjusted ? `Adjusted Price per ${perUnit}` : `Price per ${perUnit}`;
+  const criteria = criteriaLine(cms, adj.adjusted);
+  const charts = [];
+
+  const unknown = activeRecords().filter((r) => !waterOf(r).group).length;
+  const unknownNote = unknown
+    ? `${unknown} sale${unknown === 1 ? '' : 's'} without water data are left out — still loading in the `
+      + 'main window, or no water data is published for the municipality.'
+    : '';
+
+  /** Box-plot groups from a key function, 'in' points fitting the box. */
+  const boxGroups = (keyOf, order = null, minN = 2, maxGroups = Infinity) => {
+    const by = new Map();
+    for (const rec of drawnRecords()) {
+      const key = keyOf(rec);
+      const v = rate(rec);
+      if (key == null || !Number.isFinite(v) || v <= 0) continue;
+      const flag = saleAsmtFlag(rec.flagRatio);
+      if (!by.has(key)) by.set(key, []);
+      by.get(key).push({
+        v, rec, state: cms.stateOf(rec), flagged: flag !== '' && flag !== 'No assessment',
+      });
+    }
+    let keys = [...by.keys()];
+    const inCount = (k) => by.get(k).filter((p) => p.state === 'in').length;
+    keys = keys.filter((k) => inCount(k) >= minN);
+    if (order) keys.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    else keys.sort((a, b) => inCount(b) - inCount(a) || String(a).localeCompare(String(b)));
+    const dropped = [...by.keys()].length - keys.length;
+    keys = keys.slice(0, maxGroups);
+    return {
+      groups: keys.map((k) => ({
+        label: k,
+        color: WATER_GROUP_COLORS[k],
+        points: by.get(k),
+        stats: boxStats(by.get(k).filter((p) => p.state === 'in').map((p) => p.v)),
+      })),
+      dropped: dropped + Math.max(0, [...by.keys()].length - dropped - maxGroups),
+    };
+  };
+  const box = (spec) => drawBoxChart({
+    tooltipRows,
+    onPointClick: opts.frozen ? null : onPointClick,
+    pngName: pngName(spec.title),
+    valueFormat: areaFmt,
+    axisFormat: fmtAxisDollar,
+    valueLabel: yWord,
+    subtitle: criteria,
+    ...spec,
+  });
+
+  // 1. By water group — the headline comparison.
+  {
+    const { groups } = boxGroups((r) => waterOf(r).group, WATER_GROUPS, 1);
+    charts.push(box({
+      title: `Price per ${perUnit} by Water Influence`,
+      note: sub('Waterfront = any parcel in the sale has frontage; Near water = near but without frontage.',
+        adj.note, unknownNote),
+      groups,
+      empty: 'No sales in the current filter carry water-influence data and a usable rate.',
+    }));
+  }
+
+  // 2. By detection class, strongest first.
+  {
+    const order = [...WATER_CLASSES.map((c) => c.label), 'No water'];
+    const { groups, dropped } = boxGroups((r) => waterOf(r).cls, order);
+    charts.push(box({
+      title: `Price per ${perUnit} by Water Class`,
+      note: sub('Classes with fewer than 2 sales are left out.',
+        dropped ? `${dropped} class${dropped === 1 ? '' : 'es'} omitted.` : '', adj.note),
+      groups,
+    }));
+  }
+
+  // 3. By flood status.
+  {
+    const { groups, dropped } = boxGroups((r) => waterOf(r).flood);
+    charts.push(box({
+      title: `Price per ${perUnit} by Flood Status`,
+      note: sub('Most severe flood layer any parcel in the sale touches. Groups with fewer than 2 sales are left out.',
+        dropped ? `${dropped} omitted.` : '', adj.note),
+      groups,
+      empty: 'No flood-layer data for these sales: the municipality has no published flood shard '
+        + '(often because no flood layer reaches it), so flood status is unknown rather than "None".',
+    }));
+  }
+
+  // 4. By water body (at least 2 sales per body, as the template).
+  {
+    const { groups, dropped } = boxGroups((r) => waterOf(r).body, null, 2, 10);
+    charts.push(box({
+      title: `Price per ${perUnit} by Water Body`,
+      note: sub('The ten water bodies with the most sales, at least 2 each.',
+        dropped ? `${dropped} other water bod${dropped === 1 ? 'y' : 'ies'} omitted.` : '', adj.note),
+      groups,
+      empty: 'No water body has 2 or more sales in the current filter.',
+    }));
+  }
+
+  // 5. By size, coloured by water group, a straight line per group.
+  {
+    const pts = pointsFor(cms, size, rate, (r) => WATER_GROUP_COLORS[waterOf(r).group] || null)
+      .filter((p) => waterOf(p.rec).group);
+    const fits = [];
+    for (const g of WATER_GROUPS) {
+      const lin = fitLinear(inOnly(pts).filter((p) => waterOf(p.rec).group === g).map((p) => ({ x: p.x, y: p.y })));
+      if (lin) fits.push({ predict: lin.predict, color: WATER_GROUP_COLORS[g], label: `${g} trend` });
+    }
+    const legend = [
+      ...WATER_GROUPS.filter((g) => pts.some((p) => waterOf(p.rec).group === g))
+        .map((g) => ({ label: g, color: WATER_GROUP_COLORS[g], dot: 'swatch' })),
+      ...fits.map((f) => ({ label: f.label, color: f.color })),
+      ...stateLegend(pts),
+    ];
+    charts.push(chart({
+      title: `Price per ${perUnit} by Size and Water Influence`,
+      subtitle: criteria,
+      note: sub('A straight trend per group; the gap between the lines at a given size is the water effect.', adj.note),
+      points: pts,
+      xLabel: sizeAxisLabel(), yLabel: yWord,
+      yFormat: areaFmt, yAxisFormat: fmtAxisDollar, xAxisFormat: fmtAxisComma,
+      fits, legend: legend.length > 1 ? legend : null,
+      refLines: subjectRef(),
+      stats: sizeStats(pts, adj.adjusted, areaFmt),
+    }));
+  }
+
+  // 6. By distance to water.
+  {
+    const pts = pointsFor(cms, (r) => waterOf(r).distFt, rate,
+      (r) => WATER_GROUP_COLORS[waterOf(r).group] || null);
+    const fits = fitsFor(pts, { curve: 'none' });
+    charts.push(chart({
+      title: `Price per ${perUnit} by Distance to Water`,
+      subtitle: criteria,
+      note: sub(`Only parcels within ${WATER_DETECTION_LIMIT_FT} ft of water carry a distance.`, adj.note),
+      points: pts,
+      xLabel: 'Distance to Water (ft)', yLabel: yWord,
+      yFormat: areaFmt, yAxisFormat: fmtAxisDollar, xAxisFormat: fmtAxisComma,
+      fits, legend: legendFor(fits, pts),
+      stats: spreadStats(pts, {
+        xName: 'Median distance', xFormat: (v) => `${fmtNum(v)} ft`, adjusted: adj.adjusted, yFormat: areaFmt,
+      }),
+      empty: 'No sales in the current filter are within the water detection distance.',
+    }));
+  }
+
+  // 7. Summary by group.
+  {
+    const rows = [];
+    for (const g of WATER_GROUPS) {
+      const recs = cms.fitted.filter((r) => waterOf(r).group === g);
+      if (!recs.length) continue;
+      const nominal = recs.map((r) => r[metric]).filter((v) => v > 0);
+      const adjusted = recs.map(rate).filter((v) => v > 0);
+      rows.push([
+        g, String(recs.length),
+        fmtNumOr(median(recs.map(size))),
+        areaFmt(median(nominal)),
+        adj.adjusted ? areaFmt(median(adjusted)) : '—',
+        fmtMoney0(median(recs.map((r) => r.price))),
+      ]);
+    }
+    charts.push(drawTableCard({
+      title: 'Water Influence Summary',
+      subtitle: criteria,
+      columns: [
+        { label: 'Group' }, { label: 'Sales', num: true }, { label: `Median ${unitSpec().range}`, num: true },
+        { label: `Median $/${areaUnitLabel()}`, num: true }, { label: `Median adj. $/${areaUnitLabel()}`, num: true },
+        { label: 'Median price', num: true },
+      ],
+      rows,
+      note: unknownNote,
+      empty: 'No sales in the current filter carry water-influence data.',
+    }));
+  }
+
+  // 8. Water premium regression.
+  {
+    const prem = waterPremium(cms.fitted
+      .map((r) => ({ rate: rate(r), size: size(r), group: waterOf(r).group })));
+    const rows = prem ? prem.groups.map((g) => [
+      g.group, String(g.n), pct1(g.premium), `${pct1(g.lo)} to ${pct1(g.hi)}`,
+    ]) : [];
+    charts.push(drawTableCard({
+      title: 'Water Premium',
+      subtitle: `log(${yWord}) ~ log(size) + water group, against ${prem?.baseN ?? 0} no-water sales`,
+      columns: [{ label: 'Group' }, { label: 'Sales', num: true }, { label: 'Premium vs no water', num: true }, { label: '95% range', num: true }],
+      rows,
+      note: prem
+        ? `n = ${prem.n}, R² = ${prem.r2.toFixed(2)}, size elasticity ${prem.sizeElasticity.toFixed(2)}. `
+          + 'Controls for size, since waterfront lots are often smaller; a range that spans 0% is not a measured premium.'
+        : '',
+      empty: 'Needs sales in the No water group and at least one water group, each with a size.',
+    }));
+  }
+
+  // 9. Paired sales.
+  {
+    const items = cms.fitted.map((r) => ({
+      rec: r, size: size(r), rate: rate(r), group: waterOf(r).group,
+    }));
+    const pairs = pairedSales(items);
+    const who = (r) => r.address || (r.rolls || []).join(', ');
+    const rows = pairs.map((p) => [
+      who(p.wet.rec), p.wet.rec.dateText || fmtDate(p.wet.rec.dateMs), unitSpec().sizeText(p.wet.size), areaFmt(p.wet.rate),
+      who(p.dry.rec), unitSpec().sizeText(p.dry.size), areaFmt(p.dry.rate), pct1(p.diff),
+    ]);
+    const medDiff = median(pairs.map((p) => p.diff));
+    charts.push(drawTableCard({
+      title: 'Paired Sales: Waterfront vs No Water',
+      subtitle: 'Each waterfront sale paired with the no-water sale closest in size (half to double its size)',
+      columns: [
+        { label: 'Waterfront sale' }, { label: 'Sold' }, { label: 'Size', num: true }, { label: `$/${areaUnitLabel()}`, num: true },
+        { label: 'Paired dry sale' }, { label: 'Size', num: true }, { label: `$/${areaUnitLabel()}`, num: true },
+        { label: 'Difference', num: true },
+      ],
+      rows,
+      note: pairs.length ? `Median difference across ${pairs.length} pair${pairs.length === 1 ? '' : 's'}: ${pct1(medDiff)}. ${adj.note}` : '',
+      empty: 'No waterfront sale has a no-water sale within half to double its size.',
+    }));
+  }
+
+  return charts;
+}
+
+const fmtNumOr = (v) => (Number.isFinite(v) ? fmtNum(v) : '—');
+
 // ---------- table view ---------------------------------------------
 
 /** The measures a tab trims on, for the table's Trimmed column. */
 function trimMetricsForTab() {
-  return opts.tab === 'total'
-    ? [['price', 'Price']]
-    : [[areaMetric(), `$/${areaUnitLabel()}`], ['ppl', '$/Lot']];
+  if (opts.tab === 'total') return [['price', 'Price']];
+  if (opts.tab === 'water') return [[areaMetric(), `$/${areaUnitLabel()}`]];
+  return [[areaMetric(), `$/${areaUnitLabel()}`], ['ppl', '$/Lot']];
 }
 
 const TABLE_COLS = [
@@ -1241,6 +1521,7 @@ function render() {
   // Every comparable set is rebuilt from the data and options of THIS
   // render; a cached trim from the last one would describe other sales.
   cmsCache = new Map();
+  waterCache = new Map();
   renderStatus();
 
   const has = data.records.length > 0;
@@ -1270,16 +1551,19 @@ function syncControls() {
   // governs nothing on the total-price tab; showing it there would be an
   // inert switch inviting a click that changes no chart on screen.
   const onTotal = opts.tab === 'total';
-  els.tabRates.setAttribute('aria-selected', String(!onTotal));
-  els.tabTotal.setAttribute('aria-selected', String(onTotal));
-  els.tabRates.classList.toggle('is-on', !onTotal);
-  els.tabTotal.classList.toggle('is-on', onTotal);
+  const tab = ['rates', 'total', 'water'].includes(opts.tab) ? opts.tab : 'rates';
+  for (const [key, btn] of [['rates', els.tabRates], ['total', els.tabTotal], ['water', els.tabWater]]) {
+    btn.setAttribute('aria-selected', String(tab === key));
+    btn.classList.toggle('is-on', tab === key);
+  }
   els.ctlUnit.hidden = onTotal;
   // Name the charts the Nominal/Time-adjusted toggle actually reaches on
   // THIS tab — the total set has no by-size chart to speak of.
   els.ratesHint.textContent = onTotal
     ? 'Applies to the by-distance and assessed-value charts.'
-    : 'Applies to the by-size and by-distance charts.';
+    : tab === 'water'
+      ? 'Applies to every chart and table on this tab.'
+      : 'Applies to the by-size and by-distance charts.';
 
   const unit = UNITS[opts.unit] ? opts.unit : 'acres';
   for (const [key, btn] of [['acres', els.unitAcres], ['sf', els.unitSf], ['ff', els.unitFf]]) {
@@ -1351,6 +1635,7 @@ function setOpt(patch) {
 
 els.tabRates.addEventListener('click', () => setOpt({ tab: 'rates' }));
 els.tabTotal.addEventListener('click', () => setOpt({ tab: 'total' }));
+els.tabWater.addEventListener('click', () => setOpt({ tab: 'water' }));
 els.unitAcres.addEventListener('click', () => setOpt({ unit: 'acres' }));
 els.unitSf.addEventListener('click', () => setOpt({ unit: 'sf' }));
 els.unitFf.addEventListener('click', () => setOpt({ unit: 'ff' }));

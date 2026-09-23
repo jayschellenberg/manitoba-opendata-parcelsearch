@@ -300,9 +300,12 @@ export function exportChartPng({ svg, title, subtitle, legend, stats, note, file
   plot.setAttribute('x', '0');
   plot.setAttribute('y', String(y));
   plot.setAttribute('width', String(VB_W));
-  plot.setAttribute('height', String(VB_H));
+  // The plot's own height: scatters are VB_H tall, box plots grow a row per
+  // group. Forcing VB_H would squash a box plot into the wrong aspect.
+  const plotH = Number(String(svg.getAttribute('viewBox') || '').split(/\s+/)[3]) || VB_H;
+  plot.setAttribute('height', String(plotH));
   root.appendChild(plot);
-  y += VB_H + 6;
+  y += plotH + 6;
 
   if (legend && legend.length > 1) {
     let x = M;
@@ -707,15 +710,20 @@ export function drawChart(spec) {
   // Above the dots by construction — see the note where trendLines is built.
   svg.appendChild(trendLines);
 
-  // Highlight ring for the hovered/focused point, drawn above both.
-  const highlight = el('circle', {
-    r: 9, fill: 'none', stroke: INK.primary, 'stroke-width': 2, opacity: 0,
-    'pointer-events': 'none',
-  });
-  svg.appendChild(highlight);
-
   figure.appendChild(svg);
+  appendChartFooter(figure, {
+    svg, title, subtitle, legend, stats, note, pngName, strip: statStrip(),
+  });
+  wirePointInteraction({ figure, svg, cap, placed, tooltipRows, onPointClick });
+  return figure;
+}
 
+/**
+ * Legend, note, stat strip and PNG button under a chart. Shared by the
+ * scatter (drawChart) and the box plot (drawBoxChart) so the two read, and
+ * export, alike.
+ */
+function appendChartFooter(figure, { svg, title, subtitle, legend, stats, note, pngName, strip }) {
   if (legend && legend.length > 1) {
     const key = document.createElement('ul');
     key.className = 'chart-legend';
@@ -755,7 +763,6 @@ export function drawChart(spec) {
     figure.appendChild(p);
   }
 
-  const strip = statStrip();
   if (strip) figure.appendChild(strip);
 
   // ---- PNG export (the land template's per-chart PNG, for a report).
@@ -775,6 +782,21 @@ export function drawChart(spec) {
     });
     figure.appendChild(btn);
   }
+
+}
+
+/**
+ * Hover readout, click-to-exclude and keyboard stepping over a chart's
+ * placed points ({cx, cy, rec, …} in viewBox units). Shared by the scatter
+ * and the box plot.
+ */
+function wirePointInteraction({ figure, svg, cap, placed, tooltipRows = () => [], onPointClick = null }) {
+  // Highlight ring for the hovered/focused point, drawn above everything.
+  const highlight = el('circle', {
+    r: 9, fill: 'none', stroke: INK.primary, 'stroke-width': 2, opacity: 0,
+    'pointer-events': 'none',
+  });
+  svg.appendChild(highlight);
 
   // ---- hover / focus readout.
   //
@@ -884,5 +906,272 @@ export function drawChart(spec) {
     }
   });
 
+}
+
+// ---------- box plot -------------------------------------------------
+
+/**
+ * Horizontal box plot, one row per group, with every sale jittered over its
+ * box — the template's ec_live_box_h / geom_boxplot + geom_jitter. Rows run
+ * top to bottom in the order given.
+ *
+ * spec:
+ *   title, subtitle, note, stats, legend, pngName — as drawChart
+ *   groups       [{label, stats: boxStats(), points: [{v, rec, state, flagged}]}]
+ *   valueLabel   the value axis title
+ *   valueFormat  full-precision formatter (median labels)
+ *   axisFormat   tick formatter
+ *   tooltipRows, onPointClick — as drawChart
+ *   empty        message when no group has a value
+ *
+ * Boxes and whiskers are drawn from each group's `stats` (the caller fits
+ * them to the 'in' points only); points in other states are drawn as the
+ * scatter draws them, so an excluded sale is visible and clickable.
+ */
+export function drawBoxChart(spec) {
+  const {
+    title, subtitle = '', note = '', stats = [], legend = null, pngName = '',
+    groups = [], valueLabel = '', valueFormat = fmtMoney0, axisFormat = fmtAxisDollar,
+    tooltipRows = () => [], onPointClick = null,
+    empty = 'No sales in the current filter carry the values this chart needs.',
+  } = spec;
+
+  const figure = document.createElement('figure');
+  figure.className = 'chart-card';
+  const cap = document.createElement('figcaption');
+  const h = document.createElement('h3');
+  h.textContent = title || '';
+  cap.appendChild(h);
+  if (subtitle) {
+    const sub = document.createElement('p');
+    sub.className = 'chart-sub';
+    sub.textContent = subtitle;
+    cap.appendChild(sub);
+  }
+  figure.appendChild(cap);
+
+  const rows = groups.filter((g) => g.points?.length);
+  if (!rows.length) {
+    const none = document.createElement('p');
+    none.className = 'chart-empty';
+    none.textContent = empty;
+    figure.appendChild(none);
+    return figure;
+  }
+
+  const LEFT = 200;       // room for the group labels
+  // Long names ("Winnipeg River / Rivière Winnipeg") are cut to fit; the
+  // hover card names the full water body for every point.
+  const MAX_LABEL = 22;
+  const clip = (s) => (s.length > MAX_LABEL ? `${s.slice(0, MAX_LABEL - 1)}…` : s);
+  const ROW_H = 46;
+  const TOP = 20;
+  const BOTTOM = 56;
+  const H = TOP + rows.length * ROW_H + BOTTOM;
+  const plotW = VB_W - LEFT - PAD.right;
+
+  let vHi = 0;
+  for (const g of rows) for (const p of g.points) if (p.v > vHi) vHi = p.v;
+  // Four ticks, not six: the value axis is narrower than a scatter's (the
+  // labels take its left), and full-dollar labels like "$1,200,000" collide
+  // at six.
+  const scale = niceTicks(0, vHi, 4);
+  const span = (scale.hi - scale.lo) || 1;
+  const sx = (v) => LEFT + ((v - scale.lo) / span) * plotW;
+  const rowY = (i) => TOP + i * ROW_H + ROW_H / 2;
+  const plotBottom = TOP + rows.length * ROW_H;
+
+  const svg = el('svg', {
+    viewBox: `0 0 ${VB_W} ${H}`,
+    class: 'chart-svg',
+    role: 'img',
+    tabindex: '0',
+    'aria-label': `${title}. ${rows.length} groups. Use arrow keys to step through points.`,
+  });
+  svg.appendChild(el('rect', { x: 0, y: 0, width: VB_W, height: H, fill: R_STYLE.bg }));
+
+  // Vertical gridlines + value ticks.
+  for (const t of scale.ticks) {
+    svg.appendChild(el('line', {
+      x1: sx(t), x2: sx(t), y1: TOP, y2: plotBottom,
+      stroke: R_STYLE.grid, 'stroke-width': 0.75,
+    }));
+    svg.appendChild(text(axisFormat(t), {
+      x: sx(t), y: plotBottom + 22, 'text-anchor': sx(t) > VB_W - PAD.right - 30 ? 'end' : 'middle',
+      class: 'chart-tick', fill: R_STYLE.tick,
+    }));
+  }
+  if (valueLabel) {
+    svg.appendChild(text(valueLabel, {
+      x: LEFT + plotW / 2, y: H - 10, 'text-anchor': 'middle',
+      class: 'chart-axis-title', fill: R_STYLE.axisTitle,
+    }));
+  }
+
+  const placed = [];
+  rows.forEach((g, i) => {
+    const cy = rowY(i);
+    // Group label with its count, right-aligned against the plot.
+    svg.appendChild(text(`${clip(String(g.label))} (${g.stats?.n ?? 0})`, {
+      x: LEFT - 10, y: cy + 5, 'text-anchor': 'end', class: 'chart-tick', fill: R_STYLE.axisTitle,
+    }));
+    const st = g.stats;
+    if (st) {
+      const bh = ROW_H * 0.5;
+      // Whisker line and caps.
+      svg.appendChild(el('line', {
+        x1: sx(st.whiskerLo), x2: sx(st.whiskerHi), y1: cy, y2: cy,
+        stroke: R_STYLE.pointStroke, 'stroke-width': 1.25,
+      }));
+      for (const w of [st.whiskerLo, st.whiskerHi]) {
+        svg.appendChild(el('line', {
+          x1: sx(w), x2: sx(w), y1: cy - bh * 0.35, y2: cy + bh * 0.35,
+          stroke: R_STYLE.pointStroke, 'stroke-width': 1.25,
+        }));
+      }
+      svg.appendChild(el('rect', {
+        x: sx(st.q1), y: cy - bh / 2, width: Math.max(1, sx(st.q3) - sx(st.q1)), height: bh,
+        fill: g.color || R_STYLE.pointFill, 'fill-opacity': 0.3,
+        stroke: R_STYLE.pointStroke, 'stroke-width': 1.25,
+      }));
+      // Median bar in the template's red4, with its value above the box.
+      svg.appendChild(el('line', {
+        x1: sx(st.median), x2: sx(st.median), y1: cy - bh / 2, y2: cy + bh / 2,
+        stroke: R_STYLE.cubic, 'stroke-width': 2.5,
+      }));
+      svg.appendChild(text(valueFormat(st.median), {
+        x: sx(st.median), y: cy - bh / 2 - 4, 'text-anchor': 'middle',
+        class: 'chart-ref-label', 'font-weight': 700, fill: R_STYLE.cubic,
+      }));
+    }
+    // Jittered sale points. Deterministic jitter (from the sale id) so a
+    // re-render on every filter keystroke does not make the dots dance.
+    for (const p of g.points) {
+      const jitter = (hashUnit(String(p.rec?.saleId ?? p.v)) - 0.5) * ROW_H * 0.45;
+      placed.push({ ...p, cx: sx(p.v), cy: cy + jitter });
+    }
+  });
+
+  const LAYER = { excluded: 0, trimmed: 1, in: 2 };
+  const dots = el('g');
+  const order = placed.slice()
+    .sort((a, b) => (LAYER[a.state || 'in'] ?? 2) - (LAYER[b.state || 'in'] ?? 2));
+  for (const p of order) {
+    const state = p.state || 'in';
+    let attrs;
+    if (state === 'excluded') {
+      attrs = {
+        fill: R_STYLE.excludedFill, stroke: R_STYLE.excludedStroke,
+        'stroke-width': 0.75, opacity: R_STYLE.excludedOpacity,
+      };
+    } else if (state === 'trimmed') {
+      attrs = { fill: R_STYLE.bg, stroke: R_STYLE.pointStroke, 'stroke-width': 1.5 };
+    } else {
+      attrs = {
+        fill: R_STYLE.pointFill, 'fill-opacity': R_STYLE.pointOpacity,
+        stroke: R_STYLE.pointStroke, 'stroke-width': 0.75,
+      };
+    }
+    if (p.flagged && state !== 'excluded') { attrs.stroke = INK.primary; attrs['stroke-width'] = 1.75; }
+    dots.appendChild(el('circle', { cx: p.cx.toFixed(2), cy: p.cy.toFixed(2), r: 4, ...attrs }));
+  }
+  svg.appendChild(dots);
+
+  figure.appendChild(svg);
+  appendChartFooter(figure, {
+    svg, title, subtitle, legend, stats, note, pngName, strip: statStripEl(stats),
+  });
+  wirePointInteraction({ figure, svg, cap, placed, tooltipRows, onPointClick });
+  return figure;
+}
+
+/** A stable pseudo-random number in [0, 1) from a string (FNV-1a). */
+function hashUnit(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return ((h >>> 0) % 10000) / 10000;
+}
+
+/** The stat strip as a standalone element (drawChart builds its own). */
+function statStripEl(stats) {
+  if (!stats?.length) return null;
+  const dl = document.createElement('dl');
+  dl.className = 'chart-stats';
+  for (const s of stats) {
+    const dt = document.createElement('dt');
+    dt.textContent = s.label;
+    const dd = document.createElement('dd');
+    dd.textContent = s.value;
+    if (s.title) { dt.title = s.title; dd.title = s.title; }
+    dl.appendChild(dt);
+    dl.appendChild(dd);
+  }
+  return dl;
+}
+
+// ---------- table card -----------------------------------------------
+
+/**
+ * A chart-card holding a small table — the water tab's summary, premium
+ * and paired-sales tables sit in the same grid as the charts. Cells go in
+ * through textContent.
+ *
+ *   columns  [{label, num?}]      rows [[cell, …]]
+ */
+export function drawTableCard({ title, subtitle = '', note = '', columns = [], rows = [], empty = 'Nothing to show.' }) {
+  const figure = document.createElement('figure');
+  figure.className = 'chart-card table-card';
+  const cap = document.createElement('figcaption');
+  const h = document.createElement('h3');
+  h.textContent = title || '';
+  cap.appendChild(h);
+  if (subtitle) {
+    const sub = document.createElement('p');
+    sub.className = 'chart-sub';
+    sub.textContent = subtitle;
+    cap.appendChild(sub);
+  }
+  figure.appendChild(cap);
+  if (!rows.length) {
+    const none = document.createElement('p');
+    none.className = 'chart-empty';
+    none.textContent = empty;
+    figure.appendChild(none);
+  } else {
+    const wrap = document.createElement('div');
+    wrap.className = 'table-scroll';
+    const table = document.createElement('table');
+    table.className = 'card-table';
+    const trh = document.createElement('tr');
+    for (const c of columns) {
+      const th = document.createElement('th');
+      th.textContent = c.label;
+      if (c.num) th.className = 'num';
+      trh.appendChild(th);
+    }
+    table.createTHead().appendChild(trh);
+    const tb = table.createTBody();
+    for (const r of rows) {
+      const tr = document.createElement('tr');
+      r.forEach((cell, i) => {
+        const td = document.createElement('td');
+        td.textContent = cell ?? '';
+        if (columns[i]?.num) td.className = 'num';
+        tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    }
+    wrap.appendChild(table);
+    figure.appendChild(wrap);
+  }
+  if (note) {
+    const p = document.createElement('p');
+    p.className = 'chart-note';
+    p.textContent = note;
+    figure.appendChild(p);
+  }
   return figure;
 }

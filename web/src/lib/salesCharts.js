@@ -143,6 +143,14 @@ export function saleRecordsFromRows(rows, { parseDate, centroid, rowKey, isSelec
         _anySelected: false,
         _landSum: 0,
         _landN: 0,
+        // Member water / flood stamps for the Water tab (lib/salesWater.js
+        // reads them). Loaded = EVERY member's muni shard resolved, which is
+        // what lets an unstamped sale read as "no water" rather than
+        // unknown — the same three-state rule as the grid's Water column.
+        waters: [],
+        waterLoaded: true,
+        floods: [],
+        floodLoaded: true,
       });
     }
 
@@ -152,6 +160,10 @@ export function saleRecordsFromRows(rows, { parseDate, centroid, rowKey, isSelec
     if (!isSelected || isSelected(row)) rec._anySelected = true;
     const land = pos(p._asmtLand);
     if (land != null) { rec._landSum += land; rec._landN += 1; }
+    if (p._water && typeof p._water === 'object') rec.waters.push(p._water);
+    if (!p._waterLoaded) rec.waterLoaded = false;
+    if (p._flood && typeof p._flood === 'object') rec.floods.push(p._flood);
+    if (!p._floodLoaded) rec.floodLoaded = false;
 
     // Sale position = mean of its members' centroids, so a multi-parcel
     // assembly plots at the middle of the deal rather than at whichever
