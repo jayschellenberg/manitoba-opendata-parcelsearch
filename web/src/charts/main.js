@@ -222,6 +222,11 @@ function distanceFor(rec) {
   return Number.isFinite(d) ? d : null;
 }
 
+/** What the review flag's ratio was measured against — bare-land sales are
+ *  graded against today's LAND assessment, since the lot may since have
+ *  been built on (see saleRecordsFromRows). */
+const flagBasisWords = (rec) => (rec.flagBasis === 'land' ? 'vs land' : 'vs total');
+
 /** Tooltip rows, shared by every chart. Values lead, labels follow. */
 function tooltipRows(rec, pt) {
   if (!rec) return [];
@@ -231,9 +236,9 @@ function tooltipRows(rec, pt) {
   const state = pt?.state || (rec.excluded ? 'excluded' : 'in');
   if (state === 'excluded') rows.push(['Unticked in the grid', 'Excluded']);
   else if (state === 'trimmed') rows.push([`Outside ${opts.trimLo}th–${opts.trimHi}th pctl`, 'Trimmed']);
-  const flag = saleAsmtFlag(rec.saleToAsmt);
+  const flag = saleAsmtFlag(rec.flagRatio);
   if (flag && flag !== 'No assessment') {
-    rows.push(['Sale/Asmt flag', `${flag} (${rec.saleToAsmt.toFixed(2)})`]);
+    rows.push([`Sale/Asmt flag (${flagBasisWords(rec)})`, `${flag} (${rec.flagRatio.toFixed(2)})`]);
   }
   rows.push(
     [rec.parcelCount > 1 ? `${rec.parcelCount}-parcel sale` : 'Sale', fmtMoney0(rec.price)],
@@ -388,7 +393,7 @@ function pointsFor(cms, xOf, yOf, colorOf) {
     const x = xOf(rec);
     const y = yOf(rec);
     if (!Number.isFinite(x) || !Number.isFinite(y) || y <= 0) continue;
-    const flag = saleAsmtFlag(rec.saleToAsmt);
+    const flag = saleAsmtFlag(rec.flagRatio);
     out.push({
       x, y, rec,
       r: dotRadius(rec.parcelCount),
@@ -1039,7 +1044,10 @@ const TABLE_COLS = [
       .map(([, label]) => label);
     return trimmedOn.length ? `Trimmed (${trimmedOn.join(', ')})` : 'In';
   }],
-  ['S/A flag', (r) => saleAsmtFlag(r.saleToAsmt) || '—'],
+  ['S/A flag', (r) => {
+    const f = saleAsmtFlag(r.flagRatio);
+    return f && f !== 'No assessment' ? `${f} (${flagBasisWords(r)})` : (f || '—');
+  }],
   ['Sold', (r) => r.dateText || fmtDate(r.dateMs)],
   ['Municipality', (r) => r.muni],
   ['Address', (r) => r.address || (r.rolls || []).join(', ')],

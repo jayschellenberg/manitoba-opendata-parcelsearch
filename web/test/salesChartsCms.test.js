@@ -132,6 +132,31 @@ test('an incomplete group frontage gives no lot frontage and no $/FF', () => {
   assert.equal(rec.ppff, null);
 });
 
+console.log('saleRecordsFromRows — review-flag basis');
+const bare = (extra = {}) => ({
+  _saleGroupId: 9, _saleDate: '2021-05-01', _saleGroupTotalPriceNum: 90000, _saleGroupSize: 1,
+  _saleTypeGroup: 'RESIDENTIAL BARE LAND', _saleGroupSaleToAsmt: 0.18, _asmtLand: 100000, ...extra,
+});
+test('a bare-land sale is graded against the LAND assessment', () => {
+  // Sold bare for $90k; today's total includes a house (ratio 0.18), land is $100k.
+  const [rec] = saleRecordsFromRows([row(bare())]);
+  assert.equal(rec.flagBasis, 'land');
+  close(rec.flagRatio, 0.9);
+  assert.equal(saleAsmtFlag(rec.flagRatio), '', 'not flagged once the house is out of the ratio');
+  assert.equal(rec.saleToAsmt, 0.18, 'the grid ratio itself is untouched');
+});
+test('an improved sale keeps the total basis', () => {
+  const [rec] = saleRecordsFromRows([row(bare({ _saleTypeGroup: 'RESIDENTIAL LAND AND BUILDINGS' }))]);
+  assert.equal(rec.flagBasis, 'total');
+  assert.equal(rec.flagRatio, 0.18);
+});
+test('a bare-land assembly missing a member land value falls back to total', () => {
+  const a = bare({ _saleGroupSize: 2, _saleSeq: 0 });
+  const b = bare({ _saleGroupSize: 2, _saleSeq: 1, _asmtLand: null });
+  const [rec] = saleRecordsFromRows([row(a), row(b)]);
+  assert.equal(rec.flagBasis, 'total');
+});
+
 console.log('buildSalesWaterfall');
 const LABELS = ['Municipality', 'Size range', 'Sale date range'];
 test('counts SALES, crediting each to the step its last row fell at', () => {
