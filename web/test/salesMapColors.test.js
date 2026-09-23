@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict';
 import {
-  priceBuckets, yearColors, circleRing, PRICE_RAMP,
+  priceBuckets, yearColors, circleRing, PRICE_RAMP, SIZE_RAMP,
 } from '../src/lib/salesMapColors.js';
 
 let passed = 0;
@@ -28,6 +28,13 @@ test('ties collapse breaks instead of inventing empty buckets', () => {
   assert.equal(b.colorOf(9), PRICE_RAMP[4]);
 });
 test('nothing to colour', () => { assert.equal(priceBuckets([]), null); });
+test('the lot-size map uses its own ramp, smallest palest', () => {
+  const b = priceBuckets([0.2, 0.5, 1, 2, 5, 10, 40, 80], String, SIZE_RAMP);
+  assert.equal(b.colorOf(0.2), SIZE_RAMP[0]);
+  assert.equal(b.colorOf(80), SIZE_RAMP[4]);
+  assert.ok(b.legend.every((l) => SIZE_RAMP.includes(l.color)));
+  assert.ok(!SIZE_RAMP.some((c) => PRICE_RAMP.includes(c)), 'no colour shared with the price ramp');
+});
 
 console.log('yearColors');
 test('one colour per year, oldest palest', () => {

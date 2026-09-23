@@ -532,6 +532,15 @@ main { padding: 18px 20px 0; }
 
 /* ---------- map tab ---------- */
 .map-card { grid-column: 1 / -1; }
+/* The colour-by map and the lot-size heatmap side by side, stacking when
+   the window is too narrow for two 6.5 x 3.5 in cards. */
+.map-pair {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 430px), 1fr));
+}
+.map-pair .map-card { grid-column: auto; min-width: 0; }
 .sales-map {
   /* The plot band of a 6.5 x 3.5 in card, so the map on screen frames what
      its PNG will show. */
