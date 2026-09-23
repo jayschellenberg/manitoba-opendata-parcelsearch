@@ -133,8 +133,16 @@ export function saleRecordsFromRows(rows, { parseDate, centroid, rowKey, isSelec
         // member did), and the group's price and rates describe the whole
         // sale either way.
         excluded: false,
+        // MAO's own sale type, for the review flag's basis below.
+        saleType: p._saleTypeGroup || '',
+        // The ratio the sale/assessment review flag grades, and what it was
+        // measured against — filled in after every member row is seen.
+        flagRatio: null,
+        flagBasis: '',
         _pts: [],
         _anySelected: false,
+        _landSum: 0,
+        _landN: 0,
       });
     }
 
@@ -142,6 +150,8 @@ export function saleRecordsFromRows(rows, { parseDate, centroid, rowKey, isSelec
     const key = rowKey ? rowKey(row) : '';
     if (key) rec.keys.push(key);
     if (!isSelected || isSelected(row)) rec._anySelected = true;
+    const land = pos(p._asmtLand);
+    if (land != null) { rec._landSum += land; rec._landN += 1; }
 
     // Sale position = mean of its members' centroids, so a multi-parcel
     // assembly plots at the middle of the deal rather than at whichever
@@ -157,8 +167,26 @@ export function saleRecordsFromRows(rows, { parseDate, centroid, rowKey, isSelec
       rec.lng = rec._pts.reduce((s, c) => s + c.lng, 0) / rec._pts.length;
     }
     rec.excluded = !rec._anySelected;
+    // Review-flag basis (Jason, 2026-09-22). The assessment on file is
+    // TODAY's, so a lot that sold bare and has had a house built since
+    // compares its price with land + house and grades "Very low" — on a
+    // built-out subdivision that was most of the sales, flagging "built on
+    // since" rather than a doubtful sale. For a sale MAO typed as bare land
+    // the price is graded against the LAND assessment alone; everything
+    // else keeps the total. Land is used only when every member parcel has
+    // one, or a partial sum would grade the sale as dear.
+    const landComplete = rec._landN > 0 && rec._landN === rec.parcelCount;
+    if (/BARE LAND/i.test(rec.saleType) && landComplete && rec.price != null) {
+      rec.flagRatio = rec.price / rec._landSum;
+      rec.flagBasis = 'land';
+    } else if (rec.saleToAsmt != null) {
+      rec.flagRatio = rec.saleToAsmt;
+      rec.flagBasis = 'total';
+    }
     delete rec._pts;
     delete rec._anySelected;
+    delete rec._landSum;
+    delete rec._landN;
     out.push(rec);
   }
   // Chronological, so anything that walks the array (the table view,
