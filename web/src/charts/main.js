@@ -32,6 +32,7 @@ import {
 import { WATER_CLASSES, WATER_DETECTION_LIMIT_FT } from '../lib/water.js';
 import { priceBuckets, yearColors, ringDistances } from '../lib/salesMapColors.js';
 import { createSalesMap } from './chartMap.js';
+import { criteriaText } from '../lib/criteriaLine.js';
 import {
   drawChart, drawBoxChart, drawTableCard, ZONE_COLORS, OTHER_COLOR, INK, R_STYLE, slugify,
   fmtMoney0, fmtMoney2, fmtNum, fmtDate, fmtAxisDollar, fmtAxisComma, fmtMonYear,
@@ -777,27 +778,33 @@ const rangeNum = (v) => v.toLocaleString('en-US', { maximumFractionDigits: v < 1
 
 /**
  * The template's criteria subtitle (land_subtitles):
- *   "CMS; 0-35 km from Winnipeg; 0.2-120 acres; Jan-2018 to Aug-2026"
- * built from the sales the chart's fits actually use, with "CMS (Time-
- * Adjusted)" on the charts that carry rates to the effective date. The
- * template states the FILTER bounds; the page has no single set of those
- * (the main window's filters are open-ended by default), so it states the
- * span of the evidence instead, which is what those bounds describe.
+ *   "CMS; 0-35 km from Subject; 1-10 acres; Jan-2021 to Sep-2026"
+ * with "CMS (Time-Adjusted)" on the charts that carry rates to the effective
+ * date. Each part states the Sales Analysis filter setting where one is set
+ * (Jason, 2026-09-22), and the span of the fitted sales where the filter is
+ * left open — see lib/criteriaLine.js.
  */
 function criteriaLine(cms, adjusted) {
   const recs = cms.fitted;
-  const parts = [adjusted ? 'CMS (Time-Adjusted)' : 'CMS'];
   const span = (vals) => {
     const v = vals.filter((x) => Number.isFinite(x));
     return v.length ? [Math.min(...v), Math.max(...v)] : null;
   };
-  const d = span(recs.map(distanceFor));
-  if (d) parts.push(`${rangeNum(d[0])}-${rangeNum(d[1])} km from ${distContext().refTitle}`);
-  const s = span(recs.map((r) => r[sizeField()]));
-  if (s) parts.push(`${rangeNum(s[0])}-${rangeNum(s[1])} ${unitSpec().range}`);
-  const t = span(recs.map((r) => r.dateMs));
-  if (t) parts.push(`${fmtMonYear(t[0])} to ${fmtMonYear(t[1])}`);
-  return parts.join('; ');
+  return criteriaText({
+    adjusted,
+    criteria: data.meta?.criteria || null,
+    unitKey: UNITS[opts.unit] ? opts.unit : 'acres',
+    unitWord: unitSpec().range,
+    refTitle: distContext().refTitle,
+    refIsSubject: activeDistRef() === 'subject',
+    span: {
+      dist: span(recs.map(distanceFor)),
+      size: span(recs.map((r) => r[sizeField()])),
+      date: span(recs.map((r) => r.dateMs)),
+    },
+    fmtMonYear,
+    fmtNum: rangeNum,
+  });
 }
 
 /** The y-axis tick formatter for a measure: full dollars, cents on $/SF. */
