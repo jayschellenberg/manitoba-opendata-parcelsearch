@@ -597,6 +597,16 @@
 
             <!-- Shown once a database is present. -->
             <div class="sales-db-ready" id="sales-db-ready" hidden>
+              <!-- Database housekeeping, directly under the title (Jason,
+                   2026-09-24): these act on the archive itself, not on a
+                   search, so they sit apart from Search / Nominal sales,
+                   which stay with the municipality picker below. -->
+              <div class="sales-db-actions sales-db-actions-top">
+                <button type="button" id="sales-db-refresh" class="parcel-list-modal-btn" title="Re-reads the latest sales files from your hard drive">🔄 Reload</button>
+                <button type="button" id="sales-db-forget" class="parcel-list-modal-btn danger" title="Disconnect the imported sales database from this browser">🔌 Disconnect</button>
+                <button type="button" id="sales-db-coverage" class="parcel-list-modal-btn"
+                        title="When each municipality was last scraped for sales">📅 Coverage</button>
+              </div>
               <!-- Province-wide search (Jason, 2026-09-24): every sale in the
                    archive by assessment class AT THE SALE, then the property
                    types found in that class, with date, sale type and a
@@ -706,10 +716,6 @@
               </p>
               <div class="sales-db-actions">
                 <button type="button" id="sales-db-load" class="parcel-list-modal-btn primary">🔍 Search</button>
-                <button type="button" id="sales-db-refresh" class="parcel-list-modal-btn" title="Re-reads the latest sales files from your hard drive">🔄 Reload</button>
-                <button type="button" id="sales-db-forget" class="parcel-list-modal-btn danger" title="Disconnect the imported sales database from this browser">🔌 Disconnect</button>
-                <button type="button" id="sales-db-coverage" class="parcel-list-modal-btn"
-                        title="When each municipality was last scraped for sales">📅 Coverage</button>
                 <!-- Exclude Nominal Sales rides in this row, beside Coverage, by
                      explicit request (Jason, 2026-08-21). KNOWN AND ACCEPTED
                      TRADE-OFF: this row lives inside #sales-db-ready, which is

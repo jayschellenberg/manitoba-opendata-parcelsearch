@@ -25,7 +25,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   classBitsOf, classMask, indexShard, KeyTable, runSearch, extractRows, describeCriteria,
-  listSaved, saveSearch, deleteSaved, SAVED_KEY, dateKey,
+  listSaved, saveSearch, deleteSaved, SAVED_KEY, dateKey, CLASS_CODES, defaultDateWindow,
 } from '../src/lib/provinceSearch.js';
 
 const results = [];
@@ -70,6 +70,20 @@ test('classBitsOf: blank is unknown, stacked lines OR together', () => {
   assert.equal(classBitsOf('11\n60'), classMask(['11', '60']));
   assert.ok(classBitsOf('99') & classMask(['99']), 'an unlisted code still indexes');
   assert.equal(classBitsOf('99') & classMask(['60']), 0);
+});
+
+test('class picker lists codes in numeric order', () => {
+  const codes = CLASS_CODES.map(([c]) => Number(c));
+  assert.deepEqual(codes, [...codes].sort((a, b) => a - b));
+});
+
+test('default window: Jan 1 five years back, through the newest sale', () => {
+  assert.deepEqual(defaultDateWindow(new Date(2026, 8, 24), '2026-09-10'),
+    { from: '2021-01-01', to: '2026-09-10' });
+  assert.deepEqual(defaultDateWindow(new Date(2027, 0, 1), '2026-12-20T00:00:00Z'),
+    { from: '2022-01-01', to: '2026-12-20' });
+  assert.deepEqual(defaultDateWindow(new Date(2026, 8, 24), null), { from: '2021-01-01', to: '' },
+    'no newest sale = open-ended, never a made-up date');
 });
 
 test('dateKey: ISO to int, junk to 0', () => {

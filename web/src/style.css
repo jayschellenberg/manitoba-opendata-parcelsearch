@@ -568,6 +568,8 @@ header small a {
   cursor: pointer;
 }
 .sales-db-muni:hover { background: var(--color-neutral-100, #f4f4f5); }
+/* Reload / Disconnect / Coverage, directly under the panel title. */
+.sales-db-actions.sales-db-actions-top { margin-top: 6px; }
 /* Province-wide class search (lib/salesProvincePanel.js). A card inside the
    database block, ahead of the municipality picker. */
 .sales-prov {
