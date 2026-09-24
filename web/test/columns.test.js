@@ -14,6 +14,8 @@ const {
   DEFAULT_VISIBLE,
   PRESETS,
   PRESET_ORDER,
+  SALES_DEFAULT_ORDER,
+  activeOrder,
   columnPermutation,
   applyParcelImportDefaults,
   applyPreset,
@@ -188,6 +190,27 @@ for (const [name, order] of Object.entries(PRESET_ORDER)) {
     assert.ok(set.has(key),
       `PRESET_ORDER['${name}'] orders '${key}', which the preset does not show`);
   }
+}
+
+// Sales tables without a preset order take SALES_DEFAULT_ORDER (Jason,
+// 2026-09-24): Roll, Muni, Address, Sale Date, Sale Price, Primary Property,
+// N1 ID, Group #, Sale Type, then the rest. Property Search keeps natural.
+assert.equal(activeOrder(null, true), SALES_DEFAULT_ORDER);
+assert.equal(activeOrder(null, false), null, 'non-sales mode keeps the natural order');
+assert.equal(activeOrder('Land Sales', true), PRESET_ORDER['Land Sales'],
+  'a preset with its own order still wins');
+assert.equal(activeOrder('Sales analysis', true), SALES_DEFAULT_ORDER,
+  'a preset without an order gets the sales default');
+{
+  const SALES_NATURAL = [
+    { key: 'seq', pinned: true }, { key: 'select', pinned: true },
+    { key: 'favorite' }, { key: 'roll' }, { key: 'municode' }, { key: 'muniname' },
+    { key: 'saledate' }, { key: 'saleprice' }, { key: 'saletype' }, { key: 'primaryprop' },
+    { key: 'n1id' }, { key: 'groupsize' }, { key: 'address' }, { key: 'zone1' },
+  ];
+  const got = columnPermutation(SALES_NATURAL, SALES_DEFAULT_ORDER).map((i) => SALES_NATURAL[i].key);
+  assert.deepEqual(got, ['seq', 'select', 'favorite', 'roll', 'muniname', 'address', 'saledate',
+    'saleprice', 'primaryprop', 'n1id', 'groupsize', 'saletype', 'municode', 'zone1']);
 }
 
 console.log('column preset tests passed');
