@@ -368,6 +368,28 @@ export const PRESET_ORDER = {
 };
 
 /**
+ * The order a SALES table takes when the active preset declares none of its
+ * own (Jason, 2026-09-24): which comp, where, when and for how much, then
+ * what stands on it and whether it is in N1, then the group and the sale
+ * type. The star rides ahead of Roll as the table's leading control column.
+ * Everything unlisted follows in natural order, exactly as with
+ * PRESET_ORDER. Property Search (non-sales) mode keeps the natural order.
+ */
+export const SALES_DEFAULT_ORDER = [
+  'favorite', 'roll', 'muniname', 'address', 'saledate', 'saleprice',
+  'primaryprop', 'n1id', 'groupsize', 'saletype',
+];
+
+/**
+ * The key list in force: the named preset's own order, else the sales
+ * default in sales mode, else null (natural thead order).
+ */
+export function activeOrder(presetName, salesMode) {
+  if (presetName && PRESET_ORDER[presetName]) return PRESET_ORDER[presetName];
+  return salesMode ? SALES_DEFAULT_ORDER : null;
+}
+
+/**
  * Resolve a preset's key list into a permutation of natural column indices.
  *
  * Pure — no DOM — so the ordering rules above can be tested directly.
@@ -580,8 +602,12 @@ function reorderChildren(rowEl, perm) {
 function applyOrder(heads) {
   const headRow = heads[0]?.parentElement;
   if (!headRow) return;
-  const order = orderName ? PRESET_ORDER[orderName] : null;
-  const sig = order ? orderName : 'natural';
+  const salesMode = document.body.classList.contains('sales-mode');
+  const order = activeOrder(orderName, salesMode);
+  // The signature names the order actually applied, so entering or leaving
+  // sales mode re-permutes the thead even when the preset did not change.
+  const sig = orderName && PRESET_ORDER[orderName] ? orderName
+    : salesMode ? 'sales-default' : 'natural';
   // Read the column list back in NATURAL order via the data-nat stamps, NOT
   // in current DOM order. Once the thead has been reordered it no longer
   // reads left-to-right as the baseline, and feeding it back in computes a
