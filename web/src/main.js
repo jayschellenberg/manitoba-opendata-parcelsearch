@@ -16,6 +16,7 @@ import { initInfoIcons } from './lib/infoIcon.js';
 import { initParcelListImport } from './lib/parcelListImport.js';
 import { initSalesPasteImport } from './lib/salesPasteImport.js';
 import { initSalesDbPanel } from './lib/salesDbPanel.js';
+import { initSalesProvincePanel } from './lib/salesProvincePanel.js';
 import { listShardKeys } from './lib/salesStore.js';
 import { showMuniLayer, hideMuniLayer, paintMuniSelection, wireMuniInteractions, fitToSelection }
   from './lib/muniLayer.js';
@@ -2595,18 +2596,46 @@ const salesDbPanel = initSalesDbPanel({
   // finds nothing — or fails — can never leave the last one on screen
   // pretending to be the answer. See clearSalesResults.
   onSearchStart: clearSalesResults,
-  onLoad: async ({ name, text }) => {
-    try {
-      await handleSalesUpload({ name, text });
-      // The baseline the narrowing is measured against: what is in the table
-      // now IS the loaded set, so unticking any of it can narrow and ticking
-      // anything else cannot.
-      salesMuniLoaded = new Set(salesMuniSelection || []);
-      setActiveTab('sales', { skipFocus: true });
-    } catch (err) {
-      console.error('Sales database load failed', err);
-      setCount(`Sales load failed: ${err.message}`);
-    }
+  onLoad: loadSalesDbPayload,
+});
+
+/**
+ * Hand a sales-database CSV (municipality or province-wide load) to the
+ * same pipeline an upload takes.
+ */
+async function loadSalesDbPayload({ name, text, scope }) {
+  try {
+    await handleSalesUpload({ name, text });
+    // The baseline the narrowing is measured against: what is in the table
+    // now IS the loaded set, so unticking any of it can narrow and ticking
+    // anything else cannot. A province-wide load was not chosen through the
+    // municipality ticks at all, so those ticks must not narrow it — null
+    // means "never narrow" (salesMuniNarrowSet).
+    salesMuniLoaded = scope === 'province' ? null : new Set(salesMuniSelection || []);
+    setActiveTab('sales', { skipFocus: true });
+  } catch (err) {
+    console.error('Sales database load failed', err);
+    setCount(`Sales load failed: ${err.message}`);
+  }
+}
+
+// Province-wide class search, in front of the municipality picker. Same
+// load path; its date and price window is copied into the sidebar filters
+// so a narrower window left from an earlier job cannot hide the results.
+initSalesProvincePanel({
+  setStatus: setCount,
+  onSearchStart: clearSalesResults,
+  onLoad: loadSalesDbPayload,
+  applyWindow: ({ from, to, min, max }) => {
+    const set = (el, v) => {
+      if (!el) return;
+      el.value = v || '';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    set($saleDateFrom, from);
+    set($saleDateTo, to);
+    set($salesPriceLow, min);
+    set($salesPriceHigh, max);
   },
 });
 
