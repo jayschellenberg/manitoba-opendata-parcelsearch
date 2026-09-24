@@ -597,6 +597,60 @@
 
             <!-- Shown once a database is present. -->
             <div class="sales-db-ready" id="sales-db-ready" hidden>
+              <!-- Province-wide search (Jason, 2026-09-24): every sale in the
+                   archive by assessment class AT THE SALE, then the property
+                   types found in that class, with date, sale type and a
+                   whole-sale price window at the same step. Sits in front of
+                   the municipality picker and loads into the same table and
+                   map. Driven by lib/salesProvincePanel.js over the index in
+                   lib/provinceSearch.js; nothing leaves the device. -->
+              <details class="sales-prov" id="sales-prov">
+                <summary class="sales-prov-head">
+                  <strong>Province-wide search</strong>
+                  <span class="sales-db-status" id="sales-prov-status">All of Manitoba, by class</span>
+                </summary>
+                <div class="sales-prov-saved-row">
+                  <select id="sales-prov-saved" aria-label="Saved searches">
+                    <option value="">Saved searches…</option>
+                  </select>
+                  <button type="button" id="sales-prov-delete" class="parcel-list-modal-btn" disabled
+                          title="Delete the selected saved search from this browser">Delete</button>
+                </div>
+                <label class="sales-db-typefilter" for="sales-prov-class">
+                  <span>Class at sale</span>
+                  <select id="sales-prov-class">
+                    <option value="">Choose a class…</option>
+                  </select>
+                </label>
+                <label class="sales-prov-unknown">
+                  <input type="checkbox" id="sales-prov-unknown" />
+                  <span>Also include sales with no class recorded at the sale (all before 1996, most before 2008)</span>
+                </label>
+                <div class="sales-prov-pair">
+                  <span class="sales-prov-prefix">Sale date</span>
+                  <input id="sales-prov-from" type="date" aria-label="Province search: sale date from" />
+                  <input id="sales-prov-to" type="date" aria-label="Province search: sale date to" />
+                </div>
+                <div class="sales-prov-pair">
+                  <span class="sales-prov-prefix">Sale price</span>
+                  <input id="sales-prov-min" type="number" min="0" step="1000" placeholder="Min $"
+                         aria-label="Province search: minimum sale price" />
+                  <input id="sales-prov-max" type="number" min="0" step="1000" placeholder="Max $ (optional)"
+                         aria-label="Province search: maximum sale price" />
+                </div>
+                <span class="sales-db-label">Sale type group <span class="sales-prov-any">(none ticked = any)</span></span>
+                <div id="sales-prov-types" class="sales-prov-list" role="group" aria-label="Sale type group"></div>
+                <span class="sales-db-label">Primary property types in this class <span class="sales-prov-any">(none ticked = any)</span></span>
+                <div id="sales-prov-subs" class="sales-prov-list" role="group" aria-label="Primary property types">
+                  <p class="sales-db-hint">Choose a class to list its property types.</p>
+                </div>
+                <div class="sales-db-selcount" id="sales-prov-count" aria-live="polite"></div>
+                <div class="sales-db-actions">
+                  <button type="button" id="sales-prov-search" class="parcel-list-modal-btn primary" disabled>🔍 Search province</button>
+                  <button type="button" id="sales-prov-save" class="parcel-list-modal-btn" disabled
+                          title="Save these settings under a name, in this browser">💾 Save search</button>
+                </div>
+              </details>
               <label class="sales-db-label" for="sales-db-muni-search">Municipalities</label>
               <input id="sales-db-muni-search" type="search" class="sales-db-search"
                      placeholder="Filter municipalities…" aria-label="Filter municipalities" />

@@ -568,6 +568,60 @@ header small a {
   cursor: pointer;
 }
 .sales-db-muni:hover { background: var(--color-neutral-100, #f4f4f5); }
+/* Province-wide class search (lib/salesProvincePanel.js). A card inside the
+   database block, ahead of the municipality picker. */
+.sales-prov {
+  border: 1px solid var(--color-neutral-300, #d4d4d8);
+  border-radius: 4px;
+  background: #fff;
+  padding: 6px 8px;
+  margin: 8px 0 4px;
+  font-size: 0.8rem;
+}
+.sales-prov-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  cursor: pointer;
+}
+.sales-prov[open] > .sales-prov-head { margin-bottom: 6px; }
+.sales-prov-saved-row,
+.sales-prov-pair {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.sales-prov-saved-row select { flex: 1 1 auto; min-width: 0; }
+.sales-prov-prefix { flex: 0 0 64px; font-size: 0.78rem; }
+.sales-prov-pair input { flex: 1 1 0; min-width: 0; font-size: 0.8rem; }
+.sales-prov-unknown {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--color-neutral-600, #52525b);
+  margin-top: 4px;
+}
+.sales-prov-any { font-weight: 400; color: var(--color-neutral-600, #52525b); }
+.sales-prov-list {
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--color-neutral-300, #d4d4d8);
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+.sales-prov-list label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 0;
+  cursor: pointer;
+}
+.sales-prov-list label.is-sub { padding-left: 14px; }
+.sales-prov-family { font-weight: 600; padding: 3px 0 1px; }
 .sales-db-selcount {
   font-size: 0.75rem;
   color: var(--color-neutral-600, #52525b);
