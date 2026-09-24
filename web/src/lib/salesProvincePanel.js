@@ -15,7 +15,7 @@
 import { getManifest, listShardKeys, getShard } from './salesStore.js';
 import {
   CLASS_CODES, UNKNOWN_CLASS, KeyTable, indexShard, runSearch, extractRows,
-  describeCriteria, listSaved, saveSearch, deleteSaved,
+  describeCriteria, listSaved, saveSearch, deleteSaved, defaultDateWindow,
 } from './provinceSearch.js';
 
 const fmt = (n) => Number(n || 0).toLocaleString();
@@ -88,6 +88,21 @@ export function initSalesProvincePanel({ onLoad, onSearchStart, setStatus, apply
     $types.appendChild(row);
   }
 
+  // ---- default date window ------------------------------------------------------
+  // Jan 1 five years back through the newest sale in the database (Jason,
+  // 2026-09-24). Only a DEFAULT: once the user edits either date, or loads a
+  // saved search, we stop touching them. Re-applied when the archive is
+  // re-imported, so the end date follows the newest sale after a Reload.
+  let datesTouched = false;
+  for (const el of [$from, $to]) el.addEventListener('input', () => { datesTouched = true; });
+  function applyDefaultDates(manifest) {
+    if (datesTouched) return;
+    const w = defaultDateWindow(new Date(), manifest?.newest_sale);
+    $from.value = w.from;
+    $to.value = w.to;
+  }
+  getManifest().then(applyDefaultDates).catch(() => { /* no archive yet */ });
+
   // ---- index ----------------------------------------------------------------
   let index = null;          // { stamp, keys, shards: Map<muni, ix>, header }
   let building = null;       // in-flight build promise, so two changes share one pass
@@ -96,6 +111,7 @@ export function initSalesProvincePanel({ onLoad, onSearchStart, setStatus, apply
     const manifest = await getManifest();
     const stamp = manifest?.imported_at || null;
     if (index && index.stamp === stamp) return index;
+    applyDefaultDates(manifest);   // a re-import can move the newest sale
     if (building) return building;
     building = (async () => {
       const keys = new KeyTable();
@@ -149,6 +165,7 @@ export function initSalesProvincePanel({ onLoad, onSearchStart, setStatus, apply
   function setCriteria(c) {
     $class.value = (c.classes || []).find((v) => v !== UNKNOWN_CLASS) || '';
     $unknown.checked = (c.classes || []).includes(UNKNOWN_CLASS);
+    datesTouched = true;            // a saved search's dates win over the default
     $from.value = c.from || '';
     $to.value = c.to || '';
     $min.value = c.min ?? '';

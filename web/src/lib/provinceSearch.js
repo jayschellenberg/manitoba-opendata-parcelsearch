@@ -27,12 +27,11 @@ import { forEachCsvRow, tokenizeRows } from './delimitedRows.js';
 import { familyOf, subcategoryOf, optionKey, FAMILY_ORDER, NO_STRUCTURE, OTHER_SUBCATEGORY }
   from './primaryProperty.js';
 
-/** MAO class codes, in the order the picker lists them. */
+/** MAO class codes, in the order the picker lists them: by number (Jason, 2026-09-24). */
 export const CLASS_CODES = [
   ['11', 'Residential 1 — single family'],
   ['12', 'Residential 1 — with farm use'],
   ['20', 'Residential 2 — multi-family'],
-  ['80', 'Residential 3 — condos & co-ops'],
   ['30', 'Farm'],
   ['40', 'Institutional'],
   ['41', 'Designated higher education'],
@@ -40,6 +39,7 @@ export const CLASS_CODES = [
   ['52', 'Railway'],
   ['60', 'Other (commercial / industrial)'],
   ['70', 'Designated recreational'],
+  ['80', 'Residential 3 — condos & co-ops'],
 ];
 
 /** The picker value for "no class recorded at the sale". */
@@ -83,6 +83,22 @@ const COL = {
 };
 
 const firstLine = (cell) => String(cell ?? '').split(/\r\n|\r|\n/)[0].trim();
+
+/**
+ * The window the class search opens with (Jason, 2026-09-24): Jan 1 five
+ * years back, through the newest sale in the database. The end is the
+ * archive's newest sale, not today — MAO posts sales ~3 weeks late, so
+ * "today" would promise a stretch no archive holds. Blank when the manifest
+ * has no usable newest_sale.
+ *
+ * @param {Date} today
+ * @param {string} [newestSale] manifest.newest_sale, ISO
+ */
+export function defaultDateWindow(today, newestSale) {
+  const from = `${today.getFullYear() - 5}-01-01`;
+  const to = /^\d{4}-\d{2}-\d{2}/.test(String(newestSale || '')) ? String(newestSale).slice(0, 10) : '';
+  return { from, to };
+}
 
 /** ISO date -> yyyymmdd integer (0 when unreadable), so ranges are int compares. */
 export function dateKey(iso) {
