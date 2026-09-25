@@ -311,7 +311,7 @@ import {
   strRefsFromRecord, distinctSections, sectionWhere, placeFromSurvey,
   municipalityCentre, findMunicipality, muniNoForListName,
   selectUnmappedRecords, buildUnmappedFeature, unmappedCountNote, unmappedPlacementText,
-  placeFromNeighbours, NEIGHBOUR_ROLL_WINDOW, MAX_UNMAPPED,
+  placeFromNeighbours, NEIGHBOUR_ROLL_WINDOW, MAX_UNMAPPED, maoLinkTitle,
 } from './lib/unmappedRolls.js';
 import {
   mfInvFillColor, mfInvPasses, mfInvLegendSteps, clampMinDu, mfInvDu, sameLegendSteps,
@@ -15126,7 +15126,7 @@ function rollNumberCell(p) {
     a.target = '_blank';
     a.rel = 'noreferrer';
     a.textContent = display;
-    a.title = 'Open this parcel on Manitoba Assessment Online';
+    a.title = maoLinkTitle(p);
     a.addEventListener('click', (e) => e.stopPropagation());
     cell.appendChild(a);
   }

@@ -56,7 +56,7 @@ import {
   applyMuniParcelsBasemapStyle,
 } from './lib/muniParcelsStyle.js';
 import { polygonBboxMidpoint } from './lib/polygonCentroid.js';
-import { approxFitMaxZoom, unmappedPlacementText } from './lib/unmappedRolls.js';
+import { approxFitMaxZoom, unmappedPlacementText, maoLinkTitle } from './lib/unmappedRolls.js';
 import { yieldToOverlay, duLabelFilter, duLabelTextField } from './lib/overlayHighlight.js';
 import { rollDisplay } from './lib/parcelLabelFields.js';
 import { zoningBylawText, devPlanBylawText } from './lib/amendment.js';
@@ -5664,7 +5664,7 @@ export function parcelHtml(p, { showJumpToList = false, hoverSoil = false } = {}
     const display = escapeHtml(rollDisplayFor(p));
     const safeReport = safeExternalUrl(p.Asmt_Rpt_Url);
     const rollLine = safeReport
-      ? `<a href="${escapeHtml(safeReport)}" target="_blank" rel="noreferrer" title="Open Manitoba Assessment report">${display}</a>`
+      ? `<a href="${escapeHtml(safeReport)}" target="_blank" rel="noreferrer" title="${escapeHtml(p._maoSearchLink ? maoLinkTitle(p) : 'Open Manitoba Assessment report')}">${display}</a>`
       : display;
     lines.push(`<strong>Roll #</strong> ${rollLine}`);
   }

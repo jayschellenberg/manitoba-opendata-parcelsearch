@@ -53,6 +53,12 @@ export const UNMAPPED_BASIS = Object.freeze({
   neighbour:    { zoom: 15, label: 'neighbouring rolls' },
 });
 
+/** MAO's public property search. A roll with no report URL of its own (one
+ *  placed by neighbouring rolls — MAO's report links carry an
+ *  extrct_prop_id that can't be derived from the roll number) links here
+ *  instead, so the user can look the roll up by municipality + roll. */
+export const MAO_SEARCH_URL = 'https://www.gov.mb.ca/mao/public/search_select.aspx';
+
 /** How far, in whole roll numbers, a neighbour may be from the wanted roll. */
 export const NEIGHBOUR_ROLL_WINDOW = 100;
 
@@ -242,7 +248,10 @@ export function buildUnmappedFeature(rec, place, muniFeature, seq) {
       Municipality: Number.isFinite(muniNo) ? `${muniNo} - ${muniName}` : muniName,
       Muni_Name_With_Typ: mp.MUNI_LIST_NAME_WITH_TYPE || rec.municipality || '',
       Property_Address: rec.civic_address || '',
-      Asmt_Rpt_Url: rec.source_url || '',
+      Asmt_Rpt_Url: rec.source_url || MAO_SEARCH_URL,
+      // True when the link above is MAO's search page, not this roll's
+      // report — the link titles say so.
+      _maoSearchLink: !rec.source_url,
       _unmapped: true,
       // In neither ROLL_ENTRY nor the MAO scrape — nothing confirms it exists.
       _unconfirmed: basis === 'neighbour',
@@ -305,6 +314,13 @@ export function placeFromNeighbours(roll, neighbours, centreOf) {
     one = dHi < dLo ? hi : lo;
   }
   return { ...one.c, basis: 'neighbour', refLabel: `beside roll ${label(one)}` };
+}
+
+/** Hover title for the roll-number link on a stand-in feature. */
+export function maoLinkTitle(p) {
+  if (!p?._maoSearchLink) return 'Open this parcel on Manitoba Assessment Online';
+  const muni = String(p.Muni_Name_With_Typ || '').trim();
+  return `Open the Manitoba Assessment Online search — pick ${muni || 'the municipality'} and enter roll ${rollDisp(p.Roll_No_Txt)}`;
 }
 
 /** One-line description of where the pin sits, for the popup and table. */
