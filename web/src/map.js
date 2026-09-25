@@ -56,6 +56,7 @@ import {
   applyMuniParcelsBasemapStyle,
 } from './lib/muniParcelsStyle.js';
 import { polygonBboxMidpoint } from './lib/polygonCentroid.js';
+import { approxFitMaxZoom, unmappedPlacementText } from './lib/unmappedRolls.js';
 import { yieldToOverlay, duLabelFilter, duLabelTextField } from './lib/overlayHighlight.js';
 import { rollDisplay } from './lib/parcelLabelFields.js';
 import { zoningBylawText, devPlanBylawText } from './lib/amendment.js';
@@ -4286,9 +4287,12 @@ export function showResults(map, parcelFc, { fit = true } = {}) {
   }
   try {
     const [minLon, minLat, maxLon, maxLat] = bbox(parcelFc);
+    // A result made only of approximate pins (rolls not yet mapped) must not
+    // zoom to street level — that would read as an address-accurate match.
+    const approxZoom = approxFitMaxZoom(parcelFc.features);
     map.fitBounds(
       [[minLon, minLat], [maxLon, maxLat]],
-      { padding: 60, maxZoom: 18, duration: 800 }
+      { padding: 60, maxZoom: approxZoom ?? 18, duration: 800 }
     );
   } catch (err) {
     console.warn('fit bounds failed', err);
@@ -5666,6 +5670,15 @@ export function parcelHtml(p, { showJumpToList = false, hoverSoil = false } = {}
   }
   if (p.Property_Address)   lines.push(escapeHtml(p.Property_Address));
   if (p.Muni_Name_With_Typ) lines.push(`<em>${escapeHtml(p.Muni_Name_With_Typ)}</em>`);
+  // A roll MAO has but ROLL_ENTRY hasn't mapped yet (lib/unmappedRolls.js).
+  // Said right under the identity block: the pin is a stand-in placed from
+  // the legal description or the municipality, not a surveyed position.
+  if (p._unmapped) {
+    lines.push('<strong style="color:#b45309">\u26a0 Not on the parcel map yet</strong>'
+      + '<br><small style="color:#888">This roll is in the assessment roll but Roll Entry'
+      + ' has no boundary for it. ' + escapeHtml(unmappedPlacementText(p))
+      + ' Location is approximate \u2014 confirm on the MAO report or the title.</small>');
+  }
   // As-of boundary. With the Historical overlay on, the highlight traces this
   // parcel as it stood at the snapshot date while every attribute below it —
   // address, value, area, legal, land cover — is still TODAY's record. Say so

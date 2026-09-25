@@ -8,7 +8,7 @@ import { initSidebarTabs, setActiveTab, getActiveTab, onTabChange } from './lib/
 import { initDataStatusDialog } from './dataStatusDialog.js';
 // Phone mode: map-first shell + bottom sheet below 768px.
 import { initPhoneMode, ensureSheetVisible, isPhone, revealResultCard, setSheetState } from './lib/phoneMode.js';
-import { municipalityAt } from './lib/muniAt.js';
+import { municipalityAt, municipalityFeatures } from './lib/muniAt.js';
 
 // Phase 4 form controls.
 import { initChipInput } from './lib/chipInput.js';
@@ -170,6 +170,7 @@ import {
   canonicalRoll,
   acresFromFrontageField,
   fetchRollLayerPublishedDate,
+  fetchSectionSurveyPoints,
 } from './arcgis.js';
 import {
   quartersToFc,
@@ -307,6 +308,11 @@ import {
 } from './lib/condoDev.js';
 import { polygonBboxMidpoint } from './lib/polygonCentroid.js';
 import {
+  strRefsFromRecord, distinctSections, sectionWhere, placeFromSurvey,
+  municipalityCentre, findMunicipality, muniNoForListName,
+  selectUnmappedRecords, buildUnmappedFeature, unmappedCountNote, unmappedPlacementText,
+} from './lib/unmappedRolls.js';
+import {
   mfInvFillColor, mfInvPasses, mfInvLegendSteps, clampMinDu, mfInvDu, sameLegendSteps,
 } from './lib/mfInventory.js';
 import { resolveParcelAcres, formatRollSizeField, parseRollFrontageFeet } from './lib/acres.js';
@@ -329,6 +335,7 @@ import {
   parcelLegalKey,
   searchLegalIndex,
   lookupLegalRecordsByParcelKeys,
+  lookupLegalRecordsByRollSet,
   warmLegalIndex,
   getLegalIndexMetadata,
   getParishOptions,
@@ -4162,6 +4169,75 @@ function buildEnteredRollOrder(rollInput) {
 }
 
 /**
+ * Is this a plain roll search — rolls plus at most a municipality? Only then
+ * may a roll that missed in ROLL_ENTRY come back as an approximate pin. With
+ * an address, zoning, drainage or dwelling-unit filter also set, a miss means
+ * "doesn't pass the filter" as often as "isn't mapped yet", and a pin the
+ * filter never checked would be a false match.
+ */
+function isRollOnlySearch(inputs) {
+  if (!parseRollList(inputs.roll).length) return false;
+  return !(inputs.addressFrom || inputs.addressTo || inputs.addressStreet
+    || inputs.addressType || inputs.addressDir || inputs.zoneCategory
+    || inputs.zoningChanged || inputs.devPlanChanged
+    || inputs.tileDrainageOnly || inputs.irrigationOnly || inputs.duMode);
+}
+
+/**
+ * Stand-in Point features for rolls that exist in MAO (the legal index) but
+ * have no ROLL_ENTRY polygon yet — see lib/unmappedRolls.js. Placed at the
+ * quarter / section named in the legal description when MB_LegalDesc has it,
+ * otherwise at the middle of the municipality. Never throws: any failure just
+ * means fewer pins, and the roll is reported as not found as before.
+ */
+async function resolveUnmappedRolls(missingRolls, municipality) {
+  if (!missingRolls?.length) return [];
+  try {
+    const canonical = [...new Set(missingRolls.map((r) => canonicalRoll(r)))];
+    const [recsByRoll, muniFeats] = await Promise.all([
+      lookupLegalRecordsByRollSet(canonical),
+      municipalityFeatures().catch(() => []),
+    ]);
+    const muniNo = municipality ? muniNoForListName(muniFeats, municipality) : null;
+    // A picked municipality the boundary file can't name would otherwise
+    // widen the lookup to every municipality — stand down instead.
+    if (municipality && muniNo == null) return [];
+    const recs = selectUnmappedRecords(canonical, recsByRoll, muniNo);
+    if (!recs.length) return [];
+
+    // One MB_LegalDesc query per distinct section across every record.
+    const refsByRec = recs.map((rec) => strRefsFromRecord(rec));
+    const sections = new Map();
+    for (const refs of refsByRec) {
+      for (const sec of distinctSections(refs)) {
+        sections.set(`${sec.sec}|${sec.twp}|${sec.rge}|${sec.dir}`, sec);
+      }
+    }
+    const surveyBySection = new Map();
+    await Promise.all([...sections].map(async ([key, sec]) => {
+      let fc = await fetchSectionSurveyPoints(sectionWhere(sec));
+      if (!fc?.features?.length) fc = await fetchSectionSurveyPoints(sectionWhere(sec, { quoted: true }));
+      if (fc) surveyBySection.set(key, fc);
+    }));
+
+    const out = [];
+    recs.forEach((rec, i) => {
+      const muniFeature = findMunicipality(muniFeats, rec.muni_no);
+      let place = placeFromSurvey(refsByRec[i], surveyBySection);
+      if (!place) {
+        const c = municipalityCentre(muniFeature);
+        if (c) place = { ...c, basis: 'municipality' };
+      }
+      if (place) out.push(buildUnmappedFeature(rec, place, muniFeature, i + 1));
+    });
+    return out;
+  } catch (err) {
+    console.warn('Unmapped-roll lookup failed (non-fatal):', err);
+    return [];
+  }
+}
+
+/**
  * The rollOrder to number by right now — null unless the option is on AND
  * there is a real order to follow. The `rollCount > 1` test mirrors
  * updateNumberingAvailability's, so what gets applied can never disagree
@@ -4974,6 +5050,20 @@ async function runSearch() {
       setCount(`Search failed: ${err.message}`);
       return;
     }
+    // A roll MAO knows but ROLL_ENTRY hasn't mapped yet (a new subdivision,
+    // a fresh split) comes back as an approximate pin rather than "not
+    // found" — see lib/unmappedRolls.js. Added before the legal join below so
+    // the stand-in rows get their Legal / Title cells like any other parcel.
+    if (!hasList && !hasLegalSearch && !waterPre?.applied && isRollOnlySearch(inputs)) {
+      const stillMissing = missingRollsFromResults(inputs.roll, parcelFc);
+      if (stillMissing.length > 0) {
+        setCount('Checking the assessment roll for parcels not yet mapped…');
+        const unmapped = await resolveUnmappedRolls(stillMissing, inputs.municipality);
+        if (unmapped.length > 0) {
+          parcelFc = { ...parcelFc, features: [...(parcelFc.features || []), ...unmapped] };
+        }
+      }
+    }
     // Always enrich the result table's Legal + Title columns from the
     // legal index, even when the user didn't type a legal-search
     // criterion. Previously only the explicit legal-search path
@@ -5095,6 +5185,8 @@ async function runSearch() {
       const tail = missingRolls.length > 10 ? ` and ${missingRolls.length - 10} others` : '';
       capNotes.push(`${missingRolls.length} of ${rollList.length} not found: ${inline}${tail}`);
     }
+    const unmappedNote = unmappedCountNote(parcelFc.features);
+    if (unmappedNote) capNotes.push(unmappedNote);
     // List-import mode gets its own label that frames N as
     // "of the imported list", folding the resolver's unresolved
     // count into the tail so the user sees the full pipeline at a
@@ -14984,16 +15076,26 @@ function rollNumberCell(p) {
   const safe = safeExternalUrl(p.Asmt_Rpt_Url);
   if (!safe) {
     cell.textContent = display;
-    return cell;
+  } else {
+    const a = document.createElement('a');
+    a.href = safe;
+    a.target = '_blank';
+    a.rel = 'noreferrer';
+    a.textContent = display;
+    a.title = 'Open this parcel on Manitoba Assessment Online';
+    a.addEventListener('click', (e) => e.stopPropagation());
+    cell.appendChild(a);
   }
-  const a = document.createElement('a');
-  a.href = safe;
-  a.target = '_blank';
-  a.rel = 'noreferrer';
-  a.textContent = display;
-  a.title = 'Open this parcel on Manitoba Assessment Online';
-  a.addEventListener('click', (e) => e.stopPropagation());
-  cell.appendChild(a);
+  // In MAO but not yet in Roll Entry — the map shows an approximate pin
+  // (lib/unmappedRolls.js). Flagged here too so the row can't pass for a
+  // mapped parcel once it's scrolled away from the popup.
+  if (p._unmapped) {
+    const tag = document.createElement('small');
+    tag.textContent = ' (not mapped)';
+    tag.style.color = '#b45309';
+    tag.title = `Not on the parcel map yet. ${unmappedPlacementText(p)}`;
+    cell.appendChild(tag);
+  }
   return cell;
 }
 
