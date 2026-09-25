@@ -4018,7 +4018,7 @@ for (const el of [$addressFrom, $addressTo, $addressStreet, $roll, $legalText, $
   });
 }
 
-// ---------- "Advanced searches" active-criteria badge ----------
+// ---------- "Additional Searches" active-criteria badge ----------
 //
 // The advanced group is collapsed by default, so a criterion set in an
 // earlier session (or restored from a shared URL) silently narrows the
@@ -4097,7 +4097,7 @@ function renderAdvancedFilterBadge() {
   }
   badge.hidden = false;
   badge.textContent = chips.map((c) => c.label).join(' · ');
-  badge.title = `${chips.length} advanced criteri${chips.length === 1 ? 'on' : 'a'} set — ${chips.map((c) => c.detail).join('; ')}`;
+  badge.title = `${chips.length} additional search criteri${chips.length === 1 ? 'on' : 'a'} set — ${chips.map((c) => c.detail).join('; ')}`;
 }
 
 // Delegated so every control in the group is covered, including any

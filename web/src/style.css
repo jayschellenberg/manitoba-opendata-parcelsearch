@@ -2028,13 +2028,14 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 
 /* Civic-address From/To/Street row. From + To are narrow numeric
    inputs; the Street Name field takes whatever's left so the row
-   stays on one line at the 280-px sidebar width. */
+   stays on one line at the 280-px sidebar width. 64px matches Winnipeg
+   ParcelSearch and still fits five digits (Wpg/MB parity, 2026-09-24). */
 .sidebar .address-row {
   display: flex;
   gap: 6px;
 }
-.sidebar .address-row .address-from-field   { flex: 0 0 96px; min-width: 0; }
-.sidebar .address-row .address-to-field     { flex: 0 0 96px; min-width: 0; }
+.sidebar .address-row .address-from-field   { flex: 0 0 64px; min-width: 0; }
+.sidebar .address-row .address-to-field     { flex: 0 0 64px; min-width: 0; }
 .sidebar .address-row .address-street-field { flex: 1 1 auto; min-width: 0; }
 
 /* Legal description + Certificate of Title on a single row, each at
@@ -4437,7 +4438,7 @@ body:not(.has-max-km) #results td.subj-col {
    Parcel-list import: trigger + resolved-pill (live inside the
    sidebar Property Search panel), plus the <dialog> modal.
 
-   The trigger button sits at the left edge of the Advanced searches
+   The trigger button sits at the left edge of the Additional Searches
    collapsible (relocated there from the Roll # chip-input row to keep
    the Roll # field uncluttered).
    Tapping it opens the modal; once the modal resolves a list, the
