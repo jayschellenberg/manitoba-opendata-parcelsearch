@@ -2735,6 +2735,31 @@ export async function fetchSurveyGridForMuni(muniNameWithTyp, muniBoundaryFeatur
   return fc;
 }
 
+/**
+ * The quarter-section points of one section from MB_LegalDesc, as a GeoJSON
+ * FeatureCollection. Used to place a roll that exists in MAO but has no
+ * ROLL_ENTRY polygon yet (lib/unmappedRolls.js). `where` comes from
+ * sectionWhere(); a section has four quarters, so one small page is always
+ * enough. Returns null on any failure — the caller falls back to the
+ * municipality centre rather than fail the search.
+ */
+export async function fetchSectionSurveyPoints(where) {
+  try {
+    const fc = await fetchPage(SURVEY_GRID_URL, {
+      where,
+      outFields: 'QUARTER,SECTION,TOWNSHIP,RANGE,MERIDIAN',
+      returnGeometry: 'true',
+      outSR: '4326',
+      f: 'geojson',
+      resultRecordCount: '50',
+    });
+    return fc && Array.isArray(fc.features) ? fc : null;
+  } catch (err) {
+    console.warn('Section survey lookup failed:', err?.message || err);
+    return null;
+  }
+}
+
 export async function fetchMunicipalBoundaries() {
   const cacheKey = 'mb_muni_boundaries_v2';
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);

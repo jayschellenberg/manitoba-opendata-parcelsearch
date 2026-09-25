@@ -178,6 +178,41 @@ export function lookupLegalRecordsByRollSet(index, rollSet) {
 }
 
 /**
+ * The legal-index records whose roll numbers sit closest to each wanted
+ * roll within one municipality — `k` below and `k` above, nearest first,
+ * no further than `window` whole-roll units away. Roll numbers run roughly
+ * in geographic order inside a municipality, so these neighbours are how a
+ * roll that is in neither ROLL_ENTRY nor this index gets an approximate
+ * location (lib/unmappedRolls.js). Returns
+ * Map<canonicalRoll, { below: Record[], above: Record[] }>.
+ */
+export function nearestRollRecords(index, muniNo, rolls, { k = 3, window = 100 } = {}) {
+  const out = new Map();
+  const muni = Number(muniNo);
+  const wanted = [];
+  for (const r of rolls || []) {
+    const v = parseFloat(r);
+    if (Number.isFinite(v)) wanted.push({ key: String(r), v });
+  }
+  if (!Number.isFinite(muni) || wanted.length === 0) return out;
+  const pool = [];
+  for (const row of index?.rows || []) {
+    if (Number(row[FIELD.muni_no]) !== muni) continue;
+    const v = parseFloat(row[FIELD.roll_no_txt]);
+    if (Number.isFinite(v)) pool.push({ v, row });
+  }
+  for (const w of wanted) {
+    const below = pool.filter((p) => p.v < w.v && w.v - p.v <= window).sort((a, b) => b.v - a.v);
+    const above = pool.filter((p) => p.v > w.v && p.v - w.v <= window).sort((a, b) => a.v - b.v);
+    out.set(w.key, {
+      below: below.slice(0, k).map((p) => rowToRecord(p.row)),
+      above: above.slice(0, k).map((p) => rowToRecord(p.row)),
+    });
+  }
+  return out;
+}
+
+/**
  * Bulk-lookup records by canonical section-township-range token
  * ("NE|27|7|4|E", the deriveStrTokens encoding). Used by the parcel-
  * list resolver for rows that carry ONLY a grid legal description —

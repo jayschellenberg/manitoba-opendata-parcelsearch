@@ -16,6 +16,7 @@ import {
   lookupLegalRecordsByParcelKeys,
   lookupLegalRecordsByRollSet,
   lookupLegalRecordsByStrSet,
+  nearestRollRecords,
   listParishOptions,
 } from '../legalIndex.core.js';
 
@@ -34,6 +35,10 @@ self.addEventListener('message', async (ev) => {
       // Map → array-of-pairs for postMessage transport. Re-hydrated on
       // the main thread by the wrapper in legalIndex.js.
       const map = lookupLegalRecordsByRollSet(parsed, payload?.rolls || []);
+      result = [...map.entries()];
+    }
+    else if (type === 'nearestRolls') {
+      const map = nearestRollRecords(parsed, payload?.muniNo, payload?.rolls || [], payload?.opts || {});
       result = [...map.entries()];
     }
     else if (type === 'lookupStr') {

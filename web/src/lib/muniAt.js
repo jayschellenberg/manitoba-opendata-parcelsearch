@@ -24,6 +24,12 @@ async function features() {
   return loading;
 }
 
+/** The boundary features themselves (fetched once and shared). Rejects when
+ *  the file can't be fetched. */
+export function municipalityFeatures() {
+  return features();
+}
+
 /**
  * Pure: the first feature whose polygon contains [lng, lat], as
  * { no, name, listName } — or null. Exported for the test; the async
