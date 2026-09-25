@@ -19,6 +19,17 @@
 //                  unit, a river lot); the pin goes to the middle of the
 //                  municipality. Says only "somewhere in here".
 //
+// A roll newer than the last MAO scrape isn't in the legal index either —
+// the scrape's delta is driven by ROLL_ENTRY changes, so a roll ROLL_ENTRY
+// has never carried waits for its municipality's 6-month re-scrape. For
+// those, with a municipality picked:
+//
+//   4. neighbour — roll numbers run roughly in geographic order inside a
+//                  municipality, so the pin goes between the mapped parcels
+//                  with the nearest roll numbers either side (within
+//                  NEIGHBOUR_ROLL_WINDOW). Nothing confirms such a roll
+//                  exists, so it is flagged `_unconfirmed` as well.
+//
 // The feature is flagged `_unmapped` with its basis, so the popup, the table
 // and the status line can all say the location is approximate rather than let
 // a pin read as a surveyed position. It renders on the existing `parcel-pin`
@@ -39,7 +50,16 @@ export const UNMAPPED_BASIS = Object.freeze({
   quarter:      { zoom: 14, label: 'quarter section' },
   section:      { zoom: 13, label: 'section' },
   municipality: { zoom: 10, label: 'municipality' },
+  neighbour:    { zoom: 15, label: 'neighbouring rolls' },
 });
+
+/** How far, in whole roll numbers, a neighbour may be from the wanted roll. */
+export const NEIGHBOUR_ROLL_WINDOW = 100;
+
+/** Neighbours further apart than this straddle a numbering break (the
+ *  sequence jumping to another part of the municipality), so the pin goes
+ *  to the nearer-numbered one instead of the empty ground between them. */
+export const NEIGHBOUR_MAX_SPREAD_M = 3000;
 
 /** Cap on how many stand-in pins one search adds. A roll typed without a
  *  municipality can match the same number in many municipalities. */
@@ -210,7 +230,8 @@ export function buildUnmappedFeature(rec, place, muniFeature, seq) {
   const muniNo = Number(rec.muni_no);
   const basis = UNMAPPED_BASIS[place.basis] ? place.basis : 'municipality';
   const ref = place.ref;
-  const refLabel = ref ? `${ref.sec}-${ref.twp}-${ref.rge}${ref.dir || ''}` : '';
+  const refLabel = place.refLabel
+    || (ref ? `${ref.sec}-${ref.twp}-${ref.rge}${ref.dir || ''}` : '');
   const muniName = mp.MUNI_NAME || rec.municipality || '';
   return {
     type: 'Feature',
@@ -223,6 +244,8 @@ export function buildUnmappedFeature(rec, place, muniFeature, seq) {
       Property_Address: rec.civic_address || '',
       Asmt_Rpt_Url: rec.source_url || '',
       _unmapped: true,
+      // In neither ROLL_ENTRY nor the MAO scrape — nothing confirms it exists.
+      _unconfirmed: basis === 'neighbour',
       _unmappedBasis: basis,
       _unmappedRef: refLabel,
       _approxZoom: UNMAPPED_BASIS[basis].zoom,
@@ -230,10 +253,65 @@ export function buildUnmappedFeature(rec, place, muniFeature, seq) {
   };
 }
 
+const rollDisp = (r) => String(r || '').replace(/\.000$/, '');
+
+function metresBetween(a, b) {
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+/**
+ * Place a roll from its nearest-numbered neighbours. `neighbours` is
+ * `{ below: Record[], above: Record[] }` (nearest first, from the legal
+ * index); `centreOf(rec)` returns the mapped parcel's `{ lng, lat }` or null
+ * when ROLL_ENTRY has no polygon for it. The first mapped record each side
+ * is used. Both sides and close together → the midpoint; far apart → the
+ * one nearer by roll number; one side only → that one. Returns
+ * `{ lng, lat, basis: 'neighbour', refLabel }` or null.
+ */
+export function placeFromNeighbours(roll, neighbours, centreOf) {
+  const want = parseFloat(roll);
+  const pick = (list) => {
+    for (const rec of list || []) {
+      const c = centreOf(rec);
+      if (c && Number.isFinite(c.lng) && Number.isFinite(c.lat)) return { rec, c };
+    }
+    return null;
+  };
+  const lo = pick(neighbours?.below);
+  const hi = pick(neighbours?.above);
+  if (!lo && !hi) return null;
+  const label = (x) => {
+    const legal = String(x.rec.legal_description || '').trim();
+    return `${rollDisp(x.rec.roll_no_txt)}${legal ? ` (${legal})` : ''}`;
+  };
+  if (lo && hi && metresBetween(lo.c, hi.c) <= NEIGHBOUR_MAX_SPREAD_M) {
+    return {
+      lng: (lo.c.lng + hi.c.lng) / 2,
+      lat: (lo.c.lat + hi.c.lat) / 2,
+      basis: 'neighbour',
+      refLabel: `between rolls ${label(lo)} and ${label(hi)}`,
+    };
+  }
+  let one = lo || hi;
+  if (lo && hi) {
+    const dLo = Math.abs(want - parseFloat(lo.rec.roll_no_txt));
+    const dHi = Math.abs(want - parseFloat(hi.rec.roll_no_txt));
+    one = dHi < dLo ? hi : lo;
+  }
+  return { ...one.c, basis: 'neighbour', refLabel: `beside roll ${label(one)}` };
+}
+
 /** One-line description of where the pin sits, for the popup and table. */
 export function unmappedPlacementText(p) {
   const basis = p?._unmappedBasis;
   if (basis === 'quarter') return `Pin at the quarter section in the legal description${p._unmappedRef ? ` (${p._unmappedRef})` : ''}.`;
+  if (basis === 'neighbour') return `Pin placed ${p._unmappedRef || 'between the nearest-numbered rolls'} — roll numbers run roughly in order on the ground, but a numbering break can put it in the wrong spot.`;
   if (basis === 'section') return `Pin at the centre of section ${p._unmappedRef || 'in the legal description'}.`;
   return 'Pin at the centre of the municipality — the legal description has no section to place it by.';
 }

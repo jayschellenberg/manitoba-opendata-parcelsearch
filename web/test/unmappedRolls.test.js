@@ -12,8 +12,9 @@ import {
   strRefsFromRecord, distinctSections, sectionWhere, placeFromSurvey,
   municipalityCentre, findMunicipality, muniNoForListName,
   selectUnmappedRecords, buildUnmappedFeature, unmappedCountNote,
-  unmappedPlacementText, approxFitMaxZoom, MAX_UNMAPPED,
+  unmappedPlacementText, approxFitMaxZoom, MAX_UNMAPPED, placeFromNeighbours,
 } from '../src/lib/unmappedRolls.js';
+import { nearestRollRecords } from '../src/legalIndex.core.js';
 
 const results = [];
 function test(name, fn) {
@@ -132,6 +133,63 @@ test('count note and zoom cap', () => {
   assert.equal(approxFitMaxZoom([b]), 14);
   assert.equal(approxFitMaxZoom([a, real]), null);
   assert.equal(approxFitMaxZoom([]), null);
+});
+
+// ---- neighbour placement (roll in neither ROLL_ENTRY nor the MAO scrape) ----
+
+const row = (muni, roll, legal = '') => [muni, roll, '', '', '', legal, '', '', '', '', '', ''];
+const index = { rows: [
+  row(610, '344340.000', '3-2-22850'),
+  row(610, '344345.000', '4-2-22850'),
+  row(610, '344400.000', '1--75938'),
+  row(610, '344600.000'),
+  row(152, '344350.000'),
+] };
+
+test('nearest rolls stay in the municipality, nearest first, within the window', () => {
+  const m = nearestRollRecords(index, 610, ['344360.000'], { k: 3, window: 100 });
+  const n = m.get('344360.000');
+  assert.deepEqual(n.below.map((r) => r.roll_no_txt), ['344345.000', '344340.000']);
+  assert.deepEqual(n.above.map((r) => r.roll_no_txt), ['344400.000']);
+  const far = nearestRollRecords(index, 610, ['344500.000'], { window: 50 }).get('344500.000');
+  assert.equal(far.below.length + far.above.length, 0);
+});
+
+const near = nearestRollRecords(index, 610, ['344360.000']).get('344360.000');
+
+test('close neighbours either side → midpoint, labelled with both', () => {
+  const centres = { '344345.000': { lng: -96.00, lat: 49.00 }, '344400.000': { lng: -96.01, lat: 49.00 } };
+  const p = placeFromNeighbours('344360.000', near, (r) => centres[r.roll_no_txt] || null);
+  assert.equal(p.basis, 'neighbour');
+  assert.ok(Math.abs(p.lng + 96.005) < 1e-9);
+  assert.match(p.refLabel, /between rolls 344345 \(4-2-22850\) and 344400/);
+});
+
+test('an unmapped nearest neighbour is skipped for the next one', () => {
+  const centres = { '344340.000': { lng: -96.00, lat: 49.00 } };
+  const p = placeFromNeighbours('344360.000', near, (r) => centres[r.roll_no_txt] || null);
+  assert.match(p.refLabel, /beside roll 344340/);
+});
+
+test('neighbours far apart (numbering break) → the nearer-numbered one', () => {
+  const centres = { '344345.000': { lng: -96.00, lat: 49.00 }, '344400.000': { lng: -96.50, lat: 49.40 } };
+  const p = placeFromNeighbours('344360.000', near, (r) => centres[r.roll_no_txt] || null);
+  assert.deepEqual([p.lng, p.lat], [-96.00, 49.00]);
+});
+
+test('no mapped neighbour → no pin', () => {
+  assert.equal(placeFromNeighbours('344360.000', near, () => null), null);
+  assert.equal(placeFromNeighbours('344360.000', undefined, () => null), null);
+});
+
+test('a neighbour-placed pin is flagged unconfirmed', () => {
+  const f = buildUnmappedFeature({ muni_no: 610, roll_no_txt: '344360.000' },
+    { lng: -96, lat: 49, basis: 'neighbour', refLabel: 'between rolls 1 and 2' }, null, 1);
+  assert.equal(f.properties._unconfirmed, true);
+  assert.equal(f.properties._approxZoom, 15);
+  assert.match(unmappedPlacementText(f.properties), /between rolls 1 and 2.*numbering break/);
+  const g = buildUnmappedFeature({ muni_no: 610, roll_no_txt: '1.000' }, { lng: 0, lat: 0, basis: 'quarter' }, null, 2);
+  assert.equal(g.properties._unconfirmed, false);
 });
 
 const failed = results.filter((r) => r === 0).length;

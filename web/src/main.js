@@ -311,6 +311,7 @@ import {
   strRefsFromRecord, distinctSections, sectionWhere, placeFromSurvey,
   municipalityCentre, findMunicipality, muniNoForListName,
   selectUnmappedRecords, buildUnmappedFeature, unmappedCountNote, unmappedPlacementText,
+  placeFromNeighbours, NEIGHBOUR_ROLL_WINDOW, MAX_UNMAPPED,
 } from './lib/unmappedRolls.js';
 import {
   mfInvFillColor, mfInvPasses, mfInvLegendSteps, clampMinDu, mfInvDu, sameLegendSteps,
@@ -336,6 +337,7 @@ import {
   searchLegalIndex,
   lookupLegalRecordsByParcelKeys,
   lookupLegalRecordsByRollSet,
+  lookupNearestRolls,
   warmLegalIndex,
   getLegalIndexMetadata,
   getParishOptions,
@@ -4184,6 +4186,40 @@ function isRollOnlySearch(inputs) {
 }
 
 /**
+ * Approximate pins for rolls in neither ROLL_ENTRY nor the legal index,
+ * placed between the nearest-numbered mapped rolls in the same
+ * municipality (lib/unmappedRolls.js placeFromNeighbours). A roll with no
+ * mapped neighbour within NEIGHBOUR_ROLL_WINDOW gets no pin — a typo would
+ * otherwise always produce one.
+ */
+async function placeByNeighbourRolls(rolls, muniNo, muniFeats, seqBase) {
+  const near = await lookupNearestRolls(muniNo, rolls, { k: 3, window: NEIGHBOUR_ROLL_WINDOW });
+  const keys = [];
+  for (const { below, above } of near.values()) {
+    for (const rec of [...below, ...above]) keys.push({ muni_no: rec.muni_no, roll_no_txt: rec.roll_no_txt });
+  }
+  if (keys.length === 0) return [];
+  const fc = await searchParcels({ parcelKeys: keys });
+  const centres = new Map();
+  for (const f of fc?.features || []) {
+    const k = parcelLegalKey(f.properties || {});
+    const c = parcelCentrePoint(f);
+    if (k && c && !centres.has(k)) centres.set(k, c);
+  }
+  const centreOf = (rec) => centres.get(legalRecordKey(rec)) || null;
+  const muniFeature = findMunicipality(muniFeats, muniNo);
+  const out = [];
+  for (const roll of rolls) {
+    const place = placeFromNeighbours(roll, near.get(roll), centreOf);
+    if (!place) continue;
+    out.push(buildUnmappedFeature(
+      { muni_no: muniNo, roll_no_txt: roll }, place, muniFeature, seqBase + out.length + 1,
+    ));
+  }
+  return out;
+}
+
+/**
  * Stand-in Point features for rolls that exist in MAO (the legal index) but
  * have no ROLL_ENTRY polygon yet — see lib/unmappedRolls.js. Placed at the
  * quarter / section named in the legal description when MB_LegalDesc has it,
@@ -4203,7 +4239,6 @@ async function resolveUnmappedRolls(missingRolls, municipality) {
     // widen the lookup to every municipality — stand down instead.
     if (municipality && muniNo == null) return [];
     const recs = selectUnmappedRecords(canonical, recsByRoll, muniNo);
-    if (!recs.length) return [];
 
     // One MB_LegalDesc query per distinct section across every record.
     const refsByRec = recs.map((rec) => strRefsFromRecord(rec));
@@ -4230,6 +4265,15 @@ async function resolveUnmappedRolls(missingRolls, municipality) {
       }
       if (place) out.push(buildUnmappedFeature(rec, place, muniFeature, i + 1));
     });
+
+    // Rolls the MAO scrape doesn't have either (newer than the last
+    // re-scrape): place by the nearest-numbered mapped rolls. Only with a
+    // municipality picked — roll numbers mean nothing across municipalities.
+    const found = new Set(recs.map((r) => canonicalRoll(r.roll_no_txt)));
+    const unknown = canonical.filter((r) => !found.has(r)).slice(0, MAX_UNMAPPED - out.length);
+    if (muniNo != null && unknown.length > 0) {
+      out.push(...await placeByNeighbourRolls(unknown, muniNo, muniFeats, out.length));
+    }
     return out;
   } catch (err) {
     console.warn('Unmapped-roll lookup failed (non-fatal):', err);

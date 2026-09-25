@@ -5675,8 +5675,12 @@ export function parcelHtml(p, { showJumpToList = false, hoverSoil = false } = {}
   // the legal description or the municipality, not a surveyed position.
   if (p._unmapped) {
     lines.push('<strong style="color:#b45309">\u26a0 Not on the parcel map yet</strong>'
-      + '<br><small style="color:#888">This roll is in the assessment roll but Roll Entry'
-      + ' has no boundary for it. ' + escapeHtml(unmappedPlacementText(p))
+      + '<br><small style="color:#888">'
+      + (p._unconfirmed
+        ? 'This roll is not in Roll Entry or the app\u2019s copy of MAO, so the app cannot'
+          + ' confirm it exists \u2014 check the roll number on MAO. '
+        : 'This roll is in the assessment roll but Roll Entry has no boundary for it. ')
+      + escapeHtml(unmappedPlacementText(p))
       + ' Location is approximate \u2014 confirm on the MAO report or the title.</small>');
   }
   // As-of boundary. With the Historical overlay on, the highlight traces this

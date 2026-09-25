@@ -19,6 +19,7 @@ import {
   lookupLegalRecordsByParcelKeys as lookupCore,
   lookupLegalRecordsByRollSet as lookupRollsCore,
   lookupLegalRecordsByStrSet as lookupStrCore,
+  nearestRollRecords as nearestRollsCore,
   listParishOptions as parishOptionsCore,
   PARISH_LOT_TYPES,
 } from './legalIndex.core.js';
@@ -189,6 +190,24 @@ export async function lookupLegalRecordsByStrSet(tokens) {
   }
   const index = await loadDirect();
   return lookupStrCore(index, tokenList);
+}
+
+/**
+ * Nearest-numbered rolls in one municipality, below and above each wanted
+ * roll. See legalIndex.core.js nearestRollRecords. Returns
+ * Map<roll, { below: Record[], above: Record[] }>.
+ */
+export async function lookupNearestRolls(muniNo, rolls, opts = {}) {
+  const rollList = Array.from(rolls || []);
+  if (rollList.length === 0) return new Map();
+  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
+  if (viaWorker) {
+    await viaWorker;
+    const pairs = await postMessage('nearestRolls', { muniNo, rolls: rollList, opts });
+    return new Map(pairs || []);
+  }
+  const index = await loadDirect();
+  return nearestRollsCore(index, muniNo, rollList, opts);
 }
 
 /**
