@@ -4017,7 +4017,7 @@ for (const el of [$addressFrom, $addressTo, $addressStreet, $roll, $legalText, $
 // active criterion beside the summary title, visible open or closed;
 // the title attribute carries the actual values.
 //
-// Deliberately excludes the Import List of Parcels action that shares
+// Deliberately excludes the Import list… action that shares
 // the group — a resolved list already announces itself in its own pill
 // above the action row.
 
