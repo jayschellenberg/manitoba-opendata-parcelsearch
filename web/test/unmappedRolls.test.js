@@ -13,6 +13,7 @@ import {
   municipalityCentre, findMunicipality, muniNoForListName,
   selectUnmappedRecords, buildUnmappedFeature, unmappedCountNote,
   unmappedPlacementText, approxFitMaxZoom, MAX_UNMAPPED, placeFromNeighbours,
+  MAO_SEARCH_URL, maoLinkTitle,
 } from '../src/lib/unmappedRolls.js';
 import { nearestRollRecords } from '../src/legalIndex.core.js';
 
@@ -190,6 +191,19 @@ test('a neighbour-placed pin is flagged unconfirmed', () => {
   assert.match(unmappedPlacementText(f.properties), /between rolls 1 and 2.*numbering break/);
   const g = buildUnmappedFeature({ muni_no: 610, roll_no_txt: '1.000' }, { lng: 0, lat: 0, basis: 'quarter' }, null, 2);
   assert.equal(g.properties._unconfirmed, false);
+});
+
+test('roll links: own MAO report when known, MAO search page otherwise', () => {
+  const withUrl = buildUnmappedFeature({ muni_no: 152, roll_no_txt: '1.000', source_url: 'https://www.gov.mb.ca/mao/public/summary.aspx?x=1' },
+    { lng: 0, lat: 0, basis: 'quarter' }, muni, 1).properties;
+  assert.equal(withUrl.Asmt_Rpt_Url, 'https://www.gov.mb.ca/mao/public/summary.aspx?x=1');
+  assert.equal(withUrl._maoSearchLink, false);
+  assert.equal(maoLinkTitle(withUrl), 'Open this parcel on Manitoba Assessment Online');
+  const noUrl = buildUnmappedFeature({ muni_no: 152, roll_no_txt: '344360.000' },
+    { lng: 0, lat: 0, basis: 'neighbour' }, muni, 2).properties;
+  assert.equal(noUrl.Asmt_Rpt_Url, MAO_SEARCH_URL);
+  assert.equal(noUrl._maoSearchLink, true);
+  assert.match(maoLinkTitle(noUrl), /pick HANOVER \(RM\) and enter roll 344360$/);
 });
 
 const failed = results.filter((r) => r === 0).length;
