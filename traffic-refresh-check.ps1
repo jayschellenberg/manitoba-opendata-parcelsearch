@@ -9,13 +9,15 @@
 #      series and the ~291 town count stations. A new edition means rebuild,
 #      which this script does unattended.
 #
-#   2. A new AADT_<year> COLUMN on the MHTIS ArcGIS Traffic Flow service.
-#      This one a rebuild CANNOT fix: the column list lives in AADT_FIELDS in
-#      web/src/arcgis.js, so picking it up is a code change. It is checked
-#      here anyway because it is exactly the failure that started this whole
-#      thread -- the app sat on AADT_2023 for months while AADT_2024 existed,
-#      showing a stale count on 36% of the network with no error anywhere.
-#      Silent staleness is the thing to catch, so this alerts and stops.
+#   2. A SCHEMA CHANGE on the MHTIS ArcGIS Traffic Flow service. A rebuild
+#      CANNOT fix this: the URL and field map live in TRAFFIC_FLOW_URL /
+#      TRAFFIC_FLOW_FIELDS in web/src/arcgis.js, both read from there (not
+#      copied here), and every field the app requests must still exist on
+#      the live layer. Until 2026-09 this watched for a new AADT_<year>
+#      column instead; the 2026-09-23 republish replaced those with a single
+#      AADT + AADT_YEAR and renamed the join fields, so the risk moved from
+#      "a newer column exists" to "a field the app asks for is gone".
+#      This alerts and stops -- it is a code change.
 #
 # WHY editions_seen, NOT editions. traffic-history.json records both: the
 # editions that CONTRIBUTED rows, and the editions the build LOOKED AT. Two
@@ -60,7 +62,6 @@ $NtfyTopic   = 'mbps-traffic-refresh-jks'
 $HistoryJson = Join-Path $root 'web\public\data\traffic-history.json'
 $ArcgisJs    = Join-Path $root 'web\src\arcgis.js'
 $IndexUrl    = 'https://www.gov.mb.ca/mti/traffic/mhtis_traffic_reports.html'
-$FlowMetaUrl = 'https://services6.arcgis.com/HQUud09zgy3Asw9X/arcgis/rest/services/MHTIS_Traffic_Flow_2023_(new)/FeatureServer/0?f=json'
 
 $LogDir = Join-Path $root 'logs'
 if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir -Force | Out-Null }
@@ -145,32 +146,33 @@ Log ("upstream editions:   {0}" -f ($available -join ', '))
 
 $newEditions = @($available | Where-Object { $seen -notcontains $_ })
 
-# --------------------------------------- flow service column drift check ---
-# A new AADT_<year> column needs AADT_FIELDS in arcgis.js updated. A rebuild
-# does not touch that, so this only ever reports.
+# ------------------------------------------ flow service schema check ---
+# Every field in TRAFFIC_FLOW_FIELDS (arcgis.js) must still exist on the live
+# layer at TRAFFIC_FLOW_URL. A missing one is a code change, so this only
+# ever reports. An unreachable layer is left to upstream-vintage-check.ps1,
+# which owns that alert; this logs it and moves on.
 
 $columnWarning = $null
 try {
-  $meta = Invoke-RestMethod -Uri $FlowMetaUrl -TimeoutSec 60
-  $svcYears = @($meta.fields | ForEach-Object { $_.name } |
-                Where-Object { $_ -match '^AADT_(\d{4})$' } |
-                ForEach-Object { [int]($_ -replace '^AADT_', '') } | Sort-Object -Unique)
   $js = Get-Content $ArcgisJs -Raw -Encoding UTF8
-  $m = [regex]::Match($js, 'AADT_FIELDS\s*=\s*\[(?<body>[^\]]*)\]')
-  $knownYears = @()
-  if ($m.Success) {
-    $knownYears = @([regex]::Matches($m.Groups['body'].Value, "AADT_(\d{4})") |
-                    ForEach-Object { [int]$_.Groups[1].Value } | Sort-Object -Unique)
+  $u = [regex]::Match($js, "const TRAFFIC_FLOW_URL\s*=\s*'(?<url>[^']+)'")
+  $m = [regex]::Match($js, 'TRAFFIC_FLOW_FIELDS\s*=\s*\{(?<body>[^}]*)\}')
+  if (-not $u.Success -or -not $m.Success) {
+    throw 'TRAFFIC_FLOW_URL / TRAFFIC_FLOW_FIELDS not found in arcgis.js'
   }
-  Log ("flow service AADT columns: {0}" -f ($svcYears -join ', '))
-  Log ("AADT_FIELDS knows:         {0}" -f ($knownYears -join ', '))
-  $unknown = @($svcYears | Where-Object { $knownYears -notcontains $_ })
-  if ($unknown.Count -gt 0) {
-    $columnWarning = "The MHTIS Traffic Flow service now publishes AADT_$($unknown -join ', AADT_') but AADT_FIELDS in web/src/arcgis.js reads only AADT_$($knownYears -join ', AADT_'). A rebuild does NOT pick this up -- it is a code change. Until it is made, segments whose station is absent from the annual reports fall back to a stale column."
-    Log "!! NEW FLOW COLUMN(S): $($unknown -join ', ') -- code change needed"
+  $wanted = @([regex]::Matches($m.Groups['body'].Value, "'(?<k>[A-Za-z0-9_]+)'\s*:") |
+              ForEach-Object { $_.Groups['k'].Value })
+  $meta = Invoke-RestMethod -Uri ($u.Groups['url'].Value + '?f=json') -TimeoutSec 60
+  if ($meta.error) { throw "flow layer answered: $($meta.error.message)" }
+  $have = @($meta.fields | ForEach-Object { $_.name })
+  $missing = @($wanted | Where-Object { $have -notcontains $_ })
+  Log ("flow fields the app reads: {0}" -f ($wanted -join ', '))
+  if ($missing.Count -gt 0) {
+    $columnWarning = "The MHTIS Traffic Flow layer at $($u.Groups['url'].Value) no longer has field(s) $($missing -join ', '), which TRAFFIC_FLOW_FIELDS in web/src/arcgis.js requests. The Flow overlay will fail or lose data until the field map is updated -- a code change, not a rebuild."
+    Log "!! FLOW FIELD(S) GONE: $($missing -join ', ') -- code change needed"
   }
 } catch {
-  Log "   (flow service metadata check skipped: $($_.Exception.Message))"
+  Log "   (flow service schema check skipped: $($_.Exception.Message))"
 }
 
 # ------------------------------------------------------------- decision ----
@@ -178,8 +180,8 @@ try {
 if ($newEditions.Count -eq 0 -and -not $Force) {
   Log 'no new annual report -- nothing to rebuild'
   if ($columnWarning) {
-    if ($DryRun) { Log "DRY RUN: would alert about the new flow column" }
-    else { Send-FailureAlert $root $NtfyTopic 'New MHTIS AADT column needs a code change' $columnWarning | Out-Null }
+    if ($DryRun) { Log "DRY RUN: would alert about the flow schema change" }
+    else { Send-FailureAlert $root $NtfyTopic 'MHTIS traffic flow schema changed - code change needed' $columnWarning | Out-Null }
   }
   Log '=== done'
   exit 0

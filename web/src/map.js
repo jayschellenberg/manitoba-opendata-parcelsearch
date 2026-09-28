@@ -1393,14 +1393,13 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
         paint: {
           // `_aadt` is stamped by joinFlowHistory(): the station's most
           // recent PUBLISHED count, which is fresher than anything the
-          // service carries for 604 stations. The AADT_<year> coalesce
+          // service carried for 604 stations. The service's own `AADT`
           // behind it is the fallback for a segment whose station is absent
-          // from the reports — newest column first, since the service keeps
-          // every stale one and the obvious field name is the oldest.
+          // from the reports (see TRAFFIC_FLOW_URL in arcgis.js).
           // Coalesce picks the first non-null BEFORE to-number, so an absent
-          // column falls through rather than being coerced to 0 and winning.
+          // value falls through rather than being coerced to 0 and winning.
           'line-color': [
-            'step', ['to-number', ['coalesce', ['get', '_aadt'], ['get', 'AADT_2024'], ['get', 'AADT_2023'], ['get', 'AADT'], 0]],
+            'step', ['to-number', ['coalesce', ['get', '_aadt'], ['get', 'AADT'], 0]],
             '#cccccc',
             500,    '#a8d8a8',
             2000,   '#f4d35e',

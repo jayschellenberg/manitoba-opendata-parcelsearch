@@ -260,10 +260,9 @@ test('segment colour steps on the joined count, falling back to the service', ()
   const band = (p) => at(p);
   assert.notEqual(band({ _aadt: 300 }), band({ _aadt: 3000 }), 'different bands differ');
   assert.equal(band({ _aadt: 3000 }), band({ _aadt: 4999 }), 'same band matches');
-  // _aadt wins over the service columns...
-  assert.equal(band({ _aadt: 3000, AADT_2024: 300 }), band({ _aadt: 3000 }));
-  // ...and an absent _aadt falls through to them rather than scoring 0.
-  assert.equal(band({ AADT_2024: 3000 }), band({ _aadt: 3000 }));
+  // _aadt wins over the service's own count...
+  assert.equal(band({ _aadt: 3000, AADT: 300 }), band({ _aadt: 3000 }));
+  // ...and an absent _aadt falls through to it rather than scoring 0.
   assert.equal(band({ AADT: 3000 }), band({ _aadt: 3000 }));
 });
 
