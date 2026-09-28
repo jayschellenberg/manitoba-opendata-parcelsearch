@@ -9152,7 +9152,7 @@ async function refreshOverlayLayersForMuniChange() {
 /**
  * Toggle one of the province-wide auxiliary overlays:
  *   contam  — Manitoba Contaminated Sites Registry (CSV → coloured points)
- *   flow    — MHTIS Traffic Flow 2023 (FeatureServer polylines, AADT-coloured)
+ *   flow    — MHTIS Traffic Flow 2025 (FeatureServer polylines, AADT-coloured)
  *   highways — Manitoba Road Network 2023 (FeatureServer polylines)
  *   riskAreas — official MASC crop-insurance risk-area polygons
  *
@@ -9311,8 +9311,8 @@ setMbHighwayAadtPeek(highwayAadtPeek);
  * So: the title says the counts are per-segment latest rather than naming
  * one year, the note under the swatches gives the real span, and the
  * per-segment year lives in the popup where a specific number can be
- * dated. Reads DateOfEsti via currentAadtYear — the year that belongs to
- * whichever column currentAadt() actually returned.
+ * dated. (Those counts were for the layer retired 2026-09-23; its
+ * replacement spreads 2025: 660, 2024: 695, 2023: 661, ~50 older to 1995.)
  */
 function updateFlowLegendTitle(fc) {
   const el = document.getElementById('flow-legend-title');

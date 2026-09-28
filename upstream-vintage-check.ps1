@@ -142,14 +142,24 @@ foreach ($url in $serviceUrls) {
     }
   } catch { $err = $_.Exception.Message }
 
-  # Year-stamped name? Look for a later sibling sharing the base name.
+  # Stamped name? Look for a later sibling sharing the base name. Two stamp
+  # shapes: a full yyyyMMdd date (E_MHTIS_LRS_20260923, the MHTIS traffic
+  # layer since 2026-09-23) is tried first, because the year-only pattern
+  # would read its leading "2026" as the year and miss a 20261015 sibling
+  # that shares it. Stamps compare as integers within one shape only.
   $newer = @()
   $leaf = ($svcName -replace '^.*/', '')
-  if ($leaf -match '^(?<base>.*?)(?<year>(19|20)\d{2})(?<tail>.*)$') {
-    $base = $Matches['base']; $year = [int]$Matches['year']
+  $stampRx = $null
+  if ($leaf -match '^(?<base>.*?)(?<stamp>(19|20)\d{6})(?!\d)') {
+    $stampRx = '(19|20)\d{6}(?!\d)'
+  } elseif ($leaf -match '^(?<base>.*?)(?<stamp>(19|20)\d{2})(?!\d)') {
+    $stampRx = '(19|20)\d{2}(?!\d)'
+  }
+  if ($stampRx) {
+    $base = $Matches['base']; $stamp = [int64]$Matches['stamp']
     foreach ($cand in (Get-OrgServices $orgRoot)) {
-      if ($cand -match ('^' + [regex]::Escape($base) + '(?<y>(19|20)\d{2})')) {
-        if ([int]$Matches['y'] -gt $year) { $newer += $cand }
+      if ($cand -match ('^' + [regex]::Escape($base) + '(?<y>' + $stampRx + ')')) {
+        if ([int64]$Matches['y'] -gt $stamp) { $newer += $cand }
       }
     }
   }
@@ -204,10 +214,10 @@ if ($superseded.Count) {
   $body += 'SUPERSEDED -- a later vintage of this layer is published:'
   foreach ($r in $superseded) { $body += "  $($r.Service)  ->  $($r.NewerFound -join ', ')" }
   $body += ''
-  $body += '  Repointing is NOT just a URL change. The 2023 traffic layer kept a stale'
-  $body += '  carried-forward `AADT` column and put the current count in `AADT_2023`, so'
-  $body += '  swapping the URL alone changed nothing. Diff the field list first, and bump'
-  $body += '  the fetch cache key so browsers do not serve the old data from cache.'
+  $body += '  Repointing is NOT just a URL change. Each MHTIS traffic republish has'
+  $body += '  changed the schema (2023: a new AADT_<year> column; 2026-09: new field'
+  $body += '  names, AADT + AADT_YEAR). Diff the field list first, and bump the fetch'
+  $body += '  cache key so browsers do not serve the old data from cache.'
   $body += ''
 }
 if ($unreachable.Count) {

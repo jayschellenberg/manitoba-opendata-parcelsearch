@@ -145,12 +145,10 @@ test('returns the newest published point', () => {
 console.log('\narcgis.js — joinFlowHistory');
 
 test('a segment takes its station\'s published count over the service column', () => {
-  // Station 73 on 2026-09-10: the service stops at 2024 (1,000) while the
-  // reports carry 2025 (1,040). Reading the service put a different number
+  // Station 73 on 2026-09-10: the service then stopped at 2024 (1,000) while
+  // the reports carried 2025 (1,040). Reading the service put a different number
   // on the segment than on the station dot sitting on it.
-  const fc = { features: [{ properties: {
-    StationNum: 73, AADT: 1040, AADT_2023: 1020, AADT_2024: 1000, DateOfEsti: 2024, EYear: 2019,
-  } }] };
+  const fc = { features: [{ properties: { StationNum: 73, AADT: 1000, AADT_YEAR: 2024 } }] };
   const p = joinFlowHistory(fc, { stations: { 73: { t: 0, y: { 2024: 1000, 2025: 1040 } } } })
     .features[0].properties;
   assert.equal(p._aadt, 1040);
@@ -161,18 +159,16 @@ test('a segment takes its station\'s published count over the service column', (
 });
 
 test('falls back to the service columns when the station is not in the reports', () => {
-  const fc = { features: [{ properties: {
-    StationNum: 999, AADT: 900, AADT_2023: 950, AADT_2024: 980, DateOfEsti: 2024, EYear: 2019,
-  } }] };
+  const fc = { features: [{ properties: { StationNum: 999, AADT: 980, AADT_YEAR: 2024 } }] };
   const p = joinFlowHistory(fc, { stations: {} }).features[0].properties;
-  assert.equal(p._aadt, 980, 'newest service column');
-  assert.equal(p._aadtYear, 2024, 'DateOfEsti');
+  assert.equal(p._aadt, 980, 'service AADT');
+  assert.equal(p._aadtYear, 2024, 'AADT_YEAR');
   assert.equal(p._src, 'service');
   assert.equal(p._labelYear, '980 (2024)');
 });
 
 test('a missing history file leaves the overlay on the service columns', () => {
-  const fc = { features: [{ properties: { StationNum: 73, AADT_2024: 1000, DateOfEsti: 2024 } }] };
+  const fc = { features: [{ properties: { StationNum: 73, AADT: 1000, AADT_YEAR: 2024 } }] };
   const p = joinFlowHistory(fc, null).features[0].properties;
   assert.equal(p._aadt, 1000);
   assert.equal(p._src, 'service');
@@ -181,7 +177,7 @@ test('a missing history file leaves the overlay on the service columns', () => {
 test('a segment and its station agree once both read the history', () => {
   // The property this whole change exists to guarantee.
   const history = { stations: { 73: { t: 0, y: { 2024: 1000, 2025: 1040 } } } };
-  const seg = joinFlowHistory({ features: [{ properties: { StationNum: 73, AADT_2024: 1000 } }] },
+  const seg = joinFlowHistory({ features: [{ properties: { StationNum: 73, AADT: 1000 } }] },
                               history).features[0].properties;
   const stn = joinTrafficHistory({ features: [{ properties: { StationNum: 73 } }] },
                                  history).features[0].properties;
