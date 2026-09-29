@@ -52,8 +52,8 @@ const DATASETS = [
   { name: 'traffic_history',  file: 'traffic-history.json',  hasMetadata: true,  schema_version: 1 },
   // section-grid, river-lots, masc-riverlots, and every per-muni
   // shard set now ship from outside this repo: the two big indexes
-  // above via GitHub Releases + edge functions; section-grid via the
-  // same Release-fn pattern (api/section-grid.js); everything else
+  // above via GitHub Releases + edge functions; section-grid as
+  // section-grid.pmtiles on R2 (rebuild-section-grid-tiles.ps1); everything else
   // via the mb-parcel-data CDN (raw.githubusercontent, pinned commit).
   // Future single-file datasets that this repo's deploy serves directly
   // go back in this list.

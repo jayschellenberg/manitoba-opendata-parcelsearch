@@ -222,10 +222,8 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // in front (immutable per-URL, so a repin never needs a purge). GitHub
 // only sees Vercel egress traffic; client IPs stop mattering. In `npm
 // run dev` the same path is proxied straight to raw by vite.config.js.
-// section-grid.json is separate: at 40 MB it ships from a GitHub
-// Release through the /api/section-grid edge function (see
-// fetchProvinceSectionGrid below). A stale, unread 40 MB copy is still
-// git-tracked in mb-parcel-data; nothing here points at it.
+// The province-wide section grid is not here either: it renders from
+// section-grid.pmtiles on R2 (map.js SECTION_GRID_TILES_URL).
 export const MB_PARCEL_DATA_REVISION =
   'b57d2a1da00660e5d26d6c4057898b0d46f26b8f';
 // Origin-absolute rather than a bare /gh-data/... path: MapLibre tile
@@ -1792,48 +1790,6 @@ export async function fetchSoilSurveyLabelsForMuni(muniNameWithTyp, muniBoundary
 const SURVEY_GRID_URL = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/MB_LegalDesc/FeatureServer/0';
 
 /**
- * Fetch the pre-baked province-wide Sec-Twp grid as a single static
- * GeoJSON file. Built by r/build_section_grid.R — section geometry
- * doesn't change, so the file ships through a GitHub Release and
- * the /api/section-grid edge function streams it with CORS (same
- * pattern as legal-index / assessment-index).
- *
- * Cached in localStorage with the same 30-day TTL as muni boundaries
- * (ample, since the grid never actually changes — TTL just prevents
- * unbounded staleness if the file is ever rebuilt). First load is
- * a single ~2 MB gzipped fetch; subsequent loads come from the cache.
- *
- * Returns a FeatureCollection of polygon features, the same shape
- * sectionLinesFromRows() produces. main.js can drop it straight onto
- * the survey-grid map source.
- */
-export async function fetchProvinceSectionGrid() {
-  // v3: source URL moved from a local /data/section-grid.json file to
-  // the /api/section-grid edge function (which streams the same
-  // GeoJSON from a GitHub Release — same pattern as legal-index /
-  // assessment-index). Bumping the cache key forces clients off the
-  // old in-localStorage entry on first load.
-  const cacheKey = 'mb_section_grid_province_v3';
-  const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
-  if (cached) return cached;
-  // Edge function URL — no cache-bust query param needed: the edge
-  // function URL is stable and a re-release just changes RELEASE_URL
-  // inside api/section-grid.js, which arrives with the next deploy.
-  const url = `${import.meta.env?.BASE_URL || '/'}api/section-grid`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(
-      `Province-wide section grid not found at ${url} (status ${res.status}). ` +
-      `Run \`Rscript r/build_section_grid.R\` to regenerate, then publish ` +
-      `a new GitHub Release and bump RELEASE_URL in api/section-grid.js.`
-    );
-  }
-  const fc = await res.json();
-  await writeCache(cacheKey, fc);
-  return fc;
-}
-
-/**
  * Fetch the pre-baked dominant MASC soil rating for every parcel in a
  * single municipality. Built by r/build_parcel_masc.R from a spatial
  * intersection of ROLL_ENTRY parcels × MASC quarter-section polygons.
@@ -2647,8 +2603,7 @@ function normalizeMuniLookupType(value) {
 /**
  * Fetch the pre-baked Manitoba river-lots polygon overlay. Built by
  * r/build_river_lots.R from MB-RIVER-LOTS.kmz. Same load pattern as
- * fetchProvinceSectionGrid — committed to source control, cached
- * 30 days. Returns a FeatureCollection of polygons each with
+ * the other static reference files — cached 30 days. Returns a FeatureCollection of polygons each with
  * properties.kind = 'riverlot' and properties.label = lot identifier.
  *
  * Returns null (not an error) if the static file is missing — river

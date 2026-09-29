@@ -493,6 +493,18 @@ export const SOIL_TILES_URL =
   || 'https://pub-091058079bf6458da1681945177e1682.r2.dev/soil.pmtiles';
 
 /**
+ * The province-wide Section/township grid archive
+ * (rebuild-section-grid-tiles.ps1), drawn when the grid is toggled with no
+ * municipality in scope. Display only, like the soil tiles: layers
+ * `sections` (polygons) and `section-labels` (centroid points, z11+).
+ * With a municipality selected the grid still comes from the live
+ * MB_LegalDesc fetch through the `survey-grid` GeoJSON source.
+ */
+export const SECTION_GRID_TILES_URL =
+  import.meta.env?.VITE_SECTION_GRID_TILES_URL
+  || 'https://pub-091058079bf6458da1681945177e1682.r2.dev/section-grid.pmtiles';
+
+/**
  * The archive holds every municipality, so each parcel layer carries a
  * filter narrowing it to the municipalities in scope. This is the
  * nothing-selected form: a filter that matches no feature, which is also
@@ -2170,6 +2182,61 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
         },
       });
 
+      // Province-wide section grid from PMTiles — the no-muni-selected
+      // case, which used to load a 40 MB GeoJSON into `survey-grid`.
+      // Paint and layout copied from survey-grid-line / survey-grid-label
+      // so the two paths look identical; the tiles start at z8 (below
+      // that a section is under 2 px). Visibility is driven through
+      // setSurveyGridVisible + setSectionGridTilesActive.
+      map.addSource('section-grid-tiles', {
+        type: 'vector',
+        url: `pmtiles://${SECTION_GRID_TILES_URL}`,
+      });
+      map.addLayer({
+        id: 'section-grid-tiles-line',
+        type: 'line',
+        source: 'section-grid-tiles',
+        'source-layer': 'sections',
+        minzoom: 8,
+        layout: { visibility: 'none', 'line-cap': 'square' },
+        paint: {
+          'line-color': '#444',
+          'line-width': [
+            'interpolate', ['linear'], ['zoom'],
+            8,  0.4,
+            12, 0.9,
+            16, 1.4,
+          ],
+          'line-opacity': 0.7,
+          'line-dasharray': [4, 3],
+        },
+      }, 'survey-grid-label');
+      map.addLayer({
+        id: 'section-grid-tiles-label',
+        type: 'symbol',
+        source: 'section-grid-tiles',
+        'source-layer': 'section-labels',
+        minzoom: 11,
+        layout: {
+          visibility: 'none',
+          'text-field': ['get', 'label'],
+          'text-font': ['Open Sans Semibold'],
+          'text-size': [
+            'interpolate', ['linear'], ['zoom'],
+            11, 11,
+            14, 13,
+            17, 15,
+          ],
+          'text-allow-overlap': false,
+          'text-ignore-placement': true,
+        },
+        paint: {
+          'text-color': '#333',
+          'text-halo-color': '#fff',
+          'text-halo-width': 1.2,
+        },
+      });
+
       // Muni-wide parcel fabric — every Roll_Entry parcel in the selected
       // municipality, rendered in muted grey under the search-result
       // parcels. Toggleable; off by default since fetching can take a few
@@ -3352,6 +3419,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
       if (map.getLayer('subject-radius-fill'))       map.moveLayer('subject-radius-fill');
       if (map.getLayer('subject-radius-line'))       map.moveLayer('subject-radius-line');
       if (map.getLayer('survey-grid-label'))         map.moveLayer('survey-grid-label');
+      if (map.getLayer('section-grid-tiles-label'))  map.moveLayer('section-grid-tiles-label');
       if (map.getLayer('muni-parcels-civic-label'))  map.moveLayer('muni-parcels-civic-label');
       if (map.getLayer('muni-parcels-label'))        map.moveLayer('muni-parcels-label');
       // Multi-family unit counts go above the roll numbers: while that overlay
@@ -4856,6 +4924,26 @@ function polygonCentroid(f) {
 export function setSurveyGridVisible(map, visible) {
   const v = visible ? 'visible' : 'none';
   for (const id of ['survey-grid-line', 'survey-grid-riverlot', 'survey-grid-label']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
+  }
+  map._surveyGridVisible = !!visible;
+  applySectionGridTilesVisibility(map);
+}
+
+/**
+ * Switch the grid between the province-wide PMTiles sections (no muni in
+ * scope) and the per-muni GeoJSON in `survey-grid`. River lots stay on the
+ * GeoJSON source either way. Stored on the map rather than the module so the
+ * off-screen snapshot-export map (snapshotExport.js) never inherits it.
+ */
+export function setSectionGridTilesActive(map, active) {
+  map._sectionGridTilesActive = !!active;
+  applySectionGridTilesVisibility(map);
+}
+
+function applySectionGridTilesVisibility(map) {
+  const v = map._surveyGridVisible && map._sectionGridTilesActive ? 'visible' : 'none';
+  for (const id of ['section-grid-tiles-line', 'section-grid-tiles-label']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
   }
 }

@@ -369,6 +369,7 @@ const JOBS = {
     confirm: 'Rebuild section-grid and river-lot reference files?',
     steps: [
       cmdStep('Build section grid', MB_ROOT, r('r\\build_section_grid.R')),
+      cmdStep('Build section grid tiles (not published)', MB_ROOT, 'powershell -ExecutionPolicy Bypass -File rebuild-section-grid-tiles.ps1'),
       cmdStep('Build river lots', MB_ROOT, r('r\\build_river_lots.R')),
       cmdStep('Build Manitoba data manifest', MB_ROOT, 'node web\\scripts\\build-manifest.js'),
       npmStep('Manitoba tests', path.join(MB_ROOT, 'web'), 'test'),
