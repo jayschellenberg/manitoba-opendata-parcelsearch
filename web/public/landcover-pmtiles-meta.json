@@ -1,0 +1,20 @@
+{
+  "built": "2026-06-05T22:55:14-0500",
+  "source": "LCR_RCT_2020_MB.tif",
+  "format": "webp",
+  "minzoom": 6,
+  "maxzoom": 12,
+  "palette": {
+    "cult": "#d8a93b",
+    "past": "#9ab95a",
+    "bush": "#3f7d3f",
+    "wet": "#4a90c2",
+    "other": "#b0b0b0"
+  },
+  "file": "mb-landcover.pmtiles",
+  "url": "https://pub-091058079bf6458da1681945177e1682.r2.dev/mb-landcover.pmtiles",
+  "bytes": 88293678,
+  "sha256": "c0916a53307fd0e96d84cf0d703fcaa4c16c8717b1fc291e2072556c046147fa",
+  "tiles": 26936,
+  "packed": "2026-09-29"
+}

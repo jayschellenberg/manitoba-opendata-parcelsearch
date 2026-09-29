@@ -263,6 +263,7 @@ import {
   setParcelNumberData,
   setParcelNumbersVisible,
   setResultPin,
+  LANDCOVER_TILES_URL,
 } from './map.js';
 import {
   fetchTileDrainageAreas,
@@ -12295,21 +12296,19 @@ async function toggleLandCoverOverlay() {
 }
 
 /**
- * Probe whether the Detailed raster pyramid has been built. Called once
- * during init — fetches the manifest written by r/build_landcover_tiles.R;
- * when present, the toggle's tri-state cycle includes Detailed, otherwise
- * it stays Dominant↔off. Non-fatal — a 404 just leaves the button in its
- * default 2-state mode.
+ * Probe whether the Detailed raster archive is reachable. Called once during
+ * init — a 16-byte range read of the PMTiles header (r/pack_landcover_pmtiles.R
+ * publishes it); when it answers with the PMTiles magic, the toggle's
+ * tri-state cycle includes Detailed, otherwise it stays Dominant↔off.
+ * Non-fatal — a miss just leaves the button in its default 2-state mode.
  */
 async function probeLandCoverRaster() {
   try {
-    const url = `${MB_PARCEL_DATA_CDN}/landcover-tiles/manifest.json`;
-    const res = await fetch(url, { cache: 'no-cache' });
+    const res = await fetch(LANDCOVER_TILES_URL, { headers: { Range: 'bytes=0-15' } });
     if (!res.ok) return;
-    const manifest = await res.json();
-    // Cheap sanity check — the manifest shape is small but a stray empty
-    // file shouldn't flip the cycle on.
-    if (manifest && Number.isFinite(manifest.minzoom) && Number.isFinite(manifest.maxzoom)) {
+    const head = new Uint8Array(await res.arrayBuffer());
+    // "PMTiles" magic — a 200 HTML error page shouldn't flip the cycle on.
+    if (String.fromCharCode(...head.slice(0, 7)) === 'PMTiles') {
       landCoverRasterAvailable = true;
     }
   } catch {

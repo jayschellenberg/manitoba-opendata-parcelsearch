@@ -80,8 +80,8 @@ feeds only **mao-assembly's** land-cover inputs. A daily dead-man watchdog
 | Class | Examples | Where served | Cadence |
 |---|---|---|---|
 | **Live** | parcels, zoning, dev-plan | ArcGIS (live) | always current |
-| **Latest-only generated** | legal-index (129 MB), assessment-index (28 MB), land-cover shards, land-cover tiles, RollEntry snapshot fallback | `web/public/data/**` (in deploy) | monthly / on rebuild |
-| **Object storage** | Assessment Parcels vector tiles (363 MB), MLI ortho imagery (16 GB) | Cloudflare R2, via `pmtiles://` + HTTP Range | monthly (tiles) / one-off (ortho) |
+| **Latest-only generated** | legal-index (129 MB), assessment-index (28 MB), land-cover shards, RollEntry snapshot fallback | `web/public/data/**` (in deploy) | monthly / on rebuild |
+| **Object storage** | Assessment Parcels vector tiles (363 MB), MLI ortho imagery (16 GB), land-cover Detailed raster (88 MB) | Cloudflare R2, via `pmtiles://` + HTTP Range | monthly (tiles) / one-off (ortho) |
 | **Cold archive + provenance** | dated provincial source downloads + `<file>.meta.json` sidecars (sha256, source date, retrieved_at, source_crs, source_url, license) | `D:\Dropbox\Appraisal\Web\MAOSnapshots\<year>\` (Dropbox, outside git) | semi-annual / annual |
 | **Historical shards** | per-muni parcels/zoning/dev-plan **per snapshot date** (`YYYY-MM-DD`) + per-snapshot provenance manifest | `mb-parcel-history` → raw.githubusercontent | when a snapshot is archived |
 | **Lineage index** | inferred predecessor/successor per parcel, per muni | `mb-parcel-history/lineage/**` → raw.githubusercontent | when ≥ 2 snapshots exist |
@@ -188,8 +188,9 @@ register's cropland tracks the five-year MAXIMUM of annual crop, median
 
 ### 3.5 Land-cover **Detailed** tiles — `r/build_landcover_tiles.R`
 A z6–z12 XYZ raster pyramid of the 2020 raster for the overlay's "Detailed"
-pixel view. **Lossless WebP** (`--tiledriver WEBP --webp-lossless`), ~84 MB
-(down from 220 MB PNG), committed under `web/public/data/landcover-tiles/`.
+pixel view. **Lossless WebP** (`--tiledriver WEBP --webp-lossless`), packed by
+`r/pack_landcover_pmtiles.R` into one 88 MB PMTiles archive
+(`mb-landcover.pmtiles`) on the mb-ortho R2 bucket.
 Needs GDAL on PATH. **Rebuild only when a new `LCR_RCT_*.tif` lands** (years
 apart) — it's static, so it's not part of any refresh.
 
@@ -921,7 +922,8 @@ provincial download becoming the archived source-of-record.
 | Path | Purpose | Output |
 |---|---|---|
 | `r/build_landcover.R` | bridge mao-assembly Parquet → land-cover shards | `web/public/data/landcover/**` |
-| `r/build_landcover_tiles.R` | 2020 raster → WebP tile pyramid | `web/public/data/landcover-tiles/**` |
+| `r/build_landcover_tiles.R` | 2020 raster → WebP tile pyramid (scratch) | `build-cache/landcover-tiles/xyz/**` |
+| `r/pack_landcover_pmtiles.R` | pyramid → PMTiles archive; `--publish` to R2 | `mb-landcover.pmtiles` (→ R2) + `web/public/landcover-pmtiles-meta.json` |
 | `r/archive_snapshot.R` | archive provincial downloads (dated, append-only) + provenance sidecars | `…\MAOSnapshots\<year>\` + `<file>.meta.json` |
 | `r/build_historical_shards.R` | archive → per-snapshot per-muni shards + provenance manifests | `mb-parcel-history\<snapshot_id>\**` |
 | `r/build_lineage.R` | infer predecessor/successor across snapshots | `mb-parcel-history\lineage\**` |

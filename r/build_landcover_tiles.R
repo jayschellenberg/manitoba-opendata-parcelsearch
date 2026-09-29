@@ -9,9 +9,11 @@
 #   https://www150.statcan.gc.ca/n1/pub/16-510-x/16-510-x2025002-eng.htm
 #   Local, clipped to Manitoba: mao-assembly/inputs/LCR_RCT_2020_MB.tif
 #   Vintage and provenance are documented once in build_landcover.R's header
-#   and mirrored for the UI in web/src/lib/dataStatus.js (LAND_COVER_SOURCE). The result is a directory of lossless WebP tiles served
-# from web/public/data/landcover-tiles/{z}/{x}/{y}.webp — MapLibre reads
-# them as a plain raster source, no tile server needed.
+#   and mirrored for the UI in web/src/lib/dataStatus.js (LAND_COVER_SOURCE). The result is a directory of lossless WebP tiles, which
+# r/pack_landcover_pmtiles.R then packs into ONE PMTiles archive
+# (build-cache/landcover-tiles/mb-landcover.pmtiles) for the mb-ortho R2
+# bucket. Until 2026-09-29 the tiles themselves were committed to
+# mb-parcel-data and served one request per tile through /gh-data.
 #
 # Pipeline (3 GDAL steps via system()):
 #   1. gdaldem color-relief     — recolour the 12 source classes into the
@@ -50,12 +52,14 @@
 #
 # Output size (estimate): ~70-110 MB total for MB as lossless WebP
 # (roughly half the PNG-8 pyramid; the 6-colour source compresses well).
-# Output dir: web/public/data/landcover-tiles/{z}/{x}/{y}.webp
-# Manifest:   web/public/data/landcover-tiles/manifest.json
-#             { built: "<ISO date>", minzoom, maxzoom, palette }
-#             — the webapp probes this on init to know whether the
-#             Detailed tri-state branch is available; if missing the
-#             button silently falls back to dominant↔off.
+# Output dir: build-cache/landcover-tiles/xyz/{z}/{x}/{y}.webp (gitignored)
+# Manifest:   build-cache/landcover-tiles/xyz/manifest.json
+#             { built: "<ISO date>", minzoom, maxzoom, palette } — read by
+#             the packer into web/public/landcover-pmtiles-meta.json.
+# Then:       r/pack_landcover_pmtiles.R runs automatically; publish the
+#             archive with
+#               Rscript r/pack_landcover_pmtiles.R --publish-only
+#             once you have looked at it (MAINTENANCE.md).
 #
 # Prerequisites: GDAL CLI tools must be on PATH:
 #   - gdaldem, gdalwarp, gdal2tiles.py (or gdal2tiles on Windows)
@@ -77,9 +81,8 @@ source(if (length(.cfg)) file.path(dirname(sub("^--file=", "", .cfg[1])), "confi
 
 source_dir   <- mb_parcelsearch_root
 assembly_in  <- file.path(mao_assembly_root, "inputs")
-# Tiles publish into the local mb-parcel-data clone (served via
-# raw.githubusercontent pinned commit — see MB_PARCEL_DATA_CDN in arcgis.js).
-tiles_dir    <- file.path(mb_parcel_data_root, "landcover-tiles")
+# Scratch pyramid; r/pack_landcover_pmtiles.R turns it into the archive.
+tiles_dir    <- file.path(mb_parcelsearch_root, "build-cache", "landcover-tiles", "xyz")
 manifest     <- file.path(tiles_dir, "manifest.json")
 
 MIN_ZOOM <- 6L
@@ -440,3 +443,11 @@ cat("  Tiles dir :", tiles_dir, "\n")
 cat("  Manifest  :", manifest, "\n")
 cat(sprintf("  %d WebP tiles, %.1f MB total (z%d-z%d)\n",
             n_tiles, total_bytes / 1024 / 1024, MIN_ZOOM, MAX_ZOOM))
+
+# ----------------------------------------------------------------------
+# 6. Pack into the PMTiles archive (not published -- see the header)
+# ----------------------------------------------------------------------
+rscript <- file.path(R.home("bin"), "Rscript")
+status <- system2(rscript, c(file.path(source_dir, "r", "pack_landcover_pmtiles.R"),
+                             "--tiles", tiles_dir))
+if (status != 0L) stop("pack_landcover_pmtiles.R exited with status ", status)
