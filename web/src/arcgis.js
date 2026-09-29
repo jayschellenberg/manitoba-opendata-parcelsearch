@@ -223,9 +223,7 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // only sees Vercel egress traffic; client IPs stop mattering. In `npm
 // run dev` the same path is proxied straight to raw by vite.config.js.
 // The province-wide section grid is not here either: it renders from
-// section-grid.pmtiles on R2 (map.js SECTION_GRID_TILES_URL). A stale,
-// unread 40 MB section-grid.json is still git-tracked in mb-parcel-data;
-// nothing here points at it.
+// section-grid.pmtiles on R2 (map.js SECTION_GRID_TILES_URL).
 export const MB_PARCEL_DATA_REVISION =
   'b57d2a1da00660e5d26d6c4057898b0d46f26b8f';
 // Origin-absolute rather than a bare /gh-data/... path: MapLibre tile

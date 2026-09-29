@@ -130,12 +130,11 @@ province-wide zooms. The top is z12 because the source is rounded to ~10 m and
 z12 already resolves ~1.3 m. z13 added 37 MB and 6 minutes of tiling for nothing.
 
 The old GitHub Release (`data-section-grid-2026-05-06`) is no longer read and
-can be deleted. The unreferenced 40 MB copy
-tracked in `mb-parcel-data` (see §1b) is also safe to delete: it is in no
-code path, and removing it in a new commit cannot affect the currently pinned
-SHA. Note the 40 MB blob stays in `mb-parcel-data`'s history (~212 MB `.git`)
-until that history is squashed, which the repo's contract already allows —
-repoint the app first.
+can be deleted once this deploy is live. The unread 40 MB copy that sat in
+`mb-parcel-data` (see §1b) was removed on 2026-09-29 (`66fc6dfe`); its one
+local reader, `rural-report`, now reads `web/public/data/section-grid.json`
+here instead, so keep that file on disk. The blob stays in `mb-parcel-data`'s
+history (~212 MB `.git`) until that history is squashed.
 
 ### 1b. mb-parcel-data CDN refresh  (cadence: whenever any CDN-hosted dataset rebuilds)
 Most of the app's generated data — RollEntry fallback shards,
@@ -208,8 +207,8 @@ The province-wide section grid is not on this CDN: it renders from
 > (`27173b26`) and never touched since. Nothing reads it — no
 > `MB_PARCEL_DATA_CDN` URL references it, and `r/build_section_grid.R` writes to
 > `web/public/data/section-grid.json`, not into the data clone. The *serving*
-> claim above was always right; only the residency claim was wrong. The copy is
-> dead weight carried by every pinned SHA and can be removed (see §1c).
+> claim above was always right; only the residency claim was wrong. The copy
+> was removed on 2026-09-29 (see §1c).
 
 **This repin now also happens automatically.** `auto-publish-indexes.ps1`
 (scheduled monthly by `schedule_publish.ps1`) calls `update-cdn-pin.ps1` as its
