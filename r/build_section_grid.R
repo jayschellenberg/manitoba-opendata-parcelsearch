@@ -1,9 +1,10 @@
 # build_section_grid.R
 #
 # Pre-bakes the province-wide Sec-Twp grid as a single static GeoJSON file
-# served from web/public/data/section-grid.json. Manitoba's DLS sections
-# never change, so this runs once and the output is committed to source
-# control alongside the MASC shards.
+# at web/public/data/section-grid.json (gitignored). Manitoba's DLS sections
+# never change, so this runs rarely. The app does not read this file
+# directly: rebuild-section-grid-tiles.ps1 tiles it into section-grid.pmtiles
+# on R2 (MAINTENANCE.md 1c).
 #
 # Source : MB_LegalDesc FeatureServer (point centroids, one per quarter
 #          section, ~970k rows)

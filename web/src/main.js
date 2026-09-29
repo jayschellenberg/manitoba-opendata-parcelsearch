@@ -152,7 +152,6 @@ import {
   fetchCondoDevForMuni,
   fetchMfInventoryForMuni,
   fetchSurveyGridForMuni,
-  fetchProvinceSectionGrid,
   fetchRiverLots,
   fetchParcelMascForMuni,
   fetchLandCoverForMuni,
@@ -238,6 +237,7 @@ import {
   setIrrigationVisible,
   setSurveyGridData,
   setSurveyGridVisible,
+  setSectionGridTilesActive,
   setLandCoverVisible,
   setLandfactsVisible,
   setMfNewbuildVisible,
@@ -12466,17 +12466,13 @@ async function toggleSurveyGridOverlay() {
     setOverlayBtnLabel($gridToggle, 'Loading…');
     try {
       if (munis.length === 0) {
-        // No muni selected — load the pre-baked province-wide grid AND
-        // the river-lots overlay as static files in parallel. Both are
-        // cached in localStorage on first hit; subsequent toggles are
-        // instant. River lots are optional — if the file is missing
-        // we just render the section grid alone.
-        const [gridFc, riverFc] = await Promise.all([
-          fetchProvinceSectionGrid(),
-          fetchRiverLots(),
-        ]);
+        // No muni selected — the sections render from the province-wide
+        // PMTiles archive (map.js section-grid-tiles), so only the river-
+        // lots overlay is fetched here. River lots are optional — if the
+        // file is missing we just render the section grid alone.
+        const riverFc = await fetchRiverLots();
         surveyGridDataCache = {
-          provinceSectionFc: gridFc,
+          provinceTiles: true,
           quarterRows: null,
           riverFeatures: riverFc?.features || [],
         };
@@ -12525,7 +12521,7 @@ async function toggleSurveyGridOverlay() {
           }
         });
         surveyGridDataCache = {
-          provinceSectionFc: null,
+          provinceTiles: false,
           quarterRows,
           riverFeatures: riverInMunis,
         };
@@ -12555,15 +12551,16 @@ async function toggleSurveyGridOverlay() {
  *  vs quarter rectangles) plus river lots, then push it to the map. */
 function renderSurveyGridForMode(mode) {
   if (!surveyGridDataCache) return;
-  const { provinceSectionFc, quarterRows, riverFeatures } = surveyGridDataCache;
+  const { provinceTiles, quarterRows, riverFeatures } = surveyGridDataCache;
+  // Province-wide: sections come from the PMTiles layers, always in
+  // section mode (quarter rendering needs the per-muni centroids that
+  // aren't fetched here). The GeoJSON source carries river lots only.
+  setSectionGridTilesActive(map, !!provinceTiles);
   let lineFeatures;
-  if (mode === 'quarter' && Array.isArray(quarterRows)) {
+  if (provinceTiles) {
+    lineFeatures = [];
+  } else if (mode === 'quarter' && Array.isArray(quarterRows)) {
     lineFeatures = quarterLinesFromRows(quarterRows).features;
-  } else if (provinceSectionFc) {
-    // Province-wide fallback: pre-baked section bounding boxes only;
-    // quarter rendering needs the per-muni centroids that aren't fetched
-    // here, so we always show sections in this branch.
-    lineFeatures = provinceSectionFc.features || [];
   } else if (Array.isArray(quarterRows)) {
     lineFeatures = sectionLinesFromRows(quarterRows).features;
   } else {
