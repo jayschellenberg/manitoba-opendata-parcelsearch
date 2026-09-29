@@ -130,12 +130,10 @@ section is ~4 px; below that the grid is a grey smear, so the layer is blank at
 province-wide zooms. The top is z12 because the source is rounded to ~10 m and
 z12 already resolves ~1.3 m. z13 added 37 MB and 6 minutes of tiling for nothing.
 
-The old GitHub Release (`data-section-grid-2026-05-06`) is no longer read and
-can be deleted once this deploy is live. The unread 40 MB copy that sat in
-`mb-parcel-data` (see §1b) was removed on 2026-09-29 (`66fc6dfe`); its one
-local reader, `rural-report`, now reads `web/public/data/section-grid.json`
-here instead, so keep that file on disk. The blob stays in `mb-parcel-data`'s
-history (~212 MB `.git`) until that history is squashed.
+The old GitHub Release (`data-section-grid-2026-05-06`) was deleted on
+2026-09-29. The unread 40 MB copy that sat in `mb-parcel-data` (see §1b) was
+removed the same day; its one local reader, `rural-report`, now reads
+`web/public/data/section-grid.json` here instead, so keep that file on disk.
 
 ### 1b. mb-parcel-data CDN refresh  (cadence: whenever any CDN-hosted dataset rebuilds)
 Most of the app's generated data — RollEntry fallback shards,
@@ -182,6 +180,18 @@ data revision is part of each MASC cache key, so changing the pin
 automatically invalidates stale 30-day browser entries. That
 data repo's history exists only to mint immutable SHAs — squash it
 whenever it gets heavy, then repoint the app first.
+
+**How it was done on 2026-09-29** (`.git` 277 MB → 54 MB; the full prior
+history was kept as a `git bundle`):
+1. In `mb-parcel-data`: `git checkout --orphan squashed && git commit`; check
+   the new commit's tree hash equals the old `main`'s; `git push origin squashed`.
+2. Repoint `MB_PARCEL_DATA_REVISION` in `web/src/arcgis.js` to that commit,
+   merge, and confirm production loads shards from it.
+3. Only then `git push --force-with-lease=main:<old sha> origin squashed:main`,
+   delete the `squashed` branch, point local `main` at it, and
+   `git reflog expire --expire=now --all && git gc --prune=now`.
+The order matters: the app must never be pinned to a SHA that isn't
+reachable.
 The province-wide section grid is not on this CDN: it renders from
 `section-grid.pmtiles` on R2 (see §1c below).
 
