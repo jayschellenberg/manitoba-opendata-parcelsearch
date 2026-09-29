@@ -31,7 +31,7 @@ REM      legitimate big change, rerun step 7 by hand with
 REM      --accept-large-change.
 REM
 REM NOT part of this refresh: the Land Cover "Detailed" raster tiles
-REM (r/build_landcover_tiles.R -> web/public/data/landcover-tiles/). They
+REM (r/build_landcover_tiles.R -> mb-landcover.pmtiles on R2). They
 REM derive from the static 2020 LCR_RCT_*.tif, so they only need
 REM rebuilding when a NEW provincial land-cover raster lands — run that
 REM script by hand then (it needs GDAL on PATH; ~15-45 min).

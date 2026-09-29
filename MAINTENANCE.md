@@ -12,7 +12,8 @@ thumb: nothing should go more than ~12 months stale.**
 | Live parcels / zoning / dev-plan | ArcGIS (live) | ArcGIS, live | always current *to the provincial extract* — see below |
 | Legal index, assessment index | mao-scrape `parcels.parquet` | GitHub Release → `api/legal-index.js` / `api/assessment-index.js` edge fns | monthly |
 | Section grid | MB_LegalDesc service | `section-grid.pmtiles` on R2 (`rebuild-section-grid-tiles.ps1`) | rare, manual (geometry doesn't change) |
-| RollEntry snapshot (fallback), parcel-masc, assessment shards, masc shards, landcover shards, landcover tiles, river-lots, masc-riverlots | various R build scripts | `mb-parcel-data` repo → raw.githubusercontent (pinned commit) | monthly-ish |
+| RollEntry snapshot (fallback), parcel-masc, assessment shards, masc shards, landcover shards, river-lots, masc-riverlots | various R build scripts | `mb-parcel-data` repo → raw.githubusercontent (pinned commit) | monthly-ish |
+| Land-cover Detailed raster | 2020 LCR raster | `mb-landcover.pmtiles` on R2 (`r/pack_landcover_pmtiles.R`) | rare — only a new raster (§6) |
 | **Cold archive** (provincial source + provenance sidecars: roll / zoning / dev-plan) | MB Open Data downloads | `D:\Dropbox\Appraisal\Web\MAOSnapshots\<year>\` | semi-annual (scheduled Jan 1 / Jul 1) |
 | **Historical shards** (as-of-date view, keyed `YYYY-MM-DD`) | the cold archive | `mb-parcel-history` repo → raw.githubusercontent | when a new snapshot is archived |
 | **Lineage index** (inferred predecessor/successor) | the historical shards | `mb-parcel-history/lineage/` → raw.githubusercontent | when ≥ 2 snapshots exist |
@@ -138,8 +139,8 @@ history (~212 MB `.git`) until that history is squashed.
 
 ### 1b. mb-parcel-data CDN refresh  (cadence: whenever any CDN-hosted dataset rebuilds)
 Most of the app's generated data — RollEntry fallback shards,
-parcel-masc, assessment shards, MASC shards, landcover shards, landcover
-tiles, river-lots, masc-riverlots — lives in the **`mb-parcel-data`**
+parcel-masc, assessment shards, MASC shards, landcover shards,
+river-lots, masc-riverlots — lives in the **`mb-parcel-data`**
 repo and reaches the app via **raw.githubusercontent.com** pinned to an
 immutable commit (never a branch ref — every client must see one
 coherent tree). The R build scripts already write straight into the
@@ -583,9 +584,18 @@ it re-shards from whatever complete mao-assembly Parquet is current.
 ### 6. Land-cover Detailed tiles  (cadence: rare — only a new raster)
 Only when a new provincial `LCR_RCT_*.tif` lands (years apart):
 ```
-Rscript r/build_landcover_tiles.R     # needs GDAL on PATH; ~15-45 min
+Rscript r/build_landcover_tiles.R     # needs GDAL on PATH; ~15-45 min; packs the archive at the end
+Rscript r/pack_landcover_pmtiles.R --publish-only   # after a look: staged, size-verified upload to R2
 ```
-Commit the regenerated `web/public/data/landcover-tiles/`.
+Then commit `web/public/landcover-pmtiles-meta.json` (the build record). The
+object name is stable (`mb-landcover.pmtiles`), so the app needs no change.
+
+Until 2026-09-29 the pyramid was ~27k WebP files committed to
+`mb-parcel-data` and fetched one request per tile through `/gh-data`. The tile
+URLs carried that repo's pinned commit, so every monthly repin made every tile
+a cold edge-cache miss and re-fetched it from GitHub, although the raster had
+not changed. The packer copies the tiles byte-for-byte (40/40 sampled tiles
+identical); the archive is 88 MB, 26,936 tiles, z6–z12.
 
 ### 6a. Traffic-count history  (cadence: annual, when MHTIS publishes)
 Feeds the **Traffic Counts** overlay: every MHTIS counting station with its
