@@ -199,9 +199,8 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // after the upstream rebuild is the supported recovery path.
 //
 // Per-muni shards (rollentry-snapshot, parcel-masc, assessment, masc,
-// landcover), the small standalone files (river-lots, masc-riverlots),
-// and the landcover-tiles raster pyramid all live in the mb-parcel-data
-// repo, fetched per-file from raw.githubusercontent.com pinned to an
+// landcover) and the small standalone files (river-lots, masc-riverlots)
+// live in the mb-parcel-data repo, fetched per-file from raw.githubusercontent.com pinned to an
 // IMMUTABLE commit. Pulling these out of web/public/data/ trimmed
 // ~430 MB of generated assets from this repo/deploy. MAINTENANCE: after
 // rebuilding any of these datasets (the r/build_*.R scripts write into
@@ -226,8 +225,9 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // section-grid.pmtiles on R2 (map.js SECTION_GRID_TILES_URL).
 export const MB_PARCEL_DATA_REVISION =
   'b57d2a1da00660e5d26d6c4057898b0d46f26b8f';
-// Origin-absolute rather than a bare /gh-data/... path: MapLibre tile
-// templates (map.js landcover-tiles) need absolute URLs. Node imports
+// Origin-absolute rather than a bare /gh-data/... path, so the URL is usable
+// anywhere (it once fed a MapLibre tile template, which requires absolute
+// URLs; the land-cover pyramid is now a PMTiles archive on R2). Node imports
 // this module in unit tests, where location is absent — the fallback
 // produces a relative URL that those tests never fetch.
 const GH_DATA_ORIGIN = globalThis.location?.origin ?? '';
