@@ -277,6 +277,7 @@ import { passesShapeFilter } from './lib/shapeFilter.js';
 import { countSnapshotFrames } from './lib/snapshotGroups.js';
 import { waitForMapIdle, MapRenderTimeoutError } from './lib/snapshotCapture.js';
 import { OUTPUT_MIME, OUTPUT_QUALITY, MAX_OUTPUT_DIM } from './lib/imageOutput.js';
+import { renderLocationMap, isInManitoba, DIRECTIONS } from './lib/locationMap.js';
 import {
   dominantBucket, cultFraction, LAND_COVER_BUCKETS, LAND_COVER_MIN_ACRES,
   headlineCover, LAND_COVER_SOURCES,
@@ -3016,6 +3017,11 @@ if ($staticMapBtn) {
 if ($staticMapLegendBtn) {
   $staticMapLegendBtn.addEventListener('click', () => generateStaticMap({ withLegend: true }));
 }
+const $locationMapBtn = document.getElementById('location-map-btn');
+const LOCATION_MAP_LABEL = $locationMapBtn?.textContent || 'Province Location Map';
+if ($locationMapBtn) {
+  $locationMapBtn.addEventListener('click', () => generateLocationMap());
+}
 
 // Parcel Snapshots (ZIP) — render a 1600×900 satellite JPEG of each result
 // subject (highlighted, fit to 16:9) and download them all as one ZIP named
@@ -3408,6 +3414,152 @@ async function generateStaticMap({ withLegend = false } = {}) {
     // the button on what is actually on screen now rather than on the
     // state we snapshotted before.
     updateLegendAvailability();
+  }
+}
+
+/**
+ * Where the province location map's SUBJECT arrow points, most specific
+ * first: the sales-mode subject parcel, then the parcel open in the
+ * summary card, then the middle of the whole result set. Returns
+ * { lng, lat, note } or null when nothing is loaded. `note` says which
+ * one was used, so a multi-parcel set pointing at its middle is never
+ * mistaken for one property's location.
+ */
+function resolveLocationMapSubject() {
+  if (subjectFeature && subjectCentroid) {
+    return { ...subjectCentroid, note: 'the subject parcel' };
+  }
+  if (selectedParcelRow?.parcel?.geometry) {
+    const c = computeCentroid(selectedParcelRow.parcel);
+    if (c) return { ...c, note: 'the selected parcel' };
+  }
+  const feats = (lastResultFc?.features || []).filter((f) => f?.geometry);
+  if (feats.length === 0) return null;
+  let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
+  for (const f of feats) {
+    try {
+      const [a, b, cc, d] = bboxOfFeature(f);
+      minLon = Math.min(minLon, a); minLat = Math.min(minLat, b);
+      maxLon = Math.max(maxLon, cc); maxLat = Math.max(maxLat, d);
+    } catch { /* skip an unreadable geometry */ }
+  }
+  if (!Number.isFinite(minLon)) return null;
+  const c = { lng: (minLon + maxLon) / 2, lat: (minLat + maxLat) / 2 };
+  return {
+    ...c,
+    note: feats.length === 1 ? 'the search result' : `the middle of all ${feats.length} result parcels`,
+  };
+}
+
+let locationMapState = { label: 'SUBJECT', direction: 'auto' };
+
+/**
+ * Province location map: the NRCan Manitoba overview page with a SUBJECT
+ * callout at the searched property (lib/locationMap.js), rendered as a
+ * PNG under the table with Copy / Download and two tweaks — the callout
+ * text and which side of the point it sits. PNG, not the JPEG the map
+ * captures use: this is flat colour and fine text, where JPEG rings.
+ */
+async function generateLocationMap() {
+  if (!$staticMapOutput) return;
+  const subject = resolveLocationMapSubject();
+  if ($staticMapSection) $staticMapSection.hidden = false;
+  $staticMapOutput.hidden = false;
+  $staticMapOutput.innerHTML = '';
+  if (!subject) {
+    $staticMapOutput.innerHTML = '<p class="static-map-hint">Search for a property first — the location map points at the search result.</p>';
+    $staticMapOutput.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+  if (!isInManitoba(subject.lng, subject.lat)) {
+    $staticMapOutput.innerHTML = '<p class="static-map-hint">That property is outside the area the province map covers.</p>';
+    return;
+  }
+
+  const hint = document.createElement('p');
+  hint.className = 'static-map-hint';
+  hint.textContent = `Province location map — arrow points at ${subject.note}. Copy, or right-click the image:`;
+
+  const controls = document.createElement('div');
+  controls.className = 'location-map-controls';
+  const labelInput = document.createElement('input');
+  labelInput.type = 'text';
+  labelInput.value = locationMapState.label;
+  labelInput.maxLength = 24;
+  labelInput.setAttribute('aria-label', 'Callout text');
+  labelInput.title = 'Callout text';
+  const dirSelect = document.createElement('select');
+  dirSelect.setAttribute('aria-label', 'Callout position');
+  dirSelect.title = 'Which side of the property the callout sits on';
+  const dirNames = { auto: 'Auto', ne: 'Up-right', e: 'Right', se: 'Down-right', s: 'Below', sw: 'Down-left', w: 'Left', nw: 'Up-left', n: 'Above' };
+  for (const key of ['auto', ...Object.keys(DIRECTIONS)]) {
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = dirNames[key] || key;
+    dirSelect.appendChild(opt);
+  }
+  dirSelect.value = locationMapState.direction;
+  const copyBtn = document.createElement('button');
+  copyBtn.type = 'button';
+  copyBtn.className = 'location-map-copy';
+  copyBtn.textContent = 'Copy image';
+  const dlBtn = document.createElement('button');
+  dlBtn.type = 'button';
+  dlBtn.textContent = 'Download PNG';
+  controls.append(labelInput, dirSelect, copyBtn, dlBtn);
+
+  const img = document.createElement('img');
+  img.className = 'location-map-img';
+  img.alt = 'Manitoba location map with the subject marked';
+  $staticMapOutput.append(hint, controls, img);
+
+  let blob = null;
+  let renderSeq = 0;
+  const render = async () => {
+    const seq = ++renderSeq;
+    locationMapState = { label: labelInput.value, direction: dirSelect.value };
+    const canvas = await renderLocationMap({
+      lng: subject.lng,
+      lat: subject.lat,
+      label: labelInput.value,
+      direction: dirSelect.value,
+    });
+    const b = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    if (seq !== renderSeq || !b) return;
+    blob = b;
+    if (img.src) URL.revokeObjectURL(img.src);
+    img.src = URL.createObjectURL(b);
+  };
+  labelInput.addEventListener('input', () => { render().catch(showError); });
+  dirSelect.addEventListener('change', () => { render().catch(showError); });
+  copyBtn.addEventListener('click', async () => {
+    if (!blob) return;
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      copyBtn.textContent = 'Copied!';
+    } catch (err) {
+      console.warn('location map copy failed', err);
+      copyBtn.textContent = 'Copy blocked — right-click the image';
+    }
+    setTimeout(() => { copyBtn.textContent = 'Copy image'; }, 2000);
+  });
+  dlBtn.addEventListener('click', () => {
+    if (blob) downloadBlob(blob, 'manitoba-location-map.png');
+  });
+  function showError(err) {
+    console.error('location map render failed', err);
+    hint.textContent = 'Location map failed to render — check the browser console.';
+  }
+
+  const btn = $locationMapBtn;
+  if (btn) { btn.disabled = true; btn.textContent = 'Rendering…'; }
+  try {
+    await render();
+    $staticMapOutput.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (err) {
+    showError(err);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = LOCATION_MAP_LABEL; }
   }
 }
 /**

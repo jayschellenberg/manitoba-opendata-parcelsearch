@@ -139,6 +139,7 @@ const PERSISTENT = {
   numberingOn: 'a display preference that should carry across searches',
   numberingEntryOrder: 'travels with numberingOn',
   pinOn: 'the one-parcel Locator choice (Shape or Pin), a display preference like numberingOn',
+  locationMapState: 'the province location map callout text and side, a display preference like numberingOn',
   trafficFlowFcPromise: 'session memo for the Traffic Flow FC; refetching it per search would be pure waste',
   tileNetworkLastKey: 'cache key for the loaded tile-network scope, invalidated by scope not by search',
 };
