@@ -4421,6 +4421,45 @@ body:not(.has-max-km) #results td.subj-col {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
+/* Province location map: a tall portrait page, so cap its on-screen width
+   (the PNG itself stays full resolution for Copy / Download). */
+.static-map-output img.location-map-img {
+  max-width: min(100%, 560px);
+}
+.location-map-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+}
+.location-map-controls input,
+.location-map-controls select,
+.location-map-controls button {
+  font: inherit;
+  font-size: 13px;
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid #c2c5cc;
+  border-radius: 4px;
+  background: #fff;
+  color: #1a1a1a;
+}
+.location-map-controls input {
+  width: 9em;
+}
+.location-map-controls button {
+  cursor: pointer;
+  font-weight: 600;
+}
+.location-map-controls button.location-map-copy {
+  background: #8c1c22;
+  border-color: #8c1c22;
+  color: #fff;
+}
+.location-map-controls button:hover {
+  filter: brightness(0.95);
+}
+
 .disclaimer {
   margin: 0;
   padding: 14px 20px 22px;
