@@ -25,6 +25,7 @@
 // file picker, which still works, just without the auto-refresh.
 
 import { countDataRows, forEachCsvRow, tokenizeRows } from './delimitedRows.js';
+import { resolveAppFolder, filterAppFiles } from './appMarketData.js';
 
 const DB_NAME = 'mb-parcel-sales';
 const DB_VERSION = 1;
@@ -145,7 +146,9 @@ export function fsAccessSupported() {
 /** Ask the user to nominate the export folder. Requires a user gesture. */
 export async function pickSalesDirectory() {
   if (!fsAccessSupported()) throw new Error('File System Access not supported in this browser');
-  const handle = await window.showDirectoryPicker({ id: 'mao-sales', mode: 'read' });
+  const picked = await window.showDirectoryPicker({ id: 'mao-sales', mode: 'read' });
+  // AppMarketData or SalesData also work: step down to the Manitoba subfolder.
+  const handle = await resolveAppFolder(picked, ['SalesData', 'Manitoba']);
   await putMeta('dirHandle', handle);   // handles are structured-cloneable
   return handle;
 }
@@ -289,6 +292,7 @@ export async function checkForUpdates(dirHandle) {
  * there is no auto-refresh — the user re-imports when they want fresher data.
  */
 export async function importFromFileList(fileList, { onProgress } = {}) {
+  fileList = filterAppFiles(fileList, ['SalesData', 'Manitoba']);
   const files = Array.from(fileList || []);
   const manifestFile = files.find((f) => /manifest\.json$/i.test(f.name));
   const shardFiles = files.filter((f) => MUNI_FILE_RE.test(f.name.split('/').pop()));
