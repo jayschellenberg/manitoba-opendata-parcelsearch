@@ -1218,40 +1218,6 @@
             </div>
           </details>
 
-          <details class="overlay-group" data-group="water">
-            <summary class="overlay-group-title">Water<span class="overlay-group-count"></span></summary>
-            <div class="overlay-group-body">
-            <!-- Water Influence colours the RESULT PARCELS themselves; it and
-                 its Water Proximity filter have their own group (collapsed by
-                 default) so the parcel layers stay short. -->
-            <button id="water-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Water Influence — colours the result parcels by waterfront classification. DARK BLUE = actual frontage (Direct / Waterfront / Reserve separated); PALE BLUE = near water but no frontage, because a road or another parcel lies between (the 'second row', often a view). Reads the same pre-baked data as the Water column, so no extra fetch. Screening aid from provincial/federal mapping — not a survey.">
-              <span class="overlay-btn-label">Water Influence</span>
-            </button>
-            <!-- Its two search filters sit directly beneath it: ticking one
-                 also arms the overlay above, so keeping them adjacent makes
-                 that coupling visible instead of surprising. Pure post-filters
-                 on the pre-baked water shards (or, with a municipality
-                 selected, a roll-list pre-filter so the result cap can't hide
-                 matches) — no municipality scoping needed and no extra fetch.
-                 Ticking both gives "any water influence".
-                 Full-width rows: the labels don't fit a half column. -->
-            <!-- The two boxes are still the source of truth (every handler,
-                 the URL state and the group badge read them); the pill is a
-                 view of them — see lib/pillBinding.js. Any = both ticked. -->
-            <input type="checkbox" id="waterfront-only" class="pill-backing" hidden />
-            <input type="checkbox" id="near-water-only" class="pill-backing" hidden />
-            <div class="mode-pill-row" title="Return only parcels with a water influence. Pure post-filter on the pre-baked water shards (or, with a municipality selected, a roll-list pre-filter so the result cap can't hide matches) — no extra fetch. Works on an imported sales list too.">
-              <span class="mode-pill-prefix">Water Proximity:</span>
-              <div class="mode-pill" role="radiogroup" aria-label="Water influence filter" data-pill="water">
-                <button type="button" class="mode-btn active mode-btn-off" data-mode="off" aria-pressed="true" title="No water filter.">Off</button>
-                <button type="button" class="mode-btn" data-mode="waterfront" aria-pressed="false" title="Only parcels with actual water FRONTAGE — the detection's Direct, Waterfront and Reserve-separated classes. Reserve-separated means a narrow public reserve strip sits between the lot and the water, which is normal in Manitoba lake communities and still counts as waterfront.">Waterfront</button>
-                <button type="button" class="mode-btn" data-mode="near" aria-pressed="false" title="Only parcels NEAR water but WITHOUT frontage — across a developed road, or with another parcel between them and the water. The 'second row': often a view, but not comparable to true waterfront.">Near water</button>
-                <button type="button" class="mode-btn" data-mode="any" aria-pressed="false" title="Both — waterfront or near water.">Both</button>
-              </div>
-            </div>
-            </div>
-          </details>
-
           <details class="overlay-group" data-group="planning" open>
             <summary class="overlay-group-title">Planning<span class="overlay-group-count"></span></summary>
             <div class="overlay-group-body">
@@ -1363,6 +1329,40 @@
               <div class="mode-pill" role="radiogroup" aria-label="Licensed irrigation filter" data-pill="irrigation">
                 <button type="button" class="mode-btn active mode-btn-off" data-mode="off" aria-pressed="true">Off</button>
                 <button type="button" class="mode-btn" data-mode="on" aria-pressed="false">On</button>
+              </div>
+            </div>
+            </div>
+          </details>
+
+          <details class="overlay-group" data-group="water">
+            <summary class="overlay-group-title">Water<span class="overlay-group-count"></span></summary>
+            <div class="overlay-group-body">
+            <!-- Water Influence colours the RESULT PARCELS themselves; it and
+                 its Water Proximity filter have their own group (collapsed by
+                 default) so the parcel layers stay short. -->
+            <button id="water-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Water Influence — colours the result parcels by waterfront classification. DARK BLUE = actual frontage (Direct / Waterfront / Reserve separated); PALE BLUE = near water but no frontage, because a road or another parcel lies between (the 'second row', often a view). Reads the same pre-baked data as the Water column, so no extra fetch. Screening aid from provincial/federal mapping — not a survey.">
+              <span class="overlay-btn-label">Water Influence</span>
+            </button>
+            <!-- Its two search filters sit directly beneath it: ticking one
+                 also arms the overlay above, so keeping them adjacent makes
+                 that coupling visible instead of surprising. Pure post-filters
+                 on the pre-baked water shards (or, with a municipality
+                 selected, a roll-list pre-filter so the result cap can't hide
+                 matches) — no municipality scoping needed and no extra fetch.
+                 Ticking both gives "any water influence".
+                 Full-width rows: the labels don't fit a half column. -->
+            <!-- The two boxes are still the source of truth (every handler,
+                 the URL state and the group badge read them); the pill is a
+                 view of them — see lib/pillBinding.js. Any = both ticked. -->
+            <input type="checkbox" id="waterfront-only" class="pill-backing" hidden />
+            <input type="checkbox" id="near-water-only" class="pill-backing" hidden />
+            <div class="mode-pill-row" title="Return only parcels with a water influence. Pure post-filter on the pre-baked water shards (or, with a municipality selected, a roll-list pre-filter so the result cap can't hide matches) — no extra fetch. Works on an imported sales list too.">
+              <span class="mode-pill-prefix">Water Proximity:</span>
+              <div class="mode-pill" role="radiogroup" aria-label="Water influence filter" data-pill="water">
+                <button type="button" class="mode-btn active mode-btn-off" data-mode="off" aria-pressed="true" title="No water filter.">Off</button>
+                <button type="button" class="mode-btn" data-mode="waterfront" aria-pressed="false" title="Only parcels with actual water FRONTAGE — the detection's Direct, Waterfront and Reserve-separated classes. Reserve-separated means a narrow public reserve strip sits between the lot and the water, which is normal in Manitoba lake communities and still counts as waterfront.">Waterfront</button>
+                <button type="button" class="mode-btn" data-mode="near" aria-pressed="false" title="Only parcels NEAR water but WITHOUT frontage — across a developed road, or with another parcel between them and the water. The 'second row': often a view, but not comparable to true waterfront.">Near water</button>
+                <button type="button" class="mode-btn" data-mode="any" aria-pressed="false" title="Both — waterfront or near water.">Both</button>
               </div>
             </div>
             </div>
