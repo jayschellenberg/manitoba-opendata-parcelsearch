@@ -1551,6 +1551,18 @@
                 <button type="button" class="mode-btn" data-mode="pin" aria-pressed="false">Pin</button>
               </div>
             </div>
+            <!-- Side lengths in feet on every result parcel, from the
+                 assessment polygon (lib/parcelDimensions.js). Shown whenever
+                 an outline is drawn; the labels appear from zoom 15 and a
+                 side too short on screen to hold its label skips it. -->
+            <input type="checkbox" id="dims-toggle" class="pill-backing" hidden>
+            <div id="dims-toggle-label" class="mode-pill-row numbering-toggle" hidden title="Label every side of the result parcels with its length in feet, measured from the assessment parcel polygon. Approximate — the polygons are digitized, not surveyed. Labels appear once you zoom in close enough to read them, and carry into the Generate Map image. The same figures are in the Sides (ft) column.">
+              <span class="mode-pill-prefix">Dimensions:</span>
+              <div class="mode-pill" role="radiogroup" aria-label="Parcel dimensions" data-pill="dims">
+                <button type="button" class="mode-btn active mode-btn-off" data-mode="off" aria-pressed="true">Off</button>
+                <button type="button" class="mode-btn" data-mode="on" aria-pressed="false">On (ft)</button>
+              </div>
+            </div>
           </div>
           <span id="count" class="count"></span>
           <details id="unmatched-panel" class="unmatched-panel" hidden>
@@ -2029,6 +2041,8 @@
             <th data-col="rollsize" class="basic-only" title="What the assessment roll itself records for this parcel — verbatim, in the assessor's own units. About 63% of Manitoba parcels carry an area ('160.00 ACRES'); the other 37% carry a frontage instead ('110.00 FEET'), which is a width, not an area, and cannot be converted to acres. This is the primary source; the Acres column beside it is that same figure when it is an area, and a polygon-derived estimate when it is not.">Roll Frontage/Area</th>
             <th data-col="acres" class="basic-only" title="Parcel area in acres. Uses the assessor's recorded area when the roll states one, otherwise computed from the parcel polygon — the 'Acres Src' column in the CSV export records which. A ⚠ marks rows where the two disagree by more than 2%.">Acres</th>
             <th data-col="sf">SF</th>
+            <th data-col="sides" title="Approximate side lengths in feet, measured from the assessment parcel polygon — clockwise, starting with the north side. Near-straight runs are merged into one side and a curve is one arc length, marked (arc); a | separates the pieces of a multi-part parcel. The polygons are digitized, not surveyed: expect a few feet of error on an urban lot and more on large rural parcels. Turn on Dimensions above the map to label each side on the map.">Sides (ft, approx.)</th>
+            <th data-col="perim" title="Approximate perimeter in feet, from the assessment parcel polygon (outer boundary only). Digitized, not surveyed.">Perimeter (ft)</th>
             <th data-col="value" id="value-header" title="Click any value to open the parcel's Manitoba Assessment Online report">Assessment</th>
             <th data-col="walk" title="Open this address on walkscore.com">Walkscore</th>
             <th data-col="flood" title="Flood zone this parcel sits in, with the share of the parcel inside it — strongest first where there is more than one. Statutory Designated Flood Areas outrank the 1-in-200 year extent, which outranks the observed 1997 / 2009 / 2011 extents. &quot;None&quot; means outside every layer screened here; blank means no data was loaded for that municipality. Joined at full resolution, so a boundary parcel can read differently from the simplified map overlay. The ↗ opens the parcel in the standalone flood tool for the appraisal paragraph and static exhibit. Screening aid, not a flood determination.">Flood</th>

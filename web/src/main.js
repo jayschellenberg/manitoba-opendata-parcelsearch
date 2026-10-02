@@ -262,6 +262,8 @@ import {
   setSubjectRadius,
   setParcelNumberData,
   setParcelNumbersVisible,
+  setParcelDimensionData,
+  setParcelDimensionsVisible,
   setResultPin,
   LANDCOVER_TILES_URL,
 } from './map.js';
@@ -320,6 +322,7 @@ import {
 } from './lib/mfInventory.js';
 import { resolveParcelAcres, formatRollSizeField, parseRollFrontageFeet } from './lib/acres.js';
 import { rollDisplay } from './lib/parcelLabelFields.js';
+import { parcelDimensions, formatSides, formatSidesForGrid, formatFeet } from './lib/parcelDimensions.js';
 import { createMuniParcelResolver, recordKey } from './lib/muniParcelRecords.js';
 import {
   saleSizeStamp, saleSizeState, saleAcres, sizeSourceLabel, showsCurrentRollSize,
@@ -606,6 +609,9 @@ const $numberingLabel  = document.getElementById('numbering-toggle-label');
 // "Locator: Shape | Pin" — numbering's counterpart for a one-parcel result.
 const $pinToggle       = document.getElementById('pin-toggle');
 const $pinLabel        = document.getElementById('pin-toggle-label');
+// "Dimensions: Off | On" — side lengths in feet on the result parcels.
+const $dimsToggle      = document.getElementById('dims-toggle');
+const $dimsLabel       = document.getElementById('dims-toggle-label');
 // "Entry order" — number by the sequence the rolls were typed rather than
 // by muni + Roll #. Only offered when the results came from a typed list.
 const $numberingOrderToggle = document.getElementById('numbering-order-toggle');
@@ -1483,6 +1489,12 @@ let numberingOn = false;
 let pinOn = false;
 let pinPoint = null;
 
+// "Dimensions: On" — label every side of the result parcels with its length
+// in feet (lib/parcelDimensions.js), in place of measuring each lot by hand.
+// A display preference like numberingOn, so it carries across searches. The
+// grid's Sides / Perimeter columns are computed regardless of this switch.
+let dimsOn = false;
+
 // Number in the order the rolls were TYPED, rather than by muni + roll #
 // (the "Entry order" checkbox beside "Number parcels"). Opt-in, and only
 // offered when the result set came from an explicit Roll # list — see
@@ -1618,6 +1630,10 @@ const SORT_KEYS = {
   // order for exactly the subdivided parcels this path exists to get right.
   acres:   (r) => finiteOrNeg(rowSizeAcres(r.parcel.properties || {}, parcelAcres(r.parcel))),
   sf:      (r) => finiteOrNeg(rowSizeAcres(r.parcel.properties || {}, parcelAcres(r.parcel))),
+  // Sides sorts by perimeter too: a list of lengths has no natural order of
+  // its own, and perimeter is the one number that grows with the lot.
+  sides:   (r) => finiteOrNeg(rowDimensions(r)?.perimeterFt),
+  perim:   (r) => finiteOrNeg(rowDimensions(r)?.perimeterFt),
   // Walkscore column is just a link — sort by whether we have an address
   // to send to walkscore.com (rows without an address sort last).
   walk:    (r) => strKey(r.parcel.properties.Property_Address),
@@ -4398,7 +4414,7 @@ function updateLegendAvailability() {
 function updateMapOptionsRow() {
   if (!$numberingRow) return;
   const shown = (el) => el && !el.hidden;
-  $numberingRow.hidden = !(shown($numberingLabel) || shown($pinLabel));
+  $numberingRow.hidden = !(shown($numberingLabel) || shown($pinLabel) || shown($dimsLabel));
 }
 
 /**
@@ -4495,6 +4511,13 @@ if ($numberingToggle) {
     mapReady.then(() => setParcelNumbersVisible(map, active));
     if (currentRows.length > 0) renderTable(currentRows);
     queueUrlWrite();
+  });
+}
+
+if ($dimsToggle) {
+  $dimsToggle.addEventListener('change', () => {
+    dimsOn = $dimsToggle.checked;
+    mapReady.then(() => setParcelDimensionsVisible(map, dimsOn));
   });
 }
 
@@ -8499,9 +8522,15 @@ function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
   const onlyOne = (highlightFc.features?.length || 0) === 1 ? highlightFc.features[0] : null;
   pinPoint = onlyOne ? parcelCentrePoint(onlyOne) : null;
   if ($pinLabel) $pinLabel.hidden = !pinPoint;
+  // Dimensions are offered whenever an outline is drawn — a withheld parcel
+  // is a pin and has no sides to measure.
+  const hasOutline = (highlightFc.features || []).some((f) => /Polygon$/.test(f?.geometry?.type || ''));
+  if ($dimsLabel) $dimsLabel.hidden = !hasOutline;
   updateMapOptionsRow();
   mapReady.then(() => {
     showResults(map, highlightFc, opts);
+    setParcelDimensionData(map, highlightFc.features || []);
+    setParcelDimensionsVisible(map, dimsOn);
     setResultPin(map, pinOn ? pinPoint : null);
     setZoningData(map, zoningFc);
     setDevPlanData(map, devPlanFc);
@@ -9982,6 +10011,7 @@ function refreshAsOfHighlight() {
   mapReady.then(() => {
     showResults(map, pushFc, { fit: !!asOf?.swapped });
     setParcelNumberData(map, pushFc.features || []);
+    setParcelDimensionData(map, pushFc.features || []);
   });
   return asOf;
 }
@@ -13544,6 +13574,15 @@ function renderTable(rows, { resetPage = true } = {}) {
     markAreaCheck(acresBasicCell, p);
     tr.appendChild(acresBasicCell);
     tr.appendChild(td(formatSf(acSize), 'num'));
+    // Sides / Perimeter — positional, in step with the data-col="sides" and
+    // data-col="perim" <th>s right after SF.
+    const dims = rowDimensions(row);
+    const sidesCell = td(formatSidesForGrid(dims) || null, 'dims-cell', DIMS_EMPTY_HINT);
+    // The full list rides in the tooltip, so a summarised irregular parcel
+    // still has its numbers one hover away (and in the CSV).
+    if (dims) sidesCell.title = formatSides(dims);
+    tr.appendChild(sidesCell);
+    tr.appendChild(td(dims ? formatFeet(dims.perimeterFt) : null, 'num', DIMS_EMPTY_HINT));
     tr.appendChild(assessmentCell(p));
     tr.appendChild(walkCell(row));
     tr.appendChild(floodCell(row));
@@ -15892,6 +15931,25 @@ function formatDu(v) {
 }
 
 // Square feet from acres. Always integer with thousands separators.
+/**
+ * Side lengths of the row's parcel polygon (lib/parcelDimensions.js), or null.
+ * Null on a sales row whose boundary changed after the sale: today's polygon
+ * is a different piece of land, the map draws it as a pin, and its sides
+ * would describe land the sale did not buy.
+ */
+function rowDimensions(row) {
+  const parcel = row?.parcel;
+  if (!parcel || parcel.properties?._geomTrust === 'withheld') return null;
+  return parcelDimensions(parcel.geometry);
+}
+
+const DIMS_EMPTY_HINT = 'No polygon to measure — the parcel is not mapped, or its boundary changed after the sale.';
+
+/** Perimeter for the CSV: a bare rounded number a spreadsheet can sort. */
+function csvPerimeter(dims) {
+  return dims ? Math.round(dims.perimeterFt * 10) / 10 : '';
+}
+
 function formatSf(acres) {
   return formatSqFtFromAcres(acres);
 }
@@ -16530,6 +16588,9 @@ function exportCsv(explicitRows) {
     // they are. Both travel beside Acres so a reviewer sees the provenance and
     // the caveat on the same row as the figure.
     'DU', 'Roll Frontage/Area', 'Acres', 'SF', 'Acres Src', 'Area Check',
+    // Approximate side lengths and perimeter from the polygon, beside the
+    // other size figures (lib/parcelDimensions.js).
+    'Sides (ft)', 'Perimeter (ft)',
     csvAssessHeader(currentRows), 'Asmt Report URL',
     'Walkscore URL', 'Flood-Map URL', 'Street View URL',
     ...(inSalesMode
@@ -16641,6 +16702,8 @@ function exportCsv(explicitRows) {
       sizeSourceLabel(p)
         || (p._acresRollNominal ? 'geometry (roll nominal)' : (p._acresSource ?? '')),
       areaCheckCsv(p),
+      formatSides(rowDimensions(row)),
+      csvPerimeter(rowDimensions(row)),
       parseTotalValue(p.Total_Value) ?? '',
       p.Asmt_Rpt_Url ?? '',
       walkscoreUrl(p),
