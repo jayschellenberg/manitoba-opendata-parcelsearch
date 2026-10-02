@@ -99,6 +99,10 @@ export const DEFAULT_VISIBLE = new Set([
   // grid can show — Acres falls back to a polygon estimate there.
   'rollsize',
   'sf',
+  // Side lengths in feet from the assessment polygon (lib/parcelDimensions.js),
+  // replacing a hand measurement of each lot (Jason, 2026-10-02). Perimeter
+  // is its gear-only companion.
+  'sides',
   'value',
   'soil',
   'subjdist',
@@ -140,7 +144,7 @@ const ADOPTED_KEY = 'mbps_table_columns_adopted';
 // from a link into a data column, and a user who never ticked a link column
 // would otherwise never discover that it now answers the question. Adopting
 // it once puts it in front of them; unticking it still sticks.
-const ADOPT_ONCE = ['streetview', 'rollsize', 'zonecat', 'n1id', 'muniname', 'saletype', 'boundary', 'flood'];
+const ADOPT_ONCE = ['streetview', 'rollsize', 'zonecat', 'n1id', 'muniname', 'saletype', 'boundary', 'flood', 'sides'];
 
 // Column presets — `null` value means "everything that the current
 // mode would show". The labels match the dropdown options.
@@ -220,7 +224,7 @@ export const PRESETS = {
   //                per muni, so it costs no overlay load.
   'Land Sales': new Set([
     'favorite', 'roll', 'n1id', 'muniname', 'saledate', 'saleprice', 'groupsize',
-    'address', 'zone1', 'zonecat', 'rollsize', 'acres', 'boundary', 'sf', 'groupacres', 'groupsf',
+    'address', 'zone1', 'zonecat', 'rollsize', 'acres', 'boundary', 'sf', 'sides', 'groupacres', 'groupsf',
     'grouppriceac', 'grouppricesf', 'grouppriceff', 'grouppricelot',
     'subjdist', 'saletype', 'primaryprop', 'water', 'flood',
     'saletoasmt', 'asmtland', 'asmtbldg', 'asmtpct', 'asmtyear',
@@ -271,7 +275,7 @@ export const PRESETS = {
   // active — the same mode-gating the Agricultural preset relies on. Being in
   // the set only means the gear isn't independently suppressing them.
   'Residential': new Set([
-    'favorite', 'roll', 'muniname', 'address', 'rollsize', 'acres', 'boundary', 'sf', 'du',
+    'favorite', 'roll', 'muniname', 'address', 'rollsize', 'acres', 'boundary', 'sf', 'sides', 'du',
     // Water and Flood together: on a valley lot they are one question, and a
     // Designated Flood Area governs what may be built on exactly the kind of
     // parcel this preset is for.
@@ -352,7 +356,7 @@ export const PRESET_ORDER = {
     'grouppriceff', 'grouppricelot', 'groupsize',
     // Per-parcel size AFTER the group figures: on a land comp the sale is
     // the transaction and the parcel is a component of it.
-    'rollsize', 'acres', 'boundary', 'sf',
+    'rollsize', 'acres', 'boundary', 'sf', 'sides',
     // Distance screens the comp set before any of its detail matters.
     'subjdist',
     'zone1', 'zonecat', 'water',

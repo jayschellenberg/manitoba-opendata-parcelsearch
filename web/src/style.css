@@ -2749,6 +2749,15 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   font-weight: 600;
 }
 
+/* Sides (ft): a list of lengths. Tabular figures so the slashes line up
+   row to row; capped width so an irregular lot's long list wraps instead of
+   stretching the grid. */
+#results td.dims-cell {
+  font-variant-numeric: tabular-nums;
+  max-width: 24ch;
+  white-space: normal;
+}
+
 /* Roll-vs-shape area disagreement. A caret rather than a worded badge: the
    Acres column is narrow and this fires on ~15% of parcels carrying an
    assessor area, so a full label would crowd every rural search. Amber

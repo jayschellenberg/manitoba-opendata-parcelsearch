@@ -59,6 +59,7 @@ import { polygonBboxMidpoint } from './lib/polygonCentroid.js';
 import { approxFitMaxZoom, unmappedPlacementText, maoLinkTitle } from './lib/unmappedRolls.js';
 import { yieldToOverlay, duLabelFilter, duLabelTextField } from './lib/overlayHighlight.js';
 import { rollDisplay } from './lib/parcelLabelFields.js';
+import { dimensionLabelFeatures } from './lib/parcelDimensions.js';
 import { zoningBylawText, devPlanBylawText } from './lib/amendment.js';
 import { WAYBACK_VERSIONS, waybackTileUrl } from './lib/wayback.js';
 import {
@@ -3054,6 +3055,39 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
       map.addSource('condo-du-labels', { type: 'geojson', data: emptyFc() });
       map.addLayer(condoDuLabelLayer('condo-du-label', 'condo-du-labels'));
 
+      // ---- Parcel dimensions (side lengths in feet) ------------------
+      // One LineString per side of each result parcel (lib/parcelDimensions.js),
+      // labelled at its centre and following it — a curved frontage gets its
+      // label bent along the arc. `line-center` placement drops a label on
+      // its own when the side is too short on screen to hold it, which is
+      // the zoom gate for small lots; minzoom keeps a muni-wide result set
+      // from trying to place tens of thousands of labels at province zoom.
+      // Two result parcels sharing a line produce the same label twice in
+      // the same spot, and collision detection keeps one. GL rather than
+      // DOM so Generate Map's canvas capture includes it.
+      map.addSource('parcel-dims', { type: 'geojson', data: emptyFc() });
+      map.addLayer({
+        id: 'parcel-dims-text',
+        type: 'symbol',
+        source: 'parcel-dims',
+        minzoom: 15,
+        layout: {
+          visibility: 'none',
+          'symbol-placement': 'line-center',
+          'text-field': ['get', 'label'],
+          'text-font': ['Open Sans Semibold'],
+          'text-size': 12,
+          'text-max-angle': 60,
+          'text-keep-upright': true,
+          'text-padding': 1,
+        },
+        paint: {
+          'text-color': '#1d2a3a',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.6,
+        },
+      });
+
       // ---- Parcel numbering (leader-line callouts) -------------------
       // When a multi-parcel result set is numbered (main.js stamps a
       // stable 1..N `_seq` per parcel, sorted by municipality then
@@ -3431,6 +3465,9 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
       if (map.getLayer('muni-parcels-du-label')) map.moveLayer('muni-parcels-du-label');
       if (map.getLayer('du-label'))             map.moveLayer('du-label');
       if (map.getLayer('condo-du-label'))       map.moveLayer('condo-du-label');
+      // Side dimensions ride above the roll-number labels (they were asked
+      // for) and below the number callouts, which must always read.
+      if (map.getLayer('parcel-dims-text')) map.moveLayer('parcel-dims-text');
       // Parcel-number callouts ride ABOVE the roll-number labels — the
       // whole point is that the number is the thing you can always read.
       // Order within the group: casing → leader → dot → badge → text,
@@ -4365,6 +4402,26 @@ export function showResults(map, parcelFc, { fit = true } = {}) {
     );
   } catch (err) {
     console.warn('fit bounds failed', err);
+  }
+}
+
+// ---- Parcel dimensions --------------------------------------------
+
+/**
+ * Load the side-length labels for the result parcels. Pass the same
+ * features the highlight draws, so the labels sit on the outline actually
+ * on screen (an as-of boundary, or nothing for a withheld pin). Measuring is
+ * cached per geometry, so re-pushing an unchanged set is cheap.
+ */
+export function setParcelDimensionData(map, features) {
+  const src = map.getSource('parcel-dims');
+  if (src) src.setData({ type: 'FeatureCollection', features: dimensionLabelFeatures(features) });
+}
+
+/** Show or hide the side-length labels. */
+export function setParcelDimensionsVisible(map, on) {
+  if (map.getLayer('parcel-dims-text')) {
+    map.setLayoutProperty('parcel-dims-text', 'visibility', on ? 'visible' : 'none');
   }
 }
 
