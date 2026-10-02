@@ -5828,6 +5828,29 @@ body {
   opacity: 0.45;
   cursor: not-allowed;
 }
+/* Callout red (CALLOUT.fill in lib/locationMap.js), so the button reads as
+   the image it makes, and as a third action beside the black and blue
+   map captures. Same as the Winnipeg app. */
+.sidebar .generate-map-btn-location {
+  background: #8c1c22;
+  border-color: #8c1c22;
+}
+.sidebar .generate-map-btn-location:hover:not(:disabled) {
+  background: #a3262d;
+  border-color: #a3262d;
+}
+
+/* Export CSV: Excel green, same as the Winnipeg app. */
+.sidebar .export-row > #export.export-btn {
+  background: #217346;
+  border-color: #217346;
+  color: #fff;
+}
+.sidebar .export-row > #export.export-btn:hover:not(:disabled) {
+  background: #185c37;
+  border-color: #185c37;
+  color: #fff;
+}
 
 /* .danger — a destructive reset. The Clear button on both tabs, which
    reloads the page and drops the uploaded CSV, the results, the subject
