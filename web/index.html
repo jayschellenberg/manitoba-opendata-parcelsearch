@@ -41,7 +41,9 @@
          downward; clicks outside should not auto-close it (native
          <details> semantics are fine for this lightweight use). -->
     <header class="topbar" role="banner">
-      <h1 class="topbar-title">Manitoba Parcel Search</h1>
+      <!-- Clicking the title is a "home" button: the same full reset as
+           Clear, landing on the Property Search tab (main.js). -->
+      <h1 class="topbar-title" id="topbar-home" role="button" tabindex="0" title="Start over — clears the search and returns to Property Search">Manitoba Parcel Search</h1>
       <!-- Phone only (body.phone, lib/phoneMode.js): the nav below folds
            into a menu behind this button so the bar fits a 375px screen
            instead of overflowing sideways. display:none on desktop. -->
@@ -1465,7 +1467,7 @@
                District site, when one applies. Not overlays; kept
                in the Map layers tab because that's where they used
                to live. -->
-          <details class="overlay-group overlay-links-group" data-group="links" open>
+          <details class="overlay-group overlay-links-group" data-group="links">
             <summary class="overlay-group-title">Quick links<span class="overlay-group-count"></span></summary>
             <div class="overlay-group-body">
             <button id="muni-website-btn" type="button" class="overlay-btn link-btn" disabled title="Select a municipality to enable">Muni Website ↗</button>
