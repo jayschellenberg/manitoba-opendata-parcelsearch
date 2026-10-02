@@ -1206,9 +1206,22 @@
             <button id="muni-parcels-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled title="Assessment Parcels — every parcel in the selected municipality (grey fabric under your search results)">
               <span class="overlay-btn-label">Assessment Parcels</span>
             </button>
-            <!-- Water Influence colours the RESULT PARCELS themselves, so it
-                 belongs with the parcel layers rather than with the reference
-                 overlays it used to sit among. -->
+            <!-- Side lengths in feet on the result parcels, from the
+                 assessment polygon (lib/parcelDimensions.js). A display
+                 preference: it stays on across searches, and labels draw once
+                 there are results and the map is zoomed in (z16+). -->
+            <button id="dims-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Dimensions — label every side of the result parcels with its length in feet, measured from the assessment parcel polygon. Shows once a search has results and the map is zoomed in. Approximate: the polygons are digitized, not surveyed. The same figures are in the Sides (ft) column, and the labels carry into the Generate Map image.">
+              <span class="overlay-btn-label">Dimensions</span>
+            </button>
+            </div>
+          </details>
+
+          <details class="overlay-group" data-group="water">
+            <summary class="overlay-group-title">Water<span class="overlay-group-count"></span></summary>
+            <div class="overlay-group-body">
+            <!-- Water Influence colours the RESULT PARCELS themselves; it and
+                 its Water Proximity filter have their own group (collapsed by
+                 default) so the parcel layers stay short. -->
             <button id="water-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Water Influence — colours the result parcels by waterfront classification. DARK BLUE = actual frontage (Direct / Waterfront / Reserve separated); PALE BLUE = near water but no frontage, because a road or another parcel lies between (the 'second row', often a view). Reads the same pre-baked data as the Water column, so no extra fetch. Screening aid from provincial/federal mapping — not a survey.">
               <span class="overlay-btn-label">Water Influence</span>
             </button>
@@ -1549,18 +1562,6 @@
               <div class="mode-pill" role="radiogroup" aria-label="Single-parcel locator" data-pill="locator">
                 <button type="button" class="mode-btn active mode-btn-off" data-mode="shape" aria-pressed="true">Shape</button>
                 <button type="button" class="mode-btn" data-mode="pin" aria-pressed="false">Pin</button>
-              </div>
-            </div>
-            <!-- Side lengths in feet on every result parcel, from the
-                 assessment polygon (lib/parcelDimensions.js). Shown whenever
-                 an outline is drawn; the labels appear from zoom 15 and a
-                 side too short on screen to hold its label skips it. -->
-            <input type="checkbox" id="dims-toggle" class="pill-backing" hidden>
-            <div id="dims-toggle-label" class="mode-pill-row numbering-toggle" hidden title="Label every side of the result parcels with its length in feet, measured from the assessment parcel polygon. Approximate — the polygons are digitized, not surveyed. Labels appear once you zoom in close enough to read them, and carry into the Generate Map image. The same figures are in the Sides (ft) column.">
-              <span class="mode-pill-prefix">Dimensions:</span>
-              <div class="mode-pill" role="radiogroup" aria-label="Parcel dimensions" data-pill="dims">
-                <button type="button" class="mode-btn active mode-btn-off" data-mode="off" aria-pressed="true">Off</button>
-                <button type="button" class="mode-btn" data-mode="on" aria-pressed="false">On (ft)</button>
               </div>
             </div>
           </div>

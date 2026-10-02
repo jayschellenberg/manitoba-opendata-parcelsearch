@@ -609,9 +609,8 @@ const $numberingLabel  = document.getElementById('numbering-toggle-label');
 // "Locator: Shape | Pin" — numbering's counterpart for a one-parcel result.
 const $pinToggle       = document.getElementById('pin-toggle');
 const $pinLabel        = document.getElementById('pin-toggle-label');
-// "Dimensions: Off | On" — side lengths in feet on the result parcels.
+// Dimensions — side lengths in feet on the result parcels (Parcel layers).
 const $dimsToggle      = document.getElementById('dims-toggle');
-const $dimsLabel       = document.getElementById('dims-toggle-label');
 // "Entry order" — number by the sequence the rolls were typed rather than
 // by muni + Roll #. Only offered when the results came from a typed list.
 const $numberingOrderToggle = document.getElementById('numbering-order-toggle');
@@ -4414,7 +4413,7 @@ function updateLegendAvailability() {
 function updateMapOptionsRow() {
   if (!$numberingRow) return;
   const shown = (el) => el && !el.hidden;
-  $numberingRow.hidden = !(shown($numberingLabel) || shown($pinLabel) || shown($dimsLabel));
+  $numberingRow.hidden = !(shown($numberingLabel) || shown($pinLabel));
 }
 
 /**
@@ -4515,9 +4514,11 @@ if ($numberingToggle) {
 }
 
 if ($dimsToggle) {
-  $dimsToggle.addEventListener('change', () => {
-    dimsOn = $dimsToggle.checked;
+  $dimsToggle.addEventListener('click', () => {
+    dimsOn = !dimsOn;
+    setOverlayPressed($dimsToggle, dimsOn);
     mapReady.then(() => setParcelDimensionsVisible(map, dimsOn));
+    queueUrlWrite();
   });
 }
 
@@ -8522,10 +8523,6 @@ function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
   const onlyOne = (highlightFc.features?.length || 0) === 1 ? highlightFc.features[0] : null;
   pinPoint = onlyOne ? parcelCentrePoint(onlyOne) : null;
   if ($pinLabel) $pinLabel.hidden = !pinPoint;
-  // Dimensions are offered whenever an outline is drawn — a withheld parcel
-  // is a pin and has no sides to measure.
-  const hasOutline = (highlightFc.features || []).some((f) => /Polygon$/.test(f?.geometry?.type || ''));
-  if ($dimsLabel) $dimsLabel.hidden = !hasOutline;
   updateMapOptionsRow();
   mapReady.then(() => {
     showResults(map, highlightFc, opts);

@@ -3056,35 +3056,36 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
       map.addLayer(condoDuLabelLayer('condo-du-label', 'condo-du-labels'));
 
       // ---- Parcel dimensions (side lengths in feet) ------------------
-      // One LineString per side of each result parcel (lib/parcelDimensions.js),
-      // labelled at its centre and following it — a curved frontage gets its
-      // label bent along the arc. `line-center` placement drops a label on
-      // its own when the side is too short on screen to hold it, which is
-      // the zoom gate for small lots; minzoom keeps a muni-wide result set
-      // from trying to place tens of thousands of labels at province zoom.
-      // Two result parcels sharing a line produce the same label twice in
-      // the same spot, and collision detection keeps one. GL rather than
-      // DOM so Generate Map's canvas capture includes it.
+      // One Point per side of each result parcel at the side's middle
+      // (lib/parcelDimensions.js), rotated along it. Points rather than the
+      // sides themselves because the GeoJSON source cuts lines at tile
+      // edges and line placement labels every piece: a side crossing a
+      // tile edge printed its length twice. Styled like the Winnipeg app's
+      // dimensions (20 px blue, heavy halo); minzoom keeps a muni-wide
+      // result set from placing tens of thousands of labels at province
+      // zoom. GL rather than DOM so Generate Map's canvas capture has it.
       map.addSource('parcel-dims', { type: 'geojson', data: emptyFc() });
       map.addLayer({
         id: 'parcel-dims-text',
         type: 'symbol',
         source: 'parcel-dims',
-        minzoom: 15,
+        minzoom: 16,
         layout: {
           visibility: 'none',
-          'symbol-placement': 'line-center',
           'text-field': ['get', 'label'],
           'text-font': ['Open Sans Semibold'],
-          'text-size': 12,
-          'text-max-angle': 60,
-          'text-keep-upright': true,
+          // Grows with zoom so a block of lots at z16 is not a wall of text,
+          // reaching the Winnipeg app's 20 px at lot scale.
+          'text-size': ['interpolate', ['linear'], ['zoom'], 16, 13, 17, 17, 18, 20],
+          'text-rotate': ['get', 'rot'],
+          'text-rotation-alignment': 'map',
+          'text-pitch-alignment': 'map',
           'text-padding': 1,
         },
         paint: {
-          'text-color': '#1d2a3a',
+          'text-color': '#1d4ed8',
           'text-halo-color': '#ffffff',
-          'text-halo-width': 1.6,
+          'text-halo-width': 2.8,
         },
       });
 

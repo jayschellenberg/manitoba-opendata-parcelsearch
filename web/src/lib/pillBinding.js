@@ -36,8 +36,6 @@ export const PILL_SPECS = {
   // One-parcel results: the parcel shape (default) or a locator pin in its
   // place, for reading the location at muni or province zoom.
   locator: { inputs: ['pin-toggle'], modes: { shape: [false], pin: [true] } },
-  // Side-length labels in feet on the result parcels.
-  dims: { inputs: ['dims-toggle'], modes: { off: [false], on: [true] } },
   // Sales tab. The first mode is always the ALL-UNTICKED state; its name
   // follows the question the control asks rather than "off".
   //
