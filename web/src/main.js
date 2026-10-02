@@ -277,7 +277,7 @@ import { passesShapeFilter } from './lib/shapeFilter.js';
 import { countSnapshotFrames } from './lib/snapshotGroups.js';
 import { waitForMapIdle, MapRenderTimeoutError } from './lib/snapshotCapture.js';
 import { OUTPUT_MIME, OUTPUT_QUALITY, MAX_OUTPUT_DIM } from './lib/imageOutput.js';
-import { renderLocationMap, isInManitoba, DIRECTIONS } from './lib/locationMap.js';
+import { showLocationMapPanel } from './lib/locationMapPanel.js';
 import {
   dominantBucket, cultFraction, LAND_COVER_BUCKETS, LAND_COVER_MIN_ACRES,
   headlineCover, LAND_COVER_SOURCES,
@@ -3451,14 +3451,14 @@ function resolveLocationMapSubject() {
   };
 }
 
-let locationMapState = { label: 'SUBJECT', direction: 'auto' };
+let locationMapState = { label: 'SUBJECT', direction: 'auto', base: 'manitoba' };
 
 /**
- * Province location map: the NRCan Manitoba overview page with a SUBJECT
- * callout at the searched property (lib/locationMap.js), rendered as a
- * PNG under the table with Copy / Download and two tweaks — the callout
- * text and which side of the point it sits. PNG, not the JPEG the map
- * captures use: this is flat colour and fine text, where JPEG rings.
+ * Location map: a printed base map with a SUBJECT callout at the searched
+ * property, rendered as a PNG under the table with Copy / Download
+ * (lib/locationMapPanel.js, shared with the Winnipeg app). The Manitoba
+ * overview is the default; a property inside the Winnipeg map's extent can
+ * be switched to the Winnipeg map, which adds the downtown inset.
  */
 async function generateLocationMap() {
   if (!$staticMapOutput) return;
@@ -3471,93 +3471,18 @@ async function generateLocationMap() {
     $staticMapOutput.scrollIntoView({ behavior: 'smooth', block: 'start' });
     return;
   }
-  if (!isInManitoba(subject.lng, subject.lat)) {
-    $staticMapOutput.innerHTML = '<p class="static-map-hint">That property is outside the area the province map covers.</p>';
-    return;
-  }
-
-  const hint = document.createElement('p');
-  hint.className = 'static-map-hint';
-  hint.textContent = `Province location map — arrow points at ${subject.note}. Copy, or right-click the image:`;
-
-  const controls = document.createElement('div');
-  controls.className = 'location-map-controls';
-  const labelInput = document.createElement('input');
-  labelInput.type = 'text';
-  labelInput.value = locationMapState.label;
-  labelInput.maxLength = 24;
-  labelInput.setAttribute('aria-label', 'Callout text');
-  labelInput.title = 'Callout text';
-  const dirSelect = document.createElement('select');
-  dirSelect.setAttribute('aria-label', 'Callout position');
-  dirSelect.title = 'Which side of the property the callout sits on';
-  const dirNames = { auto: 'Auto', ne: 'Up-right', e: 'Right', se: 'Down-right', s: 'Below', sw: 'Down-left', w: 'Left', nw: 'Up-left', n: 'Above' };
-  for (const key of ['auto', ...Object.keys(DIRECTIONS)]) {
-    const opt = document.createElement('option');
-    opt.value = key;
-    opt.textContent = dirNames[key] || key;
-    dirSelect.appendChild(opt);
-  }
-  dirSelect.value = locationMapState.direction;
-  const copyBtn = document.createElement('button');
-  copyBtn.type = 'button';
-  copyBtn.className = 'location-map-copy';
-  copyBtn.textContent = 'Copy image';
-  const dlBtn = document.createElement('button');
-  dlBtn.type = 'button';
-  dlBtn.textContent = 'Download PNG';
-  controls.append(labelInput, dirSelect, copyBtn, dlBtn);
-
-  const img = document.createElement('img');
-  img.className = 'location-map-img';
-  img.alt = 'Manitoba location map with the subject marked';
-  $staticMapOutput.append(hint, controls, img);
-
-  let blob = null;
-  let renderSeq = 0;
-  const render = async () => {
-    const seq = ++renderSeq;
-    locationMapState = { label: labelInput.value, direction: dirSelect.value };
-    const canvas = await renderLocationMap({
-      lng: subject.lng,
-      lat: subject.lat,
-      label: labelInput.value,
-      direction: dirSelect.value,
-    });
-    const b = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
-    if (seq !== renderSeq || !b) return;
-    blob = b;
-    if (img.src) URL.revokeObjectURL(img.src);
-    img.src = URL.createObjectURL(b);
-  };
-  labelInput.addEventListener('input', () => { render().catch(showError); });
-  dirSelect.addEventListener('change', () => { render().catch(showError); });
-  copyBtn.addEventListener('click', async () => {
-    if (!blob) return;
-    try {
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-      copyBtn.textContent = 'Copied!';
-    } catch (err) {
-      console.warn('location map copy failed', err);
-      copyBtn.textContent = 'Copy blocked — right-click the image';
-    }
-    setTimeout(() => { copyBtn.textContent = 'Copy image'; }, 2000);
-  });
-  dlBtn.addEventListener('click', () => {
-    if (blob) downloadBlob(blob, 'manitoba-location-map.png');
-  });
-  function showError(err) {
-    console.error('location map render failed', err);
-    hint.textContent = 'Location map failed to render — check the browser console.';
-  }
-
   const btn = $locationMapBtn;
   if (btn) { btn.disabled = true; btn.textContent = 'Rendering…'; }
   try {
-    await render();
+    await showLocationMapPanel({
+      container: $staticMapOutput,
+      subject,
+      maps: ['manitoba', 'winnipeg'],
+      state: locationMapState,
+      onState: (next) => { locationMapState = next; },
+      download: downloadBlob,
+    });
     $staticMapOutput.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  } catch (err) {
-    showError(err);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = LOCATION_MAP_LABEL; }
   }
