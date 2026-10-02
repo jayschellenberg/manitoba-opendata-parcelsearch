@@ -150,11 +150,30 @@ test('distance agrees with the WGS84 ellipsoid', () => {
   near(ns[0] * FT, 111.229, 0.05, 'north-south side (m)');
 });
 
-test('label features: one LineString per labelled side, text in feet', () => {
+test('label features: one Point per side, at its middle, rotated along it', () => {
   const fs = dimensionLabelFeatures([{ type: 'Feature', properties: {}, geometry: poly(LOT) }, { geometry: null }]);
   assert.equal(fs.length, 4);
-  assert.ok(fs.every((f) => f.geometry.type === 'LineString' && f.geometry.coordinates.length === 2));
+  assert.ok(fs.every((f) => f.geometry.type === 'Point'));
   assert.equal(fs[0].properties.label, '66.0 ft');
+  // North side runs east-west: horizontal text. East side runs north-south: vertical.
+  assert.equal(Math.abs(fs[0].properties.rot), 0);
+  assert.equal(Math.abs(fs[1].properties.rot), 90);
+  // The north side's label sits halfway along it.
+  near(fs[0].geometry.coordinates[0], ll([33, 120])[0], 1e-7);
+});
+
+test('a line shared by two result parcels (or a parcel listed twice) is labelled once', () => {
+  const a = { geometry: poly(LOT) };
+  const b = { geometry: poly([[66, 0], [132, 0], [132, 120], [66, 120]]) };
+  assert.equal(dimensionLabelFeatures([a, b]).length, 7);
+  assert.equal(dimensionLabelFeatures([a, { geometry: poly(LOT) }]).length, 4);
+});
+
+test('label rotation never reads upside down', () => {
+  const tilted = poly([[0, 0], [60, -30], [120, 90], [60, 120]]);
+  for (const f of dimensionLabelFeatures([{ geometry: tilted }])) {
+    assert.ok(f.properties.rot >= -90 && f.properties.rot <= 90, String(f.properties.rot));
+  }
 });
 
 test('grid summarises a parcel with too many sides to read', () => {

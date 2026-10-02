@@ -6748,6 +6748,10 @@ body {
 .sidebar .overlay-group[data-group="agricultural"] .overlay-btn:hover:not(:disabled) {
   color: #166534;        /* dark green, same as Planning */
 }
+.sidebar .overlay-group[data-group="water"] .overlay-btn,
+.sidebar .overlay-group[data-group="water"] .overlay-btn:hover:not(:disabled) {
+  color: #0369a1;        /* water blue */
+}
 .sidebar .overlay-group[data-group="historical"] .overlay-btn,
 .sidebar .overlay-group[data-group="historical"] .overlay-btn:hover:not(:disabled) {
   color: var(--color-primary-700, #0f172a);   /* with the parcel layers it came from */
@@ -6962,6 +6966,7 @@ body {
 .sidebar .overlay-group[data-group="parcels"] .overlay-group-count     { background: #0f172a; }
 .sidebar .overlay-group[data-group="planning"] .overlay-group-count    { background: #166534; }
 .sidebar .overlay-group[data-group="reference"] .overlay-group-count   { background: #1d4ed8; }
+.sidebar .overlay-group[data-group="water"] .overlay-group-count       { background: #0369a1; }
 .sidebar .overlay-group[data-group="agricultural"] .overlay-group-count { background: #166534; }
 .sidebar .overlay-group[data-group="historical"] .overlay-group-count   { background: #0f172a; }
 .overlay-group-count:empty,

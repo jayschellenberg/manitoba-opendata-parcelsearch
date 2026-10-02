@@ -305,21 +305,68 @@ export function formatSidesForGrid(dims) {
 }
 
 /**
- * One LineString per labelled side, for a `symbol-placement: line-center`
- * layer: the label follows the side (and a curve), and MapLibre drops it on
- * its own when the side is too short on screen to hold the text.
+ * Point at the middle of a side (by length, so an arc's label sits on the
+ * arc) and the rotation, in degrees clockwise, that lays text along the side
+ * there, normalised to [-90, 90] so it never reads upside down.
+ */
+function sideLabelAnchor(coords) {
+  const k = metresPerDegree(coords[0][1]);
+  const xy = coords.map((c) => ({ x: c[0] * k.lon, y: c[1] * k.lat }));
+  let total = 0;
+  for (let i = 1; i < xy.length; i++) total += dist(xy[i - 1], xy[i]);
+  let half = total / 2;
+  for (let i = 1; i < xy.length; i++) {
+    const seg = dist(xy[i - 1], xy[i]);
+    if (seg >= half || i === xy.length - 1) {
+      const t = seg > 0 ? Math.min(1, half / seg) : 0;
+      const a = coords[i - 1], b = coords[i];
+      // Bearing clockwise from north; horizontal text runs east (90°).
+      const bearing = (Math.atan2(xy[i].x - xy[i - 1].x, xy[i].y - xy[i - 1].y) * 180) / Math.PI;
+      let rot = bearing - 90;
+      while (rot > 90) rot -= 180;
+      while (rot < -90) rot += 180;
+      return { point: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], rot };
+    }
+    half -= seg;
+  }
+  return null;
+}
+
+/** Undirected key for a side, so a line two result parcels share (or a
+ *  parcel listed twice) is labelled once. ~10 cm rounding. */
+function sideKey(coords) {
+  const r = (c) => `${c[0].toFixed(6)},${c[1].toFixed(6)}`;
+  return coords.map(r).sort().join('|');
+}
+
+/**
+ * One Point per labelled side, at its middle, carrying the label text and
+ * the rotation that lays it along the side.
+ *
+ * Points, not the sides' LineStrings: a GeoJSON source cuts lines at tile
+ * boundaries, and `line-center` then labels EACH piece, so a side crossing a
+ * tile edge came out with its length printed twice. A point is never cut.
  */
 export function dimensionLabelFeatures(features) {
   const out = [];
+  const seen = new Set();
   for (const f of features || []) {
     const dims = parcelDimensions(f?.geometry);
     if (!dims) continue;
     for (const part of dims.parts) {
       for (const s of labelledSides(part)) {
+        const key = sideKey(s.coords);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const anchor = sideLabelAnchor(s.coords);
+        if (!anchor) continue;
         out.push({
           type: 'Feature',
-          properties: { label: `${formatFeet(s.ft)} ft${s.arc ? ' arc' : ''}` },
-          geometry: { type: 'LineString', coordinates: s.coords },
+          properties: {
+            label: `${formatFeet(s.ft)} ft${s.arc ? ' arc' : ''}`,
+            rot: Math.round(anchor.rot * 10) / 10,
+          },
+          geometry: { type: 'Point', coordinates: anchor.point },
         });
       }
     }
