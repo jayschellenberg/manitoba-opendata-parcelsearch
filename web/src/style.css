@@ -5355,6 +5355,17 @@ body {
   text-transform: uppercase;
 }
 
+.topbar-title[role="button"] {
+  cursor: pointer;
+  user-select: none;
+}
+.topbar-title[role="button"]:hover { color: #fff; opacity: 0.85; }
+.topbar-title[role="button"]:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
 .topbar-title::before {
   content: "";
   display: inline-block;
@@ -5536,6 +5547,19 @@ body {
   border-color: var(--ui-line-strong);
   background: #fff;
 }
+
+/* Additional Searches sits between the address rows and Search/Clear; the
+   panel's 5px flex gap already separates it, so its own margins and the
+   summary's padding are trimmed to save vertical room. */
+.sidebar .advanced-filters {
+  margin: 0;
+  padding-top: 0;
+}
+.sidebar .advanced-filters > summary {
+  margin: 0;
+  padding: 4px 8px;
+}
+.sidebar .advanced-filters[open] > summary { margin-bottom: 4px; }
 
 .map-layers-section,
 .sidebar-status {
@@ -6911,6 +6935,12 @@ body {
 .sidebar .overlay-group > .overlay-group-title:hover {
   color: var(--ui-ink, #111);
 }
+
+/* Space between the groups, halved to save vertical room: it was the
+   group's 8px bottom margin + the panel's 5px flex gap + the title's 6px
+   top margin (19px); now 0 + 5 + 4. */
+.sidebar #map-layers-section .overlay-group { margin-bottom: 0; }
+.sidebar #map-layers-section .overlay-group > .overlay-group-title { margin-top: 4px; }
 
 /* "2 on" badge. Only rendered while the group is COLLAPSED — an
    active layer the user can't see is the one real hazard this

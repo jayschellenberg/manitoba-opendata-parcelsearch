@@ -2449,6 +2449,20 @@ updateSortIndicators();
 
 $search.addEventListener('click', runSearch);
 $clear.addEventListener('click', clearAll);
+
+// The topbar title is the app's home button: everything Clear does, but
+// always landing on Property Search. Clear keeps you on the tab you were
+// on; the title is the way back to the start. setActiveTab writes the
+// remembered tab, so clearAll's reload comes back on Property Search.
+const $topbarHome = document.getElementById('topbar-home');
+function goHome() {
+  setActiveTab('property', { skipFocus: true });
+  clearAll();
+}
+$topbarHome?.addEventListener('click', goHome);
+$topbarHome?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goHome(); }
+});
 $export.addEventListener('click', exportCsv);
 
 // Sales-CSV upload — Phase 3 wires the dropzone (click + drag/drop)
