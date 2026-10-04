@@ -504,6 +504,36 @@ git add lineage && git commit -m "Rebuild lineage" && git push
 Each record is **inferred from public geometry** and carries a verify
 disclaimer — confirm against registered plans / titles before relying on it.
 
+### 4a. Parcel change history — versions + lineage tables  (cadence: **weekly, scheduled**)
+For matching a sale to the parcel **as it was on the sale date**. Built from
+every `RollEntry_*.gpkg` (weekly) and `MBRollGeoPackage*.gpkg` (archive) on disk,
+keyed on **LINC** (`<muni3>R<roll9>`, as in mao-assembly). Output is local only,
+in `history/` (gitignored); model and table layout are documented at the top of
+`r/parcel_history_lib.R`.
+
+Runs inside `mao-assembly-monthly-refresh` (Saturdays 03:00, despite the name)
+right after the RollEntry download, as a **late** step: a failure turns the task
+red but never blocks the input refresh or parquet rebuild.
+```
+Rscript r/build_parcel_history.R            # new snapshots -> versions
+Rscript r/build_lineage.R --tables          # lineage_edges / lineage_events
+Rscript r/test_parcel_history.R             # offline tests
+```
+- **Quarantine (exit 2).** A snapshot that loses > 0.5% of LINCs (or shrinks
+  > 1%) vs the last accepted one is recorded but not applied; 2026-05-06 is the
+  example (rolls missing, back on 2026-07-01). It is accepted automatically if
+  the next snapshot repeats the losses; otherwise re-run with
+  `--accept <snapshot_id>` once you have confirmed the change is real.
+- **Dates are windows.** A version's change happened in
+  `(open_not_before, first_seen]`; it ended in `(last_seen, close_not_after]`.
+  `match_sales()` returns every version possible on a sale date and marks the
+  sale `ambiguous` when more than one is; nothing is ever assigned a midpoint.
+- **Thresholds changed?** `--rebuild` re-derives versions from the stored deltas
+  (no gpkg reads); `build_lineage.R --tables --rebuild` redoes lineage.
+- **Pruning RollEntry gpkgs** is safe once their snapshot is in
+  `history/snapshots.parquet`: the deltas are the record. Only a re-read from a
+  date (`--rebuild-from`) needs the files back.
+
 ### 4b. Retire a snapshot  (cadence: rare — when two captures sit too close)
 
 Withdraws a snapshot from the app's "As of" picker. Nothing here implies the

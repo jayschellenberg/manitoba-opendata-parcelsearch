@@ -116,3 +116,6 @@ alert-email.local.txt
 # build, so a stray archive there ships on every deploy.
 web/public/tiles-build/
 web/public/*.pmtiles
+
+# Parcel change history (r/build_parcel_history.R). Local derived data, ~1 GB.
+history/

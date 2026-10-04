@@ -28,6 +28,8 @@
 # Usage:
 #   Rscript r/build_lineage.R               # all munis, all consecutive pairs
 #   Rscript r/build_lineage.R --muni 168    # one muni (still reads full files)
+#   Rscript r/build_lineage.R --tables      # version-based lineage tables from
+#                                           # history/ (see the --tables block)
 #
 # Runtime: a few minutes — only the new/removed parcels (a few thousand
 # province-wide) are intersected, against a spatial index of the full set.
@@ -54,6 +56,71 @@ M2_PER_AC  <- 4046.8564224
 args      <- commandArgs(trailingOnly = TRUE)
 arg_val   <- function(flag) { i <- match(flag, args); if (is.na(i) || i == length(args)) NA_character_ else args[i + 1] }
 only_muni <- suppressWarnings(as.integer(arg_val("--muni")))
+
+# ---- --tables: version-based lineage from the parcel history -------------------
+# The JSON below (for the web app) compares semiannual snapshots by roll. The
+# tables mode instead reads history/parcel_versions.parquet (built by
+# r/build_parcel_history.R from every weekly + archive snapshot) and writes
+#   history/lineage_edges.parquet   parent version -> child version, both overlap %
+#   history/lineage_events.parquet  one row per connected change, typed
+# keyed on LINC versions, so a parent roll kept on the remainder lot is its own
+# older version rather than a self-edge. See lineage_window() in
+# r/parcel_history_lib.R for the method. Incremental: windows already in the
+# tables are kept except the last RECOMPUTE_TAIL, whose provisional versions may
+# have been confirmed or re-opened since; --rebuild recomputes everything.
+#
+#   Rscript r/build_lineage.R --tables [--rebuild]
+if ("--tables" %in% args) {
+  .r_dir <- if (length(.cfg)) dirname(sub("^--file=", "", .cfg[1])) else "r"
+  source(file.path(.r_dir, "parcel_history_lib.R"))
+  HIST <- Sys.getenv("PARCEL_HISTORY_DIR")
+  if (!nzchar(HIST)) HIST <- file.path(mb_parcelsearch_root, "history")
+  # Lineage crosses muni lines (administrative transfers), and a one-muni run
+  # would overwrite the province-wide tables, so --muni is not supported here.
+  if (!is.na(only_muni)) stop("--muni is not supported with --tables")
+  RECOMPUTE_TAIL <- 2
+  f_edges <- file.path(HIST, "lineage_edges.parquet"); f_events <- file.path(HIST, "lineage_events.parquet")
+
+  lock <- acquire_lock(HIST)
+  status <- tryCatch({
+    cat_ <- as.data.frame(arrow::read_parquet(file.path(HIST, "snapshots.parquet")))
+    acc <- sort(as.Date(cat_$snapshot_date[cat_$status == "accepted"]))
+    if (length(acc) < 2) stop("need >= 2 accepted snapshots in ", HIST)
+    windows <- data.frame(d_prev = head(acc, -1), d_cur = tail(acc, -1))
+
+    old_e <- old_v <- NULL
+    if (!"--rebuild" %in% args && file.exists(f_events) && file.exists(f_edges)) {
+      old_v <- as.data.frame(arrow::read_parquet(f_events)); old_e <- as.data.frame(arrow::read_parquet(f_edges))
+      keep_until <- if (nrow(windows) > RECOMPUTE_TAIL) windows$d_cur[nrow(windows) - RECOMPUTE_TAIL] else as.Date("1900-01-01")
+      ok_ver <- all(old_v$algorithm_version == PH_ALGORITHM_VERSION)
+      if (!ok_ver) { old_v <- old_e <- NULL; cat("algorithm version changed -> full lineage rebuild\n") }
+      else {
+        old_v <- old_v[as.Date(old_v$window_end) <= keep_until & as.Date(old_v$window_end) %in% acc, ]
+        old_e <- old_e[old_e$event_id %in% old_v$event_id, ]
+        windows <- windows[windows$d_cur > keep_until, ]
+      }
+    }
+
+    v <- read_geoparquet(file.path(HIST, "parcel_versions.parquet"))
+    for (dc in c("first_seen", "last_seen", "open_not_before", "close_not_after")) v[[dc]] <- as.Date(v[[dc]])
+
+    new_e <- list(); new_v <- list()
+    for (w in seq_len(nrow(windows))) {
+      t0 <- Sys.time()
+      L <- lineage_window(v, windows$d_prev[w], windows$d_cur[w])
+      cat(sprintf("window %s -> %s: %d events, %d edges (%.1f s)\n", windows$d_prev[w], windows$d_cur[w],
+                  NROW(L$events), NROW(L$edges), as.numeric(difftime(Sys.time(), t0, units = "secs"))))
+      if (!is.null(L$events)) { new_v[[w]] <- L$events; new_e[[w]] <- L$edges }
+    }
+    ev <- do.call(rbind, c(list(old_v), new_v)); ed <- do.call(rbind, c(list(old_e), new_e))
+    if (is.null(ev)) { ev <- data.frame(event_id = character()); ed <- data.frame(event_id = character()) }
+    atomic_write(f_edges,  function(tmp) arrow::write_parquet(ed, tmp))
+    atomic_write(f_events, function(tmp) arrow::write_parquet(ev, tmp))
+    if (nrow(ev)) print(table(type = ev$type))
+    0L
+  }, finally = release_lock(lock))
+  quit(status = status)
+}
 
 date_from_name <- function(p) {
   m <- regmatches(basename(p), regexpr("\\d{8}", basename(p)))
