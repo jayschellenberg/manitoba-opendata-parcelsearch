@@ -88,11 +88,8 @@ if (Test-Path $HistRepo) {
 $pubLabel = '(unreadable)'
 $pubAge   = $null
 try {
-  $pin = $null
-  if (Test-Path $ArcgisJs) {
-    $m = [regex]::Match((Get-Content -Raw $ArcgisJs), 'mb-parcel-history@([0-9a-f]{40})')
-    if ($m.Success) { $pin = $m.Groups[1].Value }
-  }
+  . (Join-Path $PSScriptRoot 'history-pin-lib.ps1')   # accepts @<sha> and /gh-data/.../<sha>
+  $pin = Get-HistoryPin $ArcgisJs
   if ($pin) {
     $idxRaw = & git -C $HistRepo show "${pin}:index.json" 2>$null
     if ($LASTEXITCODE -eq 0 -and $idxRaw) {

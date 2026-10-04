@@ -180,17 +180,13 @@ if ($wbChanged) { Log 'Wayback date list changed -- will ship with this run' }
 
 # 6b. repoint the app CDN pin.
 Log '== repoint app HISTORICAL_CDN =='
-$content = Get-Content -Raw $ArcgisJs
-$new = [regex]::Replace($content, 'mb-parcel-history@[0-9a-f]{40}', "mb-parcel-history@$sha")
-$pinChanged = ($new -ne $content)
-if (-not $pinChanged) {
-  Log "app pin already at $sha -- no pin change needed"
-} else {
-  # BOM-less UTF-8: Set-Content -Encoding UTF8 adds a BOM under Windows
-  # PowerShell 5.1 (the scheduled-task runtime), which would corrupt the JS
-  # file's first bytes. Write via .NET with an explicit no-BOM encoder.
-  [System.IO.File]::WriteAllText($ArcgisJs, $new, (New-Object System.Text.UTF8Encoding($false)))
-}
+# history-pin-lib.ps1 accepts both pin forms (@<sha> and /gh-data/.../<sha>);
+# the old inline '@' regex stopped matching when shards moved to /gh-data, so
+# this step reported "already at" and never re-pinned.
+. (Join-Path $root 'history-pin-lib.ps1')
+try { $pinChanged = Set-HistoryPin $ArcgisJs $sha }
+catch { Die 'app pin' $_.Exception.Message }
+if (-not $pinChanged) { Log "app pin already at $sha -- no pin change needed" }
 
 # 6c. commit + push the app repo if EITHER the pin or the Wayback list changed.
 if ($pinChanged -or $wbChanged) {
