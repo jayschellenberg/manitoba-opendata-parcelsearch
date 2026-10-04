@@ -23,8 +23,13 @@
 
 param([switch]$DryRun, [switch]$TestAlert)
 
-$ErrorActionPreference = 'Stop'
-$PSNativeCommandUseErrorActionPreference = $false   # gate on $LASTEXITCODE, not stderr
+# 'Continue', not 'Stop': under Windows PowerShell 5.1 (the scheduled-task
+# runtime) 'Stop' turns any native-command stderr line into a terminating
+# error, and Rscript writes ordinary progress there ("Spherical geometry (s2)
+# switched off") -- the first publish died on exactly that line. Every native
+# call below is gated on $LASTEXITCODE explicitly instead.
+$ErrorActionPreference = 'Continue'
+$PSNativeCommandUseErrorActionPreference = $false   # PS 7 equivalent; no-op on 5.1
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $root 'alert-lib.ps1')
 . (Join-Path $root 'history-pin-lib.ps1')
