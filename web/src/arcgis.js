@@ -18,16 +18,16 @@
 //     Risk_Area
 //
 // Single search flow (Manitoba doesn't have a separate survey/legal-lots
-// dataset — Roll_Entry IS the parcels):
+// dataset â€” Roll_Entry IS the parcels):
 //
 //   1. searchParcels({ address, municipality, roll, zoneCategory,
-//        devPlanCategory }) — attribute query against Roll_Entry. Filled
+//        devPlanCategory }) â€” attribute query against Roll_Entry. Filled
 //        text fields use case-insensitive UPPER(...) LIKE; the muni and
 //        category dropdowns use exact equality.
-//   2. fetchZoningOverlap(parcelFc) and fetchDevPlanOverlap(parcelFc) —
+//   2. fetchZoningOverlap(parcelFc) and fetchDevPlanOverlap(parcelFc) â€”
 //      per-parcel envelope query against Zoning + Dev Plan layers (true
 //      esriSpatialRelIntersects, no padding needed). Run in parallel.
-//   3. joinTopNByArea(parcelFc, overlayFc, n=2) — for each parcel, clip
+//   3. joinTopNByArea(parcelFc, overlayFc, n=2) â€” for each parcel, clip
 //      overlay polygons to the parcel polygon, compute intersection area,
 //      sort desc, return top N with coverage ratio. Mirrors the
 //      get_multiple_by_area() helper in mao-assembly's Step 1 pipeline.
@@ -35,7 +35,7 @@
 // Notes vs. the Winnipeg sister tool:
 //   - Pagination uses resultOffset/resultRecordCount (not Socrata's
 //     $offset/$limit).
-//   - 'where' uses real SQL UPPER(col) LIKE '%X%' — not Socrata upper().
+//   - 'where' uses real SQL UPPER(col) LIKE '%X%' â€” not Socrata upper().
 //   - spatialRel=esriSpatialRelIntersects is a true intersection test, so
 //     there's no 150m bbox padding (Bug 10.2 in REPLICATION_GUIDE doesn't
 //     apply). The client-side overlap re-check is dropped accordingly.
@@ -47,11 +47,11 @@ import bbox from '@turf/bbox';
 // @turf/intersect moved to lib/overlayJoinCore.js with the area join.
 // Persistent cache lives in its own module so the storage backend
 // (IndexedDB primary, localStorage fallback) can evolve without
-// touching every call site. readCache + writeCache are async — every
+// touching every call site. readCache + writeCache are async â€” every
 // caller in this file already runs inside an async function.
 import { readCache, readCacheEntry, writeCache } from './cache.js';
 // Owns the "MAO splits the rural grid number at the thousands mark"
-// convention — see lib/civicRange.js. The street clause below and the
+// convention â€” see lib/civicRange.js. The street clause below and the
 // snapshot filter both expand the search term through it so they agree.
 import {
   addressSearchVariants,
@@ -85,7 +85,7 @@ export const MASC_RISK_AREAS_URL = `${BASE}/MASC_Risk_Areas/FeatureServer/0`;
 
 // Live provincial FeatureServers the results grid is sourced from, as a
 // citable list for evidence-export provenance (lib/provenance.js). These are
-// the authoritative live endpoints queried at search time — keep in lock-step
+// the authoritative live endpoints queried at search time â€” keep in lock-step
 // with the consts above. `label` is the column family it feeds in the grid.
 export const SERVICE_SOURCES = [
   { label: 'Parcels (Roll Entry)',          url: ROLL_URL },
@@ -107,9 +107,9 @@ const ROLL_PUBLISHED_TTL_MS = 24 * 60 * 60 * 1000;
  * Manitoba Assessment Online by an unknown margin: on 2026-08-05 the layer
  * reported an edit date of the previous day while still serving RM of Ste
  * Anne roll 126910 at its pre-subdivision 17.22 ac, against a matching
- * pre-subdivision polygon, when MAO's map already showed the ±2.3 ac child
+ * pre-subdivision polygon, when MAO's map already showed the Â±2.3 ac child
  * parcel. Quoting this date alone would therefore raise confidence exactly
- * where it should fall — callers must pair it with the standing caveat that
+ * where it should fall â€” callers must pair it with the standing caveat that
  * an individual roll can be older than the publish date implies.
  *
  * @returns {string|null} ISO date (YYYY-MM-DD), or null if unavailable.
@@ -146,7 +146,7 @@ const ROLL_KEY_CHUNK_SIZE = 80;
 // Bulk roll-number searches (sales-CSV upload, paste-list) split the
 // Roll_No_Txt IN-list into chunks before querying Roll_Entry. ArcGIS
 // hosted services silently return incomplete results for large IN-lists
-// without setting exceededTransferLimit — observed empirically: a single
+// without setting exceededTransferLimit â€” observed empirically: a single
 // 192-roll IN-list returned 62 features instead of the expected ~149.
 // Chunking sidesteps that, and the per-chunk queries run concurrently
 // so total latency is roughly unchanged.
@@ -157,7 +157,7 @@ const ROLL_LIST_CHUNK_SIZE = 50;
 const ROLL_LIST_CONCURRENCY = 4;
 // Ceiling for the roll-list path alone. MAX_RESULTS exists to stop an
 // open-ended muni-wide query dragging back a third of the province; a roll list
-// is the opposite situation — the caller has already named every record it
+// is the opposite situation â€” the caller has already named every record it
 // wants, and the list is finite by construction. Sharing the 1,000 cap silently
 // truncated any longer list: Niverville's residential sales span 1,720 rolls,
 // so 42% of them resolved to nothing and were then reported as "not in
@@ -165,7 +165,7 @@ const ROLL_LIST_CONCURRENCY = 4;
 // 2026-08-17). Worse, the four workers race, so WHICH rolls survived varied
 // between runs of the same load.
 //
-// This is a backstop against a pathological paste, not a result cap — the sales
+// This is a backstop against a pathological paste, not a result cap â€” the sales
 // panel's own 25,000-sale big-load warning trips first on any realistic list.
 const ROLL_LIST_MAX_RESULTS = 25000;
 // How many per-feature spatial queries we run in parallel. ArcGIS hosted
@@ -194,7 +194,7 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // FeatureCollection shape (same 10 fields, EPSG:4326), so the rest of
 // the app is none the wiser.
 //
-// Shard cache is in-memory only (per session) — each muni's shard is
+// Shard cache is in-memory only (per session) â€” each muni's shard is
 // ~1-10 MB and gzipped on the wire; a quick reload to pick up live data
 // after the upstream rebuild is the supported recovery path.
 //
@@ -205,17 +205,17 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // ~430 MB of generated assets from this repo/deploy. MAINTENANCE: after
 // rebuilding any of these datasets (the r/build_*.R scripts write into
 // the local mb-parcel-data clone), commit + push that repo and update
-// this SHA — see MAINTENANCE.md.
+// this SHA â€” see MAINTENANCE.md.
 //
 // Host history: this served from cdn.jsdelivr.net until 2026-08-17,
 // when the repo (~175 MB) turned out to be over jsDelivr's 50 MB
-// PACKAGE limit — jsDelivr kept serving files already in its cache but
+// PACKAGE limit â€” jsDelivr kept serving files already in its cache but
 // refused every cold file ("Failed to fetch the requested commit" /
 // "Package size exceeded"), so land cover and water quietly returned
 // null for any muni nobody had fetched before, and new pins could never
 // ingest at all. It moved to direct raw.githubusercontent.com fetches
 // (no repo-size limit, no ingestion lag, CORS *), but raw rate-limits
-// per client IP and the very first live check tripped a 429 — so the
+// per client IP and the very first live check tripped a 429 â€” so the
 // app now fetches same-origin /gh-data/<repo>/<sha>/<path>, which the
 // api/gh-data.js edge function proxies to raw with Vercel's edge cache
 // in front (immutable per-URL, so a repin never needs a purge). GitHub
@@ -228,7 +228,7 @@ export const MB_PARCEL_DATA_REVISION =
 // Origin-absolute rather than a bare /gh-data/... path, so the URL is usable
 // anywhere (it once fed a MapLibre tile template, which requires absolute
 // URLs; the land-cover pyramid is now a PMTiles archive on R2). Node imports
-// this module in unit tests, where location is absent — the fallback
+// this module in unit tests, where location is absent â€” the fallback
 // produces a relative URL that those tests never fetch.
 const GH_DATA_ORIGIN = globalThis.location?.origin ?? '';
 export const MB_PARCEL_DATA_CDN =
@@ -242,7 +242,7 @@ const snapshotShardCache = new Map();
  *  the per-muni shards instead of hitting the live FeatureServer. */
 export function setRollEntrySnapshot(manifest) {
   rollEntrySnapshot = manifest || null;
-  // Drop the per-muni cache when toggling modes — otherwise switching
+  // Drop the per-muni cache when toggling modes â€” otherwise switching
   // back to live mid-session would still serve stale snapshot data
   // until the cache evicted naturally.
   snapshotShardCache.clear();
@@ -266,7 +266,7 @@ async function fetchSnapshotShard(muniName) {
       return makeEmptyFc({ truncated: false });
     }
     const fc = await res.json();
-    // Ensure the FC has the shape downstream code expects (defensive —
+    // Ensure the FC has the shape downstream code expects (defensive â€”
     // a malformed shard shouldn't break the whole search path).
     if (!fc || fc.type !== 'FeatureCollection' || !Array.isArray(fc.features)) {
       return makeEmptyFc({ truncated: false });
@@ -282,10 +282,10 @@ async function fetchSnapshotShard(muniName) {
 /** Apply the same attribute filters searchParcels applies SQL-side,
  *  but to an in-memory FC. Skips zoning/dev-plan category filters
  *  (those depend on OBJECTID lists from the overlay services, and
- *  OBJECTIDs don't survive a server republish — so cross-mode
+ *  OBJECTIDs don't survive a server republish â€” so cross-mode
  *  filtering is unsafe). Also skips buildParcelClauses' civic-number
  *  clause: that one only exists to beat the live query's row cap, and a
- *  snapshot shard is already the whole muni — main.js's
+ *  snapshot shard is already the whole muni â€” main.js's
  *  applyCivicNumberFilter decides the number either way.
  *  The remaining filters mirror buildParcelClauses. */
 function filterSnapshotFeatures(features, args) {
@@ -342,7 +342,7 @@ async function searchParcelsFromSnapshot(args) {
     // buildParcelClauses output alongside the key clause, so address and
     // dwelling-units narrow an imported list in live mode; skipping them
     // here quietly broke that promise in snapshot mode. `roll` is left
-    // out on purpose — buildParcelClauses excludes it too (the key match
+    // out on purpose â€” buildParcelClauses excludes it too (the key match
     // above already identifies each row).
     const filtered = filterSnapshotFeatures(all, { ...args, roll: null });
     return { type: 'FeatureCollection', features: filtered, _truncated: false };
@@ -353,7 +353,7 @@ async function searchParcelsFromSnapshot(args) {
     const features = filterSnapshotFeatures(shard.features, args);
     return { type: 'FeatureCollection', features, _truncated: false };
   }
-  // Without a muni (or parcelKeys) the snapshot can't usefully search —
+  // Without a muni (or parcelKeys) the snapshot can't usefully search â€”
   // we'd have to load all 186 shards. Return empty rather than burn
   // hundreds of MB on what's almost certainly an unintended path.
   return makeEmptyFc({ truncated: false });
@@ -374,7 +374,7 @@ async function fetchAllParcelsInMunicipalityFromSnapshot(municipality) {
  * collection if the cap was reached).
  */
 export async function searchParcels(args) {
-  // Snapshot fallback — see SNAPSHOT_BASE_URL section above. While the
+  // Snapshot fallback â€” see SNAPSHOT_BASE_URL section above. While the
   // snapshot manifest is set we route to the per-muni shards instead of
   // hitting the live FeatureServer; the returned FC has the same shape
   // so the rest of the search pipeline is unchanged. Zone/dev-plan
@@ -395,7 +395,7 @@ export async function searchParcels(args) {
   const clauses = buildParcelClauses(args || {});
   const rollList = canonicalRollList(args?.roll);
 
-  // Zone / Dev-Plan category aren't fields on Roll_Entry — they live on the
+  // Zone / Dev-Plan category aren't fields on Roll_Entry â€” they live on the
   // overlay layers. We resolve them to a list of parcel OBJECTIDs by spatial
   // query against the matching overlay first, then add an `OBJECTID IN (...)`
   // clause to the parcel query. Done up front so the result row cap respects
@@ -407,7 +407,7 @@ export async function searchParcels(args) {
       zoneCategory, devPlanCategory, zoningChanged, devPlanChanged,
       tileDrainageOnly, irrigationOnly, municipality,
     });
-    // Empty result set on the overlay side → empty parcel result.
+    // Empty result set on the overlay side â†’ empty parcel result.
     if (oidFilter !== null && oidFilter.length === 0) {
       return makeEmptyFc({ truncated: false });
     }
@@ -435,7 +435,7 @@ export async function searchParcels(args) {
   // Roll-list path: when the user supplied a roll list (single value, comma
   // paste, or bulk sales-CSV upload), split into chunks before joining the
   // IN-list into the WHERE clause. Large IN-lists silently truncate at the
-  // service side — see ROLL_LIST_CHUNK_SIZE comment for the empirical case.
+  // service side â€” see ROLL_LIST_CHUNK_SIZE comment for the empirical case.
   if (rollList.length > 0) {
     if (rollList.length <= ROLL_LIST_CHUNK_SIZE) {
       const inList = rollList.map((v) => `'${escapeSql(v)}'`).join(',');
@@ -459,8 +459,8 @@ export async function searchParcels(args) {
  * a muni that writes it closed up). `anchored` drops the leading % for a
  * civic number, which an address always starts with.
  *
- * Single-variant terms — anything without a 4-digit run or an internal
- * digit space, i.e. nearly every street name — emit exactly the one
+ * Single-variant terms â€” anything without a 4-digit run or an internal
+ * digit space, i.e. nearly every street name â€” emit exactly the one
  * clause they always have. Multiple variants are parenthesized so the OR
  * can't leak past the AND joining it to the muni / DU clauses.
  */
@@ -475,7 +475,7 @@ function addressLikeClause(term, { anchored = false } = {}) {
 /**
  * Server-side narrowing for the From/To civic-number boxes. Mirrors
  * civicSearchMode: a lone box is a contains, From == To is an anchored
- * prefix, and a true range returns null — a prefix LIKE can't express
+ * prefix, and a true range returns null â€” a prefix LIKE can't express
  * one, so ranges still lean on applyCivicNumberFilter's post-filter.
  *
  * Why it exists: From/To were otherwise pure post-filters, so the number
@@ -486,13 +486,13 @@ function addressLikeClause(term, { anchored = false } = {}) {
  *
  * The exact form is deliberately a SUPERSET of the real predicate:
  * '100%' also drags in "1000 MAIN", and a prefix can't express the
- * letter-suffix span. That is fine — applyCivicNumberFilter still runs
+ * letter-suffix span. That is fine â€” applyCivicNumberFilter still runs
  * client-side and makes the exact call. This clause exists to beat the
  * row cap, not to decide.
  */
 // Range addresses ("1511 - 1519 26TH ST") answer for every number
 // between their endpoints, and an anchored prefix on the searched number
-// cannot reach them — 1515 does not start the string. Letting any range
+// cannot reach them â€” 1515 does not start the string. Letting any range
 // row on the street through, for applyCivicNumberFilter to decide, is
 // what makes an interior number findable at all. See
 // parseCivicAddressSpans: the SPACED hyphen is the discriminator, so
@@ -526,7 +526,7 @@ function buildParcelClauses({ addressStreet, addressFrom, addressTo, municipalit
     if (streetClause) clauses.push(streetClause);
   }
   // From/To narrow server-side where they can, so the row cap can't hide
-  // the match — see civicNumberClause. Deciding the number still happens
+  // the match â€” see civicNumberClause. Deciding the number still happens
   // client-side in main.js's applyCivicNumberFilter (ArcGIS SQL can't
   // cleanly cast the leading digits), and a true range narrows there
   // alone.
@@ -535,7 +535,7 @@ function buildParcelClauses({ addressStreet, addressFrom, addressTo, municipalit
   // Muni dropdown delivers the exact stored form, e.g. "STONEWALL (TOWN)";
   // exact equality is faster than LIKE and avoids surprise partial-matches.
   if (municipality)    clauses.push(`Muni_Name_With_Typ = '${escapeSql(municipality)}'`);
-  // Roll # handling moved into searchParcels() — large IN-lists need to
+  // Roll # handling moved into searchParcels() â€” large IN-lists need to
   // be chunked across multiple queries (see ROLL_LIST_CHUNK_SIZE).
   // canonicalRollList() builds the deduped, normalized list searchParcels
   // then splits.
@@ -544,7 +544,7 @@ function buildParcelClauses({ addressStreet, addressFrom, addressTo, municipalit
   // Most rural / commercial / vacant parcels store 0; the "0 DU only" option
   // is useful for finding vacant land. The "min" option treats null/missing
   // as not-matching, which is correct: a parcel with no DU value isn't
-  // confirmed to have ≥N dwellings.
+  // confirmed to have â‰¥N dwellings.
   if (duMode === 'zero') {
     clauses.push(`Dwelling_Units = 0`);
   } else if (duMode === 'min') {
@@ -571,8 +571,8 @@ async function fetchRollEntryByKeyChunks(parcelKeys, clauses) {
   const features = [];
   const seenOids = new Set();
   // ROLL_LIST_MAX_RESULTS, not MAX_RESULTS: a parcel-key list is an explicit
-  // enumeration exactly like a roll list — the caller named every record it
-  // wants — so it earns the same ceiling for the same reason. Sharing the
+  // enumeration exactly like a roll list â€” the caller named every record it
+  // wants â€” so it earns the same ceiling for the same reason. Sharing the
   // muni-wide 1,000 cap truncated any list-import or legal-index lookup past
   // that point, and this path declared `truncated` from the INPUT length, so a
   // 1,200-key import reported itself short before a single fetch had run.
@@ -587,7 +587,7 @@ async function fetchRollEntryByKeyChunks(parcelKeys, clauses) {
       truncated = true;
       break;
     }
-    // Per-chunk cap rather than this chunk's share of a running budget — see
+    // Per-chunk cap rather than this chunk's share of a running budget â€” see
     // the same change in fetchRollListChunked.
     const fc = await fetchRollEntryWhere(where, Math.min(PAGE_SIZE, remaining));
     truncated = truncated || fc._truncated === true;
@@ -620,7 +620,7 @@ async function fetchRollEntryByKeyChunks(parcelKeys, clauses) {
  * chunks; each chunk fires as an independent fetchRollEntryWhere with
  * the rest of the WHERE intact. Up to ROLL_LIST_CONCURRENCY chunks run
  * concurrently. Results merge into a single FeatureCollection with
- * OBJECTID-keyed dedupe (defensive — chunks don't overlap).
+ * OBJECTID-keyed dedupe (defensive â€” chunks don't overlap).
  *
  * Worker-pool concurrency rather than a fire-all Promise.all keeps the
  * rate-limit footprint bounded even for large lists (an 800-roll upload
@@ -743,7 +743,7 @@ function rollKeyWhereClause(keys) {
 /**
  * Per-parcel envelope query against the Zoning By-Laws layer. Returns a
  * deduplicated FeatureCollection of zoning polygons covering the parcel
- * set. esriSpatialRelIntersects is a true intersection — no bbox padding
+ * set. esriSpatialRelIntersects is a true intersection â€” no bbox padding
  * needed, no client-side re-check needed for spatial correctness.
  */
 const ZONING_OUTFIELDS  = 'OBJECTID,ZONE,ZONE_NAME,ZONE_CATEGORY,ZBL,ZBL_A,AMENDMENT_DESCRIPTION,MUNI_NAME,PLANNINGDISTRICT,PLANNINGREGION';
@@ -760,8 +760,8 @@ export async function fetchZoningOverlap(parcelFc, { municipality, municipalitie
 /**
  * Per-parcel envelope query against the Development Plan Designations layer.
  * Same shape as fetchZoningOverlap. When a municipality (or array of
- * municipalities) is set, takes the fast bulk path — one query for the
- * whole muni — instead of fanning out one envelope query per parcel.
+ * municipalities) is set, takes the fast bulk path â€” one query for the
+ * whole muni â€” instead of fanning out one envelope query per parcel.
  */
 export async function fetchDevPlanOverlap(parcelFc, { municipality, municipalities } = {}) {
   if (municipality) return fetchOverlayByMunicipality(DEVPLAN_URL, municipality, DEVPLAN_OUTFIELDS);
@@ -776,9 +776,9 @@ export async function fetchDevPlanOverlap(parcelFc, { municipality, municipaliti
  * muni in parallel, then merge the results into a single FC,
  * deduping by OBJECTID. Sales-CSV uploads matched against 10-30
  * munis used to fall into the per-parcel envelope path (1 fetch
- * per parcel × 2000+ parcels = 30+ seconds with concurrency cap);
+ * per parcel Ã— 2000+ parcels = 30+ seconds with concurrency cap);
  * this path collapses to one fetch per muni (~20 fetches
- * total) — generally under 5 seconds.
+ * total) â€” generally under 5 seconds.
  */
 async function fetchOverlayByMunicipalities(baseUrl, municipalities, outFields) {
   const unique = [...new Set(municipalities.filter(Boolean))];
@@ -807,7 +807,7 @@ async function fetchOverlayByMunicipalities(baseUrl, municipalities, outFields) 
  * 1000 per-parcel queries silently fails and leaves a parcel with empty
  * zoning or dev-plan in the table. Roll Entry's Muni_Name_With_Typ
  * ("NIVERVILLE (TOWN)") differs from the overlay layers' MUNI_NAME
- * ("Niverville") — strip the suffix and ignore case.
+ * ("Niverville") â€” strip the suffix and ignore case.
  */
 async function fetchOverlayByMunicipality(baseUrl, municipality, outFields) {
   const cacheKey = overlayCacheKey(baseUrl, municipality);
@@ -823,8 +823,8 @@ async function fetchOverlayByMunicipality(baseUrl, municipality, outFields) {
     f: 'geojson',
   }, 20000);
   // Only a non-empty result is worth remembering. An empty one is
-  // ambiguous — a municipality with genuinely no coverage looks exactly
-  // like a name that failed to match or a request that came back short —
+  // ambiguous â€” a municipality with genuinely no coverage looks exactly
+  // like a name that failed to match or a request that came back short â€”
   // and caching that for a week would pin a parcel set to blank zoning
   // with no obvious way for the user to tell why. Re-fetching the
   // genuinely-empty munis costs one request each.
@@ -838,7 +838,7 @@ async function fetchOverlayByMunicipality(baseUrl, municipality, outFields) {
  * Cache key for one municipality's overlay polygons.
  *
  * Municipal zoning and development-plan layers change on a by-law
- * cadence — months to years — while a multi-municipality sales import
+ * cadence â€” months to years â€” while a multi-municipality sales import
  * re-fetches all of them every single time. On a 15-muni upload that
  * was 46 paged requests before a single polygon could be clipped, and
  * it dominated the wall-clock the user actually waits through.
@@ -862,7 +862,7 @@ function overlayCacheKey(baseUrl, municipality) {
 /**
  * Build a `MUNI_NAME` WHERE clause that copes with the Zoning +
  * Dev-Plan layers' wildly inconsistent muni naming. Roll_Entry stores
- * "WEST ST PAUL (RM)" / "STONEWALL (TOWN)" — but the overlay layers
+ * "WEST ST PAUL (RM)" / "STONEWALL (TOWN)" â€” but the overlay layers
  * use a half-dozen different conventions for the same muni:
  *
  *   "Stonewall"               (bare)
@@ -873,12 +873,12 @@ function overlayCacheKey(baseUrl, municipality) {
  *   "Portage la Prairie (RM)" (parens-typed)
  *
  * The previous single-equals comparison ("UPPER(MUNI_NAME) = bare")
- * only matched the bare form — so Stonewall, Selkirk, West St Paul,
+ * only matched the bare form â€” so Stonewall, Selkirk, West St Paul,
  * Ste. Anne, Portage la Prairie, and any other muni whose overlay-
  * side spelling included a type prefix, parens-suffix, OR a period
  * on St/Ste all silently returned zero features. This builds the
- * full cross-product of (bare ± type-prefix ± parens-suffix) × (with
- * dot ± without dot), wraps it in a UPPER(MUNI_NAME) IN-list, and
+ * full cross-product of (bare Â± type-prefix Â± parens-suffix) Ã— (with
+ * dot Â± without dot), wraps it in a UPPER(MUNI_NAME) IN-list, and
  * lets the source pick whichever form it happens to use.
  */
 function muniNameMatchClause(municipality) {
@@ -887,7 +887,7 @@ function muniNameMatchClause(municipality) {
   const bare = (bareMatch ? bareMatch[1] : upper).trim();
   const type = (bareMatch ? bareMatch[2] : '').trim();
 
-  // Type → list of prefix candidates (e.g. "TOWN" → "TOWN OF").
+  // Type â†’ list of prefix candidates (e.g. "TOWN" â†’ "TOWN OF").
   // Multi-expansion for types that have both short + long forms in
   // open-data layers ("RM" appears as both "RM OF" and "RURAL
   // MUNICIPALITY OF" across different layers).
@@ -902,7 +902,7 @@ function muniNameMatchClause(municipality) {
   };
   const prefixes = PREFIX_MAP[type] || [];
 
-  // Type → list of parens-suffix candidates (matches the Manitoba
+  // Type â†’ list of parens-suffix candidates (matches the Manitoba
   // Zoning layer's "Portage la Prairie (RM)" convention). Some munis
   // shorten the type (e.g. "Souris-Glenwood (M)" for Municipality).
   const SUFFIX_MAP = {
@@ -929,8 +929,8 @@ function muniNameMatchClause(municipality) {
   // canonical layer-side spellings when building the variant set.
   // Add a new entry whenever the audit surfaces another mismatch.
   const ACCENT_HYPHEN_ALIASES = {
-    'TACHE':                      ['TACHÉ'],
-    'ST FRANCOIS XAVIER':         ['ST FRANÇOIS XAVIER'],
+    'TACHE':                      ['TACHÃ‰'],
+    'ST FRANCOIS XAVIER':         ['ST FRANÃ‡OIS XAVIER'],
     'KILLARNEY TURTLE MOUNTAIN':  ['KILLARNEY-TURTLE MOUNTAIN'],
   };
   // Start with the bare name and any layer-side aliases for it. The
@@ -963,12 +963,12 @@ function muniNameMatchClause(municipality) {
  * Compute area-weighted top-N overlay matches for each parcel. Returns
  *   Map<parcelOid, Array<{ feature, ratio }>>
  * where `ratio = intersectionArea / parcelArea` (0-1) and the array is
- * sorted descending by ratio, length ≤ n.
+ * sorted descending by ratio, length â‰¤ n.
  *
  * Mirrors `get_multiple_by_area()` in mao-assembly/scripts/pipeline_utils.R:
  * intersect(parcel, overlay), area(intersection), sort desc, take top N.
  *
- * Failures on individual parcels are logged and skipped — one bad geometry
+ * Failures on individual parcels are logged and skipped â€” one bad geometry
  * never kills the whole join.
  */
 /**
@@ -981,7 +981,7 @@ function muniNameMatchClause(municipality) {
  * for the same collection is pure waste.
  *
  * Keyed weakly on the FC, so the entry disappears when the collection
- * does — no cache invalidation to get wrong, and no retention of a
+ * does â€” no cache invalidation to get wrong, and no retention of a
  * province-worth of geometry after a new search replaces it. Mutating
  * an FC's features in place after a join would serve a stale index, but
  * nothing in this codebase does that: overlay FCs are built by a fetch
@@ -1008,7 +1008,7 @@ function attachOverlayFeatures(pairs, overlayFeatures) {
 
 /**
  * For each parcel, clip every candidate overlay polygon to it and keep
- * the top `n` by share of parcel area. Synchronous — blocks until done.
+ * the top `n` by share of parcel area. Synchronous â€” blocks until done.
  *
  * The compute lives in lib/overlayJoinCore.js so this and the worker
  * path below run the exact same code. Prefer joinTopNByAreaAsync for
@@ -1025,7 +1025,7 @@ export function joinTopNByArea(parcelFc, overlayFc, n = 2) {
 //
 // The join is the app's heaviest synchronous block; on a multi-muni
 // sales import it froze the tab for tens of seconds. Running it in a
-// worker doesn't reduce total CPU — tiling did that — it just stops the
+// worker doesn't reduce total CPU â€” tiling did that â€” it just stops the
 // UI from locking up while the work happens.
 
 let joinWorker = null;
@@ -1071,8 +1071,8 @@ function getJoinWorker() {
 
 /**
  * Same contract as joinTopNByArea, computed off the main thread when a
- * worker is available. Falls back to the synchronous path — same code,
- * same results — if the worker can't start, errors, or the payload
+ * worker is available. Falls back to the synchronous path â€” same code,
+ * same results â€” if the worker can't start, errors, or the payload
  * can't be cloned.
  *
  * Only geometry is sent, and only indices come back, so the transfer
@@ -1109,7 +1109,7 @@ export async function joinTopNByAreaAsync(parcelFc, overlayFc, n = 2) {
 
 /**
  * Touch-level fallback to joinTopNByArea. For each parcel, return overlay
- * features that genuinely intersect it — including the zero-area case
+ * features that genuinely intersect it â€” including the zero-area case
  * joinTopNByArea drops. Used by the "Changes" column when the
  * area-weighted join returned empty: ArcGIS server-side spatial intersect
  * counts edge-touching polygons as a match (so the parcel lands in the
@@ -1121,8 +1121,8 @@ export async function joinTopNByAreaAsync(parcelFc, overlayFc, n = 2) {
  * THIS USED TO BE A BBOX-ONLY TEST, and that is what put a neighbour's
  * amendment on an unamended parcel. Two bboxes can overlap with the
  * polygons hundreds of metres apart, and because the caller consults this
- * fallback whenever the real changed-join is empty — the normal state for
- * any parcel WITHOUT an amendment — every parcel in the vicinity of an
+ * fallback whenever the real changed-join is empty â€” the normal state for
+ * any parcel WITHOUT an amendment â€” every parcel in the vicinity of an
  * amendment inherited its text. Measured over ~12,000 parcels in three
  * municipalities: 408 parcels got an amendment they do not have (30-43% of
  * every amendment the column showed), the nearest one a median 7-39 m away
@@ -1173,10 +1173,10 @@ export function touchOverlapJoin(parcelFc, overlayFc, n = 3) {
 /**
  * One-shot fetch of every distinct Muni_Name_With_Typ value in Roll_Entry,
  * sorted alphabetically. Cached in sessionStorage for the life of the tab
- * — the list barely changes year to year and the request is ~50 KB.
+ * â€” the list barely changes year to year and the request is ~50 KB.
  */
 // Manitoba publishes ~180-190 munis. A distinct-values answer far below
-// that is the province mid-republish (18 munis seen 2026-06-03) — it is
+// that is the province mid-republish (18 munis seen 2026-06-03) â€” it is
 // still returned so the boot health check can see it, but it must not be
 // persisted, or every load for the next week (and, with the stale-while-
 // revalidate serving below, every load until the weekly refresh succeeds)
@@ -1204,13 +1204,13 @@ export async function fetchDevPlanCategoryList(municipality = null) {
 }
 
 /**
- * Total live Roll_Entry record count via returnCountOnly — one cheap
+ * Total live Roll_Entry record count via returnCountOnly â€” one cheap
  * request. Used by the boot health check to detect a partial upstream
  * state (record count far below the snapshot's total) even when the muni
  * list looks complete. ALWAYS hits the live FeatureServer (never the
  * snapshot route) since its whole purpose is judging live health.
  * Returns null on failure so the caller can fall back to the muni-count
- * signal alone. Not cached — it's a freshness probe.
+ * signal alone. Not cached â€” it's a freshness probe.
  */
 export async function fetchRollEntryCount() {
   try {
@@ -1221,7 +1221,7 @@ export async function fetchRollEntryCount() {
       body: usp.toString(),
       // A stalled upstream used to hold this open for the browser default
       // (~2 min) and, because it sat in the boot Promise.all, park every
-      // dropdown with it. Null on timeout — it is only a health probe.
+      // dropdown with it. Null on timeout â€” it is only a health probe.
       signal: fetchTimeoutSignal(ROLL_ENTRY_COUNT_TIMEOUT_MS),
     });
     if (!res.ok) return null;
@@ -1239,7 +1239,7 @@ export async function fetchRollEntryCount() {
 // Access-Control-Allow-Origin, so a direct browser fetch is silently
 // CORS-blocked. Both Vercel (vercel.json rewrites) and the Vite dev
 // server (vite.config.js proxy) rewrite this same path to the upstream
-// URL — same string here works in both environments.
+// URL â€” same string here works in both environments.
 const CONTAM_CSV_URL = '/proxy/contam-sites.csv';
 const TRAFFIC_STATIONS_URL  = 'https://services6.arcgis.com/HQUud09zgy3Asw9X/arcgis/rest/services/All_Stations_C_Only/FeatureServer/0';
 // MHTIS Traffic Flow. The service name is STAMPED (a year, and since
@@ -1256,17 +1256,17 @@ const TRAFFIC_STATIONS_URL  = 'https://services6.arcgis.com/HQUud09zgy3Asw9X/arc
 // the year across DateOfEsti / EYear depending on which column answered. This
 // one has a single current `AADT` and an explicit per-segment `AADT_YEAR`.
 // Measured 2026-09-28 over 2,065 segments: 2025: 660, 2024: 695, 2023: 661,
-// ~50 older back to 1995, 2 with no year. Still NOT one vintage — see
+// ~50 older back to 1995, 2 with no year. Still NOT one vintage â€” see
 // updateFlowLegendTitle() in main.js. Station 1193 (PTH 68 at Arborg), which
 // the old layer served as a carried-forward 2018 count of 1130, now reads the
 // 2024 count of 1230, matching the report.
 //
-// Field names changed too (StationNum → STATION_NO, FlowDirect → FLOW_DIR,
-// ROAD_IDENT → ROAD_TYPE with the same values). fetchTrafficFlow() maps them
+// Field names changed too (StationNum â†’ STATION_NO, FlowDirect â†’ FLOW_DIR,
+// ROAD_IDENT â†’ ROAD_TYPE with the same values). fetchTrafficFlow() maps them
 // back to the app's names at the one place the layer enters, so the station
 // join keeps a single key: the stations layer still says `StationNum`.
 const TRAFFIC_FLOW_URL      = 'https://services6.arcgis.com/HQUud09zgy3Asw9X/arcgis/rest/services/E_MHTIS_LRS_20260923/FeatureServer/1';
-// Service field → the app's property name. traffic-refresh-check.ps1 parses the
+// Service field â†’ the app's property name. traffic-refresh-check.ps1 parses the
 // keys and alerts when any of them vanishes from the live layer, so keep this a
 // flat literal of 'KEY': 'value' pairs.
 const TRAFFIC_FLOW_FIELDS = {
@@ -1318,26 +1318,26 @@ const MB_ROAD_NETWORK_URL   = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcg
 const MUNICIPALITY_URL      = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/MUNICIPALITY/FeatureServer/0';
 
 /**
- * Province-wide municipal boundaries — a stable reference layer that's
+ * Province-wide municipal boundaries â€” a stable reference layer that's
  * shown by default. Pulled at simplified resolution to keep the payload
  * small without sacrificing visible accuracy:
  *
- *   - maxAllowableOffset=0.0005 — units match outSR (degrees here), so
- *     0.0005° ≈ 50 m at Manitoba latitude. Faithful to the boundary at
+ *   - maxAllowableOffset=0.0005 â€” units match outSR (degrees here), so
+ *     0.0005Â° â‰ˆ 50 m at Manitoba latitude. Faithful to the boundary at
  *     every zoom where this layer is meant to be useful (province-wide
  *     to muni-overview); imperceptible drift only kicks in past zoom 16
  *     where the parcel-detail layers take over anyway.
  *
- *   - geometryPrecision=4 — 4 decimal places (~11 m) of coordinate
+ *   - geometryPrecision=4 â€” 4 decimal places (~11 m) of coordinate
  *     precision per vertex, smaller wire payload without changing
  *     vertex count.
  *
  * Combined payload: ~298 KB vs ~7.1 MB at full resolution. (An earlier
  * attempt with maxAllowableOffset=100 returned a 58 KB payload but
- * collapsed polygons to absurd minimum shapes — the unit is degrees
+ * collapsed polygons to absurd minimum shapes â€” the unit is degrees
  * with outSR=4326, not metres. Don't repeat that mistake.)
  *
- * Cached for 30 days — boundaries change on a multi-year cadence
+ * Cached for 30 days â€” boundaries change on a multi-year cadence
  * (amalgamations) so a month is comfortable. Loaded async on page open
  * so it never blocks the first paint of the search controls or map.
  */
@@ -1345,12 +1345,12 @@ const MUNICIPALITY_URL      = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcg
  * MASC soil-rating shards. Built by r/build_masc_shards.R from the
  * province's masc_soil_ratings_with_latlon.csv into per-muni JSON
  * files at web/public/data/masc/<MUNI>.json plus an _index.json
- * manifest mapping normalized muni keys → { file, count }.
+ * manifest mapping normalized muni keys â†’ { file, count }.
  *
  * The frontend fetches the manifest once (cached 30 days), then
  * fetches each muni's shard on demand when the MASC overlay is
  * toggled on. Each shard caches per-muni in localStorage with the
- * same 30-day TTL — they're build-time artifacts that only change
+ * same 30-day TTL â€” they're build-time artifacts that only change
  * when MASC publishes new ratings.
  *
  * Returns null when no shard exists for the requested muni (the
@@ -1418,7 +1418,7 @@ export async function fetchMascRiskAreas() {
 }
 
 /**
- * CLI Soil Capability for Agriculture — sourced from Manitoba's
+ * CLI Soil Capability for Agriculture â€” sourced from Manitoba's
  * provincial Soil_Survey_MB FeatureServer (the same layer Manitoba's
  * AgriMaps app draws on). The AGCAP_CLS{1-3} fields carry the
  * CLI-style 1-7 agricultural-capability class with organic
@@ -1430,21 +1430,21 @@ export async function fetchMascRiskAreas() {
  * cli_agr_cap_250k service (open.canada.ca/data/en/dataset/
  * 0c113e2c-e20e-4b64-be6f-496b1be834ee) at 1:250,000 scale. The
  * provincial Soil_Survey_MB layer is what AgriMaps treats as the
- * authoritative capability source — finer 1:50,000-scale polygons,
+ * authoritative capability source â€” finer 1:50,000-scale polygons,
  * Manitoba-curated, and three soils per polygon with extent
  * percentages so mixed-capability landscapes (Class 2 main soil +
  * Class 3 subordinate) read accurately.
  *
  * Class scale (1 = best, 7 = worst):
- *   1 — no significant limitations
- *   2 — minor limitations
- *   3 — moderate limitations
- *   4 — severe limitations, marginal for sustained cultivation
- *   5 — only suitable for hay/perennial crops
- *   6 — only suitable for native pasture
- *   7 — no agricultural capability
- *   O3-O7 — organic soils (capability class implied by the digit)
- *   $ML/$UL/$UR/$ZZ — mineral landscape / urban / urban-residential /
+ *   1 â€” no significant limitations
+ *   2 â€” minor limitations
+ *   3 â€” moderate limitations
+ *   4 â€” severe limitations, marginal for sustained cultivation
+ *   5 â€” only suitable for hay/perennial crops
+ *   6 â€” only suitable for native pasture
+ *   7 â€” no agricultural capability
+ *   O3-O7 â€” organic soils (capability class implied by the digit)
+ *   $ML/$UL/$UR/$ZZ â€” mineral landscape / urban / urban-residential /
  *                     water (no agricultural rating)
  *
  * Subclass letters (suffix on AGRI_CAP, e.g. "2W"):
@@ -1486,15 +1486,15 @@ const CLI_AGR_CAP_OUTFIELDS = [
   // decoded via map.js's TOPO_LABELS / STONE_LABELS / etc.) and the
   // dominant-soil descriptor columns in the CSV export.
   //
-  //   TOPO       — slope class (a-j + level/marsh/urban/water specials)
-  //   STONE      — stoniness (Non-stony … Excessively stony)
-  //   SALINITY   — non-saline through strongly saline (mS/cm bands)
-  //   EROSION    — non-eroded through severely eroded / overwash
-  //   DRAINAGE   — rapid / well / imperfect / poor / very poor
-  //   SURFTEXTM  — surface-texture modifier (gravelly, mucky, woody)
-  //   MANCON     — rolled-up management-considerations code
-  //   GEN_RATIN  — irrigation suitability rating
-  //   SPUD_RTNG  — potato-irrigation suitability class
+  //   TOPO       â€” slope class (a-j + level/marsh/urban/water specials)
+  //   STONE      â€” stoniness (Non-stony â€¦ Excessively stony)
+  //   SALINITY   â€” non-saline through strongly saline (mS/cm bands)
+  //   EROSION    â€” non-eroded through severely eroded / overwash
+  //   DRAINAGE   â€” rapid / well / imperfect / poor / very poor
+  //   SURFTEXTM  â€” surface-texture modifier (gravelly, mucky, woody)
+  //   MANCON     â€” rolled-up management-considerations code
+  //   GEN_RATIN  â€” irrigation suitability rating
+  //   SPUD_RTNG  â€” potato-irrigation suitability class
   'TOPO1', 'TOPO2', 'TOPO3',
   'STONE1', 'STONE2', 'STONE3',
   'SALINITY1', 'SALINITY2', 'SALINITY3',
@@ -1504,7 +1504,7 @@ const CLI_AGR_CAP_OUTFIELDS = [
   'MANCON1', 'MANCON2', 'MANCON3',
   'GEN_RATIN1', 'GEN_RATIN2', 'GEN_RATIN3',
   'SPUD_RTNG1', 'SPUD_RTNG2', 'SPUD_RTNG3',
-  // Server-precomputed polygon area in metres² (Shape__Area is the
+  // Server-precomputed polygon area in metresÂ² (Shape__Area is the
   // ArcGIS Online auto-field). Lets the Soil Type palette ranking and
   // the per-parcel composition stamp skip the per-feature turfArea
   // fallback that used to spin for several seconds on busy munis.
@@ -1518,7 +1518,7 @@ const CLI_AGR_CAP_OUTFIELDS = [
 // parcels rather than a whole municipality. Each batch goes out as ONE
 // multi-ring polygon (see polygonsToEsriGeometry), so this is the divisor
 // on request count: 1,000 sale parcels become 20 ID queries, not 1,000.
-// A bbox ring is 5 points, so even 50 of them is a ~6 KB POST body —
+// A bbox ring is 5 points, so even 50 of them is a ~6 KB POST body â€”
 // nothing like the WALLAS footprints that set that batch size at 25.
 const SOIL_PARCEL_BATCH_SIZE = 50;
 
@@ -1530,12 +1530,12 @@ const SOIL_PARCEL_BATCH_SIZE = 50;
  * is what made a multi-municipality sales analysis so heavy: RM of
  * Ritchot alone is 2,715 polygons / 55 MB, and a farm-sales search
  * touches a small fraction of that ground. The map overlay still loads
- * whole municipalities — it paints across the RM, so it has to.
+ * whole municipalities â€” it paints across the RM, so it has to.
  *
  * Each parcel contributes the GRID CELLS its bounding box touches, not its
  * outline and not the bbox itself. Any soil polygon that intersects the
  * parcel also intersects those cells, so the result is a superset of what
- * the join needs — and the join clips precisely anyway, so the extra
+ * the join needs â€” and the join clips precisely anyway, so the extra
  * polygons cost nothing but a few bbox tests.
  *
  * The grid is not a tidiness measure, it is the correctness of the batch.
@@ -1545,7 +1545,7 @@ const SOIL_PARCEL_BATCH_SIZE = 50;
  * set overlap constantly (measured: 69 overlapping pairs in a single batch
  * of 50), and a soil polygon reaching only into one of those holes was
  * never returned. That silently cost parcel 37865 a 6.35% share of
- * class-1 Fort Garry — a real component, missing, with nothing to show
+ * class-1 Fort Garry â€” a real component, missing, with nothing to show
  * for it. Snapping to a fixed grid makes the rings disjoint by
  * construction, so parity has nothing to resolve.
  *
@@ -1601,10 +1601,10 @@ export async function fetchSoilSurveyForParcels(parcelFc, { onProgress } = {}) {
   for (let i = 0; i < boxes.length; i += SOIL_PARCEL_BATCH_SIZE) {
     batches.push(boxes.slice(i, i + SOIL_PARCEL_BATCH_SIZE));
   }
-  if (onProgress) onProgress(`Locating soils for ${parcels.length} parcels…`);
+  if (onProgress) onProgress(`Locating soils for ${parcels.length} parcelsâ€¦`);
 
   // Each batch reports ok/failed rather than just its IDs. An empty ID
-  // list is a perfectly good answer — unsurveyed ground — so "[] came
+  // list is a perfectly good answer â€” unsurveyed ground â€” so "[] came
   // back" cannot stand in for "the request failed". The sales export
   // gates on completeness, and a silently short soil set is exactly the
   // blank-column export that guard exists to prevent.
@@ -1643,7 +1643,7 @@ export async function fetchSoilSurveyForParcels(parcelFc, { onProgress } = {}) {
 
   const features = [];
   for (let i = 0; i < ids.length; i += PAGE_SIZE) {
-    if (onProgress) onProgress(`Loading ${ids.length} soil polygons…`);
+    if (onProgress) onProgress(`Loading ${ids.length} soil polygonsâ€¦`);
     const fc = await fetchPage(CLI_AGR_CAP_URL, {
       where: '1=1',
       objectIds: ids.slice(i, i + PAGE_SIZE).join(','),
@@ -1660,7 +1660,7 @@ export async function fetchSoilSurveyForParcels(parcelFc, { onProgress } = {}) {
 }
 
 /**
- * Manitoba Soil Survey (Soil_Survey_MB) — provincial soil-association
+ * Manitoba Soil Survey (Soil_Survey_MB) â€” provincial soil-association
  * polygons published by Manitoba Open Data, hosted on the same Esri
  * org as ROLL_ENTRY. Each polygon stamps the dominant 3 soils with
  * SOILNAME{1-3}, SOIL_CODE{1-3}, CLASS{1-3} (CLI-style capability
@@ -1668,8 +1668,8 @@ export async function fetchSoilSurveyForParcels(parcelFc, { onProgress } = {}) {
  * unit symbol MAPUNITNOM, and survey-report metadata (REPORT_NAME,
  * SCALE, DATE).
  *
- * Coloured on the map by the FIRST character of CLASS1 — that's the
- * agricultural-capability class (1=prime → 7=no capability, plus 'o'
+ * Coloured on the map by the FIRST character of CLASS1 â€” that's the
+ * agricultural-capability class (1=prime â†’ 7=no capability, plus 'o'
  * organic and 'x' unclassified). Same scale as the CLI Soil overlay,
  * but at finer resolution and with the full soil-association record
  * attached.
@@ -1680,7 +1680,7 @@ export async function fetchSoilSurveyForParcels(parcelFc, { onProgress } = {}) {
  * shape as fetchCliAgrForMuni). Cached 30 days; the soil survey is
  * essentially static between revisions.
  *
- * Source: Open Manitoba — Manitoba Soil Survey.
+ * Source: Open Manitoba â€” Manitoba Soil Survey.
  */
 const SOIL_SURVEY_URL =
   'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/Soil_Survey_MB/FeatureServer/0';
@@ -1688,11 +1688,11 @@ const SOIL_SURVEY_LABELS_URL =
   'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/rest/services/Soil_Survey_Data_MB_Labels/FeatureServer/0';
 // The Esri layer schema truncates several field names to 10 characters
 // (a legacy of the Shapefile origin). The metadata lists each truncated
-// name plus an `alias` like "REPORT_NAME" — but outFields= only accepts
+// name plus an `alias` like "REPORT_NAME" â€” but outFields= only accepts
 // the truncated form. Using the alias returns HTTP 400 with no useful
 // error body.
 //
-// CLASS{1-3} is the soil-survey internal code (e.g. "xxxx") — it is
+// CLASS{1-3} is the soil-survey internal code (e.g. "xxxx") â€” it is
 // almost always unhelpful for agricultural rating; many fertile soils
 // have CLASS = "xxxx" because the survey didn't carry the class
 // inline. Painting + the popup rating chip both use AGCAP_CLS{1-3}
@@ -1705,7 +1705,7 @@ const SOIL_SURVEY_OUTFIELDS = [
   // it for the area-ranking pass so we skip ~3000 turfArea() calls
   // on the main thread when the user opens Soil Survey for a busy
   // muni like St Clements (~3000 polygons). Property name is
-  // case-sensitive — ArcGIS GeoJSON returns it as "Shape__Area".
+  // case-sensitive â€” ArcGIS GeoJSON returns it as "Shape__Area".
   'Shape__Area',
   // CLASS{1-3} dropped 2026-05-20: the field is the soil-survey
   // INTERNAL code (e.g. "xxxx"), almost never useful, never read
@@ -1747,7 +1747,7 @@ export async function fetchSoilSurveyForMuni(muniNameWithTyp, muniBoundaryFeatur
  * placement on the map. Same field shape as Soil_Survey_MB but as
  * points at the polygon centroid. Used by map.js's soil-survey-label
  * symbol layer; rendered alongside the fill so the user can read
- * the unit symbol (e.g. "ALMv-S2") at zoom ≥ 11 without clicking.
+ * the unit symbol (e.g. "ALMv-S2") at zoom â‰¥ 11 without clicking.
  */
 export async function fetchSoilSurveyLabelsForMuni(muniNameWithTyp, muniBoundaryFeature) {
   if (!muniNameWithTyp || !muniBoundaryFeature?.geometry) return null;
@@ -1776,7 +1776,7 @@ export async function fetchSoilSurveyLabelsForMuni(muniNameWithTyp, muniBoundary
 }
 
 /**
- * Manitoba Original Survey Legal Descriptions — point layer with
+ * Manitoba Original Survey Legal Descriptions â€” point layer with
  * QUARTER, SECTION, TOWNSHIP, RANGE, MERIDIAN attributes at each
  * quarter-section centroid (and parish lots, river lots, etc; we
  * filter to D.L.S. quarter sections only). Used to render the
@@ -1792,7 +1792,7 @@ const SURVEY_GRID_URL = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/res
 /**
  * Fetch the pre-baked dominant MASC soil rating for every parcel in a
  * single municipality. Built by r/build_parcel_masc.R from a spatial
- * intersection of ROLL_ENTRY parcels × MASC quarter-section polygons.
+ * intersection of ROLL_ENTRY parcels Ã— MASC quarter-section polygons.
  *
  * Per-muni shards live in mb-parcel-data/parcel-masc/<MUNI_KEY>.json.
  * Shape: a flat dictionary keyed by Roll_No_Txt:
@@ -1800,9 +1800,9 @@ const SURVEY_GRID_URL = 'https://services.arcgis.com/mMUesHYPkXjaFGfS/arcgis/res
  * Manifest at mb-parcel-data/parcel-masc/_index.json maps the original
  * Muni_Name_With_Typ values to shard filenames + counts.
  *
- * Returns a {rollNoTxt → ratingObj} map, or null when the muni isn't
- * in the index (urban munis with no farmland — Winnipeg, Brandon centre,
- * etc. — typically drop out of the build).
+ * Returns a {rollNoTxt â†’ ratingObj} map, or null when the muni isn't
+ * in the index (urban munis with no farmland â€” Winnipeg, Brandon centre,
+ * etc. â€” typically drop out of the build).
  *
  * Cached in localStorage with the same 30-day TTL as MASC overlay shards.
  */
@@ -1860,12 +1860,12 @@ export async function fetchParcelMascForMuni(muniNameWithTyp) {
  * Shape: a flat dictionary keyed by Roll_No_Txt, each value the five
  * farmland buckets as fractions (0-1) that sum to ~1:
  *   { "100.000": { cult: 0.78, past: 0.10, bush: 0.08, wet: 0.03, other: 0.01 }, ... }
- *     cult = cultivated/cropland · past = pasture/grass · bush = bush/treed
- *     wet  = wetland/water       · other = built-up/barren/etc.
+ *     cult = cultivated/cropland Â· past = pasture/grass Â· bush = bush/treed
+ *     wet  = wetland/water       Â· other = built-up/barren/etc.
  * Manifest at web/public/data/landcover/_index.json maps the original
  * Muni_Name_With_Typ values to shard filenames + counts.
  *
- * Returns a {rollNoTxt → bucketObj} map, or null when the muni isn't in
+ * Returns a {rollNoTxt â†’ bucketObj} map, or null when the muni isn't in
  * the index (urban munis with no farmland-scale parcels drop out of the
  * build). Cached in localStorage with the same 30-day TTL as the MASC
  * and parcel-masc shards.
@@ -1926,7 +1926,7 @@ export async function fetchLandCoverForMuni(muniNameWithTyp) {
  * Manifest at mb-parcel-data/water/_index.json maps Muni_Name_With_Typ to
  * shard filenames plus counts.
  *
- * ONLY parcels with a non-"None" classification are in the shards — 370k of
+ * ONLY parcels with a non-"None" classification are in the shards â€” 370k of
  * 437k parcels have no water within 50 m, and shipping them would inflate the
  * payload sixfold to say nothing. So a roll ABSENT from a shard that loaded
  * means "no water", which is a different state from "shard never loaded".
@@ -1984,14 +1984,14 @@ export async function fetchWaterForMuni(muniNameWithTyp) {
 }
 
 // ---------------------------------------------------------------------------
-// Land facts — per-muni shards from r/build_landfacts.R: crop history
+// Land facts â€” per-muni shards from r/build_landfacts.R: crop history
 // 2009-2025, relief, mapped wetland and surface water for every parcel over
 // LANDFACTS_MIN_ACRES with a MASC rating. Same family shape as flood/ and
 // landcover/; see the header of src/lib/landfacts.js for the stamp.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// Soil facts — the pre-baked parcel x soil-survey overlap (r/build_soilfacts.R,
+// Soil facts â€” the pre-baked parcel x soil-survey overlap (r/build_soilfacts.R,
 // mb-parcel-data/soilfacts/). Same family shape as landfacts below; see the
 // header of src/lib/soilfacts.js for what a shard holds and why it holds
 // ratios rather than finished composition rows.
@@ -2126,13 +2126,13 @@ export async function fetchLandfactsForMuni(muniNameWithTyp) {
 }
 
 // ---------------------------------------------------------------------------
-// Multi-family new construction — per-muni shards from r/build_mf_newbuild.R:
+// Multi-family new construction â€” per-muni shards from r/build_mf_newbuild.R:
 // the rolls where an apartment-scale building landed on the assessment roll,
 // dated off 20 years of assessed building value. Same family shape as
 // landfacts/; see the header of src/lib/mfNewbuild.js for the stamp.
 //
-// A far sparser layer than its siblings — roughly 600 rolls province-wide
-// against landfacts' 173,000 — so most munis have no shard at all and the
+// A far sparser layer than its siblings â€” roughly 600 rolls province-wide
+// against landfacts' 173,000 â€” so most munis have no shard at all and the
 // null return below is the common case, not the error case.
 // ---------------------------------------------------------------------------
 
@@ -2186,7 +2186,7 @@ export async function fetchMfNewbuildForMuni(muniNameWithTyp) {
 }
 
 // ---------------------------------------------------------------------------
-// The standing multi-family inventory — per-muni shards from the second half
+// The standing multi-family inventory â€” per-muni shards from the second half
 // of r/build_mf_newbuild.R: every roll at or above its MIN_DU, colonies
 // excluded, whether or not anything was built on it recently. See the header
 // of src/lib/mfInventory.js for why this is a shard rather than a filter on
@@ -2237,7 +2237,7 @@ export async function fetchMfInventoryForMuni(muniNameWithTyp) {
 }
 
 // ---------------------------------------------------------------------------
-// New condo developments — per-muni shards from r/build_condo_dev.R: the
+// New condo developments â€” per-muni shards from r/build_condo_dev.R: the
 // single-unit condo rolls of a new development, reassembled by their shared
 // condo plan. Same family shape as mf-newbuild/; see the header of
 // src/lib/condoDev.js for the stamp and for why row housing needs its own
@@ -2293,7 +2293,7 @@ export async function fetchCondoDevForMuni(muniNameWithTyp) {
   }
 }
 
-// Flood zone membership — per-muni shards from r/build_flood.R, served from
+// Flood zone membership â€” per-muni shards from r/build_flood.R, served from
 // the mb-parcel-data CDN like the water and land-cover shards.
 //
 // Separate from the overlay geometry below and NOT interchangeable with it:
@@ -2329,7 +2329,7 @@ export async function fetchFloodIndex() {
  * Flood-zone dictionary for one municipality, keyed by Roll_No_Txt, or null
  * when the muni has no shard.
  *
- * null means "we do not know", not "no parcel here is in a flood zone" —
+ * null means "we do not know", not "no parcel here is in a flood zone" â€”
  * the caller must keep those apart (see `_floodLoaded` in main.js). Only
  * parcels intersecting at least one zone are shipped, so a muni WITH a shard
  * and a roll absent from it is the "outside every zone" answer.
@@ -2355,7 +2355,7 @@ export async function fetchFloodForMuni(muniNameWithTyp) {
 }
 
 // ---------------------------------------------------------------------------
-// Flood overlay geometry — static assets under public/data/flood/, built by
+// Flood overlay geometry â€” static assets under public/data/flood/, built by
 // scripts/build-flood-overlay.js from the sister MBFloodMapping project.
 //
 // Same-origin, so no CSP allowlist entry and no CDN pin: these are dissolved
@@ -2365,7 +2365,7 @@ export async function fetchFloodForMuni(muniNameWithTyp) {
 // Deliberately NOT routed through readCache/writeCache. The five files run
 // to ~500 KB, which is a meaningful slice of the localStorage budget the
 // muni shards actually need, and Vercel already serves public/ with
-// immutable-style caching — the browser's HTTP cache does this job for free.
+// immutable-style caching â€” the browser's HTTP cache does this job for free.
 // The in-flight promise memo below is what stops two toggles racing the
 // same file; a second toggle in the same session hits the HTTP cache.
 // ---------------------------------------------------------------------------
@@ -2373,7 +2373,7 @@ export async function fetchFloodForMuni(muniNameWithTyp) {
 const floodOverlayPromises = new Map();
 
 /**
- * Fetch one flood group's FeatureCollection by group key ('dfa', 'f200', …).
+ * Fetch one flood group's FeatureCollection by group key ('dfa', 'f200', â€¦).
  * Rejects on a missing file rather than resolving empty: an empty overlay
  * that silently draws nothing is indistinguishable from "this parcel is in
  * no flood zone", which is the one wrong impression this layer must not
@@ -2397,7 +2397,7 @@ export function fetchFloodOverlay(key) {
   return p;
 }
 
-/** Provenance for the Flood overlay groups — source URLs and the date each
+/** Provenance for the Flood overlay groups â€” source URLs and the date each
  *  was last pulled. Written by the same build script; read by the Data
  *  Status dialog. Resolves null when absent so a missing file degrades to
  *  "no vintage shown" rather than breaking the dialog. */
@@ -2417,27 +2417,27 @@ export function fetchFloodOverlayMeta() {
 }
 
 // ---------------------------------------------------------------------------
-// Historical (as-of-year) snapshots — served from the separate
+// Historical (as-of-year) snapshots â€” served from the separate
 // mb-parcel-history repo, fetched per-file from raw.githubusercontent.com.
 // Self-contained: the app discovers available years + each year's muni
 // list/dates from the published manifests, so adding a year needs NO app
 // code change. Generated by r/build_historical_shards.R; see
-// DATA-ARCHIVE-PLAN.md for the original design rationale (superseded — for
-// cadence read MAINTENANCE.md §2-4).
+// DATA-ARCHIVE-PLAN.md for the original design rationale (superseded â€” for
+// cadence read MAINTENANCE.md Â§2-4).
 // ---------------------------------------------------------------------------
 // Pinned to an IMMUTABLE commit, not a branch, so every client sees one
-// coherent tree (a branch HEAD once served stale geometry for some munis —
+// coherent tree (a branch HEAD once served stale geometry for some munis â€”
 // Steinbach showed 36% triangles while Hanover was clean).
 // Moved off cdn.jsdelivr.net 2026-08-17 (repo ~177 MB, over jsDelivr's
 // 50 MB package limit) and behind the same /gh-data edge proxy as
-// MB_PARCEL_DATA_CDN above — see that comment for the full story.
+// MB_PARCEL_DATA_CDN above â€” see that comment for the full story.
 // MAINTENANCE: when you republish mb-parcel-history (new snapshot or a data
-// fix), update this SHA to the new commit — see MAINTENANCE.md.
+// fix), update this SHA to the new commit â€” see MAINTENANCE.md.
 const HISTORICAL_CDN =
-  `${GH_DATA_ORIGIN}/gh-data/mb-parcel-history/7e736813060449f20cf80095f49c7d4b4966867c`;
-const HISTORICAL_INDEX_TTL_MS = 24 * 60 * 60 * 1000;        // 1 day — so new years surface
-const HISTORICAL_MANIFEST_TTL_MS = 6 * 60 * 60 * 1000;     // 6 h — gates the shard version token, keep fresh
-const HISTORICAL_SHARD_TTL_MS = 30 * 24 * 60 * 60 * 1000;   // 30 days — safe: the key is version-stamped, so a rebuild changes it
+  `${GH_DATA_ORIGIN}/gh-data/mb-parcel-history/bf4c87c61c2060cb3e85beddd5481e35102113c8`;
+const HISTORICAL_INDEX_TTL_MS = 24 * 60 * 60 * 1000;        // 1 day â€” so new years surface
+const HISTORICAL_MANIFEST_TTL_MS = 6 * 60 * 60 * 1000;     // 6 h â€” gates the shard version token, keep fresh
+const HISTORICAL_SHARD_TTL_MS = 30 * 24 * 60 * 60 * 1000;   // 30 days â€” safe: the key is version-stamped, so a rebuild changes it
 
 let historicalIndexPromise = null;
 
@@ -2449,7 +2449,7 @@ export async function fetchHistoricalIndex() {
     // sized for snapshots being ADDED, where a day's lag costs nothing. A
     // REMOVAL is the opposite case: a stale index keeps offering a date whose
     // shards now 404, so the picker lists an option that fails when chosen.
-    // Bump this key on every retirement — it invalidates on the next load.
+    // Bump this key on every retirement â€” it invalidates on the next load.
     const cacheKey = 'mb_historical_index_v3';
     const cached = await readCache(cacheKey, HISTORICAL_INDEX_TTL_MS);
     if (cached) return cached;
@@ -2468,7 +2468,7 @@ export async function fetchHistoricalIndex() {
 export async function fetchHistoricalManifest(year) {
   if (!year) return null;
   // v3: short TTL + bumped so a republished snapshot's NEW `generated` stamp is
-  // picked up promptly — that stamp version-keys the shard cache below.
+  // picked up promptly â€” that stamp version-keys the shard cache below.
   const cacheKey = `mb_historical_manifest_${year}_v3`;
   const cached = await readCache(cacheKey, HISTORICAL_MANIFEST_TTL_MS);
   if (cached) return cached;
@@ -2491,14 +2491,14 @@ function manifestVersionToken(manifest) {
 /**
  * One layer's GeoJSON FeatureCollection for a year + muni number.
  * `layer` is 'parcels' | 'zoning' | 'devplan'. Returns null on a miss
- * (e.g. a muni with no zoning/dev-plan shard) — callers skip that layer.
+ * (e.g. a muni with no zoning/dev-plan shard) â€” callers skip that layer.
  */
 export async function fetchHistoricalShard(year, layer, muniNo) {
   if (!year || !layer || muniNo == null || muniNo === '') return null;
   // Self-invalidating cache: the key embeds the snapshot manifest's build
   // timestamp, so ANY republish (e.g. the geometry-fix rebuild that stopped
   // small lots collapsing into triangles) changes the key and the client
-  // re-fetches — no manual version bumps, and a stale 30-day entry from an
+  // re-fetches â€” no manual version bumps, and a stale 30-day entry from an
   // earlier build is never served.
   const manifest = await fetchHistoricalManifest(year);
   const ver = manifestVersionToken(manifest);
@@ -2535,7 +2535,7 @@ export async function fetchHistoricalLineage(muniNo) {
 }
 
 // ---------------------------------------------------------------------------
-// Parcel change history (weekly) — mb-parcel-history/changes/, built by
+// Parcel change history (weekly) â€” mb-parcel-history/changes/, built by
 // r/build_parcel_history.R + r/build_change_shards.R and published by
 // publish-history-changes.ps1, which re-pins HISTORICAL_CDN each week. See
 // lib/parcelHistory.js for the shard format and what it can (not) say.
@@ -2566,7 +2566,7 @@ export function fetchChangeIndex() {
 
 /**
  * One muni's change shard: { rolls, outlines }. Null when the muni has no
- * recorded change (not in the index) or the fetch fails — callers treat that
+ * recorded change (not in the index) or the fetch fails â€” callers treat that
  * as "no history", never as "unchanged".
  */
 export async function fetchChangeShard(muniNo) {
@@ -2637,7 +2637,7 @@ function compactMuniLookupKey(name, { stripType = false } = {}) {
       return '';
     });
   }
-  // Same reconciliation list the identity matcher uses — imported rather than
+  // Same reconciliation list the identity matcher uses â€” imported rather than
   // repeated so a new alias lands in both. Only the final separator handling
   // differs: this builds a compact no-separator shard key.
   const compact = reconcileMuniSpelling(s.replace(/&/g, ' AND '))
@@ -2654,10 +2654,10 @@ function normalizeMuniLookupType(value) {
 /**
  * Fetch the pre-baked Manitoba river-lots polygon overlay. Built by
  * r/build_river_lots.R from MB-RIVER-LOTS.kmz. Same load pattern as
- * the other static reference files — cached 30 days. Returns a FeatureCollection of polygons each with
+ * the other static reference files â€” cached 30 days. Returns a FeatureCollection of polygons each with
  * properties.kind = 'riverlot' and properties.label = lot identifier.
  *
- * Returns null (not an error) if the static file is missing — river
+ * Returns null (not an error) if the static file is missing â€” river
  * lots are an optional reference layer; the section grid still works
  * without them.
  */
@@ -2672,7 +2672,7 @@ function normalizeMuniLookupType(value) {
  *   properties.rating, properties.ra (risk_area), properties.label
  *     (e.g. "NO-RL-241"), properties.muni (Muni_Name_With_Typ).
  *
- * Returns null on missing file (returned by older builds) — caller
+ * Returns null on missing file (returned by older builds) â€” caller
  * just renders the quarter-section overlay alone.
  */
 export async function fetchMascRiverlots() {
@@ -2723,7 +2723,7 @@ export async function fetchSurveyGridForMuni(muniNameWithTyp, muniBoundaryFeatur
     // MB_LegalDesc TYPE vocabulary: Lot, OT, PL, Quarter, RL, SL, WL.
     // Quarter rows (~970k province-wide) are the only ones that carry
     // SECTION+TOWNSHIP+RANGE values useful for the township grid;
-    // everything else drops out. Match the exact literal — hosted
+    // everything else drops out. Match the exact literal â€” hosted
     // ArcGIS LIKE is case-sensitive, so '%QUARTER%' missed every row.
     where: "TYPE = 'Quarter'",
     geometry: JSON.stringify(esriGeom),
@@ -2734,7 +2734,7 @@ export async function fetchSurveyGridForMuni(muniNameWithTyp, muniBoundaryFeatur
     returnGeometry: 'true',
     outSR: '4326',
     f: 'geojson',
-    // MB_LegalDesc's identity column is OBJECTID_1, not OBJECTID — the
+    // MB_LegalDesc's identity column is OBJECTID_1, not OBJECTID â€” the
     // default orderByFields fetchAllPages applies would 400 on this
     // service. Pass the correct field explicitly so pagination stays
     // ordered and the survey-grid fetch actually returns rows.
@@ -2749,7 +2749,7 @@ export async function fetchSurveyGridForMuni(muniNameWithTyp, muniBoundaryFeatur
  * FeatureCollection. Used to place a roll that exists in MAO but has no
  * ROLL_ENTRY polygon yet (lib/unmappedRolls.js). `where` comes from
  * sectionWhere(); a section has four quarters, so one small page is always
- * enough. Returns null on any failure — the caller falls back to the
+ * enough. Returns null on any failure â€” the caller falls back to the
  * municipality centre rather than fail the search.
  */
 export async function fetchSectionSurveyPoints(where) {
@@ -2792,7 +2792,7 @@ export async function fetchMunicipalBoundaries() {
  * official ArcGIS web map. Columns:
  *   ID, OPRID, Link, OPERATION NAME, ADDRESS, MUNICIPALITY,
  *   LATITUDE, LONGITUDE, CSGroup
- * CSGroup ∈ { 'Not Designated', 'Designated Impacted Site',
+ * CSGroup âˆˆ { 'Not Designated', 'Designated Impacted Site',
  *             'Designated Contaminated Site' }
  *
  * Returns a GeoJSON FeatureCollection of Points in WGS84. Cached in
@@ -2843,12 +2843,12 @@ export async function fetchContaminatedSites() {
 
 /**
  * Fetch the MHTIS traffic-counting station locations. The published
- * FeatureServer carries point geometry and station metadata only — no AADT.
+ * FeatureServer carries point geometry and station metadata only â€” no AADT.
  * The counts come from fetchTrafficHistory() and are joined on StationNum
  * by joinTrafficHistory().
  *
  * This layer holds 2,096 stations, ~291 of them TOWN stations (StationNum
- * >= 5000) which have no flow segment at all — for years they were the dots
+ * >= 5000) which have no flow segment at all â€” for years they were the dots
  * on the map that could never answer a click.
  */
 export async function fetchTrafficStations() {
@@ -2857,7 +2857,7 @@ export async function fetchTrafficStations() {
   if (cached) return cached;
   // This layer's OID field is `FID`, not OBJECTID, so fetchAllPages's
   // default `orderByFields: 'OBJECTID ASC'` returns HTTP 400 "'OBJECTID ASC'
-  // parameter is invalid" — the same trap the Traffic Flow fetch documents.
+  // parameter is invalid" â€” the same trap the Traffic Flow fetch documents.
   // It went unnoticed because nothing ever called this function: the station
   // overlay was exported but never wired into main.js, so the very first
   // real call was the one that lit the overlay up.
@@ -2906,7 +2906,7 @@ export function fetchTrafficHistory() {
  *
  * Exported so the popup, the map paint and any future export all read the
  * same thing. Years arrive as object keys (strings) and must sort
- * numerically — lexicographic ordering is right for 4-digit years today but
+ * numerically â€” lexicographic ordering is right for 4-digit years today but
  * silently wrong the moment anything else lands in there.
  */
 export function stationSeries(entry) {
@@ -2922,7 +2922,7 @@ export function stationSeries(entry) {
  * Annualized change between each published count and the one before it.
  *
  * WHY ANNUALIZED AND NOT A PLAIN PERCENTAGE. MHTIS counts a short-duration
- * station whenever it gets to it, so the gaps are irregular — station 1193
+ * station whenever it gets to it, so the gaps are irregular â€” station 1193
  * runs 2004, 2006, 2008, 2010, 2012, 2015, 2018, 2024. A raw "+8.8%" would
  * mean something different on the 2-year steps than on the 6-year one, and
  * the two would sit in the same column inviting comparison. Compounding it
@@ -2931,7 +2931,7 @@ export function stationSeries(entry) {
  *     ((curr / prev) ** (1 / years)) - 1
  *
  * `pct` is null for the oldest row (nothing to compare against) and for any
- * pair that cannot produce a meaningful rate — a zero or negative prior, or
+ * pair that cannot produce a meaningful rate â€” a zero or negative prior, or
  * a non-positive gap. Callers print nothing rather than a fabricated 0%.
  *
  * @param {Array<[number, number]>} rows  [year, aadt] pairs, oldest first
@@ -2989,7 +2989,7 @@ export function countLabels(aadt, year) {
  *
  * WHY THE SEGMENTS READ THE HISTORY TOO. Each segment carries the StationNum
  * it was estimated from, so a segment and that station's dot describe the
- * same measurement — but they disagreed on 30% of stations (497 of 1,670),
+ * same measurement â€” but they disagreed on 30% of stations (497 of 1,670),
  * because the ArcGIS service then stopped at 2024 while the reports carried
  * 2025 for 604 stations (measured 2026-09-10, on the layer since retired). Station 73 read 1,000 from the service and 1,040 from the
  * report. Two numbers for one road is worse than a slightly stale one, so
@@ -3025,7 +3025,7 @@ export function joinFlowHistory(fc, history) {
  * Stamp each station feature with its history, in place, and return the FC.
  *
  * MapLibre flattens feature properties through the style/query round-trip,
- * so the series rides as a JSON STRING in `_series` rather than an array —
+ * so the series rides as a JSON STRING in `_series` rather than an array â€”
  * an array comes back as "[object Object]" once it has been through a
  * GeoJSON source. `_aadt`/`_aadtYear` carry the latest point so the popup
  * and any label expression can read it without parsing.
@@ -3039,7 +3039,7 @@ export function joinTrafficHistory(fc, history) {
     const series = stationSeries(entry);
     // Town stations are identified by the report section they came from,
     // falling back to the >= 5000 numbering when a station has no history
-    // at all — otherwise an unmatched town dot would render as a highway one.
+    // at all â€” otherwise an unmatched town dot would render as a highway one.
     p._town = entry ? (entry.t === 1 ? 1 : 0) : (Number(p.StationNum) >= 5000 ? 1 : 0);
     p._count = series.length;
     if (series.length) {
@@ -3070,7 +3070,7 @@ export function joinTrafficHistory(fc, history) {
  * into the station-click popup (joined on StationNum).
  */
 export async function fetchTrafficFlow() {
-  // v4: the 2026-09-23 republish — new URL, new field names, and AADT +
+  // v4: the 2026-09-23 republish â€” new URL, new field names, and AADT +
   // AADT_YEAR in place of the AADT_<year> columns. A v3 entry carries the old
   // schema, which currentAadtYear() no longer reads, so it must not be served:
   // every segment the reports don't cover would lose its year. Bump this
@@ -3127,7 +3127,7 @@ export async function fetchManitobaHighways() {
  * uses, so a row-level lookup off this overlay is possible later.
  *
  * Cached per-muni in sessionStorage; the cap (50,000) is a defensive
- * upper bound — the largest single MB muni outside Winnipeg has ~30k
+ * upper bound â€” the largest single MB muni outside Winnipeg has ~30k
  * parcels.
  */
 export async function fetchAllParcelsInMunicipality(municipality) {
@@ -3137,11 +3137,11 @@ export async function fetchAllParcelsInMunicipality(municipality) {
   // Layer label can't render multiple times for the same feature when
   // an upstream cache (or transient ArcGIS pagination glitch) emitted
   // a duplicate row. Reported case: roll 187640 in DE SALABERRY (RM)
-  // rendering its label 6× on a single polygon.
+  // rendering its label 6Ã— on a single polygon.
   // v4: per-feature _civicAddress stamping (civicAddressOrEmpty()
   // distills Property_Address down to actual addresses or '' for
   // the new muni-parcels-civic-label symbol layer). v3 entries
-  // don't carry the field — so a cached v3 response would render
+  // don't carry the field â€” so a cached v3 response would render
   // zero civic labels until a manual cache bust.
   // v3: _acres prefers Roll_Entry's Frontage_or_Area when the
   // assessor recorded an actual area (vs frontage feet); falls back
@@ -3161,7 +3161,7 @@ export async function fetchAllParcelsInMunicipality(municipality) {
     outSR: '4326',
     f: 'geojson',
   }, 50000);
-  // OBJECTID dedupe (defensive — see v5 comment above). Drops any
+  // OBJECTID dedupe (defensive â€” see v5 comment above). Drops any
   // accidentally-paginated dups, falling back to a Roll_No_Txt+Address
   // composite key if OBJECTID is missing on a particular feature.
   const seenIds = new Set();
@@ -3177,7 +3177,7 @@ export async function fetchAllParcelsInMunicipality(municipality) {
   // Stamp acreage onto each feature so the hover popup can show Land Size
   // without recomputing. Resolution goes through the shared resolver so this
   // path applies the same nominal-roll guard and roll-vs-polygon cross-check
-  // as the results grid — before, a crown parcel could read "0.01 ac" here
+  // as the results grid â€” before, a crown parcel could read "0.01 ac" here
   // and "357 ac" in the grid because only the grid ran the guard.
   for (const f of fc.features || []) {
     const rollAcres = acresFromFrontageField(f.properties?.Frontage_or_Area);
@@ -3185,7 +3185,7 @@ export async function fetchAllParcelsInMunicipality(municipality) {
     try {
       const sqm = area(f);
       if (Number.isFinite(sqm) && sqm > 0) geomAcres = sqm / 4046.8564224;
-    } catch { /* topology errors — leave geometry out of the decision */ }
+    } catch { /* topology errors â€” leave geometry out of the decision */ }
     const resolved = resolveParcelAcres(rollAcres, geomAcres);
     if (resolved.acres != null) {
       f.properties._acres = resolved.acres;
@@ -3206,7 +3206,7 @@ export async function fetchAllParcelsInMunicipality(municipality) {
     // and join keys; this is purely cosmetic.
     const rd = rollDisplay(f.properties?.Roll_No_Txt);
     if (rd !== null) f.properties._rollDisplay = rd;
-    // Civic-address pass: Property_Address is a hybrid field — for
+    // Civic-address pass: Property_Address is a hybrid field â€” for
     // urban / serviced parcels it holds an actual civic address
     // ("60 SILVERSIDE DR"); for rural / unimproved / legal-description-
     // only entries it holds non-address content like "DESC NE34-2-4W",
@@ -3226,7 +3226,7 @@ export async function fetchAllParcelsInMunicipality(municipality) {
 /**
  * Build a Map<StationNum, AADT> from a Traffic Flow FC. When a station has
  * multiple flow segments (different directions / sections of the same
- * highway), keep the maximum AADT — that's the most useful single number
+ * highway), keep the maximum AADT â€” that's the most useful single number
  * for "how busy is the road this station counts." Used to inline AADT
  * into the station popup without needing a per-station network call.
  */
@@ -3272,7 +3272,7 @@ function parseCsv(text) {
         row.push(field); field = '';
         rows.push(row); row = [];
       } else if (c === '\r') {
-        // CR alone or CRLF — wait for LF; if next isn't LF, treat as line end.
+        // CR alone or CRLF â€” wait for LF; if next isn't LF, treat as line end.
         if (text[i + 1] !== '\n') {
           row.push(field); field = '';
           rows.push(row); row = [];
@@ -3294,7 +3294,7 @@ function parseCsv(text) {
  * Build a where clause that constrains an overlay-layer distinct-values
  * query to a particular municipality. Roll_Entry stores muni names as
  * "STONEWALL (TOWN)" (Muni_Name_With_Typ) but the overlay layers store
- * the bare name "STONEWALL" in MUNI_NAME — strip the trailing typed
+ * the bare name "STONEWALL" in MUNI_NAME â€” strip the trailing typed
  * suffix so the muni filter works across all three datasets.
  */
 function municipalityToWhere(muni, valueField) {
@@ -3312,7 +3312,7 @@ function municipalityToWhere(muni, valueField) {
 /**
  * Resolve overlay-side filters (category, "changed") to a list of parcel
  * OBJECTIDs in Roll_Entry. Each matching overlay polygon's geometry is
- * sent back to Roll_Entry as a spatial query envelope — we union the
+ * sent back to Roll_Entry as a spatial query envelope â€” we union the
  * per-overlay parcel hits and dedupe by OBJECTID. Multiple filters AND
  * together: a parcel must intersect at least one polygon from each
  * active overlay query.
@@ -3339,19 +3339,19 @@ async function resolveOverlayFilter({ zoneCategory, devPlanCategory, zoningChang
   // vocabulary with the zoning / dev-plan layers, and they're already in
   // hand as GeoJSON rather than fetched here.
   //
-  // Run in parallel — with both ticked these are two independent walks of
+  // Run in parallel â€” with both ticked these are two independent walks of
   // Roll_Entry, and sequencing them would double the wait for no reason.
   const [tileOidSet, irrigationOidSet] = await Promise.all([
     tileDrainageOnly ? resolveTileDrainageOids(municipality) : null,
     irrigationOnly ? resolveIrrigationOids(municipality) : null,
   ]);
-  // An explicit empty set is a real answer — "nothing licensed in scope" —
+  // An explicit empty set is a real answer â€” "nothing licensed in scope" â€”
   // and must short-circuit to zero results rather than fall through to an
   // unfiltered query.
   if (tileOidSet !== null && tileOidSet.size === 0) return [];
   if (irrigationOidSet !== null && irrigationOidSet.size === 0) return [];
 
-  // Zoning-side queries — category and "changed" can both fire and they
+  // Zoning-side queries â€” category and "changed" can both fire and they
   // narrow the same overlay layer, so they AND together within one query.
   const zoningClauses = [];
   if (zoneCategory)   zoningClauses.push(`ZONE_CATEGORY = '${escapeSql(zoneCategory)}'`);
@@ -3369,7 +3369,7 @@ async function resolveOverlayFilter({ zoneCategory, devPlanCategory, zoningChang
     overlayQueries.push({ url: ZONING_URL, clauses: zoningClauses });
   }
 
-  // Dev-plan-side queries — same structure.
+  // Dev-plan-side queries â€” same structure.
   const devClauses = [];
   if (devPlanCategory) devClauses.push(`DES_CATEGORY = '${escapeSql(devPlanCategory)}'`);
   // Same null-sentinel handling as the zoning side: '', ' ', '<Null>'
@@ -3391,7 +3391,7 @@ async function resolveOverlayFilter({ zoneCategory, devPlanCategory, zoningChang
 
   // Add the muni narrowing to each overlay query when set. Roll Entry's
   // Muni_Name_With_Typ ("STONEWALL (TOWN)") differs from the overlay
-  // layers' MUNI_NAME ("Stonewall") — and some overlay-side names
+  // layers' MUNI_NAME ("Stonewall") â€” and some overlay-side names
   // carry inconsistent dots on "St"/"Ste" abbreviations. muniNameMatchClause
   // handles both differences via a UPPER(MUNI_NAME) IN-list.
   const muniClause = municipality ? muniNameMatchClause(municipality) : null;
@@ -3415,7 +3415,7 @@ async function resolveOverlayFilter({ zoneCategory, devPlanCategory, zoningChang
   // queries. Two important changes vs. the earlier version:
   //   1. We send the overlay polygon geometry itself (not its envelope)
   //      so ArcGIS's spatialRel=esriSpatialRelIntersects gives a true
-  //      geometric intersection — no bbox false positives that previously
+  //      geometric intersection â€” no bbox false positives that previously
   //      pulled in parcels outside the polygon.
   //   2. We paginate via fetchAllPages instead of a single fetchPage,
   //      since a large polygon can match well past the 2000-row page cap
@@ -3447,7 +3447,7 @@ async function resolveOverlayFilter({ zoneCategory, devPlanCategory, zoningChang
     })
   );
 
-  // AND the sets together — a parcel only qualifies if it intersects every
+  // AND the sets together â€” a parcel only qualifies if it intersects every
   // category filter the user set. The water-rights filters join the same
   // AND: a parcel has to satisfy them *and* the zoning / dev-plan
   // narrowing.
@@ -3456,7 +3456,7 @@ async function resolveOverlayFilter({ zoneCategory, devPlanCategory, zoningChang
   return [...intersectSets(oidSets)];
 }
 
-/** Intersection of an array of Sets. Empty array → empty Set, so callers
+/** Intersection of an array of Sets. Empty array â†’ empty Set, so callers
  *  never have to special-case "no filters resolved". */
 function intersectSets(sets) {
   let out = null;
@@ -3481,7 +3481,7 @@ async function resolveTileDrainageOids(municipality) {
  * Roll_Entry OBJECTIDs covered by a licensed irrigation POINT OF USE.
  *
  * Points of diversion are excluded on purpose. A diversion is an intake
- * or a well — water is taken from there, not applied to it — so it says
+ * or a well â€” water is taken from there, not applied to it â€” so it says
  * nothing about whether a parcel is irrigated, and the Irrigation column
  * doesn't report it either. Including them here would hand back parcels
  * that the column then labels "No record", which is precisely the
@@ -3495,7 +3495,7 @@ async function resolveIrrigationOids(municipality) {
 }
 
 /** The point-of-use half of the cached irrigation collection. Shares the
- *  single cached fetch — wallas.js tags each feature with `_wallasKind`
+ *  single cached fetch â€” wallas.js tags each feature with `_wallasKind`
  *  precisely so the two can be separated without a second round-trip. */
 async function fetchIrrigationPointsOfUse() {
   const fc = await fetchIrrigationLicences();
@@ -3511,14 +3511,14 @@ async function fetchIrrigationPointsOfUse() {
  *
  * Why this isn't a client-side post-filter: 122 of Manitoba's 186 munis
  * hold more parcels than MAX_RESULTS, so filtering the returned page
- * would hide matches behind the row cap — the same trap civicNumberClause
+ * would hide matches behind the row cap â€” the same trap civicNumberClause
  * exists to avoid. Resolving to OBJECTIDs first means the cap applies to
  * the already-filtered set.
  *
  * The cost driver is one spatial query per footprint, so the polygon set
  * gets narrowed first. With a municipality selected we ask Roll_Entry for
  * that muni's extent (one cheap returnExtentOnly request) and drop every
- * footprint outside it — taking ~1,580 tile / ~6,000 irrigation polygons
+ * footprint outside it â€” taking ~1,580 tile / ~6,000 irrigation polygons
  * province-wide down to tens or low hundreds. Without a municipality
  * there's nothing to narrow by and all of them run; that's slow but
  * correct, and both tips steer the user to pick a muni first.
@@ -3533,7 +3533,7 @@ async function resolveWallasOids(fetchFc, municipality, label) {
   // Returning an empty set would silently produce zero results and read as
   // a confident answer, so surface it instead.
   if (fc?._failed) {
-    throw new Error(`Water Rights Licensing (WALLAS) is unreachable — ${label} filter unavailable.`);
+    throw new Error(`Water Rights Licensing (WALLAS) is unreachable â€” ${label} filter unavailable.`);
   }
   let footprints = fc?.features || [];
   if (footprints.length === 0) return new Set();
@@ -3553,7 +3553,7 @@ async function resolveWallasOids(fetchFc, municipality, label) {
   const muniClause = municipality
     ? `Muni_Name_With_Typ = '${escapeSql(municipality)}'`
     : '1=1';
-  // Footprints go out in batches as one multi-ring polygon each — see
+  // Footprints go out in batches as one multi-ring polygon each â€” see
   // polygonsToEsriGeometry. One request per footprint is what made this
   // filter slow enough to feel broken on an irrigation-heavy muni.
   const batches = [];
@@ -3582,7 +3582,7 @@ async function resolveWallasOids(fetchFc, municipality, label) {
 
 /**
  * Bounding box of every Roll_Entry parcel in one municipality, as
- * [minLon, minLat, maxLon, maxLat]. One returnExtentOnly request — the
+ * [minLon, minLat, maxLon, maxLat]. One returnExtentOnly request â€” the
  * service computes it server-side, so nothing but the box comes back.
  * Cached for a week: a municipality's footprint only changes on
  * amalgamation. Returns null on failure so callers degrade to "no
@@ -3659,7 +3659,7 @@ async function fetchSpatialOverlap(baseUrl, parcelFc, { outFields }) {
 /**
  * Drive an async fn across `items` with a concurrency cap. Resolves to an
  * array of results in input order. A single failing item degrades to []
- * for that slot — a bad parcel never aborts the whole batch.
+ * for that slot â€” a bad parcel never aborts the whole batch.
  */
 async function runParallelBatched(items, concurrency, fn) {
   const results = new Array(items.length);
@@ -3796,7 +3796,7 @@ export async function fetchCompleteFeatureSet(baseUrl, params, label = 'ArcGIS d
  * fewer features than requested (i.e. the last page).
  *
  * Sets `_truncated: true` on the returned collection if `cap` was reached
- * before the service ran out of features — UI surfaces this so the user
+ * before the service ran out of features â€” UI surfaces this so the user
  * can refine.
  */
 async function fetchAllPages(baseUrl, params, cap) {
@@ -3806,7 +3806,7 @@ async function fetchAllPages(baseUrl, params, cap) {
   // resultRecordCount the service does NOT guarantee a stable row
   // order across requests unless orderByFields is specified. Without
   // it, two consecutive page fetches can return overlapping or missing
-  // rows — which surfaces as silent dups (e.g. the same parcel label
+  // rows â€” which surfaces as silent dups (e.g. the same parcel label
   // rendered multiple times on the Roll Layer) or silent gaps. Caller-
   // supplied orderByFields wins so query-specific ordering still works.
   const pagedParams = params.orderByFields
@@ -3830,7 +3830,7 @@ async function fetchAllPages(baseUrl, params, cap) {
     if (!hasMore) break;
     if (all.length >= cap) {
       // If the service set exceededTransferLimit, we know there's more
-      // data left. But the flag is inconsistent across hosted services —
+      // data left. But the flag is inconsistent across hosted services â€”
       // a full page at the app-level cap also implies "probably more,"
       // since the alternative (the dataset ending exactly at the cap)
       // is rare. Treat both as truncated so the UI surfaces it.
@@ -3871,7 +3871,7 @@ async function fetchPage(baseUrl, params) {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body,
-        // Hard ceiling per attempt — without it a stalled upstream holds
+        // Hard ceiling per attempt â€” without it a stalled upstream holds
         // the request open for the browser default (~2 min per attempt)
         // with no signal to the user. A timed-out attempt falls into the
         // catch below and retries like any other network error.
@@ -3882,21 +3882,21 @@ async function fetchPage(baseUrl, params) {
       lastErr = timedOut
         ? new Error(`ArcGIS request timed out after ${FETCH_TIMEOUT_MS / 1000}s`)
         : e;
-      // Network/timeout error — short backoff then retry.
+      // Network/timeout error â€” short backoff then retry.
       if (attempt < MAX_ATTEMPTS - 1) { await sleep(500 * (attempt + 1)); continue; }
       throw lastErr;
     }
-    // 429 on the HTTP layer — back off then retry.
+    // 429 on the HTTP layer â€” back off then retry.
     if (res.status === 429) {
       const retryAfter = parseInt(res.headers.get('Retry-After') || '', 10);
-      // Honour Retry-After but cap it — a malformed or hostile header
+      // Honour Retry-After but cap it â€” a malformed or hostile header
       // shouldn't be able to park the UI for minutes between attempts.
       const waitMs = Number.isFinite(retryAfter)
         ? Math.min(Math.max(retryAfter, 0) * 1000, RETRY_AFTER_CAP_MS)
         : 2000 * (attempt + 1);
       lastErr = new Error(`ArcGIS rate-limited (429); retrying after ${waitMs}ms`);
       if (attempt < MAX_ATTEMPTS - 1) { await sleep(waitMs); continue; }
-      throw new Error(`ArcGIS service is rate-limited (HTTP 429). Retried ${MAX_ATTEMPTS}× without success. Wait a minute and re-upload.`);
+      throw new Error(`ArcGIS service is rate-limited (HTTP 429). Retried ${MAX_ATTEMPTS}Ã— without success. Wait a minute and re-upload.`);
     }
     if (!res.ok) {
       const text = await res.text();
@@ -3904,13 +3904,13 @@ async function fetchPage(baseUrl, params) {
     }
     const json = await res.json();
     // ArcGIS REST sometimes returns 200 OK with an `error` body. Code
-    // 429 here is the "request quota exceeded" form — same backoff.
+    // 429 here is the "request quota exceeded" form â€” same backoff.
     if (json && json.error) {
       if (json.error.code === 429) {
         const waitMs = 2000 * (attempt + 1);
         lastErr = new Error(`ArcGIS rate-limited (200/error 429); retrying after ${waitMs}ms`);
         if (attempt < MAX_ATTEMPTS - 1) { await sleep(waitMs); continue; }
-        throw new Error(`ArcGIS service is rate-limited (quota exceeded). Retried ${MAX_ATTEMPTS}× without success. Wait a minute and re-upload.`);
+        throw new Error(`ArcGIS service is rate-limited (quota exceeded). Retried ${MAX_ATTEMPTS}Ã— without success. Wait a minute and re-upload.`);
       }
       throw new Error(`ArcGIS error ${json.error.code}: ${json.error.message}`);
     }
@@ -3948,7 +3948,7 @@ const ROLL_ENTRY_COUNT_TIMEOUT_MS = 15_000;
 //   - older than STALE, or never cached: the caller waits on the live
 //     query, as before.
 // Before this, the weekly expiry made the entry vanish, and the very next
-// load blocked the municipality picker on the live query — up to three
+// load blocked the municipality picker on the live query â€” up to three
 // 60 s attempts against a provincial service that sometimes just hangs.
 // The list a visitor saw last week is worth far more than that wait.
 const DROPDOWN_FRESH_TTL_MS = 7 * 24 * 60 * 60 * 1000;    // refresh weekly
@@ -3964,7 +3964,7 @@ const distinctRefreshInflight = new Map();
  *
  * @param {{ minCacheable?: number }} [opts]  a result with fewer values
  *   than `minCacheable` is returned but NOT written to cache (partial
- *   upstream publish — see MUNI_LIST_MIN_CACHEABLE).
+ *   upstream publish â€” see MUNI_LIST_MIN_CACHEABLE).
  */
 async function fetchDistinctValues(baseUrl, field, cacheKey, where = null, opts = {}) {
   if (cacheKey) {
@@ -4016,22 +4016,22 @@ async function fetchDistinctValuesLive(baseUrl, field, cacheKey, where, opts = {
 }
 
 // Province-published data (Roll Entry, zoning, dev-plan) doesn't change
-// hour-to-hour — overnight at most. Caching for a week keeps the typical
+// hour-to-hour â€” overnight at most. Caching for a week keeps the typical
 // "what changed in this muni" workflow snappy without ever serving data
 // that's meaningfully out of sync. localStorage so the cache survives
 // across browser tabs / sessions; sessionStorage was the old choice and
 // re-fetched on every tab restart.
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-// Municipal boundaries are a stable reference layer — amalgamations
-// happen on a multi-year cadence — so they get a longer 30-day TTL.
+// Municipal boundaries are a stable reference layer â€” amalgamations
+// happen on a multi-year cadence â€” so they get a longer 30-day TTL.
 const MUNI_BOUNDARIES_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-// readCache / writeCache moved to ./cache.js — they're now async,
+// readCache / writeCache moved to ./cache.js â€” they're now async,
 // IDB-primary with a localStorage fallback. Every call site below
 // already lives in an async function and awaits accordingly.
 
 /**
  * Build an Esri envelope object from a GeoJSON feature's bbox in 4326.
- * Returns null on failure. We don't pad — ArcGIS's intersects test is true
+ * Returns null on failure. We don't pad â€” ArcGIS's intersects test is true
  * intersection, not Socrata-style containment, so the exact bbox is fine.
  */
 function featureEnvelope(feature) {
@@ -4067,7 +4067,7 @@ function polygonToEsriGeometry(feature) {
   if (g.type === 'Polygon') {
     rings = g.coordinates;
   } else if (g.type === 'MultiPolygon') {
-    // Flatten all polygons' rings into one rings list — Esri's polygon
+    // Flatten all polygons' rings into one rings list â€” Esri's polygon
     // type accepts arbitrary ring counts (interpreted via winding rules).
     rings = [];
     for (const poly of g.coordinates) for (const ring of poly) rings.push(ring);
@@ -4081,7 +4081,7 @@ function polygonToEsriGeometry(feature) {
 /**
  * Merge many GeoJSON polygon Features into ONE Esri polygon whose rings
  * are all the inputs' rings. Lets a single spatialRel query stand in for
- * N separate ones — the water-rights filters would otherwise fire one
+ * N separate ones â€” the water-rights filters would otherwise fire one
  * request per licensed footprint (RM of Portage la Prairie alone has
  * hundreds of irrigation footprints, which took ~48 s end to end).
  *
@@ -4095,7 +4095,7 @@ function polygonToEsriGeometry(feature) {
  *
  * Verified against the live service: batching 20 irrigation footprints
  * returned exactly the OBJECTID set that the 20 individual queries
- * produced between them — no misses, no extras.
+ * produced between them â€” no misses, no extras.
  */
 function polygonsToEsriGeometry(features) {
   const rings = [];
@@ -4135,13 +4135,13 @@ function makeEmptyFc({ truncated = false } = {}) {
 
 /**
  * Parse a Roll # input that may be a single value or a list. Every
- * punctuation form people put between rolls separates them — see
+ * punctuation form people put between rolls separates them â€” see
  * ROLL_SEPARATORS. Trims each entry, drops empties and pure-junk values,
  * dedupes, returns an array preserving first-seen order. Empty array for
  * empty input.
  *
  * Exported so the bulk-search "missing rolls" diagnostic in main.js
- * can reuse the same parser the SQL clause builds against — keeps
+ * can reuse the same parser the SQL clause builds against â€” keeps
  * the user-facing list of "not found" rolls aligned with what
  * actually got queried.
  */
@@ -4159,30 +4159,30 @@ export function parseRollList(input) {
 }
 
 /**
- * Roll entries are SEPARATED — "these are different properties" — by
+ * Roll entries are SEPARATED â€” "these are different properties" â€” by
  * whitespace, comma, semicolon, `&`, `+` or `|`. Comma is the preferred form
  * in tooltips; whitespace covers a column pasted straight out of a
  * spreadsheet; `&`, `+` and `|` cover the "Roll A & Roll B" and "83100+83200"
  * listing styles people type from memory or paste out of a multi-parcel row.
  * None appears in a valid roll number (\d+(\.\d{3})?), so every form is
- * unambiguous, and spacing never matters — "284950&373300" and
+ * unambiguous, and spacing never matters â€” "284950&373300" and
  * "284950 & 373300" parse identically.
  *
  * There is deliberately NO joiner. `+`, `&` and `|` briefly merged their
  * rolls into a single subject that shared one map badge and produced one
  * combined Parcel Snapshot; collapsing typed rolls into one number is never
- * the wanted behaviour, so each roll highlights as its own parcel — its own
- * badge, its own snapshot — whichever separator was typed between them.
+ * the wanted behaviour, so each roll highlights as its own parcel â€” its own
+ * badge, its own snapshot â€” whichever separator was typed between them.
  *
  * (The parcel-list import is a separate path: a row there can still carry
- * several parcels for one comp — see lib/parcelListParser.js — because that
+ * several parcels for one comp â€” see lib/parcelListParser.js â€” because that
  * grouping comes from the imported data, not from punctuation typed here.)
  */
 const ROLL_SEPARATORS = /[\s,;&+|]+/;
 
 /**
  * Canonicalize a single roll-number input to the source's stored form
- * — `<digits>.<3 digits>`. Any dot-suffix the user types is padded
+ * â€” `<digits>.<3 digits>`. Any dot-suffix the user types is padded
  * (or truncated, defensively) to exactly three digits; an input
  * without a dot gets `.000` appended. Pure-junk inputs that don't
  * match the digits[.digits] shape are returned unchanged, so the
@@ -4190,19 +4190,19 @@ const ROLL_SEPARATORS = /[\s,;&+|]+/;
  * typed.
  *
  * Examples:
- *   "3600"      → "3600.000"
- *   "3600.0"    → "3600.000"
- *   "3600.01"   → "3600.010"
- *   "3600.1"    → "3600.100"
- *   "3600.500"  → "3600.500"
- *   "3600.5000" → "3600.500"   (defensive truncation; won't normally fire)
- *   "abc"       → "abc"        (passthrough so it surfaces as missing)
+ *   "3600"      â†’ "3600.000"
+ *   "3600.0"    â†’ "3600.000"
+ *   "3600.01"   â†’ "3600.010"
+ *   "3600.1"    â†’ "3600.100"
+ *   "3600.500"  â†’ "3600.500"
+ *   "3600.5000" â†’ "3600.500"   (defensive truncation; won't normally fire)
+ *   "abc"       â†’ "abc"        (passthrough so it surfaces as missing)
  */
 /**
  * Parse the assessor-supplied Frontage_or_Area string. ROLL_ENTRY
  * stores this as either a frontage measurement (e.g. "120.5 Feet")
  * or an area (e.g. "5.000 Acres"). When it's already an area in
- * acres we use that directly — it's the assessor's official value
+ * acres we use that directly â€” it's the assessor's official value
  * and trumps a geometry-derived calculation. When it's a frontage
  * measurement we can't reverse-derive area, so callers fall back
  * to turf area on the polygon.
@@ -4221,7 +4221,7 @@ export function acresFromFrontageField(raw) {
   if (!Number.isFinite(n) || n <= 0) return null;
   const unit = m[2].toLowerCase();
   if (unit.startsWith('ac')) return n;
-  if (unit.startsWith('ha')) return n * 2.471053814671653;  // hectares → acres
+  if (unit.startsWith('ha')) return n * 2.471053814671653;  // hectares â†’ acres
   return null;
 }
 
@@ -4267,7 +4267,7 @@ function escapeSql(s) {
 
 // ---------- Test-only exports ----------
 // Internal query-builder helpers exposed for unit tests
-// (web/test/whereClause.test.js). Not part of the public API surface —
+// (web/test/whereClause.test.js). Not part of the public API surface â€”
 // app code should keep calling searchParcels() and friends.
 export const _internals = {
   escapeSql,
