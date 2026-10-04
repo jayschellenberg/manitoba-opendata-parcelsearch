@@ -75,6 +75,7 @@ import {
 } from './masc.js';
 import { SOIL_SURVEY_MAP_SOURCE_OPTIONS } from './soilSurvey.js';
 import { safeExternalUrl } from './lib/safeUrl.js';
+import { priorOutlineHtml, saleHistoryHtml } from './lib/parcelHistory.js';
 
 // Report Writer's parcel-edit route. The N1 ID is appended verbatim, so only
 // all-digit ids are ever put through it (see the N1 block in parcelHtml).
@@ -2505,6 +2506,49 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
           'line-dasharray': [3, 2],
         },
       });
+      // ----- PRIOR OUTLINES (parcel change history, weekly) -----
+      // Superseded outlines from mb-parcel-history/changes/ (see
+      // lib/parcelHistory.js). Two sources, one look:
+      //   prior-outlines       the "Prior outlines" overlay: every outline in
+      //                        the result munis that was later reshaped or
+      //                        retired. Toggle-driven, hidden by default.
+      //   sale-prior-outlines  the outline(s) a SALE actually sold as, when
+      //                        that is not today's — drawn whenever sales are
+      //                        loaded, no toggle, because it is part of the
+      //                        answer rather than context.
+      // Dashed pink so they never read as the historical compare view's amber.
+      map.addSource('prior-outlines', { type: 'geojson', data: emptyFc() });
+      map.addSource('sale-prior-outlines', { type: 'geojson', data: emptyFc() });
+      map.addLayer({
+        id: 'prior-outlines-line', type: 'line', source: 'prior-outlines',
+        layout: { visibility: 'none', 'line-join': 'round' },
+        paint: {
+          'line-color': ['match', ['get', 'c'], 'retired', '#7c3aed', '#be185d'],
+          'line-width': ['interpolate', ['linear'], ['zoom'], 10, 1.2, 15, 2.4],
+          'line-opacity': 0.9,
+          'line-dasharray': [2, 1.5],
+        },
+      });
+      // Invisible wide twins: the hover/click targets. A 1-3 px dashed line is
+      // nearly impossible to land a cursor on, so the popups listen here.
+      for (const src of ['prior-outlines', 'sale-prior-outlines']) {
+        map.addLayer({
+          id: `${src}-hit`, type: 'line', source: src,
+          layout: { visibility: src === 'prior-outlines' ? 'none' : 'visible' },
+          paint: { 'line-color': '#000', 'line-width': 12, 'line-opacity': 0 },
+        });
+      }
+      map.addLayer({
+        id: 'sale-prior-outlines-line', type: 'line', source: 'sale-prior-outlines',
+        layout: { 'line-join': 'round' },
+        paint: {
+          'line-color': '#be185d',
+          // Ambiguous sales draw thinner: either shape may be the one that sold.
+          'line-width': ['match', ['get', '_histState'], 'prior', 3, 2],
+          'line-opacity': 0.95,
+          'line-dasharray': [2, 1.2],
+        },
+      });
       // Roll-number labels at each parcel's centroid. Polygon symbol
       // placement uses the polygon's centroid by default (MapLibre falls
       // back to the largest interior anchor point if the centroid is
@@ -3970,6 +4014,29 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
         map.on('mouseenter', layerId, () => { setHoverCursor('pointer'); });
         map.on('mouseleave', layerId, () => { setHoverCursor(''); });
       };
+      // Prior outlines (both sources): hover reads, click pins. Lines only,
+      // so the parcel underneath keeps its own popup everywhere but the edge.
+      const priorClickPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '320px' });
+      const priorHoverPopup = new maplibregl.Popup({ className: 'hover-popup',
+        closeButton: false, closeOnClick: false, offset: 10, maxWidth: '320px' });
+      for (const layerId of ['prior-outlines-hit', 'sale-prior-outlines-hit']) {
+        onLayerClick(map, layerId, (e) => {
+          const p = e.features?.[0]?.properties;
+          if (!p) return;
+          priorHoverPopup.remove();
+          priorClickPopup.setLngLat(e.lngLat).setHTML(priorOutlineHtml(p, priorOutlineIndex)).addTo(map);
+        });
+        map.on('mousemove', layerId, (e) => {
+          if (map.getLayoutProperty(layerId, 'visibility') === 'none' || isMeasuring()) return;
+          if (priorClickPopup.isOpen()) return;
+          const p = e.features?.[0]?.properties;
+          if (!p) return;
+          setHoverCursor('pointer');
+          priorHoverPopup.setLngLat(e.lngLat).setHTML(priorOutlineHtml(p, priorOutlineIndex)).addTo(map);
+        });
+        map.on('mouseleave', layerId, () => { priorHoverPopup.remove(); setHoverCursor(''); });
+      }
+
       wireHist('historical-parcels-fill', historicalParcelHtml);
       wireHist('historical-zoning-fill',  historicalZoningHtml,  ['historical-parcels-fill']);
       wireHist('historical-devplan-fill', historicalDevplanHtml, ['historical-parcels-fill', 'historical-zoning-fill']);
@@ -4746,6 +4813,26 @@ export function setTrafficFlowVisible(map, visible) {
   for (const id of ['traffic-flow-line', 'traffic-flow-label']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
   }
+}
+
+// Change-history index (first/last snapshot) for the prior-outline popups;
+// set by main.js once fetched. Null just drops the window's date words.
+let priorOutlineIndex = null;
+export function setPriorOutlineIndex(idx) { priorOutlineIndex = idx || null; }
+
+export function setPriorOutlinesData(map, fc) {
+  const src = map.getSource('prior-outlines');
+  if (src) src.setData(fc || emptyFc());
+}
+export function setPriorOutlinesVisible(map, visible) {
+  for (const id of ['prior-outlines-line', 'prior-outlines-hit']) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+  }
+}
+/** The outlines that loaded sales actually sold as (empty FC clears). */
+export function setSalePriorOutlinesData(map, fc) {
+  const src = map.getSource('sale-prior-outlines');
+  if (src) src.setData(fc || emptyFc());
 }
 
 export function setMbHighwaysData(map, fc) {
@@ -5937,6 +6024,15 @@ export function parcelHtml(p, { showJumpToList = false, hoverSoil = false } = {}
     lines.push(
       `<strong>${saleCount} sales in this upload</strong> ${escapeHtml(p._saleHistoryText)}`,
     );
+  }
+  // Parcel history: whether the parcel that SOLD is today's outline, from the
+  // weekly change history (lib/parcelHistory.js). main.js stamps the match as
+  // a JSON string because MapLibre stringifies object properties anyway.
+  if (p._histMatch) {
+    let m = null;
+    try { m = typeof p._histMatch === 'string' ? JSON.parse(p._histMatch) : p._histMatch; } catch { m = null; }
+    const html = saleHistoryHtml(m, priorOutlineIndex);
+    if (html) lines.push(html);
   }
   // Far-flung warning. main.js stamps `_farFlungReason` at render time
   // (it depends on the user's current threshold, not on anything

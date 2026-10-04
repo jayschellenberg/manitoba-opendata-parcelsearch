@@ -534,6 +534,25 @@ Rscript r/test_parcel_history.R             # offline tests
   `history/snapshots.parquet`: the deltas are the record. Only a re-read from a
   date (`--rebuild-from`) needs the files back.
 
+**On the site.** `publish-history-changes.ps1` runs last in the same weekly
+chain: `r/build_change_shards.R` writes `mb-parcel-history/changes/<muni>.json`
+(+ `_index.json`), commits and pushes **only `changes/`**, re-pins
+`HISTORICAL_CDN` (`history-pin-lib.ps1`) and pushes the app, so Vercel
+redeploys. It **refuses unless both repos are on `main`**. The app uses it in
+two places (`web/src/lib/parcelHistory.js`):
+- every loaded sale gets an **Outline at sale** column + a *Parcel history*
+  popup section, and a sale whose parcel was an earlier outline gets that
+  outline drawn dashed pink;
+- **Historical → Prior outlines** overlays every superseded outline in the
+  result municipalities.
+
+Try freshly built shards before publishing:
+```
+$env:CHANGE_SHARDS_OUT = "$env:TEMP\changes_test"; Rscript r/build_change_shards.R
+cd web; $env:LOCAL_CHANGES_DIR = "$env:TEMP\changes_test"; npx vite --port 5173
+```
+(`LOCAL_CHANGES_DIR` makes the dev server answer `changes/*` from that folder.)
+
 ### 4b. Retire a snapshot  (cadence: rare — when two captures sit too close)
 
 Withdraws a snapshot from the app's "As of" picker. Nothing here implies the

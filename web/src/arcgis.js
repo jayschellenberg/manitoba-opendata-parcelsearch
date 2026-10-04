@@ -2534,6 +2534,57 @@ export async function fetchHistoricalLineage(muniNo) {
   } catch { return null; }
 }
 
+// ---------------------------------------------------------------------------
+// Parcel change history (weekly) — mb-parcel-history/changes/, built by
+// r/build_parcel_history.R + r/build_change_shards.R and published by
+// publish-history-changes.ps1, which re-pins HISTORICAL_CDN each week. See
+// lib/parcelHistory.js for the shard format and what it can (not) say.
+//
+// Cache keys carry the pinned commit, so a re-pin is a new key: the files at
+// one commit never change, which makes a long TTL safe.
+const HISTORY_PIN = HISTORICAL_CDN.split('/').pop().slice(0, 12);
+const CHANGE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+let changeIndexPromise = null;
+
+/** changes/_index.json: { first_snapshot, last_snapshot, snapshots, quarantined, munis }. */
+export function fetchChangeIndex() {
+  if (changeIndexPromise) return changeIndexPromise;
+  changeIndexPromise = (async () => {
+    const cacheKey = `mb_changes_index_${HISTORY_PIN}`;
+    const cached = await readCache(cacheKey, CHANGE_TTL_MS);
+    if (cached) return cached;
+    try {
+      const res = await fetch(`${HISTORICAL_CDN}/changes/_index.json`);
+      if (!res.ok) return null;
+      const idx = await res.json();
+      await writeCache(cacheKey, idx);
+      return idx;
+    } catch { return null; }
+  })();
+  return changeIndexPromise;
+}
+
+/**
+ * One muni's change shard: { rolls, outlines }. Null when the muni has no
+ * recorded change (not in the index) or the fetch fails — callers treat that
+ * as "no history", never as "unchanged".
+ */
+export async function fetchChangeShard(muniNo) {
+  if (muniNo == null || muniNo === '') return null;
+  const idx = await fetchChangeIndex();
+  if (!idx?.munis?.[String(muniNo)]) return null;
+  const cacheKey = `mb_changes_${muniNo}_${HISTORY_PIN}`;
+  const cached = await readCache(cacheKey, CHANGE_TTL_MS);
+  if (cached) return cached;
+  try {
+    const res = await fetch(`${HISTORICAL_CDN}/changes/${muniNo}.json`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    await writeCache(cacheKey, data);
+    return data;
+  } catch { return null; }
+}
+
 function lookupMuniManifestEntry(index, muniName, { stripType }) {
   if (!index || !muniName) return null;
 

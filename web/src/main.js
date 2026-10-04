@@ -160,6 +160,8 @@ import {
   fetchHistoricalManifest,
   fetchHistoricalShard,
   fetchHistoricalLineage,
+  fetchChangeIndex,
+  fetchChangeShard,
   fetchMascRiverlots,
   fetchSoilSurveyForParcels,
   fetchSoilfactsForMuni,
@@ -248,6 +250,10 @@ import {
   setMfInventoryVisible,
   setWaterInfluenceVisible,
   setHistoricalData,
+  setPriorOutlinesData,
+  setPriorOutlinesVisible,
+  setSalePriorOutlinesData,
+  setPriorOutlineIndex,
   setHistoricalVisible,
   setHistoricalLayerVisible,
   getHistoricalLegend,
@@ -329,6 +335,9 @@ import {
   shapeDerivedNote, boundaryTrustLabel, boundaryTrustRank,
 } from './lib/saleSize.js';
 import { parseSaleDate, saleDateSortKey } from './lib/saleDate.js';
+import {
+  matchSaleToHistory, historyLabel, historyRank, toIsoDay, saleOutlineFeatures,
+} from './lib/parcelHistory.js';
 import { computeSizeChanges } from './lib/sizeChange.js';
 import { indexHistoricalGeometry, applyHistoricalGeometry } from './lib/historicalHighlight.js';
 import { withholdChangedGeometry, withheldNote } from './lib/withheldGeometry.js';
@@ -641,6 +650,7 @@ const $contamToggle  = document.getElementById('contam-toggle');
 const $flowToggle    = document.getElementById('flow-toggle');
 const $stationsToggle = document.getElementById('stations-toggle');
 const $highwaysToggle = document.getElementById('highways-toggle');
+const $priorOutlinesToggle = document.getElementById('prior-outlines-toggle');
 const $muniParcelsToggle = document.getElementById('muni-parcels-toggle');
 const $mascToggle    = document.getElementById('masc-toggle');
 const $riskAreaToggle = document.getElementById('riskarea-toggle');
@@ -1670,6 +1680,7 @@ const SORT_KEYS = {
   // Boundary sorts most-changed first, so the rows whose acreage cannot be
   // trusted rise to the top rather than scattering through the set.
   boundary:     (r) => boundaryTrustRank(r.parcel.properties._geomTrust),
+  outline:      (r) => Number(r.parcel.properties._histRank ?? 9),
   groupacres:   (r) => finiteOrNeg(r.parcel.properties._saleGroupTotalAcres),
   // Group SF is Group Acres × 43,560, so it sorts on the same underlying
   // total — the multiplier is positive and constant, so the ordering is
@@ -2831,6 +2842,7 @@ $contamToggle.addEventListener('click', () => toggleAuxOverlay('contam'));
 $flowToggle.addEventListener('click', () => toggleAuxOverlay('flow'));
 $stationsToggle?.addEventListener('click', () => toggleAuxOverlay('stations'));
 $highwaysToggle.addEventListener('click', () => toggleAuxOverlay('highways'));
+$priorOutlinesToggle?.addEventListener('click', () => toggleAuxOverlay('priorOutlines'));
 $riskAreaToggle.addEventListener('click', () => toggleAuxOverlay('riskAreas'));
 for (const [key, btn] of $floodToggles) {
   btn?.addEventListener('click', () => toggleAuxOverlay(floodAuxKey(key)));
@@ -5016,6 +5028,8 @@ async function runSearch() {
   if ($resultsTable) $resultsTable.classList.remove('sales-mode');
   // Hide the size-range + vacant-only filter rows since they're CSV-only.
   document.body.classList.remove('sales-mode');
+  // The at-sale outlines belong to the sales that were on screen.
+  mapReady.then(() => setSalePriorOutlinesData(map, null));
   // Reset the sales-only filter inputs so the next upload starts
   // unfiltered. clearAll already does a full page reload, but a
   // regular Search reuses the page — explicit reset matches existing
@@ -5900,6 +5914,13 @@ async function handleSalesUpload(file) {
       f.properties._asmtStatus     = rec.tax_status || '';
       f.properties._isVacantLand   = isVacantLand(rec);
     }
+
+    // Outline at sale: which outline each sale's roll had on its sale date,
+    // from the weekly parcel change history. Bounded and non-fatal — the
+    // history is context, and a slow or missing shard must not hold up or
+    // fail the upload.
+    setCount('Checking parcel history…');
+    await stampSaleHistory(parcelFc);
 
     // Activate the Sale Date / Sale Price columns.
     if ($resultsTable) $resultsTable.classList.add('sales-mode');
@@ -9280,8 +9301,8 @@ async function refreshOverlayLayersForMuniChange() {
  * the segment AADT inline (and vice-versa: loading stations after flow
  * triggers the same join). Failures are non-fatal — the button reverts.
  */
-const auxLoaded = { contam: false, stations: false, flow: false, highways: false, riskAreas: false, muniParcels: false, tileDrainage: false, tileNetwork: false, irrigation: false };
-const auxData   = { contam: null, stations: null, flow: null, highways: null, riskAreas: null, muniParcels: null, tileDrainage: null, tileNetwork: null, irrigation: null };
+const auxLoaded = { contam: false, stations: false, flow: false, highways: false, riskAreas: false, muniParcels: false, tileDrainage: false, tileNetwork: false, irrigation: false, priorOutlines: false };
+const auxData   = { contam: null, stations: null, flow: null, highways: null, riskAreas: null, muniParcels: null, tileDrainage: null, tileNetwork: null, irrigation: null, priorOutlines: null };
 // Tracks which muni's parcels are currently in the muni-parcels source so
 // we know whether to refetch when the user switches munis.
 let muniParcelsLoadedFor = null;
@@ -9559,6 +9580,13 @@ const AUX_META = {
   irrigation:  { btn: () => $irrigationToggle, on: 'Irrigation Licences', off: 'Irrigation Licences', busy: 'Loading…',
                  fetch: () => fetchIrrigationLicences(),
                  setData: (m, fc) => setIrrigationData(m, fc), setVis: setIrrigationVisible },
+  // Parcel change history: superseded outlines in the result municipalities.
+  // Scoped to the results, so turning it on re-scopes if the search changed
+  // since it last loaded (refreshPriorOutlinesForResults).
+  priorOutlines: { btn: () => $priorOutlinesToggle, on: 'Prior outlines', off: 'Prior outlines', busy: 'Loading…',
+                 fetch: () => fetchPriorOutlinesForResults(),
+                 setData: (m, fc) => setPriorOutlinesData(m, fc),
+                 setVis: (m, v) => { setPriorOutlinesVisible(m, v); if (v) refreshPriorOutlinesForResults(); } },
 };
 
 // ---------- Flood zones ----------
@@ -9870,6 +9898,101 @@ function resetMuniParcelsToggle() {
       mapReady.then(() => setMuniParcelsVisible(map, false));
     }
   }
+}
+
+// ---------- Parcel change history (weekly) ----------
+//
+// Two consumers of mb-parcel-history/changes/ (lib/parcelHistory.js):
+//   1. stampSaleHistory — every loaded sale gets an "Outline at sale" verdict,
+//      and a sale whose parcel was an EARLIER outline gets that outline drawn
+//      dashed on the map (sale-prior-outlines). This is the point of the
+//      history: matching a sale to the parcel as it was on the sale date.
+//   2. The "Prior outlines" overlay — every superseded outline in the
+//      municipalities of the current results, for context.
+//
+// "No claim" is kept distinct from "unchanged" throughout: if the index or a
+// listed muni's shard fails to load, the affected sales get no verdict at
+// all rather than a "Same as today" nobody checked.
+
+const SALE_HISTORY_BUDGET_MS = 8000;
+
+async function stampSaleHistory(parcelFc) {
+  const feats = parcelFc?.features || [];
+  const outlines = [];
+  let expired = false;
+  const work = (async () => {
+    const index = await fetchChangeIndex();
+    if (!index || expired) return;              // history unavailable: no claim
+    setPriorOutlineIndex(index);
+    const munis = new Set();
+    for (const f of feats) {
+      const n = muniNoFromProps(f.properties || {});
+      if (n != null) munis.add(n);
+    }
+    const shards = new Map(await Promise.all(
+      [...munis].map(async (n) => [n, await fetchChangeShard(n).catch(() => null)])));
+    if (expired) return;
+    for (const f of feats) {
+      const p = f.properties || {};
+      const n = muniNoFromProps(p);
+      if (n == null) continue;
+      const shard = shards.get(n);
+      // Listed in the index but the shard did not arrive: no claim. Not
+      // listed: the muni has no recorded change, so every roll is current.
+      if (index.munis?.[String(n)] && !shard) continue;
+      const m = matchSaleToHistory(shard?.rolls || {}, p.Roll_No_Txt, toIsoDay(parseSaleDate(p._saleDate)), index);
+      const label = historyLabel(m);
+      if (!label) continue;
+      p._histState = m.state;
+      p._histLabel = label;
+      p._histRank  = historyRank(m);
+      p._histMatch = JSON.stringify(m);
+      if (shard) outlines.push(...saleOutlineFeatures(shard, p.Roll_No_Txt, m, { _rowKey: p._rowKey ?? null }));
+    }
+  })().catch((err) => console.warn('Parcel history lookup failed (non-fatal):', err));
+  await Promise.race([work, new Promise((r) => setTimeout(r, SALE_HISTORY_BUDGET_MS))]);
+  expired = true;
+  // Not awaited: the grid must not wait on the map (a background tab never
+  // finishes loading it), and the outlines land whenever it is ready.
+  mapReady.then(() => setSalePriorOutlinesData(map, { type: 'FeatureCollection', features: outlines }));
+}
+
+/** Municipality numbers of the rows currently in the grid. */
+function resultMuniNos() {
+  const s = new Set();
+  for (const r of currentRows || []) {
+    const n = muniNoFromProps(r?.parcel?.properties || {});
+    if (n != null) s.add(n);
+  }
+  return [...s].sort((a, b) => a - b);
+}
+
+let priorOutlinesLoadedFor = null;
+
+/** The "Prior outlines" overlay's data: superseded outlines in the result munis. */
+async function fetchPriorOutlinesForResults() {
+  const munis = resultMuniNos();
+  if (!munis.length) throw new Error('search first: prior outlines load for the municipalities in the results');
+  const index = await fetchChangeIndex();
+  if (!index) throw new Error('parcel change history unavailable');
+  setPriorOutlineIndex(index);
+  const shards = await Promise.all(munis.map((n) => fetchChangeShard(n).catch(() => null)));
+  priorOutlinesLoadedFor = munis.join('|');
+  return {
+    type: 'FeatureCollection',
+    features: shards.flatMap((s) => s?.outlines?.features || []),
+  };
+}
+
+/** Re-scope the overlay when the result munis change while it is on. */
+function refreshPriorOutlinesForResults() {
+  if (!$priorOutlinesToggle?.classList.contains('active')) return;
+  const key = resultMuniNos().join('|');
+  if (!key || key === priorOutlinesLoadedFor) return;
+  priorOutlinesLoadedFor = key;
+  fetchPriorOutlinesForResults()
+    .then((fc) => mapReady.then(() => setPriorOutlinesData(map, fc)))
+    .catch((err) => console.warn('Prior outlines refresh failed (non-fatal):', err));
 }
 
 // ---------- Historical (as-of-year) compare overlay ----------
@@ -13220,6 +13343,9 @@ function renderTable(rows, { resetPage = true } = {}) {
   // columns appear and disappear with the toggles.
   if ($resultsTable) $resultsTable.classList.toggle('water-mode', wantsWaterRightsEnrichment());
   currentRows = rows;
+  // Prior outlines follow the result munis while that overlay is on (no-op
+  // when it is off or the munis are unchanged).
+  refreshPriorOutlinesForResults();
   rowFeatureMap.clear();
   // A fresh fill takes the grid away from whichever overlay had it, so
   // switching that overlay off no longer hands these rows to another one (see
@@ -13444,6 +13570,12 @@ function renderTable(rows, { resetPage = true } = {}) {
     boundaryCell.classList.add('sales-only');
     if (p._geomTrust === 'withheld') boundaryCell.classList.add('boundary-changed');
     tr.appendChild(boundaryCell);
+    // Outline at sale — the change-history verdict (stampSaleHistory). Same
+    // positional rule: in step with the data-col="outline" <th> after Boundary.
+    const outlineCell = td(p._histLabel || null, null, OUTLINE_EMPTY_HINT);
+    outlineCell.classList.add('sales-only');
+    if (p._histState === 'prior' || p._histState === 'ambiguous') outlineCell.classList.add('boundary-changed');
+    tr.appendChild(outlineCell);
     // Group Acres sits between Acres and $/Acre: per-parcel size, then the
     // sale's total, then the rate that divides by it. Reading left to right
     // now shows where the rate comes from.
@@ -17047,6 +17179,10 @@ function csvExportFilename(qualifier = '') {
 // The Parcel Change signal ships in the MAO sales shards; a hand-pasted comp
 // block is the seven-column grid and carries no such column, so there is
 // nothing to load and no amount of waiting will fill it.
+// Blank Outline-at-sale cell: no sale date, or the change history could not
+// be loaded for this municipality. Either way, no claim.
+const OUTLINE_EMPTY_HINT =
+  'No claim: the sale has no readable date, or the parcel change history could not be loaded.';
 const BOUNDARY_EMPTY_HINT =
   'This sale set carries no parcel-change evidence, so no claim is made either way. '
   + 'The MAO Sales Database provides it; a pasted MAO comp block does not.';

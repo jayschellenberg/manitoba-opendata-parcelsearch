@@ -86,6 +86,11 @@ export const DEFAULT_VISIBLE = new Set([
   // without this the blank looked like missing data rather than a deliberate
   // refusal to substitute today's acreage (Jason, 2026-08-21). .sales-only.
   'boundary',
+  // Outline at sale — the same question as Boundary answered from the weekly
+  // parcel change history (geometry snapshots) rather than the sales PDFs:
+  // was the outline that sold today's, an earlier one, or did it change in a
+  // window spanning the sale? Independent evidence, so its own column.
+  'outline',
   'zone1',
   // The province's ZONE_CATEGORY rollup. Default-visible beside the code
   // because the code alone is unreadable across municipal lines — every
@@ -144,7 +149,7 @@ const ADOPTED_KEY = 'mbps_table_columns_adopted';
 // from a link into a data column, and a user who never ticked a link column
 // would otherwise never discover that it now answers the question. Adopting
 // it once puts it in front of them; unticking it still sticks.
-const ADOPT_ONCE = ['streetview', 'rollsize', 'zonecat', 'n1id', 'muniname', 'saletype', 'boundary', 'flood', 'sides'];
+const ADOPT_ONCE = ['streetview', 'rollsize', 'zonecat', 'n1id', 'muniname', 'saletype', 'boundary', 'flood', 'sides', 'outline'];
 
 // Column presets — `null` value means "everything that the current
 // mode would show". The labels match the dropdown options.
@@ -156,7 +161,7 @@ export const PRESETS = {
   // stating frontage feet it would hide the only assessor-stated size there is.
   'Sales analysis': new Set([
     'favorite', 'roll', 'muniname', 'address', 'saledate', 'saleprice', 'saletype', 'n1id',
-    'grouppriceac', 'grouppricesf', 'grouppricelot', 'rollsize', 'acres', 'boundary',
+    'grouppriceac', 'grouppricesf', 'grouppricelot', 'rollsize', 'acres', 'boundary', 'outline',
     'groupacres',
     'zone1', 'zonecat', 'subjdist', 'saletoasmt',
     // Total assessed, added 2026-08-18 beside Sale/Asmt. That column is a
@@ -192,7 +197,7 @@ export const PRESETS = {
   'Commercial Sales': new Set([
     'favorite', 'roll', 'muniname', 'address', 'saledate', 'saleprice',
     'saletype', 'primaryprop', 'n1id',
-    'zone1', 'legal', 'du', 'rollsize', 'acres', 'boundary', 'value', 'streetview',
+    'zone1', 'legal', 'du', 'rollsize', 'acres', 'boundary', 'outline', 'value', 'streetview',
   ]),
   // Land comps (Jason's chosen list, 2026-08-17) — the mirror of Commercial
   // Sales: where that view drops every unit rate, this one leads with them,
@@ -224,7 +229,7 @@ export const PRESETS = {
   //                per muni, so it costs no overlay load.
   'Land Sales': new Set([
     'favorite', 'roll', 'n1id', 'muniname', 'saledate', 'saleprice', 'groupsize',
-    'address', 'zone1', 'zonecat', 'rollsize', 'acres', 'boundary', 'sf', 'sides', 'groupacres', 'groupsf',
+    'address', 'zone1', 'zonecat', 'rollsize', 'acres', 'boundary', 'outline', 'sf', 'sides', 'groupacres', 'groupsf',
     'grouppriceac', 'grouppricesf', 'grouppriceff', 'grouppricelot',
     'subjdist', 'saletype', 'primaryprop', 'water', 'flood',
     'saletoasmt', 'asmtland', 'asmtbldg', 'asmtpct', 'asmtyear',
@@ -235,7 +240,7 @@ export const PRESETS = {
   // the roll's frontage figure is the number being checked against.
   'Zoning check': new Set([
     'roll', 'muniname', 'address', 'zone1', 'zonecat', 'zone1pct', 'zone2', 'zbl',
-    'dev1', 'dpbylaw', 'changes', 'rollsize', 'acres', 'boundary',
+    'dev1', 'dpbylaw', 'changes', 'rollsize', 'acres', 'boundary', 'outline',
   ]),
   // Farmland-oriented view. Core identity + the land-cover pair, then
   // soil/capability, sales comps, and zoning/legal context (Jason's
@@ -249,7 +254,7 @@ export const PRESETS = {
   // main.js. MASC Rating, Risk Area and Land Cover need no such trigger:
   // they're stamped during every search/import enrichment.
   'Agricultural': new Set([
-    'favorite', 'roll', 'muniname', 'address', 'rollsize', 'acres', 'boundary', 'landcover', 'cultpct', 'landfacts', 'water',
+    'favorite', 'roll', 'muniname', 'address', 'rollsize', 'acres', 'boundary', 'outline', 'landcover', 'cultpct', 'landfacts', 'water',
     'soil', 'clicls', 'soiltype', 'slope', 'riskarea', 'tile', 'irrigation',
     'grouppriceac', 'groupacres', 'saledate', 'saleprice', 'saletype', 'saletoasmt', 'grouppricesf',
     'zone1', 'dev1', 'legal', 'title',
@@ -275,7 +280,7 @@ export const PRESETS = {
   // active — the same mode-gating the Agricultural preset relies on. Being in
   // the set only means the gear isn't independently suppressing them.
   'Residential': new Set([
-    'favorite', 'roll', 'muniname', 'address', 'rollsize', 'acres', 'boundary', 'sf', 'sides', 'du',
+    'favorite', 'roll', 'muniname', 'address', 'rollsize', 'acres', 'boundary', 'outline', 'sf', 'sides', 'du',
     // Water and Flood together: on a valley lot they are one question, and a
     // Designated Flood Area governs what may be built on exactly the kind of
     // parcel this preset is for.

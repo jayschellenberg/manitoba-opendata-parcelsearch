@@ -1473,6 +1473,13 @@
                 <span class="overlay-btn-label">Dev Plan</span>
               </button>
             </div>
+            <!-- Weekly change history: every outline in the result
+                 municipalities that was later reshaped or retired, dashed
+                 pink (purple = roll retired). A sale whose parcel was such an
+                 outline gets it drawn automatically, without this toggle. -->
+            <button id="prior-outlines-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Prior outlines — earlier shapes of parcels in the result municipalities that were reshaped or retired since February 2025, from weekly snapshots of the province's parcel layer. Dashed pink = outline changed, purple = roll retired. Hover for the window between the two snapshot dates the change falls in (the province publishes no change dates), area before → after, and the roll(s) that cover the land now. Search first.">
+              <span class="overlay-btn-label">Prior outlines</span>
+            </button>
             </div>
           </details>
 
@@ -1961,6 +1968,7 @@
             <th data-col="rollsize" class="sales-only" title="What the assessment roll itself records for this parcel — verbatim, in the assessor's own units. About 63% of Manitoba parcels carry an area ('160.00 ACRES'); the other 37% carry a frontage instead ('110.00 FEET'), which is a width, not an area, and cannot be converted to acres. This is the primary source; the Acres column beside it is that same figure when it is an area, and a polygon-derived estimate when it is not.">Roll Frontage/Area</th>
             <th data-col="acres" class="sales-only" title="Parcel area in acres. Uses the assessor's recorded area when the roll states one, otherwise computed from the parcel polygon. A ⚠ marks rows where the two disagree by more than 2%. On a frontage-feet parcel this is a polygon estimate the roll does not support — check Roll Frontage/Area beside it.">Acres</th>
             <th data-col="boundary" class="sales-only" title="Is the boundary drawn today still the piece of land that sold? From the sales shard's Parcel Change evidence. &quot;Changed&quot; — the parcel was subdivided, consolidated or re-surveyed after the sale, so today's polygon is a different piece of land; those rows are drawn on the map as a pin rather than an outline, and Acres is usually blank because the at-sale size could not be recovered. &quot;Likely same&quot; — the legal description still matches but the size was never re-verified. &quot;Same&quot; — verified unchanged. An em-dash means the sale set carries no parcel-change evidence at all (a pasted MAO comp block), which is NOT the same as unchanged.">Boundary</th>
+            <th data-col="outline" class="sales-only" title="Was the outline that sold today's? From the weekly parcel change history (snapshots of the province's parcel layer since Feb 2025), independent of the Boundary column's sales-PDF evidence. &quot;Changed since sale&quot; — an earlier outline sold; it is drawn dashed pink on the map. &quot;Changed near sale&quot; — the outline changed in a window that spans the sale date, so either shape may be the one that sold. &quot;Roll created after sale&quot; — the roll did not exist yet. &quot;Same since history began&quot; — no change recorded, but the sale predates the history. The province publishes no change dates, so every change is a window between two snapshot dates.">Outline at sale</th>
             <th data-col="groupacres" class="sales-only" title="Total acres of EVERY parcel in this sale, added up — the land the sale price actually bought, and the denominator behind $/Acre beside it. On a single-parcel sale it equals the Acres column. Shows an em-dash when any parcel in the sale is missing an area, because a partial total would understate the land and make $/Acre look high.">Group Acres</th>
             <!-- Group SF — the same total as Group Acres, in square feet, so
                  the denominator behind $/SF is readable beside its rate. Only

@@ -21,11 +21,38 @@ function resolveCommit() {
 const APP_COMMIT = resolveCommit();
 const APP_BUILD_TIME = new Date().toISOString();
 
+// Dev only: LOCAL_CHANGES_DIR=<dir> serves mb-parcel-history/changes/* from a
+// local folder instead of the pinned GitHub commit, so freshly built change
+// shards (r/build_change_shards.R) can be tried before they are published.
+// Registered as a pre-middleware, so it answers ahead of the /gh-data proxy.
+function localChangesPlugin() {
+  const dir = process.env.LOCAL_CHANGES_DIR;
+  return {
+    name: 'local-change-shards',
+    apply: 'serve',
+    configureServer(server) {
+      if (!dir) return;
+      server.middlewares.use(async (req, res, next) => {
+        const m = /^\/gh-data\/mb-parcel-history\/[0-9a-f]+\/changes\/([\w.-]+\.json)$/.exec(req.url || '');
+        if (!m) return next();
+        const { readFile } = await import('node:fs/promises');
+        const { join } = await import('node:path');
+        try {
+          const body = await readFile(join(dir, m[1]));
+          res.setHeader('Content-Type', 'application/json');
+          res.end(body);
+        } catch { res.statusCode = 404; res.end(); }
+      });
+    },
+  };
+}
+
 export default defineConfig({
   // Plain static site. The only framework plugin is Tailwind v4's
   // Vite integration, which scans source files for utility classes
   // and emits the generated stylesheet for the `tailwind.css` entry.
-  plugins: [tailwindcss()],
+  // localChangesPlugin is a no-op unless LOCAL_CHANGES_DIR is set (dev only).
+  plugins: [tailwindcss(), localChangesPlugin()],
   cacheDir: process.env.VITE_CACHE_DIR || 'node_modules/.vite',
   // Escape hatch: VITE_SKIP_PUBLIC=1 disables the public/ → dist/ asset copy.
   // Useful for a code-only compile check on Windows/Dropbox, where copying the
