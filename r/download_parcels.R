@@ -9,9 +9,11 @@
 #   Manitoba_Development_Plan_Designations  ~few-hundred dev-plan polygons
 #
 # Pagination is required — each FeatureServer caps any one page at 2000.
-# We page via resultOffset until the response stops including more rows.
+# Paging is COUNT-VERIFIED: the server's exact row count is fetched first, the
+# offset advances by rows actually received, and a layer whose total does not
+# match is not written. Same pattern as download_provincial_snapshot.R.
 #
-# Requires: sf, httr2
+# Requires: sf, httr2, jsonlite
 
 suppressPackageStartupMessages({
   library(sf)
@@ -61,6 +63,21 @@ datasets <- list(
     url   = paste0(BASE, "/Manitoba_Development_Plan_Designations/FeatureServer/0")
   )
 )
+
+# Exact server-side row count (returnCountOnly). Without it a truncated
+# download is indistinguishable from a complete one, so no count, no write.
+fetch_count <- function(url) {
+  req <- request(paste0(url, "/query")) |>
+    req_url_query(where = "1=1", returnCountOnly = "true", f = "json") |>
+    req_retry(max_tries = 4)
+  body <- tryCatch(jsonlite::fromJSON(resp_body_string(req_perform(req))),
+                   error = function(e) NULL)
+  n <- suppressWarnings(as.integer(body$count))
+  if (is.null(body) || length(n) != 1 || is.na(n)) {
+    stop("count query failed for ", url, " — refusing to page without a verifiable total")
+  }
+  n
+}
 
 # Fetch one page of GeoJSON features and parse to an sf data frame.
 # Returns NULL on the page that runs past the end of the dataset.
@@ -130,9 +147,17 @@ fetch_page_resilient <- function(url, offset, page_size = PAGE_SIZE) {
   }
 }
 
-# Walk through every page until we run out. The service signals "no more"
-# either by returning fewer rows than asked, or by an empty features array.
-download_layer <- function(ds) {
+# Walk every page until the server's own row count is reached.
+#
+# The old loop stopped at the first page shorter than PAGE_SIZE and advanced
+# the offset by PAGE_SIZE rather than by rows received. A server that trims a
+# page for transfer limits would end the walk early, or skip rows, and still
+# leave a complete-looking dated .gpkg behind. build_parcel_history.R treats
+# every RollEntry_*.gpkg as a full census of rolls (a missing roll reads as a
+# retirement), so the totals must match before anything is written.
+#
+# count_fn / page_fn are injectable for offline tests.
+download_layer <- function(ds, count_fn = fetch_count, page_fn = fetch_page_resilient) {
   cat(sprintf("\n== %s ==\n", ds$name))
   gpkg_path <- file.path(output_dir, sprintf("%s_%s.gpkg", ds$name, date_stamp))
   if (file.exists(gpkg_path)) {
@@ -144,25 +169,44 @@ download_layer <- function(ds) {
     }
   }
 
+  expected <- tryCatch(count_fn(ds$url), error = function(e) {
+    cat("  count FAILED:", conditionMessage(e), "\n")
+    NA_integer_
+  })
+  if (is.na(expected)) return(invisible(NULL))
+  cat(sprintf("  server count: %d\n", expected))
+
   pages <- list()
   offset <- 0
+  got <- 0L
   failed <- FALSE
-  repeat {
+  while (got < expected) {
     cat(sprintf("  fetching offset %d...", offset))
     page <- tryCatch(
-      fetch_page_resilient(ds$url, offset),
+      page_fn(ds$url, offset),
       error = function(e) {
         cat(" FAILED:", conditionMessage(e), "\n")
         failed <<- TRUE
         NULL
       }
     )
-    if (is.null(page)) break
+    if (failed) break
+    if (is.null(page)) {
+      cat(sprintf(" premature end of data: %d of %d rows\n", got, expected))
+      failed <- TRUE
+      break
+    }
     n <- nrow(page)
     cat(sprintf(" %d features\n", n))
     pages[[length(pages) + 1]] <- page
-    if (n < PAGE_SIZE) break
-    offset <- offset + PAGE_SIZE
+    # Advance by rows RECEIVED: a trimmed page must not skip the rows it omitted.
+    got    <- got + n
+    offset <- offset + n
+  }
+  if (!failed && got != expected) {
+    cat(sprintf("  count mismatch: received %d rows, server said %d (layer changed mid-fetch?)\n",
+                got, expected))
+    failed <- TRUE
   }
 
   # A mid-stream failure means `pages` holds only part of the dataset.
@@ -180,7 +224,12 @@ download_layer <- function(ds) {
   }
 
   combined <- do.call(rbind, pages)
-  cat(sprintf("  total features: %d\n", nrow(combined)))
+  if (nrow(combined) != expected) {
+    cat(sprintf("  assembled %d rows but the verified count is %d — not writing\n",
+                nrow(combined), expected))
+    return(invisible(NULL))
+  }
+  cat(sprintf("  total features: %d (count-verified)\n", nrow(combined)))
   cat(sprintf("  writing %s ...\n", basename(gpkg_path)))
   # Write to a temp name, rename into place once complete — the dated
   # filename never exists half-written, so "file exists" above really
@@ -200,6 +249,9 @@ download_layer <- function(ds) {
   cat(sprintf("  done — %s MB\n", size_mb))
   invisible(gpkg_path)
 }
+
+# Gated so tests can source() the functions above without downloading.
+if (!nzchar(Sys.getenv("DOWNLOAD_PARCELS_SOURCE_ONLY"))) {
 
 cat("=== Manitoba Open Data Parcel Snapshot ===\n")
 cat("Date:", format(Sys.Date(), "%Y-%m-%d"), "\n")
@@ -235,3 +287,5 @@ if (length(failed_layers) > 0) {
 }
 
 cat("\nDone.\n")
+
+}  # end DOWNLOAD_PARCELS_SOURCE_ONLY gate
