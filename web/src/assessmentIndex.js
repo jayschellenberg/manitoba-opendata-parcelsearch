@@ -3,6 +3,7 @@
 // main thread; otherwise everything runs synchronously via the
 // shared core module.
 
+import { versionedDatasetUrl } from './manifest.js';
 import {
   parseAssessmentIndex,
   lookupAssessment as lookupCore,
@@ -83,7 +84,7 @@ async function loadDirect() {
       if (res.ok) json = await res.json();
     } catch { /* fall through */ }
     if (!json) {
-      const res = await fetch(ASSESSMENT_INDEX_PROXY_URL);
+      const res = await fetch(await versionedDatasetUrl(ASSESSMENT_INDEX_PROXY_URL, 'assessment_index'));
       if (!res.ok) {
         throw new Error(
           `Assessment-index not available locally (${ASSESSMENT_INDEX_LOCAL_URL}) and the proxy at ${ASSESSMENT_INDEX_PROXY_URL} returned ${res.status}.`

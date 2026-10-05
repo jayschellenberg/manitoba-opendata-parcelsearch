@@ -80,3 +80,32 @@ export async function getOverallFreshness() {
 
 // Test-only reset hook so the cache between tests doesn't carry over.
 export function _resetManifestCache() { manifestPromise = null; manifestResolved = null; }
+
+/**
+ * `url` with the dataset's build stamp appended as `?v=` — pure.
+ *
+ * The index proxies (/api/legal-index, /api/assessment-index) answer with
+ * `Cache-Control: public, max-age=604800, immutable`, which is right for ONE
+ * build of an index and wrong for a fixed URL: after a refresh, a returning
+ * browser kept serving its old copy for up to a week (found 2026-10-05, when
+ * newly published MAO legals did not reach a browser that had loaded the
+ * index the day before). Versioning the URL by the build stamp keeps the long
+ * cache within a build and makes every refresh a new URL. The proxies ignore
+ * the query string.
+ */
+export function versionedUrl(url, dataset) {
+  const v = dataset?.generated_at || dataset?.modified_at;
+  if (!url || !v) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}v=${encodeURIComponent(v)}`;
+}
+
+/**
+ * `url` versioned by the named dataset in the live manifest. Falls back to the
+ * bare url when the manifest is unavailable — today's behaviour, never a
+ * broken fetch.
+ */
+export async function versionedDatasetUrl(url, name) {
+  let ds = null;
+  try { ds = await getDataset(name); } catch { ds = null; }
+  return versionedUrl(url, ds);
+}

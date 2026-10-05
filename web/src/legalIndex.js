@@ -10,6 +10,7 @@
 // All search/match semantics are defined in legalIndex.core.js so
 // both transports share identical behavior.
 
+import { versionedDatasetUrl } from './manifest.js';
 import {
   hasLegalCriteria,
   legalRecordKey,
@@ -104,7 +105,7 @@ async function loadDirect() {
       if (res.ok) json = await res.json();
     } catch { /* fall through to proxy */ }
     if (!json) {
-      const res = await fetch(LEGAL_INDEX_PROXY_URL);
+      const res = await fetch(await versionedDatasetUrl(LEGAL_INDEX_PROXY_URL, 'legal_index'));
       if (!res.ok) {
         throw new Error(
           `Legal index not available locally (${LEGAL_INDEX_LOCAL_URL}) and the proxy at ${LEGAL_INDEX_PROXY_URL} returned ${res.status}.`

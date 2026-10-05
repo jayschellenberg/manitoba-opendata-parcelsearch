@@ -10,6 +10,7 @@
 // run in node tests (where Workers aren't available) via the
 // fallback in legalIndex.js. This file is just the transport.
 
+import { versionedDatasetUrl } from '../manifest.js';
 import {
   parseLegalIndex,
   searchLegalIndex,
@@ -60,7 +61,8 @@ async function loadFromUrls({ localUrl, proxyUrl }) {
     if (res.ok) json = await res.json();
   } catch { /* fall through to proxy */ }
   if (!json && proxyUrl) {
-    const res = await fetch(proxyUrl);
+    // Versioned by the manifest's build stamp: see versionedUrl in ../manifest.js.
+    const res = await fetch(await versionedDatasetUrl(proxyUrl, 'legal_index'));
     if (!res.ok) {
       throw new Error(
         `Legal index unavailable: ${localUrl} failed and ${proxyUrl} returned ${res.status}.`

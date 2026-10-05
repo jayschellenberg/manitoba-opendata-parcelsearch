@@ -2,6 +2,7 @@
 // legalIndex.worker.js — see that file's comment for the full
 // rationale.
 
+import { versionedDatasetUrl } from '../manifest.js';
 import {
   parseAssessmentIndex,
   lookupAssessment as lookupAssessmentCore,
@@ -31,7 +32,8 @@ async function loadFromUrls({ localUrl, proxyUrl }) {
     if (res.ok) json = await res.json();
   } catch { /* fall through to proxy */ }
   if (!json && proxyUrl) {
-    const res = await fetch(proxyUrl);
+    // Versioned by the manifest's build stamp: see versionedUrl in ../manifest.js.
+    const res = await fetch(await versionedDatasetUrl(proxyUrl, 'assessment_index'));
     if (!res.ok) {
       throw new Error(
         `Assessment-index unavailable: ${localUrl} failed and ${proxyUrl} returned ${res.status}.`
