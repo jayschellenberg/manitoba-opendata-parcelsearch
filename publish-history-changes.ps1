@@ -10,7 +10,7 @@
 #   4. re-pin HISTORICAL_CDN in web/src/arcgis.js to the new commit
 #      (history-pin-lib.ps1), commit + push the app -> Vercel redeploys
 #
-# Run by mao-assembly/refresh-monthly-wrapper.ps1 (Saturdays) right after
+# Run by mao-assembly/refresh-monthly-wrapper.ps1 (Sundays) right after
 # build_parcel_history.R and build_lineage.R --tables. Safe to run by hand.
 # Per-muni shards carry no timestamps, so a week with no parcel change in a
 # muni leaves its file byte-identical and git stores nothing new for it; a

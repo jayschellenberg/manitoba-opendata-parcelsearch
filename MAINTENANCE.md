@@ -511,7 +511,7 @@ keyed on **LINC** (`<muni3>R<roll9>`, as in mao-assembly). Output is local only,
 in `history/` (gitignored); model and table layout are documented at the top of
 `r/parcel_history_lib.R`.
 
-Runs inside `mao-assembly-monthly-refresh` (Saturdays 03:00, despite the name)
+Runs inside `mao-assembly-monthly-refresh` (Sundays 03:00, despite the name)
 right after the RollEntry download, as a **late** step: a failure turns the task
 red but never blocks the input refresh or parquet rebuild.
 ```
