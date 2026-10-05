@@ -553,7 +553,10 @@ two places (`web/src/lib/parcelHistory.js`):
   popup section, and a sale whose parcel was an earlier outline gets that
   outline drawn dashed pink;
 - **Historical → Prior outlines** overlays every superseded outline in the
-  result municipalities.
+  result municipalities;
+- the sales CSV carries `Outline at Sale`, `Outline Change Window (snapshot
+  dates)` and `Outline Acres at Sale`, and Additional filters has an
+  **Outline** filter (Any / Same as today / Changed). Details: DOCUMENTATION.md §5.9.
 
 Try freshly built shards before publishing:
 ```

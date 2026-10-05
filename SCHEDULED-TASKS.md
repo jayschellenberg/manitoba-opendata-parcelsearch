@@ -35,7 +35,7 @@ Operational detail beyond scheduling is in `MAINTENANCE.md`.
 | mb-parcelsearch-du-snapshot | 14th 03:40 | `schedule_du_snapshot.ps1` | `du-snapshot-wrapper.ps1` |
 | mb-parcelsearch-landfacts-refresh | 14th 22:00 | `schedule_landfacts.ps1` | `landfacts-refresh-wrapper.ps1` |
 | mb-parcelsearch-monthly-refresh | 15th 04:00 | `schedule_monthly.ps1` | `monthly-refresh-wrapper.ps1` |
-| mb-parcelsearch-publish-indexes | 15th 04:30 | `schedule_publish.ps1` | `auto-publish-indexes.ps1` (pwsh 7) |
+| mb-parcelsearch-publish-indexes | 15th 04:30 + Wed 10:30 | `schedule_publish.ps1` | `auto-publish-indexes.ps1` (pwsh 7) |
 | mb-parcelsearch-post-refresh-report | 15th 08:00 | `schedule_post_refresh_report.ps1` | `post-refresh-report.ps1` |
 | mb-parcelsearch-parcel-tiles | 16th 03:00 | `schedule_parcel_tiles.ps1` | `rebuild-parcel-tiles.ps1 -IfStale -Publish` |
 | mb-parcelsearch-traffic-refresh | 16th 05:30 | `schedule_traffic_check.ps1` | `traffic-refresh-check.ps1` |
@@ -115,8 +115,12 @@ the shards get committed. **No alerting of its own.**
 rebuilds, manifest validation. No commit or push. Exit 3 means a soft shard failure.
 
 **publish-indexes.** Unattended publish: rebuild indexes from mao-scrape parquets, GitHub
-release, `mb-parcel-data` publish and CDN repin, commit and push the app (Vercel deploys).
-Must run under pwsh 7 (5.1 turns R's stderr into a fatal error).
+release, `mb-parcel-data` publish and CDN repin, commit and push the app (Vercel deploys),
+then `prune-releases.ps1` keeps the newest 4 `data-*` Releases (non-fatal; alerts on failure).
+Weekly since 2026-10-05 so newly sold unmapped rolls' MAO legals reach the site within a week;
+the 15th run stays because the land-facts shards and the 08:00 report depend on it. Two triggers,
+added via task XML (`-MonthlyOnly` for the old cadence). Must run under pwsh 7 (5.1 turns R's
+stderr into a fatal error).
 
 **post-refresh-report.** Read-only summary of what the 04:00 and 04:30 jobs did and whether
 the app's CDN pin advanced. Always sends.

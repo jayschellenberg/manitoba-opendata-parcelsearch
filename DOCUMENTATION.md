@@ -817,6 +817,73 @@ names that layer**, in which case a missing layer, a missing critical field,
 or a 0-feature result also hard-fails. The semiannual publish wrapper passes
 `--require zoning,devplan`, so an automated snapshot is all-or-nothing.
 
+### 5.9 Parcel change history — the outline a sale actually bought (Oct 2026)
+§5.6 compares the semiannual snapshots; this compares **every weekly RollEntry
+download**, so a sale can be matched to the outline its roll had on the sale
+date. Operations (schedule, quarantine, publish, local testing) are in
+MAINTENANCE.md §4a; this section is what the data means and where the app uses it.
+
+- **Key:** LINC = `<3-digit muni>R<roll without '.', left-padded to 9>`
+  (`168R707400000`). `Roll_No_Txt` alone repeats across municipalities.
+- **Versions, not events:** `r/build_parcel_history.R` keeps one row per outline
+  a LINC has had. A new version needs a real reshape: symmetric-difference area
+  > max(5 m², 0.1 % of the larger area) — the geometry hash is only a prefilter,
+  so re-digitising noise is not a change.
+- **Dates are windows.** The province publishes no change dates, so each version
+  carries `open_not_before` / `first_seen` / `last_seen` / `close_not_after`
+  (snapshot dates). A sale inside a window is **ambiguous** — both outlines are
+  candidates. Never a midpoint, and the detection date is never labelled the
+  change date, anywhere (popup, grid, CSV).
+- **Quarantine:** a download that loses > 0.5 % of LINCs or shrinks > 1 % is held
+  back until a repeat confirms it (or `--accept`).
+- **Lineage:** `r/build_lineage.R --tables` links versions (strong edge at ≥ 50 %
+  cover; weak edges ≥ 5 % only to explain an otherwise unexplained version —
+  `prune_weak_edges()` stops fabric-redraw slivers chaining unrelated lots).
+- **Published:** `r/build_change_shards.R` → `mb-parcel-history/changes/<muni>.json`
+  (`rolls` → versions; `outlines` = superseded outlines) + `_index.json`, read
+  through the pinned `HISTORICAL_CDN` (`web/src/lib/parcelHistory.js`,
+  `fetchChangeIndex` / `fetchChangeShard` in `arcgis.js`).
+
+**In the app (Sales Analysis):**
+- **Outline at sale** grid column: *Same as today*, *Same since history began*
+  (sale predates the first snapshot), *Changed since sale*, *Changed near sale*
+  (ambiguous), *Not yet mapped at sale* (new lots are assessed and sold before
+  they are mapped), *Roll retired*. Sortable, most-changed first.
+- Parcel popup **Parcel history** section; a sale on an earlier outline gets that
+  outline drawn dashed pink (`sale-prior-outlines`). **Historical → Prior
+  outlines** overlays every superseded outline in the result municipalities.
+- **Retired rolls:** a sale on a roll RollEntry no longer carries is drawn from
+  its last outline in the history instead of being left unmatched.
+- **CSV export** (sales mode, after *Shape-Derived Basis*): `Outline at Sale`,
+  `Outline Change Window (snapshot dates)` — the two snapshots bracketing the
+  change, `YYYY-MM-DD to YYYY-MM-DD` — and `Outline Acres at Sale`, filled only
+  when one earlier outline certainly sold (`outlineCsvCells()`).
+- **Outline filter** (Additional filters): Any / Same as today / Changed.
+  Group-level (`groupOutlineStatus()`): an assembly is *Changed* if any parcel
+  changed, *Same as today* only if every parcel is known unchanged. Censored
+  ("since history began"), approximate-pin and not-yet-loaded sales pass neither.
+  Has a badge chip and an `Outline at sale` waterfall step.
+
+**Sold rolls that are not on the parcel map.** A sale whose roll RollEntry does
+not carry yet gets an **approximate pin** (`lib/unmappedRolls.js`, flagged
+`_unmapped`; no outline claim; `resolveUnmappedRolls()` in `main.js`). The
+roll's legal comes from the legal index — which includes rolls read from their
+own MAO page (mao-scrape's `scripts/fetch_unmapped_rolls.R`, daily, through
+MAO's roll search; `r/build_legal_index.R` appends them, `parcels.parquet`
+winning on overlap) — or else from the sale record's legal. A legal naming a
+quarter / section is pinned there (MB_LegalDesc survey points); a legal with no
+survey reference goes to the municipality centre. A roll with no legal at all
+is placed by the nearest-numbered mapped rolls (±1000 on the sales path), and
+as a last resort at the municipality centre. Up to 500 pins per load; the
+popup states the placement basis. MAO's Northern Affairs community
+names are mapped to their site names (`northernMuniCandidates()`), and the
+status line says how many loaded sales the filters are hiding
+(`filteredSalesNote()`).
+
+**Index caching:** `/api/legal-index` and `/api/assessment-index` are requested
+with `?v=<manifest generated_at>` (`versionedUrl()` in `web/src/manifest.js`),
+so the edge's 7-day immutable cache cannot pin a stale index after a publish.
+
 ---
 
 ## 6. Evidence-export provenance (CSV + parcel snapshots)
