@@ -61,7 +61,29 @@ if (length(missing)) {
   stop("Input parquet is missing expected columns: ", paste(missing, collapse = ", "))
 }
 
-idx <- parcels[fields]
+idx <- as.data.frame(parcels[fields])
+
+# Sold rolls the province has not mapped (new lots, lease sites, split rolls):
+# mao-scrape's scripts/fetch_unmapped_rolls.R reads their MAO pages through
+# MAO's roll search, since parcels.parquet only ever holds ROLL_ENTRY rolls.
+# Appended so the site's stand-in pins can read the quarter from the page's
+# legal (Elton 119000: "ORG SW-31-11-18-W / LEASE SITE ONLY") instead of
+# guessing from neighbouring roll numbers. parcels.parquet wins on overlap.
+unmapped_path <- file.path(dirname(input), "unmapped_parcels.parquet")
+if (file.exists(unmapped_path)) {
+  um <- as.data.frame(read_parquet(unmapped_path))
+  um <- um[um$status %in% "found" & all(fields %in% names(um)), , drop = FALSE]
+  if (nrow(um)) {
+    um <- um[fields]
+    um$muni_no <- as.integer(um$muni_no)
+    key <- function(d) paste(as.integer(d$muni_no), d$roll_no_txt)
+    um <- um[!key(um) %in% key(idx), , drop = FALSE]
+    for (nm in names(um)) mode(um[[nm]]) <- mode(idx[[nm]])
+    idx <- rbind(idx, um)
+    message("[legal-index] + ", nrow(um), " unmapped roll(s) from ", basename(unmapped_path))
+  }
+}
+
 clean_chr <- function(x) {
   x <- as.character(x)
   x[is.na(x)] <- ""
