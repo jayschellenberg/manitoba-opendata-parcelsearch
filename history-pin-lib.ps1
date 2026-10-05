@@ -11,10 +11,17 @@
 
 $script:HistoryPinPattern = 'mb-parcel-history([@/])([0-9a-f]{40})'
 
+# arcgis.js is BOM-less UTF-8 with non-ASCII in it (em dashes, TACHÉ). Windows
+# PowerShell 5.1's Get-Content reads a BOM-less file as Windows-1252, so reading
+# it that way and writing UTF-8 garbled every non-ASCII character once per
+# re-pin: the weekly runs of 2026-10-04 and 10-05 stacked two layers, and broke
+# the TACHÉ / ST FRANÇOIS XAVIER zoning aliases. Always read AND write UTF-8.
+$script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
 # The pinned SHA, or $null when no pin is found.
 function Get-HistoryPin([string]$ArcgisJs) {
     if (-not (Test-Path $ArcgisJs)) { return $null }
-    $m = [regex]::Match((Get-Content -Raw $ArcgisJs), $script:HistoryPinPattern)
+    $m = [regex]::Match([System.IO.File]::ReadAllText($ArcgisJs, $script:Utf8NoBom), $script:HistoryPinPattern)
     if ($m.Success) { return $m.Groups[2].Value }
     return $null
 }
@@ -23,7 +30,7 @@ function Get-HistoryPin([string]$ArcgisJs) {
 # the file changed. Throws when the file holds no pin at all: a silent no-op is
 # exactly the failure this helper exists to prevent.
 function Set-HistoryPin([string]$ArcgisJs, [string]$Sha) {
-    $content = Get-Content -Raw $ArcgisJs
+    $content = [System.IO.File]::ReadAllText($ArcgisJs, $script:Utf8NoBom)
     if (-not [regex]::IsMatch($content, $script:HistoryPinPattern)) {
         throw "no mb-parcel-history pin found in $ArcgisJs -- has its form changed again?"
     }
@@ -31,6 +38,6 @@ function Set-HistoryPin([string]$ArcgisJs, [string]$Sha) {
     if ($new -eq $content) { return $false }
     # BOM-less UTF-8: Set-Content -Encoding UTF8 adds a BOM under Windows
     # PowerShell 5.1, which would corrupt the JS file's first bytes.
-    [System.IO.File]::WriteAllText($ArcgisJs, $new, (New-Object System.Text.UTF8Encoding($false)))
+    [System.IO.File]::WriteAllText($ArcgisJs, $new, $script:Utf8NoBom)
     return $true
 }

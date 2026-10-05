@@ -99,7 +99,11 @@ finally {
 
 # Rewrite the pinned SHA in arcgis.js. MASC/browser cache keys include
 # this revision, so changing it also invalidates stale 30-day entries.
-$content = Get-Content $arcgisPath -Raw
+# Explicit UTF-8 both ways: arcgis.js is BOM-less UTF-8 with non-ASCII text, and
+# Windows PowerShell 5.1 reads a BOM-less file as Windows-1252 (see
+# history-pin-lib.ps1 for the corruption that caused, 2026-10-04/05).
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$content = [System.IO.File]::ReadAllText($arcgisPath, $utf8NoBom)
 $pattern = "(?m)(export const MB_PARCEL_DATA_REVISION\s*=\s*\r?\n?\s*')([0-9a-f]{7,40})(')"
 $match = [regex]::Match($content, $pattern)
 $existing = if ($match.Success) { $match.Groups[2].Value } else { '' }
@@ -115,7 +119,7 @@ if ($DryRun) {
     { param($m) $m.Groups[1].Value + $headSha + $m.Groups[3].Value },
     1
   )
-  Set-Content -Path $arcgisPath -Value $updated -NoNewline
+  [System.IO.File]::WriteAllText($arcgisPath, $updated, $utf8NoBom)
   Write-Host "arcgis.js: SHA $existing -> $headSha"
 }
 
