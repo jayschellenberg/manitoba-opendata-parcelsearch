@@ -10,7 +10,7 @@ thumb: nothing should go more than ~12 months stale.**
 | Dataset | Source of truth | Served from | Cadence |
 |---|---|---|---|
 | Live parcels / zoning / dev-plan | ArcGIS (live) | ArcGIS, live | always current *to the provincial extract* — see below |
-| Legal index, assessment index | mao-scrape `parcels.parquet` | GitHub Release → `api/legal-index.js` / `api/assessment-index.js` edge fns | monthly |
+| Legal index, assessment index | mao-scrape `parcels.parquet` | GitHub Release → `api/legal-index.js` / `api/assessment-index.js` edge fns | monthly (15th 04:30) + weekly (Wed 10:30) |
 | Section grid | MB_LegalDesc service | `section-grid.pmtiles` on R2 (`rebuild-section-grid-tiles.ps1`) | rare, manual (geometry doesn't change) |
 | RollEntry snapshot (fallback), parcel-masc, assessment shards, masc shards, landcover shards, river-lots, masc-riverlots | various R build scripts | `mb-parcel-data` repo → raw.githubusercontent (pinned commit) | monthly-ish |
 | Land-cover Detailed raster | 2020 LCR raster | `mb-landcover.pmtiles` on R2 (`r/pack_landcover_pmtiles.R`) | rare — only a new raster (§6) |
@@ -222,7 +222,9 @@ The province-wide section grid is not on this CDN: it renders from
 > was removed on 2026-09-29 (see §1c).
 
 **This repin now also happens automatically.** `auto-publish-indexes.ps1`
-(scheduled monthly by `schedule_publish.ps1`) calls `update-cdn-pin.ps1` as its
+(scheduled by `schedule_publish.ps1`: the 15th at 04:30 plus every Wednesday
+at 10:30, so a newly sold unmapped roll's MAO legal reaches the site within a
+week — see the registrar header) calls `update-cdn-pin.ps1` as its
 step 4, then commits `web/src/arcgis.js` alongside the edge-fn URL bumps. That
 closes a hole found 2026-08-05: `build_assessment_index.R` writes its per-muni
 shards straight into the mb-parcel-data clone as a side effect, but nothing in
@@ -1532,6 +1534,7 @@ powershell -ExecutionPolicy Bypass -File schedule_post_refresh_report.ps1   # mb
 powershell -ExecutionPolicy Bypass -File schedule_basemap.ps1        # mb-parcelsearch-basemap-refresh   — Jan 2 / Jul 2 03:00 (Protomaps streets basemap re-cut + publish, both buckets)
 powershell -ExecutionPolicy Bypass -File schedule_basemap_check.ps1  # mb-parcelsearch-basemap-staleness — daily 09:15 (basemap dead-man watchdog, reads the public sidecars)
 powershell -ExecutionPolicy Bypass -File schedule_du_snapshot.ps1    # mb-parcelsearch-du-snapshot       — 14th monthly 03:40 (dwelling-unit snapshot; feeds the New Multi-Family layer, §6e)
+powershell -ExecutionPolicy Bypass -File schedule_publish.ps1       # mb-parcelsearch-publish-indexes    — 15th monthly 04:30 + Wed 10:30 (legal/assessment index Release + app push)
 ```
 
 #### Run these from an ELEVATED prompt (2026-08-12: tasks are now S4U)

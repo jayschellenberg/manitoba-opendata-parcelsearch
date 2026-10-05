@@ -6,13 +6,23 @@
 # self-alerts (email + ntfy) on failure, so no separate wrapper is needed.
 #
 # Cadence:
-#   default        -> MONTHLY on the 15th at 04:30 (the project's documented index cadence)
+#   default        -> the 15th of every month at 04:30 (the land-facts crop shards built
+#                     the 14th and the 08:00 post-refresh report both rely on this run)
+#                     PLUS every Wednesday at 10:30 (since 2026-10-05). mao-scrape reads
+#                     the MAO page of newly sold UNMAPPED rolls daily, and those legals
+#                     reach the site only through this index, so a monthly-only publish
+#                     left a new lot's sale on a neighbour-roll guess for up to a month.
+#                     Wednesday 10:30 is clear of the nightly delta (21:00-07:00), the
+#                     daily unmapped-roll fetch (09:15) and Sunday's history publish,
+#                     which also pushes the app. Each run is a new GitHub Release.
+#   -MonthlyOnly   -> the 15th at 04:30 only (the cadence before 2026-10-05)
 #   -Semiannual    -> JAN + JUL on the 15th at 04:30 (matches the ~2x/year data refresh;
 #                     fewer 130 MB Releases, date stays inside the green staleness window)
 # Idempotent: re-run to change cadence / replace the task.
 #
 # Usage:
-#   powershell -ExecutionPolicy Bypass -File schedule_publish.ps1                # monthly
+#   powershell -ExecutionPolicy Bypass -File schedule_publish.ps1                # 15th + Wednesdays
+#   powershell -ExecutionPolicy Bypass -File schedule_publish.ps1 -MonthlyOnly   # 15th only
 #   powershell -ExecutionPolicy Bypass -File schedule_publish.ps1 -Semiannual    # Jan/Jul
 #
 # Manage:
@@ -20,7 +30,7 @@
 #   Start-ScheduledTask  -TaskName mb-parcelsearch-publish-indexes                 # run immediately
 #   Unregister-ScheduledTask -TaskName mb-parcelsearch-publish-indexes -Confirm:$false   # cancel
 
-param([switch]$Semiannual)
+param([switch]$Semiannual, [switch]$MonthlyOnly)
 
 $ErrorActionPreference = 'Stop'
 # PowerShell 7 turns native-command stderr/nonzero-exit into a throw under -Stop; we rely
@@ -70,6 +80,23 @@ if ($Semiannual) {
   $recur = '15th of every month at 04:30'
 }
 if ($LASTEXITCODE -ne 0) { Write-Error "schtasks /Create failed (exit $LASTEXITCODE)"; exit $LASTEXITCODE }
+
+# Default cadence adds the weekly trigger to the monthly one schtasks created.
+# schtasks makes one trigger per task, and Set-ScheduledTask -Trigger cannot
+# take the monthly trigger back ("The parameter is incorrect", 2026-10-05: the
+# cmdlets have no day-of-month trigger class). So the weekly trigger goes in
+# through the task XML instead; the Set-ScheduledTask calls below keep it.
+if (-not $Semiannual -and -not $MonthlyOnly) {
+  [xml]$taskXml = Export-ScheduledTask -TaskName $TaskName
+  $ns    = $taskXml.DocumentElement.NamespaceURI
+  $start = (Get-Date).Date.AddHours(10.5).ToString('s')
+  $weekly = [xml]("<CalendarTrigger xmlns=`"$ns`"><StartBoundary>$start</StartBoundary>" +
+    "<Enabled>true</Enabled><ScheduleByWeek><DaysOfWeek><Wednesday /></DaysOfWeek>" +
+    "<WeeksInterval>1</WeeksInterval></ScheduleByWeek></CalendarTrigger>")
+  $taskXml.Task.Triggers.AppendChild($taskXml.ImportNode($weekly.DocumentElement, $true)) | Out-Null
+  Register-ScheduledTask -TaskName $TaskName -Xml $taskXml.OuterXml -Force | Out-Null
+  $recur += ' + every Wednesday at 10:30'
+}
 
 # Overwrite the action with the properly-quoted pwsh 7 invocation, and add the battery +
 # start-when-available flags schtasks doesn't expose -- in one Set-ScheduledTask call.
