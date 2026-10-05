@@ -337,6 +337,7 @@ import {
 import { parseSaleDate, saleDateSortKey } from './lib/saleDate.js';
 import {
   matchSaleToHistory, historyLabel, historyRank, toIsoDay, saleOutlineFeatures,
+  historyMuniNoForName, historicalRollFeatures,
 } from './lib/parcelHistory.js';
 import { computeSizeChanges } from './lib/sizeChange.js';
 import { indexHistoricalGeometry, applyHistoricalGeometry } from './lib/historicalHighlight.js';
@@ -5697,10 +5698,9 @@ async function handleSalesUpload(file) {
       // repeat-sold parcel gets its own table row, sale-group rollup and
       // export line per transaction. Only the _saleSeq 0 feature is
       // drawn on the map — see dedupeParcelFeaturesForMap().
-      const { features, matchedRolls, matchedSales } = expandFeaturesBySale(
-        fc.features,
-        salesByRoll,
-        (p, sale, saleSeq, sales) => {
+      // Named so the parcels drawn from the change history (below) get
+      // exactly the same sale stamping as the ones Roll_Entry returned.
+      const stampSale = (p, sale, saleSeq, sales) => {
           // Group date/price: parseSalesCsv already copied the
           // primary's saleDate + consideration onto every member of
           // the group, so reading them here works regardless of
@@ -5754,8 +5754,32 @@ async function handleSalesUpload(file) {
               .map((s) => [s.saleDate || 'undated', s.consideration || ''].join(' ').trim())
               .join(' · ');
           }
-        },
-      );
+      };
+      const expanded = expandFeaturesBySale(fc.features, salesByRoll, stampSale);
+      const features = expanded.features;
+      const matchedRolls = expanded.matchedRolls;
+      let matchedSales = expanded.matchedSales;
+
+      // Rolls Roll_Entry no longer has: draw them from their last outline in
+      // the parcel change history instead of leaving the sale unplottable.
+      // Skipped when the lookup was truncated (those rolls were never asked
+      // about, so they are not known to be missing).
+      let fromHistory = 0;
+      const missing = lookupTruncated ? [] : [...salesByRoll.keys()].filter((r) => !matchedRolls.has(r));
+      if (missing.length) {
+        try {
+          const hist = await historicalRollFeaturesForMuni(muni, missing);
+          if (hist.length) {
+            const more = expandFeaturesBySale(hist, salesByRoll, stampSale);
+            features.push(...more.features);
+            for (const r of more.matchedRolls) matchedRolls.add(r);
+            matchedSales += more.matchedSales;
+            fromHistory = more.matchedSales;
+          }
+        } catch (err) {
+          console.warn(`Parcel history lookup for ${muni}'s missing rolls failed (non-fatal)`, err);
+        }
+      }
       fc = { ...fc, features };
 
       return {
@@ -5764,6 +5788,7 @@ async function handleSalesUpload(file) {
         total: recs.length,
         matched: matchedSales,
         parcels: matchedRolls.size,
+        fromHistory,
         duplicateRows,
         lookupTruncated,
         // Roll_No_Txt simply not in Roll_Entry for this muni (most
@@ -5794,11 +5819,13 @@ async function handleSalesUpload(file) {
     // raw CSV row count is what made the old line unreadable.
     let totalParcels = 0;
     let totalDuplicateRows = 0;
+    let totalFromHistory = 0;
     for (const r of results) {
       parcelFc.features.push(...(r.fc.features || []));
       totalMatched += r.matched;
       totalParcels += r.parcels || 0;
       totalDuplicateRows += (r.duplicateRows || []).length;
+      totalFromHistory += r.fromHistory || 0;
       unmatchedRecords.push(...(r.unmatched || []));
     }
     // Munis whose roll lookup stopped short. This has to be said out loud: a
@@ -5997,8 +6024,12 @@ async function handleSalesUpload(file) {
     // polygons otherwise reads as a rendering glitch rather than a finding.
     const withheldMsg = withheldNote(lastWithheldGeometry);
     const withheldNoteText = withheldMsg ? ` · ${withheldMsg}` : '';
+    // Sales on retired rolls, plotted from their last outline in the change history.
+    const historyNote = totalFromHistory > 0
+      ? ` · ${totalFromHistory} on retired roll${totalFromHistory === 1 ? '' : 's'}, drawn from prior outlines`
+      : '';
     const baseMsg = `${totalMatched} of ${totalSales} sales plotted${parcelNote}`
-                  + `${dupeNote}${unmatchedNote}${truncNote}${withheldNoteText}`;
+                  + `${historyNote}${dupeNote}${unmatchedNote}${truncNote}${withheldNoteText}`;
     renderUnmatchedPanel(unmatchedRecords);
 
     // Auto-set the muni dropdown to a "dominant" muni — the one with
@@ -9955,6 +9986,21 @@ async function stampSaleHistory(parcelFc) {
   // Not awaited: the grid must not wait on the map (a background tab never
   // finishes loading it), and the outlines land whenever it is ready.
   mapReady.then(() => setSalePriorOutlinesData(map, { type: 'FeatureCollection', features: outlines }));
+}
+
+/**
+ * Parcel features for `rolls` of `muniName` (Roll Entry's "RITCHOT (RM)")
+ * that are absent from Roll_Entry but present in the change history — i.e.
+ * retired rolls, drawn from their last outline. [] when the history or the
+ * muni's shard is unavailable: the sales then stay unmatched, as before.
+ */
+async function historicalRollFeaturesForMuni(muniName, rolls) {
+  const index = await fetchChangeIndex();
+  const muniNo = historyMuniNoForName(index, muniName);
+  if (muniNo == null) return [];
+  const shard = await fetchChangeShard(muniNo);
+  if (!shard) return [];
+  return historicalRollFeatures(shard, rolls, { muniNo, muniName });
 }
 
 /** Municipality numbers of the rows currently in the grid. */

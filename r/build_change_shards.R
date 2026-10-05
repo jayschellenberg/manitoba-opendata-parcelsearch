@@ -5,7 +5,7 @@
 # mb-parcel-history clone:
 #
 #   changes/_index.json        { schema, generated, first_snapshot, last_snapshot,
-#                                quarantined, disclaimer, munis: { "<muni_no>": {rolls, outlines} } }
+#                                quarantined, disclaimer, munis: { "<muni_no>": {name, rolls, outlines} } }
 #   changes/<muni_no>.json     { schema, muni_no,
 #                                rolls:    { "<Roll_No_Txt>": [version, ...] },  -- sale matching
 #                                outlines: GeoJSON FeatureCollection }           -- superseded outlines
@@ -126,6 +126,18 @@ geojson_text <- function(x) {
   paste(readLines(f, warn = FALSE, encoding = "UTF-8"), collapse = "")
 }
 
+# Roll Entry's own muni names ("RITCHOT (RM)"), from the newest weekly
+# snapshot. The app's sales path knows a sale only by that name, so the index
+# carries it for the name -> number lookup that finds a retired roll's shard.
+newest_gpkg <- tail(sort(list.files(mb_parcelsearch_root, "^RollEntry_\\d{8}\\.gpkg$", full.names = TRUE)), 1)
+muni_names <- if (length(newest_gpkg)) {
+  nm <- sf::st_read(newest_gpkg, quiet = TRUE,
+                    query = "SELECT DISTINCT Municipality, Muni_Name_With_Typ FROM roll_entry")
+  nm$muni_no <- suppressWarnings(as.integer(sub(" - .*$", "", nm$Municipality)))
+  nm <- nm[!is.na(nm$muni_no) & !duplicated(nm$muni_no), ]
+  setNames(nm$Muni_Name_With_Typ, nm$muni_no)
+} else character()
+
 dir.create(OUT, showWarnings = FALSE, recursive = TRUE)
 munis <- sort(unique(vt$muni_no))
 idx <- list()
@@ -144,7 +156,8 @@ for (mn in munis) {
   fp <- file.path(OUT, paste0(mn, ".json"))
   old <- if (file.exists(fp)) paste(readLines(fp, warn = FALSE, encoding = "UTF-8"), collapse = "") else ""
   if (!identical(old, txt)) { writeLines(txt, fp, useBytes = TRUE); written <- written + 1L }
-  idx[[as.character(mn)]] <- list(rolls = length(rolls), outlines = nrow(mo))
+  idx[[as.character(mn)]] <- list(name = unname(muni_names[as.character(mn)]) %||% NA_character_,
+                                  rolls = length(rolls), outlines = nrow(mo))
 }
 # Remove shards for munis that no longer have any change (rare: a rebuild).
 stale <- setdiff(sub("\\.json$", "", list.files(OUT, pattern = "^\\d+\\.json$")), as.character(munis))

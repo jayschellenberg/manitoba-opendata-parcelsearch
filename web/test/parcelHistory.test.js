@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import {
   toIsoDay, matchSaleToHistory, historyLabel, historyRank, fmtDay, fmtArea,
   changeWindowText, priorOutlineHtml, saleHistoryHtml, saleOutlineFeatures,
+  historyMuniNoForName, historicalRollFeatures,
 } from '../src/lib/parcelHistory.js';
 
 const results = [];
@@ -121,6 +122,57 @@ test('sale outline features: the superseded outline(s) only', () => {
   assert.equal(saleOutlineFeatures(shard, '1.000', st('1.000', '2026-01-10')).length, 1);
   assert.equal(saleOutlineFeatures(shard, '1.000', st('1.000', '2026-01-18')).length, 1);
   assert.equal(saleOutlineFeatures(shard, '1.000', st('1.000', '2026-02-01')).length, 0);
+});
+
+// ---- retired rolls drawn from the history ----
+const rIndex = { ...index, munis: { '165': { name: 'RITCHOT (RM)' }, '101': { name: 'ALONSA (RM)' } } };
+const rShard = {
+  rolls: {
+    // Retired: two outlines, both closed.
+    '5.000': [
+      { fs: '2026-01-01', ls: '2026-01-08', onb: null, cna: '2026-01-15', o: 'baseline', c: 'reshaped', a: 1000 },
+      { fs: '2026-01-15', ls: '2026-01-15', onb: '2026-01-08', cna: '2026-01-22', o: 'reshaped', c: 'retired', a: 900,
+        to: ['6.000'], rel: 'consolidation' },
+    ],
+    // Still current: must not be rescued.
+    '1.000': rolls['1.000'],
+  },
+  outlines: { type: 'FeatureCollection', features: [
+    { type: 'Feature', geometry: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] },
+      properties: { roll: '5.000', fs: '2026-01-01', ls: '2026-01-08', cna: '2026-01-15', c: 'reshaped' } },
+    { type: 'Feature', geometry: { type: 'Polygon', coordinates: [[[0, 0], [2, 0], [2, 2], [0, 0]]] },
+      properties: { roll: '5.000', fs: '2026-01-15', ls: '2026-01-15', cna: '2026-01-22', c: 'retired' } },
+    { type: 'Feature', geometry: { type: 'Polygon', coordinates: [[[0, 0], [3, 0], [3, 3], [0, 0]]] },
+      properties: { roll: '1.000', fs: '2026-01-01', ls: '2026-01-15', cna: '2026-01-22', c: 'reshaped' } },
+  ] },
+};
+
+test('muni name -> number from the change index, case/space-insensitive', () => {
+  assert.equal(historyMuniNoForName(rIndex, 'ritchot  (rm)'), 165);
+  assert.equal(historyMuniNoForName(rIndex, 'NOWHERE (RM)'), null);
+  assert.equal(historyMuniNoForName(null, 'RITCHOT (RM)'), null);
+});
+
+test('retired roll becomes a feature from its LAST outline; a current roll is not rescued', () => {
+  const feats = historicalRollFeatures(rShard, ['5.000', '1.000', '7.000'], { muniNo: 165, muniName: 'RITCHOT (RM)' });
+  assert.equal(feats.length, 1);
+  const p = feats[0].properties;
+  assert.equal(p.Roll_No_Txt, '5.000');
+  assert.equal(p.Municipality, '165 - RITCHOT (RM)');
+  assert.equal(p._fromHistory, true);
+  assert.ok(p.OBJECTID >= 2_000_000_000, 'synthetic OBJECTID outside ROLL_ENTRY range');
+  assert.deepEqual(feats[0].geometry.coordinates[0][1], [2, 0]);
+});
+
+test('a sale on a retired roll matches its outline and the popup says the roll is gone', () => {
+  const m = matchSaleToHistory(rShard.rolls, '5.000', '2026-01-18', rIndex);
+  assert.equal(m.state, 'prior');
+  const html = saleHistoryHtml(m, rIndex);
+  assert.match(html, /This roll no longer exists/);
+  assert.match(html, /retired between Jan 15, 2026 and Jan 22, 2026/);
+  assert.match(html, /land now in 6\.000/);
+  // After retirement there is no candidate at all.
+  assert.equal(matchSaleToHistory(rShard.rolls, '5.000', '2026-02-01', rIndex).state, 'retired');
 });
 
 const passed = results.reduce((a, b) => a + b, 0);

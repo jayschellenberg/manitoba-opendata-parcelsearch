@@ -168,6 +168,12 @@ export function saleHistoryHtml(m, index) {
       const v = m.candidates[0];
       rows.push(`Today's outline was already in place: it appeared ${esc(changeWindowText({ ls: v.onb, cna: v.fs }, index))}, before the sale.`);
     }
+  } else if (m.state === 'prior' && m.candidates[0]?.c === 'retired') {
+    const v = m.candidates[0];
+    rows.push(`<strong>This roll no longer exists.</strong> It was retired ${esc(changeWindowText(v, index))}, after the sale; the parcel is drawn from its last outline in the history.`);
+    rows.push(`Area at sale: ${esc(fmtArea(v.a))}`);
+    if (m.censored) rows.push(`<small>Outline as of ${esc(first)}; the sale predates the history.</small>`);
+    rows.push(lineageLine(v.rel, v.to, '→ land now in').replace(/^<br>/, ''));
   } else if (m.state === 'prior') {
     const v = m.candidates[0];
     rows.push(`<strong>The parcel that sold is not today's outline.</strong> It changed ${esc(changeWindowText(v, index))}, after the sale.`);
@@ -190,6 +196,69 @@ export function saleHistoryHtml(m, index) {
     + `<strong style="color:#be185d">Parcel history</strong> <span style="color:#888">(${WINDOW_NOTE})</span><br>`
     + rows.filter(Boolean).join('<br>')
     + `</div>`;
+}
+
+const normName = (s) => String(s || '').toUpperCase().replace(/\s+/g, ' ').trim();
+
+/**
+ * Muni number for a Roll Entry muni name ("RITCHOT (RM)"), from the change
+ * index's per-muni `name`. Null when the index does not list the muni — which
+ * also means it has no retired rolls to find.
+ */
+export function historyMuniNoForName(index, name) {
+  const want = normName(name);
+  if (!want || !index?.munis) return null;
+  for (const [no, info] of Object.entries(index.munis)) {
+    if (normName(info?.name) === want) return Number(no);
+  }
+  return null;
+}
+
+// OBJECTIDs for parcels drawn from the history. ROLL_ENTRY's own run to
+// about 450k, so these can never collide with a live parcel — anything that
+// looks one up in the service simply finds nothing.
+const HISTORY_OID_BASE = 2_000_000_000;
+let historyOidSeq = 0;
+
+/**
+ * Parcel features for rolls that are NOT in today's Roll_Entry but are in the
+ * change history: retired rolls, drawn from the last outline they had. One
+ * feature per roll (the sales pipeline clones it per sale); the per-sale
+ * outline, where a roll had several, is drawn by saleOutlineFeatures.
+ *
+ * A roll whose history still has a CURRENT version is skipped: it exists
+ * today, so a Roll_Entry miss is some other problem and must stay unmatched
+ * rather than be papered over with an old outline.
+ *
+ * @param {object} shard   changes/<muni_no>.json
+ * @param {string[]} rolls Roll_No_Txt values Roll_Entry did not return
+ * @param {{muniNo:number, muniName:string}} muni
+ * @returns {object[]} GeoJSON features with Roll_Entry-shaped properties
+ */
+export function historicalRollFeatures(shard, rolls, { muniNo, muniName }) {
+  const out = [];
+  for (const roll of rolls || []) {
+    const versions = shard?.rolls?.[roll];
+    if (!versions?.length || versions.some((v) => v.cna == null)) continue;
+    const outlines = (shard.outlines?.features || []).filter((f) => f.properties?.roll === roll && f.geometry);
+    if (!outlines.length) continue;
+    const last = outlines.reduce((a, b) => (b.properties.fs > a.properties.fs ? b : a));
+    out.push({
+      type: 'Feature',
+      geometry: last.geometry,
+      properties: {
+        OBJECTID: HISTORY_OID_BASE + (++historyOidSeq),
+        Roll_No_Txt: roll,
+        Municipality: `${muniNo} - ${muniName}`,
+        Muni_Name_With_Typ: muniName,
+        Property_Address: null,
+        // Marks the row and popup: this parcel is from the history, not Roll_Entry.
+        _fromHistory: true,
+        _retiredWindow: changeWindowText(last.properties, null),
+      },
+    });
+  }
+  return out;
 }
 
 /**
