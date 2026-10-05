@@ -52,7 +52,9 @@ export function lastSeen(v, index) {
  *   state: 'current'   — today's outline is the one that sold
  *          'prior'     — an earlier outline sold (see candidates[0])
  *          'ambiguous' — the outline changed in a window that spans the sale
- *          'not_yet'   — the roll did not exist yet (see `from` for its parents)
+ *          'not_yet'   — the roll was not yet on the province's parcel map (it may
+ *                        well have existed in MAO: new lots are assessed and
+ *                        sold before they are mapped). `from` = its parents.
  *          'retired'   — sale after the roll was retired (data mismatch)
  *          'unknown'   — no usable sale date
  */
@@ -82,7 +84,7 @@ const LABELS = {
   current:   'Same as today',
   prior:     'Changed since sale',
   ambiguous: 'Changed near sale',
-  not_yet:   'Roll created after sale',
+  not_yet:   'Not yet mapped at sale',
   retired:   'Roll retired',
 };
 
@@ -187,7 +189,7 @@ export function saleHistoryHtml(m, index) {
     rows.push(`Areas: ${m.candidates.map((v) => esc(fmtArea(v.a))).join(' or ')}`);
   } else if (m.state === 'not_yet') {
     const v = m.earliest;
-    rows.push(`<strong>This roll did not exist on the sale date</strong>; it first appears ${esc(fmtDay(v?.fs))}.`);
+    rows.push(`<strong>This roll was not yet on the province's parcel map on the sale date</strong>; it first appears ${esc(fmtDay(v?.fs))}. New lots are often assessed and sold before they are mapped, so the outline shown is today's.`);
     if (v?.from?.length) rows.push(lineageLine(v.rel, v.from, '← carved from').replace(/^<br>/, ''));
   } else if (m.state === 'retired') {
     rows.push('The sale is dated after this roll was retired; check the roll number.');

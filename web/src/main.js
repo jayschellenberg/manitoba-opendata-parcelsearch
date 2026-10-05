@@ -4346,18 +4346,34 @@ async function placeByNeighbourRolls(rolls, muniNo, muniFeats, seqBase) {
  * otherwise at the middle of the municipality. Never throws: any failure just
  * means fewer pins, and the roll is reported as not found as before.
  */
-async function resolveUnmappedRolls(missingRolls, municipality) {
+async function resolveUnmappedRolls(missingRolls, municipality, { fallbackLegal = null } = {}) {
   if (!missingRolls?.length) return [];
   try {
     const canonical = [...new Set(missingRolls.map((r) => canonicalRoll(r)))];
-    const [recsByRoll, muniFeats] = await Promise.all([
+    const [legalRecs, muniFeats] = await Promise.all([
       lookupLegalRecordsByRollSet(canonical),
       municipalityFeatures().catch(() => []),
     ]);
+    const recsByRoll = new Map(legalRecs || []);
     const muniNo = municipality ? muniNoForListName(muniFeats, municipality) : null;
     // A picked municipality the boundary file can't name would otherwise
     // widen the lookup to every municipality — stand down instead.
     if (municipality && muniNo == null) return [];
+    // Sales path: the sale record carries its own legal description. A roll
+    // the province has not mapped is usually missing from the legal index
+    // too (the MAO scrape follows ROLL_ENTRY), so where the sale's legal
+    // names a quarter or section, use it. A legal with no survey reference (a
+    // lot on a plan) adds nothing a neighbour placement wouldn't do better,
+    // so those are left to the neighbour pass below.
+    if (fallbackLegal && muniNo != null) {
+      for (const r of canonical) {
+        if ((recsByRoll.get(r) || []).some((rec) => Number(rec.muni_no) === Number(muniNo))) continue;
+        const fb = fallbackLegal.get(r);
+        const rec = { muni_no: muniNo, roll_no_txt: r, municipality,
+                      legal_description: fb?.legal_description || '', civic_address: fb?.civic_address || '' };
+        if (strRefsFromRecord(rec).length) recsByRoll.set(r, [...(recsByRoll.get(r) || []), rec]);
+      }
+    }
     const recs = selectUnmappedRecords(canonical, recsByRoll, muniNo);
 
     // One MB_LegalDesc query per distinct section across every record.
@@ -5780,6 +5796,38 @@ async function handleSalesUpload(file) {
           console.warn(`Parcel history lookup for ${muni}'s missing rolls failed (non-fatal)`, err);
         }
       }
+
+      // Still missing: rolls MAO has assessed (and sold) but the province has
+      // not mapped yet — newly registered subdivision lots, split rolls,
+      // Northern Affairs land. Same stand-in as a roll search: an approximate
+      // pin from the legal description's quarter/section, the municipality,
+      // or the nearest-numbered mapped rolls (lib/unmappedRolls.js). Never
+      // throws; a roll it cannot place stays unmatched as before.
+      let unmappedSales = 0;
+      const stillMissing = lookupTruncated ? [] : [...salesByRoll.keys()].filter((r) => !matchedRolls.has(r));
+      if (stillMissing.length) {
+        const fallbackLegal = new Map(stillMissing.map((r) => {
+          const s = salesByRoll.get(r)?.[0] || {};
+          return [canonicalRoll(r), { legal_description: s.legalDescription || '', civic_address: s.streetAddress || '' }];
+        }));
+        const pins = await resolveUnmappedRolls(stillMissing, muni, { fallbackLegal });
+        // Re-key to the sale's own roll spelling, and give each pin an id that
+        // is unique across municipalities (resolveUnmappedRolls numbers from 1
+        // per call, which the per-parcel dedupe would merge across munis).
+        const byCanon = new Map(stillMissing.map((r) => [canonicalRoll(r), r]));
+        for (const f of pins) {
+          const k = byCanon.get(canonicalRoll(f.properties.Roll_No_Txt));
+          if (k) f.properties.Roll_No_Txt = k;
+          f.properties.OBJECTID = nextSalePinOid();
+        }
+        if (pins.length) {
+          const more = expandFeaturesBySale(pins, salesByRoll, stampSale);
+          features.push(...more.features);
+          for (const r of more.matchedRolls) matchedRolls.add(r);
+          matchedSales += more.matchedSales;
+          unmappedSales = more.matchedSales;
+        }
+      }
       fc = { ...fc, features };
 
       return {
@@ -5789,6 +5837,7 @@ async function handleSalesUpload(file) {
         matched: matchedSales,
         parcels: matchedRolls.size,
         fromHistory,
+        unmappedSales,
         duplicateRows,
         lookupTruncated,
         // Roll_No_Txt simply not in Roll_Entry for this muni (most
@@ -5820,12 +5869,14 @@ async function handleSalesUpload(file) {
     let totalParcels = 0;
     let totalDuplicateRows = 0;
     let totalFromHistory = 0;
+    let totalUnmappedSales = 0;
     for (const r of results) {
       parcelFc.features.push(...(r.fc.features || []));
       totalMatched += r.matched;
       totalParcels += r.parcels || 0;
       totalDuplicateRows += (r.duplicateRows || []).length;
       totalFromHistory += r.fromHistory || 0;
+      totalUnmappedSales += r.unmappedSales || 0;
       unmatchedRecords.push(...(r.unmatched || []));
     }
     // Munis whose roll lookup stopped short. This has to be said out loud: a
@@ -6028,8 +6079,11 @@ async function handleSalesUpload(file) {
     const historyNote = totalFromHistory > 0
       ? ` · ${totalFromHistory} on retired roll${totalFromHistory === 1 ? '' : 's'}, drawn from prior outlines`
       : '';
+    const unmappedSaleNote = totalUnmappedSales > 0
+      ? ` · ${totalUnmappedSales} not yet on the parcel map, shown at an approximate location`
+      : '';
     const baseMsg = `${totalMatched} of ${totalSales} sales plotted${parcelNote}`
-                  + `${historyNote}${dupeNote}${unmatchedNote}${truncNote}${withheldNoteText}`;
+                  + `${historyNote}${unmappedSaleNote}${dupeNote}${unmatchedNote}${truncNote}${withheldNoteText}`;
     renderUnmatchedPanel(unmatchedRecords);
 
     // Auto-set the muni dropdown to a "dominant" muni — the one with
@@ -9967,6 +10021,9 @@ async function stampSaleHistory(parcelFc) {
       const p = f.properties || {};
       const n = muniNoFromProps(p);
       if (n == null) continue;
+      // An approximate pin has no outline to compare: no claim (the row's
+      // own "not on the parcel map" tag already says what it is).
+      if (p._unmapped) continue;
       const shard = shards.get(n);
       // Listed in the index but the shard did not arrive: no claim. Not
       // listed: the muni has no recorded change, so every roll is current.
@@ -10002,6 +10059,11 @@ async function historicalRollFeaturesForMuni(muniName, rolls) {
   if (!shard) return [];
   return historicalRollFeatures(shard, rolls, { muniNo, muniName });
 }
+
+// Ids for approximate sale pins: unique across a whole upload and clear of
+// ROLL_ENTRY's (~450k) and the history-drawn parcels' (2,000,000,000+) ranges.
+let salePinOidSeq = 0;
+function nextSalePinOid() { return 2_100_000_000 + (++salePinOidSeq); }
 
 /** Municipality numbers of the rows currently in the grid. */
 function resultMuniNos() {

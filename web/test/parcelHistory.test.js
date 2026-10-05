@@ -77,6 +77,10 @@ test('a sale before a new roll existed: not_yet, with its parent roll', () => {
   const m = st('1.100', '2026-01-05');
   assert.equal(m.state, 'not_yet');
   assert.deepEqual(m.earliest.from, ['1.000']);
+  // "Not mapped yet", not "did not exist": MAO assesses and sells new lots
+  // before the province maps them.
+  assert.equal(historyLabel(m), 'Not yet mapped at sale');
+  assert.match(saleHistoryHtml(m, index), /not yet on the province's parcel map/);
   assert.match(saleHistoryHtml(m, index), /carved from 1\.000/);
 });
 
