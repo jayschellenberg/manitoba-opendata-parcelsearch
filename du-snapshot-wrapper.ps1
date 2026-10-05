@@ -127,5 +127,33 @@ elseif ($code -ne 0) {
     Write-Host ('[du-snapshot] FAILED (exit {0}) - see {1}' -f $code, $LogFile)
     exit $code
 }
+# ---- Commit + push du-snapshots/ in mb-parcel-history ------------------------
+# The repo is the durable record; the Dropbox working copy is not. Until
+# 2026-10-05 nothing committed the output, so the 2026-09-14 delta sat
+# untracked for three weeks. Stages ONLY du-snapshots/ (the weekly history
+# publish owns changes/), refuses off main, and adds the whole folder so a run
+# whose commit failed is picked up by the next one. A failure here exits 4:
+# the snapshot itself was written, and task-health reports the nonzero result.
+if (-not $DryRun) {
+    $HistRepo = Join-Path (Split-Path $ScriptDir -Parent) 'mb-parcel-history'
+    $ErrorActionPreference = 'Continue'
+    $branch = (& git -C $HistRepo branch --show-current 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or $branch -ne 'main') {
+        Write-Host ("[du-snapshot] NOT committed: {0} is on '{1}', not main." -f $HistRepo, $branch)
+        exit 4
+    }
+    & git -C $HistRepo add -- du-snapshots 2>&1 | Tee-Object -FilePath $LogFile -Append
+    & git -C $HistRepo diff --cached --quiet -- du-snapshots
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host '[du-snapshot] no change to commit.'
+    } else {
+        & git -C $HistRepo commit -q -m ("DU snapshot {0}" -f (Get-Date -Format 'yyyy-MM-dd')) -- du-snapshots 2>&1 |
+            Tee-Object -FilePath $LogFile -Append
+        if ($LASTEXITCODE -ne 0) { Write-Host '[du-snapshot] git commit FAILED.'; exit 4 }
+        & git -C $HistRepo push -q origin main 2>&1 | Tee-Object -FilePath $LogFile -Append
+        if ($LASTEXITCODE -ne 0) { Write-Host '[du-snapshot] git push FAILED (committed locally).'; exit 4 }
+        Write-Host '[du-snapshot] committed and pushed du-snapshots/.'
+    }
+}
 Write-Host '[du-snapshot] done.'
 exit 0

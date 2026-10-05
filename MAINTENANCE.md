@@ -1050,6 +1050,12 @@ pass `-Force` once you have confirmed the loss is real. Only *losses* are
 gated — a mass gain cannot come from truncation, and capping gains would
 suppress exactly the construction wave the layer exists to catch.
 
+**The wrapper commits its own output** (since 2026-10-05): after a successful
+run it commits and pushes `mb-parcel-history/du-snapshots/` only, and refuses
+(exit 4) if that working copy is not on `main`. Before this nothing committed
+it, and the 2026-09-14 delta sat untracked for three weeks. A failed commit
+leaves the files in place; the next run's `git add du-snapshots` picks them up.
+
 **Overdue coverage.** `mb-parcelsearch-task-health` reads this task's monthly
 trigger out of its XML and flags it after 62 days (interval 31, tolerance 2x).
 It needs no bespoke dead-man's switch of its own.
