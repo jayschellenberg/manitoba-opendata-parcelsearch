@@ -1073,6 +1073,23 @@
                 </span>
               </span>
             </div>
+            <!-- Outline at sale, from the weekly parcel change history (the
+                 grid's "Outline at sale" column). Group-level like Parcels:
+                 an assembly is changed when any parcel is, unchanged only
+                 when all are. Same half-row layout, one half used. -->
+            <div class="sale-price-row">
+              <span class="sale-price-half">
+                <span class="sale-price-prefix">Outline:</span>
+                <span class="field">
+                  <select id="sales-outline-filter" aria-label="Outline at sale filter"
+                          title="Filter by whether the parcel outline that sold is today's, from the weekly parcel change history (the Outline at sale column). Same as today keeps sales whose outline is known to be unchanged, so today's acreage and shape describe what sold. Changed keeps sales whose outline changed since (or around) the sale date, or that were not yet mapped. A multi-parcel sale counts as changed when any of its parcels did. Sales the history cannot place — before it began, approximate pins, or still loading — pass neither option.">
+                    <option value="any" selected>Any</option>
+                    <option value="unchanged">Same as today</option>
+                    <option value="changed">Changed</option>
+                  </select>
+                </span>
+              </span>
+            </div>
             <!-- Vacant-land threshold. Single input + a %/$ pill
                  toggle decides how to interpret the number:
                  building-percentage cap (% mode) or building-dollar

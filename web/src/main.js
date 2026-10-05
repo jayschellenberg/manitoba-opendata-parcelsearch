@@ -337,6 +337,7 @@ import {
 import { parseSaleDate, saleDateSortKey } from './lib/saleDate.js';
 import {
   matchSaleToHistory, historyLabel, historyRank, toIsoDay, saleOutlineFeatures,
+  outlineStatus, groupOutlineStatus, outlineCsvCells,
   historyMuniNoForName, historicalRollFeatures,
 } from './lib/parcelHistory.js';
 import { computeSizeChanges } from './lib/sizeChange.js';
@@ -586,6 +587,7 @@ const $salesStreetName = document.getElementById('sales-street-name');
 // "N1 ID" column. "Unmatched" is the working mode: it turns the site
 // into the browsable queue of sales not yet entered in N1.
 const $salesN1 = document.getElementById('sales-n1-filter');
+const $salesOutline = document.getElementById('sales-outline-filter');
 // Parcels-per-sale filter — 'any' | 'single' | 'multi', tested against the
 // _saleGroupSize stamped by computeSaleGroupTotals. Shares a row with the N1
 // filter. Separates assemblies (one price, several rolls) from ordinary
@@ -1285,6 +1287,7 @@ let lastSalesWaterfall = null;
 const SALES_FILTER_STEPS = [
   'Municipality', 'Nominal sales', 'Far-flung sales', 'Water influence',
   'Zoning/Dev Plan changes', 'Plan #', 'Street name', 'N1 match',
+  'Outline at sale',
   'Parcels per sale', '$/Acre range', 'Sale price range', 'Dwelling units',
   'Drawn area', 'Vacant / improved', 'Max Sale/Asmt', 'Size range',
   'Sale date range', 'Assessment class', 'Zoning code', 'Distance from subject',
@@ -3918,7 +3921,7 @@ for (const el of [
   $primaryPropEl,
   $distanceMax, $salesPlan,
   $salesStreetName, $salesPpaLow, $salesPpaHigh, $saleAsmtMax,
-  $salesPriceLow, $salesPriceHigh, $salesN1, $salesGroupSize, $excludeNominal,
+  $salesPriceLow, $salesPriceHigh, $salesN1, $salesOutline, $salesGroupSize, $excludeNominal,
 ].filter(Boolean)) {
   el.addEventListener('change', refilterCsvIfActive);
   el.addEventListener('input',  refilterCsvIfActive);
@@ -3957,6 +3960,7 @@ function readSalesFilterState() {
     zoneCat: zoneCatFilter.getSelected(),
     groupSize: $salesGroupSize?.value,
     n1: $salesN1?.value,
+    outline: $salesOutline?.value,
     vacantImproved: $vacantImproved?.value,
     vacantThreshold: $thr?.value,
     vacantMode: $pill?.dataset.mode,
@@ -5098,6 +5102,7 @@ async function runSearch() {
   if ($salesPlan)     $salesPlan.value = '';
   if ($salesStreetName) $salesStreetName.value = '';
   if ($salesN1)       $salesN1.value = 'any';
+  if ($salesOutline)  $salesOutline.value = 'any';
   if ($salesGroupSize) $salesGroupSize.value = 'any';
   if ($salesPpaLow)   $salesPpaLow.value = '';
   if ($salesPpaHigh)  $salesPpaHigh.value = '';
@@ -7594,6 +7599,22 @@ function filterCsvRowsByOtherSearches(rows) {
   // truthiness test on the stamped _n1Id; a pasted comp set (no N1 ID
   // column at all) reads as entirely unmatched, which is the truth.
   const n1Mode = $salesN1?.value || 'any';
+  // Outline-at-sale filter — 'any' is off. Group-level: a sale's status is
+  // read across all its parcels (groupOutlineStatus), so an assembly is kept
+  // or dropped whole. A sale with no claim (history not loaded, approximate
+  // pin, or a sale before the history began) passes neither option.
+  const outlineMode = $salesOutline?.value || 'any';
+  const outlineOfSale = new Map();
+  if (outlineMode !== 'any') {
+    const bySale = new Map();
+    rows.forEach((r, i) => {
+      const q = r.parcel?.properties || {};
+      const key = q._saleGroupId != null ? `g:${q._saleGroupId}` : `r:${i}`;
+      if (!bySale.has(key)) bySale.set(key, []);
+      bySale.get(key).push(q._histStatus ?? null);
+    });
+    for (const [key, list] of bySale) outlineOfSale.set(key, groupOutlineStatus(list));
+  }
   // Parcels-per-sale filter — 'any' is off. See the predicate below for why
   // the two live options are not symmetrical.
   const groupSizeMode = $salesGroupSize?.value || 'any';
@@ -7705,6 +7726,11 @@ function filterCsvRowsByOtherSearches(rows) {
     if (n1Mode !== 'any') {
       const hasN1 = !!p._n1Id;
       if (n1Mode === 'matched' ? !hasN1 : hasN1) return fail('N1 match');
+    }
+
+    if (outlineMode !== 'any') {
+      const key = p._saleGroupId != null ? `g:${p._saleGroupId}` : `r:${rowIdx}`;
+      if (outlineOfSale.get(key) !== outlineMode) return fail('Outline at sale');
     }
 
     // Parcels-per-sale filter. Group-level by construction: _saleGroupSize is
@@ -10107,6 +10133,8 @@ async function stampSaleHistory(parcelFc) {
       p._histLabel = label;
       p._histRank  = historyRank(m);
       p._histMatch = JSON.stringify(m);
+      p._histStatus = outlineStatus(m);           // the Outline filter
+      p._histCsv   = outlineCsvCells(m, index);   // export: label, window, acres
       if (shard) outlines.push(...saleOutlineFeatures(shard, p.Roll_No_Txt, m, { _rowKey: p._rowKey ?? null }));
     }
   })().catch((err) => console.warn('Parcel history lookup failed (non-fatal):', err));
@@ -16939,6 +16967,11 @@ function exportCsv(explicitRows) {
           // were sampled from, so a figure lifted into a report carries its
           // referent with it. See lib/saleSize.js shapeDerivedNote().
           'Shape-Derived Basis',
+          // Outline at sale, from the parcel change history. The window is
+          // two weekly-snapshot dates bracketing the change, NOT a change
+          // date (the province publishes none); acres only when one earlier
+          // outline is certainly the one that sold.
+          'Outline at Sale', 'Outline Change Window (snapshot dates)', 'Outline Acres at Sale',
           'Dist (km)', 'Asmt Land', 'Asmt Buildings', 'Asmt Bldg %', 'Asmt Year', 'Asmt Class', 'Asmt Status',
         ]
       : []),
@@ -17066,6 +17099,9 @@ function exportCsv(explicitRows) {
             p._saleGroupMuniCount ?? '',
             p._saleGroupSpanKm == null ? '' : (p._saleGroupSpanIncomplete ? 'No' : 'Yes'),
             shapeDerivedNote(p),
+            p._histCsv?.[0] ?? '',
+            p._histCsv?.[1] ?? '',
+            p._histCsv?.[2] ?? '',
             Number.isFinite(p._distanceKm) ? p._distanceKm.toFixed(2) : '',
             Number.isFinite(p._asmtLand) ? Math.round(p._asmtLand) : '',
             Number.isFinite(p._asmtBuildings) ? Math.round(p._asmtBuildings) : '',

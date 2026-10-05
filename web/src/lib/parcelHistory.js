@@ -95,6 +95,53 @@ export function historyLabel(m) {
   return LABELS[m.state] || null;
 }
 
+/**
+ * The Outline filter's reading of one sale: 'unchanged' only when today's
+ * outline is KNOWN to be the one that sold, 'changed' for any change claim,
+ * null for no claim. A censored "same since history began" sale predates the
+ * first snapshot, so it is neither: the outline may have changed before then.
+ */
+export function outlineStatus(m) {
+  if (!m) return null;
+  if (m.state === 'current') return m.censored ? null : 'unchanged';
+  if (['prior', 'ambiguous', 'not_yet', 'retired'].includes(m.state)) return 'changed';
+  return null;
+}
+
+/**
+ * One sale's status from its parcels' statuses, so an assembly is kept or
+ * dropped whole: changed if ANY parcel changed (the group acreage no longer
+ * describes today's land), unchanged only if EVERY parcel is, else null.
+ */
+export function groupOutlineStatus(statuses) {
+  const list = statuses || [];
+  if (list.includes('changed')) return 'changed';
+  if (list.length && list.every((s) => s === 'unchanged')) return 'unchanged';
+  return null;
+}
+
+/**
+ * CSV cells for a sale: [label, change window, outline acres at sale].
+ * The window is two SNAPSHOT dates ('YYYY-MM-DD to YYYY-MM-DD') bracketing
+ * the change, never a change date: the province publishes none. Acres only
+ * when one earlier outline is certainly the one that sold ('prior').
+ */
+export function outlineCsvCells(m, index) {
+  const label = historyLabel(m) || '';
+  if (!m) return [label, '', ''];
+  let win = '';
+  let acres = '';
+  if (m.state === 'prior' || m.state === 'ambiguous') {
+    const v = (m.candidates || []).find((c) => c.cna != null);
+    if (v) win = `${lastSeen(v, index)} to ${v.cna}`;
+    const a = Number(v?.a);
+    if (m.state === 'prior' && Number.isFinite(a) && a > 0) acres = (a / 4046.8564224).toFixed(3);
+  } else if (m.state === 'not_yet' && m.earliest?.onb) {
+    win = `${m.earliest.onb} to ${m.earliest.fs}`;
+  }
+  return [label, win, acres];
+}
+
 /** Sort rank for the grid column: most-changed first, no-claim last. */
 export function historyRank(m) {
   const order = { prior: 0, ambiguous: 1, not_yet: 2, retired: 3, current: 4 };

@@ -12,6 +12,7 @@ import {
   toIsoDay, matchSaleToHistory, historyLabel, historyRank, fmtDay, fmtArea,
   changeWindowText, priorOutlineHtml, saleHistoryHtml, saleOutlineFeatures,
   historyMuniNoForName, historicalRollFeatures,
+  outlineStatus, groupOutlineStatus, outlineCsvCells,
 } from '../src/lib/parcelHistory.js';
 
 const results = [];
@@ -177,6 +178,35 @@ test('a sale on a retired roll matches its outline and the popup says the roll i
   assert.match(html, /land now in 6\.000/);
   // After retirement there is no candidate at all.
   assert.equal(matchSaleToHistory(rShard.rolls, '5.000', '2026-02-01', rIndex).state, 'retired');
+});
+
+test('outline filter status: censored and no-claim sales are neither', () => {
+  assert.equal(outlineStatus(st('1.000', '2026-01-10')), 'changed');      // prior
+  assert.equal(outlineStatus(st('1.000', '2026-01-18')), 'changed');      // ambiguous
+  assert.equal(outlineStatus(st('1.100', '2026-01-10')), 'changed');      // not yet mapped
+  assert.equal(outlineStatus(st('1.000', '2026-01-25')), 'unchanged');
+  assert.equal(outlineStatus(st('9.000', '2026-01-25')), 'unchanged');    // no record, after history began
+  assert.equal(outlineStatus(st('9.000', '2025-12-01')), null);           // censored
+  assert.equal(outlineStatus(st('1.000', null)), null);
+  assert.equal(outlineStatus(null), null);
+});
+
+test('a sale is changed if any parcel changed, unchanged only if all are', () => {
+  assert.equal(groupOutlineStatus(['unchanged', 'changed']), 'changed');
+  assert.equal(groupOutlineStatus(['unchanged', 'unchanged']), 'unchanged');
+  assert.equal(groupOutlineStatus(['unchanged', null]), null);
+  assert.equal(groupOutlineStatus([]), null);
+});
+
+test('CSV cells carry snapshot-date windows, and acres only for a certain prior outline', () => {
+  assert.deepEqual(outlineCsvCells(st('1.000', '2026-01-10'), index),
+    ['Changed since sale', '2026-01-15 to 2026-01-22', '9.884']);
+  assert.deepEqual(outlineCsvCells(st('1.000', '2026-01-18'), index),
+    ['Changed near sale', '2026-01-15 to 2026-01-22', '']);
+  assert.deepEqual(outlineCsvCells(st('1.100', '2026-01-10'), index),
+    ['Not yet mapped at sale', '2026-01-15 to 2026-01-22', '']);
+  assert.deepEqual(outlineCsvCells(st('1.000', '2026-01-25'), index), ['Same as today', '', '']);
+  assert.deepEqual(outlineCsvCells(null, index), ['', '', '']);
 });
 
 const passed = results.reduce((a, b) => a + b, 0);

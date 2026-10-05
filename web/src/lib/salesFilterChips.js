@@ -20,7 +20,8 @@
  *   sizeUom ('acres'|'sf'|'ff'), sizeLow, sizeHigh
  *   ppaLow, ppaHigh, priceLow, priceHigh  number inputs (strings from the DOM)
  *   zoning, zoneCat                       arrays of ticked values
- *   groupSize ('any'|'single'|'multi'), n1 ('any'|'matched'|'unmatched')
+ *   groupSize ('any'|'single'|'multi'), n1 ('any'|'matched'|'unmatched'),
+ *   outline ('any'|'unchanged'|'changed')
  *   vacantImproved ('all'|'vacant'|'improved')  — the selector OUTSIDE the
  *                                         disclosure that the two below tune
  *   vacantThreshold, vacantMode ('pct'|'dollar'), saleAsmtMax
@@ -132,6 +133,10 @@ export function salesFilterChips(s = {}) {
   const n1 = text(s.n1);
   if (n1 === 'matched') push('n1', 'N1 matched', 'N1 crosswalk: matched sales only');
   else if (n1 === 'unmatched') push('n1', 'N1 unmatched', 'N1 crosswalk: unmatched sales only');
+
+  const outline = text(s.outline);
+  if (outline === 'unchanged') push('outline', 'Outline unchanged', 'Outline at sale: same outline as today only');
+  else if (outline === 'changed') push('outline', 'Outline changed', 'Outline at sale: changed or not yet mapped only');
 
   // Bldg Threshold tunes the Vacant/Improved selector, which lives OUTSIDE
   // the disclosure. Away from its default it is set — and worth naming,
