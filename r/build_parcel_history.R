@@ -14,6 +14,8 @@
 #                                                          # (after changing thresholds)
 #   Rscript r/build_parcel_history.R --rebuild-from 2026-08-04  # re-read files from a date
 #   Rscript r/build_parcel_history.R --max-new 3          # cap snapshots this run
+#   Rscript r/build_parcel_history.R --keep-files 8       # weekly gpkgs kept on disk (default 4)
+#   Rscript r/build_parcel_history.R --no-prune           # delete no weekly gpkgs this run
 #
 # Exit codes: 0 ok; 1 error; 2 a snapshot was QUARANTINED this run (nothing
 # wrong with the code, but a human should look: see history/snapshots.parquet
@@ -43,6 +45,10 @@ ACCEPT       <- arg_vals("--accept")
 REBUILD_FROM <- as.Date(arg_vals("--rebuild-from")[1] %||% NA)
 MAX_NEW      <- suppressWarnings(as.integer(arg_vals("--max-new")[1] %||% NA))
 if (is.na(MAX_NEW)) MAX_NEW <- .Machine$integer.max
+NO_PRUNE     <- "--no-prune" %in% args
+KEEP_FILES   <- suppressWarnings(as.integer(arg_vals("--keep-files")[1] %||% NA))
+if (is.na(KEEP_FILES)) KEEP_FILES <- 4L
+if (KEEP_FILES < 2L) stop("--keep-files must be at least 2")
 
 HIST <- Sys.getenv("PARCEL_HISTORY_DIR")
 if (!nzchar(HIST)) HIST <- file.path(mb_parcelsearch_root, "history")
@@ -166,6 +172,7 @@ if (!is.na(dirty)) {
 }
 
 checkpoint <- function(ctx, catalog) {
+  ctx$versions <- tag_realignments(ctx$versions)
   ctx$versions <- mark_provisional(ctx$versions, ctx$last_date)
   write_geoparquet(ctx$versions, P$versions)
   write_state(ctx$state)
@@ -220,6 +227,33 @@ for (i in seq_len(nrow(pending))) {
 }
 
 if (!nrow(pending) && (REBUILD || !is.na(dirty))) ctx <- checkpoint(ctx, catalog)
+
+# ---- prune weekly RollEntry files the history no longer needs --------------------
+# ~265 MB each, weekly: ~14 GB/year if nothing deletes them. Once a snapshot is
+# accepted its delta in history/deltas/ is the record (replay and --rebuild read
+# deltas, not files, and a processed file that is merely gone does not trigger a
+# rebuild). Deleted only when ALL hold: weekly (never the semiannual archive),
+# accepted, delta on disk, SHA-256 matches the catalog, and not among the newest
+# KEEP_FILES weekly files (every other reader takes the newest file, and
+# --rebuild-from needs files from its date on). Quarantined and unprocessed
+# files are never deleted. Dropbox keeps deleted files recoverable for a while.
+if (!NO_PRUNE) {
+  wk <- pref[pref$source == "weekly", ]
+  wk <- wk[order(wk$snapshot_date, decreasing = TRUE), ]
+  old <- wk[-seq_len(min(KEEP_FILES, nrow(wk))), ]
+  k <- match(old$snapshot_id, catalog$snapshot_id)
+  ok <- !is.na(k) & catalog$status[k] %in% "accepted" & old$sha256 == catalog$sha256[k] &
+        file.exists(delta_path(old$snapshot_id))
+  prune <- old[ok, ]
+  if (nrow(prune)) {
+    gone <- vapply(prune$path, function(f) isTRUE(file.remove(f)), TRUE)
+    log("pruned %d weekly file(s), %.0f MB: %s", sum(gone), sum(prune$size[gone]) / 2^20,
+        paste(basename(prune$path[gone]), collapse = ", "))
+    if (any(!gone)) log("could not delete: %s", paste(basename(prune$path[!gone]), collapse = ", "))
+  }
+  if (nrow(old) > nrow(prune))
+    log("kept older weekly file(s) not safe to prune: %s", paste(basename(old$path[!ok]), collapse = ", "))
+}
 
 v <- sf::st_drop_geometry(ctx$versions)
 log("done: %d versions over %d LINCs; reasons opened: %s", nrow(v), length(unique(v$linc)),

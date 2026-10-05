@@ -84,6 +84,17 @@ PH_LINEAGE_MIN_M2      <- 1
 PH_LINEAGE_STRONG_COVER <- 0.5
 PH_RENUMBER_MIN_COVER  <- 0.90   # 1:1 with both covers >= this -> possible_renumber
 
+# Map realignment. When MAO redraws an area's parcel fabric (munis 146, 163,
+# 184, 192, 203 in 2026), hundreds of lots in one muni change outline in the
+# same snapshot while keeping their area. Those are redraws, not legal changes,
+# so a reshape is tagged "realigned" when its area moves less than
+# PH_REALIGN_AREA_FRAC AND at least PH_REALIGN_MIN_CLUSTER such reshapes share
+# its muni and snapshot. A lone area-preserving reshape stays "reshaped": one
+# lot is not evidence of a redraw. Measured 2026-10-05: tags ~78% of all
+# reshapes; every weekly cluster it catches is in a known redraw muni.
+PH_REALIGN_AREA_FRAC   <- 0.01
+PH_REALIGN_MIN_CLUSTER <- 25L
+
 PH_ATTR_COLS <- c("Property_Address", "Asmt_Roll", "Total_Value", "Frontage_or_Area", "Dwelling_Units")
 
 `%||%` <- function(a, b) if (is.null(a) || length(a) == 0) b else a
@@ -94,7 +105,8 @@ ph_params <- function(...) {
             confirm_overlap = PH_CONFIRM_OVERLAP,
             lineage_min_cover = PH_LINEAGE_MIN_COVER, lineage_min_m2 = PH_LINEAGE_MIN_M2,
             lineage_strong_cover = PH_LINEAGE_STRONG_COVER,
-            renumber_min_cover = PH_RENUMBER_MIN_COVER)
+            renumber_min_cover = PH_RENUMBER_MIN_COVER,
+            realign_area_frac = PH_REALIGN_AREA_FRAC, realign_min_cluster = PH_REALIGN_MIN_CLUSTER)
   o <- list(...)
   p[names(o)] <- o
   p
@@ -527,6 +539,34 @@ new_context <- function() list(state = empty_state(), versions = empty_versions(
 mark_provisional <- function(versions, last_date) {
   versions$provisional <- (versions$first_seen == last_date & versions$opened_reason %in% c("new", "reappeared_reshaped")) |
     (versions$closed_reason %in% "retired" & versions$close_not_after %in% last_date)
+  versions
+}
+
+#' Tag map realignments (see PH_REALIGN_*): a "reshaped" opening whose area is
+#' within realign_area_frac of the version it replaced, in a (muni, snapshot)
+#' with at least realign_min_cluster such openings, becomes "realigned", and
+#' the version it closed gets closed_reason "realigned". Re-derived from scratch
+#' on every call (a "realigned" that no longer qualifies reverts to "reshaped"),
+#' so a threshold change re-tags the whole history consistently.
+tag_realignments <- function(versions, params = ph_params()) {
+  if (!nrow(versions)) return(versions)
+  ord <- order(versions$linc, versions$first_seen)
+  v <- sf::st_drop_geometry(versions)[ord, c("linc", "muni_no", "first_seen", "opened_reason", "area_m2")]
+  prev_same <- c(FALSE, v$linc[-1] == v$linc[-nrow(v)])
+  prev_area <- c(NA, v$area_m2[-nrow(v)]); prev_area[!prev_same] <- NA
+  cand <- v$opened_reason %in% c("reshaped", "realigned") & prev_same
+  keep <- cand & !is.na(prev_area) & prev_area > 0 &
+    abs(v$area_m2 / prev_area - 1) < params$realign_area_frac
+  key <- paste(v$muni_no, v$first_seen)
+  n_keep <- ave(as.integer(keep), key, FUN = sum)
+  realigned <- keep & n_keep >= params$realign_min_cluster
+  new_open <- ifelse(cand, ifelse(realigned, "realigned", "reshaped"), v$opened_reason)
+  # The version a (re)tagged opening replaced is the row just before it.
+  close_rows <- which(cand) - 1L
+  new_close <- versions$closed_reason[ord]
+  new_close[close_rows] <- ifelse(realigned[cand], "realigned", "reshaped")
+  versions$opened_reason[ord] <- new_open
+  versions$closed_reason[ord] <- new_close
   versions
 }
 

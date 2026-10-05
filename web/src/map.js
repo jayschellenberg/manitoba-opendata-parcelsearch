@@ -5737,9 +5737,11 @@ function lineageHtml(roll) {
   if (rec.predecessors?.length) rows.push(`<strong>← from</strong> ${list(rec.predecessors)}`);
   if (rec.successors?.length)   rows.push(`<strong>→ became</strong> ${list(rec.successors, 6, true)} (${rec.successors.length})`);
   if (!rows.length) return '';
-  const conf = Number.isFinite(rec.confidence) ? ` · ${Math.round(rec.confidence * 100)}% conf` : '';
+  // rec.type is the weekly change history's relation (lib/parcelHistory.js
+  // lineageByRoll), e.g. subdivision_retained_parent.
+  const type = rec.type ? escapeHtml(String(rec.type).replace(/_/g, ' ')) : 'inferred';
   return `<div style="margin-top:5px;border-top:1px solid #eee;padding-top:4px">`
-    + `<strong style="color:#b45309">Lineage</strong> <span style="color:#888">(${escapeHtml(rec.type || '')}${conf})</span><br>`
+    + `<strong style="color:#b45309">Lineage</strong> <span style="color:#888">(${type})</span><br>`
     + rows.join('<br>')
     + `<br><small style="color:#888">Inferred from geometry — verify against the registered plan / title.</small></div>`;
 }

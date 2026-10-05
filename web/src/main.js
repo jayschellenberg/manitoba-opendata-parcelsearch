@@ -159,7 +159,6 @@ import {
   fetchHistoricalIndex,
   fetchHistoricalManifest,
   fetchHistoricalShard,
-  fetchHistoricalLineage,
   fetchChangeIndex,
   fetchChangeShard,
   fetchMascRiverlots,
@@ -336,7 +335,7 @@ import {
 } from './lib/saleSize.js';
 import { parseSaleDate, saleDateSortKey } from './lib/saleDate.js';
 import {
-  matchSaleToHistory, historyLabel, historyRank, toIsoDay, saleOutlineFeatures,
+  matchSaleToHistory, historyLabel, historyRank, toIsoDay, saleOutlineFeatures, lineageByRoll,
   outlineStatus, groupOutlineStatus, outlineCsvCells,
   historyMuniNoForName, historicalRollFeatures,
 } from './lib/parcelHistory.js';
@@ -10188,7 +10187,8 @@ async function fetchPriorOutlinesForResults() {
   priorOutlinesLoadedFor = munis.join('|');
   return {
     type: 'FeatureCollection',
-    features: shards.flatMap((s) => s?.outlines?.features || []),
+    // A map realignment is the same parcel redrawn, not a prior parcel.
+    features: shards.flatMap((s) => s?.outlines?.features || []).filter((f) => f.properties?.c !== 'realigned'),
   };
 }
 
@@ -10532,11 +10532,14 @@ async function loadHistorical(snap, muniName) {
   try {
     const muniNo = await resolveHistoricalMuniNo(snap, muniName);
     if (muniNo == null) { setCount(`Historical: no ${snap} data for ${muniName}.`); deactivateHistorical(); return; }
-    const [parcels, zoning, devplan, lineage] = await Promise.all([
+    // Lineage comes from the weekly change history (the same data the sales
+    // Outline at sale column reads), at the version alive on this snapshot.
+    const [parcels, zoning, devplan, changeIndex, changeShard] = await Promise.all([
       fetchHistoricalShard(snap, 'parcels', muniNo),
       fetchHistoricalShard(snap, 'zoning', muniNo),
       fetchHistoricalShard(snap, 'devplan', muniNo),
-      fetchHistoricalLineage(muniNo),
+      fetchChangeIndex().catch(() => null),
+      fetchChangeShard(muniNo).catch(() => null),
     ]);
     if (!parcels) { setCount(`Historical: couldn't load ${snap} parcels for ${muniName}.`); deactivateHistorical(); return; }
     // Stamp size-change bands + current-MAO links BEFORE setHistoricalData so
@@ -10545,7 +10548,7 @@ async function loadHistorical(snap, muniName) {
     const sizeSummary = enrich?.summary || null;
     setHistoricalData(map, {
       parcels, zoning, devplan, year: snap,
-      lineage: lineage?.by_roll || null,
+      lineage: lineageByRoll(changeShard, snap, changeIndex),
       currentUrls: enrich?.curUrlByRoll || null,   // roll → today's MAO URL for the popup links
     });
     historicalActive = true;

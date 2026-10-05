@@ -777,6 +777,10 @@ The app navigates by **today's** municipalities. Handled in two halves:
    correct as-is.)*
 
 ### 5.6 Parcel lineage index — `r/build_lineage.R`
+> **Superseded on the site (2026-10-05).** The Historical popup now takes its
+> lineage from the weekly change shards (§5.9, `lineageByRoll()`); `lineage/`
+> below is kept as a record and is no longer read or rebuilt.
+
 Infers parcel **predecessor / successor** relationships between consecutive
 snapshots so the app can answer "this lot **← came from** … / **→ became** …".
 - **Roll-identity model:** the same `Roll_No_Txt` across snapshots = the same
@@ -836,6 +840,12 @@ MAINTENANCE.md §4a; this section is what the data means and where the app uses 
   change date, anywhere (popup, grid, CSV).
 - **Quarantine:** a download that loses > 0.5 % of LINCs or shrinks > 1 % is held
   back until a repeat confirms it (or `--accept`).
+- **Map realignments:** a reshape that keeps its area within 1 %, in a muni and
+  snapshot with at least 25 of them, is a province map redraw, tagged
+  `realigned` (`tag_realignments()`): no lineage edges, and a sale on it reads
+  *Same parcel, map redrawn*. A lone one stays a reshape.
+- **Weekly gpkgs** are pruned to the newest 4 once processed (deltas are the
+  record); see MAINTENANCE.md §4a.
 - **Lineage:** `r/build_lineage.R --tables` links versions (strong edge at ≥ 50 %
   cover; weak edges ≥ 5 % only to explain an otherwise unexplained version —
   `prune_weak_edges()` stops fabric-redraw slivers chaining unrelated lots).
@@ -848,10 +858,15 @@ MAINTENANCE.md §4a; this section is what the data means and where the app uses 
 - **Outline at sale** grid column: *Same as today*, *Same since history began*
   (sale predates the first snapshot), *Changed since sale*, *Changed near sale*
   (ambiguous), *Not yet mapped at sale* (new lots are assessed and sold before
-  they are mapped), *Roll retired*. Sortable, most-changed first.
+  they are mapped), *Roll retired*, *Same parcel, map redrawn* (only map
+  realignments since; counts as unchanged in the Outline filter, no dashed
+  outline, excluded from Prior outlines). Sortable, most-changed first.
 - Parcel popup **Parcel history** section; a sale on an earlier outline gets that
   outline drawn dashed pink (`sale-prior-outlines`). **Historical → Prior
   outlines** overlays every superseded outline in the result municipalities.
+- **Historical view lineage** (← from / → became in the as-of popup) is read
+  from the same shards at the version alive on the snapshot date
+  (`lineageByRoll()`), replacing the semiannual `lineage/` (§5.6).
 - **Retired rolls:** a sale on a roll RollEntry no longer carries is drawn from
   its last outline in the history instead of being left unmatched.
 - **CSV export** (sales mode, after *Shape-Derived Basis*): `Outline at Sale`,

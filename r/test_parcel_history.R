@@ -167,4 +167,29 @@ check(nrow(back) == nrow(ctx$versions) && isTRUE(all.equal(as.numeric(sf::st_are
 meta <- jsonlite::fromJSON(arrow::read_parquet(f, as_data_frame = FALSE)$metadata$geo)
 check(meta$columns$geometry$crs$id$code == 26914, "GeoParquet metadata carries EPSG:26914")
 
+# ---- map realignment ----
+# Muni 101: three lots shifted 10 m at equal area in one snapshot (a redraw), and
+# one lot that grew 20% the same week (a real change). Muni 102: one lot shifted
+# alone. Cluster threshold 3 for the tiny fixture.
+rp <- ph_params(max_gone_frac = 1.01, max_shrink_frac = 1.01, realign_min_cluster = 3L)
+s1 <- snap(P("101", "1.000", sq(0, 0)), P("101", "2.000", sq(200, 0)), P("101", "3.000", sq(400, 0)),
+           P("101", "4.000", sq(600, 0)), P("102", "1.000", sq(0, 400)))
+s2 <- snap(P("101", "1.000", sq(10, 0)), P("101", "2.000", sq(210, 0)), P("101", "3.000", sq(410, 0)),
+           P("101", "4.000", sq(600, 0, w = 120)), P("102", "1.000", sq(10, 400)))
+ra <- run(list(s1, s2), c("2026-01-01", "2026-01-08"), params = rp)
+rt <- tag_realignments(ra$versions, rp)
+ro <- function(linc) V(list(versions = rt), linc)
+check(all(vapply(c("101R000001000", "101R000002000", "101R000003000"), function(l) {
+        x <- ro(l); identical(x$opened_reason, c("baseline", "realigned")) && identical(x$closed_reason, c("realigned", NA_character_))
+      }, TRUE)), "an equal-area cluster in one muni + snapshot is tagged realigned (both ends)")
+check(identical(ro("101R000004000")$opened_reason[2], "reshaped"), "a 20% area change in the same week stays reshaped")
+check(identical(ro("102R000001000")$opened_reason[2], "reshaped"), "a lone equal-area shift stays reshaped")
+back <- tag_realignments(rt, ph_params(realign_min_cluster = 4L))
+check(identical(V(list(versions = back), "101R000001000")$opened_reason[2], "reshaped") &&
+      identical(V(list(versions = back), "101R000001000")$closed_reason[1], "reshaped"),
+      "raising the threshold re-tags realigned back to reshaped")
+lw <- lineage_window(rt, as.Date("2026-01-01"), as.Date("2026-01-08"), rp)
+lk <- if (is.null(lw$edges)) character() else unique(c(lw$edges$parent_linc, lw$edges$child_linc))
+check(!any(c("101R000001000", "101R000002000", "101R000003000") %in% lk), "realigned lots produce no lineage edges")
+
 cat("\nall parcel_history tests passed\n")

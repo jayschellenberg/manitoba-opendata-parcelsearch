@@ -12,7 +12,7 @@ import {
   toIsoDay, matchSaleToHistory, historyLabel, historyRank, fmtDay, fmtArea,
   changeWindowText, priorOutlineHtml, saleHistoryHtml, saleOutlineFeatures,
   historyMuniNoForName, historicalRollFeatures,
-  outlineStatus, groupOutlineStatus, outlineCsvCells,
+  outlineStatus, groupOutlineStatus, outlineCsvCells, lineageByRoll,
 } from '../src/lib/parcelHistory.js';
 
 const results = [];
@@ -207,6 +207,76 @@ test('CSV cells carry snapshot-date windows, and acres only for a certain prior 
     ['Not yet mapped at sale', '2026-01-15 to 2026-01-22', '']);
   assert.deepEqual(outlineCsvCells(st('1.000', '2026-01-25'), index), ['Same as today', '', '']);
   assert.deepEqual(outlineCsvCells(null, index), ['', '', '']);
+});
+
+// Map realignment: roll 7.000 redrawn at the same area on 01-22 (only change
+// since). Roll 8.000 redrawn on 01-22, then really reshaped on 02-05.
+const rRolls = {
+  '7.000': [
+    { fs: '2026-01-01', ls: '2026-01-15', onb: null, cna: '2026-01-22', o: 'baseline', c: 'realigned', a: 4000 },
+    { fs: '2026-01-22', onb: '2026-01-15', cna: null, o: 'realigned', c: null, a: 4010 },
+  ],
+  '8.000': [
+    { fs: '2026-01-01', ls: '2026-01-15', onb: null, cna: '2026-01-22', o: 'baseline', c: 'realigned', a: 4000 },
+    { fs: '2026-01-22', ls: '2026-01-29', onb: '2026-01-15', cna: '2026-02-05', o: 'realigned', c: 'reshaped', a: 4010 },
+    { fs: '2026-02-05', onb: '2026-01-29', cna: null, o: 'reshaped', c: null, a: 6000 },
+  ],
+};
+const rIdx = { first_snapshot: '2026-01-01', last_snapshot: '2026-02-05' };
+
+test('a sale whose outline was only redrawn since is the same parcel', () => {
+  const m = matchSaleToHistory(rRolls, '7.000', '2026-01-10', rIdx);
+  assert.equal(m.state, 'realigned');
+  assert.equal(historyLabel(m), 'Same parcel, map redrawn');
+  assert.equal(outlineStatus(m), 'unchanged');
+  assert.deepEqual(saleOutlineFeatures({ outlines: { features: [] } }, '7.000', m), []);
+  assert.match(saleHistoryHtml(m, rIdx), /Same parcel, map redrawn/);
+  assert.deepEqual(outlineCsvCells(m, rIdx), ['Same parcel, map redrawn', '2026-01-15 to 2026-01-22', '']);
+  // A sale inside the redraw window is the same parcel either way.
+  assert.equal(matchSaleToHistory(rRolls, '7.000', '2026-01-18', rIdx).state, 'realigned');
+});
+
+test('a redraw followed by a real reshape is still a prior outline', () => {
+  const m = matchSaleToHistory(rRolls, '8.000', '2026-01-10', rIdx);
+  assert.equal(m.state, 'prior');
+  assert.equal(outlineStatus(m), 'changed');
+  // Sold on the redrawn outline, before the real change: prior too.
+  assert.equal(matchSaleToHistory(rRolls, '8.000', '2026-01-25', rIdx).state, 'prior');
+});
+
+test('realigned ranks after the real changes and before current', () => {
+  const r = historyRank(matchSaleToHistory(rRolls, '7.000', '2026-01-10', rIdx));
+  assert.ok(r > historyRank(st('1.000', '2026-01-10')) && r < historyRank(st('1.000', '2026-01-25')));
+});
+
+test('a realigned prior outline says so in its popup', () => {
+  assert.match(priorOutlineHtml({ roll: '7.000', c: 'realigned', ls: '2026-01-15', cna: '2026-01-22', a: 4000, a2: 4010 }, rIdx),
+    /Map redrawn \(same parcel/);
+});
+
+// Stanley 89600 kept half its land when 89650 was carved out (snapshots
+// 2025-02-12 -> 2026-07-01), as published in changes/190.json.
+const lShard = { rolls: {
+  '89600.000': [
+    { fs: '2025-02-12', ls: '2025-02-12', onb: null, cna: '2026-07-01', o: 'baseline', c: 'reshaped', a: 665382,
+      to: ['89650.000'], rel: 'subdivision_retained_parent' },
+    { fs: '2026-07-01', onb: '2025-02-12', cna: null, o: 'reshaped', c: null, a: 341366 },
+  ],
+  '89650.000': [
+    { fs: '2026-07-01', onb: '2025-02-12', cna: null, o: 'new', c: null, a: 324016,
+      from: ['89600.000'], rel: 'subdivision_retained_parent' },
+  ],
+} };
+const lIdx = { first_snapshot: '2025-02-12', last_snapshot: '2026-10-04' };
+
+test('historical lineage is read at the version alive on the snapshot date', () => {
+  const y25 = lineageByRoll(lShard, '2025-02-12', lIdx);
+  assert.deepEqual(y25['89600.000'], { type: 'subdivision_retained_parent', predecessors: [], successors: [{ roll: '89650.000' }] });
+  assert.equal(y25['89650.000'], undefined);            // did not exist yet
+  const y26 = lineageByRoll(lShard, '2026-07-01', lIdx);
+  assert.deepEqual(y26['89650.000'].predecessors, [{ roll: '89600.000' }]);
+  assert.equal(y26['89600.000'], undefined);            // the remainder lot has no lineage of its own
+  assert.equal(lineageByRoll(null, '2026-07-01', lIdx), null);
 });
 
 const passed = results.reduce((a, b) => a + b, 0);

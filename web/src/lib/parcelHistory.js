@@ -56,6 +56,9 @@ export function lastSeen(v, index) {
  *                        well have existed in MAO: new lots are assessed and
  *                        sold before they are mapped). `from` = its parents.
  *          'retired'   — sale after the roll was retired (data mismatch)
+ *          'realigned' — the outline that sold (or both, if ambiguous) was
+ *                        replaced only by map realignments since: the same
+ *                        parcel, redrawn by the province at the same area
  *          'unknown'   — no usable sale date
  */
 export function matchSaleToHistory(versionsByRoll, roll, saleIso, index) {
@@ -73,11 +76,30 @@ export function matchSaleToHistory(versionsByRoll, roll, saleIso, index) {
     return { state: saleIso < earliest ? 'not_yet' : 'retired', candidates: [],
              certain: false, censored: false, earliest: versions.find((v) => v.fs === earliest) };
   }
-  if (cands.length > 1) return { state: 'ambiguous', candidates: cands, certain: false, censored: false };
+  if (cands.length > 1) {
+    if (redrawnOnly(versions, cands)) return { state: 'realigned', candidates: cands, certain: false, censored: false };
+    return { state: 'ambiguous', candidates: cands, certain: false, censored: false };
+  }
   const v = cands[0];
   const observed = saleIso >= v.fs && saleIso <= lastSeen(v, index);
   const censored = v.onb == null && saleIso < v.fs;
+  if (v.cna != null && redrawnOnly(versions, cands)) return { state: 'realigned', candidates: [v], certain: observed, censored };
   return { state: v.cna == null ? 'current' : 'prior', candidates: [v], certain: observed, censored };
+}
+
+/**
+ * True when every change after the earliest closed candidate is a map
+ * realignment (r/parcel_history_lib.R tag_realignments): the parcel that sold
+ * is today's, redrawn. Same rule as build_change_shards.R uses to drop the
+ * outline, so a 'realigned' sale never needs one.
+ */
+function redrawnOnly(versions, cands) {
+  const closed = cands.filter((v) => v.cna != null);
+  if (!closed.length) return false;
+  const from = closed.reduce((a, b) => (b.fs < a.fs ? b : a));
+  if (from.c !== 'realigned') return false;
+  const later = versions.filter((v) => v.fs > from.fs);
+  return later.length > 0 && later.every((v) => v.o === 'realigned');
 }
 
 const LABELS = {
@@ -86,6 +108,7 @@ const LABELS = {
   ambiguous: 'Changed near sale',
   not_yet:   'Not yet mapped at sale',
   retired:   'Roll retired',
+  realigned: 'Same parcel, map redrawn',
 };
 
 /** Grid cell text; null for "no claim" (no date, or no history loaded). */
@@ -104,6 +127,8 @@ export function historyLabel(m) {
 export function outlineStatus(m) {
   if (!m) return null;
   if (m.state === 'current') return m.censored ? null : 'unchanged';
+  // Redrawn at the same area: today's acreage and parcel still describe the sale.
+  if (m.state === 'realigned') return m.censored ? null : 'unchanged';
   if (['prior', 'ambiguous', 'not_yet', 'retired'].includes(m.state)) return 'changed';
   return null;
 }
@@ -131,7 +156,7 @@ export function outlineCsvCells(m, index) {
   if (!m) return [label, '', ''];
   let win = '';
   let acres = '';
-  if (m.state === 'prior' || m.state === 'ambiguous') {
+  if (m.state === 'prior' || m.state === 'ambiguous' || m.state === 'realigned') {
     const v = (m.candidates || []).find((c) => c.cna != null);
     if (v) win = `${lastSeen(v, index)} to ${v.cna}`;
     const a = Number(v?.a);
@@ -144,9 +169,9 @@ export function outlineCsvCells(m, index) {
 
 /** Sort rank for the grid column: most-changed first, no-claim last. */
 export function historyRank(m) {
-  const order = { prior: 0, ambiguous: 1, not_yet: 2, retired: 3, current: 4 };
+  const order = { prior: 0, ambiguous: 1, not_yet: 2, retired: 3, realigned: 4, current: 5 };
   if (!m || !(m.state in order)) return 9;
-  return m.state === 'current' && m.censored ? 5 : order[m.state];
+  return m.state === 'current' && m.censored ? 6 : order[m.state];
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -188,7 +213,8 @@ function lineageLine(rel, rolls, arrow) {
 export function priorOutlineHtml(p, index) {
   const what = p.c === 'retired'
     ? (p.p ? 'Roll retired (not yet confirmed by a later snapshot)' : 'Roll retired')
-    : p.c === 'reshaped_during_gap' ? 'Outline changed (roll briefly missing from the data)' : 'Outline changed';
+    : p.c === 'reshaped_during_gap' ? 'Outline changed (roll briefly missing from the data)'
+    : p.c === 'realigned' ? 'Map redrawn (same parcel, area within 1%)' : 'Outline changed';
   const area = p.c === 'retired' || p.a2 == null ? fmtArea(p.a) : `${fmtArea(p.a)} → ${fmtArea(p.a2)}`;
   const now = p.c === 'retired'
     ? (p.to || 'none found')
@@ -234,6 +260,11 @@ export function saleHistoryHtml(m, index) {
     const old = m.candidates.find((v) => v.cna != null) || m.candidates[0];
     rows.push(`<strong>The outline changed ${esc(changeWindowText(old, index))}</strong> and the sale falls in that window: it may have sold as either shape. Check the registered plan.`);
     rows.push(`Areas: ${m.candidates.map((v) => esc(fmtArea(v.a))).join(' or ')}`);
+  } else if (m.state === 'realigned') {
+    const v = m.candidates.find((c) => c.cna != null) || m.candidates[0];
+    rows.push(`<strong>Same parcel, map redrawn.</strong> The province redrew the parcel map here ${esc(changeWindowText(v, index))}, moving the outline without changing its area (within 1%), so today's outline is the parcel that sold.`);
+    rows.push(`Area at sale: ${esc(fmtArea(v.a))}`);
+    if (m.censored) rows.push(`<small>Outline as of ${esc(first)}; the sale predates the history.</small>`);
   } else if (m.state === 'not_yet') {
     const v = m.earliest;
     rows.push(`<strong>This roll was not yet on the province's parcel map on the sale date</strong>; it first appears ${esc(fmtDay(v?.fs))}. New lots are often assessed and sold before they are mapped, so the outline shown is today's.`);
@@ -245,6 +276,29 @@ export function saleHistoryHtml(m, index) {
     + `<strong style="color:#be185d">Parcel history</strong> <span style="color:#888">(${WINDOW_NOTE})</span><br>`
     + rows.filter(Boolean).join('<br>')
     + `</div>`;
+}
+
+/**
+ * Lineage for the Historical (as-of) view, from the weekly change shard: per
+ * roll, the version alive on the snapshot date and the rolls it came from /
+ * became. Replaces the semiannual lineage/<muni>.json, which compared only the
+ * archived snapshots and was rebuilt by hand. Shape is what map.js
+ * lineageHtml() reads: { type, predecessors: [{roll}], successors: [{roll}] }.
+ * Rolls with no lineage at that date are absent; null when there is no shard.
+ */
+export function lineageByRoll(shard, snapIso, index) {
+  if (!shard?.rolls || !snapIso) return null;
+  const out = {};
+  for (const [roll, versions] of Object.entries(shard.rolls)) {
+    const v = (versions || []).find((x) => x.fs <= snapIso && snapIso <= lastSeen(x, index));
+    if (!v || (!v.from?.length && !v.to?.length)) continue;
+    out[roll] = {
+      type: v.rel || null,
+      predecessors: (v.from || []).map((r) => ({ roll: r })),
+      successors: (v.to || []).map((r) => ({ roll: r })),
+    };
+  }
+  return out;
 }
 
 const normName = (s) => String(s || '').toUpperCase().replace(/\s+/g, ' ').trim();

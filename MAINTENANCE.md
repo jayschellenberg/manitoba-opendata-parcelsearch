@@ -502,9 +502,13 @@ timestamp, so clients pick it up on next load. This repo rides the same
 `/gh-data` edge proxy as mb-parcel-data — it is ~177 MB, over jsDelivr's
 50 MB package limit; see §1b.)
 
-### 4. Rebuild parcel lineage  (cadence: after #3, once ≥ 2 snapshots exist)
-Infer predecessor/successor (subdivision / consolidation / …) across
-snapshots and publish:
+### 4. Rebuild parcel lineage  (retired from the site 2026-10-05)
+**The site no longer reads `lineage/`.** Since 2026-10-05 the Historical view's
+popup lineage comes from the weekly change shards (`changes/<muni>.json`, the
+version-based lineage of §4a — `lineageByRoll()` in `web/src/lib/parcelHistory.js`),
+which cover every weekly snapshot, not just the archives, and are published
+automatically. The semiannual `lineage/` below is kept only as a record; nothing
+needs it rebuilt. Old command, for reference:
 ```
 Rscript r/build_lineage.R
 cd ..\mb-parcel-history
@@ -539,9 +543,25 @@ Rscript r/test_parcel_history.R             # offline tests
   sale `ambiguous` when more than one is; nothing is ever assigned a midpoint.
 - **Thresholds changed?** `--rebuild` re-derives versions from the stored deltas
   (no gpkg reads); `build_lineage.R --tables --rebuild` redoes lineage.
-- **Pruning RollEntry gpkgs** is safe once their snapshot is in
-  `history/snapshots.parquet`: the deltas are the record. Only a re-read from a
-  date (`--rebuild-from`) needs the files back.
+- **Weekly RollEntry gpkgs are pruned automatically** (since 2026-10-05) at the
+  end of each `build_parcel_history.R` run: the newest 4 weekly files are kept
+  (`--keep-files N` to change, `--no-prune` to skip); an older one is deleted
+  only if it is accepted, its delta is in `history/deltas/` and its checksum
+  matches the catalog. Archives, quarantined and unprocessed files are never
+  deleted. The deltas are the record (`--rebuild` reads them, not the files);
+  only `--rebuild-from` a date before the oldest kept file needs files back
+  (Dropbox's deleted-files history, for a while).
+- **Map realignments.** When MAO redraws an area's parcel map, hundreds of lots
+  in one muni change outline in one snapshot at the same area.
+  `tag_realignments()` marks a reshape `realigned` when its area moves < 1% and
+  at least 25 such reshapes share its muni and snapshot (`PH_REALIGN_*`); a
+  lone one stays `reshaped`. Realignments make no lineage edges, their
+  outlines are not shipped when nothing but redraws follow, and a sale on one
+  reads **Same parcel, map redrawn** (counts as unchanged in the Outline
+  filter). Measured 2026-10-05: 19,507 of 25,111 reshapes, all in redraw munis
+  (146, 163, 184, 192, 203, and the 2026-07-01 archive). Re-derived on every
+  checkpoint; after changing a threshold run `--rebuild` then
+  `build_lineage.R --tables --rebuild`.
 
 **On the site.** `publish-history-changes.ps1` runs last in the same weekly
 chain: `r/build_change_shards.R` writes `mb-parcel-history/changes/<muni>.json`
@@ -589,7 +609,7 @@ move "D:\Dropbox\Appraisal\Web\MAOSnapshots\<yr>\MBRollGeoPackage<YYYYMMDD>.gpkg
 rmdir /s /q ..\mb-parcel-history\<snapshot_id>
 :: 3. rewrite the discovery index from what is on disk
 Rscript r/build_historical_shards.R --index-only
-:: 4. REQUIRED — lineage names its snapshots; see below
+:: 4. optional since 2026-10-05 — the site no longer reads lineage/ (see §4)
 Rscript r/build_lineage.R
 :: 5. publish, then repin the app
 cd ..\mb-parcel-history && git add -A && git commit && git push
@@ -601,9 +621,11 @@ sized for snapshots being *added*, where lag costs nothing, but a cached index
 keeps offering a date whose shards now 404 — the picker lists an option that
 fails when chosen and reads as a broken feature.
 
-Step 4 is not optional. Lineage is inferred between **consecutive** pairs and
-every record names its snapshot, so removing one without rebuilding leaves
-records pointing at a snapshot the picker no longer offers.
+Step 4 used to be required: `lineage/` is inferred between **consecutive**
+pairs and every record names its snapshot. Since 2026-10-05 the site reads
+lineage from the weekly change shards instead (§4), so it only keeps the
+`lineage/` record tidy. The change history is unaffected by retiring a snapshot
+here: it reads the archive root too, and a gone file is treated as pruned.
 
 #### Deleting a retired archive — provenance of record
 

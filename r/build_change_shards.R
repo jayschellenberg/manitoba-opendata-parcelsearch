@@ -104,8 +104,17 @@ version_obj <- function(r) {
   o
 }
 
+# An outline replaced only by map realignments from then on (see
+# tag_realignments) is the same parcel redrawn: the app never draws it (a sale
+# on it reads "Same parcel, map redrawn"), so it is not shipped. Its version
+# stays in `rolls`, which is what sale matching reads.
+vt <- vt |> arrange(linc, first_seen) |> group_by(linc) |>
+  mutate(realigned_to_end = rev(cumall(rev(opened_reason %in% "realigned"))),
+         redraw_only_after = closed_reason %in% "realigned" & lead(realigned_to_end, default = FALSE)) |>
+  ungroup()
+
 # Superseded outlines, simplified to 1 m (UTM) and written at 6 decimals.
-sup_ids <- vt$version_id[!is.na(vt$closed_reason)]
+sup_ids <- vt$version_id[!is.na(vt$closed_reason) & !vt$redraw_only_after]
 outl <- v[v$version_id %in% sup_ids, "version_id"]
 outl <- sf::st_simplify(outl, dTolerance = 1, preserveTopology = TRUE)
 outl <- cbind(outl, vt[match(outl$version_id, vt$version_id),
