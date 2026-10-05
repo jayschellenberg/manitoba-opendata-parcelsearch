@@ -234,6 +234,13 @@ rebuild "succeeded" every time; the result just never reached anyone. If you add
 another build script that writes into mb-parcel-data, make sure something
 publishes it, or it will fail the same silent way.
 
+**Old Releases are pruned automatically.** Step 6 of `auto-publish-indexes.ps1`
+runs `prune-releases.ps1`, which keeps the newest 4 `data-YYYY-MM-DD` Releases
+(about a month of weekly runs, for rollback) and never deletes a tag `api/*.js`
+still points at. It runs after the push and is non-fatal: a failure alerts and
+next week's run retries. Preview with `prune-releases.ps1 -DryRun`; keep more
+with `-Keep N`.
+
 ### 1d. RollEntry fallback snapshot  (cadence: **monthly**, via `monthly-refresh.bat` step 6)
 The degraded-mode shards the app serves when live ROLL_ENTRY is mid-republish.
 Now rebuilt automatically as step 6 of the monthly refresh. Run it by hand as

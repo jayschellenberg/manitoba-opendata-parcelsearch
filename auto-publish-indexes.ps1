@@ -14,6 +14,7 @@
 #   3. release-indexes.ps1 -SkipBuild                               (size-check + GitHub Release + bump api/*.js RELEASE_URL)
 #   4. update-cdn-pin.ps1                                           (publish mb-parcel-data shards + repin web/src/arcgis.js)
 #   5. git add api/*.js web/src/arcgis.js web/public/data/{manifest,muni-vintage}.json; commit; push (Vercel auto-deploys)
+#   6. prune-releases.ps1                                          (delete all but the newest 4 data-* Releases; non-fatal)
 #
 # WHY STEP 4 EXISTS: build_assessment_index.R writes per-muni shards straight into
 # the mb-parcel-data clone as a side effect, but nothing here used to commit that repo.
@@ -144,6 +145,19 @@ try {
   git push origin HEAD *>> $log   # explicit remote+ref: works even when the branch has no upstream set
   if ($LASTEXITCODE -ne 0) { throw "git push failed (exit $LASTEXITCODE)" }
   Log "pushed -- Vercel will redeploy; the Data Sources 'Data refreshed' date updates once the deploy is live."
+
+  # 6. Prune superseded Releases (weekly runs add ~170 MB each). After the push,
+  #    and non-fatal: the publish has already succeeded, so a failed prune only
+  #    alerts and leaves the old Releases for next week's run to retry.
+  Log 'prune-releases.ps1'
+  try {
+    & (Join-Path $root 'prune-releases.ps1') *>> $log
+    if ($LASTEXITCODE -ne 0) { throw "exit $LASTEXITCODE" }
+  } catch {
+    Log "prune-releases FAILED (publish itself succeeded): $($_.Exception.Message)"
+    Send-FailureAlert $root $NtfyTopic "WARNING - old index Releases not pruned on $env:COMPUTERNAME" `
+      ("The index publish succeeded, but prune-releases.ps1 failed: $($_.Exception.Message)`nLog: $log") | Out-Null
+  }
   Log '=== complete ==='
   exit 0
 }
