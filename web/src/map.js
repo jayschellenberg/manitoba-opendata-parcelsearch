@@ -8505,5 +8505,12 @@ export function setResultPin(map, point) {
     for (const [id, prop, v] of map._resultPinSaved || []) map.setPaintProperty(id, prop, v ?? 1);
     map._resultPinSaved = null;
   }
+  // The zoning code normally sits just above the centroid, which is where
+  // the pin's body stands, so the pin would cover it. While the pin is up,
+  // hang the code below the centroid (clear of the roll number) instead.
+  if (map.getLayer('zoning-label')) {
+    map.setLayoutProperty('zoning-label', 'text-anchor', on ? 'top' : 'bottom');
+    map.setLayoutProperty('zoning-label', 'text-offset', on ? [0, 1.2] : [0, -1.2]);
+  }
   map._resultPinOn = on;
 }
