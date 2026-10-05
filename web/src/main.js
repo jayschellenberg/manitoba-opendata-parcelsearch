@@ -4315,8 +4315,8 @@ function isRollOnlySearch(inputs) {
  * mapped neighbour within NEIGHBOUR_ROLL_WINDOW gets no pin — a typo would
  * otherwise always produce one.
  */
-async function placeByNeighbourRolls(rolls, muniNo, muniFeats, seqBase) {
-  const near = await lookupNearestRolls(muniNo, rolls, { k: 3, window: NEIGHBOUR_ROLL_WINDOW });
+async function placeByNeighbourRolls(rolls, muniNo, muniFeats, seqBase, window = NEIGHBOUR_ROLL_WINDOW) {
+  const near = await lookupNearestRolls(muniNo, rolls, { k: 3, window });
   const keys = [];
   for (const { below, above } of near.values()) {
     for (const rec of [...below, ...above]) keys.push({ muni_no: rec.muni_no, roll_no_txt: rec.roll_no_txt });
@@ -4349,7 +4349,20 @@ async function placeByNeighbourRolls(rolls, muniNo, muniFeats, seqBase) {
  * otherwise at the middle of the municipality. Never throws: any failure just
  * means fewer pins, and the roll is reported as not found as before.
  */
-async function resolveUnmappedRolls(missingRolls, municipality, { fallbackLegal = null } = {}) {
+// Sales-path settings for resolveUnmappedRolls. A roll search keeps the tight
+// defaults (MAX_UNMAPPED, NEIGHBOUR_ROLL_WINDOW) because a typed roll may be a
+// typo, and a confident-looking pin for a roll that doesn't exist is worse
+// than none. A sale confirms the roll exists, so the sales path can reach
+// further: rural rolls run in steps of 50-500 (Piney 129500 sits beside
+// 129000, past the 100 window), a multi-year upload of a growth area can
+// carry more than 25 unmapped lots, and a roll nothing else places still
+// belongs somewhere in its municipality.
+const SALE_PIN_OPTIONS = { maxPins: 500, neighbourWindow: 1000, muniCentreFallback: true };
+
+async function resolveUnmappedRolls(missingRolls, municipality, {
+  fallbackLegal = null, maxPins = MAX_UNMAPPED,
+  neighbourWindow = NEIGHBOUR_ROLL_WINDOW, muniCentreFallback = false,
+} = {}) {
   if (!missingRolls?.length) return [];
   try {
     const canonical = [...new Set(missingRolls.map((r) => canonicalRoll(r)))];
@@ -4377,7 +4390,7 @@ async function resolveUnmappedRolls(missingRolls, municipality, { fallbackLegal 
         if (strRefsFromRecord(rec).length) recsByRoll.set(r, [...(recsByRoll.get(r) || []), rec]);
       }
     }
-    const recs = selectUnmappedRecords(canonical, recsByRoll, muniNo);
+    const recs = selectUnmappedRecords(canonical, recsByRoll, muniNo, maxPins);
 
     // One MB_LegalDesc query per distinct section across every record.
     const refsByRec = recs.map((rec) => strRefsFromRecord(rec));
@@ -4409,9 +4422,31 @@ async function resolveUnmappedRolls(missingRolls, municipality, { fallbackLegal 
     // re-scrape): place by the nearest-numbered mapped rolls. Only with a
     // municipality picked — roll numbers mean nothing across municipalities.
     const found = new Set(recs.map((r) => canonicalRoll(r.roll_no_txt)));
-    const unknown = canonical.filter((r) => !found.has(r)).slice(0, MAX_UNMAPPED - out.length);
+    const unknown = canonical.filter((r) => !found.has(r)).slice(0, maxPins - out.length);
     if (muniNo != null && unknown.length > 0) {
-      out.push(...await placeByNeighbourRolls(unknown, muniNo, muniFeats, out.length));
+      out.push(...await placeByNeighbourRolls(unknown, muniNo, muniFeats, out.length, neighbourWindow));
+    }
+
+    // Last resort (sales path only): a roll a sale confirms exists but that
+    // nothing above could place goes to the middle of its municipality, the
+    // same 'municipality' basis a lot-on-plan legal gets. Says only
+    // "somewhere in here", and the popup says so.
+    if (muniCentreFallback && muniNo != null) {
+      const placed = new Set(out.map((f) => canonicalRoll(f.properties.Roll_No_Txt)));
+      const muniFeature = findMunicipality(muniFeats, muniNo);
+      const c = municipalityCentre(muniFeature);
+      if (c) {
+        for (const r of canonical) {
+          if (placed.has(r) || out.length >= maxPins) continue;
+          const f = buildUnmappedFeature({ muni_no: muniNo, roll_no_txt: r, municipality },
+            { ...c, basis: 'municipality' }, muniFeature, out.length + 1);
+          // Nothing but the sale vouches for this roll — a typo in a pasted
+          // CSV lands here too — so it reads as unconfirmed, like a
+          // neighbour placement, never as a located parcel.
+          f.properties._unconfirmed = true;
+          out.push(f);
+        }
+      }
     }
     return out;
   } catch (err) {
@@ -5841,7 +5876,7 @@ async function handleSalesUpload(file) {
           const s = salesByRoll.get(r)?.[0] || {};
           return [canonicalRoll(r), { legal_description: s.legalDescription || '', civic_address: s.streetAddress || '' }];
         }));
-        const pins = await resolveUnmappedRolls(stillMissing, muni, { fallbackLegal });
+        const pins = await resolveUnmappedRolls(stillMissing, muni, { fallbackLegal, ...SALE_PIN_OPTIONS });
         // Re-key to the sale's own roll spelling, and give each pin an id that
         // is unique across municipalities (resolveUnmappedRolls numbers from 1
         // per call, which the per-parcel dedupe would merge across munis).

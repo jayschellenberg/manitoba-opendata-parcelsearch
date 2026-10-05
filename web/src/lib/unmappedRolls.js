@@ -205,9 +205,9 @@ export function muniNoForListName(muniFeatures, listName) {
  * legal-index lookup keyed by canonical roll ("12345.000"); `muniNo`, when
  * the search was scoped to a municipality, drops same-numbered rolls in
  * other municipalities. One record per muni|roll, in the order the rolls
- * were asked for, capped at MAX_UNMAPPED.
+ * were asked for, capped at `max` (MAX_UNMAPPED unless the sales path raises it).
  */
-export function selectUnmappedRecords(missingCanonical, recsByRoll, muniNo = null) {
+export function selectUnmappedRecords(missingCanonical, recsByRoll, muniNo = null, max = MAX_UNMAPPED) {
   const out = [];
   const seen = new Set();
   for (const roll of missingCanonical || []) {
@@ -217,7 +217,7 @@ export function selectUnmappedRecords(missingCanonical, recsByRoll, muniNo = nul
       if (seen.has(k)) continue;
       seen.add(k);
       out.push(rec);
-      if (out.length >= MAX_UNMAPPED) return out;
+      if (out.length >= max) return out;
     }
   }
   return out;

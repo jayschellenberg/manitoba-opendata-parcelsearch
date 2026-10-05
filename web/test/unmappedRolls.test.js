@@ -103,6 +103,8 @@ test('records are scoped to the picked municipality, deduped and capped', () => 
   assert.equal(selectUnmappedRecords(['999.000'], recs, null).length, 0);
   const many = new Map([['1.000', Array.from({ length: 40 }, (_, i) => ({ muni_no: i, roll_no_txt: '1.000' }))]]);
   assert.equal(selectUnmappedRecords(['1.000'], many, null).length, MAX_UNMAPPED);
+  // The sales path raises the cap (a sale confirms the roll exists).
+  assert.equal(selectUnmappedRecords(['1.000'], many, null, 500).length, Math.min(many.get('1.000').length, 500));
 });
 
 test('the stand-in feature reads like a ROLL_ENTRY parcel and is flagged', () => {
