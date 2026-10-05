@@ -64,7 +64,7 @@ import {
 } from './lib/salesDedupe.js';
 import { parseSalesCsv } from './lib/salesCsvParse.js';
 import { saleRecordsFromRows } from './lib/salesCharts.js';
-import { buildSalesWaterfall } from './lib/salesWaterfall.js';
+import { buildSalesWaterfall, filteredSalesNote } from './lib/salesWaterfall.js';
 import { initMultiSelect } from './lib/multiSelect.js';
 import {
   primaryPropertyTree,
@@ -6378,20 +6378,26 @@ async function handleSalesUpload(file) {
     setExportEnabled(salesExportEnrichmentComplete && currentRows.length > 0);
     // Carry the water-rights filter note through — enrichOverlays folded it
     // into its own copy of baseMsg, which these lines replace.
+    //
+    // Same for the sidebar filters: refilterCsvIfActive just wrote "N of M
+    // shown (filtered)", and these lines replace that too. Without this a
+    // default-on filter (Exclude nominal sales) could hide most of an upload
+    // under a status line reading "8 of 8 sales plotted".
+    const hiddenNote = filteredSalesNote(lastSalesWaterfall);
     if (!soilResult) {
       // Soil was not requested. Say so rather than claiming "all available
       // parcel data loaded", which would be untrue while the CLI, Soil Type
       // and Slope columns sit empty — and would leave the user hunting for a
       // fault instead of reading the one sentence that explains the blanks.
       const filtered = lastWaterFilterDropped > 0 ? ` · ${waterFilterDropNote()}` : '';
-      setCount(`${baseMsg}${filtered} · soil data not loaded — pick the Agricultural preset to add it`);
+      setCount(`${baseMsg}${hiddenNote}${filtered} · soil data not loaded — pick the Agricultural preset to add it`);
     } else if (soilResult.complete) {
       const filtered = lastWaterFilterDropped > 0 ? ` · ${waterFilterDropNote()}` : '';
-      setCount(`${baseMsg}${filtered} · all available parcel data loaded`);
+      setCount(`${baseMsg}${hiddenNote}${filtered} · all available parcel data loaded`);
     } else {
       const failedMunis = soilResult.failures.map((failure) => failure.muni).join(', ');
       setCount(
-        `${baseMsg} · Soil data failed for ${failedMunis}; export disabled. Retry the import.`,
+        `${baseMsg}${hiddenNote} · Soil data failed for ${failedMunis}; export disabled. Retry the import.`,
       );
     }
   } finally {

@@ -59,3 +59,22 @@ export function buildSalesWaterfall(rows, stepOf, labels, groupIdOf) {
   });
   return { loaded, steps, remaining };
 }
+
+/**
+ * Status-line note for sales the grid is hiding, from a buildSalesWaterfall
+ * result: " · 5 of 8 sales hidden by filters (nominal sales: 5)". '' when
+ * nothing was hidden or there is no waterfall.
+ *
+ * Why it exists: the upload's final status line ("8 of 8 sales plotted …")
+ * is written after the filter pass and used to replace its message, so a
+ * default-on filter could hide most of an upload with nothing on screen
+ * saying so. Nominal ($0/$1) sales are the common case (found 2026-10-05).
+ */
+export function filteredSalesNote(waterfall) {
+  const loaded = waterfall?.loaded || 0;
+  const steps = (waterfall?.steps || []).filter((s) => s.removed > 0);
+  if (!loaded || !steps.length) return '';
+  const hidden = steps.reduce((n, s) => n + s.removed, 0);
+  const why = steps.map((s) => `${s.label.charAt(0).toLowerCase()}${s.label.slice(1)}: ${s.removed}`).join(', ');
+  return ` · ${hidden} of ${loaded} sale${loaded === 1 ? '' : 's'} hidden by filters (${why})`;
+}
