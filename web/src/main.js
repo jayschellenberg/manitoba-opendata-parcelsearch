@@ -90,7 +90,7 @@ import {
   parcelSlopeRange,
   slopeRangeText,
 } from './lib/cellFormat.js';
-import { filterMascRiverlotsForMuni, matchMuniNameCandidates } from './lib/muniIdentity.js';
+import { filterMascRiverlotsForMuni, matchMuniNameCandidates, northernMuniCandidates } from './lib/muniIdentity.js';
 import { safeExternalUrl } from './lib/safeUrl.js';
 import {
   applyCivicNumberFilter,
@@ -1959,6 +1959,9 @@ async function resolveMuniNamesForImport(rows) {
       const strict = normalizeMuniFromCsv(r.muniName);
       if (strict) candidates = [strict];
     }
+    // MAO's Northern Affairs names (see northernMuniCandidates); several
+    // candidates are queried and the roll # decides, as for MORRIS above.
+    if (candidates.length === 0) candidates = northernMuniCandidates(r.muniName, knownMunis);
     if (candidates.length === 0) {
       unresolvedByLine.set(r.lineNo, `Municipality not recognised: "${r.muniName}"`);
       continue;
@@ -5652,13 +5655,31 @@ async function handleSalesUpload(file) {
     // a Roll_Entry-style 'NAME (TYPE)' value, or made it through but
     // the roll wasn't in Roll_Entry (added later, after the API match).
     const byMuni = new Map();
+    // Group key -> Roll Entry names to query, for keys that stand for several
+    // (see northernMuniCandidates). Absent = the key is itself the one name.
+    const muniCandidates = new Map();
+    const knownMuniNames = $municipality
+      ? Array.from($municipality.options).map((o) => o.value).filter(Boolean)
+      : [];
     const unmatchedRecords = [];
     for (const r of records) {
       if (!r.rollNumber || !r.municipality) {
         unmatchedRecords.push({ ...r, reason: 'Roll # or Municipality blank in CSV row' });
         continue;
       }
-      const muni = normalizeMuniFromCsv(r.municipality);
+      let muni = normalizeMuniFromCsv(r.municipality);
+      if (!muni) {
+        // MAO's Northern Affairs names ("HARWILL-NORTHERN AFFAIRS ACT",
+        // "MUNICIPAL AND NORTHERN RELATIONS") — see northernMuniCandidates.
+        // Several candidates (the four 700-703 districts) are all queried
+        // and the roll decides, under one combined group key.
+        const north = northernMuniCandidates(r.municipality, knownMuniNames);
+        if (north.length === 1) muni = north[0];
+        else if (north.length > 1) {
+          muni = north.join(' / ');
+          muniCandidates.set(muni, north);
+        }
+      }
       if (!muni) {
         unmatchedRecords.push({ ...r, reason: `Municipality not recognised: "${r.municipality}"` });
         continue;
@@ -5687,8 +5708,18 @@ async function handleSalesUpload(file) {
     const fetches = [...byMuni.entries()].map(async ([muni, recs]) => {
       const rolls = recs.map((r) => r.rollNumber).filter(Boolean).join(',');
       let fc = { type: 'FeatureCollection', features: [] };
+      // Usually one Roll Entry name; several when one CSV name maps to more
+      // (MAO's "MUNICIPAL AND NORTHERN RELATIONS" -> districts 700-703).
+      const cands = muniCandidates.get(muni) || [muni];
       try {
-        fc = await searchParcels({ municipality: muni, roll: rolls });
+        if (cands.length === 1) {
+          fc = await searchParcels({ municipality: muni, roll: rolls });
+        } else {
+          const parts = await Promise.all(cands.map((c) => searchParcels({ municipality: c, roll: rolls })));
+          fc = { type: 'FeatureCollection',
+                 features: parts.flatMap((p) => p?.features || []),
+                 _truncated: parts.some((p) => p?._truncated === true) };
+        }
       } catch (err) {
         console.warn(`searchParcels failed for ${muni}`, err);
         fetchErrors.push({ muni, message: err.message || String(err) });
@@ -5784,7 +5815,7 @@ async function handleSalesUpload(file) {
       const missing = lookupTruncated ? [] : [...salesByRoll.keys()].filter((r) => !matchedRolls.has(r));
       if (missing.length) {
         try {
-          const hist = await historicalRollFeaturesForMuni(muni, missing);
+          const hist = (await Promise.all(cands.map((c) => historicalRollFeaturesForMuni(c, missing)))).flat();
           if (hist.length) {
             const more = expandFeaturesBySale(hist, salesByRoll, stampSale);
             features.push(...more.features);

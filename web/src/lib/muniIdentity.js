@@ -156,6 +156,43 @@ export function matchMuniNameCandidates(raw, knownNames = []) {
   return sameType.length > 0 ? sameType : sameName;
 }
 
+/**
+ * Roll Entry names for MAO's Northern Affairs municipality strings, which the
+ * "RM OF" / "CITY OF" normalisation cannot read:
+ *
+ *   MAO sales / exports                     Roll Entry (Muni_Name_With_Typ)
+ *   "HARWILL-NORTHERN AFFAIRS ACT"          "HARWILL (NORTHERN COMMUNITY)"
+ *   "AGHAMING-NORTHERN AFFAIRS ACT"         "AGHAMING (NORTHERN SETTLEMENT)"
+ *   "HOMEBROOK - PEONAN POINT-NORTHERN …"   "HOMEBROOK-PEONAN POINT (NORTHERN COMMUNITY)"
+ *   "INCORPORATED COMMUNITY OF CROSS LAKE"  "CROSS LAKE (NORTHERN COMMUNITY)"
+ *   "MUNICIPAL AND NORTHERN RELATIONS"      "INDIGENOUS&NORTHERN RELATIONS (700)" … "(703)"
+ *
+ * The last is one MAO name for four Roll Entry jurisdictions (the
+ * department's unorganized-territory districts), so it returns all four and
+ * the caller lets the roll number decide, as for the Town / RM of Morris.
+ *
+ * Returns names exactly as `knownNames` spells them (one carries a double
+ * space, "NELSON HOUSE  (NORTHERN COMMUNITY)", that an exact-match query must
+ * reproduce), or [] when the string is not a Northern Affairs name. Before
+ * this, every such sale was dropped as "Municipality not recognised" —
+ * 5,811 MAO sale rows (0.7%), found 2026-10-05.
+ */
+export function northernMuniCandidates(raw, knownNames = []) {
+  const flat = (v) => String(v ?? '').toUpperCase().replace(/\s*-\s*/g, '-').replace(/\s+/g, ' ').trim();
+  const s = flat(raw);
+  const list = (knownNames || []).filter(Boolean).map(String);
+  if (!s || !list.length) return [];
+
+  if (/^(MUNICIPAL|INDIGENOUS) ?(AND|&) ?NORTHERN RELATIONS$/.test(s)) {
+    return list.filter((n) => /^INDIGENOUS ?& ?NORTHERN RELATIONS \(\d+\)$/.test(flat(n)));
+  }
+  const m = s.match(/^(.+)-NORTHERN AFFAIRS ACT$/) || s.match(/^INCORPORATED COMMUNITY OF (.+)$/);
+  if (!m) return [];
+  const base = m[1].trim();
+  return list.filter((n) => flat(n).replace(/ \(NORTHERN (COMMUNITY|SETTLEMENT)\)$/, '') === base
+                            && / \(NORTHERN (COMMUNITY|SETTLEMENT)\)$/.test(flat(n)));
+}
+
 /** The distinct municipality strings a MASC river-lot feature carries. */
 export function featureMascMunis(feature) {
   const p = feature?.properties || {};

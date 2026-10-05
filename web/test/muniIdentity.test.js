@@ -15,6 +15,7 @@ import {
   parseMuniIdentity,
   muniIdentitiesMatch,
   matchMuniNameCandidates,
+  northernMuniCandidates,
   featureMascMunis,
   filterMascRiverlotsForMuni,
 } from '../src/lib/muniIdentity.js';
@@ -187,6 +188,48 @@ test('unknown names and empty input yield nothing', () => {
   assert.deepEqual(matchMuniNameCandidates('NOWHERE', KNOWN), []);
   assert.deepEqual(matchMuniNameCandidates('', KNOWN), []);
   assert.deepEqual(matchMuniNameCandidates('ARBORG', []), []);
+});
+
+// Roll Entry's own spellings, including its double-spaced NELSON HOUSE.
+const NORTH = [
+  'HARWILL (NORTHERN COMMUNITY)', 'AGHAMING (NORTHERN SETTLEMENT)',
+  'HOMEBROOK-PEONAN POINT (NORTHERN COMMUNITY)', 'NELSON HOUSE  (NORTHERN COMMUNITY)',
+  'CROSS LAKE (NORTHERN COMMUNITY)', 'DALLAS/RED ROSE (NORTHERN COMMUNITY)',
+  'INDIGENOUS&NORTHERN RELATIONS (700)', 'INDIGENOUS&NORTHERN RELATIONS (701)',
+  'INDIGENOUS&NORTHERN RELATIONS (702)', 'INDIGENOUS&NORTHERN RELATIONS (703)',
+  'MORRIS (RM)', 'HARWILL (RM)',
+];
+
+test('MAO "-NORTHERN AFFAIRS ACT" names map to the community or settlement', () => {
+  assert.deepEqual(northernMuniCandidates('HARWILL-NORTHERN AFFAIRS ACT', NORTH), ['HARWILL (NORTHERN COMMUNITY)']);
+  assert.deepEqual(northernMuniCandidates('AGHAMING-NORTHERN AFFAIRS ACT', NORTH), ['AGHAMING (NORTHERN SETTLEMENT)']);
+  assert.deepEqual(northernMuniCandidates('DALLAS/RED ROSE-NORTHERN AFFAIRS ACT', NORTH), ['DALLAS/RED ROSE (NORTHERN COMMUNITY)']);
+});
+
+test('hyphen spacing differences are ignored', () => {
+  assert.deepEqual(northernMuniCandidates('HOMEBROOK - PEONAN POINT-NORTHERN AFFAIRS ACT', NORTH),
+    ['HOMEBROOK-PEONAN POINT (NORTHERN COMMUNITY)']);
+});
+
+test('incorporated communities, returned with Roll Entry\'s exact (double-spaced) spelling', () => {
+  assert.deepEqual(northernMuniCandidates('INCORPORATED COMMUNITY OF NELSON HOUSE', NORTH),
+    ['NELSON HOUSE  (NORTHERN COMMUNITY)']);
+  assert.deepEqual(northernMuniCandidates('Incorporated Community of Cross Lake', NORTH),
+    ['CROSS LAKE (NORTHERN COMMUNITY)']);
+});
+
+test('"MUNICIPAL AND NORTHERN RELATIONS" is all four districts; the roll decides', () => {
+  assert.deepEqual(northernMuniCandidates('MUNICIPAL AND NORTHERN RELATIONS', NORTH), [
+    'INDIGENOUS&NORTHERN RELATIONS (700)', 'INDIGENOUS&NORTHERN RELATIONS (701)',
+    'INDIGENOUS&NORTHERN RELATIONS (702)', 'INDIGENOUS&NORTHERN RELATIONS (703)',
+  ]);
+});
+
+test('non-Northern names, and a same-named RM, are not matched', () => {
+  assert.deepEqual(northernMuniCandidates('RM OF MORRIS', NORTH), []);
+  assert.deepEqual(northernMuniCandidates('NOWHERE-NORTHERN AFFAIRS ACT', NORTH), []);
+  assert.ok(!northernMuniCandidates('HARWILL-NORTHERN AFFAIRS ACT', NORTH).includes('HARWILL (RM)'));
+  assert.deepEqual(northernMuniCandidates('', NORTH), []);
 });
 
 const failed = results.filter((r) => r.status === 'fail');
