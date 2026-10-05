@@ -136,21 +136,24 @@ elseif ($code -ne 0) {
 # the snapshot itself was written, and task-health reports the nonzero result.
 if (-not $DryRun) {
     $HistRepo = Join-Path (Split-Path $ScriptDir -Parent) 'mb-parcel-history'
-    $ErrorActionPreference = 'Continue'
-    $branch = (& git -C $HistRepo branch --show-current 2>&1 | Out-String).Trim()
+    # git reports on STDERR too; same guard as the Rscript call above.
+    function Invoke-HistGit {
+        $ErrorActionPreference = 'Continue'
+        & git -C $HistRepo @args 2>&1 | Tee-Object -FilePath $LogFile -Append
+    }
+    $branch = (Invoke-HistGit branch --show-current | Out-String).Trim()
     if ($LASTEXITCODE -ne 0 -or $branch -ne 'main') {
         Write-Host ("[du-snapshot] NOT committed: {0} is on '{1}', not main." -f $HistRepo, $branch)
         exit 4
     }
-    & git -C $HistRepo add -- du-snapshots 2>&1 | Tee-Object -FilePath $LogFile -Append
-    & git -C $HistRepo diff --cached --quiet -- du-snapshots
+    Invoke-HistGit add -- du-snapshots | Out-Null
+    Invoke-HistGit diff --cached --quiet -- du-snapshots | Out-Null
     if ($LASTEXITCODE -eq 0) {
         Write-Host '[du-snapshot] no change to commit.'
     } else {
-        & git -C $HistRepo commit -q -m ("DU snapshot {0}" -f (Get-Date -Format 'yyyy-MM-dd')) -- du-snapshots 2>&1 |
-            Tee-Object -FilePath $LogFile -Append
+        Invoke-HistGit commit -q -m ("DU snapshot {0}" -f (Get-Date -Format 'yyyy-MM-dd')) -- du-snapshots
         if ($LASTEXITCODE -ne 0) { Write-Host '[du-snapshot] git commit FAILED.'; exit 4 }
-        & git -C $HistRepo push -q origin main 2>&1 | Tee-Object -FilePath $LogFile -Append
+        Invoke-HistGit push -q origin main
         if ($LASTEXITCODE -ne 0) { Write-Host '[du-snapshot] git push FAILED (committed locally).'; exit 4 }
         Write-Host '[du-snapshot] committed and pushed du-snapshots/.'
     }
