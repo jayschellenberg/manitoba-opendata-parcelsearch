@@ -1117,18 +1117,18 @@ header small a {
   text-align: center;
 }
 
-/* DU mode + min-# in a side-by-side row inside the sidebar. Even
-   50/50 split: the mode select is capped at half the sidebar width
-   (it used to grow to fill, leaving a cramped 64-px unit input on a
-   wide sidebar) and the min-# input takes the other half. Both carry
-   min-width:0 so they can shrink past the select's intrinsic width. */
+/* DU mode + min-# side by side, an exact 50/50 split of the BOXES
+   (Jason, 2026-10-06). The flex 50/50 this replaced split the fields,
+   and the # field also held the row's info icon, so the box came out
+   ~31px narrower than the select. Same icon-track grid as .legal-row:
+   the icon gets its own 25px column and the # field spans into it. */
 .sidebar .du-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) 25px;
   gap: 6px;
 }
-
-.sidebar .du-row .du-mode-field { flex: 1 1 50%; max-width: 50%; min-width: 0; }
-.sidebar .du-row .du-min-field  { flex: 1 1 50%; min-width: 0; }
+.sidebar .du-row > .field { min-width: 0; }
+.sidebar .du-row > .field:last-child { grid-column: span 2; }
 
 /* Combined DU + Size row — 4 fields on one line at the 280-px
    sidebar width. Left half (DU mode + #) takes 50%; right half
