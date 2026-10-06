@@ -38,6 +38,7 @@ export function hasLegalCriteria(criteria = {}) {
     real(criteria.strSection) ||
     real(criteria.strTownship) ||
     real(criteria.strRange) ||
+    real(criteria.strDir) ||
     real(criteria.strQuarter)
   );
 }
@@ -491,7 +492,9 @@ export function parishSearchNeedle(criteria = {}) {
 
 /** Criteria → RegExp over the STR token string, or null. The range
  *  box accepts `4`, `4E` or `4W` — a bare number matches either side
- *  of the principal meridian. */
+ *  of the principal meridian. `strDir` (the E/W select, 2026-10-06)
+ *  names the side on its own and wins over a letter typed into the
+ *  range box; on its own it narrows to every parcel on that side. */
 export function strSearchNeedle(criteria = {}) {
   const q   = real(criteria.strQuarter) ? String(criteria.strQuarter).toUpperCase().trim() : '';
   const sec = real(criteria.strSection) ? stripZeros(String(criteria.strSection).toUpperCase().replace(/[^0-9A-Z]/g, '')) : '';
@@ -502,7 +505,12 @@ export function strSearchNeedle(criteria = {}) {
     if (m) { rge = stripZeros(m[1]); dir = m[2] || ''; }
     else return NEVER_MATCH;  // garbage in the range box matches nothing
   }
-  if (!q && !sec && !twp && !rge) return null;
+  if (real(criteria.strDir)) {
+    const d = String(criteria.strDir).toUpperCase().trim();
+    if (d !== 'E' && d !== 'W') return NEVER_MATCH;
+    dir = d;
+  }
+  if (!q && !sec && !twp && !rge && !dir) return null;
   return new RegExp(
     `;${q ? escRe(q) : '[A-Z]{2}'}` +
     `\\|${sec ? escRe(sec) : '[^|;]*'}` +

@@ -2049,11 +2049,20 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 .sidebar .legal-title-row .legal-title-field { flex: 1 1 0; min-width: 0; }
 .sidebar .legal-title-row input[type="text"] { width: 100%; }
 
+/* Equal boxes despite the row's info icon (Jason, 2026-10-06). The ⓘ sits
+   inside the LAST field, so in a plain 1fr grid it ate ~31px of that box
+   alone (Plan 61px beside Lot/Block's 92). Rows that need equal widths
+   add a 25px trailing column and let their last field span into it: the
+   field gets 1fr + 6px gap + 25px = its share plus the 31px the icon
+   takes (measured), so the input left over is exactly 1fr. */
 .sidebar .legal-row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr)) 25px;
   gap: 6px;
 }
+.sidebar .legal-row > .field:last-child,
+.sidebar .parish-row > .field:last-child,
+.sidebar .str-row > .field:last-child { grid-column: span 2; }
 .sidebar .legal-row input { width: 100%; min-width: 0; }
 
 /* Import multi-match notice — the amber line under the list pill that
@@ -2093,22 +2102,38 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
    the lot type / lot # / plan trio shares the second. */
 .sidebar .parish-row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr)) 25px;
   gap: 6px;
 }
 .sidebar .parish-row .parish-field { grid-column: 1 / -1; }
 .sidebar .parish-row select,
 .sidebar .parish-row input { width: 100%; min-width: 0; }
 
-/* Section-Township-Range + Quarter — four short values on one line,
-   mirroring MAO's "12 5 4E" three-box entry plus the quarter select. */
+/* Qtr + Section-Township-Range + E/W on one line, mirroring MAO's
+   "12 5 4E" entry. Sec / Twp / Rge were halved (Jason, 2026-10-06) to
+   make room for the E/W select: the two selects are sized to "Qtr" /
+   "E/W" plus the native arrow, the three boxes share what is left
+   (~39px each on the desktop sidebar), and their padding drops to 3px
+   so the widest placeholder ("Twp", 28px) still shows in full. */
 .sidebar .str-row {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: 58px repeat(3, minmax(0, 1fr)) 64px 25px;
   gap: 6px;
 }
 .sidebar .str-row select,
 .sidebar .str-row input { width: 100%; min-width: 0; }
+/* Chrome draws its ~20px native arrow on top of padding-right, so the
+   app-wide 24px right padding left "NE" no room in a 58px select (and
+   "Lot type" clipped in its 82px third). Narrow selects keep 2px. */
+.sidebar .str-row select,
+.sidebar .parish-row > .field:not(.parish-field) select { padding-left: 6px; padding-right: 2px; }
+/* [type="text"] for specificity: the later `.controls input[type="text"]`
+   padding rule would otherwise win on source order. */
+.sidebar .str-row input[type="text"] {
+  padding-left: 3px;
+  padding-right: 3px;
+  text-align: center;
+}
 
 .sidebar .legal-row input {
   text-align: center;

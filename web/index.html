@@ -373,27 +373,6 @@
               <span class="tip">Civic-address search. From # on its own is a "contains" match — 1106 finds "1 106 E ROAD 71 N" however the number is spaced. Fill To # as well for an exact number (same value; tabbing into To auto-fills it) or an inclusive range (different values). Street Name is a substring match against Property_Address (e.g. 'MAIN ST', 'DRURY', 'ROAD 96W').</span>
             </span>
           </div>
-          <!-- Street Type + Direction, mirroring the dropdowns on MAO's
-               civic-address search. MAO decides these against structured
-               columns; here they're word-position matches against the
-               Property_Address text, applied client-side alongside the
-               civic-number filter. Options are filled from
-               civicRange.js's lists at boot so the dropdowns and the
-               matcher can't drift apart. -->
-          <div class="address-typedir-row">
-            <span class="field">
-              <select id="address-type">
-                <option value="">Street Type</option>
-              </select>
-            </span>
-            <span class="field">
-              <select id="address-dir">
-                <option value="">Direction</option>
-              </select>
-              <span class="tip">Street Type is matched in type position at the end of the address — 'ST' finds "100 MAIN ST N" but not "123 ST MARYS RD"; long forms match too (RD also finds "ROAD", HWY finds "HIGHWAY"). Direction matches as its own word ("MAIN ST N") or glued to a rural grid number ("ROAD 96W"). Both work best together with a street name.</span>
-            </span>
-          </div>
-
           <!-- Phase 3: Additional Searches collapsible. Holds the less-
                frequently-touched controls (legal description, certificate
                of title, zoning category, amendment status, dwelling units).
@@ -409,6 +388,40 @@
               id="advanced-filters-badge"
               hidden
             ></span></summary>
+            <!-- Street Type + Direction, mirroring the dropdowns on MAO's
+                 civic-address search. MAO decides these against structured
+                 columns; here they're word-position matches against the
+                 Property_Address text, applied client-side alongside the
+                 civic-number filter. Options are filled from
+                 civicRange.js's lists at boot so the dropdowns and the
+                 matcher can't drift apart. Moved in here from under the
+                 address row (Jason, 2026-10-06): rarely needed, and the
+                 badge on the summary still names them when the group is
+                 collapsed. -->
+            <div class="address-typedir-row">
+              <span class="field">
+                <select id="address-type">
+                  <option value="">Street Type</option>
+                </select>
+              </span>
+              <span class="field">
+                <select id="address-dir">
+                  <option value="">Direction</option>
+                </select>
+                <span class="tip">Street Type is matched in type position at the end of the address — 'ST' finds "100 MAIN ST N" but not "123 ST MARYS RD"; long forms match too (RD also finds "ROAD", HWY finds "HIGHWAY"). Direction matches as its own word ("MAIN ST N") or glued to a rural grid number ("ROAD 96W"). Both work best together with a street name.</span>
+              </span>
+            </div>
+            <!-- Condo Unit then Plan (Jason, 2026-10-06), above Legal
+                 description. -->
+            <div class="condo-row">
+              <span class="field">
+                <input id="condo-unit" type="text" placeholder="Condo Unit" />
+              </span>
+              <span class="field">
+                <input id="condo-plan" type="text" placeholder="Condo Plan" />
+                <span class="tip">Condominium unit search, e.g. Unit 1 on Plan 38239 — matches the plan-unit pairs in the legal detail ("38239-1 TOGETHER WITH AN UNDIVIDED…"). Plan alone returns every unit on the plan; unit ranges in the legal description ("1/8-39000") count as every unit they cover.</span>
+              </span>
+            </div>
             <!-- Legal description + Certificate of Title row -->
             <div class="legal-title-row">
               <span class="field legal-title-field">
@@ -438,15 +451,6 @@
                 <span class="tip">Lot / Block / Plan — exact matches against the MAO scrape's parsed fields ("4" and "04" are the same). Plan falls back to a text search of the full legal description for plans the parser missed. Fill any subset.</span>
               </span>
             </div>
-            <div class="condo-row">
-              <span class="field">
-                <input id="condo-plan" type="text" placeholder="Condo Plan" />
-              </span>
-              <span class="field">
-                <input id="condo-unit" type="text" placeholder="Condo Unit" />
-                <span class="tip">Condominium unit search, e.g. Plan 38239 Unit 1 — matches the plan-unit pairs in the legal detail ("38239-1 TOGETHER WITH AN UNDIVIDED…"). Plan alone returns every unit on the plan; unit ranges in the legal description ("1/8-39000") count as every unit they cover.</span>
-              </span>
-            </div>
             <div class="parish-row">
               <span class="field parish-field">
                 <select id="parish" disabled>
@@ -466,13 +470,15 @@
                 <span class="tip">Parish river-lot search — "RL-65-FX-5066" is River Lot 65, Parish of St François Xavier, Plan 5066. The Parish list only offers parishes occurring in the archive, and the search is province-wide (no municipality needed). Lot type is best-effort narrowing (MAO codes some settlement and inner-two-mile lots as river lots — leave it on "Lot type" if a search comes up short). Lot ranges ("RL45/51-BP-626") count as every lot they cover; leave Plan blank to match any plan.</span>
               </span>
             </div>
-            <!-- Quarter leads the row (Jason, 2026-08-22): it's how the
+            <!-- Qtr leads the row (Jason, 2026-08-22): it's how the
                  legal reads aloud — "NE 27-7-4E" — so the boxes follow
-                 the same order the value is spoken and typed. -->
+                 the same order the value is spoken and typed. The
+                 meridian side has its own E/W select at the end
+                 (2026-10-06); Rge still accepts "4E" typed whole. -->
             <div class="str-row">
               <span class="field">
                 <select id="str-quarter">
-                  <option value="">Quarter</option>
+                  <option value="">Qtr</option>
                   <option value="NE">NE</option>
                   <option value="NW">NW</option>
                   <option value="SE">SE</option>
@@ -488,7 +494,14 @@
               </span>
               <span class="field">
                 <input id="str-range" type="text" placeholder="Rge" />
-                <span class="tip">Section-township-range search, e.g. Quarter NE, Sec 27, Twp 7, Rge 4E. Rge takes the meridian direction ("4E" / "28W"); a bare number matches both east and west. Quarter RL is for river lots surveyed by township — Sec then takes the lot number. Leave Quarter on "Quarter" to match any; fill any subset of the boxes.</span>
+              </span>
+              <span class="field">
+                <select id="str-dir" aria-label="Range east or west of the principal meridian">
+                  <option value="">E/W</option>
+                  <option value="E">E</option>
+                  <option value="W">W</option>
+                </select>
+                <span class="tip">Section-township-range search, e.g. Qtr NE, Sec 27, Twp 7, Rge 4, E. E/W is the side of the principal meridian; left on "E/W" a range matches both sides. Typing the side into Rge ("4E") works too and moves it into E/W. Qtr RL is for river lots surveyed by township — Sec then takes the lot number. Leave Qtr on "Qtr" to match any; fill any subset of the boxes.</span>
               </span>
             </div>
             <div class="filter-row">
