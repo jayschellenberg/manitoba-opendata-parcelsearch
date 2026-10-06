@@ -554,8 +554,16 @@
           </details>
 
           <div class="action-row">
+            <!-- Three equal thirds (Jason, 2026-10-06). Clear Roll/Address
+                 empties the Roll # chips, the civic-address row and the
+                 results but KEEPS the municipality, for working through
+                 several properties in one muni; Clear All is the full
+                 page reset it always was. -->
             <button id="search" type="button" class="primary">🔍 Search</button>
-            <button id="clear" type="button" class="danger">Clear</button>
+            <button id="clear-roll-address" type="button" class="danger-soft"
+                    title="Clear the Roll # and address fields and the results, keeping the municipality">🧹 Roll/Add</button>
+            <button id="clear" type="button" class="danger"
+                    title="Reset everything: every field, the results, overlays and cached data">🗑️ Clear All</button>
           </div>
         </section><!-- /tab-panel-property -->
 
