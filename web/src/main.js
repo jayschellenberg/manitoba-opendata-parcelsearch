@@ -405,6 +405,7 @@ const $parishPlan    = document.getElementById('parish-plan');
 const $strSection    = document.getElementById('str-section');
 const $strTownship   = document.getElementById('str-township');
 const $strRange      = document.getElementById('str-range');
+const $strDir        = document.getElementById('str-dir');
 const $strQuarter    = document.getElementById('str-quarter');
 // Street Type + Direction dropdowns under the civic-address row.
 // Decided client-side against Property_Address, like the civic-number
@@ -2240,6 +2241,7 @@ const URL_INPUT_BINDINGS = [
   { id: 'str-section',   key: 'strSection',    event: 'change' },
   { id: 'str-township',  key: 'strTownship',   event: 'change' },
   { id: 'str-range',     key: 'strRange',      event: 'change' },
+  { id: 'str-dir',       key: 'strDir',        event: 'change' },
   { id: 'str-quarter',   key: 'strQuarter',    event: 'change' },
   { id: 'title',         key: 'title',         event: 'change' },
   { id: 'zone-category', key: 'zoneCategory',  event: 'change' },
@@ -4154,6 +4156,18 @@ if ($addressFrom && $addressTo) {
   });
 }
 
+// The meridian side has its own E/W select (2026-10-06), but "4E" typed
+// whole into Rge is how the legal is written, so move the letter across
+// as it is typed. Done on `input`, not `change`, so the two can never
+// disagree when Enter runs the search before the box blurs.
+$strRange?.addEventListener('input', () => {
+  const m = $strRange.value.trim().match(/^(\d+)\s*([EW])$/i);
+  if (!m || !$strDir) return;
+  $strRange.value = m[1];
+  $strDir.value = m[2].toUpperCase();
+  $strDir.dispatchEvent(new Event('change', { bubbles: true }));
+});
+
 for (const el of [$addressFrom, $addressTo, $addressStreet, $roll, $legalText, $lot, $block, $plan, $title,
   $condoPlan, $condoUnit, $parishLot, $parishPlan, $strSection, $strTownship, $strRange].filter(Boolean)) {
   el.addEventListener('keydown', (e) => {
@@ -4176,6 +4190,10 @@ for (const el of [$addressFrom, $addressTo, $addressStreet, $roll, $legalText, $
 /** One entry per active advanced criterion: short label + full detail. */
 function advancedFilterChips() {
   const chips = [];
+  // Street Type / Direction moved into this group (2026-10-06), so they
+  // need the badge too: collapsed, nothing else would show they are set.
+  const streetBits = [$addressType?.value.trim(), $addressDir?.value.trim()].filter(Boolean);
+  if (streetBits.length) chips.push({ label: 'Street', detail: `Street type/direction: ${streetBits.join(' ')}` });
   const legal = $legalText?.value.trim() || '';
   if (legal) chips.push({ label: 'Legal', detail: `Legal description contains "${legal}"` });
   const ct = $title?.value.trim() || '';
@@ -4204,6 +4222,7 @@ function advancedFilterChips() {
     $strSection?.value.trim() ? `Sec ${$strSection.value.trim()}` : '',
     $strTownship?.value.trim() ? `Twp ${$strTownship.value.trim()}` : '',
     $strRange?.value.trim() ? `Rge ${$strRange.value.trim()}` : '',
+    $strDir?.value ? `${$strDir.value} of meridian` : '',
   ].filter(Boolean);
   if (strBits.length) chips.push({ label: 'Sec-Twp-Rge', detail: `Section-township-range: ${strBits.join(' ')}` });
   const zone = $zoneCategory?.value.trim() || '';
@@ -5193,6 +5212,7 @@ async function runSearch() {
     strSection:     $strSection?.value.trim()  ?? '',
     strTownship:    $strTownship?.value.trim() ?? '',
     strRange:       $strRange?.value.trim()    ?? '',
+    strDir:         $strDir?.value.trim()      ?? '',
     strQuarter:     $strQuarter?.value.trim()  ?? '',
   };
   const inputs = {

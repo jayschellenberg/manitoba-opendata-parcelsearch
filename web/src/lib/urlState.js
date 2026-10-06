@@ -170,6 +170,7 @@ export const SCHEMA = {
   strTownship: { param: 'sw', validate: cleanString,           format: (v) => v },
   strRange:    { param: 'sg', validate: cleanString,           format: (v) => v },
   strQuarter:  { param: 'sq', validate: oneOf(['NE', 'NW', 'SE', 'SW', 'RL']), format: (v) => v },
+  strDir:      { param: 'se', validate: oneOf(['E', 'W']),     format: (v) => v },
   zoneCategory: { param: 'zc', validate: cleanString,          format: (v) => v },
   changedStatus: { param: 'cs', validate: oneOf(['zoning', 'devplan', 'both']), format: (v) => v },
   duMode:      { param: 'du', validate: oneOf(['zero', 'min']), format: (v) => v },

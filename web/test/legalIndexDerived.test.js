@@ -171,11 +171,28 @@ test('str needle: bare range matches both meridians, suffixed does not', () => {
   assert.equal(strSearchNeedle({}), null);
 });
 
+test('str needle: the E/W select picks the meridian side (2026-10-06)', () => {
+  const west = ';NE|1|13|28|W;';
+  const east = ';NE|1|13|28|E;';
+  // with a bare range, the select narrows it to one side
+  assert.ok(strSearchNeedle({ strRange: '28', strDir: 'W' }).test(west));
+  assert.ok(!strSearchNeedle({ strRange: '28', strDir: 'W' }).test(east));
+  assert.ok(strSearchNeedle({ strRange: '28', strDir: 'e' }).test(east));
+  // the select wins over a letter typed into the range box
+  assert.ok(strSearchNeedle({ strRange: '28E', strDir: 'W' }).test(west));
+  assert.ok(!strSearchNeedle({ strRange: '28E', strDir: 'W' }).test(east));
+  // on its own it is a criterion: every parcel on that side
+  assert.ok(strSearchNeedle({ strDir: 'W' }).test(west));
+  assert.ok(!strSearchNeedle({ strDir: 'W' }).test(east));
+  // anything else in it matches nothing rather than everything
+  assert.ok(!strSearchNeedle({ strDir: 'X' }).test(west));
+});
+
 console.log('hasLegalCriteria');
 
 test('each new field lights the legal-search path', () => {
   for (const key of ['condoPlan', 'condoUnit', 'parish', 'parishLotType', 'parishLot',
-    'parishPlan', 'strSection', 'strTownship', 'strRange', 'strQuarter']) {
+    'parishPlan', 'strSection', 'strTownship', 'strRange', 'strDir', 'strQuarter']) {
     assert.ok(hasLegalCriteria({ [key]: 'x' }), key);
   }
   assert.ok(!hasLegalCriteria({}));
