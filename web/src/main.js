@@ -1928,6 +1928,21 @@ placeMapOptionsRow(getActiveTab());
 const $rollChip = document.querySelector('.chip-input[data-target="roll"]');
 if ($rollChip) initChipInput($rollChip, { onEnterEmpty: () => runSearch() });
 
+// Typing a roll # and tabbing out clears the civic-address row (Jason,
+// 2026-10-06): a roll is the whole lookup, and a leftover street number or
+// name would AND against it and return nothing. Only a freshly TYPED roll
+// triggers it — tabbing through a field whose chips are already set leaves
+// an address the user may have entered on purpose. `change` (not `input`)
+// is what the URL-state writer listens for.
+$rollChip?.querySelector('.chip-input-text')?.addEventListener('keydown', (e) => {
+  if (e.key !== 'Tab' || !e.target.value.trim()) return;
+  for (const el of [$addressFrom, $addressTo, $addressStreet, $addressType, $addressDir]) {
+    if (!el || !el.value) continue;
+    el.value = '';
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+});
+
 // Roll Entry name→muni_no reconciler for the Import-List "Municipality
 // (name)" column (the sales-export shape: "RM OF SPRINGFIELD" + roll).
 // Injected into the import modal's resolver so the parser/resolver stay
