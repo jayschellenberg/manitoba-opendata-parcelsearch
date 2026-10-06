@@ -2038,15 +2038,16 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 .sidebar .address-row .address-to-field     { flex: 0 0 64px; min-width: 0; }
 .sidebar .address-row .address-street-field { flex: 1 1 auto; min-width: 0; }
 
-/* Legal description + Certificate of Title on a single row, each at
-   ~50% width. Keeps the inputs paired (both are MAO-scrape lookups)
-   and saves vertical space in the sidebar. */
+/* Legal description + Certificate of Title on a single row, equal
+   widths (see the icon-track note below). Keeps the inputs paired (both
+   are MAO-scrape lookups) and saves vertical space in the sidebar. */
 .sidebar .legal-title-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) 25px;
   gap: 6px;
   margin-top: 4px;
 }
-.sidebar .legal-title-row .legal-title-field { flex: 1 1 0; min-width: 0; }
+.sidebar .legal-title-row .legal-title-field { min-width: 0; }
 .sidebar .legal-title-row input[type="text"] { width: 100%; }
 
 /* Equal boxes despite the row's info icon (Jason, 2026-10-06). The ⓘ sits
@@ -2061,6 +2062,9 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   gap: 6px;
 }
 .sidebar .legal-row > .field:last-child,
+.sidebar .legal-title-row > .field:last-child,
+.sidebar .address-typedir-row > .field:last-child,
+.sidebar .condo-row > .field:last-child,
 .sidebar .parish-row > .field:last-child,
 .sidebar .str-row > .field:last-child { grid-column: span 2; }
 .sidebar .legal-row input { width: 100%; min-width: 0; }
@@ -2079,22 +2083,25 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   line-height: 1.35;
 }
 
-/* Street Type + Direction under the civic-address row — two selects
-   at half width each, same rhythm as the zoning/status filter-row. */
+/* Street Type + Direction, first row of Additional Searches — two
+   selects of equal width (icon track, see .legal-row). */
 .sidebar .address-typedir-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) 25px;
   gap: 6px;
   margin-top: 4px;
 }
-.sidebar .address-typedir-row > .field { flex: 1 1 50%; min-width: 0; }
+.sidebar .address-typedir-row > .field { min-width: 0; }
 .sidebar .address-typedir-row > .field select { width: 100%; }
 
-/* Condo Plan + Unit — paired inputs like the legal/title row. */
+/* Condo Unit + Plan — paired inputs of equal width like the
+   legal/title row. */
 .sidebar .condo-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) 25px;
   gap: 6px;
 }
-.sidebar .condo-row > .field { flex: 1 1 50%; min-width: 0; }
+.sidebar .condo-row > .field { min-width: 0; }
 .sidebar .condo-row input { width: 100%; }
 
 /* Parish-lot search. The parish name is the widest value by far
@@ -6721,14 +6728,18 @@ body {
     display: none;
   }
 
-  .sidebar .address-row,
-  .sidebar .legal-title-row {
+  .sidebar .address-row {
     flex-wrap: wrap;
   }
 
-  .sidebar .address-row .address-street-field,
-  .sidebar .legal-title-row .legal-title-field {
+  .sidebar .address-row .address-street-field {
     flex-basis: 100%;
+  }
+
+  /* Legal / Title stack one per line on the narrowest phones. Still a
+     grid with the icon track, so the two boxes stay the same width. */
+  .sidebar .legal-title-row {
+    grid-template-columns: minmax(0, 1fr) 25px;
   }
 
   /* The grid moved to .overlay-group-body when the groups became
