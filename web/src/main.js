@@ -610,6 +610,7 @@ const $farFlungCount   = document.getElementById('far-flung-count');
 const $farFlungExclude = document.getElementById('far-flung-exclude');
 const $search        = document.getElementById('search');
 const $clear         = document.getElementById('clear');
+const $clearRollAddress = document.getElementById('clear-roll-address');
 const $export        = document.getElementById('export');
 // Parcel numbering — the "Number parcels" toggle (leader-line callouts
 // on the map + the "#" column in the grid). Off by default; the row is
@@ -2480,6 +2481,7 @@ updateSortIndicators();
 
 $search.addEventListener('click', runSearch);
 $clear.addEventListener('click', clearAll);
+$clearRollAddress?.addEventListener('click', clearRollAddress);
 
 // The topbar title is the app's home button: everything Clear does, but
 // always landing on Property Search. Clear keeps you on the tab you were
@@ -13467,7 +13469,9 @@ function setCount(text) {
 }
 function setBusy(busy) {
   $search.disabled = busy;
-  $search.textContent = busy ? 'Searching…' : 'Search';
+  // The idle label carries the same glyph index.html ships with; resetting
+  // to bare 'Search' dropped the magnifier after the first search.
+  $search.textContent = busy ? 'Searching…' : '🔍 Search';
 }
 
 /** Hard-reset the page. A full reload + cache clear guarantees every
@@ -13506,6 +13510,37 @@ function clearAll() {
   // second mechanism.
   const tab = getActiveTab() === 'sales' ? '?t=sales' : '';
   window.location.href = window.location.pathname + tab;
+}
+
+/**
+ * Clear Roll/Address (Jason, 2026-10-06): empty the Roll # chips, the whole
+ * civic-address row and the results, but keep the municipality — the way to
+ * move on to the next property in the same muni without Clear All's reload
+ * throwing away the selection, overlays and map position.
+ *
+ * The chips live in lib/chipInput.js's closure, so the hidden value needs the
+ * reseed event to take the chips with it, plus `change` for the URL-state
+ * writer; any half-typed roll in the text box goes too. The map is emptied
+ * without a refit so the view stays where the user left it.
+ */
+function clearRollAddress() {
+  if ($roll) {
+    $roll.value = '';
+    $roll.dispatchEvent(new CustomEvent('chip-input:reseed', { bubbles: true }));
+    $roll.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  const $rollText = $rollChip?.querySelector('.chip-input-text');
+  if ($rollText) $rollText.value = '';
+  for (const el of [$addressFrom, $addressTo, $addressStreet, $addressType, $addressDir]) {
+    if (!el || !el.value) continue;
+    el.value = '';
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  clearTable();
+  clearStaticMap();
+  setMapData(EMPTY_FC, EMPTY_FC, EMPTY_FC, { fit: false });
+  setCount('');
+  $rollText?.focus();
 }
 
 function clearTable() {
