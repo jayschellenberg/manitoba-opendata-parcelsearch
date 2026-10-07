@@ -2327,18 +2327,32 @@ export async function fetchFloodIndex() {
 
 /**
  * Flood-zone dictionary for one municipality, keyed by Roll_No_Txt, or null
- * when the muni has no shard.
+ * when we do not know.
  *
  * null means "we do not know", not "no parcel here is in a flood zone" —
  * the caller must keep those apart (see `_floodLoaded` in main.js). Only
- * parcels intersecting at least one zone are shipped, so a muni WITH a shard
- * and a roll absent from it is the "outside every zone" answer.
+ * parcels intersecting at least one zone are shipped, so a roll absent from
+ * a muni's dictionary is the "outside every zone" answer.
+ *
+ * A muni ABSENT from a loaded index gets an EMPTY dictionary — every parcel
+ * outside every zone — not null (2026-10-07). r/build_flood.R intersects
+ * every parcel in the province in one pass and writes a shard only for munis
+ * with at least one hit, so absence from a built index means none of that
+ * muni's parcels touches any of the nine layers: checked against the
+ * 2026-10-04 snapshot, all 77 index names match the parcel fabric exactly and
+ * the 109 absent munis are the northern, Interlake and western ones the
+ * layers do not map. That is the same "None" an unlisted roll already gets —
+ * outside every mapped screening layer, not "no flood risk". It used to read
+ * "unknown" across those 109 munis. Still null when the index itself failed
+ * to load (or lacks its `_meta`, i.e. is not a built index), or a shard fetch
+ * fails.
  */
 export async function fetchFloodForMuni(muniNameWithTyp) {
   if (!muniNameWithTyp) return null;
   const idx = await fetchFloodIndex();
+  if (!idx || !idx._meta) return null;
   const entry = lookupMuniManifestEntry(idx, muniNameWithTyp, { stripType: false });
-  if (!entry) return null;
+  if (!entry) return {};
   const file = entry.file;
   const cacheKey = `mb_flood_${file}_v1_${MB_PARCEL_DATA_REVISION}`;
   const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);

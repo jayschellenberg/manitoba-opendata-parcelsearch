@@ -1158,6 +1158,21 @@ Map notes:
 - Maps are kept per key in `pageMaps`; a fit made while a map has no size (its
   tab hidden) waits for its first sized `resize()`, and the padding scales
   with the map.
+- **Comp labels** (2026-10-07) avoid each other and the subject pin: each
+  tries above its dot, then the other sides and corners (`LABEL_ANCHORS`,
+  `text-radial-offset`), comps placed in number order (`labelRank`), and the pin
+  claims its space (`icon-ignore-placement: false`). In a crowd no side fits —
+  far zoomed out — a number waits for a closer zoom; its red ring always draws.
+- **Flood "None" vs "unknown"** (2026-10-07; grid Flood column, popups, CSV and
+  the Water page): a roll missing from its municipality's flood shard is
+  outside every zone, and so is every roll in a municipality missing from a
+  *loaded* flood index — `r/build_flood.R` intersects every parcel in the
+  province and writes shards only for municipalities with a hit (77 of 186; the
+  other 109 are the northern, Interlake and western ones the nine layers do not
+  map). Both read "None": outside every mapped screening layer, not "no flood
+  risk". Only an index that failed to load reads "unknown"
+  (`fetchFloodForMuni`). Restricting the build to a region would break this —
+  the build script and `flood.test.js` both say so.
 - The Agricultural page's MASC map colours by the acre-weighted mode rating,
   the CLI map by class 1-7 on a green-to-red ramp. The Water page's map shows
   only water-influenced sales by their strongest water class.

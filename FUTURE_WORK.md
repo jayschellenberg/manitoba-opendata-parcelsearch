@@ -283,15 +283,9 @@ Still open:
   records panels, the Shift-click gesture (no Shift on a phone — the map popup
   and Table view work), the grid's reason popover and its right-click tag menu
   have not been tried on a phone.
-- **Comp labels near the subject pin** can overlap at low zoom; labels are
-  allowed to overlap by design (`text-allow-overlap`) so none goes missing.
 
 - **$/usable area** (the template's area net of water %) needs a per-parcel
   water-share figure the site does not carry.
-- **A municipality with no flood shard reads "unknown", not "None"** on the
-  Water tab, as in the grid's Flood column. If absence from the flood index
-  reliably means "no flood layer reaches it", both could say None; confirm
-  against `r/build_flood.R` before changing.
 - **Soil for shard misses** (town lots, parcels under 20 ac, the north) still
   needs the Agricultural preset's live join; every other sale gets soil
   automatically from the shards.
