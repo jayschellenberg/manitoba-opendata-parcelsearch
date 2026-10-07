@@ -1896,6 +1896,11 @@
           </select>
         </label>
         <div class="results-toolbar-spacer"></div>
+        <!-- Sales Analysis only: number the starred sales that predate the
+             numbered comps (★ = comp, 2026-10-07). Shown only while some
+             starred, ticked sale on the grid has no number; main.js keeps
+             it current (refreshNumberStarredBtn). -->
+        <button type="button" id="number-starred" class="number-starred-btn" hidden>Number starred</button>
         <div class="columns-popover-wrap">
           <button
             type="button"

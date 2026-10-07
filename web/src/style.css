@@ -7811,3 +7811,22 @@ body.phone .maplibregl-ctrl-group button {
 .excl-reason-actions button { padding: 3px 10px; font: inherit; font-weight: 600; border-radius: 5px; cursor: pointer; }
 /* A numbered star (★12) needs room the bare glyph did not. */
 #results td.fav-col button.fav-star { min-width: 1.6em; white-space: nowrap; }
+
+/* "Number starred (n)" in the results toolbar (2026-10-07). Sales mode only;
+   main.js also hides it whenever there is nothing to number. */
+.number-starred-btn {
+  margin-right: 8px;
+  padding: 3px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #e0b34f;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.number-starred-btn:hover { background: #fde68a; }
+body:not(.sales-mode) .number-starred-btn { display: none; }

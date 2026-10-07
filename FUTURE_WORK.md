@@ -272,10 +272,6 @@ a map row on every page, numbered comparables and Land Sets, exclusion reasons,
 and the grid's ★ as the numbered comp (PRs #170–#173, merged and live
 2026-10-07). Still open:
 
-- **Existing stars carry no comp number.** Stars made before 2026-10-07 stay
-  starred but unnumbered until re-starred. If that proves a nuisance, a one-off
-  "number my starred sales" action could append them to the comp list in grid
-  order.
 - **Tags and reasons are per browser.** They live in localStorage, so another
   browser or device starts empty. A job file (save / load the subject, filters,
   tags, reasons and chart settings — the template's params.yml idea, offered
