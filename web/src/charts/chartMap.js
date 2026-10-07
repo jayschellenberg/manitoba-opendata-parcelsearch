@@ -56,6 +56,14 @@ function subjectPinImage() {
 }
 
 const EMPTY = { type: 'FeatureCollection', features: [] };
+/**
+ * The zoom the sale outlines start at. 10, not the tiles' own 8 (Jason,
+ * 2026-10-07): tippecanoe thins the densest zoom 8–9 tiles to fit its size
+ * cap — the 2026-10-04 build kept 29–72% of the parcels in the Winnipeg-area
+ * tiles — so a spread set of comps framed at 8–9 drew outlines for some sales
+ * and not others. From 10 every parcel is in its tile.
+ */
+export const OUTLINE_MINZOOM = 10;
 /** Where a comp label may sit round its dot, in the order tried: above first. */
 export const LABEL_ANCHORS = ['bottom', 'top', 'left', 'right', 'bottom-left', 'bottom-right', 'top-left', 'top-right'];
 /** A filter that matches no parcel: the outline layers' state with no sales. */
@@ -175,17 +183,17 @@ export function createSalesMap({ onPick, popupRows, popupActions = () => [] }) {
     // The sales' parcel outlines (2026-10-07), from the site's own parcel
     // tiles filtered to the sales' parcels (municipality + roll, see
     // PARCEL_KEY) and coloured like their dots.
-    // The tiles start at zoom 8; further out the dots carry the map alone.
+    // From zoom 10 (OUTLINE_MINZOOM); further out the dots carry the map alone.
     // Under the rings, dots and pin, which stay the click targets.
     map.addSource('parcel-tiles', { type: 'vector', url: `pmtiles://${PARCEL_TILES_URL}` });
     map.addLayer({
       id: 'sale-outline-fill', type: 'fill', source: 'parcel-tiles', 'source-layer': 'parcels',
-      minzoom: 8, filter: OUTLINE_NONE,
+      minzoom: OUTLINE_MINZOOM, filter: OUTLINE_NONE,
       paint: { 'fill-color': R_STYLE.pointFill, 'fill-opacity': 0.22 },
     });
     map.addLayer({
       id: 'sale-outline-line', type: 'line', source: 'parcel-tiles', 'source-layer': 'parcels',
-      minzoom: 8, filter: OUTLINE_NONE,
+      minzoom: OUTLINE_MINZOOM, filter: OUTLINE_NONE,
       paint: { 'line-color': R_STYLE.pointStroke, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1, 14, 2.2] },
     });
     map.addSource('rings', { type: 'geojson', data: EMPTY });

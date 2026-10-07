@@ -147,6 +147,7 @@ const PERSISTENT = {
   exclReasons: 'exclusion reasons, kept in browser storage like compTags and keyed by sale',
   reasonPrompt: 'an open reason popover saves under its sale key, which outlives the result set; any click closes it',
   tagMenu: 'an open grid tag menu acts on a sale key, which outlives the result set; any click or Escape closes it',
+  lastColumnPreset: 'the column preset last picked, a display preference like the columns themselves; a job file records it',
 };
 
 console.log('main.js — what a new Search must not inherit');

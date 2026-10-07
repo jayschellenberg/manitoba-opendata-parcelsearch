@@ -22,7 +22,7 @@ export const JOB_VERSION = 1;
 /** Assemble the document. Every part is optional except the sales. */
 export function buildJob({
   savedAt = new Date().toISOString(), build = '', name = '', sales, sidebar = {}, subject = null,
-  grid = {}, tags = null, reasons = {}, charts = {}, overlays = [],
+  grid = {}, tags = null, reasons = {}, charts = {}, overlays = [], columns = null,
 } = {}) {
   if (!sales || typeof sales.text !== 'string' || !sales.text) throw new Error('No sales are loaded to save.');
   return {
@@ -49,6 +49,12 @@ export function buildJob({
     // The main map's pressed layer toggles, by button id stem ("zoning",
     // "flood-dfa"…) — the shared-link format (2026-10-07).
     overlays: Array.isArray(overlays) ? overlays.filter((o) => typeof o === 'string') : [],
+    // The grid's column preset (re-applied on open, which re-runs the
+    // Agricultural soil / water-rights load) and the columns showing.
+    columns: columns && typeof columns === 'object' ? {
+      preset: typeof columns.preset === 'string' ? columns.preset : null,
+      visible: Array.isArray(columns.visible) ? columns.visible.filter((k) => typeof k === 'string') : [],
+    } : null,
   };
 }
 
@@ -85,6 +91,11 @@ export function parseJob(text) {
     charts: { opts: doc.charts?.opts && typeof doc.charts.opts === 'object' ? doc.charts.opts : null, workfileOff: arr(doc.charts?.workfileOff) },
     // Absent in jobs saved before 2026-10-07: no toggles to restore.
     overlays: Array.isArray(doc.overlays) ? doc.overlays.filter((o) => typeof o === 'string') : null,
+    // Absent in older jobs: the grid's columns are left as they are.
+    columns: doc.columns && typeof doc.columns === 'object' ? {
+      preset: typeof doc.columns.preset === 'string' ? doc.columns.preset : null,
+      visible: Array.isArray(doc.columns.visible) ? doc.columns.visible.filter((k) => typeof k === 'string') : null,
+    } : null,
   };
 }
 

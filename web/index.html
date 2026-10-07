@@ -615,6 +615,10 @@
             <button type="button" id="job-open" class="secondary" title="Open a saved job file: reloads its sales and puts every filter, tag and setting back.">Open job…</button>
             <input type="file" id="job-open-input" accept=".json,application/json" hidden />
           </div>
+          <!-- The last few jobs saved or opened in this browser (2026-10-07). -->
+          <div class="job-recent-row" hidden>
+            <select id="job-recent" aria-label="Open a recent job"><option value="">Recent jobs</option></select>
+          </div>
           <details class="sales-db" id="sales-db">
             <summary class="sales-db-head">
               <strong>MAO Sales Database</strong>

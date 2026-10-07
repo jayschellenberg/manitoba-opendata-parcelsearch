@@ -40,7 +40,13 @@ import {
   setColumnVisible,
   applyParcelImportDefaults,
   onPresetApply,
+  applyPreset,
+  listAllColumns,
+  isColumnVisible,
 } from './lib/columns.js';
+import {
+  addRecentJob, listRecentJobs, getRecentJob, clearRecentJobs, recentJobsAvailable,
+} from './lib/recentJobs.js';
 
 // Phase 6 URL state — serialises a small set of form values into the
 // query string so a session URL is shareable.
@@ -2237,7 +2243,11 @@ initColumns();
 // four empty columns. Any other preset drops the water-rights latch again
 // so later searches stop paying the WALLAS fetch — that's its off-switch.
 // No-op when there's nothing to load or nothing in scope.
+// The column preset last picked — what a job file records (2026-10-07), so
+// reopening an Agricultural job re-runs the ag soil / water-rights load.
+let lastColumnPreset = null;
 onPresetApply((name) => {
+  lastColumnPreset = name;
   const wasLatched = waterRightsWantedForGrid;
   waterRightsWantedForGrid = name === 'Agricultural';
   // Soil gets the same off-switch. Before this it had none: the stamp was
@@ -16397,6 +16407,27 @@ function readStoredJson(key) {
   try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; }
 }
 
+/**
+ * A job's name when no subject is set: its main municipality and how many
+ * sales — "RITCHOT (RM) — 3 sales", "TACHE (RM) +2 — 41 sales". The sales
+ * source's own name reads "Paste: Sale Date,Consideration,…" for pasted data,
+ * which is no use in the recent-jobs list.
+ */
+function jobNameFromSales(rows) {
+  const counts = new Map();
+  const sales = new Set();
+  for (const r of rows || []) {
+    const p = r?.parcel?.properties || {};
+    const m = p.Muni_Name_With_Typ || p.Municipality;
+    if (m) counts.set(m, (counts.get(m) || 0) + 1);
+    if (p._saleGroupId != null) sales.add(p._saleGroupId);
+  }
+  const munis = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([m]) => m);
+  if (!munis.length) return lastSalesSource?.name || 'Sales job';
+  const n = sales.size || (rows || []).length;
+  return `${munis[0]}${munis.length > 1 ? ` +${munis.length - 1}` : ''} — ${n} ${n === 1 ? 'sale' : 'sales'}`;
+}
+
 function saveJob() {
   if (!csvFullRows || !lastSalesSource) {
     window.alert('Load sales in Sales Analysis first: a job file holds the sales it was made from.');
@@ -16418,7 +16449,7 @@ function saveJob() {
   try {
     job = buildJob({
       build: APP_COMMIT,
-      name: subjectRoll ? `Subject roll ${subjectRoll}` : (lastSalesSource.name || ''),
+      name: subjectRoll ? `Subject roll ${subjectRoll}` : jobNameFromSales(allRows),
       sales: lastSalesSource,
       sidebar: { controls: collectJobControls(), multis: Object.fromEntries(Object.entries(JOB_MULTIS).map(([id, ms]) => [id, ms.getSelected()])), pills: collectJobPills() },
       subject: subjectRoll ? { muni: $subjectMuni?.value || '', roll: subjectRoll, distanceMax: $distanceMax?.value || '' } : null,
@@ -16427,6 +16458,10 @@ function saveJob() {
       reasons,
       charts: { opts: readStoredJson(CHARTS_OPTS_KEY), workfileOff: readStoredJson(CHARTS_WORKFILE_KEY)?.off || [] },
       overlays: readCurrentUrlState().overlays || [],
+      columns: {
+        preset: lastColumnPreset,
+        visible: listAllColumns().filter(({ key }) => isColumnVisible(key)).map(({ key }) => key),
+      },
     });
   } catch (err) {
     window.alert(err.message || String(err));
@@ -16435,7 +16470,9 @@ function saveJob() {
   const d = new Date();
   const p2 = (n) => String(n).padStart(2, '0');
   const today = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
-  downloadBlob(new Blob([JSON.stringify(job)], { type: 'application/json' }), jobFileName(subjectRoll, today));
+  const text = JSON.stringify(job);
+  downloadBlob(new Blob([text], { type: 'application/json' }), jobFileName(subjectRoll, today));
+  addRecentJob(job, text).then(refreshRecentJobs);
 }
 
 /**
@@ -16495,6 +16532,21 @@ async function openJob(job) {
   syncSelectAllBox();
   repaintStars();
   refreshRouteStarredBtn();
+  // The grid's columns. Re-applying the preset is what brings an
+  // Agricultural job's soil and water-rights columns back FILLED: picking it
+  // runs the same load as picking it by hand (onPresetApply ->
+  // ensureAgriculturalGridData). Shard soil is stamped on every sales load
+  // anyway; the preset adds the water-rights columns and the live join for
+  // the parcels the shards miss. Then any column shown or hidden by hand.
+  if (job.columns) {
+    if (job.columns.preset) applyPreset(job.columns.preset);
+    if (Array.isArray(job.columns.visible)) {
+      const want = new Set(job.columns.visible);
+      for (const { key } of listAllColumns()) {
+        if (isColumnVisible(key) !== want.has(key)) setColumnVisible(key, want.has(key));
+      }
+    }
+  }
   // The main map's layer toggles, exactly as saved (a job from before they
   // were saved leaves the current ones alone): press the saved ones through
   // the shared-link restore, and release any other that is on.
@@ -16510,24 +16562,76 @@ async function openJob(job) {
 const $jobOpenInput = document.getElementById('job-open-input');
 document.getElementById('job-save')?.addEventListener('click', saveJob);
 document.getElementById('job-open')?.addEventListener('click', () => $jobOpenInput?.click());
-$jobOpenInput?.addEventListener('change', async () => {
-  const file = $jobOpenInput.files?.[0];
-  $jobOpenInput.value = '';
-  if (!file) return;
+/** Open a job from its text — a picked file or a recent-jobs entry. */
+async function openJobText(text, fallbackName) {
   let job;
-  try { job = parseJob(await file.text()); } catch (err) { window.alert(err.message || String(err)); return; }
+  try { job = parseJob(text); } catch (err) { window.alert(err.message || String(err)); return; }
   const saved = job.savedAt ? new Date(job.savedAt).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' }) : 'an unknown date';
   const busy = csvFullRows || compTags.comps.length || compTags.set1.length || compTags.set2.length;
-  if (busy && !window.confirm(`Open "${job.name || file.name}" (saved ${saved})?`
+  if (busy && !window.confirm(`Open "${job.name || fallbackName}" (saved ${saved})?`
     + String.fromCharCode(10, 10)
     + 'It replaces the loaded sales, the filters, the comp numbers and Land Sets, and the chart settings.')) return;
+  addRecentJob(job, text).then(refreshRecentJobs);
   try {
     await openJob(job);
   } catch (err) {
     console.warn('Open job failed', err);
     window.alert(`The job did not open completely: ${err.message || err}`);
   }
+}
+
+$jobOpenInput?.addEventListener('change', async () => {
+  const file = $jobOpenInput.files?.[0];
+  $jobOpenInput.value = '';
+  if (!file) return;
+  await openJobText(await file.text(), file.name);
 });
+
+/**
+ * The recent-jobs picker (2026-10-07): the last few jobs saved or opened in
+ * this browser (lib/recentJobs.js, IndexedDB). Hidden when there are none or
+ * the browser has no IndexedDB.
+ */
+const $jobRecent = document.getElementById('job-recent');
+async function refreshRecentJobs() {
+  if (!$jobRecent) return;
+  const list = recentJobsAvailable() ? await listRecentJobs() : [];
+  $jobRecent.textContent = '';
+  const head = document.createElement('option');
+  head.value = '';
+  head.textContent = list.length ? `Recent jobs (${list.length})…` : 'Recent jobs';
+  $jobRecent.appendChild(head);
+  for (const r of list) {
+    const o = document.createElement('option');
+    o.value = r.id;
+    const when = r.savedAt ? new Date(r.savedAt).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+    o.textContent = `${r.name}${when ? ` — saved ${when}` : ''}`;
+    $jobRecent.appendChild(o);
+  }
+  if (list.length) {
+    const clear = document.createElement('option');
+    clear.value = '__clear';
+    clear.textContent = 'Clear this list';
+    $jobRecent.appendChild(clear);
+  }
+  $jobRecent.closest('.job-recent-row')?.toggleAttribute('hidden', !list.length);
+}
+$jobRecent?.addEventListener('change', async () => {
+  const id = $jobRecent.value;
+  $jobRecent.value = '';
+  if (!id) return;
+  if (id === '__clear') {
+    if (window.confirm('Forget the recent jobs in this browser? The job files themselves are not touched.')) {
+      await clearRecentJobs();
+      refreshRecentJobs();
+    }
+    return;
+  }
+  const rec = await getRecentJob(id);
+  if (!rec?.text) { window.alert('That job is no longer stored in this browser — open its file instead.'); refreshRecentJobs(); return; }
+  await openJobText(rec.text, rec.name);
+});
+refreshRecentJobs();
 
 /** Build the favourites star cell for a row. Click toggles the
  *  in-memory + localStorage favourite state and stops the click

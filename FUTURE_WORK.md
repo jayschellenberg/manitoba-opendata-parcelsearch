@@ -273,12 +273,10 @@ and the grid's ★ as the numbered comp (PRs #170–#173, merged and live
 2026-10-07); Number starred (#175) and Save / Open job (#176); then the
 clearer status counts, the Agricultural page's consistency filters (R's
 CMSAG1, own rate) and Land Sets from the grid's ★ menu (#177); then the lighter
-work file, map toggles in the job file and parcel outlines on the charts maps.
-Still open:
+work file, map toggles in the job file and parcel outlines on the charts maps;
+then outlines from zoom 10, the column preset in job files and a recent-jobs
+list. Still open:
 
-- **Job file, later.** Saved jobs do not carry the soil / Agricultural-preset
-  enrichment (re-run on open when the preset is picked), and there is no list of
-  recent jobs — each is a file the user keeps.
 - **Phone (low priority — Jason, 2026-10-07).** The Comparables / Excluded
   records panels, the Shift-click gesture (no Shift on a phone — the map popup
   and Table view work), the grid's reason popover and its right-click tag menu
@@ -288,4 +286,5 @@ Still open:
   water-share figure the site does not carry.
 - **Soil for shard misses** (town lots, parcels under 20 ac, the north) still
   needs the Agricultural preset's live join; every other sale gets soil
-  automatically from the shards.
+  automatically from the shards. Not wanted (Jason, 2026-10-07) — kept here
+  only so nobody builds it by mistake.

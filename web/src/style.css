@@ -7869,3 +7869,5 @@ body:not(.sales-mode) .number-starred-btn { display: none; }
 }
 .tag-menu button:hover, .tag-menu button:focus-visible { background: #f1f5f9; }
 .tag-menu button.is-on { color: #92400e; font-weight: 600; }
+.job-recent-row { margin: -4px 0 10px; }
+.job-recent-row select { width: 100%; font-size: 12.5px; }
