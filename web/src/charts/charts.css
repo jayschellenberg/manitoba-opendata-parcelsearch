@@ -557,6 +557,11 @@ main { padding: 18px 20px 0; }
   overflow: hidden;
 }
 .map-popup { font: 12px/1.45 Arial, Helvetica, sans-serif; min-width: 180px; }
+/* The hover readout: never under the pointer's way, so moving onto it
+   cannot fire mouseleave on the dot and make it flicker. */
+.map-hover-tip { pointer-events: none; }
+.map-hover-tip .maplibregl-popup-content { padding: 7px 10px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18); }
+.map-hover-hint { margin-top: 4px; font-size: 11px; color: var(--ink-muted); }
 .map-popup-btn {
   margin-top: 6px;
   padding: 3px 9px;

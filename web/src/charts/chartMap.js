@@ -159,38 +159,86 @@ export function createSalesMap({ onPick, popupRows }) {
         'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5,
       },
     });
-    map.on('mouseenter', 'sales-circles', () => { map.getCanvas().style.cursor = 'pointer'; });
-    map.on('mouseleave', 'sales-circles', () => { map.getCanvas().style.cursor = ''; });
+    // Hover readout (Jason, 2026-10-06): the click popup's facts without
+    // its button, following the pointer. A DOM popup, so it never reaches
+    // the PNG, which copies the WebGL canvas only.
+    const hoverTip = new maplibregl.Popup({
+      closeButton: false, closeOnClick: false, maxWidth: '280px', offset: 10, className: 'map-hover-tip',
+    });
+    let hoverId = null;
+    const hideTip = () => { hoverTip.remove(); hoverId = null; };
+    map.on('mousemove', 'sales-circles', (e) => {
+      const f = e.features?.[0];
+      if (!f) return;
+      map.getCanvas().style.cursor = 'pointer';
+      // A click popup open on this sale already says all of it.
+      if (clickPopup?.isOpen() && clickId === f.properties.saleId) { hideTip(); return; }
+      if (hoverId !== f.properties.saleId) {
+        hoverId = f.properties.saleId;
+        hoverTip.setDOMContent(popupBody(hoverId, 'Click for details or to exclude'));
+      }
+      hoverTip.setLngLat(f.geometry.coordinates).addTo(map);
+    });
+    map.on('mouseleave', 'sales-circles', () => { map.getCanvas().style.cursor = ''; hideTip(); });
+    map.on('mouseenter', 'subject-dot', (e) => {
+      const f = e.features?.[0];
+      if (!f) return;
+      const body = document.createElement('div');
+      body.className = 'map-popup';
+      const strong = document.createElement('strong');
+      strong.textContent = 'Subject';
+      body.appendChild(strong);
+      hoverId = '__subject';
+      hoverTip.setDOMContent(body).setLngLat(f.geometry.coordinates).addTo(map);
+    });
+    map.on('mouseleave', 'subject-dot', hideTip);
+    let clickPopup = null;
+    let clickId = null;
     map.on('click', 'sales-circles', (e) => {
       const f = e.features?.[0];
       if (!f) return;
+      hideTip();
       const id = f.properties.saleId;
-      const rows = popupRows(id);
-      const wrap = document.createElement('div');
-      wrap.className = 'map-popup';
-      for (const [label, value] of rows) {
-        const r = document.createElement('div');
-        r.className = 'chart-tip-row';
-        const v = document.createElement('strong');
-        v.textContent = value;
-        const l = document.createElement('span');
-        l.textContent = label;
-        r.append(v, l);
-        wrap.appendChild(r);
-      }
+      const wrap = popupBody(id);
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'map-popup-btn';
       btn.textContent = f.properties.excluded ? 'Include this sale' : 'Exclude this sale';
+      clickPopup?.remove();
       const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '280px' })
         .setLngLat(f.geometry.coordinates)
         .setDOMContent(wrap)
         .addTo(map);
+      clickPopup = popup;
+      clickId = id;
       btn.addEventListener('click', () => { popup.remove(); onPick(id); });
       wrap.appendChild(btn);
     });
     if (pending) { apply(pending); pending = null; }
   });
+
+  /** A sale's facts as label/value rows — the click popup and the hover tip. */
+  function popupBody(id, hint = '') {
+    const wrap = document.createElement('div');
+    wrap.className = 'map-popup';
+    for (const [label, value] of popupRows(id)) {
+      const r = document.createElement('div');
+      r.className = 'chart-tip-row';
+      const v = document.createElement('strong');
+      v.textContent = value;
+      const l = document.createElement('span');
+      l.textContent = label;
+      r.append(v, l);
+      wrap.appendChild(r);
+    }
+    if (hint) {
+      const h = document.createElement('div');
+      h.className = 'map-hover-hint';
+      h.textContent = hint;
+      wrap.appendChild(h);
+    }
+    return wrap;
+  }
 
   function apply({ fc, subject, rings, fitKey }) {
     map.getSource('sales').setData(fc);
