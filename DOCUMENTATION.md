@@ -1232,6 +1232,17 @@ lists: numbered comparables, Land Set 1 and Land Set 2 (`web/src/lib/compTags.js
 - Saved in this browser (`mbps_charts_comp_tags_v1`) and shared live between
   charts tabs through the storage event.
 
+**Excluded records** (charts Phase 3, 2026-10-06) — the R template's Excluded
+Records card. A panel under Comparables lists every unticked sale with a reason
+box (suggestions: Nominal transfer, Non-arm's length, Assembly, Outlier, Not
+comparable, Includes improvements, Forced sale; or free text) and *Include
+again*. Excluding by a chart dot or the map popup opens the panel on that sale
+with its reason box focused. Reasons save on change, keyed on rolls + sale date
+like the tags (`mbps_charts_excl_reasons_v1`), and outlive a re-tick. The panel
+does not redraw while a reason box has focus, so a republish from the main
+window never wipes half-typed text. Reasons show in the tooltip, `cms.csv`
+(Exclusion reason), `excluded.csv`, and the summary's Excluded records table.
+
 **Work file** (2026-10-06, the first of three phases toward a no-R path to the
 land template's work-file output). The **Work file…** button in the header opens
 a list of every chart on every tab, ticked by default. Charts with nothing to draw

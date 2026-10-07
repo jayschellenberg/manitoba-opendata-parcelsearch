@@ -268,10 +268,9 @@ Feature detail is in DOCUMENTATION.md §3.6.1. What is still open:
 
 See DOCUMENTATION.md §10.0.2 for what shipped. Still open:
 
-- **Work file, phase 3** (Jason, 2026-10-06; phases 1 and 2 shipped): an
-  optional reason on each exclusion ("Nominal transfer", "Non-arm's length",
-  "Assembly", or free text), keyed on roll number because MAO renumbers Sale
-  Group IDs, shown as an Excluded Records table in the zip and the summary.
+- **Exclusion reasons from the main grid.** Phase 3 records reasons on the charts
+  page; the grid's untick could ask too, reading and writing
+  `mbps_charts_excl_reasons_v1` (same origin) keyed by rolls + sale date.
 - **Comp tags from the main grid.** Phase 2 tags on the charts page only (chart
   Shift-click, map popup, Table view). The grid could show and toggle them too:
   both pages share an origin, so the grid can read `mbps_charts_comp_tags_v1`
