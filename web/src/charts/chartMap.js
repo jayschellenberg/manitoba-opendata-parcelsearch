@@ -18,6 +18,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { Protocol as PMTilesProtocol } from 'pmtiles';
 import { streetsStyle } from '../lib/basemapStyle.js';
 import { R_STYLE, exportChartPng, renderChartPng } from '../lib/chartRender.js';
+import { PARCEL_TILES_URL } from '../lib/parcelTilesUrl.js';
 import { circleRing } from '../lib/salesMapColors.js';
 
 let protocolAdded = false;
@@ -55,6 +56,10 @@ function subjectPinImage() {
 }
 
 const EMPTY = { type: 'FeatureCollection', features: [] };
+/** A filter that matches no parcel: the outline layers' state with no sales. */
+const OUTLINE_NONE = ['==', ['get', 'Roll_No_Txt'], '\u0000'];
+/** A tile parcel's key, as the sale records spell it: "MUNI (TYPE)|roll". */
+const PARCEL_KEY = ['concat', ['get', 'Muni_Name_With_Typ'], '|', ['get', 'Roll_No_Txt']];
 
 /**
  * Build the map card. `onPick(saleId)` fires on a click on a sale;
@@ -165,6 +170,22 @@ export function createSalesMap({ onPick, popupRows, popupActions = () => [] }) {
       paint: { 'text-color': '#3a3a3a', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 },
     });
     applyMunis();
+    // The sales' parcel outlines (2026-10-07), from the site's own parcel
+    // tiles filtered to the sales' parcels (municipality + roll, see
+    // PARCEL_KEY) and coloured like their dots.
+    // The tiles start at zoom 8; further out the dots carry the map alone.
+    // Under the rings, dots and pin, which stay the click targets.
+    map.addSource('parcel-tiles', { type: 'vector', url: `pmtiles://${PARCEL_TILES_URL}` });
+    map.addLayer({
+      id: 'sale-outline-fill', type: 'fill', source: 'parcel-tiles', 'source-layer': 'parcels',
+      minzoom: 8, filter: OUTLINE_NONE,
+      paint: { 'fill-color': R_STYLE.pointFill, 'fill-opacity': 0.22 },
+    });
+    map.addLayer({
+      id: 'sale-outline-line', type: 'line', source: 'parcel-tiles', 'source-layer': 'parcels',
+      minzoom: 8, filter: OUTLINE_NONE,
+      paint: { 'line-color': R_STYLE.pointStroke, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1, 14, 2.2] },
+    });
     map.addSource('rings', { type: 'geojson', data: EMPTY });
     map.addSource('sales', { type: 'geojson', data: EMPTY });
     map.addSource('subject', { type: 'geojson', data: EMPTY });
@@ -334,8 +355,35 @@ export function createSalesMap({ onPick, popupRows, popupActions = () => [] }) {
     return wrap;
   }
 
+  /**
+   * Point the outline layers at the drawn sales' parcels: a filter on their
+   * keys and a match giving each parcel its sale's colour (context sales
+   * grey). An empty set filters everything out.
+   */
+  function applyOutlines(fc) {
+    const colorOf = new Map();
+    for (const f of fc.features || []) {
+      const pr = f.properties || {};
+      const color = pr.context ? '#9e9e9e' : (pr.color || R_STYLE.pointFill);
+      for (const k of pr.parcelKeys || []) if (!colorOf.has(k)) colorOf.set(k, color);
+    }
+    if (!colorOf.size) {
+      for (const id of ['sale-outline-fill', 'sale-outline-line']) map.setFilter(id, OUTLINE_NONE);
+      return;
+    }
+    const keys = [...colorOf.keys()];
+    const filter = ['in', PARCEL_KEY, ['literal', keys]];
+    const match = ['match', PARCEL_KEY];
+    for (const [k, color] of colorOf) match.push(k, color);
+    match.push(R_STYLE.pointFill);
+    for (const id of ['sale-outline-fill', 'sale-outline-line']) map.setFilter(id, filter);
+    map.setPaintProperty('sale-outline-fill', 'fill-color', match);
+    map.setPaintProperty('sale-outline-line', 'line-color', match);
+  }
+
   function apply({ fc, subject, rings, fitKey }) {
     map.getSource('sales').setData(fc);
+    applyOutlines(fc);
     map.getSource('subject').setData(subject ? {
       type: 'FeatureCollection',
       features: [{ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [subject.lng, subject.lat] } }],

@@ -148,6 +148,14 @@ export function saleRecordsFromRows(rows, { parseDate, centroid, rowKey, isSelec
         // this sale's dot in the charts tab can untick (or re-tick) exactly
         // the rows it stands for.
         keys: [],
+        // The members as "MUNI (TYPE)|roll" — the municipality and the raw
+        // Roll_No_Txt, as the site's parcel tiles carry them. The charts maps
+        // draw the sale's outlines from those tiles by these (2026-10-07), so
+        // no geometry crosses the BroadcastChannel. Not OBJECTID: it is
+        // reassigned between the monthly parcel exports (roll 100 in Ritchot
+        // was 7969 in the 2026-09-13 snapshot the tiles were cut from and is
+        // 3203 in the live service), so an id match silently finds nothing.
+        parcelKeys: [],
         // Excluded = EVERY member row is unticked in the grid. A sale with
         // one member still ticked stays in: that is how the charts behaved
         // before exclusions were drawn at all (a group reached them if any
@@ -182,6 +190,8 @@ export function saleRecordsFromRows(rows, { parseDate, centroid, rowKey, isSelec
     const rec = byGroup.get(gid);
     const key = rowKey ? rowKey(row) : '';
     if (key) rec.keys.push(key);
+    const pk = p.Muni_Name_With_Typ && p.Roll_No_Txt ? `${p.Muni_Name_With_Typ}|${p.Roll_No_Txt}` : null;
+    if (pk && !rec.parcelKeys.includes(pk)) rec.parcelKeys.push(pk);
     if (!isSelected || isSelected(row)) rec._anySelected = true;
     const land = pos(p._asmtLand);
     if (land != null) { rec._landSum += land; rec._landN += 1; }

@@ -272,41 +272,13 @@ a map row on every page, numbered comparables and Land Sets, exclusion reasons,
 and the grid's ★ as the numbered comp (PRs #170–#173, merged and live
 2026-10-07); Number starred (#175) and Save / Open job (#176); then the
 clearer status counts, the Agricultural page's consistency filters (R's
-CMSAG1, own rate) and Land Sets from the grid's ★ menu. Still open:
-
-- **Planned next — three small items** (Jason, 2026-10-07; plan only, not
-  started):
-  1. *Lighter work file.* Add an "Embed images in summary.html" checkbox to
-     the work-file dialog, on by default. Off: `buildSummaryHtml` gets each
-     figure's zip path (`charts/NN-….png`) as its `src` instead of a data URL
-     (`buildWorkFile`, where it now calls `blobToDataUrl`), so the summary is
-     a few KB and reads its images from the folder the zip unpacks to; the
-     dialog says it then only works unzipped. Test: `workFile.test.js` —
-     relative `src` passes through `escapeHtml` and stays inside `charts/`.
-  2. *Map layer toggles in the job file.* `readCurrentUrlState()` already
-     collects the pressed overlay buttons (`state.overlays`) and
-     `restoreUrlOverlays()` re-presses them for shared links. `saveJob` adds
-     `overlays: readCurrentUrlState().overlays || []`; `openJob` calls
-     `restoreUrlOverlays({ overlays })` after the render; `jobFile.js` keeps
-     the field (array of strings) and bumps nothing (absent = none). Test: the
-     round trip and a contract that openJob restores them.
-  3. *Parcel outlines on the charts maps.* No geometry needs to cross the
-     BroadcastChannel: the site's own parcel tiles (`parcels.pmtiles`,
-     source-layer `parcels`, zoom 8–16, carrying `OBJECTID`) can be drawn on
-     the charts maps filtered to the sales' parcels. Steps: `saleRecordsFromRows`
-     adds `oids` (the members' OBJECTIDs, as it already collects keys);
-     `chartMap.js` adds the pmtiles source (URL as in `map.js`, CSP already
-     allows it) and a line + faint fill layer with
-     `['in', ['get', 'OBJECTID'], ['literal', oids]]`, coloured per sale by a
-     `match` on OBJECTID → the dot's colour; dots stay for zooms below 8 and
-     as the click target. Watch: the filter literal on a 1,000-sale set (fine
-     for MapLibre at that size, but measure), and the PNG capture waiting for
-     the tile source in `whenIdle`. Test: a contract on the filter and a check
-     that the outline colours follow the dot colours.
+CMSAG1, own rate) and Land Sets from the grid's ★ menu (#177); then the lighter
+work file, map toggles in the job file and parcel outlines on the charts maps.
+Still open:
 
 - **Job file, later.** Saved jobs do not carry the soil / Agricultural-preset
   enrichment (re-run on open when the preset is picked), and there is no list of
-  recent jobs — each is a file the user keeps. (Map toggles: planned above.)
+  recent jobs — each is a file the user keeps.
 - **Phone (low priority — Jason, 2026-10-07).** The Comparables / Excluded
   records panels, the Shift-click gesture (no Shift on a phone — the map popup
   and Table view work), the grid's reason popover and its right-click tag menu

@@ -22,7 +22,7 @@ export const JOB_VERSION = 1;
 /** Assemble the document. Every part is optional except the sales. */
 export function buildJob({
   savedAt = new Date().toISOString(), build = '', name = '', sales, sidebar = {}, subject = null,
-  grid = {}, tags = null, reasons = {}, charts = {},
+  grid = {}, tags = null, reasons = {}, charts = {}, overlays = [],
 } = {}) {
   if (!sales || typeof sales.text !== 'string' || !sales.text) throw new Error('No sales are loaded to save.');
   return {
@@ -46,6 +46,9 @@ export function buildJob({
     tags,
     reasons,
     charts: { opts: charts.opts || null, workfileOff: charts.workfileOff || [] },
+    // The main map's pressed layer toggles, by button id stem ("zoning",
+    // "flood-dfa"…) — the shared-link format (2026-10-07).
+    overlays: Array.isArray(overlays) ? overlays.filter((o) => typeof o === 'string') : [],
   };
 }
 
@@ -80,6 +83,8 @@ export function parseJob(text) {
     },
     reasons: obj(doc.reasons),
     charts: { opts: doc.charts?.opts && typeof doc.charts.opts === 'object' ? doc.charts.opts : null, workfileOff: arr(doc.charts?.workfileOff) },
+    // Absent in jobs saved before 2026-10-07: no toggles to restore.
+    overlays: Array.isArray(doc.overlays) ? doc.overlays.filter((o) => typeof o === 'string') : null,
   };
 }
 

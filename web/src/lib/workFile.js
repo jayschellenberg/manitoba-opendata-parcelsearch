@@ -117,6 +117,8 @@ function factsHtml(pairs) {
  *   tagged    [{title, columns, rows}] — the numbered comps and Land Sets
  *   comps     {columns, rows}          — the ticked sales (the CMS)
  *   excluded  {columns, rows}          — the unticked ones, with their reasons
+ *   linkedImages  true when figure src values are paths into the zip
+ *             rather than data: URLs (the "don't embed" choice)
  *   figures   [{tabLabel, title, kind: 'image', src} |
  *              {tabLabel, title, kind: 'table', subtitle, note, columns, rows}]
  *
@@ -160,6 +162,10 @@ export function buildSummaryHtml(model) {
   const figures = m.figures || [];
   if (figures.length) {
     parts.push('<h2>Charts and maps</h2>');
+    if (m.linkedImages) {
+      parts.push('<p class="note">The images are read from the <code>charts</code> folder beside this file: '
+        + 'keep the two together, as the zip unpacks them.</p>');
+    }
     let lastTab = null;
     for (const f of figures) {
       if (f.tabLabel !== lastTab) {

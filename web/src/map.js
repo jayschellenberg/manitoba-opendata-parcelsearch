@@ -478,8 +478,8 @@ export const MLI_ORTHO_YEAR_RANGE = '2007-2013';
  * requests and CORS, and an absolute origin must also be added to
  * `connect-src` in vercel.json's CSP.
  */
-const PARCEL_TILES_URL =
-  import.meta.env?.VITE_PARCEL_TILES_URL || '/parcels.pmtiles';
+// Shared with the Sales Charts maps (lib/parcelTilesUrl.js).
+import { PARCEL_TILES_URL } from './lib/parcelTilesUrl.js';
 
 /**
  * The province-wide Manitoba Soil Survey vector-tile archive

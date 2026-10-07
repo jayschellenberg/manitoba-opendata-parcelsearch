@@ -16426,6 +16426,7 @@ function saveJob() {
       tags: compTags,
       reasons,
       charts: { opts: readStoredJson(CHARTS_OPTS_KEY), workfileOff: readStoredJson(CHARTS_WORKFILE_KEY)?.off || [] },
+      overlays: readCurrentUrlState().overlays || [],
     });
   } catch (err) {
     window.alert(err.message || String(err));
@@ -16476,7 +16477,10 @@ async function openJob(job) {
     void frozen;
     try { localStorage.setItem(CHARTS_OPTS_KEY, JSON.stringify({ ...rest, effDatePinned: !!rest.effDate })); } catch { /* private mode */ }
   }
-  try { localStorage.setItem(CHARTS_WORKFILE_KEY, JSON.stringify({ off: job.charts.workfileOff })); } catch { /* private mode */ }
+  try {
+    // Keep this browser's own embed choice; the job carries only the list.
+    localStorage.setItem(CHARTS_WORKFILE_KEY, JSON.stringify({ ...(readStoredJson(CHARTS_WORKFILE_KEY) || {}), off: job.charts.workfileOff }));
+  } catch { /* private mode */ }
 
   if (job.grid.sort && SORT_KEYS[job.grid.sort.col]) {
     currentSort = { col: job.grid.sort.col, dir: job.grid.sort.dir === 'desc' ? 'desc' : 'asc' };
@@ -16491,6 +16495,16 @@ async function openJob(job) {
   syncSelectAllBox();
   repaintStars();
   refreshRouteStarredBtn();
+  // The main map's layer toggles, exactly as saved (a job from before they
+  // were saved leaves the current ones alone): press the saved ones through
+  // the shared-link restore, and release any other that is on.
+  if (Array.isArray(job.overlays)) {
+    const want = new Set(job.overlays);
+    for (const btn of document.querySelectorAll('button.overlay-btn[id$="-toggle"]')) {
+      if (btn.getAttribute('aria-pressed') === 'true' && !want.has(btn.id.replace(/-toggle$/, '')) && !btn.disabled) btn.click();
+    }
+    restoreUrlOverlays({ overlays: job.overlays });
+  }
 }
 
 const $jobOpenInput = document.getElementById('job-open-input');
