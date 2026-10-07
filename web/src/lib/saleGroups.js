@@ -23,7 +23,7 @@
 // none — which flows into the existing acresIncomplete/frontageIncomplete
 // guards and suppresses the rate rather than stating a wrong one.
 
-import { saleAcres, saleFrontageFeet } from './saleSize.js';
+import { saleSizeAcres, saleFrontageFeet } from './saleSize.js';
 
 const SQFT_PER_ACRE = 43560;
 
@@ -200,14 +200,18 @@ export function computeSaleGroups(
     // upstream pipeline resolved for THIS SALE and null when it deliberately
     // resolved none (parcel changed, at-sale size unrecoverable) — see
     // lib/saleSize.js. A pasted comp set has no such column and falls back to
-    // today's acreage there, exactly as before.
+    // today's acreage there, exactly as before. saleSizeAcres() adds one case
+    // to saleAcres(): a frontage-stated parcel whose boundary is verified
+    // unchanged contributes its measured polygon area, the same figure the
+    // row's own Acres cell shows — otherwise every all-town-lot sale would
+    // have no $/acre at all.
     //
     // Null lands in acresIncomplete, which already suppresses $/acre and $/SF
     // for the whole group. That is the correct outcome and needs no new rule:
     // dividing a whole consideration by a partially-known area produces a
     // plausible wrong rate, which is the one failure mode worth engineering
     // against.
-    const ac = saleAcres(f.properties);
+    const ac = saleSizeAcres(f.properties);
     if (ac != null) g.totalAcres += ac;
     else g.acresIncomplete = true;
 

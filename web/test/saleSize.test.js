@@ -20,6 +20,8 @@ import {
   showsCurrentRollSize,
   shapeDerivedNote,
   showMeasuredArea,
+  saleSizeAcres,
+  areaSourceLabel,
 } from '../src/lib/saleSize.js';
 
 const results = [];
@@ -334,6 +336,58 @@ test('a pasted comp set is left alone — it already shows today\'s acreage', ()
   assert.equal(showMeasuredArea(saleSizeStamp({ roll: '1' })), false);
   assert.equal(showMeasuredArea({ _acres: 0.25 }), false);
   assert.equal(showMeasuredArea(null), false);
+});
+
+console.log('\nsaleSize.js — saleSizeAcres / areaSourceLabel');
+
+// The Town of Lac du Bonnet case (rolls 500 + 600, sold 2026-05-25): each lot
+// stated as 50 FEET at sale, boundary verified unchanged. The popup measured
+// them; the Acres / Land SF columns and the export came out blank.
+const LDB_LOT = { ...saleSizeStamp({
+  parcelSize: '50', parcelSizeUnit: 'FEET',
+  parcelChange: 'verified_unchanged', sizeBasis: 'at_sale_pdf',
+}), _acres: 0.17 };
+
+test('a verified frontage row reports its measured area to the size columns', () => {
+  assert.equal(saleSizeAcres(LDB_LOT), 0.17);
+  assert.equal(saleSizeAcres(LDB_LOT, 0.2), 0.2);   // caller-supplied polygon area wins
+});
+
+test('a stated acreage is used as-is, never the polygon', () => {
+  assert.equal(saleSizeAcres({ ...saleSizeStamp({
+    parcelSize: '160', parcelSizeUnit: 'ACRES', parcelChange: 'verified_unchanged',
+  }), _acres: 40 }), 160);
+});
+
+test('an unverified or changed frontage row stays blank', () => {
+  for (const change of ['legal_matches_size_unchecked', 'size_changed', 'unverifiable']) {
+    assert.equal(saleSizeAcres({ ...saleSizeStamp({
+      parcelSize: '50', parcelSizeUnit: 'FEET', parcelChange: change,
+    }), _acres: 0.17 }), null, change);
+  }
+  assert.equal(saleSizeAcres({ ...saleSizeStamp({
+    parcelSize: '', parcelSizeUnit: '', parcelChange: 'size_changed',
+  }), _acres: 40 }), null);
+});
+
+test('a verified frontage row with no polygon area stays blank', () => {
+  assert.equal(saleSizeAcres({ ...LDB_LOT, _acres: undefined }), null);
+  assert.equal(saleSizeAcres(LDB_LOT, 0), null);
+});
+
+test('the area source names the measurement, not the sales report', () => {
+  assert.match(areaSourceLabel(LDB_LOT), /^measured from parcel shape/);
+  // The size LINE still names the report: it quotes the 50 ft frontage.
+  assert.equal(sizeSourceLabel(LDB_LOT), 'at sale (property-sales report)');
+});
+
+test('everywhere else the area source is the size source', () => {
+  const acresRow = saleSizeStamp({
+    parcelSize: '160', parcelSizeUnit: 'ACRES',
+    parcelChange: 'verified_unchanged', sizeBasis: 'at_sale_pdf',
+  });
+  assert.equal(areaSourceLabel(acresRow), sizeSourceLabel(acresRow));
+  assert.equal(areaSourceLabel({ _acres: 3 }), '');
 });
 
 const passed = results.reduce((a, b) => a + b, 0);

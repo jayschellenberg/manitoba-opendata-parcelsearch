@@ -2817,6 +2817,15 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   cursor: help;
 }
 
+/* Acres / SF measured from the polygon on a frontage-stated sale whose
+   boundary is verified unchanged (saleSize.showMeasuredArea). Italic so a
+   measurement never reads as a figure the roll or sales report stated; the
+   wording lives in the tooltip and in the CSV's Size Source column. */
+#results td.size-measured {
+  font-style: italic;
+  cursor: help;
+}
+
 /* The sale-level exclusion row. Vacant Land Only is given a line of
    its own via a 100% basis; the far-flung threshold, its Exclude
    toggle and the live tally follow on the line below and wrap only
