@@ -216,7 +216,9 @@ test('sales mode on the phone: draw tools on the map, star proxy, no-folder impo
   // Star: the card forwards to the row's button, which owns the Set.
   assert.match(cards, /rowStar\.click\(\)/, 'the card star does not forward to the row star');
   assert.match(cards, /td\.fav-col button\.fav-star/, 'the card star is not read from the row');
-  assert.match(main, /className = isFav \? 'fav-star active' : 'fav-star'/, 'main.js no longer renders button.fav-star — update the card proxy');
+  // paintStar (2026-10-06, star = comp tag) draws every row star, ★n included;
+  // the card proxy copies its text, so a phone card shows the comp number too.
+  assert.match(main, /className = fav \? 'fav-star active' : 'fav-star'/, 'main.js no longer renders button.fav-star — update the card proxy');
   assert.ok(css.includes('.result-card-star'), 'CSS has no card star rule');
   // Import: no File System Access -> the button must not promise a folder.
   assert.match(panel, /if \(\$import && !fsAccessSupported\(\)\) \{[\s\S]*Choose export files/, 'salesDbPanel.js keeps "Choose export folder" without File System Access');

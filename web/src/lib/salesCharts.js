@@ -69,6 +69,27 @@ function pos(n) {
  * 3-lot assembly was buying three ~5-acre lots, not one 15-acre parcel,
  * and the $/lot on the y-axis is per-lot too.
  */
+/**
+ * The fields a sale's comp-tag key is built from (lib/compTags.js
+ * saleTagKey): its rolls and its parsed sale date, plus the address and
+ * municipality a tag remembers. The ONE derivation for both the charts page
+ * (via saleRecordsFromRows, which must agree — see compTags.test.js) and the
+ * main grid's star, so a sale tagged in either place is the same sale in the
+ * other.
+ */
+export function saleTagInput(p, parseDate) {
+  const d = parseDate ? parseDate(p?._saleDate) : null;
+  return {
+    rolls: Array.isArray(p?._saleGroupRolls) && p._saleGroupRolls.length
+      ? p._saleGroupRolls.slice()
+      : [p?.Roll_No_Txt].filter(Boolean),
+    dateMs: d instanceof Date && !Number.isNaN(d.getTime()) ? d.getTime() : null,
+    dateText: p?._saleDate ?? '',
+    address: p?.Property_Address || '',
+    muni: p?.Muni_Name_With_Typ || p?.Municipality || '',
+  };
+}
+
 export function saleRecordsFromRows(rows, { parseDate, centroid, rowKey, isSelected, agOf } = {}) {
   const byGroup = new Map();
 
