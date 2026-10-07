@@ -1136,7 +1136,15 @@ selection, so the charts, the map and the CSV export always agree.
 - *Total/Per Lot Price*: total price over time, by distance, vs assessed; price
   per lot (the price divided by the parcels in the sale) over time, by size, by
   distance. A note under the tabs explains the difference.
-- *Water*: a map of the water-influenced sales at the top (2026-10-06): waterfront
+- *Maps on every tab* (2026-10-06): each map sits in a two-column `.map-row`, so
+  none is wider than half the page (stacking below 900px). The Agricultural tab
+  ends with a MASC rating map and a CLI capability class map; Total/Per Lot ends
+  with a price-per-lot quintile heatmap. Sales without the mapped value are faint
+  grey context dots. The subject is a red teardrop pin drawn as a style icon
+  (`subjectPinImage`), so it prints into the PNGs. Maps are kept per key in
+  `pageMaps`; a fit made while a map has no size waits for its first sized
+  `resize()`.
+- *Water*: a map of the water-influenced sales after the charts (2026-10-06): waterfront
   and near-water sales coloured by their strongest water class, the dry sales as
   faint grey context dots (smaller, under everything, not framed), sales with no
   water data left off and counted; hover any dot for its details. Then box plots

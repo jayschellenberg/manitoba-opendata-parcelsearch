@@ -22,6 +22,38 @@ import { circleRing } from '../lib/salesMapColors.js';
 
 let protocolAdded = false;
 
+/** Device pixels per CSS pixel the pin is drawn at, so it stays crisp in the 1950px PNG. */
+const PIN_RATIO = 3;
+
+/**
+ * A Google-Maps-style teardrop pin, 26 x 38 CSS px with its tip at the
+ * bottom centre: red with a darker outline and a dark centre dot. Drawn on
+ * a canvas and handed to MapLibre as pixels, which needs no image fetch
+ * (the CSP allows none) and no sprite.
+ */
+function subjectPinImage() {
+  const W = 26;
+  const H = 38;
+  const c = document.createElement('canvas');
+  c.width = W * PIN_RATIO;
+  c.height = H * PIN_RATIO;
+  const ctx = c.getContext('2d');
+  ctx.scale(PIN_RATIO, PIN_RATIO);
+  // A 24 x 36 teardrop, inset 1px for the outline.
+  ctx.translate(1, 1);
+  const body = new Path2D('M12 0C5.37 0 0 5.37 0 12c0 8.4 10.2 21.3 11.1 22.6a1.1 1.1 0 0 0 1.8 0C13.8 33.3 24 20.4 24 12 24 5.37 18.63 0 12 0z');
+  ctx.fillStyle = '#EA4335';
+  ctx.fill(body);
+  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = '#A52714';
+  ctx.stroke(body);
+  ctx.beginPath();
+  ctx.arc(12, 12, 4.6, 0, Math.PI * 2);
+  ctx.fillStyle = '#7B1A0E';
+  ctx.fill();
+  return ctx.getImageData(0, 0, c.width, c.height);
+}
+
 const EMPTY = { type: 'FeatureCollection', features: [] };
 
 /**
@@ -93,6 +125,18 @@ export function createSalesMap({ onPick, popupRows }) {
 
   let pending = null;   // data that arrived before the style finished loading
   let lastFitKey = null;
+  // Bounds still waiting to be fitted: a map filled while its tab is hidden
+  // (or its figure detached) has a 0 x 0 box, and fitting into that zooms
+  // out to the world. The fit runs on the first resize with a real size.
+  let pendingFit = null;
+  const hasSize = () => box.clientWidth > 0 && box.clientHeight > 0;
+  // Padding scales with the map: a fixed 40px left a half-width map
+  // (~130px tall on a laptop) only ~50px for the sales.
+  const fitNow = (b) => map.fitBounds(b, {
+    padding: Math.round(Math.max(8, Math.min(40, box.clientHeight * 0.1, box.clientWidth * 0.1))),
+    maxZoom: 13,
+    duration: 0,
+  });
   // Our own flag, not map.isStyleLoaded(): that reads false for a moment
   // whenever tiles are still streaming in, which would park fresh data in
   // `pending` with nothing left to flush it.
@@ -157,11 +201,17 @@ export function createSalesMap({ onPick, popupRows }) {
         'circle-stroke-width': ['case', ctx, 0.5, 0.75],
       },
     });
+    // The subject as a map pin (Jason, 2026-10-06), tip on the point. A
+    // style icon, not a DOM Marker, so it is part of the WebGL canvas and
+    // prints into the PNG and the work file.
+    if (!map.hasImage('subject-pin')) map.addImage('subject-pin', subjectPinImage(), { pixelRatio: PIN_RATIO });
     map.addLayer({
-      id: 'subject-dot', type: 'circle', source: 'subject',
-      paint: {
-        'circle-radius': 8, 'circle-color': R_STYLE.subject,
-        'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5,
+      id: 'subject-dot', type: 'symbol', source: 'subject',
+      layout: {
+        'icon-image': 'subject-pin',
+        'icon-anchor': 'bottom',
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
       },
     });
     // Hover readout (Jason, 2026-10-06): the click popup's facts without
@@ -270,7 +320,7 @@ export function createSalesMap({ onPick, popupRows }) {
       if (subject) b.extend([subject.lng, subject.lat]);
       // The whole distance-filter ring in view, not cut off at the edges.
       if (subject) for (const km of rings || []) for (const c of circleRing(subject, km, 16)) b.extend(c);
-      map.fitBounds(b, { padding: 40, maxZoom: 13, duration: 0 });
+      if (hasSize()) { pendingFit = null; fitNow(b); } else pendingFit = b;
     }
   }
 
@@ -342,7 +392,10 @@ export function createSalesMap({ onPick, popupRows }) {
       if (ready) apply(data);
       else pending = data;
     },
-    resize() { map.resize(); },
+    resize() {
+      map.resize();
+      if (pendingFit && hasSize()) { const b = pendingFit; pendingFit = null; fitNow(b); }
+    },
     /** The MapLibre map, for linkMaps. */
     map,
   };
