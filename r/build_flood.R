@@ -72,9 +72,15 @@
 # ABSENCE SEMANTICS — read this before changing the filter.
 #   Only parcels intersecting at least one zone are shipped. Most of Manitoba
 #   is outside every layer, so shipping the rest would inflate the payload
-#   many times over to say nothing. On the frontend:
+#   many times over to say nothing. Every parcel in the province goes through
+#   the one intersection pass below, so on the frontend:
 #       muni in _index AND roll absent -> genuinely outside every zone
-#       muni NOT in _index             -> shard never built; state unknown
+#       muni NOT in a loaded _index    -> no parcel there touches any zone:
+#                                         also outside every zone (2026-10-07)
+#       _index failed to load          -> state unknown
+#   The second line holds only while this script keeps processing EVERY
+#   parcel. Never restrict it to a region or a muni list without changing
+#   fetchFloodForMuni (web/src/arcgis.js) back to "unknown" for absent munis.
 #   That is the same three-state problem the Water and Tile Drainage columns
 #   already handle. Do not collapse it: this is a hazard column, and a
 #   confident "None" with no evidence behind it is the worst thing it can say.

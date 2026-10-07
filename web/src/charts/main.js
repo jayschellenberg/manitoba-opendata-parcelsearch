@@ -2040,6 +2040,9 @@ function paintMap(key, { title, cms, adj, colored, context = [], colorOf, legend
     properties: {
       saleId: String(r.saleId), excluded: false, context: ctx, color: ctx ? null : colorOf(r),
       label: tagLabel(tags, saleTagKey(r)) || '',
+      // Placement priority for the map labels: comps by number, then Land
+      // Set 1, then Land Set 2.
+      labelRank: labelRank(saleTagKey(r)),
       parcelKeys: r.parcelKeys || [],
     },
     geometry: { type: 'Point', coordinates: [r.lng, r.lat] },
@@ -2064,6 +2067,16 @@ function paintMap(key, { title, cms, adj, colored, context = [], colorOf, legend
   });
   mapCounts.set(key, colored.length);
   return m;
+}
+
+/** Map-label priority: Comp n -> n, Land Set 1 #n -> 100 + n, Land Set 2 #n -> 200 + n. */
+function labelRank(key) {
+  const c = tagNumber(tags, 'comps', key);
+  if (c) return c;
+  const a = tagNumber(tags, 'set1', key);
+  if (a) return 100 + a;
+  const b = tagNumber(tags, 'set2', key);
+  return b ? 200 + b : 999;
 }
 
 /** Click and popup handlers, shared by every map on the page. */

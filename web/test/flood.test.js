@@ -183,4 +183,21 @@ if (!existsSync(join(DATA_DIR, FLOOD_GROUPS[0].file))) {
   }
 }
 
+// A muni absent from a LOADED flood index is outside every zone (an empty
+// dictionary, so every parcel reads None) — r/build_flood.R intersects every
+// parcel in the province and writes shards only for munis with a hit. A
+// failed index is still "unknown" (null). 2026-10-07; this used to return
+// null for an absent muni, and 109 munis read "unknown".
+{
+  const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'arcgis.js'), 'utf8');
+  const body = src.slice(src.indexOf('export async function fetchFloodForMuni'));
+  assert.match(body, /if \(!idx \|\| !idx\._meta\) return null;/, 'a failed or unbuilt index must stay unknown');
+  assert.match(body, /lookupMuniManifestEntry\(idx, muniNameWithTyp, \{ stripType: false \}\);\s*if \(!entry\) return \{\};/,
+    'a muni absent from a loaded index must read outside every zone');
+  const r = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'r', 'build_flood.R'), 'utf8');
+  // The premise: the build must not restrict which parcels it intersects.
+  assert.match(r, /parcels <- sf::st_read\(roll_path, quiet = TRUE\)/);
+  assert.doesNotMatch(r, /parcels <- parcels\[parcels\$Muni_Name_With_Typ %in%/, 'build_flood.R must process every muni');
+}
+
 console.log('flood.test.js: all assertions passed');

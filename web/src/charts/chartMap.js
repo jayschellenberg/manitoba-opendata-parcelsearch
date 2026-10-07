@@ -56,6 +56,8 @@ function subjectPinImage() {
 }
 
 const EMPTY = { type: 'FeatureCollection', features: [] };
+/** Where a comp label may sit round its dot, in the order tried: above first. */
+export const LABEL_ANCHORS = ['bottom', 'top', 'left', 'right', 'bottom-left', 'bottom-right', 'top-left', 'top-right'];
 /** A filter that matches no parcel: the outline layers' state with no sales. */
 const OUTLINE_NONE = ['==', ['get', 'Roll_No_Txt'], '\u0000'];
 /** A tile parcel's key, as the sale records spell it: "MUNI (TYPE)|roll". */
@@ -238,15 +240,25 @@ export function createSalesMap({ onPick, popupRows, popupActions = () => [] }) {
     });
     map.addLayer({
       id: 'sales-tag-label', type: 'symbol', source: 'sales', filter: tagged,
+      // Labels avoid each other and the subject pin (2026-10-07): each
+      // tries above its dot first, then the other sides and corners, and
+      // lower comp numbers are placed first (labelRank). They used to be
+      // drawn with collisions off, so a comp beside the subject sat under
+      // the pin and two near comps printed on top of each other. In the
+      // rare crowd where no side fits — far zoomed out — the number waits
+      // for a closer zoom; the ring below it (a circle layer) always draws.
       layout: {
         'text-field': ['get', 'label'],
         // The one stack the glyph server serves (see fontStacks.test.js).
         'text-font': ['Open Sans Semibold'],
         'text-size': 13,
-        'text-anchor': 'bottom',
-        'text-offset': [0, -0.7],
-        'text-allow-overlap': true,
-        'text-ignore-placement': true,
+        'text-variable-anchor': LABEL_ANCHORS,
+        'text-radial-offset': 0.95,
+        'text-justify': 'auto',
+        'text-padding': 1,
+        'symbol-sort-key': ['coalesce', ['get', 'labelRank'], 999],
+        'text-allow-overlap': false,
+        'text-ignore-placement': false,
       },
       paint: { 'text-color': '#B3261E', 'text-halo-color': '#ffffff', 'text-halo-width': 2 },
     });
@@ -259,8 +271,11 @@ export function createSalesMap({ onPick, popupRows, popupActions = () => [] }) {
       layout: {
         'icon-image': 'subject-pin',
         'icon-anchor': 'bottom',
+        // Always drawn, and it CLAIMS its space: the comp labels (placed
+        // after it — it is the higher layer) move round it rather than
+        // printing over it.
         'icon-allow-overlap': true,
-        'icon-ignore-placement': true,
+        'icon-ignore-placement': false,
       },
     });
     // Hover readout (Jason, 2026-10-06): the click popup's facts without
