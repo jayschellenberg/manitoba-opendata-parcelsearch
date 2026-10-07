@@ -272,11 +272,10 @@ a map row on every page, numbered comparables and Land Sets, exclusion reasons,
 and the grid's ★ as the numbered comp (PRs #170–#173, merged and live
 2026-10-07). Still open:
 
-- **Tags and reasons are per browser.** They live in localStorage, so another
-  browser or device starts empty. A job file (save / load the subject, filters,
-  tags, reasons and chart settings — the template's params.yml idea, offered
-  2026-10-06 and not chosen then) would carry an assignment between machines and
-  make a signed report's charts reproducible.
+- **Job file, later.** Saved jobs carry the sales text but not the soil /
+  Agricultural-preset enrichment (re-run on open when the preset is picked),
+  nor the main map's overlay toggles; and there is no list of recent jobs —
+  each is a file the user keeps.
 - **summary.html size.** With every map ticked the work-file zip is ~20 MB,
   nearly all embedded images. If mail limits bite, link the summary to the PNGs
   in the zip instead of embedding them (smaller, but no longer one file).

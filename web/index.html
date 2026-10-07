@@ -605,6 +605,16 @@
                database exists, when it becomes the main way in. The status line
                rides in the summary so the collapsed state still says whether an
                archive is present and how fresh it is. -->
+          <!-- Job file (2026-10-07): save the whole assignment — the loaded
+               sales, filters, subject, grid state, comp numbers, exclusion
+               reasons and chart settings — to one file, and open it again here
+               or on another machine. -->
+          <div class="job-row">
+            <span class="job-row-label">Job</span>
+            <button type="button" id="job-save" class="secondary" title="Save the loaded sales, filters, subject, unticked rows, stars, comp numbers, exclusion reasons and Sales Charts settings to one .json file. It holds the sales themselves (MAO subscriber data when they came from the database) — keep it as privately as a CSV export.">Save job</button>
+            <button type="button" id="job-open" class="secondary" title="Open a saved job file: reloads its sales and puts every filter, tag and setting back.">Open job…</button>
+            <input type="file" id="job-open-input" accept=".json,application/json" hidden />
+          </div>
           <details class="sales-db" id="sales-db">
             <summary class="sales-db-head">
               <strong>MAO Sales Database</strong>
