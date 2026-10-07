@@ -26,7 +26,7 @@ export const config = {
 };
 
 const RELEASE_URL =
-  'https://github.com/jayschellenberg/manitoba-opendata-parcelsearch/releases/download/data-2026-10-05/assessment-index.json';
+  'https://github.com/jayschellenberg/manitoba-opendata-parcelsearch/releases/download/data-2026-10-07/assessment-index.json';
 
 export default async function handler() {
   let upstream;

@@ -23,7 +23,7 @@ export const config = {
 };
 
 const RELEASE_URL =
-  'https://github.com/jayschellenberg/manitoba-opendata-parcelsearch/releases/download/data-2026-10-05/legal-index.json';
+  'https://github.com/jayschellenberg/manitoba-opendata-parcelsearch/releases/download/data-2026-10-07/legal-index.json';
 
 export default async function handler() {
   let upstream;
