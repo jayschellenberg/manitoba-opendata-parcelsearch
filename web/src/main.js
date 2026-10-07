@@ -3132,8 +3132,9 @@ $gridToggle.addEventListener('click', () => toggleSurveyGridOverlay());
 setTimeout(() => restoreUrlOverlays(initialUrlState), 0);
 
 const $staticMapBtn      = document.getElementById('static-map-btn');
-const $staticMapOutput   = document.getElementById('static-map-output');
-const $staticMapSection  = document.getElementById('static-map-section');
+// The MB Overall Map pop-up: lib/locationMapPanel.js renders into its body.
+const $locationMapModal  = document.getElementById('location-map-modal');
+const $locationMapOutput = document.getElementById('location-map-output');
 // The Capture Map panel: preview + Include legend + Copy / Download.
 const $captureModal      = document.getElementById('map-capture-modal');
 const $captureImg        = document.getElementById('map-capture-img');
@@ -3149,6 +3150,12 @@ if ($staticMapBtn) {
   });
 }
 wireCapturePanel();
+if ($locationMapModal) {
+  for (const el of $locationMapModal.querySelectorAll('[data-close]')) {
+    el.addEventListener('click', () => $locationMapModal.close());
+  }
+  $locationMapModal.addEventListener('click', (e) => { if (e.target === $locationMapModal) $locationMapModal.close(); });
+}
 const $locationMapBtn = document.getElementById('location-map-btn');
 const LOCATION_MAP_LABEL = $locationMapBtn?.textContent || 'Province Location Map';
 if ($locationMapBtn) {
@@ -3417,28 +3424,6 @@ function wrapToWidth(ctx, text, maxWidth) {
 }
 
 /**
- * Drop the Generate Image snapshot.
- *
- * The snapshot is a still of the map AT THE MOMENT IT WAS TAKEN, and nothing
- * on it says so. Left on the page through a new search it sits directly under
- * a grid describing different parcels, looking exactly like output of the
- * search you are now reading — the one failure mode where a stale image is
- * worse than no image, because the user's next step is pasting it into a
- * report (Jason, 2026-08-13).
- *
- * Called when a NEW RESULT SET arrives — a Property Search, or a sales upload
- * — and deliberately not on filter changes, overlay toggles or re-sorts. Those
- * refine the set the image was taken of; clearing there would yank the image
- * out from under someone who took it and then tidied the view before saving.
- */
-function clearStaticMap() {
-  if (!$staticMapOutput) return;
-  $staticMapOutput.innerHTML = '';
-  $staticMapOutput.hidden = true;
-  if ($staticMapSection) $staticMapSection.hidden = true;
-}
-
-/**
  * Capture the current map view as an exact CAPTURE_W x CAPTURE_H frame.
  *
  * The map is redrawn at whatever pixel ratio makes its 1950:1050 window
@@ -3697,34 +3682,33 @@ let locationMapState = { label: 'SUBJECT', direction: 'auto', base: 'manitoba' }
 
 /**
  * Location map: a printed base map with a SUBJECT callout at the searched
- * property, rendered as a PNG under the table with Copy / Download
- * (lib/locationMapPanel.js, shared with the Winnipeg app). The Manitoba
+ * property, rendered as a PNG in a pop-up with Copy / Download, the same
+ * shape as the Capture Map panel (lib/locationMapPanel.js, shared with the
+ * Winnipeg app, renders the panel body unchanged). The Manitoba
  * overview is the default; a property inside the Winnipeg map's extent can
  * be switched to the Winnipeg map, which adds the downtown inset.
  */
 async function generateLocationMap() {
-  if (!$staticMapOutput) return;
+  if (!$locationMapModal || !$locationMapOutput) return;
   const subject = resolveLocationMapSubject();
-  if ($staticMapSection) $staticMapSection.hidden = false;
-  $staticMapOutput.hidden = false;
-  $staticMapOutput.innerHTML = '';
+  $locationMapOutput.innerHTML = '';
   if (!subject) {
-    $staticMapOutput.innerHTML = '<p class="static-map-hint">Search for a property first — the location map points at the search result.</p>';
-    $staticMapOutput.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    $locationMapOutput.innerHTML = '<p class="static-map-hint">Search for a property first — the location map points at the search result.</p>';
+    if (!$locationMapModal.open) $locationMapModal.showModal();
     return;
   }
   const btn = $locationMapBtn;
   if (btn) { btn.disabled = true; btn.textContent = 'Rendering…'; }
   try {
     await showLocationMapPanel({
-      container: $staticMapOutput,
+      container: $locationMapOutput,
       subject,
       maps: ['manitoba', 'winnipeg'],
       state: locationMapState,
       onState: (next) => { locationMapState = next; },
       download: downloadBlob,
     });
-    $staticMapOutput.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (!$locationMapModal.open) $locationMapModal.showModal();
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = LOCATION_MAP_LABEL; }
   }
@@ -5427,8 +5411,6 @@ async function runSearch() {
   setBusy(true);
   setCount('Searching Roll Entry…');
   clearTable();
-  // A new result set makes any existing snapshot a picture of the last one.
-  clearStaticMap();
   setMapData(EMPTY_FC, EMPTY_FC, EMPTY_FC);
 
   // Resolve a ticked water-influence box into a roll list BEFORE the query
@@ -5802,9 +5784,33 @@ async function runSearch() {
         }
       }
     }
+    autoEnableMuniParcels();
   } finally {
     setBusy(false);
   }
+}
+
+// A search over more municipalities than this leaves Assessment Parcels to
+// a deliberate click: the fabric is one fetch per muni, and a wide list
+// import would otherwise pull dozens of them unasked.
+const AUTO_MUNI_PARCELS_MAX_MUNIS = 3;
+
+/**
+ * Turn Assessment Parcels on after a search lands, so the results sit on
+ * the grey parcel fabric by default (Jason, 2026-10-07). Goes through the
+ * layer's own toggle so its button state stays honest. Not awaited: the
+ * fabric loads behind the finished results rather than holding the busy
+ * spinner. Property Search only — Sales Analysis keeps its own layer
+ * choices. Skipped when the layer is already on, has no muni scope
+ * (button disabled), or the scope is wider than the cap above.
+ */
+function autoEnableMuniParcels() {
+  if (getActiveTabName() !== 'property') return;
+  if (!$muniParcelsToggle || $muniParcelsToggle.disabled) return;
+  if ($muniParcelsToggle.classList.contains('active')) return;
+  if (scopedOverlayMunis().length > AUTO_MUNI_PARCELS_MAX_MUNIS) return;
+  toggleAuxOverlay('muniParcels')
+    .catch((err) => console.warn('auto Assessment Parcels failed', err));
 }
 
 /**
@@ -5866,7 +5872,6 @@ async function handleSalesUpload(file) {
   // …and the same rule for the snapshot: a new upload is a new result set, so
   // any image on the page is of the previous one. Covers every entry point
   // into this function — dropzone, paste modal and Recent uploads alike.
-  clearStaticMap();
   // A CSV has its own row order, which is the vendor's sort rather than
   // anything the user chose — "Entry order" is a typed-Roll#-list option
   // only, so drop any order left over from an earlier search.
@@ -13738,7 +13743,6 @@ function clearRollAddress() {
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }
   clearTable();
-  clearStaticMap();
   setMapData(EMPTY_FC, EMPTY_FC, EMPTY_FC, { fit: false });
   setCount('');
   $rollText?.focus();
@@ -13772,7 +13776,6 @@ function clearTable() {
  */
 function clearSalesResults() {
   clearTable();
-  clearStaticMap();
   csvFullRows = null;
   csvFullBaseMsg = '';
   csvMatchedMunis = null;

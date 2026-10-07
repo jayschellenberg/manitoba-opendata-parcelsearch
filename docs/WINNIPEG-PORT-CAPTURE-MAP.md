@@ -14,6 +14,33 @@ this page.
    a panel with a preview, an **Include legend** tick box, **Copy image**,
    **Download PNG** and **Download JPG (smaller)**.
 4. **Alt+C** copies the current view straight to the clipboard, with no panel.
+5. **Capture Map and the overall location map share one row**, half width each.
+   The location button's label drops "Location" ("🗺️ MB Overall Map" in MB;
+   Winnipeg's equivalent label, shortened the same way).
+6. **The overall location map opens in the same kind of pop-up** (Copy image /
+   Download PNG) instead of rendering under the grid.
+7. **Assessment Parcels turns on by default when a Property Search finishes.**
+
+MB PRs: #183 (items 1–4) and the follow-up PR (items 5–7).
+
+## Part 0: Assessment Parcels on after a Property Search
+
+MB `runSearch()` calls `autoEnableMuniParcels()` as its last step on the
+success path. Early returns (no results, errors) never reach it. The function:
+- runs only on the Property Search tab (`getActiveTabName() === 'property'`).
+  Every `runSearch` caller is a Property Search feature anyway (Search
+  button, Enter, list import, waterfront re-run); Sales Analysis has its own
+  upload path.
+- skips when the toggle is disabled (no muni scope) or already active.
+- skips when `scopedOverlayMunis().length > AUTO_MUNI_PARCELS_MAX_MUNIS` (3).
+  The fabric is one fetch per muni, and an older design note says a wide list
+  import should stay a deliberate click.
+- calls `toggleAuxOverlay('muniParcels')` **without awaiting it**, so the fabric
+  loads behind the finished results instead of holding the busy spinner.
+
+Winnipeg has no municipalities. Find its parcel-fabric layer toggle and
+whatever scope gates it, and use the same success-path hook. A user who turns
+the layer off gets it back on the next search; MB accepted that as "default on".
 
 ## Part 1: map size (CSS only)
 
@@ -158,3 +185,43 @@ load it with `createRequire`.) Checks that passed:
 `node_modules/.vite/deps_temp_*` under Dropbox and serves "504 Outdated
 Optimize Dep", so the map never initialises. Use the `-tmpcache` launch
 config (cacheDir outside Dropbox), or add one for Winnipeg.
+
+## Part 3: button row + location map pop-up (follow-up PR)
+
+### Half-width row
+- index.html: `#static-map-btn` and `#location-map-btn` are wrapped in
+  `<div class="capture-row">`.
+- CSS `.sidebar .capture-row`: flex, gap 6px; buttons `flex: 1 1 0; min-width: 0`
+  with nowrap and ellipsis.
+- Measured button widths: 221 px at 1920 wide, 173 px at 1536, 151 px at 1366.
+  "📸 Capture Map Alt+C" clips at 1366, so
+  `@media (max-width: 1450px) { .sidebar .capture-row .kbd-hint { display: none; } }`.
+  The shortcut is still in the tooltip and the panel. Re-measure in Winnipeg,
+  whose sidebar width may differ.
+- `LOCATION_MAP_LABEL` reads the button's text at startup, so changing the label
+  in HTML is enough.
+
+### Location map in a pop-up
+- **Do not edit `lib/locationMapPanel.js`.** It is byte-identical between the two
+  apps, and MB's `test/locationMap.test.js` checks that. The pop-up is pure
+  host-side.
+- index.html: new `<dialog id="location-map-modal" class="map-capture-modal location-map-modal">`
+  with the same head (title + `data-close` ×) and a body
+  `<div id="location-map-output" class="static-map-output">`. The class keeps
+  the panel's existing hint/img styles.
+- main.js `generateLocationMap()` renders into `$locationMapOutput` and calls
+  `showModal()`. With no subject yet it shows the "Search for a property first"
+  line in the pop-up. Close wiring: `[data-close]` plus a backdrop click.
+- The old under-grid `#static-map-section` / `#static-map-output`, `clearStaticMap()`
+  and its 4 call sites are gone. Pop-ups can't go stale under a new result set,
+  which is the only reason `clearStaticMap` existed.
+- CSS: removed both `.static-map-section` rules. The `.location-map-modal`
+  block narrows the dialog to 760 px (portrait image), strips the card styling
+  from the body, holds the image to `calc(94vh - 190px)`, and restyles the
+  panel's buttons to match the Capture Map ones. Copy uses `var(--ui-brand)`,
+  the same dark fill as `#map-capture-copy`; check it's the same token in
+  Winnipeg.
+- PNG only, no JPG: the shared lib keeps flat-colour location maps PNG on
+  purpose (JPEG leaves visible smudges around edges and text).
+- Verified in MB: 1467×1958 PNG on Copy, `manitoba-location-map.png` on Download,
+  and the image fits a 730 px tall window.
