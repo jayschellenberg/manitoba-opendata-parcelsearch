@@ -179,7 +179,12 @@ test('the star toggles the comp tag, and the charts page reaches the grid', () =
   const main = code('src/main.js');
   assert.match(main, /if \(!wasFav && !inComps\) saveCompTags\(toggleTag\(compTags, 'comps', sale\.key, sale\.rec\)\)/);
   assert.match(main, /else if \(wasFav && inComps\) saveCompTags\(removeTag\(compTags, 'comps', sale\.key\)\)/);
-  assert.match(main, /btn\.textContent = fav \? \(n \? `★\$\{n\}` : '★'\) : '☆'/);
+  assert.match(main, /btn\.textContent = \(fav \? \(n \? `★\$\{n\}` : '★'\) : '☆'\) \+ \(sets\.length \? ` \$\{sets\.join\(' '\)\}` : ''\)/);
+  // Land Sets from the grid: right-click / Alt-click opens the tag menu, and
+  // its Comp line keeps the star rule.
+  assert.match(main, /btn\.addEventListener\('contextmenu', \(e\) => \{[\s\S]*?openTagMenu\(btn, row, sale\);/);
+  assert.match(main, /if \(e\.altKey && sale\.key\) \{ openTagMenu\(btn, row, sale\); return; \}/);
+  assert.match(main, /saveCompTags\(toggleTag\(compTags, list, sale\.key, sale\.rec\)\);\s*if \(list === 'comps' && fav\)/);
   assert.match(main, /if \(e\.key === COMP_TAGS_KEY\) \{[\s\S]*?syncStarsFromTags\(prev, compTags\)/);
 });
 test('unticking a sale in the grid asks for the reason', () => {

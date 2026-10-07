@@ -146,6 +146,7 @@ const PERSISTENT = {
   compTags: 'the numbered comp tags, kept in browser storage and shared with the Sales Charts page; keyed by sale, not by result set',
   exclReasons: 'exclusion reasons, kept in browser storage like compTags and keyed by sale',
   reasonPrompt: 'an open reason popover saves under its sale key, which outlives the result set; any click closes it',
+  tagMenu: 'an open grid tag menu acts on a sale key, which outlives the result set; any click or Escape closes it',
 };
 
 console.log('main.js — what a new Search must not inherit');

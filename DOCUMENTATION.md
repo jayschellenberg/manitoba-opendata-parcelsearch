@@ -1155,6 +1155,26 @@ Map notes:
   only water-influenced sales by their strongest water class.
 - Front feet: the Agricultural page draws per acre (`withPageUnit`).
 
+**Ag consistency filters** (2026-10-07) — the land template's CMSAG1 in its
+"rate" mode. A bar at the top of the Agricultural page: a cultivated-% band and
+keep-chips for the MASC ratings, CLI classes and dominant covers among the
+ticked sales (no chip ticked = no filter). The page then fits its **own** set:
+`cmsFor` (cache key `<metric>|ag`) narrows the ticked sales with
+`agConsistent`, sales outside are drawn hollow and fitted by nothing, and the
+page's trend and time-adjustment rate come from that set; its caption quotes
+"Per year (all ticked)" beside it. Every other page keeps the wide set. As in
+R, a sale with no value for an attribute is kept. The filters show in the
+subtitle ("; Ag: Cultivated 50–100%; MASC A, B"), the waterfall (Agricultural
+page only), the work-file summary's settings and market-conditions table, and
+the job file (they live in the charts opts, `agCons`). Rules:
+`lib/agConsistency.js`, tested in `agConsistency.test.js`. R's "both" mode —
+narrowing every page — is the main window's own MASC / CLI / cultivation
+filters.
+
+**Status line** (2026-10-07): "Live — 24 sales: 23 ticked, 1 unticked · 23
+ticked parcels". It used to read "23 sales (1 excluded)", which looked like a
+different count from the grid beside it.
+
 **Controls.**
 - Size unit: Acres / Sq ft / Front ft.
 - Nominal / Time-adjusted rates.
@@ -1306,6 +1326,11 @@ numbered comparable: starring a sale makes it the next comp and the star reads
   numbering), once per sale, after any existing numbers. Unticked sales are
   skipped (`unnumberedStarredSales` / `numberStarredSales`; refreshed from
   `refreshRouteStarredBtn` and `applySelectionToMapAndCharts`).
+- **Land Sets from the grid** (2026-10-07): right-click (or Alt-click) a star
+  for the tag menu — Comparable, Land Set 1, Land Set 2, each a toggle naming
+  its number (`openTagMenu`). The Comp line keeps the star rule (adding stars
+  the parcel, removing unstars it). Land Set places show beside the star:
+  "★2 L1-3", "☆ L2-1".
 - **Unticking** a sale's checkbox opens a small reason popover
   (`openReasonPrompt`): Enter/Save keeps it, Escape/Skip leaves it blank,
   clicking away keeps what was typed; the row is unticked either way, and the
