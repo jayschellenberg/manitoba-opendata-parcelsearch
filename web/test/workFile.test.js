@@ -105,7 +105,24 @@ test('an empty excluded list adds no section', () => {
   assert.ok(!html.includes('Excluded sales'));
 });
 
+test('linked images: zip paths kept as relative src, with a note to keep the folder', () => {
+  const html = buildSummaryHtml({
+    linkedImages: true,
+    figures: [{ tabLabel: 'Map', title: 'T', kind: 'image', src: 'charts/01-map-cms-heatmap.png' }],
+  });
+  assert.ok(html.includes('<img src="charts/01-map-cms-heatmap.png"'));
+  assert.ok(html.includes('keep the two together'));
+  assert.ok(!buildSummaryHtml({ figures: [{ tabLabel: 'Map', title: 'T', kind: 'image', src: 'data:image/png;base64,AA' }] })
+    .includes('keep the two together'), 'no note when embedded');
+});
+
 console.log('contracts');
+test('the embed choice reaches the summary', () => {
+  const main = code('src/charts/main.js');
+  assert.match(main, /src: embed \? await blobToDataUrl\(png\) : name/);
+  assert.match(main, /buildSummaryHtml\(\{ \.\.\.model, figures, linkedImages: !embed \}\)/);
+  assert.match(main, /\{ embed: els\.workfileEmbed\.checked \}/);
+});
 test('the button opens the dialog and the dialog builds the zip', () => {
   const main = code('src/charts/main.js');
   assert.match(main, /els\.workfileOpen\.addEventListener\('click'[\s\S]*?renderWorkfileList\(\)[\s\S]*?showModal\(\)/);

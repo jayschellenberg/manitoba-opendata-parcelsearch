@@ -193,6 +193,32 @@ test('unticking a sale in the grid asks for the reason', () => {
   assert.match(main, /if \(save\) saveExclReason\(key, input\.value\)/);
 });
 
+console.log('parcel outlines on the charts maps (2026-10-07)');
+test('each sale record carries its parcels as muni|raw roll, once each — not OBJECTID', () => {
+  const M = 'RITCHOT (RM)';
+  const rows = [
+    { parcel: { properties: { _saleGroupId: 1, _saleDate: '2024-01-15', OBJECTID: 11, Muni_Name_With_Typ: M, Roll_No_Txt: '100.000' } } },
+    { parcel: { properties: { _saleGroupId: 1, _saleDate: '2024-01-15', OBJECTID: 12, Muni_Name_With_Typ: M, Roll_No_Txt: '200.000' } } },
+    { parcel: { properties: { _saleGroupId: 1, _saleDate: '2024-01-15', OBJECTID: 11, Muni_Name_With_Typ: M, Roll_No_Txt: '100.000' } } },
+    { parcel: { properties: { _saleGroupId: 2, _saleDate: '2024-02-15', Roll_No_Txt: '3' } } },
+  ];
+  const recs = saleRecordsFromRows(rows, { parseDate: parseSaleDate });
+  assert.deepEqual(recs.find((r) => r.saleId === 1).parcelKeys, ['RITCHOT (RM)|100.000', 'RITCHOT (RM)|200.000']);
+  assert.deepEqual(recs.find((r) => r.saleId === 2).parcelKeys, [], 'no muni, no key');
+  assert.equal(recs[0].oids, undefined, 'OBJECTID changes between monthly exports — never the key');
+});
+test('the maps outline those parcels from the shared parcel tiles by muni + roll, coloured like the dots', () => {
+  const map = code('src/charts/chartMap.js');
+  assert.match(map, /import \{ PARCEL_TILES_URL \} from '\.\.\/lib\/parcelTilesUrl\.js';/);
+  assert.match(map, /addSource\('parcel-tiles', \{ type: 'vector', url: `pmtiles:\/\/\$\{PARCEL_TILES_URL\}` \}\)/);
+  assert.match(map, /const PARCEL_KEY = \['concat', \['get', 'Muni_Name_With_Typ'\], '\|', \['get', 'Roll_No_Txt'\]\];/);
+  assert.match(map, /const filter = \['in', PARCEL_KEY, \['literal', keys\]\];/);
+  assert.match(map, /setPaintProperty\('sale-outline-line', 'line-color', match\)/);
+  assert.match(map, /map\.getSource\('sales'\)\.setData\(fc\);\s*applyOutlines\(fc\);/);
+  assert.match(code('src/map.js'), /import \{ PARCEL_TILES_URL \} from '\.\/lib\/parcelTilesUrl\.js';/);
+  assert.match(code('src/charts/main.js'), /parcelKeys: r\.parcelKeys \|\| \[\]/);
+});
+
 console.log('number my starred sales (2026-10-07)');
 test('the button numbers unnumbered starred, ticked sales in grid order and stays current', () => {
   const main = code('src/main.js');

@@ -1140,8 +1140,16 @@ old Map tab folded into Land Price/Unit, one map per former colour-by mode.
 | Water | Water Class | Influence & Class · Flood & Water Body · Size & Distance · Summary & Premium · Paired Sales |
 
 Map notes:
-- Sales are points at the mean of their parcels' centres (no geometry reaches
-  the page). Only ticked sales are drawn; sales without the mapped value are
+- Sales are points at the mean of their parcels' centres, and from zoom 8 in
+  each sale's **parcel outlines** too (2026-10-07), in the dot's colour: the
+  maps read the site's own `parcels.pmtiles` (source-layer `parcels`, URL shared
+  with the main map through `lib/parcelTilesUrl.js`) filtered to the sales'
+  parcels, so no geometry crosses the BroadcastChannel. The match key is
+  **municipality + raw roll** (`Muni_Name_With_Typ|Roll_No_Txt`, the records'
+  `parcelKeys`), never OBJECTID: OBJECTIDs are reassigned between the monthly
+  parcel exports (Ritchot roll 100 was 7969 in the 2026-09-13 snapshot the tiles
+  were cut from and 3203 in the live service), so an id match silently drew
+  nothing. Only ticked sales are drawn; sales without the mapped value are
   faint grey context dots, under the rest and left out of the framing.
 - The subject is a red teardrop pin drawn as a style icon (`subjectPinImage`),
   so it prints into the PNGs; the Sales Analysis distance filter is one
@@ -1259,6 +1267,12 @@ writes `work-file-<subject roll>-<date>.zip`:
 | `charts/NN-<page>-<title>.png` | Each ticked chart and map at 1950 × 1050 — byte-for-byte what its own PNG button gives, rendered from the spec the card registered (`chartExportSpec`). |
 | `tables/*.csv` | The table cards (water summary, premium, paired sales). |
 
+**Embed the images** (a checkbox in the dialog, on by default, remembered):
+on, `summary.html` is one file that opens anywhere; off, its images are
+links into the zip's `charts/` folder, so the summary is ~10 KB and the zip a
+fraction of the size, but it shows its images only once the zip is unpacked
+(the page says so).
+
 The CSVs carry raw numbers, ISO dates, a UTF-8 BOM, and nominal and adjusted
 $/unit side by side whatever the Nominal toggle says; text opening with
 `= + - @` is prefixed with `'` so Excel cannot evaluate it.
@@ -1357,6 +1371,7 @@ holds:
 | `grid` | Sort, unticked rows (parcel key + sale sequence, which the same sales text reproduces), starred parcels. |
 | `tags`, `reasons` | The comp list and Land Sets (replaced on open), and the reasons for this job's sales (merged). |
 | `charts` | The Sales Charts page's settings and work-file choices. |
+| `overlays` | The main map's pressed layer toggles (2026-10-07), captured and re-pressed with the shared-link code (`readCurrentUrlState` / `restoreUrlOverlays`); Open also releases any toggle the job did not have on. A job saved before this field leaves the current toggles alone. A layer that is still loading when the job is saved (e.g. the section grid waits for the map) is saved as off. |
 
 **Open** order matters: sidebar controls and pills first (the import's own
 final `refilterCsvIfActive` applies them), then `handleSalesUpload`, then the
@@ -1370,8 +1385,6 @@ through the storage event. A job from a newer site version is refused rather
 than half-applied (`JOB_VERSION`).
 
 **Caveats.**
-- The charts page receives no parcel geometry, so the maps show sales as
-  points, not parcel outlines.
 - Tags, reasons and work-file choices live in this browser's storage: another
   browser or device starts empty, and clearing site data loses them — save a
   job file to carry or keep them.

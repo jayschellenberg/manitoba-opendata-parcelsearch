@@ -75,6 +75,13 @@ test('file name carries the subject roll', () => {
   assert.equal(jobFileName('', '2026-10-07'), 'job-sales-2026-10-07.json');
 });
 
+test('map layer toggles round-trip; an older job has none to restore', () => {
+  const job = buildJob({ sales, overlays: ['zoning', 'flood-dfa', 7] });
+  assert.deepEqual(job.overlays, ['zoning', 'flood-dfa']);
+  assert.deepEqual(parseJob(JSON.stringify(job)).overlays, ['zoning', 'flood-dfa']);
+  assert.equal(parseJob(JSON.stringify({ app: JOB_APP, version: 1, sales })).overlays, null);
+});
+
 console.log('which controls');
 test('data sources, file inputs, pill backers and display toggles are left out', () => {
   assert.equal(isJobControl({ id: 'size-low', type: 'number' }), true);
@@ -111,6 +118,12 @@ test('the charts page follows an opened job, effective date included', () => {
   assert.match(charts, /setOpt\(\{ effDate: els\.effDate\.value, effDatePinned: false \}\)/);
   const main = code('src/main.js');
   assert.match(main, /effDatePinned: !!rest\.effDate/);
+});
+
+test('Save records the pressed layer toggles and Open sets exactly those', () => {
+  const main = code('src/main.js');
+  assert.match(main, /overlays: readCurrentUrlState\(\)\.overlays \|\| \[\]/);
+  assert.match(main, /if \(Array\.isArray\(job\.overlays\)\) \{[\s\S]*?btn\.click\(\);[\s\S]*?restoreUrlOverlays\(\{ overlays: job\.overlays \}\);/);
 });
 
 console.log(`\n${passed} passed`);

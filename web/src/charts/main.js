@@ -103,6 +103,7 @@ const els = {
   workfileList: $('workfile-list'),
   workfileStatus: $('workfile-status'),
   workfileGo: $('workfile-go'),
+  workfileEmbed: $('workfile-embed'),
   table: $('sales-table'),
 };
 
@@ -2039,6 +2040,7 @@ function paintMap(key, { title, cms, adj, colored, context = [], colorOf, legend
     properties: {
       saleId: String(r.saleId), excluded: false, context: ctx, color: ctx ? null : colorOf(r),
       label: tagLabel(tags, saleTagKey(r)) || '',
+      parcelKeys: r.parcelKeys || [],
     },
     geometry: { type: 'Point', coordinates: [r.lng, r.lat] },
   });
@@ -2967,16 +2969,27 @@ const WORK_TABS = [
 ];
 const WORKFILE_KEY = 'mbps_charts_workfile_v1';
 
-/** Item keys he has unticked. New charts default to ticked. */
-function readWorkfileOff() {
+function readWorkfileStore() {
   try {
     const v = JSON.parse(localStorage.getItem(WORKFILE_KEY) || 'null');
-    return new Set(Array.isArray(v?.off) ? v.off : []);
-  } catch { return new Set(); }
+    return v && typeof v === 'object' ? v : {};
+  } catch { return {}; }
 }
-function writeWorkfileOff(off) {
-  try { localStorage.setItem(WORKFILE_KEY, JSON.stringify({ off: [...off] })); } catch { /* private mode */ }
+function writeWorkfileStore(patch) {
+  try { localStorage.setItem(WORKFILE_KEY, JSON.stringify({ ...readWorkfileStore(), ...patch })); } catch { /* private mode */ }
 }
+/** Item keys he has unticked. New charts default to ticked. */
+function readWorkfileOff() {
+  const off = readWorkfileStore().off;
+  return new Set(Array.isArray(off) ? off : []);
+}
+function writeWorkfileOff(off) { writeWorkfileStore({ off: [...off] }); }
+/**
+ * Embed the images in summary.html (the default: one file that opens
+ * anywhere) or link them from the zip's charts/ folder (2026-10-07: a
+ * ~20 MB zip becomes ~6 MB, but the summary then only works unzipped).
+ */
+function readWorkfileEmbed() { return readWorkfileStore().embed !== false; }
 
 /**
  * Everything the work file could hold, in page order:
@@ -3270,7 +3283,7 @@ async function captureMaps(which, onStep) {
  * items, the CSV rows, the summary text — so a republish from the main
  * window mid-export cannot mix two sets of sales in one work file.
  */
-async function buildWorkFile(selected, onStep) {
+async function buildWorkFile(selected, onStep, { embed = true } = {}) {
   const enc = new TextEncoder();
   const items = workItems().filter((it) => !it.empty && selected.has(it.key));
   const cols = saleCsvColumns();
@@ -3312,13 +3325,14 @@ async function buildWorkFile(selected, onStep) {
     onStep(`Rendering image ${images + 1} of ${nImages}…`);
     const png = it.kind === 'map' ? maps[it.map] : await renderChartPng(it.spec);
     if (!png) continue;
-    files.push({ name: `charts/${figureFileName(idx, it.tabLabel, it.title, 'png')}`, data: new Uint8Array(await png.arrayBuffer()) });
-    figures.push({ tabLabel: it.tabLabel, title: it.title, kind: 'image', src: await blobToDataUrl(png) });
+    const name = `charts/${figureFileName(idx, it.tabLabel, it.title, 'png')}`;
+    files.push({ name, data: new Uint8Array(await png.arrayBuffer()) });
+    figures.push({ tabLabel: it.tabLabel, title: it.title, kind: 'image', src: embed ? await blobToDataUrl(png) : name });
     images += 1;
   }
 
   onStep('Writing the zip…');
-  files.unshift({ name: 'summary.html', data: enc.encode(buildSummaryHtml({ ...model, figures })) });
+  files.unshift({ name: 'summary.html', data: enc.encode(buildSummaryHtml({ ...model, figures, linkedImages: !embed })) });
   const zip = buildStoreZip(files);
   downloadBlob(zip, workFileName(data.meta?.subject?.roll, todayLocal()));
   return { images, tables, bytes: zip.size, mapsIncomplete: !!maps.incomplete };
@@ -3401,13 +3415,16 @@ function renderWorkfileList() {
 els.workfileOpen.addEventListener('click', () => {
   if (!data.records.length) return;
   els.workfileStatus.textContent = '';
+  els.workfileEmbed.checked = readWorkfileEmbed();
   renderWorkfileList();
   els.workfileDialog.showModal();
 });
+els.workfileEmbed.addEventListener('change', () => writeWorkfileStore({ embed: els.workfileEmbed.checked }));
 els.workfileGo.addEventListener('click', async () => {
   els.workfileGo.disabled = true;
   try {
-    const res = await buildWorkFile(selectedWorkKeys(), (msg) => { els.workfileStatus.textContent = msg; });
+    const res = await buildWorkFile(selectedWorkKeys(), (msg) => { els.workfileStatus.textContent = msg; },
+      { embed: els.workfileEmbed.checked });
     els.workfileStatus.textContent = `Downloaded: ${res.images} image${res.images === 1 ? '' : 's'}`
       + `${res.tables ? `, ${res.tables} table${res.tables === 1 ? '' : 's'}` : ''}, summary.html, cms.csv and comps.csv`
       + ` (${(res.bytes / 1048576).toFixed(1)} MB).`
