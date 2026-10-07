@@ -678,3 +678,44 @@ main { padding: 18px 20px 0; }
 }
 .workfile-actions button.is-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .workfile-actions button:disabled { opacity: 0.6; cursor: progress; }
+
+/* ---------- the Shiny layout: a map row, then a chart row ---------- */
+
+.page-row { grid-column: 1 / -1; min-width: 0; }
+.page-row + .page-row { margin-top: 6px; }
+/* Shiny's .tabset strip, one per row. */
+.row-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 0 0 10px;
+  border-bottom: 1px solid var(--rule);
+}
+.row-tabs button {
+  padding: 6px 12px;
+  font: 600 12.5px/1.4 Arial, Helvetica, sans-serif;
+  color: var(--ink-2);
+  background: none;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 5px 5px 0 0;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+.row-tabs button:hover { color: var(--ink); }
+.row-tabs button.is-on {
+  color: var(--ink);
+  background: var(--surface);
+  border-color: var(--rule);
+}
+.row-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* Two charts per tab, each half the page, as the maps above. */
+.chart-pair {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.chart-pair > * { min-width: 0; }
+@media (max-width: 900px) {
+  .chart-pair { grid-template-columns: minmax(0, 1fr); }
+}

@@ -1117,41 +1117,37 @@ subtitle states. Clicking a dot sends `set-excluded` back, and the main window
 unticks those rows (`applyChartsExclusion`): the grid stays the one source of the
 selection, so the charts, the map and the CSV export always agree.
 
-**Tabs** (order set by Jason): **Land Price/Unit** · **Map** · **Agricultural** ·
-**Total/Per Lot Price** · **Water**.
-- *Land Price/Unit*: $/unit over time, by size, by size + zoning, by distance.
-- *Map*: a MapLibre map (`web/src/charts/chartMap.js`), coloured by price
-  quintile, sale year, zoning or water influence, with municipal boundaries
-  (toggle), the subject, and ONE labelled ring at the Sales Analysis distance
-  filter (none when no filter is set). Only ticked sales are drawn; unticked
-  ones are left off the map (they stay clickable on the charts). Beside it, a
-  second map — the lot-size heatmap: quintiles of lot size in the chosen unit
-  (acres / sq ft / front feet) on a blue YlGnBu ramp (`SIZE_RAMP`), sales with
-  no size grey. The two are camera-linked (`linkMaps`). Both are created once
-  and re-appended on each render, and refit only when the set of sales changes.
-- *Agricultural*: price over time by MASC; by cultivation ratio; box plots by
-  MASC, soil, CLI class and dominant cover; cover mix by MASC and by soil; the
-  S/A ratio over time, by MASC and as a histogram. If the size unit is Front ft,
-  this tab draws per acre instead (farmland has no frontage), and says so.
-- *Total/Per Lot Price*: total price over time, by distance, vs assessed; price
-  per lot (the price divided by the parcels in the sale) over time, by size, by
-  distance. A note under the tabs explains the difference.
-- *Maps on every tab* (2026-10-06): each map sits in a two-column `.map-row`, so
-  none is wider than half the page (stacking below 900px). The Agricultural tab
-  ends with a MASC rating map and a CLI capability class map; Total/Per Lot ends
-  with a price-per-lot quintile heatmap. Sales without the mapped value are faint
-  grey context dots. The subject is a red teardrop pin drawn as a style icon
-  (`subjectPinImage`), so it prints into the PNGs. Maps are kept per key in
-  `pageMaps`; a fit made while a map has no size waits for its first sized
-  `resize()`.
-- *Water*: a map of the water-influenced sales after the charts (2026-10-06): waterfront
-  and near-water sales coloured by their strongest water class, the dry sales as
-  faint grey context dots (smaller, under everything, not framed), sales with no
-  water data left off and counted; hover any dot for its details. Then box plots
-  by water group, class, flood status and water body; scatters
-  by size and by distance to water; summary, water-premium
-  (`lm(log rate ~ log size + group)`, checked against R) and paired-sales tables
-  (`web/src/lib/salesWater.js`).
+**Pages** (order set by Jason): **Land Price/Unit** · **Agricultural** ·
+**Total/Per Lot Price** · **Water**. Since 2026-10-06 each page follows
+LandShiny's layout: a row of **map tabs** on top and a row of **chart tabs**
+below, each tab showing two side by side at half the page width (stacking below
+900px). The tab sets are `PAGE_MAPS` and `CHART_GROUPS` in `main.js`; a chart
+whose title no `CHART_GROUPS` pattern matches lands in a "More" tab rather than
+vanishing. The chosen sub-tab per page and row persists (`opts.subTabs`). The
+old Map tab folded into Land Price/Unit, one map per former colour-by mode.
+
+| Page | Map tabs | Chart tabs |
+|---|---|---|
+| Land Price/Unit | Price & Lot Size · Year & Zoning · Water Influence | Over Time & Size · Zoning & Distance |
+| Agricultural | MASC & CLI | MASC Rating · Cultivation & Soil · CLI & Land Cover · Cover Mix · Sale/Assessment · S/A Distribution |
+| Total/Per Lot Price | Price per Lot | Total Price · Per Lot · Per Lot by Distance & Assessed |
+| Water | Water Class | Influence & Class · Flood & Water Body · Size & Distance · Summary & Premium · Paired Sales |
+
+Map notes:
+- Sales are points at the mean of their parcels' centres (no geometry reaches
+  the page). Only ticked sales are drawn; sales without the mapped value are
+  faint grey context dots, under the rest and left out of the framing.
+- The subject is a red teardrop pin drawn as a style icon (`subjectPinImage`),
+  so it prints into the PNGs; the Sales Analysis distance filter is one
+  labelled ring. Hover any dot for its details; click for the popup with
+  Exclude / Include.
+- Maps are kept per key in `pageMaps`; a fit made while a map has no size (its
+  tab hidden) waits for its first sized `resize()`, and the padding scales
+  with the map.
+- The Agricultural page's MASC map colours by the acre-weighted mode rating,
+  the CLI map by class 1-7 on a green-to-red ramp. The Water page's map shows
+  only water-influenced sales by their strongest water class.
+- Front feet: the Agricultural page draws per acre (`withPageUnit`).
 
 **Controls.**
 - Size unit: Acres / Sq ft / Front ft.
@@ -1231,10 +1227,12 @@ are listed greyed with "no data". Unticked choices persist in `localStorage`
   the card registered (`chartExportSpec`), so a zip chart is byte-for-byte what
   its own PNG button gives. Table cards go to `tables/*.csv`.
 
-Other tabs are built **off-screen** through the same builders (`buildCharts`
-under a temporarily switched `opts.tab`). The maps cannot be: MapLibre has to
-paint, so the export shows the Map tab, waits for both maps to go idle (15 s
-cap, `whenIdle`), captures, and restores the tab. If either map timed out (a
+Other pages are built **off-screen** through the same builders (under a
+temporarily switched `opts.tab`), every map tab painted so the list can mark
+the empty ones. The maps cannot be captured off-screen: MapLibre has to paint,
+so the export shows each page and map tab holding a wanted map (`MAP_HOME`),
+waits for its maps to go idle (15 s cap, `whenIdle`), captures, and restores
+the page and sub-tabs it started on. If either map timed out (a
 hidden window gets no animation frames), the status line warns that its image
 may be blank. Everything else is snapshotted before the first await, so a
 republish mid-export cannot mix two sets of sales.

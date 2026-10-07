@@ -62,12 +62,10 @@ const els = {
   tabRates: $('tab-rates'),
   tabTotal: $('tab-total'),
   tabWater: $('tab-water'),
-  tabMap: $('tab-map'),
   tabNote: $('tab-note'),
   company: $('company'),
   tabAg: $('tab-ag'),
   ctlMapColor: $('ctl-mapcolor'),
-  mapColor: $('map-color'),
   mapMunis: $('map-munis'),
   effDate: $('eff-date'),
   ratesNominal: $('rates-nominal'),
@@ -141,9 +139,7 @@ const opts = {
   trim: false,
   trimLo: 5,
   trimHi: 95,
-  // What colours the sales on the Map tab: price | year | zoning | water.
-  mapColor: 'price',
-  // Municipal boundaries on the Map tab.
+  // Municipal boundaries on every map.
   mapMunis: true,
   // The company name that signs every chart caption and PNG (Jason,
   // 2026-09-23). Persisted with the rest of opts, so it is typed once.
@@ -300,7 +296,7 @@ function tooltipRows(rec, pt) {
     if (rec.ag.cover) rows.push(['Cultivated', `${Math.round(rec.ag.cover.cult * 100)}%`]);
     if (rec.ag.coverLabel) rows.push(['Cover', rec.ag.coverLabel]);
   }
-  if (opts.tab === 'water' || (opts.tab === 'map' && opts.mapColor === 'water')) {
+  if (opts.tab === 'water' || (opts.tab === 'rates' && subTab('rates', 'map') === 'Water Influence')) {
     const w = waterOf(rec);
     if (w.group) rows.push(['Water', w.cls && w.cls !== w.group ? `${w.group} · ${w.cls}` : w.group]);
     if (w.body) rows.push(['Water body', w.body]);
@@ -437,22 +433,27 @@ function distContext() {
   };
 }
 
-/** Dispatch to the active tab's builder. */
-function buildCharts() {
-  if (opts.tab === 'total') return buildTotalCharts();
-  if (opts.tab === 'water') return buildWaterCharts();
-  if (opts.tab === 'map') return buildMapTab();
-  if (opts.tab === 'ag') {
-    // Front feet means nothing for farmland — almost no farm roll states a
-    // frontage — and left on it the whole tab went empty with messages that
-    // blamed the MASC and land-cover data instead (Jason, 2026-09-23). The
-    // tab draws per acre instead; the unit control keeps its setting for the
-    // other tabs, and the note under the tabs says what happened.
-    if (opts.unit !== 'ff') return buildAgCharts();
-    opts.unit = 'acres';
-    try { return buildAgCharts(); } finally { opts.unit = 'ff'; }
-  }
-  return buildRateCharts();
+/** Each page's chart builder. */
+const PAGE_BUILDERS = {
+  rates: () => buildRateCharts(),
+  ag: () => buildAgCharts(),
+  total: () => buildTotalCharts(),
+  water: () => buildWaterCharts(),
+};
+const pageOf = (tab) => (PAGE_BUILDERS[tab] ? tab : 'rates');
+
+/**
+ * Run `fn` in the unit a page draws in. Front feet means nothing for
+ * farmland — almost no farm roll states a frontage — and left on it the
+ * whole Agricultural page went empty with messages that blamed the MASC and
+ * land-cover data instead (Jason, 2026-09-23). That page draws per acre; the
+ * unit control keeps its setting for the others, and the note under the
+ * tabs says what happened.
+ */
+function withPageUnit(page, fn) {
+  if (page !== 'ag' || opts.unit !== 'ff') return fn();
+  opts.unit = 'acres';
+  try { return fn(); } finally { opts.unit = 'ff'; }
 }
 
 /**
@@ -1189,7 +1190,6 @@ function buildTotalCharts() {
     }));
   }
 
-  charts.push(mapRow('total', [buildPplMap()]));
   return charts;
 }
 
@@ -1522,8 +1522,6 @@ function buildWaterCharts() {
     }));
   }
 
-  // The map follows the charts (Jason, 2026-10-06).
-  charts.push(mapRow('water', [buildWaterMap(cms, adj)]));
   return charts;
 }
 
@@ -1606,7 +1604,7 @@ function buildAgMaps(cms, adj) {
         + (noCli ? ' Grey dots have no CLI class loaded.' : '')
       : 'No CLI data for these sales. Pick the Agricultural column preset in the main window to load it.',
   });
-  return mapRow('ag', [masc, cli]);
+  return [masc, cli];
 }
 
 function buildAgCharts() {
@@ -1844,7 +1842,6 @@ function buildAgCharts() {
     }));
   }
 
-  charts.push(buildAgMaps(cms, adj));
   return charts;
 }
 
@@ -1854,23 +1851,15 @@ function buildAgCharts() {
  *  colour-by map, and beside it the lot-size heatmap (Jason, 2026-09-23 —
  *  for residential work, where lot size drives the rate). One wrapper holds
  *  both so they sit side by side in the grid. */
-let salesMap = null;
-let sizeMap = null;
-
 /**
  * Every map on the page, by key, created on first use and kept: a MapLibre
- * map is expensive, and the figures are re-appended on each render.
- *   sales / size — the Map tab's pair
- *   water        — the Water tab's water-influenced sales (2026-10-06)
- *   masc / cli   — the Agricultural tab's crop-rating maps (2026-10-06)
- *   ppl          — the Total/Per Lot tab's price-per-lot heatmap (2026-10-06)
- * MAP_TAB says which tab draws each, so the work file can show that tab to
- * capture it. mapCounts holds how many sales each drew in colour; the work
- * file lists a map with none as "no data".
+ * map is expensive, and the figures are re-appended on each render. Which
+ * page and map tab shows each key is PAGE_MAPS. mapCounts holds how many
+ * sales each drew in colour; the work file lists a map with none as
+ * "no data".
  */
 const pageMaps = new Map();
 const mapCounts = new Map();
-const MAP_TAB = { sales: 'map', size: 'map', water: 'water', masc: 'ag', cli: 'ag', ppl: 'total' };
 function pageMap(key) {
   if (!pageMaps.has(key)) pageMaps.set(key, createSalesMap(mapHandlers()));
   return pageMaps.get(key);
@@ -1926,7 +1915,12 @@ function paintMap(key, { title, cms, adj, colored, context = [], colorOf, legend
   m.setMunisVisible(opts.mapMunis !== false);
   m.setLegend(legend);
   const unlocated = activeRecords().length - activeRecords().filter(located).length;
-  m.setNote(sub(note, unlocated ? `${plural(unlocated, 'sale')} without a parcel location not shown.` : ''));
+  const unticked = (data.records || []).filter((r) => r.excluded).length;
+  m.setNote(sub(note,
+    rings.length ? `The circle is the ${fmtNum(rings[0])} km distance filter set in Sales Analysis.` : '',
+    subject ? '' : 'Set a subject roll in the main window to mark it on the map.',
+    unticked ? `${plural(unticked, 'unticked sale')} not shown.` : '',
+    unlocated ? `${plural(unlocated, 'sale')} without a parcel location not shown.` : ''));
   m.setData({
     fc: { type: 'FeatureCollection', features: [...context.map((r) => feature(r, true)), ...colored.map((r) => feature(r, false))] },
     subject,
@@ -1947,132 +1941,236 @@ function mapHandlers() {
 }
 
 /** The template's map titles, per colouring. */
-const MAP_MODES = {
-  price: (unit) => `CMS Heatmap – Price per ${unit}`,
-  year: () => 'CMS – Map by Year of Sale',
-  zoning: () => 'CMS – Map by Zoning',
-  water: () => 'CMS – Map by Water Influence',
-};
+/** Two maps side by side pan and zoom together; linked once, on first paint. */
+const linkedMaps = new WeakSet();
+function linkPair(a, b) {
+  if (linkedMaps.has(a)) return;
+  linkMaps(a, b);
+  linkedMaps.add(a);
+}
 
 /**
- * The land template's CMS maps (LandStatic.qmd ~6798-7303) as one map with
- * a colour-by switch: price-per-unit quintiles, sale year, zoning, or water
- * influence. Sales are points at the mean of their parcels' centres (the
- * charts page receives no parcel geometry); the subject is marked, with
- * distance rings spanning the comps. Click a sale to open it, and to
- * exclude or include it — the same grid untick as a click on a chart.
+ * The Land Price/Unit page's maps — the land template's CMS maps
+ * (LandStatic.qmd ~6798-7303), one map per colouring rather than a
+ * colour-by switch, arranged in Shiny's map tabs (Jason, 2026-10-06).
+ * Only the ticked sales are drawn (Jason, 2026-09-23): an unticked sale
+ * drawn pale beside the pale end of the price ramp read as a real, cheap
+ * sale.
  */
-function buildMapTab() {
-  if (!salesMap) {
-    salesMap = pageMap('sales');
-    sizeMap = pageMap('size');
-    linkMaps(salesMap, sizeMap);
-  }
+function paintRateMaps(keys) {
   const metric = areaMetric();
   const areaFmt = areaMoneyFmt();
   const cms = cmsFor(metric);
   const adj = adjusterFor(cms);
-  // Only the ticked sales (Jason, 2026-09-23): an unticked sale drawn pale
-  // beside the pale end of the price ramp read as a real, cheap sale. It can
-  // still be clicked back in on the other charts or ticked in the grid.
-  const located = (r) => Number.isFinite(r.lat) && Number.isFinite(r.lng);
   const recs = activeRecords().filter(located);
-  const live = recs;
-  const unticked = (data.records || []).filter((r) => r.excluded).length;
-  const mode = MAP_MODES[opts.mapColor] ? opts.mapColor : 'price';
-
-  let colorOf = () => null;
-  let legend = [];
-  let note = '';
-  if (mode === 'price') {
-    const b = priceBuckets(live.map(adj.adjust), areaFmt);
-    if (b) { colorOf = (r) => b.colorOf(adj.adjust(r)); legend = b.legend; }
-    note = sub(`Quintiles of ${adj.adjusted ? 'adjusted ' : ''}price per ${unitSpec().perUnit.toLowerCase()}; `
-      + 'each colour holds about a fifth of the sales.', adj.note);
-  } else if (mode === 'year') {
-    const yearOf = (r) => (Number.isFinite(r.dateMs) ? new Date(r.dateMs).getFullYear() : null);
-    const y = yearColors(live.map(yearOf));
-    colorOf = (r) => y.colorOf(yearOf(r));
-    legend = y.legend;
-  } else if (mode === 'zoning') {
-    const zones = topZones(live, ZONE_COLORS.length);
-    const byZone = new Map(zones.map((z, i) => [z.key, ZONE_COLORS[i]]));
-    colorOf = (r) => byZone.get(String(r.zone || '').trim()) || OTHER_COLOR;
-    legend = [...zones.map((z) => ({ label: `${z.key} (${z.count})`, color: byZone.get(z.key) })),
-      ...(live.some((r) => !byZone.has(String(r.zone || '').trim())) ? [{ label: 'Other', color: OTHER_COLOR }] : [])];
-  } else if (mode === 'water') {
-    colorOf = (r) => WATER_GROUP_COLORS[waterOf(r).group] || '#dddddd';
-    legend = [...WATER_GROUPS.map((g) => ({ label: g, color: WATER_GROUP_COLORS[g] })),
-      ...(live.some((r) => !waterOf(r).group) ? [{ label: 'No water data', color: '#dddddd' }] : [])];
-  }
-
-  const fc = {
-    type: 'FeatureCollection',
-    features: recs.map((r) => ({
-      type: 'Feature',
-      properties: {
-        saleId: String(r.saleId),
-        excluded: false,
-        color: colorOf(r) || R_STYLE.pointFill,
-      },
-      geometry: { type: 'Point', coordinates: [r.lng, r.lat] },
-    })),
-  };
-
-  const s = data.meta?.subject;
-  const subject = Number.isFinite(s?.lat) && Number.isFinite(s?.lng) ? { lat: s.lat, lng: s.lng } : null;
-  // One ring, at the Sales Analysis distance filter ("Within 10 km of …"),
-  // labelled — the same circle the main map draws. The earlier automatic
-  // rings (0.5 / 1 / 2 / 5 km…) carried no labels and no meaning of their
-  // own, and read as noise (Jason, 2026-09-23). No filter set, no ring.
-  const filterKm = Number(data.meta?.criteria?.distanceMax);
-  const rings = subject && Number.isFinite(filterKm) && filterKm > 0 ? [filterKm] : [];
-
-  const mapTitle = MAP_MODES[mode](unitSpec().perUnit);
-  salesMap.setHeader(mapTitle, criteriaLine(cms, adj.adjusted));
-  salesMap.setPngName(pngName(mapTitle));
-  salesMap.setMunisVisible(opts.mapMunis !== false);
-  salesMap.setLegend(legend);
-  salesMap.setNote(sub(note,
-    rings.length ? `The circle is the ${fmtNum(rings[0])} km distance filter set in Sales Analysis.` : '',
-    subject ? '' : 'Set a subject roll in the main window to mark it on the map.',
-    unticked ? `${unticked} unticked sale${unticked === 1 ? '' : 's'} not shown.` : '',
-    recs.length < activeRecords().length ? `${activeRecords().length - recs.length} sales without a parcel location are not shown.` : ''));
-  const fitKey = recs.map((r) => r.saleId).join('|');
-  salesMap.setData({ fc, subject, rings, fitKey });
-
-  // The lot-size heatmap: quintiles of the sale's size in the chosen unit
-  // (acres, square feet or front feet), on its own blue ramp so it is never
-  // mistaken for the price map beside it. Size is not time-adjusted.
   const spec = unitSpec();
-  const sizeOf = (r) => { const v = Number(r[sizeField()]); return v > 0 ? v : null; };
-  const sb = priceBuckets(recs.map(sizeOf), spec.sizeText, SIZE_RAMP);
-  const sizeless = recs.filter((r) => sizeOf(r) == null).length;
-  const NO_SIZE = '#dddddd';
-  const sizeTitle = `CMS Heatmap – ${spec.sizeTitle}`;
-  sizeMap.setHeader(sizeTitle, criteriaLine(cms, adj.adjusted));
-  sizeMap.setPngName(pngName(sizeTitle));
-  sizeMap.setMunisVisible(opts.mapMunis !== false);
-  sizeMap.setLegend([...(sb ? sb.legend : []),
-    ...(sizeless ? [{ label: opts.unit === 'ff' ? 'No frontage' : 'No size', color: NO_SIZE }] : [])]);
-  sizeMap.setNote(sub(
-    `Quintiles of ${opts.unit === 'ff' ? 'lot frontage' : 'lot size'}; each colour holds about a fifth of the sales.`,
-    sizeless ? `${sizeless} sale${sizeless === 1 ? '' : 's'} without a ${opts.unit === 'ff' ? 'frontage' : 'size'} drawn grey.` : '',
-    'Pans and zooms with the map beside it.'));
-  sizeMap.setData({
-    fc: {
-      type: 'FeatureCollection',
-      features: recs.map((r) => ({
-        type: 'Feature',
-        properties: { saleId: String(r.saleId), excluded: false, color: (sb && sb.colorOf(sizeOf(r))) || NO_SIZE },
-        geometry: { type: 'Point', coordinates: [r.lng, r.lat] },
-      })),
+  const painters = {
+    price: () => {
+      const b = priceBuckets(recs.map(adj.adjust), areaFmt);
+      return paintMap('price', {
+        title: `CMS Heatmap – Price per ${spec.perUnit}`,
+        cms,
+        adj,
+        colored: recs,
+        colorOf: (r) => (b && b.colorOf(adj.adjust(r))) || R_STYLE.pointFill,
+        legend: b ? b.legend : [],
+        note: sub(`Quintiles of ${adj.adjusted ? 'adjusted ' : ''}price per ${spec.perUnit.toLowerCase()}; `
+          + 'each colour holds about a fifth of the sales.', adj.note),
+      });
     },
-    subject, rings, fitKey,
+    // Quintiles of the size in the chosen unit, on its own blue ramp so it is
+    // never mistaken for the price map beside it. Size is not time-adjusted.
+    size: () => {
+      const sizeOf = (r) => { const v = Number(r[sizeField()]); return v > 0 ? v : null; };
+      const sized = recs.filter((r) => sizeOf(r) != null);
+      const sb = priceBuckets(sized.map(sizeOf), spec.sizeText, SIZE_RAMP);
+      const sizeless = recs.length - sized.length;
+      const ff = opts.unit === 'ff';
+      return paintMap('size', {
+        title: `CMS Heatmap – ${spec.sizeTitle}`,
+        cms,
+        adj,
+        colored: sized,
+        context: recs.filter((r) => sizeOf(r) == null),
+        colorOf: (r) => (sb && sb.colorOf(sizeOf(r))) || '#dddddd',
+        legend: [...(sb ? sb.legend : []), ...(sizeless ? [{ label: `${ff ? 'No frontage' : 'No size'} (${sizeless})`, color: '#c8c8c8' }] : [])],
+        note: sub(`Quintiles of ${ff ? 'lot frontage' : 'lot size'}; each colour holds about a fifth of the sales.`,
+          'Pans and zooms with the map beside it.'),
+      });
+    },
+    year: () => {
+      const yearOf = (r) => (Number.isFinite(r.dateMs) ? new Date(r.dateMs).getFullYear() : null);
+      const y = yearColors(recs.map(yearOf));
+      return paintMap('year', {
+        title: 'CMS – Map by Year of Sale', cms, adj, colored: recs,
+        colorOf: (r) => y.colorOf(yearOf(r)), legend: y.legend,
+        note: 'Pans and zooms with the map beside it.',
+      });
+    },
+    zoning: () => {
+      const zones = topZones(recs, ZONE_COLORS.length);
+      const byZone = new Map(zones.map((z, i) => [z.key, ZONE_COLORS[i]]));
+      return paintMap('zoning', {
+        title: 'CMS – Map by Zoning', cms, adj, colored: recs,
+        colorOf: (r) => byZone.get(String(r.zone || '').trim()) || OTHER_COLOR,
+        legend: [...zones.map((z) => ({ label: `${z.key} (${z.count})`, color: byZone.get(z.key) })),
+          ...(recs.some((r) => !byZone.has(String(r.zone || '').trim())) ? [{ label: 'Other', color: OTHER_COLOR }] : [])],
+        note: 'The eight most common zones; the rest are Other.',
+      });
+    },
+    waterinf: () => paintMap('waterinf', {
+      title: 'CMS – Map by Water Influence', cms, adj, colored: recs,
+      colorOf: (r) => WATER_GROUP_COLORS[waterOf(r).group] || '#dddddd',
+      legend: [...WATER_GROUPS.map((g) => ({ label: g, color: WATER_GROUP_COLORS[g] })),
+        ...(recs.some((r) => !waterOf(r).group) ? [{ label: 'No water data', color: '#dddddd' }] : [])],
+      note: 'Waterfront = any parcel in the sale has frontage; Near water = near but without frontage.',
+    }),
+  };
+  const apis = keys.map((k) => painters[k]());
+  if (apis.length === 2) linkPair(apis[0], apis[1]);
+  return apis;
+}
+
+/**
+ * Each page's map tabs, the top row of the Shiny layout (Jason, 2026-10-06):
+ * a label, the map keys it shows side by side, and the painter that fills
+ * them. Every painter runs inside withPageUnit for its page.
+ */
+const PAGE_MAPS = {
+  rates: [
+    { label: 'Price & Lot Size', keys: ['price', 'size'], paint: () => paintRateMaps(['price', 'size']) },
+    { label: 'Year & Zoning', keys: ['year', 'zoning'], paint: () => paintRateMaps(['year', 'zoning']) },
+    { label: 'Water Influence', keys: ['waterinf'], paint: () => paintRateMaps(['waterinf']) },
+  ],
+  ag: [{
+    label: 'MASC & CLI', keys: ['masc', 'cli'],
+    paint: () => { const cms = cmsFor(areaMetric()); return buildAgMaps(cms, adjusterFor(cms)); },
+  }],
+  total: [{ label: 'Price per Lot', keys: ['ppl'], paint: () => [buildPplMap()] }],
+  water: [{
+    label: 'Water Class', keys: ['water'],
+    paint: () => { const cms = cmsFor(areaMetric()); return [buildWaterMap(cms, adjusterFor(cms))]; },
+  }],
+};
+/** key -> {page, label}: where the work file goes to capture a map. */
+const MAP_HOME = Object.fromEntries(Object.entries(PAGE_MAPS)
+  .flatMap(([page, tabs]) => tabs.flatMap((t) => t.keys.map((k) => [k, { page, label: t.label }]))));
+
+/**
+ * Each page's chart tabs, the bottom row: a label and the chart titles it
+ * holds, two to a tab. Matched on the title without its unit, so "Price
+ * per Acre by Size" and "Price per SF by Size" land in the same tab. A
+ * chart no pattern names goes to a "More" tab rather than disappearing.
+ */
+const CHART_GROUPS = {
+  rates: [
+    ['Over Time & Size', /Over Time$|by Size$/],
+    ['Zoning & Distance', /and Zoning$|by Distance from/],
+  ],
+  ag: [
+    ['MASC Rating', /Over Time by MASC Rating$|^Farmland Price/],
+    ['Cultivation & Soil', /by Cultivation Ratio$|^Price per .* by Soil Type$/],
+    ['CLI & Land Cover', /by CLI Capability Class$|by Dominant Land Cover$/],
+    ['Cover Mix', /^Land Cover Mix/],
+    ['Sale/Assessment', /^Sale-to-Assessment Ratio (Over Time|by MASC)/],
+    ['S/A Distribution', /Ratio Distribution$/],
+  ],
+  total: [
+    ['Total Price', /^Total Price (Over Time|by Distance)/],
+    ['Per Lot', /^Land Price per Lot Over Time$|^Price per Lot by Size$/],
+    ['Per Lot by Distance & Assessed', /^Price per Lot by Distance|vs Assessed Value$/],
+  ],
+  water: [
+    ['Influence & Class', /by Water Influence$|by Water Class$/],
+    ['Flood & Water Body', /by Flood Status$|by Water Body$/],
+    ['Size & Distance', /Size and Water Influence$|Distance to Water$/],
+    ['Summary & Premium', /^Water Influence Summary$|^Water Premium$/],
+    ['Paired Sales', /^Paired Sales/],
+  ],
+};
+
+const figTitle = (fig) => chartExportSpec(fig)?.title || fig.querySelector('h3')?.textContent || '';
+
+/** A page's figures as [{label, figs}] in CHART_GROUPS order, two per tab at most. */
+function groupCharts(page, figs) {
+  const defs = CHART_GROUPS[page] || [];
+  const groups = defs.map(([label]) => ({ label, figs: [] }));
+  const rest = [];
+  for (const fig of figs) {
+    const i = defs.findIndex(([, re]) => re.test(figTitle(fig)));
+    if (i >= 0) groups[i].figs.push(fig); else rest.push(fig);
+  }
+  const out = [];
+  for (const g of groups) {
+    for (let i = 0; i < g.figs.length; i += 2) {
+      out.push({ label: i ? `${g.label} (${i / 2 + 1})` : g.label, figs: g.figs.slice(i, i + 2) });
+    }
+  }
+  for (let i = 0; i < rest.length; i += 2) {
+    out.push({ label: i ? `More (${i / 2 + 1})` : 'More', figs: rest.slice(i, i + 2) });
+  }
+  return out;
+}
+
+/** The remembered sub-tab of a page's map or chart row. */
+function subTab(page, row) {
+  return opts.subTabs?.[page]?.[row] || null;
+}
+function setSubTab(page, row, label) {
+  const all = { ...(opts.subTabs || {}) };
+  all[page] = { ...(all[page] || {}), [row]: label };
+  setOpt({ subTabs: all });
+}
+
+/** A row's tab strip, Shiny's .tabset: one button per label. */
+function rowTabStrip(page, row, labels, active, ariaLabel) {
+  const strip = document.createElement('div');
+  strip.className = 'row-tabs';
+  strip.setAttribute('role', 'tablist');
+  strip.setAttribute('aria-label', ariaLabel);
+  for (const label of labels) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('role', 'tab');
+    b.setAttribute('aria-selected', String(label === active));
+    b.className = label === active ? 'is-on' : '';
+    b.textContent = label;
+    b.addEventListener('click', () => { if (label !== active) setSubTab(page, row, label); });
+    strip.appendChild(b);
+  }
+  return strip;
+}
+
+/**
+ * The active page in LandShiny's layout (Jason, 2026-10-06): a row of map
+ * tabs on top, a row of chart tabs below, each tab showing two side by
+ * side at half the page width.
+ */
+function renderPage() {
+  const page = pageOf(opts.tab);
+  return withPageUnit(page, () => {
+    const out = [];
+    const mapTabs = PAGE_MAPS[page] || [];
+    if (mapTabs.length) {
+      const act = mapTabs.find((t) => t.label === subTab(page, 'map')) || mapTabs[0];
+      const sec = document.createElement('section');
+      sec.className = 'page-row page-maps';
+      sec.append(rowTabStrip(page, 'map', mapTabs.map((t) => t.label), act.label, 'Maps'), mapRow(page, act.paint()));
+      out.push(sec);
+    }
+    const groups = groupCharts(page, PAGE_BUILDERS[page]());
+    if (groups.length) {
+      const act = groups.find((g) => g.label === subTab(page, 'chart')) || groups[0];
+      const sec = document.createElement('section');
+      sec.className = 'page-row page-charts';
+      const pair = document.createElement('div');
+      pair.className = 'chart-pair';
+      pair.append(...act.figs);
+      sec.append(rowTabStrip(page, 'chart', groups.map((g) => g.label), act.label, 'Charts'), pair);
+      out.push(sec);
+    }
+    return out;
   });
-  mapCounts.set('sales', recs.length);
-  mapCounts.set('size', recs.length);
-  return [mapRow('map', [salesMap, sizeMap])];
 }
 
 // ---------- table view ---------------------------------------------
@@ -2080,7 +2178,7 @@ function buildMapTab() {
 /** The measures a tab trims on, for the table's Trimmed column. */
 function trimMetricsForTab() {
   if (opts.tab === 'total') return [['price', 'Price'], ['ppl', '$/Lot']];
-  if (['water', 'map', 'ag'].includes(opts.tab)) return [[areaMetric(), `$/${areaUnitLabel()}`]];
+  if (['water', 'ag'].includes(opts.tab)) return [[areaMetric(), `$/${areaUnitLabel()}`]];
   return [[areaMetric(), `$/${areaUnitLabel()}`]];
 }
 
@@ -2267,7 +2365,7 @@ function render() {
   // Rebuild into a fragment and swap in one go, so a re-render on every
   // keystroke in the main window's filters doesn't flash an empty grid.
   const frag = document.createDocumentFragment();
-  for (const fig of buildCharts()) frag.appendChild(fig);
+  for (const el of renderPage()) frag.appendChild(el);
   els.grid.textContent = '';
   els.grid.appendChild(frag);
 
@@ -2277,13 +2375,11 @@ function render() {
 function syncControls() {
   // Tab state.
   const onTotal = opts.tab === 'total';
-  const tab = ['rates', 'total', 'water', 'ag', 'map'].includes(opts.tab) ? opts.tab : 'rates';
-  for (const [key, btn] of [['rates', els.tabRates], ['total', els.tabTotal], ['water', els.tabWater], ['ag', els.tabAg], ['map', els.tabMap]]) {
+  const tab = pageOf(opts.tab);
+  for (const [key, btn] of [['rates', els.tabRates], ['total', els.tabTotal], ['water', els.tabWater], ['ag', els.tabAg]]) {
     btn.setAttribute('aria-selected', String(tab === key));
     btn.classList.toggle('is-on', tab === key);
   }
-  els.ctlMapColor.hidden = tab !== 'map';
-  els.mapColor.value = MAP_MODES[opts.mapColor] ? opts.mapColor : 'price';
   els.mapMunis.checked = opts.mapMunis !== false;
   // The size unit shows on every tab now: the Total price tab's Price per
   // Lot by Size chart takes its x-axis from it.
@@ -2305,9 +2401,7 @@ function syncControls() {
     ? 'Applies to the by-size, by-distance and assessed-value charts.'
     : tab === 'water' || tab === 'ag'
       ? 'Applies to every price chart on this tab.'
-      : tab === 'map'
-        ? 'Applies to the price colouring.'
-        : 'Applies to the by-size and by-distance charts.';
+      : 'Applies to the by-size and by-distance charts and the price heatmap.';
 
   const unit = UNITS[opts.unit] ? opts.unit : 'acres';
   for (const [key, btn] of [['acres', els.unitAcres], ['sf', els.unitSf], ['ff', els.unitFf]]) {
@@ -2386,7 +2480,6 @@ function syncControls() {
  */
 const WORK_TABS = [
   ['rates', 'Land Price/Unit'],
-  ['map', 'Map'],
   ['ag', 'Agricultural'],
   ['total', 'Total/Per Lot Price'],
   ['water', 'Water'],
@@ -2405,17 +2498,6 @@ function writeWorkfileOff(off) {
 }
 
 /**
- * One tab's figures, built off-screen. The maps are the persistent ones,
- * re-filled with the same data and kept in their own rows (mapRow), so
- * this never pulls a live map out of the page.
- */
-function figuresForTab(tab) {
-  const saved = opts.tab;
-  opts.tab = tab;
-  try { return buildCharts(); } finally { opts.tab = saved; }
-}
-
-/**
  * Everything the work file could hold, in page order:
  *   {key, tab, tabLabel, title, kind: 'chart' | 'table' | 'map', spec, map, empty}
  * A chart with nothing to draw is listed (so its absence is explained) but
@@ -2423,23 +2505,33 @@ function figuresForTab(tab) {
  */
 function workItems() {
   const items = [];
+  // Each page built off-screen through its own builders, maps first as the
+  // page shows them. Every map tab is painted, not only the active one, so
+  // the list can say which have data; a painted map that is not on screen
+  // only takes its data and fits when it is next shown.
   for (const [tab, tabLabel] of WORK_TABS) {
-    for (const fig of figuresForTab(tab)) {
-      // A map row (or a lone map) becomes one item per map in it.
-      const maps = [...pageMaps].filter(([, m]) => fig === m.figure || fig.contains(m.figure));
-      if (maps.length) {
-        for (const [k, m] of maps) {
-          items.push({ key: `${tab}:map:${k}`, tab, tabLabel, title: m.title(), kind: 'map', map: k, empty: !mapCounts.get(k) });
+    const saved = opts.tab;
+    opts.tab = tab;
+    try {
+      withPageUnit(tab, () => {
+        for (const mt of PAGE_MAPS[tab] || []) {
+          const apis = mt.paint();
+          mt.keys.forEach((k, i) => items.push({
+            key: `${tab}:map:${k}`, tab, tabLabel, title: apis[i].title(), kind: 'map', map: k, empty: !mapCounts.get(k),
+          }));
         }
-        continue;
-      }
-      const spec = chartExportSpec(fig);
-      const title = spec?.title || fig.querySelector('h3')?.textContent || 'Chart';
-      items.push({
-        key: `${tab}:${slugify(title)}`, tab, tabLabel, title,
-        kind: spec?.kind || 'chart', spec, empty: !spec,
+        for (const g of groupCharts(tab, PAGE_BUILDERS[tab]())) {
+          for (const fig of g.figs) {
+            const spec = chartExportSpec(fig);
+            const title = spec?.title || fig.querySelector('h3')?.textContent || 'Chart';
+            items.push({
+              key: `${tab}:${slugify(title)}`, tab, tabLabel, title,
+              kind: spec?.kind || 'chart', spec, empty: !spec,
+            });
+          }
+        }
       });
-    }
+    } finally { opts.tab = saved; }
   }
   // Two charts can share a title across a tab (a nominal and an adjusted
   // twin); keep the keys unique so ticking one never ticks the other.
@@ -2627,21 +2719,29 @@ function blobToDataUrl(blob) {
  * the status line says so.
  */
 async function captureMaps(which, onStep) {
-  const prevTab = opts.tab;
+  const prev = { tab: opts.tab, subTabs: opts.subTabs };
   const out = { incomplete: false };
-  const tabs = [...new Set([...which].map((k) => MAP_TAB[k]))];
+  // One stop per page + map tab, showing it as the reader would.
+  const stops = new Map();
+  for (const k of which) {
+    const home = MAP_HOME[k];
+    const id = `${home.page}|${home.label}`;
+    if (!stops.has(id)) stops.set(id, { ...home, keys: [] });
+    stops.get(id).keys.push(k);
+  }
   try {
-    for (const tab of tabs) {
-      const want = [...which].filter((k) => MAP_TAB[k] === tab);
-      if (opts.tab !== tab) setOpt({ tab });
+    for (const stop of stops.values()) {
+      const all = { ...(opts.subTabs || {}) };
+      all[stop.page] = { ...(all[stop.page] || {}), map: stop.label };
+      setOpt({ tab: stop.page, subTabs: all });
       onStep('Waiting for the maps to draw…');
-      const drawn = await Promise.all(want.map((k) => pageMap(k).whenIdle()));
+      const drawn = await Promise.all(stop.keys.map((k) => pageMap(k).whenIdle()));
       if (drawn.includes(false)) out.incomplete = true;
-      for (const k of want) out[k] = await pageMap(k).pngBlob();
+      for (const k of stop.keys) out[k] = await pageMap(k).pngBlob();
     }
     return out;
   } finally {
-    if (opts.tab !== prevTab) setOpt({ tab: prevTab });
+    setOpt(prev);
   }
 }
 
@@ -2802,10 +2902,8 @@ function setOpt(patch) {
 els.tabRates.addEventListener('click', () => setOpt({ tab: 'rates' }));
 els.tabTotal.addEventListener('click', () => setOpt({ tab: 'total' }));
 els.tabWater.addEventListener('click', () => setOpt({ tab: 'water' }));
-els.tabMap.addEventListener('click', () => setOpt({ tab: 'map' }));
 els.company.addEventListener('input', () => setOpt({ company: els.company.value.trim() }));
 els.tabAg.addEventListener('click', () => setOpt({ tab: 'ag' }));
-els.mapColor.addEventListener('change', () => setOpt({ mapColor: els.mapColor.value }));
 els.mapMunis.addEventListener('change', () => setOpt({ mapMunis: els.mapMunis.checked }));
 els.unitAcres.addEventListener('click', () => setOpt({ unit: 'acres' }));
 els.unitSf.addEventListener('click', () => setOpt({ unit: 'sf' }));

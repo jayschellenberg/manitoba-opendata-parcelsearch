@@ -275,14 +275,7 @@ See DOCUMENTATION.md §10.0.2 for what shipped. Still open:
   Phase 3: an optional reason on each exclusion ("Nominal transfer", "Non-arm's
   length", "Assembly", or free text), keyed on roll number because MAO renumbers
   Sale Group IDs, shown as an Excluded Records table in the zip and the summary.
-- **The work file's map images were never seen non-blank.** The capture is the
-  map PNG button's own path, but every automation pane here is hidden; the first
-  real-browser export closes it.
 
-- **The Map tab has never been seen drawing.** Automation tabs run hidden, so
-  MapLibre never paints there. Its data, legends, boundary-file load and PNG
-  size were verified; the dots, rings and municipal lines on screen were not.
-  One look on a real screen closes it.
 - **Parcel outlines on the charts map.** The page receives no geometry (kept
   out of the BroadcastChannel message on purpose, for size), so sales are
   points. The template's parcel heatmap would need a slimmed outline per sale.
