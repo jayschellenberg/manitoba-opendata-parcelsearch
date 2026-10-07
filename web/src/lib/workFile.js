@@ -116,7 +116,7 @@ function factsHtml(pairs) {
  *   waterfall {columns, rows}
  *   tagged    [{title, columns, rows}] — the numbered comps and Land Sets
  *   comps     {columns, rows}          — the ticked sales (the CMS)
- *   excluded  {columns, rows}          — the unticked ones
+ *   excluded  {columns, rows}          — the unticked ones, with their reasons
  *   figures   [{tabLabel, title, kind: 'image', src} |
  *              {tabLabel, title, kind: 'table', subtitle, note, columns, rows}]
  *
@@ -154,7 +154,7 @@ export function buildSummaryHtml(model) {
     parts.push(`<h2>${title} (${m.comps.rows.length})</h2>`, tableHtml(m.comps, 'No sales are ticked.'));
   }
   if (m.excluded && m.excluded.rows.length) {
-    parts.push(`<h2>Excluded sales (${m.excluded.rows.length})</h2>`, tableHtml(m.excluded));
+    parts.push(`<h2>Excluded records (${m.excluded.rows.length})</h2>`, tableHtml(m.excluded));
   }
 
   const figures = m.figures || [];

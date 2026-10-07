@@ -91,6 +91,9 @@ const els = {
   tablePanel: $('table-panel'),
   workfileOpen: $('workfile-open'),
   compsPanel: $('comps-panel'),
+  exclPanel: $('excl-panel'),
+  exclSummary: $('excl-summary'),
+  exclBody: $('excl-body'),
   compsSummary: $('comps-summary'),
   compsBody: $('comps-body'),
   workfileDialog: $('workfile-dialog'),
@@ -124,6 +127,42 @@ function toggleSaleTag(rec, list) {
 window.addEventListener('storage', (e) => {
   if (e.key !== TAGS_KEY) return;
   tags = readTags();
+  render();
+});
+
+/**
+ * Exclusion reasons (charts Phase 3, Jason 2026-10-06): why a sale was
+ * unticked, as the R template's Excluded Records card records it
+ * ("127900|Nominal transfer"). Keyed like the comp tags — rolls + sale date —
+ * because MAO renumbers sale ids. A reason outlives a re-tick, so excluding
+ * the same sale again brings it back.
+ */
+const REASONS_KEY = 'mbps_charts_excl_reasons_v1';
+const EXCLUSION_REASONS = [
+  'Nominal transfer', "Non-arm's length", 'Assembly', 'Outlier', 'Not comparable',
+  'Includes improvements', 'Forced sale',
+];
+function readReasons() {
+  try {
+    const v = JSON.parse(localStorage.getItem(REASONS_KEY) || 'null');
+    if (!v || typeof v !== 'object') return {};
+    return Object.fromEntries(Object.entries(v).filter(([k, r]) => k && typeof r === 'string' && r.trim()));
+  } catch { return {}; }
+}
+let reasons = readReasons();
+function setReason(key, text) {
+  const t = String(text ?? '').trim().slice(0, 200);
+  reasons = { ...reasons };
+  if (t) reasons[key] = t; else delete reasons[key];
+  try { localStorage.setItem(REASONS_KEY, JSON.stringify(reasons)); } catch { /* private mode */ }
+}
+const reasonOf = (rec) => reasons[saleTagKey(rec)] || '';
+// The sale just excluded from a chart or map: the panel opens on it, with
+// its reason box focused, on the render that shows it unticked.
+let reasonPromptKey = null;
+window.addEventListener('storage', (e) => {
+  if (e.key !== REASONS_KEY) return;
+  reasons = readReasons();
   render();
 });
 
@@ -339,6 +378,7 @@ function tooltipRows(rec, pt) {
   }
   const who = rec.address || (rec.rolls || []).join(', ');
   if (who) rows.push([rec.muni || 'Parcel', who]);
+  if (rec.excluded && reasonOf(rec)) rows.unshift(['Excluded', reasonOf(rec)]);
   const tagged = tagDescriptions(tags, saleTagKey(rec));
   if (tagged.length) rows.unshift(['Tagged', tagged.join(' · ')]);
   if (!opts.frozen && rec.keys?.length) {
@@ -438,6 +478,7 @@ function onPointClick(rec, pt, e) {
   // Shift-click tags the sale as the next comparable (or untags it).
   if (e?.shiftKey) { toggleSaleTag(rec, 'comps'); return; }
   if (opts.frozen || !rec?.keys?.length) return;
+  if (!rec.excluded) reasonPromptKey = saleTagKey(rec);
   channel.postMessage({ type: 'set-excluded', keys: rec.keys, excluded: !rec.excluded });
 }
 
@@ -1977,7 +2018,7 @@ function paintMap(key, { title, cms, adj, colored, context = [], colorOf, legend
 function mapHandlers() {
   const find = (id) => (data.records || []).find((r) => String(r.saleId) === String(id));
   return {
-    onPick: (id) => { const rec = find(id); if (rec) onPointClick(rec); },
+    onPick: (id) => { const rec = find(id); if (rec) onPointClick(rec); },  // prompts for a reason too
     popupRows: (id) => { const rec = find(id); return rec ? tooltipRows(rec, null).filter(([l]) => l !== '') : []; },
     // Tag buttons under Exclude: one per list, saying what a click will do.
     popupActions: (id) => {
@@ -2522,6 +2563,106 @@ function renderCompsPanel() {
   }
 }
 
+// ---------- excluded records (charts Phase 3) -------------------------------
+
+/**
+ * The Excluded records panel: every unticked sale with a reason box
+ * (suggestions, or free text) and a way back in. The reason saves on change
+ * and does not redraw the page, so typing is never interrupted by a
+ * republish from the main window.
+ */
+function renderExclPanel() {
+  const body = els.exclBody;
+  // Keep a reason being typed: a republish mid-entry must not wipe it.
+  const active = document.activeElement;
+  if (active && body.contains(active) && active.dataset.key) return;
+  body.textContent = '';
+  const excluded = (data.records || []).filter((r) => r.excluded)
+    .sort((a, b) => (a.dateMs ?? 0) - (b.dateMs ?? 0));
+  const summary = () => {
+    const n = excluded.filter((r) => reasonOf(r)).length;
+    els.exclSummary.textContent = excluded.length
+      ? `Excluded records — ${plural(excluded.length, 'unticked sale')}, ${n} with a reason`
+      : 'Excluded records — none';
+  };
+  summary();
+
+  if (!excluded.length) {
+    const p = document.createElement('p');
+    p.className = 'comps-hint';
+    p.textContent = 'Sales you untick in the grid, or by clicking a dot, are listed here so you can record why.';
+    body.appendChild(p);
+    return;
+  }
+  const list = document.createElement('datalist');
+  list.id = 'excl-reason-list';
+  for (const r of EXCLUSION_REASONS) {
+    const o = document.createElement('option');
+    o.value = r;
+    list.appendChild(o);
+  }
+  body.appendChild(list);
+
+  const metric = areaMetric();
+  const money = areaMoneyFmt();
+  const table = document.createElement('table');
+  table.className = 'comps-table';
+  let focusEl = null;
+  for (const rec of excluded) {
+    const key = saleTagKey(rec);
+    const tr = document.createElement('tr');
+    const cell = (txt, cls = '') => {
+      const td = document.createElement('td');
+      if (cls) td.className = cls;
+      td.textContent = txt ?? '';
+      tr.appendChild(td);
+      return td;
+    };
+    cell(rec.dateText || fmtDate(rec.dateMs));
+    cell(rec.address || (rec.rolls || []).join(', '));
+    cell(rec.muni);
+    cell(rec.price != null ? fmtMoney0(rec.price) : '—', 'num');
+    cell(Number.isFinite(rec[metric]) ? `${money(rec[metric])}/${areaUnitLabel()}` : '—', 'num');
+    const td = document.createElement('td');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'excl-reason';
+    input.setAttribute('list', 'excl-reason-list');
+    input.placeholder = key ? 'Reason (pick or type)' : 'No roll number to key on';
+    input.maxLength = 200;
+    input.disabled = !key;
+    input.value = key ? reasons[key] || '' : '';
+    input.setAttribute('aria-label', `Exclusion reason for ${rec.address || (rec.rolls || []).join(', ')}`);
+    if (key) input.dataset.key = key;
+    input.addEventListener('change', () => { setReason(key, input.value); summary(); });
+    // Enter commits and leaves the box, so the next republish can redraw.
+    input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') input.blur(); });
+    td.appendChild(input);
+    tr.appendChild(td);
+    const act = document.createElement('td');
+    act.className = 'tag-cell';
+    const back = document.createElement('button');
+    back.type = 'button';
+    back.textContent = 'Include again';
+    back.title = 'Tick this sale back in, in the grid, the map and every chart';
+    back.disabled = opts.frozen;
+    back.addEventListener('click', () => restoreSales([rec]));
+    act.appendChild(back);
+    tr.appendChild(act);
+    if (key && key === reasonPromptKey) { tr.classList.add('is-new'); focusEl = input; }
+    table.appendChild(tr);
+  }
+  body.appendChild(table);
+  if (focusEl) {
+    reasonPromptKey = null;
+    els.exclPanel.open = true;
+    requestAnimationFrame(() => {
+      focusEl.scrollIntoView({ block: 'nearest' });
+      focusEl.focus({ preventScroll: true });
+    });
+  }
+}
+
 /** Money formatter matching a measure, for the trim band. */
 function areaMoneyFmtFor(metric) {
   return metric === 'ppsf' ? fmtMoney2 : fmtMoney0;
@@ -2542,6 +2683,7 @@ function render() {
   els.tablePanel.hidden = !has || !opts.showTable;
   els.waterfall.hidden = !has;
   els.compsPanel.hidden = !has;
+  els.exclPanel.hidden = !has;
   els.workfileOpen.disabled = !has;
 
   if (!has) {
@@ -2550,6 +2692,7 @@ function render() {
   }
   renderWaterfall();
   renderCompsPanel();
+  renderExclPanel();
 
   // Rebuild into a fragment and swap in one go, so a re-render on every
   // keystroke in the main window's filters doesn't flash an empty grid.
@@ -2766,6 +2909,7 @@ function saleCsvColumns() {
     ['Comp #', (r) => tagNumber(tags, 'comps', saleTagKey(r))],
     ['Land set', (r) => [tagNumber(tags, 'set1', saleTagKey(r)) && `L1-${tagNumber(tags, 'set1', saleTagKey(r))}`,
       tagNumber(tags, 'set2', saleTagKey(r)) && `L2-${tagNumber(tags, 'set2', saleTagKey(r))}`].filter(Boolean).join('; ')],
+    ['Exclusion reason', (r) => (r.excluded ? reasonOf(r) : '')],
     ['Status', (r) => {
       const st = cms.stateOf(r);
       return st === 'excluded' ? 'Excluded' : st === 'trimmed' ? 'Trimmed' : 'In';
@@ -2904,7 +3048,10 @@ function summaryModel() {
       };
     }).filter((t) => t.rows.length),
     comps: { columns: saleCols, rows: activeRecords().slice().sort(byDate).map(saleRow) },
-    excluded: { columns: saleCols, rows: (data.records || []).filter((r) => r.excluded).sort(byDate).map(saleRow) },
+    excluded: {
+      columns: [...saleCols, { label: 'Reason' }],
+      rows: (data.records || []).filter((r) => r.excluded).sort(byDate).map((r) => [...saleRow(r), reasonOf(r) || '—']),
+    },
   };
 }
 
@@ -2971,6 +3118,8 @@ async function buildWorkFile(selected, onStep) {
     { name: 'cms.csv', data: enc.encode(toCsv(labels, csvRows(all))) },
     { name: 'comps.csv', data: enc.encode(toCsv(labels, csvRows(tags.comps.length ? tagged : all.filter((r) => !r.excluded)))) },
   ];
+  const excludedRecs = all.filter((r) => r.excluded);
+  if (excludedRecs.length) files.push({ name: 'excluded.csv', data: enc.encode(toCsv(labels, csvRows(excludedRecs))) });
   for (const list of ['set1', 'set2']) {
     const recs = tags[list].map((k) => byKey.get(k)).filter(Boolean);
     if (recs.length) files.push({ name: `land-set-${list.slice(-1)}.csv`, data: enc.encode(toCsv(labels, csvRows(recs))) });

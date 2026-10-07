@@ -131,4 +131,22 @@ test('the work file writes the tagged comps', () => {
   assert.match(main, /\['Comp #', \(r\) => tagNumber\(tags, 'comps', saleTagKey\(r\)\)\]/);
 });
 
+console.log('exclusion reasons (charts Phase 3)');
+test('reasons are keyed on rolls + date and reach the tooltip, CSVs and summary', () => {
+  const main = code('src/charts/main.js');
+  assert.match(main, /const reasonOf = \(rec\) => reasons\[saleTagKey\(rec\)\] \|\| ''/);
+  assert.match(main, /if \(rec\.excluded && reasonOf\(rec\)\) rows\.unshift\(\['Excluded', reasonOf\(rec\)\]\)/);
+  assert.match(main, /\['Exclusion reason', \(r\) => \(r\.excluded \? reasonOf\(r\) : ''\)\]/);
+  assert.match(main, /name: 'excluded\.csv'/);
+  assert.match(main, /columns: \[\.\.\.saleCols, \{ label: 'Reason' \}\]/);
+});
+test('the panel renders, saves on change, and a click-exclude prompts for the reason', () => {
+  const main = code('src/charts/main.js');
+  assert.match(main, /renderExclPanel\(\);/);
+  assert.match(main, /input\.addEventListener\('change', \(\) => \{ setReason\(key, input\.value\)/);
+  assert.match(main, /if \(!rec\.excluded\) reasonPromptKey = saleTagKey\(rec\);/);
+  // A republish while a reason is being typed must not wipe it.
+  assert.match(main, /if \(active && body\.contains\(active\) && active\.dataset\.key\) return;/);
+});
+
 console.log(`\n${passed} passed`);

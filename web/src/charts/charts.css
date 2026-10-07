@@ -756,3 +756,15 @@ main { padding: 18px 20px 0; }
 .tag-btn.is-on { color: #fff; background: #B3261E; border-color: #B3261E; }
 .tag-cell { white-space: nowrap; }
 .tag-cell .tag-btn + .tag-btn { margin-left: 2px; }
+
+/* ---------- excluded records (charts Phase 3) ---------- */
+.excl-reason {
+  width: 100%;
+  min-width: 14em;
+  padding: 2px 6px;
+  font: 12.5px/1.4 Arial, Helvetica, sans-serif;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+}
+.excl-reason:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+.comps-table tr.is-new td { background: #fff7e0; }
