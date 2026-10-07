@@ -1136,7 +1136,11 @@ selection, so the charts, the map and the CSV export always agree.
 - *Total/Per Lot Price*: total price over time, by distance, vs assessed; price
   per lot (the price divided by the parcels in the sale) over time, by size, by
   distance. A note under the tabs explains the difference.
-- *Water*: box plots by water group, class, flood status and water body; scatters
+- *Water*: a map of the water-influenced sales at the top (2026-10-06): waterfront
+  and near-water sales coloured by their strongest water class, the dry sales as
+  faint grey context dots (smaller, under everything, not framed), sales with no
+  water data left off and counted; hover any dot for its details. Then box plots
+  by water group, class, flood status and water body; scatters
   by size and by distance to water; summary, water-premium
   (`lm(log rate ~ log size + group)`, checked against R) and paired-sales tables
   (`web/src/lib/salesWater.js`).

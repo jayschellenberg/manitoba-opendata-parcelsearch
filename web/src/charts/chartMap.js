@@ -140,16 +140,21 @@ export function createSalesMap({ onPick, popupRows }) {
       },
       paint: { 'text-color': R_STYLE.subject, 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 },
     });
-    // Excluded sales under the rest, pale, as on the charts.
+    // Excluded sales under the rest, pale, as on the charts. A `context`
+    // sale (the Water tab's dry sales, shown for the market around the water
+    // ones) is smaller, grey and faint, and sits under everything.
+    const ctx = ['==', ['get', 'context'], true];
     map.addLayer({
       id: 'sales-circles', type: 'circle', source: 'sales',
-      layout: { 'circle-sort-key': ['case', ['get', 'excluded'], 0, 1] },
+      layout: { 'circle-sort-key': ['case', ctx, -1, ['get', 'excluded'], 0, 1] },
       paint: {
-        'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 4, 12, 7],
-        'circle-color': ['coalesce', ['get', 'color'], R_STYLE.pointFill],
-        'circle-opacity': ['case', ['get', 'excluded'], R_STYLE.excludedOpacity, 0.85],
-        'circle-stroke-color': ['case', ['get', 'excluded'], R_STYLE.excludedStroke, '#404040'],
-        'circle-stroke-width': 0.75,
+        // Zoom has to be the outermost expression, so the context size
+        // switch sits inside each stop.
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, ['case', ctx, 2.5, 4], 12, ['case', ctx, 4, 7]],
+        'circle-color': ['case', ctx, '#9e9e9e', ['coalesce', ['get', 'color'], R_STYLE.pointFill]],
+        'circle-opacity': ['case', ctx, 0.35, ['get', 'excluded'], R_STYLE.excludedOpacity, 0.85],
+        'circle-stroke-color': ['case', ctx, '#bdbdbd', ['get', 'excluded'], R_STYLE.excludedStroke, '#404040'],
+        'circle-stroke-width': ['case', ctx, 0.5, 0.75],
       },
     });
     map.addLayer({
@@ -258,7 +263,10 @@ export function createSalesMap({ onPick, popupRows }) {
     if (fitKey !== lastFitKey && fc.features.length) {
       lastFitKey = fitKey;
       const b = new maplibregl.LngLatBounds();
-      for (const f of fc.features) b.extend(f.geometry.coordinates);
+      // Frame the sales the map is about; context dots ride along unframed
+      // unless they are all there is.
+      const focus = fc.features.filter((f) => !f.properties.context);
+      for (const f of focus.length ? focus : fc.features) b.extend(f.geometry.coordinates);
       if (subject) b.extend([subject.lng, subject.lat]);
       // The whole distance-filter ring in view, not cut off at the edges.
       if (subject) for (const km of rings || []) for (const c of circleRing(subject, km, 16)) b.extend(c);

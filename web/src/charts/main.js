@@ -1243,6 +1243,76 @@ const pct1 = (v) => (Number.isFinite(v) ? `${v >= 0 ? '+' : '−'}${Math.abs(v *
  * foot), time-adjusted when the toggle says so, over the same comparable set
  * (CMS1, or CMS2 when the trim is on) as the Land rates tab.
  */
+/** A water class's colour, by the label saleWaterFacts reports. */
+const WATER_CLASS_COLOR = new Map(WATER_CLASSES.map((c) => [c.label, c.color]));
+
+/**
+ * The Water tab's map (Jason, 2026-10-06): only the water-influenced sales
+ * in colour, by the strongest water class among each sale's parcels; the
+ * dry sales as faint grey dots for the market around them; sales with no
+ * water data left off and counted in the note. Framed on the water sales.
+ */
+function buildWaterMap(cms, adj) {
+  if (!waterMap) waterMap = createSalesMap(mapHandlers());
+  const located = (r) => Number.isFinite(r.lat) && Number.isFinite(r.lng);
+  const recs = activeRecords().filter(located);
+  const wet = recs.filter((r) => ['Waterfront', 'Near water'].includes(waterOf(r).group));
+  const dry = recs.filter((r) => waterOf(r).group === 'No water');
+  const unknown = recs.length - wet.length - dry.length;
+  waterMapCount = wet.length;
+
+  const colorOf = (r) => {
+    const w = waterOf(r);
+    return WATER_CLASS_COLOR.get(w.cls) || WATER_GROUP_COLORS[w.group] || R_STYLE.pointFill;
+  };
+  const counts = new Map();
+  for (const r of wet) {
+    const w = waterOf(r);
+    // A sale with no class falls back to its group, counted under its own
+    // key: the "Waterfront" class and the "Waterfront" group share a name.
+    const key = WATER_CLASS_COLOR.has(w.cls) ? w.cls : `group:${w.group}`;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  const legend = [
+    ...WATER_CLASSES.filter((c) => counts.has(c.label)).map((c) => ({ label: `${c.label} (${counts.get(c.label)})`, color: c.color })),
+    ...WATER_GROUPS.filter((g) => counts.has(`group:${g}`))
+      .map((g) => ({ label: `${g}, class not recorded (${counts.get(`group:${g}`)})`, color: WATER_GROUP_COLORS[g] })),
+    ...(dry.length ? [{ label: `No water influence (${dry.length})`, color: '#c8c8c8' }] : []),
+  ];
+
+  const feature = (r, context) => ({
+    type: 'Feature',
+    properties: { saleId: String(r.saleId), excluded: false, context, color: context ? null : colorOf(r) },
+    geometry: { type: 'Point', coordinates: [r.lng, r.lat] },
+  });
+  const s = data.meta?.subject;
+  const subject = Number.isFinite(s?.lat) && Number.isFinite(s?.lng) ? { lat: s.lat, lng: s.lng } : null;
+  const filterKm = Number(data.meta?.criteria?.distanceMax);
+  const rings = subject && Number.isFinite(filterKm) && filterKm > 0 ? [filterKm] : [];
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+  const title = 'CMS – Map of Water-Influenced Sales';
+  waterMap.setHeader(title, criteriaLine(cms, adj.adjusted));
+  waterMap.setPngName(pngName(title));
+  waterMap.setMunisVisible(opts.mapMunis !== false);
+  waterMap.setLegend(legend);
+  waterMap.setNote(sub(
+    wet.length
+      ? `${plural(wet.length, 'water-influenced sale')}, coloured by the strongest water class among each sale's parcels.`
+      : 'No ticked sale in the current filter is waterfront or near water.',
+    dry.length ? 'Grey dots are the sales with no water influence, shown for context.' : '',
+    unknown ? `${plural(unknown, 'sale')} without water data not shown.` : '',
+    recs.length < activeRecords().length ? `${activeRecords().length - recs.length} sales without a parcel location are not shown.` : ''));
+  waterMap.setData({
+    fc: { type: 'FeatureCollection', features: [...dry.map((r) => feature(r, true)), ...wet.map((r) => feature(r, false))] },
+    subject,
+    rings,
+    fitKey: `${wet.map((r) => r.saleId).join('|')}#${dry.length}`,
+  });
+  requestAnimationFrame(() => waterMap.resize());
+  return waterMap.figure;
+}
+
 function buildWaterCharts() {
   const metric = areaMetric();
   const areaFmt = areaMoneyFmt();
@@ -1260,6 +1330,8 @@ function buildWaterCharts() {
     ? `${unknown} sale${unknown === 1 ? '' : 's'} without water data are left out — still loading in the `
       + 'main window, or no water data is published for the municipality.'
     : '';
+
+  charts.push(buildWaterMap(cms, adj));
 
   const boxGroups = (keyOf, order = null, minN = 2, maxGroups = Infinity) => boxGroupsFor(
     cms, keyOf, rate, { order, minN, maxGroups, colorOf: (k) => WATER_GROUP_COLORS[k] });
@@ -1727,6 +1799,19 @@ function buildAgCharts() {
 let salesMap = null;
 let sizeMap = null;
 let mapPair = null;
+// The Water tab's map of water-influenced sales (Jason, 2026-10-06), and how
+// many it drew — the work file lists it as "no data" when that is zero.
+let waterMap = null;
+let waterMapCount = 0;
+
+/** Click and popup handlers, shared by every map on the page. */
+function mapHandlers() {
+  const find = (id) => (data.records || []).find((r) => String(r.saleId) === String(id));
+  return {
+    onPick: (id) => { const rec = find(id); if (rec) onPointClick(rec); },
+    popupRows: (id) => { const rec = find(id); return rec ? tooltipRows(rec, null).filter(([l]) => l !== '') : []; },
+  };
+}
 
 /** The template's map titles, per colouring. */
 const MAP_MODES = {
@@ -1746,11 +1831,7 @@ const MAP_MODES = {
  */
 function buildMapTab() {
   if (!salesMap) {
-    const find = (id) => (data.records || []).find((r) => String(r.saleId) === String(id));
-    const handlers = {
-      onPick: (id) => { const rec = find(id); if (rec) onPointClick(rec); },
-      popupRows: (id) => { const rec = find(id); return rec ? tooltipRows(rec, null).filter(([l]) => l !== '') : []; },
-    };
+    const handlers = mapHandlers();
     salesMap = createSalesMap(handlers);
     sizeMap = createSalesMap(handlers);
     linkMaps(salesMap, sizeMap);
@@ -2219,6 +2300,10 @@ function workItems() {
       continue;
     }
     for (const fig of figuresForTab(tab)) {
+      if (waterMap && fig === waterMap.figure) {
+        items.push({ key: 'water:map', tab, tabLabel, title: waterMap.title(), kind: 'map', map: 'water', empty: !waterMapCount });
+        continue;
+      }
       const spec = chartExportSpec(fig);
       const title = spec?.title || fig.querySelector('h3')?.textContent || 'Chart';
       items.push({
@@ -2406,21 +2491,29 @@ function blobToDataUrl(blob) {
   });
 }
 
-/** Show the Map tab, let both maps paint, capture them, put the tab back. */
+/**
+ * Show each tab that holds a wanted map, let its maps paint, capture them,
+ * and put the original tab back. A map that never finished drawing (a
+ * hidden window gets no animation frames) is captured as it stands, and
+ * the status line says so.
+ */
 async function captureMaps(which, onStep) {
   const prevTab = opts.tab;
-  if (prevTab !== 'map') setOpt({ tab: 'map' });
+  const mapOf = { sales: () => salesMap, size: () => sizeMap, water: () => waterMap };
+  const out = { incomplete: false };
   try {
-    onStep('Waiting for the maps to draw…');
-    const drawn = await Promise.all([salesMap.whenIdle(), sizeMap.whenIdle()]);
-    // A map that never finished drawing (a hidden window gets no animation
-    // frames) is captured as it stands, and the status line says so.
-    const out = { incomplete: drawn.includes(false) };
-    if (which.has('sales')) out.sales = await salesMap.pngBlob();
-    if (which.has('size')) out.size = await sizeMap.pngBlob();
+    for (const [tab, keys] of [['map', ['sales', 'size']], ['water', ['water']]]) {
+      const want = keys.filter((k) => which.has(k));
+      if (!want.length) continue;
+      if (opts.tab !== tab) setOpt({ tab });
+      onStep('Waiting for the maps to draw…');
+      const drawn = await Promise.all(want.map((k) => mapOf[k]().whenIdle()));
+      if (drawn.includes(false)) out.incomplete = true;
+      for (const k of want) out[k] = await mapOf[k]().pngBlob();
+    }
     return out;
   } finally {
-    if (prevTab !== 'map') setOpt({ tab: prevTab });
+    if (opts.tab !== prevTab) setOpt({ tab: prevTab });
   }
 }
 
