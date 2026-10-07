@@ -36,6 +36,9 @@ import { criteriaText } from '../lib/criteriaLine.js';
 import { masccolor } from '../masc.js';
 import { buildStoreZip } from '../lib/zipStore.js';
 import {
+  agConsSpec as libAgConsSpec, agConsActive as libAgConsActive, agConsistent as libAgConsistent, agConsWords as libAgConsWords,
+} from '../lib/agConsistency.js';
+import {
   TAG_LISTS, TAG_LIST_NAMES, COMP_TAGS_KEY, EXCL_REASONS_KEY, EXCLUSION_REASONS, normalizeReasons, normalizeTags, saleTagKey, toggleTag, removeTag, moveTag, clearTags,
   tagNumber, tagLabel, tagDescriptions,
 } from '../lib/compTags.js';
@@ -212,6 +215,10 @@ const opts = {
   trim: false,
   trimLo: 5,
   trimHi: 95,
+  // The Agricultural page's consistency filters (R's CMSAG1, 2026-10-07):
+  // a cultivated-% band and keep-lists for MASC, CLI class and dominant
+  // cover. Empty = no filter. See agConsistent().
+  agCons: { cultLo: '', cultHi: '', masc: [], cli: [], cover: [] },
   // Municipal boundaries on every map.
   mapMunis: true,
   // The company name that signs every chart caption and PNG (Jason,
@@ -418,10 +425,31 @@ function drawnRecords() {
  * price: a sale can sit inside the $/acre band and outside the $/lot one.
  * Cached per render, so the charts sharing a measure share one trim.
  */
+// ---------- Ag consistency filters (R's CMSAG1, 2026-10-07) -------------
+//
+// The land template's consistency filters in its "rate" mode: on the
+// Agricultural page only, a cultivated-% band and keep-lists for MASC rating,
+// CLI class and dominant land cover narrow the set that page fits — its own
+// trend and its own time-adjustment rate — while every other page keeps the
+// wide set. (R's "both" mode, narrowing everything, is what the main window's
+// MASC / CLI / cultivation filters already do.) As in R, a sale with no value
+// for an attribute is KEPT: it was never measured, so it has not failed.
+
+function agConsSpec() { return libAgConsSpec(opts.agCons); }
+function agConsActive() { return libAgConsActive(agConsSpec()); }
+/** True when a sale passes every set filter (unknown values pass). */
+function agConsistent(rec) { return libAgConsistent(rec, agConsSpec(), { mascOf: mascKey, unrated: UNRATED }); }
+function agConsWords() { return libAgConsWords(agConsSpec()); }
+
 let cmsCache = new Map();
 function cmsFor(metric) {
-  if (cmsCache.has(metric)) return cmsCache.get(metric);
-  const active = activeRecords();
+  // The Agricultural page fits its own, consistency-filtered set.
+  const ag = opts.tab === 'ag' && agConsActive();
+  const cacheKey = ag ? `${metric}|ag` : metric;
+  if (cmsCache.has(cacheKey)) return cmsCache.get(cacheKey);
+  const ticked = activeRecords();
+  const active = ag ? ticked.filter(agConsistent) : ticked;
+  const agOut = ag ? new Set(ticked.filter((r) => !agConsistent(r)).map((r) => r.saleId)) : null;
   const trim = opts.trim ? percentileTrim(active, metric, opts.trimLo, opts.trimHi) : null;
   const applied = !!trim?.applied;
   const fitted = applied ? active.filter((r) => trim.keep.has(r.saleId)) : active;
@@ -430,13 +458,18 @@ function cmsFor(metric) {
   const fittedIds = new Set(fitted.map((r) => r.saleId));
   const cms = {
     metric, active, fitted, mc, mc1, trim, applied,
+    // The Ag set's bookkeeping: how many ticked sales the filters left out,
+    // and the rate on every ticked sale for comparison.
+    ag: ag ? { out: agOut.size, ticked: ticked.length, mcWide: marketConditions(ticked, metric), words: agConsWords() } : null,
     stateOf: (rec) => {
       if (rec.excluded) return 'excluded';
+      // Drawn hollow like a trimmed sale: present, but fitted by nothing.
+      if (agOut?.has(rec.saleId)) return 'trimmed';
       if (applied && !fittedIds.has(rec.saleId)) return 'trimmed';
       return 'in';
     },
   };
-  cmsCache.set(metric, cms);
+  cmsCache.set(cacheKey, cms);
   return cms;
 }
 
@@ -449,7 +482,11 @@ function trimWords() {
 function stateLegend(pts) {
   const out = [];
   if (pts.some((p) => p.state === 'trimmed')) {
-    out.push({ label: `Trimmed (outside ${trimWords()})`, dot: 'hollow', color: R_STYLE.pointStroke });
+    const agOn = opts.tab === 'ag' && agConsActive();
+    const label = agOn && opts.trim ? `Outside the Ag filters or ${trimWords()}`
+      : agOn ? 'Outside the Ag consistency filters'
+        : `Trimmed (outside ${trimWords()})`;
+    out.push({ label, dot: 'hollow', color: R_STYLE.pointStroke });
   }
   if (pts.some((p) => p.state === 'excluded')) {
     out.push({ label: 'Excluded (unticked)', dot: 'pale' });
@@ -667,9 +704,16 @@ function trendStats(points, cms, fmt) {
   }
   if (cms.applied && pctWords(cms.mc1)) {
     stats.push({
-      label: 'Per year (all)',
+      label: cms.ag ? 'Per year (Ag set)' : 'Per year (all)',
       value: pctWords(cms.mc1),
-      title: `The same regression on all ${cms.active.length} ticked sales, before the trim.`,
+      title: `The same regression on all ${cms.active.length} ${cms.ag ? 'Ag-set' : 'ticked'} sales, before the trim.`,
+    });
+  }
+  if (cms.ag && pctWords(cms.ag.mcWide)) {
+    stats.push({
+      label: 'Per year (all ticked)',
+      value: pctWords(cms.ag.mcWide),
+      title: `The same regression on all ${cms.ag.ticked} ticked sales, before the Ag consistency filters (${cms.ag.words}).`,
     });
   }
   return stats;
@@ -928,6 +972,9 @@ const rangeNum = (v) => v.toLocaleString('en-US', { maximumFractionDigits: v < 1
  * left open — see lib/criteriaLine.js.
  */
 function criteriaLine(cms, adjusted) {
+  return baseCriteriaLine(cms, adjusted) + (cms.ag ? `; Ag: ${cms.ag.words}` : '');
+}
+function baseCriteriaLine(cms, adjusted) {
   const recs = cms.fitted;
   const span = (vals) => {
     const v = vals.filter((x) => Number.isFinite(x));
@@ -2246,10 +2293,99 @@ function rowTabStrip(page, row, labels, active, ariaLabel) {
  * tabs on top, a row of chart tabs below, each tab showing two side by
  * side at half the page width.
  */
+/**
+ * The Agricultural page's consistency bar: a cultivated-% band and chips for
+ * the MASC ratings, CLI classes and dominant covers among the ticked sales.
+ * No chip ticked means no filter on that attribute.
+ */
+function agConsBar() {
+  const a = agConsSpec();
+  const bar = document.createElement('section');
+  bar.className = 'page-row ag-cons';
+  const head = document.createElement('div');
+  head.className = 'ag-cons-head';
+  const h = document.createElement('strong');
+  h.textContent = 'Ag consistency filters';
+  const why = document.createElement('span');
+  why.className = 'ag-cons-note';
+  why.textContent = agConsActive()
+    ? 'This page fits its own trend and time-adjustment rate on the sales that pass; the others are drawn hollow. Other pages are unaffected. Unknown values are kept.'
+    : 'Narrow the set this page fits — its trend and its time-adjustment rate — without changing the other pages (R\'s CMSAG1).';
+  head.append(h, why);
+  if (agConsActive()) {
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.className = 'ag-cons-clear';
+    clear.textContent = 'Clear';
+    clear.addEventListener('click', () => setOpt({ agCons: { cultLo: '', cultHi: '', masc: [], cli: [], cover: [] } }));
+    head.appendChild(clear);
+  }
+  bar.appendChild(head);
+
+  const patch = (p) => setOpt({ agCons: { ...(opts.agCons || {}), ...p } });
+  const row = document.createElement('div');
+  row.className = 'ag-cons-row';
+  // Cultivated band.
+  const cult = document.createElement('label');
+  cult.className = 'ag-cons-cult';
+  cult.append('Cultivated ');
+  const lo = document.createElement('input');
+  const hi = document.createElement('input');
+  for (const [inp, key, val, ph] of [[lo, 'cultLo', a.cultLo, '0'], [hi, 'cultHi', a.cultHi, '100']]) {
+    inp.type = 'number';
+    inp.min = '0';
+    inp.max = '100';
+    inp.step = '5';
+    inp.placeholder = ph;
+    inp.value = val ?? '';
+    inp.setAttribute('aria-label', key === 'cultLo' ? 'Lowest cultivated percent' : 'Highest cultivated percent');
+    inp.addEventListener('change', () => patch({ [key]: inp.value }));
+  }
+  cult.append(lo, '–', hi, ' %');
+  row.appendChild(cult);
+
+  const ticked = activeRecords();
+  const chipGroup = (label, key, values) => {
+    if (!values.length) return;
+    const g = document.createElement('span');
+    g.className = 'ag-cons-group';
+    const l = document.createElement('span');
+    l.className = 'ag-cons-label';
+    l.textContent = label;
+    g.appendChild(l);
+    for (const v of values) {
+      const on = a[key].includes(v);
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `ag-chip${on ? ' is-on' : ''}`;
+      b.textContent = v;
+      b.setAttribute('aria-pressed', String(on));
+      b.addEventListener('click', () => patch({ [key]: on ? a[key].filter((x) => x !== v) : [...a[key], v] }));
+      g.appendChild(b);
+    }
+    row.appendChild(g);
+  };
+  const present = (f) => [...new Set(ticked.map(f).filter(Boolean).map(String))];
+  chipGroup('MASC', 'masc', present((r) => mascKey(r)).filter((k) => k !== UNRATED)
+    .sort((x, y) => MASC_ORDER.indexOf(x) - MASC_ORDER.indexOf(y)));
+  chipGroup('CLI', 'cli', present((r) => r.ag?.cliClass).sort());
+  chipGroup('Cover', 'cover', present((r) => r.ag?.coverLabel).sort());
+  bar.appendChild(row);
+  if (agConsActive()) {
+    const kept = ticked.filter(agConsistent).length;
+    const n = document.createElement('p');
+    n.className = 'ag-cons-count';
+    n.textContent = `${kept} of ${ticked.length} ticked sales pass: ${agConsWords()}.`;
+    bar.appendChild(n);
+  }
+  return bar;
+}
+
 function renderPage() {
   const page = pageOf(opts.tab);
   return withPageUnit(page, () => {
     const out = [];
+    if (page === 'ag') out.push(agConsBar());
     const mapTabs = PAGE_MAPS[page] || [];
     if (mapTabs.length) {
       const act = mapTabs.find((t) => t.label === subTab(page, 'map')) || mapTabs[0];
@@ -2373,9 +2509,15 @@ function renderStatus() {
   const when = receivedAt
     ? new Date(receivedAt).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit' })
     : '';
-  const sales = `${n} ${n === 1 ? 'sale' : 'sales'}`
-    + (nExcluded > 0 ? ` (${nExcluded} excluded)` : '');
-  const parcels = data.meta.parcelCount != null ? ` from ${data.meta.parcelCount} parcels` : '';
+  // The grid's own count first, then the split (2026-10-07). "3 sales (1
+  // excluded)" read as three in all when the grid beside it showed four —
+  // the total and the ticked/unticked split are now both stated.
+  const total = data.records.length;
+  const sales = nExcluded > 0
+    ? `${total} sales: ${n} ticked, ${nExcluded} unticked`
+    : `${n} ${n === 1 ? 'sale' : 'sales'}`;
+  const pc = data.meta.parcelCount;
+  const parcels = pc != null ? ` · ${pc} ticked ${pc === 1 ? 'parcel' : 'parcels'}` : '';
   els.status.textContent = opts.frozen
     ? `Frozen — ${sales}${parcels}, as of ${when} · filter changes are being ignored.`
     : `Live — ${sales}${parcels} · tracking the Sales Analysis filters · updated ${when}`;
@@ -2405,6 +2547,10 @@ function waterfallRows() {
   rows.push({ label: 'After the Sales Analysis filters', value: nAll, kind: 'total' });
   if (nAll !== nActive) {
     rows.push({ label: 'Unticked in the grid', removed: nAll - nActive, value: nActive });
+  }
+  if (opts.tab === 'ag' && agConsActive()) {
+    const kept = activeRecords().filter(agConsistent).length;
+    rows.push({ label: 'Ag consistency filters (Agricultural page only)', removed: nActive - kept, value: kept, note: agConsWords() });
   }
   for (const [metric, label] of trimMetricsForTab()) {
     const cms = cmsFor(metric);
@@ -2968,6 +3114,23 @@ function ratesTable() {
   ];
   const rows = [row('CMS1 — ticked sales', cms.active, cms.mc1)];
   if (cms.applied) rows.push(row(`CMS2 — trimmed to ${trimWords()}`, cms.fitted, cms.mc));
+  // The Agricultural page's own set and rate, when its filters are on and it
+  // shares this unit (it draws per acre when the unit is front feet).
+  if (agConsActive() && opts.tab !== 'ag' && opts.unit !== 'ff') {
+    const saved = opts.tab;
+    opts.tab = 'ag';
+    try {
+      const agCms = cmsFor(metric);
+      const agAdj = adjusterAlways(metric);
+      rows.push([
+        `Ag set — ${agConsWords()}`, String(agCms.fitted.length),
+        (() => { const m = median(agCms.fitted.map((r) => r[metric]).filter((v) => Number.isFinite(v) && v > 0)); return m != null ? fmt(m) : '—'; })(),
+        agAdj.adjusted ? (() => { const m = median(agCms.fitted.map(agAdj.adjust).filter((v) => Number.isFinite(v) && v > 0)); return m != null ? fmt(m) : '—'; })() : '—',
+        agCms.mc ? `${agCms.mc.perDay >= 0 ? '+' : '−'}${fmtRate(Math.abs(agCms.mc.perDay))}` : '—',
+        agCms.mc?.pctPerYear != null ? `${(agCms.mc.pctPerYear * 100).toFixed(1)}%` : '—',
+      ]);
+    } finally { opts.tab = saved; }
+  }
   return {
     columns: [
       { label: 'Set' }, { label: 'Sales', num: true }, { label: `Median $/${unit}`, num: true },
@@ -3024,6 +3187,7 @@ function summaryModel() {
       ['Time adjustment', ovr != null ? `${(ovr * 100).toFixed(1)}% per year (judgement rate)`
         : cms.mc ? 'Fitted trend from the charted sales' : 'None (too few dated sales)'],
       ['Percentile trim', opts.trim ? trimWords() : 'Off'],
+      ['Ag consistency (Agricultural page)', agConsActive() ? agConsWords() : 'Off'],
       ['Distance measured from', activeDistRef() === 'subject' ? 'the subject parcel' : 'Portage & Main, Winnipeg'],
     ],
     rates: ratesTable(),
