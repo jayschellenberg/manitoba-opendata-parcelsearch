@@ -264,9 +264,34 @@ Feature detail is in DOCUMENTATION.md §3.6.1. What is still open:
   above it suggest (a 2W soil folded into "Other" still counts). That is
   the intended, citable figure — documented, but easy to mistake for a bug.
 
-## Sales Charts page follow-ups (from the 2026-09-22/23 session)
+## Sales Charts page follow-ups
 
-See DOCUMENTATION.md §10.0.2 for what shipped. Still open:
+Shipped (DOCUMENTATION.md §10.0.2): the CMS charts port, 2026-09-22/23 (PRs
+#128–#138); then on 2026-10-06/07 the work file, LandShiny's two-row layout with
+a map row on every page, numbered comparables and Land Sets, exclusion reasons,
+and the grid's ★ as the numbered comp (PRs #170–#173, merged and live
+2026-10-07). Still open:
+
+- **Existing stars carry no comp number.** Stars made before 2026-10-07 stay
+  starred but unnumbered until re-starred. If that proves a nuisance, a one-off
+  "number my starred sales" action could append them to the comp list in grid
+  order.
+- **Tags and reasons are per browser.** They live in localStorage, so another
+  browser or device starts empty. A job file (save / load the subject, filters,
+  tags, reasons and chart settings — the template's params.yml idea, offered
+  2026-10-06 and not chosen then) would carry an assignment between machines and
+  make a signed report's charts reproducible.
+- **summary.html size.** With every map ticked the work-file zip is ~20 MB,
+  nearly all embedded images. If mail limits bite, link the summary to the PNGs
+  in the zip instead of embedding them (smaller, but no longer one file).
+- **Land Sets in the grid.** The ★ numbers comparables only; Land Set
+  membership shows on the charts page and in the star's tooltip, and is set
+  there.
+- **Phone.** The Comparables / Excluded records panels, the Shift-click gesture
+  (no Shift on a phone — the map popup and Table view work) and the grid's
+  reason popover have not been tried on a phone.
+- **Comp labels near the subject pin** can overlap at low zoom; labels are
+  allowed to overlap by design (`text-allow-overlap`) so none goes missing.
 
 - **Parcel outlines on the charts map.** The page receives no geometry (kept
   out of the BroadcastChannel message on purpose, for size), so sales are
