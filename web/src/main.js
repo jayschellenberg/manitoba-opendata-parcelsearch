@@ -16828,6 +16828,9 @@ function publishSalesCharts() {
               lat: subjectCentroid.lat,
               lng: subjectCentroid.lng,
               roll: displayRoll(subjectFeature?.properties?.Roll_No_Txt) || '',
+              // Named in the work file's summary page (charts Phase 1).
+              address: subjectFeature?.properties?.Property_Address || '',
+              muni: subjectFeature?.properties?.Muni_Name_With_Typ || subjectFeature?.properties?.Municipality || '',
               acres: Number.isFinite(subjectAcres) && subjectAcres > 0 ? subjectAcres : null,
               // The roll's own frontage, for the $/front-foot charts' subject
               // line; null when the roll states an area instead.

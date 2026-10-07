@@ -268,10 +268,14 @@ Feature detail is in DOCUMENTATION.md §3.6.1. What is still open:
 
 See DOCUMENTATION.md §10.0.2 for what shipped. Still open:
 
-- **The Map tab has never been seen drawing.** Automation tabs run hidden, so
-  MapLibre never paints there. Its data, legends, boundary-file load and PNG
-  size were verified; the dots, rings and municipal lines on screen were not.
-  One look on a real screen closes it.
+- **Work file, phases 2 and 3** (Jason, 2026-10-06; phase 1, the zip, shipped).
+  Phase 2: number the comparables (Comp #1, #2…, optional Land Set 1/2) from the
+  grid or a chart dot, label them on every chart, map and PNG, and narrow
+  `comps.csv` and the summary's comps table to them. Tags persist in the browser.
+  Phase 3: an optional reason on each exclusion ("Nominal transfer", "Non-arm's
+  length", "Assembly", or free text), keyed on roll number because MAO renumbers
+  Sale Group IDs, shown as an Excluded Records table in the zip and the summary.
+
 - **Parcel outlines on the charts map.** The page receives no geometry (kept
   out of the BroadcastChannel message on purpose, for size), so sales are
   points. The template's parcel heatmap would need a slimmed outline per sale.

@@ -1041,6 +1041,19 @@ header small a {
   gap: 5px;
 }
 
+/* "Subject Property" over the subject roll controls in Sales Analysis:
+   the sidebar's section-title look, with a rule separating it from the
+   filters above. */
+.sales-subject-title {
+  margin: 10px 0 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border, #e2e8f0);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-primary-500, #1e293b);
+}
 .sidebar-section-title {
   margin: 0 0 3px;
   font-size: 13px;
@@ -1201,6 +1214,7 @@ body:not(.sales-mode) .sidebar .date-row,
 body:not(.sales-mode) .sidebar .class-row,
 body:not(.sales-mode) .sidebar .subject-row,
 body:not(.sales-mode) .sidebar .subject-muni-row,
+body:not(.sales-mode) .sidebar .sales-subject-title,
 body:not(.sales-mode) .sidebar .distance-row,
 body:not(.sales-mode) .sidebar .uom-vacant-row,
 body:not(.sales-mode) .sidebar .far-flung-row,

@@ -531,16 +531,20 @@ main { padding: 18px 20px 0; }
 .card-table th { position: sticky; top: 0; background: #ffffff; }
 
 /* ---------- map tab ---------- */
-.map-card { grid-column: 1 / -1; }
-/* The colour-by map and the lot-size heatmap side by side, stacking when
-   the window is too narrow for two 6.5 x 3.5 in cards. */
-.map-pair {
+/* Every map sits in a full-width row of two equal columns, so no map is
+   wider than half the page (Jason, 2026-10-06) and a single map takes the
+   left half. Below 900px the columns stack: half of a phone is too small to
+   read a map. */
+.map-row {
   grid-column: 1 / -1;
   display: grid;
   gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 430px), 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-.map-pair .map-card { grid-column: auto; min-width: 0; }
+.map-row .map-card { min-width: 0; }
+@media (max-width: 900px) {
+  .map-row { grid-template-columns: minmax(0, 1fr); }
+}
 .sales-map {
   /* The plot band of a 6.5 x 3.5 in card, so the map on screen frames what
      its PNG will show. */
@@ -557,6 +561,11 @@ main { padding: 18px 20px 0; }
   overflow: hidden;
 }
 .map-popup { font: 12px/1.45 Arial, Helvetica, sans-serif; min-width: 180px; }
+/* The hover readout: never under the pointer's way, so moving onto it
+   cannot fire mouseleave on the dot and make it flicker. */
+.map-hover-tip { pointer-events: none; }
+.map-hover-tip .maplibregl-popup-content { padding: 7px 10px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18); }
+.map-hover-hint { margin-top: 4px; font-size: 11px; color: var(--ink-muted); }
 .map-popup-btn {
   margin-top: 6px;
   padding: 3px 9px;
@@ -612,3 +621,101 @@ main { padding: 18px 20px 0; }
   text-decoration: underline;
 }
 .chart-restore:hover { color: #0b5cad; }
+
+/* ---------- work file (charts Phase 1) ---------- */
+
+.workfile-open {
+  margin: 6px 0 0 12px;
+  padding: 3px 10px;
+  font: 600 12px/1.5 Arial, Helvetica, sans-serif;
+  color: var(--ink);
+  background: var(--plane);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.workfile-open:hover { border-color: var(--ink-muted); }
+.workfile-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.workfile-dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  padding: 18px 20px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+}
+.workfile-dialog::backdrop { background: rgba(0, 0, 0, 0.3); }
+.workfile-dialog form { display: flex; flex-direction: column; max-height: calc(100vh - 82px); }
+.workfile-dialog h2 { margin: 0 0 6px; font-size: 17px; font-weight: 600; }
+.workfile-intro { margin: 0 0 10px; font-size: 12.5px; color: var(--ink-2); line-height: 1.45; }
+.workfile-list { overflow-y: auto; min-height: 0; flex: 1 1 auto; border-top: 1px solid var(--rule); padding-top: 6px; }
+.workfile-group { margin: 6px 0 8px; padding: 0; border: none; }
+.workfile-group legend { padding: 0; font-size: 13px; font-weight: 600; }
+.workfile-group legend label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+.workfile-item {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 2px 0 2px 22px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.workfile-item.is-empty { color: var(--ink-muted); cursor: default; }
+.workfile-why { margin-left: auto; font-size: 11px; font-style: italic; }
+.workfile-status { min-height: 1.4em; margin: 8px 0 0; font-size: 12.5px; color: var(--ink-2); }
+.workfile-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.workfile-actions button {
+  padding: 5px 12px;
+  font: 600 12.5px/1.4 Arial, Helvetica, sans-serif;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--plane);
+  color: var(--ink);
+  cursor: pointer;
+}
+.workfile-actions button.is-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.workfile-actions button:disabled { opacity: 0.6; cursor: progress; }
+
+/* ---------- the Shiny layout: a map row, then a chart row ---------- */
+
+.page-row { grid-column: 1 / -1; min-width: 0; }
+.page-row + .page-row { margin-top: 6px; }
+/* Shiny's .tabset strip, one per row. */
+.row-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin: 0 0 10px;
+  border-bottom: 1px solid var(--rule);
+}
+.row-tabs button {
+  padding: 6px 12px;
+  font: 600 12.5px/1.4 Arial, Helvetica, sans-serif;
+  color: var(--ink-2);
+  background: none;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 5px 5px 0 0;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+.row-tabs button:hover { color: var(--ink); }
+.row-tabs button.is-on {
+  color: var(--ink);
+  background: var(--surface);
+  border-color: var(--rule);
+}
+.row-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* Two charts per tab, each half the page, as the maps above. */
+.chart-pair {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.chart-pair > * { min-width: 0; }
+@media (max-width: 900px) {
+  .chart-pair { grid-template-columns: minmax(0, 1fr); }
+}
