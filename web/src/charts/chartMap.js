@@ -17,7 +17,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Protocol as PMTilesProtocol } from 'pmtiles';
 import { streetsStyle } from '../lib/basemapStyle.js';
-import { R_STYLE, exportChartPng } from '../lib/chartRender.js';
+import { R_STYLE, exportChartPng, renderChartPng } from '../lib/chartRender.js';
 import { circleRing } from '../lib/salesMapColors.js';
 
 let protocolAdded = false;
@@ -218,6 +218,14 @@ export function createSalesMap({ onPick, popupRows }) {
     }
   }
 
+  const pngSpec = () => ({
+    raster: map.getCanvas(),
+    title: h.textContent,
+    subtitle: sub.textContent,
+    legend: legendItems.length > 1 ? legendItems : null,
+    note: note.textContent,
+  });
+
   const api = {
     figure,
     setPngName(name) { pngFile = name; },
@@ -243,13 +251,35 @@ export function createSalesMap({ onPick, popupRows }) {
     /** Download the map as the template-sized PNG (6.5 x 3.5 in), with the
      *  card's title, criteria line, legend and note around it. */
     exportPng(filename) {
-      return exportChartPng({
-        raster: map.getCanvas(),
-        title: h.textContent,
-        subtitle: sub.textContent,
-        legend: legendItems.length > 1 ? legendItems : null,
-        note: note.textContent,
-        filename,
+      return exportChartPng({ ...pngSpec(), filename });
+    },
+    /** The same image as a Blob, for the work-file zip. */
+    pngBlob() { return renderChartPng(pngSpec()); },
+    /** The card's title, for the work-file list. */
+    title() { return h.textContent; },
+    /** The file stem the PNG button would use. */
+    pngName() { return pngFile; },
+    /**
+     * Resolves true once the map has drawn its current data: style and
+     * tiles loaded and nothing moving — or false on the timeout. Capped at `timeoutMs` so a slow tile
+     * server degrades to whatever is on the canvas rather than a hung
+     * export. Only meaningful while the map is in a visible document —
+     * a hidden tab never paints (no requestAnimationFrame).
+     */
+    whenIdle(timeoutMs = 15000) {
+      return new Promise((resolve) => {
+        let done = false;
+        const finish = (ok) => { if (!done) { done = true; resolve(ok); } };
+        setTimeout(() => finish(false), timeoutMs);
+        const check = () => {
+          if (ready && !pending && map.loaded() && map.areTilesLoaded() && !map.isMoving()) {
+            // One more frame so the last tiles are on the canvas.
+            requestAnimationFrame(() => requestAnimationFrame(() => finish(true)));
+          } else {
+            map.once('idle', check);
+          }
+        };
+        check();
       });
     },
     setData(data) {

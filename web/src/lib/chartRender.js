@@ -85,6 +85,15 @@ let chartCompany = '';
 export function setChartCompany(name) { chartCompany = String(name ?? '').trim(); }
 export function getChartCompany() { return chartCompany; }
 
+/**
+ * What each chart card exports, keyed by its <figure>: the spec its PNG
+ * button renders ({kind: 'chart'}), or a table card's columns and rows
+ * ({kind: 'table'}). The work file reads this instead of re-deriving any
+ * chart, so the zip can only ever hold what the cards show.
+ */
+const EXPORT_SPECS = new WeakMap();
+export function chartExportSpec(figure) { return EXPORT_SPECS.get(figure) || null; }
+
 const VB_W = 760;
 // 290, not 400 (Jason, 2026-09-23): a chart card, and its PNG, keeps the
 // template's 6.5 x 3.5 in shape once the title and footer are added.
@@ -291,7 +300,28 @@ const EXPORT_H = Math.round((VB_W * EXPORT_PX_HEIGHT) / EXPORT_PX_WIDTH);
  * image carries no hover ring, tooltip or button, and every string goes in
  * through textContent: addresses and zone codes are pasted-CSV text.
  */
-export function exportChartPng({ svg = null, raster = null, title, subtitle, legend, stats, note, filename }) {
+export function exportChartPng({ filename, ...spec }) {
+  return renderChartPng(spec).then((png) => downloadBlob(png, `${filename}.png`));
+}
+
+/** Save a Blob through a temporary link. */
+export function downloadBlob(blob, name) {
+  const a = document.createElement('a');
+  const href = URL.createObjectURL(blob);
+  a.href = href;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(href), 2000);
+}
+
+/**
+ * The composed 1950 x 1050 chart image as a PNG Blob, without downloading
+ * it — exportChartPng's body, shared with the work-file zip so a chart in
+ * the zip is byte-for-byte the one its PNG button gives.
+ */
+export function renderChartPng({ svg = null, raster = null, title, subtitle, legend, stats, note }) {
   const W = VB_W;
   const H = EXPORT_H;
   const M = 14;
@@ -426,15 +456,7 @@ export function exportChartPng({ svg = null, raster = null, title, subtitle, leg
         URL.revokeObjectURL(url);
         canvas.toBlob((png) => {
           if (!png) { reject(new Error('canvas produced no image')); return; }
-          const a = document.createElement('a');
-          const href = URL.createObjectURL(png);
-          a.href = href;
-          a.download = `${filename}.png`;
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-          setTimeout(() => URL.revokeObjectURL(href), 2000);
-          resolve();
+          resolve(png);
         }, 'image/png');
       } catch (err) { URL.revokeObjectURL(url); reject(err); }
     };
@@ -794,6 +816,7 @@ export function drawChart(spec) {
  * export, alike.
  */
 function appendChartFooter(figure, { svg, title, subtitle, legend, stats, note, pngName, strip, restore = [], onRestore = null }) {
+  if (svg) EXPORT_SPECS.set(figure, { kind: 'chart', svg, title, subtitle, legend, stats, note, pngName });
   if (legend && legend.length > 1) {
     const key = document.createElement('ul');
     key.className = 'chart-legend';
@@ -1275,6 +1298,9 @@ export function drawTableCard({ title, subtitle = '', note = '', columns = [], r
     }
     wrap.appendChild(table);
     figure.appendChild(wrap);
+    EXPORT_SPECS.set(figure, {
+      kind: 'table', title, subtitle, note, columns: columns.map((c) => ({ label: c.label, num: !!c.num })), rows,
+    });
   }
   if (note) {
     const p = document.createElement('p');

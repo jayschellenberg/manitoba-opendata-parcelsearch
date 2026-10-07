@@ -1027,6 +1027,7 @@ provincial download becoming the archived source-of-record.
 | `web/src/charts/chartMap.js` | the charts page's MapLibre map (boundaries, subject rings, PNG) | — |
 | `web/src/lib/chartRender.js` | SVG renderers (scatter, box plot, stacked bars, histogram, table card), `R_STYLE`, the 6.5×3.5 PNG export | — |
 | `web/src/lib/salesCharts.js` | sale records, regressions, CMS2 trim, S/A flag, ag roll-up | — |
+| `web/src/lib/workFile.js` | the charts page's work-file zip: CSV (Excel formula guard, BOM), `summary.html`, entry names (§10.0.2) | — |
 | `web/src/lib/salesWater.js` / `salesWaterfall.js` / `salesMapColors.js` / `criteriaLine.js` / `basemapStyle.js` | water analysis; filter waterfall; map colouring; subtitle criteria line; the charts map's basemap (held to `map.js` by `basemapStyle.test.js`) | — |
 | `r/export_rollentry_geojson.R` | gpkg → newline-delimited GeoJSON for the tile build (GDAL vectortranslate, ~12s) | `tiles-build/rollentry.geojsons` |
 | `web/scripts/build-parcel-tiles.js` | derives `_rollDisplay`/`_civicAddress`/`_acres`, writes both tile layers, runs tippecanoe, band-checks and promotes. `--promote-only` finishes a run whose tiling already succeeded | `web/public/parcels.pmtiles` + `parcels-pmtiles-meta.json` |
@@ -1199,6 +1200,32 @@ not part of the PNG.
 | Colours, fonts, line styles | `R_STYLE` in `chartRender.js` |
 | A chart's content | `buildRateCharts` / `buildMapTab` / `buildAgCharts` / `buildTotalCharts` / `buildWaterCharts` in `web/src/charts/main.js` |
 | What reaches the charts | `saleRecordsFromRows` and `publishSalesCharts` |
+| What the work file holds | `buildWorkFile` / `summaryModel` / `saleCsvColumns` in `main.js`; formatting in `lib/workFile.js` |
+
+**Work file** (2026-10-06, the first of three phases toward a no-R path to the
+land template's work-file output). The **Work file…** button in the header opens
+a list of every chart on every tab, ticked by default. Charts with nothing to draw
+are listed greyed with "no data". Unticked choices persist in `localStorage`
+(`mbps_charts_workfile_v1`). **Download zip** writes `work-file-<subject roll>-<date>.zip`:
+- `summary.html` — one self-contained page (images embedded as data URLs, opens
+  offline): subject, analysis settings and criteria line, market conditions
+  (CMS1, plus CMS2 when the trim applies), the filter waterfall, the comparable
+  (ticked) and excluded sales, then every ticked chart grouped by tab.
+- `comps.csv` (ticked sales) and `cms.csv` (every sale, with In / Trimmed /
+  Excluded) — raw numbers, ISO dates, a UTF-8 BOM, and both nominal and
+  adjusted $/unit whatever the Nominal toggle says. Text opening with `= + - @`
+  is prefixed with `'` so Excel cannot evaluate it.
+- `charts/NN-<tab>-<title>.png` — each at 1950 × 1050, rendered from the spec
+  the card registered (`chartExportSpec`), so a zip chart is byte-for-byte what
+  its own PNG button gives. Table cards go to `tables/*.csv`.
+
+Other tabs are built **off-screen** through the same builders (`buildCharts`
+under a temporarily switched `opts.tab`). The maps cannot be: MapLibre has to
+paint, so the export shows the Map tab, waits for both maps to go idle (15 s
+cap, `whenIdle`), captures, and restores the tab. If either map timed out (a
+hidden window gets no animation frames), the status line warns that its image
+may be blank. Everything else is snapshotted before the first await, so a
+republish mid-export cannot mix two sets of sales.
 
 **Caveats.**
 - The map was never seen painting during development: automation tabs run

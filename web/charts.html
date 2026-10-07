@@ -21,6 +21,10 @@
           <span>Company (signs your charts)</span>
           <input id="company" type="text" maxlength="60" placeholder="Your firm name" autocomplete="organization" />
         </label>
+        <!-- One zip for the appraisal work file: the ticked charts and maps
+             as PNGs, cms.csv / comps.csv, and a self-contained summary.html. -->
+        <button type="button" id="workfile-open" class="workfile-open"
+                title="Download the charts, maps and comparable sales as one zip for your work file">Work file…</button>
       </div>
 
       <!-- One filter row, above everything it scopes. Every chart and the
@@ -187,6 +191,24 @@
         </div>
       </section>
     </main>
+
+    <dialog id="workfile-dialog" class="workfile-dialog" aria-labelledby="workfile-title">
+      <form method="dialog">
+        <h2 id="workfile-title">Download work file</h2>
+        <p class="workfile-intro">
+          One zip with <strong>summary.html</strong> (subject, settings, rates, the filter waterfall,
+          the comparable and excluded sales, and every chart below in one page that opens offline),
+          <strong>comps.csv</strong> (the ticked sales), <strong>cms.csv</strong> (every sale, with its status),
+          and a PNG of each chart and map you tick. Charts follow the current size unit and settings.
+        </p>
+        <div id="workfile-list" class="workfile-list"></div>
+        <p id="workfile-status" class="workfile-status" role="status" aria-live="polite"></p>
+        <div class="workfile-actions">
+          <button type="submit" value="close">Close</button>
+          <button type="button" id="workfile-go" class="is-primary">Download zip</button>
+        </div>
+      </form>
+    </dialog>
 
     <script type="module" src="/src/charts/main.js"></script>
   </body>

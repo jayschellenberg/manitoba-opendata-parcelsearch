@@ -34,9 +34,12 @@ import { priceBuckets, yearColors, SIZE_RAMP } from '../lib/salesMapColors.js';
 import { createSalesMap, linkMaps } from './chartMap.js';
 import { criteriaText } from '../lib/criteriaLine.js';
 import { masccolor } from '../masc.js';
+import { buildStoreZip } from '../lib/zipStore.js';
+import { toCsv, buildSummaryHtml, figureFileName, workFileName } from '../lib/workFile.js';
 import { LAND_COVER_BUCKETS } from '../lib/landcover.js';
 import {
   drawChart, drawBoxChart, drawTableCard, drawStackedBars, drawHistogram, setChartCompany, ZONE_COLORS, OTHER_COLOR, INK, R_STYLE, slugify,
+  chartExportSpec, renderChartPng, downloadBlob,
   fmtMoney0, fmtMoney2, fmtNum, fmtDate, fmtAxisDollar, fmtAxisComma, fmtMonYear,
 } from '../lib/chartRender.js';
 
@@ -84,6 +87,11 @@ const els = {
   waterfallSummary: $('waterfall-summary'),
   waterfallBody: $('waterfall-body'),
   tablePanel: $('table-panel'),
+  workfileOpen: $('workfile-open'),
+  workfileDialog: $('workfile-dialog'),
+  workfileList: $('workfile-list'),
+  workfileStatus: $('workfile-status'),
+  workfileGo: $('workfile-go'),
   table: $('sales-table'),
 };
 
@@ -1955,10 +1963,8 @@ function renderStatus() {
  * something), then the sales unticked in the grid, then — per measure on the
  * current tab — the percentile trim.
  */
-function renderWaterfall() {
+function waterfallRows() {
   const wf = data.meta?.waterfall;
-  const body = els.waterfallBody;
-  body.textContent = '';
   const nAll = data.records.length;
   const nActive = activeRecords().length;
 
@@ -1989,6 +1995,16 @@ function renderWaterfall() {
       rows.push({ label: `${label}: trim not applied (fewer than ${TRIM_MIN_SALES} sales)`, value: cms.fitted.length });
     }
   }
+  return rows;
+}
+
+function renderWaterfall() {
+  const wf = data.meta?.waterfall;
+  const body = els.waterfallBody;
+  body.textContent = '';
+  const nAll = data.records.length;
+  const nActive = activeRecords().length;
+  const rows = waterfallRows();
 
   for (const r of rows) {
     const tr = document.createElement('tr');
@@ -2031,6 +2047,7 @@ function render() {
   els.grid.hidden = !has;
   els.tablePanel.hidden = !has || !opts.showTable;
   els.waterfall.hidden = !has;
+  els.workfileOpen.disabled = !has;
 
   if (!has) {
     els.grid.textContent = '';
@@ -2141,6 +2158,416 @@ function syncControls() {
   }
   els.distRef.value = activeDistRef();
 }
+
+// ---------- work file (charts Phase 1) --------------------------------
+
+/**
+ * "Work file…" (Jason, 2026-10-06): one zip for the appraisal work file —
+ * a PNG of each chart and map he ticks, the comparable set as CSV, and a
+ * self-contained summary.html. The lighter, no-R path to what the land
+ * template's exports give.
+ *
+ * Every tab is built OFF-SCREEN through the same builders the page draws
+ * with (buildCharts under a temporarily switched opts.tab), and each PNG is
+ * rendered from the spec its card registered (chartExportSpec) — so a chart
+ * in the zip is the one its own PNG button gives, and nothing is re-derived.
+ * The two maps are the exception: MapLibre has to paint, so the export
+ * shows the Map tab, waits for both maps to go idle, captures, and puts
+ * the previous tab back.
+ */
+const WORK_TABS = [
+  ['rates', 'Land Price/Unit'],
+  ['map', 'Map'],
+  ['ag', 'Agricultural'],
+  ['total', 'Total/Per Lot Price'],
+  ['water', 'Water'],
+];
+const WORKFILE_KEY = 'mbps_charts_workfile_v1';
+
+/** Item keys he has unticked. New charts default to ticked. */
+function readWorkfileOff() {
+  try {
+    const v = JSON.parse(localStorage.getItem(WORKFILE_KEY) || 'null');
+    return new Set(Array.isArray(v?.off) ? v.off : []);
+  } catch { return new Set(); }
+}
+function writeWorkfileOff(off) {
+  try { localStorage.setItem(WORKFILE_KEY, JSON.stringify({ off: [...off] })); } catch { /* private mode */ }
+}
+
+/** One tab's figures, built off-screen. Never the Map tab (it mutates the live maps). */
+function figuresForTab(tab) {
+  const saved = opts.tab;
+  opts.tab = tab;
+  try { return buildCharts(); } finally { opts.tab = saved; }
+}
+
+/**
+ * Everything the work file could hold, in page order:
+ *   {key, tab, tabLabel, title, kind: 'chart' | 'table' | 'map', spec, map, empty}
+ * A chart with nothing to draw is listed (so its absence is explained) but
+ * cannot be ticked.
+ */
+function workItems() {
+  const items = [];
+  for (const [tab, tabLabel] of WORK_TABS) {
+    if (tab === 'map') {
+      const mode = MAP_MODES[opts.mapColor] ? opts.mapColor : 'price';
+      const located = activeRecords().some((r) => Number.isFinite(r.lat) && Number.isFinite(r.lng));
+      items.push({ key: 'map:colour', tab, tabLabel, title: MAP_MODES[mode](unitSpec().perUnit), kind: 'map', map: 'sales', empty: !located });
+      items.push({ key: 'map:size', tab, tabLabel, title: `CMS Heatmap – ${unitSpec().sizeTitle}`, kind: 'map', map: 'size', empty: !located });
+      continue;
+    }
+    for (const fig of figuresForTab(tab)) {
+      const spec = chartExportSpec(fig);
+      const title = spec?.title || fig.querySelector('h3')?.textContent || 'Chart';
+      items.push({
+        key: `${tab}:${slugify(title)}`, tab, tabLabel, title,
+        kind: spec?.kind || 'chart', spec, empty: !spec,
+      });
+    }
+  }
+  // Two charts can share a title across a tab (a nominal and an adjusted
+  // twin); keep the keys unique so ticking one never ticks the other.
+  const seen = new Map();
+  for (const it of items) {
+    const n = (seen.get(it.key) || 0) + 1;
+    seen.set(it.key, n);
+    if (n > 1) it.key = `${it.key}~${n}`;
+  }
+  return items;
+}
+
+/** A blank-safe number for a CSV cell: finite or null. */
+const num = (v) => (v !== null && v !== '' && Number.isFinite(Number(v)) ? Number(v) : null);
+const round = (v, dp) => (v == null ? null : Math.round(v * 10 ** dp) / 10 ** dp);
+const isoDate = (ms) => {
+  if (!Number.isFinite(ms)) return '';
+  const d = new Date(ms);
+  const p2 = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+};
+
+/**
+ * The adjuster in the current unit, on the page's adjustment basis (fitted
+ * trend or stated %/yr), WHETHER OR NOT the Nominal/Time-adjusted toggle is
+ * on — a work file wants the nominal and adjusted columns side by side.
+ */
+function adjusterAlways(metric) {
+  const saved = opts.adjusted;
+  opts.adjusted = true;
+  try { return adjusterFor(cmsFor(metric)); } finally { opts.adjusted = saved; }
+}
+
+/** The sale columns of cms.csv and comps.csv: [label, raw value]. */
+function saleCsvColumns() {
+  const metric = areaMetric();
+  const adj = adjusterAlways(metric);
+  const cms = cmsFor(metric);
+  const refWord = activeDistRef() === 'subject' ? 'subject' : 'Winnipeg';
+  const unit = areaUnitLabel();
+  const dp = metric === 'ppsf' ? 2 : 0;
+  return [
+    ['Status', (r) => {
+      const st = cms.stateOf(r);
+      return st === 'excluded' ? 'Excluded' : st === 'trimmed' ? 'Trimmed' : 'In';
+    }],
+    ['Sale date', (r) => isoDate(r.dateMs) || r.dateText || ''],
+    ['Municipality', (r) => r.muni || ''],
+    ['Address', (r) => r.address || ''],
+    ['Roll numbers', (r) => (r.rolls || []).join('; ')],
+    ['Parcels', (r) => num(r.parcelCount)],
+    ['Sale type', (r) => r.saleType || ''],
+    ['Price', (r) => num(r.price)],
+    ['Lot acres', (r) => round(num(r.lotAcres), 3)],
+    ['Lot sq ft', (r) => round(num(r.lotSf), 0)],
+    ['Frontage ft', (r) => round(num(r.lotFrontFt), 1)],
+    ['$/Lot', (r) => round(num(r.ppl), 0)],
+    ['$/Acre', (r) => round(num(r.ppa), 0)],
+    ['$/SF', (r) => round(num(r.ppsf), 2)],
+    ['$/FF', (r) => round(num(r.ppff), 0)],
+    [adj.adjusted ? `Adj $/${unit} at ${opts.effDate}` : `Adj $/${unit} (no adjustment)`,
+      (r) => (adj.adjusted ? round(num(adj.adjust(r)), dp) : null)],
+    ['Sale/Asmt', (r) => round(num(r.saleToAsmt), 3)],
+    ['S/A flag', (r) => {
+      const f = saleAsmtFlag(r.flagRatio);
+      return f && f !== 'No assessment' ? `${f} (${flagBasisWords(r)})` : '';
+    }],
+    ['Zoning', (r) => r.zone || ''],
+    [`Distance from ${refWord} (km)`, (r) => round(num(distanceFor(r)), 2)],
+    ['Water', (r) => waterOf(r).group || ''],
+    ['MASC', (r) => r.ag?.masc || ''],
+    ['CLI', (r) => r.ag?.cli || ''],
+    ['Soil', (r) => r.ag?.soil || ''],
+  ];
+}
+
+/** The market-conditions table: CMS1, and CMS2 when the trim applies. */
+function ratesTable() {
+  const metric = areaMetric();
+  const cms = cmsFor(metric);
+  const fmt = areaMoneyFmtFor(metric);
+  const adj = adjusterAlways(metric);
+  const unit = areaUnitLabel();
+  const med = (recs, f) => {
+    const m = median(recs.map(f).filter((v) => Number.isFinite(v) && v > 0));
+    return m != null ? fmt(m) : '—';
+  };
+  const row = (label, recs, mc) => [
+    label,
+    String(recs.length),
+    med(recs, (r) => r[metric]),
+    adj.adjusted ? med(recs, adj.adjust) : '—',
+    mc ? `${mc.perDay >= 0 ? '+' : '−'}${fmtRate(Math.abs(mc.perDay))}` : '—',
+    mc?.pctPerYear != null ? `${(mc.pctPerYear * 100).toFixed(1)}%` : '—',
+  ];
+  const rows = [row('CMS1 — ticked sales', cms.active, cms.mc1)];
+  if (cms.applied) rows.push(row(`CMS2 — trimmed to ${trimWords()}`, cms.fitted, cms.mc));
+  return {
+    columns: [
+      { label: 'Set' }, { label: 'Sales', num: true }, { label: `Median $/${unit}`, num: true },
+      { label: `Median adj $/${unit}`, num: true }, { label: '$/day trend', num: true }, { label: '%/yr', num: true },
+    ],
+    rows,
+  };
+}
+
+/** Everything summary.html says besides the figures. */
+function summaryModel() {
+  const s = data.meta?.subject || null;
+  const metric = areaMetric();
+  const adj = adjusterAlways(metric);
+  const cms = cmsFor(metric);
+  const money = areaMoneyFmt();
+  const n2 = (v, dp = 2) => (num(v) != null ? Number(v).toLocaleString('en-US', { maximumFractionDigits: dp }) : '');
+  const saleRow = (r) => {
+    const a = adj.adjusted ? adj.adjust(r) : null;
+    const d = distanceFor(r);
+    return [
+      isoDate(r.dateMs) || r.dateText || '', r.muni || '', r.address || (r.rolls || []).join(', '),
+      r.price != null ? fmtMoney0(r.price) : '—',
+      r[sizeField()] != null ? n2(r[sizeField()]) : '—',
+      r[metric] != null ? money(r[metric]) : '—',
+      Number.isFinite(a) ? money(a) : '—',
+      r.zone || '—',
+      d != null ? fmtNum(d) : '—',
+    ];
+  };
+  const saleCols = [
+    { label: 'Sold' }, { label: 'Municipality' }, { label: 'Address / roll' }, { label: 'Price', num: true },
+    { label: unitSpec().sizeTitle, num: true }, { label: `$/${areaUnitLabel()}`, num: true },
+    { label: `Adj $/${areaUnitLabel()}`, num: true }, { label: 'Zoning' }, { label: 'Dist. km', num: true },
+  ];
+  const byDate = (x, y) => (x.dateMs ?? 0) - (y.dateMs ?? 0);
+  const ovr = overrideRate();
+  return {
+    title: s?.roll ? `Sales work file — roll ${s.roll}` : 'Sales work file',
+    company: opts.company || '',
+    generated: new Date().toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' }),
+    build: typeof __APP_COMMIT__ !== 'undefined' ? `build ${__APP_COMMIT__}` : '',
+    subject: s ? [
+      ['Roll', s.roll],
+      ['Address', s.address],
+      ['Municipality', s.muni],
+      ['Acres', Number(s.acres) > 0 ? n2(s.acres, 3) : ''],
+      ['Frontage', Number(s.frontFt) > 0 ? `${n2(s.frontFt, 1)} ft` : ''],
+    ] : null,
+    settings: [
+      ['Criteria', criteriaLine(cms, adj.adjusted)],
+      ['Size unit', unitSpec().perUnit],
+      ['Effective date', opts.effDate],
+      ['Time adjustment', ovr != null ? `${(ovr * 100).toFixed(1)}% per year (judgement rate)`
+        : cms.mc ? 'Fitted trend from the charted sales' : 'None (too few dated sales)'],
+      ['Percentile trim', opts.trim ? trimWords() : 'Off'],
+      ['Distance measured from', activeDistRef() === 'subject' ? 'the subject parcel' : 'Portage & Main, Winnipeg'],
+    ],
+    rates: ratesTable(),
+    waterfall: {
+      columns: [{ label: 'Step' }, { label: 'Removed', num: true }, { label: 'Sales left', num: true }, { label: '' }],
+      rows: waterfallRows().map((r) => [
+        r.label,
+        r.removed != null ? `−${r.removed.toLocaleString('en-US')}` : '',
+        Number.isFinite(r.value) ? r.value.toLocaleString('en-US') : '',
+        r.note || '',
+      ]),
+    },
+    comps: { columns: saleCols, rows: activeRecords().slice().sort(byDate).map(saleRow) },
+    excluded: { columns: saleCols, rows: (data.records || []).filter((r) => r.excluded).sort(byDate).map(saleRow) },
+  };
+}
+
+/** A Blob as a data: URL, for embedding a PNG in summary.html. */
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = () => reject(fr.error);
+    fr.readAsDataURL(blob);
+  });
+}
+
+/** Show the Map tab, let both maps paint, capture them, put the tab back. */
+async function captureMaps(which, onStep) {
+  const prevTab = opts.tab;
+  if (prevTab !== 'map') setOpt({ tab: 'map' });
+  try {
+    onStep('Waiting for the maps to draw…');
+    const drawn = await Promise.all([salesMap.whenIdle(), sizeMap.whenIdle()]);
+    // A map that never finished drawing (a hidden window gets no animation
+    // frames) is captured as it stands, and the status line says so.
+    const out = { incomplete: drawn.includes(false) };
+    if (which.has('sales')) out.sales = await salesMap.pngBlob();
+    if (which.has('size')) out.size = await sizeMap.pngBlob();
+    return out;
+  } finally {
+    if (prevTab !== 'map') setOpt({ tab: prevTab });
+  }
+}
+
+/**
+ * Build and download the zip. Everything is snapshotted up front — the
+ * items, the CSV rows, the summary text — so a republish from the main
+ * window mid-export cannot mix two sets of sales in one work file.
+ */
+async function buildWorkFile(selected, onStep) {
+  const enc = new TextEncoder();
+  const items = workItems().filter((it) => !it.empty && selected.has(it.key));
+  const cols = saleCsvColumns();
+  const labels = cols.map(([l]) => l);
+  const csvRows = (recs) => recs.map((r) => cols.map(([, get]) => get(r)));
+  const all = (data.records || []).slice().sort((x, y) => (x.dateMs ?? 0) - (y.dateMs ?? 0));
+  const files = [
+    { name: 'cms.csv', data: enc.encode(toCsv(labels, csvRows(all))) },
+    { name: 'comps.csv', data: enc.encode(toCsv(labels, csvRows(all.filter((r) => !r.excluded)))) },
+  ];
+  const model = summaryModel();
+  const figures = [];
+
+  // Maps first, while nothing else has moved.
+  const mapWant = new Set(items.filter((it) => it.kind === 'map').map((it) => it.map));
+  const maps = mapWant.size ? await captureMaps(mapWant, onStep) : {};
+
+  const nImages = items.filter((it) => it.kind !== 'table').length;
+  let images = 0;
+  let tables = 0;
+  for (const [idx, it] of items.entries()) {
+    if (it.kind === 'table') {
+      const name = `tables/${figureFileName(idx, it.tabLabel, it.title, 'csv')}`;
+      files.push({ name, data: enc.encode(toCsv(it.spec.columns.map((c) => c.label), it.spec.rows)) });
+      figures.push({ ...it.spec, tabLabel: it.tabLabel, title: it.title, kind: 'table' });
+      tables += 1;
+      continue;
+    }
+    onStep(`Rendering image ${images + 1} of ${nImages}…`);
+    const png = it.kind === 'map' ? maps[it.map] : await renderChartPng(it.spec);
+    if (!png) continue;
+    files.push({ name: `charts/${figureFileName(idx, it.tabLabel, it.title, 'png')}`, data: new Uint8Array(await png.arrayBuffer()) });
+    figures.push({ tabLabel: it.tabLabel, title: it.title, kind: 'image', src: await blobToDataUrl(png) });
+    images += 1;
+  }
+
+  onStep('Writing the zip…');
+  files.unshift({ name: 'summary.html', data: enc.encode(buildSummaryHtml({ ...model, figures })) });
+  const zip = buildStoreZip(files);
+  downloadBlob(zip, workFileName(data.meta?.subject?.roll, todayLocal()));
+  return { images, tables, bytes: zip.size, mapsIncomplete: !!maps.incomplete };
+}
+
+function selectedWorkKeys() {
+  return new Set([...els.workfileList.querySelectorAll('input[data-key]:checked')].map((b) => b.dataset.key));
+}
+
+function syncWorkfileButton() {
+  const n = selectedWorkKeys().size;
+  els.workfileGo.textContent = n ? `Download zip (${n} item${n === 1 ? '' : 's'})` : 'Download zip (CSV + summary only)';
+}
+
+/** The dialog's list: one fieldset per tab, a checkbox per chart. */
+function renderWorkfileList() {
+  const off = readWorkfileOff();
+  const items = workItems();
+  const list = els.workfileList;
+  list.textContent = '';
+  for (const [tab, tabLabel] of WORK_TABS) {
+    const group = items.filter((it) => it.tab === tab);
+    if (!group.length) continue;
+    const fs = document.createElement('fieldset');
+    fs.className = 'workfile-group';
+    const legend = document.createElement('legend');
+    const allLabel = document.createElement('label');
+    const all = document.createElement('input');
+    all.type = 'checkbox';
+    const allText = document.createElement('span');
+    allLabel.append(all, allText);
+    legend.appendChild(allLabel);
+    fs.appendChild(legend);
+
+    const boxes = [];
+    for (const it of group) {
+      const label = document.createElement('label');
+      label.className = 'workfile-item';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.dataset.key = it.key;
+      cb.disabled = it.empty;
+      cb.checked = !it.empty && !off.has(it.key);
+      const t = document.createElement('span');
+      t.textContent = it.title + (it.kind === 'table' ? ' (table)' : '');
+      label.append(cb, t);
+      if (it.empty) {
+        label.classList.add('is-empty');
+        const why = document.createElement('span');
+        why.className = 'workfile-why';
+        why.textContent = 'no data';
+        label.appendChild(why);
+      } else {
+        boxes.push(cb);
+      }
+      fs.appendChild(label);
+    }
+    const syncAll = () => {
+      const on = boxes.filter((b) => b.checked).length;
+      all.checked = boxes.length > 0 && on === boxes.length;
+      all.indeterminate = on > 0 && on < boxes.length;
+      all.disabled = !boxes.length;
+      allText.textContent = `${tabLabel} (${on} of ${boxes.length})`;
+    };
+    const save = () => {
+      const cur = readWorkfileOff();
+      for (const b of boxes) { if (b.checked) cur.delete(b.dataset.key); else cur.add(b.dataset.key); }
+      writeWorkfileOff(cur);
+      syncAll();
+      syncWorkfileButton();
+    };
+    for (const b of boxes) b.addEventListener('change', save);
+    all.addEventListener('change', () => { for (const b of boxes) b.checked = all.checked; save(); });
+    syncAll();
+    list.appendChild(fs);
+  }
+  syncWorkfileButton();
+}
+
+els.workfileOpen.addEventListener('click', () => {
+  if (!data.records.length) return;
+  els.workfileStatus.textContent = '';
+  renderWorkfileList();
+  els.workfileDialog.showModal();
+});
+els.workfileGo.addEventListener('click', async () => {
+  els.workfileGo.disabled = true;
+  try {
+    const res = await buildWorkFile(selectedWorkKeys(), (msg) => { els.workfileStatus.textContent = msg; });
+    els.workfileStatus.textContent = `Downloaded: ${res.images} image${res.images === 1 ? '' : 's'}`
+      + `${res.tables ? `, ${res.tables} table${res.tables === 1 ? '' : 's'}` : ''}, summary.html, cms.csv and comps.csv`
+      + ` (${(res.bytes / 1048576).toFixed(1)} MB).`
+      + (res.mapsIncomplete ? ' The maps had not finished drawing, so their images may be blank — keep this window in front and try again.' : '');
+  } catch (err) {
+    console.warn('Work file export failed', err);
+    els.workfileStatus.textContent = `Export failed: ${err?.message || err}`;
+  } finally {
+    els.workfileGo.disabled = false;
+  }
+});
 
 // ---------- wiring ---------------------------------------------------
 
