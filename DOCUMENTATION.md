@@ -1210,6 +1210,28 @@ not part of the PNG.
 | What reaches the charts | `saleRecordsFromRows` and `publishSalesCharts` |
 | What the work file holds | `buildWorkFile` / `summaryModel` / `saleCsvColumns` in `main.js`; formatting in `lib/workFile.js` |
 
+**Comparable tags** (charts Phase 2, 2026-10-06) — the R template's
+`CompetitiveSales` / `CompetitiveSales1` / `CompetitiveSales2` as three ordered
+lists: numbered comparables, Land Set 1 and Land Set 2 (`web/src/lib/compTags.js`).
+- **Keyed on rolls + sale date**, never the sale id MAO renumbers between exports.
+  A tag whose sale is filtered out stays in the panel, greyed.
+- **Tagging:** Shift-click a dot on any chart (the next comp, or untag); click a
+  sale on a map for Add/Remove buttons for each list; or the Tag column (C / L1 /
+  L2) in Table view.
+- **The Comparables panel** under the filter waterfall lists each list in order
+  with its adjusted rate, ↑ ↓ to renumber, × to remove, Copy comp roll numbers,
+  and Clear all.
+- **Labels:** "1", "2"… for comps and "L1-n" / "L2-n" for the Land Sets, with a
+  red ring, on every scatter and box plot (`setPointLabeler` →
+  `drawPointLabels`, inside the SVG so the PNG keeps them) and every map
+  (`sales-tag-ring` / `sales-tag-label` layers, on the canvas).
+- **Work file:** `comps.csv` is the tagged comps in comp order (every ticked sale
+  when none are tagged); `land-set-1.csv` / `land-set-2.csv` when used; `cms.csv`
+  gains Comp # and Land set columns; `summary.html` leads with the numbered lists,
+  then the CMS.
+- Saved in this browser (`mbps_charts_comp_tags_v1`) and shared live between
+  charts tabs through the storage event.
+
 **Work file** (2026-10-06, the first of three phases toward a no-R path to the
 land template's work-file output). The **Work file…** button in the header opens
 a list of every chart on every tab, ticked by default. Charts with nothing to draw

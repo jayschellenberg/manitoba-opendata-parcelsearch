@@ -35,11 +35,15 @@ import { createSalesMap, linkMaps } from './chartMap.js';
 import { criteriaText } from '../lib/criteriaLine.js';
 import { masccolor } from '../masc.js';
 import { buildStoreZip } from '../lib/zipStore.js';
+import {
+  TAG_LISTS, TAG_LIST_NAMES, normalizeTags, saleTagKey, toggleTag, removeTag, moveTag, clearTags,
+  tagNumber, tagLabel, tagDescriptions,
+} from '../lib/compTags.js';
 import { toCsv, buildSummaryHtml, figureFileName, workFileName } from '../lib/workFile.js';
 import { LAND_COVER_BUCKETS } from '../lib/landcover.js';
 import {
   drawChart, drawBoxChart, drawTableCard, drawStackedBars, drawHistogram, setChartCompany, ZONE_COLORS, OTHER_COLOR, INK, R_STYLE, slugify,
-  chartExportSpec, renderChartPng, downloadBlob,
+  chartExportSpec, renderChartPng, downloadBlob, setPointLabeler,
   fmtMoney0, fmtMoney2, fmtNum, fmtDate, fmtAxisDollar, fmtAxisComma, fmtMonYear,
 } from '../lib/chartRender.js';
 
@@ -86,12 +90,42 @@ const els = {
   waterfallBody: $('waterfall-body'),
   tablePanel: $('table-panel'),
   workfileOpen: $('workfile-open'),
+  compsPanel: $('comps-panel'),
+  compsSummary: $('comps-summary'),
+  compsBody: $('comps-body'),
   workfileDialog: $('workfile-dialog'),
   workfileList: $('workfile-list'),
   workfileStatus: $('workfile-status'),
   workfileGo: $('workfile-go'),
   table: $('sales-table'),
 };
+
+/**
+ * Comparable tags (charts Phase 2, Jason 2026-10-06): the numbered comps and
+ * Land Sets 1 and 2, keyed on rolls + sale date (see lib/compTags.js). Kept
+ * in this browser, and shared live with any other charts tab through the
+ * storage event.
+ */
+const TAGS_KEY = 'mbps_charts_comp_tags_v1';
+function readTags() {
+  try { return normalizeTags(JSON.parse(localStorage.getItem(TAGS_KEY) || 'null')); } catch { return normalizeTags(null); }
+}
+let tags = readTags();
+function saveTags(next) {
+  tags = next;
+  try { localStorage.setItem(TAGS_KEY, JSON.stringify(tags)); } catch { /* private mode */ }
+  render();
+}
+/** Add a sale to a tag list, or take it off. */
+function toggleSaleTag(rec, list) {
+  const key = saleTagKey(rec);
+  if (key) saveTags(toggleTag(tags, list, key, rec));
+}
+window.addEventListener('storage', (e) => {
+  if (e.key !== TAGS_KEY) return;
+  tags = readTags();
+  render();
+});
 
 /** Latest payload from the main window: {records, meta}. */
 let data = { records: [], meta: null };
@@ -305,8 +339,11 @@ function tooltipRows(rec, pt) {
   }
   const who = rec.address || (rec.rolls || []).join(', ');
   if (who) rows.push([rec.muni || 'Parcel', who]);
+  const tagged = tagDescriptions(tags, saleTagKey(rec));
+  if (tagged.length) rows.unshift(['Tagged', tagged.join(' · ')]);
   if (!opts.frozen && rec.keys?.length) {
-    rows.push(['', state === 'excluded' ? 'Click to include' : 'Click to exclude']);
+    rows.push(['', `${state === 'excluded' ? 'Click to include' : 'Click to exclude'} · Shift-click to ${
+      tagNumber(tags, 'comps', saleTagKey(rec)) ? 'untag the comp' : 'tag as a comp'}`]);
   }
   return rows;
 }
@@ -397,7 +434,9 @@ function restoreSales(recs) {
   if (keys.length) channel.postMessage({ type: 'set-excluded', keys, excluded: false });
 }
 
-function onPointClick(rec) {
+function onPointClick(rec, pt, e) {
+  // Shift-click tags the sale as the next comparable (or untags it).
+  if (e?.shiftKey) { toggleSaleTag(rec, 'comps'); return; }
   if (opts.frozen || !rec?.keys?.length) return;
   channel.postMessage({ type: 'set-excluded', keys: rec.keys, excluded: !rec.excluded });
 }
@@ -1906,7 +1945,10 @@ function paintMap(key, { title, cms, adj, colored, context = [], colorOf, legend
   const m = pageMap(key);
   const feature = (r, ctx) => ({
     type: 'Feature',
-    properties: { saleId: String(r.saleId), excluded: false, context: ctx, color: ctx ? null : colorOf(r) },
+    properties: {
+      saleId: String(r.saleId), excluded: false, context: ctx, color: ctx ? null : colorOf(r),
+      label: tagLabel(tags, saleTagKey(r)) || '',
+    },
     geometry: { type: 'Point', coordinates: [r.lng, r.lat] },
   });
   const { subject, rings } = subjectAndRings();
@@ -1937,6 +1979,20 @@ function mapHandlers() {
   return {
     onPick: (id) => { const rec = find(id); if (rec) onPointClick(rec); },
     popupRows: (id) => { const rec = find(id); return rec ? tooltipRows(rec, null).filter(([l]) => l !== '') : []; },
+    // Tag buttons under Exclude: one per list, saying what a click will do.
+    popupActions: (id) => {
+      const rec = find(id);
+      const key = rec && saleTagKey(rec);
+      if (!key) return [];
+      return TAG_LISTS.map((list) => {
+        const n = tagNumber(tags, list, key);
+        const name = list === 'comps' ? 'Comp' : TAG_LIST_NAMES[list];
+        return {
+          text: n ? `Remove ${name} #${n}` : `Add as ${name} #${tags[list].length + 1}`,
+          run: () => toggleSaleTag(rec, list),
+        };
+      });
+    },
   };
 }
 
@@ -2223,6 +2279,9 @@ function renderTable() {
     th.textContent = label;
     hr.appendChild(th);
   }
+  const tagTh = document.createElement('th');
+  tagTh.textContent = 'Tag';
+  hr.insertBefore(tagTh, hr.firstChild);
   thead.appendChild(hr);
 
   // Every cell goes in via textContent — addresses, municipality names
@@ -2230,6 +2289,23 @@ function renderTable() {
   for (const rec of drawnRecords()) {
     const tr = document.createElement('tr');
     if (rec.excluded) tr.className = 'is-excluded';
+    // The tag toggles: Comp, Land Set 1, Land Set 2 — lit with the number
+    // when the sale is in that list.
+    const tagTd = document.createElement('td');
+    tagTd.className = 'tag-cell';
+    const key = saleTagKey(rec);
+    for (const [list, short] of [['comps', 'C'], ['set1', 'L1'], ['set2', 'L2']]) {
+      const n = tagNumber(tags, list, key);
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `tag-btn${n ? ' is-on' : ''}`;
+      b.textContent = n ? `${short}${list === 'comps' ? '#' : '-'}${n}` : short;
+      b.title = n ? `Remove from ${TAG_LIST_NAMES[list]}` : `Add to ${TAG_LIST_NAMES[list]}`;
+      b.disabled = !key;
+      b.addEventListener('click', () => toggleSaleTag(rec, list));
+      tagTd.appendChild(b);
+    }
+    tr.appendChild(tagTd);
     for (const [, get] of TABLE_COLS) {
       const td = document.createElement('td');
       td.textContent = get(rec) ?? '';
@@ -2336,6 +2412,116 @@ function renderWaterfall() {
     `Filter waterfall — ${start.toLocaleString('en-US')} loaded → ${nActive.toLocaleString('en-US')} ticked`;
 }
 
+// ---------- comparables panel (charts Phase 2) ----------------------------
+
+/** The current sale for each tag key (null when it is filtered out). */
+function recordsByTag() {
+  const m = new Map();
+  for (const r of data.records || []) {
+    const k = saleTagKey(r);
+    if (k && !m.has(k)) m.set(k, r);
+  }
+  return m;
+}
+
+/**
+ * The Comparables panel: each list in order with its number, the sale, its
+ * adjusted rate, and buttons to reorder or remove it. A tag whose sale is not
+ * in the current filter stays listed (greyed) — a filter change must not
+ * quietly lose a comparable.
+ */
+function renderCompsPanel() {
+  const body = els.compsBody;
+  body.textContent = '';
+  const byKey = recordsByTag();
+  const metric = areaMetric();
+  const adj = adjusterAlways(metric);
+  const money = areaMoneyFmt();
+  const total = TAG_LISTS.reduce((n, l) => n + tags[l].length, 0);
+  els.compsSummary.textContent = total
+    ? `Comparable sales — ${plural(tags.comps.length, 'comp')}`
+      + `${tags.set1.length ? `, Land Set 1: ${tags.set1.length}` : ''}${tags.set2.length ? `, Land Set 2: ${tags.set2.length}` : ''}`
+    : 'Comparable sales — none tagged';
+
+  const hint = document.createElement('p');
+  hint.className = 'comps-hint';
+  hint.textContent = 'Shift-click a dot on any chart to tag it as the next comp; click a sale on a map for the Land Set buttons; '
+    + 'or use the Tag column in Table view. Numbers show on every chart, map and PNG, and in the work file.';
+  body.appendChild(hint);
+
+  const button = (label, title, run, disabled = false) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.title = title;
+    b.disabled = disabled;
+    b.addEventListener('click', run);
+    return b;
+  };
+  for (const list of TAG_LISTS) {
+    if (!tags[list].length) continue;
+    const sec = document.createElement('div');
+    sec.className = 'comps-list';
+    const h = document.createElement('h3');
+    h.textContent = TAG_LIST_NAMES[list];
+    sec.appendChild(h);
+    const table = document.createElement('table');
+    table.className = 'comps-table';
+    tags[list].forEach((key, i) => {
+      const rec = byKey.get(key);
+      const info = tags.info[key] || {};
+      const tr = document.createElement('tr');
+      const cell = (txt, cls = '') => {
+        const td = document.createElement('td');
+        if (cls) td.className = cls;
+        td.textContent = txt ?? '';
+        tr.appendChild(td);
+        return td;
+      };
+      cell(list === 'comps' ? `#${i + 1}` : `${list === 'set1' ? 'L1' : 'L2'}-${i + 1}`, 'tag');
+      cell(rec ? (rec.dateText || fmtDate(rec.dateMs)) : info.date);
+      cell(rec ? (rec.address || (rec.rolls || []).join(', ')) : (info.address || key.split('@')[0]));
+      cell(rec ? rec.muni : info.muni);
+      if (rec) {
+        cell(rec.price != null ? fmtMoney0(rec.price) : '—', 'num');
+        const a = adj.adjusted ? adj.adjust(rec) : rec[metric];
+        cell(Number.isFinite(a) ? `${money(a)}/${areaUnitLabel()}${adj.adjusted ? ' adj.' : ''}` : '—', 'num');
+        if (rec.excluded) cell('unticked', 'gone');
+        else cell('');
+      } else {
+        const td = cell('not in the current filter', 'gone');
+        td.colSpan = 3;
+      }
+      const act = document.createElement('td');
+      act.className = 'tag-cell';
+      act.append(
+        button('↑', 'Move up', () => saveTags(moveTag(tags, list, key, -1)), i === 0),
+        button('↓', 'Move down', () => saveTags(moveTag(tags, list, key, 1)), i === tags[list].length - 1),
+        button('×', 'Remove this tag', () => saveTags(removeTag(tags, list, key))),
+      );
+      tr.appendChild(act);
+      table.appendChild(tr);
+    });
+    sec.appendChild(table);
+    body.appendChild(sec);
+  }
+
+  if (total) {
+    const actions = document.createElement('div');
+    actions.className = 'comps-actions';
+    actions.append(
+      button('Copy comp roll numbers', 'Copy the comparables\' roll numbers, in comp order', () => {
+        const txt = tags.comps.map((k, i) => `${i + 1}\t${k.split('@')[0].replace(/\+/g, ', ')}`).join('\n');
+        navigator.clipboard?.writeText(txt).catch(() => {});
+      }, !tags.comps.length),
+      button('Clear all tags', 'Remove every comp and Land Set tag', () => {
+        if (window.confirm('Remove every comparable and Land Set tag?')) saveTags(clearTags(tags));
+      }),
+    );
+    body.appendChild(actions);
+  }
+}
+
 /** Money formatter matching a measure, for the trim band. */
 function areaMoneyFmtFor(metric) {
   return metric === 'ppsf' ? fmtMoney2 : fmtMoney0;
@@ -2347,6 +2533,7 @@ function render() {
   cmsCache = new Map();
   waterCache = new Map();
   setChartCompany(opts.company);
+  setPointLabeler((rec) => tagLabel(tags, saleTagKey(rec)));
   renderStatus();
 
   const has = data.records.length > 0;
@@ -2354,6 +2541,7 @@ function render() {
   els.grid.hidden = !has;
   els.tablePanel.hidden = !has || !opts.showTable;
   els.waterfall.hidden = !has;
+  els.compsPanel.hidden = !has;
   els.workfileOpen.disabled = !has;
 
   if (!has) {
@@ -2361,6 +2549,7 @@ function render() {
     return;
   }
   renderWaterfall();
+  renderCompsPanel();
 
   // Rebuild into a fragment and swap in one go, so a re-render on every
   // keystroke in the main window's filters doesn't flash an empty grid.
@@ -2574,6 +2763,9 @@ function saleCsvColumns() {
   const unit = areaUnitLabel();
   const dp = metric === 'ppsf' ? 2 : 0;
   return [
+    ['Comp #', (r) => tagNumber(tags, 'comps', saleTagKey(r))],
+    ['Land set', (r) => [tagNumber(tags, 'set1', saleTagKey(r)) && `L1-${tagNumber(tags, 'set1', saleTagKey(r))}`,
+      tagNumber(tags, 'set2', saleTagKey(r)) && `L2-${tagNumber(tags, 'set2', saleTagKey(r))}`].filter(Boolean).join('; ')],
     ['Status', (r) => {
       const st = cms.stateOf(r);
       return st === 'excluded' ? 'Excluded' : st === 'trimmed' ? 'Trimmed' : 'In';
@@ -2697,6 +2889,20 @@ function summaryModel() {
         r.note || '',
       ]),
     },
+    tagged: TAG_LISTS.map((list) => {
+      const byKey = recordsByTag();
+      return {
+        title: TAG_LIST_NAMES[list],
+        columns: [{ label: '#' }, ...saleCols],
+        rows: tags[list].map((k, i) => {
+          const r = byKey.get(k);
+          const n = list === 'comps' ? String(i + 1) : `${list === 'set1' ? 'L1' : 'L2'}-${i + 1}`;
+          const info = tags.info[k] || {};
+          return r ? [n, ...saleRow(r)]
+            : [n, info.date || '', info.muni || '', `${info.address || k.split('@')[0]} (not in the current filter)`, '', '', '', '', '', ''];
+        }),
+      };
+    }).filter((t) => t.rows.length),
     comps: { columns: saleCols, rows: activeRecords().slice().sort(byDate).map(saleRow) },
     excluded: { columns: saleCols, rows: (data.records || []).filter((r) => r.excluded).sort(byDate).map(saleRow) },
   };
@@ -2757,10 +2963,18 @@ async function buildWorkFile(selected, onStep) {
   const labels = cols.map(([l]) => l);
   const csvRows = (recs) => recs.map((r) => cols.map(([, get]) => get(r)));
   const all = (data.records || []).slice().sort((x, y) => (x.dateMs ?? 0) - (y.dateMs ?? 0));
+  // comps.csv is the tagged comparables in comp order (charts Phase 2); with
+  // none tagged it falls back to every ticked sale, as Phase 1 wrote it.
+  const byKey = recordsByTag();
+  const tagged = tags.comps.map((k) => byKey.get(k)).filter(Boolean);
   const files = [
     { name: 'cms.csv', data: enc.encode(toCsv(labels, csvRows(all))) },
-    { name: 'comps.csv', data: enc.encode(toCsv(labels, csvRows(all.filter((r) => !r.excluded)))) },
+    { name: 'comps.csv', data: enc.encode(toCsv(labels, csvRows(tags.comps.length ? tagged : all.filter((r) => !r.excluded)))) },
   ];
+  for (const list of ['set1', 'set2']) {
+    const recs = tags[list].map((k) => byKey.get(k)).filter(Boolean);
+    if (recs.length) files.push({ name: `land-set-${list.slice(-1)}.csv`, data: enc.encode(toCsv(labels, csvRows(recs))) });
+  }
   const model = summaryModel();
   const figures = [];
 
