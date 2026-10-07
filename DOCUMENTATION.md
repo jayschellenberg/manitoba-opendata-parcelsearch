@@ -1140,8 +1140,11 @@ old Map tab folded into Land Price/Unit, one map per former colour-by mode.
 | Water | Water Class | Influence & Class · Flood & Water Body · Size & Distance · Summary & Premium · Paired Sales |
 
 Map notes:
-- Sales are points at the mean of their parcels' centres, and from zoom 8 in
-  each sale's **parcel outlines** too (2026-10-07), in the dot's colour: the
+- Sales are points at the mean of their parcels' centres, and from zoom 10 in
+  each sale's **parcel outlines** too (2026-10-07; `OUTLINE_MINZOOM` — not the
+  tiles' own zoom 8, because tippecanoe thins the densest zoom 8–9 tiles to its
+  size cap, keeping 29–72% of the Winnipeg-area parcels in the 2026-10-04 build,
+  so a spread set of comps framed at 8–9 outlined some sales and not others), in the dot's colour: the
   maps read the site's own `parcels.pmtiles` (source-layer `parcels`, URL shared
   with the main map through `lib/parcelTilesUrl.js`) filtered to the sales'
   parcels, so no geometry crosses the BroadcastChannel. The match key is
@@ -1386,7 +1389,16 @@ holds:
 | `grid` | Sort, unticked rows (parcel key + sale sequence, which the same sales text reproduces), starred parcels. |
 | `tags`, `reasons` | The comp list and Land Sets (replaced on open), and the reasons for this job's sales (merged). |
 | `charts` | The Sales Charts page's settings and work-file choices. |
+| `columns` | The grid's column preset and the columns showing (2026-10-07). Open re-applies the preset, and picking **Agricultural** is what loads the ag data (`onPresetApply` → `ensureAgriculturalGridData`): the water-rights columns and the live soil join for parcels the soil shards miss. Shard soil is stamped on every sales load regardless, so an Agricultural job reopens with its soil, CLI and water-rights columns filled — no soil is copied into the file. |
 | `overlays` | The main map's pressed layer toggles (2026-10-07), captured and re-pressed with the shared-link code (`readCurrentUrlState` / `restoreUrlOverlays`); Open also releases any toggle the job did not have on. A job saved before this field leaves the current toggles alone. A layer that is still loading when the job is saved (e.g. the section grid waits for the map) is saved as off. |
+
+**Recent jobs** (2026-10-07): a picker under Save / Open lists the last 8 jobs
+saved or opened in this browser, newest first ("RITCHOT (RM) — 3 sales — saved
+Oct 7, 2026", or "Subject roll …"); picking one opens it without the file.
+Stored whole in IndexedDB (`lib/recentJobs.js`, database `mbps_recent_jobs`) —
+a job embeds its sales, so localStorage's ~5 MB is too small. A reopened job
+keeps one entry (identity = saved time + name). Hidden when empty or when the
+browser has no IndexedDB; *Clear this list* forgets them, never the files.
 
 **Open** order matters: sidebar controls and pills first (the import's own
 final `refilterCsvIfActive` applies them), then `handleSalesUpload`, then the

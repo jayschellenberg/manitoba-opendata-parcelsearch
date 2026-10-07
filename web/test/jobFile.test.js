@@ -106,7 +106,10 @@ test('every sales import records the text a job embeds, and a new search forgets
 test('Save and Open are wired, and Open goes through the ordinary import', () => {
   const main = code('src/main.js');
   assert.match(main, /getElementById\('job-save'\)\?\.addEventListener\('click', saveJob\)/);
-  assert.match(main, /\$jobOpenInput\?\.addEventListener\('change'[\s\S]*?parseJob\([\s\S]*?await openJob\(job\)/);
+  // A picked file and a recent-jobs entry share one open path.
+  assert.match(main, /\$jobOpenInput\?\.addEventListener\('change'[\s\S]*?await openJobText\(await file\.text\(\), file\.name\)/);
+  assert.match(main, /async function openJobText\(text, fallbackName\) \{[\s\S]*?parseJob\(text\)[\s\S]*?await openJob\(job\)/);
+  assert.match(main, /const rec = await getRecentJob\(id\);[\s\S]*?await openJobText\(rec\.text, rec\.name\)/);
   assert.match(main, /async function openJob\(job\) \{[\s\S]*?await handleSalesUpload\(job\.sales\);[\s\S]*?ms\.setSelected\(values\)[\s\S]*?await applySubjectFromInput\(\);[\s\S]*?deselectedSaleKeys = new Set\(job\.grid\.unticked\);[\s\S]*?saveCompTags\(normalizeTags\(job\.tags\)\)/);
   const html = readFileSync(path.join(here, '..', 'index.html'), 'utf8');
   for (const id of ['job-save', 'job-open', 'job-open-input']) assert.ok(html.includes(`id="${id}"`), `index.html lacks #${id}`);
@@ -124,6 +127,24 @@ test('Save records the pressed layer toggles and Open sets exactly those', () =>
   const main = code('src/main.js');
   assert.match(main, /overlays: readCurrentUrlState\(\)\.overlays \|\| \[\]/);
   assert.match(main, /if \(Array\.isArray\(job\.overlays\)\) \{[\s\S]*?btn\.click\(\);[\s\S]*?restoreUrlOverlays\(\{ overlays: job\.overlays \}\);/);
+});
+
+test('the column preset round-trips; an older job leaves the columns alone', () => {
+  const job = buildJob({ sales, columns: { preset: 'Agricultural', visible: ['roll', 'cli', 5] } });
+  assert.deepEqual(parseJob(JSON.stringify(job)).columns, { preset: 'Agricultural', visible: ['roll', 'cli'] });
+  assert.equal(parseJob(JSON.stringify({ app: JOB_APP, version: 1, sales })).columns, null);
+});
+test('Open re-applies the preset — which re-runs the Agricultural soil load — then the hand-set columns', () => {
+  const main = code('src/main.js');
+  assert.match(main, /if \(job\.columns\.preset\) applyPreset\(job\.columns\.preset\);/);
+  // applyPreset fires onPresetApply, whose Agricultural branch loads the soil.
+  assert.match(main, /onPresetApply\(\(name\) => \{\s*lastColumnPreset = name;[\s\S]*?if \(name === 'Agricultural'\) \{\s*ensureAgriculturalGridData\(\);/);
+  assert.match(main, /columns: \{\s*preset: lastColumnPreset,/);
+});
+test('saving and opening both remember the job in the recent list', () => {
+  const main = code('src/main.js');
+  assert.match(main, /downloadBlob\(new Blob\(\[text\][\s\S]*?addRecentJob\(job, text\)\.then\(refreshRecentJobs\);/);
+  assert.match(main, /async function openJobText[\s\S]*?addRecentJob\(job, text\)\.then\(refreshRecentJobs\);/);
 });
 
 console.log(`\n${passed} passed`);
