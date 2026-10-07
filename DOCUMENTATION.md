@@ -1023,10 +1023,11 @@ provincial download becoming the archived source-of-record.
 | `web/src/map.js` | land-cover + historical map layers, setters, tooltips (+ lineage) | — |
 | `web/src/main.js` | toggles, handlers, banners, CSV export, snapshot export, wiring | — |
 | `web/src/snapshotExport.js` | parcel satellite-snapshot ZIP (+ `PROVENANCE.txt`) | — |
-| `web/charts.html` + `web/src/charts/main.js` | the Sales Charts page (§10.0.2): tabs, controls, chart builders | — |
-| `web/src/charts/chartMap.js` | the charts page's MapLibre map (boundaries, subject rings, PNG) | — |
+| `web/charts.html` + `web/src/charts/main.js` | the Sales Charts page (§10.0.2): pages, map and chart tabs, controls, builders, Comparables / Excluded records panels, the work file | — |
+| `web/src/charts/chartMap.js` | the charts page's MapLibre maps (boundaries, subject pin and ring, comp labels, hover tip, popup actions, PNG) | — |
+| `web/src/lib/compTags.js` | comp tags and exclusion reasons: keys (rolls + date, `canonicalRoll`), the three ordered lists, labels, shared storage keys (§10.0.2) | — |
 | `web/src/lib/chartRender.js` | SVG renderers (scatter, box plot, stacked bars, histogram, table card), `R_STYLE`, the 6.5×3.5 PNG export | — |
-| `web/src/lib/salesCharts.js` | sale records, regressions, CMS2 trim, S/A flag, ag roll-up | — |
+| `web/src/lib/salesCharts.js` | sale records, regressions, CMS2 trim, S/A flag, ag roll-up; `saleTagInput`, the one derivation of a sale's tag key fields | — |
 | `web/src/lib/workFile.js` | the charts page's work-file zip: CSV (Excel formula guard, BOM), `summary.html`, entry names (§10.0.2) | — |
 | `web/src/lib/salesWater.js` / `salesWaterfall.js` / `salesMapColors.js` / `criteriaLine.js` / `basemapStyle.js` | water analysis; filter waterfall; map colouring; subtitle criteria line; the charts map's basemap (held to `map.js` by `basemapStyle.test.js`) | — |
 | `r/export_rollentry_geojson.R` | gpkg → newline-delimited GeoJSON for the tile build (GDAL vectortranslate, ~12s) | `tiles-build/rollentry.geojsons` |
@@ -1102,7 +1103,12 @@ runtime.
 Sales Analysis → **Charts** opens a second page that plots whatever the grid is
 showing, tracked live. It ports the CMS / CMS Charts / Ag-CMS pages of Jason's R
 land template (`D:\Dropbox\Appraisal\RProjects\appraisal-templates\land\`), and
-is styled to look like those charts. Built 2026-09-22/23, PRs #128–#138.
+is styled to look like those charts. Built 2026-09-22/23 (PRs #128–#138), then
+reshaped 2026-10-06/07 (PRs #170–#173) into LandShiny's two-row layout with a
+downloadable work file, numbered comparables and Land Sets, and exclusion
+reasons — the lighter, no-R path to the land template's work-file output
+(Jason: "a lightweight tool for people who may not use R/shiny — not a
+replacement, another path to the same end result").
 
 **How it gets its data.** The main window projects its rows to one record per
 SALE (`saleRecordsFromRows`, `web/src/lib/salesCharts.js`) and posts them over a
@@ -1157,7 +1163,7 @@ Map notes:
 - Distance from the subject or from Winnipeg.
 - Trim to percentiles (the template's CMS2).
 - Freeze, Table view, Show excluded.
-- Map colouring and a municipal-boundaries checkbox.
+- Maps: a municipal-boundaries checkbox (each colouring is its own map tab).
 - **Company** (signs every caption and PNG).
 
 All options persist in `localStorage` (`mbps_charts_opts_v2`), except Freeze and
@@ -1165,8 +1171,9 @@ the effective date. **A stale persisted setting (the unit especially) is the
 first suspect when a tab "has no data".**
 
 **CMS tools.**
-- *Click-to-exclude*: clicking a dot unticks the sale in the grid; a pale dot
-  can be clicked back in.
+- *Click-to-exclude*: clicking a dot unticks the sale in the grid (and opens
+  the Excluded records panel on it for a reason); a pale dot can be clicked
+  back in. **Shift**-click tags the sale as the next comparable instead.
   The axes fit only the sales in use, so excluding an outlier rescales the
   chart; an unticked sale outside that range is not drawn. Under any chart
   with unticked sales, a **Restore N unticked sales** link re-ticks them.
@@ -1198,101 +1205,118 @@ is set, and the span of the charted sales where it is left open
 The caption lists the figures (no R²; per-day rate to 4 decimals) and ends
 `| <Company>`. Every chart card and the map keep the template's **6.5 × 3.5 in**
 shape, and the PNG export composes to exactly **1950 × 1050 px**
-(`exportChartPng`). The grey notes under each chart are on screen only; they are
-not part of the PNG.
+(`exportChartPng` → `renderChartPng`). The grey notes under each chart are on
+screen only; they are not part of the PNG. Comp labels, the subject pin and
+the distance ring are drawn into the SVG or the map canvas, so they are.
 
 **Where to change what.**
 
 | To change… | Edit |
 |---|---|
 | Colours, fonts, line styles | `R_STYLE` in `chartRender.js` |
-| A chart's content | `buildRateCharts` / `buildMapTab` / `buildAgCharts` / `buildTotalCharts` / `buildWaterCharts` in `web/src/charts/main.js` |
+| A chart's content | `buildRateCharts` / `buildAgCharts` / `buildTotalCharts` / `buildWaterCharts` in `web/src/charts/main.js` |
+| Which chart sits in which chart tab | `CHART_GROUPS` (title patterns, two per tab) |
+| A page's maps and map tabs | `PAGE_MAPS`; the Land Price/Unit maps are `paintRateMaps`, the others `buildAgMaps` / `buildPplMap` / `buildWaterMap`, all through `paintMap` |
+| Map styling (circles, tag ring and label, subject pin) | `createSalesMap` / `subjectPinImage` in `web/src/charts/chartMap.js` |
 | What reaches the charts | `saleRecordsFromRows` and `publishSalesCharts` |
 | What the work file holds | `buildWorkFile` / `summaryModel` / `saleCsvColumns` in `main.js`; formatting in `lib/workFile.js` |
+| Tag / reason rules, storage keys, suggested reasons | `lib/compTags.js` |
 
-**Comparable tags** (charts Phase 2, 2026-10-06) — the R template's
-`CompetitiveSales` / `CompetitiveSales1` / `CompetitiveSales2` as three ordered
-lists: numbered comparables, Land Set 1 and Land Set 2 (`web/src/lib/compTags.js`).
-- **Keyed on rolls + sale date**, never the sale id MAO renumbers between exports.
-  A tag whose sale is filtered out stays in the panel, greyed.
-- **Tagging:** Shift-click a dot on any chart (the next comp, or untag); click a
-  sale on a map for Add/Remove buttons for each list; or the Tag column (C / L1 /
-  L2) in Table view.
-- **The Comparables panel** under the filter waterfall lists each list in order
-  with its adjusted rate, ↑ ↓ to renumber, × to remove, Copy comp roll numbers,
-  and Clear all.
-- **Labels:** "1", "2"… for comps and "L1-n" / "L2-n" for the Land Sets, with a
-  red ring, on every scatter and box plot (`setPointLabeler` →
-  `drawPointLabels`, inside the SVG so the PNG keeps them) and every map
-  (`sales-tag-ring` / `sales-tag-label` layers, on the canvas).
-- **Work file:** `comps.csv` is the tagged comps in comp order (every ticked sale
-  when none are tagged); `land-set-1.csv` / `land-set-2.csv` when used; `cms.csv`
-  gains Comp # and Land set columns; `summary.html` leads with the numbered lists,
-  then the CMS.
-- Saved in this browser (`mbps_charts_comp_tags_v1`) and shared live between
-  charts tabs through the storage event.
+#### Work file
 
-**Excluded records** (charts Phase 3, 2026-10-06) — the R template's Excluded
-Records card. A panel under Comparables lists every unticked sale with a reason
-box (suggestions: Nominal transfer, Non-arm's length, Assembly, Outlier, Not
-comparable, Includes improvements, Forced sale; or free text) and *Include
-again*. Excluding by a chart dot or the map popup opens the panel on that sale
-with its reason box focused. Reasons save on change, keyed on rolls + sale date
-like the tags (`mbps_charts_excl_reasons_v1`), and outlive a re-tick. The panel
-does not redraw while a reason box has focus, so a republish from the main
-window never wipes half-typed text. Reasons show in the tooltip, `cms.csv`
-(Exclusion reason), `excluded.csv`, and the summary's Excluded records table.
+The **Work file…** button in the header opens a list of every chart and map on
+every page, ticked by default; one with nothing to draw is listed greyed "no
+data". Unticked choices persist (`mbps_charts_workfile_v1`). **Download zip**
+writes `work-file-<subject roll>-<date>.zip`:
 
-**The grid shares both** (2026-10-06, Jason: "Star = comp tag"). In the main
-window's Sales Analysis grid the ★ IS the numbered comp: starring a sale makes
-it the next comparable and the star reads ★1, ★2…; unstarring removes it and
-renumbers the rest (`paintStar`, `repaintStars`). Stars stay per parcel
-(`mb_favorite_sales_v1`, which still drives starred-only export, Route Starred
-and the map highlight); `syncStarsFromTags` stars or unstars a sale's parcels
-when the charts page tags or untags it, through the storage event. Unticking a
-sale's checkbox opens a small reason popover (`openReasonPrompt`): the same
-suggestions, Enter/Save keeps it, Escape/Skip leaves it blank, clicking away
-keeps what was typed; the checkbox title then reads "Excluded: <reason>".
-Storage keys and the reason list are exported from `lib/compTags.js` so the two
-pages cannot drift, and `saleTagInput` (`lib/salesCharts.js`) is the one
-derivation of a sale's key fields — `compTags.test.js` holds the grid and the
-charts page to the same key. Rolls are canonicalised in the key
-(`canonicalRoll`: "100.000" = "100"), because the grid restamps the roll's
-display form mid-load.
+| File | Holds |
+|---|---|
+| `summary.html` | One self-contained page (images embedded, opens offline): subject, settings and criteria line, market conditions (CMS1, plus CMS2 when the trim applies), the filter waterfall, the numbered Comparable sales and Land Sets, the CMS (every ticked sale), Excluded records with reasons, then every ticked chart and map grouped by page. |
+| `comps.csv` | The tagged comparables in comp order; every ticked sale when none are tagged. |
+| `land-set-1.csv` / `land-set-2.csv` | Each Land Set in order, when used. |
+| `cms.csv` | Every sale: Comp #, Land set, Exclusion reason, In / Trimmed / Excluded. |
+| `excluded.csv` | The unticked sales with their reasons, when there are any. |
+| `charts/NN-<page>-<title>.png` | Each ticked chart and map at 1950 × 1050 — byte-for-byte what its own PNG button gives, rendered from the spec the card registered (`chartExportSpec`). |
+| `tables/*.csv` | The table cards (water summary, premium, paired sales). |
 
-**Work file** (2026-10-06, the first of three phases toward a no-R path to the
-land template's work-file output). The **Work file…** button in the header opens
-a list of every chart on every tab, ticked by default. Charts with nothing to draw
-are listed greyed with "no data". Unticked choices persist in `localStorage`
-(`mbps_charts_workfile_v1`). **Download zip** writes `work-file-<subject roll>-<date>.zip`:
-- `summary.html` — one self-contained page (images embedded as data URLs, opens
-  offline): subject, analysis settings and criteria line, market conditions
-  (CMS1, plus CMS2 when the trim applies), the filter waterfall, the comparable
-  (ticked) and excluded sales, then every ticked chart grouped by tab.
-- `comps.csv` (ticked sales) and `cms.csv` (every sale, with In / Trimmed /
-  Excluded) — raw numbers, ISO dates, a UTF-8 BOM, and both nominal and
-  adjusted $/unit whatever the Nominal toggle says. Text opening with `= + - @`
-  is prefixed with `'` so Excel cannot evaluate it.
-- `charts/NN-<tab>-<title>.png` — each at 1950 × 1050, rendered from the spec
-  the card registered (`chartExportSpec`), so a zip chart is byte-for-byte what
-  its own PNG button gives. Table cards go to `tables/*.csv`.
+The CSVs carry raw numbers, ISO dates, a UTF-8 BOM, and nominal and adjusted
+$/unit side by side whatever the Nominal toggle says; text opening with
+`= + - @` is prefixed with `'` so Excel cannot evaluate it.
 
 Other pages are built **off-screen** through the same builders (under a
 temporarily switched `opts.tab`), every map tab painted so the list can mark
-the empty ones. The maps cannot be captured off-screen: MapLibre has to paint,
-so the export shows each page and map tab holding a wanted map (`MAP_HOME`),
+the empty ones. Maps cannot be captured off-screen: MapLibre has to paint, so
+the export shows each page and map tab holding a wanted map (`MAP_HOME`),
 waits for its maps to go idle (15 s cap, `whenIdle`), captures, and restores
-the page and sub-tabs it started on. If either map timed out (a
-hidden window gets no animation frames), the status line warns that its image
-may be blank. Everything else is snapshotted before the first await, so a
-republish mid-export cannot mix two sets of sales.
+the page and sub-tabs it started on. If a map timed out (a hidden window gets
+no animation frames) the status line warns that its image may be blank — keep
+the window in front. Everything else is snapshotted before the first await, so
+a republish mid-export cannot mix two sets of sales. With every map ticked the
+zip runs ~20 MB, nearly all of it `summary.html`'s embedded images.
+
+#### Comparable tags
+
+The R template's `CompetitiveSales` / `CompetitiveSales1` /
+`CompetitiveSales2` as three ordered lists — numbered comparables, Land Set 1
+and Land Set 2 (`web/src/lib/compTags.js`).
+- **Keyed on rolls + sale date**, never the sale id MAO renumbers between
+  exports. Rolls are canonicalised (`canonicalRoll`: "100.000" = "0100" =
+  "100"; "3200.100" keeps its ".1"), because the grid restamps a roll's display
+  form mid-load. A tag whose sale is filtered out stays listed, greyed.
+- **Tagging on the charts page:** Shift-click a dot on any chart (next comp, or
+  untag); click a sale on a map for Add/Remove buttons per list; or the Tag
+  column (C / L1 / L2) in Table view. **In the main grid:** the ★ (below).
+- **The Comparables panel** under the filter waterfall lists each list in order
+  with its adjusted rate: ↑ ↓ renumber, × removes, *Copy comp roll numbers*,
+  *Clear all tags*.
+- **Labels:** "1", "2"… for comps and "L1-n" / "L2-n" for the Land Sets, with a
+  red ring, on every scatter and box plot (`setPointLabeler` →
+  `drawPointLabels`) and every map (`sales-tag-ring` / `sales-tag-label`).
+- Stored in this browser (`mbps_charts_comp_tags_v1`) and followed live by
+  every open charts tab and the main window through the storage event.
+
+#### Excluded records
+
+The R template's Excluded Records card. A panel under Comparables lists every
+unticked sale with a reason box — suggestions (Nominal transfer, Non-arm's
+length, Assembly, Outlier, Not comparable, Includes improvements, Forced sale)
+or free text — and *Include again*. Excluding by a chart dot or the map popup
+opens the panel on that sale with its box focused. Reasons save on change,
+keyed on rolls + sale date (`mbps_charts_excl_reasons_v1`), and outlive a
+re-tick. The panel does not redraw while a reason box has focus, so a republish
+from the main window never wipes half-typed text. Reasons show in the tooltip,
+`cms.csv`, `excluded.csv` and the summary.
+
+#### The main grid: ★ = numbered comp, untick asks why
+
+Jason, 2026-10-06: "Star = comp tag". In the Sales Analysis grid the ★ IS the
+numbered comparable: starring a sale makes it the next comp and the star reads
+★1, ★2…; unstarring removes it and renumbers the rest (`paintStar`,
+`repaintStars`; phone cards copy the row star's text, so they show it too).
+- Stars stay **per parcel** (`mb_favorite_sales_v1`), which still drives
+  starred-only export, Route Starred and the map highlight. A repeat-sold
+  parcel therefore stars on all its sale rows, but only the sale clicked gets
+  the number. `syncStarsFromTags` stars or unstars a sale's parcels when the
+  charts page tags or untags it.
+- **Stars made before 2026-10-07 carry no number** until re-starred: the comp
+  list starts empty, and only a new star click (or a charts-page tag) numbers a
+  sale.
+- **Unticking** a sale's checkbox opens a small reason popover
+  (`openReasonPrompt`): Enter/Save keeps it, Escape/Skip leaves it blank,
+  clicking away keeps what was typed; the row is unticked either way, and the
+  checkbox title then reads "Excluded: <reason>". *Select all* off does not
+  prompt.
+- The grid and the charts page cannot drift: the storage keys and the reason
+  list come from `lib/compTags.js`, and `saleTagInput` (`lib/salesCharts.js`)
+  is the one derivation of a sale's key fields — `compTags.test.js` holds both
+  pages to the same key for the same rows. The new main.js state is classified
+  persistent in `searchReset.test.js`.
 
 **Caveats.**
-- The map was never seen painting during development: automation tabs run
-  hidden, so MapLibre doesn't draw. Its data, legends and export size were
-  verified; the drawn result was not.
-- The charts page receives no parcel geometry, so the map shows sales as points,
-  not parcel outlines.
+- The charts page receives no parcel geometry, so the maps show sales as
+  points, not parcel outlines.
+- Tags, reasons and work-file choices live in this browser's storage: another
+  browser or device starts empty, and clearing site data loses them.
 
 ### 10.1 Basemaps
 `map.js` `BASEMAP_STYLE` stacks the basemaps; the top-right menu selects them:
