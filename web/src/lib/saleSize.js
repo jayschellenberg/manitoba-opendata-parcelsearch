@@ -273,6 +273,30 @@ export function showMeasuredArea(props) {
 }
 
 /**
+ * The acreage a sales row's SIZE COLUMNS and unit rates use: the pipeline's
+ * figure where it stated one, else the polygon's measured area where
+ * showMeasuredArea() allows it, else null.
+ *
+ * saleAcres() alone is not enough for the grid and export. On a frontage row
+ * with a verified boundary it correctly returns null (no area was STATED), and
+ * the popup then adds a measured line — but the Acres / Land SF columns, the
+ * group totals and $/acre all went through saleAcres() and came out blank for
+ * the same row. Town lots are mostly frontage-stated, so that blanked roughly
+ * a quarter of all export sales (25.2% of parcel-sale records, 2026-10-07).
+ *
+ * Every refusal in saleAcres() still holds: a changed or unverified parcel
+ * stays null, and no frontage is ever converted into an area.
+ *
+ * @param {object} props            the parcel's properties
+ * @param {number|null} [measured]  the polygon acreage; defaults to `_acres`
+ */
+export function saleSizeAcres(props, measured = props?._acres) {
+  const ac = saleAcres(props);
+  if (ac != null) return ac;
+  return showMeasuredArea(props) ? posOrNull(measured) : null;
+}
+
+/**
  * Plain-language source for the size this row displays, or '' when there is
  * nothing to attribute (a regular search or a pasted comp set, where the
  * acreage is simply today's and always has been).
@@ -299,6 +323,20 @@ export function sizeSourceLabel(props) {
         ? 'withheld (parcel changed since sale)'
         : 'sale-resolved (MAO sales export)';
   }
+}
+
+/**
+ * Source label for the AREA columns (Acres / Land SF), which can differ from
+ * the size line's: on a measured row the size quoted is a frontage from the
+ * sales report or roll, but the acreage beside it came from the polygon.
+ * Calling that acreage "at sale (property-sales report)" would attribute a
+ * measurement to a document that never stated it.
+ */
+export function areaSourceLabel(props) {
+  if (showMeasuredArea(props)) {
+    return 'measured from parcel shape (boundary verified unchanged since sale; size stated as frontage)';
+  }
+  return sizeSourceLabel(props);
 }
 
 /**

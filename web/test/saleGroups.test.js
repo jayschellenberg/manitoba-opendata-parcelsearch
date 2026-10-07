@@ -707,6 +707,33 @@ test('an at-sale ACRES row states no frontage, so $/FF stays withheld', () => {
   assert.equal(frontageRateState({ ...features[0].properties, ...stamp }), 'none');
 });
 
+test('a verified frontage group divides by the measured polygon areas', () => {
+  // Town of Lac du Bonnet rolls 500 + 600, one $60,000 sale, each lot stated
+  // as 50 ft frontage with its boundary verified unchanged. Used to come out
+  // acresIncomplete, with no $/acre or $/SF.
+  const lot = (oid, acres) => feat({
+    _saleGroupId: 'g', OBJECTID: oid, _salePrice: '$60,000', _acres: acres,
+    _saleSizeKnown: true, _saleSizeUnit: 'FEET', _acresAtSale: null,
+    _frontageAtSaleFt: 50, _geomTrust: 'confirmed', _asmtTotal: 1, _asmtBuildings: 0,
+  });
+  const stamp = computeSaleGroups([lot(1, 0.25), lot(2, 0.25)], helpers).get('g');
+  assert.equal(stamp._saleGroupAcresIncomplete, false);
+  assert.ok(approx(stamp._saleGroupTotalAcres, 0.5));
+  assert.ok(approx(stamp._saleGroupPpa, 120000));     // 60000 / 0.5
+  assert.equal(stamp._saleGroupTotalFrontageFt, 100); // frontage still the stated one
+});
+
+test('an unverified frontage member still withholds the group rate', () => {
+  const features = [
+    feat({ _saleGroupId: 'g', OBJECTID: 1, _salePrice: '$60,000', _acres: 0.25,
+      _saleSizeKnown: true, _acresAtSale: null, _frontageAtSaleFt: 50,
+      _geomTrust: 'provisional', _asmtTotal: 1, _asmtBuildings: 0 }),
+  ];
+  const stamp = computeSaleGroups(features, helpers).get('g');
+  assert.equal(stamp._saleGroupAcresIncomplete, true);
+  assert.equal(stamp._saleGroupPpa, null);
+});
+
 const failed = results.filter((r) => r.status === 'fail');
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 if (failed.length > 0) process.exit(1);

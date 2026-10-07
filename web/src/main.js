@@ -340,7 +340,7 @@ import { rollDisplay } from './lib/parcelLabelFields.js';
 import { parcelDimensions, formatSides, formatSidesForGrid, formatFeet } from './lib/parcelDimensions.js';
 import { createMuniParcelResolver, recordKey } from './lib/muniParcelRecords.js';
 import {
-  saleSizeStamp, saleSizeState, saleAcres, sizeSourceLabel, showsCurrentRollSize,
+  saleSizeStamp, saleSizeState, saleSizeAcres, areaSourceLabel, showMeasuredArea, showsCurrentRollSize,
   shapeDerivedNote, boundaryTrustLabel, boundaryTrustRank,
 } from './lib/saleSize.js';
 import { parseSaleDate, saleDateSortKey } from './lib/saleDate.js';
@@ -13895,6 +13895,7 @@ function renderTable(rows, { resetPage = true } = {}) {
     const acresSalesCell = td(formatAcres(acSize), 'num');
     acresSalesCell.classList.add('sales-only');
     markAreaCheck(acresSalesCell, p);
+    markMeasuredSize(acresSalesCell, p);
     tr.appendChild(acresSalesCell);
     // Boundary — is today's polygon still what sold? Sits immediately after
     // Acres because it qualifies that number: on a "Changed" row the at-sale
@@ -14052,8 +14053,11 @@ function renderTable(rows, { resetPage = true } = {}) {
     const acresBasicCell = td(formatAcres(acSize), 'num');
     acresBasicCell.classList.add('basic-only');
     markAreaCheck(acresBasicCell, p);
+    markMeasuredSize(acresBasicCell, p);
     tr.appendChild(acresBasicCell);
-    tr.appendChild(td(formatSf(acSize), 'num'));
+    const sfCell = td(formatSf(acSize), 'num');
+    markMeasuredSize(sfCell, p);
+    tr.appendChild(sfCell);
     // Sides / Perimeter — positional, in step with the data-col="sides" and
     // data-col="perim" <th>s right after SF.
     const dims = rowDimensions(row);
@@ -15954,6 +15958,18 @@ function markAreaCheck(cell, p) {
 }
 
 /**
+ * Label an Acres / SF cell whose figure was measured from the polygon rather
+ * than stated by the roll or the sales report (saleSize.showMeasuredArea).
+ * Italic plus a tooltip, so a measurement never reads as a quoted figure.
+ */
+function markMeasuredSize(cell, p) {
+  if (!cell || !showMeasuredArea(p)) return;
+  cell.classList.add('size-measured');
+  cell.title = 'Measured from the parcel shape. The roll and sales report state a frontage,'
+    + ' not an area; this sale’s boundary is verified unchanged since the sale.';
+}
+
+/**
  * The "Area Check" CSV cell — blank when the assessor area and the polygon
  * agree (the overwhelming majority), otherwise a short phrase naming what the
  * shape measures and how far off it is. Written out in full words because the
@@ -15985,12 +16001,14 @@ function areaCheckCsv(p) {
  *
  * Returns null on a sales row whose at-sale size was withheld, which is the
  * point: the cell goes blank rather than showing a figure the rate did not use.
+ * A frontage-stated row with a verified boundary gets `today` (the polygon
+ * area) — see saleSizeAcres() — and markMeasuredSize() labels that cell.
  *
  * @param {object} props       the parcel's properties
  * @param {number|null} today  parcelAcres() for this row, already computed
  */
 function rowSizeAcres(props, today) {
-  return saleSizeState(props) === 'legacy' ? today : saleAcres(props);
+  return saleSizeState(props) === 'legacy' ? today : saleSizeAcres(props, today);
 }
 
 function formatAcres(v) {
@@ -17761,7 +17779,7 @@ function exportCsv(explicitRows) {
       // Source column and distinguishes a property-sales-report figure from a
       // verified-unchanged current one, which is the difference an appraisal
       // has to be able to state.
-      sizeSourceLabel(p)
+      areaSourceLabel(p)
         || (p._acresRollNominal ? 'geometry (roll nominal)' : (p._acresSource ?? '')),
       areaCheckCsv(p),
       formatSides(rowDimensions(row)),
