@@ -104,10 +104,9 @@ export const DEFAULT_VISIBLE = new Set([
   // grid can show — Acres falls back to a polygon estimate there.
   'rollsize',
   'sf',
-  // Side lengths in feet from the assessment polygon (lib/parcelDimensions.js),
-  // replacing a hand measurement of each lot (Jason, 2026-10-02). Perimeter
-  // is its gear-only companion.
-  'sides',
+  // Sides (ft, approx) — side lengths from the assessment polygon
+  // (lib/parcelDimensions.js) — is gear-only since 2026-10-07: it is wide and
+  // approximate, so it no longer earns default width (Jason). See DROP_ONCE.
   'value',
   'soil',
   'subjdist',
@@ -149,7 +148,19 @@ const ADOPTED_KEY = 'mbps_table_columns_adopted';
 // from a link into a data column, and a user who never ticked a link column
 // would otherwise never discover that it now answers the question. Adopting
 // it once puts it in front of them; unticking it still sticks.
-const ADOPT_ONCE = ['streetview', 'rollsize', 'zonecat', 'n1id', 'muniname', 'saletype', 'boundary', 'flood', 'sides', 'outline'];
+// 'du' is not new either, and has always been in DEFAULT_VISIBLE — but a stored
+// set wins, so anyone whose set predates it never saw it (Jason, 2026-10-07:
+// "show DU"). Adopting it once puts it back; unticking it still sticks.
+const ADOPT_ONCE = ['streetview', 'rollsize', 'zonecat', 'n1id', 'muniname', 'saletype', 'boundary', 'flood', 'outline', 'du'];
+
+// The mirror of ADOPT_ONCE: columns taken OUT of the default after stored
+// sets may already hold them. Each key is removed from the visible set ONCE
+// (tracked in DROPPED_KEY); tick it back on after that and it stays ticked.
+// 'sides' was adopted into every stored set on 2026-10-02 and dropped from
+// the default on 2026-10-07 (Jason), so without this it would linger for
+// everyone who had already opened the app.
+const DROPPED_KEY = 'mbps_table_columns_dropped';
+const DROP_ONCE = ['sides'];
 
 // Column presets — `null` value means "everything that the current
 // mode would show". The labels match the dropdown options.
@@ -390,12 +401,42 @@ export const SALES_DEFAULT_ORDER = [
 ];
 
 /**
- * The key list in force: the named preset's own order, else the sales
- * default in sales mode, else null (natural thead order).
+ * Property Search (non-sales) order: the natural thead order, except the
+ * water block sits at the end of the grid beside Flood (Jason, 2026-10-07:
+ * "move Water to the end of the list next to Flood"). Tile Drainage and
+ * Irrigation travel with Water — they are its WALLAS companions and only
+ * render while a water overlay is on, so splitting them off would scatter
+ * one question across the grid.
+ *
+ * Pure: takes the natural key list (duplicated keys included) and returns
+ * a full key list for columnPermutation. With no Flood column the natural
+ * order is returned unchanged. The moved columns all sit past the 13
+ * left-aligned positions style.css pins by nth-child, so no alignment
+ * shifts.
  */
-export function activeOrder(presetName, salesMode) {
+export const PROPERTY_WATER_BLOCK = ['water', 'tile', 'irrigation'];
+export function propertyDefaultOrder(naturalKeys) {
+  if (!naturalKeys.includes('flood')) return naturalKeys.slice();
+  const out = [];
+  for (const key of naturalKeys) {
+    if (PROPERTY_WATER_BLOCK.includes(key)) continue;
+    if (key === 'flood') {
+      for (const w of PROPERTY_WATER_BLOCK) if (naturalKeys.includes(w)) out.push(w);
+    }
+    out.push(key);
+  }
+  return out;
+}
+
+/**
+ * The key list in force: the named preset's own order, else the sales
+ * default in sales mode, else the Property Search order (built from the
+ * natural keys), else null (natural thead order).
+ */
+export function activeOrder(presetName, salesMode, naturalKeys = null) {
   if (presetName && PRESET_ORDER[presetName]) return PRESET_ORDER[presetName];
-  return salesMode ? SALES_DEFAULT_ORDER : null;
+  if (salesMode) return SALES_DEFAULT_ORDER;
+  return naturalKeys ? propertyDefaultOrder(naturalKeys) : null;
 }
 
 /**
@@ -612,11 +653,10 @@ function applyOrder(heads) {
   const headRow = heads[0]?.parentElement;
   if (!headRow) return;
   const salesMode = document.body.classList.contains('sales-mode');
-  const order = activeOrder(orderName, salesMode);
   // The signature names the order actually applied, so entering or leaving
   // sales mode re-permutes the thead even when the preset did not change.
   const sig = orderName && PRESET_ORDER[orderName] ? orderName
-    : salesMode ? 'sales-default' : 'natural';
+    : salesMode ? 'sales-default' : 'property-default';
   // Read the column list back in NATURAL order via the data-nat stamps, NOT
   // in current DOM order. Once the thead has been reordered it no longer
   // reads left-to-right as the baseline, and feeding it back in computes a
@@ -628,6 +668,7 @@ function applyOrder(heads) {
     .slice()
     .sort((a, b) => Number(a.dataset.nat) - Number(b.dataset.nat))
     .map((th) => ({ key: th.dataset.col, pinned: th.hasAttribute('data-no-gear') }));
+  const order = activeOrder(orderName, salesMode, natural.map((c) => c.key));
   const perm = columnPermutation(natural, order || null);
   if (headRow.dataset.orderSig !== sig) {
     reorderChildren(headRow, perm);
@@ -713,6 +754,22 @@ export function initColumns() {
       writeStored();
     }
   } catch { /* storage unavailable — column stays gear-only */ }
+  // One-time removal of columns dropped from the default — see DROP_ONCE.
+  // After ADOPT_ONCE, so a key on both lists ends up dropped.
+  try {
+    const dropped = new Set(JSON.parse(localStorage.getItem(DROPPED_KEY) || '[]'));
+    let changed = false;
+    for (const key of DROP_ONCE) {
+      if (dropped.has(key)) continue;
+      dropped.add(key);
+      if (visible != null) visible.delete(key);
+      changed = true;
+    }
+    if (changed) {
+      localStorage.setItem(DROPPED_KEY, JSON.stringify([...dropped]));
+      writeStored();
+    }
+  } catch { /* storage unavailable — the stored set keeps the column */ }
   const gear = document.getElementById('columns-gear');
   const popover = document.getElementById('columns-popover');
   const presetSelect = document.getElementById('columns-preset');
