@@ -114,7 +114,8 @@ function factsHtml(pairs) {
  *   settings  [[label, value], …]
  *   rates     {columns, rows}          — CMS1 / CMS2 figures
  *   waterfall {columns, rows}
- *   comps     {columns, rows}          — the ticked sales
+ *   tagged    [{title, columns, rows}] — the numbered comps and Land Sets
+ *   comps     {columns, rows}          — the ticked sales (the CMS)
  *   excluded  {columns, rows}          — the unticked ones
  *   figures   [{tabLabel, title, kind: 'image', src} |
  *              {tabLabel, title, kind: 'table', subtitle, note, columns, rows}]
@@ -143,7 +144,15 @@ export function buildSummaryHtml(model) {
 
   if (m.rates) parts.push('<h2>Market conditions</h2>', tableHtml(m.rates, 'Too few dated sales to measure a trend.'));
   if (m.waterfall) parts.push('<h2>Filter waterfall</h2>', tableHtml(m.waterfall));
-  if (m.comps) parts.push(`<h2>Comparable sales (${m.comps.rows.length})</h2>`, tableHtml(m.comps, 'No sales are ticked.'));
+  // The tagged lists (charts Phase 2) lead: the numbered comparables, then
+  // the Land Sets. The CMS — every ticked sale — follows as the market.
+  for (const t of m.tagged || []) {
+    parts.push(`<h2>${escapeHtml(t.title)} (${t.rows.length})</h2>`, tableHtml(t));
+  }
+  if (m.comps) {
+    const title = (m.tagged || []).length ? 'CMS — ticked sales' : 'Comparable sales';
+    parts.push(`<h2>${title} (${m.comps.rows.length})</h2>`, tableHtml(m.comps, 'No sales are ticked.'));
+  }
   if (m.excluded && m.excluded.rows.length) {
     parts.push(`<h2>Excluded sales (${m.excluded.rows.length})</h2>`, tableHtml(m.excluded));
   }

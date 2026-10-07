@@ -86,6 +86,44 @@ export function setChartCompany(name) { chartCompany = String(name ?? '').trim()
 export function getChartCompany() { return chartCompany; }
 
 /**
+ * The comparable label a sale carries ("3", "L1-2"), or null — set once per
+ * render by the page from its comp tags (charts Phase 2, 2026-10-06). Drawn
+ * into the SVG, so it prints into the PNG and the work file.
+ */
+let pointLabeler = () => null;
+export function setPointLabeler(fn) { pointLabeler = typeof fn === 'function' ? fn : () => null; }
+
+/** The tag colour: a dark ring round the dot and the label text. */
+const TAG_COLOR = '#B3261E';
+
+/**
+ * Number labels above the tagged points, with a ring round each dot so a
+ * tagged sale stands out before its label is read. Labels sit on a white
+ * halo (paint-order stroke) so they stay legible over dots and trend lines.
+ */
+function drawPointLabels(svg, placed, r = 4.5) {
+  // data-keep: the PNG export strips pointer-events="none" nodes (the hover
+  // ring), and these must survive it.
+  const g = el('g', { 'data-keep': '1' });
+  let any = false;
+  for (const p of placed) {
+    const label = p.rec ? pointLabeler(p.rec) : null;
+    if (!label) continue;
+    any = true;
+    g.appendChild(el('circle', {
+      cx: p.cx.toFixed(2), cy: p.cy.toFixed(2), r: r + 2.5,
+      fill: 'none', stroke: TAG_COLOR, 'stroke-width': 1.75,
+    }));
+    g.appendChild(text(label, {
+      x: p.cx.toFixed(2), y: (p.cy - r - 5).toFixed(2), 'text-anchor': 'middle',
+      'font-size': 12, 'font-weight': 700, fill: TAG_COLOR,
+      stroke: '#ffffff', 'stroke-width': 3, 'paint-order': 'stroke', 'stroke-linejoin': 'round',
+    }));
+  }
+  if (any) svg.appendChild(g);
+}
+
+/**
  * What each chart card exports, keyed by its <figure>: the spec its PNG
  * button renders ({kind: 'chart'}), or a table card's columns and rows
  * ({kind: 'table'}). The work file reads this instead of re-deriving any
@@ -800,6 +838,7 @@ export function drawChart(spec) {
   svg.appendChild(dots);
   // Above the dots by construction — see the note where trendLines is built.
   svg.appendChild(trendLines);
+  drawPointLabels(svg, placed, R_STYLE.pointR);
 
   figure.appendChild(svg);
   appendChartFooter(figure, {
@@ -997,7 +1036,7 @@ function wirePointInteraction({ figure, svg, cap, placed, tooltipRows = () => []
       const rect = svg.getBoundingClientRect();
       if (!rect.width) return;
       const idx = nearest(e, rect);
-      if (idx >= 0) onPointClick(byX[idx].rec, byX[idx]);
+      if (idx >= 0) onPointClick(byX[idx].rec, byX[idx], e);
     });
   }
   svg.addEventListener('pointerleave', hide);
@@ -1005,7 +1044,7 @@ function wirePointInteraction({ figure, svg, cap, placed, tooltipRows = () => []
   svg.addEventListener('keydown', (e) => {
     if ((e.key === 'Enter' || e.key === ' ') && activeIdx >= 0 && typeof onPointClick === 'function') {
       e.preventDefault();
-      onPointClick(byX[activeIdx].rec, byX[activeIdx]);
+      onPointClick(byX[activeIdx].rec, byX[activeIdx], e);
     } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
       e.preventDefault();
       const next = activeIdx < 0
@@ -1198,6 +1237,7 @@ export function drawBoxChart(spec) {
     dots.appendChild(el('circle', { cx: p.cx.toFixed(2), cy: p.cy.toFixed(2), r: 4, ...attrs }));
   }
   svg.appendChild(dots);
+  drawPointLabels(svg, placed, 4);
 
   figure.appendChild(svg);
   appendChartFooter(figure, {

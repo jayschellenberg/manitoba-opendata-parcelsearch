@@ -268,14 +268,14 @@ Feature detail is in DOCUMENTATION.md §3.6.1. What is still open:
 
 See DOCUMENTATION.md §10.0.2 for what shipped. Still open:
 
-- **Work file, phases 2 and 3** (Jason, 2026-10-06; phase 1, the zip, shipped).
-  Phase 2: number the comparables (Comp #1, #2…, optional Land Set 1/2) from the
-  grid or a chart dot, label them on every chart, map and PNG, and narrow
-  `comps.csv` and the summary's comps table to them. Tags persist in the browser.
-  Phase 3: an optional reason on each exclusion ("Nominal transfer", "Non-arm's
-  length", "Assembly", or free text), keyed on roll number because MAO renumbers
-  Sale Group IDs, shown as an Excluded Records table in the zip and the summary.
-
+- **Work file, phase 3** (Jason, 2026-10-06; phases 1 and 2 shipped): an
+  optional reason on each exclusion ("Nominal transfer", "Non-arm's length",
+  "Assembly", or free text), keyed on roll number because MAO renumbers Sale
+  Group IDs, shown as an Excluded Records table in the zip and the summary.
+- **Comp tags from the main grid.** Phase 2 tags on the charts page only (chart
+  Shift-click, map popup, Table view). The grid could show and toggle them too:
+  both pages share an origin, so the grid can read `mbps_charts_comp_tags_v1`
+  and follow it through the storage event.
 - **Parcel outlines on the charts map.** The page receives no geometry (kept
   out of the BroadcastChannel message on purpose, for size), so sales are
   points. The template's parcel heatmap would need a slimmed outline per sale.

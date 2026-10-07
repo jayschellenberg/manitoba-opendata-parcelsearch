@@ -149,6 +149,13 @@
         <p class="waterfall-foot">Click any dot on a chart to untick that sale in the grid; click a pale one to tick it back in.</p>
       </details>
 
+      <!-- The tagged comparables and Land Sets (charts Phase 2), in order,
+           with reorder / remove. Filled by renderCompsPanel. -->
+      <details id="comps-panel" class="comps-panel" hidden>
+        <summary id="comps-summary">Comparable sales</summary>
+        <div id="comps-body" class="comps-body"></div>
+      </details>
+
       <div class="charts-tabs" role="tablist" aria-label="Chart set">
         <button type="button" id="tab-rates" role="tab" aria-selected="true"
                 aria-controls="charts-grid"

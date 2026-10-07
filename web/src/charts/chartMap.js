@@ -58,10 +58,12 @@ const EMPTY = { type: 'FeatureCollection', features: [] };
 
 /**
  * Build the map card. `onPick(saleId)` fires on a click on a sale;
- * `popupRows(saleId)` returns [[label, value], …] for its popup.
+ * `popupRows(saleId)` returns [[label, value], …] for its popup, and
+ * `popupActions(saleId)` [{text, run}] — extra buttons under the Exclude one
+ * (the comp-tag toggles, charts Phase 2).
  * Returns {figure, setData(fc, {subject, rings, fitKey}), setLegend(items, title), resize()}.
  */
-export function createSalesMap({ onPick, popupRows }) {
+export function createSalesMap({ onPick, popupRows, popupActions = () => [] }) {
   if (!protocolAdded) {
     maplibregl.addProtocol('pmtiles', new PMTilesProtocol().tile);
     protocolAdded = true;
@@ -201,6 +203,32 @@ export function createSalesMap({ onPick, popupRows }) {
         'circle-stroke-width': ['case', ctx, 0.5, 0.75],
       },
     });
+    // A tagged comparable (charts Phase 2): a ring and its number above the
+    // dot, in the charts' tag red. On the canvas, so both print.
+    const tagged = ['all', ['has', 'label'], ['!=', ['get', 'label'], '']];
+    map.addLayer({
+      id: 'sales-tag-ring', type: 'circle', source: 'sales', filter: tagged,
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 6.5, 12, 9.5],
+        'circle-color': 'rgba(0,0,0,0)',
+        'circle-stroke-color': '#B3261E',
+        'circle-stroke-width': 2,
+      },
+    });
+    map.addLayer({
+      id: 'sales-tag-label', type: 'symbol', source: 'sales', filter: tagged,
+      layout: {
+        'text-field': ['get', 'label'],
+        // The one stack the glyph server serves (see fontStacks.test.js).
+        'text-font': ['Open Sans Semibold'],
+        'text-size': 13,
+        'text-anchor': 'bottom',
+        'text-offset': [0, -0.7],
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+      },
+      paint: { 'text-color': '#B3261E', 'text-halo-color': '#ffffff', 'text-halo-width': 2 },
+    });
     // The subject as a map pin (Jason, 2026-10-06), tip on the point. A
     // style icon, not a DOM Marker, so it is part of the WebGL canvas and
     // prints into the PNG and the work file.
@@ -267,7 +295,18 @@ export function createSalesMap({ onPick, popupRows }) {
       clickPopup = popup;
       clickId = id;
       btn.addEventListener('click', () => { popup.remove(); onPick(id); });
-      wrap.appendChild(btn);
+      const actions = document.createElement('div');
+      actions.className = 'map-popup-actions';
+      actions.appendChild(btn);
+      for (const a of popupActions(id) || []) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'map-popup-btn map-popup-tag';
+        b.textContent = a.text;
+        b.addEventListener('click', () => { popup.remove(); a.run(); });
+        actions.appendChild(b);
+      }
+      wrap.appendChild(actions);
     });
     if (pending) { apply(pending); pending = null; }
   });
