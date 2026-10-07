@@ -7783,3 +7783,31 @@ body.phone .maplibregl-ctrl-group button {
   flex-basis: 100%;
   margin: 2px 0 0;
 }
+
+/* The exclusion-reason popover beside an unticked grid row (2026-10-06). */
+.excl-reason-pop {
+  position: fixed;
+  z-index: 60;
+  width: 260px;
+  padding: 10px 12px;
+  background: #ffffff;
+  border: 1px solid var(--color-border, #cbd5e1);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  font-size: 12.5px;
+}
+.excl-reason-pop label { display: block; font-weight: 600; color: var(--color-primary-500, #1e293b); }
+.excl-reason-pop input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 4px 7px;
+  font: inherit;
+  font-weight: 400;
+  border: 1px solid var(--color-border, #cbd5e1);
+  border-radius: 5px;
+}
+.excl-reason-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+.excl-reason-actions button { padding: 3px 10px; font: inherit; font-weight: 600; border-radius: 5px; cursor: pointer; }
+/* A numbered star (★12) needs room the bare glyph did not. */
+#results td.fav-col button.fav-star { min-width: 1.6em; white-space: nowrap; }

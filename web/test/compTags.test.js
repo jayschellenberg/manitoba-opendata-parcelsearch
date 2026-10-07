@@ -33,8 +33,17 @@ console.log('keys');
 test('rolls sorted + local date, independent of the sale id', () => {
   const a = sale(['123400.000', '99.000'], 2024, 3, 9);
   const b = { ...a, saleId: 'renumbered' };
-  assert.equal(saleTagKey(a), '123400.000+99.000@2024-03-09');
+  assert.equal(saleTagKey(a), '123400+99@2024-03-09');
   assert.equal(saleTagKey(a), saleTagKey(b));
+});
+test('one roll, one spelling: "100.000", "100" and "0100" key alike', () => {
+  const k = (rolls) => saleTagKey({ rolls, dateMs: new Date(2024, 0, 15).getTime() });
+  assert.equal(k(['100.000']), '100@2024-01-15');
+  assert.equal(k(['100']), k(['100.000']));
+  assert.equal(k(['0100.0']), k(['100']));
+  assert.equal(k(['3200.100']), '3200.1@2024-01-15', 'a real fraction is kept');
+  assert.notEqual(k(['3200.100']), k(['3200']));
+  assert.equal(k(['A-17 ']), 'A-17@2024-01-15', 'a non-numeric roll is kept as written');
 });
 test('same rolls on another date is another sale', () => {
   assert.notEqual(saleTagKey(sale(['1.000'], 2024, 3, 9)), saleTagKey(sale(['1.000'], 2025, 3, 9)));
@@ -147,6 +156,36 @@ test('the panel renders, saves on change, and a click-exclude prompts for the re
   assert.match(main, /if \(!rec\.excluded\) reasonPromptKey = saleTagKey\(rec\);/);
   // A republish while a reason is being typed must not wipe it.
   assert.match(main, /if \(active && body\.contains\(active\) && active\.dataset\.key\) return;/);
+});
+
+console.log('grid parity (star = comp tag, 2026-10-06)');
+const { saleRecordsFromRows, saleTagInput } = await import('../src/lib/salesCharts.js');
+const { parseSaleDate } = await import('../src/lib/saleDate.js');
+test('the grid and the charts page key a sale identically', () => {
+  const props = [
+    { _saleGroupId: 7, _saleDate: '2024-03-09', _saleGroupRolls: ['2.000', '10.000'], Roll_No_Txt: '2.000', Property_Address: '1 Rd' },
+    { _saleGroupId: 8, _saleDate: '15-Jun-2021', Roll_No_Txt: '55.500' },
+    { _saleGroupId: 9, _saleDate: '2019/11/30', _saleGroupRolls: [], Roll_No_Txt: '77' },
+  ];
+  const records = saleRecordsFromRows(props.map((p) => ({ parcel: { properties: p } })), { parseDate: parseSaleDate });
+  assert.equal(records.length, 3);
+  for (const [i, p] of props.entries()) {
+    const fromGrid = saleTagKey(saleTagInput(p, parseSaleDate));
+    assert.ok(fromGrid, `no key for row ${i}`);
+    assert.equal(fromGrid, saleTagKey(records.find((r) => r.saleId === p._saleGroupId)), `row ${i} keys differ`);
+  }
+});
+test('the star toggles the comp tag, and the charts page reaches the grid', () => {
+  const main = code('src/main.js');
+  assert.match(main, /if \(!wasFav && !inComps\) saveCompTags\(toggleTag\(compTags, 'comps', sale\.key, sale\.rec\)\)/);
+  assert.match(main, /else if \(wasFav && inComps\) saveCompTags\(removeTag\(compTags, 'comps', sale\.key\)\)/);
+  assert.match(main, /btn\.textContent = fav \? \(n \? `★\$\{n\}` : '★'\) : '☆'/);
+  assert.match(main, /if \(e\.key === COMP_TAGS_KEY\) \{[\s\S]*?syncStarsFromTags\(prev, compTags\)/);
+});
+test('unticking a sale in the grid asks for the reason', () => {
+  const main = code('src/main.js');
+  assert.match(main, /if \(!box\.checked && sale\.key && document\.body\.classList\.contains\('sales-mode'\)\) openReasonPrompt\(box, sale\.key\)/);
+  assert.match(main, /if \(save\) saveExclReason\(key, input\.value\)/);
 });
 
 console.log(`\n${passed} passed`);

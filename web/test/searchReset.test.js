@@ -143,6 +143,9 @@ const PERSISTENT = {
   locationMapState: 'the province location map callout text and side, a display preference like numberingOn',
   trafficFlowFcPromise: 'session memo for the Traffic Flow FC; refetching it per search would be pure waste',
   tileNetworkLastKey: 'cache key for the loaded tile-network scope, invalidated by scope not by search',
+  compTags: 'the numbered comp tags, kept in browser storage and shared with the Sales Charts page; keyed by sale, not by result set',
+  exclReasons: 'exclusion reasons, kept in browser storage like compTags and keyed by sale',
+  reasonPrompt: 'an open reason popover saves under its sale key, which outlives the result set; any click closes it',
 };
 
 console.log('main.js — what a new Search must not inherit');

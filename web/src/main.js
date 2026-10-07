@@ -63,7 +63,11 @@ import {
   uniqueParcelFeatures, dedupeParcelFeaturesForMap,
 } from './lib/salesDedupe.js';
 import { parseSalesCsv } from './lib/salesCsvParse.js';
-import { saleRecordsFromRows } from './lib/salesCharts.js';
+import { saleRecordsFromRows, saleTagInput } from './lib/salesCharts.js';
+import {
+  COMP_TAGS_KEY, EXCL_REASONS_KEY, EXCLUSION_REASONS, normalizeTags, normalizeReasons,
+  saleTagKey, toggleTag, removeTag, tagNumber, tagDescriptions,
+} from './lib/compTags.js';
 import { buildSalesWaterfall, filteredSalesNote } from './lib/salesWaterfall.js';
 import { initMultiSelect } from './lib/multiSelect.js';
 import {
@@ -1428,6 +1432,39 @@ function saveFavorites() {
   try {
     localStorage.setItem(FAV_STORAGE_KEY, JSON.stringify([...favoriteKeys]));
   } catch { /* quota / private mode — best-effort, the in-memory Set still works */ }
+}
+
+// Comp tags and exclusion reasons, shared with the Sales Charts page
+// (Jason, 2026-10-06: "Star = comp tag"). The star IS the numbered comp: it
+// shows ★1, ★2… and starring a sale makes it the next comparable. Tags are
+// keyed by sale (rolls + sale date — lib/compTags.js), stars by parcel; the
+// star handler and syncStarsFromTags keep the two in step. Both stores are
+// the charts page's own localStorage keys, followed through the storage
+// event, so a tag or reason set on either page shows on the other.
+function readCompTags() {
+  try { return normalizeTags(JSON.parse(localStorage.getItem(COMP_TAGS_KEY) || 'null')); } catch { return normalizeTags(null); }
+}
+function readExclReasons() {
+  try { return normalizeReasons(JSON.parse(localStorage.getItem(EXCL_REASONS_KEY) || 'null')); } catch { return {}; }
+}
+let compTags = readCompTags();
+let exclReasons = readExclReasons();
+function saveCompTags(next) {
+  compTags = next;
+  try { localStorage.setItem(COMP_TAGS_KEY, JSON.stringify(next)); } catch { /* private mode */ }
+}
+function saveExclReason(key, text) {
+  const t = String(text ?? '').trim().slice(0, 200);
+  exclReasons = { ...exclReasons };
+  if (t) exclReasons[key] = t; else delete exclReasons[key];
+  try { localStorage.setItem(EXCL_REASONS_KEY, JSON.stringify(exclReasons)); } catch { /* private mode */ }
+}
+/** A grid row's sale, as the tag key and the facts a tag remembers. */
+function rowSaleTag(row) {
+  const p = row?.parcel?.properties;
+  if (!p || p._saleDate == null) return { key: null, rec: null };
+  const rec = saleTagInput(p, parseSaleDate);
+  return { key: saleTagKey(rec), rec };
 }
 
 // Row selection — the opposite polarity to favourites, and deliberately so.
@@ -16067,16 +16104,103 @@ function selectCell(row) {
   box.title = 'Show this sale on the map, in the CSV export and in the charts. '
     + 'Unticking hides it from all three for this session.';
   box.dataset.selKey = key;
+  const sale = rowSaleTag(row);
+  if (sale.key) box.dataset.saleKey = sale.key;
+  paintSelectBox(box);
   box.addEventListener('click', (e) => e.stopPropagation());
   box.addEventListener('change', () => {
     if (box.checked) deselectedSaleKeys.delete(key);
     else deselectedSaleKeys.add(key);
     box.closest('tr')?.classList.toggle('deselected', !box.checked);
+    paintSelectBox(box);
     applySelectionToMapAndCharts();
     syncSelectAllBox();
+    // Unticking a SALE asks why (optional): the same reasons the charts
+    // page's Excluded records panel keeps.
+    if (!box.checked && sale.key && document.body.classList.contains('sales-mode')) openReasonPrompt(box, sale.key);
   });
   cell.appendChild(box);
   return cell;
+}
+
+/** The checkbox title: what it does, plus the exclusion reason once unticked. */
+function paintSelectBox(box) {
+  const reason = !box.checked && box.dataset.saleKey ? exclReasons[box.dataset.saleKey] : '';
+  box.title = reason
+    ? `Excluded: ${reason}. Tick to include this sale again.`
+    : 'Show this sale on the map, in the CSV export and in the charts. '
+      + 'Unticking hides it from all three for this session.';
+}
+
+/**
+ * The exclusion-reason popover beside an unticked checkbox (Jason,
+ * 2026-10-06): the suggestions or free text, Enter or Save to keep it,
+ * Escape or Skip to leave it blank. Clicking away keeps whatever was typed.
+ * Either way the row stays unticked — the reason is optional.
+ */
+let reasonPrompt = null;
+function closeReasonPrompt(save) {
+  if (!reasonPrompt) return;
+  const { el, input, key, box, onDoc } = reasonPrompt;
+  reasonPrompt = null;
+  document.removeEventListener('pointerdown', onDoc, true);
+  if (save) saveExclReason(key, input.value);
+  el.remove();
+  paintSelectBox(box);
+}
+function openReasonPrompt(box, key) {
+  closeReasonPrompt(true);
+  const el = document.createElement('div');
+  el.className = 'excl-reason-pop';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-label', 'Why exclude this sale?');
+  const label = document.createElement('label');
+  label.textContent = 'Why exclude this sale? (optional)';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.maxLength = 200;
+  input.placeholder = 'Pick or type a reason';
+  input.value = exclReasons[key] || '';
+  const listId = 'excl-reason-suggestions';
+  if (!document.getElementById(listId)) {
+    const dl = document.createElement('datalist');
+    dl.id = listId;
+    for (const r of EXCLUSION_REASONS) {
+      const o = document.createElement('option');
+      o.value = r;
+      dl.appendChild(o);
+    }
+    document.body.appendChild(dl);
+  }
+  input.setAttribute('list', listId);
+  label.appendChild(input);
+  const actions = document.createElement('div');
+  actions.className = 'excl-reason-actions';
+  const skip = document.createElement('button');
+  skip.type = 'button';
+  skip.textContent = 'Skip';
+  const save = document.createElement('button');
+  save.type = 'button';
+  save.className = 'primary';
+  save.textContent = 'Save';
+  actions.append(skip, save);
+  el.append(label, actions);
+  document.body.appendChild(el);
+  const r = box.getBoundingClientRect();
+  const left = Math.min(window.innerWidth - el.offsetWidth - 8, r.right + 8);
+  const top = Math.min(window.innerHeight - el.offsetHeight - 8, r.top - 6);
+  el.style.left = `${Math.max(8, left)}px`;
+  el.style.top = `${Math.max(8, top)}px`;
+  const onDoc = (ev) => { if (!el.contains(ev.target)) closeReasonPrompt(true); };
+  reasonPrompt = { el, input, key, box, onDoc };
+  document.addEventListener('pointerdown', onDoc, true);
+  skip.addEventListener('click', () => closeReasonPrompt(false));
+  save.addEventListener('click', () => closeReasonPrompt(true));
+  input.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') { ev.preventDefault(); closeReasonPrompt(true); }
+    else if (ev.key === 'Escape') { ev.preventDefault(); closeReasonPrompt(false); }
+  });
+  input.focus();
 }
 
 /**
@@ -16187,41 +16311,94 @@ function favoriteCell(row) {
   cell.classList.add('sales-only', 'fav-col');
   const key = parcelLegalKey(row?.parcel?.properties || {});
   if (!key) return cell;
-  const isFav = favoriteKeys.has(key);
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.className = isFav ? 'fav-star active' : 'fav-star';
-  btn.textContent = isFav ? '★' : '☆';
-  btn.title = isFav ? 'Unstar — remove from comparables' : 'Star — mark as comparable';
-  btn.setAttribute('aria-pressed', String(isFav));
   // Lets the click handler find every row showing this same parcel.
   btn.dataset.favKey = key;
+  const sale = rowSaleTag(row);
+  if (sale.key) btn.dataset.saleKey = sale.key;
+  paintStar(btn);
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (favoriteKeys.has(key)) favoriteKeys.delete(key);
+    const wasFav = favoriteKeys.has(key);
+    if (wasFav) favoriteKeys.delete(key);
     else if (favoriteKeys.size < FAV_CAP) favoriteKeys.add(key);
     saveFavorites();
-    // Local DOM swap rather than a full re-render — keeps the rest
-    // of the table stable and avoids losing scroll position.
-    const nowFav = favoriteKeys.has(key);
-    // A favourite is a PARCEL, keyed by muni+roll, so a repeat-sold
-    // parcel's other sale rows carry the same key and must flip with
-    // this one — otherwise the sibling row keeps showing ☆ for a
-    // parcel that is now starred, until the next full re-render.
-    for (const el of document.querySelectorAll('#results td.fav-col button.fav-star')) {
-      if (el.dataset.favKey !== key) continue;
-      el.className = nowFav ? 'fav-star active' : 'fav-star';
-      el.textContent = nowFav ? '★' : '☆';
-      el.title = nowFav ? 'Unstar — remove from comparables' : 'Star — mark as comparable';
-      el.setAttribute('aria-pressed', String(nowFav));
-      el.closest('tr')?.classList.toggle('starred', nowFav);
+    // The star is the comp tag: starring makes this SALE the next numbered
+    // comparable, unstarring takes it off (and renumbers the rest).
+    if (sale.key) {
+      const inComps = compTags.comps.includes(sale.key);
+      if (!wasFav && !inComps) saveCompTags(toggleTag(compTags, 'comps', sale.key, sale.rec));
+      else if (wasFav && inComps) saveCompTags(removeTag(compTags, 'comps', sale.key));
     }
-    setStarredOnMap(row?.parcel, nowFav);
+    // Local DOM swap rather than a full re-render — keeps the rest of the
+    // table stable and avoids losing scroll position. Every star repaints:
+    // a repeat-sold parcel's other rows share the favourite, and removing
+    // one comp renumbers the rest.
+    repaintStars();
+    setStarredOnMap(row?.parcel, favoriteKeys.has(key));
     refreshRouteStarredBtn();
   });
   cell.appendChild(btn);
   return cell;
 }
+
+/**
+ * Draw a star button from the current favourites and comp tags: ★3 for the
+ * third comparable, ★ for a starred parcel that is not (or not in this sale)
+ * a comp, ☆ otherwise. The title names any Land Set as well.
+ */
+function paintStar(btn) {
+  const fav = favoriteKeys.has(btn.dataset.favKey);
+  const saleKey = btn.dataset.saleKey || null;
+  const n = tagNumber(compTags, 'comps', saleKey);
+  btn.className = fav ? 'fav-star active' : 'fav-star';
+  btn.textContent = fav ? (n ? `★${n}` : '★') : '☆';
+  const tags = tagDescriptions(compTags, saleKey);
+  btn.title = fav
+    ? `${tags.length ? `${tags.join(' · ')} — ` : ''}Unstar to remove from the comparables`
+    : 'Star — make this sale the next numbered comparable (shown on the Sales Charts too)';
+  btn.setAttribute('aria-pressed', String(fav));
+  btn.closest('tr')?.classList.toggle('starred', fav);
+}
+function repaintStars() {
+  for (const el of document.querySelectorAll('#results td.fav-col button.fav-star')) paintStar(el);
+}
+
+/**
+ * The charts page changed the comp tags: star the parcels of every sale that
+ * became a comp, unstar those of every sale that stopped being one, and
+ * repaint. Only rows on the grid now are touched.
+ */
+function syncStarsFromTags(prev, next) {
+  const before = new Set(prev.comps);
+  const after = new Set(next.comps);
+  let changed = false;
+  for (const row of currentRows || []) {
+    const { key } = rowSaleTag(row);
+    if (!key || before.has(key) === after.has(key)) continue;
+    const fav = parcelLegalKey(row?.parcel?.properties || {});
+    if (!fav) continue;
+    if (after.has(key) && favoriteKeys.size < FAV_CAP) favoriteKeys.add(fav);
+    else if (!after.has(key)) favoriteKeys.delete(fav);
+    setStarredOnMap(row.parcel, after.has(key));
+    changed = true;
+  }
+  if (changed) saveFavorites();
+  repaintStars();
+  refreshRouteStarredBtn();
+}
+
+window.addEventListener('storage', (e) => {
+  if (e.key === COMP_TAGS_KEY) {
+    const prev = compTags;
+    compTags = readCompTags();
+    syncStarsFromTags(prev, compTags);
+  } else if (e.key === EXCL_REASONS_KEY) {
+    exclReasons = readExclReasons();
+    for (const box of document.querySelectorAll('#results input.row-select')) paintSelectBox(box);
+  }
+});
 
 /**
  * Flip the `starred` map feature-state for a parcel (and every

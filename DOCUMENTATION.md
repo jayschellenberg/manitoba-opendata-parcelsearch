@@ -1243,6 +1243,23 @@ does not redraw while a reason box has focus, so a republish from the main
 window never wipes half-typed text. Reasons show in the tooltip, `cms.csv`
 (Exclusion reason), `excluded.csv`, and the summary's Excluded records table.
 
+**The grid shares both** (2026-10-06, Jason: "Star = comp tag"). In the main
+window's Sales Analysis grid the ★ IS the numbered comp: starring a sale makes
+it the next comparable and the star reads ★1, ★2…; unstarring removes it and
+renumbers the rest (`paintStar`, `repaintStars`). Stars stay per parcel
+(`mb_favorite_sales_v1`, which still drives starred-only export, Route Starred
+and the map highlight); `syncStarsFromTags` stars or unstars a sale's parcels
+when the charts page tags or untags it, through the storage event. Unticking a
+sale's checkbox opens a small reason popover (`openReasonPrompt`): the same
+suggestions, Enter/Save keeps it, Escape/Skip leaves it blank, clicking away
+keeps what was typed; the checkbox title then reads "Excluded: <reason>".
+Storage keys and the reason list are exported from `lib/compTags.js` so the two
+pages cannot drift, and `saleTagInput` (`lib/salesCharts.js`) is the one
+derivation of a sale's key fields — `compTags.test.js` holds the grid and the
+charts page to the same key. Rolls are canonicalised in the key
+(`canonicalRoll`: "100.000" = "100"), because the grid restamps the roll's
+display form mid-load.
+
 **Work file** (2026-10-06, the first of three phases toward a no-R path to the
 land template's work-file output). The **Work file…** button in the header opens
 a list of every chart on every tab, ticked by default. Charts with nothing to draw

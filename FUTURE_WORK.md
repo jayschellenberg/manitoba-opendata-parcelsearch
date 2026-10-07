@@ -268,13 +268,6 @@ Feature detail is in DOCUMENTATION.md §3.6.1. What is still open:
 
 See DOCUMENTATION.md §10.0.2 for what shipped. Still open:
 
-- **Exclusion reasons from the main grid.** Phase 3 records reasons on the charts
-  page; the grid's untick could ask too, reading and writing
-  `mbps_charts_excl_reasons_v1` (same origin) keyed by rolls + sale date.
-- **Comp tags from the main grid.** Phase 2 tags on the charts page only (chart
-  Shift-click, map popup, Table view). The grid could show and toggle them too:
-  both pages share an origin, so the grid can read `mbps_charts_comp_tags_v1`
-  and follow it through the storage event.
 - **Parcel outlines on the charts map.** The page receives no geometry (kept
   out of the BroadcastChannel message on purpose, for size), so sales are
   points. The template's parcel heatmap would need a slimmed outline per sale.

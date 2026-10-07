@@ -36,7 +36,7 @@ import { criteriaText } from '../lib/criteriaLine.js';
 import { masccolor } from '../masc.js';
 import { buildStoreZip } from '../lib/zipStore.js';
 import {
-  TAG_LISTS, TAG_LIST_NAMES, normalizeTags, saleTagKey, toggleTag, removeTag, moveTag, clearTags,
+  TAG_LISTS, TAG_LIST_NAMES, COMP_TAGS_KEY, EXCL_REASONS_KEY, EXCLUSION_REASONS, normalizeReasons, normalizeTags, saleTagKey, toggleTag, removeTag, moveTag, clearTags,
   tagNumber, tagLabel, tagDescriptions,
 } from '../lib/compTags.js';
 import { toCsv, buildSummaryHtml, figureFileName, workFileName } from '../lib/workFile.js';
@@ -109,7 +109,7 @@ const els = {
  * in this browser, and shared live with any other charts tab through the
  * storage event.
  */
-const TAGS_KEY = 'mbps_charts_comp_tags_v1';
+const TAGS_KEY = COMP_TAGS_KEY;
 function readTags() {
   try { return normalizeTags(JSON.parse(localStorage.getItem(TAGS_KEY) || 'null')); } catch { return normalizeTags(null); }
 }
@@ -137,17 +137,9 @@ window.addEventListener('storage', (e) => {
  * because MAO renumbers sale ids. A reason outlives a re-tick, so excluding
  * the same sale again brings it back.
  */
-const REASONS_KEY = 'mbps_charts_excl_reasons_v1';
-const EXCLUSION_REASONS = [
-  'Nominal transfer', "Non-arm's length", 'Assembly', 'Outlier', 'Not comparable',
-  'Includes improvements', 'Forced sale',
-];
+const REASONS_KEY = EXCL_REASONS_KEY;
 function readReasons() {
-  try {
-    const v = JSON.parse(localStorage.getItem(REASONS_KEY) || 'null');
-    if (!v || typeof v !== 'object') return {};
-    return Object.fromEntries(Object.entries(v).filter(([k, r]) => k && typeof r === 'string' && r.trim()));
-  } catch { return {}; }
+  try { return normalizeReasons(JSON.parse(localStorage.getItem(REASONS_KEY) || 'null')); } catch { return {}; }
 }
 let reasons = readReasons();
 function setReason(key, text) {

@@ -15,6 +15,27 @@
  */
 
 export const TAG_LISTS = ['comps', 'set1', 'set2'];
+
+/**
+ * Where the tags and the exclusion reasons are kept. The charts page and the
+ * main window's grid share an origin, so both read and write these same keys
+ * and follow each other through the storage event (2026-10-06).
+ */
+export const COMP_TAGS_KEY = 'mbps_charts_comp_tags_v1';
+export const EXCL_REASONS_KEY = 'mbps_charts_excl_reasons_v1';
+/** The suggested exclusion reasons; any other text is accepted too. */
+export const EXCLUSION_REASONS = [
+  'Nominal transfer', "Non-arm's length", 'Assembly', 'Outlier', 'Not comparable',
+  'Includes improvements', 'Forced sale',
+];
+
+/** Read the reasons map out of storage text, dropping anything malformed. */
+export function normalizeReasons(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+  return Object.fromEntries(Object.entries(raw)
+    .filter(([k, r]) => k && typeof r === 'string' && r.trim())
+    .map(([k, r]) => [k, r.trim().slice(0, 200)]));
+}
 export const TAG_LIST_NAMES = { comps: 'Comparable sales', set1: 'Land Set 1', set2: 'Land Set 2' };
 
 /** A fresh, empty tag state. `info` remembers enough to name a tag whose sale is filtered out. */
@@ -52,12 +73,28 @@ function dateKey(rec) {
 }
 
 /**
+ * One spelling per roll. The same roll reaches the page as "100.000" from a
+ * CSV and "100" once the grid's sale grouping stamps the display form
+ * (measured 2026-10-06: the key changed under a live grid between the two
+ * renders), so a numeric roll loses leading zeros and a zero fraction —
+ * "0100.000" and "100" are one roll, while "3200.100" keeps its ".1".
+ */
+export function canonicalRoll(r) {
+  const s = String(r ?? '').trim().replace(/\s+/g, '');
+  const m = /^(\d+)(?:\.(\d+))?$/.exec(s);
+  if (!m) return s;
+  const whole = m[1].replace(/^0+(?=\d)/, '');
+  const frac = (m[2] || '').replace(/0+$/, '');
+  return frac ? `${whole}.${frac}` : whole;
+}
+
+/**
  * The tag key of a sale: its roll numbers, sorted and trimmed, joined with
  * "+", then "@" and the sale date. Null when the sale has no roll — there is
  * nothing stable to key on.
  */
 export function saleTagKey(rec) {
-  const rolls = (rec?.rolls || []).map((r) => String(r).trim()).filter(Boolean).sort();
+  const rolls = (rec?.rolls || []).map(canonicalRoll).filter(Boolean).sort();
   if (!rolls.length) return null;
   return `${rolls.join('+')}@${dateKey(rec)}`;
 }
