@@ -348,7 +348,8 @@ import { indexHistoricalGeometry, applyHistoricalGeometry } from './lib/historic
 import { withholdChangedGeometry, withheldNote } from './lib/withheldGeometry.js';
 import { clearAllCache as clearAllCacheModule } from './cache.js';
 import { getManifest, getManifestSync } from './manifest.js';
-import { buildProvenance, provenanceCsvLines, provenanceText } from './lib/provenance.js';
+import { buildProvenance, provenanceCsvLines, provenanceText, APP_COMMIT } from './lib/provenance.js';
+import { buildJob, parseJob, jobFileName, isJobControl, JOB_SKIPPED_PILLS } from './lib/jobFile.js';
 import {
   hasLegalCriteria,
   legalRecordKey,
@@ -1281,6 +1282,9 @@ let lastWithheldGeometry = null;
 // null means "not in CSV mode" — Other Searches filter changes do
 // nothing in that state, matching the old runSearch-only behaviour.
 let csvFullRows = null;
+// The sales text behind csvFullRows — what a job file embeds (2026-10-07).
+// Set by handleSalesUpload, the one door every sales source comes through.
+let lastSalesSource = null;
 let csvFullBaseMsg = '';
 // The filter waterfall of the last sales filter pass — how many sales each
 // filter removed, in SALES_FILTER_STEPS order. Sent to the charts tab with
@@ -5223,6 +5227,7 @@ async function runSearch() {
   // drop the multi-muni overlay scope so MASC/CLI fall back to the
   // dropdown's single-muni value for non-CSV searches.
   csvFullRows = null;
+  lastSalesSource = null;
   csvFullBaseMsg = '';
   csvMatchedMunis = null;
   lastSalesWaterfall = null;
@@ -5760,6 +5765,7 @@ async function handleSalesUpload(file) {
       return;
     }
     rememberUpload(fileName, text);
+    lastSalesSource = { name: fileName, text };
 
     // Group by normalized muni. Track each unmatched record alongside
     // a human-readable `reason` so the unmatched-records panel can
@@ -16304,6 +16310,210 @@ function applyChartsExclusion(msg) {
   applySelectionToMapAndCharts();
   syncSelectAllBox();
 }
+
+// ---------- job file (Jason, 2026-10-07) ------------------------------------
+//
+// Save / Open job: one JSON file carrying the whole Sales Analysis assignment —
+// the loaded sales themselves (their CSV text, so it reopens on any machine
+// without the MAO database), the sidebar filters, the subject, the grid's
+// sort / unticked rows / stars, the comp tags and exclusion reasons, and the
+// Sales Charts page's settings. lib/jobFile.js builds and validates the
+// document; this gathers and applies it.
+
+/** The multi-select filters, by their <details> id. */
+const JOB_MULTIS = {
+  'asmt-class': asmtClassFilter,
+  'primaryprop-filter': primaryPropFilter,
+  'zoning-filter': zoningFilter,
+  'zonecat-filter': zoneCatFilter,
+};
+/** Applied after the sales load: the subject muni's options come from them. */
+const JOB_SUBJECT_IDS = ['subject-muni', 'subject-roll', 'distance-max'];
+const CHARTS_OPTS_KEY = 'mbps_charts_opts_v2';
+const CHARTS_WORKFILE_KEY = 'mbps_charts_workfile_v1';
+
+function jobControlEls() {
+  return [...document.querySelectorAll('.sidebar input[id], .sidebar select[id], .sidebar textarea[id]')]
+    .filter((el) => isJobControl({ id: el.id, type: el.type, className: el.className }));
+}
+
+function collectJobControls() {
+  const out = {};
+  for (const el of jobControlEls()) {
+    if (el.type === 'checkbox' || el.type === 'radio') out[el.id] = !!el.checked;
+    else if (el.multiple) out[el.id] = [...el.selectedOptions].map((o) => o.value);
+    else out[el.id] = el.value;
+  }
+  return out;
+}
+
+/**
+ * Set saved controls, firing input + change only where the value actually
+ * changes — the same events a person typing would fire, so every filter
+ * listener runs, and an untouched field stays quiet.
+ */
+function applyJobControls(controls, { only = null, skip = [] } = {}) {
+  for (const [id, v] of Object.entries(controls || {})) {
+    if (skip.includes(id) || (only && !only.includes(id))) continue;
+    const el = document.getElementById(id);
+    if (!el || !el.closest('.sidebar') || !isJobControl({ id, type: el.type, className: el.className })) continue;
+    if (el.type === 'checkbox' || el.type === 'radio') {
+      if (el.checked === !!v) continue;
+      el.checked = !!v;
+    } else if (el.multiple && Array.isArray(v)) {
+      for (const o of el.options) o.selected = v.includes(o.value);
+    } else {
+      if (el.value === String(v ?? '')) continue;
+      el.value = String(v ?? '');
+    }
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.dispatchEvent(new CustomEvent('chip-input:reseed', { bubbles: true }));
+  }
+}
+
+function collectJobPills() {
+  const out = {};
+  for (const pill of document.querySelectorAll('.sidebar [data-pill]')) {
+    const name = pill.dataset.pill;
+    if (!name || JOB_SKIPPED_PILLS.includes(name)) continue;
+    const seg = pill.querySelector('[data-mode][aria-pressed="true"]');
+    if (seg) out[name] = seg.dataset.mode;
+  }
+  return out;
+}
+
+/** Restored by clicking the segment, as the shared-link restore does. */
+function applyJobPills(pills) {
+  for (const [name, mode] of Object.entries(pills || {})) {
+    if (JOB_SKIPPED_PILLS.includes(name)) continue;
+    const pill = document.querySelector(`.sidebar [data-pill="${CSS.escape(name)}"]`);
+    const seg = pill?.querySelector(`[data-mode="${CSS.escape(String(mode))}"]`);
+    if (seg && !seg.disabled && seg.getAttribute('aria-pressed') !== 'true') seg.click();
+  }
+}
+
+function readStoredJson(key) {
+  try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; }
+}
+
+function saveJob() {
+  if (!csvFullRows || !lastSalesSource) {
+    window.alert('Load sales in Sales Analysis first: a job file holds the sales it was made from.');
+    return;
+  }
+  const allRows = csvFullRows;
+  const starred = new Set();
+  const saleKeys = new Set();
+  for (const row of allRows) {
+    const fav = parcelLegalKey(row?.parcel?.properties || {});
+    if (fav && favoriteKeys.has(fav)) starred.add(fav);
+    const { key } = rowSaleTag(row);
+    if (key) saleKeys.add(key);
+  }
+  const reasons = {};
+  for (const [k, r] of Object.entries(exclReasons)) if (saleKeys.has(k)) reasons[k] = r;
+  const subjectRoll = $subjectRoll?.value?.trim() || '';
+  let job;
+  try {
+    job = buildJob({
+      build: APP_COMMIT,
+      name: subjectRoll ? `Subject roll ${subjectRoll}` : (lastSalesSource.name || ''),
+      sales: lastSalesSource,
+      sidebar: { controls: collectJobControls(), multis: Object.fromEntries(Object.entries(JOB_MULTIS).map(([id, ms]) => [id, ms.getSelected()])), pills: collectJobPills() },
+      subject: subjectRoll ? { muni: $subjectMuni?.value || '', roll: subjectRoll, distanceMax: $distanceMax?.value || '' } : null,
+      grid: { sort: currentSort, unticked: [...deselectedSaleKeys], starred: [...starred] },
+      tags: compTags,
+      reasons,
+      charts: { opts: readStoredJson(CHARTS_OPTS_KEY), workfileOff: readStoredJson(CHARTS_WORKFILE_KEY)?.off || [] },
+    });
+  } catch (err) {
+    window.alert(err.message || String(err));
+    return;
+  }
+  const d = new Date();
+  const p2 = (n) => String(n).padStart(2, '0');
+  const today = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+  downloadBlob(new Blob([JSON.stringify(job)], { type: 'application/json' }), jobFileName(subjectRoll, today));
+}
+
+/**
+ * Open a job: load its sales through the ordinary import, then lay the
+ * filters, subject, grid state, tags, reasons and chart settings back over
+ * them. Filters set before the import are applied by the import's own final
+ * refilter; the multi-selects and the subject need the loaded data first.
+ */
+async function openJob(job) {
+  setActiveTab('sales', { skipFocus: true });
+  applyJobControls(job.sidebar.controls, { skip: JOB_SUBJECT_IDS });
+  applyJobPills(job.sidebar.pills);
+  await handleSalesUpload(job.sales);
+  if (!csvFullRows) throw new Error('The job\'s sales did not load — see the message above the grid.');
+
+  for (const [id, values] of Object.entries(job.sidebar.multis)) {
+    const ms = JOB_MULTIS[id];
+    if (!ms || !Array.isArray(values)) continue;
+    ms.setSelected(values);
+    document.getElementById(id)?.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  if (job.subject?.roll) {
+    applyJobControls({ 'subject-muni': job.subject.muni, 'subject-roll': job.subject.roll, 'distance-max': job.subject.distanceMax });
+    await applySubjectFromInput();
+  }
+
+  // Grid state. Unticked rows are keyed by parcel + sale sequence, which the
+  // same sales text reproduces exactly.
+  deselectedSaleKeys = new Set(job.grid.unticked);
+  for (const k of job.grid.starred) if (favoriteKeys.size < FAV_CAP) favoriteKeys.add(k);
+  saveFavorites();
+  saveCompTags(normalizeTags(job.tags));
+  exclReasons = { ...exclReasons, ...normalizeReasons(job.reasons) };
+  try { localStorage.setItem(EXCL_REASONS_KEY, JSON.stringify(exclReasons)); } catch { /* private mode */ }
+  // The charts page's settings, with its effective date pinned: a reopened
+  // job is about its own date, not today's (see the charts page's readOpts).
+  if (job.charts.opts) {
+    const { frozen, ...rest } = job.charts.opts;
+    void frozen;
+    try { localStorage.setItem(CHARTS_OPTS_KEY, JSON.stringify({ ...rest, effDatePinned: !!rest.effDate })); } catch { /* private mode */ }
+  }
+  try { localStorage.setItem(CHARTS_WORKFILE_KEY, JSON.stringify({ off: job.charts.workfileOff })); } catch { /* private mode */ }
+
+  if (job.grid.sort && SORT_KEYS[job.grid.sort.col]) {
+    currentSort = { col: job.grid.sort.col, dir: job.grid.sort.dir === 'desc' ? 'desc' : 'asc' };
+    updateSortIndicators();
+  }
+  renderTable(currentRows, { resetPage: true });
+  for (const row of currentRows) {
+    const fav = parcelLegalKey(row?.parcel?.properties || {});
+    if (fav && favoriteKeys.has(fav)) setStarredOnMap(row.parcel, true);
+  }
+  applySelectionToMapAndCharts();
+  syncSelectAllBox();
+  repaintStars();
+  refreshRouteStarredBtn();
+}
+
+const $jobOpenInput = document.getElementById('job-open-input');
+document.getElementById('job-save')?.addEventListener('click', saveJob);
+document.getElementById('job-open')?.addEventListener('click', () => $jobOpenInput?.click());
+$jobOpenInput?.addEventListener('change', async () => {
+  const file = $jobOpenInput.files?.[0];
+  $jobOpenInput.value = '';
+  if (!file) return;
+  let job;
+  try { job = parseJob(await file.text()); } catch (err) { window.alert(err.message || String(err)); return; }
+  const saved = job.savedAt ? new Date(job.savedAt).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' }) : 'an unknown date';
+  const busy = csvFullRows || compTags.comps.length || compTags.set1.length || compTags.set2.length;
+  if (busy && !window.confirm(`Open "${job.name || file.name}" (saved ${saved})?`
+    + String.fromCharCode(10, 10)
+    + 'It replaces the loaded sales, the filters, the comp numbers and Land Sets, and the chart settings.')) return;
+  try {
+    await openJob(job);
+  } catch (err) {
+    console.warn('Open job failed', err);
+    window.alert(`The job did not open completely: ${err.message || err}`);
+  }
+});
 
 /** Build the favourites star cell for a row. Click toggles the
  *  in-memory + localStorage favourite state and stops the click

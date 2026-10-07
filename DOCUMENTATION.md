@@ -1317,11 +1317,39 @@ numbered comparable: starring a sale makes it the next comp and the star reads
   pages to the same key for the same rows. The new main.js state is classified
   persistent in `searchReset.test.js`.
 
+#### Job file (save / open an assignment)
+
+**Save job** / **Open job…** at the top of Sales Analysis (2026-10-07) — the
+land template's params.yml idea for the website. One `job-<subject roll>-<date>.json`
+(`lib/jobFile.js` builds and validates it; `saveJob` / `openJob` in `main.js`)
+holds:
+
+| Part | What |
+|---|---|
+| `sales` | The loaded sales' CSV text (`lastSalesSource`, set by `handleSalesUpload`, the one door every source — upload, paste, recent, MAO database, province search — comes through). The job reopens anywhere, without the database. It can be MAO subscriber data: keep the file as privately as a CSV export. |
+| `sidebar` | Every sidebar control with an id except the data-source pickers, file inputs and pill-backing checkboxes (`isJobControl`) — property-search fields included, since they filter sales too; the four multi-selects (`JOB_MULTIS`); every pill but `adjacent`. |
+| `subject` | Muni, roll and Max km, re-applied after the sales load (`applySubjectFromInput`). |
+| `grid` | Sort, unticked rows (parcel key + sale sequence, which the same sales text reproduces), starred parcels. |
+| `tags`, `reasons` | The comp list and Land Sets (replaced on open), and the reasons for this job's sales (merged). |
+| `charts` | The Sales Charts page's settings and work-file choices. |
+
+**Open** order matters: sidebar controls and pills first (the import's own
+final `refilterCsvIfActive` applies them), then `handleSalesUpload`, then the
+multi-selects and the subject (both need the loaded data), then grid state,
+tags, reasons and chart settings, then one render. If sales are already
+loaded (or comps are tagged) it confirms first. The job's **effective date is
+pinned**: the charts page normally starts on today, but `effDatePinned`
+(written by Open job) makes its `readOpts` restore the job's date; typing a
+date by hand clears the pin. An open charts tab follows the new settings
+through the storage event. A job from a newer site version is refused rather
+than half-applied (`JOB_VERSION`).
+
 **Caveats.**
 - The charts page receives no parcel geometry, so the maps show sales as
   points, not parcel outlines.
 - Tags, reasons and work-file choices live in this browser's storage: another
-  browser or device starts empty, and clearing site data loses them.
+  browser or device starts empty, and clearing site data loses them — save a
+  job file to carry or keep them.
 
 ### 10.1 Basemaps
 `map.js` `BASEMAP_STYLE` stacks the basemaps; the top-right menu selects them:

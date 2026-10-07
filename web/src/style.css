@@ -7830,3 +7830,15 @@ body.phone .maplibregl-ctrl-group button {
 }
 .number-starred-btn:hover { background: #fde68a; }
 body:not(.sales-mode) .number-starred-btn { display: none; }
+
+/* Job file row at the top of Sales Analysis (2026-10-07). */
+.job-row { display: flex; align-items: center; gap: 6px; margin: 0 0 10px; }
+.job-row-label {
+  margin-right: auto;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-primary-500, #1e293b);
+}
+.job-row button { padding: 4px 10px; font-size: 12.5px; }

@@ -124,6 +124,14 @@ function toggleSaleTag(rec, list) {
   const key = saleTagKey(rec);
   if (key) saveTags(toggleTag(tags, list, key, rec));
 }
+// An opened job rewrites this page's settings from the main window.
+window.addEventListener('storage', (e) => {
+  if (e.key !== OPTS_KEY) return;
+  Object.assign(opts, readOpts());
+  syncControls();
+  render();
+});
+
 window.addEventListener('storage', (e) => {
   if (e.key !== TAGS_KEY) return;
   tags = readTags();
@@ -225,8 +233,11 @@ function readOpts() {
       // "today" by default, and a date stored on some earlier visit is stale
       // the next morning while still looking deliberate (Jason, 2026-08-18).
       // Type one by hand and it holds for that session.
+      // A job file pins its effective date (effDatePinned, written by the
+      // main window's Open job, 2026-10-07): a reopened assignment is about
+      // its own date, so that one IS restored.
       const { frozen, effDate, ...rest } = parsed;
-      return rest;
+      return parsed.effDatePinned && effDate ? { ...rest, effDate } : rest;
     }
     // Migrate the v1 shape, which folded "don't adjust" into the basis
     // select as a third option. Dropping the old settings on the floor
@@ -3269,7 +3280,7 @@ els.unitFf.addEventListener('click', () => setOpt({ unit: 'ff' }));
 // exists. effectiveMs() ignores anything that isn't a full YYYY-MM-DD, so
 // half-typed dates are harmless.
 for (const evt of ['input', 'change']) {
-  els.effDate.addEventListener(evt, () => setOpt({ effDate: els.effDate.value }));
+  els.effDate.addEventListener(evt, () => setOpt({ effDate: els.effDate.value, effDatePinned: false }));
 }
 els.ratesNominal.addEventListener('click', () => setOpt({ adjusted: false }));
 els.ratesAdjusted.addEventListener('click', () => setOpt({ adjusted: true }));
