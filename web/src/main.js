@@ -16533,8 +16533,17 @@ function favoriteCell(row) {
   const sale = rowSaleTag(row);
   if (sale.key) btn.dataset.saleKey = sale.key;
   paintStar(btn);
+  // Land Sets from the grid (2026-10-07): right-click or Alt-click opens the
+  // tag menu instead of toggling the star.
+  btn.addEventListener('contextmenu', (e) => {
+    if (!sale.key) return;
+    e.preventDefault();
+    e.stopPropagation();
+    openTagMenu(btn, row, sale);
+  });
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
+    if (e.altKey && sale.key) { openTagMenu(btn, row, sale); return; }
     const wasFav = favoriteKeys.has(key);
     if (wasFav) favoriteKeys.delete(key);
     else if (favoriteKeys.size < FAV_CAP) favoriteKeys.add(key);
@@ -16559,6 +16568,65 @@ function favoriteCell(row) {
 }
 
 /**
+ * The grid's tag menu (2026-10-07): Comp, Land Set 1 and Land Set 2 for one
+ * sale, each a toggle that says what a click will do. The Comp line keeps
+ * the star rule — a comp is starred, un-comping unstars — so the star and the
+ * number never disagree. Escape or a click elsewhere closes it.
+ */
+let tagMenu = null;
+function closeTagMenu() {
+  if (!tagMenu) return;
+  document.removeEventListener('pointerdown', tagMenu.onDoc, true);
+  document.removeEventListener('keydown', tagMenu.onKey, true);
+  tagMenu.el.remove();
+  tagMenu = null;
+}
+function openTagMenu(anchor, row, sale) {
+  closeTagMenu();
+  const fav = parcelLegalKey(row?.parcel?.properties || {});
+  const el = document.createElement('div');
+  el.className = 'tag-menu';
+  el.setAttribute('role', 'menu');
+  const items = [
+    ['comps', 'Comparable'],
+    ['set1', 'Land Set 1'],
+    ['set2', 'Land Set 2'],
+  ];
+  for (const [list, name] of items) {
+    const n = tagNumber(compTags, list, sale.key);
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('role', 'menuitemcheckbox');
+    b.setAttribute('aria-checked', String(!!n));
+    b.className = n ? 'is-on' : '';
+    b.textContent = n ? `✓ ${name} #${n} — remove` : `Add as ${name} #${compTags[list].length + 1}`;
+    b.addEventListener('click', () => {
+      saveCompTags(toggleTag(compTags, list, sale.key, sale.rec));
+      if (list === 'comps' && fav) {
+        if (n) favoriteKeys.delete(fav);
+        else if (favoriteKeys.size < FAV_CAP) favoriteKeys.add(fav);
+        saveFavorites();
+        setStarredOnMap(row?.parcel, favoriteKeys.has(fav));
+      }
+      closeTagMenu();
+      repaintStars();
+      refreshRouteStarredBtn();
+    });
+    el.appendChild(b);
+  }
+  document.body.appendChild(el);
+  const r = anchor.getBoundingClientRect();
+  el.style.left = `${Math.max(8, Math.min(window.innerWidth - el.offsetWidth - 8, r.left))}px`;
+  el.style.top = `${Math.max(8, Math.min(window.innerHeight - el.offsetHeight - 8, r.bottom + 4))}px`;
+  const onDoc = (ev) => { if (!el.contains(ev.target)) closeTagMenu(); };
+  const onKey = (ev) => { if (ev.key === 'Escape') { ev.preventDefault(); closeTagMenu(); anchor.focus(); } };
+  tagMenu = { el, onDoc, onKey };
+  document.addEventListener('pointerdown', onDoc, true);
+  document.addEventListener('keydown', onKey, true);
+  el.querySelector('button')?.focus();
+}
+
+/**
  * Draw a star button from the current favourites and comp tags: ★3 for the
  * third comparable, ★ for a starred parcel that is not (or not in this sale)
  * a comp, ☆ otherwise. The title names any Land Set as well.
@@ -16568,11 +16636,16 @@ function paintStar(btn) {
   const saleKey = btn.dataset.saleKey || null;
   const n = tagNumber(compTags, 'comps', saleKey);
   btn.className = fav ? 'fav-star active' : 'fav-star';
-  btn.textContent = fav ? (n ? `★${n}` : '★') : '☆';
+  // Land Set places ride after the star (2026-10-07): "★2 L1-3", "☆ L2-1".
+  const sets = [['set1', 'L1'], ['set2', 'L2']]
+    .map(([list, short]) => { const k = tagNumber(compTags, list, saleKey); return k ? `${short}-${k}` : null; })
+    .filter(Boolean);
+  btn.textContent = (fav ? (n ? `★${n}` : '★') : '☆') + (sets.length ? ` ${sets.join(' ')}` : '');
   const tags = tagDescriptions(compTags, saleKey);
-  btn.title = fav
-    ? `${tags.length ? `${tags.join(' · ')} — ` : ''}Unstar to remove from the comparables`
-    : 'Star — make this sale the next numbered comparable (shown on the Sales Charts too)';
+  const menuHint = saleKey ? ' Right-click (or Alt-click) for Land Sets.' : '';
+  btn.title = (fav
+    ? `${tags.length ? `${tags.join(' · ')} — ` : ''}Unstar to remove from the comparables.`
+    : `${tags.length ? `${tags.join(' · ')} — ` : ''}Star — make this sale the next numbered comparable (shown on the Sales Charts too).`) + menuHint;
   btn.setAttribute('aria-pressed', String(fav));
   btn.closest('tr')?.classList.toggle('starred', fav);
 }

@@ -768,3 +768,30 @@ main { padding: 18px 20px 0; }
 }
 .excl-reason:focus { outline: 2px solid var(--accent); outline-offset: 0; }
 .comps-table tr.is-new td { background: #fff7e0; }
+
+/* ---------- Ag consistency bar (R's CMSAG1, 2026-10-07) ---------- */
+.ag-cons {
+  padding: 10px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+  margin-bottom: 4px;
+}
+.ag-cons-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.ag-cons-head strong { font-size: 13px; }
+.ag-cons-note { font-size: 12px; color: var(--ink-2); flex: 1 1 20em; }
+.ag-cons-clear, .ag-chip {
+  padding: 1px 8px;
+  font: 600 11.5px/1.6 Arial, Helvetica, sans-serif;
+  color: var(--ink-2);
+  background: var(--plane);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.ag-chip.is-on { color: #fff; background: #2f6f3e; border-color: #2f6f3e; }
+.ag-cons-row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 12.5px; }
+.ag-cons-cult input { width: 4.2em; padding: 1px 4px; font: inherit; border: 1px solid var(--rule); border-radius: 4px; }
+.ag-cons-group { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.ag-cons-label { font-weight: 600; color: var(--ink-2); margin-right: 2px; }
+.ag-cons-count { margin: 6px 0 0; font-size: 12px; color: var(--ink-2); }

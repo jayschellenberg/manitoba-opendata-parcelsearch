@@ -7842,3 +7842,30 @@ body:not(.sales-mode) .number-starred-btn { display: none; }
   color: var(--color-primary-500, #1e293b);
 }
 .job-row button { padding: 4px 10px; font-size: 12.5px; }
+
+/* The grid's tag menu: Comparable / Land Set 1 / Land Set 2 (2026-10-07). */
+.tag-menu {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+  padding: 4px;
+  background: #ffffff;
+  border: 1px solid var(--color-border, #cbd5e1);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+.tag-menu button {
+  padding: 5px 9px;
+  text-align: left;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--color-primary-500, #1e293b);
+  background: none;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.tag-menu button:hover, .tag-menu button:focus-visible { background: #f1f5f9; }
+.tag-menu button.is-on { color: #92400e; font-weight: 600; }
