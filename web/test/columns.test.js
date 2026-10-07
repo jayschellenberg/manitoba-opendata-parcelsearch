@@ -213,4 +213,44 @@ assert.equal(activeOrder('Sales analysis', true), SALES_DEFAULT_ORDER,
     'saleprice', 'primaryprop', 'n1id', 'groupsize', 'saletype', 'municode', 'zone1']);
 }
 
+// --- 2026-10-07: Sides off the default, DU on, Water beside Flood ----------
+{
+  const { initColumns, propertyDefaultOrder } = await import('../src/lib/columns.js');
+
+  assert.ok(!DEFAULT_VISIBLE.has('sides'), 'Sides (ft, approx) is gear-only now');
+  assert.ok(DEFAULT_VISIBLE.has('du'), 'DU is default-visible');
+
+  // A stored set from before the change: holds Sides, lacks DU. The stored
+  // set wins over DEFAULT_VISIBLE, so only the once-lists can fix it.
+  globalThis.document.getElementById = () => null;   // initColumns bails after the migrations
+  stored.clear();
+  stored.set('mbps_table_columns_v2', JSON.stringify(['roll', 'address', 'sides']));
+  initColumns();
+  assert.equal(isColumnVisible('sides'), false, 'DROP_ONCE removes Sides from a stored set');
+  assert.equal(isColumnVisible('du'), true, 'ADOPT_ONCE adds DU to a stored set');
+  // Once only: re-ticking Sides / unticking DU must survive the next load.
+  setColumnVisible('sides', true);
+  setColumnVisible('du', false);
+  initColumns();
+  assert.equal(isColumnVisible('sides'), true, 'a re-ticked Sides is not dropped again');
+  assert.equal(isColumnVisible('du'), false, 'an unticked DU is not adopted again');
+
+  // Water (with its WALLAS companions) moves to sit just before Flood.
+  const NAT = ['seq', 'select', 'roll', 'address', 'water', 'tile', 'irrigation', 'changes',
+    'du', 'sf', 'sides', 'value', 'walk', 'flood', 'landfacts', 'streetview'];
+  assert.deepEqual(propertyDefaultOrder(NAT), ['seq', 'select', 'roll', 'address', 'changes',
+    'du', 'sf', 'sides', 'value', 'walk', 'water', 'tile', 'irrigation', 'flood', 'landfacts', 'streetview']);
+  assert.deepEqual(propertyDefaultOrder(['roll', 'water']), ['roll', 'water'],
+    'no Flood column: natural order unchanged');
+  // Wired: non-sales mode with the natural keys gets the property order;
+  // sales mode and presets with their own order are untouched.
+  assert.deepEqual(activeOrder(null, false, NAT), propertyDefaultOrder(NAT));
+  assert.equal(activeOrder(null, true, NAT), SALES_DEFAULT_ORDER);
+  assert.equal(activeOrder('Land Sales', false, NAT), PRESET_ORDER['Land Sales']);
+  // The moved block must stay clear of the 13 nth-child-aligned positions.
+  const perm = columnPermutation(NAT.map((key) => ({ key, pinned: key === 'seq' || key === 'select' })),
+    propertyDefaultOrder(NAT));
+  assert.ok(perm.slice(0, 4).every((n, i) => n === i), 'leading columns keep their positions');
+}
+
 console.log('column preset tests passed');
