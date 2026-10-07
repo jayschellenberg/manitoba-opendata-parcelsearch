@@ -1556,17 +1556,11 @@
             </div>
           </details>
 
-          <!-- Two ways to capture the same view, side by side at half width
-               each. "Map w/Legend" replaced a separate "Include legend in map
-               image" checkbox down in the status block: the legend is a
-               per-capture decision, not a mode, so making it a second button
-               turns a two-step (tick, then click) into one click. It disables
-               itself when no legend is on screen — the old checkbox hid
-               itself for the same reason. -->
-          <div class="generate-map-row">
-            <button id="static-map-btn" type="button" class="generate-map-btn" title="Capture the current map view as a JPEG. Right-click the rendered image below the table and Save Image As… to drop into a report.">📸 Generate Map</button>
-            <button id="static-map-legend-btn" type="button" class="generate-map-btn generate-map-btn-legend" title="Capture the current map view as a JPEG with the map's legend drawn into it, in the bottom-right corner just above the credit line — the same corner it occupies on screen. Every legend currently showing is included, stacked. The image keeps its normal dimensions, so the legend sits over the map rather than beside it.">📸 Map w/Legend</button>
-          </div>
+          <!-- One capture button (replaced Generate Map + Map w/Legend,
+               2026-10-07). It opens #map-capture-modal, where the legend is
+               a tick box and the image is copied or downloaded in place.
+               Alt+C copies the view straight to the clipboard. -->
+          <button id="static-map-btn" type="button" class="generate-map-btn" title="Capture the current map view as a 1950 × 1050 image (6.5 × 3.5 in at 300 dpi), whatever size the map is on screen. Opens a preview with Include legend, Copy image and Download. Shortcut: Alt+C copies the view straight to the clipboard.">📸 Capture Map <span class="kbd-hint">Alt+C</span></button>
           <button id="location-map-btn" type="button" class="generate-map-btn generate-map-btn-location" title="Render the Manitoba overview map (NRCan) with a pin at the searched property and a SUBJECT callout pointing at it — the location figure for a report. A Winnipeg property can be switched to the Winnipeg map, which also marks the downtown inset. Shown below the table as a sharp PNG with Copy and Download; the callout text and side can be changed there.">🗺️ MB Overall Location Map</button>
         </section><!-- /map-layers-section -->
 
@@ -2196,6 +2190,28 @@
          JS lives in src/lib/parcelListImport.js; main.js wires
          the resolved parcelKeys into listParcelKeys + the pill.
          =================================================== -->
+    <!-- Capture Map panel. main.js generateStaticMap() shoots a 1950 x 1050
+         frame; the panel previews it with the credit (and legend, when
+         ticked) burned in, and copies or downloads it. -->
+    <dialog id="map-capture-modal" class="map-capture-modal" aria-labelledby="map-capture-title">
+      <div class="map-capture-inner">
+        <div class="map-capture-head">
+          <h2 id="map-capture-title">Map image <span class="map-capture-size">1950 × 1050 px · 6.5 × 3.5 in at 300 dpi</span></h2>
+          <button type="button" class="map-capture-close" data-close aria-label="Close">×</button>
+        </div>
+        <p id="map-capture-note" class="map-capture-note" hidden></p>
+        <img id="map-capture-img" class="map-capture-img" alt="Captured map view">
+        <div class="map-capture-actions">
+          <label class="map-capture-legend"><input type="checkbox" id="map-capture-legend"> Include legend</label>
+          <span class="map-capture-spacer"></span>
+          <button type="button" id="map-capture-copy" class="parcel-list-modal-btn primary">Copy image</button>
+          <button type="button" id="map-capture-download" class="parcel-list-modal-btn">Download PNG</button>
+          <button type="button" id="map-capture-download-jpg" class="parcel-list-modal-btn" title="JPEG is about a tenth the file size of PNG for satellite imagery — lighter in a report, with no visible loss.">Download JPG (smaller)</button>
+        </div>
+        <p class="map-capture-tip">Tip: <kbd>Alt</kbd>+<kbd>C</kbd> copies the current map view straight to the clipboard, using this legend setting.</p>
+      </div>
+    </dialog>
+
     <dialog id="parcel-list-import-modal" class="parcel-list-modal" data-step="paste">
       <div class="parcel-list-modal-inner">
         <header class="parcel-list-modal-header">

@@ -989,25 +989,6 @@ header small a {
   color: #1e3a8a;
 }
 
-/* Generate Map / Map w/Legend share one row, half the width each. The
-   buttons keep their full-width styling for any other placement; the row
-   is what halves them. min-width:0 lets a long label ellipsis rather
-   than push its sibling narrower than half. */
-.sidebar .generate-map-row {
-  display: flex;
-  gap: 6px;
-  margin-top: 5px;
-}
-.sidebar .generate-map-row .generate-map-btn {
-  flex: 1 1 0;
-  min-width: 0;
-  margin-top: 0;
-  padding-inline: 6px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .sidebar .generate-map-btn {
   width: 100%;
   margin-top: 5px;
@@ -3084,7 +3065,7 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
 
 .map-pane {
   width: 100%;
-  /* Cap the map's rendered width so the 16:9 height doesn't push
+  /* Cap the map's rendered width so the map height doesn't push
      the table below the fold on wide monitors. The workspace
      stays full-width (the cap leaves a soft right-side gutter);
      the table grows into the freed vertical space without
@@ -3094,23 +3075,24 @@ body:not(.sales-mode) .sidebar .favourite-row { display: none; }
   max-width: min(1280px, 100%);
   background: #eaeaec;
   position: relative;
-  /* 16:9 height computed from the (capped) width. Toggling
-     .map-collapsed hides the map entirely so the table claims
-     the full workspace. */
-  aspect-ratio: 16 / 9;
+  /* 1950:1050 height computed from the (capped) width — the same shape
+     as the Capture Map image, so the screen shows exactly what gets
+     captured (Jason, 2026-10-07). Toggling .map-collapsed hides the map
+     entirely so the table claims the full workspace. */
+  aspect-ratio: 1950 / 1050;
   min-height: 320px;
 }
 .workspace.map-collapsed .map-pane { display: none; }
-/* Expanded map fills the viewport vertically and drops the 16:9
+/* Expanded map fills the viewport vertically and drops the 1950:1050
    aspect-ratio + width cap so it claims the workspace's full
    horizontal width too. The table still flows below the map; the
    user scrolls the page to reach it (the sticky toolbar inside
    .table-pane carries the "Restore map" button so they can flip
    back without scrolling all the way down). Mutually exclusive
    with .map-collapsed — main.js's toggle handlers clear one when
-   setting the other so they don't fight. Generate Map captures
-   the canvas as-is, so an expanded map produces a wide PNG
-   snapshot; restoring the default brings the 16:9 framing back. */
+   setting the other so they don't fight. Capture Map takes the
+   centre 1950:1050 of an expanded map; restoring the default
+   makes the screen match the capture again. */
 .workspace.map-expanded .map-pane {
   max-width: none;
   aspect-ratio: auto;
@@ -5628,7 +5610,13 @@ body {
 }
 
 .map-pane {
-  max-width: 100%;
+  /* Sized from the screen height so the map AND five grid rows fit under
+     the topbar on a laptop (Jason, 2026-10-07) — the WIDTH is capped, not
+     the height, so the 1950:1050 shape never changes. The reserve is
+     measured: table-pane padding + toolbar 76 px, header 31 px, 5 x 34 px
+     nowrap rows, plus the grid's horizontal scrollbar. */
+  --map-table-reserve: 300px;
+  max-width: min(100%, calc((100dvh - var(--topbar-height, 52px) - var(--map-table-reserve)) * 1950 / 1050));
   background: #dfe6e2;
   border-bottom: 1px solid var(--ui-line);
   box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.65);
@@ -5894,31 +5882,16 @@ body {
   border-color: var(--ui-brand-hover);
 }
 
-/* "Map w/Legend" is blue so the pair reads as two distinct actions at a
-   glance instead of one button rendered twice. Literal blue rather than
-   --color-accent-500: that token is the app's teal (#2f6f6a), which is a
-   near-neighbour of the brand button and defeats the whole point.
-   Declared AFTER the brand rule above — both are single-class specificity
-   under .sidebar, so source order is what decides. */
-.sidebar .generate-map-btn-legend,
-.sidebar .generate-map-btn-legend:disabled {
-  background: #2563eb;
-  border-color: #1d4ed8;
-  color: #fff;
-}
-.sidebar .generate-map-btn-legend:hover:not(:disabled) {
-  background: #1d4ed8;
-  border-color: #1d4ed8;
-}
-/* No legend on screen means nothing to draw, so the button says so by
-   going flat rather than silently producing an identical image. */
-.sidebar .generate-map-btn-legend:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
+/* The shortcut, quietly, inside the Capture Map button. */
+.sidebar .generate-map-btn .kbd-hint {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.7;
 }
 /* Callout red (CALLOUT.fill in lib/locationMap.js), so the button reads as
-   the image it makes, and as a third action beside the black and blue
-   map captures. Same as the Winnipeg app. */
+   the image it makes, and as a second action beside the black map
+   capture. Same as the Winnipeg app. */
 .sidebar .generate-map-btn-location {
   background: #8c1c22;
   border-color: #8c1c22;
@@ -7880,3 +7853,125 @@ body:not(.sales-mode) .number-starred-btn { display: none; }
 .tag-menu button.is-on { color: #92400e; font-weight: 600; }
 .job-recent-row { margin: -4px 0 10px; }
 .job-recent-row select { width: 100%; font-size: 12.5px; }
+
+/* -------------------------------------------------------------
+   Capture Map panel (#map-capture-modal) and the Alt+C toast.
+   The preview is the full 1950 x 1050 image shown scaled down;
+   the dialog is as wide as the screen allows so it stays legible.
+   ------------------------------------------------------------- */
+.map-capture-modal {
+  border: none;
+  border-radius: 8px;
+  padding: 0;
+  width: min(1100px, 94vw);
+  max-height: 94vh;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25),
+              0 4px 12px rgba(15, 23, 42, 0.12);
+  background: #fff;
+  color: #1a1a1a;
+  font-family: inherit;
+}
+.map-capture-modal::backdrop {
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(2px);
+}
+.map-capture-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 18px 12px;
+}
+.map-capture-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.map-capture-head h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.map-capture-size {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  color: #64748b;
+}
+.map-capture-close {
+  border: none;
+  background: none;
+  font-size: 22px;
+  line-height: 1;
+  padding: 2px 6px;
+  cursor: pointer;
+  color: #475569;
+}
+.map-capture-close:hover { color: #0f172a; }
+.map-capture-note {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 4px;
+  background: #fff7e6;
+  color: #92400e;
+  font-size: 12.5px;
+}
+.map-capture-img {
+  display: block;
+  width: 100%;
+  /* Never taller than the room the dialog has, keeping the shape. */
+  max-height: calc(94vh - 170px);
+  object-fit: contain;
+  border: 1px solid #e2e8f0;
+  background: #f1f5f9;
+}
+.map-capture-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.map-capture-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.map-capture-legend:has(input:disabled) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.map-capture-spacer { flex: 1 1 auto; }
+.map-capture-tip {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+}
+.map-capture-tip kbd {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 0 4px;
+  border: 1px solid #cbd5e1;
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  background: #f8fafc;
+}
+.map-capture-toast {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translate(-50%, -6px);
+  z-index: 20;
+  padding: 7px 14px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.88);
+  color: #fff;
+  font-size: 13px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s, transform 0.18s;
+}
+.map-capture-toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
