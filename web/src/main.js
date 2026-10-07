@@ -293,7 +293,7 @@ import { getShapes as getMapShapes, clearShapes as clearMapShapes, onShapesChang
 import { passesShapeFilter } from './lib/shapeFilter.js';
 import { countSnapshotFrames } from './lib/snapshotGroups.js';
 import { waitForMapIdle, MapRenderTimeoutError } from './lib/snapshotCapture.js';
-import { OUTPUT_MIME, OUTPUT_QUALITY, MAX_OUTPUT_DIM } from './lib/imageOutput.js';
+import { OUTPUT_MIME, OUTPUT_EXT } from './lib/imageOutput.js';
 import { showLocationMapPanel } from './lib/locationMapPanel.js';
 import {
   dominantBucket, cultFraction, LAND_COVER_BUCKETS, LAND_COVER_MIN_ACRES,
@@ -639,18 +639,17 @@ const $dimsToggle      = document.getElementById('dims-toggle');
 // by muni + Roll #. Only offered when the results came from a typed list.
 const $numberingOrderToggle = document.getElementById('numbering-order-toggle');
 const $numberingOrderLabel  = document.getElementById('numbering-order-label');
-// Whether the capture currently being composed should carry the map's
-// legend. Set by generateStaticMap() for the duration of one capture and
-// read by composeWithAttribution, which has no other way to be told.
-// This replaced an "Include legend in map image" checkbox: the legend
-// decides a single capture rather than a persistent mode, so it is now
-// the "Map w/Legend" button beside Generate Map.
-let captureWithLegend = false;
-// True while a capture is composing. Both capture buttons are disabled for
-// the duration, and updateLegendAvailability has to respect that: it runs
-// from a MutationObserver on the map pane, and a legend appearing mid-capture
-// would otherwise re-enable "Map w/Legend" and let a second capture start on
-// top of the first.
+// Every Capture Map image is exactly this size: 6.5 x 3.5 in at 300 dpi, the
+// same as the Sales Charts PNGs (Jason, 2026-10-07). The on-screen map is the
+// same shape, and the capture redraws it at a higher pixel ratio rather than
+// upscaling, so a small laptop map still gives a sharp full-size image.
+const CAPTURE_W = 1950;
+const CAPTURE_H = 1050;
+// The raw (legend-free, credit-free) frame of the last capture, kept so the
+// panel's "Include legend" box can recompose without re-shooting the map.
+let captureFrame = null;
+// True while a capture is composing. The capture button is disabled for the
+// duration so a second click (or Alt+C) can't start one on top of the first.
 let captureInFlight = false;
 // How long a capture waits for the map to go idle before giving up and
 // shooting the frame that is on screen. Shorter than the bulk snapshot
@@ -2478,6 +2477,14 @@ document.addEventListener('keydown', (e) => {
     setActiveTab(getActiveTabName(), { skipFocus: false });
     return;
   }
+  // Alt+C: copy the current map view to the clipboard, no panel. e.code so
+  // a non-QWERTY layout still finds it; skipped while a dialog is open.
+  if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code === 'KeyC'
+      && !document.querySelector('dialog[open]')) {
+    e.preventDefault();
+    copyMapToClipboard();
+    return;
+  }
   // Esc: clear the currently-focused text-like input.
   if (e.key === 'Escape') {
     const el = document.activeElement;
@@ -3125,15 +3132,23 @@ $gridToggle.addEventListener('click', () => toggleSurveyGridOverlay());
 setTimeout(() => restoreUrlOverlays(initialUrlState), 0);
 
 const $staticMapBtn      = document.getElementById('static-map-btn');
-const $staticMapLegendBtn = document.getElementById('static-map-legend-btn');
 const $staticMapOutput   = document.getElementById('static-map-output');
 const $staticMapSection  = document.getElementById('static-map-section');
+// The Capture Map panel: preview + Include legend + Copy / Download.
+const $captureModal      = document.getElementById('map-capture-modal');
+const $captureImg        = document.getElementById('map-capture-img');
+const $captureNote       = document.getElementById('map-capture-note');
+const $captureLegend     = document.getElementById('map-capture-legend');
+const $captureCopy       = document.getElementById('map-capture-copy');
+const $captureDownload   = document.getElementById('map-capture-download');
+const $captureDownloadJpg = document.getElementById('map-capture-download-jpg');
+const CAPTURE_LEGEND_KEY = 'mbps.captureLegend';
 if ($staticMapBtn) {
-  $staticMapBtn.addEventListener('click', () => generateStaticMap());
+  $staticMapBtn.addEventListener('click', () => {
+    generateStaticMap().then(openCapturePanel).catch(showCaptureError);
+  });
 }
-if ($staticMapLegendBtn) {
-  $staticMapLegendBtn.addEventListener('click', () => generateStaticMap({ withLegend: true }));
-}
+wireCapturePanel();
 const $locationMapBtn = document.getElementById('location-map-btn');
 const LOCATION_MAP_LABEL = $locationMapBtn?.textContent || 'Province Location Map';
 if ($locationMapBtn) {
@@ -3278,34 +3293,27 @@ function downloadBlob(blob, filename) {
 }
 
 /**
- * Draw the WebGL map canvas into a 2D canvas and burn the live
- * attribution text into the bottom-right corner. Without this the
- * saved image would show no basemap / data credit even though the live
- * map does — the WebGL canvas alone doesn't include the
- * AttributionControl DOM overlay. The returned data URL carries the
- * credit with the image so it survives right-click → Save.
+ * Burn the live attribution (and, when asked, the visible legends) into a
+ * copy of a captured map frame. Without this the saved image would show no
+ * basemap / data credit even though the live map does — the WebGL canvas
+ * alone doesn't include the AttributionControl DOM overlay.
  *
- * The captured view is downscaled so its longest side is at most
- * MAX_OUTPUT_DIM and encoded as JPEG (see lib/imageOutput.js) — the same
- * resolution/format band as the parcel snapshots, which keeps the saved
- * image small (~a few hundred KB instead of multi-MB PNG) for dropping into
- * documents. Never upscales a smaller view.
+ * `frame` is the CAPTURE_W x CAPTURE_H frame generateStaticMap() cropped out
+ * of the map canvas. It is left untouched so the panel's "Include legend"
+ * box can recompose from it. Returns a new canvas of the same size.
  */
-function composeWithAttribution(srcCanvas) {
-  const sw = srcCanvas.width;
-  const sh = srcCanvas.height;
-  const scale = Math.min(MAX_OUTPUT_DIM / sw, MAX_OUTPUT_DIM / sh, 1);
-  const w = Math.round(sw * scale);
-  const h = Math.round(sh * scale);
+function composeWithAttribution(frame, { withLegend = false } = {}) {
+  const w = frame.width;
+  const h = frame.height;
   const out = document.createElement('canvas');
   out.width = w;
   out.height = h;
   const ctx = out.getContext('2d');
-  // White backing: JPEG has no alpha, so any transparent pixel would
-  // otherwise encode as black.
+  // White backing: the JPEG download has no alpha, so any transparent pixel
+  // would otherwise encode as black.
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, w, h);
-  ctx.drawImage(srcCanvas, 0, 0, w, h);
+  ctx.drawImage(frame, 0, 0);
 
   // Pull the exact text MapLibre shows in its attribution control. This
   // keeps the static image in sync with whatever sources/overlays are
@@ -3351,9 +3359,9 @@ function composeWithAttribution(srcCanvas) {
   // the credit pill, in the same bottom-right corner it occupies on
   // screen. Drawn last so it sits over the map; the image keeps its
   // normal dimensions.
-  if (captureWithLegend) drawMapLegends(ctx, w, h, y0 - 6, fontSize);
+  if (withLegend) drawMapLegends(ctx, w, h, y0 - 6, fontSize);
 
-  return out.toDataURL(OUTPUT_MIME, OUTPUT_QUALITY);
+  return out;
 }
 
 /** Legends currently on screen, as plain data. Wraps the lib reader with
@@ -3409,20 +3417,6 @@ function wrapToWidth(ctx, text, maxWidth) {
 }
 
 /**
- * Capture the current interactive-map view as a static <img>. Forces a
- * synchronous repaint first so every layer toggle flag (zoning, dev-plan,
- * traffic, contam, muni-parcels, etc.) is reflected in the framebuffer
- * before we read pixels. The map was created with preserveDrawingBuffer:
- * true so canvas.toDataURL() returns real bytes; without that the buffer
- * would be cleared after each frame and the URL would come back blank.
- *
- * The output goes into a sibling div as an <img> the user can right-click
- * → Save Image As… for dropping into appraisal reports. We don't auto-
- * download because the user wants control over filename and destination,
- * and right-click + paste-into-Word is the actual workflow they
- * described.
- */
-/**
  * Drop the Generate Image snapshot.
  *
  * The snapshot is a still of the map AT THE MOMENT IT WAS TAKEN, and nothing
@@ -3445,45 +3439,51 @@ function clearStaticMap() {
 }
 
 /**
- * Capture the current map view as a JPEG and render it under the table.
+ * Capture the current map view as an exact CAPTURE_W x CAPTURE_H frame.
  *
- * `withLegend` drives the one difference between the two buttons that call
- * this: Generate Map captures the view alone, Map w/Legend draws the visible
- * legends into the bottom-right corner as well. Both buttons are disabled
- * for the duration so a second click can't start a capture mid-compose.
+ * The map is redrawn at whatever pixel ratio makes its 1950:1050 window
+ * CAPTURE_W device pixels wide, so the image has a fixed size however small
+ * the map is on screen — labels and line widths scale with it, so the image
+ * looks like the screen, just sharper. The ratio is put back in `finally`.
+ * The on-screen map is already 1950:1050; the centre crop only bites when
+ * the map is expanded (or on a phone), where the pane has another shape.
+ *
+ * preserveDrawingBuffer: true (map.js) keeps the framebuffer readable after
+ * the frame, which is what lets drawImage() read real pixels.
+ *
+ * Resolves { frame, staleFrame }; the panel / Alt+C path composes the credit
+ * and legend on top. Rejects when a capture is already running.
  */
-async function generateStaticMap({ withLegend = false } = {}) {
-  if (!$staticMapOutput) return;
+async function generateStaticMap() {
   await mapReady;
-  if (captureInFlight) return;
-  const btn = withLegend && $staticMapLegendBtn ? $staticMapLegendBtn : $staticMapBtn;
-  const busyBtns = [$staticMapBtn, $staticMapLegendBtn].filter(Boolean);
-  const wasDisabled = busyBtns.map((b) => b.disabled);
+  if (captureInFlight) throw new Error('A map capture is already running.');
+  const btn = $staticMapBtn;
+  const wasDisabled = btn ? btn.disabled : false;
+  const originalLabel = btn?.innerHTML;
   captureInFlight = true;
-  for (const b of busyBtns) b.disabled = true;
-  const originalLabel = btn.textContent;
-  btn.textContent = 'Capturing…';
-  captureWithLegend = withLegend;
+  if (btn) { btn.disabled = true; btn.textContent = 'Capturing…'; }
+  const canvas = map.getCanvas();
+  const prevRatio = map.getPixelRatio();
   try {
-    // Force MapLibre to redraw and wait until it's idle so the canvas
-    // contents fully match the on-screen view (otherwise a still-loading
-    // tile or mid-animation frame can show up in the snapshot).
-    //
+    const cssW = canvas.clientWidth;
+    const cssH = canvas.clientHeight;
+    const cropCssW = Math.min(cssW, cssH * CAPTURE_W / CAPTURE_H);
+    // Never drop below the screen's own ratio: on a high-DPI screen the
+    // map may already have more pixels than the export needs, and the
+    // downscale below then only sharpens it.
+    map.setPixelRatio(Math.max(prevRatio, CAPTURE_W / cropCssW));
+    map.triggerRepaint();
     // BOUNDED. 'idle' only fires once every source has finished loading,
     // so one overlay tile that never resolves — a stalled PMTiles range
     // request, an ArcGIS layer retrying — means it never fires at all, and
     // an unbounded wait here hung the button on "Capturing…" with
-    // captureInFlight stuck true, i.e. dead until a page reload. The
-    // legend button is the one that showed it, because it is only enabled
-    // when an overlay (and therefore an extra source) is on.
+    // captureInFlight stuck true, i.e. dead until a page reload.
     //
     // waitForMapIdle stops its clock while the page is hidden, so the
-    // budget is visible time and switching tabs mid-capture doesn't
-    // manufacture a timeout. A timeout is NOT fatal here the way it is for
-    // the bulk snapshot export: preserveDrawingBuffer keeps the last
-    // rendered frame readable, and that frame is the view the user is
-    // looking at right now. Capturing it beats refusing to capture; the
-    // only cost is a tile that may still have been loading.
+    // budget is visible time. A timeout is NOT fatal: preserveDrawingBuffer
+    // keeps the last rendered frame readable, and capturing it beats
+    // refusing to capture; the only cost is a tile that may still have been
+    // loading, which the panel says.
     let staleFrame = false;
     try {
       await waitForMapIdle(map, STATIC_MAP_IDLE_TIMEOUT_MS);
@@ -3492,46 +3492,171 @@ async function generateStaticMap({ withLegend = false } = {}) {
       staleFrame = true;
       console.warn('static map: map never went idle, capturing current frame', err);
     }
-    const canvas = map.getCanvas();
-    const dataUrl = composeWithAttribution(canvas);
-    if ($staticMapSection) $staticMapSection.hidden = false;
-    $staticMapOutput.hidden = false;
-    $staticMapOutput.innerHTML = '';
-    // Plain-language hint above the image so the user knows what to
-    // do with the snapshot (Save Image As… isn't discoverable
-    // without prompting).
-    const hint = document.createElement('p');
-    hint.className = 'static-map-hint';
-    hint.textContent = staleFrame
-      // Say so rather than passing off a possibly half-drawn frame as a
-      // finished one — the user can re-click once the map settles.
-      ? 'Right click and Copy or Save image (the map was still loading — re-generate if a layer looks incomplete):'
-      : 'Right click and Copy or Save image:';
-    $staticMapOutput.appendChild(hint);
-    const img = document.createElement('img');
-    img.src = dataUrl;
-    img.alt = 'Static snapshot of the current map view';
-    img.title = 'Right-click → Save Image As… to drop into a report';
-    $staticMapOutput.appendChild(img);
-    $staticMapOutput.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  } catch (err) {
-    console.error('static map capture failed', err);
-    if ($staticMapSection) $staticMapSection.hidden = false;
-    $staticMapOutput.hidden = false;
-    $staticMapOutput.innerHTML = '<p style="color:#c0392b">Capture failed — try toggling the satellite basemap and re-trying. If it persists, check the browser console.</p>';
+    const sw = canvas.width;
+    const sh = canvas.height;
+    const cropW = Math.min(sw, sh * CAPTURE_W / CAPTURE_H);
+    const cropH = cropW * CAPTURE_H / CAPTURE_W;
+    const frame = document.createElement('canvas');
+    frame.width = CAPTURE_W;
+    frame.height = CAPTURE_H;
+    const fctx = frame.getContext('2d');
+    fctx.imageSmoothingQuality = 'high';
+    fctx.drawImage(canvas, (sw - cropW) / 2, (sh - cropH) / 2, cropW, cropH, 0, 0, CAPTURE_W, CAPTURE_H);
+    return { frame, staleFrame };
   } finally {
-    captureWithLegend = false;
+    map.setPixelRatio(prevRatio);
     captureInFlight = false;
-    // Restore each button's own prior state rather than blanket-enabling:
-    // Map w/Legend is disabled whenever no legend is on screen, and a
-    // capture must not be what switches it back on.
-    busyBtns.forEach((b, i) => { b.disabled = wasDisabled[i]; });
-    btn.textContent = originalLabel;
-    // A legend may have appeared or gone while the capture ran, so settle
-    // the button on what is actually on screen now rather than on the
-    // state we snapshotted before.
-    updateLegendAvailability();
+    if (btn) { btn.disabled = wasDisabled; btn.innerHTML = originalLabel; }
   }
+}
+
+/** The legend box's remembered choice; on unless the user turned it off. */
+function captureLegendWanted() {
+  try { return localStorage.getItem(CAPTURE_LEGEND_KEY) !== '0'; } catch { return true; }
+}
+
+/** The composed image for the current frame + legend choice. */
+function composedCapture() {
+  if (!captureFrame) return null;
+  const withLegend = !!$captureLegend && !$captureLegend.disabled && $captureLegend.checked;
+  return composeWithAttribution(captureFrame.frame, { withLegend });
+}
+
+function canvasToBlob(canvas, mime = 'image/png', quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('image encode failed'))), mime, quality);
+  });
+}
+
+/** Re-draw the panel preview from the stored frame (legend box changed). */
+async function refreshCapturePreview() {
+  const out = composedCapture();
+  if (!out || !$captureImg) return;
+  const blob = await canvasToBlob(out);
+  if ($captureImg.src) URL.revokeObjectURL($captureImg.src);
+  $captureImg.src = URL.createObjectURL(blob);
+}
+
+/** Show a finished capture in the Copy / Download panel. */
+async function openCapturePanel(capture) {
+  if (!$captureModal) return;
+  captureFrame = capture;
+  updateLegendAvailability({ sync: true });
+  if ($captureNote) {
+    $captureNote.hidden = !capture.staleFrame;
+    $captureNote.textContent = 'The map was still loading — close and capture again if a layer looks incomplete.';
+  }
+  await refreshCapturePreview();
+  if (!$captureModal.open) $captureModal.showModal();
+  $captureCopy?.focus();
+}
+
+function showCaptureError(err) {
+  console.error('static map capture failed', err);
+  if (captureInFlight) return;
+  window.alert('Map capture failed — try toggling the satellite basemap and re-trying. If it persists, check the browser console.');
+}
+
+/**
+ * "<muni>-map-YYYY-MM-DD" for the download: the municipality every result
+ * parcel shares, else the dropdown's, else just "map".
+ */
+function captureFilename(ext) {
+  const munis = new Set((lastResultFc?.features || [])
+    .map((f) => String(f?.properties?.Muni_Name_With_Typ || '').trim())
+    .filter(Boolean));
+  let muni = munis.size === 1 ? [...munis][0] : '';
+  if (!muni) muni = document.getElementById('municipality')?.value || '';
+  const slug = muni.replace(/[()]/g, '').trim().replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const stamp = new Date().toISOString().slice(0, 10);
+  return `${slug ? `${slug}-` : ''}map-${stamp}.${ext}`;
+}
+
+/** Brief label swap on a button to confirm an action. */
+function flashButton(btn, text) {
+  if (!btn) return;
+  const original = btn.dataset.label || btn.textContent;
+  btn.dataset.label = original;
+  btn.textContent = text;
+  clearTimeout(btn._flashTimer);
+  btn._flashTimer = setTimeout(() => { btn.textContent = original; }, 1800);
+}
+
+/** Small confirmation over the map, for Alt+C (which opens no panel). */
+function mapToast(text) {
+  const pane = $mapEl?.closest('.map-pane') || $mapEl;
+  if (!pane) return;
+  let el = pane.querySelector('.map-capture-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'map-capture-toast';
+    el.setAttribute('role', 'status');
+    pane.appendChild(el);
+  }
+  el.textContent = text;
+  el.classList.add('show');
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+function wireCapturePanel() {
+  if (!$captureModal) return;
+  if ($captureLegend) {
+    $captureLegend.checked = captureLegendWanted();
+    $captureLegend.addEventListener('change', () => {
+      try { localStorage.setItem(CAPTURE_LEGEND_KEY, $captureLegend.checked ? '1' : '0'); } catch { /* private mode */ }
+      refreshCapturePreview().catch((err) => console.error('capture preview failed', err));
+    });
+  }
+  $captureCopy?.addEventListener('click', async () => {
+    const out = composedCapture();
+    if (!out) return;
+    try {
+      // The Blob PROMISE goes straight into ClipboardItem, so the write is
+      // registered inside the click's user activation.
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': canvasToBlob(out) })]);
+      flashButton($captureCopy, 'Copied ✓');
+    } catch (err) {
+      console.warn('map capture copy failed', err);
+      flashButton($captureCopy, 'Copy blocked — use Download');
+    }
+  });
+  $captureDownload?.addEventListener('click', async () => {
+    const out = composedCapture();
+    if (out) downloadBlob(await canvasToBlob(out), captureFilename('png'));
+  });
+  $captureDownloadJpg?.addEventListener('click', async () => {
+    const out = composedCapture();
+    if (out) downloadBlob(await canvasToBlob(out, OUTPUT_MIME, 0.9), captureFilename(OUTPUT_EXT));
+  });
+  for (const el of $captureModal.querySelectorAll('[data-close]')) {
+    el.addEventListener('click', () => $captureModal.close());
+  }
+  // Click on the backdrop closes it too.
+  $captureModal.addEventListener('click', (e) => { if (e.target === $captureModal) $captureModal.close(); });
+}
+
+/**
+ * Alt+C: capture and copy straight to the clipboard, no panel. Uses the
+ * legend box's remembered choice. ClipboardItem takes the Blob promise so
+ * the write is registered inside the keypress's user activation; the
+ * capture itself takes a second or two.
+ */
+function copyMapToClipboard() {
+  if (captureInFlight) return;
+  const blob = generateStaticMap().then(async (capture) => {
+    captureFrame = capture;
+    const withLegend = captureLegendWanted() && visibleMapLegends().length > 0;
+    const out = composeWithAttribution(capture.frame, { withLegend });
+    return canvasToBlob(out);
+  });
+  mapToast('Capturing map…');
+  navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+    .then(() => mapToast(`Map copied — ${CAPTURE_W} × ${CAPTURE_H} px`))
+    .catch((err) => {
+      console.warn('Alt+C map copy failed', err);
+      mapToast('Copy failed — use 📸 Capture Map instead');
+    });
 }
 
 /**
@@ -4558,26 +4683,26 @@ function activeRollOrder() {
 }
 
 /**
- * Enable "Map w/Legend" only while there's a legend to draw. With none on
- * screen it would produce an image identical to Generate Map's, so the
- * button goes flat and says why rather than looking broken. (The control
- * this replaced — an "Include legend in map image" checkbox — hid itself
- * outright for the same reason; a button that appears and disappears
- * beside a fixed one is more jarring than one that greys out.)
+ * Enable the Capture Map panel's "Include legend" box only while there's a
+ * legend to draw. With none on screen it would change nothing, so it greys
+ * out and says why rather than looking broken. The remembered tick stays as
+ * it was, so the next capture with a legend gets the user's choice back.
+ *
+ * The tick is only re-read from storage when availability FLIPS (or the
+ * panel opens, `sync`). This runs from the map pane's MutationObserver, and
+ * a mouse click on the box itself fires that observer between the click and
+ * its 'change' event — re-ticking from storage there silently undid every
+ * untick (found 2026-10-07).
  */
-function updateLegendAvailability() {
-  if (!$staticMapLegendBtn) return;
-  // A capture owns the buttons until it finishes; it re-runs this itself.
-  if (captureInFlight) return;
+function updateLegendAvailability({ sync = false } = {}) {
+  if (!$captureLegend) return;
   const has = visibleMapLegends().length > 0;
-  $staticMapLegendBtn.disabled = !has;
-  if (!has) {
-    $staticMapLegendBtn.title =
-      'No legend on screen to include — turn on an overlay that has one (zoning, MASC, soil, land cover, traffic flow).';
-  } else {
-    $staticMapLegendBtn.title =
-      "Capture the current map view as a JPEG with the map's legend drawn into it, in the bottom-right corner just above the credit line — the same corner it occupies on screen. Every legend currently showing is included, stacked. The image keeps its normal dimensions, so the legend sits over the map rather than beside it.";
-  }
+  const flipped = $captureLegend.disabled !== !has;
+  $captureLegend.disabled = !has;
+  if (sync || flipped) $captureLegend.checked = has && captureLegendWanted();
+  $captureLegend.closest('label')?.setAttribute('title', has
+    ? "Draw the map's legend into the image, bottom-right above the credit line — the same corner it sits in on screen. Every legend showing is included, stacked."
+    : 'No legend on screen to include — turn on an overlay that has one (zoning, MASC, soil, land cover, traffic flow).');
 }
 
 /** The map-options row shows whenever the numbering or locator toggle does. */

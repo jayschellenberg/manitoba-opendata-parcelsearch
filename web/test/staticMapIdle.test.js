@@ -1,4 +1,4 @@
-// The Generate Map / Map w/Legend capture must wait for the map on a CLOCK.
+// The Capture Map capture must wait for the map on a CLOCK.
 //
 // WHY THIS EXISTS. generateStaticMap() waits for MapLibre's 'idle' before
 // reading the WebGL canvas, and 'idle' only fires once EVERY source has
@@ -69,7 +69,7 @@ function test(name, fn) {
  *  destructures its argument (`{ withLegend = false } = {}`), so the first
  *  `{` after the name belongs to the parameters, not the body. */
 function functionBody(src, name) {
-  const re = new RegExp(`\\basync function ${name}\\s*\\(`);
+  const re = new RegExp(`\\b(?:async\\s+)?function ${name}\\s*\\(`);
   const m = re.exec(src);
   assert.ok(m, `${name}() not found in ${path.basename(mainPath)}`);
   let parens = 0;
@@ -166,6 +166,49 @@ test('a timeout is survivable: the capture still clears its in-flight flag', () 
   assert.match(fin, /\bdisabled\s*=/,
     'the finally block does not restore the buttons\' disabled state');
 });
+
+// --- Capture Map panel + Alt+C (2026-10-07) ---------------------------------
+// The capture redraws the map at a higher pixel ratio to hit a fixed
+// 1950 x 1050 image. Leaving that ratio raised would make the live map
+// render at export resolution for the rest of the session, so the restore
+// must be in the finally, not after the await. And the panel / shortcut are
+// exactly the "written but never called" shape this file guards against.
+
+console.log('capture map panel is wired');
+
+test('the raised pixel ratio is restored in the finally', () => {
+  const body = functionBody(main, 'generateStaticMap');
+  assert.match(body, /setPixelRatio\(\s*Math\.max\(/,
+    'generateStaticMap() no longer raises the pixel ratio for the export');
+  const fin = body.slice(body.indexOf('finally'));
+  assert.match(fin, /setPixelRatio\(\s*prevRatio\s*\)/,
+    'the finally block does not put the pixel ratio back');
+});
+
+test('the capture button opens the Copy / Download panel', () => {
+  assert.match(main,
+    /\$staticMapBtn\.addEventListener\(\s*'click'[\s\S]{0,120}generateStaticMap\(\)\.then\(\s*openCapturePanel\s*\)/,
+    'the Capture Map button does not feed generateStaticMap() into openCapturePanel');
+  assert.match(main, /^\s*wireCapturePanel\(\);/m,
+    'wireCapturePanel() is never called — Copy / Download would do nothing');
+  assert.match(fnBodyOf('openCapturePanel'), /\.showModal\(\)/,
+    'openCapturePanel() never shows the dialog');
+});
+
+test('Alt+C reaches copyMapToClipboard', () => {
+  assert.match(main,
+    /e\.altKey[^\n]*e\.code === 'KeyC'[\s\S]{0,200}copyMapToClipboard\(\)/,
+    'no Alt+C keydown branch calls copyMapToClipboard()');
+  assert.match(fnBodyOf('copyMapToClipboard'), /new ClipboardItem\(/,
+    'copyMapToClipboard() never writes to the clipboard');
+});
+
+test('the legend box is driven by the legend observer', () => {
+  assert.match(fnBodyOf('updateLegendAvailability'), /\$captureLegend\.disabled\s*=/,
+    'updateLegendAvailability() no longer enables/disables the Include legend box');
+});
+
+function fnBodyOf(name) { return functionBody(main, name); }
 
 const failed = results.filter((r) => r === 0).length;
 console.log(`\n${results.length - failed}/${results.length} passed`);
