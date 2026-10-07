@@ -6888,6 +6888,9 @@ async function startStarredRoute() {
  *  geometry in the current rows. Called from the star toggles and
  *  after every render that re-applies starred state. */
 function refreshRouteStarredBtn() {
+  // Every change to starred state calls this, so the Number starred button
+  // rides along rather than being wired to each call site separately.
+  refreshNumberStarredBtn();
   const $btn = document.getElementById('route-starred');
   if (!$btn) return;
   if (!hasMapboxToken()) {
@@ -16278,6 +16281,8 @@ function applySelectionToMapAndCharts() {
   }
   publishSalesCharts();
   renderResultsStatus();
+  // Unticked sales are not numbered, so a tick change moves the count.
+  refreshNumberStarredBtn();
 }
 
 /**
@@ -16364,6 +16369,53 @@ function paintStar(btn) {
 function repaintStars() {
   for (const el of document.querySelectorAll('#results td.fav-col button.fav-star')) paintStar(el);
 }
+
+/**
+ * Starred sales on the grid that have no comp number yet, in the grid's
+ * displayed order, once per sale (a multi-parcel sale's rows share a key).
+ * Unticked rows are left out: an excluded sale is not a comparable.
+ */
+function unnumberedStarredSales() {
+  const out = [];
+  const seen = new Set();
+  for (const row of sortRows(currentRows || [])) {
+    const fav = parcelLegalKey(row?.parcel?.properties || {});
+    if (!fav || !favoriteKeys.has(fav) || !rowIsSelected(row)) continue;
+    const sale = rowSaleTag(row);
+    if (!sale.key || seen.has(sale.key) || compTags.comps.includes(sale.key)) continue;
+    seen.add(sale.key);
+    out.push(sale);
+  }
+  return out;
+}
+
+/** Show the button only in Sales Analysis, and only when it has work to do. */
+function refreshNumberStarredBtn() {
+  const btn = document.getElementById('number-starred');
+  if (!btn) return;
+  const n = document.body.classList.contains('sales-mode') ? unnumberedStarredSales().length : 0;
+  btn.hidden = n === 0;
+  btn.textContent = `Number starred (${n})`;
+  btn.title = `Give the ${n} starred sale${n === 1 ? '' : 's'} without a comp number the next numbers, `
+    + `in the grid's current order (after ★${compTags.comps.length || 0}). Unticked sales are skipped.`;
+}
+
+/**
+ * "Number my starred sales" (Jason, 2026-10-07): stars made before the star
+ * became the numbered comp carry no number. Append every such sale to the
+ * comp list in the grid's current sort order, so sorting first (by date, by
+ * $/Acre…) chooses the numbering. Existing numbers are kept.
+ */
+function numberStarredSales() {
+  const todo = unnumberedStarredSales();
+  if (!todo.length) return;
+  let next = compTags;
+  for (const { key, rec } of todo) next = toggleTag(next, 'comps', key, rec);
+  saveCompTags(next);
+  repaintStars();
+  refreshRouteStarredBtn();
+}
+document.getElementById('number-starred')?.addEventListener('click', numberStarredSales);
 
 /**
  * The charts page changed the comp tags: star the parcels of every sale that

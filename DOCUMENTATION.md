@@ -1298,9 +1298,14 @@ numbered comparable: starring a sale makes it the next comp and the star reads
   parcel therefore stars on all its sale rows, but only the sale clicked gets
   the number. `syncStarsFromTags` stars or unstars a sale's parcels when the
   charts page tags or untags it.
-- **Stars made before 2026-10-07 carry no number** until re-starred: the comp
-  list starts empty, and only a new star click (or a charts-page tag) numbers a
-  sale.
+- **Number starred (n)** (2026-10-07) numbers stars made before the star became
+  the comp — they come back starred but unnumbered. The amber button beside
+  Columns shows only in Sales Analysis and only while some starred, ticked sale
+  on the grid has no number; one click appends those sales to the comp list in
+  the grid's **current sort order** (sort by date or $/Acre first to choose the
+  numbering), once per sale, after any existing numbers. Unticked sales are
+  skipped (`unnumberedStarredSales` / `numberStarredSales`; refreshed from
+  `refreshRouteStarredBtn` and `applySelectionToMapAndCharts`).
 - **Unticking** a sale's checkbox opens a small reason popover
   (`openReasonPrompt`): Enter/Save keeps it, Escape/Skip leaves it blank,
   clicking away keeps what was typed; the row is unticked either way, and the

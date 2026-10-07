@@ -188,4 +188,17 @@ test('unticking a sale in the grid asks for the reason', () => {
   assert.match(main, /if \(save\) saveExclReason\(key, input\.value\)/);
 });
 
+console.log('number my starred sales (2026-10-07)');
+test('the button numbers unnumbered starred, ticked sales in grid order and stays current', () => {
+  const main = code('src/main.js');
+  // Grid order, ticked only, once per sale, skipping existing comps.
+  assert.match(main, /function unnumberedStarredSales\(\) \{[\s\S]*?for \(const row of sortRows\(currentRows \|\| \[\]\)\)[\s\S]*?!rowIsSelected\(row\)[\s\S]*?compTags\.comps\.includes\(sale\.key\)/);
+  assert.match(main, /for \(const \{ key, rec \} of todo\) next = toggleTag\(next, 'comps', key, rec\);\s*saveCompTags\(next\);/);
+  assert.match(main, /getElementById\('number-starred'\)\?\.addEventListener\('click', numberStarredSales\)/);
+  // Refreshed wherever starred state changes.
+  assert.match(main, /function refreshRouteStarredBtn\(\) \{\s*(?:\/\/[^\n]*\n\s*)*refreshNumberStarredBtn\(\);/);
+  const html = readFileSync(path.join(here, '..', 'index.html'), 'utf8');
+  assert.match(html, /id="number-starred"[^>]*hidden/);
+});
+
 console.log(`\n${passed} passed`);
