@@ -4434,19 +4434,9 @@ body:not(.has-max-km) #results td.subj-col {
    results table and the About / Disclaimer footers — appraisers click
    the button, then right-click → Save Image As to drop the snapshot
    into a Word/PDF report. */
-/* Static-map output. The Generate Map button lives in the sidebar
-   overlay grid alongside the layer toggles; this section just hosts
-   the captured PNG so it appears below the table where the user can
-   right-click → Save Image As. The section is `hidden` until a
-   capture lands. The .static-map-header / .static-map-hint rules
-   that used to sit here were removed when the button moved into
-   the sidebar. */
-.static-map-section {
-  padding: 14px 20px 6px;
-  background: #fff;
-  border-top: 1px solid #e2e4e9;
-}
-
+/* Location-map panel body (lib/locationMapPanel.js). Since 2026-10-07 it
+   renders inside the #location-map-modal pop-up rather than in a section
+   under the table. */
 .static-map-output {
   padding-bottom: 6px;
 }
@@ -5882,6 +5872,28 @@ body {
   border-color: var(--ui-brand-hover);
 }
 
+/* Capture Map + MB Overall Map share one row, half the width each.
+   min-width:0 lets a label ellipsis on a narrow sidebar rather than push
+   its sibling narrower than half. */
+.sidebar .capture-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 5px;
+}
+.sidebar .capture-row .generate-map-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-top: 0;
+  padding-inline: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* At half width the hint stops fitting below ~1450 px (measured: clipped
+   at 1366); the shortcut is still in the tooltip and the panel. */
+@media (max-width: 1450px) {
+  .sidebar .capture-row .kbd-hint { display: none; }
+}
 /* The shortcut, quietly, inside the Capture Map button. */
 .sidebar .generate-map-btn .kbd-hint {
   margin-left: 6px;
@@ -6642,11 +6654,6 @@ body {
 .sidebar .subject-row.has-subject .subject-roll-field input[type="text"] {
   background: var(--ui-accent-soft);
   border-color: var(--ui-accent);
-}
-
-.static-map-section {
-  background: var(--ui-bg-alt);
-  border-top-color: var(--ui-line);
 }
 
 .static-map-output img {
@@ -7974,4 +7981,36 @@ body:not(.sales-mode) .number-starred-btn { display: none; }
 .map-capture-toast.show {
   opacity: 1;
   transform: translate(-50%, 0);
+}
+
+/* MB Overall Map pop-up. Same frame as the Capture Map panel; the body is
+   the shared location-map panel, restyled here so its buttons match the
+   Capture Map ones (Copy = primary). The image is a tall portrait page, so
+   the dialog is narrower and the image is held to the visible height. */
+.location-map-modal {
+  width: min(760px, 94vw);
+}
+.location-map-modal .static-map-output {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+.location-map-modal .static-map-output img.location-map-img {
+  max-width: 100%;
+  max-height: calc(94vh - 190px);
+  width: auto;
+  margin: 0 auto;
+}
+.location-map-modal .location-map-controls button {
+  font-size: 13.5px;
+  padding: 6px 16px;
+  border: 1px solid #c2c5cc;
+  background: #fff;
+  color: #1a1a1a;
+}
+.location-map-modal .location-map-controls button.location-map-copy {
+  background: var(--ui-brand);
+  border-color: var(--ui-brand);
+  color: #fff;
 }
