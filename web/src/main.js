@@ -298,6 +298,7 @@ import { showLocationMapPanel } from './lib/locationMapPanel.js';
 import { BASE_MAPS, locateOnMap, renderLocationMap } from './lib/locationMap.js';
 import { haversineMeters, drawScaleBar, drawNorthArrow, framedBounds, localDateStamp } from './lib/mapFurniture.js';
 import { buildStoreZip } from './lib/zipStore.js';
+import { assessmentPerDu } from './lib/assessmentRates.js';
 import {
   dominantBucket, cultFraction, LAND_COVER_BUCKETS, LAND_COVER_MIN_ACRES,
   headlineCover, LAND_COVER_SOURCES,
@@ -1715,6 +1716,7 @@ const SORT_KEYS = {
   condodev: (r) => condoSortRank(r.parcel.properties._condoDev),
   streetview: (r) => strKey(r.parcel.geometry ? '1' : ''),
   value:   (r) => finiteOrNeg(parseTotalValue(r.parcel.properties.Total_Value)),
+  perdu:   (r) => finiteOrNeg(assessmentPerDu(parseTotalValue(r.parcel.properties.Total_Value), r.parcel.properties.Dwelling_Units)),
   report:  (r) => strKey(r.parcel.properties.Asmt_Rpt_Url),
   // Sale Date sorts on the PARSED instant, not the displayed string. The
   // cell renders MAO's `DD-Mmm-YY` form, so a string sort ordered by day
@@ -3243,7 +3245,9 @@ async function handleSnapshotExport() {
         $snapshotBtn.textContent = `Capturing ${done}/${total}… (click to cancel)`;
       },
     });
-    const stamp = new Date().toISOString().slice(0, 10);
+    // Local date, not toISOString() (UTC): an evening's export in Manitoba
+    // would otherwise be named after tomorrow.
+    const stamp = localDateStamp();
     downloadBlob(blob, `parcel-snapshots-${stamp}.zip`);
     // Skipped subjects are named rather than merely counted — the whole point
     // is that the user can re-run and know which images they're still missing.
@@ -14420,6 +14424,9 @@ function renderTable(rows, { resetPage = true } = {}) {
     tr.appendChild(sidesCell);
     tr.appendChild(td(dims ? formatFeet(dims.perimeterFt) : null, 'num', DIMS_EMPTY_HINT));
     tr.appendChild(assessmentCell(p));
+    // Asmt $/DU — positional, in step with the data-col="perdu" <th> right
+    // after Assessment.
+    tr.appendChild(td(fmtCurrency(assessmentPerDu(parseTotalValue(p.Total_Value), p.Dwelling_Units)), 'num'));
     tr.appendChild(walkCell(row));
     tr.appendChild(floodCell(row));
     tr.appendChild(landfactsCell(row));
@@ -18018,7 +18025,7 @@ function exportCsv(explicitRows) {
     // Approximate side lengths and perimeter from the polygon, beside the
     // other size figures (lib/parcelDimensions.js).
     'Sides (ft)', 'Perimeter (ft)',
-    csvAssessHeader(currentRows), 'Asmt Report URL',
+    csvAssessHeader(currentRows), 'Asmt $/DU', 'Asmt Report URL',
     'Walkscore URL', 'Flood-Map URL', 'Street View URL',
     ...(inSalesMode
       ? [
@@ -18137,6 +18144,7 @@ function exportCsv(explicitRows) {
       formatSides(rowDimensions(row)),
       csvPerimeter(rowDimensions(row)),
       parseTotalValue(p.Total_Value) ?? '',
+      assessmentPerDu(parseTotalValue(p.Total_Value), p.Dwelling_Units) ?? '',
       p.Asmt_Rpt_Url ?? '',
       walkscoreUrl(p),
       floodMapUrl(row),
