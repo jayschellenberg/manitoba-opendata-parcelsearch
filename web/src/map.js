@@ -8496,7 +8496,7 @@ const COMMUNITY_MASK_LAYERS = ['community-mask', 'community-limits-halo', 'commu
  * PTH 1, PR 459 and PR 457), so with highways on they vanished (Jason,
  * 2026-10-08). The dash lets the road show through its gaps; the grey says
  * which side is the community even where the line sits on a road.
- * Added on demand, so the layers sit at the top of the stack.
+ * Added on demand, just under the number callouts and the locator pin.
  */
 export function setCommunityMask(map, feature) {
   for (const id of COMMUNITY_MASK_LAYERS) if (map.getLayer(id)) map.removeLayer(id);
@@ -8511,21 +8511,25 @@ export function setCommunityMask(map, feature) {
     data: { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [world, ...holes] } },
   });
   map.addSource('community-limits', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: g } });
+  // Under the number callouts and the locator pin, so the subject's marker
+  // stays the top layer; above the roads, parcels and everything else.
+  const before = ['parcel-num-leader-casing', 'result-pin'].find((id) => map.getLayer(id));
+  // Lightened from 0.22 (Jason, 2026-10-08).
   map.addLayer({
     id: 'community-mask', type: 'fill', source: 'community-mask',
-    paint: { 'fill-color': '#5b6470', 'fill-opacity': 0.22 },
-  });
+    paint: { 'fill-color': '#5b6470', 'fill-opacity': 0.12 },
+  }, before);
   map.addLayer({
     id: 'community-limits-halo', type: 'line', source: 'community-limits',
     paint: { 'line-color': '#ffffff', 'line-width': 3.5, 'line-opacity': 0.8 },
-  });
+  }, before);
   // Thinned from 3 px (halo 5 px at 0.9) on Jason's ask, 2026-10-08. The
   // dash array counts in line widths, so it grows to keep the same 9 px dash
   // and 4.5 px gap.
   map.addLayer({
     id: 'community-limits-dash', type: 'line', source: 'community-limits',
     paint: { 'line-color': '#1d4ed8', 'line-width': 2, 'line-dasharray': [4.5, 2.25] },
-  });
+  }, before);
 }
 
 /**

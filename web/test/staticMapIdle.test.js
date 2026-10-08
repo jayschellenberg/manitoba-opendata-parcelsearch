@@ -244,7 +244,7 @@ test('the Addenda Pack button builds the pack and always restores the map', () =
 test('the addenda maps carry their own marks (Jason, 2026-10-08)', () => {
   const body = fnBodyOf('buildAddendaPack');
   assert.match(body, /locatorMarks = pinPoint\s*\?\s*\{ pin: true/, 'a lone parcel no longer gets the locator pin');
-  assert.match(body, /numbers: allFeats\.length > 1/, 'several parcels are no longer numbered on the locator maps');
+  assert.match(body, /numbers: allFeats\.length > 1 && allFeats\.length <= ADDENDA_NUMBER_MAX/, 'several parcels are no longer numbered on the locator maps, or the 25-parcel cap is gone');
   assert.match(body, /dims: true[\s\S]{0,200}'satellite'/, 'the aerial no longer carries dimensions');
   assert.match(body, /cycleZoningTo\('all'\)[\s\S]{0,800}withLegend: true/, 'the zoning map is not all-zones with its legend');
   assert.match(body, /cornerLabel: zoningLabel/, 'the zoning map has lost its "Zoning Map — By-law" label');
@@ -254,7 +254,7 @@ test('the addenda maps carry their own marks (Jason, 2026-10-08)', () => {
   assert.match(fnBodyOf('drawCaptureFurniture'), /drawScaleNote\(/, 'the scale note is never drawn');
   assert.match(body, /cornerScale: 1\.5/, 'the neighbourhood label is no longer enlarged');
   const hoodStep = body.slice(body.indexOf("step('neighbourhood')"), body.indexOf("step('aerial')"));
-  assert.match(hoodStep, /setCommunityMask\(map, addendaMuniFeature\(/, 'the neighbourhood map no longer greys out the area outside the community');
+  assert.match(hoodStep, /muniFeat = addendaMuniFeature\([\s\S]{0,40}setCommunityMask\(map, muniFeat\)/, 'the neighbourhood map no longer greys out the area outside the community');
   assert.match(hoodStep, /setCommunityMask\(map, null\)/, 'the community mask is left on after the neighbourhood map');
   assert.match(body.slice(body.indexOf('finally')), /setCommunityMask\(map, null\)/, 'the community mask is not cleared in the finally');
   assert.match(body, /'zoning-map\.png'/, 'the zoning map is never added to the pack');
@@ -262,7 +262,11 @@ test('the addenda maps carry their own marks (Jason, 2026-10-08)', () => {
   const hood = body.slice(body.indexOf("step('neighbourhood')"), body.indexOf("'neighbourhood-map.png'"));
   assert.match(hood, /setAuxOverlay\('muniParcels', false\)/, 'the neighbourhood map keeps the parcel fabric');
   assert.match(hood, /setAuxOverlay\('highways', true\)/, 'the neighbourhood map has no highways');
-  assert.match(hood, /cycleGridTo\('section'\)/, 'the neighbourhood map has no section grid');
+  assert.match(hood, /cycleGridTo\(null\)/, 'the neighbourhood map shows the section grid (Jason turned it off, 2026-10-08)');
+  assert.match(hood, /addendaNeighbourhoodFrame\(subjectBox, muniFeat\)/, 'the neighbourhood map no longer frames the whole community');
+  const frame = fnBodyOf('addendaNeighbourhoodFrame');
+  assert.match(frame, /span <= ADDENDA_COMMUNITY_MAX_M/, 'the whole-community frame has lost its size cap');
+  assert.match(frame, /CITY\|TOWN\|VILLAGE/, 'a big city or town no longer gets the capped frame around the subject');
   assert.match(hood, /size: ADDENDA_NEIGHBOURHOOD_SIZE, cornerLabel:/, 'the neighbourhood map is not tall / labelled');
   assert.match(body.slice(body.indexOf('finally')), /restoreLayers\(\)/, 'the grid / highways / parcels are not put back');
   assert.match(fnBodyOf('generateStaticMap'), /frame\.height = height/, 'the capture ignores the requested size');

@@ -3833,6 +3833,12 @@ async function generateLocationMap() {
 // The neighbourhood was 6 km; Jason asked for it slightly tighter on the
 // community (2026-10-08).
 const ADDENDA_NEIGHBOURHOOD_MIN_M = 4500;
+// The neighbourhood map shows the whole community when it is no wider or
+// taller than this; a bigger city or town (Brandon is 14.4 km) gets a frame
+// this wide around the subject instead (Jason, 2026-10-08).
+const ADDENDA_COMMUNITY_MAX_M = 10000;
+// Most result parcels the neighbourhood and zoning maps will number.
+const ADDENDA_NUMBER_MAX = 25;
 const ADDENDA_AERIAL_MIN_M = 300;
 const ADDENDA_ZONING_MIN_M = 1500;
 const ADDENDA_RESULTS_MIN_M = 800;
@@ -4004,6 +4010,44 @@ function addendaMuniFeature(feat) {
   }) || null;
 }
 
+/**
+ * The neighbourhood map's frame (Jason, 2026-10-08):
+ *   - the whole community, when it fits within ADDENDA_COMMUNITY_MAX_M —
+ *     most towns and villages;
+ *   - a city, town or village bigger than that (Brandon): a frame that
+ *     wide around the subject;
+ *   - an RM or other rural municipality, which is always far bigger: the
+ *     ADDENDA_NEIGHBOURHOOD_MIN_M frame around the subject, as before.
+ * Returns { bounds, note } — the note goes into the README listing.
+ */
+function addendaNeighbourhoodFrame(subjectBox, muniFeat) {
+  let box = null;
+  try { box = muniFeat ? bboxOfFeature(muniFeat) : null; } catch { box = null; }
+  if (box) {
+    const midLat = (box[1] + box[3]) / 2;
+    const span = Math.max(
+      haversineMeters([box[0], midLat], [box[2], midLat]),
+      haversineMeters([box[0], box[1]], [box[0], box[3]]),
+    );
+    if (span <= ADDENDA_COMMUNITY_MAX_M) {
+      return {
+        bounds: framedBounds(box, { padFrac: 0.06, minWidthM: ADDENDA_NEIGHBOURHOOD_MIN_M }),
+        note: 'framed on the whole community',
+      };
+    }
+    if (/^(CITY|TOWN|VILLAGE)$/i.test(String(muniFeat.properties?.MUNI_TYPE || '').trim())) {
+      return {
+        bounds: framedBounds(subjectBox, { padFrac: 0, minWidthM: ADDENDA_COMMUNITY_MAX_M }),
+        note: `${ADDENDA_COMMUNITY_MAX_M / 1000} km around the subject (the community is ${(span / 1000).toFixed(1)} km across)`,
+      };
+    }
+  }
+  return {
+    bounds: framedBounds(subjectBox, { padFrac: 0.1, minWidthM: ADDENDA_NEIGHBOURHOOD_MIN_M }),
+    note: 'centred on the subject',
+  };
+}
+
 /** "PINEY (RM)" -> "Rural Municipality of Piney", for the neighbourhood
  *  map's label. Small joining words stay lower case ("Lac du Bonnet"). */
 function addendaMuniLabel(props) {
@@ -4059,10 +4103,12 @@ async function buildAddendaPack() {
   const withLegend = captureLegendWanted() && visibleMapLegends().length > 0;
   const allFeats = (lastResultFc?.features || []).filter((f) => f?.geometry);
   // The neighbourhood and zoning maps' marks: the Locator pin on a lone
-  // parcel, numbered shapes when the map holds several.
+  // parcel, numbered shapes when the map holds several — up to
+  // ADDENDA_NUMBER_MAX. Past that (a whole-town search with one parcel
+  // picked) the callouts bury the map, so the shapes go unnumbered.
   const locatorMarks = pinPoint
     ? { pin: true, numbers: false, dims: false }
-    : { pin: false, numbers: allFeats.length > 1, dims: false };
+    : { pin: false, numbers: allFeats.length > 1 && allFeats.length <= ADDENDA_NUMBER_MAX, dims: false };
   const total = 1 + (subject.specific ? 3 : 0) + (allFeats.length > 1 ? 1 : 0);
   let n = 0;
   const step = (what) => { btn.textContent = `Addenda ${++n}/${total}: ${what}…`; };
@@ -4098,26 +4144,27 @@ async function buildAddendaPack() {
     if (subject.specific) {
       const marked = locatorMarks.pin ? ', locator pin' : locatorMarks.numbers ? ', parcels numbered' : '';
       // Neighbourhood — streets, wide enough to show the surroundings, a
-      // taller frame, the municipality named top-left, and the section grid
-      // and highways for bearings in place of the parcel fabric.
+      // taller frame, the municipality named top-left, and highways for
+      // bearings in place of the parcel fabric. No section grid (Jason,
+      // 2026-10-08: it cluttered the community view).
       step('neighbourhood');
       setAddendaMarks(locatorMarks);
       await setAuxOverlay('muniParcels', false);
       await setAuxOverlay('highways', true);
-      const gridOk = await cycleGridTo('section');
+      await cycleGridTo(null);
       const hoodLabel = addendaMuniLabel(subject.feats[0]?.properties);
       // Light grey outside the community and its limits dashed on top, so
       // the limits survive the highways drawn over them.
-      setCommunityMask(map, addendaMuniFeature(subject.feats[0]));
-      const hood = await captureAddendaView(
-        framedBounds(subjectBox, { padFrac: 0.1, minWidthM: ADDENDA_NEIGHBOURHOOD_MIN_M }), 'streets',
+      const muniFeat = addendaMuniFeature(subject.feats[0]);
+      setCommunityMask(map, muniFeat);
+      const hoodFrame = addendaNeighbourhoodFrame(subjectBox, muniFeat);
+      const hood = await captureAddendaView(hoodFrame.bounds, 'streets',
         // The municipality label 1.5x the others: 50 px, about 12 pt printed
         // (Jason, 2026-10-08).
         { withLegend, size: ADDENDA_NEIGHBOURHOOD_SIZE, cornerLabel: hoodLabel, cornerScale: 1.5 });
       add('neighbourhood-map.png', hood.bytes,
-        `Streets, centred on ${subject.note}${marked}, ${ADDENDA_NEIGHBOURHOOD_SIZE.width} x ${ADDENDA_NEIGHBOURHOOD_SIZE.height} px`,
+        `Streets, ${hoodFrame.note}${marked}, ${ADDENDA_NEIGHBOURHOOD_SIZE.width} x ${ADDENDA_NEIGHBOURHOOD_SIZE.height} px`,
         hood.stale);
-      if (!gridOk) notes.push('The section/township grid could not be loaded for the neighbourhood map.');
       setCommunityMask(map, null);
       await restoreLayers();
       // Aerial — satellite imagery, close on the subject, sides labelled.
