@@ -281,6 +281,7 @@ import {
   setParcelDimensionData,
   setParcelDimensionsVisible,
   setResultPin,
+  setCommunityMask,
   LANDCOVER_TILES_URL,
 } from './map.js';
 import {
@@ -308,7 +309,7 @@ import {
   waterColor, waterCellText, waterTooltip, waterSortRank,
   waterCsvCells, isWaterfront, isNearWater, WATER_CLASSES, waterDistance,
 } from './lib/water.js';
-import { rowPassesChangesFilter, changesFilterInert } from './lib/amendment.js';
+import { rowPassesChangesFilter, changesFilterInert, zoningBylawText } from './lib/amendment.js';
 import { PILL_SPECS, modeFromChecked, checkedFromMode } from './lib/pillBinding.js';
 import { cliClassRollup } from './lib/cliRollup.js';
 import {
@@ -3398,11 +3399,40 @@ function composeWithAttribution(frame, { withLegend = false, furniture = null } 
 }
 
 /** Scale bar + north arrow for a composed capture. */
-function drawCaptureFurniture(ctx, w, h, fontSize, { metersPerPx, bearing }) {
+function drawCaptureFurniture(ctx, w, h, fontSize, { metersPerPx, bearing, scaleNote = '' }) {
   const pad = Math.round(w * 0.008);
-  drawScaleBar(ctx, { x: pad, y: h - pad, metersPerPx, maxWidthPx: w * 0.2, font: fontSize });
+  // An optional note (the aerial's survey disclaimer) sits under the scale
+  // bar in its own pill, and the bar moves up to make room for it.
+  const noteH = scaleNote ? drawScaleNote(ctx, { x: pad, y: h - pad, text: scaleNote, font: fontSize }) : 0;
+  const barBottom = noteH ? h - pad - noteH - Math.round(pad / 2) : h - pad;
+  drawScaleBar(ctx, { x: pad, y: barBottom, metersPerPx, maxWidthPx: w * 0.2, font: fontSize });
   const size = Math.round(w * 0.042);
   drawNorthArrow(ctx, { cx: w - pad - size / 2, cy: pad + size / 2, size, bearing });
+}
+
+/** One line of italic text in a white pill, its bottom-left corner at
+ *  (x, y), styled like the scale bar's pill. Returns the pill's height. */
+function drawScaleNote(ctx, { x, y, text, font }) {
+  const fs = Math.max(11, Math.round(font));
+  const padX = Math.round(fs * 0.6);
+  const padY = Math.round(fs * 0.4);
+  ctx.save();
+  ctx.font = `italic ${fs}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
+  const w = Math.ceil(ctx.measureText(text).width + padX * 2);
+  const h = fs + padY * 2;
+  const x0 = Math.round(x);
+  const y0 = Math.round(y - h);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+  ctx.fillRect(x0, y0, w, h);
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x0 + 0.5, y0 + 0.5, w - 1, h - 1);
+  ctx.fillStyle = '#1a1a1a';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  ctx.fillText(text, x0 + padX, y0 + h / 2);
+  ctx.restore();
+  return h;
 }
 
 /** Legends currently on screen, as plain data. Wraps the lib reader with
@@ -3800,7 +3830,9 @@ async function generateLocationMap() {
 
 // How wide each framed view is at least, in metres. Rural Manitoba needs a
 // wider neighbourhood than a city block does (the Winnipeg app uses less).
-const ADDENDA_NEIGHBOURHOOD_MIN_M = 6000;
+// The neighbourhood was 6 km; Jason asked for it slightly tighter on the
+// community (2026-10-08).
+const ADDENDA_NEIGHBOURHOOD_MIN_M = 4500;
 const ADDENDA_AERIAL_MIN_M = 300;
 const ADDENDA_ZONING_MIN_M = 1500;
 const ADDENDA_RESULTS_MIN_M = 800;
@@ -3876,7 +3908,7 @@ function setAddendaMarks({ pin, numbers, dims }) {
 }
 
 /** Frame the live map on `bounds` with `basemap`, north-up, and capture it. */
-async function captureAddendaView(bounds, basemap, { withLegend, size = null, cornerLabel = '', prepare = null }) {
+async function captureAddendaView(bounds, basemap, { withLegend, size = null, cornerLabel = '', cornerScale = 1, prepare = null, scaleNote = '' }) {
   setBasemapByKey(basemap);
   map.jumpTo({ bearing: 0, pitch: 0 });
   // Fit the bounds inside the part of the pane the capture crops out, not
@@ -3896,9 +3928,26 @@ async function captureAddendaView(bounds, basemap, { withLegend, size = null, co
   // zones) runs here, once the camera is where the capture will be.
   if (prepare) prepare();
   const capture = await generateStaticMap(size || undefined);
+  if (scaleNote) capture.scaleNote = scaleNote;
   const out = composeWithAttribution(capture.frame, { withLegend, furniture: capture });
-  if (cornerLabel) drawCornerLabel(out, cornerLabel);
+  if (cornerLabel) drawCornerLabel(out, cornerLabel, cornerScale);
   return { bytes: await blobBytes(await canvasToBlob(out)), stale: capture.staleFrame };
+}
+
+/** "Zoning Map — By-law <ZBL>" for the zone under the subject's centre;
+ *  plain "Zoning Map" when none is found or it carries no number. */
+function addendaZoningLabel(fc, feat) {
+  const c = parcelCentrePoint(feat);
+  let base = null;
+  if (c) {
+    const pt = [c.lng, c.lat];
+    const hit = (fc?.features || []).find((z) => {
+      try { return z?.geometry && booleanPointInPolygon(pt, z); } catch { return false; }
+    });
+    base = hit ? zoningBylawText(hit.properties).base : null;
+  }
+  if (!base) return 'Zoning Map';
+  return /by-?law/i.test(base) ? `Zoning Map — ${base}` : `Zoning Map — By-law ${base}`;
 }
 
 /** The zoning polygons whose extent touches the current map view. */
@@ -3917,11 +3966,13 @@ function zoningInView(fc) {
 }
 
 /** A bold boxed label in the top-left corner of a composed map — the
- *  corner the credit, legend, scale bar and north arrow all leave free. */
-function drawCornerLabel(canvas, text) {
+ *  corner the credit, legend, scale bar and north arrow all leave free.
+ *  33 px on a 1950 px map (about 8 pt printed at 6.5 in); `scale` enlarges
+ *  it, as on the neighbourhood map. */
+function drawCornerLabel(canvas, text, scale = 1) {
   const ctx = canvas.getContext('2d');
   const w = canvas.width;
-  const fontSize = Math.max(14, Math.round(w * 0.017));
+  const fontSize = Math.max(14, Math.round(w * 0.017 * scale));
   const pad = Math.round(w * 0.008);
   const padX = Math.round(fontSize * 0.6);
   const padY = Math.round(fontSize * 0.4);
@@ -3937,6 +3988,20 @@ function drawCornerLabel(canvas, text) {
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left';
   ctx.fillText(text, pad + padX, pad + boxH / 2);
+}
+
+/** The subject's municipality polygon from the boundary file: by its
+ *  "NAME (TYPE)" first, else the boundary the subject's centre falls in. */
+function addendaMuniFeature(feat) {
+  const feats = muniBoundariesFc?.features || [];
+  const name = muniNameFromProps(feat?.properties);
+  const byName = name && feats.find((f) => f.properties?.MUNI_LIST_NAME_WITH_TYPE === name);
+  if (byName) return byName;
+  const c = parcelCentrePoint(feat);
+  if (!c) return null;
+  return feats.find((f) => {
+    try { return f?.geometry && booleanPointInPolygon([c.lng, c.lat], f); } catch { return false; }
+  }) || null;
 }
 
 /** "PINEY (RM)" -> "Rural Municipality of Piney", for the neighbourhood
@@ -4041,19 +4106,27 @@ async function buildAddendaPack() {
       await setAuxOverlay('highways', true);
       const gridOk = await cycleGridTo('section');
       const hoodLabel = addendaMuniLabel(subject.feats[0]?.properties);
+      // Light grey outside the community and its limits dashed on top, so
+      // the limits survive the highways drawn over them.
+      setCommunityMask(map, addendaMuniFeature(subject.feats[0]));
       const hood = await captureAddendaView(
         framedBounds(subjectBox, { padFrac: 0.1, minWidthM: ADDENDA_NEIGHBOURHOOD_MIN_M }), 'streets',
-        { withLegend, size: ADDENDA_NEIGHBOURHOOD_SIZE, cornerLabel: hoodLabel });
+        // The municipality label 1.5x the others: 50 px, about 12 pt printed
+        // (Jason, 2026-10-08).
+        { withLegend, size: ADDENDA_NEIGHBOURHOOD_SIZE, cornerLabel: hoodLabel, cornerScale: 1.5 });
       add('neighbourhood-map.png', hood.bytes,
         `Streets, centred on ${subject.note}${marked}, ${ADDENDA_NEIGHBOURHOOD_SIZE.width} x ${ADDENDA_NEIGHBOURHOOD_SIZE.height} px`,
         hood.stale);
       if (!gridOk) notes.push('The section/township grid could not be loaded for the neighbourhood map.');
+      setCommunityMask(map, null);
       await restoreLayers();
       // Aerial — satellite imagery, close on the subject, sides labelled.
       step('aerial');
       setAddendaMarks({ pin: false, numbers: userMarks.numbers, dims: true });
       const aerial = await captureAddendaView(
-        framedBounds(subjectBox, { padFrac: 0.35, minWidthM: ADDENDA_AERIAL_MIN_M }), 'satellite', { withLegend });
+        framedBounds(subjectBox, { padFrac: 0.35, minWidthM: ADDENDA_AERIAL_MIN_M }), 'satellite',
+        { withLegend, cornerLabel: 'Aerial View (Subject Highlighted)',
+          scaleNote: 'Not a legal survey - site dimensions are approximate' });
       add('subject-aerial.png', aerial.bytes, `Satellite imagery of ${subject.note}, with dimensions`, aerial.stale);
       // Zoning — streets with every zone in the municipality, and its legend
       // whatever the Capture Map panel says.
@@ -4065,10 +4138,11 @@ async function buildAddendaPack() {
         // which dropped the very zones on the map (Brandon, 2026-10-08).
         // Colours are per code, so the subset keeps them.
         const muniZoning = lastZoningFc;
+        const zoningLabel = addendaZoningLabel(muniZoning, subject.feats[0]);
         try {
           const zoning = await captureAddendaView(
             framedBounds(subjectBox, { padFrac: 0.2, minWidthM: ADDENDA_ZONING_MIN_M }), 'streets',
-            { withLegend: true, prepare: () => rebuildZoningLegend(zoningInView(muniZoning)) });
+            { withLegend: true, cornerLabel: zoningLabel, prepare: () => rebuildZoningLegend(zoningInView(muniZoning)) });
           add('zoning-map.png', zoning.bytes, `Zoning around ${subject.note}${marked}`, zoning.stale);
         } finally {
           rebuildZoningLegend(muniZoning);
@@ -4091,6 +4165,7 @@ async function buildAddendaPack() {
   } finally {
     // Put the user's map back exactly as it was, whatever happened above.
     if (zoningOverlayMode() !== zoningWas) await cycleZoningTo(zoningWas).catch(() => {});
+    setCommunityMask(map, null);
     await restoreLayers().catch(() => {});
     setAddendaMarks(userMarks);
     setBasemapByKey(basemap);

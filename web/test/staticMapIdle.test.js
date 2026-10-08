@@ -246,7 +246,17 @@ test('the addenda maps carry their own marks (Jason, 2026-10-08)', () => {
   assert.match(body, /locatorMarks = pinPoint\s*\?\s*\{ pin: true/, 'a lone parcel no longer gets the locator pin');
   assert.match(body, /numbers: allFeats\.length > 1/, 'several parcels are no longer numbered on the locator maps');
   assert.match(body, /dims: true[\s\S]{0,200}'satellite'/, 'the aerial no longer carries dimensions');
-  assert.match(body, /cycleZoningTo\('all'\)[\s\S]{0,300}withLegend: true/, 'the zoning map is not all-zones with its legend');
+  assert.match(body, /cycleZoningTo\('all'\)[\s\S]{0,800}withLegend: true/, 'the zoning map is not all-zones with its legend');
+  assert.match(body, /cornerLabel: zoningLabel/, 'the zoning map has lost its "Zoning Map — By-law" label');
+  assert.match(fnBodyOf('addendaZoningLabel'), /zoningBylawText\(/, 'the zoning label no longer reads the by-law');
+  assert.match(body, /cornerLabel: 'Aerial View \(Subject Highlighted\)'/, 'the aerial has lost its label');
+  assert.match(body, /scaleNote: 'Not a legal survey - site dimensions are approximate'/, 'the aerial has lost its survey note');
+  assert.match(fnBodyOf('drawCaptureFurniture'), /drawScaleNote\(/, 'the scale note is never drawn');
+  assert.match(body, /cornerScale: 1\.5/, 'the neighbourhood label is no longer enlarged');
+  const hoodStep = body.slice(body.indexOf("step('neighbourhood')"), body.indexOf("step('aerial')"));
+  assert.match(hoodStep, /setCommunityMask\(map, addendaMuniFeature\(/, 'the neighbourhood map no longer greys out the area outside the community');
+  assert.match(hoodStep, /setCommunityMask\(map, null\)/, 'the community mask is left on after the neighbourhood map');
+  assert.match(body.slice(body.indexOf('finally')), /setCommunityMask\(map, null\)/, 'the community mask is not cleared in the finally');
   assert.match(body, /'zoning-map\.png'/, 'the zoning map is never added to the pack');
   assert.match(body, /title: true/, 'the location map has lost its title box');
   const hood = body.slice(body.indexOf("step('neighbourhood')"), body.indexOf("'neighbourhood-map.png'"));
