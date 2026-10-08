@@ -8517,11 +8517,14 @@ export function setCommunityMask(map, feature) {
   });
   map.addLayer({
     id: 'community-limits-halo', type: 'line', source: 'community-limits',
-    paint: { 'line-color': '#ffffff', 'line-width': 5, 'line-opacity': 0.9 },
+    paint: { 'line-color': '#ffffff', 'line-width': 3.5, 'line-opacity': 0.8 },
   });
+  // Thinned from 3 px (halo 5 px at 0.9) on Jason's ask, 2026-10-08. The
+  // dash array counts in line widths, so it grows to keep the same 9 px dash
+  // and 4.5 px gap.
   map.addLayer({
     id: 'community-limits-dash', type: 'line', source: 'community-limits',
-    paint: { 'line-color': '#1d4ed8', 'line-width': 3, 'line-dasharray': [3, 1.5] },
+    paint: { 'line-color': '#1d4ed8', 'line-width': 2, 'line-dasharray': [4.5, 2.25] },
   });
 }
 
