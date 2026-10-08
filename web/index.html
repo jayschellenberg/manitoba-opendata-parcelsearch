@@ -1566,6 +1566,7 @@
             <button id="static-map-btn" type="button" class="generate-map-btn" title="Capture the current map view as a 1950 × 1050 image (6.5 × 3.5 in at 300 dpi), whatever size the map is on screen. Opens a preview with Include legend, Copy image and Download. Shortcut: Alt+C copies the view straight to the clipboard.">📸 Capture Map <span class="kbd-hint">Alt+C</span></button>
             <button id="location-map-btn" type="button" class="generate-map-btn generate-map-btn-location" title="Render the Manitoba overview map (NRCan) with a pin at the searched property and a SUBJECT callout pointing at it — the location figure for a report. A Winnipeg property can be switched to the Winnipeg map, which also marks the downtown inset. Shown below the table as a sharp PNG with Copy and Download; the callout text and side can be changed there.">🗺️ MB Overall Map</button>
           </div>
+          <button id="exhibit-pack-btn" type="button" class="generate-map-btn generate-map-btn-pack" title="Download a ZIP of the standard report map exhibits for the current search: the MB location map, a neighbourhood map, a satellite aerial of the subject and (with more than one parcel) a map of all the results. Each map is 1950 × 1050 with the credit, scale bar and north arrow; the legend follows the Capture Map panel setting. Your map view and basemap are put back afterwards.">📦 Exhibit Pack (ZIP)</button>
         </section><!-- /map-layers-section -->
 
         <!-- ===================================================
@@ -2197,6 +2198,7 @@
         <img id="map-capture-img" class="map-capture-img" alt="Captured map view">
         <div class="map-capture-actions">
           <label class="map-capture-legend"><input type="checkbox" id="map-capture-legend"> Include legend</label>
+          <label class="map-capture-legend" title="Draw a scale bar (metres and feet, measured at the map centre) bottom-left and a north arrow top-right."><input type="checkbox" id="map-capture-furniture"> Scale bar &amp; north arrow</label>
           <span class="map-capture-spacer"></span>
           <button type="button" id="map-capture-copy" class="parcel-list-modal-btn primary">Copy image</button>
           <button type="button" id="map-capture-download" class="parcel-list-modal-btn">Download PNG</button>

@@ -295,6 +295,9 @@ import { countSnapshotFrames } from './lib/snapshotGroups.js';
 import { waitForMapIdle, MapRenderTimeoutError } from './lib/snapshotCapture.js';
 import { OUTPUT_MIME, OUTPUT_EXT } from './lib/imageOutput.js';
 import { showLocationMapPanel } from './lib/locationMapPanel.js';
+import { BASE_MAPS, locateOnMap, renderLocationMap } from './lib/locationMap.js';
+import { haversineMeters, drawScaleBar, drawNorthArrow, framedBounds, localDateStamp } from './lib/mapFurniture.js';
+import { buildStoreZip } from './lib/zipStore.js';
 import {
   dominantBucket, cultFraction, LAND_COVER_BUCKETS, LAND_COVER_MIN_ACRES,
   headlineCover, LAND_COVER_SOURCES,
@@ -3143,10 +3146,21 @@ const $captureLegend     = document.getElementById('map-capture-legend');
 const $captureCopy       = document.getElementById('map-capture-copy');
 const $captureDownload   = document.getElementById('map-capture-download');
 const $captureDownloadJpg = document.getElementById('map-capture-download-jpg');
+const $captureFurniture  = document.getElementById('map-capture-furniture');
 const CAPTURE_LEGEND_KEY = 'mbps.captureLegend';
+const CAPTURE_FURNITURE_KEY = 'mbps.captureFurniture';
+const $exhibitPackBtn    = document.getElementById('exhibit-pack-btn');
 if ($staticMapBtn) {
   $staticMapBtn.addEventListener('click', () => {
     generateStaticMap().then(openCapturePanel).catch(showCaptureError);
+  });
+}
+if ($exhibitPackBtn) {
+  $exhibitPackBtn.addEventListener('click', () => {
+    buildExhibitPack().catch((err) => {
+      console.error('exhibit pack failed', err);
+      window.alert(`Exhibit pack failed: ${err?.message || err}`);
+    });
   });
 }
 wireCapturePanel();
@@ -3308,8 +3322,11 @@ function downloadBlob(blob, filename) {
  * `frame` is the CAPTURE_W x CAPTURE_H frame generateStaticMap() cropped out
  * of the map canvas. It is left untouched so the panel's "Include legend"
  * box can recompose from it. Returns a new canvas of the same size.
+ *
+ * `furniture` is the capture record ({ metersPerPx, bearing }) when the
+ * scale bar and north arrow are wanted, else null.
  */
-function composeWithAttribution(frame, { withLegend = false } = {}) {
+function composeWithAttribution(frame, { withLegend = false, furniture = null } = {}) {
   const w = frame.width;
   const h = frame.height;
   const out = document.createElement('canvas');
@@ -3368,7 +3385,19 @@ function composeWithAttribution(frame, { withLegend = false } = {}) {
   // normal dimensions.
   if (withLegend) drawMapLegends(ctx, w, h, y0 - 6, fontSize);
 
+  // Scale bar bottom-left, north arrow top-right: the corners the credit,
+  // the legend and the on-screen controls leave free (lib/mapFurniture.js).
+  if (furniture) drawCaptureFurniture(ctx, w, h, fontSize, furniture);
+
   return out;
+}
+
+/** Scale bar + north arrow for a composed capture. */
+function drawCaptureFurniture(ctx, w, h, fontSize, { metersPerPx, bearing }) {
+  const pad = Math.round(w * 0.008);
+  drawScaleBar(ctx, { x: pad, y: h - pad, metersPerPx, maxWidthPx: w * 0.2, font: fontSize });
+  const size = Math.round(w * 0.042);
+  drawNorthArrow(ctx, { cx: w - pad - size / 2, cy: pad + size / 2, size, bearing });
 }
 
 /** Legends currently on screen, as plain data. Wraps the lib reader with
@@ -3487,7 +3516,19 @@ async function generateStaticMap() {
     const fctx = frame.getContext('2d');
     fctx.imageSmoothingQuality = 'high';
     fctx.drawImage(canvas, (sw - cropW) / 2, (sh - cropH) / 2, cropW, cropH, 0, 0, CAPTURE_W, CAPTURE_H);
-    return { frame, staleFrame };
+    // Ground resolution of the frame, for the scale bar: the true distance
+    // between two CSS points either side of the map centre, scaled to frame
+    // pixels. Measured, not derived from the zoom, so it holds whatever the
+    // projection or tile size. A pitched (tilted) map has no single scale,
+    // so it gets none rather than a wrong one.
+    let metersPerPx = NaN;
+    if (map.getPitch() <= 1) {
+      const c = map.project(map.getCenter());
+      const a = map.unproject([c.x - 50, c.y]);
+      const b = map.unproject([c.x + 50, c.y]);
+      metersPerPx = (haversineMeters([a.lng, a.lat], [b.lng, b.lat]) / 100) * (cropCssW / CAPTURE_W);
+    }
+    return { frame, staleFrame, metersPerPx, bearing: map.getBearing() };
   } finally {
     map.setPixelRatio(prevRatio);
     captureInFlight = false;
@@ -3500,11 +3541,17 @@ function captureLegendWanted() {
   try { return localStorage.getItem(CAPTURE_LEGEND_KEY) !== '0'; } catch { return true; }
 }
 
-/** The composed image for the current frame + legend choice. */
+/** The scale-bar / north-arrow box's remembered choice; on by default. */
+function captureFurnitureWanted() {
+  try { return localStorage.getItem(CAPTURE_FURNITURE_KEY) !== '0'; } catch { return true; }
+}
+
+/** The composed image for the current frame + legend / furniture choices. */
 function composedCapture() {
   if (!captureFrame) return null;
   const withLegend = !!$captureLegend && !$captureLegend.disabled && $captureLegend.checked;
-  return composeWithAttribution(captureFrame.frame, { withLegend });
+  const furniture = ($captureFurniture ? $captureFurniture.checked : captureFurnitureWanted()) ? captureFrame : null;
+  return composeWithAttribution(captureFrame.frame, { withLegend, furniture });
 }
 
 function canvasToBlob(canvas, mime = 'image/png', quality) {
@@ -3553,7 +3600,7 @@ function captureFilename(ext) {
   let muni = munis.size === 1 ? [...munis][0] : '';
   if (!muni) muni = document.getElementById('municipality')?.value || '';
   const slug = muni.replace(/[()]/g, '').trim().replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = localDateStamp();
   return `${slug ? `${slug}-` : ''}map-${stamp}.${ext}`;
 }
 
@@ -3590,6 +3637,13 @@ function wireCapturePanel() {
     $captureLegend.checked = captureLegendWanted();
     $captureLegend.addEventListener('change', () => {
       try { localStorage.setItem(CAPTURE_LEGEND_KEY, $captureLegend.checked ? '1' : '0'); } catch { /* private mode */ }
+      refreshCapturePreview().catch((err) => console.error('capture preview failed', err));
+    });
+  }
+  if ($captureFurniture) {
+    $captureFurniture.checked = captureFurnitureWanted();
+    $captureFurniture.addEventListener('change', () => {
+      try { localStorage.setItem(CAPTURE_FURNITURE_KEY, $captureFurniture.checked ? '1' : '0'); } catch { /* private mode */ }
       refreshCapturePreview().catch((err) => console.error('capture preview failed', err));
     });
   }
@@ -3632,7 +3686,8 @@ function copyMapToClipboard() {
   const blob = generateStaticMap().then(async (capture) => {
     captureFrame = capture;
     const withLegend = captureLegendWanted() && visibleMapLegends().length > 0;
-    const out = composeWithAttribution(capture.frame, { withLegend });
+    const furniture = captureFurnitureWanted() ? capture : null;
+    const out = composeWithAttribution(capture.frame, { withLegend, furniture });
     return canvasToBlob(out);
   });
   mapToast('Capturing map…');
@@ -3712,6 +3767,175 @@ async function generateLocationMap() {
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = LOCATION_MAP_LABEL; }
   }
+}
+
+// ---------- Exhibit Pack ----------
+//
+// One click, one ZIP of the standard report map exhibits for the current
+// search (Jason, 2026-10-07): the provincial location map, a neighbourhood
+// map, an aerial of the subject and — with more than one parcel — a map of
+// the whole result set. Every map is the same 1950 x 1050 Capture Map image
+// with the credit, scale bar and north arrow; the legend follows the Capture
+// Map panel's remembered choice. Built by driving the live map (basemap
+// menu + camera) and putting both back afterwards, so what is in the pack
+// is exactly what the app would have shown.
+
+// How wide each framed view is at least, in metres. Rural Manitoba needs a
+// wider neighbourhood than a city block does (the Winnipeg app uses less).
+const EXHIBIT_NEIGHBOURHOOD_MIN_M = 6000;
+const EXHIBIT_AERIAL_MIN_M = 300;
+const EXHIBIT_RESULTS_MIN_M = 800;
+
+/**
+ * The parcel the pack is about, most specific first — the same order as the
+ * location map's SUBJECT arrow: the sales subject, the parcel open in the
+ * summary card, else the search's only result. `specific` is false when
+ * none of those applies (several results, none picked): the neighbourhood
+ * and aerial exhibits are then left out, because framing "the subject" on
+ * a scattered result set produced a 20 km "aerial" that described nothing.
+ */
+function exhibitSubjectFeatures() {
+  if (subjectFeature?.geometry) return { feats: [subjectFeature], note: 'the subject parcel', specific: true };
+  if (selectedParcelRow?.parcel?.geometry) return { feats: [selectedParcelRow.parcel], note: 'the selected parcel', specific: true };
+  const feats = (lastResultFc?.features || []).filter((f) => f?.geometry);
+  if (!feats.length) return null;
+  if (feats.length === 1) return { feats, note: 'the search result', specific: true };
+  return { feats, note: `all ${feats.length} result parcels`, specific: false };
+}
+
+/** [minX, minY, maxX, maxY] over several features; null when none read. */
+function bboxOfFeatures(feats) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const f of feats) {
+    try {
+      const [a, b, c, d] = bboxOfFeature(f);
+      minX = Math.min(minX, a); minY = Math.min(minY, b);
+      maxX = Math.max(maxX, c); maxY = Math.max(maxY, d);
+    } catch { /* skip an unreadable geometry */ }
+  }
+  return Number.isFinite(minX) ? [minX, minY, maxX, maxY] : null;
+}
+
+/** The basemap menu's active view, and a way to pick one by its key. The
+ *  menu items are clicked rather than the layers flipped directly so the
+ *  menu's label and its own side effects stay in step. */
+function currentBasemapKey() {
+  return document.querySelector('.basemap-menu-item.active')?.dataset.key || 'streets';
+}
+function setBasemapByKey(key) {
+  const item = document.querySelector(`.basemap-menu-item[data-key="${key}"]`);
+  if (item && !item.classList.contains('active')) item.click();
+}
+
+async function blobBytes(blob) {
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
+/** Frame the live map on `bounds` with `basemap`, north-up, and capture it. */
+async function captureExhibitView(bounds, basemap, { withLegend }) {
+  setBasemapByKey(basemap);
+  map.jumpTo({ bearing: 0, pitch: 0 });
+  map.fitBounds(bounds, { padding: 0, animate: false });
+  const capture = await generateStaticMap();
+  const out = composeWithAttribution(capture.frame, { withLegend, furniture: capture });
+  return { bytes: await blobBytes(await canvasToBlob(out)), stale: capture.staleFrame };
+}
+
+async function buildExhibitPack() {
+  const btn = $exhibitPackBtn;
+  if (!btn || btn.disabled || captureInFlight) return;
+  const subject = exhibitSubjectFeatures();
+  const subjectBox = subject && bboxOfFeatures(subject.feats);
+  if (!subjectBox) {
+    window.alert('Search for a property first — the exhibit pack is built around the search result.');
+    return;
+  }
+  await mapReady;
+  const label = btn.innerHTML;
+  btn.disabled = true;
+  const camera = { center: map.getCenter(), zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() };
+  const basemap = currentBasemapKey();
+  const withLegend = captureLegendWanted() && visibleMapLegends().length > 0;
+  const allFeats = (lastResultFc?.features || []).filter((f) => f?.geometry);
+  const total = 1 + (subject.specific ? 2 : 0) + (allFeats.length > 1 ? 1 : 0);
+  let n = 0;
+  const step = (what) => { btn.textContent = `Exhibit ${++n}/${total}: ${what}…`; };
+  const files = [];
+  const listing = [];
+  const stale = [];
+  // Files are numbered in the order they go in, so a pack that leaves the
+  // subject views out still reads 1, 2 rather than 1, 4.
+  const add = (base, bytes, what, wasStale = false) => {
+    const name = `${files.length + 1}-${base}`;
+    files.push({ name, data: bytes });
+    listing.push(`${name.padEnd(24)}${what}`);
+    if (wasStale) stale.push(name);
+  };
+  try {
+    // Location map — the provincial overview with the SUBJECT callout, on
+    // the base map the MB Overall Map panel last used where it applies.
+    step('location map');
+    const loc = resolveLocationMapSubject();
+    const baseId = [locationMapState.base, 'manitoba', 'winnipeg']
+      .find((id) => BASE_MAPS[id] && loc && locateOnMap(BASE_MAPS[id], loc.lng, loc.lat));
+    if (baseId) {
+      const canvas = await renderLocationMap({
+        map: BASE_MAPS[baseId], lng: loc.lng, lat: loc.lat,
+        label: locationMapState.label, direction: locationMapState.direction,
+      });
+      if (canvas) {
+        add('location-map.png', await blobBytes(await canvasToBlob(canvas)),
+          `${BASE_MAPS[baseId].label} location map, arrow at ${loc.note}`);
+      }
+    }
+    if (subject.specific) {
+      // Neighbourhood — streets, wide enough to show the surroundings.
+      step('neighbourhood');
+      const hood = await captureExhibitView(
+        framedBounds(subjectBox, { padFrac: 0.1, minWidthM: EXHIBIT_NEIGHBOURHOOD_MIN_M }), 'streets', { withLegend });
+      add('neighbourhood-map.png', hood.bytes, `Streets, centred on ${subject.note}`, hood.stale);
+      // Aerial — satellite imagery, close on the subject.
+      step('aerial');
+      const aerial = await captureExhibitView(
+        framedBounds(subjectBox, { padFrac: 0.35, minWidthM: EXHIBIT_AERIAL_MIN_M }), 'satellite', { withLegend });
+      add('subject-aerial.png', aerial.bytes, `Satellite imagery of ${subject.note}`, aerial.stale);
+    }
+    // Results — every result parcel, when there is more than one.
+    if (allFeats.length > 1) {
+      step('results');
+      const results = await captureExhibitView(
+        framedBounds(bboxOfFeatures(allFeats), { padFrac: 0.08, minWidthM: EXHIBIT_RESULTS_MIN_M }), 'streets', { withLegend });
+      add('results-map.png', results.bytes,
+        `All ${allFeats.length} result parcels${numberingOn ? ', numbered as in the grid' : ''}`, results.stale);
+    }
+  } finally {
+    // Put the user's map back exactly as it was, whatever happened above.
+    setBasemapByKey(basemap);
+    map.jumpTo(camera);
+    btn.disabled = false;
+    btn.innerHTML = label;
+  }
+  const attribEl = $mapEl.querySelector('.maplibregl-ctrl-attrib-inner') || $mapEl.querySelector('.maplibregl-ctrl-attrib');
+  const credit = attribEl ? attribEl.innerText.replace(/\s+/g, ' ').trim() : '';
+  const stamp = localDateStamp();
+  const readme = [
+    `Manitoba Parcel Search — exhibit pack, ${stamp}`,
+    '',
+    ...listing,
+    '',
+    `The maps after the location map are ${CAPTURE_W} x ${CAPTURE_H} px (6.5 x 3.5 in at 300 dpi),`,
+    'with a scale bar (measured at the map centre) and a north arrow.',
+    ...(!subject.specific
+      ? ['No single subject was picked, so the neighbourhood map and subject aerial were left out.',
+        'Click a parcel in the grid (or set a subject roll) and build the pack again to include them.'] : []),
+    ...(allFeats.length > 1 && !numberingOn
+      ? ['Tip: turn on "Number parcels" before building the pack to number the results map.'] : []),
+    ...(stale.length ? ['', `Still loading when captured (rebuild if a layer looks incomplete): ${stale.join(', ')}`] : []),
+    ...(credit ? ['', `Map data: ${credit}`] : []),
+    '',
+  ].join('\r\n');
+  files.push({ name: 'README.txt', data: new TextEncoder().encode(readme) });
+  downloadBlob(buildStoreZip(files), captureFilename('zip').replace(/map-(\d{4}-\d{2}-\d{2})\.zip$/, 'exhibits-$1.zip'));
 }
 /**
  * Empty the Roll # field when a different municipality is picked.
