@@ -55,6 +55,7 @@ import { nextOverlayToggleState, setOverlayPressed } from './lib/overlayToggle.j
 import { stalenessBannerState } from './lib/staleness.js';
 import { resolveDropdownSources, firstNonEmptyList, MUNI_PLACEHOLDER } from './lib/dropdownSources.js';
 import { muniNumberIndex, muniOptionLabel } from './lib/muniLabel.js';
+import { muniTypeLabel } from './lib/placeSearch.js';
 import {
   readMapLegends, layoutMapLegends, paintMapLegends,
 } from './lib/mapLegend.js';
@@ -3151,17 +3152,17 @@ const $captureDownloadJpg = document.getElementById('map-capture-download-jpg');
 const $captureFurniture  = document.getElementById('map-capture-furniture');
 const CAPTURE_LEGEND_KEY = 'mbps.captureLegend';
 const CAPTURE_FURNITURE_KEY = 'mbps.captureFurniture';
-const $exhibitPackBtn    = document.getElementById('exhibit-pack-btn');
+const $addendaPackBtn    = document.getElementById('addenda-pack-btn');
 if ($staticMapBtn) {
   $staticMapBtn.addEventListener('click', () => {
     generateStaticMap().then(openCapturePanel).catch(showCaptureError);
   });
 }
-if ($exhibitPackBtn) {
-  $exhibitPackBtn.addEventListener('click', () => {
-    buildExhibitPack().catch((err) => {
-      console.error('exhibit pack failed', err);
-      window.alert(`Exhibit pack failed: ${err?.message || err}`);
+if ($addendaPackBtn) {
+  $addendaPackBtn.addEventListener('click', () => {
+    buildAddendaPack().catch((err) => {
+      console.error('addenda pack failed', err);
+      window.alert(`Addenda pack failed: ${err?.message || err}`);
     });
   });
 }
@@ -3471,8 +3472,11 @@ function wrapToWidth(ctx, text, maxWidth) {
  *
  * Resolves { frame, staleFrame }; the panel / Alt+C path composes the credit
  * and legend on top. Rejects when a capture is already running.
+ *
+ * `width` / `height` override the frame size for an Addenda Pack map of
+ * another shape (the taller neighbourhood map); the crop takes that shape.
  */
-async function generateStaticMap() {
+async function generateStaticMap({ width = CAPTURE_W, height = CAPTURE_H } = {}) {
   await mapReady;
   if (captureInFlight) throw new Error('A map capture is already running.');
   const btn = $staticMapBtn;
@@ -3485,11 +3489,11 @@ async function generateStaticMap() {
   try {
     const cssW = canvas.clientWidth;
     const cssH = canvas.clientHeight;
-    const cropCssW = Math.min(cssW, cssH * CAPTURE_W / CAPTURE_H);
+    const cropCssW = Math.min(cssW, cssH * width / height);
     // Never drop below the screen's own ratio: on a high-DPI screen the
     // map may already have more pixels than the export needs, and the
     // downscale below then only sharpens it.
-    map.setPixelRatio(Math.max(prevRatio, CAPTURE_W / cropCssW));
+    map.setPixelRatio(Math.max(prevRatio, width / cropCssW));
     map.triggerRepaint();
     // BOUNDED. 'idle' only fires once every source has finished loading,
     // so one overlay tile that never resolves — a stalled PMTiles range
@@ -3512,14 +3516,14 @@ async function generateStaticMap() {
     }
     const sw = canvas.width;
     const sh = canvas.height;
-    const cropW = Math.min(sw, sh * CAPTURE_W / CAPTURE_H);
-    const cropH = cropW * CAPTURE_H / CAPTURE_W;
+    const cropW = Math.min(sw, sh * width / height);
+    const cropH = cropW * height / width;
     const frame = document.createElement('canvas');
-    frame.width = CAPTURE_W;
-    frame.height = CAPTURE_H;
+    frame.width = width;
+    frame.height = height;
     const fctx = frame.getContext('2d');
     fctx.imageSmoothingQuality = 'high';
-    fctx.drawImage(canvas, (sw - cropW) / 2, (sh - cropH) / 2, cropW, cropH, 0, 0, CAPTURE_W, CAPTURE_H);
+    fctx.drawImage(canvas, (sw - cropW) / 2, (sh - cropH) / 2, cropW, cropH, 0, 0, width, height);
     // Ground resolution of the frame, for the scale bar: the true distance
     // between two CSS points either side of the map centre, scaled to frame
     // pixels. Measured, not derived from the zoom, so it holds whatever the
@@ -3530,7 +3534,7 @@ async function generateStaticMap() {
       const c = map.project(map.getCenter());
       const a = map.unproject([c.x - 50, c.y]);
       const b = map.unproject([c.x + 50, c.y]);
-      metersPerPx = (haversineMeters([a.lng, a.lat], [b.lng, b.lat]) / 100) * (cropCssW / CAPTURE_W);
+      metersPerPx = (haversineMeters([a.lng, a.lat], [b.lng, b.lat]) / 100) * (cropCssW / width);
     }
     return { frame, staleFrame, metersPerPx, bearing: map.getBearing() };
   } finally {
@@ -3737,7 +3741,7 @@ function resolveLocationMapSubject() {
   };
 }
 
-let locationMapState = { label: 'SUBJECT', direction: 'auto', base: 'manitoba' };
+let locationMapState = { label: 'SUBJECT', direction: 'auto', base: 'manitoba', title: true };
 
 /**
  * Location map: a printed base map with a SUBJECT callout at the searched
@@ -3773,32 +3777,45 @@ async function generateLocationMap() {
   }
 }
 
-// ---------- Exhibit Pack ----------
+// ---------- Addenda Pack ----------
 //
-// One click, one ZIP of the standard report map exhibits for the current
-// search (Jason, 2026-10-07): the provincial location map, a neighbourhood
-// map, an aerial of the subject and — with more than one parcel — a map of
-// the whole result set. Every map is the same 1950 x 1050 Capture Map image
-// with the credit, scale bar and north arrow; the legend follows the Capture
-// Map panel's remembered choice. Built by driving the live map (basemap
-// menu + camera) and putting both back afterwards, so what is in the pack
-// is exactly what the app would have shown.
+// One click, one ZIP of the standard report addenda maps for the current
+// search (Jason, 2026-10-07; renamed from "Exhibit Pack" 2026-10-08): the
+// provincial location map, a neighbourhood map, an aerial of the subject, a
+// zoning map and — with more than one parcel — a map of the whole result
+// set. Every map is the same 1950 x 1050 Capture Map image with the credit,
+// scale bar and north arrow; the legend follows the Capture Map panel's
+// remembered choice, except on the zoning map, which always carries it.
+// Built by driving the live map (basemap menu, camera, the Locator / Numbering
+// / Dimensions / Zoning switches) and putting all of it back afterwards, so
+// what is in the pack is exactly what the app would have shown.
+//
+// Per map (Jason, 2026-10-08): the location map carries the "Subject
+// Property Location within Manitoba" title box. The neighbourhood and zoning
+// maps mark a lone subject with the Locator pin; when the search holds
+// several parcels they keep the shapes and number them instead. The
+// neighbourhood map is taller (6.5 x 5 in), names the municipality top-left,
+// and swaps Assessment Parcels for the section grid + Manitoba Highways.
+// The aerial carries Dimensions.
 
 // How wide each framed view is at least, in metres. Rural Manitoba needs a
 // wider neighbourhood than a city block does (the Winnipeg app uses less).
-const EXHIBIT_NEIGHBOURHOOD_MIN_M = 6000;
-const EXHIBIT_AERIAL_MIN_M = 300;
-const EXHIBIT_RESULTS_MIN_M = 800;
+const ADDENDA_NEIGHBOURHOOD_MIN_M = 6000;
+const ADDENDA_AERIAL_MIN_M = 300;
+const ADDENDA_ZONING_MIN_M = 1500;
+const ADDENDA_RESULTS_MIN_M = 800;
+// The neighbourhood map is taller than the rest: 6.5 x 5 in at 300 dpi.
+const ADDENDA_NEIGHBOURHOOD_SIZE = { width: 1950, height: 1500 };
 
 /**
  * The parcel the pack is about, most specific first — the same order as the
  * location map's SUBJECT arrow: the sales subject, the parcel open in the
  * summary card, else the search's only result. `specific` is false when
- * none of those applies (several results, none picked): the neighbourhood
- * and aerial exhibits are then left out, because framing "the subject" on
+ * none of those applies (several results, none picked): the neighbourhood,
+ * aerial and zoning maps are then left out, because framing "the subject" on
  * a scattered result set produced a 20 km "aerial" that described nothing.
  */
-function exhibitSubjectFeatures() {
+function addendaSubjectFeatures() {
   if (subjectFeature?.geometry) return { feats: [subjectFeature], note: 'the subject parcel', specific: true };
   if (selectedParcelRow?.parcel?.geometry) return { feats: [selectedParcelRow.parcel], note: 'the selected parcel', specific: true };
   const feats = (lastResultFc?.features || []).filter((f) => f?.geometry);
@@ -3835,23 +3852,127 @@ async function blobBytes(blob) {
   return new Uint8Array(await blob.arrayBuffer());
 }
 
+/** The Zoning button's state: 'off', 'all' (every zone in the muni) or
+ *  'selected' (only the result parcels, coloured by zone). */
+function zoningOverlayMode() {
+  if (!$zoningToggle?.classList.contains('active')) return 'off';
+  return $zoningToggle.getAttribute('aria-pressed') === 'mixed' ? 'selected' : 'all';
+}
+
+/** Click the Zoning button round its cycle until it reads `mode`; three
+ *  clicks cover the whole cycle. False when it never got there (no muni to
+ *  load zoning for, or the fetch failed). */
+async function cycleZoningTo(mode) {
+  for (let i = 0; i < 3 && zoningOverlayMode() !== mode; i++) await toggleOverlay('zoning');
+  return zoningOverlayMode() === mode;
+}
+
+/** Switch the result-parcel marks for one addenda map: the Locator pin,
+ *  the number callouts, the side-length labels. */
+function setAddendaMarks({ pin, numbers, dims }) {
+  setResultPin(map, pin ? pinPoint : null);
+  setParcelNumbersVisible(map, numbers);
+  setParcelDimensionsVisible(map, dims);
+}
+
 /** Frame the live map on `bounds` with `basemap`, north-up, and capture it. */
-async function captureExhibitView(bounds, basemap, { withLegend }) {
+async function captureAddendaView(bounds, basemap, { withLegend, size = null, cornerLabel = '', prepare = null }) {
   setBasemapByKey(basemap);
   map.jumpTo({ bearing: 0, pitch: 0 });
-  map.fitBounds(bounds, { padding: 0, animate: false });
-  const capture = await generateStaticMap();
+  // Fit the bounds inside the part of the pane the capture crops out, not
+  // the whole pane: a taller frame than the pane's own shape loses its
+  // sides to the crop, and with them the context the framing asked for.
+  const w = size?.width || CAPTURE_W;
+  const h = size?.height || CAPTURE_H;
+  const canvas = map.getCanvas();
+  const cssW = canvas.clientWidth;
+  const cssH = canvas.clientHeight;
+  const cropW = Math.min(cssW, cssH * w / h);
+  const cropH = cropW * h / w;
+  const padX = Math.max(0, (cssW - cropW) / 2);
+  const padY = Math.max(0, (cssH - cropH) / 2);
+  map.fitBounds(bounds, { padding: { left: padX, right: padX, top: padY, bottom: padY }, animate: false });
+  // Anything that depends on the final view (the zoning legend's in-frame
+  // zones) runs here, once the camera is where the capture will be.
+  if (prepare) prepare();
+  const capture = await generateStaticMap(size || undefined);
   const out = composeWithAttribution(capture.frame, { withLegend, furniture: capture });
+  if (cornerLabel) drawCornerLabel(out, cornerLabel);
   return { bytes: await blobBytes(await canvasToBlob(out)), stale: capture.staleFrame };
 }
 
-async function buildExhibitPack() {
-  const btn = $exhibitPackBtn;
+/** The zoning polygons whose extent touches the current map view. */
+function zoningInView(fc) {
+  const b = map.getBounds();
+  const [w, s, e, n] = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+  return {
+    type: 'FeatureCollection',
+    features: (fc?.features || []).filter((f) => {
+      try {
+        const [minX, minY, maxX, maxY] = bboxOfFeature(f);
+        return minX <= e && maxX >= w && minY <= n && maxY >= s;
+      } catch { return false; }
+    }),
+  };
+}
+
+/** A bold boxed label in the top-left corner of a composed map — the
+ *  corner the credit, legend, scale bar and north arrow all leave free. */
+function drawCornerLabel(canvas, text) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const fontSize = Math.max(14, Math.round(w * 0.017));
+  const pad = Math.round(w * 0.008);
+  const padX = Math.round(fontSize * 0.6);
+  const padY = Math.round(fontSize * 0.4);
+  ctx.font = `600 ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
+  const boxW = Math.ceil(ctx.measureText(text).width + padX * 2);
+  const boxH = fontSize + padY * 2;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+  ctx.fillRect(pad, pad, boxW, boxH);
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(pad + 0.75, pad + 0.75, boxW - 1.5, boxH - 1.5);
+  ctx.fillStyle = '#1a1a1a';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  ctx.fillText(text, pad + padX, pad + boxH / 2);
+}
+
+/** "PINEY (RM)" -> "Rural Municipality of Piney", for the neighbourhood
+ *  map's label. Small joining words stay lower case ("Lac du Bonnet"). */
+function addendaMuniLabel(props) {
+  const raw = muniNameFromProps(props);
+  if (!raw) return '';
+  const m = raw.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+  const name = (m ? m[1] : raw).trim().toLowerCase()
+    .replace(/(^|[\s\-.'])([a-z])/g, (_, sep, c) => sep + c.toUpperCase())
+    .replace(/(?!^)\b(Du|De|La|Le|Des|Of|And)\b/g, (w) => w.toLowerCase());
+  return m ? `${muniTypeLabel(m[2])} of ${name}` : name;
+}
+
+/** The Section/township grid and the auxiliary overlays, driven to a state
+ *  and read back. The grid cycles off -> section -> quarter -> off. */
+async function cycleGridTo(mode) {
+  for (let i = 0; i < 3 && gridMode !== mode; i++) await toggleSurveyGridOverlay();
+  return gridMode === mode;
+}
+function auxOverlayOn(which) {
+  return !!AUX_META[which]?.btn()?.classList.contains('active');
+}
+async function setAuxOverlay(which, on) {
+  const btn = AUX_META[which]?.btn();
+  if (!btn || (on && btn.disabled) || auxOverlayOn(which) === on) return;
+  await toggleAuxOverlay(which);
+}
+
+async function buildAddendaPack() {
+  const btn = $addendaPackBtn;
   if (!btn || btn.disabled || captureInFlight) return;
-  const subject = exhibitSubjectFeatures();
+  const subject = addendaSubjectFeatures();
   const subjectBox = subject && bboxOfFeatures(subject.feats);
   if (!subjectBox) {
-    window.alert('Search for a property first — the exhibit pack is built around the search result.');
+    window.alert('Search for a property first — the addenda pack is built around the search result.');
     return;
   }
   await mapReady;
@@ -3859,16 +3980,33 @@ async function buildExhibitPack() {
   btn.disabled = true;
   const camera = { center: map.getCenter(), zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() };
   const basemap = currentBasemapKey();
+  // The user's own marks and zoning, put back in the finally.
+  const userMarks = { pin: !!map._resultPinOn, numbers: !!map._parcelNumbers?.visible, dims: dimsOn };
+  const zoningWas = zoningOverlayMode();
+  const gridWas = gridMode;
+  const auxWas = { muniParcels: auxOverlayOn('muniParcels'), highways: auxOverlayOn('highways') };
+  // The neighbourhood map's grid / highways / parcel fabric, back as the
+  // user had them — straight after that map, and again in the finally.
+  const restoreLayers = async () => {
+    if (gridMode !== gridWas) await cycleGridTo(gridWas);
+    for (const [which, on] of Object.entries(auxWas)) await setAuxOverlay(which, on);
+  };
   const withLegend = captureLegendWanted() && visibleMapLegends().length > 0;
   const allFeats = (lastResultFc?.features || []).filter((f) => f?.geometry);
-  const total = 1 + (subject.specific ? 2 : 0) + (allFeats.length > 1 ? 1 : 0);
+  // The neighbourhood and zoning maps' marks: the Locator pin on a lone
+  // parcel, numbered shapes when the map holds several.
+  const locatorMarks = pinPoint
+    ? { pin: true, numbers: false, dims: false }
+    : { pin: false, numbers: allFeats.length > 1, dims: false };
+  const total = 1 + (subject.specific ? 3 : 0) + (allFeats.length > 1 ? 1 : 0);
   let n = 0;
-  const step = (what) => { btn.textContent = `Exhibit ${++n}/${total}: ${what}…`; };
+  const step = (what) => { btn.textContent = `Addenda ${++n}/${total}: ${what}…`; };
   const files = [];
   const listing = [];
   const stale = [];
+  const notes = [];
   // Files are numbered in the order they go in, so a pack that leaves the
-  // subject views out still reads 1, 2 rather than 1, 4.
+  // subject views out still reads 1, 2 rather than 1, 5.
   const add = (base, bytes, what, wasStale = false) => {
     const name = `${files.length + 1}-${base}`;
     files.push({ name, data: bytes });
@@ -3885,7 +4023,7 @@ async function buildExhibitPack() {
     if (baseId) {
       const canvas = await renderLocationMap({
         map: BASE_MAPS[baseId], lng: loc.lng, lat: loc.lat,
-        label: locationMapState.label, direction: locationMapState.direction,
+        label: locationMapState.label, direction: locationMapState.direction, title: true,
       });
       if (canvas) {
         add('location-map.png', await blobBytes(await canvasToBlob(canvas)),
@@ -3893,27 +4031,68 @@ async function buildExhibitPack() {
       }
     }
     if (subject.specific) {
-      // Neighbourhood — streets, wide enough to show the surroundings.
+      const marked = locatorMarks.pin ? ', locator pin' : locatorMarks.numbers ? ', parcels numbered' : '';
+      // Neighbourhood — streets, wide enough to show the surroundings, a
+      // taller frame, the municipality named top-left, and the section grid
+      // and highways for bearings in place of the parcel fabric.
       step('neighbourhood');
-      const hood = await captureExhibitView(
-        framedBounds(subjectBox, { padFrac: 0.1, minWidthM: EXHIBIT_NEIGHBOURHOOD_MIN_M }), 'streets', { withLegend });
-      add('neighbourhood-map.png', hood.bytes, `Streets, centred on ${subject.note}`, hood.stale);
-      // Aerial — satellite imagery, close on the subject.
+      setAddendaMarks(locatorMarks);
+      await setAuxOverlay('muniParcels', false);
+      await setAuxOverlay('highways', true);
+      const gridOk = await cycleGridTo('section');
+      const hoodLabel = addendaMuniLabel(subject.feats[0]?.properties);
+      const hood = await captureAddendaView(
+        framedBounds(subjectBox, { padFrac: 0.1, minWidthM: ADDENDA_NEIGHBOURHOOD_MIN_M }), 'streets',
+        { withLegend, size: ADDENDA_NEIGHBOURHOOD_SIZE, cornerLabel: hoodLabel });
+      add('neighbourhood-map.png', hood.bytes,
+        `Streets, centred on ${subject.note}${marked}, ${ADDENDA_NEIGHBOURHOOD_SIZE.width} x ${ADDENDA_NEIGHBOURHOOD_SIZE.height} px`,
+        hood.stale);
+      if (!gridOk) notes.push('The section/township grid could not be loaded for the neighbourhood map.');
+      await restoreLayers();
+      // Aerial — satellite imagery, close on the subject, sides labelled.
       step('aerial');
-      const aerial = await captureExhibitView(
-        framedBounds(subjectBox, { padFrac: 0.35, minWidthM: EXHIBIT_AERIAL_MIN_M }), 'satellite', { withLegend });
-      add('subject-aerial.png', aerial.bytes, `Satellite imagery of ${subject.note}`, aerial.stale);
+      setAddendaMarks({ pin: false, numbers: userMarks.numbers, dims: true });
+      const aerial = await captureAddendaView(
+        framedBounds(subjectBox, { padFrac: 0.35, minWidthM: ADDENDA_AERIAL_MIN_M }), 'satellite', { withLegend });
+      add('subject-aerial.png', aerial.bytes, `Satellite imagery of ${subject.note}, with dimensions`, aerial.stale);
+      // Zoning — streets with every zone in the municipality, and its legend
+      // whatever the Capture Map panel says.
+      step('zoning');
+      if (await cycleZoningTo('all')) {
+        setAddendaMarks(locatorMarks);
+        // The legend lists only the zones in the frame. The full municipal
+        // list runs alphabetically and the capture cuts it at "+N more",
+        // which dropped the very zones on the map (Brandon, 2026-10-08).
+        // Colours are per code, so the subset keeps them.
+        const muniZoning = lastZoningFc;
+        try {
+          const zoning = await captureAddendaView(
+            framedBounds(subjectBox, { padFrac: 0.2, minWidthM: ADDENDA_ZONING_MIN_M }), 'streets',
+            { withLegend: true, prepare: () => rebuildZoningLegend(zoningInView(muniZoning)) });
+          add('zoning-map.png', zoning.bytes, `Zoning around ${subject.note}${marked}`, zoning.stale);
+        } finally {
+          rebuildZoningLegend(muniZoning);
+        }
+      } else {
+        notes.push('The zoning map was left out: zoning could not be loaded for this municipality.');
+      }
+      await cycleZoningTo(zoningWas);
     }
-    // Results — every result parcel, when there is more than one.
+    // Results — every result parcel, when there is more than one, marked
+    // the way the user has them.
     if (allFeats.length > 1) {
       step('results');
-      const results = await captureExhibitView(
-        framedBounds(bboxOfFeatures(allFeats), { padFrac: 0.08, minWidthM: EXHIBIT_RESULTS_MIN_M }), 'streets', { withLegend });
+      setAddendaMarks(userMarks);
+      const results = await captureAddendaView(
+        framedBounds(bboxOfFeatures(allFeats), { padFrac: 0.08, minWidthM: ADDENDA_RESULTS_MIN_M }), 'streets', { withLegend });
       add('results-map.png', results.bytes,
         `All ${allFeats.length} result parcels${numberingOn ? ', numbered as in the grid' : ''}`, results.stale);
     }
   } finally {
     // Put the user's map back exactly as it was, whatever happened above.
+    if (zoningOverlayMode() !== zoningWas) await cycleZoningTo(zoningWas).catch(() => {});
+    await restoreLayers().catch(() => {});
+    setAddendaMarks(userMarks);
     setBasemapByKey(basemap);
     map.jumpTo(camera);
     btn.disabled = false;
@@ -3923,14 +4102,16 @@ async function buildExhibitPack() {
   const credit = attribEl ? attribEl.innerText.replace(/\s+/g, ' ').trim() : '';
   const stamp = localDateStamp();
   const readme = [
-    `Manitoba Parcel Search — exhibit pack, ${stamp}`,
+    `Manitoba Parcel Search — addenda pack, ${stamp}`,
     '',
     ...listing,
     '',
-    `The maps after the location map are ${CAPTURE_W} x ${CAPTURE_H} px (6.5 x 3.5 in at 300 dpi),`,
-    'with a scale bar (measured at the map centre) and a north arrow.',
+    `The maps after the location map are ${CAPTURE_W} x ${CAPTURE_H} px (6.5 x 3.5 in at 300 dpi) -- the`,
+    `neighbourhood map ${ADDENDA_NEIGHBOURHOOD_SIZE.width} x ${ADDENDA_NEIGHBOURHOOD_SIZE.height} (6.5 x 5 in) -- with a scale bar`,
+    '(measured at the map centre) and a north arrow.',
+    ...notes,
     ...(!subject.specific
-      ? ['No single subject was picked, so the neighbourhood map and subject aerial were left out.',
+      ? ['No single subject was picked, so the neighbourhood, aerial and zoning maps were left out.',
         'Click a parcel in the grid (or set a subject roll) and build the pack again to include them.'] : []),
     ...(allFeats.length > 1 && !numberingOn
       ? ['Tip: turn on "Number parcels" before building the pack to number the results map.'] : []),
@@ -3939,7 +4120,7 @@ async function buildExhibitPack() {
     '',
   ].join('\r\n');
   files.push({ name: 'README.txt', data: new TextEncoder().encode(readme) });
-  downloadBlob(buildStoreZip(files), captureFilename('zip').replace(/map-(\d{4}-\d{2}-\d{2})\.zip$/, 'exhibits-$1.zip'));
+  downloadBlob(buildStoreZip(files), captureFilename('zip').replace(/map-(\d{4}-\d{2}-\d{2})\.zip$/, 'addenda-$1.zip'));
 }
 /**
  * Empty the Roll # field when a different municipality is picked.
