@@ -281,6 +281,7 @@ import {
   setParcelDimensionData,
   setParcelDimensionsVisible,
   setResultPin,
+  setCommunityMask,
   LANDCOVER_TILES_URL,
 } from './map.js';
 import {
@@ -3989,6 +3990,20 @@ function drawCornerLabel(canvas, text, scale = 1) {
   ctx.fillText(text, pad + padX, pad + boxH / 2);
 }
 
+/** The subject's municipality polygon from the boundary file: by its
+ *  "NAME (TYPE)" first, else the boundary the subject's centre falls in. */
+function addendaMuniFeature(feat) {
+  const feats = muniBoundariesFc?.features || [];
+  const name = muniNameFromProps(feat?.properties);
+  const byName = name && feats.find((f) => f.properties?.MUNI_LIST_NAME_WITH_TYPE === name);
+  if (byName) return byName;
+  const c = parcelCentrePoint(feat);
+  if (!c) return null;
+  return feats.find((f) => {
+    try { return f?.geometry && booleanPointInPolygon([c.lng, c.lat], f); } catch { return false; }
+  }) || null;
+}
+
 /** "PINEY (RM)" -> "Rural Municipality of Piney", for the neighbourhood
  *  map's label. Small joining words stay lower case ("Lac du Bonnet"). */
 function addendaMuniLabel(props) {
@@ -4091,6 +4106,9 @@ async function buildAddendaPack() {
       await setAuxOverlay('highways', true);
       const gridOk = await cycleGridTo('section');
       const hoodLabel = addendaMuniLabel(subject.feats[0]?.properties);
+      // Light grey outside the community and its limits dashed on top, so
+      // the limits survive the highways drawn over them.
+      setCommunityMask(map, addendaMuniFeature(subject.feats[0]));
       const hood = await captureAddendaView(
         framedBounds(subjectBox, { padFrac: 0.1, minWidthM: ADDENDA_NEIGHBOURHOOD_MIN_M }), 'streets',
         // The municipality label 1.5x the others: 50 px, about 12 pt printed
@@ -4100,6 +4118,7 @@ async function buildAddendaPack() {
         `Streets, centred on ${subject.note}${marked}, ${ADDENDA_NEIGHBOURHOOD_SIZE.width} x ${ADDENDA_NEIGHBOURHOOD_SIZE.height} px`,
         hood.stale);
       if (!gridOk) notes.push('The section/township grid could not be loaded for the neighbourhood map.');
+      setCommunityMask(map, null);
       await restoreLayers();
       // Aerial — satellite imagery, close on the subject, sides labelled.
       step('aerial');
@@ -4146,6 +4165,7 @@ async function buildAddendaPack() {
   } finally {
     // Put the user's map back exactly as it was, whatever happened above.
     if (zoningOverlayMode() !== zoningWas) await cycleZoningTo(zoningWas).catch(() => {});
+    setCommunityMask(map, null);
     await restoreLayers().catch(() => {});
     setAddendaMarks(userMarks);
     setBasemapByKey(basemap);
