@@ -13892,6 +13892,9 @@ const $psRoll        = document.getElementById('ps-roll');
 const $psAddress     = document.getElementById('ps-address');
 const $psMuni        = document.getElementById('ps-muni');
 const $psAcres       = document.getElementById('ps-acres');
+const $psSf          = document.getElementById('ps-sf');
+const $psRollsize    = document.getElementById('ps-rollsize');
+const $psDu          = document.getElementById('ps-du');
 const $psAsmt        = document.getElementById('ps-asmt');
 const $psZoning      = document.getElementById('ps-zoning');
 const $psDevplan     = document.getElementById('ps-devplan');
@@ -13971,6 +13974,11 @@ function populateSelectedParcel(row) {
     const a = formatAcres(ac);
     return a ? `${a} ac` : '—';
   })();
+  // Land SF, roll frontage/area and DU mirror the table's cells of the same
+  // name, so the card never disagrees with the row it was opened from.
+  if ($psSf) $psSf.textContent = formatSf(ac) || '—';
+  if ($psRollsize) $psRollsize.textContent = formatRollSizeField(p.Frontage_or_Area) || '—';
+  if ($psDu) $psDu.textContent = formatDu(p.Dwelling_Units) ?? '—';
   if ($psAsmt) {
     const total = parseTotalValue(p.Total_Value);
     $psAsmt.textContent = fmtCurrency(total) || '—';
@@ -16968,11 +16976,17 @@ wireSelectAllBox();
  *  the selection themselves, so this is just "tell them to look again". */
 function applySelectionToMapAndCharts() {
   if (currentRows.length > 0) {
+    // Re-frame on the parcels that are still ticked (Jason, 2026-10-10):
+    // culling the far end of a street should bring the rest back to the
+    // centre. Only while something is still ticked — an empty highlight
+    // would fly the camera back to the whole province, which throws away
+    // the user's place for no gain.
+    const anyTicked = currentRows.some((r) => rowIsSelected(r));
     setMapData(
       { type: 'FeatureCollection', features: currentRows.map((r) => r.parcel) },
       lastZoningFc || EMPTY_FC,
       lastDevPlanFc || EMPTY_FC,
-      { fit: false },
+      { fit: anyTicked },
     );
   }
   publishSalesCharts();
