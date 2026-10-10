@@ -3,6 +3,12 @@
   "buildCommand": "cd web && npm install && npm test && npm run build",
   "outputDirectory": "web/dist",
   "framework": "vite",
+  "git": {
+    "deploymentEnabled": {
+      "main": true,
+      "**": false
+    }
+  },
   "rewrites": [
     {
       "source": "/gh-data/:path*",
