@@ -1317,6 +1317,14 @@ const SALES_FILTER_STEPS = [
 // Invalidates in-flight sales enrichment when a newer upload or a regular
 // property search replaces the displayed parcel set.
 let salesEnrichmentGeneration = 0;
+/** True once a newer search or sales upload has started since `gen` was
+ *  taken. Every async stage of a search checks this after each await and
+ *  stops cold. Without it a slow earlier search finishing after a newer one
+ *  overwrote the newer table and map with its own parcels and zoning — the
+ *  "artifacts after a few searches in a row" Jason reported 2026-10-10. A
+ *  superseded run must not touch the status line or the busy state either:
+ *  those belong to the search that replaced it. */
+function searchSuperseded(gen) { return gen !== salesEnrichmentGeneration; }
 // Sales exports are enabled only after Soil Survey enrichment has finished.
 // A timeout/partial response must not turn into authoritative-looking blank
 // CLI and soil columns in the export.
@@ -5955,6 +5963,7 @@ async function runSearch() {
   // sales-CSV import already leans on) and the cap then applies to waterfront
   // parcels rather than to the muni at large.
   const waterPre = await resolveWaterRollPrefilter(inputs);
+  if (searchSuperseded(searchGeneration)) return;
   if (waterPre?.applied) {
     if (waterPre.rolls.length === 0) {
       setBusy(false);
@@ -5988,6 +5997,7 @@ async function runSearch() {
           ...legalInputs,
           municipality: inputs.municipality,
         });
+        if (searchSuperseded(searchGeneration)) return;
       } catch (err) {
         console.error(err);
         setCount(err.message);
@@ -6005,6 +6015,7 @@ async function runSearch() {
     let parcelFc;
     try {
       parcelFc = await searchParcels(inputs);
+      if (searchSuperseded(searchGeneration)) return;
     } catch (err) {
       console.error(err);
       setCount(`Search failed: ${err.message}`);
@@ -6019,6 +6030,7 @@ async function runSearch() {
       if (stillMissing.length > 0) {
         setCount('Checking the assessment roll for parcels not yet mapped…');
         const unmapped = await resolveUnmappedRolls(stillMissing, inputs.municipality);
+        if (searchSuperseded(searchGeneration)) return;
         if (unmapped.length > 0) {
           parcelFc = { ...parcelFc, features: [...(parcelFc.features || []), ...unmapped] };
         }
@@ -6042,6 +6054,7 @@ async function runSearch() {
     let perParcelLegalRecs = [];
     try {
       perParcelLegalRecs = await lookupLegalRecordsByParcelKeys(parcelKeys);
+      if (searchSuperseded(searchGeneration)) return;
     } catch (err) {
       console.warn('Legal lookup by parcel keys failed (non-fatal):', err);
     }
@@ -6247,10 +6260,12 @@ async function runSearch() {
       // Flood zones ride along for the same reason and at the same cost —
       // another pre-baked per-muni dictionary, one lookup per row.
       await Promise.all([stampWaterInfluence(waterRows), stampFloodZones(waterRows), stampLandfacts(waterRows), stampMfNewbuild(waterRows), stampCondoDev(waterRows)]);
+      if (searchSuperseded(searchGeneration)) return;
       if (waterFilterActive()) {
         setCount(`${baseMsg} · Checking water-rights licences…`);
         const rows = waterRows;
         await Promise.all([stampTileDrainage(rows), stampIrrigation(rows)]);
+        if (searchSuperseded(searchGeneration)) return;
         lastWaterFilterDropped = dropSliverOnlyMatches(rows, parcelFc);
         renderTable(rows);
         setMapData(parcelFc, EMPTY_FC, EMPTY_FC);
@@ -6266,10 +6281,12 @@ async function runSearch() {
       renderEnrichButton(parcelFc, inputs, deferredMsg);
     } else {
       await enrichOverlays(parcelFc, inputs, baseMsg);
+      if (searchSuperseded(searchGeneration)) return;
       // Changes = Filter is a view filter over the enriched rows, so it is
       // applied here, once the `_changesText` stamps exist — the same
       // moment the waterfront boxes' post-search view filter would run.
       if (getChangesMode() === 'filter') await onChangesFilterToggle();
+      if (searchSuperseded(searchGeneration)) return;
       // Property-list imports should arrive with the same agricultural
       // analysis fields as Sales Analysis. Load Manitoba Soil Survey/CLI
       // polygons for every represented municipality, stamp the dominant
@@ -6317,7 +6334,7 @@ async function runSearch() {
     }
     autoEnableMuniParcels();
   } finally {
-    setBusy(false);
+    if (!searchSuperseded(searchGeneration)) setBusy(false);
   }
 }
 
@@ -6675,6 +6692,7 @@ async function handleSalesUpload(file) {
       };
     });
     const results = await Promise.all(fetches);
+    if (searchSuperseded(uploadGeneration)) return;
 
     // Merge all FCs into one parcelFc. Per-muni unmatched buckets fold
     // into the global unmatchedRecords list so the panel surfaces all
@@ -6820,6 +6838,7 @@ async function handleSalesUpload(file) {
     // fail the upload.
     setCount('Checking parcel history…');
     await stampSaleHistory(parcelFc);
+    if (searchSuperseded(uploadGeneration)) return;
 
     // Activate the Sale Date / Sale Price columns.
     if ($resultsTable) $resultsTable.classList.add('sales-mode');
@@ -6979,6 +6998,7 @@ async function handleSalesUpload(file) {
   // demand and backfills the grid, popup and export columns.
   devPlanDeferred = true;
   await enrichOverlays(parcelFc, fakeInputs, baseMsg, { skipDevPlan: true });
+  if (searchSuperseded(uploadGeneration)) return;
     setExportEnabled(false);
     // Soil only when it has been asked for. This used to run on EVERY sales
     // search, on the reasoning that a completed import should be "fully
@@ -7022,6 +7042,7 @@ async function handleSalesUpload(file) {
       try {
         setCount(`${baseMsg} · Loading soil…`);
         await stampSoilFromShards(parcelFc);
+        if (searchSuperseded(uploadGeneration)) return;
       } catch (err) {
         console.warn('soil shard pass failed (non-fatal):', err);
       }
@@ -7133,6 +7154,7 @@ async function handleSalesUpload(file) {
     const livePushFc = currentRows.length > 0
       ? { type: 'FeatureCollection', features: currentRows.map((r) => r.parcel) }
       : parcelFc;
+    if (searchSuperseded(uploadGeneration)) return;
     setMapData(livePushFc, lastZoningFc || EMPTY_FC, lastDevPlanFc || EMPTY_FC, { fit: false });
 
     // Re-apply starred feature-state for any parcels in the existing
@@ -7191,7 +7213,7 @@ async function handleSalesUpload(file) {
       );
     }
   } finally {
-    setBusy(false);
+    if (!searchSuperseded(uploadGeneration)) setBusy(false);
   }
 }
 
@@ -9182,6 +9204,8 @@ async function stampFloodZones(rows) {
 
 async function enrichOverlays(parcelFc, inputs, baseMsg, { skipDevPlan = false } = {}) {
   setCount(`${baseMsg} · Loading zoning overlay…`);
+  // Taken before the first await: see searchSuperseded().
+  const gen = salesEnrichmentGeneration;
 
   let zoningFc = EMPTY_FC;
   let devPlanFc = EMPTY_FC;
@@ -9218,6 +9242,7 @@ async function enrichOverlays(parcelFc, inputs, baseMsg, { skipDevPlan = false }
     setCount(`${baseMsg} · zoning/dev-plan enrichment failed: ${err.message}`);
     throw err;
   }
+  if (searchSuperseded(gen)) return [];
   lastZoningFc = zoningFc;
   lastDevPlanFc = devPlanFc;
   // When the search is muni-scoped, fetchZoningOverlap /
@@ -9247,6 +9272,7 @@ async function enrichOverlays(parcelFc, inputs, baseMsg, { skipDevPlan = false }
     joinTopNByAreaAsync(parcelFc, zoningFc, 2),
     joinTopNByAreaAsync(parcelFc, devPlanFc, 2),
   ]);
+  if (searchSuperseded(gen)) return [];
   // Per-parcel "changed-polygons" join, computed against a filtered
   // overlay FC containing only polygons that actually carry an
   // amendment (ZBL_A != ZBL, AMENDMENT_DESCRIPTION set, etc.). The
@@ -9262,6 +9288,7 @@ async function enrichOverlays(parcelFc, inputs, baseMsg, { skipDevPlan = false }
     joinTopNByAreaAsync(parcelFc, zoningChangedFc, 3),
     joinTopNByAreaAsync(parcelFc, devPlanChangedFc, 3),
   ]);
+  if (searchSuperseded(gen)) return [];
   // Touch-level fallback: ArcGIS's server-side intersect counts
   // edge-touching polygons as a match, so a parcel can land in the
   // Zoning-Changed result on a sliver overlap that @turf/intersect
@@ -9323,6 +9350,7 @@ async function enrichOverlays(parcelFc, inputs, baseMsg, { skipDevPlan = false }
   if (wantsWaterRightsEnrichment()) {
     setCount(`${baseMsg} · Checking water-rights licences…`);
     await Promise.all([stampTileDrainage(rows), stampIrrigation(rows)]);
+    if (searchSuperseded(gen)) return [];
     // Record it rather than only folding it into baseMsg: the sales-CSV
     // path overwrites the count line after enrichment returns, which
     // otherwise left "5 of 5 sales plotted" above a grid showing 3.
@@ -9342,6 +9370,7 @@ async function enrichOverlays(parcelFc, inputs, baseMsg, { skipDevPlan = false }
     const dicts = await Promise.all(
       mascMunis.map((muni) => fetchParcelMascForMuni(muni).catch(() => null)),
     );
+    if (searchSuperseded(gen)) return [];
     const byMuni = new Map();
     mascMunis.forEach((muni, i) => { if (dicts[i]) byMuni.set(muni, dicts[i]); });
     for (const row of rows) {
@@ -9378,6 +9407,7 @@ async function enrichOverlays(parcelFc, inputs, baseMsg, { skipDevPlan = false }
       const dicts = await Promise.all(
         muniNames.map((m) => fetchLandCoverForMuni(m).catch(() => null)),
       );
+      if (searchSuperseded(gen)) return [];
       const byMuni = new Map();
       muniNames.forEach((m, i) => { if (dicts[i]) byMuni.set(m, dicts[i]); });
       for (const row of rows) {
@@ -9396,6 +9426,7 @@ async function enrichOverlays(parcelFc, inputs, baseMsg, { skipDevPlan = false }
   }
 
   await Promise.all([stampWaterInfluence(rows), stampFloodZones(rows), stampLandfacts(rows), stampMfNewbuild(rows), stampCondoDev(rows)]);
+  if (searchSuperseded(gen)) return [];
 
   // Stamp the most-common assessment year into the Total Value column
   // header so users can tell which assessment cycle the dollar figure
