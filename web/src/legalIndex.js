@@ -31,6 +31,10 @@ import {
 // keeping them here so they're easy to bump alongside other client
 // config.
 const LEGAL_INDEX_LOCAL_URL = `${import.meta.env?.BASE_URL || '/'}data/legal-index.json`;
+// Production copy on R2 (gzip at rest, ~17 MB on the wire): see MAINTENANCE.md
+// §1b. The edge-function proxy stays as the fallback only — it streams the
+// 130 MB file from GitHub on every cold browser and can never be edge-cached.
+const LEGAL_INDEX_R2_URL = 'https://pub-091058079bf6458da1681945177e1682.r2.dev/legal-index.json';
 const LEGAL_INDEX_PROXY_URL = '/api/legal-index';
 
 // Re-export pure helpers so existing call sites in main.js don't break.
@@ -103,7 +107,13 @@ async function loadDirect() {
     try {
       const res = await fetch(LEGAL_INDEX_LOCAL_URL);
       if (res.ok) json = await res.json();
-    } catch { /* fall through to proxy */ }
+    } catch { /* fall through to R2 */ }
+    if (!json) {
+      try {
+        const res = await fetch(await versionedDatasetUrl(LEGAL_INDEX_R2_URL, 'legal_index'));
+        if (res.ok) json = await res.json();
+      } catch { /* fall through to proxy */ }
+    }
     if (!json) {
       const res = await fetch(await versionedDatasetUrl(LEGAL_INDEX_PROXY_URL, 'legal_index'));
       if (!res.ok) {
@@ -121,7 +131,7 @@ async function loadDirect() {
 // ---------- Public API ----------
 
 export function warmLegalIndex() {
-  const promise = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
+  const promise = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, r2Url: LEGAL_INDEX_R2_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
   if (promise) {
     promise.catch((err) => console.warn('Legal-index pre-warm failed:', err.message));
     return;
@@ -133,7 +143,7 @@ export async function searchLegalIndex(criteria = {}) {
   if (!hasLegalCriteria(criteria)) {
     return { matches: [], truncated: false, metadata: null };
   }
-  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
+  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, r2Url: LEGAL_INDEX_R2_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
   if (viaWorker) {
     await viaWorker; // ensure loaded
     return postMessage('search', criteria);
@@ -144,7 +154,7 @@ export async function searchLegalIndex(criteria = {}) {
 
 export async function lookupLegalRecordsByParcelKeys(keys) {
   if (!Array.isArray(keys) || keys.length === 0) return [];
-  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
+  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, r2Url: LEGAL_INDEX_R2_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
   if (viaWorker) {
     await viaWorker;
     return postMessage('lookup', { keys });
@@ -165,7 +175,7 @@ export async function lookupLegalRecordsByParcelKeys(keys) {
 export async function lookupLegalRecordsByRollSet(rolls) {
   const rollList = rolls instanceof Set ? [...rolls] : Array.from(rolls || []);
   if (rollList.length === 0) return new Map();
-  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
+  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, r2Url: LEGAL_INDEX_R2_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
   if (viaWorker) {
     await viaWorker;
     const pairs = await postMessage('lookupRolls', { rolls: rollList });
@@ -183,7 +193,7 @@ export async function lookupLegalRecordsByRollSet(rolls) {
 export async function lookupLegalRecordsByStrSet(tokens) {
   const tokenList = tokens instanceof Set ? [...tokens] : Array.from(tokens || []);
   if (tokenList.length === 0) return new Map();
-  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
+  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, r2Url: LEGAL_INDEX_R2_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
   if (viaWorker) {
     await viaWorker;
     const pairs = await postMessage('lookupStr', { tokens: tokenList });
@@ -201,7 +211,7 @@ export async function lookupLegalRecordsByStrSet(tokens) {
 export async function lookupNearestRolls(muniNo, rolls, opts = {}) {
   const rollList = Array.from(rolls || []);
   if (rollList.length === 0) return new Map();
-  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
+  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, r2Url: LEGAL_INDEX_R2_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
   if (viaWorker) {
     await viaWorker;
     const pairs = await postMessage('nearestRolls', { muniNo, rolls: rollList, opts });
@@ -218,7 +228,7 @@ export async function lookupNearestRolls(muniNo, rolls, opts = {}) {
  * (a one-time full scan); repeats are cheap.
  */
 export async function getParishOptions() {
-  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
+  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, r2Url: LEGAL_INDEX_R2_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
   if (viaWorker) {
     await viaWorker;
     return postMessage('parishOptions');
@@ -228,7 +238,7 @@ export async function getParishOptions() {
 }
 
 export async function getLegalIndexMetadata() {
-  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
+  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, r2Url: LEGAL_INDEX_R2_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
   if (viaWorker) {
     return postMessage('metadata');
   }

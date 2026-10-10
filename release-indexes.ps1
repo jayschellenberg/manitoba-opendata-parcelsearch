@@ -95,11 +95,44 @@ if ($DryRun) {
 } else {
   Write-Host "Creating release $Tag (the 130 MB upload takes a few minutes) ..."
   & $gh release create $Tag @files --title "Data indexes $Tag" `
-    --notes 'legal-index.json + assessment-index.json rebuilt from the latest mao-scrape. Served to the app through the api/ edge functions.'
+    --notes 'legal-index.json + assessment-index.json rebuilt from the latest mao-scrape. The app reads the gzip copies on R2; the api/ edge functions serve these as the fallback.'
   if ($LASTEXITCODE -ne 0) { throw "gh release create failed (exit $LASTEXITCODE)" }
 }
 
 # --- 4. point the edge functions at the new tag -------------------------
+# ---- R2 copy (what the app actually reads; the Release above is the fallback) ----
+# Gzip at rest and tell R2 so: browsers send Accept-Encoding and get the
+# compressed body (legal 138 MB -> ~17 MB, assessment 30 MB -> ~4 MB); R2
+# decodes for a client that does not. Stable object names - the app appends
+# the manifest's build stamp as ?v= so a browser never serves a stale copy.
+# The r2-mb remote is bucket-scoped, hence --s3-no-check-bucket (see §1c).
+$r2Bucket = 'r2-mb:mb-ortho'
+$tmpGz = Join-Path $env:TEMP ('mbps-indexes-' + [guid]::NewGuid().ToString('n'))
+New-Item -ItemType Directory -Path $tmpGz | Out-Null
+try {
+  foreach ($a in $assets) {
+    $assetName = [IO.Path]::GetFileName($a.file)
+    $gz = Join-Path $tmpGz "$assetName.gz"
+    $in = [IO.File]::OpenRead($a.file)
+    $out = [IO.File]::Create($gz)
+    $zip = New-Object IO.Compression.GZipStream($out, [IO.Compression.CompressionLevel]::Optimal)
+    try { $in.CopyTo($zip) } finally { $zip.Dispose(); $out.Dispose(); $in.Dispose() }
+    $gzMB = (Get-Item $gz).Length / 1MB
+    if ($DryRun) {
+      Write-Host ("[dry-run] would upload {0} ({1:n1} MB gzip) to {2}/{3}" -f $assetName, $gzMB, $r2Bucket, $assetName)
+      continue
+    }
+    Write-Host ("Uploading {0} ({1:n1} MB gzip) to R2 ..." -f $assetName, $gzMB)
+    & rclone copyto $gz "$r2Bucket/$assetName" --s3-no-check-bucket `
+      --header-upload 'Content-Encoding: gzip' `
+      --header-upload 'Content-Type: application/json' `
+      --header-upload 'Cache-Control: public, max-age=86400'
+    if ($LASTEXITCODE -ne 0) { throw "rclone upload of $assetName failed (exit $LASTEXITCODE); the previous R2 copy is still live" }
+  }
+} finally {
+  Remove-Item -Recurse -Force $tmpGz -ErrorAction SilentlyContinue
+}
+
 foreach ($a in $assets) {
   $assetName = [IO.Path]::GetFileName($a.file)
   $content = Get-Content $a.api -Raw
@@ -118,7 +151,8 @@ if ($DryRun) {
   Write-Host "`n[dry-run] no changes made."
 } else {
   Write-Host "`nDone. Review `git diff api/`, then commit + push - Vercel redeploys the"
-  Write-Host 'edge functions and clients pick up the new index on their next fetch.'
+  Write-Host 'edge-function fallback; the R2 copies are already live and clients pick them up'
+  Write-Host 'on their next fetch (the manifest stamp changes the ?v= cache key).'
 }
 # Don't let the last native command's exit code (e.g. the expected
 # nonzero from `gh release view` on a fresh tag) leak out as failure.

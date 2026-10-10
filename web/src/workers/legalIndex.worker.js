@@ -53,13 +53,20 @@ self.addEventListener('message', async (ev) => {
   }
 });
 
-async function loadFromUrls({ localUrl, proxyUrl }) {
+async function loadFromUrls({ localUrl, r2Url, proxyUrl }) {
   if (parsed) return parsed.metadata;
   let json = null;
   try {
     const res = await fetch(localUrl);
     if (res.ok) json = await res.json();
-  } catch { /* fall through to proxy */ }
+  } catch { /* fall through to R2 */ }
+  if (!json && r2Url) {
+    // R2 copy, gzip at rest; the proxy below is only the fallback.
+    try {
+      const res = await fetch(await versionedDatasetUrl(r2Url, 'legal_index'));
+      if (res.ok) json = await res.json();
+    } catch { /* fall through to proxy */ }
+  }
   if (!json && proxyUrl) {
     // Versioned by the manifest's build stamp: see versionedUrl in ../manifest.js.
     const res = await fetch(await versionedDatasetUrl(proxyUrl, 'legal_index'));
