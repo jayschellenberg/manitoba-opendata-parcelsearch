@@ -6180,7 +6180,10 @@ export function parcelHtml(p, { showJumpToList = false, hoverSoil = false } = {}
   // formatChanges(row)). Only emit when there's actually a change to
   // report; null/empty parcels skip the line entirely.
   if (p._changesText) {
-    lines.push(`<strong style="color:#1a3a4a">Changes</strong> ${escapeHtml(p._changesText)}`);
+    // Same amber badge as the grid's Changes column (Jason, 2026-10-10), so
+    // an amended parcel reads as amended whether you hover it, click it or
+    // find it in the table.
+    lines.push(`<strong style="color:#1a3a4a">Changes</strong> <span class="badge badge-amend">${escapeHtml(p._changesText)}</span>`);
   }
   // Per-parcel assessment block — surfaces the latest-year Land /
   // Buildings / Total / Class so the user can sanity-check whether
