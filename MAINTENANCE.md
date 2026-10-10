@@ -10,7 +10,7 @@ thumb: nothing should go more than ~12 months stale.**
 | Dataset | Source of truth | Served from | Cadence |
 |---|---|---|---|
 | Live parcels / zoning / dev-plan | ArcGIS (live) | ArcGIS, live | always current *to the provincial extract* — see below |
-| Legal index, assessment index | mao-scrape `parcels.parquet` | GitHub Release → `api/legal-index.js` / `api/assessment-index.js` edge fns | monthly (15th 04:30) + weekly (Wed 10:30) |
+| Legal index, assessment index | mao-scrape `parcels.parquet` | gzip copies on R2 (`legal-index.json` / `assessment-index.json` in `mb-ortho`); GitHub Release → `api/*-index.js` edge fns as fallback | monthly (15th 04:30) + weekly (Wed 10:30) |
 | Section grid | MB_LegalDesc service | `section-grid.pmtiles` on R2 (`rebuild-section-grid-tiles.ps1`) | rare, manual (geometry doesn't change) |
 | RollEntry snapshot (fallback), parcel-masc, assessment shards, masc shards, landcover shards, river-lots, masc-riverlots | various R build scripts | `mb-parcel-data` repo → raw.githubusercontent (pinned commit) | monthly-ish |
 | Land-cover Detailed raster | 2020 LCR raster | `mb-landcover.pmtiles` on R2 (`r/pack_landcover_pmtiles.R`) | rare — only a new raster (§6) |
@@ -96,10 +96,19 @@ scrape delta, not how often the scrape itself runs). The app's **staleness
 banner** reflects the scrape age: hidden up to 180 days, amber past the
 semiannual mark, red past the 12-month rule — that's your nudge.
 
-The two big indexes (`legal-index.json` / `assessment-index.json`) ship via
-GitHub **Releases**, not git. Publish them in one command — rebuild → release
-→ bump the edge-function URLs (`-SkipBuild` right after a refresh already
-rebuilt them; `-DryRun` to preview):
+The two big indexes (`legal-index.json` / `assessment-index.json`) are read
+by the app from **R2** (`mb-ortho` bucket, same one as the basemap — CORS and
+the CSP `connect-src` already cover it). They are stored gzip (138 MB → ~17 MB
+and 30 MB → ~4 MB on the wire) under stable object names; the app appends the
+manifest's build stamp as `?v=` so a new publish is never served stale. The
+GitHub **Release** + `api/legal-index.js` / `api/assessment-index.js` edge
+functions remain as the fallback the loaders try third (after the in-tree copy
+and R2). Before 2026-10-10 the edge functions were the only path: Vercel never
+cached them (no `s-maxage`, and the legal index is over the 20 MB cap anyway),
+so every cold browser streamed 130 MB from GitHub and the first legal or
+address search took 20–90 s. Publish in one command — rebuild → release → R2
+upload → bump the edge-function URLs (`-SkipBuild` right after a refresh
+already rebuilt them; `-DryRun` to preview):
 ```
 powershell -ExecutionPolicy Bypass -File release-indexes.ps1 -SkipBuild
 ```

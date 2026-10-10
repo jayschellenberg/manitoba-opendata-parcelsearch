@@ -61,7 +61,7 @@ export default async function handler() {
     status: 200,
     headers: {
       ...corsHeaders('application/json'),
-      'Cache-Control': 'public, max-age=604800, immutable',
+      'Cache-Control': 'public, max-age=604800, s-maxage=604800, immutable',
     },
   });
 }

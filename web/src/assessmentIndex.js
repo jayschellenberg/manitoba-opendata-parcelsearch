@@ -21,6 +21,9 @@ import {
 export { prefetchShards as prefetchAssessmentShards };
 
 const ASSESSMENT_INDEX_LOCAL_URL = `${import.meta.env?.BASE_URL || '/'}data/assessment-index.json`;
+// Production copy on R2 (gzip at rest, ~4 MB on the wire): see MAINTENANCE.md
+// §1b. The edge-function proxy stays as the fallback only.
+const ASSESSMENT_INDEX_R2_URL = 'https://pub-091058079bf6458da1681945177e1682.r2.dev/assessment-index.json';
 const ASSESSMENT_INDEX_PROXY_URL = '/api/assessment-index';
 
 // Re-export pure helpers / constants so existing call sites work.
@@ -82,7 +85,13 @@ async function loadDirect() {
     try {
       const res = await fetch(ASSESSMENT_INDEX_LOCAL_URL);
       if (res.ok) json = await res.json();
-    } catch { /* fall through */ }
+    } catch { /* fall through to R2 */ }
+    if (!json) {
+      try {
+        const res = await fetch(await versionedDatasetUrl(ASSESSMENT_INDEX_R2_URL, 'assessment_index'));
+        if (res.ok) json = await res.json();
+      } catch { /* fall through to proxy */ }
+    }
     if (!json) {
       const res = await fetch(await versionedDatasetUrl(ASSESSMENT_INDEX_PROXY_URL, 'assessment_index'));
       if (!res.ok) {
@@ -102,6 +111,7 @@ async function loadDirect() {
 export function warmAssessmentIndex() {
   const p = postMessage('load', {
     localUrl: ASSESSMENT_INDEX_LOCAL_URL,
+    r2Url: ASSESSMENT_INDEX_R2_URL,
     proxyUrl: ASSESSMENT_INDEX_PROXY_URL,
   });
   if (p) {
@@ -128,6 +138,7 @@ export async function lookupAssessment(key) {
 
   const viaWorker = postMessage('load', {
     localUrl: ASSESSMENT_INDEX_LOCAL_URL,
+    r2Url: ASSESSMENT_INDEX_R2_URL,
     proxyUrl: ASSESSMENT_INDEX_PROXY_URL,
   });
   if (viaWorker) {
@@ -151,6 +162,7 @@ export async function lookupAssessment(key) {
 export async function getAssessmentIndexMetadata() {
   const viaWorker = postMessage('load', {
     localUrl: ASSESSMENT_INDEX_LOCAL_URL,
+    r2Url: ASSESSMENT_INDEX_R2_URL,
     proxyUrl: ASSESSMENT_INDEX_PROXY_URL,
   });
   if (viaWorker) {
