@@ -22,6 +22,10 @@ import {
 } from '../legalIndex.core.js';
 
 let parsed = null;
+// The one in-flight download. Every 'load' message that arrives while it
+// is pending awaits this same promise, so the index is fetched at most
+// once per worker. Reset on failure so a later message can retry.
+let loading = null;
 
 self.addEventListener('message', async (ev) => {
   const { id, type, payload } = ev.data || {};
@@ -53,8 +57,18 @@ self.addEventListener('message', async (ev) => {
   }
 });
 
-async function loadFromUrls({ localUrl, r2Url, proxyUrl }) {
+async function loadFromUrls(urls) {
   if (parsed) return parsed.metadata;
+  if (!loading) {
+    loading = fetchIndex(urls)
+      .then((json) => { parsed = parseLegalIndex(json); return parsed.metadata; })
+      .finally(() => { loading = null; });
+  }
+  return loading;
+}
+
+// Local copy (dev) → R2 (prod) → edge-function proxy (fallback).
+async function fetchIndex({ localUrl, r2Url, proxyUrl }) {
   let json = null;
   try {
     const res = await fetch(localUrl);
@@ -77,6 +91,5 @@ async function loadFromUrls({ localUrl, r2Url, proxyUrl }) {
     }
     json = await res.json();
   }
-  parsed = parseLegalIndex(json);
-  return parsed.metadata;
+  return json;
 }

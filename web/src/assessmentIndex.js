@@ -33,6 +33,13 @@ let worker = null;
 let pending = new Map();
 let nextId = 0;
 let directIndexPromise = null;
+// Single shared worker 'load' request — see legalIndex.js requestWorkerLoad.
+let workerLoadPromise = null;
+const INDEX_URLS = {
+  localUrl: ASSESSMENT_INDEX_LOCAL_URL,
+  r2Url: ASSESSMENT_INDEX_R2_URL,
+  proxyUrl: ASSESSMENT_INDEX_PROXY_URL,
+};
 
 function workerSupported() {
   return typeof Worker !== 'undefined' && typeof import.meta.url === 'string';
@@ -64,6 +71,9 @@ function ensureWorker() {
     }
     pending.clear();
     worker = null;
+    // A replacement worker starts empty, so the next call must post a
+    // fresh 'load' rather than reuse the dead worker's resolved one.
+    workerLoadPromise = null;
   });
   return worker;
 }
@@ -78,6 +88,19 @@ function postMessage(type, payload) {
   });
 }
 
+function requestWorkerLoad() {
+  if (workerLoadPromise) return workerLoadPromise;
+  const p = postMessage('load', INDEX_URLS);
+  if (!p) return null;
+  const wrapped = p.catch((err) => {
+    if (workerLoadPromise === wrapped) workerLoadPromise = null;
+    throw err;
+  });
+  workerLoadPromise = wrapped;
+  return wrapped;
+}
+
+// Main-thread fallback: only when no worker exists (see legalIndex.js).
 async function loadDirect() {
   if (directIndexPromise) return directIndexPromise;
   directIndexPromise = (async () => {
@@ -109,11 +132,7 @@ async function loadDirect() {
 // ---------- Public API ----------
 
 export function warmAssessmentIndex() {
-  const p = postMessage('load', {
-    localUrl: ASSESSMENT_INDEX_LOCAL_URL,
-    r2Url: ASSESSMENT_INDEX_R2_URL,
-    proxyUrl: ASSESSMENT_INDEX_PROXY_URL,
-  });
+  const p = requestWorkerLoad();
   if (p) {
     p.catch((err) => console.warn('Assessment-index pre-warm failed:', err.message));
     return;
@@ -136,11 +155,7 @@ export async function lookupAssessment(key) {
     }
   } catch { /* fall through to full-index path */ }
 
-  const viaWorker = postMessage('load', {
-    localUrl: ASSESSMENT_INDEX_LOCAL_URL,
-    r2Url: ASSESSMENT_INDEX_R2_URL,
-    proxyUrl: ASSESSMENT_INDEX_PROXY_URL,
-  });
+  const viaWorker = requestWorkerLoad();
   if (viaWorker) {
     try {
       await viaWorker;
@@ -160,11 +175,7 @@ export async function lookupAssessment(key) {
 }
 
 export async function getAssessmentIndexMetadata() {
-  const viaWorker = postMessage('load', {
-    localUrl: ASSESSMENT_INDEX_LOCAL_URL,
-    r2Url: ASSESSMENT_INDEX_R2_URL,
-    proxyUrl: ASSESSMENT_INDEX_PROXY_URL,
-  });
+  const viaWorker = requestWorkerLoad();
   if (viaWorker) {
     try { return await postMessage('metadata'); }
     catch { return null; }
@@ -223,4 +234,5 @@ export function _resetAssessmentIndex() {
   pending = new Map();
   nextId = 0;
   directIndexPromise = null;
+  workerLoadPromise = null;
 }

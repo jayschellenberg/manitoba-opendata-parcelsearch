@@ -50,6 +50,12 @@ let nextId = 0;
 // the parsed index in main-thread memory so repeated lookups don't
 // re-fetch.
 let directIndexPromise = null;
+// The single worker 'load' request. Every public call funnels through
+// requestWorkerLoad() so the page posts one load and awaits it, rather
+// than each caller posting its own (the worker also de-duplicates, but
+// one promise here keeps the pending map and the message traffic small).
+let workerLoadPromise = null;
+const INDEX_URLS = { localUrl: LEGAL_INDEX_LOCAL_URL, r2Url: LEGAL_INDEX_R2_URL, proxyUrl: LEGAL_INDEX_PROXY_URL };
 
 function workerSupported() {
   return typeof Worker !== 'undefined' && typeof import.meta.url === 'string';
@@ -84,6 +90,9 @@ function ensureWorker() {
     }
     pending.clear();
     worker = null;
+    // A replacement worker starts empty, so the next call must post a
+    // fresh 'load' rather than reuse the dead worker's resolved one.
+    workerLoadPromise = null;
   });
   return worker;
 }
@@ -98,7 +107,25 @@ function postMessage(type, payload) {
   });
 }
 
+// Returns the shared load promise, or null when no worker is available
+// (callers then use loadDirect). A failed load clears the slot so the
+// next call retries instead of replaying the same rejection forever.
+function requestWorkerLoad() {
+  if (workerLoadPromise) return workerLoadPromise;
+  const p = postMessage('load', INDEX_URLS);
+  if (!p) return null;
+  const wrapped = p.catch((err) => {
+    if (workerLoadPromise === wrapped) workerLoadPromise = null;
+    throw err;
+  });
+  workerLoadPromise = wrapped;
+  return wrapped;
+}
+
 // ---------- Direct (main-thread) fallback ----------
+// Only reached when there is no worker at all (node tests, or a host
+// that cannot construct module workers). It never runs alongside a
+// pending worker load: requestWorkerLoad() returns that promise first.
 
 async function loadDirect() {
   if (directIndexPromise) return directIndexPromise;
@@ -131,7 +158,7 @@ async function loadDirect() {
 // ---------- Public API ----------
 
 export function warmLegalIndex() {
-  const promise = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, r2Url: LEGAL_INDEX_R2_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
+  const promise = requestWorkerLoad();
   if (promise) {
     promise.catch((err) => console.warn('Legal-index pre-warm failed:', err.message));
     return;
@@ -143,7 +170,7 @@ export async function searchLegalIndex(criteria = {}) {
   if (!hasLegalCriteria(criteria)) {
     return { matches: [], truncated: false, metadata: null };
   }
-  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, r2Url: LEGAL_INDEX_R2_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
+  const viaWorker = requestWorkerLoad();
   if (viaWorker) {
     await viaWorker; // ensure loaded
     return postMessage('search', criteria);
@@ -154,7 +181,7 @@ export async function searchLegalIndex(criteria = {}) {
 
 export async function lookupLegalRecordsByParcelKeys(keys) {
   if (!Array.isArray(keys) || keys.length === 0) return [];
-  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, r2Url: LEGAL_INDEX_R2_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
+  const viaWorker = requestWorkerLoad();
   if (viaWorker) {
     await viaWorker;
     return postMessage('lookup', { keys });
@@ -175,7 +202,7 @@ export async function lookupLegalRecordsByParcelKeys(keys) {
 export async function lookupLegalRecordsByRollSet(rolls) {
   const rollList = rolls instanceof Set ? [...rolls] : Array.from(rolls || []);
   if (rollList.length === 0) return new Map();
-  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, r2Url: LEGAL_INDEX_R2_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
+  const viaWorker = requestWorkerLoad();
   if (viaWorker) {
     await viaWorker;
     const pairs = await postMessage('lookupRolls', { rolls: rollList });
@@ -193,7 +220,7 @@ export async function lookupLegalRecordsByRollSet(rolls) {
 export async function lookupLegalRecordsByStrSet(tokens) {
   const tokenList = tokens instanceof Set ? [...tokens] : Array.from(tokens || []);
   if (tokenList.length === 0) return new Map();
-  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, r2Url: LEGAL_INDEX_R2_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
+  const viaWorker = requestWorkerLoad();
   if (viaWorker) {
     await viaWorker;
     const pairs = await postMessage('lookupStr', { tokens: tokenList });
@@ -211,7 +238,7 @@ export async function lookupLegalRecordsByStrSet(tokens) {
 export async function lookupNearestRolls(muniNo, rolls, opts = {}) {
   const rollList = Array.from(rolls || []);
   if (rollList.length === 0) return new Map();
-  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, r2Url: LEGAL_INDEX_R2_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
+  const viaWorker = requestWorkerLoad();
   if (viaWorker) {
     await viaWorker;
     const pairs = await postMessage('nearestRolls', { muniNo, rolls: rollList, opts });
@@ -228,7 +255,7 @@ export async function lookupNearestRolls(muniNo, rolls, opts = {}) {
  * (a one-time full scan); repeats are cheap.
  */
 export async function getParishOptions() {
-  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, r2Url: LEGAL_INDEX_R2_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
+  const viaWorker = requestWorkerLoad();
   if (viaWorker) {
     await viaWorker;
     return postMessage('parishOptions');
@@ -238,7 +265,7 @@ export async function getParishOptions() {
 }
 
 export async function getLegalIndexMetadata() {
-  const viaWorker = postMessage('load', { localUrl: LEGAL_INDEX_LOCAL_URL, r2Url: LEGAL_INDEX_R2_URL, proxyUrl: LEGAL_INDEX_PROXY_URL });
+  const viaWorker = requestWorkerLoad();
   if (viaWorker) {
     return postMessage('metadata');
   }
@@ -257,4 +284,5 @@ export function _resetLegalIndex() {
   pending = new Map();
   nextId = 0;
   directIndexPromise = null;
+  workerLoadPromise = null;
 }
