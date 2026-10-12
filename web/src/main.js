@@ -3849,6 +3849,11 @@ const ADDENDA_COMMUNITY_MAX_M = 10000;
 const ADDENDA_NUMBER_MAX = 25;
 const ADDENDA_AERIAL_MIN_M = 300;
 const ADDENDA_ZONING_MIN_M = 1500;
+// A subject under ADDENDA_SMALL_LOT_ACRES gets a closer zoning map: at
+// 1,500 m a town lot was a speck among the neighbouring blocks (Jason,
+// 2026-10-12).
+const ADDENDA_SMALL_LOT_ACRES = 1;
+const ADDENDA_ZONING_SMALL_MIN_M = 1000;
 const ADDENDA_RESULTS_MIN_M = 800;
 // The neighbourhood map is taller than the rest: 6.5 x 5 in at 300 dpi.
 const ADDENDA_NEIGHBOURHOOD_SIZE = { width: 1950, height: 1500 };
@@ -3868,6 +3873,21 @@ function addendaSubjectFeatures() {
   if (!feats.length) return null;
   if (feats.length === 1) return { feats, note: 'the search result', specific: true };
   return { feats, note: `all ${feats.length} result parcels`, specific: false };
+}
+
+/** Total acres of the subject features: the stamped _acres where there is
+ *  one, else the polygon's own area. Null when no area can be read. */
+function addendaSubjectAcres(feats) {
+  let total = 0;
+  for (const f of feats) {
+    let ac = Number(f?.properties?._acres);
+    if (!(Number.isFinite(ac) && ac > 0)) {
+      try { ac = turfArea(f) / 4046.8564224; } catch { ac = NaN; }
+    }
+    if (!(Number.isFinite(ac) && ac > 0)) return null;
+    total += ac;
+  }
+  return feats.length ? total : null;
 }
 
 /** [minX, minY, maxX, maxY] over several features; null when none read. */
@@ -4194,11 +4214,14 @@ async function buildAddendaPack() {
         // Colours are per code, so the subset keeps them.
         const muniZoning = lastZoningFc;
         const zoningLabel = addendaZoningLabel(muniZoning, subject.feats[0]);
+        const subjectAcres = addendaSubjectAcres(subject.feats);
+        const zoningMinM = subjectAcres != null && subjectAcres < ADDENDA_SMALL_LOT_ACRES
+          ? ADDENDA_ZONING_SMALL_MIN_M : ADDENDA_ZONING_MIN_M;
         try {
           const zoning = await captureAddendaView(
-            framedBounds(subjectBox, { padFrac: 0.2, minWidthM: ADDENDA_ZONING_MIN_M }), 'streets',
+            framedBounds(subjectBox, { padFrac: 0.2, minWidthM: zoningMinM }), 'streets',
             { withLegend: true, cornerLabel: zoningLabel, prepare: () => rebuildZoningLegend(zoningInView(muniZoning)) });
-          add('zoning-map.png', zoning.bytes, `Zoning around ${subject.note}${marked}`, zoning.stale);
+          add('zoning-map.png', zoning.bytes, `Zoning around ${subject.note}${marked}, at least ${(zoningMinM / 1000).toFixed(1)} km wide`, zoning.stale);
         } finally {
           rebuildZoningLegend(muniZoning);
         }
