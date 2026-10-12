@@ -8129,7 +8129,7 @@ class BasemapMenuControl {
  *     to its normal click handlers.
  *
  * Readout shows both metric and imperial: m / km / ft / mi for distance,
- * m² / hectares / acres for area.
+ * m² / hectares / sf / acres for area.
  */
 class MeasureControl {
   constructor(draw) {
@@ -8264,10 +8264,11 @@ class MeasureControl {
       const sqm   = turfArea(f);
       const ha    = sqm / 10000;
       const acres = sqm / 4046.8564224;
+      const sqft  = sqm / 0.09290304;
       this._setReadout(
         `<strong>Area</strong><br>` +
         `${fmtNum(sqm, 0)} m² &nbsp;(${fmtNum(ha, 4)} ha)<br>` +
-        `${fmtNum(acres, 3)} acres`
+        `${fmtNum(sqft, 0)} sf &nbsp;(${fmtNum(acres, 3)} acres)`
       );
     }
   }
