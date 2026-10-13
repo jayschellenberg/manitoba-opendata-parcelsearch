@@ -119,16 +119,101 @@ async (names) => {
 """
 
 
+STILL_JS = r"""
+(src) => {
+  document.getElementById('__sc_still')?.remove();
+  const d = document.createElement('div');
+  d.id = '__sc_still';
+  d.style.cssText = 'position:fixed;inset:0;z-index:2147483646;background:rgba(0,0,0,.45);' +
+    'display:flex;align-items:center;justify-content:center;pointer-events:none';
+  const im = new Image();
+  im.src = src;
+  im.style.cssText = 'max-width:80vw;max-height:80vh;box-shadow:0 12px 40px rgba(0,0,0,.5)';
+  d.appendChild(im);
+  document.body.appendChild(d);
+}
+"""
+
+
+def _data_url(path: Path) -> str:
+    import base64, mimetypes
+    mt = mimetypes.guess_type(str(path))[0] or "image/png"
+    return f"data:{mt};base64," + base64.b64encode(path.read_bytes()).decode()
+
+
 def ffprobe_duration(path: Path) -> float:
     out = subprocess.check_output([FFPROBE, "-v", "error", "-show_entries", "format=duration",
                                    "-of", "csv=p=0", str(path)], text=True)
     return float(out.strip())
 
 
+def clip_key(text: str, voice: str) -> str:
+    return f"{voice}\n{text}"
+
+
+def clip_current(text: str, voice: str, dest: Path) -> bool:
+    """A cached clip is reused only if its sidecar .txt matches the step's voice
+    and text. Clips made before sidecars existed have none and are trusted."""
+    if not (dest.exists() and dest.stat().st_size > 0):
+        return False
+    side = dest.with_suffix(".txt")
+    return not side.exists() or side.read_text(encoding="utf-8") == clip_key(text, voice)
+
+
+KOKORO_DIR = HERE / "out" / "_kokoro"   # kokoro-v1.0.onnx + voices-v1.0.bin (gitignored)
+_kokoro = None
+
+
+def kokoro_say(text: str, voice: str, dest: Path) -> None:
+    """Local neural voice, used while edge-tts refuses (voice "kokoro:am_michael")."""
+    global _kokoro
+    import soundfile as sf
+    from kokoro_onnx import Kokoro
+    if _kokoro is None:
+        _kokoro = Kokoro(str(KOKORO_DIR / "kokoro-v1.0.onnx"), str(KOKORO_DIR / "voices-v1.0.bin"))
+    audio, sr = _kokoro.create(text, voice=voice.split(":", 1)[1], speed=1.0, lang="en-us")
+    wav = dest.with_suffix(".wav")
+    sf.write(str(wav), audio, sr)
+    subprocess.run([FFMPEG, "-y", "-i", str(wav), "-b:a", "128k", str(dest)],
+                   check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    wav.unlink()
+
+
+def azure_say(text: str, voice: str, dest: Path) -> None:
+    """Azure AI Speech (voice "azure:en-US-AndrewMultilingualNeural"): the same
+    Andrew as edge-tts, through Jason's own free-tier resource. Key and region
+    come from the AZURE_SPEECH_KEY / AZURE_SPEECH_REGION user env vars."""
+    import urllib.request
+    from xml.sax.saxutils import escape
+    name = voice.split(":", 1)[1]
+    ssml = (f"<speak version='1.0' xml:lang='en-US'><voice name='{name}'>"
+            f"{escape(text)}</voice></speak>").encode("utf-8")
+    req = urllib.request.Request(
+        f"https://{os.environ['AZURE_SPEECH_REGION']}.tts.speech.microsoft.com/cognitiveservices/v1",
+        data=ssml, method="POST",
+        headers={"Ocp-Apim-Subscription-Key": os.environ["AZURE_SPEECH_KEY"],
+                 "Content-Type": "application/ssml+xml",
+                 "X-Microsoft-OutputFormat": "audio-24khz-96kbitrate-mono-mp3",
+                 "User-Agent": "parcelsearch-screencast"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        body = r.read()
+    if not body:
+        raise RuntimeError("Azure returned an empty clip")
+    tmp = dest.with_suffix(".part")
+    tmp.write_bytes(body)
+    tmp.replace(dest)
+
+
 async def tts(text: str, voice: str, dest: Path) -> float:
-    import edge_tts
-    if not dest.exists():
-        await edge_tts.Communicate(text, voice, rate="+0%").save(str(dest))
+    if not clip_current(text, voice, dest):
+        if voice.startswith("kokoro:"):
+            kokoro_say(text, voice, dest)
+        elif voice.startswith("azure:"):
+            azure_say(text, voice, dest)
+        else:
+            import edge_tts
+            await edge_tts.Communicate(text, voice, rate="+0%").save(str(dest))
+        dest.with_suffix(".txt").write_text(clip_key(text, voice), encoding="utf-8")
     return ffprobe_duration(dest)
 
 
@@ -144,6 +229,7 @@ class Driver:
         self.pos = (960, 540)
         self.t_video0 = time.monotonic()
         self.segments = [(page, self.t_video0)]   # every page recorded, in order
+        self.clip = ""                             # text "copied" by select_text, for fillclip
 
     async def _centre(self, sel: str):
         loc = self.page.locator(sel).first
@@ -232,6 +318,17 @@ class Driver:
             await self.move_to(x, y)
             await p.click(sel)
             await p.fill(sel, fp.read_text(encoding="utf-8"))
+        elif kind == "fillclip":        # ["#sel", "fallback file"]: paste what select_text copied
+            sel, path = arg
+            text = self.clip.strip()
+            if text.count("\n") < 2:  # nothing usable was copied: fall back to the saved file
+                print("  fillclip: no copied text, using " + path)
+                fp = Path(path)
+                text = (fp if fp.is_absolute() else HERE / fp).read_text(encoding="utf-8")
+            x, y = await self._centre(sel)
+            await self.move_to(x, y)
+            await p.click(sel)
+            await p.fill(sel, text)
         elif kind == "type":
             await p.keyboard.type(arg, delay=45)
         elif kind == "press":
@@ -253,10 +350,32 @@ class Driver:
             await p.mouse.down()
             await self.move_to(x2, y2, ms=900)
             await p.mouse.up()
+        elif kind == "dragmap":         # [lon, lat, radius_px]: draw a circle centred on a map coordinate
+            lon, lat, rad = arg
+            pt = await p.evaluate("""([lon, lat]) => { const m = window._map; if (!m) return null;
+                const r = m.getContainer().getBoundingClientRect(); const q = m.project([lon, lat]);
+                return [r.left + q.x, r.top + q.y]; }""", [lon, lat])
+            if not pt:
+                raise RuntimeError("no window._map")
+            # the app's circle tool is click-centre, move (live radius preview), click-edge
+            await self.move_to(*pt)
+            await p.mouse.down(); await p.mouse.up()
+            await p.wait_for_timeout(400)
+            await self.move_to(pt[0] + rad, pt[1] + rad * 0.4, ms=1400)
+            await p.wait_for_timeout(500)
+            await p.mouse.down(); await p.mouse.up()
         elif kind == "eval":
             await p.evaluate(arg)
         elif kind == "goto":
             await p.goto(arg, wait_until="domcontentloaded")
+        elif kind == "still":            # overlay a screenshot (e.g. a native dialog the recording can't capture)
+            await p.evaluate(STILL_JS, _data_url(HERE / arg))
+        elif kind == "unstill":
+            await p.evaluate("document.getElementById('__sc_still')?.remove()")
+        elif kind == "select_text":      # highlight an element's contents as a user's drag-select would
+            self.clip = await p.evaluate("""(sel) => { const el = document.querySelector(sel); if (!el) throw new Error('no ' + sel);
+                el.scrollIntoView({block:'start'}); const r = document.createRange(); r.selectNodeContents(el);
+                const s = getSelection(); s.removeAllRanges(); s.addRange(r); return s.toString(); }""", arg)
         elif kind == "popup":            # click something that window.open()s; record that page from here on
             x, y = await self._centre(arg)
             await self.move_to(x, y)
@@ -300,6 +419,30 @@ async def record(shot: dict, out_dir: Path, voice: str, headless: bool, dry: boo
 
     # 2. drive + record
     async with async_playwright() as pw:
+        # Sites behind a login (MAO sales search, Jason 2026-10-13): sign in by
+        # hand in an ordinary browser window (the software-GL recording window
+        # paints black on screen), then hand its cookies to the recording
+        # context in memory. The login page is never recorded and nothing is
+        # written to disk.
+        state = None
+        login = shot.get("login")
+        if login:
+            lb = await pw.chromium.launch(headless=False, args=["--start-maximized"])
+            lctx = await lb.new_context(no_viewport=True)
+            lp = await lctx.new_page()
+            await lp.goto(login["url"], wait_until="domcontentloaded")
+            await lp.bring_to_front()
+            mins = login.get("minutes", 10)
+            print(f"  >>> Sign in in the browser window. Recording starts once signed in "
+                  f"(waiting up to {mins} min)", flush=True)
+            # Signed in = the browser has left the login page (a failed login stays on it).
+            gate = login["url"].rsplit("/", 1)[-1].lower()
+            await lp.wait_for_url(lambda u: gate not in u.lower(), timeout=mins * 60000)
+            await lp.wait_for_timeout(1500)
+            state = await lctx.storage_state()
+            await lb.close()
+            print("  signed in; recording", flush=True)
+
         browser = await pw.chromium.launch(
             headless=headless,
             args=["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
@@ -311,6 +454,7 @@ async def record(shot: dict, out_dir: Path, voice: str, headless: bool, dry: boo
             record_video_dir=str(work),
             record_video_size={"width": vw, "height": vh},
             locale="en-CA",
+            storage_state=state,
         )
         await ctx.add_init_script(CURSOR_JS)
         # Sales videos (Jason, 2026-10-10, option 1): serve the firm's export
@@ -321,6 +465,8 @@ async def record(shot: dict, out_dir: Path, voice: str, headless: bool, dry: boo
         if opfs:
             await ctx.add_init_script(OPFS_PICKER_JS)
             src = Path(opfs["dir"])
+            if opfs["files"] == "*":      # the whole export folder, as a real connect would see it
+                opfs["files"] = sorted(f.name for f in src.iterdir() if f.is_file())
 
             async def serve_demo(route, request):
                 name = request.url.rsplit("/__demo/", 1)[1].split("?")[0]

@@ -1,262 +1,231 @@
 {
- "name": "mb-12-charts-comps-workfile",
- "url": "https://manitoba-opendata-parcelsearch.vercel.app/?t=sales",
- "opfs": {
-  "dir": "D:/Dropbox/SharedInfo/AppMarketData/SalesData/Manitoba",
-  "files": [
-   "manifest.json",
-   "muni_189.csv",
-   "muni_194.csv"
-  ]
- },
- "setup": [
-  {
-   "wait": 3000
-  },
-  {
-   "eval": "const d=document.querySelector('#sales-db'); if(d&&!d.open) d.open=true"
-  },
-  {
-   "wait": 400
-  },
-  {
-   "click": "#sales-db-import"
-  },
-  {
-   "wait": 6000
-  },
-  {
-   "fill": [
-    "#sales-db-muni-search",
-    "Springfield"
-   ]
-  },
-  {
-   "wait": 800
-  },
-  {
-   "click": "#sales-db-munis input[type=checkbox]:not(:checked)"
-  },
-  {
-   "fill": [
-    "#sales-db-muni-search",
-    ""
-   ]
-  },
-  {
-   "click": ".date-preset-btn[data-months=\"36\"]"
-  },
-  {
-   "wait": 600
-  },
-  {
-   "select": [
-    "#sales-db-type",
-    "RESIDENTIAL BARE LAND"
-   ]
-  },
-  {
-   "wait": 500
-  },
-  {
-   "click": "#sales-db-load"
-  },
-  {
-   "wait": 5000
-  },
-  {
-   "select": [
-    "#vacant-improved",
-    "vacant"
-   ]
-  },
-  {
-   "wait": 2000
-  },
-  {
-   "eval": "const d=document.querySelector('details.more-filters'); if(d&&!d.open) d.open=true"
-  },
-  {
-   "wait": 400
-  },
-  {
-   "fill": [
-    "#subject-roll",
-    "313960"
-   ]
-  },
-  {
-   "click": "#subject-apply"
-  },
-  {
-   "wait": 3000
-  },
-  {
-   "popup": "#charts-open"
-  },
-  {
-   "wait": 5000
-  }
- ],
- "steps": [
-  {
-   "say": "Charts are interactive. Click a dot and that sale is unticked in the grid. It moves to Excluded records with the reason box focused, so you record why as you go.",
-   "do": [
+  "name": "mb-12-charts-comps-workfile",
+  "url": "https://manitoba-opendata-parcelsearch.vercel.app/?t=sales",
+  "setup": [
     {
-     "eval": "document.querySelector('.page-charts')?.scrollIntoView({block:'start'})"
+      "wait": 3500
     },
     {
-     "wait": 800
+      "upload": [
+        "#sales-upload-input",
+        "data/hanover-sales.csv"
+      ]
     },
     {
-     "clickdot": [
-      ".page-charts .chart-card",
-      3
-     ]
+      "waitfor": "#results tbody tr"
     },
     {
-     "wait": 3000
+      "wait": 9000
     },
     {
-     "click": "#excl-panel input.excl-reason"
+      "select": [
+        "#vacant-improved",
+        "vacant"
+      ]
     },
     {
-     "type": "Outlier"
+      "wait": 2000
     },
     {
-     "press": "Enter"
+      "eval": "const d=document.querySelector('details.more-filters'); if(d&&!d.open) d.open=true"
     },
     {
-     "wait": 2500
+      "wait": 400
+    },
+    {
+      "fill": [
+        "#subject-roll",
+        "67600.048"
+      ]
+    },
+    {
+      "click": "#subject-apply"
+    },
+    {
+      "wait": 4000
+    },
+    {
+      "popup": "#charts-open"
+    },
+    {
+      "wait": 6000
     }
-   ]
-  },
-  {
-   "say": "Excluded records lists every unticked sale with its reason. The suggestions cover the usual cases: nominal transfer, non-arm's length, assembly, outlier, not comparable, includes improvements, forced sale. Include again puts a sale back.",
-   "do": [
+  ],
+  "steps": [
     {
-     "eval": "document.querySelector('#excl-panel').open=true; document.querySelector('#excl-panel').scrollIntoView({block:'center'})"
+      "say": "Charts are interactive. Click a dot and that sale is unticked in the grid. It moves to Excluded records with the reason box focused, so you record why as you go.",
+      "do": [
+        {
+          "eval": "document.body.style.minHeight='6000px'"
+        },
+        {
+          "eval": "(() => { const e = document.querySelector('.page-charts'); if (!e) return; window.scrollTo({top: e.getBoundingClientRect().top + scrollY - 232, behavior: 'smooth'}); })()"
+        },
+        {
+          "wait": 1100
+        },
+        {
+          "wait": 800
+        },
+        {
+          "clickdot": [
+            ".page-charts .chart-card",
+            3
+          ]
+        },
+        {
+          "wait": 3000
+        },
+        {
+          "click": "#excl-panel input.excl-reason"
+        },
+        {
+          "type": "Outlier"
+        },
+        {
+          "press": "Enter"
+        },
+        {
+          "wait": 2500
+        }
+      ]
     },
     {
-     "hover": "#excl-panel summary"
+      "say": "Excluded records lists every unticked sale with its reason. The suggestions cover the usual cases: nominal transfer, non-arm's length, assembly, outlier, not comparable, includes improvements, forced sale. Include again puts a sale back.",
+      "do": [
+        {
+          "eval": "document.querySelector('#excl-panel').open=true; document.querySelector('#excl-panel').scrollIntoView({block:'center'})"
+        },
+        {
+          "hover": "#excl-panel summary"
+        },
+        {
+          "wait": 4000
+        }
+      ]
     },
     {
-     "wait": 4000
+      "say": "Shift-click a dot to tag it as the next comparable. The comp number appears on the chart and on the map, and in the grid in the main window.",
+      "do": [
+        {
+          "eval": "(() => { const e = document.querySelector('.page-charts'); if (!e) return; window.scrollTo({top: e.getBoundingClientRect().top + scrollY - 232, behavior: 'smooth'}); })()"
+        },
+        {
+          "wait": 1100
+        },
+        {
+          "clickdot": [
+            ".page-charts .chart-card",
+            8,
+            "shift"
+          ]
+        },
+        {
+          "eval": "getSelection().removeAllRanges()"
+        },
+        {
+          "wait": 2500
+        },
+        {
+          "clickdot": [
+            ".page-charts .chart-card",
+            14,
+            "shift"
+          ]
+        },
+        {
+          "eval": "getSelection().removeAllRanges()"
+        },
+        {
+          "wait": 2500
+        }
+      ]
+    },
+    {
+      "say": "Comparable sales is the running list. Reorder with the arrows, remove with the cross, copy the roll numbers for the report, or clear all tags. Land Set 1 and 2 are listed separately.",
+      "do": [
+        {
+          "eval": "document.querySelector('#comps-panel').open=true; document.querySelector('#comps-panel').scrollIntoView({block:'center'})"
+        },
+        {
+          "wait": 500
+        },
+        {
+          "hover": "#comps-panel summary"
+        },
+        {
+          "wait": 4000
+        }
+      ]
+    },
+    {
+      "say": "On the maps, clicking a dot opens a popup with Exclude this sale, Add as Comp, and Add to Land Set 1 or 2, so the same decisions can be made spatially.",
+      "do": [
+        {
+          "eval": "(() => { const e = document.querySelector('.page-maps'); if (!e) return; window.scrollTo({top: e.getBoundingClientRect().top + scrollY - 232, behavior: 'smooth'}); })()"
+        },
+        {
+          "wait": 1100
+        },
+        {
+          "wait": 800
+        },
+        {
+          "hover": ".page-maps .chart-card .maplibregl-canvas"
+        },
+        {
+          "wait": 3500
+        }
+      ]
+    },
+    {
+      "say": "Work file packages the whole analysis. Choose which charts and tables to include, embed the images in the summary, and download a zip named for the subject roll and date.",
+      "do": [
+        {
+          "click": "#workfile-open"
+        },
+        {
+          "waitfor": "#workfile-dialog"
+        },
+        {
+          "wait": 3500
+        },
+        {
+          "click": "#workfile-embed"
+        },
+        {
+          "wait": 2000
+        }
+      ]
+    },
+    {
+      "say": "Inside are summary dot H T M L, comps dot C S V, the C M S table, excluded dot C S V with reasons, the land set files, every chart as P N G, and every table as C S V. Keep this window in front while it renders or map images can come out blank.",
+      "do": [
+        {
+          "hover": "#workfile-list"
+        },
+        {
+          "wait": 4000
+        },
+        {
+          "press": "Escape"
+        }
+      ]
+    },
+    {
+      "say": "Back in the main window, Save job stores the sales, filters, comps and exclusions together. Open it later and the charts page picks up exactly where you left off.",
+      "do": [
+        {
+          "move": [
+            960,
+            300
+          ]
+        },
+        {
+          "wait": 3000
+        }
+      ]
     }
-   ]
-  },
-  {
-   "say": "Shift-click a dot to tag it as the next comparable. The comp number appears on the chart and on the map, and in the grid in the main window.",
-   "do": [
-    {
-     "clickdot": [
-      ".page-charts .chart-card",
-      8,
-      "shift"
-     ]
-    },
-    {
-     "eval": "getSelection().removeAllRanges()"
-    },
-    {
-     "wait": 2500
-    },
-    {
-     "clickdot": [
-      ".page-charts .chart-card",
-      14,
-      "shift"
-     ]
-    },
-    {
-     "eval": "getSelection().removeAllRanges()"
-    },
-    {
-     "wait": 2500
-    }
-   ]
-  },
-  {
-   "say": "Comparable sales is the running list. Reorder with the arrows, remove with the cross, copy the roll numbers for the report, or clear all tags. Land Set 1 and 2 are listed separately.",
-   "do": [
-    {
-     "eval": "document.querySelector('#comps-panel').open=true; document.querySelector('#comps-panel').scrollIntoView({block:'center'})"
-    },
-    {
-     "wait": 500
-    },
-    {
-     "hover": "#comps-panel summary"
-    },
-    {
-     "wait": 4000
-    }
-   ]
-  },
-  {
-   "say": "On the maps, clicking a dot opens a popup with Exclude this sale, Add as Comp, and Add to Land Set 1 or 2, so the same decisions can be made spatially.",
-   "do": [
-    {
-     "eval": "document.querySelector('.page-maps')?.scrollIntoView({block:'start'})"
-    },
-    {
-     "wait": 800
-    },
-    {
-     "hover": ".page-maps .chart-card .maplibregl-canvas"
-    },
-    {
-     "wait": 3500
-    }
-   ]
-  },
-  {
-   "say": "Work file packages the whole analysis. Choose which charts and tables to include, embed the images in the summary, and download a zip named for the subject roll and date.",
-   "do": [
-    {
-     "click": "#workfile-open"
-    },
-    {
-     "waitfor": "#workfile-dialog"
-    },
-    {
-     "wait": 3500
-    },
-    {
-     "click": "#workfile-embed"
-    },
-    {
-     "wait": 2000
-    }
-   ]
-  },
-  {
-   "say": "Inside are summary dot H T M L, comps dot C S V, the C M S table, excluded dot C S V with reasons, the land set files, every chart as P N G, and every table as C S V. Keep this window in front while it renders or map images can come out blank.",
-   "do": [
-    {
-     "hover": "#workfile-list"
-    },
-    {
-     "wait": 4000
-    },
-    {
-     "press": "Escape"
-    }
-   ]
-  },
-  {
-   "say": "Back in the main window, Save job stores the sales, filters, comps and exclusions together. Open it later and the charts page picks up exactly where you left off.",
-   "do": [
-    {
-     "move": [
-      960,
-      300
-     ]
-    },
-    {
-     "wait": 3000
-    }
-   ]
-  }
- ]
+  ],
+  "voice": "azure:en-US-AndrewMultilingualNeural"
 }

@@ -1,135 +1,205 @@
 {
- "name": "mb-07-sales-paste",
- "url": "https://manitoba-opendata-parcelsearch.vercel.app/?t=sales",
- "setup": [
-  {
-   "wait": 3500
+  "name": "mb-07-sales-paste",
+  "url": "https://manitoba-opendata-parcelsearch.vercel.app/?t=sales",
+  "setup": [
+    {
+      "wait": 3500
+    }
+  ],
+  "steps": [
+    {
+      "say": "The Sales Analysis tab analyses sales. This video shows one way to get sales in: pasting the results of a sales search on Manitoba Assessment Online, which anyone with an M A O subscription can do.",
+      "do": [
+        {
+          "hover": "#tab-btn-sales"
+        },
+        {
+          "wait": 1500
+        }
+      ]
+    },
+    {
+      "say": "Sign in to M A O as a subscriber and open the sales search. Pick the municipality, here the R M of Springfield, and the sale type group, here residential bare land. A tip: set a minimum sale amount of a hundred dollars or so. That keeps nominal, non-arm's-length transfers, like one-dollar sales, out of your results. Then Search.",
+      "do": [
+        {
+          "goto": "https://www.gov.mb.ca/mao/public/search_sales.aspx"
+        },
+        {
+          "waitfor": "#ctl00_PublicContent_lstSalesMuni"
+        },
+        {
+          "wait": 1500
+        },
+        {
+          "eval": "const o=document.querySelector('#ctl00_PublicContent_lstSalesMuni option[value=\"189\"]'); o&&o.scrollIntoView({block:'center'})"
+        },
+        {
+          "select": [
+            "#ctl00_PublicContent_lstSalesMuni",
+            "189"
+          ]
+        },
+        {
+          "wait": 1200
+        },
+        {
+          "select": [
+            "#ctl00_PublicContent_lstSaleTypGrp",
+            "1"
+          ]
+        },
+        {
+          "wait": 1200
+        },
+        {
+          "fill": [
+            "#ctl00_PublicContent_txtSaleAmt1",
+            "100"
+          ]
+        },
+        {
+          "wait": 1200
+        },
+        {
+          "click": "#ctl00_PublicContent_btnSearch"
+        },
+        {
+          "waitfor": "#ctl00_PublicContent__ResultDataGrid"
+        },
+        {
+          "wait": 1500
+        }
+      ]
+    },
+    {
+      "say": "M A O lists the matching sales a page at a time. Select the results table, including the header row, and copy it.",
+      "do": [
+        {
+          "hover": "#ctl00_PublicContent__ResultDataGrid"
+        },
+        {
+          "wait": 1500
+        },
+        {
+          "select_text": "#ctl00_PublicContent__ResultDataGrid"
+        },
+        {
+          "key": "Control+c"
+        },
+        {
+          "wait": 2500
+        }
+      ]
+    },
+    {
+      "say": "Back in Parcel Search, open Upload a C S V or Paste Sales from M A O, and click Paste data.",
+      "do": [
+        {
+          "goto": "https://manitoba-opendata-parcelsearch.vercel.app/?t=sales"
+        },
+        {
+          "wait": 4000
+        },
+        {
+          "eval": "const d=document.querySelector('#sales-manual'); if(d&&!d.open) d.open=true; d?.scrollIntoView({block:'center'})"
+        },
+        {
+          "wait": 600
+        },
+        {
+          "click": "#sales-import-trigger"
+        },
+        {
+          "waitfor": "#sales-import-text"
+        },
+        {
+          "wait": 1500
+        }
+      ]
+    },
+    {
+      "say": "Paste the table into the box. The columns are the ones M A O gives you: sale date, consideration, municipality, roll number, street address, legal description and primary property. Roll number and municipality are the two the tool needs to find each parcel.",
+      "do": [
+        {
+          "fillclip": [
+            "#sales-import-text",
+            "data/paste-springfield.tsv"
+          ]
+        },
+        {
+          "wait": 3500
+        }
+      ]
+    },
+    {
+      "say": "Press Load sales. Each sale is matched to its parcel and plotted. The status line reports how many were placed, any duplicates merged, and any roll not yet on the parcel map, which is shown at an approximate location.",
+      "do": [
+        {
+          "click": "#sales-import-load"
+        },
+        {
+          "waitfor": "#results tbody tr"
+        },
+        {
+          "wait": 6000
+        }
+      ]
+    },
+    {
+      "say": "From here the pasted sales go through the same filters as any other sales: date presets, assessment class and structure type, vacant or improved, and the additional filters.",
+      "do": [
+        {
+          "hover": ".date-preset-btn[data-months=\"36\"]"
+        },
+        {
+          "wait": 1500
+        },
+        {
+          "hover": "#vacant-improved"
+        },
+        {
+          "wait": 1500
+        },
+        {
+          "hover": "details.more-filters summary"
+        },
+        {
+          "wait": 1500
+        }
+      ]
+    },
+    {
+      "say": "If a search runs to several pages, copy each page into one Excel sheet, keeping a single header row, and save it as a C S V. Upload sales C S V loads that file into this same tool, and Recent brings back earlier pastes and uploads without copying them again.",
+      "do": [
+        {
+          "hover": "#sales-dropzone"
+        },
+        {
+          "wait": 2000
+        },
+        {
+          "hover": "#recent-uploads-select"
+        },
+        {
+          "wait": 1500
+        }
+      ]
+    },
+    {
+      "say": "The grid, the comp stars, the exclusion reasons and the Charts window all work on pasted sales the same way.",
+      "do": [
+        {
+          "hover": "#charts-open"
+        },
+        {
+          "wait": 2500
+        }
+      ]
+    }
+  ],
+  "voice": "azure:en-US-AndrewMultilingualNeural",
+  "login": {
+    "url": "https://www.gov.mb.ca/mao/subscriber/login.aspx",
+    "minutes": 10
   }
- ],
- "steps": [
-  {
-   "say": "The Sales Analysis tab analyses sales, and there are two ways to get them in. This video shows the one anyone can use: pasting the results of a sales search on Manitoba Assessment Online. The next video covers the firm's sales database.",
-   "do": [
-    {
-     "hover": "#tab-btn-sales"
-    },
-    {
-     "wait": 1500
-    }
-   ]
-  },
-  {
-   "say": "On M A O, run a sales search for the area and sale type you need. Here it is residential bare land in the R M of Springfield. Select the results table, including the header row, and copy it.",
-   "do": [
-    {
-     "move": [
-      1100,
-      450
-     ]
-    },
-    {
-     "wait": 2000
-    }
-   ]
-  },
-  {
-   "say": "Back here, open Upload a C S V or Paste Sales from M A O, and click Paste data.",
-   "do": [
-    {
-     "eval": "const d=document.querySelector('#sales-manual'); if(d&&!d.open) d.open=true; d?.scrollIntoView({block:'center'})"
-    },
-    {
-     "wait": 600
-    },
-    {
-     "click": "#sales-import-trigger"
-    },
-    {
-     "waitfor": "#sales-import-text"
-    },
-    {
-     "wait": 1500
-    }
-   ]
-  },
-  {
-   "say": "Paste the table into the box. The columns are the ones M A O gives you: sale date, consideration, municipality, roll number, street address, legal description and primary property. Roll number and municipality are the two the tool needs to find each parcel.",
-   "do": [
-    {
-     "fillfile": [
-      "#sales-import-text",
-      "data/paste-springfield.tsv"
-     ]
-    },
-    {
-     "wait": 3500
-    }
-   ]
-  },
-  {
-   "say": "Press Load sales. Each sale is matched to its parcel and plotted. The status line reports how many were placed, any duplicates merged, and any roll not yet on the parcel map, which is shown at an approximate location.",
-   "do": [
-    {
-     "click": "#sales-import-load"
-    },
-    {
-     "waitfor": "#results tbody tr"
-    },
-    {
-     "wait": 6000
-    }
-   ]
-  },
-  {
-   "say": "From here the sales go through exactly the same tools as the database: date presets, assessment class and structure type, vacant or improved, and the additional filters.",
-   "do": [
-    {
-     "hover": ".date-preset-btn[data-months=\"36\"]"
-    },
-    {
-     "wait": 1500
-    },
-    {
-     "hover": "#vacant-improved"
-    },
-    {
-     "wait": 1500
-    },
-    {
-     "hover": "details.more-filters summary"
-    },
-    {
-     "wait": 1500
-    }
-   ]
-  },
-  {
-   "say": "Upload sales C S V takes the same columns from a saved file, and Recent brings back earlier pastes and uploads without copying them again.",
-   "do": [
-    {
-     "hover": "#sales-dropzone"
-    },
-    {
-     "wait": 2000
-    },
-    {
-     "hover": "#recent-uploads-select"
-    },
-    {
-     "wait": 1500
-    }
-   ]
-  },
-  {
-   "say": "The grid, the comp stars, the exclusion reasons and the Charts window all work on pasted sales. The next video shows the firm's sales database, which skips the copying and covers every municipality.",
-   "do": [
-    {
-     "hover": "#charts-open"
-    },
-    {
-     "wait": 2500
-    }
-   ]
-  }
- ]
 }

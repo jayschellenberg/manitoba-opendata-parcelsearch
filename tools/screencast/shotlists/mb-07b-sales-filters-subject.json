@@ -1,0 +1,244 @@
+{
+  "name": "mb-07b-sales-filters-subject",
+  "url": "https://manitoba-opendata-parcelsearch.vercel.app/?t=sales",
+  "voice": "azure:en-US-AndrewMultilingualNeural",
+  "setup": [
+    {
+      "wait": 3500
+    },
+    {
+      "eval": "const d=document.querySelector('#sales-manual'); if(d&&!d.open) d.open=true"
+    },
+    {
+      "click": "#sales-import-trigger"
+    },
+    {
+      "waitfor": "#sales-import-text"
+    },
+    {
+      "fillfile": [
+        "#sales-import-text",
+        "data/paste-springfield-min100.tsv"
+      ]
+    },
+    {
+      "click": "#sales-import-load"
+    },
+    {
+      "waitfor": "#results tbody tr"
+    },
+    {
+      "wait": 9000
+    },
+    {
+      "eval": "document.querySelector('#sidebar, .sidebar, aside')?.scrollTo?.(0,0)"
+    }
+  ],
+  "steps": [
+    {
+      "say": "This video picks up with the 73 residential bare land sales pasted from M A O for the R M of Springfield. It shows how to narrow them down with the search filters, and how to set a subject property and a search radius.",
+      "do": [
+        {
+          "hover": "#results-status"
+        },
+        {
+          "wait": 1500
+        }
+      ]
+    },
+    {
+      "say": "Start with the date. The presets keep sales from the last 3 to 72 months, counted back from today. Here, 12 months. You can also type exact From and To dates. The status line above the grid shows what's left: 39 of the 73 sales.",
+      "do": [
+        {
+          "click": ".date-preset-btn[data-months=\"12\"]"
+        },
+        {
+          "wait": 2500
+        },
+        {
+          "hover": "#sale-date-from"
+        },
+        {
+          "wait": 1500
+        },
+        {
+          "hover": "#results-status"
+        },
+        {
+          "wait": 1500
+        }
+      ]
+    },
+    {
+      "say": "Next, vacant or improved. Vacant Land Only keeps the sales where buildings are only a small part of the assessment. That cut-off is the building threshold under Additional filters, five percent by default, and it can be a percentage or a dollar amount. Twenty-nine sales are left.",
+      "do": [
+        {
+          "select": [
+            "#vacant-improved",
+            "vacant"
+          ]
+        },
+        {
+          "wait": 2500
+        },
+        {
+          "hover": "#results-status"
+        },
+        {
+          "wait": 1500
+        }
+      ]
+    },
+    {
+      "say": "Additional filters hold the rest. Size works in acres, square feet or front feet. Here, a maximum of one acre keeps the lots and drops the acreages. A sale price range trims what remains: a minimum of fifty thousand dollars drops the lowest sale. Price per acre has a range of its own.",
+      "do": [
+        {
+          "click": "details.more-filters summary"
+        },
+        {
+          "wait": 1500
+        },
+        {
+          "fill": [
+            "#size-high",
+            "1"
+          ]
+        },
+        {
+          "press": "Tab"
+        },
+        {
+          "wait": 2000
+        },
+        {
+          "fill": [
+            "#sales-price-low",
+            "50000"
+          ]
+        },
+        {
+          "press": "Tab"
+        },
+        {
+          "wait": 2000
+        },
+        {
+          "hover": "#sales-ppa-low"
+        },
+        {
+          "wait": 1000
+        }
+      ]
+    },
+    {
+      "say": "The zoning filter keeps only the zones you tick. Ticking R S and R T drops the R C lots on Joerja Way, leaving twelve sales. Zoning type does the same with broader groups, such as residential or rural.",
+      "do": [
+        {
+          "click": "#zoning-filter summary"
+        },
+        {
+          "wait": 800
+        },
+        {
+          "click": "#zoning-filter input[value=RS]"
+        },
+        {
+          "wait": 1200
+        },
+        {
+          "click": "#zoning-filter input[value=RT]"
+        },
+        {
+          "wait": 1200
+        },
+        {
+          "click": "#zoning-filter summary"
+        },
+        {
+          "wait": 1200
+        },
+        {
+          "hover": "#zonecat-filter summary"
+        },
+        {
+          "wait": 1500
+        }
+      ]
+    },
+    {
+      "say": "Far-flung flags sales more than a set distance from the rest of the group, thirty kilometres by default. Keep shows them with a flag, and Exclude drops them. All of these Springfield sales are well inside that.",
+      "do": [
+        {
+          "hover": "#far-flung-km"
+        },
+        {
+          "wait": 2000
+        },
+        {
+          "hover": "[data-pill=farflung]"
+        },
+        {
+          "wait": 2000
+        }
+      ]
+    },
+    {
+      "say": "Now the subject property. Type its roll number, here 45 Oak Meadow Drive in Oakbank, a vacant 65-foot lot. Set a maximum distance of five kilometres and click Set. The subject is outlined in blue on the map, a distance column is added at the far right of the grid, and only the four sales within five kilometres remain.",
+      "do": [
+        {
+          "fill": [
+            "#subject-roll",
+            "163408.240"
+          ]
+        },
+        {
+          "wait": 800
+        },
+        {
+          "fill": [
+            "#distance-max",
+            "5"
+          ]
+        },
+        {
+          "wait": 800
+        },
+        {
+          "click": "#subject-apply"
+        },
+        {
+          "wait": 5000
+        },
+        {
+          "hover": "#results-status"
+        },
+        {
+          "wait": 1500
+        }
+      ]
+    },
+    {
+      "say": "Every active filter is listed in the status line, and the grid, the map and the Charts window all follow them. The cross next to Set removes the subject. Clear resets the whole page, including the pasted sales, so use it only to start over.",
+      "do": [
+        {
+          "hover": "#results-status"
+        },
+        {
+          "wait": 2500
+        },
+        {
+          "hover": "#subject-clear"
+        },
+        {
+          "wait": 2000
+        },
+        {
+          "hover": "#sales-clear"
+        },
+        {
+          "wait": 2000
+        }
+      ]
+    }
+  ]
+}
