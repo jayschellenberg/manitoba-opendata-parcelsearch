@@ -1,0 +1,248 @@
+{
+ "name": "mb-08-sales-database",
+ "url": "https://manitoba-opendata-parcelsearch.vercel.app/?t=sales",
+ "opfs": {
+  "dir": "D:/Dropbox/SharedInfo/AppMarketData/SalesData/Manitoba",
+  "files": [
+   "manifest.json",
+   "muni_189.csv",
+   "muni_165.csv",
+   "muni_194.csv",
+   "muni_175.csv",
+   "muni_351.csv",
+   "muni_135.csv",
+   "muni_451.csv",
+   "muni_340.csv",
+   "muni_146.csv",
+   "muni_208.csv",
+   "muni_172.csv",
+   "muni_121.csv",
+   "muni_201.csv",
+   "muni_176.csv",
+   "muni_174.csv",
+   "muni_112.csv",
+   "muni_177.csv"
+  ]
+ },
+ "setup": [
+  {
+   "wait": 3000
+  }
+ ],
+ "steps": [
+  {
+   "say": "For firm users, the M A O Sales Database turns the firm's weekly sales export into a searchable database that lives in your browser, covering every municipality at once. This video covers connecting it, searching by municipality, and the first-pass filters.",
+   "do": [
+    {
+     "hover": "#sales-db"
+    },
+    {
+     "wait": 1500
+    }
+   ]
+  },
+  {
+   "say": "Choose export folder once, and point it at the AppMarketData Sales Data Manitoba folder on Dropbox. Every municipality file imports, and the status line shows the count and newest sale date.",
+   "do": [
+    {
+     "eval": "const d=document.querySelector('#sales-db'); if(d&&!d.open) d.open=true"
+    },
+    {
+     "wait": 400
+    },
+    {
+     "click": "#sales-db-import"
+    },
+    {
+     "wait": 9000
+    }
+   ]
+  },
+  {
+   "say": "The folder stays connected. Reload picks up new weekly files, Disconnect forgets it, and Coverage shows which municipalities are in the export and how current each one is.",
+   "do": [
+    {
+     "click": "#sales-db-coverage"
+    },
+    {
+     "wait": 4000
+    },
+    {
+     "press": "Escape"
+    },
+    {
+     "wait": 500
+    }
+   ]
+  },
+  {
+   "say": "Filter the municipality list, tick the ones you want, and the Adjacent regions pill pulls in the neighbours. A date range is required, so pick a preset, here the last 24 months. Set the sale type, here residential bare land, and Search.",
+   "do": [
+    {
+     "fill": [
+      "#sales-db-muni-search",
+      "Springfield"
+     ]
+    },
+    {
+     "wait": 800
+    },
+    {
+     "click": "#sales-db-munis input[type=checkbox]:not(:checked)"
+    },
+    {
+     "fill": [
+      "#sales-db-muni-search",
+      "Tache"
+     ]
+    },
+    {
+     "wait": 800
+    },
+    {
+     "click": "#sales-db-munis input[type=checkbox]:not(:checked)"
+    },
+    {
+     "fill": [
+      "#sales-db-muni-search",
+      ""
+     ]
+    },
+    {
+     "click": ".date-preset-btn[data-months=\"24\"]"
+    },
+    {
+     "wait": 600
+    },
+    {
+     "select": [
+      "#sales-db-type",
+      "RESIDENTIAL BARE LAND"
+     ]
+    },
+    {
+     "wait": 500
+    },
+    {
+     "click": "#sales-db-load"
+    },
+    {
+     "wait": 7000
+    }
+   ]
+  },
+  {
+   "say": "Sales land on the map and in the grid. Nominal sales are excluded by default. Flip the pill to include transfers for a dollar.",
+   "do": [
+    {
+     "hover": "[data-pill=nominal]"
+    },
+    {
+     "wait": 2500
+    }
+   ]
+  },
+  {
+   "say": "Date presets keep the last 12, 24 or 36 months, or type exact dates. Assessment class and structure type narrow by what sold, and the vacant or improved switch separates land sales from improved sales.",
+   "do": [
+    {
+     "click": ".date-preset-btn[data-months=\"36\"]"
+    },
+    {
+     "wait": 3000
+    },
+    {
+     "hover": "#vacant-improved"
+    },
+    {
+     "wait": 2500
+    }
+   ]
+  },
+  {
+   "say": "Additional filters add plan number, size in acres, square feet or front feet, price per acre, sale price, zoning, parcel count, and the building threshold that decides what counts as vacant.",
+   "do": [
+    {
+     "click": "details.more-filters summary"
+    },
+    {
+     "wait": 2500
+    },
+    {
+     "fill": [
+      "#size-low",
+      "5"
+     ]
+    },
+    {
+     "fill": [
+      "#size-high",
+      "160"
+     ]
+    },
+    {
+     "wait": 2500
+    }
+   ]
+  },
+  {
+   "say": "Far-flung flags sales more than a set distance from the cluster. Keep shows them with a flag, Exclude drops them.",
+   "do": [
+    {
+     "hover": "#far-flung-km"
+    },
+    {
+     "wait": 2500
+    }
+   ]
+  },
+  {
+   "say": "Set a subject property to add a distance column and a maximum radius. The charts page uses the subject for distance plots and for naming the work file.",
+   "do": [
+    {
+     "wait": 800
+    },
+    {
+     "fill": [
+      "#subject-roll",
+      "313960"
+     ]
+    },
+    {
+     "fill": [
+      "#distance-max",
+      "25"
+     ]
+    },
+    {
+     "click": "#subject-apply"
+    },
+    {
+     "wait": 4000
+    }
+   ]
+  },
+  {
+   "say": "Province-wide search goes the other way. Pick a class at sale, a date and price range, and search every municipality in the export at once. Saved searches store the criteria.",
+   "do": [
+    {
+     "hover": "#sales-prov"
+    },
+    {
+     "wait": 3000
+    }
+   ]
+  },
+  {
+   "say": "Save job writes the whole state, the loaded sales, the filters, the comps and exclusions, to a file you can reopen later from Recent jobs. The next video covers the grid: stars, comps and exclusion reasons.",
+   "do": [
+    {
+     "hover": "#job-save"
+    },
+    {
+     "wait": 3000
+    }
+   ]
+  }
+ ]
+}
