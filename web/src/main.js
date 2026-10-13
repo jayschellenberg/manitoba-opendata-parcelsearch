@@ -3854,6 +3854,12 @@ const ADDENDA_ZONING_MIN_M = 1500;
 // 2026-10-12).
 const ADDENDA_SMALL_LOT_ACRES = 1;
 const ADDENDA_ZONING_SMALL_MIN_M = 1000;
+// Several results with none picked still make one subject when there are
+// at most ADDENDA_GROUP_MAX of them, in one municipality, within
+// ADDENDA_GROUP_SPAN_M — a property assessed under more than one roll. A
+// section is 1.6 km, so a farm of adjoining quarters fits.
+const ADDENDA_GROUP_MAX = 10;
+const ADDENDA_GROUP_SPAN_M = 2000;
 const ADDENDA_RESULTS_MIN_M = 800;
 // The neighbourhood map is taller than the rest: 6.5 x 5 in at 300 dpi.
 const ADDENDA_NEIGHBOURHOOD_SIZE = { width: 1950, height: 1500 };
@@ -3872,7 +3878,27 @@ function addendaSubjectFeatures() {
   const feats = (lastResultFc?.features || []).filter((f) => f?.geometry);
   if (!feats.length) return null;
   if (feats.length === 1) return { feats, note: 'the search result', specific: true };
+  // A property made of several rolls (Lac du Bonnet 1200 + 1300, Jason
+  // 2026-10-13): a small set of results in one municipality, close
+  // together, is the subject as a group.
+  if (addendaResultsAreOneProperty(feats)) {
+    return { feats, note: `the ${feats.length} subject parcels`, specific: true, group: true };
+  }
   return { feats, note: `all ${feats.length} result parcels`, specific: false };
+}
+
+/** True when the results read as one multi-roll property rather than a
+ *  scattered search: at most ADDENDA_GROUP_MAX parcels, all in the same
+ *  municipality, spanning no more than ADDENDA_GROUP_SPAN_M either way. */
+function addendaResultsAreOneProperty(feats) {
+  if (feats.length < 2 || feats.length > ADDENDA_GROUP_MAX) return false;
+  const munis = new Set(feats.map((f) => muniNameFromProps(f.properties) || ''));
+  if (munis.size !== 1 || munis.has('')) return false;
+  const box = bboxOfFeatures(feats);
+  if (!box) return false;
+  const midLat = (box[1] + box[3]) / 2;
+  return haversineMeters([box[0], midLat], [box[2], midLat]) <= ADDENDA_GROUP_SPAN_M
+    && haversineMeters([box[0], box[1]], [box[0], box[3]]) <= ADDENDA_GROUP_SPAN_M;
 }
 
 /** Total acres of the subject features: the stamped _acres where there is
@@ -4137,7 +4163,10 @@ async function buildAddendaPack() {
   const locatorMarks = pinPoint
     ? { pin: true, numbers: false, dims: false }
     : { pin: false, numbers: allFeats.length > 1 && allFeats.length <= ADDENDA_NUMBER_MAX, dims: false };
-  const total = 1 + (subject.specific ? 3 : 0) + (allFeats.length > 1 ? 1 : 0);
+  // A grouped subject is the whole result set, which the aerial and zoning
+  // maps already frame, so it gets no separate results map.
+  const wantResults = allFeats.length > 1 && !subject.group;
+  const total = 1 + (subject.specific ? 3 : 0) + (wantResults ? 1 : 0);
   let n = 0;
   const step = (what) => { btn.textContent = `Addenda ${++n}/${total}: ${what}…`; };
   const files = [];
@@ -4232,7 +4261,7 @@ async function buildAddendaPack() {
     }
     // Results — every result parcel, when there is more than one, marked
     // the way the user has them.
-    if (allFeats.length > 1) {
+    if (wantResults) {
       step('results');
       setAddendaMarks(userMarks);
       const results = await captureAddendaView(
@@ -4266,7 +4295,7 @@ async function buildAddendaPack() {
     ...(!subject.specific
       ? ['No single subject was picked, so the neighbourhood, aerial and zoning maps were left out.',
         'Click a parcel in the grid (or set a subject roll) and build the pack again to include them.'] : []),
-    ...(allFeats.length > 1 && !numberingOn
+    ...(wantResults && !numberingOn
       ? ['Tip: turn on "Number parcels" before building the pack to number the results map.'] : []),
     ...(stale.length ? ['', `Still loading when captured (rebuild if a layer looks incomplete): ${stale.join(', ')}`] : []),
     ...(credit ? ['', `Map data: ${credit}`] : []),
