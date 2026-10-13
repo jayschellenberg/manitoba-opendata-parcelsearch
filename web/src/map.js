@@ -2634,22 +2634,26 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
           // and made dense areas a black soup of stacked numbers.
           //
           // - allow-overlap:false → MapLibre hides any roll-number
-          //   that would collide with a previously-drawn label.
-          //   moveLayer() puts this layer at the top of the stack, so
-          //   "previously drawn" means earlier roll numbers within
-          //   the same layer plus any survey-grid label below it; in
-          //   practice that means urban areas auto-thin while rural
-          //   stays full.
-          // - ignore-placement:true → roll numbers don't reserve
-          //   space against OTHER label layers (dev-plan, zoning,
-          //   masc, cli), so those overlay labels still render even
-          //   when a roll number sits at the same anchor.
+          //   that would collide with a label ALREADY IN the collision
+          //   index.
+          // - ignore-placement:false → each placed roll number puts its
+          //   own box INTO that index. This half is what makes roll
+          //   numbers cull each other: with ignore-placement:true (as
+          //   this layer had until 2026-10-13) no roll number ever
+          //   reserved space, so allow-overlap:false had nothing of its
+          //   own to collide with and neighbouring narrow lots printed
+          //   "115503.500115503" — on screen and in Capture Map alike.
+          //   The cost: label layers BELOW this one (placed after it)
+          //   that are themselves allow-overlap:false — section grid,
+          //   CLI, soil, traffic — now lose to a roll number sitting on
+          //   top of them, instead of being overprinted by it. Zoning
+          //   and dev-plan labels are allow-overlap:true and unaffected.
           // - text-padding:2 gives a small breathing zone around each
           //   label so the cull triggers a touch earlier than the
           //   strict glyph-bbox would, which reads more pleasant in
           //   medium-density mid-zoom views.
           'text-allow-overlap': false,
-          'text-ignore-placement': true,
+          'text-ignore-placement': false,
           'text-padding': 2,
           'symbol-placement': 'point',
         },
@@ -2724,17 +2728,19 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
             18,   12,
             20,   14,
           ],
-          // Addresses cull EACH OTHER but never lose to a roll number.
-          // allow-overlap:false hides an address that would collide
-          // with one already placed, so a row of narrow lots shows
-          // every second or third address and fills in as you zoom.
-          // The roll-number layer is ignore-placement:true, so it
-          // reserves no space and cannot knock an address out — that
-          // was the original silent loss allow-overlap:true covered.
-          // ignore-placement stays true here so addresses never knock
-          // out other overlay labels either.
+          // Addresses cull each other: allow-overlap:false hides an
+          // address that would collide with a label already placed, and
+          // ignore-placement:false puts each placed address into the
+          // collision index so the NEXT one can collide with it. Both
+          // halves are needed — with ignore-placement:true nothing is
+          // ever reserved and the cull never fires. A row of narrow
+          // lots shows every second or third address and fills in as
+          // you zoom. The text-offset keeps an address clear of its
+          // own roll number (placed first, from the layer above), so it
+          // only loses to a neighbour's.
           'text-allow-overlap': false,
-          'text-ignore-placement': true,
+          'text-ignore-placement': false,
+          'text-padding': 2,
           'text-anchor': 'top',
           'text-offset': [0, 1.4],
           'symbol-placement': 'point',
