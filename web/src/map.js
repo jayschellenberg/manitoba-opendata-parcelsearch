@@ -2696,7 +2696,27 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
         minzoom: 16.5,
         layout: {
           visibility: 'none',
-          'text-field': ['get', '_civicAddress'],
+          // House number on its own line, street below it ("25" /
+          // "JEANNE DR"). A one-line address is wider than a typical
+          // 40-50 ft town lot, so neighbours ran together into one
+          // unreadable string; stacked, each label is about a third as
+          // wide. The break is explicit rather than left to
+          // text-max-width, whose line balancing is as happy to give
+          // "25 JEANNE" / "DR". A number range stays together:
+          // "21A - 21B" / "PROMENADE JEANNE DR", not "21A" / "- 21B ...".
+          'text-field': [
+            'let', 'a', ['to-string', ['get', '_civicAddress']],
+            ['let', 'r', ['index-of', ' - ', ['var', 'a']],
+              ['let', 'i', ['index-of', ' ', ['var', 'a'],
+                ['case', ['>', ['var', 'r'], 0], ['+', ['var', 'r'], 3], 0]],
+                ['case',
+                  ['>', ['var', 'i'], 0],
+                  ['concat',
+                    ['slice', ['var', 'a'], 0, ['var', 'i']],
+                    '\n',
+                    ['slice', ['var', 'a'], ['+', ['var', 'i'], 1]]],
+                  ['var', 'a']]]],
+          ],
           'text-font': ['Open Sans Semibold'],
           'text-size': [
             'interpolate', ['linear'], ['zoom'],
@@ -2704,16 +2724,22 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
             18,   12,
             20,   14,
           ],
-          // Allow overlap with the roll number above — they share the
-          // same centroid anchor with different offsets; forcing both
-          // through collision detection was causing the civic label
-          // to lose silently.
-          'text-allow-overlap': true,
+          // Addresses cull EACH OTHER but never lose to a roll number.
+          // allow-overlap:false hides an address that would collide
+          // with one already placed, so a row of narrow lots shows
+          // every second or third address and fills in as you zoom.
+          // The roll-number layer is ignore-placement:true, so it
+          // reserves no space and cannot knock an address out — that
+          // was the original silent loss allow-overlap:true covered.
+          // ignore-placement stays true here so addresses never knock
+          // out other overlay labels either.
+          'text-allow-overlap': false,
           'text-ignore-placement': true,
           'text-anchor': 'top',
           'text-offset': [0, 1.4],
           'symbol-placement': 'point',
-          'text-max-width': 14,
+          // Long street names ("PROMENADE JEANNE DR") still wrap.
+          'text-max-width': 8,
         },
         paint: {
           'text-color': '#1f2937',
