@@ -1,0 +1,259 @@
+{
+ "name": "mb-04-map-tools-history",
+ "url": "https://manitoba-opendata-parcelsearch.vercel.app/",
+ "setup": [
+  {
+   "waitfor": "#municipality option:nth-child(5)"
+  },
+  {
+   "wait": 1500
+  }
+ ],
+ "steps": [
+  {
+   "say": "This video covers the map tools: place search, basemaps, measuring, the historical as-of view, and the data status page.",
+   "do": [
+    {
+     "move": [
+      1100,
+      500
+     ]
+    }
+   ]
+  },
+  {
+   "say": "The box at the top left of the map finds towns and municipalities by name. Pick one and the map flies there, drops a pin, and sets the municipality for you.",
+   "do": [
+    {
+     "click": "input[placeholder^='Find a town']"
+    },
+    {
+     "type": "Souris"
+    },
+    {
+     "wait": 1500
+    },
+    {
+     "press": "ArrowDown"
+    },
+    {
+     "press": "Enter"
+    },
+    {
+     "wait": 3500
+    }
+   ]
+  },
+  {
+   "say": "The basemap menu switches between streets, satellite imagery, N R Can transportation and elevation, and Esri Wayback historical imagery with a date picker.",
+   "do": [
+    {
+     "hover": ".basemap-menu-trigger"
+    },
+    {
+     "wait": 1000
+    },
+    {
+     "click": ".basemap-menu-item[data-key=satellite]"
+    },
+    {
+     "wait": 3000
+    }
+   ]
+  },
+  {
+   "say": "Measure gives distance and area. Click points on the map and double-click to finish. The readout shows metres and feet, or hectares, square feet and acres.",
+   "do": [
+    {
+     "click": ".measure-control button"
+    },
+    {
+     "wait": 600
+    },
+    {
+     "click": ".measure-modes button[data-mode=area]"
+    },
+    {
+     "wait": 400
+    },
+    {
+     "clickxy": [
+      900,
+      350
+     ]
+    },
+    {
+     "clickxy": [
+      1300,
+      370
+     ]
+    },
+    {
+     "clickxy": [
+      1280,
+      650
+     ]
+    },
+    {
+     "dblclickxy": [
+      920,
+      640
+     ]
+    },
+    {
+     "wait": 3000
+    },
+    {
+     "click": ".measure-done"
+    },
+    {
+     "wait": 500
+    }
+   ]
+  },
+  {
+   "say": "Back on streets. Search a Brandon parcel that was subdivided last year, roll 562264 on Braecrest Drive.",
+   "do": [
+    {
+     "hover": ".basemap-menu-trigger"
+    },
+    {
+     "wait": 800
+    },
+    {
+     "click": ".basemap-menu-item[data-key=streets]"
+    },
+    {
+     "wait": 800
+    },
+    {
+     "select": [
+      "#municipality",
+      "BRANDON (CITY)"
+     ]
+    },
+    {
+     "wait": 1500
+    },
+    {
+     "click": ".chip-input[data-target=\"roll\"] .chip-input-text"
+    },
+    {
+     "type": "562264"
+    },
+    {
+     "press": "Enter"
+    },
+    {
+     "click": "#search"
+    },
+    {
+     "waitfor": "#results tbody tr"
+    },
+    {
+     "wait": 3000
+    }
+   ]
+  },
+  {
+   "say": "Open the Historical group, pick an as-of date, and press Show. The parcel's earlier boundary is drawn in dashed amber over today's, so you can see the land before the subdivision.",
+   "do": [
+    {
+     "click": "details.overlay-group[data-group=historical] summary"
+    },
+    {
+     "wait": 600
+    },
+    {
+     "eval": "const s=document.querySelector('#historical-year'); if(s&&s.options.length){s.selectedIndex=s.options.length-1; s.dispatchEvent(new Event('change',{bubbles:true}))}"
+    },
+    {
+     "wait": 600
+    },
+    {
+     "click": "#historical-toggle"
+    },
+    {
+     "wait": 5000
+    }
+   ]
+  },
+  {
+   "say": "The sub-layers add the whole historical parcel fabric, coloured by how much each parcel changed, plus the zoning and development plan as they stood on that date.",
+   "do": [
+    {
+     "click": "#historical-layer-parcels"
+    },
+    {
+     "wait": 4000
+    },
+    {
+     "click": "#historical-layer-parcels"
+    },
+    {
+     "wait": 800
+    }
+   ]
+  },
+  {
+   "say": "Prior outlines is the other way round. It shows earlier shapes of any parcel in the result municipality that was reshaped or retired since early 2025, from weekly snapshots of the provincial layer.",
+   "do": [
+    {
+     "click": "#historical-toggle"
+    },
+    {
+     "click": "#prior-outlines-toggle"
+    },
+    {
+     "wait": 4000
+    },
+    {
+     "click": "#prior-outlines-toggle"
+    },
+    {
+     "click": "details.overlay-group[data-group=historical] summary"
+    }
+   ]
+  },
+  {
+   "say": "Property Data Status reports when each municipality's assessment roll was last refreshed, when the site data was published, and whether the live map services are responding. Check it when a number looks stale.",
+   "do": [
+    {
+     "click": "#data-status-open"
+    },
+    {
+     "waitfor": "#data-status-modal"
+    },
+    {
+     "wait": 3000
+    },
+    {
+     "fill": [
+      "#data-status-muni-search",
+      "Brandon"
+     ]
+    },
+    {
+     "wait": 2500
+    },
+    {
+     "click": "#data-status-close"
+    }
+   ]
+  },
+  {
+   "say": "Data Sources, at the top right, lists every source behind the tool with its refresh date, and links to the full methods page.",
+   "do": [
+    {
+     "click": "#data-sources-details summary"
+    },
+    {
+     "wait": 3000
+    },
+    {
+     "click": "#data-sources-details summary"
+    }
+   ]
+  }
+ ]
+}

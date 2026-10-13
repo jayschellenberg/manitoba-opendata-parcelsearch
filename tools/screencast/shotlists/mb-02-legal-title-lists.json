@@ -1,0 +1,233 @@
+{
+ "name": "mb-02-legal-title-lists",
+ "url": "https://manitoba-opendata-parcelsearch.vercel.app/",
+ "setup": [
+  {
+   "waitfor": "#municipality option:nth-child(5)"
+  },
+  {
+   "wait": 1500
+  }
+ ],
+ "steps": [
+  {
+   "say": "Beyond roll numbers and addresses, Manitoba Parcel Search understands legal descriptions, certificate of title numbers, and pasted lists. Open Additional Searches to see the extra fields.",
+   "do": [
+    {
+     "click": "details.advanced-filters summary"
+    },
+    {
+     "wait": 1500
+    }
+   ]
+  },
+  {
+   "say": "Section, township and range have their own row, so a quarter like the north-east of 27, 7, 4 east can be typed directly. A certificate of title number goes in the title box, and lot, block and plan have their own fields. The legal description box is a free-text contains match for anything else, like a parcel letter or a river lot. Any of these searches the legal index, so they take a little longer than a roll search.",
+   "do": [
+    {
+     "hover": "#str-quarter"
+    },
+    {
+     "wait": 2500
+    },
+    {
+     "hover": "#title"
+    },
+    {
+     "wait": 2500
+    },
+    {
+     "hover": "#lot"
+    },
+    {
+     "wait": 2000
+    },
+    {
+     "hover": "#legal-text"
+    },
+    {
+     "wait": 2000
+    }
+   ]
+  },
+  {
+   "say": "Condominiums are searched by condo plan and unit. In the R M of Montcalm, unit 1 on plan 38239 returns the unit, not the whole building.",
+   "do": [
+    {
+     "select": [
+      "#municipality",
+      "MONTCALM (RM)"
+     ]
+    },
+    {
+     "wait": 1200
+    },
+    {
+     "eval": "document.querySelector('details.advanced-filters').open=true"
+    },
+    {
+     "wait": 400
+    },
+    {
+     "fill": [
+      "#condo-plan",
+      "38239"
+     ]
+    },
+    {
+     "fill": [
+      "#condo-unit",
+      "1"
+     ]
+    },
+    {
+     "press": "Enter"
+    },
+    {
+     "waitfor": "#results tbody tr"
+    },
+    {
+     "wait": 2500
+    }
+   ]
+  },
+  {
+   "say": "When you have a list of parcels from a client or a spreadsheet, use Import list. Paste rolls with their municipality, title numbers, or even a bare quarter section, one per line.",
+   "do": [
+    {
+     "click": "#clear"
+    },
+    {
+     "wait": 1500
+    },
+    {
+     "eval": "document.querySelector('details.advanced-filters').open=true"
+    },
+    {
+     "wait": 400
+    },
+    {
+     "click": "#parcel-list-import-trigger"
+    },
+    {
+     "waitfor": "#parcel-list-import-text"
+    },
+    {
+     "wait": 600
+    },
+    {
+     "fill": [
+      "#parcel-list-import-text",
+      "313960, RM OF SPRINGFIELD\n505, CITY OF STEINBACH\n254210, ROCKWOOD\nNE27-7-4E"
+     ]
+    },
+    {
+     "wait": 800
+    }
+   ]
+  },
+  {
+   "say": "Next lets you confirm which column is which. Resolve looks every line up and runs the search in one go. The quarter section line resolves through the legal index, so give it a moment.",
+   "do": [
+    {
+     "click": "#parcel-list-import-next"
+    },
+    {
+     "wait": 2000
+    },
+    {
+     "click": "#parcel-list-import-resolve"
+    },
+    {
+     "waitfor": "#results tbody tr"
+    },
+    {
+     "wait": 3000
+    }
+   ]
+  },
+  {
+   "say": "The imported list pill shows how many parcels resolved, and anything that did not match is listed in the unmatched drawer with a download. Clear the pill to leave list mode.",
+   "do": [
+    {
+     "hover": "#parcel-list-pill"
+    },
+    {
+     "wait": 2500
+    }
+   ]
+  },
+  {
+   "say": "With more than one parcel, the Numbering pill labels them on the map. By muni numbers them in roll order within each municipality. Entry order keeps the order you typed, which is what you want when the list matches a report.",
+   "do": [
+    {
+     "click": "[data-pill=numbering] [data-mode=muni]"
+    },
+    {
+     "wait": 3500
+    }
+   ]
+  },
+  {
+   "say": "Multiple rolls is the everyday case: a farm with several quarters, or a client's portfolio. Type them straight into the roll box, separated by a comma, a space or an ampersand, or paste the whole list from a spreadsheet. Each becomes a chip, one search returns all of them, and numbering labels them on the map in the order you entered.",
+   "do": [
+    {
+     "click": "#clear"
+    },
+    {
+     "wait": 1500
+    },
+    {
+     "select": [
+      "#municipality",
+      "BRANDON (CITY)"
+     ]
+    },
+    {
+     "wait": 1200
+    },
+    {
+     "click": ".chip-input[data-target=\"roll\"] .chip-input-text"
+    },
+    {
+     "type": "510875, 525063"
+    },
+    {
+     "press": "Enter"
+    },
+    {
+     "wait": 500
+    },
+    {
+     "click": "#search"
+    },
+    {
+     "waitfor": "#results tbody tr"
+    },
+    {
+     "wait": 3000
+    },
+    {
+     "click": "[data-pill=numbering] [data-mode=entry]"
+    },
+    {
+     "wait": 2000
+    }
+   ]
+  },
+  {
+   "say": "That is every way to get parcels into the tool. Next, the map layers.",
+   "do": [
+    {
+     "move": [
+      1100,
+      450
+     ]
+    },
+    {
+     "wait": 1500
+    }
+   ]
+  }
+ ]
+}

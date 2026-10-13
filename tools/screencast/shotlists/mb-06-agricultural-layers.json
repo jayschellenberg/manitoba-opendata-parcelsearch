@@ -1,0 +1,307 @@
+{
+ "name": "mb-06-agricultural-layers",
+ "url": "https://manitoba-opendata-parcelsearch.vercel.app/",
+ "setup": [
+  {
+   "waitfor": "#municipality option:nth-child(5)"
+  },
+  {
+   "wait": 1500
+  }
+ ],
+ "steps": [
+  {
+   "say": "This video is about farmland. Manitoba Parcel Search carries the agricultural data an appraiser reaches for on a rural file: MASC productivity ratings, soil class, land cover, crop history, tile drainage and irrigation. Start by picking a rural municipality, here the R M of Springfield.",
+   "do": [
+    {
+     "select": [
+      "#municipality",
+      "SPRINGFIELD (RM)"
+     ]
+    },
+    {
+     "wait": 3000
+    }
+   ]
+  },
+  {
+   "say": "Search a quarter section the way it reads on the title. Open Additional Searches, type the quarter, section, township and range, and press Enter. Every roll on that quarter is returned.",
+   "do": [
+    {
+     "click": "details.advanced-filters summary"
+    },
+    {
+     "wait": 600
+    },
+    {
+     "select": [
+      "#str-quarter",
+      "NW"
+     ]
+    },
+    {
+     "fill": [
+      "#str-section",
+      "20"
+     ]
+    },
+    {
+     "fill": [
+      "#str-township",
+      "11"
+     ]
+    },
+    {
+     "fill": [
+      "#str-range",
+      "6E"
+     ]
+    },
+    {
+     "press": "Enter"
+    },
+    {
+     "waitfor": "#results tbody tr"
+    },
+    {
+     "wait": 3000
+    }
+   ]
+  },
+  {
+   "say": "Switch the columns to the Agricultural preset. The table now shows the roll's stated size, land cover, the cultivated share, crop history, water influence, soil productivity class, soil type, slope, MASC risk area, tile drainage and irrigation, alongside zoning and the legal description.",
+   "do": [
+    {
+     "select": [
+      "#columns-preset",
+      "Agricultural"
+     ]
+    },
+    {
+     "wait": 3500
+    },
+    {
+     "scroll": [
+      "#results",
+      400,
+      0
+     ]
+    },
+    {
+     "wait": 2500
+    }
+   ]
+  },
+  {
+   "say": "Now the map. Open the Agricultural group. MASC Risk Areas draws the crop insurance risk areas, and MASC Rating colours every parcel in the municipality by its soil productivity rating from the Manitoba Agricultural Services Corporation, the rating that drives crop insurance coverage.",
+   "do": [
+    {
+     "click": "details.overlay-group[data-group=agricultural] summary"
+    },
+    {
+     "wait": 800
+    },
+    {
+     "click": "#riskarea-toggle"
+    },
+    {
+     "wait": 3000
+    },
+    {
+     "click": "#riskarea-toggle"
+    },
+    {
+     "click": "#masc-toggle"
+    },
+    {
+     "wait": 4500
+    }
+   ]
+  },
+  {
+   "say": "Click any parcel on the map and the popup carries its MASC rating and risk area, so you can read the rating of a neighbour without searching for it.",
+   "do": [
+    {
+     "click": ".maplibregl-canvas"
+    },
+    {
+     "wait": 3500
+    },
+    {
+     "click": ".maplibregl-popup-close-button"
+    },
+    {
+     "wait": 400
+    }
+   ]
+  },
+  {
+   "say": "Soil Productivity shows the Canada Land Inventory class for agriculture, from class 1 down to class 7. Click it again and the layer switches to soil name, from the provincial soil survey.",
+   "do": [
+    {
+     "click": "#masc-toggle"
+    },
+    {
+     "click": "#cli-toggle"
+    },
+    {
+     "wait": 4000
+    },
+    {
+     "click": "#cli-toggle"
+    },
+    {
+     "wait": 3500
+    },
+    {
+     "click": "#cli-toggle"
+    }
+   ]
+  },
+  {
+   "say": "Land Cover is the federal land cover map. The first view shows the dominant cover on each parcel: cropland, grassland, forest, wetland or water. The second view shows the detailed classes.",
+   "do": [
+    {
+     "click": "#landcover-toggle"
+    },
+    {
+     "wait": 4000
+    },
+    {
+     "click": "#landcover-toggle"
+    },
+    {
+     "wait": 3500
+    },
+    {
+     "click": "#landcover-toggle"
+    }
+   ]
+  },
+  {
+   "say": "Crop History is built from seventeen years of the annual satellite crop inventory. Years Cropped colours each parcel by how many of those years it was in crop, which separates land that is farmed every year from land that only looks arable. Click again for the land use view, which shows what was there in the latest year.",
+   "do": [
+    {
+     "click": "#landfacts-toggle"
+    },
+    {
+     "wait": 4500
+    },
+    {
+     "click": "#landfacts-toggle"
+    },
+    {
+     "wait": 3500
+    },
+    {
+     "click": "#landfacts-toggle"
+    }
+   ]
+  },
+  {
+   "say": "The cultivated share and the years-cropped figure in the table come from the same data, so the numbers you export match the map. A caution: these are satellite classifications, not a cropping record. The figures can be off where land was recently broken, and they may differ from what M A O reports for the parcel. They are often quite close, but use them with caution and verify where you can.",
+   "do": [
+    {
+     "hover": "#results th[data-col=cultpct]"
+    },
+    {
+     "wait": 3000
+    },
+    {
+     "hover": "#results th[data-col=landfacts]"
+    },
+    {
+     "wait": 3000
+    }
+   ]
+  },
+  {
+   "say": "Tile Drainage shows the registered tile-drained fields. Tile Lines and Outlets adds the drainage network itself once you are zoomed in. Irrigation Licences marks each licensed point of use, where water is actually applied.",
+   "do": [
+    {
+     "click": "#tile-toggle"
+    },
+    {
+     "wait": 3500
+    },
+    {
+     "click": "#irrigation-toggle"
+    },
+    {
+     "wait": 3500
+    }
+   ]
+  },
+  {
+   "say": "The two pills beside them are search filters. Set Tile drainage to On and the search returns only tile-drained parcels. Irrigation On returns only parcels with a licensed point of use. Narrow by municipality first, because an unscoped irrigation search covers about twenty-five hundred points province-wide.",
+   "do": [
+    {
+     "hover": "[data-pill=tile] [data-mode=on]"
+    },
+    {
+     "wait": 3000
+    },
+    {
+     "hover": "[data-pill=irrigation] [data-mode=on]"
+    },
+    {
+     "wait": 3000
+    },
+    {
+     "click": "#tile-toggle"
+    },
+    {
+     "click": "#irrigation-toggle"
+    }
+   ]
+  },
+  {
+   "say": "Water Influence, in the Water group, classes each parcel as waterfront, near water, or neither, which matters for recreational and hobby-farm land as much as for crop land.",
+   "do": [
+    {
+     "click": "details.overlay-group[data-group=agricultural] summary"
+    },
+    {
+     "click": "details.overlay-group[data-group=water] summary"
+    },
+    {
+     "wait": 600
+    },
+    {
+     "click": "#water-toggle"
+    },
+    {
+     "wait": 4000
+    },
+    {
+     "click": "#water-toggle"
+    },
+    {
+     "click": "details.overlay-group[data-group=water] summary"
+    }
+   ]
+  },
+  {
+   "say": "For a farm with several parcels, Parcel Snapshots makes a satellite J P G of every parcel in the result, each highlighted and zoomed to fit, and zips them up named by roll. The two parcels on this quarter give two images.",
+   "do": [
+    {
+     "hover": "#snapshot-zip-btn"
+    },
+    {
+     "wait": 4000
+    }
+   ]
+  },
+  {
+   "say": "Every one of these layers is open data from the Government of Manitoba and the Government of Canada, each adds its columns to the table, and Export CSV carries the figures out with the parcel. For sales of farmland, the Sales Charts page has an Agricultural tab that plots price per acre against these same variables.",
+   "do": [
+    {
+     "hover": "#export"
+    },
+    {
+     "wait": 3000
+    }
+   ]
+  }
+ ]
+}

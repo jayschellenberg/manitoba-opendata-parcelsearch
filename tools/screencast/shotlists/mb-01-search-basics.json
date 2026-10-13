@@ -1,0 +1,282 @@
+{
+ "name": "mb-01-search-basics",
+ "url": "https://manitoba-opendata-parcelsearch.vercel.app/",
+ "setup": [
+  {
+   "waitfor": "#municipality option:nth-child(5)"
+  },
+  {
+   "wait": 1500
+  }
+ ],
+ "steps": [
+  {
+   "say": "This is Manitoba Parcel Search. It covers every assessed parcel outside Winnipeg, with the map on the right and the search panel on the left. Everything it shows is built from open data: the assessment roll, the parcel fabric and zoning published by the Government of Manitoba and the municipalities. In this video we find a property, open its assessment report, turn on the main map layers, and export the result.",
+   "do": [
+    {
+     "move": [
+      1200,
+      500
+     ]
+    }
+   ]
+  },
+  {
+   "say": "Most searches start with a municipality. Pick it from the list, or type a few letters to jump to it. The map flies to the municipality and outlines it.",
+   "do": [
+    {
+     "select": [
+      "#municipality",
+      "BRANDON (CITY)"
+     ]
+    },
+    {
+     "wait": 2500
+    }
+   ]
+  },
+  {
+   "say": "If you already know the roll number, type it here. Press Enter or a comma to add it as a chip. Several rolls can be stacked in one search, which is the everyday case for a farm with six quarters or a portfolio, and the next video shows that in detail.",
+   "do": [
+    {
+     "click": ".chip-input[data-target=\"roll\"] .chip-input-text"
+    },
+    {
+     "type": "510875"
+    },
+    {
+     "press": "Enter"
+    },
+    {
+     "wait": 600
+    }
+   ]
+  },
+  {
+   "say": "Press Search. The parcel is highlighted on the map and listed in the results table below.",
+   "do": [
+    {
+     "click": "#search"
+    },
+    {
+     "waitfor": "#results tbody tr"
+    },
+    {
+     "wait": 2500
+    }
+   ]
+  },
+  {
+   "say": "With a single parcel found, the map is zoomed in close. Turn on Dimensions in the Parcel Layers group and the lot lengths are drawn along each side. They are measured from the survey parcel, which may not line up exactly with the assessment parcel, so treat them as approximate and verify against the plan.",
+   "do": [
+    {
+     "click": "#dims-toggle"
+    },
+    {
+     "wait": 4000
+    }
+   ]
+  },
+  {
+   "say": "Zoning shades every parcel by its zone and builds a legend. Hover a parcel for the zone code, and the Zoning and Zoning Type columns appear in the table.",
+   "do": [
+    {
+     "click": "#zoning-toggle"
+    },
+    {
+     "wait": 4500
+    },
+    {
+     "click": "#dims-toggle"
+    },
+    {
+     "click": "#zoning-toggle"
+    },
+    {
+     "wait": 500
+    }
+   ]
+  },
+  {
+   "say": "The roll number in the table is a hyperlink to that parcel's report on Manitoba Assessment Online. Here is the pro tip: log in to M A O in another browser tab first. The link then opens straight into the logged-in site, with the full report and sales history, instead of the public page.",
+   "do": [
+    {
+     "hover": "#results tbody tr td a"
+    },
+    {
+     "wait": 4000
+    },
+    {
+     "hover": "#results tbody tr td a"
+    },
+    {
+     "wait": 3000
+    }
+   ]
+  },
+  {
+   "say": "Expand the Reference group for the province-wide layers. Environmental Sites marks the sites the province tracks for environmental impact. Traffic Counts adds the provincial count stations. And the Section Township grid draws the survey grid, clicking again for quarters.",
+   "do": [
+    {
+     "click": "details.overlay-group[data-group=reference] summary"
+    },
+    {
+     "wait": 800
+    },
+    {
+     "click": "#contam-toggle"
+    },
+    {
+     "wait": 2500
+    },
+    {
+     "click": "#stations-toggle"
+    },
+    {
+     "wait": 2500
+    },
+    {
+     "click": "#grid-toggle"
+    },
+    {
+     "wait": 2500
+    },
+    {
+     "click": "#grid-toggle"
+    },
+    {
+     "wait": 2000
+    },
+    {
+     "click": "#contam-toggle"
+    },
+    {
+     "click": "#stations-toggle"
+    },
+    {
+     "click": "#grid-toggle"
+    },
+    {
+     "click": "details.overlay-group[data-group=reference] summary"
+    },
+    {
+     "wait": 400
+    }
+   ]
+  },
+  {
+   "say": "Clear the roll and search by civic address instead. One number is a contains match, so 1511 finds the range 1511 to 1519 26th Street.",
+   "do": [
+    {
+     "click": "#clear-roll-address"
+    },
+    {
+     "wait": 500
+    },
+    {
+     "fill": [
+      "#address-from",
+      "1511"
+     ]
+    },
+    {
+     "fill": [
+      "#address-street",
+      "26TH"
+     ]
+    },
+    {
+     "press": "Enter"
+    },
+    {
+     "waitfor": "#results tbody tr"
+    },
+    {
+     "wait": 2500
+    }
+   ]
+  },
+  {
+   "say": "Click a parcel on the map for a quick popup. From here you can copy the roll number, copy the GPS coordinates, or jump to the row in the list.",
+   "do": [
+    {
+     "click": ".maplibregl-canvas"
+    },
+    {
+     "wait": 2500
+    }
+   ]
+  },
+  {
+   "say": "Search a whole street with no number to see every parcel on it. The count line reports how many were found, and the table pages through them.",
+   "do": [
+    {
+     "click": ".maplibregl-popup-close-button"
+    },
+    {
+     "fill": [
+      "#address-from",
+      ""
+     ]
+    },
+    {
+     "click": "#search"
+    },
+    {
+     "wait": 3500
+    }
+   ]
+  },
+  {
+   "say": "Column presets switch the table to the columns you need. Sales analysis, Commercial, Land, Zoning check, Agricultural, Residential, or the full detail. The gear lets you build your own set.",
+   "do": [
+    {
+     "select": [
+      "#columns-preset",
+      "Zoning check"
+     ]
+    },
+    {
+     "wait": 2500
+    },
+    {
+     "click": "#columns-gear"
+    },
+    {
+     "wait": 1800
+    },
+    {
+     "press": "Escape"
+    }
+   ]
+  },
+  {
+   "say": "Click any column header to sort. Untick a row to drop it from the map and the export without re-running the search.",
+   "do": [
+    {
+     "click": "#results th[data-col=address]"
+    },
+    {
+     "wait": 1500
+    },
+    {
+     "click": "#results tbody tr:nth-child(2) input[type=checkbox]"
+    },
+    {
+     "wait": 1500
+    }
+   ]
+  },
+  {
+   "say": "Export CSV writes the current table, with a provenance note on top, so the data source and date travel with the file. That is the basic search loop. The next video covers legal descriptions, titles and imported lists.",
+   "do": [
+    {
+     "hover": "#export"
+    },
+    {
+     "wait": 2000
+    }
+   ]
+  }
+ ]
+}

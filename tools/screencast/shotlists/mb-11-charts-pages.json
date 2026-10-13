@@ -1,0 +1,246 @@
+{
+ "name": "mb-11-charts-pages",
+ "url": "https://manitoba-opendata-parcelsearch.vercel.app/?t=sales",
+ "opfs": {
+  "dir": "D:/Dropbox/SharedInfo/AppMarketData/SalesData/Manitoba",
+  "files": [
+   "manifest.json",
+   "muni_189.csv",
+   "muni_194.csv"
+  ]
+ },
+ "setup": [
+  {
+   "wait": 3000
+  },
+  {
+   "eval": "const d=document.querySelector('#sales-db'); if(d&&!d.open) d.open=true"
+  },
+  {
+   "wait": 400
+  },
+  {
+   "click": "#sales-db-import"
+  },
+  {
+   "wait": 6000
+  },
+  {
+   "fill": [
+    "#sales-db-muni-search",
+    "Springfield"
+   ]
+  },
+  {
+   "wait": 800
+  },
+  {
+   "click": "#sales-db-munis input[type=checkbox]:not(:checked)"
+  },
+  {
+   "fill": [
+    "#sales-db-muni-search",
+    ""
+   ]
+  },
+  {
+   "click": ".date-preset-btn[data-months=\"36\"]"
+  },
+  {
+   "wait": 600
+  },
+  {
+   "select": [
+    "#sales-db-type",
+    "RESIDENTIAL BARE LAND"
+   ]
+  },
+  {
+   "wait": 500
+  },
+  {
+   "click": "#sales-db-load"
+  },
+  {
+   "wait": 5000
+  },
+  {
+   "select": [
+    "#vacant-improved",
+    "vacant"
+   ]
+  },
+  {
+   "wait": 2000
+  },
+  {
+   "eval": "const d=document.querySelector('details.more-filters'); if(d&&!d.open) d.open=true"
+  },
+  {
+   "wait": 400
+  },
+  {
+   "fill": [
+    "#subject-roll",
+    "313960"
+   ]
+  },
+  {
+   "click": "#subject-apply"
+  },
+  {
+   "wait": 3000
+  },
+  {
+   "popup": "#charts-open"
+  },
+  {
+   "wait": 5000
+  }
+ ],
+ "steps": [
+  {
+   "say": "This video walks the four chart pages. Land Price per Unit first. The maps row has Price and Lot Size, Year and Zoning, and Water Influence. Each dot is one sale, sized or coloured by the variable.",
+   "do": [
+    {
+     "click": "#tab-rates"
+    },
+    {
+     "wait": 1000
+    },
+    {
+     "click": ".page-maps .row-tabs button:nth-child(2)"
+    },
+    {
+     "wait": 3500
+    },
+    {
+     "click": ".page-maps .row-tabs button:nth-child(3)"
+    },
+    {
+     "wait": 3500
+    },
+    {
+     "click": ".page-maps .row-tabs button:nth-child(1)"
+    }
+   ]
+  },
+  {
+   "say": "The charts row plots the rate over time and against size, then by zoning and by distance from the subject. The fitted trend line and its rate per year are printed on the chart.",
+   "do": [
+    {
+     "click": ".page-charts .row-tabs button:nth-child(2)"
+    },
+    {
+     "wait": 4000
+    },
+    {
+     "click": ".page-charts .row-tabs button:nth-child(1)"
+    },
+    {
+     "wait": 2000
+    }
+   ]
+  },
+  {
+   "say": "Agricultural adds the farm variables: M A S C rating, cultivated share, soil, Canada Land Inventory class, and land cover mix, each against the price per acre, plus sale to assessment ratios.",
+   "do": [
+    {
+     "click": "#tab-ag"
+    },
+    {
+     "wait": 3500
+    },
+    {
+     "click": ".page-charts .row-tabs button:nth-child(2)"
+    },
+    {
+     "wait": 3500
+    },
+    {
+     "click": ".page-charts .row-tabs button:nth-child(4)"
+    },
+    {
+     "wait": 3500
+    }
+   ]
+  },
+  {
+   "say": "The Ag consistency filters keep only sales that are like the subject: a cultivated band, and M A S C, C L I and cover chips. They apply to this page only and show up as a step in the waterfall.",
+   "do": [
+    {
+     "hover": "section.ag-cons"
+    },
+    {
+     "wait": 4000
+    }
+   ]
+  },
+  {
+   "say": "Total and Per Lot Price is for lot sales and small holdings, where the whole price matters more than the rate. Total price, per lot, and per lot by distance and assessed value.",
+   "do": [
+    {
+     "click": "#tab-total"
+    },
+    {
+     "wait": 3500
+    },
+    {
+     "click": ".page-charts .row-tabs button:nth-child(2)"
+    },
+    {
+     "wait": 3500
+    },
+    {
+     "click": ".page-charts .row-tabs button:nth-child(3)"
+    },
+    {
+     "wait": 3000
+    }
+   ]
+  },
+  {
+   "say": "Water looks at the waterfront premium. Influence and class, flood and water body, size and distance, a summary with the premium, and paired sales where a waterfront and a non-waterfront parcel can be matched.",
+   "do": [
+    {
+     "click": "#tab-water"
+    },
+    {
+     "wait": 3500
+    },
+    {
+     "click": ".page-charts .row-tabs button:nth-child(4)"
+    },
+    {
+     "wait": 4000
+    },
+    {
+     "click": ".page-charts .row-tabs button:nth-child(5)"
+    },
+    {
+     "wait": 3500
+    }
+   ]
+  },
+  {
+   "say": "Municipal boundaries can be drawn on the maps, and every map and chart has its own P N G button at 1950 by 1050. The next video covers excluding sales from the charts and tagging comparables.",
+   "do": [
+    {
+     "click": "#tab-rates"
+    },
+    {
+     "wait": 1000
+    },
+    {
+     "click": "#map-munis"
+    },
+    {
+     "wait": 3000
+    },
+    {
+     "click": "#map-munis"
+    }
+   ]
+  }
+ ]
+}

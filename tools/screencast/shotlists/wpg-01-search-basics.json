@@ -1,0 +1,221 @@
+{
+ "name": "wpg-01-search-basics",
+ "url": "https://winnipeg-opendata-parcelsearch.vercel.app/",
+ "setup": [
+  {
+   "wait": 3500
+  }
+ ],
+ "steps": [
+  {
+   "say": "This is Winnipeg Parcel Search, the city companion to the Manitoba tool. It uses the City's open data for parcels, assessment, zoning and neighbourhoods. In this video we find a property, read its popup, and export the result.",
+   "do": [
+    {
+     "move": [
+      1200,
+      500
+     ]
+    }
+   ]
+  },
+  {
+   "say": "Type a civic number and the street name. The street box suggests matches as you type, so you can pick one from the list or just press Enter to search.",
+   "do": [
+    {
+     "fill": [
+      "#address-from",
+      "1347"
+     ]
+    },
+    {
+     "fill": [
+      "#address-to",
+      "1347"
+     ]
+    },
+    {
+     "click": "#address-street"
+    },
+    {
+     "type": "BORDER"
+    },
+    {
+     "wait": 1500
+    },
+    {
+     "press": "Escape"
+    },
+    {
+     "press": "Enter"
+    },
+    {
+     "waitfor": "#results tbody tr"
+    },
+    {
+     "wait": 3000
+    }
+   ]
+  },
+  {
+   "say": "With both From and To filled, the search is exact. One number alone is a contains match and would return every address containing it.",
+   "do": [
+    {
+     "hover": "#address-to"
+    },
+    {
+     "wait": 2000
+    }
+   ]
+  },
+  {
+   "say": "Click the parcel on the map for a popup. The click popup has Copy Roll and G P S Coordinates links, and goes straight to the assessment page.",
+   "do": [
+    {
+     "click": ".maplibregl-canvas"
+    },
+    {
+     "wait": 3000
+    },
+    {
+     "press": "Escape"
+    }
+   ]
+  },
+  {
+   "say": "Roll numbers go in the chip box. Enter or a comma adds a chip, and the search accepts rolls with or without dashes and leading zeros. Here is the same parcel by roll.",
+   "do": [
+    {
+     "click": "#clear"
+    },
+    {
+     "wait": 2500
+    },
+    {
+     "click": ".chip-input[data-target=\"roll\"] .chip-input-text"
+    },
+    {
+     "type": "07560170500"
+    },
+    {
+     "press": "Enter"
+    },
+    {
+     "click": "#search"
+    },
+    {
+     "waitfor": "#results tbody tr"
+    },
+    {
+     "wait": 3000
+    }
+   ]
+  },
+  {
+   "say": "The address box on the map itself is another way in. Type an address, pick it from the list, and the search fields fill and run.",
+   "do": [
+    {
+     "click": "#clear"
+    },
+    {
+     "wait": 2500
+    },
+    {
+     "click": "#map-address-input"
+    },
+    {
+     "type": "400 Hargrave"
+    },
+    {
+     "wait": 2000
+    },
+    {
+     "press": "ArrowDown"
+    },
+    {
+     "press": "Enter"
+    },
+    {
+     "wait": 3500
+    }
+   ]
+  },
+  {
+   "say": "Column presets switch the table between quick lookup, residential, zoning detail, sales, and full detail. The gear builds a custom set. Click a header to sort.",
+   "do": [
+    {
+     "select": [
+      "#columns-preset",
+      "Zoning detail"
+     ]
+    },
+    {
+     "wait": 2500
+    },
+    {
+     "click": "#columns-gear"
+    },
+    {
+     "wait": 1800
+    },
+    {
+     "press": "Escape"
+    }
+   ]
+  },
+  {
+   "say": "Search a whole street for every parcel on it. Border Street gives a couple of dozen. Untick rows to drop them from the map, the charts and the export without searching again.",
+   "do": [
+    {
+     "click": "#clear"
+    },
+    {
+     "wait": 2500
+    },
+    {
+     "click": "#address-street"
+    },
+    {
+     "type": "BORDER"
+    },
+    {
+     "wait": 1200
+    },
+    {
+     "press": "Escape"
+    },
+    {
+     "click": "#search"
+    },
+    {
+     "waitfor": "#results tbody tr"
+    },
+    {
+     "wait": 3000
+    },
+    {
+     "click": "#results tbody tr:nth-child(2) input[type=checkbox]"
+    },
+    {
+     "wait": 1500
+    }
+   ]
+  },
+  {
+   "say": "Export C S V writes the table as shown. If rows are unticked, it asks first. The title at the top left is a home button that clears everything.",
+   "do": [
+    {
+     "hover": "#export"
+    },
+    {
+     "wait": 2000
+    },
+    {
+     "hover": "#topbar-home"
+    },
+    {
+     "wait": 1500
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,169 @@
+{
+ "name": "mb-05-report-outputs",
+ "url": "https://manitoba-opendata-parcelsearch.vercel.app/",
+ "setup": [
+  {
+   "waitfor": "#municipality option:nth-child(5)"
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "select": [
+    "#municipality",
+    "BRANDON (CITY)"
+   ]
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "click": ".chip-input[data-target=\"roll\"] .chip-input-text"
+  },
+  {
+   "type": "510875"
+  },
+  {
+   "press": "Enter"
+  },
+  {
+   "click": "#search"
+  },
+  {
+   "waitfor": "#results tbody tr"
+  },
+  {
+   "wait": 2500
+  },
+  {
+   "wait": 2500
+  }
+ ],
+ "steps": [
+  {
+   "say": "Once a subject is found, the buttons at the bottom of the panel produce the images and files that go into a report. This video shows Capture Map, the overall location map, the Addenda Pack and parcel snapshots.",
+   "do": [
+    {
+     "hover": "#static-map-btn"
+    },
+    {
+     "wait": 1500
+    }
+   ]
+  },
+  {
+   "say": "Capture Map renders the current view at 1950 by 1050 pixels, which is six and a half by three and a half inches at 300 d p i, the size of a report figure. Turn on zoning first and the legend can be included.",
+   "do": [
+    {
+     "click": "#zoning-toggle"
+    },
+    {
+     "wait": 3000
+    },
+    {
+     "click": "#static-map-btn"
+    },
+    {
+     "waitfor": "#map-capture-modal"
+    },
+    {
+     "wait": 3500
+    }
+   ]
+  },
+  {
+   "say": "Tick Include legend and the scale bar and north arrow. Copy image puts it on the clipboard for pasting straight into Word. Download P N G or J P G saves a file.",
+   "do": [
+    {
+     "click": "#map-capture-legend"
+    },
+    {
+     "wait": 1500
+    },
+    {
+     "click": "#map-capture-furniture"
+    },
+    {
+     "wait": 2500
+    },
+    {
+     "hover": "#map-capture-copy"
+    },
+    {
+     "wait": 1500
+    },
+    {
+     "press": "Escape"
+    },
+    {
+     "wait": 600
+    }
+   ]
+  },
+  {
+   "say": "Alt C is the shortcut. It copies the current map view to the clipboard with no dialog at all.",
+   "do": [
+    {
+     "click": "#zoning-toggle"
+    },
+    {
+     "wait": 800
+    },
+    {
+     "key": "Alt+c"
+    },
+    {
+     "wait": 3000
+    }
+   ]
+  },
+  {
+   "say": "M B Overall Map draws the province location map with a subject callout. Change the callout text, move the arrow to any side, and switch to the Winnipeg base for city subjects. Copy or download the image.",
+   "do": [
+    {
+     "click": "#location-map-btn"
+    },
+    {
+     "waitfor": "#location-map-modal"
+    },
+    {
+     "wait": 5000
+    },
+    {
+     "hover": "#location-map-output"
+    },
+    {
+     "wait": 2500
+    },
+    {
+     "press": "Escape"
+    },
+    {
+     "wait": 600
+    }
+   ]
+  },
+  {
+   "say": "Addenda Pack builds the whole set in one click. A location map, a neighbourhood map framed on the municipality with the section grid and highways, a subject aerial with dimensions, a zoning map, and an all-results map when there are several parcels.",
+   "do": [
+    {
+     "click": "#addenda-pack-btn"
+    },
+    {
+     "wait": 12000
+    }
+   ]
+  },
+  {
+   "say": "The button reports progress as each map renders. The map view is restored when it finishes, and the zip downloads with a readme listing what is inside. That is the report set for a single subject.",
+   "do": [
+    {
+     "hover": "#addenda-pack-btn"
+    },
+    {
+     "wait": 10000
+    }
+   ]
+  }
+ ]
+}

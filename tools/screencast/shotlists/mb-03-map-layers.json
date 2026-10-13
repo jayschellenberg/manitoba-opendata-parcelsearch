@@ -1,0 +1,403 @@
+{
+ "name": "mb-03-map-layers",
+ "url": "https://manitoba-opendata-parcelsearch.vercel.app/",
+ "setup": [
+  {
+   "waitfor": "#municipality:not([disabled]) option[value='STEINBACH (CITY)']"
+  },
+  {
+   "wait": 800
+  },
+  {
+   "select": [
+    "#municipality",
+    "STEINBACH (CITY)"
+   ]
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "fill": [
+    "#address-from",
+    "30"
+   ]
+  },
+  {
+   "eval": "const e=document.querySelector('#address-to'); e.focus(); e.value='100'; e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true}))"
+  },
+  {
+   "fill": [
+    "#address-street",
+    "FIRST"
+   ]
+  },
+  {
+   "press": "Enter"
+  },
+  {
+   "waitfor": "#results tbody tr"
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "click": "#zoning-toggle"
+  },
+  {
+   "waitfor": "#results tbody tr .badge-amend"
+  },
+  {
+   "click": "#zoning-toggle"
+  },
+  {
+   "wait": 500
+  },
+  {
+   "click": "#clear-roll-address"
+  },
+  {
+   "wait": 800
+  },
+  {
+   "select": [
+    "#municipality",
+    "BRANDON (CITY)"
+   ]
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "click": ".chip-input[data-target=\"roll\"] .chip-input-text"
+  },
+  {
+   "type": "510875"
+  },
+  {
+   "press": "Enter"
+  },
+  {
+   "click": "#search"
+  },
+  {
+   "waitfor": "#results tbody tr"
+  },
+  {
+   "wait": 2500
+  }
+ ],
+ "steps": [
+  {
+   "say": "The Map Layers panel sits under the search fields. Groups collapse, and a badge on a collapsed group shows how many of its layers are on. Each button lights up when its layer is active.",
+   "do": [
+    {
+     "hover": "#map-layers-section"
+    },
+    {
+     "wait": 2000
+    }
+   ]
+  },
+  {
+   "say": "Assessment Parcels draws every parcel in the municipality, not just the result. Dimensions adds survey lengths once you are zoomed in close.",
+   "do": [
+    {
+     "click": "#muni-parcels-toggle"
+    },
+    {
+     "wait": 2500
+    },
+    {
+     "click": "#dims-toggle"
+    },
+    {
+     "wait": 2500
+    }
+   ]
+  },
+  {
+   "say": "Zoning shades the parcels by zone and builds a legend. Development Plan adds the dev plan designation and its columns to the table. Both, like every layer here, come from open data: the Government of Manitoba's land use and development services and the municipalities' published by-laws.",
+   "do": [
+    {
+     "click": "#zoning-toggle"
+    },
+    {
+     "wait": 3500
+    },
+    {
+     "click": "#devplan-toggle"
+    },
+    {
+     "wait": 3000
+    }
+   ]
+  },
+  {
+   "say": "The changes pill works best on a bigger set. Switch to Steinbach and search 30 to 100 First Street: nineteen parcels come back. Untick a few rows and the map re-centres on the parcels that are still ticked, so culling one end of a street brings the rest back into view.",
+   "do": [
+    {
+     "click": "#clear-roll-address"
+    },
+    {
+     "wait": 800
+    },
+    {
+     "select": [
+      "#municipality",
+      "STEINBACH (CITY)"
+     ]
+    },
+    {
+     "wait": 2000
+    },
+    {
+     "fill": [
+      "#address-from",
+      "30"
+     ]
+    },
+    {
+     "eval": "const e=document.querySelector('#address-to'); e.focus(); e.value='100'; e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true}))"
+    },
+    {
+     "fill": [
+      "#address-street",
+      "FIRST"
+     ]
+    },
+    {
+     "press": "Enter"
+    },
+    {
+     "waitfor": "#results tbody tr"
+    },
+    {
+     "wait": 3000
+    },
+    {
+     "click": "#results tbody tr:has-text('21800') input.row-select"
+    },
+    {
+     "wait": 1500
+    },
+    {
+     "click": "#results tbody tr:has-text('21900') input.row-select"
+    },
+    {
+     "wait": 1500
+    },
+    {
+     "click": "#results tbody tr:has-text('22000') input.row-select"
+    },
+    {
+     "wait": 1500
+    },
+    {
+     "click": "#results tbody tr:has-text('22100') input.row-select"
+    },
+    {
+     "wait": 2500
+    }
+   ]
+  },
+  {
+   "say": "Turn zoning on. The Zoning and Dev Plan Changes pill finds the parcels whose zoning has changed since the previous publication. Click Show if you only want to see the sites with a zoning change: two parcels on this street were rezoned from R L D to R M D, and they are outlined on the map. Hover or click either one and the popup carries the same amber change badge as the table. Filter reduces the result set to just those two, and Off puts the full set back.",
+   "do": [
+    {
+     "click": "#zoning-toggle"
+    },
+    {
+     "wait": 5000
+    },
+    {
+     "waitfor": "#results tbody tr .badge-amend"
+    },
+    {
+     "wait": 800
+    },
+    {
+     "click": ".changes-mode-pill .changes-mode-btn[data-mode=show]"
+    },
+    {
+     "wait": 4000
+    },
+    {
+     "hover": "#results tbody tr:has-text('24300') .badge-amend"
+    },
+    {
+     "wait": 2000
+    },
+    {
+     "click": ".changes-mode-pill .changes-mode-btn[data-mode=filter]"
+    },
+    {
+     "wait": 4000
+    },
+    {
+     "click": ".changes-mode-pill .changes-mode-btn[data-mode=off]"
+    },
+    {
+     "wait": 800
+    },
+    {
+     "click": "#zoning-toggle"
+    },
+    {
+     "click": "#devplan-toggle"
+    },
+    {
+     "click": "#dims-toggle"
+    },
+    {
+     "wait": 800
+    }
+   ]
+  },
+  {
+   "say": "Reference holds environmental sites, traffic count stations, Manitoba Highways and the traffic flow layer with an annual average daily traffic legend. The section and township grid cycles from sections to quarters.",
+   "do": [
+    {
+     "click": "details.overlay-group[data-group=reference] summary"
+    },
+    {
+     "wait": 800
+    },
+    {
+     "click": "#highways-toggle"
+    },
+    {
+     "wait": 1500
+    },
+    {
+     "click": "#flow-toggle"
+    },
+    {
+     "wait": 2500
+    },
+    {
+     "click": "#grid-toggle"
+    },
+    {
+     "wait": 2000
+    },
+    {
+     "click": "#flow-toggle"
+    },
+    {
+     "click": "#highways-toggle"
+    },
+    {
+     "click": "#grid-toggle"
+    },
+    {
+     "click": "#grid-toggle"
+    },
+    {
+     "click": "details.overlay-group[data-group=reference] summary"
+    },
+    {
+     "wait": 500
+    }
+   ]
+  },
+  {
+   "say": "Water Influence classes parcels as waterfront, near water, or neither, and the Water Proximity pill filters the search on that class. The Agricultural group has its own video.",
+   "do": [
+    {
+     "click": "details.overlay-group[data-group=water] summary"
+    },
+    {
+     "wait": 600
+    },
+    {
+     "click": "#water-toggle"
+    },
+    {
+     "wait": 3500
+    },
+    {
+     "hover": "[data-pill=water] [data-mode=waterfront]"
+    },
+    {
+     "wait": 1500
+    },
+    {
+     "click": "#water-toggle"
+    },
+    {
+     "click": "details.overlay-group[data-group=water] summary"
+    }
+   ]
+  },
+  {
+   "say": "Multi-Family maps the multi-family inventory above a chosen dwelling-unit count, plus new multi-family and new condo developments.",
+   "do": [
+    {
+     "click": "details.overlay-group[data-group=multifamily] summary"
+    },
+    {
+     "wait": 600
+    },
+    {
+     "click": "#mfinv-toggle"
+    },
+    {
+     "wait": 3000
+    },
+    {
+     "click": "#mfinv-toggle"
+    },
+    {
+     "click": "details.overlay-group[data-group=multifamily] summary"
+    }
+   ]
+  },
+  {
+   "say": "Flood brings in the designated flood areas, the special management area, the 1 in 200 year flood extent, historical flood extents and the Winnipeg waterway corridors.",
+   "do": [
+    {
+     "click": "details.overlay-group[data-group=flood] summary"
+    },
+    {
+     "wait": 600
+    },
+    {
+     "click": "#flood-dfa-toggle"
+    },
+    {
+     "wait": 2000
+    },
+    {
+     "click": "#flood-f200-toggle"
+    },
+    {
+     "wait": 3000
+    },
+    {
+     "click": "#flood-dfa-toggle"
+    },
+    {
+     "click": "#flood-f200-toggle"
+    },
+    {
+     "click": "details.overlay-group[data-group=flood] summary"
+    }
+   ]
+  },
+  {
+   "say": "Every layer you turn on is written into the page address, so you can bookmark a view or paste the link to a colleague and they see the same layers.",
+   "do": [
+    {
+     "move": [
+      700,
+      60
+     ]
+    },
+    {
+     "wait": 2000
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,274 @@
+{
+ "name": "wpg-02-more-searches",
+ "url": "https://winnipeg-opendata-parcelsearch.vercel.app/",
+ "setup": [
+  {
+   "wait": 3500
+  }
+ ],
+ "steps": [
+  {
+   "say": "Additional Searches opens the condo, zoning, legal description, dwelling unit and property use fields. A badge on the collapsed header lists any criteria set inside.",
+   "do": [
+    {
+     "click": "details.additional-searches summary"
+    },
+    {
+     "wait": 1500
+    }
+   ]
+  },
+  {
+   "say": "A condominium corporation number returns every unit in the building. Corp 43498.",
+   "do": [
+    {
+     "fill": [
+      "#condo-plan",
+      "43498"
+     ]
+    },
+    {
+     "press": "Enter"
+    },
+    {
+     "waitfor": "#results tbody tr"
+    },
+    {
+     "wait": 3500
+    }
+   ]
+  },
+  {
+   "say": "Lot, block and plan find subdivisions. Plan 2930 alone returns a couple of hundred parcels, which is a good way to map a whole neighbourhood of one era.",
+   "do": [
+    {
+     "click": "#clear"
+    },
+    {
+     "wait": 2500
+    },
+    {
+     "click": "details.additional-searches summary"
+    },
+    {
+     "wait": 400
+    },
+    {
+     "fill": [
+      "#plan",
+      "2930"
+     ]
+    },
+    {
+     "press": "Enter"
+    },
+    {
+     "waitfor": "#results tbody tr"
+    },
+    {
+     "wait": 4000
+    }
+   ]
+  },
+  {
+   "say": "The draw tools on the top bar narrow a result set by area. Pick the rectangle, click one corner, then the opposite corner. Only the parcels inside stay in the table, the map and the export.",
+   "do": [
+    {
+     "click": "#shape-tool-rectangle"
+    },
+    {
+     "wait": 500
+    },
+    {
+     "clickxy": [
+      760,
+      160
+     ]
+    },
+    {
+     "wait": 700
+    },
+    {
+     "clickxy": [
+      1500,
+      700
+     ]
+    },
+    {
+     "wait": 3000
+    }
+   ]
+  },
+  {
+   "say": "Click the shape to flip it from include to exclude. The clear tool removes shapes, and a new search clears them too.",
+   "do": [
+    {
+     "clickxy": [
+      1130,
+      430
+     ]
+    },
+    {
+     "wait": 2500
+    },
+    {
+     "click": "#shape-tool-clear"
+    },
+    {
+     "wait": 1500
+    }
+   ]
+  },
+  {
+   "say": "Property use and dwelling units filter by the City's use code and unit count. Zero D U finds vacant land, and Min D U finds multi-family.",
+   "do": [
+    {
+     "hover": "#pucs-filter"
+    },
+    {
+     "wait": 1500
+    },
+    {
+     "select": [
+      "#du-mode",
+      "min"
+     ]
+    },
+    {
+     "fill": [
+      "#du-min",
+      "4"
+     ]
+    },
+    {
+     "wait": 1500
+    },
+    {
+     "fill": [
+      "#du-min",
+      ""
+     ]
+    },
+    {
+     "select": [
+      "#du-mode",
+      ""
+     ]
+    }
+   ]
+  },
+  {
+   "say": "Import list takes a pasted list of addresses or rolls. Look up matches each line, shows you what it matched, and Map parcels runs the search.",
+   "do": [
+    {
+     "click": "#clear"
+    },
+    {
+     "wait": 2500
+    },
+    {
+     "click": "details.additional-searches summary"
+    },
+    {
+     "wait": 400
+    },
+    {
+     "click": "#parcel-list-trigger"
+    },
+    {
+     "waitfor": "#parcel-list-text"
+    },
+    {
+     "wait": 600
+    },
+    {
+     "fill": [
+      "#parcel-list-text",
+      "1347 Border St\n400 Hargrave St\n165 Provencher Blvd\n07560170500"
+     ]
+    },
+    {
+     "wait": 800
+    },
+    {
+     "click": "#parcel-list-next"
+    },
+    {
+     "wait": 4000
+    }
+   ]
+  },
+  {
+   "say": "Review the matches, untick any that are wrong, and map the rest. Because they came from a list, Entry order numbering is available, so the map numbers follow your list.",
+   "do": [
+    {
+     "click": "#parcel-list-confirm"
+    },
+    {
+     "waitfor": "#results tbody tr"
+    },
+    {
+     "wait": 3000
+    },
+    {
+     "click": "[data-pill=numbering] [data-mode=entry]"
+    },
+    {
+     "wait": 3000
+    }
+   ]
+  },
+  {
+   "say": "For a single result, such as one roll number, the Locator pill switches between the parcel shape and a pin, which reads better on a zoomed-out map.",
+   "do": [
+    {
+     "click": "#clear"
+    },
+    {
+     "wait": 2500
+    },
+    {
+     "click": ".chip-input[data-target=\"roll\"] .chip-input-text"
+    },
+    {
+     "type": "07560170500"
+    },
+    {
+     "press": "Enter"
+    },
+    {
+     "click": "#search"
+    },
+    {
+     "waitfor": "#results tbody tr"
+    },
+    {
+     "wait": 2500
+    },
+    {
+     "click": "[data-pill=locator] [data-mode=pin]"
+    },
+    {
+     "wait": 2500
+    }
+   ]
+  },
+  {
+   "say": "River lots, Outer Two Mile and section township range parcels have their own conventions. The hint at the foot of the page explains the block and plan codes to use.",
+   "do": [
+    {
+     "eval": "document.querySelector('details.hint-page')?.scrollIntoView({block:'center'})"
+    },
+    {
+     "wait": 800
+    },
+    {
+     "click": "details.hint-page summary"
+    },
+    {
+     "wait": 3500
+    }
+   ]
+  }
+ ]
+}

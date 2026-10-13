@@ -1,0 +1,6 @@
+out/
+data/
+__pycache__/
+# Personal drafts: kept in Dropbox, not published in this public repo.
+EMAIL-DRAFT-*.md
+POST-*.md

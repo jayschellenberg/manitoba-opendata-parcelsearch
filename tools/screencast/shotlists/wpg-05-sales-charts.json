@@ -1,0 +1,148 @@
+{
+ "name": "wpg-05-sales-charts",
+ "url": "https://winnipeg-opendata-parcelsearch.vercel.app/?t=sales",
+ "opfs": {
+  "dir": "D:/Dropbox/SharedInfo/AppMarketData/SalesData/Winnipeg",
+  "files": [
+   "wpg-sales-with-n1.csv"
+  ]
+ },
+ "setup": [
+  {
+   "wait": 3000
+  }
+ ],
+ "steps": [
+  {
+   "say": "The Winnipeg Sales Analysis tab reads the firm's SABRE export. Choose export folder once and point it at AppMarketData Sales Data Winnipeg. Any C S V with the four sales columns is imported, however it is named.",
+   "do": [
+    {
+     "eval": "const d=document.querySelector('#sales-db'); if(d&&!d.open) d.open=true"
+    },
+    {
+     "wait": 400
+    },
+    {
+     "click": "#sales-db-import"
+    },
+    {
+     "wait": 7000
+    }
+   ]
+  },
+  {
+   "say": "Set a subject roll and a radius in kilometres. The radius draws a dashed circle on the map and limits the search to it. Five kilometres here.",
+   "do": [
+    {
+     "click": ".chip-input[data-target=\"subject-roll\"] .chip-input-text"
+    },
+    {
+     "type": "07560170500"
+    },
+    {
+     "press": "Enter"
+    },
+    {
+     "fill": [
+      "#sales-radius-km",
+      "5"
+     ]
+    },
+    {
+     "wait": 1000
+    }
+   ]
+  },
+  {
+   "say": "Pick a date preset, here 36 months, choose all sales, vacant land, or improved, and Search. Nominal sales are excluded unless you flip the pill.",
+   "do": [
+    {
+     "click": ".date-preset-btn[data-months=\"36\"]"
+    },
+    {
+     "select": [
+      "#vacant-improved",
+      "all"
+     ]
+    },
+    {
+     "click": "#sales-db-load"
+    },
+    {
+     "wait": 6000
+    }
+   ]
+  },
+  {
+   "say": "After loading, the neighbourhood, category, property use, class and zoning pickers filter the sales. Click a cluster on the map to turn it off. Year built and building size narrow improved sales.",
+   "do": [
+    {
+     "click": "#category-filter-btn"
+    },
+    {
+     "wait": 2500
+    },
+    {
+     "press": "Escape"
+    },
+    {
+     "fill": [
+      "#sales-year-low",
+      "1990"
+     ]
+    },
+    {
+     "wait": 2000
+    }
+   ]
+  },
+  {
+   "say": "Additional filters add sale price, lot size, street name, the far-flung threshold and the N1 match filter. Save search and Load search keep a set of criteria as a file.",
+   "do": [
+    {
+     "click": "details.sales-filters summary"
+    },
+    {
+     "wait": 3000
+    },
+    {
+     "click": "details.sales-filters summary"
+    }
+   ]
+  },
+  {
+   "say": "Charts opens the Winnipeg charts page. Land shows price per lot square foot over time, per acre against lot size, and per lot against lot size. Buildings shows price per building square foot over time, by year built and by size.",
+   "do": [
+    {
+     "popup": "#charts-open"
+    },
+    {
+     "wait": 5000
+    }
+   ]
+  },
+  {
+   "say": "Land sales only, Exclude already-built, and Exclude far-flung refine the land set. Freeze holds the charts while you capture them. Each point is one sale, and the charts follow the main window's filters live.",
+   "do": [
+    {
+     "click": "#mode-bldg"
+    },
+    {
+     "wait": 3500
+    },
+    {
+     "click": "#mode-land"
+    },
+    {
+     "wait": 2000
+    },
+    {
+     "click": "#drop-built"
+    },
+    {
+     "wait": 2500
+    }
+   ]
+  }
+ ]
+}

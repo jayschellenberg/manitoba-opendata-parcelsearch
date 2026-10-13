@@ -1,0 +1,157 @@
+{
+ "name": "wpg-04-report-outputs",
+ "url": "https://winnipeg-opendata-parcelsearch.vercel.app/?af=1347&at=1347&as=BORDER",
+ "setup": [
+  {
+   "wait": 3000
+  },
+  {
+   "click": "#search"
+  },
+  {
+   "waitfor": "#results tbody tr"
+  },
+  {
+   "wait": 2000
+  },
+  {
+   "wait": 2500
+  }
+ ],
+ "steps": [
+  {
+   "say": "With a subject found, the buttons at the bottom of the panel make the report images. Capture Map, the Winnipeg overall map, the Addenda Pack, and Export C S V.",
+   "do": [
+    {
+     "hover": "#static-map-btn"
+    },
+    {
+     "wait": 1500
+    }
+   ]
+  },
+  {
+   "say": "Capture Map renders the view at 1950 by 1050 pixels, six and a half by three and a half inches at 300 d p i. With zoning shaded, Include legend becomes available. Scale bar and north arrow are optional.",
+   "do": [
+    {
+     "click": "#zoning-toggle"
+    },
+    {
+     "wait": 3000
+    },
+    {
+     "click": "#static-map-btn"
+    },
+    {
+     "waitfor": "#map-capture-modal"
+    },
+    {
+     "wait": 3000
+    },
+    {
+     "click": "#map-capture-legend"
+    },
+    {
+     "wait": 1500
+    },
+    {
+     "click": "#map-capture-furniture"
+    },
+    {
+     "wait": 2500
+    }
+   ]
+  },
+  {
+   "say": "Copy image puts it on the clipboard for Word. Download P N G or the smaller J P G saves a file. Alt C copies the current view with no dialog.",
+   "do": [
+    {
+     "hover": "#map-capture-copy"
+    },
+    {
+     "wait": 1500
+    },
+    {
+     "press": "Escape"
+    },
+    {
+     "wait": 500
+    },
+    {
+     "click": "#zoning-toggle"
+    },
+    {
+     "click": "#zoning-toggle"
+    },
+    {
+     "wait": 500
+    },
+    {
+     "key": "Alt+c"
+    },
+    {
+     "wait": 2500
+    }
+   ]
+  },
+  {
+   "say": "Wpg Overall Map draws the city location map with a subject callout. Edit the callout text and position. Downtown subjects get a twin-arrow inset automatically.",
+   "do": [
+    {
+     "click": "#location-map-btn"
+    },
+    {
+     "waitfor": "#location-map-modal"
+    },
+    {
+     "wait": 5000
+    },
+    {
+     "hover": "#location-map-output"
+    },
+    {
+     "wait": 2500
+    },
+    {
+     "press": "Escape"
+    },
+    {
+     "wait": 600
+    }
+   ]
+  },
+  {
+   "say": "Addenda Pack builds the full set in one click. A location map, a neighbourhood map named and framed on the subject's neighbourhood cluster, a subject aerial from the newest City photography with dimensions, a zoning map, and a results map when there are several parcels.",
+   "do": [
+    {
+     "click": "#addenda-pack-btn"
+    },
+    {
+     "wait": 12000
+    }
+   ]
+  },
+  {
+   "say": "The button shows each stage as it renders. The map view is restored at the end, and the zip downloads with a readme.",
+   "do": [
+    {
+     "hover": "#addenda-pack-btn"
+    },
+    {
+     "wait": 10000
+    }
+   ]
+  },
+  {
+   "say": "Export C S V writes the table as shown, and warns first if any rows are unticked. That completes the Property Search tools for Winnipeg.",
+   "do": [
+    {
+     "hover": "#export"
+    },
+    {
+     "wait": 3000
+    }
+   ]
+  }
+ ]
+}

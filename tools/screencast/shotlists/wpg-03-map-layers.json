@@ -1,0 +1,27 @@
+{
+  "name": "wpg-03-map-layers",
+  "url": "https://winnipeg-opendata-parcelsearch.vercel.app/?af=1347&at=1347&as=BORDER",
+  "setup": [ {"wait": 3000}, {"click": "#search"}, {"waitfor": "#results tbody tr"}, {"wait": 2500} ],
+  "steps": [
+    {"say": "Winnipeg Parcel Search has two parcel fabrics. Assessment parcels come from the City's assessment roll. Survey parcels are the legal lots. Each has a results layer and an all-parcels layer.",
+     "do": [ {"click": "#all-parcels-toggle"}, {"wait": 2500}, {"click": "#all-survey-toggle"}, {"wait": 2500}, {"click": "#all-survey-toggle"} ]},
+    {"say": "Zoning cycles through three states. Shaded colours every parcel by zone with a legend. Labels prints the zone codes. A third click turns it off.",
+     "do": [ {"click": "#zoning-toggle"}, {"wait": 3500}, {"click": "#zoning-toggle"}, {"wait": 3000}, {"click": "#zoning-toggle"} ]},
+    {"say": "Neighbourhoods also cycles: first the 23 neighbourhood clusters, then the 235 individual neighbourhoods. Click any polygon to see its name and cluster.",
+     "do": [ {"click": "#neighbourhoods-toggle"}, {"wait": 3000}, {"click": "#neighbourhoods-toggle"}, {"wait": 3000}, {"click": "#neighbourhoods-toggle"} ]},
+    {"say": "The basemap menu has the City's aerial photography for 2016, 2018, 2021, 2024 and 2026, plus satellite. Flip between years to see when a building appeared.",
+     "do": [ {"hover": ".basemap-menu-trigger"}, {"wait": 800}, {"click": ".basemap-menu-item[data-key=ortho-2026]"}, {"wait": 3500}, {"hover": ".basemap-menu-trigger"}, {"wait": 800}, {"click": ".basemap-menu-item[data-key=ortho-2016]"}, {"wait": 3500}, {"hover": ".basemap-menu-trigger"}, {"wait": 800}, {"click": ".basemap-menu-item[data-key=streets]"}, {"wait": 1000} ]},
+    {"say": "Dimensions shows survey lengths once you are zoomed in past level 17. They are from the survey parcel, so they may not match the assessment parcel exactly.",
+     "do": [ {"click": "#dimensions-toggle"}, {"wait": 3000}, {"click": "#dimensions-toggle"} ]},
+    {"say": "Planning holds the secondary plans, the infill area, malls and corridors, and the airport vicinity area. The Zoning Changes pill marks parcels with a recent D M I S zoning amendment, and Filter keeps only those.",
+     "do": [ {"click": "#planning-group summary"}, {"wait": 600}, {"click": "#secondary-plans-toggle"}, {"wait": 3000}, {"click": "#infill-toggle"}, {"wait": 3000}, {"click": "#secondary-plans-toggle"}, {"click": "#infill-toggle"}, {"click": "#planning-group summary"} ]},
+    {"say": "Reference adds 24 hour traffic counts, environmentally tracked sites, transit, dwelling units, current street names and water influence.",
+     "do": [ {"click": "#reference-group summary"}, {"wait": 600}, {"click": "#traffic-toggle"}, {"wait": 3000}, {"click": "#contam-toggle"}, {"wait": 2500}, {"click": "#traffic-toggle"}, {"click": "#contam-toggle"}, {"click": "#reference-group summary"} ]},
+    {"say": "Historical overlays an earlier snapshot of the whole city. Pick a date and press Historical. Earlier assessment parcels appear in dashed amber, tinted by how much their size changed, and survey lots in violet.",
+     "do": [ {"click": "#historical-group summary"}, {"wait": 600}, {"eval": "const s=document.querySelector('#historical-date'); if(s&&s.options.length){s.selectedIndex=s.options.length-1; s.dispatchEvent(new Event('change',{bubbles:true}))}"}, {"wait": 500}, {"click": "#historical-toggle"}, {"wait": 5000}, {"click": "#historical-toggle"}, {"click": "#historical-group summary"} ]},
+    {"say": "Measure, at the top right of the map, gives distance or area by clicking points and double-clicking to finish.",
+     "do": [ {"click": ".measure-control button"}, {"wait": 600}, {"click": ".measure-modes button[data-mode=distance]"}, {"wait": 400}, {"clickxy": [900, 350]}, {"dblclickxy": [1300, 600]}, {"wait": 2500}, {"click": ".measure-done"} ]},
+    {"say": "Data Status reports when the parcel tiles, the historical archive and each live City service were last updated. A banner appears at the top of the page if the tiles fall more than sixty days behind.",
+     "do": [ {"click": "#data-status-open"}, {"waitfor": "#data-status-modal"}, {"wait": 4000}, {"click": "#data-status-close"} ]}
+  ]
+}
