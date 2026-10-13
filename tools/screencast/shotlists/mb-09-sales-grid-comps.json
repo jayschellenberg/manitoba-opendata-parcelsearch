@@ -1,209 +1,191 @@
 {
- "name": "mb-09-sales-grid-comps",
- "url": "https://manitoba-opendata-parcelsearch.vercel.app/?t=sales",
- "opfs": {
-  "dir": "D:/Dropbox/SharedInfo/AppMarketData/SalesData/Manitoba",
-  "files": [
-   "manifest.json",
-   "muni_189.csv",
-   "muni_194.csv"
-  ]
- },
- "setup": [
-  {
-   "wait": 3000
-  },
-  {
-   "eval": "const d=document.querySelector('#sales-db'); if(d&&!d.open) d.open=true"
-  },
-  {
-   "wait": 400
-  },
-  {
-   "click": "#sales-db-import"
-  },
-  {
-   "wait": 6000
-  },
-  {
-   "fill": [
-    "#sales-db-muni-search",
-    "Springfield"
-   ]
-  },
-  {
-   "wait": 800
-  },
-  {
-   "click": "#sales-db-munis input[type=checkbox]:not(:checked)"
-  },
-  {
-   "fill": [
-    "#sales-db-muni-search",
-    ""
-   ]
-  },
-  {
-   "click": ".date-preset-btn[data-months=\"36\"]"
-  },
-  {
-   "wait": 600
-  },
-  {
-   "select": [
-    "#sales-db-type",
-    "RESIDENTIAL BARE LAND"
-   ]
-  },
-  {
-   "wait": 500
-  },
-  {
-   "click": "#sales-db-load"
-  },
-  {
-   "wait": 5000
-  },
-  {
-   "select": [
-    "#vacant-improved",
-    "vacant"
-   ]
-  },
-  {
-   "wait": 3000
-  }
- ],
- "steps": [
-  {
-   "say": "With sales loaded, the grid is where the comparables get chosen. This video covers the star column, comp tags, exclusion reasons, and the row colours.",
-   "do": [
+  "name": "mb-09-sales-grid-comps",
+  "url": "https://manitoba-opendata-parcelsearch.vercel.app/?t=sales",
+  "setup": [
     {
-     "hover": "#results"
+      "wait": 3500
     },
     {
-     "wait": 1500
-    }
-   ]
-  },
-  {
-   "say": "Click the star on a sale to make it the next comparable. Stars are numbered in the order you click, and the numbers appear on the map.",
-   "do": [
-    {
-     "click": "#results tbody tr:nth-child(1) td.fav-col button.fav-star"
-    },
-    {
-     "wait": 1500
-    },
-    {
-     "click": "#results tbody tr:nth-child(3) td.fav-col button.fav-star"
-    },
-    {
-     "wait": 2500
-    }
-   ]
-  },
-  {
-   "say": "Right-click a star for the tag menu. A sale can be a numbered comparable, or go into Land Set 1 or Land Set 2 for a two-tier land analysis.",
-   "do": [
-    {
-     "eval": "const el=document.querySelector('#results tbody tr:nth-child(5) td.fav-col button.fav-star'); if(el){const r=el.getBoundingClientRect(); el.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.x+8,clientY:r.y+8}))}"
-    },
-    {
-     "wait": 3500
-    },
-    {
-     "press": "Escape"
-    }
-   ]
-  },
-  {
-   "say": "Untick a row to exclude the sale. A popover asks why. Pick a reason or type one, and it is kept with the sale and printed in the work file.",
-   "do": [
-    {
-     "click": "#results tbody tr:nth-child(2) input[type=checkbox]"
-    },
-    {
-     "wait": 2000
-    },
-    {
-     "type": "Non-arm's length"
-    },
-    {
-     "press": "Enter"
-    },
-    {
-     "wait": 2500
-    }
-   ]
-  },
-  {
-   "say": "Row colours flag what needs a second look. Orange is an outlier more than two standard deviations from the rest. Green marks parcels that sold together as one multi-parcel sale.",
-   "do": [
-    {
-     "hover": ".sales-row-legend"
-    },
-    {
-     "wait": 3000
-    }
-   ]
-  },
-  {
-   "say": "The draw tools narrow the sales by area. Draw a circle around the subject and only sales inside it stay. Click the shape to switch it to exclude.",
-   "do": [
-    {
-     "click": "#shape-tool-circle"
-    },
-    {
-     "wait": 500
-    },
-    {
-     "drag": [
-      [
-       1150,
-       450
-      ],
-      [
-       1350,
-       550
+      "upload": [
+        "#sales-upload-input",
+        "data/hanover-sales.csv"
       ]
-     ]
     },
     {
-     "eval": "getSelection().removeAllRanges()"
+      "waitfor": "#results tbody tr"
     },
     {
-     "wait": 3000
+      "wait": 9000
     },
     {
-     "click": "#shape-tool-clear"
+      "select": [
+        "#vacant-improved",
+        "vacant"
+      ]
     },
     {
-     "wait": 1000
+      "wait": 2000
+    },
+    {
+      "eval": "const d=document.querySelector('details.more-filters'); if(d&&!d.open) d.open=true"
+    },
+    {
+      "wait": 400
+    },
+    {
+      "fill": [
+        "#subject-roll",
+        "67600.048"
+      ]
+    },
+    {
+      "click": "#subject-apply"
+    },
+    {
+      "wait": 4000
+    },
+    {
+      "eval": "const d=document.querySelector('details.more-filters'); if(d) d.open=false"
+    },
+    {
+      "wait": 1500
+    },
+    {
+      "eval": "window.scrollTo(0,0)"
     }
-   ]
-  },
-  {
-   "say": "If an older job has stars that were added before numbering existed, a Number starred button appears and fills in the comp numbers, so the job comes forward cleanly.",
-   "do": [
+  ],
+  "steps": [
     {
-     "hover": "#results th[data-col=favorite]"
+      "say": "These are the R M of Hanover's sales, copied from M A O into Excel, saved as a C S V and uploaded, with a vacant lot on Birchwood Lane in Mitchell as the subject. With sales loaded, the grid is where the comparables get chosen. This video covers the star column, comp tags, exclusion reasons, and the row colours.",
+      "do": [
+        {
+          "hover": "#results"
+        },
+        {
+          "wait": 1500
+        }
+      ]
     },
     {
-     "wait": 2500
-    }
-   ]
-  },
-  {
-   "say": "Export C S V writes the filtered sales with their comp tags and exclusion reasons. Charts opens the analysis page in a new window, which is the next video.",
-   "do": [
-    {
-     "hover": "#charts-open"
+      "say": "Click the star on a sale to make it the next comparable. Stars are numbered in the order you click, and the numbers appear on the map.",
+      "do": [
+        {
+          "click": "#results tbody tr:nth-child(1) td.fav-col button.fav-star"
+        },
+        {
+          "wait": 1500
+        },
+        {
+          "click": "#results tbody tr:nth-child(3) td.fav-col button.fav-star"
+        },
+        {
+          "wait": 2500
+        }
+      ]
     },
     {
-     "wait": 3000
+      "say": "Right-click a star for the tag menu. A sale can be a numbered comparable, or go into Land Set 1 or Land Set 2 for a two-tier land analysis.",
+      "do": [
+        {
+          "eval": "const el=document.querySelector('#results tbody tr:nth-child(5) td.fav-col button.fav-star'); if(el){const r=el.getBoundingClientRect(); el.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:r.x+8,clientY:r.y+8}))}"
+        },
+        {
+          "wait": 3500
+        },
+        {
+          "press": "Escape"
+        }
+      ]
+    },
+    {
+      "say": "Untick a row to exclude the sale. A popover asks why. Pick a reason or type one, and it is kept with the sale and printed in the work file.",
+      "do": [
+        {
+          "click": "#results tbody tr:nth-child(2) input[type=checkbox]"
+        },
+        {
+          "wait": 2000
+        },
+        {
+          "type": "Non-arm's length"
+        },
+        {
+          "press": "Enter"
+        },
+        {
+          "wait": 2500
+        }
+      ]
+    },
+    {
+      "say": "Row colours flag what needs a second look. Orange is an outlier more than two standard deviations from the rest. Green marks parcels that sold together as one multi-parcel sale.",
+      "do": [
+        {
+          "hover": ".sales-row-legend"
+        },
+        {
+          "wait": 3000
+        }
+      ]
+    },
+    {
+      "say": "The draw tools narrow the sales by area. Pick the circle, click the subject, then click again to set the radius, and only the sales inside it stay. Click the shape to switch it to exclude.",
+      "do": [
+        {
+          "eval": "document.querySelector('.maplibregl-map')?.scrollIntoView({block:'start'})"
+        },
+        {
+          "wait": 600
+        },
+        {
+          "click": "#shape-tool-circle"
+        },
+        {
+          "wait": 500
+        },
+        {
+          "dragmap": [
+            -96.75417,
+            49.53329,
+            110
+          ]
+        },
+        {
+          "eval": "getSelection().removeAllRanges()"
+        },
+        {
+          "wait": 1500
+        },
+        {
+          "click": "#shape-tool-clear"
+        },
+        {
+          "wait": 1000
+        }
+      ]
+    },
+    {
+      "say": "If an older job has stars that were added before numbering existed, a Number starred button appears and fills in the comp numbers, so the job comes forward cleanly.",
+      "do": [
+        {
+          "hover": "#results th[data-col=favorite]"
+        },
+        {
+          "wait": 2500
+        }
+      ]
+    },
+    {
+      "say": "Export C S V writes the filtered sales with their comp tags and exclusion reasons. Charts opens the analysis page in a new window, which is the next video.",
+      "do": [
+        {
+          "hover": "#charts-open"
+        },
+        {
+          "wait": 3000
+        }
+      ]
     }
-   ]
-  }
- ]
+  ],
+  "voice": "azure:en-US-AndrewMultilingualNeural"
 }

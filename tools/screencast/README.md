@@ -5,7 +5,7 @@ from JSON shot lists so any video can be re-recorded after the app changes. Stat
 
 ## Status
 
-**17 videos planned, 15 recorded, 2 waiting.** All recorded against production on 2026-10-10/12, after
+**18 videos planned, all 18 recorded.** All recorded against production on 2026-10-10/12, after
 the search-race fix, map re-centre, popup change badge and R2 indexes were live.
 
 | # | Video | Length | Audience | State |
@@ -16,12 +16,13 @@ the search-race fix, map re-centre, popup change badge and R2 indexes were live.
 | mb-04 | Map tools and history | 2:02 | external OK | recorded |
 | mb-05 | Report outputs | 1:39 | external OK | recorded |
 | mb-06 | Agricultural features | 4:01 | external OK | recorded |
-| mb-07 | Pasting sales from MAO | — | staff only | **waiting on narration** |
-| mb-08 | Connecting the MAO Sales Database | — | staff only | **waiting on narration** |
-| mb-09 | Sales grid and comparables | 1:29 | staff only | recorded |
-| mb-10 | Sales Charts: layout and settings | 1:33 | staff only | recorded |
-| mb-11 | Sales Charts: the chart pages | 1:39 | staff only | recorded |
-| mb-12 | Sales Charts: comparables and work file | 1:48 | staff only | recorded |
+| mb-07 | Pasting sales from MAO | 2:07 | staff only | recorded 2026-10-13 (Azure voice, live MAO sign-in) |
+| mb-07b | Filters and subject property (on the pasted sales) | 2:23 | staff only | recorded 2026-10-13 |
+| mb-08 | Linking the MAO Sales Database on Dropbox (link only) | 1:24 | staff only | recorded 2026-10-13; stills of the real Windows picker and Chrome "Allow" prompt in `data/still-*.png`; all 186 export files seeded (`"files": "*"`) |
+| mb-09 | Sales grid and comparables | 1:50 | staff only | re-recorded 2026-10-13 on Hanover (same data and subject as mb-10..12) |
+| mb-10 | Sales Charts: layout and settings | 1:41 | staff only | re-recorded 2026-10-13 on Hanover (`data/hanover-sales.csv` from Jason's HanoverSales.xlsx, subject 73 Birchwood Lane, Mitchell, roll 67600.048) |
+| mb-11 | Sales Charts: the chart pages | 1:39 | staff only | re-recorded 2026-10-13 on Hanover |
+| mb-12 | Sales Charts: comparables and work file | 1:47 | staff only | re-recorded 2026-10-13 on Hanover |
 | wpg-01 | Search basics | 1:45 | external OK | recorded |
 | wpg-02 | More searches | 1:55 | external OK | recorded |
 | wpg-03 | Map layers | 2:08 | external OK | recorded |
@@ -39,8 +40,9 @@ data agreements. The Property Search videos use open government data only.
 | Recorder, shot lists, scripts | this folder (`tools/screencast/`) |
 | Raw recordings, captions, timings | `out/` (gitignored) |
 | Narration clip cache | `out/_work/<video>/NN.mp3` |
-| Paste demo data (real MAO rows) | `data/paste-springfield.tsv` (gitignored, private) |
-| Shared copy for outside viewers | `D:\Dropbox\Parcel Search Training Videos`: the 10 Property Search videos plus `.srt` captions, with readable names |
+| Paste demo data (real MAO rows) | `data/paste-springfield.tsv` and `data/paste-springfield-min100.tsv` (the 73 sales in mb-07/07b; re-capture with `capture_mao_paste.py`, which needs a MAO sign-in). Gitignored, private |
+| Shared copy for outside viewers | `D:\Dropbox\SharedInfo\Parcel Search Training Videos`: the 10 Property Search videos plus `.srt` captions, with readable names |
+| Staff copy of the sales videos | `D:\Dropbox\SharedInfo\Parcel Sales Training Videos`: `Manitoba 1-6 - <title>` in viewing order (1 = mb-07 paste, 2 = mb-07b filters and subject, 3-6 = mb-09..12; 7 = mb-08 Dropbox link) and `Winnipeg 1` = wpg-05, each with `.srt`. 3-6 and Winnipeg 1 copied 2026-10-13; copy 1 and 2 there once recorded |
 | Review copy of every script | `SCRIPTS.md` (rebuild with `python make_scripts.py`) |
 | Email for outside viewers | `EMAIL-DRAFT-EXTERNAL.md` (10 videos, one `[folder link]`); local only, gitignored |
 | Email for staff | `EMAIL-DRAFT-STAFF.md` (all 17, a `[link]` per video); local only, gitignored |
@@ -58,7 +60,7 @@ data agreements. The Property Search videos use open government data only.
    ```
    It needs the PC awake. If the PC slept or restarted, run the same command again; clips already made
    stay cached. Progress is in `out/_pregen.txt`.
-2. **After mb-07/08 record:** review them, then fill the links in `EMAIL-DRAFT-STAFF.md` and put the
+2. **After mb-07/08 record:** review them, copy them to `D:\Dropbox\SharedInfo\Parcel Sales Training Videos` as `Manitoba 1 - Pasting sales from MAO` and `Manitoba 2 - Connecting the MAO Sales Database` (`.mp4` + `.srt`), then fill the links in `EMAIL-DRAFT-STAFF.md` and put the
    staff videos somewhere firm-only (a Dropbox folder by invitation, or SharePoint/Stream).
 3. **Not shown in any video:** the connect step cannot show the Windows folder dialog or the browser's
    one-time read-permission prompt, because the recorder bypasses both. Add a sentence to mb-08 step 1
@@ -139,8 +141,34 @@ works unattended. The files never leave the machine.
 `pregen_tts.py` generates narration clips slowly (`--gap`, `--backoff`, `--hours`, `--initial-wait`) for
 when the voice service is rate-limiting; `record.py` then uses the cached clips.
 
+### Voices and sign-in (2026-10-13)
+
+- edge-tts (the free Edge "Read aloud" endpoint) has returned 403 since 2026-10-12. It has no account or
+  usage page. The same Andrew voice now comes from Jason's own **Azure AI Speech** free tier (F0, East
+  US, 500k characters a month; usage on the resource's Metrics page). Set `"voice":
+  "azure:en-US-AndrewMultilingualNeural"` in a shot list. Key and region come from the user env vars
+  `AZURE_SPEECH_KEY` / `AZURE_SPEECH_REGION`. `"voice": "kokoro:am_michael"` is a local fallback
+  (model in `out/_kokoro/`).
+- Clips are cached with a `NN.txt` sidecar holding voice + text, so an edited line or a changed voice is
+  re-narrated automatically.
+- `"login": {"url": ...}` opens that page in an ordinary browser window, waits for a person to sign in
+  (signed in = the browser has left the login page), then passes the cookies to the recording browser in
+  memory. The recording window itself paints black on screen (software GL), which is expected. The MAO
+  header shows the subscriber's name ("Welcome ...").
+- New actions: `still` (path to an image, overlaid over the page), `unstill`, `select_text` (highlights
+  an element as if drag-selected).
+
 ### Traps learned the hard way
 
+- The MB draw tools are **click, then click** (centre, then edge), like Winnipeg's rectangle. A drag draws
+  nothing, which is why the 2026-10-12 mb-09 showed no circle. Use `dragmap [lon, lat, radius_px]`, which
+  projects through `window._map` (exposed in production by map.js). Never `jumpTo` a deep zoom mid-video:
+  with software GL it froze the page for 25 s.
+- The Charts page re-renders every chart on any change, and the momentary shorter page snaps the scroll
+  back to the maps. mb-11/12 pin `document.body.style.minHeight` and scroll each row below the ~220 px
+  sticky settings bar before every chart step.
+- Clip sidecars: every pre-2026-10-13 clip now has a `.txt` with the text it was recorded from (taken
+  from the committed shot lists). Before that, an edited line silently kept its old audio (bit mb-09/10).
 - `#sales-db` and `#sales-manual` are closed `<details>`; open them before clicking inside.
 - A date preset must be set before `#sales-db-load`, or nothing loads.
 - `#subject-muni` stays hidden; set the subject with `#subject-roll` inside the opened Additional filters.

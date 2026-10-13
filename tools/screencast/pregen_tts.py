@@ -28,6 +28,7 @@ async def one(text: str, voice: str, dest: Path) -> None:
         tmp.unlink()
         raise RuntimeError("empty clip")
     tmp.replace(dest)
+    dest.with_suffix(".txt").write_text(f"{voice}\n{text}", encoding="utf-8")
 
 
 def main():
@@ -50,7 +51,9 @@ def main():
         voice = shot.get("voice", DEFAULT_VOICE)
         for i, step in enumerate(shot["steps"]):
             dest = work / f"{i:02}.mp3"
-            if not (dest.exists() and dest.stat().st_size > 0):
+            side = dest.with_suffix(".txt")
+            if not (dest.exists() and dest.stat().st_size > 0) or (
+                    side.exists() and side.read_text(encoding="utf-8") != f"{voice}\n{step['say']}"):
                 todo.append((shot["name"], i, step["say"], voice, dest))
     print(f"{len(todo)} clips to generate", flush=True)
     for name, i, text, voice, dest in todo:

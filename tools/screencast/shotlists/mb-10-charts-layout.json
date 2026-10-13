@@ -1,240 +1,194 @@
 {
- "name": "mb-10-charts-layout",
- "url": "https://manitoba-opendata-parcelsearch.vercel.app/?t=sales",
- "opfs": {
-  "dir": "D:/Dropbox/SharedInfo/AppMarketData/SalesData/Manitoba",
-  "files": [
-   "manifest.json",
-   "muni_189.csv",
-   "muni_194.csv"
-  ]
- },
- "setup": [
-  {
-   "wait": 3000
-  },
-  {
-   "eval": "const d=document.querySelector('#sales-db'); if(d&&!d.open) d.open=true"
-  },
-  {
-   "wait": 400
-  },
-  {
-   "click": "#sales-db-import"
-  },
-  {
-   "wait": 6000
-  },
-  {
-   "fill": [
-    "#sales-db-muni-search",
-    "Springfield"
-   ]
-  },
-  {
-   "wait": 800
-  },
-  {
-   "click": "#sales-db-munis input[type=checkbox]:not(:checked)"
-  },
-  {
-   "fill": [
-    "#sales-db-muni-search",
-    ""
-   ]
-  },
-  {
-   "click": ".date-preset-btn[data-months=\"36\"]"
-  },
-  {
-   "wait": 600
-  },
-  {
-   "select": [
-    "#sales-db-type",
-    "RESIDENTIAL BARE LAND"
-   ]
-  },
-  {
-   "wait": 500
-  },
-  {
-   "click": "#sales-db-load"
-  },
-  {
-   "wait": 5000
-  },
-  {
-   "select": [
-    "#vacant-improved",
-    "vacant"
-   ]
-  },
-  {
-   "wait": 2000
-  },
-  {
-   "eval": "const d=document.querySelector('details.more-filters'); if(d&&!d.open) d.open=true"
-  },
-  {
-   "wait": 400
-  },
-  {
-   "fill": [
-    "#subject-roll",
-    "313960"
-   ]
-  },
-  {
-   "click": "#subject-apply"
-  },
-  {
-   "wait": 3000
-  },
-  {
-   "popup": "#charts-open"
-  },
-  {
-   "wait": 5000
-  }
- ],
- "steps": [
-  {
-   "say": "Sales Charts opens from the Charts button on the Sales Analysis tab. It is live: every filter change in the main window updates these charts. The status line reports how many sales arrived and how many are ticked.",
-   "do": [
+  "name": "mb-10-charts-layout",
+  "url": "https://manitoba-opendata-parcelsearch.vercel.app/?t=sales",
+  "setup": [
     {
-     "hover": "#charts-status"
+      "wait": 3500
     },
     {
-     "wait": 2500
+      "upload": [
+        "#sales-upload-input",
+        "data/hanover-sales.csv"
+      ]
+    },
+    {
+      "waitfor": "#results tbody tr"
+    },
+    {
+      "wait": 9000
+    },
+    {
+      "select": [
+        "#vacant-improved",
+        "vacant"
+      ]
+    },
+    {
+      "wait": 2000
+    },
+    {
+      "eval": "const d=document.querySelector('details.more-filters'); if(d&&!d.open) d.open=true"
+    },
+    {
+      "wait": 400
+    },
+    {
+      "fill": [
+        "#subject-roll",
+        "67600.048"
+      ]
+    },
+    {
+      "click": "#subject-apply"
+    },
+    {
+      "wait": 4000
+    },
+    {
+      "popup": "#charts-open"
+    },
+    {
+      "wait": 6000
     }
-   ]
-  },
-  {
-   "say": "Company signs every chart with your firm name in the caption. Size unit switches between acres, square feet and front feet, and the unit is remembered. If a tab looks empty, the first thing to check is the unit.",
-   "do": [
+  ],
+  "steps": [
     {
-     "hover": "#company"
+      "say": "Sales Charts opens from the Charts button on the Sales Analysis tab. Here it shows the R M of Hanover's sales, uploaded from a C S V, with a vacant lot on Birchwood Lane in Mitchell as the subject. It is live: every filter change in the main window updates these charts. The status line reports how many sales arrived and how many are ticked.",
+      "do": [
+        {
+          "hover": "#charts-status"
+        },
+        {
+          "wait": 2500
+        }
+      ]
     },
     {
-     "wait": 1500
+      "say": "Company signs every chart with your firm name in the caption. Size unit switches between acres, square feet and front feet, and the unit is remembered. If a tab looks empty, the first thing to check is the unit.",
+      "do": [
+        {
+          "hover": "#company"
+        },
+        {
+          "wait": 1500
+        },
+        {
+          "click": "#unit-sf"
+        },
+        {
+          "wait": 2500
+        },
+        {
+          "click": "#unit-acres"
+        },
+        {
+          "wait": 1500
+        }
+      ]
     },
     {
-     "click": "#unit-sf"
+      "say": "Rates can be nominal or time-adjusted to the effective date. Trend basis uses the fitted trend from the sales themselves, or a rate per year you type.",
+      "do": [
+        {
+          "click": "#rates-adjusted"
+        },
+        {
+          "wait": 2500
+        },
+        {
+          "hover": "#adj-basis"
+        },
+        {
+          "wait": 1500
+        },
+        {
+          "click": "#rates-nominal"
+        }
+      ]
     },
     {
-     "wait": 2500
+      "say": "Distance from chooses the subject parcel or Portage and Main as the reference for the distance plots. Trim to percentiles drops the extremes from the fits without excluding the sales.",
+      "do": [
+        {
+          "hover": "#dist-ref"
+        },
+        {
+          "wait": 1500
+        },
+        {
+          "click": "#trim-on"
+        },
+        {
+          "wait": 2500
+        },
+        {
+          "click": "#trim-on"
+        }
+      ]
     },
     {
-     "click": "#unit-acres"
+      "say": "Freeze stops live updates while you read or capture. Table view shows the numbers behind the charts. Show excluded brings unticked sales back as hollow points.",
+      "do": [
+        {
+          "click": "#show-table"
+        },
+        {
+          "wait": 3000
+        },
+        {
+          "click": "#show-table"
+        },
+        {
+          "click": "#show-excluded"
+        },
+        {
+          "wait": 2000
+        },
+        {
+          "click": "#show-excluded"
+        }
+      ]
     },
     {
-     "wait": 1500
+      "say": "The filter waterfall explains the count. Sales loaded, then after the Sales Analysis filters, then unticked in the grid, then the agricultural consistency filters, so you can always say why a sale is not on the chart.",
+      "do": [
+        {
+          "hover": "#waterfall-panel"
+        },
+        {
+          "wait": 4000
+        }
+      ]
+    },
+    {
+      "say": "Four pages: Land Price per Unit, Agricultural, Total and Per Lot Price, and Water. Each has a row of maps and a row of charts. Every card has a P N G button that renders it at report size.",
+      "do": [
+        {
+          "click": "#tab-ag"
+        },
+        {
+          "wait": 3000
+        },
+        {
+          "click": "#tab-total"
+        },
+        {
+          "wait": 3000
+        },
+        {
+          "click": "#tab-water"
+        },
+        {
+          "wait": 3000
+        },
+        {
+          "click": "#tab-rates"
+        },
+        {
+          "wait": 1500
+        }
+      ]
     }
-   ]
-  },
-  {
-   "say": "Rates can be nominal or time-adjusted to the effective date. Trend basis uses the fitted trend from the sales themselves, or a rate per year you type.",
-   "do": [
-    {
-     "click": "#rates-adjusted"
-    },
-    {
-     "wait": 2500
-    },
-    {
-     "hover": "#adj-basis"
-    },
-    {
-     "wait": 1500
-    },
-    {
-     "click": "#rates-nominal"
-    }
-   ]
-  },
-  {
-   "say": "Distance from chooses the subject parcel or Portage and Main as the reference for the distance plots. Trim to percentiles drops the extremes from the fits without excluding the sales.",
-   "do": [
-    {
-     "hover": "#dist-ref"
-    },
-    {
-     "wait": 1500
-    },
-    {
-     "click": "#trim-on"
-    },
-    {
-     "wait": 2500
-    },
-    {
-     "click": "#trim-on"
-    }
-   ]
-  },
-  {
-   "say": "Freeze stops live updates while you read or capture. Table view shows the numbers behind the charts. Show excluded brings unticked sales back as hollow points.",
-   "do": [
-    {
-     "click": "#show-table"
-    },
-    {
-     "wait": 3000
-    },
-    {
-     "click": "#show-table"
-    },
-    {
-     "click": "#show-excluded"
-    },
-    {
-     "wait": 2000
-    },
-    {
-     "click": "#show-excluded"
-    }
-   ]
-  },
-  {
-   "say": "The filter waterfall explains the count. Sales loaded, then after the Sales Analysis filters, then unticked in the grid, then the agricultural consistency filters, so you can always say why a sale is not on the chart.",
-   "do": [
-    {
-     "hover": "#waterfall-panel"
-    },
-    {
-     "wait": 4000
-    }
-   ]
-  },
-  {
-   "say": "Four pages: Land Price per Unit, Agricultural, Total and Per Lot Price, and Water. Each has a row of maps and a row of charts. Every card has a P N G button that renders it at report size.",
-   "do": [
-    {
-     "click": "#tab-ag"
-    },
-    {
-     "wait": 3000
-    },
-    {
-     "click": "#tab-total"
-    },
-    {
-     "wait": 3000
-    },
-    {
-     "click": "#tab-water"
-    },
-    {
-     "wait": 3000
-    },
-    {
-     "click": "#tab-rates"
-    },
-    {
-     "wait": 1500
-    }
-   ]
-  }
- ]
+  ],
+  "voice": "azure:en-US-AndrewMultilingualNeural"
 }
