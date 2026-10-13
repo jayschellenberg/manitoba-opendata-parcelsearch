@@ -1264,11 +1264,10 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
       // Institution, and Open Space Area") so we render slightly later
       // than the zoning-label layer to avoid clutter at province-wide
       // zooms, and use line-wrap so multi-word names break instead of
-      // overflowing the polygon. Collision detection is on so adjacent
-      // polygons don't pile labels on top of each other; text-allow-
-      // overlap is false but text-ignore-placement is true so the dev-
-      // plan label can coexist with parcel / zoning labels at the same
-      // anchor without one suppressing the other.
+      // overflowing the polygon. Collision detection is OFF (allow-
+      // overlap and ignore-placement both true, see below): designation
+      // names always render, even where adjacent polygons' names or
+      // parcel / zoning labels overlap them.
       map.addLayer({
         id: 'devplan-label',
         type: 'symbol',
@@ -2176,6 +2175,12 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
             14, 13,
             17, 15,
           ],
+          // ignore-placement:true means section labels never cull EACH
+          // OTHER (none enters the collision index) — harmless: at
+          // minzoom 11 a section is ~80 px across, wider further north,
+          // so neighbours never meet. Kept true because false makes
+          // every section label reserve space and knock out basemap
+          // place names ("TOWN OF CARMAN") placed after it.
           'text-allow-overlap': false,
           'text-ignore-placement': true,
         },
@@ -2231,6 +2236,8 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
             14, 13,
             17, 15,
           ],
+          // Same collision settings as survey-grid-label, for the same
+          // reason: the two paths must look identical.
           'text-allow-overlap': false,
           'text-ignore-placement': true,
         },
@@ -3478,6 +3485,11 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
             10, 14,
             14, 18,
           ],
+          // ignore-placement:true means these labels never cull EACH
+          // OTHER (none enters the collision index) — harmless here: 15
+          // province-sized areas whose labels never meet. Kept true so
+          // a risk label doesn't knock out basemap place names placed
+          // after it.
           'text-allow-overlap': false,
           'text-ignore-placement': true,
           'symbol-placement': 'point',
