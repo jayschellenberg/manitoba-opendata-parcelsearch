@@ -115,11 +115,21 @@ const ROLL_PUBLISHED_TTL_MS = 24 * 60 * 60 * 1000;
  * @returns {string|null} ISO date (YYYY-MM-DD), or null if unavailable.
  */
 export async function fetchRollLayerPublishedDate() {
-  const cacheKey = 'mb_roll_layer_published_v1';
+  return fetchLayerEditDate(ROLL_URL, 'mb_roll_layer_published_v1');
+}
+
+/** The zoning layer's last data edit — the "Data Updated" date DataMB
+ *  shows. Province-wide: it says when the layer last changed anywhere, not
+ *  when a given municipality's zones did. ISO date or null. */
+export async function fetchZoningLayerUpdatedDate() {
+  return fetchLayerEditDate(ZONING_URL, 'mb_zoning_layer_updated_v1');
+}
+
+async function fetchLayerEditDate(url, cacheKey) {
   const cached = await readCache(cacheKey, ROLL_PUBLISHED_TTL_MS);
   if (cached?.date) return cached.date;
   try {
-    const res = await fetch(`${ROLL_URL}?f=json`);
+    const res = await fetch(`${url}?f=json`);
     if (!res.ok) return null;
     const meta = await res.json();
     const ms = meta?.editingInfo?.dataLastEditDate;

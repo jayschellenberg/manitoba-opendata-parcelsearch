@@ -181,6 +181,7 @@ import {
   canonicalRoll,
   acresFromFrontageField,
   fetchRollLayerPublishedDate,
+  fetchZoningLayerUpdatedDate,
   fetchSectionSurveyPoints,
 } from './arcgis.js';
 import {
@@ -310,7 +311,9 @@ import {
   waterCsvCells, isWaterfront, isNearWater, WATER_CLASSES, waterDistance,
 } from './lib/water.js';
 import { rowPassesChangesFilter, changesFilterInert, zoningBylawText } from './lib/amendment.js';
-import { addendaZoningLabelText, zoningBylawDate, zoningMinWidthM } from './lib/addendaZoning.js';
+import {
+  addendaZoningLabelText, addendaZoningSourceNote, zoningBylawDate, zoningMinWidthM,
+} from './lib/addendaZoning.js';
 import { PILL_SPECS, modeFromChecked, checkedFromMode } from './lib/pillBinding.js';
 import { cliClassRollup } from './lib/cliRollup.js';
 import {
@@ -4243,10 +4246,12 @@ async function buildAddendaPack() {
         const zoningLabel = addendaZoningLabel(muniZoning, subject.feats[0]);
         const subjectAcres = addendaSubjectAcres(subject.feats);
         const zoningMinM = zoningMinWidthM(subjectAcres);
+        const zoningNote = addendaZoningSourceNote(await fetchZoningLayerUpdatedDate());
         try {
           const zoning = await captureAddendaView(
             framedBounds(subjectBox, { padFrac: 0.2, minWidthM: zoningMinM }), 'streets',
-            { withLegend: true, cornerLabel: zoningLabel, prepare: () => rebuildZoningLegend(zoningInView(muniZoning)) });
+            { withLegend: true, cornerLabel: zoningLabel, scaleNote: zoningNote,
+              prepare: () => rebuildZoningLegend(zoningInView(muniZoning)) });
           add('zoning-map.png', zoning.bytes, `Zoning around ${subject.note}${marked}, at least ${zoningMinM < 1000 ? `${zoningMinM} m` : `${(zoningMinM / 1000).toFixed(1)} km`} wide`, zoning.stale);
         } finally {
           rebuildZoningLegend(muniZoning);
