@@ -310,6 +310,7 @@ import {
   waterCsvCells, isWaterfront, isNearWater, WATER_CLASSES, waterDistance,
 } from './lib/water.js';
 import { rowPassesChangesFilter, changesFilterInert, zoningBylawText } from './lib/amendment.js';
+import { addendaZoningLabelText, zoningBylawDate, zoningMinWidthM } from './lib/addendaZoning.js';
 import { PILL_SPECS, modeFromChecked, checkedFromMode } from './lib/pillBinding.js';
 import { cliClassRollup } from './lib/cliRollup.js';
 import {
@@ -3848,12 +3849,6 @@ const ADDENDA_COMMUNITY_MAX_M = 10000;
 // Most result parcels the neighbourhood and zoning maps will number.
 const ADDENDA_NUMBER_MAX = 25;
 const ADDENDA_AERIAL_MIN_M = 300;
-const ADDENDA_ZONING_MIN_M = 1500;
-// A subject under ADDENDA_SMALL_LOT_ACRES gets a closer zoning map: at
-// 1,500 m a town lot was a speck among the neighbouring blocks (Jason,
-// 2026-10-12).
-const ADDENDA_SMALL_LOT_ACRES = 1;
-const ADDENDA_ZONING_SMALL_MIN_M = 1000;
 // Several results with none picked still make one subject when there are
 // at most ADDENDA_GROUP_MAX of them, in one municipality, within
 // ADDENDA_GROUP_SPAN_M — a property assessed under more than one roll. A
@@ -3994,20 +3989,23 @@ async function captureAddendaView(bounds, basemap, { withLegend, size = null, co
   return { bytes: await blobBytes(await canvasToBlob(out)), stale: capture.staleFrame };
 }
 
-/** "Zoning Map — By-law <ZBL>" for the zone under the subject's centre;
- *  plain "Zoning Map" when none is found or it carries no number. */
+/** The zoning map's label for the zone under the subject's centre: the
+ *  subject's municipality, the by-law and, when known, its effective date
+ *  (lib/addendaZoning.js). */
 function addendaZoningLabel(fc, feat) {
   const c = parcelCentrePoint(feat);
-  let base = null;
+  let hit = null;
   if (c) {
     const pt = [c.lng, c.lat];
-    const hit = (fc?.features || []).find((z) => {
+    hit = (fc?.features || []).find((z) => {
       try { return z?.geometry && booleanPointInPolygon(pt, z); } catch { return false; }
-    });
-    base = hit ? zoningBylawText(hit.properties).base : null;
+    }) || null;
   }
-  if (!base) return 'Zoning Map';
-  return /by-?law/i.test(base) ? `Zoning Map — ${base}` : `Zoning Map — By-law ${base}`;
+  return addendaZoningLabelText({
+    muni: addendaMuniLabel(feat?.properties),
+    bylaw: hit ? zoningBylawText(hit.properties).base : null,
+    date: hit ? zoningBylawDate(hit.properties) : null,
+  });
 }
 
 /** The zoning polygons whose extent touches the current map view. */
@@ -4244,13 +4242,12 @@ async function buildAddendaPack() {
         const muniZoning = lastZoningFc;
         const zoningLabel = addendaZoningLabel(muniZoning, subject.feats[0]);
         const subjectAcres = addendaSubjectAcres(subject.feats);
-        const zoningMinM = subjectAcres != null && subjectAcres < ADDENDA_SMALL_LOT_ACRES
-          ? ADDENDA_ZONING_SMALL_MIN_M : ADDENDA_ZONING_MIN_M;
+        const zoningMinM = zoningMinWidthM(subjectAcres);
         try {
           const zoning = await captureAddendaView(
             framedBounds(subjectBox, { padFrac: 0.2, minWidthM: zoningMinM }), 'streets',
             { withLegend: true, cornerLabel: zoningLabel, prepare: () => rebuildZoningLegend(zoningInView(muniZoning)) });
-          add('zoning-map.png', zoning.bytes, `Zoning around ${subject.note}${marked}, at least ${(zoningMinM / 1000).toFixed(1)} km wide`, zoning.stale);
+          add('zoning-map.png', zoning.bytes, `Zoning around ${subject.note}${marked}, at least ${zoningMinM < 1000 ? `${zoningMinM} m` : `${(zoningMinM / 1000).toFixed(1)} km`} wide`, zoning.stale);
         } finally {
           rebuildZoningLegend(muniZoning);
         }
