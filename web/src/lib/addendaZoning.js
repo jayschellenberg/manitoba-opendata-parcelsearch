@@ -62,3 +62,12 @@ export function addendaZoningLabelText({ muni, bylaw, date } = {}) {
   const text = `Zoning Map — ${where ? `${where} ` : ''}${law}`;
   return when ? `${text} (effective ${when})` : text;
 }
+
+/** The zoning map's source line, under the scale bar. The date is the
+ *  layer's last edit anywhere in Manitoba, hence "layer updated" rather
+ *  than a claim about this municipality's zoning. */
+export function addendaZoningSourceNote(updatedIso) {
+  const when = formatBylawDate(updatedIso);
+  const src = 'Source: Manitoba Zoning By-laws, Province of Manitoba (DataMB)';
+  return when ? `${src}, layer updated ${when}` : src;
+}

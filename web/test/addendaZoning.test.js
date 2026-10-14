@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict';
 import {
-  zoningMinWidthM, zoningBylawDate, formatBylawDate, addendaZoningLabelText,
+  zoningMinWidthM, zoningBylawDate, formatBylawDate, addendaZoningLabelText, addendaZoningSourceNote,
 } from '../src/lib/addendaZoning.js';
 import { ZONING_BYLAW_DATES } from '../src/lib/zoningBylawDates.js';
 
@@ -77,6 +77,12 @@ test('label: parts drop out down to plain "Zoning Map"', () => {
   assert.equal(addendaZoningLabelText({ muni: 'Town of Carman' }), 'Zoning Map — Town of Carman');
   assert.equal(addendaZoningLabelText({ muni: 'Town of Carman', date: '2019-03-04' }), 'Zoning Map — Town of Carman');
   assert.equal(addendaZoningLabelText({}), 'Zoning Map');
+});
+
+test('source note: layer and its update date, date optional', () => {
+  assert.equal(addendaZoningSourceNote('2026-09-23'),
+    'Source: Manitoba Zoning By-laws, Province of Manitoba (DataMB), layer updated September 23, 2026');
+  assert.equal(addendaZoningSourceNote(null), 'Source: Manitoba Zoning By-laws, Province of Manitoba (DataMB)');
 });
 
 if (failed) { console.log(`\n${failed} failed`); process.exit(1); }
