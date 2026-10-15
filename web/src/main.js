@@ -3852,6 +3852,10 @@ const ADDENDA_COMMUNITY_MAX_M = 10000;
 // Most result parcels the neighbourhood and zoning maps will number.
 const ADDENDA_NUMBER_MAX = 25;
 const ADDENDA_AERIAL_MIN_M = 300;
+// The close-up aerial and the site map share one frame: the subject and the
+// lots adjoining it (Jason, 2026-10-15).
+const ADDENDA_CLOSE_PAD = 0.2;
+const ADDENDA_CLOSE_MIN_M = 150;
 // Several results with none picked still make one subject when there are
 // at most ADDENDA_GROUP_MAX of them, in one municipality, within
 // ADDENDA_GROUP_SPAN_M — a property assessed under more than one roll. A
@@ -4167,7 +4171,7 @@ async function buildAddendaPack() {
   // A grouped subject is the whole result set, which the aerial and zoning
   // maps already frame, so it gets no separate results map.
   const wantResults = allFeats.length > 1 && !subject.group;
-  const total = 1 + (subject.specific ? 3 : 0) + (wantResults ? 1 : 0);
+  const total = 1 + (subject.specific ? 5 : 0) + (wantResults ? 1 : 0);
   let n = 0;
   const step = (what) => { btn.textContent = `Addenda ${++n}/${total}: ${what}…`; };
   const files = [];
@@ -4179,7 +4183,7 @@ async function buildAddendaPack() {
   const add = (base, bytes, what, wasStale = false) => {
     const name = `${files.length + 1}-${base}`;
     files.push({ name, data: bytes });
-    listing.push(`${name.padEnd(24)}${what}`);
+    listing.push(`${name.padEnd(28)}${what}`);
     if (wasStale) stale.push(name);
   };
   try {
@@ -4225,14 +4229,36 @@ async function buildAddendaPack() {
         hood.stale);
       setCommunityMask(map, null);
       await restoreLayers();
-      // Aerial — satellite imagery, close on the subject, sides labelled.
+      // Aerials — satellite imagery twice (Jason, 2026-10-15): the wider one
+      // for the setting, then a close-up of the subject and the lots beside
+      // it. Neither carries dimensions; the site map below does.
       step('aerial');
-      setAddendaMarks({ pin: false, numbers: userMarks.numbers, dims: true });
+      setAddendaMarks({ pin: false, numbers: userMarks.numbers, dims: false });
       const aerial = await captureAddendaView(
         framedBounds(subjectBox, { padFrac: 0.35, minWidthM: ADDENDA_AERIAL_MIN_M }), 'satellite',
-        { withLegend, cornerLabel: 'Aerial View (Subject Highlighted)',
-          scaleNote: 'Not a legal survey - site dimensions are approximate' });
-      add('subject-aerial.png', aerial.bytes, `Satellite imagery of ${subject.note}, with dimensions`, aerial.stale);
+        { withLegend, cornerLabel: 'Aerial View (Subject Highlighted)' });
+      add('subject-aerial.png', aerial.bytes, `Satellite imagery of ${subject.note}`, aerial.stale);
+      const closeBounds = framedBounds(subjectBox, { padFrac: ADDENDA_CLOSE_PAD, minWidthM: ADDENDA_CLOSE_MIN_M });
+      step('close-up aerial');
+      const aerialClose = await captureAddendaView(closeBounds, 'satellite',
+        { withLegend, cornerLabel: 'Aerial View — Close-up (Subject Highlighted)' });
+      add('subject-aerial-close.png', aerialClose.bytes,
+        `Satellite close-up of ${subject.note} and the adjoining lots`, aerialClose.stale);
+      // Site map — streets with the assessment parcels on, the close-up's
+      // frame, and the subject's sides labelled.
+      step('site map');
+      setAddendaMarks({ pin: false, numbers: userMarks.numbers, dims: true });
+      await setAuxOverlay('muniParcels', true);
+      await cycleGridTo(null);
+      try {
+        const site = await captureAddendaView(closeBounds, 'streets',
+          { withLegend, cornerLabel: 'Site Map — Assessment Parcels',
+            scaleNote: 'Not a legal survey - site dimensions are approximate' });
+        add('site-parcel-map.png', site.bytes,
+          `Streets and assessment parcels around ${subject.note}, with dimensions`, site.stale);
+      } finally {
+        await restoreLayers();
+      }
       // Zoning — streets with every zone in the municipality, and its legend
       // whatever the Capture Map panel says.
       step('zoning');
@@ -4295,7 +4321,7 @@ async function buildAddendaPack() {
     '(measured at the map centre) and a north arrow.',
     ...notes,
     ...(!subject.specific
-      ? ['No single subject was picked, so the neighbourhood, aerial and zoning maps were left out.',
+      ? ['No single subject was picked, so the neighbourhood, aerial, site and zoning maps were left out.',
         'Click a parcel in the grid (or set a subject roll) and build the pack again to include them.'] : []),
     ...(wantResults && !numberingOn
       ? ['Tip: turn on "Number parcels" before building the pack to number the results map.'] : []),
