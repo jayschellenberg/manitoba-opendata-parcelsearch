@@ -245,12 +245,24 @@ test('the addenda maps carry their own marks (Jason, 2026-10-08)', () => {
   const body = fnBodyOf('buildAddendaPack');
   assert.match(body, /locatorMarks = pinPoint\s*\?\s*\{ pin: true/, 'a lone parcel no longer gets the locator pin');
   assert.match(body, /numbers: allFeats\.length > 1 && allFeats\.length <= ADDENDA_NUMBER_MAX/, 'several parcels are no longer numbered on the locator maps, or the 25-parcel cap is gone');
-  assert.match(body, /dims: true[\s\S]{0,200}'satellite'/, 'the aerial no longer carries dimensions');
+  // Two aerials without dimensions, then the site map with them (Jason,
+  // 2026-10-15).
+  const aerials = body.slice(body.indexOf("step('aerial')"), body.indexOf("step('site map')"));
+  assert.match(aerials, /dims: false/, 'the aerials carry dimensions again');
+  assert.doesNotMatch(aerials, /dims: true/, 'an aerial carries dimensions again');
+  assert.equal((aerials.match(/'satellite'/g) || []).length, 2, 'the pack no longer has a wide and a close-up aerial');
+  assert.match(aerials, /'subject-aerial-close\.png'/, 'the close-up aerial is never added to the pack');
+  const site = body.slice(body.indexOf("step('site map')"), body.indexOf("step('zoning')"));
+  assert.match(site, /dims: true/, 'the site map has lost its dimensions');
+  assert.match(site, /setAuxOverlay\('muniParcels', true\)/, 'the site map no longer turns the assessment parcels on');
+  assert.match(site, /closeBounds, 'streets'/, 'the site map is not on the streets basemap over the close-up frame');
+  assert.match(site, /'site-parcel-map\.png'/, 'the site map is never added to the pack');
+  assert.match(site, /finally \{\s*await restoreLayers\(\)/, 'the site map does not put the parcel layer back');
   assert.match(body, /cycleZoningTo\('all'\)[\s\S]{0,800}withLegend: true/, 'the zoning map is not all-zones with its legend');
   assert.match(body, /cornerLabel: zoningLabel/, 'the zoning map has lost its "Zoning Map — By-law" label');
   assert.match(fnBodyOf('addendaZoningLabel'), /zoningBylawText\(/, 'the zoning label no longer reads the by-law');
   assert.match(body, /cornerLabel: 'Aerial View \(Subject Highlighted\)'/, 'the aerial has lost its label');
-  assert.match(body, /scaleNote: 'Not a legal survey - site dimensions are approximate'/, 'the aerial has lost its survey note');
+  assert.match(site, /scaleNote: 'Not a legal survey - site dimensions are approximate'/, 'the site map has lost its survey note');
   assert.match(fnBodyOf('drawCaptureFurniture'), /drawScaleNote\(/, 'the scale note is never drawn');
   assert.match(body, /cornerScale: 1\.5/, 'the neighbourhood label is no longer enlarged');
   const hoodStep = body.slice(body.indexOf("step('neighbourhood')"), body.indexOf("step('aerial')"));
