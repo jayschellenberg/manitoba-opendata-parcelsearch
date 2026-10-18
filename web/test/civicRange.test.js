@@ -137,6 +137,39 @@ test('either form finds Rosser roll 76250', () => {
   assert.ok(!addressMatchesVariants(addr, addressSearchVariants('1107')));
 });
 
+test('a street ordinal finds both spellings', () => {
+  for (const term of ['first st', '1st st', 'First', '1ST']) {
+    const v = addressSearchVariants(term);
+    assert.ok(addressMatchesVariants('444 1ST ST', v), `${term} -> 1ST`);
+    assert.ok(addressMatchesVariants('444 FIRST ST', v), `${term} -> FIRST`);
+  }
+  for (const [word, num] of [['second', '2ND'], ['third', '3RD'], ['eleventh', '11TH'],
+    ['twelfth', '12TH'], ['twentieth', '20TH']]) {
+    const v = addressSearchVariants(`${word} ave`);
+    assert.ok(addressMatchesVariants(`12 ${num} AVE`, v), `${word} -> ${num}`);
+    assert.ok(addressMatchesVariants(`12 ${word.toUpperCase()} AVE`, addressSearchVariants(`${num} ave`)),
+      `${num} -> ${word}`);
+  }
+});
+
+test('an ordinal mid-term flips too, and a civic number stays put', () => {
+  const v = addressSearchVariants('100 first');
+  assert.ok(addressMatchesVariants('100 1ST ST', v));
+  assert.ok(addressMatchesVariants('100 FIRST ST', v));
+  assert.ok(!addressMatchesVariants('101 FIRST ST', v));
+});
+
+test('FIRST does not drag in 21ST or 101ST', () => {
+  const v = addressSearchVariants('first st');
+  assert.ok(!addressMatchesVariants('50 21ST ST', v));
+  assert.ok(!addressMatchesVariants('50 101ST ST', v));
+});
+
+test('names that merely contain an ordinal word are left alone', () => {
+  assert.deepEqual(addressSearchVariants('firstview dr'), ['FIRSTVIEW DR']);
+  assert.deepEqual(addressSearchVariants('3rdline'), ['3RDLINE']);
+});
+
 test('empty term matches everything (filter disabled)', () => {
   assert.deepEqual(addressSearchVariants('  '), []);
   assert.ok(addressMatchesVariants('anything', []));

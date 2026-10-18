@@ -206,10 +206,51 @@ export function parseCivicBound(raw, kind) {
 export function addressSearchVariants(raw) {
   const base = String(raw || '').trim().toUpperCase().replace(/\s+/g, ' ');
   if (!base) return [];
-  const out = [base];
-  for (const v of [collapseCivicSpaces(base), groupCivicDigits(base)]) {
-    if (v && !out.includes(v)) out.push(v);
+  const out = [];
+  for (const form of [base, ...ordinalSpellings(base)]) {
+    for (const v of [form, collapseCivicSpaces(form), groupCivicDigits(form)]) {
+      if (v && !out.includes(v)) out.push(v);
+    }
   }
+  return out;
+}
+
+// Street ordinals are spelled both ways across Manitoba, often within one
+// muni: the roll-entry snapshot carries 1,744 "1ST ST" next to 960
+// "FIRST ST". Word forms in the data stop at ELEVENTH, so 1-20 covers
+// them with room to spare.
+const ORDINAL_WORDS = [
+  'FIRST', 'SECOND', 'THIRD', 'FOURTH', 'FIFTH', 'SIXTH', 'SEVENTH',
+  'EIGHTH', 'NINTH', 'TENTH', 'ELEVENTH', 'TWELFTH', 'THIRTEENTH',
+  'FOURTEENTH', 'FIFTEENTH', 'SIXTEENTH', 'SEVENTEENTH', 'EIGHTEENTH',
+  'NINETEENTH', 'TWENTIETH',
+];
+const ORDINAL_SUFFIX = (n) =>
+  (n % 100 >= 11 && n % 100 <= 13) ? 'TH' : (['TH', 'ST', 'ND', 'RD'][n % 10] || 'TH');
+const ORDINAL_WORD_TO_NUM = new Map(ORDINAL_WORDS.map((w, i) => [w, `${i + 1}${ORDINAL_SUFFIX(i + 1)}`]));
+const ORDINAL_NUM_TO_WORD = new Map(ORDINAL_WORDS.map((w, i) => [`${i + 1}${ORDINAL_SUFFIX(i + 1)}`, w]));
+
+/**
+ * The other spellings of an upper-cased term whose tokens include a
+ * street ordinal: "FIRST ST" -> "1ST ST", "100 2ND AVE" -> "100 SECOND AVE".
+ * Every ordinal token in the term flips at once, words to numbers in one
+ * form and numbers to words in the other.
+ *
+ * A numeric form that leads the term gets a leading space: the variants
+ * are substring-matched, and a bare "1ST ST" would also find "21ST ST"
+ * and "101ST ST" — hits nobody who typed FIRST asked for. Addresses lead
+ * with their civic number, so the space is always there in the data.
+ */
+function ordinalSpellings(term) {
+  const tokens = term.split(' ');
+  const toNum = tokens.map((t) => ORDINAL_WORD_TO_NUM.get(t) || t);
+  const toWord = tokens.map((t) => ORDINAL_NUM_TO_WORD.get(t) || t);
+  const out = [];
+  if (toNum.some((t, i) => t !== tokens[i])) {
+    const s = toNum.join(' ');
+    out.push(toNum[0] !== tokens[0] ? ` ${s}` : s);
+  }
+  if (toWord.some((t, i) => t !== tokens[i])) out.push(toWord.join(' '));
   return out;
 }
 
