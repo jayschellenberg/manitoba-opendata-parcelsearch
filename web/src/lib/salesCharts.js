@@ -168,6 +168,10 @@ export function saleRecordsFromRows(rows, { parseDate, centroid, rowKey, isSelec
         // sale's Residential / ICI / Farm family (lib/primaryProperty.js),
         // which colours its pin on the comp map.
         primaryProperty: p._primaryProperty || '',
+        // The legal description, for the comp table's Location column when a
+        // sale has no street address: the sales CSV's own cell first (MAO's
+        // "A--76073" form), else the legal index's.
+        legal: p._csvLegal || p._legalDescription || '',
         // The ratio the sale/assessment review flag grades, and what it was
         // measured against — filled in after every member row is seen.
         flagRatio: null,
