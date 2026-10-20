@@ -164,6 +164,10 @@ export function saleRecordsFromRows(rows, { parseDate, centroid, rowKey, isSelec
         excluded: false,
         // MAO's own sale type, for the review flag's basis below.
         saleType: p._saleTypeGroup || '',
+        // MAO's primary-structure descriptor: with saleType it decides the
+        // sale's Residential / ICI / Farm family (lib/primaryProperty.js),
+        // which colours its pin on the comp map.
+        primaryProperty: p._primaryProperty || '',
         // The ratio the sale/assessment review flag grades, and what it was
         // measured against — filled in after every member row is seen.
         flagRatio: null,
