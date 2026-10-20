@@ -25,13 +25,13 @@ import { buildN1Cell } from './lib/n1Cell.js';
 import { solveRoute, haversineMatrix, mostOutlyingIndex } from './lib/routeSolver.js';
 import {
   hasToken as hasMapboxToken,
-  fetchDrivingMatrix,
+  fetchDrivingMatrixTiled,
   fetchDrivingMatrixClustered,
   fetchDrivingRoute,
-  staticRouteImageUrl,
-  MATRIX_MAX_COORDS,
-  MatrixTooManyCoordsError,
+  staticBasemapUrl,
+  MATRIX_TILED_MAX_COORDS,
 } from './mapbox.js';
+import { planMapView, buildChecklistHtml } from './lib/routeChecklist.js';
 
 // Phase 5 column visibility.
 import {
@@ -1399,10 +1399,12 @@ let routeRoundTrip = true;
 // row; routeStartExcludeKey drops the parcel doubling as the start point (so
 // the Matrix/Directions calls never see two identical coordinates); and
 // routeStartLabel replaces the bare start coordinates in the panel with the
-// roll that was auto-picked. All reset by clearRoutePlanner().
+// roll that was auto-picked; routeStartParcel keeps that parcel so the
+// printed checklist can list it as stop S. All reset by clearRoutePlanner().
 let routeStarredOnly = false;
 let routeStartExcludeKey = null;
 let routeStartLabel = null;
+let routeStartParcel = null;
 
 // Subject parcel state. setSubjectParcel() / clearSubjectParcel()
 // drive these alongside the map source and re-stamp distances onto
@@ -2242,6 +2244,8 @@ document.getElementById('route-recalc-btn')
   ?.addEventListener('click', handleCalculateRoute);
 document.getElementById('route-print-btn')
   ?.addEventListener('click', handlePrintItinerary);
+document.getElementById('route-checklist-btn')
+  ?.addEventListener('click', handlePrintChecklist);
 document.getElementById('route-roundtrip')
   ?.addEventListener('change', (e) => { routeRoundTrip = !!e.target.checked; });
 
@@ -7517,7 +7521,10 @@ function collectRouteableParcels() {
         ? (p.Roll_No_Txt.endsWith('.000') ? p.Roll_No_Txt.slice(0, -4) : p.Roll_No_Txt)
         : ''),
       muniNo: muniNoFromProps(p),
+      muniName: p.Muni_Name_With_Typ || String(p.Municipality || '').replace(/^\d+\s*-\s*/, ''),
       address: p.Property_Address || '',
+      // In MAO but not on the parcel map yet — pinned at an approximate spot.
+      approx: !!p._unmapped,
     });
   }
   return out;
@@ -7550,6 +7557,7 @@ function clearRoutePlanner() {
   routeStarredOnly = false;
   routeStartExcludeKey = null;
   routeStartLabel = null;
+  routeStartParcel = null;
   setRouteStart(map, null);
   setRouteData(map, [], null);
   setRouteVisible(map, true);  // empty data renders nothing, but visibility stays on
@@ -7619,6 +7627,7 @@ async function handleSetStart() {
   // so it rejoins the stop list.
   routeStartLabel = null;
   routeStartExcludeKey = null;
+  routeStartParcel = null;
   setRouteStart(map, routeStart);
   refreshRouteStartStatus();
   refreshCalculateEnabled();
@@ -7637,7 +7646,7 @@ async function handleSetStart() {
  * round-trip toggle still works for a recalculate.
  *
  * Everything downstream is the existing route planner: Matrix costs
- * (clustered when > 24 stops), TSP solver, Directions polyline,
+ * (tiled to 50 stops, clustered past that), TSP solver, Directions polyline,
  * on-screen itinerary and print.
  */
 async function startStarredRoute() {
@@ -7653,6 +7662,7 @@ async function startStarredRoute() {
   const start = stops[mostOutlyingIndex(stops)];
   routeStart = { lng: start.lng, lat: start.lat };
   routeStartExcludeKey = start.key;
+  routeStartParcel = start;
   routeStartLabel = `Roll ${start.roll} — most outlying starred`;
   setRouteStart(map, routeStart);
   routeRoundTrip = false;
@@ -7711,50 +7721,61 @@ async function handleCalculateRoute() {
     const points = [routeStart, ...parcels];
 
     // Build the cost matrix. Mapbox Matrix v1 driving caps at 25
-    // total coords per call. Two paths:
-    //   ≤ 24 stops: one Matrix call covers the whole matrix.
-    //   > 24 stops: cluster-aware path — group stops by muni, fetch
-    //     real driving costs for within-cluster pairs (where road
-    //     grid matters), use haversine for cross-cluster pairs
-    //     (highway-distance ≈ great-circle distance once the
-    //     clusters are tens of km apart). Real road costs end up
-    //     covering nearly all of the optimisation work.
+    // coordinates per call. Three paths:
+    //   ≤ MATRIX_TILED_MAX_COORDS points (50 stops + start): the full
+    //     N×N matrix, tiled over sources/destinations subsets so every
+    //     pair is a real road time (16 requests / 2,601 elements at 51).
+    //   more than that: cluster-aware path — real driving costs within
+    //     each muni, haversine between munis — so one huge list can't
+    //     eat the free-tier element budget.
+    //   any Matrix failure (after retries): haversine for the whole
+    //     ordering; Directions still supplies the real km / time.
     let duration = null;
     let distance = null;
     let matrixMode = 'real';   // 'real' | 'clustered' | 'haversine'
     let clusterStats = null;
-    try {
-      const matrix = await fetchDrivingMatrix(points);
-      duration = matrix.duration;
-      distance = matrix.distance;
-    } catch (err) {
-      if (err instanceof MatrixTooManyCoordsError) {
-        // Cluster by muni — parcels carry their muniNo; the start
-        // joins the cluster of its nearest parcel by haversine.
-        const clusterIds = buildClusterIds(routeStart, parcels);
-        try {
-          const matrix = await fetchDrivingMatrixClustered({
-            points,
-            clusterIds,
-          });
-          duration = matrix.duration;
-          distance = matrix.distance;
-          matrixMode = 'clustered';
-          clusterStats = {
-            clusters: new Set(clusterIds).size,
-            realCalls: matrix.realCalls,
-            crossClusterPairs: matrix.crossClusterCount,
-            anyCallFailed: matrix.anyCallFailed,
-          };
-        } catch (clusterErr) {
-          console.warn('Cluster matrix failed, falling back to haversine:', clusterErr);
-          const hav = haversineMatrix(points);
-          distance = hav.map((row) => row.map((v) => v * 1000));
-          duration = distance;
-          matrixMode = 'haversine';
-        }
-      } else {
-        throw err;
+    let matrixStats = null;
+    const useHaversine = (why) => {
+      console.warn('Matrix failed, falling back to haversine:', why);
+      const hav = haversineMatrix(points);
+      distance = hav.map((row) => row.map((v) => v * 1000));
+      duration = distance;
+      matrixMode = 'haversine';
+    };
+    if (points.length <= MATRIX_TILED_MAX_COORDS) {
+      try {
+        const matrix = await fetchDrivingMatrixTiled(points);
+        duration = matrix.duration;
+        distance = matrix.distance;
+        matrixStats = matrix.stats;
+        console.info(`Route matrix: ${points.length} points, ` + (matrix.stats.cached
+          ? 'reused cached matrix (0 elements)'
+          : `${matrix.stats.requests} Matrix request(s), ${matrix.stats.elements} elements` +
+            (matrix.stats.retries ? `, ${matrix.stats.retries} retried` : '')));
+      } catch (err) {
+        if (/auth failed/.test(err?.cause?.message || err?.message || '')) throw err;
+        useHaversine(err);
+      }
+    } else {
+      // Cluster by muni — parcels carry their muniNo; the start
+      // joins the cluster of its nearest parcel by haversine.
+      const clusterIds = buildClusterIds(routeStart, parcels);
+      try {
+        const matrix = await fetchDrivingMatrixClustered({
+          points,
+          clusterIds,
+        });
+        duration = matrix.duration;
+        distance = matrix.distance;
+        matrixMode = 'clustered';
+        clusterStats = {
+          clusters: new Set(clusterIds).size,
+          realCalls: matrix.realCalls,
+          crossClusterPairs: matrix.crossClusterCount,
+          anyCallFailed: matrix.anyCallFailed,
+        };
+      } catch (clusterErr) {
+        useHaversine(clusterErr);
       }
     }
     const usedHaversine = matrixMode === 'haversine';
@@ -7812,6 +7833,7 @@ async function handleCalculateRoute() {
       usedHaversine,
       usedClusterMatrix,
       clusterStats,
+      matrixStats,
     };
 
     // Paint stops on the map, in visit order (excluding the start).
@@ -7925,6 +7947,89 @@ function escHtmlSafe(s) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+/**
+ * Printable checklist (modelled on the local route-optimizer's sheet):
+ * page 1 is the whole route on one map, zoomed so the outermost stops sit
+ * just inside the printable area, portrait or landscape to suit; then one
+ * page per 25 stops with a check box, stop #, address, notes and a blank
+ * Time column for the photo time. Numbers match the on-screen route.
+ *
+ * Opens in its own tab (so it prints as a clean document, not this page
+ * with everything hidden). The tab is opened synchronously from the click
+ * so popup blockers allow it, then filled in.
+ */
+function handlePrintChecklist() {
+  if (!routeResult || !routeStart) return;
+  const w = window.open('', '_blank');
+  if (!w) {
+    setCount('Pop-up blocked — allow pop-ups for this site to open the printable checklist.');
+    return;
+  }
+  const r = routeResult;
+  const markers = [{ lng: routeStart.lng, lat: routeStart.lat, text: 'S', kind: 'start' }];
+  const rows = [];
+  if (routeStartParcel) {
+    rows.push({
+      num: 'S',
+      start: true,
+      address: routeStartParcel.address || `Roll ${routeStartParcel.roll || '—'}`,
+      notes: checklistNotes(routeStartParcel, 'start'),
+      approx: routeStartParcel.approx,
+    });
+  }
+  for (let k = 1; k < r.orderedIndices.length; k++) {
+    const idx = r.orderedIndices[k];
+    if (idx === 0) continue;                  // return to start
+    const parcel = r.parcels[idx - 1];
+    markers.push({ lng: parcel.lng, lat: parcel.lat, text: String(k), kind: 'stop' });
+    rows.push({
+      num: String(k),
+      address: parcel.address || `Roll ${parcel.roll || '—'}`,
+      notes: checklistNotes(parcel),
+      approx: parcel.approx,
+    });
+  }
+  const view = planMapView(markers);
+  let mapImageUrl = '';
+  try {
+    mapImageUrl = staticBasemapUrl({ center: view.center, zoom: view.zoom, width: view.width, height: view.height });
+  } catch (err) {
+    console.warn('Checklist map image unavailable:', err);
+  }
+  const title = `Route ${new Date().toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}`;
+  const html = buildChecklistHtml({
+    title,
+    summary: formatRouteSummary(r),
+    view,
+    mapImageUrl,
+    markers,
+    line: r.geometry?.coordinates || [],
+    rows,
+  });
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  // The app's CSP blocks inline handlers, so wire the tab's controls from
+  // here: Print, and an edited map-page title copied to the list pages.
+  const doc = w.document;
+  doc.getElementById('print-btn')?.addEventListener('click', () => w.print());
+  const titles = [...doc.querySelectorAll('.title')];
+  titles[0]?.addEventListener('input', () => {
+    const t = titles[0].textContent.trim();
+    for (const el of titles.slice(1)) el.textContent = t;
+    doc.title = t;
+  });
+}
+
+/** Notes column for a checklist row: roll + municipality. */
+function checklistNotes(parcel, role) {
+  const bits = [];
+  if (parcel.address && parcel.roll) bits.push(`Roll ${parcel.roll}`);
+  if (parcel.muniName) bits.push(parcel.muniName);
+  if (role === 'start') bits.push('start');
+  return bits.join(' · ');
 }
 
 async function handlePrintItinerary() {

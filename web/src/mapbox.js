@@ -2,8 +2,11 @@
  * Mapbox API client. Three endpoints used by the route planner:
  *
  *   Matrix     — driving-time and driving-distance matrices between N stops.
- *                Capped at 25 sources × 25 destinations per call, so we
- *                chunk by destination block and stitch the result.
+ *                Capped at 25 coordinates per call; up to
+ *                MATRIX_TILED_MAX_COORDS points are tiled with
+ *                sources/destinations subsets (lib/matrixTiling.js) so
+ *                every pair gets a real road time. Billed per element
+ *                (sources × destinations), 100k elements/month free.
  *
  *   Directions — driving polyline through an ordered list of waypoints.
  *                Capped at 25 waypoints/call, so we split long routes
@@ -18,20 +21,44 @@
  * reports false; the route panel guards on that to disable itself.
  */
 
+import {
+  fetchTiledMatrix,
+  createRateLimiter,
+  planMatrixTiles,
+  tileElements,
+  MATRIX_MAX_COORDS as TILE_MAX_COORDS,
+} from './lib/matrixTiling.js';
+
 const TOKEN = readToken();
 const MAPBOX_ROOT = 'https://api.mapbox.com';
 const MATRIX_PROFILE = 'driving';
 const DIRECTIONS_PROFILE = 'driving';
 
 // Mapbox API caps.
-// Matrix v1 driving: 25 TOTAL coordinates per call (not 25×25). Past
-// that we throw MatrixTooManyCoordsError; main.js catches it and
-// falls through to the haversine fallback for the TSP ordering, then
-// still hits Directions API on the solved order to get a real km /
-// drive-time / polyline. In Manitoba's mostly-grid road network the
-// haversine ordering is within a few percent of road-optimal.
-export const MATRIX_MAX_COORDS = 25;
+// Matrix v1 driving: 25 TOTAL coordinates per call (not 25×25).
+// fetchDrivingMatrix throws MatrixTooManyCoordsError past that;
+// fetchDrivingMatrixTiled covers up to MATRIX_TILED_MAX_COORDS and
+// throws the same error past its own cap, which main.js answers with
+// the muni-clustered estimate.
+export const MATRIX_MAX_COORDS = TILE_MAX_COORDS;
 const DIRECTIONS_CHUNK = 25;
+
+// Largest point list (start + stops) the tiled Matrix path takes: 50
+// stops + start = 51 points = 16 requests, 2,601 elements. Elements grow
+// with N², so past this the planner keeps the cheaper muni-clustered
+// estimate rather than spending ~4k+ elements of the free tier per route.
+export const MATRIX_TILED_MAX_COORDS = 51;
+
+// One limiter for every Matrix request this tab makes: Mapbox allows 60 a
+// minute on the driving profile, so a Recalculate right after a 51-point
+// route still stays under it.
+const matrixLimiter = createRateLimiter({ limit: 50, windowMs: 60_000 });
+
+// Last few matrices, keyed by their exact coordinate list. A Recalculate
+// with the same start and stops (e.g. after flipping Round trip) re-solves
+// on the cached matrix instead of paying for the same elements again.
+const MATRIX_CACHE_SIZE = 4;
+const matrixCache = new Map();
 
 export class MatrixTooManyCoordsError extends Error {
   constructor(count) {
@@ -110,6 +137,65 @@ export async function fetchDrivingMatrix(points) {
     }
   }
   return { duration, distance };
+}
+
+/**
+ * Full N×N driving matrix for up to MATRIX_TILED_MAX_COORDS points,
+ * tiled across as many Matrix calls as the 25-coordinate cap needs.
+ * Each ordered pair is requested exactly once, so a route costs N²
+ * elements whatever the tiling (see lib/matrixTiling.js for the plan).
+ * 429 / 5xx responses are retried with backoff behind a shared
+ * rate limiter; if a tile still fails, this throws and the caller falls
+ * back to its haversine ordering.
+ *
+ * @param {Array<{lng:number,lat:number}>} points
+ * @returns {Promise<{ duration: number[][], distance: number[][],
+ *   stats: { tiles: number, requests: number, elements: number,
+ *            retries: number, cached: boolean } }>}
+ */
+export async function fetchDrivingMatrixTiled(points) {
+  requireToken();
+  const n = points.length;
+  if (n > MATRIX_TILED_MAX_COORDS) throw new MatrixTooManyCoordsError(n);
+  const key = points.map((p) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join(';');
+  const hit = matrixCache.get(key);
+  if (hit) {
+    matrixCache.delete(key);
+    matrixCache.set(key, hit);           // refresh LRU position
+    return {
+      duration: hit.duration.map((r) => r.slice()),
+      distance: hit.distance.map((r) => r.slice()),
+      stats: { ...hit.stats, requests: 0, elements: 0, retries: 0, cached: true },
+    };
+  }
+  const result = await fetchTiledMatrix({
+    points,
+    fetchTile: fetchMatrixTile,
+    acquire: matrixLimiter,
+  });
+  matrixCache.set(key, result);
+  while (matrixCache.size > MATRIX_CACHE_SIZE) matrixCache.delete(matrixCache.keys().next().value);
+  return {
+    duration: result.duration.map((r) => r.slice()),
+    distance: result.distance.map((r) => r.slice()),
+    stats: { ...result.stats, cached: false },
+  };
+}
+
+/** Requests + elements a tiled matrix over n points will cost. */
+export function matrixCost(n) {
+  const tiles = planMatrixTiles(n);
+  return { requests: tiles.length, elements: tiles.reduce((a, t) => a + tileElements(t), 0) };
+}
+
+/** One Matrix HTTP call for a tile from lib/matrixTiling.js. */
+async function fetchMatrixTile({ coords, sources, destinations }) {
+  const coordStr = coords.map((p) => `${p.lng},${p.lat}`).join(';');
+  let url = `${MAPBOX_ROOT}/directions-matrix/v1/mapbox/${MATRIX_PROFILE}/${coordStr}` +
+            `?annotations=duration,distance`;
+  if (sources) url += `&sources=${sources.join(';')}`;
+  if (destinations) url += `&destinations=${destinations.join(';')}`;
+  return fetchJson(`${url}&access_token=${TOKEN}`);
 }
 
 /**
@@ -439,6 +525,25 @@ export function staticRouteImageUrl({ start, stops, polyline, width = 900, heigh
   return `${MAPBOX_ROOT}/styles/v1/mapbox/streets-v12/static/${overlayPath}/auto/${width}x${height}${sizeSuffix}?access_token=${TOKEN}`;
 }
 
+/**
+ * Static Images URL for a bare basemap at an exact centre and fractional
+ * zoom — the print checklist draws its own pins and route line on top
+ * (lib/routeChecklist.js), so the URL carries no overlays.
+ *
+ * @param {Object} o
+ * @param {{lng:number,lat:number}} o.center
+ * @param {number} o.zoom    - 0–22, two decimals.
+ * @param {number} o.width   - 1x px, ≤ 1280.
+ * @param {number} o.height  - 1x px, ≤ 1280.
+ * @param {boolean} [o.retina=true]
+ */
+export function staticBasemapUrl({ center, zoom, width, height, retina = true }) {
+  requireToken();
+  const pos = `${center.lng.toFixed(6)},${center.lat.toFixed(6)},${zoom.toFixed(2)},0`;
+  return `${MAPBOX_ROOT}/styles/v1/mapbox/streets-v12/static/${pos}/${width}x${height}${retina ? '@2x' : ''}` +
+         `?access_token=${TOKEN}`;
+}
+
 // -----------------------------------------------------------------
 // internals
 // -----------------------------------------------------------------
@@ -448,17 +553,34 @@ async function fetchJson(url) {
   if (!res.ok) {
     let body = '';
     try { body = (await res.text()).slice(0, 200); } catch {}
+    let err;
     if (res.status === 401 || res.status === 403) {
-      throw new Error(`Mapbox auth failed (${res.status}). Check VITE_MAPBOX_TOKEN.`);
+      err = new Error(`Mapbox auth failed (${res.status}). Check VITE_MAPBOX_TOKEN.`);
+    } else if (res.status === 422) {
+      err = new Error(`Mapbox refused the request (422). Check that the coordinates are valid and within limits. Details: ${body}`);
+    } else if (res.status === 429) {
+      err = new Error(`Mapbox rate-limit hit (429). Wait a moment and retry. ${body}`);
+      err.retryAfterMs = retryAfterMs(res);
+    } else {
+      err = new Error(`Mapbox request failed: ${res.status} ${res.statusText}. ${body}`);
     }
-    if (res.status === 422) {
-      throw new Error(`Mapbox refused the request (422). Check that the coordinates are valid and within limits. Details: ${body}`);
-    }
-    if (res.status === 429) {
-      throw new Error(`Mapbox rate-limit hit (429). Wait a moment and retry. ${body}`);
-    }
-    throw new Error(`Mapbox request failed: ${res.status} ${res.statusText}. ${body}`);
+    // Status lets the tiled Matrix path retry 429 / 5xx and give up on the rest.
+    err.status = res.status;
+    throw err;
   }
   return res.json();
+}
+
+/** Wait time from a 429's Retry-After or X-Rate-Limit-Reset (epoch s)
+ *  header, when CORS exposes either; undefined lets the caller back off. */
+function retryAfterMs(res) {
+  const ra = Number(res.headers?.get?.('Retry-After'));
+  if (Number.isFinite(ra) && ra > 0) return Math.min(ra * 1000, 60_000);
+  const reset = Number(res.headers?.get?.('X-Rate-Limit-Reset'));
+  if (Number.isFinite(reset) && reset > 0) {
+    const ms = reset * 1000 - Date.now();
+    if (ms > 0) return Math.min(ms + 250, 60_000);
+  }
+  return undefined;
 }
 
