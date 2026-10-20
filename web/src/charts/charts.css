@@ -851,7 +851,7 @@ main { padding: 18px 20px 0; }
 .comp-table th { position: sticky; top: 0; background: var(--surface); }
 .comp-table td, .comp-table th { padding: 3px 8px 3px 0; }
 .comp-table { width: 100%; }
-.comp-table td:last-child { width: 100%; min-width: 10em; }
+.comp-table td:last-child { min-width: 9em; }
 .comp-comment {
   width: 100%;
   box-sizing: border-box;
@@ -867,3 +867,8 @@ main { padding: 18px 20px 0; }
 .comp-indicators strong { grid-column: 1 / -1; color: var(--ink-2); font-style: italic; }
 .comp-indicators dt { font-style: italic; color: var(--ink-2); text-align: right; }
 .comp-indicators dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+/* Ten columns in half the page (the per-lot column, 2026-10-20): the text
+   columns and headings wrap so Comments stays in view; figures do not. */
+.comp-table th { white-space: normal; vertical-align: bottom; }
+.comp-table td:nth-child(2), .comp-table td:nth-child(3) { white-space: normal; min-width: 6em; }
+.comp-table-title::placeholder { color: #8B0000; opacity: 1; }
