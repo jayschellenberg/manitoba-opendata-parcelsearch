@@ -1134,10 +1134,25 @@ old Map tab folded into Land Price/Unit, one map per former colour-by mode.
 
 | Page | Map tabs | Chart tabs |
 |---|---|---|
-| Land Price/Unit | Price & Lot Size · Year & Zoning · Water Influence | Over Time & Size · Zoning & Distance |
+| Land Price/Unit | Comparables · Price & Lot Size · Year & Zoning · Water Influence | Over Time & Size · Zoning & Distance |
 | Agricultural | MASC & CLI | MASC Rating · Cultivation & Soil · CLI & Land Cover · Cover Mix · Sale/Assessment · S/A Distribution |
 | Total/Per Lot Price | Price per Lot | Total Price · Per Lot · Per Lot by Distance & Assessed |
 | Water | Water Class | Influence & Class · Flood & Water Body · Size & Distance · Summary & Premium · Paired Sales |
+
+**Comparables map** (2026-10-20, Jason's hand-built report maps as the model):
+the subject as a red pin with a "Subject Property" callout, each tagged comp as
+a pin coloured by property type (Residential orange, ICI blue, Agricultural
+green, Other purple; family from `lib/primaryProperty.js` `familyOf`, i.e. MAO's
+Sale Type Group, falling back to the structure descriptor) or all one colour,
+and a callout per comp: `Sale #3 – $12,108/ac`, the total price, both (two
+lines), or the number only. Rates are as sold, in the page's unit. Default is
+tagged comps only; "All ticked sales" adds untagged ones as unlabelled pins.
+Callouts are images (exact size known) placed by `lib/compLabelLayout.js`:
+beside the pin when clear, otherwise out on rings with a leader line, leaders
+never crossing, labels held in place across small pans, and the zoom buttons
+and attribution kept clear. Up to four maps (`opts.compMap.maps`), each with a
+property-type filter, optional title, own view and Fit button, for a set too
+crowded for one map; all are in the work file.
 
 Map notes:
 - Sales are points at the mean of their parcels' centres, and from zoom 10 in

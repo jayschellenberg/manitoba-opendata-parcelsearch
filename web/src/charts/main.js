@@ -44,6 +44,7 @@ import {
 } from '../lib/compTags.js';
 import { toCsv, buildSummaryHtml, figureFileName, workFileName } from '../lib/workFile.js';
 import { LAND_COVER_BUCKETS } from '../lib/landcover.js';
+import { familyOf } from '../lib/primaryProperty.js';
 import {
   drawChart, drawBoxChart, drawTableCard, drawStackedBars, drawHistogram, setChartCompany, ZONE_COLORS, OTHER_COLOR, INK, R_STYLE, slugify,
   chartExportSpec, renderChartPng, downloadBlob, setPointLabeler,
@@ -222,6 +223,13 @@ const opts = {
   agCons: { cultLo: '', cultHi: '', masc: [], cli: [], cover: [] },
   // Municipal boundaries on every map.
   mapMunis: true,
+  // The Comparables map tab (Jason, 2026-10-20): what each callout says
+  // ('rate' | 'total' | 'both' | 'number'), whether only the tagged comps
+  // are drawn ('comps') or every ticked sale ('all'), whether the pins are
+  // coloured by property type ('type') or all one colour ('single'), and the
+  // maps themselves — one or more, each with its own property-type filter
+  // and an optional title, so a crowded set can be split over several.
+  compMap: { label: 'rate', scope: 'comps', color: 'type', maps: [{ type: 'all', title: '' }] },
   // The company name that signs every chart caption and PNG (Jason,
   // 2026-09-23). Persisted with the rest of opts, so it is typed once.
   company: '',
@@ -1992,7 +2000,7 @@ function buildAgCharts() {
 const pageMaps = new Map();
 const mapCounts = new Map();
 function pageMap(key) {
-  if (!pageMaps.has(key)) pageMaps.set(key, createSalesMap(mapHandlers()));
+  if (!pageMaps.has(key)) pageMaps.set(key, createSalesMap({ ...mapHandlers(), pins: isCompMapKey(key) }));
   return pageMaps.get(key);
 }
 
@@ -2193,6 +2201,207 @@ function paintRateMaps(keys) {
   return apis;
 }
 
+// ---------- comparables map ------------------------------------------
+
+/**
+ * The Comparables map (Jason, 2026-10-20), after the report maps he builds
+ * by hand in Google My Maps: the subject as a red pin, each comp as a pin in
+ * its property type's colour, and a callout on each — "Sale #3 – $12,108/ac",
+ * the total price, both, or just the number. Callouts sit beside their pins
+ * and move out into clear space with a leader line where pins crowd
+ * (lib/compLabelLayout.js). A set too crowded for one map is split over
+ * several: each map has its own property-type filter, title and view.
+ */
+const COMP_TYPE_COLORS = { Residential: '#E8710A', ICI: '#1A73E8', Farm: '#188038', Uncategorized: '#8E24AA' };
+const COMP_TYPE_NAMES = { Residential: 'Residential', ICI: 'ICI', Farm: 'Agricultural', Uncategorized: 'Other' };
+const COMP_SINGLE_COLOR = '#1A73E8';
+const COMP_MAX_MAPS = 4;
+const RATE_SUFFIX = { acres: 'ac', sf: 'sf', ff: 'ff' };
+const COMP_LABELS = [['rate', 'Sale # and rate'], ['total', 'Sale # and total price'], ['both', 'Sale #, total and rate'], ['number', 'Sale # only']];
+const COMP_SCOPES = [['comps', 'Tagged comps only'], ['all', 'All ticked sales']];
+const COMP_COLORS = [['type', 'Pin colour by property type'], ['single', 'One pin colour']];
+
+const isCompMapKey = (k) => /^comp\d*$/.test(k);
+
+/** opts.compMap with every field defaulted, whatever an old job file held. */
+function compMapSpec() {
+  const c = opts.compMap && typeof opts.compMap === 'object' ? opts.compMap : {};
+  const maps = Array.isArray(c.maps) && c.maps.length ? c.maps.slice(0, COMP_MAX_MAPS) : [{}];
+  return {
+    label: COMP_LABELS.some(([v]) => v === c.label) ? c.label : 'rate',
+    scope: c.scope === 'all' ? 'all' : 'comps',
+    color: c.color === 'single' ? 'single' : 'type',
+    maps: maps.map((m) => ({
+      type: COMP_TYPE_NAMES[m?.type] ? m.type : 'all',
+      title: typeof m?.title === 'string' ? m.title.slice(0, 120) : '',
+    })),
+  };
+}
+function setCompMap(patch) { setOpt({ compMap: { ...compMapSpec(), ...patch } }); }
+
+/** The page-map keys of the comp maps: comp, comp2, comp3 … */
+function compMapKeys() {
+  return compMapSpec().maps.map((_, i) => (i ? `comp${i + 1}` : 'comp'));
+}
+
+/** A sale's Residential / ICI / Farm / Uncategorized family. */
+const saleFamily = (r) => familyOf(r.saleType, r.primaryProperty);
+
+/** "Sale #3", "Set 1 #2" — the name a comp goes by on the map, or '' untagged. */
+function compName(rec) {
+  const key = saleTagKey(rec);
+  const c = tagNumber(tags, 'comps', key);
+  if (c) return `Sale #${c}`;
+  const a = tagNumber(tags, 'set1', key);
+  if (a) return `Set 1 #${a}`;
+  const b = tagNumber(tags, 'set2', key);
+  return b ? `Set 2 #${b}` : '';
+}
+
+/**
+ * A comp's callout text in the chosen mode; lines joined by "\n". The rate
+ * is the sale's own, as sold, in the page's unit — the figure a report's
+ * sales table shows, not a time-adjusted one.
+ */
+function compCallout(rec, mode) {
+  const name = compName(rec);
+  if (!name || mode === 'number') return name;
+  const spec = unitSpec();
+  const v = Number(rec[spec.metric]);
+  const rate = v > 0 ? `${spec.money(v)}/${RATE_SUFFIX[opts.unit] || 'ac'}` : '';
+  const total = Number(rec.price) > 0 ? fmtMoney0(Number(rec.price)) : '';
+  if (mode === 'rate') return rate ? `${name} – ${rate}` : name;
+  if (mode === 'total') return total ? `${name} – ${total}` : name;
+  const both = [total, rate].filter(Boolean).join(' · ');
+  return both ? `${name}\n${both}` : name;
+}
+
+/** Fill every comp map; returns their APIs in order. */
+function paintCompMaps() {
+  const spec = compMapSpec();
+  const { subject } = subjectAndRings();
+  const ticked = activeRecords().filter(located);
+  const base = spec.scope === 'comps' ? ticked.filter((r) => compName(r)) : ticked;
+  const tagged = ticked.filter((r) => compName(r)).length;
+  const colorOf = (r) => (spec.color === 'type' ? COMP_TYPE_COLORS[saleFamily(r)] : COMP_SINGLE_COLOR);
+  return spec.maps.map((mspec, i) => {
+    const key = i ? `comp${i + 1}` : 'comp';
+    const m = pageMap(key);
+    const recs = mspec.type === 'all' ? base : base.filter((r) => saleFamily(r) === mspec.type);
+    const auto = mspec.type === 'all'
+      ? (spec.scope === 'comps' ? 'Comparable Sales' : 'Sales')
+      : `${COMP_TYPE_NAMES[mspec.type]} ${spec.scope === 'comps' ? 'Comparable Sales' : 'Sales'}`;
+    const title = mspec.title || auto;
+    m.setHeader(title, '');
+    m.setPngName(pngName(title) + (i ? `-${i + 1}` : ''));
+    m.setMunisVisible(opts.mapMunis !== false);
+    if (spec.color === 'type') {
+      const counts = new Map();
+      for (const r of recs) counts.set(saleFamily(r), (counts.get(saleFamily(r)) || 0) + 1);
+      m.setLegend(Object.keys(COMP_TYPE_COLORS).filter((f) => counts.has(f))
+        .map((f) => ({ label: `${COMP_TYPE_NAMES[f]} (${counts.get(f)})`, color: COMP_TYPE_COLORS[f] })));
+    } else m.setLegend([]);
+    const unlocated = activeRecords().filter((r) => compName(r) && !located(r)).length;
+    m.setNote(sub(
+      spec.scope === 'comps' && !tagged
+        ? 'No comps tagged yet: Shift-click a sale on any chart or map, or star it in the grid, to number it.' : '',
+      spec.scope === 'comps' && tagged && !recs.length ? `None of the ${plural(tagged, 'tagged comp')} is ${COMP_TYPE_NAMES[mspec.type]}.` : '',
+      subject ? '' : 'Set a subject roll in the main window to mark it on the map.',
+      unlocated ? `${plural(unlocated, 'tagged comp')} without a parcel location not shown.` : ''));
+    m.setData({
+      fc: {
+        type: 'FeatureCollection',
+        features: recs.map((r) => ({
+          type: 'Feature',
+          properties: {
+            saleId: String(r.saleId), excluded: false, context: false, color: colorOf(r),
+            callout: compCallout(r, spec.label),
+            labelRank: labelRank(saleTagKey(r)),
+            parcelKeys: r.parcelKeys || [],
+          },
+          geometry: { type: 'Point', coordinates: [r.lng, r.lat] },
+        })),
+      },
+      subject,
+      rings: [],
+      fitKey: `${mspec.type}|${recs.map((r) => r.saleId).join('|')}`,
+    });
+    mapCounts.set(key, recs.length);
+    return m;
+  });
+}
+
+/** The Comparables tab's settings bar: labels, scope, colours, and one line per map. */
+function compMapControls() {
+  const spec = compMapSpec();
+  const bar = document.createElement('div');
+  bar.className = 'comp-map-ctl';
+  const select = (label, choices, value, onChange) => {
+    const s = document.createElement('select');
+    s.setAttribute('aria-label', label);
+    for (const [v, text] of choices) {
+      const o = document.createElement('option');
+      o.value = v;
+      o.textContent = text;
+      o.selected = v === value;
+      s.appendChild(o);
+    }
+    s.addEventListener('change', () => onChange(s.value));
+    return s;
+  };
+  const top = document.createElement('div');
+  top.className = 'comp-map-row';
+  top.append(
+    select('Callout text', COMP_LABELS, spec.label, (v) => setCompMap({ label: v })),
+    select('Which sales', COMP_SCOPES, spec.scope, (v) => setCompMap({ scope: v })),
+    select('Pin colour', COMP_COLORS, spec.color, (v) => setCompMap({ color: v })),
+  );
+  if (spec.maps.length < COMP_MAX_MAPS) {
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.textContent = '+ Add map';
+    add.title = 'Another map of the same comps, with its own view and property-type filter — for a set too crowded to read on one';
+    add.addEventListener('click', () => setCompMap({ maps: [...spec.maps, { type: 'all', title: '' }] }));
+    top.appendChild(add);
+  }
+  bar.appendChild(top);
+  const typeChoices = [['all', 'All property types'], ...Object.entries(COMP_TYPE_NAMES)];
+  spec.maps.forEach((mspec, i) => {
+    const row = document.createElement('div');
+    row.className = 'comp-map-row';
+    const lab = document.createElement('strong');
+    lab.textContent = `Map ${i + 1}`;
+    const patchMap = (p) => setCompMap({ maps: spec.maps.map((m, j) => (j === i ? { ...m, ...p } : m)) });
+    const title = document.createElement('input');
+    title.type = 'text';
+    title.placeholder = 'Title (automatic)';
+    title.value = mspec.title;
+    title.setAttribute('aria-label', `Map ${i + 1} title`);
+    title.addEventListener('change', () => patchMap({ title: title.value.trim() }));
+    title.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') title.blur(); });
+    const fit = document.createElement('button');
+    fit.type = 'button';
+    fit.textContent = 'Fit';
+    fit.title = 'Zoom this map back out to all of its sales and the subject';
+    fit.addEventListener('click', () => { pageMap(i ? `comp${i + 1}` : 'comp').refit(); render(); });
+    row.append(lab, select(`Map ${i + 1} property type`, typeChoices, mspec.type, (v) => patchMap({ type: v })), title, fit);
+    if (i) {
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.textContent = 'Remove';
+      del.addEventListener('click', () => setCompMap({ maps: spec.maps.filter((_, j) => j !== i) }));
+      row.appendChild(del);
+    }
+    bar.appendChild(row);
+  });
+  const hint = document.createElement('p');
+  hint.className = 'comp-map-hint';
+  hint.textContent = 'Zoom each map to frame what it should show; its PNG and the work file print it as it stands. '
+    + 'Where pins crowd, the callouts move out with a line back to their pin.';
+  bar.appendChild(hint);
+  return bar;
+}
+
 /**
  * Each page's map tabs, the top row of the Shiny layout (Jason, 2026-10-06):
  * a label, the map keys it shows side by side, and the painter that fills
@@ -2200,6 +2409,9 @@ function paintRateMaps(keys) {
  */
 const PAGE_MAPS = {
   rates: [
+    // The report map (2026-10-20). `keys` is a getter: the number of comp
+    // maps is the user's to change.
+    { label: 'Comparables', get keys() { return compMapKeys(); }, paint: () => paintCompMaps(), controls: () => compMapControls() },
     { label: 'Price & Lot Size', keys: ['price', 'size'], paint: () => paintRateMaps(['price', 'size']) },
     { label: 'Year & Zoning', keys: ['year', 'zoning'], paint: () => paintRateMaps(['year', 'zoning']) },
     { label: 'Water Influence', keys: ['waterinf'], paint: () => paintRateMaps(['waterinf']) },
@@ -2214,9 +2426,14 @@ const PAGE_MAPS = {
     paint: () => { const cms = cmsFor(areaMetric()); return [buildWaterMap(cms, adjusterFor(cms))]; },
   }],
 };
-/** key -> {page, label}: where the work file goes to capture a map. */
-const MAP_HOME = Object.fromEntries(Object.entries(PAGE_MAPS)
-  .flatMap(([page, tabs]) => tabs.flatMap((t) => t.keys.map((k) => [k, { page, label: t.label }]))));
+/** key -> {page, label}: where the work file goes to capture a map. A
+ *  function, not a table: the comp maps come and go. */
+function mapHome(key) {
+  for (const [page, tabs] of Object.entries(PAGE_MAPS)) {
+    for (const t of tabs) if (t.keys.includes(key)) return { page, label: t.label };
+  }
+  return null;
+}
 
 /**
  * Each page's chart tabs, the bottom row: a label and the chart titles it
@@ -2406,7 +2623,9 @@ function renderPage() {
       const act = mapTabs.find((t) => t.label === subTab(page, 'map')) || mapTabs[0];
       const sec = document.createElement('section');
       sec.className = 'page-row page-maps';
-      sec.append(rowTabStrip(page, 'map', mapTabs.map((t) => t.label), act.label, 'Maps'), mapRow(page, act.paint()));
+      sec.append(rowTabStrip(page, 'map', mapTabs.map((t) => t.label), act.label, 'Maps'));
+      if (act.controls) sec.appendChild(act.controls());
+      sec.appendChild(mapRow(page, act.paint()));
       out.push(sec);
     }
     const groups = groupCharts(page, PAGE_BUILDERS[page]());
@@ -3270,7 +3489,8 @@ async function captureMaps(which, onStep) {
   // One stop per page + map tab, showing it as the reader would.
   const stops = new Map();
   for (const k of which) {
-    const home = MAP_HOME[k];
+    const home = mapHome(k);
+    if (!home) continue;
     const id = `${home.page}|${home.label}`;
     if (!stops.has(id)) stops.set(id, { ...home, keys: [] });
     stops.get(id).keys.push(k);
