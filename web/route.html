@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Route Optimizer — Manitoba Parcel Search</title>
+    <!-- Self-contained, deliberately NOT src/style.css (the main app's sheet),
+         like data-sources.html. -->
+    <link rel="stylesheet" href="./src/route/route.css" />
+  </head>
+  <body>
+    <div class="ro-app" id="ro-app">
+      <header class="ro-top">
+        <h1>Route Optimizer</h1>
+        <p class="ro-tagline">Put a list of stops in the fastest driving order, then print a map and a check-off list.</p>
+        <a class="ro-back" href="./">← Parcel Search</a>
+      </header>
+
+      <div class="ro-layout">
+        <!-- Settings. Saved in this browser (localStorage), including the
+             Google key when "Remember" is ticked. -->
+        <aside class="ro-side" aria-label="Settings">
+          <h2>Settings</h2>
+          <fieldset class="ro-field">
+            <legend>Map data provider</legend>
+            <label><input type="radio" name="provider" value="osm" checked /> OpenStreetMap (free)</label>
+            <label><input type="radio" name="provider" value="google" /> Google Maps (API key)</label>
+            <p class="ro-help">Google is more accurate for rural and small-town addresses.</p>
+          </fieldset>
+          <div class="ro-field" id="key-block" hidden>
+            <label for="google-key">Google API key</label>
+            <input id="google-key" type="password" autocomplete="off" spellcheck="false" />
+            <label class="ro-check"><input id="remember-key" type="checkbox" checked /> Remember key in this browser</label>
+            <p class="ro-help">Needs the Geocoding API and Routes API enabled. The key stays in this browser and is
+              sent only with your own route requests.</p>
+          </div>
+          <div class="ro-field">
+            <label for="country">Country code</label>
+            <input id="country" type="text" value="ca" maxlength="2" />
+            <p class="ro-help">Limits geocoding to one country. Blank = worldwide.</p>
+          </div>
+          <div class="ro-field">
+            <label for="suffix">Append to addresses</label>
+            <input id="suffix" type="text" value="Manitoba" />
+            <p class="ro-help">Added to any address that doesn't already contain it.</p>
+          </div>
+          <fieldset class="ro-field">
+            <legend>Optimize for</legend>
+            <label><input type="radio" name="objective" value="time" checked /> Driving time</label>
+            <label><input type="radio" name="objective" value="distance" /> Distance</label>
+          </fieldset>
+        </aside>
+
+        <main class="ro-main">
+          <section class="ro-inputs" aria-label="Route">
+            <div class="ro-row">
+              <div class="ro-field ro-grow">
+                <label for="start">Start (optional)</label>
+                <input id="start" type="text" placeholder="Blank = start at the first stop in the list" />
+              </div>
+              <fieldset class="ro-field">
+                <legend>Finish</legend>
+                <label><input type="radio" name="finish" value="open" checked /> Wherever the last stop is</label>
+                <label><input type="radio" name="finish" value="round" /> Return to start</label>
+                <label><input type="radio" name="finish" value="fixed" /> Specific location</label>
+              </fieldset>
+            </div>
+            <div class="ro-field" id="end-block" hidden>
+              <label for="end">Finish location</label>
+              <input id="end" type="text" placeholder="Address or lat, lon" />
+            </div>
+            <div class="ro-field">
+              <label for="stops">Stops — paste rows from Excel including the header row (Address, City, Province/State,
+                Notes…), or type one address or <code>lat, lon</code> per line</label>
+              <textarea id="stops" rows="10" spellcheck="false"
+                placeholder="Address&#9;City&#9;State&#9;Notes&#10;215 Cree Rd&#9;Thompson&#9;MB&#9;Apartments&#10;…&#10;&#10;or&#10;&#10;123 Main St, Steinbach&#10;Smith farm | 49.5412, -96.6840"></textarea>
+            </div>
+            <div class="ro-row ro-actions">
+              <label class="ro-file">…or add a CSV file <input id="file" type="file" accept=".csv,text/csv" /></label>
+              <button type="button" id="optimize" class="ro-primary">Optimize route</button>
+            </div>
+            <p id="status" class="ro-status" role="status" aria-live="polite"></p>
+          </section>
+
+          <section id="results" class="ro-results" hidden aria-label="Results">
+            <div id="alerts"></div>
+            <div class="ro-metrics" id="metrics"></div>
+            <div class="ro-mapwrap">
+              <div id="map" class="ro-map"></div>
+              <div class="ro-tools">
+                <h3>Printable route sheet</h3>
+                <label for="sheet-title">Sheet title</label>
+                <input id="sheet-title" type="text" />
+                <button type="button" id="print" class="ro-primary">Print route sheet</button>
+                <p class="ro-help">Page 1: map. Then a checklist with a box, address, notes and a Time column.
+                  Choose “Save as PDF” in the print dialog for a file.</p>
+                <h3>Open in Google Maps</h3>
+                <p class="ro-help">Split into legs of up to 9 waypoints, the limit on phones.</p>
+                <div id="links" class="ro-links"></div>
+                <button type="button" id="csv">Download route CSV</button>
+              </div>
+            </div>
+            <div class="ro-tablewrap"><table id="table" class="ro-table"></table></div>
+            <p id="source-note" class="ro-help"></p>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <!-- The printable sheet. Built on demand, hidden on screen, the only
+         thing shown when printing (see @media print in route.css). -->
+    <section id="sheet" class="ro-sheet" aria-hidden="true"></section>
+
+    <script type="module" src="/src/route/main.js"></script>
+  </body>
+</html>
