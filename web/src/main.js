@@ -25,12 +25,11 @@ import { buildN1Cell } from './lib/n1Cell.js';
 import { solveRoute, haversineMatrix, mostOutlyingIndex } from './lib/routeSolver.js';
 import {
   hasToken as hasMapboxToken,
-  fetchDrivingMatrix,
+  fetchDrivingMatrixTiled,
   fetchDrivingMatrixClustered,
   fetchDrivingRoute,
   staticRouteImageUrl,
-  MATRIX_MAX_COORDS,
-  MatrixTooManyCoordsError,
+  MATRIX_TILED_MAX_COORDS,
 } from './mapbox.js';
 
 // Phase 5 column visibility.
@@ -7637,7 +7636,7 @@ async function handleSetStart() {
  * round-trip toggle still works for a recalculate.
  *
  * Everything downstream is the existing route planner: Matrix costs
- * (clustered when > 24 stops), TSP solver, Directions polyline,
+ * (tiled to 50 stops, clustered past that), TSP solver, Directions polyline,
  * on-screen itinerary and print.
  */
 async function startStarredRoute() {
@@ -7711,50 +7710,61 @@ async function handleCalculateRoute() {
     const points = [routeStart, ...parcels];
 
     // Build the cost matrix. Mapbox Matrix v1 driving caps at 25
-    // total coords per call. Two paths:
-    //   ≤ 24 stops: one Matrix call covers the whole matrix.
-    //   > 24 stops: cluster-aware path — group stops by muni, fetch
-    //     real driving costs for within-cluster pairs (where road
-    //     grid matters), use haversine for cross-cluster pairs
-    //     (highway-distance ≈ great-circle distance once the
-    //     clusters are tens of km apart). Real road costs end up
-    //     covering nearly all of the optimisation work.
+    // coordinates per call. Three paths:
+    //   ≤ MATRIX_TILED_MAX_COORDS points (50 stops + start): the full
+    //     N×N matrix, tiled over sources/destinations subsets so every
+    //     pair is a real road time (16 requests / 2,601 elements at 51).
+    //   more than that: cluster-aware path — real driving costs within
+    //     each muni, haversine between munis — so one huge list can't
+    //     eat the free-tier element budget.
+    //   any Matrix failure (after retries): haversine for the whole
+    //     ordering; Directions still supplies the real km / time.
     let duration = null;
     let distance = null;
     let matrixMode = 'real';   // 'real' | 'clustered' | 'haversine'
     let clusterStats = null;
-    try {
-      const matrix = await fetchDrivingMatrix(points);
-      duration = matrix.duration;
-      distance = matrix.distance;
-    } catch (err) {
-      if (err instanceof MatrixTooManyCoordsError) {
-        // Cluster by muni — parcels carry their muniNo; the start
-        // joins the cluster of its nearest parcel by haversine.
-        const clusterIds = buildClusterIds(routeStart, parcels);
-        try {
-          const matrix = await fetchDrivingMatrixClustered({
-            points,
-            clusterIds,
-          });
-          duration = matrix.duration;
-          distance = matrix.distance;
-          matrixMode = 'clustered';
-          clusterStats = {
-            clusters: new Set(clusterIds).size,
-            realCalls: matrix.realCalls,
-            crossClusterPairs: matrix.crossClusterCount,
-            anyCallFailed: matrix.anyCallFailed,
-          };
-        } catch (clusterErr) {
-          console.warn('Cluster matrix failed, falling back to haversine:', clusterErr);
-          const hav = haversineMatrix(points);
-          distance = hav.map((row) => row.map((v) => v * 1000));
-          duration = distance;
-          matrixMode = 'haversine';
-        }
-      } else {
-        throw err;
+    let matrixStats = null;
+    const useHaversine = (why) => {
+      console.warn('Matrix failed, falling back to haversine:', why);
+      const hav = haversineMatrix(points);
+      distance = hav.map((row) => row.map((v) => v * 1000));
+      duration = distance;
+      matrixMode = 'haversine';
+    };
+    if (points.length <= MATRIX_TILED_MAX_COORDS) {
+      try {
+        const matrix = await fetchDrivingMatrixTiled(points);
+        duration = matrix.duration;
+        distance = matrix.distance;
+        matrixStats = matrix.stats;
+        console.info(`Route matrix: ${points.length} points, ` + (matrix.stats.cached
+          ? 'reused cached matrix (0 elements)'
+          : `${matrix.stats.requests} Matrix request(s), ${matrix.stats.elements} elements` +
+            (matrix.stats.retries ? `, ${matrix.stats.retries} retried` : '')));
+      } catch (err) {
+        if (/auth failed/.test(err?.cause?.message || err?.message || '')) throw err;
+        useHaversine(err);
+      }
+    } else {
+      // Cluster by muni — parcels carry their muniNo; the start
+      // joins the cluster of its nearest parcel by haversine.
+      const clusterIds = buildClusterIds(routeStart, parcels);
+      try {
+        const matrix = await fetchDrivingMatrixClustered({
+          points,
+          clusterIds,
+        });
+        duration = matrix.duration;
+        distance = matrix.distance;
+        matrixMode = 'clustered';
+        clusterStats = {
+          clusters: new Set(clusterIds).size,
+          realCalls: matrix.realCalls,
+          crossClusterPairs: matrix.crossClusterCount,
+          anyCallFailed: matrix.anyCallFailed,
+        };
+      } catch (clusterErr) {
+        useHaversine(clusterErr);
       }
     }
     const usedHaversine = matrixMode === 'haversine';
@@ -7812,6 +7822,7 @@ async function handleCalculateRoute() {
       usedHaversine,
       usedClusterMatrix,
       clusterStats,
+      matrixStats,
     };
 
     // Paint stops on the map, in visit order (excluding the start).
