@@ -230,6 +230,10 @@ const opts = {
   // maps themselves — one or more, each with its own property-type filter
   // and an optional title, so a crowded set can be split over several.
   compMap: { label: 'rate', scope: 'comps', color: 'type', maps: [{ type: 'all', title: '' }] },
+  // The comp table's comments, by sale tag key (rolls + sale date), and its
+  // title (blank = the first map's). Kept in opts so a job file carries them.
+  compComments: {},
+  compTableTitle: '',
   // The company name that signs every chart caption and PNG (Jason,
   // 2026-09-23). Persisted with the rest of opts, so it is typed once.
   company: '',
@@ -2402,6 +2406,239 @@ function compMapControls() {
   return bar;
 }
 
+// ---------- comparables table ----------------------------------------
+
+/**
+ * The comp table beside the Comparables map (Jason, 2026-10-20), after the
+ * sales grid in his reports: one row per sale on the first comp map, in comp
+ * order — Sale No., Roll #, Location, Sale Date, Sale Price, Lot Area, Zoning,
+ * Price per unit and a Comments box — then the value indicators (mean, high,
+ * low and median of the rate and of the size). Rates are as sold, in the
+ * page's unit. Comments are saved as they are typed, in opts.compComments.
+ */
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** 22-Jan-26, the date form of his comp tables. */
+function fmtCompDate(ms, text) {
+  if (!Number.isFinite(ms)) return text || '';
+  const d = new Date(ms);
+  return `${d.getDate()}-${MON[d.getMonth()]}-${String(d.getFullYear()).slice(-2)}`;
+}
+/** "SPRINGFIELD (RM)" -> "Springfield", for a roll outside the main municipality. */
+function shortMuni(m) {
+  return String(m || '').replace(/\s*\([^)]*\)\s*$/, '').toLowerCase()
+    .replace(/(^|[\s.-])([a-z])/g, (_, a, b) => a + b.toUpperCase()).trim();
+}
+const compComment = (rec) => (opts.compComments || {})[saleTagKey(rec)] || '';
+
+/** The sales the table lists: the first comp map's, in comp order, then by date. */
+function compTableRecords() {
+  const spec = compMapSpec();
+  const ticked = activeRecords().filter(located);
+  let recs = spec.scope === 'comps' ? ticked.filter((r) => compName(r)) : ticked;
+  const t = spec.maps[0]?.type || 'all';
+  if (t !== 'all') recs = recs.filter((r) => saleFamily(r) === t);
+  return recs.slice().sort((a, b) => labelRank(saleTagKey(a)) - labelRank(saleTagKey(b)) || (a.dateMs ?? 0) - (b.dateMs ?? 0));
+}
+
+/** {title, columns, rows, stats, recs} — the screen table, the copy and the work file read it. */
+function compTableModel() {
+  const u = unitSpec();
+  const areaLabel = { acres: 'Acres', sf: 'Sq Ft', ff: 'Front Ft' }[opts.unit] || 'Acres';
+  const rateLabel = `Price per ${u.perUnit}`;
+  const sizeOf = (r) => { const v = Number(r[u.size]); return v > 0 ? v : null; };
+  const rateOf = (r) => { const v = Number(r[u.metric]); return v > 0 ? v : null; };
+  const fmtSize = (v) => (v == null ? '' : opts.unit === 'acres' ? v.toFixed(2) : fmtNum(Math.round(v)));
+  const recs = compTableRecords();
+  // A roll outside the subject's municipality (or, with no subject, the
+  // most common one) is named with its municipality, as "Springfield - 44060".
+  const counts = new Map();
+  for (const r of recs) counts.set(r.muni, (counts.get(r.muni) || 0) + 1);
+  const home = data.meta?.subject?.muni || [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+  const rows = recs.map((r) => {
+    const n = compName(r);
+    const rolls = (r.rolls || []).join(', ');
+    return [
+      n.replace(/^Sale #/, ''),
+      r.muni && home && r.muni !== home ? `${shortMuni(r.muni)} - ${rolls}` : rolls,
+      r.address || r.legal || '',
+      fmtCompDate(r.dateMs, r.dateText),
+      Number(r.price) > 0 ? fmtMoney0(Number(r.price)) : '',
+      fmtSize(sizeOf(r)),
+      r.zone || '',
+      rateOf(r) != null ? u.money(rateOf(r)) : '',
+      compComment(r),
+    ];
+  });
+  const stat = (vals, fmt) => {
+    const v = vals.filter((x) => x != null);
+    if (!v.length) return null;
+    return {
+      Mean: fmt(v.reduce((s, x) => s + x, 0) / v.length), High: fmt(Math.max(...v)), Low: fmt(Math.min(...v)), Median: fmt(median(v)),
+    };
+  };
+  return {
+    title: opts.compTableTitle || pageMaps.get('comp')?.title() || 'Comparable Sales',
+    columns: [
+      { label: 'Sale No.' }, { label: 'Roll #' }, { label: 'Location' }, { label: 'Sale Date' },
+      { label: 'Sale Price', num: true }, { label: `Lot Area (${areaLabel})`, num: true }, { label: 'Zoning' },
+      { label: rateLabel, num: true }, { label: 'Comments' },
+    ],
+    rows,
+    recs,
+    rateLabel,
+    areaLabel,
+    rateStats: stat(recs.map(rateOf), u.money),
+    sizeStats: stat(recs.map(sizeOf), fmtSize),
+  };
+}
+
+/** The table and its value indicators as rows of cells, for the copy and the CSV. */
+function compTableGrid(m) {
+  const out = [m.columns.map((c) => c.label), ...m.rows];
+  if (m.rateStats) {
+    out.push([], ['', '', '', '', '', '', `Value indicators – ${m.rateLabel} (unadjusted)`]);
+    for (const [k, v] of Object.entries(m.rateStats)) out.push(['', '', '', '', '', '', k, v]);
+  }
+  if (m.sizeStats) {
+    out.push([], ['', '', '', '', '', '', `Size (${m.areaLabel})`]);
+    for (const [k, v] of Object.entries(m.sizeStats)) out.push(['', '', '', '', '', '', k, v]);
+  }
+  return out;
+}
+
+/** The table card shown beside the first comp map. */
+function compTableCard() {
+  const m = compTableModel();
+  const fig = document.createElement('figure');
+  fig.className = 'chart-card comp-table-card';
+  const cap = document.createElement('figcaption');
+  const title = document.createElement('input');
+  title.type = 'text';
+  title.className = 'comp-table-title';
+  title.value = opts.compTableTitle || '';
+  title.placeholder = m.title;
+  title.setAttribute('aria-label', 'Table title');
+  title.title = 'Table title — blank uses the map\'s title';
+  title.addEventListener('change', () => setOpt({ compTableTitle: title.value.trim() }));
+  title.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') title.blur(); });
+  cap.appendChild(title);
+  fig.appendChild(cap);
+
+  const btns = document.createElement('div');
+  btns.className = 'comp-table-btns';
+  const status = document.createElement('span');
+  status.className = 'comp-table-status';
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.textContent = 'Copy for Excel';
+  copy.title = 'Copy the table and its value indicators; paste into Excel or Word';
+  copy.addEventListener('click', async () => {
+    const mm = compTableModel();
+    const tsv = compTableGrid(mm).map((r) => r.map((c) => String(c ?? '').replace(/[\t\r\n]+/g, ' ')).join('\t')).join('\r\n');
+    try {
+      await navigator.clipboard.writeText(`${mm.title}\r\n${tsv}\r\n`);
+      status.textContent = 'Copied';
+    } catch {
+      status.textContent = 'Copy blocked by the browser — use CSV';
+    }
+    setTimeout(() => { status.textContent = ''; }, 2500);
+  });
+  const csv = document.createElement('button');
+  csv.type = 'button';
+  csv.textContent = 'CSV';
+  csv.title = 'Download the table as a CSV file';
+  csv.addEventListener('click', () => {
+    const mm = compTableModel();
+    const g = compTableGrid(mm);
+    const blob = new Blob([toCsv(g[0], g.slice(1))], { type: 'text/csv;charset=utf-8' });
+    downloadBlob(blob, `${pngName(mm.title)}.csv`);
+  });
+  btns.append(status, copy, csv);
+  fig.appendChild(btns);
+
+  if (!m.rows.length) {
+    const none = document.createElement('p');
+    none.className = 'chart-empty';
+    none.textContent = 'No comps to list: tag sales as comps to fill this table.';
+    fig.appendChild(none);
+    return fig;
+  }
+  const wrap = document.createElement('div');
+  wrap.className = 'table-scroll';
+  const table = document.createElement('table');
+  table.className = 'card-table comp-table';
+  const trh = document.createElement('tr');
+  for (const c of m.columns) {
+    const th = document.createElement('th');
+    th.textContent = c.label;
+    if (c.num) th.className = 'num';
+    trh.appendChild(th);
+  }
+  table.createTHead().appendChild(trh);
+  const tb = table.createTBody();
+  m.rows.forEach((row, i) => {
+    const tr = document.createElement('tr');
+    row.forEach((cell, j) => {
+      const td = document.createElement('td');
+      if (j === row.length - 1) {
+        // Saved on every keystroke without a redraw, so typing is never
+        // interrupted; the next redraw shows the same text.
+        const key = saleTagKey(m.recs[i]);
+        const box = document.createElement('input');
+        box.type = 'text';
+        box.className = 'comp-comment';
+        box.value = cell;
+        box.placeholder = 'Comment';
+        box.disabled = !key;
+        box.setAttribute('aria-label', `Comment for sale ${row[0] || i + 1}`);
+        box.addEventListener('input', () => {
+          const all = { ...(opts.compComments || {}) };
+          const t = box.value.slice(0, 300);
+          if (t.trim()) all[key] = t; else delete all[key];
+          opts.compComments = all;
+          writeOpts();
+        });
+        box.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') box.blur(); });
+        td.appendChild(box);
+      } else {
+        td.textContent = cell;
+        if (m.columns[j]?.num) td.className = 'num';
+      }
+      tr.appendChild(td);
+    });
+    tb.appendChild(tr);
+  });
+  wrap.appendChild(table);
+  fig.appendChild(wrap);
+
+  const ind = document.createElement('div');
+  ind.className = 'comp-indicators';
+  for (const [head, stats] of [[`Value indicators – ${m.rateLabel} (unadjusted)`, m.rateStats], [`Size (${m.areaLabel})`, m.sizeStats]]) {
+    if (!stats) continue;
+    const dl = document.createElement('dl');
+    const h = document.createElement('strong');
+    h.textContent = head;
+    dl.appendChild(h);
+    for (const [k, v] of Object.entries(stats)) {
+      const dt = document.createElement('dt');
+      dt.textContent = k;
+      const dd = document.createElement('dd');
+      dd.textContent = v;
+      dl.append(dt, dd);
+    }
+    ind.appendChild(dl);
+  }
+  fig.appendChild(ind);
+  return fig;
+}
+
+/** The comp table as a work-file item: a CSV and an HTML table in summary.html. */
+function compTableSpec() {
+  const m = compTableModel();
+  const g = compTableGrid(m);
+  return { kind: 'table', title: m.title, subtitle: '', note: '', columns: m.columns.map((c) => ({ label: c.label, num: !!c.num })), rows: g.slice(1) };
+}
+
 /**
  * Each page's map tabs, the top row of the Shiny layout (Jason, 2026-10-06):
  * a label, the map keys it shows side by side, and the painter that fills
@@ -2411,7 +2648,7 @@ const PAGE_MAPS = {
   rates: [
     // The report map (2026-10-20). `keys` is a getter: the number of comp
     // maps is the user's to change.
-    { label: 'Comparables', get keys() { return compMapKeys(); }, paint: () => paintCompMaps(), controls: () => compMapControls() },
+    { label: 'Comparables', get keys() { return compMapKeys(); }, paint: () => paintCompMaps(), controls: () => compMapControls(), table: () => compTableCard(), tableSpec: () => compTableSpec() },
     { label: 'Price & Lot Size', keys: ['price', 'size'], paint: () => paintRateMaps(['price', 'size']) },
     { label: 'Year & Zoning', keys: ['year', 'zoning'], paint: () => paintRateMaps(['year', 'zoning']) },
     { label: 'Water Influence', keys: ['waterinf'], paint: () => paintRateMaps(['waterinf']) },
@@ -2625,7 +2862,11 @@ function renderPage() {
       sec.className = 'page-row page-maps';
       sec.append(rowTabStrip(page, 'map', mapTabs.map((t) => t.label), act.label, 'Maps'));
       if (act.controls) sec.appendChild(act.controls());
-      sec.appendChild(mapRow(page, act.paint()));
+      const row = mapRow(page, act.paint());
+      // The comp table sits beside the first map (2026-10-20), so a single
+      // map no longer leaves the right half of the row empty.
+      if (act.table) row.insertBefore(act.table(), row.children[1] || null);
+      sec.appendChild(row);
       out.push(sec);
     }
     const groups = groupCharts(page, PAGE_BUILDERS[page]());
@@ -3245,6 +3486,10 @@ function workItems() {
           mt.keys.forEach((k, i) => items.push({
             key: `${tab}:map:${k}`, tab, tabLabel, title: apis[i].title(), kind: 'map', map: k, empty: !mapCounts.get(k),
           }));
+          if (mt.tableSpec) {
+            const spec = mt.tableSpec();
+            items.push({ key: `${tab}:comp-table`, tab, tabLabel, title: spec.title, kind: 'table', spec, empty: !compTableRecords().length });
+          }
         }
         for (const g of groupCharts(tab, PAGE_BUILDERS[tab]())) {
           for (const fig of g.figs) {

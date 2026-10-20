@@ -1153,6 +1153,15 @@ never crossing, labels held in place across small pans, and the zoom buttons
 and attribution kept clear. Up to four maps (`opts.compMap.maps`), each with a
 property-type filter, optional title, own view and Fit button, for a set too
 crowded for one map; all are in the work file.
+Beside the first comp map sits the **comp table** (2026-10-20, after his
+report's sales grid): Sale No., Roll # (prefixed with the municipality when it
+is not the subject's, "Springfield - 44060"), Location (address, else the
+legal), Sale Date (22-Jan-26), Sale Price, Lot Area and Price per unit in the
+page's unit, Zoning and a Comments box, then the unadjusted value indicators
+(mean / high / low / median of the rate and the size). It lists the first
+map's sales in comp order. Comments (`opts.compComments`, keyed by sale tag
+key) and the editable title (`opts.compTableTitle`) ride in opts, so job files
+carry them. Copy for Excel (tab-separated), CSV, and a table in the work file.
 
 Map notes:
 - Sales are points at the mean of their parcels' centres, and from zoom 10 in
