@@ -48,7 +48,7 @@ function allowedByCsp(host) {
 // the ~150 municipal website links in main.js, which are navigation
 // targets rather than fetch destinations and have no business in
 // connect-src.
-const SERVICE_MODULES = ['../src/arcgis.js', '../src/wallas.js'];
+const SERVICE_MODULES = ['../src/arcgis.js', '../src/wallas.js', '../src/route/providers.js'];
 const URL_CONST = /\b(?:const|let|var)\s+\w*(?:URL|BASE|CDN)\w*\s*=\s*[`'"](https:\/\/([^/`'"]+))/g;
 
 const found = new Map();   // host -> the module that declares it

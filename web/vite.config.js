@@ -47,12 +47,37 @@ function localChangesPlugin() {
   };
 }
 
+// Dev only: Vite doesn't run Vercel functions, so serve the Route
+// Optimizer's Google pass-through (api/route-google.js) from the same
+// handler the edge function uses. Production goes straight to Vercel.
+function routeGoogleDevPlugin() {
+  return {
+    name: 'route-google-dev',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use('/api/route-google', async (req, res) => {
+        const chunks = [];
+        for await (const c of req) chunks.push(c);
+        const { default: handler } = await import('../api/route-google.js');
+        const r = await handler(new Request('http://localhost/api/route-google', {
+          method: req.method,
+          headers: { 'Content-Type': 'application/json' },
+          body: req.method === 'POST' ? Buffer.concat(chunks) : undefined,
+        }));
+        res.statusCode = r.status;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(await r.text());
+      });
+    },
+  };
+}
+
 export default defineConfig({
   // Plain static site. The only framework plugin is Tailwind v4's
   // Vite integration, which scans source files for utility classes
   // and emits the generated stylesheet for the `tailwind.css` entry.
   // localChangesPlugin is a no-op unless LOCAL_CHANGES_DIR is set (dev only).
-  plugins: [tailwindcss(), localChangesPlugin()],
+  plugins: [tailwindcss(), localChangesPlugin(), routeGoogleDevPlugin()],
   cacheDir: process.env.VITE_CACHE_DIR || 'node_modules/.vite',
   // Escape hatch: VITE_SKIP_PUBLIC=1 disables the public/ → dist/ asset copy.
   // Useful for a code-only compile check on Windows/Dropbox, where copying the
@@ -74,7 +99,7 @@ export default defineConfig({
     // is comfortably under 500 kB.
     chunkSizeWarningLimit: 900,
     rollupOptions: {
-      // Three pages, not one. charts.html is the Sales Charts tab, and it
+      // Four pages, not one. charts.html is the Sales Charts tab, and it
       // has to be a real same-origin entry rather than a document written
       // into a popup: the production CSP is `script-src 'self'` (so no
       // inline script and no blob: document), and the BroadcastChannel
@@ -89,6 +114,8 @@ export default defineConfig({
         main: fileURLToPath(new URL('./index.html', import.meta.url)),
         charts: fileURLToPath(new URL('./charts.html', import.meta.url)),
         dataSources: fileURLToPath(new URL('./data-sources.html', import.meta.url)),
+        // route.html is the Route Optimizer (src/route/), linked from the topbar.
+        route: fileURLToPath(new URL('./route.html', import.meta.url)),
       },
       output: {
         // Split heavy third-party deps into named vendor chunks so a
