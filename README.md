@@ -272,6 +272,17 @@ The MASC Rating layer only paints ratings that exist in the generated quarter-se
 
 A **Generate Static Map** button between the table and the About section captures the current MapLibre view (extent, zoom, basemap, every active overlay) as a PNG. The captured image has the basemap attribution composited into the bottom-right corner so it travels with the file when right-click → Save Image As is used to drop it into a Word/PDF report.
 
+## Route Optimizer page
+
+`route.html` (topbar link **🧭 Route Optimizer**) puts any list of stops in the fastest driving order. It's a browser port of the local Streamlit app in `D:\Dropbox\ClaudeCode\route-optimizer`, separate from the sidebar's Mapbox Route Planner. Code: `web/src/route/`; tests: `web/test/routeOptimizer.test.js`.
+
+- **Input:** rows pasted from Excel (header row recommended, not required: Address, City, Province/State, Notes, Name, Lat, Lon), typed addresses or `lat, lon` lines, or a CSV. A blank Start uses the first stop. Finish: one-way (default), round trip, or a fixed location.
+- **Providers:** OpenStreetMap (Nominatim + the public OSRM server, called from the browser; free, about 1 address/second) or Google (Geocoding + Routes APIs, with the **user's own key**, typed into the page and kept in localStorage when "Remember" is ticked). Google's web services don't allow browser (CORS) calls, so they go through `api/route-google.js`, an Edge Function that forwards exactly three operations and holds no key of its own. In dev, `vite.config.js` serves the same handler.
+- **Checks:** address ranges (`215 & 223 Cree Rd`) are geocoded by their first number. A match on a different street type (asked for Crescent, got Road) counts as not found. A match on the street but not the house number is flagged approximate (`*`).
+- **Solver:** `web/src/route/optimize.js`. Exact (Held-Karp) up to 12 stops; above that 2-opt + Or-opt with double-bridge restarts, for up to 3 s. Handles asymmetric drive times.
+- **Output:** the route on the site basemap, a table, Google Maps links in legs of 9 waypoints, a CSV, and a printable sheet. The sheet is a full-page map rendered off-screen at print size and fitted to the stops, then a check-off list (box, #, address, notes, blank Time column; 25 stops per Letter page). It's printed from the page itself under `@media print`, since the CSP allows no popup documents.
+- **CSP:** `nominatim.openstreetmap.org` and `router.project-osrm.org` are in `connect-src` (guarded by `test/csp.test.js`).
+
 ## Architecture summary
 
 Pure static. Vercel serves the Vite-built bundle plus the generated legal-search JSON. The browser makes its own ArcGIS REST queries directly to `services.arcgis.com` (CORS open). The contaminated-sites CSV at `manitoba.ca` is proxied through `vercel.json` `rewrites` (and a matching Vite dev-server proxy in `vite.config.js`) because the upstream doesn't send `Access-Control-Allow-Origin`.
