@@ -525,6 +525,25 @@ export function staticRouteImageUrl({ start, stops, polyline, width = 900, heigh
   return `${MAPBOX_ROOT}/styles/v1/mapbox/streets-v12/static/${overlayPath}/auto/${width}x${height}${sizeSuffix}?access_token=${TOKEN}`;
 }
 
+/**
+ * Static Images URL for a bare basemap at an exact centre and fractional
+ * zoom — the print checklist draws its own pins and route line on top
+ * (lib/routeChecklist.js), so the URL carries no overlays.
+ *
+ * @param {Object} o
+ * @param {{lng:number,lat:number}} o.center
+ * @param {number} o.zoom    - 0–22, two decimals.
+ * @param {number} o.width   - 1x px, ≤ 1280.
+ * @param {number} o.height  - 1x px, ≤ 1280.
+ * @param {boolean} [o.retina=true]
+ */
+export function staticBasemapUrl({ center, zoom, width, height, retina = true }) {
+  requireToken();
+  const pos = `${center.lng.toFixed(6)},${center.lat.toFixed(6)},${zoom.toFixed(2)},0`;
+  return `${MAPBOX_ROOT}/styles/v1/mapbox/streets-v12/static/${pos}/${width}x${height}${retina ? '@2x' : ''}` +
+         `?access_token=${TOKEN}`;
+}
+
 // -----------------------------------------------------------------
 // internals
 // -----------------------------------------------------------------
