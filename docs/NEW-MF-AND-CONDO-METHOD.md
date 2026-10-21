@@ -100,6 +100,23 @@ OTHER PROPERTY at $163,900 through 2016, then $16.9M as RESIDENTIAL 2 in
 | `expanded` | `(b / b_prev) / factor ≥ 1.5`, the gain ≥ $100,000, and `b ≥ MIN_BUILDING` |
 | `new_roll` | the roll's first year in the archive is after the archive starts (2008) and it is already improved |
 
+Two filters then take out what is not a new building (added 2026-10-21,
+after Thompson showed 15 "new" rolls of which about 7 were old blocks):
+
+- **Rebound.** An `expanded` event must also reach 1.5× the roll's own
+  earlier **peak** building value. A block written down for a cycle and
+  then restored (6 Carleton Ave: $910k → $341k → $697k) clears the ratio
+  against the year before but not against its own history.
+- **Already standing.** Where the roll, or the same civic address, sold at
+  least two tax years before the event with fewer than `MIN_DU` units
+  short of today's count, the event is dropped — a unit or two added to a
+  standing block is not a new building. This also catches a building that
+  changed roll number (364 - 424 Princeton Dr: 273 units at its 2007 sale,
+  reassembled onto roll 233900.101 in 2018). Exempt: a building landing on
+  a roll that held nothing the year before — the old one was demolished,
+  so the new one is new. Kept events carry the pre-event count (`u0`, sale
+  year `uy`), shown as "19 DU at the 2005 sale → 114 DU now".
+
 **Every** qualifying event on a roll is emitted, not just one — a roll
 with a 2017 build and a 2024 phase two has two real buildings, and
 collapsing to one year discards one. The **primary** event (largest

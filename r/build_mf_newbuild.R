@@ -318,7 +318,10 @@ cat(sprintf("[mf-newbuild] DU >= %d: %s rolls; %s dropped as farm/colony; %s kep
 # Fallback chain: muni x class -> province x class -> province blended -> 1.
 step <- ry |>
   group_by(muni_no, roll_no_txt) |>
-  mutate(prev_b = lag(b), prev_y = lag(tax_year), prev_dc = lag(dc)) |>
+  mutate(prev_b = lag(b), prev_y = lag(tax_year), prev_dc = lag(dc),
+         # Highest building value the roll ever carried BEFORE this year —
+         # what the rebound test in section 6 measures an expansion against.
+         peak_before = lag(cummax(b))) |>
   ungroup() |>
   filter(!is.na(prev_b), tax_year - prev_y == 1L)
 
@@ -350,7 +353,7 @@ print(as.data.frame(
                        values_from = f_cls)), row.names = FALSE)
 
 # --- 6. events ---------------------------------------------------------------
-ev_step <- step |>
+ev_flags <- step |>
   semi_join(mf, by = c("muni_no", "roll_no_txt")) |>
   left_join(reval, by = c("muni_no", "tax_year", "dc")) |>
   mutate(
@@ -361,8 +364,19 @@ ev_step <- step |>
     appeared = (empty_before | prev_b <= APPEAR_PRIOR_FRAC * b) & b >= MIN_BUILDING,
     excess   = ifelse(prev_b > 0, (b / prev_b) / factor, NA_real_),
     expanded = !appeared & !is.na(excess) & excess >= EXCESS_RATIO &
-               (b - prev_b) >= MIN_INCREASE & b >= MIN_BUILDING
-  ) |>
+               (b - prev_b) >= MIN_INCREASE & b >= MIN_BUILDING,
+    # A REBOUND is not an expansion. Thompson is full of blocks whose value was
+    # written down for a cycle and then restored — 6 Carleton Ave went
+    # $910k -> $341k -> $697k, 274 Princeton Dr $4.66M -> $2.40M -> $3.73M —
+    # and against the year before, every restoration clears EXCESS_RATIO. Against
+    # the roll's own earlier peak none of them do. A real later phase does
+    # (Selkirk's 1027 Manitoba Ave, $17.0M -> $37.4M). Expansions only: an
+    # `appeared` event starts from nothing by definition.
+    rebound  = expanded & !is.na(peak_before) & b < EXCESS_RATIO * peak_before,
+    expanded = expanded & !rebound
+  )
+n_rebound <- sum(ev_flags$rebound & ev_flags$tax_year >= FROM_YEAR, na.rm = TRUE)
+ev_step <- ev_flags |>
   filter(appeared | expanded) |>
   transmute(muni_no, roll_no_txt, y = tax_year,
             k = ifelse(appeared, "appeared", "expanded"),
@@ -396,6 +410,106 @@ ev_new <- ry |>
 events <- bind_rows(ev_step, ev_new) |>
   filter(y >= FROM_YEAR) |>
   arrange(muni_no, roll_no_txt, y)
+cat(sprintf("\n[mf-newbuild] %s expansions dropped as rebounds to an earlier peak\n",
+            format(n_rebound, big.mark = ",")))
+
+# --- 7. at-a-date DU from the sales PDF archive ------------------------------
+# Real historical unit counts, for the rolls that sold. The archive's `roll` is
+# Excel-escaped (="500") and its muni_no is the HISTORIC one; current_muni_no
+# is the amalgamated code that matches the scrape. Roll numbers repeat across
+# municipalities, so the join must carry the muni.
+#
+# Each observation keeps the civic address at sale as well as the roll, because
+# a building can change roll number without changing anything else: 364 - 424
+# Princeton Dr in Thompson sold in 2007 as roll 233900 with 273 units, was
+# split into condo unit rolls, and came back together as 233900.101 in 2018 —
+# where, matched on roll alone, it "appeared" as a new 273-unit building.
+sale_obs <- NULL
+sdu <- NULL
+norm_civic <- function(x) {
+  x <- toupper(trimws(gsub('^="|"$', "", coalesce(x, ""))))
+  gsub("\\s+", " ", x)
+}
+if (file.exists(sales_path)) {
+  sa <- readr::read_csv(sales_path, show_col_types = FALSE, progress = FALSE,
+                        col_types = readr::cols(.default = readr::col_character()))
+  if (all(c("roll", "current_muni_no", "dwelling_units", "sale_date") %in% names(sa))) {
+    sale_obs <- sa |>
+      transmute(
+        muni_no  = suppressWarnings(as.integer(current_muni_no)),
+        roll_num = suppressWarnings(as.numeric(gsub("[^0-9.]", "", roll))),
+        civic    = if ("civic_at_sale" %in% names(sa)) norm_civic(civic_at_sale) else "",
+        du       = suppressWarnings(as.integer(dwelling_units)),
+        y        = suppressWarnings(as.integer(stringi::stri_extract_last_regex(sale_date, "[0-9]{4}")))) |>
+      filter(!is.na(muni_no), !is.na(roll_num), !is.na(du), du > 0, !is.na(y)) |>
+      mutate(roll_no_txt = sprintf("%.3f", roll_num)) |>
+      distinct(muni_no, roll_no_txt, civic, y, du)
+    sdu <- sale_obs |>
+      distinct(muni_no, roll_no_txt, y, du) |>
+      semi_join(mf, by = c("muni_no", "roll_no_txt"))
+    cat(sprintf("\n[mf-newbuild] at-sale DU observations for MF rolls: %s on %s rolls\n",
+                format(nrow(sdu), big.mark = ","),
+                format(n_distinct(paste(sdu$muni_no, sdu$roll_no_txt)), big.mark = ",")))
+  }
+} else {
+  cat("\n[mf-newbuild] no sales archive at ", sales_path, " - sdu omitted\n", sep = "")
+}
+
+# --- 7b. was the building already there? -------------------------------------
+# A value jump says something changed; it does not say a building was added.
+# Where the roll (or its civic address) sold BEFORE the event with about as
+# many units as it has today, the building was standing already and the jump
+# was a renovation, a write-down being restored, or a roll being reassembled.
+# In Thompson, 121 and 135 Nickel Rd sold with 18 units in 2005 and carry 19
+# now; 376 - 392 Thompson Dr sold with 60 in 2015 and has 48.
+#
+# One shape is exempt: a building landing on a roll that held NOTHING the year
+# before (`appeared` from <= APPEAR_PRIOR_ABS). The old building was gone, so
+# what landed is a new building even when it replaced one of the same size —
+# most of these are Brandon triplexes rebuilt on a cleared lot. The sale
+# evidence still rides along, so the popup says what was there before.
+#
+# "Before" is two tax years ahead of the event: the event year is the first
+# year ASSESSED, so a sale in the year before it may already be the finished
+# building. "About as many" is fewer than MIN_DU units added — a unit or two
+# added to a standing block is not a new multi-family building. Where units
+# WERE added the event stays, and carries the pre-event count (`u0`, `uy`) so
+# the popup can say "19 units at the 2005 sale, 114 now" rather than leave the
+# reader to trust the value series.
+#
+# Silence is not evidence: a roll that never sold keeps its event.
+if (!is.null(sale_obs) && nrow(events)) {
+  ev_ad <- events |>
+    mutate(.ev = row_number()) |>
+    left_join(mf |> transmute(muni_no, roll_no_txt, du_now = dwelling_units,
+                              civic = norm_civic(civic_address)),
+              by = c("muni_no", "roll_no_txt"))
+  by_roll  <- ev_ad |>
+    inner_join(sale_obs |> select(muni_no, roll_no_txt, sy = y, sdu_ = du),
+               by = c("muni_no", "roll_no_txt"), relationship = "many-to-many")
+  by_civic <- ev_ad |>
+    filter(nzchar(civic)) |>
+    inner_join(sale_obs |> filter(nzchar(civic)) |> select(muni_no, civic, sy = y, sdu_ = du),
+               by = c("muni_no", "civic"), relationship = "many-to-many")
+  prior <- bind_rows(by_roll, by_civic) |>
+    filter(sy <= y - 2L) |>
+    group_by(.ev) |>
+    # The LATEST sale before the event is the state of the roll going into
+    # it; on a tie, the larger count (a multi-roll sale lists the whole block).
+    arrange(desc(sy), desc(sdu_), .by_group = TRUE) |>
+    slice_head(n = 1) |>
+    ungroup() |>
+    select(.ev, uy = sy, u0 = sdu_)
+  ev_ad <- ev_ad |> left_join(prior, by = ".ev")
+  rebuilt  <- ev_ad$k == "appeared" & ev_ad$bp <= APPEAR_PRIOR_ABS
+  standing <- !is.na(ev_ad$u0) & (ev_ad$du_now - ev_ad$u0) < MIN_DU & !rebuilt
+  cat(sprintf("[mf-newbuild] %s events dropped: a sale before the event already showed the units\n",
+              format(sum(standing), big.mark = ",")))
+  events <- ev_ad[!standing, ] |>
+    select(muni_no, roll_no_txt, y, k, b, bp, c, u0, uy)
+} else {
+  events <- events |> mutate(u0 = NA_integer_, uy = NA_integer_)
+}
 
 # The PRIMARY event is the one that created the most building value — that is
 # what the map ranks and colours by. Every other event stays in the shard.
@@ -418,34 +532,6 @@ print(as.data.frame(events |> count(k)), row.names = FALSE)
 cat("\n--- rolls with more than one event (separate phases) ---\n")
 multi <- events |> count(muni_no, roll_no_txt) |> filter(n > 1)
 cat(sprintf("  %d rolls, %d events\n", nrow(multi), sum(multi$n)))
-
-# --- 7. at-a-date DU from the sales PDF archive ------------------------------
-# Real historical unit counts, for the rolls that sold. The archive's `roll` is
-# Excel-escaped (="500") and its muni_no is the HISTORIC one; current_muni_no
-# is the amalgamated code that matches the scrape. Roll numbers repeat across
-# municipalities, so the join must carry the muni.
-sdu <- NULL
-if (file.exists(sales_path)) {
-  sa <- readr::read_csv(sales_path, show_col_types = FALSE, progress = FALSE,
-                        col_types = readr::cols(.default = readr::col_character()))
-  if (all(c("roll", "current_muni_no", "dwelling_units", "sale_date") %in% names(sa))) {
-    sdu <- sa |>
-      transmute(
-        muni_no  = suppressWarnings(as.integer(current_muni_no)),
-        roll_num = suppressWarnings(as.numeric(gsub("[^0-9.]", "", roll))),
-        du       = suppressWarnings(as.integer(dwelling_units)),
-        y        = suppressWarnings(as.integer(stringi::stri_extract_last_regex(sale_date, "[0-9]{4}")))) |>
-      filter(!is.na(muni_no), !is.na(roll_num), !is.na(du), du > 0, !is.na(y)) |>
-      mutate(roll_no_txt = sprintf("%.3f", roll_num)) |>
-      distinct(muni_no, roll_no_txt, y, du) |>
-      semi_join(mf, by = c("muni_no", "roll_no_txt"))
-    cat(sprintf("\n[mf-newbuild] at-sale DU observations for MF rolls: %s on %s rolls\n",
-                format(nrow(sdu), big.mark = ","),
-                format(n_distinct(paste(sdu$muni_no, sdu$roll_no_txt)), big.mark = ",")))
-  }
-} else {
-  cat("\n[mf-newbuild] no sales archive at ", sales_path, " - sdu omitted\n", sep = "")
-}
 
 # --- 8. assemble ------------------------------------------------------------
 rolls <- primary |>
@@ -593,8 +679,12 @@ for (kk in sort(unique(rolls$muni_key))) {
       cl = r$cl,
       p  = r$p,
       ty = if (!is.na(r$ty)) r$ty else NULL,
-      e  = lapply(seq_len(nrow(e)), function(j) list(
-             y = e$y[j], k = e$k[j], b = round(e$b[j]), bp = round(e$bp[j]), c = e$c[j])))
+      e  = lapply(seq_len(nrow(e)), function(j) {
+             ev <- list(y = e$y[j], k = e$k[j], b = round(e$b[j]), bp = round(e$bp[j]), c = e$c[j])
+             # Units at the last sale before the event, where one exists (7b).
+             if (!is.na(e$u0[j])) { ev$u0 <- e$u0[j]; ev$uy <- e$uy[j] }
+             ev
+           }))
     s <- sdu_key[[id]]
     if (!is.null(s) && nrow(s)) {
       s <- s[order(s$y), ]
@@ -628,6 +718,13 @@ manifest[["_meta"]] <- list(
   du_caveat   = paste("du is the CURRENT dwelling-unit count, not the count at any one",
                       "event; MAO publishes no DU history. sdu, where present, is at-sale",
                       "DU from the sales PDF archive."),
+  rebound_rule  = paste("an expansion must also reach excess_ratio x the roll's own earlier",
+                        "peak building value; a value restored after a write-down is not a new building"),
+  standing_rule = paste("an event is dropped where a sale of the same roll or civic address,",
+                        "at least two tax years before it, already showed within min_du - 1",
+                        "units of today's count (except a building landing on an empty roll),",
+                        "where units were added or a building was replaced, u0/uy carry that",
+                        "pre-event count and its sale year"),
   lag_caveat  = paste("event years are the first tax year the building is ASSESSED, which",
                       "trails physical completion, typically by about a year."),
   confidence  = list(
@@ -647,6 +744,7 @@ readr::write_csv(
     mutate(is_primary = y == p, gain = b - bp) |>
     select(municipality, roll_no_txt, civic_address, dwelling_units, classes = cl,
            event_year = y, kind = k, confidence = c, buildings = b, buildings_prev = bp,
+           units_before = u0, units_before_sale_year = uy,
            gain, is_primary, legal_description) |>
     arrange(desc(event_year), desc(gain)),
   csv_path)

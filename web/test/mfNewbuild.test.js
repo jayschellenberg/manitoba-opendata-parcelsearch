@@ -34,6 +34,8 @@ import {
   mfnbLegendSteps,
   mfnbDu,
   mfnbPasses,
+  mfnbUnitsBefore,
+  mfnbTopLine,
 } from '../src/lib/mfNewbuild.js';
 
 // Selkirk 1027 Manitoba Ave — the two-phase case the builder is written
@@ -244,5 +246,29 @@ assert.deepEqual(raised.map((b) => b.label), ['50-99', '100+']);
 assert.deepEqual(mfnbLegendSteps('year', 50), mfnbLegendSteps('year'),
                  'the Year key is not a unit ramp and must not be filtered');
 assert.deepEqual(mfnbLegendSteps('type', 50), mfnbLegendSteps('type'));
+
+// --- units before the event -------------------------------------------------
+// Thompson's 107 Nickel Rd: 19 units at its 2005 sale, 114 now. The builder
+// keeps an event like this only because units were added, so the count has
+// to say before and after rather than leave the reader to trust the value.
+const nickel = { du: 114, ad: '107 NICKEL RD', p: 2016,
+  e: [{ y: 2016, k: 'expanded', b: 6134100, bp: 2780700, c: 'low', u0: 19, uy: 2005 }] };
+assert.equal(mfnbUnitsBefore(nickel.e[0], nickel.du), '19 DU at the 2005 sale → 114 DU now');
+// A building landing on an emptied lot replaced what the sale recorded.
+assert.equal(mfnbUnitsBefore({ y: 2023, k: 'appeared', b: 1096000, bp: 0, u0: 3, uy: 2014 }, 3),
+             'replaced a 3-unit building (3 DU at the 2014 sale)');
+assert.equal(mfnbUnitsBefore({ y: 2023, k: 'appeared', b: 1096000, bp: 0 }, 3), '',
+             'a roll that never sold says nothing about before');
+assert.ok(mfnbTooltip(nickel).includes('19 DU at the 2005 sale'), 'the grid tooltip carries it');
+assert.ok(mfnbCsvCells(nickel, true)[1].includes('19 DU at the 2005 sale'), 'and so does the CSV');
+
+// --- the hover line names the year -----------------------------------------
+assert.equal(mfnbTopLine(nickel),
+             'on roll 2016 expanded (19 DU at the 2005 sale → 114 DU now) · 114 DU');
+assert.equal(mfnbTopLine({ du: 30, e: [{ y: 2023, k: 'appeared', b: 4003900, bp: 166900, c: 'med' }] }),
+             'on roll 2023 appeared · 30 DU');
+assert.equal(mfnbTopLine(JSON.stringify(nickel)), mfnbTopLine(nickel),
+             'the hover path may hand the stamp back as MapLibre serialised it');
+assert.equal(mfnbTopLine(null), '');
 
 console.log('mfNewbuild tests passed');
