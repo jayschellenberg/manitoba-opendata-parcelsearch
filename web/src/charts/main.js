@@ -2455,7 +2455,8 @@ function compTableRecords() {
 function compTableModel() {
   const u = unitSpec();
   const areaLabel = { acres: 'Acres', sf: 'Sq Ft', ff: 'Front Ft' }[opts.unit] || 'Acres';
-  const rateLabel = `Price per ${u.perUnit}`;
+  // Short headings, as in his report tables (Jason, 2026-10-21).
+  const rateLabel = `Price/${{ acres: 'Acre', sf: 'SF', ff: 'Front Ft' }[opts.unit] || 'Acre'}`;
   const sizeOf = (r) => { const v = Number(r[u.size]); return v > 0 ? v : null; };
   const rateOf = (r) => { const v = Number(r[u.metric]); return v > 0 ? v : null; };
   const fmtSize = (v) => (v == null ? '' : opts.unit === 'acres' ? v.toFixed(2) : fmtNum(Math.round(v)));
@@ -2495,16 +2496,16 @@ function compTableModel() {
   return {
     title: opts.compTableTitle || pageMaps.get('comp')?.title() || 'Comparable Sales',
     columns: [
-      { label: 'Sale No.' }, { label: 'Roll #' }, { label: 'Location' }, { label: 'Sale Date' },
-      { label: 'Sale Price', num: true }, { label: `Lot Area (${areaLabel})`, num: true }, { label: 'Zoning' },
-      { label: rateLabel, num: true }, ...(perLot ? [{ label: 'Price per Lot', num: true }] : []), { label: 'Comments' },
+      { label: '#' }, { label: 'Roll #' }, { label: 'Location' }, { label: 'Date' },
+      { label: 'Price', num: true }, { label: `Lot Area (${areaLabel})`, num: true }, { label: 'Zoning' },
+      { label: rateLabel, num: true }, ...(perLot ? [{ label: 'Price/Lot', num: true }] : []), { label: 'Comments' },
     ],
     rows,
     recs,
     // The value-indicator blocks, [heading, {Mean, High, Low, Median}], in
     // print order; a block with no values is left out.
     indicators: [
-      ...(perLot ? [['Value indicators – Price per Lot (unadjusted)', stat(recs.map(pplOf), fmtMoney0)]] : []),
+      ...(perLot ? [['Value indicators – Price/Lot (unadjusted)', stat(recs.map(pplOf), fmtMoney0)]] : []),
       [`Value indicators – ${rateLabel} (unadjusted)`, stat(recs.map(rateOf), u.money)],
       [`Size (${areaLabel})`, stat(recs.map(sizeOf), fmtSize)],
     ].filter(([, st]) => st),
