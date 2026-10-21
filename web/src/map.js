@@ -18,6 +18,7 @@
 // top) scrolls the table to the matching row; clicking a zoning or dev-
 // plan polygon while its overlay is visible pops up a small description.
 
+import { addMlsAreaLayers, mlsAreaHtml } from './lib/mlsAreas.js';
 import maplibregl from 'maplibre-gl';
 import { addLocateControl } from './lib/locateControl.js';
 import bbox from '@turf/bbox';
@@ -1775,6 +1776,9 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
           'line-opacity': 0.75,
         },
       });
+
+      // MLS area boundaries (lib/mlsAreas.js, shared with the Winnipeg app).
+      addMlsAreaLayers(map);
 
       // ---- Flood zones (see src/lib/flood.js) ----
       // Five independently-toggled groups, one GeoJSON source each, all
@@ -4225,6 +4229,19 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
       wireWallas('wallas-tile-network-line', tileNetworkHtml);
       wireWallas('wallas-tile-outlet-point', tileOutletHtml);
       map.on('mouseleave', 'masc-risk-area-fill', () => { setHoverCursor(''); });
+
+      // Click an MLS area -> its code and board.
+      const mlsPopup = new maplibregl.Popup({ closeButton: true });
+      onLayerClick(map, 'mls-area-fill', (e) => {
+        if (map.getLayoutProperty('mls-area-fill', 'visibility') !== 'visible') return;
+        const p = e.features?.[0]?.properties;
+        if (!p) return;
+        mlsPopup.setLngLat(e.lngLat).setHTML(mlsAreaHtml(p)).addTo(map);
+      });
+      map.on('mouseenter', 'mls-area-fill', () => {
+        if (map.getLayoutProperty('mls-area-fill', 'visibility') === 'visible') setHoverCursor('pointer');
+      });
+      map.on('mouseleave', 'mls-area-fill', () => { setHoverCursor(''); });
 
       // Click a CLI polygon → popup listing every class slot the
       // polygon carries (A through F) with class number, percentage,
