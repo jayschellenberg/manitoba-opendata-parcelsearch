@@ -124,3 +124,5 @@ history/
 tools/city-location-maps/work/
 tools/city-location-maps/__pycache__/
 web/public/_lmtest/
+web/public/_lm2/
+web/public/_lm3/

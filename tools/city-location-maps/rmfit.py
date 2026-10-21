@@ -117,10 +117,14 @@ def margin_labels(words):
     tps, rges = [], []
     # Only the margin's own size: the key-plan inset repeats "Tp. 14" etc.
     # in small type (Alexander: 4.3 pt against 9.8).
+    # The margin labels' common size: the median of the larger ones, not the
+    # maximum, since one oversized OCR token (15.8 pt on Wallace-Woodworth)
+    # would otherwise shut out every 9.8 pt label.
     hs = [w[3] for w in words if re.match(r'(Tp|Twp|Rge)', w[2], re.I)]
-    hmax = max(hs) if hs else 0
+    big = [h for h in hs if h >= 0.6 * max(hs)] if hs else []
+    href = float(np.median([h for h in hs if h > 6])) if any(h > 6 for h in hs) else (max(hs) if hs else 0)
     for i, (x, y, t, h) in enumerate(words):
-        if h < hmax * 0.75:
+        if not 0.75 * href <= h <= 1.3 * href:
             continue
         m = re.fullmatch(r'(Tp|Twp|Rge)\.?(\d{0,3}[EW]?)\.?', t, re.I)
         if not m:
@@ -178,7 +182,7 @@ def main():
             tps, rges = margin_labels(words)
             res['margins'] = f'{len(tps)} tp, {len(rges)} rge'
             M = None
-            if len(tps) >= 2 and len(rges) >= 2:
+            if len(tps) + len(rges) >= 3 and tps and rges:
                 twps = {t for _, t in tps}; rgs = {r for _, r in rges}
                 Nc = []; Ec = []
                 for y, t in tps:
@@ -187,11 +191,22 @@ def main():
                 for x, r in rges:
                     k = np.nonzero((grge == r) & np.isin(gtwp, list(twps)))[0]
                     if len(k): Ec.append((x, float(np.median(gutm[k, 0]))))
-                if len(Nc) >= 2 and len(Ec) >= 2:
-                    ax, c = np.polyfit([e for _, e in Ec], [x for x, _ in Ec], 1)
-                    ay, f = np.polyfit([n for _, n in Nc], [y for y, _ in Nc], 1)
-                    M = np.array([[ax, 0, c], [0, ay, f]])
-                    res['seed'] = 'margins'
+                if len(Nc) + len(Ec) >= 3 and max(len(Nc), len(Ec)) >= 2:
+                    # One scale, from the axis whose labels spread furthest;
+                    # each offset from the median, because labels on part
+                    # rows sit off their township's centre (Reynolds: the
+                    # y-only fit came out 5% off).
+                    spanE = np.ptp([e for _, e in Ec]) if len(Ec) >= 2 else 0
+                    spanN = np.ptp([n for _, n in Nc]) if len(Nc) >= 2 else 0
+                    if spanE >= spanN:
+                        sc = np.polyfit([e for _, e in Ec], [x for x, _ in Ec], 1)[0]
+                    else:
+                        sc = -np.polyfit([n for _, n in Nc], [y for y, _ in Nc], 1)[0]
+                    c = float(np.median([x - sc * e for x, e in Ec])) if Ec else None
+                    f = float(np.median([y + sc * n for y, n in Nc])) if Nc else None
+                    if c is not None and f is not None and sc > 0:
+                        M = np.array([[sc, 0, c], [0, -sc, f]])
+                        res['seed'] = 'margins'
             if M is None:
                 px0, py0 = src.min(0); px1, py1 = src.max(0)
                 ux0, uy0, ux1, uy1 = mpoly.bounds

@@ -128,19 +128,81 @@ def scale_from_bar(words):
             else:
                 rows.append([w])
         for row in rows:
-            pts = sorted(((int(w['t']), w['x']) for w in row), key=lambda t: t[1])
-            if len(pts) < 2:
-                continue
-            vs = np.array([v for v, _ in pts], float); xs = np.array([x for _, x in pts], float)
-            if np.any(np.diff(vs) <= 0):
-                continue
-            slope, icpt = np.polyfit(vs, xs, 1)
-            if slope <= 0 or (len(pts) > 2 and np.max(np.abs(np.polyval([slope, icpt], vs) - xs)) > max(6, 0.04 * (xs[-1] - xs[0]))):
-                continue
-            cand = (slope / unit, len(pts), int(vs[-1]), unit)
-            if best is None or cand[1] > best[1]:
-                best = cand
+            row = sorted(((int(w['t']), w['x']) for w in row), key=lambda t: t[1])[:10]
+            # The largest subset that rises evenly with x: a lot number on
+            # the same row (Arnaud's "27", 700 px right of "500 1500")
+            # must not sink the whole bar.
+            for mask in range(1, 1 << len(row)):
+                pts = [row[i] for i in range(len(row)) if mask >> i & 1]
+                if len(pts) < 2 or (best and len(pts) < best[1]):
+                    continue
+                vs = np.array([v for v, _ in pts], float); xs = np.array([x for _, x in pts], float)
+                if np.any(np.diff(vs) <= 0):
+                    continue
+                slope, icpt = np.polyfit(vs, xs, 1)
+                if slope <= 0 or (len(pts) > 2 and np.max(np.abs(np.polyval([slope, icpt], vs) - xs)) > max(6, 0.04 * (xs[-1] - xs[0]))):
+                    continue
+                # A bar's ticks are close together: reject pairs spread over
+                # more than a fifth of the sheet's text width.
+                if xs[-1] - xs[0] > uw['h'] * 50:
+                    continue
+                cand = (slope / unit, len(pts), int(vs[-1]), unit)
+                if best is None or cand[1] > best[1]:
+                    best = cand
     return best
+
+
+def bar_from_geometry(gray, words):
+    """One number over the bar ("0" missed, as on Bellsite's "0 ... 1500"):
+    measure the drawn bar instead. Its longest dark run between the number
+    and the unit word ends at the tick under the number and starts at 0."""
+    H, W = gray.shape
+    units = ([(w, 1.0) for w in words if re.match(r'MET', w['t'], re.I)]
+             + [(w, 0.3048) for w in words if re.fullmatch(r'(FEET|FT)\.?', w['t'], re.I)])
+    for uw, unit in units:
+        nums = [w for w in words if re.fullmatch(r'\d{2,5}', w['t'])
+                and 0 < uw['y'] - w['y'] < uw['h'] * 6 and abs(w['x'] - uw['x']) < uw['h'] * 25]
+        for n in nums:
+            y0, y1 = int(n['box'][3]), int(uw['box'][1])
+            if y1 - y0 < 3:
+                continue
+            # Only the bar's neighbourhood: across the full width a road in
+            # the same rows is longer than the bar.
+            bx0 = max(0, int(min(uw['x'], n['x']) - uw['h'] * 25)); bx1 = min(W, int(n['x'] + n['h'] * 2))
+            band = gray[y0:y1, bx0:bx1] < 128
+            best = None
+            for row in band:
+                d = np.diff(np.r_[0, row.astype(np.int8), 0])
+                starts, ends = np.nonzero(d == 1)[0], np.nonzero(d == -1)[0]
+                # Bars are drawn as segments with small gaps between them:
+                # merge runs closer than a character height.
+                runs = []
+                for a0, a1 in zip(starts, ends):
+                    if runs and a0 - runs[-1][1] < n['h']:
+                        runs[-1][1] = a1
+                    else:
+                        runs.append([a0, a1])
+                for a0, a1 in runs:
+                    if best is None or a1 - a0 > best[1] - best[0]:
+                        best = (a0, a1)
+            if best:
+                best = (best[0] + bx0, best[1] + bx0)
+            if best and abs(best[1] - n['x']) < n['h'] * 1.5 and best[1] - best[0] > n['h'] * 3:
+                return ((best[1] - best[0]) / (int(n['t']) * unit), 1, int(n['t']), unit)
+    return None
+
+
+def ratio_scale(words, dpi=300):
+    """"1 INCH = 500 FEET" -> pixels per metre at `dpi`."""
+    text = ' '.join(w['t'] for w in sorted(words, key=lambda w: (round(w['y'] / 20), w['x'])))
+    # OCR often loses the "1 INCH =" (Badger read "SCALE: 500 FEET").
+    # The "1" comes back as "|", "l" or "I" as often as not.
+    m = re.search(r'SCALE\W*(?:[1|lI]?\s*INCH\s*=?\s*)?([\d,]{2,6})\s*(FEET|FT|MET)', text, re.I)
+    if not m:
+        return None
+    n = int(m.group(1).replace(',', ''))
+    unit = 1.0 if m.group(2).upper().startswith('MET') else 0.3048
+    return (dpi / (n * unit), 0, n, unit)
 
 
 def overpass(lat, lon, r_deg, cache):
@@ -244,9 +306,22 @@ def fit_one(ctx, work, fname):
                 res['bar_zoom'] = True
                 break
     if not bar:
+        bar = bar_from_geometry(gray, words)
+        if bar:
+            res['bar_geometry'] = True
+    scales = SCALES
+    if not bar:
+        # "SCALE: 1 INCH = 500 FEET" and no bar (Badger): the scans carry no
+        # dpi, but the pages are ~2420 x 3170 px, letter at 300 dpi. Seed
+        # from that and search wider; review these by eye.
+        bar = ratio_scale(words)
+        if bar:
+            res['ratio_scale'] = True
+            scales = tuple(round(0.76 + 0.03 * i, 2) for i in range(17))
+    if not bar:
         raise RuntimeError('no scale bar read')
     ppm = bar[0]
-    res['bar'] = [round(ppm, 4), bar[2], 'm' if bar[3] == 1 else 'ft']
+    res['bar'] = [round(float(ppm), 4), bar[2], 'm' if bar[3] == 1 else 'ft']
     labels = corner_labels(words, secs)
     res['labels'] = [[round(x), round(y), al[0] if len(al) == 1 else f'{len(al)} secs'] for x, y, al in labels]
     # Seed: the title's sections, else the sections the corner labels name,
@@ -314,7 +389,7 @@ def fit_one(ctx, work, fname):
     best = None
     cx, cy = W / 2, H / 2
     for rot in (-2, -1, 0, 1, 2):
-        for sf in SCALES:
+        for sf in scales:
             r = math.radians(rot); s = 1 / (ppm * sf)
             dx, dy = sub[:, 0] - cx, sub[:, 1] - cy
             u = s * (dx * math.cos(r) + dy * math.sin(r)); v = s * (dx * math.sin(r) - dy * math.cos(r))
@@ -389,6 +464,12 @@ def fit_one(ctx, work, fname):
     res['aniso'] = round(float(np.linalg.norm(M[:, 0]) / np.linalg.norm(M[:, 1])), 4)
     res['rot'] = round(math.degrees(math.atan2(-M[1, 0], M[0, 0])), 2)
     res['M'] = M.tolist()
+    # A fit that wandered off its own scale bar latched onto the wrong lines
+    # (Bellsite: 13% off). Ratio-scale sheets have no bar to hold to.
+    drift = res['m_per_px'] / res['bar_m_per_px'] - 1
+    res['scale_drift'] = round(drift, 3)
+    if not res.get('ratio_scale') and abs(drift) > 0.06:
+        raise RuntimeError(f'scale drifted {drift:+.0%} from the bar')
     return res
 
 
@@ -397,6 +478,8 @@ def main():
     work = WORK = sys.argv[1]
     ctx = Ctx()
     for fname in sys.argv[2:]:
+        if os.environ.get('TOWNFIT_SKIP') and os.path.exists(os.path.join(work, f'town_{os.path.splitext(fname)[0]}.json')):
+            continue
         try:
             res = fit_one(ctx, work, fname); res['status'] = 'ok'
         except Exception as ex:
