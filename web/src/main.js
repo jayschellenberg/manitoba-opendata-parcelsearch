@@ -300,6 +300,7 @@ import { OUTPUT_MIME, OUTPUT_EXT } from './lib/imageOutput.js';
 import { showLocationMapPanel } from './lib/locationMapPanel.js';
 import { BASE_MAPS, locateOnMap, renderLocationMap } from './lib/locationMap.js';
 import { CITY_MAP_IDS, cityMapForMuni, registerCityMaps } from './lib/cityMaps.js';
+import { loadAreaMaps, pickAreaMap, prepareAreaMap } from './lib/areaMaps.js';
 import { haversineMeters, drawScaleBar, drawNorthArrow, framedBounds, frameWidthM, localDateStamp } from './lib/mapFurniture.js';
 import { buildStoreZip } from './lib/zipStore.js';
 import { assessmentPerDu } from './lib/assessmentRates.js';
@@ -3814,10 +3815,18 @@ async function generateLocationMap() {
   const btn = $locationMapBtn;
   if (btn) { btn.disabled = true; btn.textContent = 'Rendering…'; }
   try {
+    // The RM map and community plan for this subject, fetched first so the
+    // panel's dropdown can offer them.
+    const areaMaps = await loadAreaMaps();
+    const areaIds = [];
+    for (const m of [pickAreaMap(areaMaps, 'rm', subject.lng, subject.lat), pickAreaMap(areaMaps, 'community', subject.lng, subject.lat)]) {
+      if (!m) continue;
+      try { await prepareAreaMap(m); areaIds.push(m.id); } catch (err) { console.warn(err); }
+    }
     await showLocationMapPanel({
       container: $locationMapOutput,
       subject,
-      maps: ['manitoba', 'winnipeg', ...CITY_MAP_IDS],
+      maps: ['manitoba', 'winnipeg', ...CITY_MAP_IDS, ...areaIds],
       state: locationMapState,
       onState: (next) => { locationMapState = next; },
       download: downloadBlob,
@@ -4196,7 +4205,14 @@ async function buildAddendaPack() {
   const subjectMuni = addendaMuniFeature(subject.feats[0])?.properties?.MUNI_LIST_NAME_WITH_TYPE;
   const cityMap = loc && cityMapForMuni(subjectMuni);
   const wantCity = !!(cityMap && locateOnMap(cityMap, loc.lng, loc.lat));
-  const total = 1 + (wantCity ? 1 : 0) + (subject.specific ? 5 : 0) + (wantResults ? 1 : 0);
+  // The RM map (subject in that municipality) and the community plan
+  // (subject on one of its sheets), from the R2 index — Jason, 2026-10-21.
+  const areaMaps = loc ? await loadAreaMaps() : [];
+  const areaPicks = loc ? [
+    pickAreaMap(areaMaps, 'rm', loc.lng, loc.lat, subjectMuni),
+    pickAreaMap(areaMaps, 'community', loc.lng, loc.lat),
+  ].filter(Boolean) : [];
+  const total = 1 + (wantCity ? 1 : 0) + areaPicks.length + (subject.specific ? 5 : 0) + (wantResults ? 1 : 0);
   let n = 0;
   const step = (what) => { btn.textContent = `Addenda ${++n}/${total}: ${what}…`; };
   const files = [];
@@ -4239,6 +4255,23 @@ async function buildAddendaPack() {
       if (canvas) {
         add('city-location-map.png', await blobBytes(await canvasToBlob(canvas)),
           `${cityMap.label} city map (Manitoba highway map), arrow at ${loc.note}`);
+      }
+    }
+    for (const areaMap of areaPicks) {
+      step(`${areaMap.label} map`);
+      try {
+        await prepareAreaMap(areaMap);
+        const canvas = await renderLocationMap({
+          map: areaMap, lng: loc.lng, lat: loc.lat,
+          label: locationMapState.label, direction: locationMapState.direction, title: true,
+        });
+        if (canvas) {
+          add(areaMap.kind === 'rm' ? 'municipal-map.png' : 'community-plan.png',
+            await blobBytes(await canvasToBlob(canvas)),
+            `${areaMap.label} ${areaMap.kind === 'rm' ? 'municipal map (Manitoba Infrastructure, 2017)' : 'community plan (Manitoba Highways)'}, arrow at ${loc.note}`);
+        }
+      } catch (err) {
+        notes.push(`The ${areaMap.label} map was left out: ${err.message}.`);
       }
     }
     if (subject.specific) {
@@ -4356,7 +4389,7 @@ async function buildAddendaPack() {
     '',
     ...listing,
     '',
-    `The maps after the location map${wantCity ? 's' : ''} are ${CAPTURE_W} x ${CAPTURE_H} px (6.5 x 3.5 in at 300 dpi) -- the`,
+    `The maps after the location map${wantCity || areaPicks.length ? 's' : ''} are ${CAPTURE_W} x ${CAPTURE_H} px (6.5 x 3.5 in at 300 dpi) -- the`,
     `neighbourhood map ${ADDENDA_NEIGHBOURHOOD_SIZE.width} x ${ADDENDA_NEIGHBOURHOOD_SIZE.height} (6.5 x 5 in) -- with a scale bar`,
     '(measured at the map centre) and a north arrow.',
     ...notes,

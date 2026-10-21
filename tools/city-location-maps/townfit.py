@@ -16,6 +16,7 @@ Writes <workdir>/town_<stem>.json and appends to town_summary.tsv.
 """
 import json, math, os, re, subprocess, sys, time, urllib.parse, urllib.request
 import fitz, numpy as np
+import shapely
 from PIL import Image, ImageDraw
 from shapely.geometry import shape, Point, LineString
 from shapely.strtree import STRtree
@@ -27,10 +28,11 @@ SRC = r'D:/Dropbox/Appraisal/Maps/$Town and Village Maps'
 WORK = '.'
 WEB = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'web'))
 TESS = r'C:/Program Files/Tesseract-OCR/tesseract.exe'
-PDF_DPI = 150
+PDF_DPI = 250
 # Scale-bar multipliers the search tries: the bar is read from OCR'd label
-# centres, good to a few percent.
-SCALES = tuple(float(v) for v in os.environ.get('TOWNFIT_SCALES', '0.9,0.93,0.96,0.98,1.0,1.02,1.04,1.07,1.1').split(','))
+# centres: every verified fit is within 3% of it, and a wider search let
+# Alonsa lock 7% off scale onto the wrong fields.
+SCALES = tuple(float(v) for v in os.environ.get('TOWNFIT_SCALES', '0.96,0.98,1.0,1.02,1.04').split(','))
 
 
 def load_image(path):
@@ -97,37 +99,47 @@ def corner_labels(words, title_secs):
                 allowed = [f"{int(n['t'])}-{twp}-{rge}"]
                 cx, cy = (cx + n['x']) / 2, (cy + n['y']) / 2
             else:
-                allowed = [t for t in title_secs if t.endswith(f'-{twp}-{rge}')] or [f'{k}-{twp}-{rge}' for k in range(1, 37)]
+                # No readable number (OCR often misses the bold digit): any
+                # section of the township. The title list is too often partial.
+                allowed = [f'{k}-{twp}-{rge}' for k in range(1, 37)]
             out.append((cx, cy, allowed))
             break
     return out
 
 
 def scale_from_bar(words):
-    """Pixels per metre from the scale bar: '0' and the largest number on the
-    same row, whose unit word (METRES / FEET) sits just below."""
+    """Pixels per metre from the scale bar: the numbers on one row ("0 100
+    200 300"; OCR often drops the 0) whose unit word (METRES / FEET) sits
+    just below. Values must rise evenly with x; the slope is the scale.
+    Returns (ppm, numbers used, largest value, metres per unit) or None."""
+    units = ([(w, 1.0) for w in words if re.match(r'MET', w['t'], re.I)]
+             + [(w, 0.3048) for w in words if re.fullmatch(r'(FEET|FT)\.?', w['t'], re.I)])
     best = None
-    for z in words:
-        if z['t'] != '0':
-            continue
-        row = [w for w in words if abs(w['y'] - z['y']) < z['h'] * 0.8 and 0 < w['x'] - z['x'] < 900 and re.fullmatch(r'\d{2,5}', w['t'])]
-        if len(row) < 2:
-            continue
-        vals = sorted(((int(w['t']), w['x']) for w in row))
-        # monotonic numbers, evenly spaced
-        xs = [z['x']] + [x for _, x in vals]; vs = [0] + [v for v, _ in vals]
-        if any(b <= a for a, b in zip(vs, vs[1:])) or any(b <= a for a, b in zip(xs, xs[1:])):
-            continue
-        unit = None
-        for w in words:
-            if 0 < w['y'] - z['y'] < 120 and abs(w['x'] - z['x']) < 600:
-                if re.match(r'MET', w['t'], re.I): unit = 1.0
-                if re.match(r'FEET|FT', w['t'], re.I): unit = 0.3048
-        if unit is None:
-            continue
-        ppm = (xs[-1] - xs[0]) / (vs[-1] * unit)
-        if best is None or len(row) > best[1]:
-            best = (ppm, len(row), vs[-1], unit)
+    for uw, unit in units:
+        # Number rows above the unit word, within a few line heights.
+        nums = [w for w in words if re.fullmatch(r'\d{1,5}', w['t'])
+                and 0 < uw['y'] - w['y'] < uw['h'] * 6 and abs(w['x'] - uw['x']) < uw['h'] * 40]
+        # Group into rows by nearness in y (rounding into buckets split
+        # Bissett's "100" and "600", one pixel apart).
+        rows = []
+        for w in sorted(nums, key=lambda w: w['y']):
+            if rows and w['y'] - rows[-1][-1]['y'] < w['h'] * 0.6:
+                rows[-1].append(w)
+            else:
+                rows.append([w])
+        for row in rows:
+            pts = sorted(((int(w['t']), w['x']) for w in row), key=lambda t: t[1])
+            if len(pts) < 2:
+                continue
+            vs = np.array([v for v, _ in pts], float); xs = np.array([x for _, x in pts], float)
+            if np.any(np.diff(vs) <= 0):
+                continue
+            slope, icpt = np.polyfit(vs, xs, 1)
+            if slope <= 0 or (len(pts) > 2 and np.max(np.abs(np.polyval([slope, icpt], vs) - xs)) > max(6, 0.04 * (xs[-1] - xs[0]))):
+                continue
+            cand = (slope / unit, len(pts), int(vs[-1]), unit)
+            if best is None or cand[1] > best[1]:
+                best = cand
     return best
 
 
@@ -218,6 +230,20 @@ def fit_one(ctx, work, fname):
     res['sections'] = secs
     bar = scale_from_bar(words)
     if not bar:
+        # The bar's small numbers often escape a full-page pass (Beausejour):
+        # read the strip above each unit word again at 3x.
+        for uw in [w for w in words if re.match(r'MET|FEET|FT', w['t'], re.I)]:
+            x0 = max(0, int(uw['x'] - uw['h'] * 40)); x1 = min(W, int(uw['x'] + uw['h'] * 40))
+            y0 = max(0, int(uw['y'] - uw['h'] * 6)); y1 = min(H, int(uw['y'] + uw['h']))
+            crop = np.array(Image.fromarray(gray[y0:y1, x0:x1]).resize(((x1 - x0) * 3, (y1 - y0) * 3), Image.LANCZOS))
+            extra = [{**w, 'x': x0 + w['x'] / 3, 'y': y0 + w['y'] / 3, 'h': w['h'] / 3,
+                      'box': tuple(v / 3 + o for v, o in zip(w['box'], (x0, y0, x0, y0)))}
+                     for w in ocr(crop, work, stem + '_bar')]
+            bar = scale_from_bar(extra)
+            if bar:
+                res['bar_zoom'] = True
+                break
+    if not bar:
         raise RuntimeError('no scale bar read')
     ppm = bar[0]
     res['bar'] = [round(ppm, 4), bar[2], 'm' if bar[3] == 1 else 'ft']
@@ -260,25 +286,23 @@ def fit_one(ctx, work, fname):
         raise RuntimeError('no line work found')
     rng = np.random.default_rng(0)
     sub = pts[rng.choice(len(pts), min(len(pts), 20000), replace=False)]
-    # Reference distance raster, 5 m cells.
-    C = 5.0
+    # Reference distance raster, 10 m cells (the ICP below refines).
+    C = 10.0
     ext = half_m + 500
     Wr = Hr = int(2 * ext / C)
     occ = np.zeros((Hr, Wr), bool)
-    for l in ref:
-        for d in np.arange(0, l.length, C / 2):
-            x, y = l.interpolate(d).coords[0]
-            col = int((x - (E0 - ext)) / C); row = int(((N0 + ext) - y) / C)
-            if 0 <= row < Hr and 0 <= col < Wr:
-                occ[row, col] = True
-    CAP = 12
+    dens = shapely.get_coordinates(shapely.segmentize(np.array(ref, dtype=object), C / 2))
+    col = ((dens[:, 0] - (E0 - ext)) / C).astype(int); row = (((N0 + ext) - dens[:, 1]) / C).astype(int)
+    ok = (row >= 0) & (row < Hr) & (col >= 0) & (col < Wr)
+    occ[row[ok], col[ok]] = True
+    CAP = 8
     dt = np.where(occ, 0.0, CAP)
     for _ in range(CAP):
         m = dt.copy()
         m[1:] = np.minimum(m[1:], dt[:-1] + 1); m[:-1] = np.minimum(m[:-1], dt[1:] + 1)
         m[:, 1:] = np.minimum(m[:, 1:], dt[:, :-1] + 1); m[:, :-1] = np.minimum(m[:, :-1], dt[:, 1:] + 1)
         dt = m
-    Fdt = np.fft.fft2(dt)
+    Fdt = np.fft.rfft2(dt)
     # Section polygons the corner labels must land in, buffered 150 m (labels
     # sit near the lines), in UTM.
     lab_polys = []
@@ -299,8 +323,9 @@ def fit_one(ctx, work, fname):
             if ui.max() >= Wr or vi.max() >= Hr:
                 continue
             P = np.zeros((Hr, Wr)); np.add.at(P, (vi, ui), 1)
-            corr = np.real(np.fft.ifft2(Fdt * np.conj(np.fft.fft2(P))))
+            corr = np.fft.irfft2(Fdt * np.conj(np.fft.rfft2(P)), s=P.shape)
             valid = corr[: Hr - vi.max(), : Wr - ui.max()].copy()
+            votes = np.zeros(valid.shape, np.int16)
             # Translations (kx, ky) that put every corner label inside one of
             # its allowed sections: a label at metre offset (uL, vL) lands at
             # E = (E0 - ext) + kx*C + (uL - umin), N = (N0 + ext) - ky*C - (vmax - vL).
@@ -313,9 +338,16 @@ def fit_one(ctx, work, fname):
                     for part in getattr(poly, 'geoms', [poly]):
                         dr.polygon([((E - (E0 - ext) - (uL - umin)) / C, ((N0 + ext) - N - (vmax - vL)) / C)
                                     for E, N in part.exterior.coords], fill=1)
-                valid[~np.array(mask, bool)] = np.inf
-            if not np.isfinite(valid).any():
-                continue
+                votes += np.array(mask, bool)
+            # Keep the placements that satisfy the most corner labels, so one
+            # misread label (Amaranth) cannot veto the right answer; with two or
+            # fewer, all must hold (one alone let Alonsa lock 7% off scale).
+            if lab_polys:
+                need = votes.max()
+                n = len(lab_polys)
+                if need < (n if n <= 2 else n - 1):
+                    continue
+                valid[votes < need] = np.inf
             k = np.unravel_index(np.argmin(valid), valid.shape)
             score = valid[k] / len(sub)
             if best is None or score < best[0]:
@@ -330,9 +362,12 @@ def fit_one(ctx, work, fname):
     Fwd = np.array([[a, b, Eo - a * cx - b * cy], [b, -a, No - b * cx + a * cy]])
     M = inv(Fwd)
 
+    refarr = np.array(ref, dtype=object)
+
     def nearest(U):
-        idx = tree.nearest([Point(u) for u in U])
-        return np.array([ref[j].interpolate(ref[j].project(Point(u))).coords[0] for u, j in zip(U, idx)])
+        pts = shapely.points(U)
+        lines = refarr[tree.nearest(pts)]
+        return shapely.get_coordinates(shapely.line_interpolate_point(lines, shapely.line_locate_point(lines, pts)))
     icp = sub[rng.choice(len(sub), min(len(sub), 5000), replace=False)]
     # Similarity only: the plans are drafted true to scale, and an affine on
     # sparse matches buys shear, not accuracy (Anola: 2% anisotropy).

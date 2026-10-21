@@ -15,6 +15,7 @@ Writes <workdir>/rm_<stem>.json and appends a line to rm_summary.tsv.
 """
 import json, math, os, re, sys
 import fitz, numpy as np
+import shapely
 from shapely.geometry import shape, Point, LineString, box
 from shapely.strtree import STRtree
 from shapely.ops import transform
@@ -219,27 +220,59 @@ def main():
                 res['label_median_m'] = round(float(np.median(dd)), 0)
                 res['m_lock'] = M.tolist()
             # 3. snap section lines to the true section edges
+            earr = np.array(edges, dtype=object)
+
             def nearest(U):
-                idx = etree.nearest([Point(u) for u in U])
-                return np.array([edges[j].interpolate(edges[j].project(Point(u))).coords[0] for u, j in zip(U, idx)])
+                pts = shapely.points(U)
+                ln = earr[etree.nearest(pts)]
+                return shapely.get_coordinates(shapely.line_interpolate_point(ln, shapely.line_locate_point(ln, pts)))
             sub = src[:: max(1, len(src) // 4000)]
             # The match radius shrinks from half a section, so a seed a few
             # hundred metres out (a margin seed is north-up; pages turn up to
             # ~2 degrees) still settles on the right section lines.
-            stages = [('similarity', sim_fit, r) for r in (600, 300, 150, 80)] + [('similarity', sim_fit, 40), ('affine', aff_fit, 40)]
-            for mode, fit, radius in stages:
-                for it in range(30):
-                    U = apply(inv(M), sub)
-                    nr = nearest(U)
-                    d = np.hypot(*(U - nr).T)
-                    keep = d < (radius if radius > 40 else max(2.5 * np.median(d), 40))
-                    if keep.sum() < 20:
-                        break
-                    Mn = fit(sub[keep], nr[keep])
-                    done = np.abs(Mn - M).max() < 1e-7
-                    M = Mn
-                    if done or radius > 40 and it >= 8:
-                        break
+            def snap(M, radii):
+                stages = [('similarity', sim_fit, r) for r in radii] + [('similarity', sim_fit, 40), ('affine', aff_fit, 40)]
+                for mode, fit, radius in stages:
+                    for it in range(30):
+                        U = apply(inv(M), sub)
+                        nr = nearest(U)
+                        d = np.hypot(*(U - nr).T)
+                        keep = d < (radius if radius > 40 else max(2.5 * np.median(d), 40))
+                        if keep.sum() < 20:
+                            break
+                        Mn = fit(sub[keep], nr[keep])
+                        done = np.abs(Mn - M).max() < 1e-7
+                        M = Mn
+                        if done or radius > 40 and it >= 8:
+                            break
+                return M, d, keep
+            M, d, keep = snap(M, (600, 300, 150, 80))
+            # 4. Township lock. Section lines repeat every 1.6 km, so the snap
+            # can settle a whole section off (Cornwallis: 1,640 m east, every
+            # corner label in the wrong section). Try whole-section shifts and
+            # keep the one that puts the most corner labels in a section of
+            # their own number; re-snap if it moved.
+            stree = STRtree(secs)
+
+            def labels_ok(M):
+                if not labs:
+                    return 0
+                U = apply(inv(M), np.array([l[:2] for l in labs]))
+                i, j = stree.query(shapely.points(U), predicate='within')
+                return len({a for a, b in zip(i, j) if secnum[b] == labs[a][2]})
+            SEC = 1609.3
+            best = (labels_ok(M), 0, 0)
+            for dx in range(-3, 4):
+                for dy in range(-3, 4):
+                    if dx or dy:
+                        Ms = M.copy(); Ms[:, 2] -= M[:, :2] @ [dx * SEC, dy * SEC]
+                        n = labels_ok(Ms)
+                        if n > best[0]:
+                            best = (n, dx, dy)
+            if best[1] or best[2]:
+                Ms = M.copy(); Ms[:, 2] -= M[:, :2] @ [best[1] * SEC, best[2] * SEC]
+                M, d, keep = snap(Ms, (300, 150, 80))
+                res['shift_sections'] = [best[1], best[2]]
             res['median_m'] = round(float(np.median(d[keep])), 1)
             res['kept'] = round(float(keep.mean()), 3)
             res['m_per_pt'] = round(1 / math.sqrt(abs(np.linalg.det(M[:, :2]))), 2)
@@ -247,19 +280,13 @@ def main():
             res['rot'] = round(math.degrees(math.atan2(-M[1, 0], M[0, 0])), 2)
             # Check: every corner label must now sit in a section of its own number.
             if labs:
-                U = apply(inv(M), np.array([l[:2] for l in labs]))
-                ok = 0
-                for u, l in zip(U, labs):
-                    pt = Point(u)
-                    hit = [secnum[k] for k, sp in enumerate(secs) if sp.contains(pt)]
-                    ok += bool(hit) and hit[0] == l[2]
-                res['labels_ok'] = f'{ok}/{len(labs)}'
+                res['labels_ok'] = f'{labels_ok(M)}/{len(labs)}'
             res['M'] = M.tolist()
             res['status'] = 'ok'
         except Exception as ex:  # one bad map must not stop the batch
             res['status'] = f'FAIL: {ex}'
         json.dump(res, open(os.path.join(work, f'rm_{stem}.json'), 'w'))
-        line = '\t'.join(str(res.get(k, '')) for k in ('stem', 'muni', 'status', 'median_m', 'kept', 'm_per_pt', 'aniso', 'rot', 'labels', 'label_median_m', 'labels_ok', 'seed', 'margins'))
+        line = '\t'.join(str(res.get(k, '')) for k in ('stem', 'muni', 'status', 'median_m', 'kept', 'm_per_pt', 'aniso', 'rot', 'labels', 'label_median_m', 'labels_ok', 'seed', 'margins', 'shift_sections'))
         print(line, flush=True)
         with open(os.path.join(work, 'rm_summary.tsv'), 'a') as f:
             f.write(line + '\n')
