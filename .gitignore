@@ -126,3 +126,10 @@ tools/city-location-maps/__pycache__/
 web/public/_lmtest/
 web/public/_lm2/
 web/public/_lm3/
+
+# Monthly update email: local recipients, drafts, state, logs
+tools/changelog-email/recipients.local.txt
+tools/changelog-email/drafts/
+tools/changelog-email/state/
+tools/changelog-email/logs/
+tools/changelog-email/claude-token.local.txt
