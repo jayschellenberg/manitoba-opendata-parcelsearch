@@ -100,8 +100,10 @@ files, so rerun the fit for a sheet if you want those exact.
   typos (Mossy_River, North_Cyress-Langford) are matched fuzzily. Fits in
   `fits/rm-dxf/`.
 - **Town plans from MLI.** https://mli.gov.mb.ca/towns/ has 546 vector
-  redraws (2000-2020) of the plans, far cleaner than the old scans. Run
-  `townfit.py` with `TOWNFIT_SRC` pointing at the downloaded PDFs. 482 fit;
+  redraws (2000-2020) of the plans, far cleaner than the old scans. Jason's
+  master copy: `D:\Dropbox\Appraisal\Maps\$Town and Village Maps 2026`
+  (`townfit.MLI_SRC`; every fit's `src` points there). Run `townfit.py`
+  with `TOWNFIT_SRC` set to it. 482 fit;
   209 pass an automatic check (every printed section label lands in its own
   section, `work/triage.py`), the rest were reviewed by eye: 418 accepted
   (`fits/mli-verdicts.json`, fits in `fits/mli/`).

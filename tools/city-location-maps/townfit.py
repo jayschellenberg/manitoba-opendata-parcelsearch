@@ -24,9 +24,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # utm.py beside 
 from utm import utm14  # noqa: E402
 import parcelref  # noqa: E402
 
-# TOWNFIT_SRC: another folder of plans, e.g. MLI's 2009-2010 vector redraws
-# (https://mli.gov.mb.ca/towns/, named <Town>_S<sheet>.pdf).
+# TOWNFIT_SRC: another folder of plans, e.g. MLI_SRC below for MLI's vector
+# redraws (https://mli.gov.mb.ca/towns/, named <Town>_S<sheet>.pdf).
 SRC = os.environ.get('TOWNFIT_SRC', r'D:/Dropbox/Appraisal/Maps/$Town and Village Maps')
+# Jason's master copy of MLI's plans (2026-10-21); the folder above holds the
+# 1979-2014 scans that the 23 old-scan fits in fits/town still come from.
+MLI_SRC = r'D:/Dropbox/Appraisal/Maps/$Town and Village Maps 2026'
 WORK = '.'
 WEB = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'web'))
 TESS = r'C:/Program Files/Tesseract-OCR/tesseract.exe'
