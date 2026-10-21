@@ -300,7 +300,7 @@ import { OUTPUT_MIME, OUTPUT_EXT } from './lib/imageOutput.js';
 import { showLocationMapPanel } from './lib/locationMapPanel.js';
 import { BASE_MAPS, locateOnMap, renderLocationMap } from './lib/locationMap.js';
 import { CITY_MAP_IDS, cityMapForMuni, registerCityMaps } from './lib/cityMaps.js';
-import { haversineMeters, drawScaleBar, drawNorthArrow, framedBounds, localDateStamp } from './lib/mapFurniture.js';
+import { haversineMeters, drawScaleBar, drawNorthArrow, framedBounds, frameWidthM, localDateStamp } from './lib/mapFurniture.js';
 import { buildStoreZip } from './lib/zipStore.js';
 import { assessmentPerDu } from './lib/assessmentRates.js';
 import {
@@ -3861,6 +3861,14 @@ const ADDENDA_COMMUNITY_MAX_M = 10000;
 // Most result parcels the neighbourhood and zoning maps will number.
 const ADDENDA_NUMBER_MAX = 25;
 const ADDENDA_AERIAL_MIN_M = 300;
+// The wide aerial shows at least this many times the close-up's width.
+// Both frames used to be the subject plus a pad (35% / 20%), so on a
+// parcel bigger than the minimums the two came out nearly the same
+// (Thompson 233900.101, Jason 2026-10-21). 2.25 is the ratio a small lot
+// already got (300 m x 1.35 against 150 m x 1.2), so small lots are
+// unchanged and big ones now zoom out as far, relatively.
+const ADDENDA_AERIAL_CONTEXT = 2.25;
+const ADDENDA_AERIAL_PAD = 0.35;
 // The close-up aerial and the site map share one frame: the subject and the
 // lots adjoining it (Jason, 2026-10-15).
 const ADDENDA_CLOSE_PAD = 0.2;
@@ -4264,11 +4272,13 @@ async function buildAddendaPack() {
       // it. Neither carries dimensions; the site map below does.
       step('aerial');
       setAddendaMarks({ pin: false, numbers: userMarks.numbers, dims: false });
+      const closeBounds = framedBounds(subjectBox, { padFrac: ADDENDA_CLOSE_PAD, minWidthM: ADDENDA_CLOSE_MIN_M });
+      const wideMinM = Math.max(ADDENDA_AERIAL_MIN_M,
+        (ADDENDA_AERIAL_CONTEXT * frameWidthM(closeBounds)) / (1 + ADDENDA_AERIAL_PAD));
       const aerial = await captureAddendaView(
-        framedBounds(subjectBox, { padFrac: 0.35, minWidthM: ADDENDA_AERIAL_MIN_M }), 'satellite',
+        framedBounds(subjectBox, { padFrac: ADDENDA_AERIAL_PAD, minWidthM: wideMinM }), 'satellite',
         { withLegend, cornerLabel: 'Aerial View (Subject Highlighted)' });
       add('subject-aerial.png', aerial.bytes, `Satellite imagery of ${subject.note}`, aerial.stale);
-      const closeBounds = framedBounds(subjectBox, { padFrac: ADDENDA_CLOSE_PAD, minWidthM: ADDENDA_CLOSE_MIN_M });
       step('close-up aerial');
       const aerialClose = await captureAddendaView(closeBounds, 'satellite',
         { withLegend, cornerLabel: 'Aerial View — Close-up (Subject Highlighted)' });

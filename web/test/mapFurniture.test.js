@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict';
 import {
-  haversineMeters, niceLength, scaleBarRows, drawScaleBar, drawNorthArrow, framedBounds,
+  haversineMeters, niceLength, scaleBarRows, drawScaleBar, drawNorthArrow, framedBounds, frameWidthM,
   localDateStamp,
 } from '../src/lib/mapFurniture.js';
 
@@ -68,6 +68,16 @@ test('framedBounds: a big extent keeps its size plus the pad', () => {
   const bb = [-97.3, 49.8, -97.0, 49.95];
   const [[w], [e]] = framedBounds(bb, { padFrac: 0.2, minWidthM: 100 });
   near(e - w, 0.3 * 1.2, 1e-9, 'padded lng span');
+});
+
+test('frameWidthM: the wider of the width and the height at the frame aspect', () => {
+  // ~200 m wide, ~50 m tall: the width fills a 1950 x 1050 frame.
+  const flat = [[-97.1414, 49.8950], [-97.1386, 49.89545]];
+  near(frameWidthM(flat), haversineMeters([-97.1414, 49.89523], [-97.1386, 49.89523]), 0.5, 'flat');
+  // ~50 m wide, ~200 m tall: the height fills it, so the frame is ~371 m wide.
+  const tall = [[-97.1403, 49.8943], [-97.1396, 49.8961]];
+  const h = haversineMeters([-97.13995, 49.8943], [-97.13995, 49.8961]);
+  near(frameWidthM(tall), h * 1950 / 1050, 0.5, 'tall');
 });
 
 // A recording 2D context: enough to prove the draw calls run, place things
