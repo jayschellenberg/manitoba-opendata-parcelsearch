@@ -2221,7 +2221,14 @@ const COMP_TYPE_NAMES = { Residential: 'Residential', ICI: 'ICI', Farm: 'Agricul
 const COMP_SINGLE_COLOR = '#1A73E8';
 const COMP_MAX_MAPS = 4;
 const RATE_SUFFIX = { acres: 'ac', sf: 'sf', ff: 'ff' };
-const COMP_LABELS = [['rate', 'Sale # and rate'], ['total', 'Sale # and total price'], ['both', 'Sale #, total and rate'], ['number', 'Sale # only']];
+const COMP_LABELS = [
+  ['rate', 'Sale # and rate'], ['total', 'Sale # and total price'], ['both', 'Sale #, total and rate'],
+  // Per lot (2026-10-20): the sale price over its parcel count (the record's
+  // ppl, as the Total/Per Lot Price page uses). A label choice rather than a
+  // fourth size unit: the unit drives the price-by-size charts, and a lot has
+  // no size to plot against. Picking it also adds the table's per-lot column.
+  ['lot', 'Sale # and price per lot'], ['number', 'Sale # only'],
+];
 const COMP_SCOPES = [['comps', 'Tagged comps only'], ['all', 'All ticked sales']];
 const COMP_COLORS = [['type', 'Pin colour by property type'], ['single', 'One pin colour']];
 
@@ -2276,6 +2283,10 @@ function compCallout(rec, mode) {
   const total = Number(rec.price) > 0 ? fmtMoney0(Number(rec.price)) : '';
   if (mode === 'rate') return rate ? `${name} – ${rate}` : name;
   if (mode === 'total') return total ? `${name} – ${total}` : name;
+  if (mode === 'lot') {
+    const ppl = Number(rec.ppl);
+    return ppl > 0 ? `${name} – ${fmtMoney0(ppl)}/lot` : name;
+  }
   const both = [total, rate].filter(Boolean).join(' · ');
   return both ? `${name}\n${both}` : name;
 }
@@ -2448,6 +2459,9 @@ function compTableModel() {
   const sizeOf = (r) => { const v = Number(r[u.size]); return v > 0 ? v : null; };
   const rateOf = (r) => { const v = Number(r[u.metric]); return v > 0 ? v : null; };
   const fmtSize = (v) => (v == null ? '' : opts.unit === 'acres' ? v.toFixed(2) : fmtNum(Math.round(v)));
+  // The Price per Lot column shows only while the callouts are per lot.
+  const perLot = compMapSpec().label === 'lot';
+  const pplOf = (r) => { const v = Number(r.ppl); return v > 0 ? v : null; };
   const recs = compTableRecords();
   // A roll outside the subject's municipality (or, with no subject, the
   // most common one) is named with its municipality, as "Springfield - 44060".
@@ -2466,6 +2480,8 @@ function compTableModel() {
       fmtSize(sizeOf(r)),
       r.zone || '',
       rateOf(r) != null ? u.money(rateOf(r)) : '',
+      // A multi-parcel sale says how many lots its per-lot price is over.
+      ...(perLot ? [pplOf(r) != null ? `${fmtMoney0(pplOf(r))}${r.parcelCount > 1 ? ` (${r.parcelCount} lots)` : ''}` : ''] : []),
       compComment(r),
     ];
   });
@@ -2481,27 +2497,27 @@ function compTableModel() {
     columns: [
       { label: 'Sale No.' }, { label: 'Roll #' }, { label: 'Location' }, { label: 'Sale Date' },
       { label: 'Sale Price', num: true }, { label: `Lot Area (${areaLabel})`, num: true }, { label: 'Zoning' },
-      { label: rateLabel, num: true }, { label: 'Comments' },
+      { label: rateLabel, num: true }, ...(perLot ? [{ label: 'Price per Lot', num: true }] : []), { label: 'Comments' },
     ],
     rows,
     recs,
-    rateLabel,
-    areaLabel,
-    rateStats: stat(recs.map(rateOf), u.money),
-    sizeStats: stat(recs.map(sizeOf), fmtSize),
+    // The value-indicator blocks, [heading, {Mean, High, Low, Median}], in
+    // print order; a block with no values is left out.
+    indicators: [
+      ...(perLot ? [['Value indicators – Price per Lot (unadjusted)', stat(recs.map(pplOf), fmtMoney0)]] : []),
+      [`Value indicators – ${rateLabel} (unadjusted)`, stat(recs.map(rateOf), u.money)],
+      [`Size (${areaLabel})`, stat(recs.map(sizeOf), fmtSize)],
+    ].filter(([, st]) => st),
   };
 }
 
 /** The table and its value indicators as rows of cells, for the copy and the CSV. */
 function compTableGrid(m) {
   const out = [m.columns.map((c) => c.label), ...m.rows];
-  if (m.rateStats) {
-    out.push([], ['', '', '', '', '', '', `Value indicators – ${m.rateLabel} (unadjusted)`]);
-    for (const [k, v] of Object.entries(m.rateStats)) out.push(['', '', '', '', '', '', k, v]);
-  }
-  if (m.sizeStats) {
-    out.push([], ['', '', '', '', '', '', `Size (${m.areaLabel})`]);
-    for (const [k, v] of Object.entries(m.sizeStats)) out.push(['', '', '', '', '', '', k, v]);
+  const pad = ['', '', '', '', '', ''];
+  for (const [head, st] of m.indicators) {
+    out.push([], [...pad, head]);
+    for (const [k, v] of Object.entries(st)) out.push([...pad, k, v]);
   }
   return out;
 }
@@ -2613,8 +2629,7 @@ function compTableCard() {
 
   const ind = document.createElement('div');
   ind.className = 'comp-indicators';
-  for (const [head, stats] of [[`Value indicators – ${m.rateLabel} (unadjusted)`, m.rateStats], [`Size (${m.areaLabel})`, m.sizeStats]]) {
-    if (!stats) continue;
+  for (const [head, stats] of m.indicators) {
     const dl = document.createElement('dl');
     const h = document.createElement('strong');
     h.textContent = head;

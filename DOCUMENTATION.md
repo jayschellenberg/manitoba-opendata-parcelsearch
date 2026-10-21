@@ -1162,6 +1162,11 @@ page's unit, Zoning and a Comments box, then the unadjusted value indicators
 map's sales in comp order. Comments (`opts.compComments`, keyed by sale tag
 key) and the editable title (`opts.compTableTitle`) ride in opts, so job files
 carry them. Copy for Excel (tab-separated), CSV, and a table in the work file.
+**Per lot** (2026-10-20) is a callout choice, not a fourth size unit (the
+unit drives the price-by-size charts, and a lot has no size): "Sale #3 –
+$85,000/lot" from the record's `ppl` (sale price / parcel count). Only while it
+is picked, the table adds a Price per Lot column ("$180,000 (4 lots)" on a
+multi-parcel sale) and per-lot value indicators.
 
 Map notes:
 - Sales are points at the mean of their parcels' centres, and from zoom 10 in
