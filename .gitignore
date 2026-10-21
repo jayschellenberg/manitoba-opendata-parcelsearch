@@ -119,3 +119,7 @@ web/public/*.pmtiles
 
 # Parcel change history (r/build_parcel_history.R). Local derived data, ~1 GB.
 history/
+
+# georeferencing work files (fits, OSM caches, OCR)
+tools/city-location-maps/work/
+tools/city-location-maps/__pycache__/
