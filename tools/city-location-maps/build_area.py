@@ -1,9 +1,8 @@
 """Build the R2 assets for the RM maps and community plans (lib/areaMaps.js).
 
-    python build_area.py <rm workdir> <town workdir> <review.json> <outdir>
+    python build_area.py <rm fits> <mli fits> <mli verdicts> <old fits> <old review> <work> <out>
 
-review.json: {"rm": {"<stem>": "ok" | "reject"}, "town": {"<file>": ...}};
-only sheets marked "ok" are built. Writes to <outdir>:
+See main(). Accepted sheets only. Writes to <outdir>:
     rm/<slug>.svg        RM page, cropped to its frame, white title band on top
     plan/<slug>.png      community plan, greyscale, white title band on top
     index.json           {version, generated, maps: [{id, kind, label, muni,
@@ -57,6 +56,9 @@ def build_rm(stem, fit, work, outdir):
     if not words:
         tsv = os.path.join(work, f'ocr_rm_{stem}.tsv')
         k = 72 / 300
+        if not os.path.exists(tsv):
+            pix3 = page.get_pixmap(dpi=300, colorspace=fitz.csGRAY, alpha=False)
+            townfit.ocr(np.frombuffer(pix3.samples, np.uint8).reshape(pix3.height, pix3.width).copy(), work, 'rm_' + stem)
         if os.path.exists(tsv):
             for line in open(tsv, encoding='utf-8', errors='replace').read().splitlines()[1:]:
                 p = line.split('\t')
@@ -83,6 +85,9 @@ def build_rm(stem, fit, work, outdir):
             'affine': [float(v) for v in M.reshape(-1)], 'obstacles': boxes_inside(boxes, W, H + band)}
 
 
+_PLAN_SLUGS = set()
+
+
 def build_plan(fname, fit, work, outdir, label):
     stem = os.path.splitext(fname)[0]
     gray = townfit.load_image(os.path.join(fit.get('src', townfit.SRC), fname))
@@ -94,6 +99,8 @@ def build_plan(fname, fit, work, outdir, label):
     M[1, 2] += band
     boxes = []
     tsv = os.path.join(work, f'ocr_{stem}.tsv')
+    if not os.path.exists(tsv):
+        townfit.ocr(gray, work, stem)
     if os.path.exists(tsv):
         for line in open(tsv, encoding='utf-8', errors='replace').read().splitlines()[1:]:
             p = line.split('\t')
@@ -101,6 +108,11 @@ def build_plan(fname, fit, work, outdir, label):
                 l, t, w_, h_ = map(int, p[6:10])
                 boxes.append([l, t + band, l + w_, t + h_ + band])
     slug = re.sub(r'[^a-z0-9]+', '-', stem.lower()).strip('-')
+    # MLI has two different St. Laurent drawings that slug alike.
+    base, n = slug, 2
+    while slug in _PLAN_SLUGS:
+        slug = f'{base}-{n}'; n += 1
+    _PLAN_SLUGS.add(slug)
     os.makedirs(os.path.join(outdir, 'plan'), exist_ok=True)
     Image.fromarray(img).save(os.path.join(outdir, 'plan', slug + '.png'), optimize=True)
     return {'id': f'plan-{slug}', 'kind': 'community', 'label': label, 'muni': None,
@@ -117,25 +129,41 @@ def plan_label(fname, places):
     return hit or title_case(stem.replace('_', ' '))
 
 
+def community_key(fname):
+    """'altona_01.gif' and 'Altona_S2.pdf' -> 'altona'."""
+    stem = re.sub(r'_(S?\d+|index)$', '', os.path.splitext(fname)[0], flags=re.I)
+    stem = stem.lower().replace('sainte', 'ste').replace('saint', 'st')
+    return re.sub(r'[^a-z]', '', stem)
+
+
 def main():
-    rm_work, town_work, review_path, outdir = sys.argv[1:5]
-    review = json.load(open(review_path))
+    """build_area.py <rm fits> <mli fits> <mli verdicts> <old fits> <old review> <work> <out>
+
+    RM maps: every fit with status ok (MLI DXF fits). Community plans: the
+    accepted MLI sheets; an old scan only for a community with none."""
+    rm_dir, mli_dir, mli_verdicts, old_dir, old_review, work, outdir = sys.argv[1:8]
+    os.makedirs(work, exist_ok=True)
     places = json.load(open(os.path.join(townfit.WEB, 'public', 'mb-places.json')))
     maps = []
-    for stem, verdict in sorted(review.get('rm', {}).items()):
-        if verdict == 'ok':
-            maps.append(build_rm(stem, json.load(open(os.path.join(rm_work, f'rm_{stem}.json'))), rm_work, outdir))
-            print('rm', stem, flush=True)
-    for fname, verdict in sorted(review.get('town', {}).items()):
-        if verdict == 'ok':
-            stem = os.path.splitext(fname)[0]
-            fit = json.load(open(os.path.join(town_work, f'town_{stem}.json')))
-            maps.append(build_plan(fname, fit, town_work, outdir, plan_label(fname, places)))
-            print('plan', fname, flush=True)
-    idx = {'version': 1, 'generated': datetime.date.today().isoformat(), 'maps': maps}
+    for f in sorted(os.listdir(rm_dir)):
+        fit = json.load(open(os.path.join(rm_dir, f)))
+        if fit.get('status') == 'ok' and fit.get('muni'):
+            maps.append(build_rm(fit['stem'], fit, work, outdir))
+            print('rm', fit['stem'], flush=True)
+    mli = {f: v for f, v in json.load(open(mli_verdicts)).items() if v == 'ok'}
+    covered = {community_key(f) for f in mli}
+    plans = [(f, os.path.join(mli_dir, f'town_{os.path.splitext(f)[0]}.json')) for f in sorted(mli)]
+    old = json.load(open(old_review)).get('town', {})
+    plans += [(f, os.path.join(old_dir, f'town_{os.path.splitext(f)[0]}.json'))
+              for f, v in sorted(old.items()) if v == 'ok' and community_key(f) not in covered]
+    for fname, path in plans:
+        fit = json.load(open(path))
+        maps.append(build_plan(fname, fit, work, outdir, plan_label(fname, places)))
+        print('plan', fname, flush=True)
+    idx = {'version': 2, 'generated': datetime.date.today().isoformat(), 'maps': maps}
     with open(os.path.join(outdir, 'index.json'), 'w', encoding='utf-8') as f:
         json.dump(idx, f, separators=(',', ':'))
-    print(len(maps), 'maps')
+    print(len(maps), 'maps;', len(mli), 'MLI plans,', len(plans) - len(mli), 'old scans kept')
 
 
 if __name__ == '__main__':

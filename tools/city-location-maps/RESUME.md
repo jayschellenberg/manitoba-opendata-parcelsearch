@@ -31,7 +31,14 @@ Work files (gitignored, in the MAIN tree):
   reject. Record more with `python -I ../rec.py <from> <to> <rejected
   stems...>` run in `work/mlitown`.
 
-## Remaining steps
+## Status 2026-10-21 late
+Review finished (418/482 MLI sheets ok, `fits/mli-verdicts.json`). Built:
+541 maps (100 RM + 418 MLI plans + 23 old scans) in the main tree
+`tools/city-location-maps/work/out3/`, spot-checked. NEXT: Jason approves
+the R2 re-upload, then `rclone sync out3 r2-mb:mb-ortho/location-maps/`, real
+pack test, PR.
+
+## Remaining steps (original list)
 1. Finish eye review: `work/rvc/sheet_040.png` … `sheet_068.png`.
 2. Build: RM maps from `fits/rm-dxf` (all 100) + town plans = MLI
    accepted sheets, falling back to the old accepted scan
