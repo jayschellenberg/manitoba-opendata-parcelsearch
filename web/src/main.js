@@ -300,6 +300,7 @@ import { OUTPUT_MIME, OUTPUT_EXT } from './lib/imageOutput.js';
 import { showLocationMapPanel } from './lib/locationMapPanel.js';
 import { BASE_MAPS, locateOnMap, renderLocationMap } from './lib/locationMap.js';
 import { CITY_MAP_IDS, cityMapForMuni, registerCityMaps } from './lib/cityMaps.js';
+import { fetchMlsAreas, setMlsAreasData, setMlsAreasVisible } from './lib/mlsAreas.js';
 import { loadAreaMaps, pickAreaMap, prepareAreaMap } from './lib/areaMaps.js';
 import { haversineMeters, drawScaleBar, drawNorthArrow, framedBounds, frameWidthM, localDateStamp } from './lib/mapFurniture.js';
 import { buildStoreZip } from './lib/zipStore.js';
@@ -684,6 +685,7 @@ const $priorOutlinesToggle = document.getElementById('prior-outlines-toggle');
 const $muniParcelsToggle = document.getElementById('muni-parcels-toggle');
 const $mascToggle    = document.getElementById('masc-toggle');
 const $riskAreaToggle = document.getElementById('riskarea-toggle');
+const $mlsToggle = document.getElementById('mls-toggle');
 // Flood zones (src/lib/flood.js). Five buttons of identical shape, so they
 // are looked up, wired and registered from FLOOD_GROUPS rather than spelled
 // out five times — the group list is the single source of truth.
@@ -2956,6 +2958,7 @@ $stationsToggle?.addEventListener('click', () => toggleAuxOverlay('stations'));
 $highwaysToggle.addEventListener('click', () => toggleAuxOverlay('highways'));
 $priorOutlinesToggle?.addEventListener('click', () => toggleAuxOverlay('priorOutlines'));
 $riskAreaToggle.addEventListener('click', () => toggleAuxOverlay('riskAreas'));
+$mlsToggle?.addEventListener('click', () => toggleAuxOverlay('mlsAreas'));
 for (const [key, btn] of $floodToggles) {
   btn?.addEventListener('click', () => toggleAuxOverlay(floodAuxKey(key)));
 }
@@ -10767,6 +10770,9 @@ const AUX_META = {
                  fetch: () => fetchManitobaHighways(),         setData: (m, fc) => setMbHighwaysData(m, fc), setVis: setMbHighwaysVisible },
   riskAreas:   { btn: () => $riskAreaToggle,    on: 'MASC risk areas', off: 'MASC risk areas', busy: 'Loading…',
                  fetch: () => fetchMascRiskAreas(),            setData: (m, fc) => setMascRiskAreasData(m, fc), setVis: setMascRiskAreasVisible },
+  // MLS area boundaries, a static same-origin file (lib/mlsAreas.js).
+  mlsAreas:    { btn: () => $mlsToggle,          on: 'MLS Areas', off: 'MLS Areas', busy: 'Loading…',
+                 fetch: () => fetchMlsAreas(),                 setData: (m, fc) => setMlsAreasData(m, fc), setVis: setMlsAreasVisible },
   // Assessment Parcels is the one overlay with nothing to fetch. Its fabric
   // is the province-wide PMTiles archive, already on the map as a vector
   // source that MapLibre range-requests per viewport, so turning the layer
