@@ -299,6 +299,7 @@ import { waitForMapIdle, MapRenderTimeoutError } from './lib/snapshotCapture.js'
 import { OUTPUT_MIME, OUTPUT_EXT } from './lib/imageOutput.js';
 import { showLocationMapPanel } from './lib/locationMapPanel.js';
 import { BASE_MAPS, locateOnMap, renderLocationMap } from './lib/locationMap.js';
+import { CITY_MAP_IDS, cityMapForMuni, registerCityMaps } from './lib/cityMaps.js';
 import { haversineMeters, drawScaleBar, drawNorthArrow, framedBounds, localDateStamp } from './lib/mapFurniture.js';
 import { buildStoreZip } from './lib/zipStore.js';
 import { assessmentPerDu } from './lib/assessmentRates.js';
@@ -397,6 +398,10 @@ import {
 } from './lib/format.js';
 import { soilSurveyComponentsFromMatches } from './soilSurvey.js';
 import { soilMatchesFromShard, soilRollKey } from './lib/soilfacts.js';
+
+// The highway map's city pages join the location-map base maps (MB only;
+// locationMap.js itself is shared with the Winnipeg app).
+registerCityMaps();
 
 // Civic-address search is now a 3-input row: a numeric range (From / To)
 // plus a Street Name substring. The single legacy `#address` input was
@@ -3812,7 +3817,7 @@ async function generateLocationMap() {
     await showLocationMapPanel({
       container: $locationMapOutput,
       subject,
-      maps: ['manitoba', 'winnipeg'],
+      maps: ['manitoba', 'winnipeg', ...CITY_MAP_IDS],
       state: locationMapState,
       onState: (next) => { locationMapState = next; },
       download: downloadBlob,
@@ -4175,7 +4180,15 @@ async function buildAddendaPack() {
   // A grouped subject is the whole result set, which the aerial and zoning
   // maps already frame, so it gets no separate results map.
   const wantResults = allFeats.length > 1 && !subject.group;
-  const total = 1 + (subject.specific ? 5 : 0) + (wantResults ? 1 : 0);
+  // The city location map: a subject inside the limits of a city with a
+  // highway-map page gets that page as well as the Manitoba one (Jason,
+  // 2026-10-21) — by the subject's municipality, not by being on the page,
+  // so a farm just outside Brandon keeps the provincial map alone.
+  const loc = resolveLocationMapSubject();
+  const subjectMuni = addendaMuniFeature(subject.feats[0])?.properties?.MUNI_LIST_NAME_WITH_TYPE;
+  const cityMap = loc && cityMapForMuni(subjectMuni);
+  const wantCity = !!(cityMap && locateOnMap(cityMap, loc.lng, loc.lat));
+  const total = 1 + (wantCity ? 1 : 0) + (subject.specific ? 5 : 0) + (wantResults ? 1 : 0);
   let n = 0;
   const step = (what) => { btn.textContent = `Addenda ${++n}/${total}: ${what}…`; };
   const files = [];
@@ -4193,9 +4206,11 @@ async function buildAddendaPack() {
   try {
     // Location map — the provincial overview with the SUBJECT callout, on
     // the base map the MB Overall Map panel last used where it applies.
+    // A city map picked in the panel does not displace the provincial one
+    // here; the city map has its own file below.
     step('location map');
-    const loc = resolveLocationMapSubject();
     const baseId = [locationMapState.base, 'manitoba', 'winnipeg']
+      .filter((id) => id === 'manitoba' || id === 'winnipeg')
       .find((id) => BASE_MAPS[id] && loc && locateOnMap(BASE_MAPS[id], loc.lng, loc.lat));
     if (baseId) {
       const canvas = await renderLocationMap({
@@ -4205,6 +4220,17 @@ async function buildAddendaPack() {
       if (canvas) {
         add('location-map.png', await blobBytes(await canvasToBlob(canvas)),
           `${BASE_MAPS[baseId].label} location map, arrow at ${loc.note}`);
+      }
+    }
+    if (wantCity) {
+      step(`${cityMap.label} map`);
+      const canvas = await renderLocationMap({
+        map: cityMap, lng: loc.lng, lat: loc.lat,
+        label: locationMapState.label, direction: locationMapState.direction, title: true,
+      });
+      if (canvas) {
+        add('city-location-map.png', await blobBytes(await canvasToBlob(canvas)),
+          `${cityMap.label} city map (Manitoba highway map), arrow at ${loc.note}`);
       }
     }
     if (subject.specific) {
@@ -4320,7 +4346,7 @@ async function buildAddendaPack() {
     '',
     ...listing,
     '',
-    `The maps after the location map are ${CAPTURE_W} x ${CAPTURE_H} px (6.5 x 3.5 in at 300 dpi) -- the`,
+    `The maps after the location map${wantCity ? 's' : ''} are ${CAPTURE_W} x ${CAPTURE_H} px (6.5 x 3.5 in at 300 dpi) -- the`,
     `neighbourhood map ${ADDENDA_NEIGHBOURHOOD_SIZE.width} x ${ADDENDA_NEIGHBOURHOOD_SIZE.height} (6.5 x 5 in) -- with a scale bar`,
     '(measured at the map centre) and a north arrow.',
     ...notes,
