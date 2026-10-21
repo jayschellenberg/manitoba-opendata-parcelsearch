@@ -1,9 +1,9 @@
 {
  "version": 1,
  "metadata": {
-  "generated_at": "2026-10-05T15:47:00.132Z",
+  "generated_at": "2026-10-21T15:37:33.138Z",
   "source": "mao-scrape muni_refresh_ledger.csv (assessment cadence, month precision)",
-  "source_modified": "2026-10-02T07:29:55.315Z",
+  "source_modified": "2026-10-21T04:11:34.070Z",
   "precision": "month",
   "row_count": 186
  },
@@ -12,8 +12,8 @@
    "muni_no": "741",
    "name": "AGHAMING (NORTHERN SETTLEMENT)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -28,8 +28,8 @@
    "muni_no": "601",
    "name": "ALONSA (RM)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 6
   },
   {
@@ -68,16 +68,16 @@
    "muni_no": "781",
    "name": "BADEN (NORTHERN SETTLEMENT)",
    "region": "North",
-   "last_refreshed": "2026-08",
-   "last_refreshed_date": "2026-08-01",
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
    "muni_no": "782",
    "name": "BARROWS (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -92,8 +92,8 @@
    "muni_no": "744",
    "name": "BERENS RIVER (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -108,8 +108,8 @@
    "muni_no": "746",
    "name": "BISSETT (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-08",
-   "last_refreshed_date": "2026-08-01",
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -140,8 +140,8 @@
    "muni_no": "734",
    "name": "BROCHET (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-09",
-   "last_refreshed_date": "2026-09-02",
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -156,8 +156,8 @@
    "muni_no": "783",
    "name": "CAMPERVILLE (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -220,40 +220,40 @@
    "muni_no": "784",
    "name": "CORMORANT (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
    "muni_no": "116",
    "name": "CORNWALLIS (RM)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 6
   },
   {
    "muni_no": "727",
    "name": "CRANE RIVER (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
    "muni_no": "707",
    "name": "CROSS LAKE (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
    "muni_no": "747",
    "name": "DALLAS/RED ROSE (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -276,16 +276,16 @@
    "muni_no": "748",
    "name": "DAUPHIN RIVER (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
    "muni_no": "785",
    "name": "DAWSON BAY (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -308,16 +308,16 @@
    "muni_no": "786",
    "name": "DUCK BAY (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-09",
-   "last_refreshed_date": "2026-09-02",
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
    "muni_no": "120",
    "name": "DUFFERIN (RM)",
    "region": "South-Central / Central Plains",
-   "last_refreshed": "2026-08",
-   "last_refreshed_date": "2026-08-01",
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 6
   },
   {
@@ -341,7 +341,7 @@
    "name": "EASTERVILLE (NORTHERN COMMUNITY)",
    "region": "North",
    "last_refreshed": "2026-10",
-   "last_refreshed_date": "2026-10-02",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -388,8 +388,8 @@
    "muni_no": "750",
    "name": "FISHER BAY (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -444,8 +444,8 @@
    "muni_no": "704",
    "name": "GODS LAKE NARROWS (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -500,24 +500,24 @@
    "muni_no": "135",
    "name": "HANOVER (RM)",
    "region": "Southeast",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 6
   },
   {
    "muni_no": "609",
    "name": "HARRISON PARK (MUNICIPALITY)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 6
   },
   {
    "muni_no": "752",
    "name": "HARWILL (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -532,32 +532,32 @@
    "muni_no": "738",
    "name": "HERB LAKE LANDING (NORTHERN SETTLEMENT)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
    "muni_no": "754",
    "name": "HOMEBROOK-PEONAN POINT (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
    "muni_no": "739",
    "name": "ILFORD (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
    "muni_no": "755",
    "name": "ISLAND LAKE (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-09",
-   "last_refreshed_date": "2026-09-02",
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -572,8 +572,8 @@
    "muni_no": "196",
    "name": "KILLARNEY TURTLE MOUNTAIN (MUNICIPALITY)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-09",
-   "last_refreshed_date": "2026-09-02",
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 6
   },
   {
@@ -621,15 +621,15 @@
    "name": "LITTLE GRAND RAPIDS (NORTHERN SETTLEMENT)",
    "region": "North",
    "last_refreshed": "2026-10",
-   "last_refreshed_date": "2026-10-02",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
    "muni_no": "761",
    "name": "LOON STRAITS (NORTHERN SETTLEMENT)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -668,24 +668,24 @@
    "muni_no": "728",
    "name": "MALLARD (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-08",
-   "last_refreshed_date": "2026-08-01",
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
    "muni_no": "762",
    "name": "MANIGOTAGAN (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
    "muni_no": "763",
    "name": "MATHESON ISLAND (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -700,8 +700,8 @@
    "muni_no": "729",
    "name": "MEADOW PORTAGE (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -740,8 +740,8 @@
    "muni_no": "151",
    "name": "MONTCALM (RM)",
    "region": "South-Central / Central Plains",
-   "last_refreshed": "2026-09",
-   "last_refreshed_date": "2026-09-01",
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 6
   },
   {
@@ -749,7 +749,7 @@
    "name": "MOOSE LAKE (NORTHERN COMMUNITY)",
    "region": "North",
    "last_refreshed": "2026-10",
-   "last_refreshed_date": "2026-10-02",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -796,32 +796,32 @@
    "muni_no": "700",
    "name": "MUNICIPAL AND NORTHERN RELATIONS (700)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
    "muni_no": "701",
    "name": "MUNICIPAL AND NORTHERN RELATIONS (701)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
    "muni_no": "702",
    "name": "MUNICIPAL AND NORTHERN RELATIONS (702)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
    "muni_no": "703",
    "name": "MUNICIPAL AND NORTHERN RELATIONS (703)",
    "region": "North",
-   "last_refreshed": "2026-08",
-   "last_refreshed_date": "2026-08-01",
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -836,24 +836,24 @@
    "muni_no": "788",
    "name": "NATIONAL MILLS (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
    "muni_no": "437",
    "name": "NEEPAWA (TOWN)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 6
   },
   {
    "muni_no": "706",
    "name": "NELSON HOUSE  (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -892,8 +892,8 @@
    "muni_no": "710",
    "name": "NORWAY HOUSE (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -916,8 +916,8 @@
    "muni_no": "789",
    "name": "PELICAN RAPIDS (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -932,8 +932,8 @@
    "muni_no": "712",
    "name": "PIKWITONEI (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-09",
-   "last_refreshed_date": "2026-09-02",
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -948,8 +948,8 @@
    "muni_no": "765",
    "name": "PINE DOCK (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -1012,16 +1012,16 @@
    "muni_no": "766",
    "name": "PRINCESS HARBOUR (NORTHERN SETTLEMENT)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
    "muni_no": "792",
    "name": "RED DEER LAKE (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -1076,8 +1076,8 @@
    "muni_no": "730",
    "name": "ROCK RIDGE (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -1124,16 +1124,16 @@
    "muni_no": "445",
    "name": "RUSSELL-BINSCARTH (MUNICIPALITY)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 6
   },
   {
    "muni_no": "731",
    "name": "SALT POINT (NORTHERN SETTLEMENT)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -1148,8 +1148,8 @@
    "muni_no": "708",
    "name": "SEYMOURVILLE (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -1157,7 +1157,7 @@
    "name": "SHERRIDON (NORTHERN COMMUNITY)",
    "region": "North",
    "last_refreshed": "2026-10",
-   "last_refreshed_date": "2026-10-02",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -1188,16 +1188,16 @@
    "muni_no": "714",
    "name": "SOUTH INDIAN LAKE (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
    "muni_no": "732",
    "name": "SPENCE LAKE (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -1212,16 +1212,16 @@
    "muni_no": "174",
    "name": "ST ANDREWS (RM)",
    "region": "Interlake",
-   "last_refreshed": "2026-09",
-   "last_refreshed_date": "2026-09-01",
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 6
   },
   {
    "muni_no": "176",
    "name": "ST CLEMENTS (RM)",
    "region": "Interlake",
-   "last_refreshed": "2026-08",
-   "last_refreshed_date": "2026-08-01",
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 6
   },
   {
@@ -1253,7 +1253,7 @@
    "name": "STANLEY (RM)",
    "region": "South-Central / Central Plains",
    "last_refreshed": "2026-10",
-   "last_refreshed_date": "2026-10-02",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 6
   },
   {
@@ -1308,8 +1308,8 @@
    "muni_no": "455",
    "name": "SWAN RIVER (TOWN)",
    "region": "West & Parkland",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 6
   },
   {
@@ -1348,8 +1348,8 @@
    "muni_no": "715",
    "name": "THICKET PORTAGE (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -1373,7 +1373,7 @@
    "name": "TWO BORDERS (MUNICIPALITY)",
    "region": "West & Parkland",
    "last_refreshed": "2026-10",
-   "last_refreshed_date": "2026-10-01",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 6
   },
   {
@@ -1404,8 +1404,8 @@
    "muni_no": "716",
    "name": "WABOWDEN (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -1420,8 +1420,8 @@
    "muni_no": "733",
    "name": "WATERHEN (NORTHERN COMMUNITY)",
    "region": "North",
-   "last_refreshed": "2026-07",
-   "last_refreshed_date": null,
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 12
   },
   {
@@ -1468,8 +1468,8 @@
    "muni_no": "463",
    "name": "WINKLER (CITY)",
    "region": "South-Central / Central Plains",
-   "last_refreshed": "2026-09",
-   "last_refreshed_date": "2026-09-02",
+   "last_refreshed": "2026-10",
+   "last_refreshed_date": "2026-10-20",
    "cadence_months": 6
   },
   {

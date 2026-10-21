@@ -1,40 +1,40 @@
 {
   "manifest_version": 1,
-  "generated_at": "2026-10-15T09:36:42.388Z",
+  "generated_at": "2026-10-21T15:37:33.140Z",
   "datasets": {
     "legal_index": {
       "file": "legal-index.json",
       "schema_version": 1,
-      "size_bytes": 138435221,
-      "modified_at": "2026-10-15T09:32:20.611Z",
-      "generated_at": "2026-10-15T09:30:42Z",
+      "size_bytes": 138458631,
+      "modified_at": "2026-10-21T15:32:40.596Z",
+      "generated_at": "2026-10-21T15:30:53Z",
       "source": "parcels.parquet",
-      "source_modified": "2026-10-15T09:04:26Z",
-      "row_count": 438381
+      "source_modified": "2026-10-21T14:20:44Z",
+      "row_count": 438432
     },
     "assessment_index": {
       "file": "assessment-index.json",
       "schema_version": 1,
-      "size_bytes": 29827222,
-      "modified_at": "2026-10-15T09:34:41.750Z",
-      "generated_at": "2026-10-15T09:32:53Z",
+      "size_bytes": 29836339,
+      "modified_at": "2026-10-21T15:35:19.180Z",
+      "generated_at": "2026-10-21T15:33:15Z",
       "source": "tax_history.parquet",
-      "source_modified": "2026-10-15T09:04:29Z",
-      "row_count": 438441,
+      "source_modified": "2026-10-21T14:20:48Z",
+      "row_count": 438549,
       "year_min": 2026,
       "year_max": 2027,
       "vacant_threshold_pct": 2,
-      "nominal_vacant_count": 201956,
-      "zero_buildings_count": 195862
+      "nominal_vacant_count": 201734,
+      "zero_buildings_count": 195644
     },
     "muni_vintage": {
       "file": "muni-vintage.json",
       "schema_version": 1,
-      "size_bytes": 36949,
-      "modified_at": "2026-10-05T16:51:46.703Z",
-      "generated_at": "2026-10-05T15:47:00.132Z",
+      "size_bytes": 35809,
+      "modified_at": "2026-10-21T15:37:33.140Z",
+      "generated_at": "2026-10-21T15:37:33.138Z",
       "source": "mao-scrape muni_refresh_ledger.csv (assessment cadence, month precision)",
-      "source_modified": "2026-10-02T07:29:55.315Z",
+      "source_modified": "2026-10-21T04:11:34.070Z",
       "precision": "month",
       "row_count": 186
     },
