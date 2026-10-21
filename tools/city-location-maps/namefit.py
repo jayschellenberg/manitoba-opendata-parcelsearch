@@ -45,7 +45,9 @@ def simfit(src, dst, w=None):
     c = np.mean(x - p * e - q * n); f = np.mean(y - q * e + p * n)
     return np.array([[p, q, c], [q, -p, f]])
 best=None
-for rot in range(-180,180,5):
+# The city pages are drawn north-up within a few degrees; a full-circle
+# search let Flin Flon, Niverville and Stonewall lock 70-120 degrees off.
+for rot in range(-15, 16, 1):
     r=math.radians(rot); p0=47/1000*math.cos(r); q0=-47/1000*math.sin(r)
     M=np.array([[p0,q0,0],[q0,-p0,0]]); 
     U0=(M[:,:2]@Gc.T).T; M[:,2]=np.mean(P-U0,0)

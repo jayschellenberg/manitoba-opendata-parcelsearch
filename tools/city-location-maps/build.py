@@ -24,7 +24,7 @@ CITIES = {
     'morden': ('MORDEN (CITY)', 'Morden'),
     'neepawa': ('NEEPAWA (TOWN)', 'Neepawa'),
     'niverville': ('NIVERVILLE (TOWN)', 'Niverville'),
-    'portage_la_prairie': ('PORTAGE LA PRAIRIE (CITY)', 'Portage la Prairie'),
+    'portagelaprairie': ('PORTAGE LA PRAIRIE (CITY)', 'Portage la Prairie'),
     'selkirk': ('SELKIRK (CITY)', 'Selkirk'),
     'steinbach': ('STEINBACH (CITY)', 'Steinbach'),
     'stonewall': ('STONEWALL (TOWN)', 'Stonewall'),
@@ -91,13 +91,20 @@ def main():
     for name in names:
         muni, label = CITIES[name]
         fit = json.load(open(os.path.join(work, f'fit_{name}.json')))
-        M = np.array(fit['M'])
         page = fitz.open(os.path.join(SRC, f'{name}.pdf'))[0]
+        M = np.array(fit['M'])
+        if page.rotation:
+            # Drawings (what the fit used) are in the unrotated page frame,
+            # the render and crop in the rotated one: carry M across.
+            R = page.rotation_matrix
+            M = np.array([[R.a, R.c, R.e], [R.b, R.d, R.f]]) @ np.vstack([M, [0, 0, 1]])
         crop = content_box(page)
         crop.y0 = max(0, crop.y0 - TITLE_BAND_UNITS * crop.width / UNIT_WIDTH)
         obs = obstacles(page, crop)
         M[:, 2] -= [crop.x0, crop.y0]
-        page.set_cropbox(crop)
+        # The crop is in the displayed (rotated) frame; the PDF's CropBox is
+        # in the unrotated one (Portage la Prairie's page is /Rotate 90).
+        page.set_cropbox((crop * page.derotation_matrix).normalize())
         svg = page.get_svg_image(text_as_path=True)
         with open(os.path.join(WEB, 'public', f'city-{name}.svg'), 'w', encoding='utf-8', newline='\n') as f:
             f.write(svg)

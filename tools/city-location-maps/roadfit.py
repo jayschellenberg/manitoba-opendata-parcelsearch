@@ -32,6 +32,11 @@ for k, segs in classes.items():
         for d in np.arange(0, ls.length + 1e-9, 1.5):
             src.append(ls.interpolate(d).coords[0]); cls.append(str(k))
 src = np.array(src); cls = np.array(cls)
+# Strokes run far past the page under clip paths (Flin Flon: 42k samples,
+# most off the page); fit only what is visible.
+_pr = page.rect
+_vis = (src[:, 0] >= _pr.x0) & (src[:, 0] <= _pr.x1) & (src[:, 1] >= _pr.y0) & (src[:, 1] <= _pr.y1)
+src, cls = src[_vis], cls[_vis]
 print('page road classes', {str(k): len(v) for k, v in classes.items()}, 'samples', len(src))
 
 ways = json.load(open(f'osm_{name}.json'))

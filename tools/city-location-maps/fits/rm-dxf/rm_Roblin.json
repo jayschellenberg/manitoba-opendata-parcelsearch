@@ -1,0 +1,1 @@
+{"stem": "Roblin", "method": "dxf", "muni": "ROBLIN (MUNICIPALITY)", "dxf": ["Roblin Sheet 1.dxf", "Roblin Sheet 2.dxf"], "seed": "grid", "median_m": 2.0, "kept": 1.0, "m_per_pt": 88.23, "aniso": 1.0, "rot": 1.75, "M": [[0.011328834711888707, -0.0003450766556098581, -1615.5793357247544], [-0.000345154579964793, -0.01132931326977533, 65003.27666766736]], "status": "ok"}

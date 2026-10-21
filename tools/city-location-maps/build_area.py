@@ -85,7 +85,7 @@ def build_rm(stem, fit, work, outdir):
 
 def build_plan(fname, fit, work, outdir, label):
     stem = os.path.splitext(fname)[0]
-    gray = townfit.load_image(os.path.join(townfit.SRC, fname))
+    gray = townfit.load_image(os.path.join(fit.get('src', townfit.SRC), fname))
     H, W = gray.shape
     band = int(round(TITLE_BAND_UNITS * W / UNIT_WIDTH))
     img = np.full((H + band, W), 255, np.uint8)
@@ -110,7 +110,7 @@ def build_plan(fname, fit, work, outdir, label):
 
 def plan_label(fname, places):
     """Community name: the CGN name for the file stem, else the stem."""
-    stem = re.sub(r'_\d+$', '', os.path.splitext(fname)[0])
+    stem = re.sub(r'_S?\d+$', '', os.path.splitext(fname)[0])
     norm = lambda s: re.sub(r'[^a-z]', '', s.lower().replace('saint', 'st').replace('sainte', 'ste'))
     i_n = places['fields'].index('name')
     hit = next((r[i_n] for r in places['rows'] if norm(r[i_n]) == norm(stem)), None)
