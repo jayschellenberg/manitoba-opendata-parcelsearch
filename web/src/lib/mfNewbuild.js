@@ -9,11 +9,16 @@
  *     ad: '1027 MANITOBA AVE',      civic address
  *     cl: 'R2',                     property classes in the latest tax year
  *     p:  2024,                     year of the primary (largest-gain) event
- *     e:  [ {y, k, b, bp, c}, ... ] every event, oldest first
+ *     e:  [ {y, k, b, bp, c, u0?, uy?}, ... ] every event, oldest first
  *     sdu:[[2015, 12], ...] }       at-sale dwelling units, where the roll sold
  *
  * Each event is a year `y`, a kind `k`, the building value `b` that year, the
- * value `bp` the year before, and a confidence `c`.
+ * value `bp` the year before, and a confidence `c`. Where the roll (or its
+ * civic address) sold at least two years before the event, `u0` is the unit
+ * count at that sale and `uy` its year — the one genuine "before" figure. The
+ * builder has already dropped events where `u0` shows the units were standing
+ * (r/build_mf_newbuild.R section 7b), so an event that still carries `u0`
+ * either added units or replaced a building on a cleared lot.
  *
  * WHY BUILDING VALUE AND NOT UNIT COUNT. MAO publishes dwelling units as a
  * CURRENT scalar with no history, so a year-over-year DU change cannot be
@@ -122,6 +127,10 @@ export function mfnbType(m) {
 /** Tolerant read of the stamp — main.js may hand back a parsed object or
  *  nothing at all. Returns null for anything without at least one event. */
 export function readMfnb(v) {
+  // The hover path can hand back the stamp as MapLibre serialised it.
+  if (typeof v === 'string') {
+    try { v = JSON.parse(v); } catch { return null; }
+  }
   if (!v || typeof v !== 'object') return null;
   if (!Array.isArray(v.e) || v.e.length === 0) return null;
   return v;
@@ -239,12 +248,45 @@ export function mfnbSortRank(m) {
   return primaryYear(v) * 1e6 + Math.min(v.du, 999999);
 }
 
+/**
+ * What the sales archive says stood on the roll before an event, or '' where
+ * it never sold. Two shapes: a building landing on an emptied roll REPLACED
+ * whatever the sale recorded; anything else ADDED units to it, and the count
+ * goes from the sale's to today's.
+ */
+export function mfnbUnitsBefore(e, du) {
+  if (!e || !Number.isFinite(Number(e.u0))) return '';
+  const u0 = Number(e.u0);
+  const at = Number.isFinite(Number(e.uy)) ? ` at the ${e.uy} sale` : ' at an earlier sale';
+  if (e.k === 'appeared' && !(Number(e.bp) > 10000)) {
+    return `replaced a ${u0}-unit building (${u0} DU${at})`;
+  }
+  const now = Number.isFinite(Number(du)) ? `${du} DU now` : 'today';
+  return `${u0} DU${at} → ${now}`;
+}
+
+/** One line for the parcel hover tooltip: the year(s) the building landed on
+ *  the roll, today's units, and the before-count where a sale recorded one.
+ *  Plain text — map.js escapes it. */
+export function mfnbTopLine(m) {
+  const v = readMfnb(m);
+  if (!v) return '';
+  const parts = v.e.map((e) => {
+    const before = mfnbUnitsBefore(e, v.du);
+    return `${e.y} ${String(e.k).replace('_', ' ')}${before ? ` (${before})` : ''}`;
+  });
+  const du = mfnbDu(v);
+  return `on roll ${parts.join('; ')}${du === null ? '' : ` · ${du} DU`}`;
+}
+
 export function mfnbTooltip(m) {
   const v = readMfnb(m);
   if (!v) return '';
   const lines = v.e.map((e) => {
     const gain = Math.max(0, (e.b || 0) - (e.bp || 0));
-    return `${e.y}  ${e.k}  ${money(e.bp)} → ${money(e.b)}  (+${money(gain)}, ${e.c})`;
+    const before = mfnbUnitsBefore(e, v.du);
+    return `${e.y}  ${e.k}  ${money(e.bp)} → ${money(e.b)}  (+${money(gain)}, ${e.c})`
+      + (before ? `\n      ${before}` : '');
   });
   if (Array.isArray(v.sdu) && v.sdu.length) {
     lines.push(`at sale: ${v.sdu.map(([yy, dd]) => `${yy}: ${dd} DU`).join(', ')}`);
@@ -270,7 +312,10 @@ export function mfnbCsvCells(m, loaded) {
   if (!v) return loaded ? ['None', '', '', '', '', ''] : ['', '', '', '', '', ''];
   return [
     String(primaryYear(v)),
-    v.e.map((e) => `${e.y} ${e.k}`).join('; '),
+    v.e.map((e) => {
+      const before = mfnbUnitsBefore(e, v.du);
+      return `${e.y} ${e.k}${before ? ` (${before})` : ''}`;
+    }).join('; '),
     String(v.du),
     String(Math.round(totalGain(v))),
     bestConfidence(v) || '',

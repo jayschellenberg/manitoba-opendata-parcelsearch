@@ -257,7 +257,6 @@ import {
   setCondoDevVisible,
   setCondoDuLabelData,
   setActiveOverlays,
-  inventoryContextWanted,
   setMfInventoryVisible,
   setWaterInfluenceVisible,
   setHistoricalData,
@@ -12914,16 +12913,10 @@ function renderMfLegends() {
 function renderMfnbLegend(mode, merged = false) {
   if (!$mfnbLegend) return;
   const min = mfMinDu();
-  const items = mfLegendRows(mfnbLegendSteps(mode, min))
-    // The context outline is part of what is on screen, so it is part of the
-    // key — appended after the ramp rather than folded into mfnbLegendSteps,
-    // which has to keep matching the inventory's key for the merge test.
-    // Shown only in the combination that draws it: this layer on, the
-    // inventory off.
-    + (inventoryContextWanted()
-        ? `<li><span class="swatch" style="background:#cbd5e1;border:1px solid #64748b"></span>`
-          + `existing multi-family (outlined)</li>`
-        : '');
+  // Only what is new is drawn. An "existing multi-family" outline used to sit
+  // under this layer as context; Jason asked for the new buildings alone, and
+  // the standing stock is one click away on the Multi-Family button.
+  const items = mfLegendRows(mfnbLegendSteps(mode, min));
   const title = (MFNB_MODES[mode] || MFNB_MODES.year).legend;
   $mfnbLegend.innerHTML =
     `<strong>${title}</strong>`
@@ -12938,7 +12931,8 @@ function renderMfnbLegend(mode, merged = false) {
     + `${min}+ dwelling units (excluding colonies)<br>`
     + (mode === 'type'
         ? `type is hand-labelled in mf-type-overrides.csv, never inferred<br>`
-        : `from assessed building value ${MFNB_FROM_YEAR}+<br>`)
+        : `new buildings from assessed building value ${MFNB_FROM_YEAR}+<br>`
+          + `hover a parcel for the year it landed on the roll<br>`)
     + `years are assessment years and trail completion by about a year<br>`
     + `unit count labels each parcel (zoom in to read them)`
     + (merged ? `<br>Multi-Family is the standing inventory over the same ramp` : '')
@@ -13003,26 +12997,6 @@ function turnMfnbOff() {
   regrantResultsGrid('mfnb');
 }
 
-/**
- * Load the standing-inventory stamps for this scope if they are not already
- * here, whatever switched them on.
- *
- * New Multi-Family needs them even with the inventory's own button off: the
- * context outline under it is drawn from `_mfInvDu` (map.js,
- * applyInventoryContext), and without a load there is simply nothing to
- * outline — the feature would work or not depending on whether the user had
- * happened to press the other button first.
- *
- * Shares `mfInvLoadedFor` with the inventory toggle, so whichever path gets
- * here first pays for the fetch and the other skips it.
- */
-async function ensureMfInventoryStamps(munis, scopeKey) {
-  if (!munis.length || mfInvLoadedFor === scopeKey) return;
-  if (!auxData.muniParcels?.features?.length) return;
-  await stampMfInventoryOnFabric(auxData.muniParcels, munis);
-  mfInvLoadedFor = scopeKey;
-}
-
 async function toggleMfNewbuildOverlay() {
   if (!$mfnbToggle) return;
   await mapReady;
@@ -13059,12 +13033,6 @@ async function toggleMfNewbuildOverlay() {
         setMuniParcelsScope(map, scopedOverlayMunis());
       }
       await stampMfNewbuildOnFabric(auxData.muniParcels, munis);
-      // The context outline underneath needs the inventory stamps too.
-      // Non-fatal: a failed context load must not cost the layer the user
-      // actually asked for.
-      await ensureMfInventoryStamps(munis, scopeKey).catch((err) => {
-        console.warn('Standing-inventory context for New Multi-Family failed (non-fatal):', err);
-      });
       setMuniParcelsData(map, auxData.muniParcels);
       mfnbLoadedFor = scopeKey;
     } catch (err) {
@@ -13080,12 +13048,6 @@ async function toggleMfNewbuildOverlay() {
     // Already stamped for this scope, but under whichever view was showing
     // when the overlay last went off (Units, at the end of a full cycle).
     recolorMfnb();
-    // Still may never have loaded the inventory — this branch is reached
-    // after a plain off/on of a layer that was loaded before the context
-    // outline existed for the scope.
-    await ensureMfInventoryStamps(munis, scopeKey).catch((err) => {
-      console.warn('Standing-inventory context for New Multi-Family failed (non-fatal):', err);
-    });
     setMuniParcelsData(map, auxData.muniParcels);
   }
 
@@ -13415,11 +13377,7 @@ function onMfThresholdChange() {
     // Whichever of the two is on gets repainted — the bar governs both, so
     // leaving the other showing its old set would be the inconsistency this
     // single control exists to avoid.
-    // The context outline is drawn from the inventory stamps, so they have to
-    // be re-stamped at the new bar even while that overlay's button is off —
-    // otherwise the outlines keep describing the threshold they were last
-    // painted under.
-    if (mfInvOverlayOn || inventoryContextWanted()) recolorMfInv();
+    if (mfInvOverlayOn) recolorMfInv();
     if (mfnbOverlayOn) recolorMfnb();
     renderMfLegends();
     const munis = overlayResultMunis();
