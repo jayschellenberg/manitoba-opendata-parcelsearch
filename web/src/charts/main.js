@@ -2455,7 +2455,8 @@ function compTableRecords() {
 function compTableModel() {
   const u = unitSpec();
   const areaLabel = { acres: 'Acres', sf: 'Sq Ft', ff: 'Front Ft' }[opts.unit] || 'Acres';
-  const rateLabel = `Price per ${u.perUnit}`;
+  // Short headings, as in his report tables (Jason, 2026-10-21).
+  const rateLabel = `Price/${{ acres: 'Acre', sf: 'SF', ff: 'Front Ft' }[opts.unit] || 'Acre'}`;
   const sizeOf = (r) => { const v = Number(r[u.size]); return v > 0 ? v : null; };
   const rateOf = (r) => { const v = Number(r[u.metric]); return v > 0 ? v : null; };
   const fmtSize = (v) => (v == null ? '' : opts.unit === 'acres' ? v.toFixed(2) : fmtNum(Math.round(v)));
@@ -2468,12 +2469,20 @@ function compTableModel() {
   const counts = new Map();
   for (const r of recs) counts.set(r.muni, (counts.get(r.muni) || 0) + 1);
   const home = data.meta?.subject?.muni || [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+  // On screen a long assembly shows its first six rolls and a count (Jason,
+  // 2026-10-21: a 13-roll sale made one row five lines tall); the copy, the
+  // CSV and the work file keep every roll, and the cell's tooltip lists them.
+  const ROLLS_SHOWN = 6;
+  const rollCell = (r, all) => {
+    const list = r.rolls || [];
+    const text = all || list.length <= ROLLS_SHOWN ? list.join(', ') : `${list.slice(0, ROLLS_SHOWN).join(', ')} + ${list.length - ROLLS_SHOWN} more`;
+    return r.muni && home && r.muni !== home ? `${shortMuni(r.muni)} - ${text}` : text;
+  };
   const rows = recs.map((r) => {
     const n = compName(r);
-    const rolls = (r.rolls || []).join(', ');
     return [
       n.replace(/^Sale #/, ''),
-      r.muni && home && r.muni !== home ? `${shortMuni(r.muni)} - ${rolls}` : rolls,
+      rollCell(r, true),
       r.address || r.legal || '',
       fmtCompDate(r.dateMs, r.dateText),
       Number(r.price) > 0 ? fmtMoney0(Number(r.price)) : '',
@@ -2495,16 +2504,17 @@ function compTableModel() {
   return {
     title: opts.compTableTitle || pageMaps.get('comp')?.title() || 'Comparable Sales',
     columns: [
-      { label: 'Sale No.' }, { label: 'Roll #' }, { label: 'Location' }, { label: 'Sale Date' },
-      { label: 'Sale Price', num: true }, { label: `Lot Area (${areaLabel})`, num: true }, { label: 'Zoning' },
-      { label: rateLabel, num: true }, ...(perLot ? [{ label: 'Price per Lot', num: true }] : []), { label: 'Comments' },
+      { label: '#' }, { label: 'Roll #' }, { label: 'Location' }, { label: 'Date' },
+      { label: 'Price', num: true }, { label: `Lot Area (${areaLabel})`, num: true }, { label: 'Zoning' },
+      { label: rateLabel, num: true }, ...(perLot ? [{ label: 'Price/Lot', num: true }] : []), { label: 'Comments' },
     ],
     rows,
     recs,
+    rollsShort: recs.map((r) => rollCell(r, false)),
     // The value-indicator blocks, [heading, {Mean, High, Low, Median}], in
     // print order; a block with no values is left out.
     indicators: [
-      ...(perLot ? [['Value indicators – Price per Lot (unadjusted)', stat(recs.map(pplOf), fmtMoney0)]] : []),
+      ...(perLot ? [['Value indicators – Price/Lot (unadjusted)', stat(recs.map(pplOf), fmtMoney0)]] : []),
       [`Value indicators – ${rateLabel} (unadjusted)`, stat(recs.map(rateOf), u.money)],
       [`Size (${areaLabel})`, stat(recs.map(sizeOf), fmtSize)],
     ].filter(([, st]) => st),
@@ -2617,7 +2627,8 @@ function compTableCard() {
         box.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') box.blur(); });
         td.appendChild(box);
       } else {
-        td.textContent = cell;
+        td.textContent = j === 1 ? m.rollsShort[i] : cell;
+        if (j === 1 && m.rollsShort[i] !== cell) td.title = cell;
         if (m.columns[j]?.num) td.className = 'num';
       }
       tr.appendChild(td);

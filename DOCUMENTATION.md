@@ -1157,7 +1157,8 @@ Beside the first comp map sits the **comp table** (2026-10-20, after his
 report's sales grid): Sale No., Roll # (prefixed with the municipality when it
 is not the subject's, "Springfield - 44060"), Location (address, else the
 legal), Sale Date (22-Jan-26), Sale Price, Lot Area and Price per unit in the
-page's unit, Zoning and a Comments box, then the unadjusted value indicators
+page's unit, Zoning and a Comments box, (headings #, Roll #, Location, Date, Price, Lot Area, Zoning, Price/Acre or
+/SF or /Front Ft, [Price/Lot], Comments — Jason 2026-10-21) then the unadjusted value indicators
 (mean / high / low / median of the rate and the size). It lists the first
 map's sales in comp order. Comments (`opts.compComments`, keyed by sale tag
 key) and the editable title (`opts.compTableTitle`) ride in opts, so job files
