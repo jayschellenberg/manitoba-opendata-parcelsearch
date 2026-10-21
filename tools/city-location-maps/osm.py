@@ -1,6 +1,7 @@
 """Download OSM roads around a city: osm_<city>.json in the current dir.
     python -I osm.py <city> "<MUNI (TYPE)>"
-Overpass sometimes answers 502; run it again.
+Overpass sometimes answers 502; run it again, or pass a mirror URL as a
+third argument (https://overpass.kumi.systems/api/interpreter).
 """
 import json, sys, urllib.request, urllib.parse
 from shapely.geometry import shape
@@ -10,7 +11,8 @@ f = next(f for f in g['features'] if f['properties']['MUNI_LIST_NAME_WITH_TYPE']
 x0, y0, x1, y1 = shape(f['geometry']).bounds
 d = 0.06
 q = f'[out:json][timeout:120];way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential)(_link)?$"]({y0-d},{x0-d*1.5},{y1+d},{x1+d*1.5});out geom;'
-req = urllib.request.Request('https://overpass-api.de/api/interpreter', data=urllib.parse.urlencode({'data': q}).encode(), headers={'User-Agent': 'mb-parcelsearch georef (jksconsulting)'})
+url = sys.argv[3] if len(sys.argv) > 3 else 'https://overpass-api.de/api/interpreter'
+req = urllib.request.Request(url, data=urllib.parse.urlencode({'data': q}).encode(), headers={'User-Agent': 'mb-parcelsearch georef (jksconsulting)'})
 js = json.load(urllib.request.urlopen(req, timeout=180))
 ways = [{'hw': e['tags'].get('highway'), 'name': e['tags'].get('name'), 'ref': e['tags'].get('ref'), 'pts': [[p['lon'], p['lat']] for p in e['geometry']]} for e in js['elements'] if e['type'] == 'way']
 json.dump(ways, open(f'osm_{name}.json', 'w'))

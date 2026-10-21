@@ -84,3 +84,28 @@ community plan when the subject is on one of its sheets.
 and 270 town sheets accepted). Rebuilding from them needs no refit, only
 the source maps; the label boxes the callout avoids come from the OCR
 files, so rerun the fit for a sheet if you want those exact.
+
+## Second round (2026-10-21): MLI sources
+
+- **All 13 highway-map cities** now ship (Dauphin, Flin Flon, Morden,
+  Neepawa, Niverville, Portage la Prairie, Selkirk, Stonewall, The Pas,
+  Winkler added). `chamferseed.py` seeds pages with too few street labels
+  for `namefit.py`; strokes are clipped to the page; Portage's page is
+  `/Rotate 90`, carried through `build.py`. Fits in `fits/city/`.
+- **RM maps from MLI's DXFs.** https://mli.gov.mb.ca/municipalities/ has a
+  DXF of every RM map; the PDF is a print of the same drawing, so
+  `rmdxf.py` fits the PDF's grey section lines to the DXF's
+  `Section_Township` layer: 100/100 RMs at ~2 m, including the river-lot
+  RMs the section-grid fit missed. Multi-sheet RMs are merged; MLI's folder
+  typos (Mossy_River, North_Cyress-Langford) are matched fuzzily. Fits in
+  `fits/rm-dxf/`.
+- **Town plans from MLI.** https://mli.gov.mb.ca/towns/ has 546 vector
+  redraws (2000-2020) of the plans, far cleaner than the old scans. Jason's
+  master copy: `D:\Dropbox\Appraisal\Maps\$Town and Village Maps 2026`
+  (`townfit.MLI_SRC`; every fit's `src` points there). Run `townfit.py`
+  with `TOWNFIT_SRC` set to it. 482 fit;
+  209 pass an automatic check (every printed section label lands in its own
+  section, `work/triage.py`), the rest were reviewed by eye: 418 accepted
+  (`fits/mli-verdicts.json`, fits in `fits/mli/`).
+- `build_area.py` builds every ok RM fit plus the accepted MLI plans, and an
+  old scan only for a community with no accepted MLI sheet.

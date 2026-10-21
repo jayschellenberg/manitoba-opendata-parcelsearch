@@ -18,7 +18,10 @@ import { BASE_MAPS, utm14 } from './locationMap.js';
 import { CITY_MAP_DATA } from './cityMapData.js';
 
 /** The cities with a map, in the order the panel lists them. */
-export const CITY_MAP_IDS = ['brandon', 'steinbach', 'thompson'];
+export const CITY_MAP_IDS = [
+  'brandon', 'dauphin', 'flinflon', 'morden', 'neepawa', 'niverville', 'portagelaprairie',
+  'selkirk', 'steinbach', 'stonewall', 'thepas', 'thompson', 'winkler',
+];
 
 /** Output width the figures are rendered at, in pixels — about the
  *  Manitoba figure's 1467. */

@@ -1,0 +1,1 @@
+{"stem": "Dauphin", "method": "dxf", "muni": "DAUPHIN (RM)", "dxf": ["Dauphin Sheet 1.dxf", "Dauphin Sheet 2.dxf"], "seed": "grid", "median_m": 1.0, "kept": 1.0, "m_per_pt": 88.21, "aniso": 1.0, "rot": 0.8, "M": [[0.01133549834322172, -0.00015815055848771096, -3626.6459100540287], [-0.0001581585987768931, -0.011335467935112028, 64781.56117256846]], "status": "ok"}

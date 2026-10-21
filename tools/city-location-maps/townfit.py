@@ -24,7 +24,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # utm.py beside 
 from utm import utm14  # noqa: E402
 import parcelref  # noqa: E402
 
-SRC = r'D:/Dropbox/Appraisal/Maps/$Town and Village Maps'
+# TOWNFIT_SRC: another folder of plans, e.g. MLI_SRC below for MLI's vector
+# redraws (https://mli.gov.mb.ca/towns/, named <Town>_S<sheet>.pdf).
+SRC = os.environ.get('TOWNFIT_SRC', r'D:/Dropbox/Appraisal/Maps/$Town and Village Maps')
+# Jason's master copy of MLI's plans (2026-10-21); the folder above holds the
+# 1979-2014 scans that the 23 old-scan fits in fits/town still come from.
+MLI_SRC = r'D:/Dropbox/Appraisal/Maps/$Town and Village Maps 2026'
 WORK = '.'
 WEB = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'web'))
 TESS = r'C:/Program Files/Tesseract-OCR/tesseract.exe'
@@ -273,7 +278,7 @@ class Ctx:
 
 
 def place_point(ctx, stem):
-    name = re.sub(r'_\d+$|_index$', '', stem).replace('_', ' ').lower()
+    name = re.sub(r'_S?\d+$|_index$', '', stem).replace('_', ' ').lower()
     flds = ctx.places['fields']; rows = ctx.places['places'] if 'places' in ctx.places else ctx.places.get('rows', [])
     i_n, i_lat, i_lon = flds.index('name'), flds.index('lat'), flds.index('lon')
     norm = lambda s: re.sub(r'[^a-z]', '', s.lower().replace('saint', 'st').replace('sainte', 'ste'))
@@ -283,7 +288,7 @@ def place_point(ctx, stem):
 
 def fit_one(ctx, work, fname):
     stem = os.path.splitext(fname)[0]
-    res = {'file': fname}
+    res = {'file': fname, 'src': SRC}
     gray = load_image(os.path.join(SRC, fname))
     H, W = gray.shape
     res['size'] = [W, H]
