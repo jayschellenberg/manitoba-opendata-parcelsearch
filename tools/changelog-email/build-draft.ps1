@@ -21,6 +21,28 @@ $logDir = Join-Path $ChangelogDir 'logs'
 if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Force $logDir | Out-Null }
 Start-Transcript -Path (Join-Path $logDir ("build-{0:yyyy-MM-dd_HHmm}.log" -f (Get-Date))) | Out-Null
 
+# PR bodies are written for the developer: half of each is verification, test
+# and implementation notes no appraiser sees. Keep the user-facing sections and
+# cap the rest - 7 weeks of untrimmed bodies (241 PRs, 430 KB) overflowed the
+# model's context ("Prompt is too long").
+function Compress-PrBody([string]$body, [int]$cap = 2500) {
+  $out = New-Object System.Collections.Generic.List[string]
+  $skip = $false; $fence = $false
+  foreach ($line in ($body -split "`r?`n")) {
+    if ($line -match '^\s*(```|~~~)') { $fence = -not $fence; continue }
+    if ($fence) { continue }
+    if ($line -match '^#{1,6}\s') {
+      $skip = $line -match '^#{1,6}\s*(Verif|Test|How\b|Implementation|Technical|Files|Notes? for|Screenshots?|Checklist|Review|Gap|Known|Follow|Out of scope|Deploy|CI\b)'
+      if ($skip) { continue }
+    }
+    if ($skip -or $line -match '^\s*(!\[|<img|<!--|\|)') { continue }   # images, comments, tables
+    $out.Add($line)
+  }
+  $t = (($out -join "`n") -replace '(\n\s*){3,}', "`n`n").Trim()
+  if ($t.Length -gt $cap) { $t = $t.Substring(0, $cap) + ' [...]' }
+  return $t
+}
+
 $cfg = Get-AlertConfig $RepoRoot
 try {
   $windowStart = Get-WindowStart
@@ -38,6 +60,7 @@ try {
   [void]$sb.AppendLine("Period: $periodLabel`n")
   $total = 0
   foreach ($r in $repos) {
+    $r.prs = @()
     # gh's search is date-granular; filter to the exact timestamp below.
     $since = $windowStart.ToString('yyyy-MM-dd')
     $json = & gh pr list -R $r.slug --state merged --search "merged:>=$since" --limit 300 `
@@ -53,10 +76,18 @@ try {
     } | Sort-Object mergedAt)
     Write-Host "$($r.name): $($prs.Count) merged PRs"
     $total += $prs.Count
+    $r.prs = $prs
+  }
+
+  # Split a fixed budget (~75k tokens) across the PRs: the full 2,500 chars each
+  # in a typical month, less in a busy stretch, never under 600.
+  $cap = [Math]::Max(600, [Math]::Min(2500, [int](280000 / [Math]::Max(1, $total))))
+  Write-Host "Per-PR body cap: $cap chars"
+  foreach ($r in $repos) {
+    $prs = $r.prs
     [void]$sb.AppendLine("# $($r.name) - $($prs.Count) merged pull requests`n")
     foreach ($p in $prs) {
-      $body = [string]$p.body
-      if ($body.Length -gt 5000) { $body = $body.Substring(0, 5000) + "`n[...truncated]" }
+      $body = Compress-PrBody ([string]$p.body) $cap
       [void]$sb.AppendLine("## $($p.title)  (merged $(([DateTime]::Parse($p.mergedAt)).ToLocalTime().ToString('yyyy-MM-dd')))")
       [void]$sb.AppendLine($body)
       [void]$sb.AppendLine()
@@ -81,7 +112,12 @@ try {
   } else {
     # cmd.exe redirection keeps the bytes UTF-8 end to end (PS 5.1 pipes would
     # re-encode through the console code page). --tools "" = text in, text out.
-    $cmdline = "claude -p --model opus --tools `"`" --no-session-persistence " +
+    # Isolate it from this PC's Claude setup: the MCP servers' tool lists alone
+    # overflow the context, so even a two-word prompt fails "Prompt is too long"
+    # without --strict-mcp-config / --setting-sources "" (measured 2026-10-21).
+    $cmdline = "claude -p --model opus --tools `"`" --strict-mcp-config --setting-sources `"`" " +
+               "--disable-slash-commands --system-prompt `"You write clear, plain-English emails.`" " +
+               "--no-session-persistence " +
                "`"Write the email exactly as the instructions at the top of the input say.`" " +
                "< `"$inFile`" > `"$outFile`" 2> `"$errFile`""
     $p = Start-Process cmd.exe -ArgumentList "/d /s /c `"$cmdline`"" -Wait -NoNewWindow -PassThru
