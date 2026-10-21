@@ -58,3 +58,29 @@ intermediate files into the current directory), with `python -I`.
   page as 380 units wide so the SUBJECT box reads the same in every figure.
 - The PDFs embed their fonts, so unlike the NRCan Manitoba overview no
   Ghostscript font pass is needed.
+
+# RM maps and community plans (R2)
+
+The 2017 RM maps (`D:\Dropbox\Appraisal\Maps\$MunicipalMaps-2017`) and the
+town / village / unincorporated plans (`$Town and Village Maps`) are served
+from R2, not the Vercel build: `r2-mb:mb-ortho/location-maps/` (public at
+`pub-0910…r2.dev/location-maps/`), 353 sheets + `index.json`, 117 MB,
+uploaded 2026-10-21. `web/src/lib/areaMaps.js` loads the index on demand;
+the Addenda Pack adds the RM map when the subject is in that RM, and the
+community plan when the subject is on one of its sheets.
+
+- `rmfit.py`: margin Tp/Rge seed, section-line ICP, then a whole-section
+  shift chosen by the corner labels (a 1.6 km lock-off is the usual failure).
+- `townfit.py`: OCR (Tesseract) for the scale bar, title sections and
+  corner labels; FFT search against the **assessment-parcel edges**
+  (`parcelref.py`), constrained so corner labels land in their sections;
+  rejects fits that drift >6% from the bar.
+- `review.py`: contact sheets (parcels over the scan) for the eye review.
+  Only sheets marked `ok` in `fits/review.json` are built.
+- `build_area.py <rm dir> <town dir> fits/review.json <out>` then
+  `rclone copy <out> r2-mb:mb-ortho/location-maps/ --s3-no-check-bucket`.
+
+`fits/` holds every fit (101 RM, 521 town) and the review verdicts (83 RM
+and 270 town sheets accepted). Rebuilding from them needs no refit, only
+the source maps; the label boxes the callout avoids come from the OCR
+files, so rerun the fit for a sheet if you want those exact.
