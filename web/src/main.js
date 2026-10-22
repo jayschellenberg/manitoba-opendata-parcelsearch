@@ -2755,6 +2755,13 @@ const salesDbPanel = initSalesDbPanel({
     from: ($saleDateFrom?.value || '').trim(),
     to:   ($saleDateTo?.value   || '').trim(),
   }),
+  // Sale Price (Additional filters) narrows the load the same way when it is
+  // set before Search (Jason, 2026-10-22). The sidebar filter still applies
+  // afterwards, so the two can never disagree.
+  getPriceWindow: () => ({
+    min: ($salesPriceLow?.value  || '').trim(),
+    max: ($salesPriceHigh?.value || '').trim(),
+  }),
   // Fired once a Search is committed (after the no-date-range confirm) and
   // before anything is read. Drops the previous result set so a search that
   // finds nothing — or fails — can never leave the last one on screen

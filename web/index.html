@@ -850,12 +850,296 @@
           </div>
           </details>
 
+          <!-- The occasional filters. Collapsed by default so the
+               sales panel opens at a readable length; the controls
+               inside are the ones reached for on particular jobs
+               rather than on every upload.
+
+               Directly under the upload line and shown BEFORE a load
+               (Jason, 2026-10-22), so size, price, $/Ac and the rest can
+               be set up front instead of after the slow part has run.
+               Sale Price also narrows a database Search the way the date
+               range does (lib/salesStore.js). The zoning pickers list
+               only values in the loaded results, so they stay greyed out
+               until a load. The Subject Property controls need an
+               import's municipalities and stay hidden until then. -->
+          <details class="more-filters sales-filters sales-only">
+            <!-- The badge is a WARNING that names every control in here
+                 that is set. It lives inside <summary> so it shows when
+                 the group is collapsed — the case where a forgotten Plan #
+                 or a persisted Far-Flung Exclude silently drops comps.
+                 Filled by renderSalesFiltersBadge() in main.js, which also
+                 repeats the list on the count line above the table. -->
+            <summary><span class="more-filters-title">Additional filters</span><span
+              class="sales-filters-badge"
+              id="sales-filters-badge"
+              hidden
+            ></span></summary>
+            <div class="size-vacant-row">
+              <!-- A plan number is at most 7 digits, usually 3-5, so this is
+                   sized for 7 and fixed — see the CSS. `title` rather than a
+                   `.tip` span for the same reason as the size boxes: a .tip
+                   makes infoIcon.js inject an ⓘ button inside the field,
+                   which would take 31px of a 65px control. -->
+              <span class="field sales-plan-field">
+                <input id="sales-plan" type="text" placeholder="Plan #" autocomplete="off" maxlength="12"
+                       title="Filter uploaded sales to rows whose plan number contains this string. Case-insensitive substring match against both the legal-index Plan field AND the raw &quot;Legal Description&quot; cell from the uploaded CSV." />
+              </span>
+              <!-- Unit for the two size boxes below. The boxes are read in
+                   whichever unit is lit, so switching the pill re-interprets
+                   what is already typed rather than clearing it.
+                   FF filters on the roll's stated FRONTAGE, which only about
+                   37% of parcels carry — the rest state an area instead, and
+                   drop out while FF is selected. -->
+              <span class="field size-uom-field">
+                <select id="size-uom" aria-label="Size unit"
+                        title="Ac / SF filter on parcel area. FF filters on the assessment roll's stated frontage in feet — parcels whose roll states an area instead (about 63%) drop out while FF is selected.">
+                  <option value="acres" selected>Ac</option>
+                  <option value="sf">SF</option>
+                  <option value="ff">FF</option>
+                </select>
+              </span>
+              <!-- These two carry a plain `title` rather than a `.tip` span.
+                   A .tip makes infoIcon.js inject an ⓘ button INSIDE the
+                   field, which on a 46px box left only ~15px for the input
+                   itself. The pill's own button titles already explain the
+                   units, so the icon was costing two thirds of the control
+                   to say something said elsewhere. -->
+              <span class="field size-low-field">
+                <input id="size-low" type="number" min="0" step="0.01" placeholder="Lo Ac"
+                       title="Minimum parcel size, in the unit lit on the Ac/SF/FF pill. Empty = no minimum." />
+              </span>
+              <span class="field size-high-field">
+                <input id="size-high" type="number" min="0" step="0.01" placeholder="Hi Ac"
+                       title="Maximum parcel size, in the unit lit on the Ac/SF/FF pill. Empty = no maximum." />
+              </span>
+            </div>
+            <!-- Street Name + Min $/Ac + Max $/Ac on a single row.
+                 Street Name takes the left half; the two PPA inputs
+                 split the right half evenly. -->
+            <div class="street-name-row">
+              <span class="field street-name-field">
+                <input id="sales-street-name" type="text" placeholder="Street name" autocomplete="off" />
+                <span class="tip">Filter uploaded sales to rows whose Property Address contains this string. Case-insensitive substring match.</span>
+              </span>
+              <!-- `title` rather than a `.tip` span: a .tip makes
+                   infoIcon.js inject an ⓘ button inside the field, and at
+                   ~31px that was most of a 69px control — the placeholder
+                   "Min $/Ac" could not even render in what was left.
+                   Street name keeps its icon; it has the width to spare. -->
+              <span class="field ppa-low-field">
+                <input id="sales-ppa-low" type="number" min="0" step="1" placeholder="Min $/Ac"
+                       title="Minimum $/Acre (group rate). Empty = no lower limit." />
+              </span>
+              <span class="field ppa-high-field">
+                <input id="sales-ppa-high" type="number" min="0" step="1" placeholder="Max $/Ac"
+                       title="Maximum $/Acre (group rate). Empty = no upper limit. Use a high Min on its own to surface development-land sales." />
+              </span>
+            </div>
+            <!-- Total consideration bounds. Deliberately a separate
+                 pair from $/Ac rather than a shared box with a unit
+                 toggle: the two express different things and combining
+                 them ("$3k-$6k an acre, under $2M all in") is a real
+                 screen. -->
+            <div class="sale-price-row">
+              <span class="sale-price-prefix">Sale Price:</span>
+              <span class="field sale-price-low-field">
+                <input id="sales-price-low" type="number" min="0" step="1000" placeholder="Min $" />
+              </span>
+              <span class="field sale-price-high-field">
+                <input id="sales-price-high" type="number" min="0" step="1000" placeholder="Max $" />
+                <span class="tip">Total sale price bounds (the Consideration from the uploaded CSV). For a multi-parcel sale this is the whole transaction, so the entire sale passes or fails together. Sales with no readable price drop out while either bound is set; empty = no limit on that side. Set before a database Search, it also limits which sales are loaded, like the date range — widen it afterwards and search again to bring the rest in.</span>
+              </span>
+            </div>
+            <!-- Zoning code + Zoning Type. Moved in here 2026-08-18 (Jason):
+                 both narrow an already-chosen set rather than describing it,
+                 which is what this section is for, and the top of the sales
+                 panel was carrying four pickers before the first filter that
+                 gets reached on most jobs. They keep .class-row, so the pair
+                 still splits the width 50/50 the way it did above. -->
+            <!-- Shown only before a load (style.css), when the two pickers
+                 below have nothing to list yet. -->
+            <p class="sales-filters-preload-hint">Zoning lists fill in once sales are loaded.</p>
+            <div class="class-row sales-only sales-zoning-row">
+              <span class="field zoning-field">
+                <details class="multiselect" id="zoning-filter">
+                  <summary aria-label="Zoning filter">
+                    <span class="multiselect-label">Any zoning</span>
+                  </summary>
+                  <div class="multiselect-menu"></div>
+                </details>
+              </span>
+              <!-- Zoning TYPE, the cross-muni companion to the code picker
+                   above. Zone codes are municipality-specific, so on a
+                   multi-muni sales set the code filter can't express
+                   "all the commercial sales" — this can. -->
+              <span class="field zonecat-field">
+                <details class="multiselect" id="zonecat-filter">
+                  <summary aria-label="Zoning type filter">
+                    <span class="multiselect-label">Any zoning type</span>
+                  </summary>
+                  <div class="multiselect-menu"></div>
+                </details>
+                <span class="tip">Zoning filters by zone code — the values the Zoning and Zoning 2 columns show. Codes are municipality-specific, so a multi-muni upload lists each muni's codes together; a sale is kept when either of its zones matches anything ticked. Zoning Type filters by the province's broad ZONE_CATEGORY rollup (Commercial, Industrial, Residential, Open Space…), which compares ACROSS municipalities — the one to reach for on a multi-muni set. Type matches a parcel's DOMINANT zone, exactly what the Zoning Type column shows, so the ticked types and the column always agree. Both lists hold only values your current results contain; spelling variants fold together and unjoined zoning appears under "(no category)".</span>
+              </span>
+            </div>
+            <!-- Parcels-per-sale + N1 crosswalk, sharing one row at half
+                 width each. Both are single-select questions about the SHAPE
+                 of a sale rather than its numbers, and neither needs a row of
+                 its own. Reuses the sale-price row's layout classes — prefix
+                 + field — plus .sale-price-half to split it. -->
+            <div class="sale-price-row">
+              <span class="sale-price-half">
+                <span class="sale-price-prefix">Parcels:</span>
+                <span class="field">
+                  <select id="sales-groupsize-filter" aria-label="Parcels per sale filter"
+                          title="Filter by how many parcels the sale transferred. Multi-parcel only keeps assemblies — sales where one price bought several rolls, which is what the Group # column counts and what every $/Acre on this tab is computed across. Single parcel only keeps the rest. A whole sale is kept or dropped together, never part of one, so the group rates keep describing the land actually bought.">
+                    <option value="any" selected>All sales</option>
+                    <option value="single">Single parcel</option>
+                    <option value="multi">Multi-parcel</option>
+                  </select>
+                </span>
+              </span>
+              <span class="sale-price-half">
+                <span class="sale-price-prefix">N1:</span>
+                <span class="field">
+                  <select id="sales-n1-filter" aria-label="N1 match filter"
+                          title="Filter by N1 crosswalk status. Matched = sale carries an N1 ID; Unmatched = no N1 record linked yet — the data-entry queue. Pasted comp sets have no N1 column and read as entirely unmatched.">
+                    <option value="any" selected>Any</option>
+                    <option value="matched">Matched</option>
+                    <option value="unmatched">Unmatched</option>
+                  </select>
+                </span>
+              </span>
+            </div>
+            <!-- Outline at sale, from the weekly parcel change history (the
+                 grid's "Outline at sale" column). Group-level like Parcels:
+                 an assembly is changed when any parcel is, unchanged only
+                 when all are. Same half-row layout, one half used. -->
+            <div class="sale-price-row">
+              <span class="sale-price-half">
+                <span class="sale-price-prefix">Outline:</span>
+                <span class="field">
+                  <select id="sales-outline-filter" aria-label="Outline at sale filter"
+                          title="Filter by whether the parcel outline that sold is today's, from the weekly parcel change history (the Outline at sale column). Same as today keeps sales whose outline is known to be unchanged, or only redrawn by a province map realignment at the same area, so today's acreage and shape describe what sold. Changed keeps sales whose outline changed since (or around) the sale date, or that were not yet mapped. A multi-parcel sale counts as changed when any of its parcels did. Sales the history cannot place — before it began, approximate pins, or still loading — pass neither option.">
+                    <option value="any" selected>Any</option>
+                    <option value="unchanged">Same as today</option>
+                    <option value="changed">Changed</option>
+                  </select>
+                </span>
+              </span>
+            </div>
+            <!-- Vacant-land threshold. Single input + a %/$ pill
+                 toggle decides how to interpret the number:
+                 building-percentage cap (% mode) or building-dollar
+                 cap ($ mode). Tunes the Vacant Only selector below. -->
+            <div class="vacant-threshold-row">
+              <span class="vacant-threshold-prefix">Bldg Threshold:</span>
+              <span class="field vacant-threshold-field">
+                <input id="vacant-threshold" type="number" min="0" step="0.1" placeholder="5" value="5" />
+              </span>
+              <div class="vacant-mode-pill" role="radiogroup" aria-label="Vacant threshold mode">
+                <button type="button" class="vacant-mode-btn active" data-mode="pct" aria-pressed="true">%</button>
+                <button type="button" class="vacant-mode-btn" data-mode="dollar" aria-pressed="false">$</button>
+              </div>
+              <!-- Sale/Asmt ratio cap as a small dropdown. Empty value
+                   (default) reads "Max Sale/Asmt" and applies no
+                   filter. Picking a numeric option caps Sale ÷
+                   Assessed Total at that value — surfaces quirky
+                   sales where the assessment hadn't caught up to a
+                   newly built improvement. -->
+              <span class="field sale-asmt-max-field">
+                <select id="sale-asmt-max" aria-label="Max Sale/Asmt ratio cap">
+                  <option value="">Max Sale/Asmt</option>
+                  <option value="0.5">≤ 0.5</option>
+                  <option value="0.75">≤ 0.75</option>
+                  <option value="1">≤ 1</option>
+                  <option value="1.25">≤ 1.25</option>
+                  <option value="1.5">≤ 1.5</option>
+                  <option value="1.75">≤ 1.75</option>
+                  <option value="2">≤ 2</option>
+                  <option value="3">≤ 3</option>
+                  <option value="4">≤ 4</option>
+                  <option value="5">≤ 5</option>
+                </select>
+                <span class="tip">Bldg Threshold tunes the Vacant Only proxy below the date range: in % mode (default) a parcel reads as vacant when Buildings ÷ Total is below this percent, in $ mode when Buildings $ is below this dollar value — heuristic only, verify with the municipality. Max Sale/Asmt separately caps Sale ÷ Assessed Total, surfacing sales where buildings sold before the assessment caught up (Sale/Asmt &gt;&gt; 1); leave it on "Max Sale/Asmt" for no cap. Both apply alongside Vacant Only.</span>
+              </span>
+            </div>
+
+            <!-- Far-Flung threshold + Exclude. The tally that says whether
+                 either is biting stays outside this disclosure, down beside
+                 All Sales. -->
+            <div class="far-flung-controls-row">
+              <span class="far-flung-field">
+                <label for="far-flung-km">Far-Flung &gt;</label>
+                <input id="far-flung-km" type="number" min="0" step="1" />
+                <span class="far-flung-unit">km</span>
+              </span>
+              <span class="field far-flung-exclude-field">
+                <!-- Checked by default (Jason, 2026-09-22): a portfolio or estate sale
+                     spread across a wide area has a blended $/Acre that is not a
+                     local comparable, so dropping them is the normal starting
+                     point. `data-default` on Exclude below is what keeps shared
+                     links honest — see the URL writer in main.js, and the note on
+                     resetFarFlungExclude for why that matters here specifically. -->
+                <input type="checkbox" id="far-flung-exclude" class="pill-backing" hidden checked />
+                <div class="mode-pill-row far-flung-exclude" title="Remove the flagged sales from the results table, the map and the CSV export. On by default — a sale spread across a wide area has a blended $/Acre that is not a local comparable. Switch to Keep to bring them back. Sales whose spread can't be measured (a parcel with no geometry) are never excluded.">
+                  <span class="mode-pill-prefix">Flagged:</span>
+                  <div class="mode-pill compact" role="radiogroup" aria-label="Far-flung sales" data-pill="farflung">
+                    <button type="button" class="mode-btn mode-btn-off" data-mode="keep" aria-pressed="false">Keep</button>
+                    <button type="button" class="mode-btn active" data-mode="exclude" aria-pressed="true" data-default>Exclude</button>
+                  </div>
+                </div>
+                <span class="tip">Far-Flung marks multi-parcel sales whose parcels lie farther apart than the km threshold, measured between parcel centroids. Portfolio and estate sales sweep up land across a wide area, so their blended $/Acre is not a local comparable. Blank or 0 turns the marking off, and marking alone removes nothing — tick Exclude to drop the flagged sales from the table, the map and the CSV export. Sales whose spread can't be measured (a parcel with no geometry) are never excluded.</span>
+              </span>
+            </div>
+
+            <!-- Subject parcel. The muni picker leads deliberately: the
+                 roll number alone does not identify a parcel — the same
+                 roll exists in many municipalities — so the question
+                 "which muni is this roll in" has to be answered before
+                 the roll means anything. It used to sit BELOW the roll
+                 and only appear on multi-muni uploads, which made the
+                 resolution invisible on the single-muni imports that are
+                 the common case. -->
+            <!-- A header over the subject controls (Jason, 2026-10-06): they
+                 sit at the foot of the filters and read as one more filter
+                 without it. -->
+            <h3 class="sales-subject-title sales-only">Subject Property</h3>
+            <!-- Starts hidden and is revealed once an import has munis to
+                 offer, so an empty select never claims to name one. -->
+            <div id="subject-muni-row" class="subject-muni-row sales-only" hidden>
+              <span class="field subject-muni-field">
+                <select id="subject-muni" aria-label="Municipality for the subject roll"></select>
+                <span class="tip">Municipality the subject roll # is fetched from. Lists every municipality in the current import, defaulting to the one with the most matched parcels.</span>
+              </span>
+            </div>
+            <!-- Roll # and radius sit together because they are one thought —
+                 "how far from THIS parcel" — and the buttons that commit it
+                 follow both rather than splitting the pair. One tip for the
+                 row, on the radius field: two icons a few pixels apart said
+                 half the story each, and the half about the subject roll was
+                 the half you needed to read the radius (Jason, 2026-08-19). -->
+            <div class="subject-row sales-only">
+              <span class="field subject-roll-field">
+                <input id="subject-roll" type="text" placeholder="Subject roll #" autocomplete="off" />
+              </span>
+              <span class="field distance-max-field">
+                <input id="distance-max" type="number" min="0" step="0.1" placeholder="Max km" />
+                <span class="tip">Sets the subject property and filters the sales around it. Subject roll # is the roll of the subject, fetched from the municipality selected above; Max km then keeps only sales within that many kilometres of the subject's centroid. Hit Set to apply — the radius does nothing until a subject is set — and × to clear the subject and its distance column.</span>
+              </span>
+              <button id="subject-apply" type="button" class="secondary subject-apply-btn">Set</button>
+              <button id="subject-clear" type="button" class="secondary subject-clear-btn" title="Clear the subject parcel">×</button>
+            </div>
+          </details>
+
           <!-- Sales filters. Each .sales-only row is hidden by
                body:not(.sales-mode) CSS until a CSV upload completes.
                Order is by how often the filter gets touched: date
                range, assessment class and the far-flung/vacant line
                stay out in the open; everything else lives one click
-               away in the "Filters" disclosure below them. -->
+               away in the "Additional filters" disclosure above them,
+               under the upload line. -->
 
           <!-- Sale Date range. The quick picks and the two date inputs
                below drive the SAME pair of values; the inputs are the
@@ -966,276 +1250,6 @@
             <span id="far-flung-count" class="far-flung-count"></span>
           </div>
 
-          <!-- The occasional filters. Collapsed by default so the
-               sales panel opens at a readable length; the controls
-               inside are the ones reached for on particular jobs
-               rather than on every upload. -->
-          <details class="more-filters sales-filters sales-only">
-            <!-- The badge is a WARNING that names every control in here
-                 that is set. It lives inside <summary> so it shows when
-                 the group is collapsed — the case where a forgotten Plan #
-                 or a persisted Far-Flung Exclude silently drops comps.
-                 Filled by renderSalesFiltersBadge() in main.js, which also
-                 repeats the list on the count line above the table. -->
-            <summary><span class="more-filters-title">Additional filters</span><span
-              class="sales-filters-badge"
-              id="sales-filters-badge"
-              hidden
-            ></span></summary>
-            <div class="size-vacant-row">
-              <!-- A plan number is at most 7 digits, usually 3-5, so this is
-                   sized for 7 and fixed — see the CSS. `title` rather than a
-                   `.tip` span for the same reason as the size boxes: a .tip
-                   makes infoIcon.js inject an ⓘ button inside the field,
-                   which would take 31px of a 65px control. -->
-              <span class="field sales-plan-field">
-                <input id="sales-plan" type="text" placeholder="Plan #" autocomplete="off" maxlength="12"
-                       title="Filter uploaded sales to rows whose plan number contains this string. Case-insensitive substring match against both the legal-index Plan field AND the raw &quot;Legal Description&quot; cell from the uploaded CSV." />
-              </span>
-              <!-- Unit for the two size boxes below. The boxes are read in
-                   whichever unit is lit, so switching the pill re-interprets
-                   what is already typed rather than clearing it.
-                   FF filters on the roll's stated FRONTAGE, which only about
-                   37% of parcels carry — the rest state an area instead, and
-                   drop out while FF is selected. -->
-              <span class="field size-uom-field">
-                <select id="size-uom" aria-label="Size unit"
-                        title="Ac / SF filter on parcel area. FF filters on the assessment roll's stated frontage in feet — parcels whose roll states an area instead (about 63%) drop out while FF is selected.">
-                  <option value="acres" selected>Ac</option>
-                  <option value="sf">SF</option>
-                  <option value="ff">FF</option>
-                </select>
-              </span>
-              <!-- These two carry a plain `title` rather than a `.tip` span.
-                   A .tip makes infoIcon.js inject an ⓘ button INSIDE the
-                   field, which on a 46px box left only ~15px for the input
-                   itself. The pill's own button titles already explain the
-                   units, so the icon was costing two thirds of the control
-                   to say something said elsewhere. -->
-              <span class="field size-low-field">
-                <input id="size-low" type="number" min="0" step="0.01" placeholder="Lo Ac"
-                       title="Minimum parcel size, in the unit lit on the Ac/SF/FF pill. Empty = no minimum." />
-              </span>
-              <span class="field size-high-field">
-                <input id="size-high" type="number" min="0" step="0.01" placeholder="Hi Ac"
-                       title="Maximum parcel size, in the unit lit on the Ac/SF/FF pill. Empty = no maximum." />
-              </span>
-            </div>
-            <!-- Street Name + Min $/Ac + Max $/Ac on a single row.
-                 Street Name takes the left half; the two PPA inputs
-                 split the right half evenly. -->
-            <div class="street-name-row">
-              <span class="field street-name-field">
-                <input id="sales-street-name" type="text" placeholder="Street name" autocomplete="off" />
-                <span class="tip">Filter uploaded sales to rows whose Property Address contains this string. Case-insensitive substring match.</span>
-              </span>
-              <!-- `title` rather than a `.tip` span: a .tip makes
-                   infoIcon.js inject an ⓘ button inside the field, and at
-                   ~31px that was most of a 69px control — the placeholder
-                   "Min $/Ac" could not even render in what was left.
-                   Street name keeps its icon; it has the width to spare. -->
-              <span class="field ppa-low-field">
-                <input id="sales-ppa-low" type="number" min="0" step="1" placeholder="Min $/Ac"
-                       title="Minimum $/Acre (group rate). Empty = no lower limit." />
-              </span>
-              <span class="field ppa-high-field">
-                <input id="sales-ppa-high" type="number" min="0" step="1" placeholder="Max $/Ac"
-                       title="Maximum $/Acre (group rate). Empty = no upper limit. Use a high Min on its own to surface development-land sales." />
-              </span>
-            </div>
-            <!-- Total consideration bounds. Deliberately a separate
-                 pair from $/Ac rather than a shared box with a unit
-                 toggle: the two express different things and combining
-                 them ("$3k-$6k an acre, under $2M all in") is a real
-                 screen. -->
-            <div class="sale-price-row">
-              <span class="sale-price-prefix">Sale Price:</span>
-              <span class="field sale-price-low-field">
-                <input id="sales-price-low" type="number" min="0" step="1000" placeholder="Min $" />
-              </span>
-              <span class="field sale-price-high-field">
-                <input id="sales-price-high" type="number" min="0" step="1000" placeholder="Max $" />
-                <span class="tip">Total sale price bounds (the Consideration from the uploaded CSV). For a multi-parcel sale this is the whole transaction, so the entire sale passes or fails together. Sales with no readable price drop out while either bound is set; empty = no limit on that side.</span>
-              </span>
-            </div>
-            <!-- Zoning code + Zoning Type. Moved in here 2026-08-18 (Jason):
-                 both narrow an already-chosen set rather than describing it,
-                 which is what this section is for, and the top of the sales
-                 panel was carrying four pickers before the first filter that
-                 gets reached on most jobs. They keep .class-row, so the pair
-                 still splits the width 50/50 the way it did above. -->
-            <div class="class-row sales-only">
-              <span class="field zoning-field">
-                <details class="multiselect" id="zoning-filter">
-                  <summary aria-label="Zoning filter">
-                    <span class="multiselect-label">Any zoning</span>
-                  </summary>
-                  <div class="multiselect-menu"></div>
-                </details>
-              </span>
-              <!-- Zoning TYPE, the cross-muni companion to the code picker
-                   above. Zone codes are municipality-specific, so on a
-                   multi-muni sales set the code filter can't express
-                   "all the commercial sales" — this can. -->
-              <span class="field zonecat-field">
-                <details class="multiselect" id="zonecat-filter">
-                  <summary aria-label="Zoning type filter">
-                    <span class="multiselect-label">Any zoning type</span>
-                  </summary>
-                  <div class="multiselect-menu"></div>
-                </details>
-                <span class="tip">Zoning filters by zone code — the values the Zoning and Zoning 2 columns show. Codes are municipality-specific, so a multi-muni upload lists each muni's codes together; a sale is kept when either of its zones matches anything ticked. Zoning Type filters by the province's broad ZONE_CATEGORY rollup (Commercial, Industrial, Residential, Open Space…), which compares ACROSS municipalities — the one to reach for on a multi-muni set. Type matches a parcel's DOMINANT zone, exactly what the Zoning Type column shows, so the ticked types and the column always agree. Both lists hold only values your current results contain; spelling variants fold together and unjoined zoning appears under "(no category)".</span>
-              </span>
-            </div>
-            <!-- Parcels-per-sale + N1 crosswalk, sharing one row at half
-                 width each. Both are single-select questions about the SHAPE
-                 of a sale rather than its numbers, and neither needs a row of
-                 its own. Reuses the sale-price row's layout classes — prefix
-                 + field — plus .sale-price-half to split it. -->
-            <div class="sale-price-row">
-              <span class="sale-price-half">
-                <span class="sale-price-prefix">Parcels:</span>
-                <span class="field">
-                  <select id="sales-groupsize-filter" aria-label="Parcels per sale filter"
-                          title="Filter by how many parcels the sale transferred. Multi-parcel only keeps assemblies — sales where one price bought several rolls, which is what the Group # column counts and what every $/Acre on this tab is computed across. Single parcel only keeps the rest. A whole sale is kept or dropped together, never part of one, so the group rates keep describing the land actually bought.">
-                    <option value="any" selected>All sales</option>
-                    <option value="single">Single parcel</option>
-                    <option value="multi">Multi-parcel</option>
-                  </select>
-                </span>
-              </span>
-              <span class="sale-price-half">
-                <span class="sale-price-prefix">N1:</span>
-                <span class="field">
-                  <select id="sales-n1-filter" aria-label="N1 match filter"
-                          title="Filter by N1 crosswalk status. Matched = sale carries an N1 ID; Unmatched = no N1 record linked yet — the data-entry queue. Pasted comp sets have no N1 column and read as entirely unmatched.">
-                    <option value="any" selected>Any</option>
-                    <option value="matched">Matched</option>
-                    <option value="unmatched">Unmatched</option>
-                  </select>
-                </span>
-              </span>
-            </div>
-            <!-- Outline at sale, from the weekly parcel change history (the
-                 grid's "Outline at sale" column). Group-level like Parcels:
-                 an assembly is changed when any parcel is, unchanged only
-                 when all are. Same half-row layout, one half used. -->
-            <div class="sale-price-row">
-              <span class="sale-price-half">
-                <span class="sale-price-prefix">Outline:</span>
-                <span class="field">
-                  <select id="sales-outline-filter" aria-label="Outline at sale filter"
-                          title="Filter by whether the parcel outline that sold is today's, from the weekly parcel change history (the Outline at sale column). Same as today keeps sales whose outline is known to be unchanged, or only redrawn by a province map realignment at the same area, so today's acreage and shape describe what sold. Changed keeps sales whose outline changed since (or around) the sale date, or that were not yet mapped. A multi-parcel sale counts as changed when any of its parcels did. Sales the history cannot place — before it began, approximate pins, or still loading — pass neither option.">
-                    <option value="any" selected>Any</option>
-                    <option value="unchanged">Same as today</option>
-                    <option value="changed">Changed</option>
-                  </select>
-                </span>
-              </span>
-            </div>
-            <!-- Vacant-land threshold. Single input + a %/$ pill
-                 toggle decides how to interpret the number:
-                 building-percentage cap (% mode) or building-dollar
-                 cap ($ mode). Tunes the Vacant Only checkbox above. -->
-            <div class="vacant-threshold-row">
-              <span class="vacant-threshold-prefix">Bldg Threshold:</span>
-              <span class="field vacant-threshold-field">
-                <input id="vacant-threshold" type="number" min="0" step="0.1" placeholder="5" value="5" />
-              </span>
-              <div class="vacant-mode-pill" role="radiogroup" aria-label="Vacant threshold mode">
-                <button type="button" class="vacant-mode-btn active" data-mode="pct" aria-pressed="true">%</button>
-                <button type="button" class="vacant-mode-btn" data-mode="dollar" aria-pressed="false">$</button>
-              </div>
-              <!-- Sale/Asmt ratio cap as a small dropdown. Empty value
-                   (default) reads "Max Sale/Asmt" and applies no
-                   filter. Picking a numeric option caps Sale ÷
-                   Assessed Total at that value — surfaces quirky
-                   sales where the assessment hadn't caught up to a
-                   newly built improvement. -->
-              <span class="field sale-asmt-max-field">
-                <select id="sale-asmt-max" aria-label="Max Sale/Asmt ratio cap">
-                  <option value="">Max Sale/Asmt</option>
-                  <option value="0.5">≤ 0.5</option>
-                  <option value="0.75">≤ 0.75</option>
-                  <option value="1">≤ 1</option>
-                  <option value="1.25">≤ 1.25</option>
-                  <option value="1.5">≤ 1.5</option>
-                  <option value="1.75">≤ 1.75</option>
-                  <option value="2">≤ 2</option>
-                  <option value="3">≤ 3</option>
-                  <option value="4">≤ 4</option>
-                  <option value="5">≤ 5</option>
-                </select>
-                <span class="tip">Bldg Threshold tunes the Vacant Only proxy above: in % mode (default) a parcel reads as vacant when Buildings ÷ Total is below this percent, in $ mode when Buildings $ is below this dollar value — heuristic only, verify with the municipality. Max Sale/Asmt separately caps Sale ÷ Assessed Total, surfacing sales where buildings sold before the assessment caught up (Sale/Asmt &gt;&gt; 1); leave it on "Max Sale/Asmt" for no cap. Both apply alongside Vacant Only.</span>
-              </span>
-            </div>
-
-            <!-- Far-Flung threshold + Exclude. The tally that says whether
-                 either is biting stays outside this disclosure, up beside
-                 All Sales. -->
-            <div class="far-flung-controls-row">
-              <span class="far-flung-field">
-                <label for="far-flung-km">Far-Flung &gt;</label>
-                <input id="far-flung-km" type="number" min="0" step="1" />
-                <span class="far-flung-unit">km</span>
-              </span>
-              <span class="field far-flung-exclude-field">
-                <!-- Checked by default (Jason, 2026-09-22): a portfolio or estate sale
-                     spread across a wide area has a blended $/Acre that is not a
-                     local comparable, so dropping them is the normal starting
-                     point. `data-default` on Exclude below is what keeps shared
-                     links honest — see the URL writer in main.js, and the note on
-                     resetFarFlungExclude for why that matters here specifically. -->
-                <input type="checkbox" id="far-flung-exclude" class="pill-backing" hidden checked />
-                <div class="mode-pill-row far-flung-exclude" title="Remove the flagged sales from the results table, the map and the CSV export. On by default — a sale spread across a wide area has a blended $/Acre that is not a local comparable. Switch to Keep to bring them back. Sales whose spread can't be measured (a parcel with no geometry) are never excluded.">
-                  <span class="mode-pill-prefix">Flagged:</span>
-                  <div class="mode-pill compact" role="radiogroup" aria-label="Far-flung sales" data-pill="farflung">
-                    <button type="button" class="mode-btn mode-btn-off" data-mode="keep" aria-pressed="false">Keep</button>
-                    <button type="button" class="mode-btn active" data-mode="exclude" aria-pressed="true" data-default>Exclude</button>
-                  </div>
-                </div>
-                <span class="tip">Far-Flung marks multi-parcel sales whose parcels lie farther apart than the km threshold, measured between parcel centroids. Portfolio and estate sales sweep up land across a wide area, so their blended $/Acre is not a local comparable. Blank or 0 turns the marking off, and marking alone removes nothing — tick Exclude to drop the flagged sales from the table, the map and the CSV export. Sales whose spread can't be measured (a parcel with no geometry) are never excluded.</span>
-              </span>
-            </div>
-
-            <!-- Subject parcel. The muni picker leads deliberately: the
-                 roll number alone does not identify a parcel — the same
-                 roll exists in many municipalities — so the question
-                 "which muni is this roll in" has to be answered before
-                 the roll means anything. It used to sit BELOW the roll
-                 and only appear on multi-muni uploads, which made the
-                 resolution invisible on the single-muni imports that are
-                 the common case. -->
-            <!-- A header over the subject controls (Jason, 2026-10-06): they
-                 sit at the foot of the filters and read as one more filter
-                 without it. -->
-            <h3 class="sales-subject-title sales-only">Subject Property</h3>
-            <!-- Starts hidden and is revealed once an import has munis to
-                 offer, so an empty select never claims to name one. -->
-            <div id="subject-muni-row" class="subject-muni-row sales-only" hidden>
-              <span class="field subject-muni-field">
-                <select id="subject-muni" aria-label="Municipality for the subject roll"></select>
-                <span class="tip">Municipality the subject roll # is fetched from. Lists every municipality in the current import, defaulting to the one with the most matched parcels.</span>
-              </span>
-            </div>
-            <!-- Roll # and radius sit together because they are one thought —
-                 "how far from THIS parcel" — and the buttons that commit it
-                 follow both rather than splitting the pair. One tip for the
-                 row, on the radius field: two icons a few pixels apart said
-                 half the story each, and the half about the subject roll was
-                 the half you needed to read the radius (Jason, 2026-08-19). -->
-            <div class="subject-row sales-only">
-              <span class="field subject-roll-field">
-                <input id="subject-roll" type="text" placeholder="Subject roll #" autocomplete="off" />
-              </span>
-              <span class="field distance-max-field">
-                <input id="distance-max" type="number" min="0" step="0.1" placeholder="Max km" />
-                <span class="tip">Sets the subject property and filters the sales around it. Subject roll # is the roll of the subject, fetched from the municipality selected above; Max km then keeps only sales within that many kilometres of the subject's centroid. Hit Set to apply — the radius does nothing until a subject is set — and × to clear the subject and its distance column.</span>
-              </span>
-              <button id="subject-apply" type="button" class="secondary subject-apply-btn">Set</button>
-              <button id="subject-clear" type="button" class="secondary subject-clear-btn" title="Clear the subject parcel">×</button>
-            </div>
-          </details>
           <!-- Clear stays OUTSIDE the collapsible: it resets the whole
                page, so it has to be reachable without first expanding a
                panel. -->

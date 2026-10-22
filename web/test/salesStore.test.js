@@ -269,7 +269,7 @@ await test('buildCsvFor windows by date, relying on newest-first ordering', asyn
   const win = await store.buildCsvFor(['400'], { from: '2026-01-01', to: '2026-12-31' });
   assert.equal(win.sales, 2, 'only the two 2026 sales');
   assert.equal(win.salesAvailable, 4);
-  assert.deepEqual(win.window, { from: '2026-01-01', to: '2026-12-31', type: null });
+  assert.deepEqual(win.window, { from: '2026-01-01', to: '2026-12-31', type: null, min: null, max: null });
   assert.ok(win.text.includes('2026-07-21') && win.text.includes('2026-03-02'));
   assert.ok(!win.text.includes('1991-02-01'), 'older rows never read');
   assert.equal(win.text.split('\n').filter((l) => l.trim()).length, 3, 'header + 2 rows');
@@ -306,6 +306,42 @@ await test('buildCsvFor filters by sale type without ending the scan early', asy
   assert.equal((await store.buildCsvFor(['400'], {})).sales, 3);
   // A type nothing matches returns null rather than a header-only CSV.
   assert.equal(await store.buildCsvFor(['400'], { type: 'FARM BARE LAND' }), null);
+});
+
+await test('buildCsvFor windows by whole-sale price, dropping unpriced sales', async () => {
+  // Price is not sorted, so like type it must keep scanning past a miss. An
+  // unpriced sale fails an active window, matching the sidebar price filter.
+  await store.clearSales();
+  const csv = 'muni_no,municipality,sale_date_parsed,consideration_num,roll\n'
+    + '400,ALTONA,2026-07-21,510000,1\n'
+    + '400,ALTONA,2026-06-02,90000,2\n'
+    + '400,ALTONA,2026-05-15,,3\n'
+    + '400,ALTONA,2026-04-01,330000,"4\n5"\n'
+    + '400,ALTONA,1991-02-01,60000,6\n';
+  await store.putShard({ muni_no: '400', municipality: 'TOWN OF ALTONA', csv, meta: { rows: 5 } });
+
+  const mid = await store.buildCsvFor(['400'], { min: '100000', max: '400000' });
+  assert.equal(mid.sales, 1, 'only the $330k multi-parcel sale');
+  assert.ok(mid.text.includes('330000'));
+  assert.deepEqual(mid.window, { from: null, to: null, type: null, min: 100000, max: 400000 });
+
+  const floor = await store.buildCsvFor(['400'], { min: 100000 });
+  assert.equal(floor.sales, 2, '$510k and $330k; the unpriced sale drops');
+
+  // Combines with the date window, which still stops at the first older row.
+  const both = await store.buildCsvFor(['400'], { max: 100000, from: '2026-01-01' });
+  assert.equal(both.sales, 1, 'the $90k 2026 sale, not the 1991 one');
+
+  // Blank bounds are no window at all.
+  const none = await store.buildCsvFor(['400'], { min: '', max: '' });
+  assert.equal(none.window, null);
+  assert.equal(none.sales, 5);
+
+  // An export without consideration_num ignores the price window.
+  await store.clearSales();
+  await store.putShard({ muni_no: '400', municipality: 'TOWN OF ALTONA',
+    csv: 'muni_no,municipality,sale_date_parsed\n400,ALTONA,2026-07-21\n', meta: { rows: 1 } });
+  assert.equal((await store.buildCsvFor(['400'], { min: 1 })).sales, 1, 'no price column -> no window');
 });
 
 await test('date window keeps undated rows and tolerates an export without the ISO column', async () => {

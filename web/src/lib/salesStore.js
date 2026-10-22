@@ -348,6 +348,16 @@ const DATE_COL = 'sale_date_parsed';
 // The EFFECTIVE category, as the export renames it (condos already
 // reclassified out of ICI). Matched case-insensitively on the whole cell.
 const TYPE_COL = 'Sale Type Group';
+// The whole sale's consideration as a bare number — the same column the
+// province search windows on (lib/provinceSearch.js).
+const PRICE_COL = 'consideration_num';
+
+/** A price bound as a finite number, or null when blank / unreadable. */
+function priceBound(v) {
+  if (v === null || v === undefined || String(v).trim() === '') return null;
+  const n = Number(String(v).replace(/[$,\s]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
 
 /**
  * Rows of one shard inside [from, to], relying on the export writing each
@@ -361,17 +371,30 @@ const TYPE_COL = 'Sale Type Group';
  * A row whose date is missing or unparseable is KEPT: dropping sales
  * silently because a cell was blank is the worse failure, and it cannot
  * trigger the early stop.
+ *
+ * The price window (Jason, 2026-10-22) is the sidebar's Sale Price pair,
+ * set before the Search. Each row is one whole sale, so a multi-parcel sale
+ * passes or fails as one, as it does in the sidebar filter. An UNPRICED
+ * sale fails an active window. That is the reverse of the undated rule
+ * above, and on purpose: the sidebar's price filter drops unpriced sales
+ * too, so keeping them here would only load rows the table then hides.
  */
-function sliceShardByDate(body, header, from, to, type) {
-  if (!from && !to && !type) return { text: body.replace(/\s+$/, ''), kept: null };
+function sliceShardByDate(body, header, from, to, type, min = null, max = null) {
+  const lo = priceBound(min);
+  const hi = priceBound(max);
+  if (!from && !to && !type && lo === null && hi === null) {
+    return { text: body.replace(/\s+$/, ''), kept: null };
+  }
   const cols = tokenizeRows(header, ',')[0] || [];
   const dateIdx = cols.findIndex((c) => String(c).trim() === DATE_COL);
   const typeIdx = cols.findIndex((c) => String(c).trim() === TYPE_COL);
+  const priceIdx = cols.findIndex((c) => String(c).trim() === PRICE_COL);
   // An older export without the columns we filter on ignores that filter
   // rather than testing the wrong column and silently returning nothing.
   const useDate = dateIdx >= 0 && (from || to);
   const useType = typeIdx >= 0 && Boolean(type);
-  if (!useDate && !useType) return { text: body.replace(/\s+$/, ''), kept: null };
+  const usePrice = priceIdx >= 0 && (lo !== null || hi !== null);
+  if (!useDate && !useType && !usePrice) return { text: body.replace(/\s+$/, ''), kept: null };
   const wantType = String(type || '').trim().toUpperCase();
 
   const keptRows = [];
@@ -393,13 +416,20 @@ function sliceShardByDate(body, header, from, to, type) {
       const t = String(cells[typeIdx] ?? '').split('\n')[0].trim().toUpperCase();
       if (t && t !== wantType) return true;             // wrong type: skip, keep going
     }
+    // Price is not sorted either.
+    if (usePrice) {
+      const p = priceBound(String(cells[priceIdx] ?? '').split('\n')[0]);
+      if (p === null || (lo !== null && p < lo) || (hi !== null && p > hi)) return true;
+    }
     keptRows.push(row);
     return true;
   });
   return { text: keptRows.join('\n'), kept: keptRows.length };
 }
 
-export async function buildCsvFor(muniNos, { manifest, from = null, to = null, type = null } = {}) {
+export async function buildCsvFor(muniNos, {
+  manifest, from = null, to = null, type = null, min = null, max = null,
+} = {}) {
   const recs = await getSalesFor(muniNos);
   if (!recs.length) return null;
 
@@ -417,7 +447,7 @@ export async function buildCsvFor(muniNos, { manifest, from = null, to = null, t
         'Re-import the whole export folder so every shard is the same version.');
     }
     total += r.meta?.rows || 0;
-    const sliced = sliceShardByDate(body, h, from, to, type);
+    const sliced = sliceShardByDate(body, h, from, to, type, min, max);
     kept += sliced.kept === null ? (r.meta?.rows || 0) : sliced.kept;
     const trimmed = sliced.text.replace(/\s+$/, '');
     if (trimmed) bodies.push(trimmed);
@@ -430,7 +460,9 @@ export async function buildCsvFor(muniNos, { manifest, from = null, to = null, t
     ? names.join(', ')
     : `${names.slice(0, 2).join(', ')} +${names.length - 2} more`;
 
-  const windowed = Boolean(from || to || type);
+  const lo = priceBound(min);
+  const hi = priceBound(max);
+  const windowed = Boolean(from || to || type) || lo !== null || hi !== null;
   return {
     name: `MAO database — ${label}`,
     text: [header, ...bodies].join('\n') + '\n',
@@ -439,7 +471,7 @@ export async function buildCsvFor(muniNos, { manifest, from = null, to = null, t
     // What the caller actually got, so the panel can say so out loud —
     // a load that silently returned a slice of the archive would be
     // indistinguishable from a municipality with few sales.
-    window: windowed ? { from, to, type } : null,
+    window: windowed ? { from, to, type, min: lo, max: hi } : null,
     sales: kept,
     salesAvailable: total,
   };
