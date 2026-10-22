@@ -377,7 +377,7 @@
               <input id="address-to" type="text" placeholder="To #" autocomplete="off" />
             </span>
             <span class="field address-street-field">
-              <input id="address-street" type="text" placeholder="Street" />
+              <input id="address-street" type="text" placeholder="Street" autocomplete="off" />
             </span>
             <!-- Direction rides on the address row (Jason, 2026-10-22); it
                  sat in Additional Searches beside Street Type from
@@ -387,8 +387,13 @@
               <select id="address-dir">
                 <option value="">Dir</option>
               </select>
-              <span class="tip">Civic-address search. From # on its own is a "contains" match — 1106 finds "1 106 E ROAD 71 N" however the number is spaced. Fill To # as well for an exact number (same value; tabbing into To auto-fills it) or an inclusive range (different values). Street Name is a substring match against Property_Address (e.g. 'MAIN ST', 'DRURY', 'ROAD 96W'). Dir matches as its own word ("MAIN ST N"), glued to a rural grid number ("ROAD 96W") or spelled out at the end ("ROAD 80 NORTH"); it works best together with a street name.</span>
+              <span class="tip">Civic-address search. From # on its own is a "contains" match — 1106 finds "1 106 E ROAD 71 N" however the number is spaced. Fill To # as well for an exact number (same value; tabbing into To auto-fills it) or an inclusive range (different values). Street Name is a substring match against Property_Address (e.g. 'MAIN ST', 'DRURY', 'ROAD 96W'). Type two letters for a list of the chosen municipality's streets; pick one with the arrows and Enter (Enter also searches), or keep typing. Dir matches as its own word ("MAIN ST N"), glued to a rural grid number ("ROAD 96W") or spelled out at the end ("ROAD 80 NORTH"); it works best together with a street name.</span>
             </span>
+            <!-- Street suggestions (lib/streetSuggest.js): the chosen
+                 municipality's streets, from mb-parcel-data/streets/.
+                 A sibling of the fields so it spans the whole row, as in
+                 Winnipeg ParcelSearch. -->
+            <div id="address-street-suggest" class="street-suggest" role="listbox" aria-label="Street suggestions" hidden></div>
           </div>
           <!-- Search / Clear sit BEFORE Additional Searches in the markup so
                Tab runs Municipality → Roll # → From → To → Street Name →
@@ -930,7 +935,7 @@
             <div class="street-name-row">
               <span class="field street-name-field">
                 <input id="sales-street-name" type="text" placeholder="Street name" autocomplete="off" />
-                <span class="tip">Filter uploaded sales to rows whose Property Address contains this string. Case-insensitive substring match.</span>
+                <span class="tip">Filter uploaded sales to rows whose Property Address contains this string. Case-insensitive substring match. Type two letters for suggestions from the ticked municipalities' streets.</span>
               </span>
               <!-- `title` rather than a `.tip` span: a .tip makes
                    infoIcon.js inject an ⓘ button inside the field, and at
@@ -945,6 +950,8 @@
                 <input id="sales-ppa-high" type="number" min="0" step="1" placeholder="Max $/Ac"
                        title="Maximum $/Acre (group rate). Empty = no upper limit. Use a high Min on its own to surface development-land sales." />
               </span>
+              <!-- Street suggestions for the ticked municipalities. -->
+              <div id="sales-street-suggest" class="street-suggest" role="listbox" aria-label="Street suggestions" hidden></div>
             </div>
             <!-- Total consideration bounds. Deliberately a separate
                  pair from $/Ac rather than a shared box with a unit

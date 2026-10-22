@@ -74,6 +74,14 @@ test('address becomes an upper-cased, escaped LIKE clause', () => {
   assert.deepEqual(clauses, [`UPPER(Property_Address) LIKE '%O''HARA%'`]);
 });
 
+test('a multi-word street also tries each gap doubled', () => {
+  // 1.2% of addresses carry a doubled space ("27 Penelope  CL"), and the
+  // column can't be whitespace-collapsed inside an ArcGIS LIKE.
+  assert.deepEqual(buildParcelClauses({ addressStreet: 'penelope cl' }), [
+    `(UPPER(Property_Address) LIKE '%PENELOPE CL%' OR UPPER(Property_Address) LIKE '%PENELOPE  CL%')`,
+  ]);
+});
+
 test('a civic number ORs across its spacing variants', () => {
   // "1106" has to reach Rosser's "1 106 E ROAD 71 N" — see
   // lib/civicRange.js. Parenthesized so the OR can't leak past the AND
