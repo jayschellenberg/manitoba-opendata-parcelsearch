@@ -84,10 +84,13 @@ const N1_EDIT_URL_BASE = 'https://reportwriter.lightboxre.com/Parcel/Edit/Genera
 import { createMuniPicker, muniBackdropInert, hoverDefersToContent } from './lib/muniPicker.js';
 import { PlaceSearchControl, muniLabel } from './lib/placeSearch.js';
 import {
+  INLINE_SLOT,
   badgeRadius,
   calloutOffset,
+  inlineBadgeFits,
   solveCalloutSlots,
 } from './lib/calloutPlacement.js';
+import { rollLabelSize, rollLabelSizeExpression } from './lib/rollLabelSize.js';
 import { Protocol as PMTilesProtocol } from 'pmtiles';
 import { layers as protomapsLayers, namedFlavor } from '@protomaps/basemaps';
 
@@ -2577,41 +2580,9 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
           // (half-quarter), 640 (section). Stops between zooms 13/14/
           // 17/19 mirror the existing zoom-only ramp's general shape
           // but with per-area variation at each level.
-          'text-size': [
-            'interpolate', ['linear'], ['zoom'],
-            13, [
-              'interpolate', ['linear'], ['to-number', ['get', '_acres'], 1],
-              0.1, 7,
-              1,   9,
-              10,  11,
-              80,  12,
-              640, 14,
-            ],
-            14, [
-              'interpolate', ['linear'], ['to-number', ['get', '_acres'], 1],
-              0.1, 7,
-              1,   10,
-              10,  12,
-              80,  13,
-              640, 15,
-            ],
-            17, [
-              'interpolate', ['linear'], ['to-number', ['get', '_acres'], 1],
-              0.1, 9,
-              1,   12,
-              10,  14,
-              80,  16,
-              640, 18,
-            ],
-            19, [
-              'interpolate', ['linear'], ['to-number', ['get', '_acres'], 1],
-              0.1, 11,
-              1,   14,
-              10,  16,
-              80,  18,
-              640, 20,
-            ],
-          ],
+          // The table lives in lib/rollLabelSize.js: the numbered callouts
+          // read the same sizes to sit a badge just above the roll number.
+          'text-size': rollLabelSizeExpression(),
           // Auto-cull overlapping labels so dense urban grids
           // (Carman, Steinbach core, Selkirk Main St) stay readable
           // while rural townships still show every roll. The earlier
@@ -3171,8 +3142,9 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
       // lib/calloutPlacement.js bumps the crowded ones outward to clear
       // space and the leader lines keep each number tied to its parcel.
       //
-      //   parcel-num-anchors — Point per numbered parcel at its centroid
-      //                        (static; drives the on-parcel dot).
+      //   parcel-num-anchors — Point at the centroid of each parcel drawn
+      //                        as a callout (drives the on-parcel dot; an
+      //                        inline badge has none, so recomputed on move).
       //   parcel-num-leaders — LineString centroid→badge (recomputed on move).
       //   parcel-num-labels  — Point at the badge position (recomputed on move).
       map.addSource('parcel-num-anchors', { type: 'geojson', data: emptyFc() });
@@ -4543,18 +4515,19 @@ export function setParcelNumberData(map, features) {
   const st = map._parcelNumbers;
   if (!st) return;
   const anchors = [];
-  const anchorFeatures = [];
   for (const f of features || []) {
     const seq = f?.properties?._seq;
     if (seq == null) continue;
     const c = polygonBboxMidpoint(f.geometry);
     if (!c) continue;
     const seqStr = String(seq);
-    anchors.push({ lng: c[0], lat: c[1], seq, seqStr, radius: badgeRadius(seqStr) });
-    anchorFeatures.push({
-      type: 'Feature',
-      properties: { _seq: seq },
-      geometry: { type: 'Point', coordinates: c },
+    // The parcel's rings and bbox, for the inline test (does the badge fit
+    // inside the parcel on screen?), and its acreage, which sizes the roll
+    // label the badge sits above.
+    const rings = f.geometry.type === 'Polygon' ? f.geometry.coordinates : f.geometry.coordinates.flat();
+    anchors.push({
+      lng: c[0], lat: c[1], seq, seqStr, radius: badgeRadius(seqStr),
+      rings, bbox: ringsBbox(rings), acres: f.properties._acres,
     });
   }
   // Placement order low→high: the de-confliction pass hands out slots
@@ -4567,9 +4540,108 @@ export function setParcelNumberData(map, features) {
   st.anchors = anchors;
   // A new result set is a new placement problem; don't carry slots over.
   st.slots = new Map();
-  const anchorSrc = map.getSource('parcel-num-anchors');
-  if (anchorSrc) anchorSrc.setData({ type: 'FeatureCollection', features: anchorFeatures });
   repositionParcelNumbers(map);
+}
+
+function ringsBbox(rings) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const ring of rings) {
+    for (const [x, y] of ring) {
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  return [minX, minY, maxX, maxY];
+}
+
+// Inline badges (inside their own parcel, no leader): clearance in px
+// between the disc and the parcel's edge, to take the inline spot and to
+// keep it — the gap stops a badge flicking between inline and callout as
+// the zoom crosses the threshold. ROLL_BADGE_GAP is the space between the
+// badge and the top of the roll number below it.
+const INLINE_TAKE_MARGIN = 4;
+const INLINE_KEEP_MARGIN = 1;
+const ROLL_BADGE_GAP = 3;
+
+/** True while the Assessment Parcels roll numbers are drawing — the layer
+ *  is on and the camera is past its minzoom. */
+function rollLabelsShown(map) {
+  const layer = map.getLayer('muni-parcels-label');
+  return !!layer && map.getLayoutProperty('muni-parcels-label', 'visibility') === 'visible' &&
+    map.getZoom() >= (layer.minzoom ?? 0);
+}
+
+// The callout's anchor dot: circle-radius 3 + 1.25 stroke on
+// parcel-num-anchor-dot.
+const ANCHOR_DOT_PX = 4.25;
+
+/**
+ * One parcel on screen, projected lazily: the bbox's four corners give
+ * its screen size, a cheap reject for the many parcels too small to hold
+ * a mark, so the rings are only projected for parcels big on screen.
+ */
+function parcelOnScreen(map, a) {
+  let size = null;
+  let ringsPx = null;
+  return {
+    size() {
+      if (!size) {
+        const [minX, minY, maxX, maxY] = a.bbox;
+        const pts = [[minX, minY], [maxX, minY], [maxX, maxY], [minX, maxY]].map((c) => map.project(c));
+        const xs = pts.map((c) => c.x);
+        const ys = pts.map((c) => c.y);
+        size = [Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)];
+      }
+      return size;
+    },
+    rings() {
+      ringsPx ??= a.rings.map((ring) => ring.map((c) => {
+        const q = map.project(c);
+        return [q.x, q.y];
+      }));
+      return ringsPx;
+    },
+  };
+}
+
+/** True when a disc of radius r at (p.x, p.y + dy) sits inside the parcel. */
+function discFitsParcel(view, p, dy, r, margin) {
+  const [w, h] = view.size();
+  if (w < 2 * (r + margin) || h < 2 * (r + margin)) return false;
+  return inlineBadgeFits(view.rings(), p.x, p.y + dy, r, margin);
+}
+
+/** How far (px, negative = up) to lift something of radius r so it sits
+ *  just above the roll number, which is centred on the anchor. */
+function aboveRollLabel(a, zoom, r) {
+  return -(rollLabelSize(zoom, a.acres) / 2 + ROLL_BADGE_GAP + r);
+}
+
+/**
+ * The inline offset for one anchor, or null when its badge does not fit
+ * inside the parcel on screen. Centred just above the roll number while
+ * the roll numbers draw (the label sits on the same bbox midpoint), else
+ * centred on the parcel.
+ */
+function inlineOffset(a, p, view, { rollShown, zoom, margin, width, height }) {
+  if (p.x < 0 || p.y < 0 || p.x > width || p.y > height) return null;
+  const dy = rollShown ? aboveRollLabel(a, zoom, a.radius) : 0;
+  return discFitsParcel(view, p, dy, a.radius, margin) ? [0, dy] : null;
+}
+
+/**
+ * A callout's anchor dot sits on the roll number unless moved: lift it
+ * just above the label when that spot is still inside the parcel, so the
+ * roll number reads under the leader (a narrow town lot). Where it is
+ * not — a parcel tiny on screen — the dot stays centred, since a dot off
+ * its parcel would point at the neighbour.
+ */
+function calloutDotLift(a, p, view, { rollShown, zoom, width, height }) {
+  if (!rollShown || p.x < 0 || p.y < 0 || p.x > width || p.y > height) return 0;
+  const dy = aboveRollLabel(a, zoom, ANCHOR_DOT_PX);
+  return discFitsParcel(view, p, dy, ANCHOR_DOT_PX, 1) ? dy : 0;
 }
 
 /** Show or hide the numbered callouts (all five layers). Re-projects the
@@ -4603,38 +4675,69 @@ export function setParcelNumbersVisible(map, on) {
  * pass's slots back in gives the solve hysteresis, so a bumped badge
  * holds position through a pan rather than hopping every frame. No-op
  * (and clears the sources) when hidden or empty.
+ *
+ * A parcel big enough on screen to hold its badge gets it INSIDE, just
+ * above the roll number, with no leader or dot (Jason, 2026-10-22: the
+ * callouts sat on the roll numbers in printed maps); the solver places
+ * those first. Small parcels (a zoomed-out farm view) keep callouts,
+ * since there the leader is what says which parcel is which; a callout's
+ * dot moves above the roll number too wherever that is still inside the
+ * parcel (calloutDotLift).
  */
 function repositionParcelNumbers(map) {
   const st = map._parcelNumbers;
   if (!st) return;
   const leaderSrc = map.getSource('parcel-num-leaders');
   const labelSrc = map.getSource('parcel-num-labels');
-  if (!leaderSrc || !labelSrc) return;
+  const anchorSrc = map.getSource('parcel-num-anchors');
+  if (!leaderSrc || !labelSrc || !anchorSrc) return;
   if (!st.visible || st.anchors.length === 0) {
     leaderSrc.setData(emptyFc());
     labelSrc.setData(emptyFc());
+    anchorSrc.setData(emptyFc());
     return;
   }
-  const projected = st.anchors.map((a) => {
-    const pt = map.project([a.lng, a.lat]);
-    return { key: a.key, x: pt.x, y: pt.y, r: a.radius };
-  });
   const canvas = map.getCanvas();
-  st.slots = solveCalloutSlots(projected, st.slots, {
+  const viewport = {
     width: canvas.clientWidth || canvas.width,
     height: canvas.clientHeight || canvas.height,
+  };
+  const rollShown = rollLabelsShown(map);
+  const zoom = map.getZoom();
+  const projected = st.anchors.map((a) => {
+    const pt = map.project([a.lng, a.lat]);
+    const item = { key: a.key, x: pt.x, y: pt.y, r: a.radius };
+    const view = parcelOnScreen(map, a);
+    const margin = st.slots.get(a.key) === INLINE_SLOT ? INLINE_KEEP_MARGIN : INLINE_TAKE_MARGIN;
+    const inline = inlineOffset(a, pt, view, { rollShown, zoom, margin, ...viewport });
+    if (inline) item.inline = inline;
+    // A callout's dot (and so its leader) starts above the roll number.
+    else item.y += calloutDotLift(a, pt, view, { rollShown, zoom, ...viewport });
+    return item;
   });
+  st.slots = solveCalloutSlots(projected, st.slots, viewport);
   const leaders = [];
   const labels = [];
+  const dots = [];
   st.anchors.forEach((a, i) => {
-    const [dx, dy] = calloutOffset(st.slots.get(a.key));
     const p = projected[i];
+    const isInline = st.slots.get(a.key) === INLINE_SLOT;
+    const [dx, dy] = isInline ? p.inline : calloutOffset(st.slots.get(a.key));
     const lp = map.unproject([p.x + dx, p.y + dy]);
-    leaders.push({
-      type: 'Feature',
-      properties: { _seq: a.seq },
-      geometry: { type: 'LineString', coordinates: [[a.lng, a.lat], [lp.lng, lp.lat]] },
-    });
+    // An inline badge sits inside its parcel: no leader, no dot.
+    if (!isInline) {
+      const dp = map.unproject([p.x, p.y]);
+      leaders.push({
+        type: 'Feature',
+        properties: { _seq: a.seq },
+        geometry: { type: 'LineString', coordinates: [[dp.lng, dp.lat], [lp.lng, lp.lat]] },
+      });
+      dots.push({
+        type: 'Feature',
+        properties: { _seq: a.seq },
+        geometry: { type: 'Point', coordinates: [dp.lng, dp.lat] },
+      });
+    }
     labels.push({
       type: 'Feature',
       properties: { _seq: a.seq, _seqStr: a.seqStr },
@@ -4642,6 +4745,7 @@ function repositionParcelNumbers(map) {
     });
   });
   leaderSrc.setData({ type: 'FeatureCollection', features: leaders });
+  anchorSrc.setData({ type: 'FeatureCollection', features: dots });
   labelSrc.setData({ type: 'FeatureCollection', features: labels });
 }
 
@@ -5445,6 +5549,8 @@ export function setMuniParcelsVisible(map, visible) {
   for (const id of ['muni-parcels-fill', 'muni-parcels-line', 'muni-parcels-label', 'muni-parcels-civic-label']) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
   }
+  // The badges sit above the roll numbers only while those draw.
+  repositionParcelNumbers(map);
 }
 
 /**
