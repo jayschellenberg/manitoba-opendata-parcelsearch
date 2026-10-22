@@ -349,7 +349,7 @@ import {
 } from './lib/mfInventory.js';
 import { resolveParcelAcres, formatRollSizeField, parseRollFrontageFeet } from './lib/acres.js';
 import { rollDisplay } from './lib/parcelLabelFields.js';
-import { parcelDimensions, formatSides, formatSidesForGrid, formatFeet } from './lib/parcelDimensions.js';
+import { featureDimensions, rollFrontageNote, formatSides, formatSidesForGrid, formatFeet } from './lib/parcelDimensions.js';
 import { createMuniParcelResolver, recordKey } from './lib/muniParcelRecords.js';
 import {
   saleSizeStamp, saleSizeState, saleSizeAcres, areaSourceLabel, showMeasuredArea, showsCurrentRollSize,
@@ -14981,7 +14981,7 @@ function renderTable(rows, { resetPage = true } = {}) {
     const sidesCell = td(formatSidesForGrid(dims) || null, 'dims-cell', DIMS_EMPTY_HINT);
     // The full list rides in the tooltip, so a summarised irregular parcel
     // still has its numbers one hover away (and in the CSV).
-    if (dims) sidesCell.title = formatSides(dims);
+    if (dims) sidesCell.title = [formatSides(dims), rollFrontageNote(dims)].filter(Boolean).join('\n');
     tr.appendChild(sidesCell);
     tr.appendChild(td(dims ? formatFeet(dims.perimeterFt) : null, 'num', DIMS_EMPTY_HINT));
     tr.appendChild(assessmentCell(p));
@@ -17930,7 +17930,8 @@ function formatDu(v) {
 
 // Square feet from acres. Always integer with thousands separators.
 /**
- * Side lengths of the row's parcel polygon (lib/parcelDimensions.js), or null.
+ * Side lengths of the row's parcel polygon (lib/parcelDimensions.js), with
+ * the roll frontage applied where a side agrees with it, or null.
  * Null on a sales row whose boundary changed after the sale: today's polygon
  * is a different piece of land, the map draws it as a pin, and its sides
  * would describe land the sale did not buy.
@@ -17938,7 +17939,7 @@ function formatDu(v) {
 function rowDimensions(row) {
   const parcel = row?.parcel;
   if (!parcel || parcel.properties?._geomTrust === 'withheld') return null;
-  return parcelDimensions(parcel.geometry);
+  return featureDimensions(parcel);
 }
 
 const DIMS_EMPTY_HINT = 'No polygon to measure — the parcel is not mapped, or its boundary changed after the sale.';
