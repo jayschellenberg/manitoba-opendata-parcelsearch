@@ -2216,9 +2216,10 @@ body.sales-mode .sidebar .sales-filters-preload-hint { display: none; }
 .controls select {
   flex: 1 1 auto;
   /* Halved from 7px 10px (Jason, 2026-10-22): the sidebar boxes carried
-     a lot of white space around their text. The inherited 1.5 line
-     height left text inputs 2px taller than the selects beside them. */
-  padding: 4px 5px;
+     a lot of white space around their text; then 20% more vertical
+     room back the same day (4px -> 5px). The inherited 1.5 line height
+     left text inputs 2px taller than the selects beside them. */
+  padding: 5px 5px;
   line-height: 1.25;
   border: 1px solid #c2c5cc;
   border-radius: 4px;
@@ -2383,6 +2384,8 @@ body.sales-mode .sidebar .sales-filters-preload-hint { display: none; }
   justify-content: center;
   width: 16px;
   height: 16px;
+  /* .controls button's 36px min-height made every chip 42px tall. */
+  min-height: 0;
   padding: 0;
   background: transparent;
   border: none;
@@ -2422,8 +2425,14 @@ body.sales-mode .sidebar .sales-filters-preload-hint { display: none; }
    of the chip strip. */
 .controls .chip-input .chip-input-text {
   /* The wrapper is the box; the inner input must not add its own
-     min-height on top of the wrapper's (it measured 46px, 2026-10-22). */
+     min-height on top of the wrapper's (it measured 46px, 2026-10-22).
+     Nor the sidebar's width:100% / flex-basis auto: that made the text
+     box a full line of its own, so the first chip always pushed it onto
+     a second row. It shares the chips' row while 80px is left. */
   min-height: 0;
+  width: auto;
+  flex: 1 1 80px;
+  min-width: 80px;
   padding: 2px 1px;
   border: none;
   background: transparent;
@@ -5728,9 +5737,9 @@ body {
 .controls input[type="number"],
 .controls input[type="date"],
 .controls select {
-  /* 28px with the halved padding (was 36px, 2026-10-22). Phone mode
+  /* 30px with the tightened padding (was 36px, 2026-10-22). Phone mode
      keeps its 44px touch targets (body.phone .sidebar …). */
-  min-height: 28px;
+  min-height: 30px;
 }
 .results-toolbar-presets select {
   min-height: 36px;
@@ -5776,8 +5785,8 @@ body {
 }
 
 .chip-input {
-  min-height: 28px;
-  padding: 2px 4px;
+  min-height: 30px;
+  padding: 3px 4px;
   border-color: var(--ui-line-strong);
   border-radius: var(--ui-radius);
   background: var(--ui-panel);
