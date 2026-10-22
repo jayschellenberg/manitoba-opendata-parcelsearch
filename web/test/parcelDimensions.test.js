@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import {
   parcelDimensions, formatSides, formatFeet, dimensionLabelFeatures, labelledSides,
-  formatSidesForGrid, GRID_MAX_SIDES,
+  formatSidesForGrid, GRID_MAX_SIDES, featureDimensions, rollFrontageNote,
 } from '../src/lib/parcelDimensions.js';
 
 const results = [];
@@ -190,6 +190,89 @@ test('grid summarises a parcel with too many sides to read', () => {
 test('results are cached per geometry object', () => {
   const g = poly(LOT);
   assert.equal(parcelDimensions(g), parcelDimensions(g));
+});
+
+// ---- Roll frontage ------------------------------------------------------
+
+const feat = (geometry, rollSize) => ({ type: 'Feature', properties: { Frontage_or_Area: rollSize }, geometry });
+// 66.4 ft wide x 120 ft deep: the polygon reads 0.4 ft wide of a 66 ft roll frontage.
+const WIDE = [[0, 0], [66.4, 0], [66.4, 120], [0, 120]];
+
+test('roll frontage within 1 ft: that side takes the roll figure, the rest scale by the ratio', () => {
+  const dims = featureDimensions(feat(poly(WIDE), '66.00 FEET'));
+  const s = dims.parts[0].sides;
+  assert.equal(s[0].ft, 66);
+  assert.equal(s[0].roll, true);
+  const ratio = 66 / 66.4;
+  near(s[1].ft, 120 * ratio, 0.05, 'east');
+  near(s[2].ft, 66, 0.05, 'south (scaled too)');
+  assert.ok(!s[2].roll, 'only one side is the roll frontage');
+  near(dims.perimeterFt, (66.4 + 120) * 2 * ratio, 0.1, 'perimeter');
+  near(dims.rollFrontage.ratio, ratio, 1e-4);
+  assert.equal(formatSides(dims), '66.0 (roll) / 119.3 / 66.0 / 119.3');
+});
+
+test('roll frontage does not touch the cached polygon measurement', () => {
+  const g = poly(WIDE);
+  featureDimensions(feat(g, '66.00 FEET'));
+  near(parcelDimensions(g).parts[0].sides[0].ft, 66.4, 0.05);
+  assert.ok(!parcelDimensions(g).parts[0].sides.some((s) => s.roll));
+});
+
+test('roll frontage more than 1 ft off, an area, or no roll figure: left as measured', () => {
+  const g = poly(WIDE);
+  const measured = parcelDimensions(g);
+  assert.equal(featureDimensions(feat(g, '65.30 FEET')), measured, '1.1 ft off');
+  assert.equal(featureDimensions(feat(g, '0.18 ACRES')), measured, 'acres');
+  assert.equal(featureDimensions(feat(g, null)), measured, 'null');
+  assert.equal(featureDimensions({ geometry: g }), measured, 'no properties');
+  assert.ok(featureDimensions(feat(g, '65.50 FEET')).rollFrontage, '0.9 ft off still applies');
+});
+
+test('within 1 ft but more than a 2% rescale: left as measured', () => {
+  // A 10.3 ft sliver frontage against a 9.51 ft roll (Winkler roll 3910's
+  // shape): 0.8 ft off, but taking it would shrink every side 8%.
+  const g = poly([[0, 0], [10.3, 0], [10.3, 30], [0, 30]]);
+  assert.equal(featureDimensions(feat(g, '9.51 FEET')), parcelDimensions(g));
+  // 1 ft off a 40 ft lot is 2.5%: also left alone.
+  const g40 = poly([[0, 0], [40, 0], [40, 100], [0, 100]]);
+  assert.equal(featureDimensions(feat(g40, '41.00 FEET')), parcelDimensions(g40));
+  assert.ok(featureDimensions(feat(g40, '40.70 FEET')).rollFrontage, '1.75% still applies');
+});
+
+test('roll frontage goes to the side closest to it', () => {
+  // 66 wide x 66.8 deep, roll 66.6: east/west (0.2 off) beat north/south (0.6 off).
+  const dims = featureDimensions(feat(poly([[0, 0], [66, 0], [66, 66.8], [0, 66.8]]), '66.60 FEET'));
+  const s = dims.parts[0].sides;
+  assert.equal(s.findIndex((x) => x.roll), 1);
+  assert.equal(s[1].ft, 66.6);
+});
+
+test('a multi-part parcel is left as measured', () => {
+  const g = {
+    type: 'MultiPolygon',
+    coordinates: [poly(WIDE).coordinates, poly([[200, 0], [250, 0], [250, 40], [200, 40]]).coordinates],
+  };
+  assert.equal(featureDimensions(feat(g, '66.00 FEET')), parcelDimensions(g));
+});
+
+test('roll frontage on the map labels, and the note for the tooltip', () => {
+  const f = feat(poly(WIDE), '66.00 FEET');
+  const labels = dimensionLabelFeatures([f]).map((x) => x.properties.label);
+  assert.deepEqual(labels, ['66.0 ft (roll)', '119.3 ft', '66.0 ft', '119.3 ft']);
+  assert.match(rollFrontageNote(featureDimensions(f)), /^Frontage 66\.0 ft is from the assessment roll \(polygon measures 66\.4 ft\);.*×0\.994/);
+  assert.equal(rollFrontageNote(parcelDimensions(poly(LOT))), '');
+});
+
+test('a shared line is labelled with the neighbour\'s roll frontage over a plain measurement', () => {
+  const a = feat(poly(LOT), '0.18 ACRES');
+  // East neighbour, its west side the 120 ft line shared with a's east side.
+  const b = feat(poly([[66, 0], [132, 0], [132, 125], [66, 120]]), '120.30 FEET');
+  const labels = dimensionLabelFeatures([a, b]).map((x) => x.properties.label);
+  assert.equal(labels.length, 7);
+  assert.ok(labels.includes('120.3 ft (roll)'), labels.join(', '));
+  // Only a's own west side still reads as measured; its east side is the shared line.
+  assert.equal(labels.filter((l) => l === '120.0 ft').length, 1, labels.join(', '));
 });
 
 const failed = results.filter((r) => r.status === 'fail').length;

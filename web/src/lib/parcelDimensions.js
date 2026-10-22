@@ -27,8 +27,20 @@
  * Holes are ignored; MultiPolygon parts are measured separately. Sides are
  * listed clockwise, starting with the side whose midpoint is furthest north.
  *
- * Pure and dependency-free so it unit-tests under node (test/parcelDimensions.test.js).
+ * ROLL FRONTAGE. About 37% of parcels have a frontage in feet on the
+ * assessment roll (Frontage_or_Area "50.00 FEET"). When one measured side is
+ * within ROLL_FRONTAGE_TOL_FT of it (and that rescales the parcel by no more
+ * than ROLL_FRONTAGE_MAX_SCALE), featureDimensions() takes the roll figure
+ * as that side's length and scales every other side by the same ratio, on the
+ * reading that the polygon is the right shape at a slightly wrong scale
+ * (Jason, 2026-10-22). That side is flagged `roll` and labelled "(roll)".
+ * A parcel whose roll states acres, or no side close enough, is left as
+ * measured.
+ *
+ * Pure so it unit-tests under node (test/parcelDimensions.test.js).
  */
+
+import { parseRollFrontageFeet } from './acres.js';
 
 export const M_TO_FT = 1 / 0.3048;
 
@@ -53,6 +65,14 @@ export const ARC_MAX_CHORD_M = 20;
 export const ARC_MAX_CHORD_RATIO = 3;
 // Sides shorter than this get no label (still counted in the perimeter).
 export const MIN_SIDE_FT = 1;
+// A measured side this close to the roll's stated frontage IS the frontage…
+export const ROLL_FRONTAGE_TOL_FT = 1;
+// …unless taking it would rescale the parcel by more than this. 1 ft is noise
+// on a 50 ft lot but 10% of a 10 ft sliver. Measured 2026-10-22 on 2,400 live
+// frontage lots in six towns: 2,001 match within 1 ft, 1,945 of them scale
+// under 0.5%, and only 6 past 2% (3-10 ft remnant slivers, and lots a full
+// foot off on a 40-50 ft frontage). Jason chose 2%.
+export const ROLL_FRONTAGE_MAX_SCALE = 0.02;
 
 /** WGS84 metres per degree of latitude / longitude at latitude `latDeg`. */
 function metresPerDegree(latDeg) {
@@ -260,6 +280,67 @@ export function parcelDimensions(geometry) {
   return out;
 }
 
+const ROLL_CACHE = new WeakMap();
+
+/**
+ * `dims` with the roll frontage applied: the labelled side nearest `rollFt`,
+ * if within ROLL_FRONTAGE_TOL_FT and ROLL_FRONTAGE_MAX_SCALE of it, becomes
+ * exactly `rollFt` (flagged `roll`)
+ * and every side and the perimeter are scaled by rollFt / measured. Returns
+ * `dims` itself when nothing applies — no roll frontage, no side close
+ * enough, or a multi-part parcel (the roll states one frontage for the whole
+ * parcel, and which part it belongs to is a guess). The cached `dims` is
+ * never mutated.
+ *
+ * Adds `rollFrontage: {ft, measuredFt, ratio}` to a corrected result.
+ */
+export function applyRollFrontage(dims, rollFt) {
+  if (!dims || dims.parts.length !== 1 || !(rollFt > 0)) return dims;
+  let byFt = ROLL_CACHE.get(dims);
+  if (byFt?.has(rollFt)) return byFt.get(rollFt);
+  const part = dims.parts[0];
+  let best = -1, bestDiff = Infinity;
+  part.sides.forEach((s, i) => {
+    if (s.ft < MIN_SIDE_FT) return;
+    const d = Math.abs(s.ft - rollFt);
+    if (d > ROLL_FRONTAGE_TOL_FT || Math.abs(rollFt / s.ft - 1) > ROLL_FRONTAGE_MAX_SCALE) return;
+    if (d < bestDiff) { best = i; bestDiff = d; }
+  });
+  let out = dims;
+  if (best >= 0) {
+    const measuredFt = part.sides[best].ft;
+    const ratio = rollFt / measuredFt;
+    const sides = part.sides.map((s, i) => (i === best
+      ? { ...s, ft: rollFt, roll: true }
+      : { ...s, ft: s.ft * ratio }));
+    const perimeterFt = part.perimeterFt * ratio;
+    out = { parts: [{ sides, perimeterFt }], perimeterFt, rollFrontage: { ft: rollFt, measuredFt, ratio } };
+  }
+  if (!byFt) ROLL_CACHE.set(dims, (byFt = new Map()));
+  byFt.set(rollFt, out);
+  return out;
+}
+
+/**
+ * Dimensions of a parcel FEATURE: its polygon's sides, with the roll's
+ * stated frontage (properties.Frontage_or_Area) applied. What the grid, the
+ * CSV and the map labels all show, so the three always agree.
+ */
+export function featureDimensions(feature) {
+  return applyRollFrontage(
+    parcelDimensions(feature?.geometry),
+    parseRollFrontageFeet(feature?.properties?.Frontage_or_Area),
+  );
+}
+
+/** Tooltip line for a roll-corrected parcel; '' otherwise. */
+export function rollFrontageNote(dims) {
+  const r = dims?.rollFrontage;
+  if (!r) return '';
+  return `Frontage ${formatFeet(r.ft)} ft is from the assessment roll (polygon measures ${formatFeet(r.measuredFt)} ft); `
+    + `the other sides are scaled by the same ratio (×${r.ratio.toFixed(3)}).`;
+}
+
 /** "66.0" under 1,000 ft, "1,320" at or above. */
 export function formatFeet(ft) {
   if (!Number.isFinite(ft)) return '';
@@ -274,14 +355,15 @@ export function labelledSides(part) {
 }
 
 /**
- * Grid / CSV text: "66.0 / 120.2 / 66.1 / 119.8", an arc marked "(arc)",
- * MultiPolygon parts separated by " | ". '' when there is no polygon.
+ * Grid / CSV text: "66.0 / 120.2 / 66.1 / 119.8", an arc marked "(arc)", the
+ * roll's frontage marked "(roll)", MultiPolygon parts separated by " | ".
+ * '' when there is no polygon.
  */
 export function formatSides(dims) {
   if (!dims?.parts?.length) return '';
   return dims.parts
     .map((part) => labelledSides(part)
-      .map((s) => `${formatFeet(s.ft)}${s.arc ? ' (arc)' : ''}`)
+      .map((s) => `${formatFeet(s.ft)}${s.arc ? ' (arc)' : ''}${s.roll ? ' (roll)' : ''}`)
       .join(' / '))
     .filter(Boolean)
     .join(' | ');
@@ -346,30 +428,36 @@ function sideKey(coords) {
  * Points, not the sides' LineStrings: a GeoJSON source cuts lines at tile
  * boundaries, and `line-center` then labels EACH piece, so a side crossing a
  * tile edge came out with its length printed twice. A point is never cut.
+ *
+ * A line two parcels share is labelled once: by the first parcel listing it,
+ * unless a later one has it as its roll frontage — the assessor's figure beats
+ * a measurement of the same line.
  */
 export function dimensionLabelFeatures(features) {
-  const out = [];
-  const seen = new Set();
+  const byKey = new Map();
   for (const f of features || []) {
-    const dims = parcelDimensions(f?.geometry);
+    const dims = featureDimensions(f);
     if (!dims) continue;
     for (const part of dims.parts) {
       for (const s of labelledSides(part)) {
         const key = sideKey(s.coords);
-        if (seen.has(key)) continue;
-        seen.add(key);
+        const prev = byKey.get(key);
+        if (prev && (prev.roll || !s.roll)) continue;
         const anchor = sideLabelAnchor(s.coords);
         if (!anchor) continue;
-        out.push({
-          type: 'Feature',
-          properties: {
-            label: `${formatFeet(s.ft)} ft${s.arc ? ' arc' : ''}`,
-            rot: Math.round(anchor.rot * 10) / 10,
+        byKey.set(key, {
+          roll: !!s.roll,
+          feature: {
+            type: 'Feature',
+            properties: {
+              label: `${formatFeet(s.ft)} ft${s.arc ? ' arc' : ''}${s.roll ? ' (roll)' : ''}`,
+              rot: Math.round(anchor.rot * 10) / 10,
+            },
+            geometry: { type: 'Point', coordinates: anchor.point },
           },
-          geometry: { type: 'Point', coordinates: anchor.point },
         });
       }
     }
   }
-  return out;
+  return [...byKey.values()].map((v) => v.feature);
 }
