@@ -34,6 +34,9 @@ const fmt = (n) => Number(n || 0).toLocaleString();
  *   may be empty) limiting which sales are read out of the archive. Supplied by
  *   main.js from the sidebar's date range so the panel does not reach into the
  *   filter DOM itself. Absent (or empty) means load the full history.
+ * @param {Function} [opts.getPriceWindow] returns {min, max} (either may be
+ *   empty): the sidebar's Sale Price pair, applied to the load the same way as
+ *   the date range so sales outside it are never parsed or geometry-fetched.
  * @param {Function} [opts.onSelectionChange] called with (effective, picked)
  *   Sets of muni_no whenever the selection changes, so the map can shade the
  *   chosen municipalities. Fires for adjacency changes too, since those change
@@ -42,7 +45,7 @@ const fmt = (n) => Number(n || 0).toLocaleString();
  *   the map drive the same selection the checkboxes do.
  */
 export function initSalesDbPanel({
-  onLoad, setStatus, getDateWindow, onSelectionChange, onSearchStart,
+  onLoad, setStatus, getDateWindow, getPriceWindow, onSelectionChange, onSearchStart,
 } = {}) {
   const $root    = document.getElementById('sales-db');
   if (!$root) return { refresh: () => {} };
@@ -250,7 +253,8 @@ export function initSalesDbPanel({
 
   const stateKey = () => {
     const { from, to } = dateWindow();
-    return { munis: [...effectiveSelection()].sort().join(','), from, to, type: $type?.value || '' };
+    const { min, max } = priceWindow();
+    return { munis: [...effectiveSelection()].sort().join(','), from, to, type: $type?.value || '', min, max };
   };
 
   /**
@@ -288,14 +292,20 @@ export function initSalesDbPanel({
     const now = stateKey();
     const widened = (loadedState.from && (!now.from || now.from < loadedState.from))
                  || (loadedState.to && (!now.to || now.to > loadedState.to));
+    // Same rule for price: only a WIDER window needs the archive again, since
+    // a narrower one is still applied to what is in memory.
+    const priceWidened = (loadedState.min !== null && (now.min === null || now.min < loadedState.min))
+                      || (loadedState.max !== null && (now.max === null || now.max > loadedState.max));
     const muniChanged = now.munis !== loadedState.munis && !muniOnlyNarrowed(now.munis);
-    const stale = muniChanged || now.type !== loadedState.type || widened;
+    const stale = muniChanged || now.type !== loadedState.type || widened || priceWidened;
     $update.hidden = !stale;
     $update.classList.toggle('is-stale', stale);
     if (stale) {
       $update.textContent = muniChanged
         ? 'Municipalities added — hit Search to load their sales.'
-        : 'Date range or sale type changed — hit Search to refresh the data.';
+        : priceWidened && !widened && now.type === loadedState.type
+          ? 'Sale price widened — hit Search to load the sales outside the old range.'
+          : 'Date range, sale price or sale type changed — hit Search to refresh the data.';
     }
   }
 
@@ -310,6 +320,16 @@ export function initSalesDbPanel({
   function dateWindow() {
     const w = getDateWindow?.() || {};
     return { from: (w.from || '').trim(), to: (w.to || '').trim() };
+  }
+  // Price bounds as numbers, null when blank, so the staleness test can
+  // compare them without '' vs '0' ambiguity.
+  function priceWindow() {
+    const w = getPriceWindow?.() || {};
+    const num = (v) => {
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? n : null;
+    };
+    return { min: num(w.min), max: num(w.max) };
   }
   function updateLoadEnabled() {
     const { from, to } = dateWindow();
@@ -326,6 +346,10 @@ export function initSalesDbPanel({
   // polling; both the presets and hand-typed dates fire 'input'.
   for (const id of ['sale-date-from', 'sale-date-to']) {
     document.getElementById(id)?.addEventListener('input', updateLoadEnabled);
+  }
+  // The Sale Price pair narrows the load too, so widening it is stale.
+  for (const id of ['sales-price-low', 'sales-price-high']) {
+    document.getElementById(id)?.addEventListener('input', updateStaleness);
   }
 
   /** Rebuild the region groups. Cheap enough to redraw wholesale — 186 rows. */
@@ -541,7 +565,12 @@ export function initSalesDbPanel({
       // region being practical to select and not. No range set means the
       // whole archive, exactly as before.
       const { from, to } = getDateWindow?.() || {};
-      const payload = await buildCsvFor(chosen, { manifest, from, to, type: $type?.value || null });
+      // The Sale Price pair narrows the load the same way, when it is set
+      // before Search.
+      const { min, max } = priceWindow();
+      const payload = await buildCsvFor(chosen, {
+        manifest, from, to, type: $type?.value || null, min, max,
+      });
       if (!payload) {
         // The table was emptied by onSearchStart, so this state IS what the
         // controls now describe. Recording it stops the staleness banner
@@ -553,9 +582,10 @@ export function initSalesDbPanel({
         const scope = [
           $type?.value ? `sale type "${$type.options[$type.selectedIndex]?.text || $type.value}"` : '',
           (from || to) ? 'that date range' : '',
+          (min !== null || max !== null) ? 'that price range' : '',
         ].filter(Boolean).join(' in ');
         say(scope
-          ? `No sales match ${scope} for the selection. Widen the date range or choose a different sale type, then search again.`
+          ? `No sales match ${scope} for the selection. Widen the date range or price, or choose a different sale type, then search again.`
           : 'No sales found for that selection.');
         return;
       }
@@ -570,8 +600,13 @@ export function initSalesDbPanel({
       // already in memory — more history needs another Load.
       if (payload.window) {
         const span = [payload.window.from || 'earliest', payload.window.to || 'today'].join(' → ');
-        say(`Loaded ${fmt(payload.sales)} of ${fmt(payload.salesAvailable)} sales (${span}). `
-          + 'Change the date range and search again for more history.');
+        const money = (n) => `$${fmt(n)}`;
+        const { min: lo, max: hi } = payload.window;
+        const price = lo !== null && hi !== null ? `, ${money(lo)}–${money(hi)}`
+          : lo !== null ? `, ≥ ${money(lo)}` : hi !== null ? `, ≤ ${money(hi)}` : '';
+        say(`Loaded ${fmt(payload.sales)} of ${fmt(payload.salesAvailable)} sales (${span}${price}). `
+          + (price ? 'Widen the date range or price and search again for more.'
+            : 'Change the date range and search again for more history.'));
       } else {
         say(`Loaded ${fmt(payload.sales)} sales (full history).`);
       }

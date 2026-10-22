@@ -1187,8 +1187,6 @@ header small a {
    (handleSalesUpload sets it; clearAll removes it). Low + High inputs
    on the left, UofM toggle pill on the right. */
 body:not(.sales-mode) .sidebar .size-row,
-body:not(.sales-mode) .sidebar .size-vacant-row,
-body:not(.sales-mode) .sidebar .street-name-row,
 body:not(.sales-mode) .sidebar .ppa-row,
 body:not(.sales-mode) .sidebar .vacant-row,
 body:not(.sales-mode) .sidebar .date-row,
@@ -1196,22 +1194,38 @@ body:not(.sales-mode) .sidebar .date-row,
    outside it are never read out of the archive — so it should be set before
    Search Sales runs, not discovered afterwards once the slow part already
    ran (the panel hints at it and confirms before a full-history search).
+   The Additional filters panel is not hidden either (Jason, 2026-10-22):
+   its size, price and other boxes can be set up front and apply when the
+   sales arrive, and Sale Price narrows the load like the date range. Only
+   its zoning pickers (greyed below) and Subject Property wait for data.
    The rest of the sales filters still wait for data to filter. */
-body:not(.sales-mode) .sidebar .class-row,
+body:not(.sales-mode) .sidebar .class-row:not(.sales-zoning-row),
 body:not(.sales-mode) .sidebar .subject-row,
 body:not(.sales-mode) .sidebar .subject-muni-row,
 body:not(.sales-mode) .sidebar .sales-subject-title,
 body:not(.sales-mode) .sidebar .distance-row,
 body:not(.sales-mode) .sidebar .uom-vacant-row,
 body:not(.sales-mode) .sidebar .far-flung-row,
-body:not(.sales-mode) .sidebar .sale-price-row,
-body:not(.sales-mode) .sidebar .sales-filters,
 /* The Sales Charts button plots sale dates and prices, so outside
    sales mode there is nothing for it to open. It rides this list
    rather than the .sales-only class the grid uses — that class is
    scoped to #results and does nothing to a sidebar control. */
 body:not(.sales-mode) .sidebar #charts-open,
 body:not(.sales-mode) .sidebar .favourite-row { display: none; }
+
+/* Before a load the zoning pickers in Additional filters have nothing to
+   list, so they show greyed with a one-line note rather than opening onto
+   an empty menu. The note hides again once sales are loaded. */
+body:not(.sales-mode) .sidebar .sales-zoning-row {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.sidebar .sales-filters-preload-hint {
+  margin: 2px 0;
+  font-size: 0.78rem;
+  color: var(--color-neutral-600, #52525b);
+}
+body.sales-mode .sidebar .sales-filters-preload-hint { display: none; }
 
 /* "More filters" collapsible — wraps the regular-search filter
    controls (Zoning Category, Status, Any DU, # of DU) behind a
