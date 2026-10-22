@@ -2051,6 +2051,19 @@ body.sales-mode .sidebar .sales-filters-preload-hint { display: none; }
 .sidebar .address-row .address-from-field   { flex: 0 0 64px; min-width: 0; }
 .sidebar .address-row .address-to-field     { flex: 0 0 64px; min-width: 0; }
 .sidebar .address-row .address-street-field { flex: 1 1 auto; min-width: 0; }
+/* Dir (Jason, 2026-10-22): just wide enough for "NW" (24px at 14px Inter)
+   plus an arrow. Chromium's native arrow is ~20px wide whatever the
+   padding and clipped "Dir" to "D", so this one select draws its own
+   small chevron. The row's ⓘ rides in this field, so Street Name gives
+   up the room. */
+.sidebar .address-row .address-dir-field    { flex: 0 0 auto; min-width: 0; }
+.sidebar .address-row .address-dir-field select {
+  width: 50px;
+  padding-left: 6px;
+  padding-right: 14px;
+  appearance: none;
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23555'/%3E%3C/svg%3E") no-repeat right 5px center;
+}
 
 /* Legal description + Certificate of Title on a single row, equal
    widths (see the icon-track note below). Keeps the inputs paired (both
@@ -2097,11 +2110,12 @@ body.sales-mode .sidebar .sales-filters-preload-hint { display: none; }
   line-height: 1.35;
 }
 
-/* Street Type + Direction, first row of Additional Searches — two
-   selects of equal width (icon track, see .legal-row). */
+/* Street Type, first row of Additional Searches — one select across the
+   row (icon track, see .legal-row). Direction moved up to the address
+   row as Dir (2026-10-22). */
 .sidebar .address-typedir-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr)) 25px;
+  grid-template-columns: minmax(0, 1fr) 25px;
   gap: 6px;
   margin-top: 4px;
 }
@@ -6801,8 +6815,9 @@ body {
     flex-wrap: wrap;
   }
 
+  /* Street Name drops to its own line with Dir beside it. */
   .sidebar .address-row .address-street-field {
-    flex-basis: 100%;
+    flex-basis: 60%;
   }
 
   /* Legal / Title stack one per line on the narrowest phones. Still a

@@ -5052,10 +5052,11 @@ for (const el of [$addressFrom, $addressTo, $addressStreet, $roll, $legalText, $
 /** One entry per active advanced criterion: short label + full detail. */
 function advancedFilterChips() {
   const chips = [];
-  // Street Type / Direction moved into this group (2026-10-06), so they
-  // need the badge too: collapsed, nothing else would show they are set.
-  const streetBits = [$addressType?.value.trim(), $addressDir?.value.trim()].filter(Boolean);
-  if (streetBits.length) chips.push({ label: 'Street', detail: `Street type/direction: ${streetBits.join(' ')}` });
+  // Street Type moved into this group (2026-10-06), so it needs the badge
+  // too: collapsed, nothing else would show it is set. Dir sits on the
+  // address row (2026-10-22), always in view, so it needs no chip.
+  const streetType = $addressType?.value.trim() || '';
+  if (streetType) chips.push({ label: 'Street', detail: `Street type: ${streetType}` });
   const legal = $legalText?.value.trim() || '';
   if (legal) chips.push({ label: 'Legal', detail: `Legal description contains "${legal}"` });
   const ct = $title?.value.trim() || '';
