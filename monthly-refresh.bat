@@ -23,11 +23,16 @@ REM      fallback would have served week-old geometry during exactly the
 REM      upstream outage it exists to cover. Monthly is the floor, not
 REM      the ideal; rerun r\build_rollentry_snapshot.R by hand after any
 REM      off-cycle download.
-REM   7. Rebuild + VALIDATE the data manifest (--validate compares the
+REM   7. Rebuild the Street typeahead lists (mb-parcel-data\streets\)
+REM      from the snapshot step 6 just wrote (non-fatal; added
+REM      2026-10-22). It refuses to write if the street count halves —
+REM      rerun web\scripts\build-street-index.mjs by hand with
+REM      --accept-large-change for a real drop.
+REM   8. Rebuild + VALIDATE the data manifest (--validate compares the
 REM      fresh shard set against the previously written manifest and
 REM      aborts on collapsed row counts / vanished datasets / corrupt
 REM      sample shards, leaving the prior manifest in place). For a
-REM      legitimate big change, rerun step 7 by hand with
+REM      legitimate big change, rerun step 8 by hand with
 REM      --accept-large-change.
 REM
 REM NOT part of this refresh: the Land Cover "Detailed" raster tiles
@@ -43,7 +48,7 @@ REM changed files; review the diff and commit when ready. The scheduled
 REM companion task mb-parcelsearch-publish-indexes (04:30, 30 min later)
 REM is what actually publishes and repins them.
 REM
-REM Non-fatal steps (4, 5, 6) leave the previous shards in place and let
+REM Non-fatal steps (4, 5, 6, 7) leave the previous shards in place and let
 REM the run continue, but they now set SOFTFAIL so the script still
 REM exits nonzero at the end. Before 2026-08-12 a failed shard build was
 REM logged and otherwise silent: the run "COMPLETED", Task Scheduler
@@ -101,7 +106,7 @@ set SOFTFAIL=
 REM ---------------------------------------------------------------
 REM Step 1 — mao-scrape delta.
 REM ---------------------------------------------------------------
-echo --- step 1/7: mao-scrape delta --- >> "%LOGFILE%"
+echo --- step 1/8: mao-scrape delta --- >> "%LOGFILE%"
 call "..\mao-scrape\run_delta.bat" >> "%LOGFILE%" 2>&1
 set DELTARC=!errorlevel!
 REM $2run_delta.R exits 2 for "DONE - WITH PROBLEMS": the delta COMPLETED and
@@ -131,7 +136,7 @@ REM ---------------------------------------------------------------
 REM Step 2 — rebuild legal-index JSON.
 REM ---------------------------------------------------------------
 echo. >> "%LOGFILE%"
-echo --- step 2/7: build_legal_index.R --- >> "%LOGFILE%"
+echo --- step 2/8: build_legal_index.R --- >> "%LOGFILE%"
 %RSCRIPT% r\build_legal_index.R >> "%LOGFILE%" 2>&1
 if errorlevel 1 (
   echo *** build_legal_index.R FAILED ^(exit code !errorlevel!^) >> "%LOGFILE%"
@@ -143,7 +148,7 @@ REM ---------------------------------------------------------------
 REM Step 3 — rebuild assessment-index + per-muni shards.
 REM ---------------------------------------------------------------
 echo. >> "%LOGFILE%"
-echo --- step 3/7: build_assessment_index.R --- >> "%LOGFILE%"
+echo --- step 3/8: build_assessment_index.R --- >> "%LOGFILE%"
 %RSCRIPT% r\build_assessment_index.R >> "%LOGFILE%" 2>&1
 if errorlevel 1 (
   echo *** build_assessment_index.R FAILED ^(exit code !errorlevel!^) >> "%LOGFILE%"
@@ -158,7 +163,7 @@ REM present on every machine. A failure here logs a warning and leaves
 REM the existing landcover shards in place rather than aborting the run.
 REM ---------------------------------------------------------------
 echo. >> "%LOGFILE%"
-echo --- step 4/7: build_landcover.R --- >> "%LOGFILE%"
+echo --- step 4/8: build_landcover.R --- >> "%LOGFILE%"
 %RSCRIPT% r\build_landcover.R >> "%LOGFILE%" 2>&1
 if errorlevel 1 (
   echo *** build_landcover.R FAILED ^(exit code !errorlevel!^) — continuing >> "%LOGFILE%"
@@ -172,7 +177,7 @@ REM Non-fatal for the same reason as step 4: it bridges a sister
 REM project's output that may not exist on every machine.
 REM ---------------------------------------------------------------
 echo. >> "%LOGFILE%"
-echo --- step 5/7: build_water.R --- >> "%LOGFILE%"
+echo --- step 5/8: build_water.R --- >> "%LOGFILE%"
 %RSCRIPT% r\build_water.R >> "%LOGFILE%" 2>&1
 if errorlevel 1 (
   echo *** build_water.R FAILED ^(exit code !errorlevel!^) — continuing >> "%LOGFILE%"
@@ -188,7 +193,7 @@ REM Non-fatal like steps 4-5: a stale fallback is worse than a fresh
 REM one but far better than aborting the run and publishing nothing.
 REM ---------------------------------------------------------------
 echo. >> "%LOGFILE%"
-echo --- step 6/7: build_rollentry_snapshot.R --- >> "%LOGFILE%"
+echo --- step 6/8: build_rollentry_snapshot.R --- >> "%LOGFILE%"
 %RSCRIPT% r\build_rollentry_snapshot.R >> "%LOGFILE%" 2>&1
 if errorlevel 1 (
   echo *** build_rollentry_snapshot.R FAILED ^(exit code !errorlevel!^) — continuing >> "%LOGFILE%"
@@ -197,14 +202,28 @@ if errorlevel 1 (
 )
 
 REM ---------------------------------------------------------------
-REM Step 7 — rebuild the public/data manifest.
+REM Step 7 — Street typeahead lists, parsed from the snapshot's
+REM Property_Address text (see web\src\lib\streetIndex.js). Non-fatal:
+REM the previous lists stay in place and still work.
 REM ---------------------------------------------------------------
 echo. >> "%LOGFILE%"
-echo --- step 7/7: build-manifest.js --validate --- >> "%LOGFILE%"
+echo --- step 7/8: build-street-index.mjs --- >> "%LOGFILE%"
+%NODE% web\scripts\build-street-index.mjs >> "%LOGFILE%" 2>&1
+if errorlevel 1 (
+  echo *** build-street-index.mjs FAILED ^(exit code !errorlevel!^) — continuing >> "%LOGFILE%"
+  echo *** existing street lists left untouched >> "%LOGFILE%"
+  set SOFTFAIL=1
+)
+
+REM ---------------------------------------------------------------
+REM Step 8 — rebuild the public/data manifest.
+REM ---------------------------------------------------------------
+echo. >> "%LOGFILE%"
+echo --- step 8/8: build-manifest.js --validate --- >> "%LOGFILE%"
 %NODE% web\scripts\build-manifest.js --validate >> "%LOGFILE%" 2>&1
 if errorlevel 1 (
   echo *** build-manifest.js FAILED ^(exit code !errorlevel!^) >> "%LOGFILE%"
-  echo monthly-refresh aborted at step 7. See %LOGFILE% for details.
+  echo monthly-refresh aborted at step 8. See %LOGFILE% for details.
   exit /b 1
 )
 

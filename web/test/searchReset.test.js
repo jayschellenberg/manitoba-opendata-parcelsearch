@@ -142,6 +142,7 @@ const PERSISTENT = {
   dimsOn: 'the Dimensions labels switch, a display preference like numberingOn',
   locationMapState: 'the province location map callout text and side, a display preference like numberingOn',
   trafficFlowFcPromise: 'session memo for the Traffic Flow FC; refetching it per search would be pure waste',
+  streetIndexPromise: 'session memo for the street-typeahead index; a published file pinned to a commit, so a search cannot change it',
   tileNetworkLastKey: 'cache key for the loaded tile-network scope, invalidated by scope not by search',
   compTags: 'the numbered comp tags, kept in browser storage and shared with the Sales Charts page; keyed by sale, not by result set',
   exclReasons: 'exclusion reasons, kept in browser storage like compTags and keyed by sale',

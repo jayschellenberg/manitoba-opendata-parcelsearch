@@ -57,6 +57,7 @@ import {
   addressSearchVariants,
   addressMatchesVariants,
   civicSearchMode,
+  doubledSpaceForms,
 } from './lib/civicRange.js';
 // The area join's compute lives in its own module so this file and the
 // Web Worker in overlayJoin.worker.js share one implementation.
@@ -234,7 +235,7 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // The province-wide section grid is not here either: it renders from
 // section-grid.pmtiles on R2 (map.js SECTION_GRID_TILES_URL).
 export const MB_PARCEL_DATA_REVISION =
-  '6ebd946c41785beca2fc6c4fb595fba8819b79c4';
+  '5470efa60043fd2a9240ca3ad5b00368385f6489';
 // Origin-absolute rather than a bare /gh-data/... path, so the URL is usable
 // anywhere (it once fed a MapLibre tile template, which requires absolute
 // URLs; the land-cover pyramid is now a PMTiles archive on R2). Node imports
@@ -473,10 +474,20 @@ export async function searchParcels(args) {
  * digit space, i.e. nearly every street name — emit exactly the one
  * clause they always have. Multiple variants are parenthesized so the OR
  * can't leak past the AND joining it to the muni / DU clauses.
+ *
+ * `spacing` (the Street box only) also ORs in each variant with one gap
+ * doubled — see doubledSpaceForms — because the column can't be
+ * whitespace-collapsed in SQL and 1.2% of addresses carry a double space.
  */
-function addressLikeClause(term, { anchored = false } = {}) {
+function addressLikeClause(term, { anchored = false, spacing = false } = {}) {
   const lead = anchored ? '' : '%';
-  const likes = addressSearchVariants(term)
+  const variants = addressSearchVariants(term);
+  if (spacing) {
+    for (const v of [...variants]) {
+      for (const d of doubledSpaceForms(v)) if (!variants.includes(d)) variants.push(d);
+    }
+  }
+  const likes = variants
     .map((v) => `UPPER(Property_Address) LIKE '${lead}${escapeSql(v)}%'`);
   if (likes.length === 0) return null;
   return likes.length === 1 ? likes[0] : `(${likes.join(' OR ')})`;
@@ -532,7 +543,7 @@ function buildParcelClauses({ addressStreet, addressFrom, addressTo, municipalit
   const clauses = [];
   // Street-name substring match against Property_Address.
   if (addressStreet) {
-    const streetClause = addressLikeClause(addressStreet);
+    const streetClause = addressLikeClause(addressStreet, { spacing: true });
     if (streetClause) clauses.push(streetClause);
   }
   // From/To narrow server-side where they can, so the row cap can't hide

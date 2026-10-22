@@ -10,7 +10,9 @@
 import assert from 'node:assert/strict';
 import {
   addressMatchesTypeDir,
+  addressMatchesVariants,
   applyStreetTypeDirFilter,
+  doubledSpaceForms,
   STREET_TYPES,
   STREET_DIRECTIONS,
 } from '../src/lib/civicRange.js';
@@ -132,6 +134,21 @@ test('direction filter on rural grid addresses', () => {
   const c = fc('60158 ROAD 96W', '60158 ROAD 96E', '1 106 E ROAD 71 N');
   applyStreetTypeDirFilter(c, '', 'W');
   assert.deepEqual(addrs(c), ['60158 ROAD 96W']);
+});
+
+console.log('doubled spaces');
+
+test('the client-side street match sees through a doubled space', () => {
+  assert.ok(addressMatchesVariants('27 Penelope  CL', ['PENELOPE CL']));
+  assert.ok(!addressMatchesVariants('27 PENELOPE CL', ['ASPEN PL']));
+});
+
+test('doubledSpaceForms doubles one word gap at a time, never a civic gap', () => {
+  assert.deepEqual(doubledSpaceForms('LEISURE FALLS DR'),
+    ['LEISURE  FALLS DR', 'LEISURE FALLS  DR']);
+  assert.deepEqual(doubledSpaceForms('MAIN'), []);
+  assert.deepEqual(doubledSpaceForms('1 106'), []);
+  assert.deepEqual(doubledSpaceForms('A B C D E'), []);
 });
 
 console.log('option lists');

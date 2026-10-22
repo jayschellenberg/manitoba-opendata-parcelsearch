@@ -256,11 +256,37 @@ function ordinalSpellings(term) {
 
 /** True when `address` contains any of `variants` (as built by
  *  addressSearchVariants). Shared by every client-side street filter so
- *  they agree with the SQL clause buildParcelClauses emits. */
+ *  they agree with the SQL clause buildParcelClauses emits. The address
+ *  is whitespace-collapsed like the variants are: 5,187 snapshot
+ *  addresses (2026-10-11) carry a doubled space inside the street
+ *  ("27 Penelope  CL"), and comparing them raw made those parcels
+ *  unreachable by the street they are on. */
 export function addressMatchesVariants(address, variants) {
   if (!variants || variants.length === 0) return true;
-  const addr = String(address || '').toUpperCase();
+  const addr = String(address || '').toUpperCase().replace(/\s+/g, ' ');
   return variants.some((v) => addr.includes(v));
+}
+
+/**
+ * The SQL side of the same doubled-space problem: Property_Address can't
+ * be whitespace-collapsed inside an ArcGIS LIKE, so a street term also
+ * needs the forms with one of its gaps doubled — "PENELOPE CL" adds
+ * "PENELOPE  CL". One doubled gap covers all but 38 of those 5,187
+ * addresses; terms with more than three gaps get none, to keep the OR
+ * list short. A gap between two digit runs is a grouped civic number
+ * ("1 106"), which addressSearchVariants already spells both ways, so it
+ * is left alone. Returns only the extra forms.
+ */
+export function doubledSpaceForms(term) {
+  const parts = String(term || '').split(' ');
+  const gaps = parts.length - 1;
+  if (gaps < 1 || gaps > 3) return [];
+  const out = [];
+  for (let g = 0; g < gaps; g++) {
+    if (/^\d+$/.test(parts[g]) && /^\d+$/.test(parts[g + 1])) continue;
+    out.push(parts.slice(0, g + 1).join(' ') + '  ' + parts.slice(g + 1).join(' '));
+  }
+  return out;
 }
 
 // ---------- Street type + direction (MAO-parity dropdowns) ----------

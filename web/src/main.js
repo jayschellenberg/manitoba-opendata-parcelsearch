@@ -16,6 +16,7 @@ import { initInfoIcons } from './lib/infoIcon.js';
 import { initParcelListImport } from './lib/parcelListImport.js';
 import { initSalesPasteImport } from './lib/salesPasteImport.js';
 import { initSalesDbPanel } from './lib/salesDbPanel.js';
+import { createStreetSuggest } from './lib/streetSuggest.js';
 import { initSalesProvincePanel } from './lib/salesProvincePanel.js';
 import { listShardKeys } from './lib/salesStore.js';
 import { showMuniLayer, hideMuniLayer, paintMuniSelection, wireMuniInteractions, fitToSelection }
@@ -5030,12 +5031,80 @@ $strRange?.addEventListener('input', () => {
   $strDir.dispatchEvent(new Event('change', { bubbles: true }));
 });
 
-for (const el of [$addressFrom, $addressTo, $addressStreet, $roll, $legalText, $lot, $block, $plan, $title,
+// $addressStreet is not in this list: its typeahead owns Enter (accept the
+// highlighted street, THEN search) — see createStreetSuggest below.
+for (const el of [$addressFrom, $addressTo, $roll, $legalText, $lot, $block, $plan, $title,
   $condoPlan, $condoUnit, $parishLot, $parishPlan, $strSection, $strTownship, $strRange].filter(Boolean)) {
   el.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') runSearch();
   });
 }
+
+// ---------- Street typeahead ----------
+//
+// Street lists parsed from the Roll Entry snapshot's addresses, one small
+// file per municipality in mb-parcel-data/streets/ (built monthly by
+// web/scripts/build-street-index.mjs; lib/streetIndex.js has the rules).
+// Only the chosen municipality's streets are offered (Jason, 2026-10-22):
+// Property Search's Municipality, or the municipalities ticked on Sales
+// Analysis. Fetched on first use and kept for the session.
+let streetIndexPromise = null;
+const streetListCache = new Map();
+function loadStreetIndex() {
+  if (!streetIndexPromise) {
+    streetIndexPromise = fetch(`${MB_PARCEL_DATA_CDN}/streets/_index.json`)
+      .then((res) => { if (!res.ok) throw new Error(`streets index HTTP ${res.status}`); return res.json(); })
+      .catch((err) => { streetIndexPromise = null; throw err; });
+  }
+  return streetIndexPromise;
+}
+function loadStreetFile(file) {
+  if (!streetListCache.has(file)) {
+    const p = fetch(`${MB_PARCEL_DATA_CDN}/streets/${file}`)
+      .then((res) => { if (!res.ok) throw new Error(`streets ${file} HTTP ${res.status}`); return res.json(); })
+      .catch((err) => { streetListCache.delete(file); throw err; });
+    streetListCache.set(file, p);
+  }
+  return streetListCache.get(file);
+}
+/** One municipality's street list by Muni_Name_With_Typ; null when none is chosen. */
+async function streetListForMuniName(name) {
+  if (!name) return null;
+  const entry = (await loadStreetIndex()).munis?.[name];
+  return entry ? loadStreetFile(entry.file) : [];
+}
+/** The ticked Sales municipalities' streets, merged by name (counts summed,
+ *  directions unioned); null when nothing is ticked. */
+async function streetListForMuniNos(nos) {
+  if (!nos || nos.size === 0) return null;
+  const index = await loadStreetIndex();
+  const files = Object.values(index.munis || {})
+    .filter((m) => nos.has(String(m.muni_no)))
+    .map((m) => m.file);
+  const lists = await Promise.all(files.map(loadStreetFile));
+  if (lists.length === 1) return lists[0];
+  const byName = new Map();
+  for (const e of lists.flat()) {
+    const m = byName.get(e.n);
+    if (!m) { byName.set(e.n, { n: e.n, c: e.c, d: [...(e.d || [])] }); continue; }
+    m.c += e.c;
+    for (const d of e.d || []) if (!m.d.includes(d)) m.d.push(d);
+  }
+  return [...byName.values()];
+}
+createStreetSuggest({
+  inputId: 'address-street',
+  listId: 'address-street-suggest',
+  getList: () => streetListForMuniName($municipality?.value.trim()),
+  noMuniText: 'Pick a municipality to see its streets',
+  onSearch: () => runSearch(),
+});
+createStreetSuggest({
+  inputId: 'sales-street-name',
+  listId: 'sales-street-suggest',
+  getList: () => streetListForMuniNos(salesMuniSelection),
+  noMuniText: 'Tick a municipality to see its streets',
+});
 
 // ---------- "Additional Searches" active-criteria badge ----------
 //
