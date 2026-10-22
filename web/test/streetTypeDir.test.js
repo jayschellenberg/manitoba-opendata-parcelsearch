@@ -74,6 +74,31 @@ test('direction does not match inside words or wrong direction', () => {
   assert.ok(!addressMatchesTypeDir('5 008 ROAD 39NW', '', 'W'));
 });
 
+test('a spelled-out direction counts only as the last token', () => {
+  assert.ok(addressMatchesTypeDir('97124 ROAD 75 NORTH', '', 'N'));
+  assert.ok(addressMatchesTypeDir('16 PR #248 SOUTH', '', 'S'));
+  assert.ok(addressMatchesTypeDir('71080 - 71090 ROAD 82 WEST', '', 'W'));
+  assert.ok(!addressMatchesTypeDir('97124 ROAD 75 NORTH', '', 'S'));
+  // Street names, not suffixes.
+  assert.ok(!addressMatchesTypeDir('2 NORTH SHORE DR', '', 'N'));
+  assert.ok(!addressMatchesTypeDir('28 EAST COVE', '', 'E'));
+  assert.ok(!addressMatchesTypeDir('16 SOUTHEAST DR', '', 'SE'));
+});
+
+test('a trailing period on the last token is ignored, initials are not directions', () => {
+  assert.ok(addressMatchesTypeDir('332 GRAND BEACH RD. S.', '', 'S'));
+  assert.ok(addressMatchesTypeDir('65108 ROAD 20 W.', '', 'W'));
+  assert.ok(!addressMatchesTypeDir('1145 E. S. MURRAY DR', '', 'E'));
+  assert.ok(!addressMatchesTypeDir('1145 E. S. MURRAY DR', '', 'S'));
+});
+
+test('a leading quarter on a section legal is not a direction', () => {
+  assert.ok(!addressMatchesTypeDir('NE 25-10-19-1', '', 'NE'));
+  assert.ok(!addressMatchesTypeDir('NW 19-23-20W', '', 'NW'));
+  // A real prefix direction still counts.
+  assert.ok(addressMatchesTypeDir('162 E NORTHSHORE RD', '', 'E'));
+});
+
 test('type and direction AND together', () => {
   assert.ok(addressMatchesTypeDir('100 MAIN ST N', 'ST', 'N'));
   assert.ok(!addressMatchesTypeDir('100 MAIN ST N', 'ST', 'S'));

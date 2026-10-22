@@ -2051,6 +2051,19 @@ body.sales-mode .sidebar .sales-filters-preload-hint { display: none; }
 .sidebar .address-row .address-from-field   { flex: 0 0 64px; min-width: 0; }
 .sidebar .address-row .address-to-field     { flex: 0 0 64px; min-width: 0; }
 .sidebar .address-row .address-street-field { flex: 1 1 auto; min-width: 0; }
+/* Dir (Jason, 2026-10-22): just wide enough for "NW" (24px at 14px Inter)
+   plus an arrow. Chromium's native arrow is ~20px wide whatever the
+   padding and clipped "Dir" to "D", so this one select draws its own
+   small chevron. The row's ⓘ rides in this field, so Street Name gives
+   up the room. */
+.sidebar .address-row .address-dir-field    { flex: 0 0 auto; min-width: 0; }
+.sidebar .address-row .address-dir-field select {
+  width: 50px;
+  padding-left: 5px;
+  padding-right: 14px;
+  appearance: none;
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23555'/%3E%3C/svg%3E") no-repeat right 5px center;
+}
 
 /* Legal description + Certificate of Title on a single row, equal
    widths (see the icon-track note below). Keeps the inputs paired (both
@@ -2097,11 +2110,12 @@ body.sales-mode .sidebar .sales-filters-preload-hint { display: none; }
   line-height: 1.35;
 }
 
-/* Street Type + Direction, first row of Additional Searches — two
-   selects of equal width (icon track, see .legal-row). */
+/* Street Type, first row of Additional Searches — one select across the
+   row (icon track, see .legal-row). Direction moved up to the address
+   row as Dir (2026-10-22). */
 .sidebar .address-typedir-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr)) 25px;
+  grid-template-columns: minmax(0, 1fr) 25px;
   gap: 6px;
   margin-top: 4px;
 }
@@ -2201,7 +2215,11 @@ body.sales-mode .sidebar .sales-filters-preload-hint { display: none; }
 .controls input[type="number"],
 .controls select {
   flex: 1 1 auto;
-  padding: 7px 10px;
+  /* Halved from 7px 10px (Jason, 2026-10-22): the sidebar boxes carried
+     a lot of white space around their text. The inherited 1.5 line
+     height left text inputs 2px taller than the selects beside them. */
+  padding: 4px 5px;
+  line-height: 1.25;
   border: 1px solid #c2c5cc;
   border-radius: 4px;
   font-size: 14px;
@@ -2213,7 +2231,7 @@ body.sales-mode .sidebar .sales-filters-preload-hint { display: none; }
 
 .controls select {
   /* Slight extra padding-right so the native arrow doesn't overlap text. */
-  padding-right: 24px;
+  padding-right: 20px;
 }
 
 .controls select:disabled {
@@ -2292,6 +2310,9 @@ body.sales-mode .sidebar .sales-filters-preload-hint { display: none; }
   justify-content: center;
   width: 22px;
   height: 22px;
+  /* .controls button's 36px min-height stretched every row with an ⓘ
+     past its 28px boxes (2026-10-22). */
+  min-height: 0;
   margin-left: 4px;
   padding: 0;
   background: transparent;
@@ -2400,7 +2421,10 @@ body.sales-mode .sidebar .sales-filters-preload-hint { display: none; }
    chip wrapper so the inner text input reads as a continuation
    of the chip strip. */
 .controls .chip-input .chip-input-text {
-  padding: 4px 2px;
+  /* The wrapper is the box; the inner input must not add its own
+     min-height on top of the wrapper's (it measured 46px, 2026-10-22). */
+  min-height: 0;
+  padding: 2px 1px;
   border: none;
   background: transparent;
 }
@@ -5703,7 +5727,11 @@ body {
 .controls input[type="text"],
 .controls input[type="number"],
 .controls input[type="date"],
-.controls select,
+.controls select {
+  /* 28px with the halved padding (was 36px, 2026-10-22). Phone mode
+     keeps its 44px touch targets (body.phone .sidebar …). */
+  min-height: 28px;
+}
 .results-toolbar-presets select {
   min-height: 36px;
 }
@@ -5748,8 +5776,8 @@ body {
 }
 
 .chip-input {
-  min-height: 36px;
-  padding: 4px 7px;
+  min-height: 28px;
+  padding: 2px 4px;
   border-color: var(--ui-line-strong);
   border-radius: var(--ui-radius);
   background: var(--ui-panel);
@@ -6801,8 +6829,9 @@ body {
     flex-wrap: wrap;
   }
 
+  /* Street Name drops to its own line with Dir beside it. */
   .sidebar .address-row .address-street-field {
-    flex-basis: 100%;
+    flex-basis: 60%;
   }
 
   /* Legal / Title stack one per line on the narrowest phones. Still a

@@ -377,13 +377,22 @@
               <input id="address-to" type="text" placeholder="To #" autocomplete="off" />
             </span>
             <span class="field address-street-field">
-              <input id="address-street" type="text" placeholder="Street Name" />
-              <span class="tip">Civic-address search. From # on its own is a "contains" match — 1106 finds "1 106 E ROAD 71 N" however the number is spaced. Fill To # as well for an exact number (same value; tabbing into To auto-fills it) or an inclusive range (different values). Street Name is a substring match against Property_Address (e.g. 'MAIN ST', 'DRURY', 'ROAD 96W').</span>
+              <input id="address-street" type="text" placeholder="Street" />
+            </span>
+            <!-- Direction rides on the address row (Jason, 2026-10-22); it
+                 sat in Additional Searches beside Street Type from
+                 2026-10-06. Options are filled from civicRange.js's list
+                 at boot, as before. -->
+            <span class="field address-dir-field">
+              <select id="address-dir">
+                <option value="">Dir</option>
+              </select>
+              <span class="tip">Civic-address search. From # on its own is a "contains" match — 1106 finds "1 106 E ROAD 71 N" however the number is spaced. Fill To # as well for an exact number (same value; tabbing into To auto-fills it) or an inclusive range (different values). Street Name is a substring match against Property_Address (e.g. 'MAIN ST', 'DRURY', 'ROAD 96W'). Dir matches as its own word ("MAIN ST N"), glued to a rural grid number ("ROAD 96W") or spelled out at the end ("ROAD 80 NORTH"); it works best together with a street name.</span>
             </span>
           </div>
           <!-- Search / Clear sit BEFORE Additional Searches in the markup so
                Tab runs Municipality → Roll # → From → To → Street Name →
-               Search → Clear Roll/Addy → Clear All → Additional Searches
+               Dir → Search → Clear Roll/Addy → Clear All → Additional Searches
                (Jason, 2026-10-22). They are still DRAWN below it: the
                panel is a flex column and style.css gives this row a later
                `order`, so the layout is unchanged. -->
@@ -414,27 +423,23 @@
               id="advanced-filters-badge"
               hidden
             ></span></summary>
-            <!-- Street Type + Direction, mirroring the dropdowns on MAO's
-                 civic-address search. MAO decides these against structured
-                 columns; here they're word-position matches against the
-                 Property_Address text, applied client-side alongside the
-                 civic-number filter. Options are filled from
-                 civicRange.js's lists at boot so the dropdowns and the
-                 matcher can't drift apart. Moved in here from under the
-                 address row (Jason, 2026-10-06): rarely needed, and the
-                 badge on the summary still names them when the group is
-                 collapsed. -->
+            <!-- Street Type, mirroring the dropdown on MAO's civic-address
+                 search. MAO decides it against a structured column; here
+                 it's a word-position match against the Property_Address
+                 text, applied client-side alongside the civic-number
+                 filter. Options are filled from civicRange.js's list at
+                 boot so the dropdown and the matcher can't drift apart.
+                 Moved in here from under the address row (Jason,
+                 2026-10-06): rarely needed, and the badge on the summary
+                 still names it when the group is collapsed. Its Direction
+                 partner moved back up to the address row as "Dir"
+                 (2026-10-22). -->
             <div class="address-typedir-row">
               <span class="field">
                 <select id="address-type">
                   <option value="">Street Type</option>
                 </select>
-              </span>
-              <span class="field">
-                <select id="address-dir">
-                  <option value="">Direction</option>
-                </select>
-                <span class="tip">Street Type is matched in type position at the end of the address — 'ST' finds "100 MAIN ST N" but not "123 ST MARYS RD"; long forms match too (RD also finds "ROAD", HWY finds "HIGHWAY"). Direction matches as its own word ("MAIN ST N") or glued to a rural grid number ("ROAD 96W"). Both work best together with a street name.</span>
+                <span class="tip">Street Type is matched in type position at the end of the address — 'ST' finds "100 MAIN ST N" but not "123 ST MARYS RD"; long forms match too (RD also finds "ROAD", HWY finds "HIGHWAY"). Works best together with a street name.</span>
               </span>
             </div>
             <!-- Condo Unit then Plan (Jason, 2026-10-06), above Legal

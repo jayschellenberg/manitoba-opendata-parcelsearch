@@ -303,6 +303,17 @@ export const STREET_TYPES = Object.keys(STREET_TYPE_SYNONYMS);
 export const STREET_DIRECTIONS = ['E', 'N', 'NE', 'NW', 'S', 'SE', 'SW', 'W'];
 
 const DIRECTION_SET = new Set(STREET_DIRECTIONS);
+// Spelled-out directions, as rural addresses sometimes write the suffix
+// ("97124 ROAD 75 NORTH", "16 PR #248 SOUTH"). Counted only as the LAST
+// token: anywhere else they are street names ("2 NORTH SHORE DR",
+// "28 EAST COVE", "16 SOUTHEAST DR").
+const DIRECTION_WORDS = {
+  NORTH: 'N', SOUTH: 'S', EAST: 'E', WEST: 'W',
+  NORTHEAST: 'NE', NORTHWEST: 'NW', SOUTHEAST: 'SE', SOUTHWEST: 'SW',
+};
+// A quarter-section legal standing in for an address ("NE 25-10-19-1",
+// "NW 19-23-20W"): the leading NE/NW/… is the quarter, not a direction.
+const QUARTER_LEGAL = /^\d+-\d+-\d+/;
 // Tokens allowed AFTER the street type without disqualifying it:
 // directions, numbers / lettered numbers ("ROAD 71 N", "96W"), and
 // unit designators. Anything else means the candidate token was part
@@ -322,9 +333,13 @@ function allowedAfterType(tok) {
  * type position: "100 MAIN ST", "100 MAIN ST N", "1 106 E ROAD 71 N"
  * all match ST / RD; "123 ST MARYS RD" does not match ST.
  *
- * Direction matches as a standalone token anywhere ("… ST N") or
- * glued to a number the way rural grid addresses write it
- * ("60158 ROAD 96W", "5 008 ROAD 39NW").
+ * Direction matches as a standalone token anywhere ("… ST N"), glued
+ * to a number the way rural grid addresses write it ("60158 ROAD 96W",
+ * "5 008 ROAD 39NW"), or spelled out as the last token ("ROAD 80
+ * NORTH"). A trailing period on the last token is ignored ("RD. S.");
+ * a dotted letter mid-address is an initial ("E. S. MURRAY DR") and is
+ * not. Measured against the 2026-10-15 ROLL_ENTRY snapshot (438,322
+ * addresses, 70,365 with a direction).
  */
 export function addressMatchesTypeDir(address, type, dir) {
   const wantType = String(type || '').trim().toUpperCase();
@@ -332,10 +347,16 @@ export function addressMatchesTypeDir(address, type, dir) {
   if (!wantType && !wantDir) return true;
   const tokens = String(address || '').toUpperCase().split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return false;
+  const last = tokens.length - 1;
+  tokens[last] = tokens[last].replace(/\.$/, '');
 
   if (wantDir) {
     const glued = new RegExp(`^\\d+${wantDir}$`);
-    const hit = tokens.some((t) => t === wantDir || glued.test(t));
+    const hit = tokens.some((t, i) => {
+      if (t === wantDir) return !(i === 0 && QUARTER_LEGAL.test(tokens[1] || ''));
+      if (glued.test(t)) return true;
+      return i === last && i > 0 && DIRECTION_WORDS[t] === wantDir;
+    });
     if (!hit) return false;
   }
 
