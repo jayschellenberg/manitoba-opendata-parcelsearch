@@ -379,6 +379,11 @@ header small a {
 .sidebar-tab-panel[hidden] {
   display: none !important;
 }
+/* Property Search's Search / Clear row comes before Additional Searches in
+   the markup, so Tab reaches it straight after Street Name (Jason,
+   2026-10-22), but is drawn last, below Additional Searches, where it
+   always sat. */
+#tab-panel-property > .action-row { order: 1; }
 
 /* Advanced filters details — same visual treatment as the old
    .more-filters block (uppercase summary, soft slate hover) so

@@ -381,6 +381,24 @@
               <span class="tip">Civic-address search. From # on its own is a "contains" match — 1106 finds "1 106 E ROAD 71 N" however the number is spaced. Fill To # as well for an exact number (same value; tabbing into To auto-fills it) or an inclusive range (different values). Street Name is a substring match against Property_Address (e.g. 'MAIN ST', 'DRURY', 'ROAD 96W').</span>
             </span>
           </div>
+          <!-- Search / Clear sit BEFORE Additional Searches in the markup so
+               Tab runs Municipality → Roll # → From → To → Street Name →
+               Search → Clear Roll/Addy → Clear All → Additional Searches
+               (Jason, 2026-10-22). They are still DRAWN below it: the
+               panel is a flex column and style.css gives this row a later
+               `order`, so the layout is unchanged. -->
+          <div class="action-row">
+            <!-- Search / Clear Roll/Addy / Clear All (Jason, 2026-10-06). Clear Roll/Addy
+                 empties the Roll # chips, the civic-address row and the
+                 results but KEEPS the municipality, for working through
+                 several properties in one muni; Clear All is the full
+                 page reset it always was. -->
+            <button id="search" type="button" class="primary">🔍 Search</button>
+            <button id="clear-roll-address" type="button" class="danger"
+                    title="Clear the Roll # and address fields and the results, keeping the municipality">Clear Roll/Addy</button>
+            <button id="clear" type="button" class="danger"
+                    title="Reset everything: every field, the results, overlays and cached data">🗑️ Clear All</button>
+          </div>
           <!-- Phase 3: Additional Searches collapsible. Holds the less-
                frequently-touched controls (legal description, certificate
                of title, zoning category, amendment status, dwelling units).
@@ -573,19 +591,6 @@
               >Sample CSV</a>
             </div>
           </details>
-
-          <div class="action-row">
-            <!-- Search / Clear Roll/Addy / Clear All (Jason, 2026-10-06). Clear Roll/Addy
-                 empties the Roll # chips, the civic-address row and the
-                 results but KEEPS the municipality, for working through
-                 several properties in one muni; Clear All is the full
-                 page reset it always was. -->
-            <button id="search" type="button" class="primary">🔍 Search</button>
-            <button id="clear-roll-address" type="button" class="danger"
-                    title="Clear the Roll # and address fields and the results, keeping the municipality">Clear Roll/Addy</button>
-            <button id="clear" type="button" class="danger"
-                    title="Reset everything: every field, the results, overlays and cached data">🗑️ Clear All</button>
-          </div>
         </section><!-- /tab-panel-property -->
 
         <!-- ===================================================
