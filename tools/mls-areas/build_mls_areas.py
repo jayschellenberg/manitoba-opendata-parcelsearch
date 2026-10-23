@@ -17,7 +17,7 @@ nested areas draw and hit-test on top), each with:
     area   the MLS area code ("1A", "R26", "B07", "P03")
     board  which board's area system it belongs to
     lx/ly  the label point the boards themselves use (LogoLng/LogoLat)
-Self-intersecting rings (R14, R31, R41, R43 in the source) are repaired.
+Self-intersecting rings (R14, R31, R41 in the source) are repaired.
 Copy the output to the Winnipeg app's web/public/ as well.
 """
 import json, os, re, sys
