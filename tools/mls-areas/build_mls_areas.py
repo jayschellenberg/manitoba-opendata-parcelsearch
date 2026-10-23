@@ -8,6 +8,10 @@ WRREB digital map (map.keystonerealtors.ca, 2026-10-21) and match exactly;
 it adds Brandon's A-D areas, Portage's P01-P07 and R38, which that map
 does not serve.
 
+The source's Brandon and Portage shapes were hand-drawn rectangles; they,
+and R38 (whose hole is Portage), are replaced by brandon-portage.geojson from
+rebuild_brandon_portage.py, which also adds C15A (Prairie Crossing): 142 areas.
+
 Writes one FeatureCollection of polygons, largest first (so the smaller,
 nested areas draw and hit-test on top), each with:
     area   the MLS area code ("1A", "R26", "B07", "P03")
@@ -24,10 +28,11 @@ from shapely.ops import unary_union
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = sys.argv[1] if len(sys.argv) > 1 else r'D:/Dropbox/Appraisal/RProjects/appraisal-templates/base-files/MLSAreas.geojson'
 OUT = os.path.normpath(os.path.join(HERE, '..', '..', 'web', 'public', 'mls-areas.geojson'))
+REBUILT = os.path.join(HERE, 'brandon-portage.geojson')
 
 
 def board(code):
-    if re.fullmatch(r'[A-D]\d\d|ANW|BSW|CSE|DNE', code):
+    if re.fullmatch(r'[A-D]\d\dA?|ANW|BSW|CSE|DNE', code):
         return 'Brandon Area REALTORS'
     if re.fullmatch(r'P\d\d', code):
         return 'Portage la Prairie Real Estate Board'
@@ -40,8 +45,10 @@ def rnd(x):
     return round(x, 6)
 
 
+rebuilt = json.load(open(REBUILT))['features']
+done = {f['properties']['MLSArea'] for f in rebuilt}
 feats = []
-for f in json.load(open(SRC))['features']:
+for f in [f for f in json.load(open(SRC))['features'] if f['properties']['MLSArea'] not in done] + rebuilt:
     p = f['properties']
     g = shape(f['geometry'])
     if not g.is_valid:
