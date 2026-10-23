@@ -45,7 +45,7 @@ CACHE = os.path.join(HERE, '.cache')
 QUERIES = {
     'brandon': '(way["highway"](49.79,-100.04,49.90,-99.88);way["railway"="rail"](49.79,-100.04,49.90,-99.88););',
     'portage': '(way["highway"](49.91,-98.40,50.03,-98.20);way["railway"="rail"](49.91,-98.40,50.03,-98.20););',
-    'rural': '(way["highway"]["ref"~"^(PTH |PR )?(10|455|457|1A)$"](49.55,-100.55,50.20,-99.45););',
+    'rural': '(way["highway"]["ref"~"^(PTH |PR )?(10|455|457|1A|110)$"](49.55,-100.55,50.20,-99.45););',
 }
 
 
@@ -192,7 +192,7 @@ C['D24'] = ((bx(L18, 0, L1, BRAE) & north_of(KIRK))
             | (bx(BAR(920, 0)[0], BAR(0, 679.5)[1], L1, 50) - north_of(KIRK)))  # + Kasiurak Bay
 C['A02'] = Polygon([(L26, LANE_W), (L26, A02_N[0][1])] + A02_N[1:-1] + [(L18, A02_N[-1][1]), (L18, LANE_W)])
 C['A04'] = Polygon([(L34, VIC), (L34, MCDON), (L26, A02_N[0][1]), (L26, VIC)])   # diagonal is park land
-C['A03'] = (bx(L34 - 1, VIC, L34, 90) - north_of(CP)) & BDN
+C['A03'] = (bx(L34 - 1, VIC, L34, 50) - north_of(CP)) & BDN
 C['A05'] = bx(L26, VIC, L18, LANE_W) | bx(L18, VIC, L13, PAC_E)
 C['D23'] = Polygon([(L18, PAC_E), (L18, D23_N[0][1])] + D23_N[1:-1]
                    + [(L6N, D23_N[-1][1]), (L6N, STICK), (L5N, STICK), (L5N, PAC_E)])
@@ -208,9 +208,10 @@ C['C15A'] = bx(L1, 0, L17E, CONGRESS) & BDN
 C['B06'] = bx(L26, 0, L18, VIC) & north_of(CN)
 C['B07'] = bx(L34, 0, L26, VIC) & north_of(CN)
 C['B09'] = bx(L42, 0, L34, VIC) & north_of(CN)
-C['B10'] = bx(L42, RICH, L34, 90) - north_of(CN)
-C['B11'] = bx(L34, RICH, L26, 90) - north_of(CN)
-C['B12'] = bx(L26, RICH, L18, 90) - north_of(CN)
+C['B10'] = bx(L42, RICH, L34, VIC) - north_of(CN)   # boxes stop at Victoria: north_of()
+                                                    # ends 1 deg north, a box to 90 leaks past it
+C['B11'] = bx(L34, RICH, L26, VIC) - north_of(CN)
+C['B12'] = bx(L26, RICH, L18, VIC) - north_of(CN)
 C['B08'] = bx(L42, PATR, L34, RICH)
 C['B13'] = bx(L34, MARY_W, L26, RICH)
 C['B14'] = (bx(L34, 0, L26, MARY_W) | bx(L26, 0, L18, RICH)) & BDN
@@ -239,17 +240,30 @@ HWY10 = LineString([(L18, s), (L18, TCH_LAT), (-99.9350, TCH_LAT), (-99.9350, n)
 P455 = lat_of(lines(R, lambda t: t.get('ref') == 'PR 455'))
 hw1a = profile(coords(lines(R, lambda t: t.get('ref') == 'PTH 1A')), -100.12, L18, ymax=49.845)
 WEST = LineString([(w, P455), (-100.12, P455)] + hw1a + [(L18, VIC)])
-# PR 457 east from Brandon; inside the city the C/D line is Victoria Ave E
-# and 17th St E, as the numbered areas have it.
-p457 = profile(coords(lines(R, lambda t: t.get('ref') == 'PR 457')), L17E + 0.002, e)
-lat457_at_17 = p457[0][1]
-EAST = LineString([(L18, VIC), (L17E, VIC), (L17E, lat457_at_17)] + p457 + [(e, p457[-1][1])])
+# PR 457 east from Brandon. Nearer the city the line is Victoria Ave E out to
+# PTH 110 and up 110 to 457: MLS results put a listing on Victoria Ave E past
+# 17th St E in DNE and the cluster on its south side in CSE (Jason, 2026-10-23).
+p457all = profile(coords(lines(R, lambda t: t.get('ref') == 'PR 457')), L18, e)
+pth110 = [(x, y) for x, y in coords(lines(R, lambda t: t.get('ref') == 'PTH 110')) if VIC <= y <= 49.87 and x > L1]
+lat457 = lambda x: min(p457all, key=lambda q: abs(q[0] - x))[1]
+up110 = sorted([(x, y) for x, y in pth110 if y <= lat457(x)], key=lambda q: q[1])
+x110 = min(up110, key=lambda q: q[1])[0]
+p457 = [(x, y) for x, y in p457all if x > up110[-1][0] + 0.001]
+EAST = LineString([(L18, VIC), (x110, VIC)] + up110 + p457 + [(e, p457[-1][1])])
 rural = board - CITY_AREAS
 westside = west_of(HWY10)
 C['ANW'] = (rural & westside & north_of(WEST))
 C['BSW'] = (rural & westside) - north_of(WEST)
 C['DNE'] = (rural - westside) & north_of(EAST)
 C['CSE'] = (rural - westside) - north_of(EAST)
+# City land north of the TCH (the airport and its business park) is DNE
+# although it lies west of Hwy 10: its listings come up as DNE, none as ANW.
+# The province's city outline is generalized and leaves a strip between the
+# TCH and the airport outside it, where those listings sit, so take the
+# envelope of the city north of the TCH, from the airport's west edge to Hwy 10.
+north_city = ((BDN & north_of(TCH)).envelope & north_of(TCH)) - CITY_AREAS
+C['ANW'] = C['ANW'] - north_city
+C['DNE'] = C['DNE'] | (north_city & board)
 
 # ------------------------------------------------------------------ Portage
 PO = osm('portage')
@@ -324,6 +338,9 @@ for k in sorted(C):
     # R's sf / s2 rejects).
     g = polys(shapely.set_precision(polys(C[k]), 1e-6))
     assert not g.is_empty and g.is_valid, k
+    w_, s_, e_, n_ = g.bounds
+    if k != 'R38':     # every rebuilt area sits in south-west Manitoba
+        assert -100.6 < w_ and e_ < -98.0 and 49.5 < s_ and n_ < 50.3, (k, g.bounds)
     if k in BAR_LABEL:
         lx, ly = BAR(*BAR_LABEL[k])
     else:
