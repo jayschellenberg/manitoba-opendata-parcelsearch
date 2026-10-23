@@ -32,6 +32,7 @@ OSM extracts are cached in tools/mls-areas/.cache/ (git-ignored); delete it
 to re-download. City limits come from web/public/mb-municipalities.geojson.
 """
 import json, os, sys, time, urllib.parse, urllib.request
+import shapely
 from shapely.geometry import shape, mapping, box, Point, Polygon, LineString
 from shapely.ops import unary_union, linemerge, polygonize, polylabel
 
@@ -318,7 +319,10 @@ def rnd(x):
 
 feats = []
 for k in sorted(C):
-    g = polys(C[k])
+    # Snap to the 6-decimal output grid here: rounding afterwards can fold a
+    # near-degenerate corner into a self-crossing (D24 and DNE did, which
+    # R's sf / s2 rejects).
+    g = polys(shapely.set_precision(polys(C[k]), 1e-6))
     assert not g.is_empty and g.is_valid, k
     if k in BAR_LABEL:
         lx, ly = BAR(*BAR_LABEL[k])
