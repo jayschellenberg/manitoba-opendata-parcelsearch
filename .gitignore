@@ -133,3 +133,6 @@ tools/changelog-email/drafts/
 tools/changelog-email/state/
 tools/changelog-email/logs/
 tools/changelog-email/claude-token.local.txt
+
+# OSM extracts cached by tools/mls-areas/rebuild_brandon_portage.py
+tools/mls-areas/.cache/
