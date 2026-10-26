@@ -45,8 +45,8 @@
 #   powershell -ExecutionPolicy Bypass -File upstream-vintage-check.ps1 -TestAlert
 #   ... -MaxAgeDays 730                                                             # override the age threshold
 #
-# Scheduled via schedule_vintage_check.ps1 (weekly; a stamp keeps it to one
-# reminder per month). ASCII-only so Windows PowerShell 5.1 parses it without a BOM.
+# Scheduled via schedule_vintage_check.ps1 (weekly; a stamp keeps superseded /
+# unreachable to one reminder per month, and each QUIET layer to one per year). ASCII-only so Windows PowerShell 5.1 parses it without a BOM.
 
 param(
   [int]$MaxAgeDays = 730,      # ~2 years; only flags layers that have truly gone quiet
@@ -60,6 +60,8 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $root 'alert-lib.ps1')
 $NtfyTopic = 'mbps-upstream-vintage-jks'
 $StampFile = Join-Path $root 'logs\vintage-alert-stamp.txt'
+$QuietStampFile  = Join-Path $root 'logs\vintage-quiet-stamp.txt'
+$QuietRepeatDays = 365
 $SrcDir    = Join-Path $root 'web\src'
 
 if ($TestAlert) {
@@ -199,12 +201,39 @@ if (-not $problem) {
   exit 0
 }
 if ($Report) { exit 0 }
-if ($DryRun) { Write-Host 'DRYRUN - findings above would raise an alert. Nothing sent.'; exit 0 }
 
-# Dedupe -- one reminder per calendar month.
+# Dedupe. Superseded / unreachable: one reminder per calendar month. QUIET is
+# a different kind of finding -- a stable reference layer (MASC_Risk_Areas,
+# last edited 2024-10-25) can legitimately sit still for years, so a monthly
+# nag about it is noise. Jason 2026-10-26: quiet layers at most once a year.
+# Tracked PER SERVICE (one "Service<TAB>yyyy-MM-dd" line each in its own
+# stamp), so a second layer going quiet mid-year still gets its first notice
+# instead of waiting behind the first one's year.
+$quietSeen = @{}
+if (Test-Path $QuietStampFile) {
+  foreach ($line in (Get-Content $QuietStampFile)) {
+    $parts = $line -split "`t"
+    if ($parts.Count -eq 2) { $quietSeen[$parts[0]] = [datetime]::ParseExact($parts[1], 'yyyy-MM-dd', $null) }
+  }
+}
+$ancient = @($ancient | Where-Object {
+  -not $quietSeen.ContainsKey($_.Service) -or ($now.Date - $quietSeen[$_.Service]).TotalDays -ge $QuietRepeatDays
+})
+
+$urgent   = ($unreachable.Count + $superseded.Count) -gt 0
 $stampVal = $now.ToString('yyyy-MM')
-if ((Test-Path $StampFile) -and ((Get-Content $StampFile -Raw).Trim() -eq $stampVal)) {
-  Write-Host "Already reminded this month ($stampVal) -- skipping."
+if ($urgent -and (Test-Path $StampFile) -and ((Get-Content $StampFile -Raw).Trim() -eq $stampVal)) {
+  Write-Host "Already reminded this month ($stampVal) about superseded/unreachable services."
+  $urgent = $false
+}
+if (-not $urgent -and $ancient.Count -eq 0) {
+  Write-Host 'Nothing due: any quiet layer was already reported within the last year.'
+  exit 0
+}
+if (-not $urgent) { $superseded = @(); $unreachable = @() }
+if ($DryRun) {
+  Write-Host ("DRYRUN - would alert: superseded=$($superseded.Count) unreachable=$($unreachable.Count) " +
+              "quiet=$($ancient.Count) $(($ancient | ForEach-Object Service) -join ', '). Nothing sent.")
   exit 0
 }
 
@@ -228,6 +257,7 @@ if ($unreachable.Count) {
 if ($ancient.Count) {
   $body += "QUIET -- no upstream edit in over $MaxAgeDays days (may be fine for a stable reference layer):"
   foreach ($r in $ancient) { $body += "  $($r.Service): last edited $($r.LastEdit) ($($r.AgeDays) days)" }
+  $body += "  (Each quiet layer is reported at most once every $QuietRepeatDays days.)"
   $body += ''
 }
 $body += "Full table:  powershell -ExecutionPolicy Bypass -File `"$root\upstream-vintage-check.ps1`" -Report"
@@ -242,10 +272,16 @@ $body += "Stop these reminders:  Unregister-ScheduledTask -TaskName mb-parcelsea
 # (alert-lib.ps1) accepts a real email, or push alone when email is not
 # configured at all; email configured and failing leaves the stamp alone so next
 # week's run alerts again.
-$sent = Send-FailureAlert $root $NtfyTopic 'UPSTREAM - provincial service superseded or unreachable' ($body -join "`n")
+$subject = if ($urgent) { 'UPSTREAM - provincial service superseded or unreachable' }
+           else { 'UPSTREAM - provincial layer quiet (yearly reminder)' }
+$sent = Send-FailureAlert $root $NtfyTopic $subject ($body -join "`n")
 if (Test-AlertDelivered) {
   New-Item -ItemType Directory -Force -Path (Split-Path $StampFile) | Out-Null
-  Set-Content -Path $StampFile -Value $stampVal
+  if ($urgent) { Set-Content -Path $StampFile -Value $stampVal }
+  foreach ($r in $ancient) { $quietSeen[$r.Service] = $now.Date }
+  if ($ancient.Count) {
+    Set-Content -Path $QuietStampFile -Value @($quietSeen.Keys | Sort-Object | ForEach-Object { "$_`t$($quietSeen[$_].ToString('yyyy-MM-dd'))" })
+  }
   Write-Host "Reminder sent (superseded=$($superseded.Count), unreachable=$($unreachable.Count), quiet=$($ancient.Count))."
   exit 0
 } elseif ($sent) {

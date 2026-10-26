@@ -94,7 +94,9 @@ app-pinned `mb-parcel-history` snapshot is older than 215 days. Needs git and th
 if OSM data is older than 400 days or the buckets disagree. No credentials needed.
 
 **upstream-vintage.** Weekly reachability and vintage check of every provincial ArcGIS
-service referenced in `web\src\*.js`.
+service referenced in `web\src\*.js`. Superseded or unreachable services alert at most
+once a month; a QUIET layer (no upstream edit in 730+ days) at most once a year per layer,
+tracked in `logs\vintage-quiet-stamp.txt`.
 
 **task-health.** The cross-project watchdog. Scans `schedule_*.ps1` in `mb-parcelsearch`,
 `mao-assembly`, `mao-scrape` and `MBFloodMapping` for `$TaskName = 'literal'`, then reads

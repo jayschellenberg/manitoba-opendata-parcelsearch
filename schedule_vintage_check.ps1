@@ -4,7 +4,8 @@
 # Weekly rather than daily because this one makes ~12 outbound requests plus an
 # org service listing per run, and the thing it watches -- the province
 # publishing a new vintage of a layer -- moves on a scale of months or years.
-# A dedupe stamp still holds it to at most ONE reminder per calendar month.
+# A dedupe stamp still holds it to at most ONE reminder per calendar month
+# (and each merely QUIET layer to one per year).
 #
 # What it catches that nothing else did: a live provincial service being
 # superseded by a later year-stamped sibling, or retired outright. Every other
