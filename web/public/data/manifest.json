@@ -1,40 +1,40 @@
 {
   "manifest_version": 1,
-  "generated_at": "2026-10-21T15:37:33.140Z",
+  "generated_at": "2026-10-28T15:36:27.538Z",
   "datasets": {
     "legal_index": {
       "file": "legal-index.json",
       "schema_version": 1,
-      "size_bytes": 138458631,
-      "modified_at": "2026-10-21T15:32:40.596Z",
-      "generated_at": "2026-10-21T15:30:53Z",
+      "size_bytes": 138459665,
+      "modified_at": "2026-10-28T15:32:15.785Z",
+      "generated_at": "2026-10-28T15:30:43Z",
       "source": "parcels.parquet",
-      "source_modified": "2026-10-21T14:20:44Z",
-      "row_count": 438432
+      "source_modified": "2026-10-28T14:19:50Z",
+      "row_count": 438433
     },
     "assessment_index": {
       "file": "assessment-index.json",
       "schema_version": 1,
-      "size_bytes": 29836339,
-      "modified_at": "2026-10-21T15:35:19.180Z",
-      "generated_at": "2026-10-21T15:33:15Z",
+      "size_bytes": 29836781,
+      "modified_at": "2026-10-28T15:34:31.639Z",
+      "generated_at": "2026-10-28T15:32:48Z",
       "source": "tax_history.parquet",
-      "source_modified": "2026-10-21T14:20:48Z",
-      "row_count": 438549,
+      "source_modified": "2026-10-28T14:19:53Z",
+      "row_count": 438554,
       "year_min": 2026,
       "year_max": 2027,
       "vacant_threshold_pct": 2,
-      "nominal_vacant_count": 201734,
-      "zero_buildings_count": 195644
+      "nominal_vacant_count": 201729,
+      "zero_buildings_count": 195639
     },
     "muni_vintage": {
       "file": "muni-vintage.json",
       "schema_version": 1,
       "size_bytes": 35809,
-      "modified_at": "2026-10-21T15:37:33.140Z",
-      "generated_at": "2026-10-21T15:37:33.138Z",
+      "modified_at": "2026-10-28T15:36:27.537Z",
+      "generated_at": "2026-10-28T15:36:27.535Z",
       "source": "mao-scrape muni_refresh_ledger.csv (assessment cadence, month precision)",
-      "source_modified": "2026-10-21T04:11:34.070Z",
+      "source_modified": "2026-10-28T02:32:50.073Z",
       "precision": "month",
       "row_count": 186
     },
