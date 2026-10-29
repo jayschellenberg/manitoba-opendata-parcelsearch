@@ -341,10 +341,12 @@ export function rollFrontageNote(dims) {
     + `the other sides are scaled by the same ratio (×${r.ratio.toFixed(3)}).`;
 }
 
-/** "66.0" under 1,000 ft, "1,320" at or above. */
+/** "66.0" under 100 ft, whole feet at or above: "119", "1,320" (Jason,
+ *  2026-10-29 — a tenth of a foot on a 300 ft side is noise). Decided on
+ *  the rounded tenth, so 99.96 reads "100", never "100.0". */
 export function formatFeet(ft) {
   if (!Number.isFinite(ft)) return '';
-  return ft < 1000
+  return ft < 99.95
     ? ft.toFixed(1)
     : Math.round(ft).toLocaleString('en-US');
 }
