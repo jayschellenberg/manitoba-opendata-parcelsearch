@@ -60,7 +60,7 @@ import { polygonBboxMidpoint } from './lib/polygonCentroid.js';
 import { approxFitMaxZoom, unmappedPlacementText, maoLinkTitle } from './lib/unmappedRolls.js';
 import { yieldToOverlay, duLabelFilter, duLabelTextField } from './lib/overlayHighlight.js';
 import { rollDisplay } from './lib/parcelLabelFields.js';
-import { dimensionLabelFeatures } from './lib/parcelDimensions.js';
+import { dimensionLabelFeatures, dimsSideFilter, DIMS_MIN_ZOOM } from './lib/parcelDimensions.js';
 import { zoningBylawText, devPlanBylawText } from './lib/amendment.js';
 import { WAYBACK_VERSIONS, waybackTileUrl } from './lib/wayback.js';
 import {
@@ -3093,22 +3093,27 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
       // sides themselves because the GeoJSON source cuts lines at tile
       // edges and line placement labels every piece: a side crossing a
       // tile edge printed its length twice. Styled like the Winnipeg app's
-      // dimensions (20 px blue, heavy halo); minzoom keeps a muni-wide
-      // result set from placing tens of thousands of labels at province
-      // zoom. GL rather than DOM so Generate Map's canvas capture has it.
+      // dimensions (20 px blue, heavy halo). Below z16 a side is labelled
+      // only when it is long enough on screen to hold its label, so a whole
+      // quarter section on screen (z14) shows its sides while a town's 50 ft
+      // lots wait for lot scale as before (Jason, 2026-10-29: Hanover 106425
+      // showed nothing until zoomed past the whole parcel). minzoom still
+      // keeps a muni-wide result set from placing labels at province zoom.
+      // GL rather than DOM so Generate Map's canvas capture has it.
       map.addSource('parcel-dims', { type: 'geojson', data: emptyFc() });
       map.addLayer({
         id: 'parcel-dims-text',
         type: 'symbol',
         source: 'parcel-dims',
-        minzoom: 16,
+        minzoom: DIMS_MIN_ZOOM,
+        filter: dimsSideFilter(),
         layout: {
           visibility: 'none',
           'text-field': ['get', 'label'],
           'text-font': ['Open Sans Semibold'],
           // Grows with zoom so a block of lots at z16 is not a wall of text,
           // reaching the Winnipeg app's 20 px at lot scale.
-          'text-size': ['interpolate', ['linear'], ['zoom'], 16, 13, 17, 17, 18, 20],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 14, 12, 16, 13, 17, 17, 18, 20],
           'text-rotate': ['get', 'rot'],
           'text-rotation-alignment': 'map',
           'text-pitch-alignment': 'map',
