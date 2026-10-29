@@ -3675,18 +3675,31 @@ function showCaptureError(err) {
 }
 
 /**
- * "<muni>-map-YYYY-MM-DD" for the download: the municipality every result
- * parcel shares, else the dropdown's, else just "map".
+ * "<muni>-<rolls>-map-YYYY-MM-DD" for the download: the municipality every
+ * result parcel shares, else the dropdown's, else none; then the result
+ * rolls, named the way Parcel Snapshots names a multi-parcel frame — the
+ * lowest 3 joined on "_", plus "{n}p" when there are more than one
+ * (HANOVER-RM-106425-map-…, THOMPSON-CITY-1100_3100-2p-map-…). Rolls added
+ * at Jason's request, 2026-10-29.
  */
 function captureFilename(ext) {
-  const munis = new Set((lastResultFc?.features || [])
+  const features = lastResultFc?.features || [];
+  const munis = new Set(features
     .map((f) => String(f?.properties?.Muni_Name_With_Typ || '').trim())
     .filter(Boolean));
   let muni = munis.size === 1 ? [...munis][0] : '';
   if (!muni) muni = document.getElementById('municipality')?.value || '';
   const slug = muni.replace(/[()]/g, '').trim().replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  // Distinct: a parcel sold twice is two sales rows but one parcel on the map.
+  const rolls = [...new Set(features
+    .map((f) => displayRoll(f?.properties?.Roll_No_Txt))
+    .filter(Boolean))]
+    .sort((a, b) => (Number(a) - Number(b)) || a.localeCompare(b));
+  const rollPart = rolls.length
+    ? `${rolls.slice(0, 3).join('_').replace(/[^A-Za-z0-9_.]+/g, '')}${rolls.length > 1 ? `-${rolls.length}p` : ''}-`
+    : '';
   const stamp = localDateStamp();
-  return `${slug ? `${slug}-` : ''}map-${stamp}.${ext}`;
+  return `${slug ? `${slug}-` : ''}${rollPart}map-${stamp}.${ext}`;
 }
 
 /** Brief label swap on a button to confirm an action. */
