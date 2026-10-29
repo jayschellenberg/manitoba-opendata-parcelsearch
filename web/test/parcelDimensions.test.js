@@ -46,7 +46,7 @@ test('rectangle: four sides, clockwise from the north side', () => {
   const s = sideFt(poly(LOT));
   assert.equal(s.length, 4);
   [66, 120, 66, 120].forEach((v, i) => near(s[i], v, 0.05, `side ${i}`));
-  assert.equal(formatSides(parcelDimensions(poly(LOT))), '66.0 / 120.0 / 66.0 / 120.0');
+  assert.equal(formatSides(parcelDimensions(poly(LOT))), '66.0 / 120 / 66.0 / 120');
 });
 
 test('counter-clockwise input reads the same as clockwise', () => {
@@ -73,6 +73,16 @@ test('a 1 m wobble in the middle of a quarter-section line still merges', () => 
   const s = sideFt(poly([[0, 0], [q, 0], [q + wob, q / 2], [q, q], [0, q]]));
   assert.equal(s.length, 4);
   assert.equal(formatFeet(s[0]), '2,640');
+});
+
+test('feet: a tenth under 100 ft, whole feet from 100 ft up', () => {
+  // Jason, 2026-10-29: no decimals on anything over 100 ft.
+  assert.equal(formatFeet(66), '66.0');
+  assert.equal(formatFeet(99.94), '99.9');
+  assert.equal(formatFeet(99.96), '100', 'rounds up into whole feet, never "100.0"');
+  assert.equal(formatFeet(119.3), '119');
+  assert.equal(formatFeet(120.5), '121');
+  assert.equal(formatFeet(1989.4), '1,989');
 });
 
 test('a single real bend in a lot line stays two sides', () => {
@@ -130,7 +140,7 @@ test('MultiPolygon parts are measured separately and joined with |', () => {
   const b = poly([[200, 0], [250, 0], [250, 50], [200, 50]]).coordinates;
   const dims = parcelDimensions({ type: 'MultiPolygon', coordinates: [a, b] });
   assert.equal(dims.parts.length, 2);
-  assert.equal(formatSides(dims), '66.0 / 120.0 / 66.0 / 120.0 | 50.0 / 50.0 / 50.0 / 50.0');
+  assert.equal(formatSides(dims), '66.0 / 120 / 66.0 / 120 | 50.0 / 50.0 / 50.0 / 50.0');
   near(dims.perimeterFt, 372 + 200, 0.2);
 });
 
@@ -185,7 +195,7 @@ test('grid summarises a parcel with too many sides to read', () => {
   const dims = parcelDimensions(poly(pts));
   assert.ok(labelledSides(dims.parts[0]).length > GRID_MAX_SIDES);
   assert.match(formatSidesForGrid(dims), /^Irregular — \d+ sides \(.* ft perimeter\)$/);
-  assert.equal(formatSidesForGrid(parcelDimensions(poly(LOT))), '66.0 / 120.0 / 66.0 / 120.0');
+  assert.equal(formatSidesForGrid(parcelDimensions(poly(LOT))), '66.0 / 120 / 66.0 / 120');
 });
 
 test('results are cached per geometry object', () => {
@@ -210,7 +220,7 @@ test('roll frontage within 1 ft: that side takes the roll figure, the rest scale
   assert.ok(!s[2].roll, 'only one side is the roll frontage');
   near(dims.perimeterFt, (66.4 + 120) * 2 * ratio, 0.1, 'perimeter');
   near(dims.rollFrontage.ratio, ratio, 1e-4);
-  assert.equal(formatSides(dims), '66.0 (roll) / 119.3 / 66.0 / 119.3');
+  assert.equal(formatSides(dims), '66.0 (roll) / 119 / 66.0 / 119');
 });
 
 test('roll frontage does not touch the cached polygon measurement', () => {
@@ -260,7 +270,7 @@ test('a multi-part parcel is left as measured', () => {
 test('roll frontage on the map labels, and the note for the tooltip', () => {
   const f = feat(poly(WIDE), '66.00 FEET');
   const labels = dimensionLabelFeatures([f]).map((x) => x.properties.label);
-  assert.deepEqual(labels, ['66.0 ft (roll)', '119.3 ft', '66.0 ft', '119.3 ft']);
+  assert.deepEqual(labels, ['66.0 ft (roll)', '119 ft', '66.0 ft', '119 ft']);
   assert.match(rollFrontageNote(featureDimensions(f)), /^Frontage 66\.0 ft is from the assessment roll \(polygon measures 66\.4 ft\);.*×0\.994/);
   assert.equal(rollFrontageNote(parcelDimensions(poly(LOT))), '');
 });
@@ -271,9 +281,9 @@ test('a shared line is labelled with the neighbour\'s roll frontage over a plain
   const b = feat(poly([[66, 0], [132, 0], [132, 125], [66, 120]]), '120.30 FEET');
   const labels = dimensionLabelFeatures([a, b]).map((x) => x.properties.label);
   assert.equal(labels.length, 7);
-  assert.ok(labels.includes('120.3 ft (roll)'), labels.join(', '));
+  assert.ok(labels.includes('120 ft (roll)'), labels.join(', '));
   // Only a's own west side still reads as measured; its east side is the shared line.
-  assert.equal(labels.filter((l) => l === '120.0 ft').length, 1, labels.join(', '));
+  assert.equal(labels.filter((l) => l === '120 ft').length, 1, labels.join(', '));
 });
 
 test('a whole quarter section on screen is labelled; town lots wait for lot scale', () => {
