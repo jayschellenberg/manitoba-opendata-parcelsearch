@@ -589,7 +589,11 @@ export function initSalesDbPanel({
           : 'No sales found for that selection.');
         return;
       }
-      await onLoad?.(payload);
+      const loaded = await onLoad?.(payload);
+      // A failed parcel lookup leads the line: left to the "Loaded" text
+      // alone, Thompson's sales all came back "(not mapped)" with nothing
+      // saying why (2026-10-29).
+      const warn = loaded?.warning ? `⚠ ${loaded.warning.replace(/^⚠ /, '')} · ` : '';
       // Remember exactly what the table now holds, so a later change to the
       // municipalities, sale type or date range can flag the data as stale.
       loadedState = stateKey();
@@ -604,11 +608,11 @@ export function initSalesDbPanel({
         const { min: lo, max: hi } = payload.window;
         const price = lo !== null && hi !== null ? `, ${money(lo)}–${money(hi)}`
           : lo !== null ? `, ≥ ${money(lo)}` : hi !== null ? `, ≤ ${money(hi)}` : '';
-        say(`Loaded ${fmt(payload.sales)} of ${fmt(payload.salesAvailable)} sales (${span}${price}). `
+        say(`${warn}Loaded ${fmt(payload.sales)} of ${fmt(payload.salesAvailable)} sales (${span}${price}). `
           + (price ? 'Widen the date range or price and search again for more.'
             : 'Change the date range and search again for more history.'));
       } else {
-        say(`Loaded ${fmt(payload.sales)} sales (full history).`);
+        say(`${warn}Loaded ${fmt(payload.sales)} sales (full history).`);
       }
     } catch (err) {
       say(`Could not load sales: ${err.message}`);

@@ -270,24 +270,17 @@ async function fetchSnapshotShard(muniName) {
   if (snapshotShardCache.has(muniName)) return snapshotShardCache.get(muniName);
   const entry = rollEntrySnapshot?.munis?.[muniName];
   if (!entry?.file) return makeEmptyFc({ truncated: false });
-  try {
-    const res = await fetch(`${SNAPSHOT_BASE_URL}${entry.file}`);
-    if (!res.ok) {
-      console.warn(`Snapshot shard ${entry.file} returned ${res.status}`);
-      return makeEmptyFc({ truncated: false });
-    }
-    const fc = await res.json();
-    // Ensure the FC has the shape downstream code expects (defensive —
-    // a malformed shard shouldn't break the whole search path).
-    if (!fc || fc.type !== 'FeatureCollection' || !Array.isArray(fc.features)) {
-      return makeEmptyFc({ truncated: false });
-    }
-    snapshotShardCache.set(muniName, fc);
-    return fc;
-  } catch (err) {
-    console.warn(`Snapshot shard ${entry.file} fetch failed`, err);
-    return makeEmptyFc({ truncated: false });
+  // A shard that fails to arrive THROWS, the same as a failed live query. It
+  // used to come back as an empty muni, which a sales load cannot tell from
+  // "none of these rolls is mapped" — every sale became an approximate pin.
+  const res = await fetch(`${SNAPSHOT_BASE_URL}${entry.file}`);
+  if (!res.ok) throw new Error(`Snapshot shard ${entry.file} returned ${res.status}`);
+  const fc = await res.json();
+  if (!fc || fc.type !== 'FeatureCollection' || !Array.isArray(fc.features)) {
+    throw new Error(`Snapshot shard ${entry.file} is not a FeatureCollection`);
   }
+  snapshotShardCache.set(muniName, fc);
+  return fc;
 }
 
 /** Apply the same attribute filters searchParcels applies SQL-side,
