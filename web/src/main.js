@@ -1309,6 +1309,10 @@ let csvFullRows = null;
 // The sales text behind csvFullRows — what a job file embeds (2026-10-07).
 // Set by handleSalesUpload, the one door every sales source comes through.
 let lastSalesSource = null;
+// The last sales load's parcel-lookup failure, or ''. The sales-database
+// panel rewrites the status line after the load, so it reads this back
+// rather than let its "Loaded N sales" line hide a failed lookup.
+let lastSalesLookupWarning = '';
 let csvFullBaseMsg = '';
 // The filter waterfall of the last sales filter pass — how many sales each
 // filter removed, in SALES_FILTER_STEPS order. Sent to the charts tab with
@@ -2781,7 +2785,8 @@ const salesDbPanel = initSalesDbPanel({
 
 /**
  * Hand a sales-database CSV (municipality or province-wide load) to the
- * same pipeline an upload takes.
+ * same pipeline an upload takes. Resolves to `{ warning }` — a failed parcel
+ * lookup, or '' — which the panels lead their "Loaded N sales" line with.
  */
 async function loadSalesDbPayload({ name, text, scope }) {
   try {
@@ -2793,9 +2798,11 @@ async function loadSalesDbPayload({ name, text, scope }) {
     // means "never narrow" (salesMuniNarrowSet).
     salesMuniLoaded = scope === 'province' ? null : new Set(salesMuniSelection || []);
     setActiveTab('sales', { skipFocus: true });
+    return { warning: lastSalesLookupWarning };
   } catch (err) {
     console.error('Sales database load failed', err);
     setCount(`Sales load failed: ${err.message}`);
+    return { warning: `Sales load failed: ${err.message}` };
   }
 }
 
@@ -6130,6 +6137,7 @@ async function runSearch() {
   csvFullBaseMsg = '';
   csvMatchedMunis = null;
   lastSalesWaterfall = null;
+  lastSalesLookupWarning = '';
   // The narrowing baseline goes with the rows it described. Left standing,
   // it would let the next result set be narrowed against a municipality set
   // that search never loaded.
@@ -6659,6 +6667,7 @@ const $resultsTable = document.getElementById('results');
  * so the user sees what was lost.
  */
 async function handleSalesUpload(file) {
+  lastSalesLookupWarning = '';
   // Same rule as runSearch: parcels on the map disarm the muni picker.
   disarmSearchPicker();
   // Drop the narrowing baseline for the set being replaced. Every entry
@@ -6768,6 +6777,7 @@ async function handleSalesUpload(file) {
       // Usually one Roll Entry name; several when one CSV name maps to more
       // (MAO's "MUNICIPAL AND NORTHERN RELATIONS" -> districts 700-703).
       const cands = muniCandidates.get(muni) || [muni];
+      let lookupError = null;
       try {
         if (cands.length === 1) {
           fc = await searchParcels({ municipality: muni, roll: rolls });
@@ -6779,13 +6789,19 @@ async function handleSalesUpload(file) {
         }
       } catch (err) {
         console.warn(`searchParcels failed for ${muni}`, err);
-        fetchErrors.push({ muni, message: err.message || String(err) });
+        lookupError = err.message || String(err);
+        fetchErrors.push({ muni, message: lookupError });
       }
       // A lookup that stopped short has established NOTHING about the rolls it
       // never reached, so the "not in Roll_Entry" reason below would be a plain
       // falsehood for them. Carried out to the summary line too — a silently
       // short result set is the one failure the user cannot see in the grid.
       const lookupTruncated = fc._truncated === true;
+      // A lookup that FAILED has established nothing about any of them. Left
+      // to fall through, every roll reached the approximate-pin fallback
+      // below and the whole municipality came back "(not mapped)" with no
+      // error shown — Thompson's 68 ICI sales, 2026-10-29.
+      const notLookedUp = lookupTruncated || lookupError != null;
       // Reconcile this muni's CSV rows down to distinct SALES before
       // stamping. A MAO export repeats a portfolio sale's block once
       // per member, so the same (roll, date, price) can appear several
@@ -6869,7 +6885,7 @@ async function handleSalesUpload(file) {
       // Skipped when the lookup was truncated (those rolls were never asked
       // about, so they are not known to be missing).
       let fromHistory = 0;
-      const missing = lookupTruncated ? [] : [...salesByRoll.keys()].filter((r) => !matchedRolls.has(r));
+      const missing = notLookedUp ? [] : [...salesByRoll.keys()].filter((r) => !matchedRolls.has(r));
       if (missing.length) {
         try {
           const hist = (await Promise.all(cands.map((c) => historicalRollFeaturesForMuni(c, missing)))).flat();
@@ -6892,7 +6908,7 @@ async function handleSalesUpload(file) {
       // or the nearest-numbered mapped rolls (lib/unmappedRolls.js). Never
       // throws; a roll it cannot place stays unmatched as before.
       let unmappedSales = 0;
-      const stillMissing = lookupTruncated ? [] : [...salesByRoll.keys()].filter((r) => !matchedRolls.has(r));
+      const stillMissing = notLookedUp ? [] : [...salesByRoll.keys()].filter((r) => !matchedRolls.has(r));
       if (stillMissing.length) {
         const fallbackLegal = new Map(stillMissing.map((r) => {
           const s = salesByRoll.get(r)?.[0] || {};
@@ -6928,16 +6944,19 @@ async function handleSalesUpload(file) {
         unmappedSales,
         duplicateRows,
         lookupTruncated,
+        lookupError,
         // Roll_No_Txt simply not in Roll_Entry for this muni (most
         // common cause: typo / old roll / wrong muni assignment in the
-        // source CSV) — unless the lookup itself stopped short, in which
-        // case these rolls were never queried and the miss is ours.
+        // source CSV) — unless the lookup itself failed or stopped short,
+        // in which case these rolls were never queried and the miss is ours.
         unmatched: unmatchedSales(
           salesByRoll,
           matchedRolls,
-          lookupTruncated
-            ? `${muni} roll lookup stopped at its ceiling before reaching this roll — not a Roll_Entry miss`
-            : `Roll # not found in Roll_Entry for ${muni}`,
+          lookupError != null
+            ? `${muni} parcel lookup failed (${lookupError}) — not a Roll_Entry miss; search again`
+            : lookupTruncated
+              ? `${muni} roll lookup stopped at its ceiling before reaching this roll — not a Roll_Entry miss`
+              : `Roll # not found in Roll_Entry for ${muni}`,
         ),
       };
     });
@@ -6987,10 +7006,11 @@ async function handleSalesUpload(file) {
       if (fetchErrors.length > 0) {
         const rateLimited = fetchErrors.some((e) => /429|rate-limited/i.test(e.message));
         if (rateLimited) {
-          setCount(`Upload failed: ArcGIS rate-limited. Wait ~60s and try again. (${fetchErrors.length} muni fetch${fetchErrors.length === 1 ? '' : 'es'} failed)`);
+          lastSalesLookupWarning = `Upload failed: ArcGIS rate-limited. Wait ~60s and try again. (${fetchErrors.length} muni fetch${fetchErrors.length === 1 ? '' : 'es'} failed)`;
         } else {
-          setCount(`Upload failed: ${fetchErrors[0].message}. Retry or check Roll_Entry for ${fetchErrors[0].muni}.`);
+          lastSalesLookupWarning = `Upload failed: ${fetchErrors[0].message}. Retry or check Roll_Entry for ${fetchErrors[0].muni}.`;
         }
+        setCount(lastSalesLookupWarning);
       } else {
         setCount(`No matching parcels found for the ${records.length} CSV rows. ` +
                  `Check that municipality names and roll numbers match Roll_Entry.`);
@@ -7159,6 +7179,12 @@ async function handleSalesUpload(file) {
     const truncNote = truncatedMunis.length > 0
       ? ` · ⚠ roll lookup incomplete for ${truncatedMunis.join(', ')} — sales are MISSING, not absent`
       : '';
+    // Some munis plotted and some failed outright. The all-failed case never
+    // reaches here (the zero-features branch above reports it).
+    const failNote = fetchErrors.length > 0
+      ? ` · ⚠ parcel lookup FAILED for ${fetchErrors.map((e) => e.muni).join(', ')} (${fetchErrors[0].message}) — search again`
+      : '';
+    lastSalesLookupWarning = failNote ? failNote.replace(/^ · /, '') : '';
     // Parcels reduced to a pin because they changed after their sale. This is
     // the path where that actually happens (setMapData above has already run,
     // so the count is in hand), and it needs saying out loud: a pin among
@@ -7173,7 +7199,7 @@ async function handleSalesUpload(file) {
       ? ` · ${totalUnmappedSales} not yet on the parcel map, shown at an approximate location`
       : '';
     const baseMsg = `${totalMatched} of ${totalSales} sales plotted${parcelNote}`
-                  + `${historyNote}${unmappedSaleNote}${dupeNote}${unmatchedNote}${truncNote}${withheldNoteText}`;
+                  + `${historyNote}${unmappedSaleNote}${dupeNote}${unmatchedNote}${failNote}${truncNote}${withheldNoteText}`;
     renderUnmatchedPanel(unmatchedRecords);
 
     // Auto-set the muni dropdown to a "dominant" muni — the one with
@@ -14667,6 +14693,7 @@ function clearSalesResults() {
   csvFullBaseMsg = '';
   csvMatchedMunis = null;
   lastSalesWaterfall = null;
+  lastSalesLookupWarning = '';
   // The narrowing baseline goes with the rows it described. Left standing,
   // it would let the next result set be narrowed against a municipality set
   // that search never loaded.

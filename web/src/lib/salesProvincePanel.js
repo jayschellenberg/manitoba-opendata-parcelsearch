@@ -273,7 +273,7 @@ export function initSalesProvincePanel({ onLoad, onSearchStart, setStatus, apply
       applyWindow?.({ from: c.from, to: c.to, min: c.min, max: c.max });
       const manifest = await getManifest();
       const desc = describeCriteria(c);
-      await onLoad?.({
+      const loaded = await onLoad?.({
         name: `MAO database — Province: ${desc}`,
         text: `${header}\n${bodies.join('\n')}\n`,
         municipalities: [...result.byMuni.keys()],
@@ -284,7 +284,10 @@ export function initSalesProvincePanel({ onLoad, onSearchStart, setStatus, apply
         scope: 'province',
       });
       if ($status) $status.textContent = desc;
-      say(`Loaded ${fmt(bodies.length)} sales province-wide (${desc}).`);
+      // A failed parcel lookup leads the line: left to the "Loaded" text alone,
+      // every sale came back "(not mapped)" with nothing saying why.
+      const warn = loaded?.warning ? `⚠ ${loaded.warning.replace(/^⚠ /, '')} · ` : '';
+      say(`${warn}Loaded ${fmt(bodies.length)} sales province-wide (${desc}).`);
     } catch (err) {
       say(`Could not load sales: ${err.message}`);
     }
