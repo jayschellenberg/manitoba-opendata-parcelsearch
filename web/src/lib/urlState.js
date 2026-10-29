@@ -150,6 +150,9 @@ export const SCHEMA = {
   addressFrom: { param: 'af', validate: cleanString,           format: (v) => v },
   addressTo:   { param: 'at', validate: cleanString,           format: (v) => v },
   addressStreet: { param: 'as', validate: cleanString,         format: (v) => v },
+  // Street was picked from the typeahead: match that street exactly, not
+  // as a substring (CHARLES ST without ST CHARLES ST).
+  addressStreetExact: { param: 'ax', validate: oneOf(['1']),   format: (v) => v },
   addressType: { param: 'ay', validate: cleanString,           format: (v) => v },
   addressDir:  { param: 'ad', validate: oneOf(['E', 'N', 'NE', 'NW', 'S', 'SE', 'SW', 'W']), format: (v) => v },
   legalText:   { param: 'lt', validate: cleanString,           format: (v) => v },

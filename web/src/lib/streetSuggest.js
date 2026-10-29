@@ -76,6 +76,12 @@ export function createStreetSuggest({ inputId, listId, getList, noMuniText, onSe
     if (!entry) return;
     accepting = true;
     $input.value = entry.n;
+    // A pick names ONE street, so it searches as an exact match (see
+    // addressOnStreet) — CHARLES ST must not also return ST CHARLES ST.
+    // Stored as the picked name rather than a flag so a script write of
+    // any other value can only turn it off. Set before the events below
+    // so the URL writer and the sales re-filter see it.
+    $input.dataset.exactStreet = entry.n;
     // main.js hangs the URL-state writer and the sales re-filter off
     // 'input'; setting .value in script fires nothing.
     $input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -134,7 +140,12 @@ export function createStreetSuggest({ inputId, listId, getList, noMuniText, onSe
       });
   }
 
-  $input.addEventListener('input', () => { if (!accepting) refresh(); });
+  $input.addEventListener('input', () => {
+    if (accepting) return;
+    // Typing after a pick puts the field back to a substring search.
+    delete $input.dataset.exactStreet;
+    refresh();
+  });
   $input.addEventListener('focus', () => refresh());
   $input.addEventListener('blur', () => close());
   // Keep the pointer from stealing focus: blur fires before click and
@@ -173,4 +184,12 @@ export function createStreetSuggest({ inputId, listId, getList, noMuniText, onSe
   });
 
   return { close, isOpen: () => !$list.hidden };
+}
+
+/** The street picked from the list when the field still holds it, else
+ *  '' — i.e. whether the search should match that street exactly rather
+ *  than as a substring. */
+export function exactStreetPick($input) {
+  const picked = $input?.dataset?.exactStreet;
+  return picked && picked === String($input.value ?? '').trim() ? picked : '';
 }

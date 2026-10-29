@@ -16,7 +16,8 @@ import { initInfoIcons } from './lib/infoIcon.js';
 import { initParcelListImport } from './lib/parcelListImport.js';
 import { initSalesPasteImport } from './lib/salesPasteImport.js';
 import { initSalesDbPanel } from './lib/salesDbPanel.js';
-import { createStreetSuggest } from './lib/streetSuggest.js';
+import { createStreetSuggest, exactStreetPick } from './lib/streetSuggest.js';
+import { addressOnStreet } from './lib/streetIndex.js';
 import { initSalesProvincePanel } from './lib/salesProvincePanel.js';
 import { listShardKeys } from './lib/salesStore.js';
 import { showMuniLayer, hideMuniLayer, paintMuniSelection, wireMuniInteractions, fitToSelection }
@@ -2349,6 +2350,9 @@ function readCurrentUrlState() {
       state[b.key] = raw;
     }
   }
+  if (state.addressStreet && exactStreetPick(document.getElementById('address-street'))) {
+    state.addressStreetExact = '1';
+  }
   // Tab + selected parcel come from non-input state.
   try {
     const stored = localStorage.getItem('mbps_sidebar_tab_v1');
@@ -2431,6 +2435,10 @@ function applyUrlStateToInputs(state) {
     // inputs have no listener for this event, so it's a no-op
     // there.
     el.dispatchEvent(new CustomEvent('chip-input:reseed', { bubbles: true }));
+  }
+  if (state.addressStreetExact && state.addressStreet) {
+    const $street = document.getElementById('address-street');
+    if ($street) $street.dataset.exactStreet = String(state.addressStreet);
   }
   if (state.tab && (state.tab === 'property' || state.tab === 'sales')) {
     try { setActiveTab(state.tab, { skipFocus: true }); } catch {}
@@ -6152,6 +6160,7 @@ async function runSearch() {
     addressFrom:    $addressFrom?.value.trim()   ?? '',
     addressTo:      $addressTo?.value.trim()     ?? '',
     addressStreet:  $addressStreet?.value.trim() ?? '',
+    addressStreetExact: exactStreetPick($addressStreet),
     addressType:    $addressType?.value.trim()   ?? '',
     addressDir:     $addressDir?.value.trim()    ?? '',
     municipality:    $municipality.value.trim(),
@@ -6313,6 +6322,14 @@ async function runSearch() {
     // civic number does: ArcGIS SQL can't express "in type position",
     // so the dropdowns never narrow the fetch — they only filter it.
     applyStreetTypeDirFilter(parcelFc, inputs.addressType, inputs.addressDir);
+    // A street PICKED from the typeahead means that one street: the SQL
+    // substring fetched CHARLES ST and ST CHARLES ST alike, and this keeps
+    // only the addresses that parse to the picked name.
+    if (inputs.addressStreetExact) {
+      parcelFc.features = (parcelFc.features || []).filter(
+        (f) => addressOnStreet(f?.properties?.Property_Address, inputs.addressStreetExact),
+      );
+    }
 
     // Property Search never groups parcels — not from Roll # punctuation
     // ("83100+83200" is two parcels, not one subject), and not from a
@@ -8732,6 +8749,8 @@ function filterCsvRowsByOtherSearches(rows) {
   // fail when the filter is active. Expanded through the civic-number
   // spacing variants so it agrees with the regular search's clause.
   const streetVariants = addressSearchVariants($salesStreetName?.value || '');
+  // Picked from the typeahead → that one street only (addressOnStreet).
+  const streetExact = exactStreetPick($salesStreetName);
   // $/Acre filter — Min / Max bounds against _saleGroupPpa.
   // Either bound is optional; empty = unbounded on that side. Rows
   // missing _saleGroupPpa (no acres data on the group, or single-
@@ -8826,7 +8845,9 @@ function filterCsvRowsByOtherSearches(rows) {
 
     // Street Name filter — same shape as the Plan # filter above.
     if (streetVariants.length > 0) {
-      if (!addressMatchesVariants(p.Property_Address, streetVariants)) return fail('Street name');
+      if (streetExact
+        ? !addressOnStreet(p.Property_Address, streetExact)
+        : !addressMatchesVariants(p.Property_Address, streetVariants)) return fail('Street name');
     }
 
     // N1 match filter — row-level, not group-level: a multi-parcel sale

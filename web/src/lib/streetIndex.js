@@ -52,6 +52,19 @@ export function normalizeAddress(raw) {
 }
 
 /**
+ * True when `address` sits on exactly the street `name` — the test for a
+ * street PICKED from the typeahead. Both searches are substring matches,
+ * so picking CHARLES ST would also return ST CHARLES ST; parsing the
+ * address with the same streetOfAddress that built the list makes a pick
+ * mean that one street. The trailing direction is not compared: it was
+ * split off into `d`, and the Dir box decides it.
+ */
+export function addressOnStreet(address, name) {
+  const want = normalizeAddress(name);
+  return !!want && streetOfAddress(address)?.name === want;
+}
+
+/**
  * The street an address sits on, or null when there isn't one to offer.
  * @returns {{ name: string, dir: string }|null}  dir is '' when the
  *   address carries no trailing direction.

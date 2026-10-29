@@ -14,6 +14,7 @@ import {
   suggestStreets,
   suggestHint,
   suggestKey,
+  addressOnStreet,
 } from '../src/lib/streetIndex.js';
 
 const results = [];
@@ -147,6 +148,17 @@ test('nothing under two characters, nothing from an empty list', () => {
 test('the hint names directions then the parcel count', () => {
   assert.equal(suggestHint({ n: 'MAIN ST', c: 36, d: ['NE', 'N'] }), 'NE · N · 36 parcels');
   assert.equal(suggestHint({ n: 'ELM AVE', c: 1 }), '1 parcel');
+});
+
+test('a picked street matches that street only, not one containing it', () => {
+  assert.equal(addressOnStreet('123 CHARLES ST', 'CHARLES ST'), true);
+  assert.equal(addressOnStreet('123 ST CHARLES ST', 'CHARLES ST'), false);
+  assert.equal(addressOnStreet('123 ST CHARLES ST', 'ST CHARLES ST'), true);
+  // Doubled spaces, case and a trailing direction don't stop a match.
+  assert.equal(addressOnStreet('27 Penelope  CL', 'PENELOPE CL'), true);
+  assert.equal(addressOnStreet('1 106 E ROAD 71 N', 'E ROAD 71'), true);
+  assert.equal(addressOnStreet('', 'MAIN ST'), false);
+  assert.equal(addressOnStreet('12 MAIN ST', ''), false);
 });
 
 const failed = results.filter((r) => r.status === 'fail');
