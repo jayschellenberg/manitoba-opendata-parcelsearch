@@ -452,6 +452,9 @@ export function dimensionLabelFeatures(features) {
             properties: {
               label: `${formatFeet(s.ft)} ft${s.arc ? ' arc' : ''}${s.roll ? ' (roll)' : ''}`,
               rot: Math.round(anchor.rot * 10) / 10,
+              // The map shows a side only once it is long enough on screen
+              // to hold its label (map.js DIMS_MIN_SIDE_FT_BY_ZOOM).
+              ft: Math.round(s.ft),
             },
             geometry: { type: 'Point', coordinates: anchor.point },
           },
@@ -460,4 +463,33 @@ export function dimensionLabelFeatures(features) {
     }
   }
   return [...byKey.values()].map((v) => v.feature);
+}
+
+/** Lowest zoom the map's side-length labels draw at. A quarter section
+ *  (2,640 ft sides) spans ~130 px here in southern Manitoba — about the
+ *  smallest a whole quarter is ever fitted on screen. */
+export const DIMS_MIN_ZOOM = 13;
+/** From this zoom every labelled side shows, as it always did. */
+export const DIMS_ALL_SIDES_ZOOM = 16;
+/** Screen length a side needs below DIMS_ALL_SIDES_ZOOM: room for "2640.00
+ *  ft" at the small end of the text-size ramp, plus some air. */
+export const DIMS_MIN_SIDE_PX = 100;
+// Metres per screen pixel at zoom 0 (512 px world) at 49.5°N, the middle of
+// agricultural Manitoba. Further north a side is a little longer on screen
+// than this assumes, so the cut only ever errs towards hiding a label.
+const DIMS_M_PER_PX_Z0 = (40075016.686 * Math.cos((49.5 * Math.PI) / 180)) / 512;
+
+/** Shortest side (whole feet) labelled at integer zoom `z`; 0 = every side. */
+export function dimsMinSideFt(z) {
+  if (z >= DIMS_ALL_SIDES_ZOOM) return 0;
+  return Math.ceil((DIMS_MIN_SIDE_PX * DIMS_M_PER_PX_Z0) / 2 ** z * M_TO_FT);
+}
+
+/** The map layer filter applying dimsMinSideFt per zoom. MapLibre evaluates
+ *  a zoom filter at whole zooms, so z14.9 uses z14's (longer) cut. */
+export function dimsSideFilter() {
+  const at = (z) => ['>=', ['get', 'ft'], dimsMinSideFt(z)];
+  const expr = ['step', ['zoom'], at(DIMS_MIN_ZOOM)];
+  for (let z = DIMS_MIN_ZOOM + 1; z <= DIMS_ALL_SIDES_ZOOM; z++) expr.push(z, at(z));
+  return expr;
 }

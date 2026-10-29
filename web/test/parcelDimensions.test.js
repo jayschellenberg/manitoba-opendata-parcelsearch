@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import {
   parcelDimensions, formatSides, formatFeet, dimensionLabelFeatures, labelledSides,
   formatSidesForGrid, GRID_MAX_SIDES, featureDimensions, rollFrontageNote,
+  dimsMinSideFt, dimsSideFilter, DIMS_MIN_ZOOM, DIMS_ALL_SIDES_ZOOM,
 } from '../src/lib/parcelDimensions.js';
 
 const results = [];
@@ -273,6 +274,26 @@ test('a shared line is labelled with the neighbour\'s roll frontage over a plain
   assert.ok(labels.includes('120.3 ft (roll)'), labels.join(', '));
   // Only a's own west side still reads as measured; its east side is the shared line.
   assert.equal(labels.filter((l) => l === '120.0 ft').length, 1, labels.join(', '));
+});
+
+test('a whole quarter section on screen is labelled; town lots wait for lot scale', () => {
+  // Hanover 106425 (Jason, 2026-10-29): nothing showed until zoomed past the
+  // parcel. A quarter's 2,640 ft sides must clear the cut from the lowest zoom.
+  assert.ok(dimsMinSideFt(DIMS_MIN_ZOOM) < 2640, String(dimsMinSideFt(DIMS_MIN_ZOOM)));
+  // A 50 ft lot frontage still only shows at lot scale, as before.
+  for (let z = DIMS_MIN_ZOOM; z < DIMS_ALL_SIDES_ZOOM; z++) assert.ok(dimsMinSideFt(z) > 50, `z${z}`);
+  assert.equal(dimsMinSideFt(DIMS_ALL_SIDES_ZOOM), 0);
+  // Each zoom in halves the cut.
+  assert.ok(Math.abs(dimsMinSideFt(14) * 2 - dimsMinSideFt(13)) <= 2);
+});
+
+test('label features carry the whole-foot side length the zoom filter reads', () => {
+  const props = dimensionLabelFeatures([feat(poly(LOT), '0.18 ACRES')]).map((x) => x.properties);
+  assert.ok(props.every((q) => Number.isInteger(q.ft) && q.ft > 0), JSON.stringify(props));
+  const f = dimsSideFilter();
+  assert.equal(f[0], 'step');
+  assert.deepEqual(f[2], ['>=', ['get', 'ft'], dimsMinSideFt(DIMS_MIN_ZOOM)]);
+  assert.deepEqual(f.at(-1), ['>=', ['get', 'ft'], 0]);
 });
 
 const failed = results.filter((r) => r.status === 'fail').length;
