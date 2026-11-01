@@ -1318,6 +1318,14 @@ let csvFullBaseMsg = '';
 // filter removed, in SALES_FILTER_STEPS order. Sent to the charts tab with
 // the sale records; null until a sales pass has run.
 let lastSalesWaterfall = null;
+// The near market for the charts tab's ADF Overview page (2026-11-01, the
+// land dashboard's ADF tier): every loaded sale that passed the first three
+// steps of the last sales pass -- unticked municipality, nominal and far-flung
+// sales -- whatever the analysis filters after them did. Exact because those
+// three run first (see filterCsvRowsByOtherSearches). null until a pass runs.
+let lastAdfRows = null;
+// The step indices that define it, by name so a reordering cannot shift them.
+const ADF_STEPS = ['Municipality', 'Nominal sales', 'Far-flung sales'];
 // The steps of filterCsvRowsByOtherSearches, in the order its tests run.
 // Every fail('…') label there must be one of these; a label missing here
 // would make indexOf -1 and the row would count as passing.
@@ -6150,6 +6158,7 @@ async function runSearch() {
   csvFullBaseMsg = '';
   csvMatchedMunis = null;
   lastSalesWaterfall = null;
+  lastAdfRows = null;
   lastSalesLookupWarning = '';
   // The narrowing baseline goes with the rows it described. Left standing,
   // it would let the next result set be narrowed against a municipality set
@@ -9098,6 +9107,14 @@ function filterCsvRowsByOtherSearches(rows) {
   });
   lastSalesWaterfall = buildSalesWaterfall(rows, (i) => stepOfRow[i], SALES_FILTER_STEPS,
     (r) => r.parcel?.properties?._saleGroupId);
+  {
+    const adfFail = new Set(ADF_STEPS.map((l) => SALES_FILTER_STEPS.indexOf(l)));
+    if (adfFail.has(-1)) throw new Error('ADF_STEPS names a step SALES_FILTER_STEPS does not have');
+    // The ADF steps must be the FIRST steps, or "failed at a later step"
+    // would not imply "passed these".
+    if (Math.max(...adfFail) !== adfFail.size - 1) throw new Error('ADF_STEPS must be the first sales filter steps');
+    lastAdfRows = rows.filter((_, i) => !adfFail.has(stepOfRow[i]));
+  }
   return kept;
 }
 
@@ -14706,6 +14723,7 @@ function clearSalesResults() {
   csvFullBaseMsg = '';
   csvMatchedMunis = null;
   lastSalesWaterfall = null;
+  lastAdfRows = null;
   lastSalesLookupWarning = '';
   // The narrowing baseline goes with the rows it described. Left standing,
   // it would let the next result set be narrowed against a municipality set
@@ -18472,6 +18490,20 @@ function subjectChartFacts() {
   };
 }
 
+function chartAgOf(row) {
+  const p = row?.parcel?.properties || {};
+  const hc = headlineCover(p._landfacts, p._landCover, p._acres);
+  return {
+    masc: p._soilRating || null,
+    cli: dominantCliLabel(p),
+    soil: dominantSoilTypeLabel(p),
+    soilLoaded: Array.isArray(p._soilComposition),
+    cover: hc?.lc || null,
+    coverLabel: dominantBucket(hc?.lc)?.label || null,
+    acres: Number(p._acres),
+  };
+}
+
 function publishSalesCharts() {
   const channel = getChartsChannel();
   if (!channel) return;
@@ -18496,29 +18528,36 @@ function publishSalesCharts() {
       // The Agricultural tab's per-parcel facts, through the same helpers
       // the grid cells and CSV columns use, so the charts cannot disagree
       // with the table beside them.
-      agOf: (row) => {
-        const p = row?.parcel?.properties || {};
-        const hc = headlineCover(p._landfacts, p._landCover, p._acres);
-        return {
-          masc: p._soilRating || null,
-          cli: dominantCliLabel(p),
-          soil: dominantSoilTypeLabel(p),
-          soilLoaded: Array.isArray(p._soilComposition),
-          cover: hc?.lc || null,
-          coverLabel: dominantBucket(hc?.lc)?.label || null,
-          acres: Number(p._acres),
-        };
-      },
+      agOf: chartAgOf,
     });
   } catch (err) {
     console.warn('Sales charts projection failed', err);
     return;
+  }
+  // The ADF Overview page's near market (see lastAdfRows): the same
+  // projection, every sale counted in (the grid's ticks are the CMS's, not
+  // the near market's).
+  let adfRecords = [];
+  if (inSalesMode && lastAdfRows?.length) {
+    try {
+      adfRecords = saleRecordsFromRows(lastAdfRows, {
+        parseDate: parseSaleDate,
+        centroid: parcelCentrePoint,
+        rowKey: (row) => saleRowKey(row?.parcel?.properties),
+        isSelected: () => true,
+        agOf: chartAgOf,
+      });
+    } catch (err) {
+      console.warn('Sales charts ADF projection failed', err);
+      adfRecords = [];
+    }
   }
   const subjectAcres = subjectFeature ? parcelAcres(subjectFeature) : null;
   try {
     channel.postMessage({
       type: 'sales',
       records,
+      adfRecords,
       meta: {
         parcelCount: selectedRows,
         // How the loaded sales were narrowed to the ones on screen. Only

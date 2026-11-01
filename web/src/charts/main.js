@@ -32,6 +32,7 @@ import {
 import { WATER_CLASSES, WATER_DETECTION_LIMIT_FT } from '../lib/water.js';
 import { priceBuckets, yearColors, SIZE_RAMP } from '../lib/salesMapColors.js';
 import { createSalesMap, linkMaps } from './chartMap.js';
+import { LOCFX_MIN_N, ISO_MIN_N } from '../lib/locationMaps.js';
 import { criteriaText } from '../lib/criteriaLine.js';
 import { masccolor } from '../masc.js';
 import { buildStoreZip } from '../lib/zipStore.js';
@@ -46,7 +47,7 @@ import { toCsv, buildSummaryHtml, figureFileName, workFileName } from '../lib/wo
 import { LAND_COVER_BUCKETS } from '../lib/landcover.js';
 import { familyOf } from '../lib/primaryProperty.js';
 import {
-  drawChart, drawBoxChart, drawTableCard, drawStackedBars, drawHistogram, setChartCompany, ZONE_COLORS, OTHER_COLOR, INK, R_STYLE, slugify,
+  drawChart, drawBoxChart, drawTableCard, drawStackedBars, drawHistogram, drawCountBars, setChartCompany, ZONE_COLORS, OTHER_COLOR, INK, R_STYLE, slugify,
   chartExportSpec, renderChartPng, downloadBlob, setPointLabeler,
   fmtMoney0, fmtMoney2, fmtNum, fmtDate, fmtAxisDollar, fmtAxisComma, fmtMonYear,
 } from '../lib/chartRender.js';
@@ -67,6 +68,7 @@ const els = {
   unitFf: $('unit-ff'),
   ctlUnit: $('ctl-unit'),
   ratesHint: $('rates-hint'),
+  tabAdf: $('tab-adf'),
   tabRates: $('tab-rates'),
   tabTotal: $('tab-total'),
   tabWater: $('tab-water'),
@@ -172,7 +174,28 @@ window.addEventListener('storage', (e) => {
 });
 
 /** Latest payload from the main window: {records, meta}. */
-let data = { records: [], meta: null };
+let data = { records: [], adfRecords: [], meta: null };
+
+// ---------- the ADF scope (2026-11-01) ---------------------------------------
+//
+// The land dashboard's ADF Overview page charts the NEAR MARKET -- every sale
+// the search loaded, less nominal and far-flung sales and unticked
+// municipalities (the main window's lastAdfRows) -- where the other pages
+// chart the CMS, the grid's ticked sales. Rather than a second copy of every
+// builder, the ADF page runs the same builders with `scope` set to 'adf':
+// activeRecords() then returns the near market, the criteria line says ADF,
+// the percentile trim stays off (the template's ADF page has none), and a
+// click does nothing (an ADF sale is not a grid tick to toggle).
+let scope = 'cms';
+const inAdf = () => scope === 'adf';
+function withScope(page, fn) {
+  if (page !== 'adf') return fn();
+  const prev = scope;
+  scope = 'adf';
+  try { return fn(); } finally { scope = prev; }
+}
+/** The set's name in titles: "ADF Heatmap", "CMS Heatmap". */
+const tierWord = () => (inAdf() ? 'ADF' : 'CMS');
 let receivedAt = null;
 
 /**
@@ -404,7 +427,7 @@ function tooltipRows(rec, pt) {
   if (rec.excluded && reasonOf(rec)) rows.unshift(['Excluded', reasonOf(rec)]);
   const tagged = tagDescriptions(tags, saleTagKey(rec));
   if (tagged.length) rows.unshift(['Tagged', tagged.join(' · ')]);
-  if (!opts.frozen && rec.keys?.length) {
+  if (!opts.frozen && opts.tab !== 'adf' && rec.keys?.length) {
     rows.push(['', `${state === 'excluded' ? 'Click to include' : 'Click to exclude'} · Shift-click to ${
       tagNumber(tags, 'comps', saleTagKey(rec)) ? 'untag the comp' : 'tag as a comp'}`]);
   }
@@ -415,12 +438,14 @@ function tooltipRows(rec, pt) {
 
 /** Sales ticked in the grid — the land template's CMS1. */
 function activeRecords() {
+  if (inAdf()) return data.adfRecords || [];
   return (data.records || []).filter((r) => !r.excluded);
 }
 
 /** What the charts draw: every sale, or only the ticked ones when the
  *  "Show excluded" box is off. */
 function drawnRecords() {
+  if (inAdf()) return activeRecords();
   return opts.showExcluded ? (data.records || []) : activeRecords();
 }
 
@@ -458,12 +483,12 @@ let cmsCache = new Map();
 function cmsFor(metric) {
   // The Agricultural page fits its own, consistency-filtered set.
   const ag = opts.tab === 'ag' && agConsActive();
-  const cacheKey = ag ? `${metric}|ag` : metric;
+  const cacheKey = `${scope}|${ag ? `${metric}|ag` : metric}`;
   if (cmsCache.has(cacheKey)) return cmsCache.get(cacheKey);
   const ticked = activeRecords();
   const active = ag ? ticked.filter(agConsistent) : ticked;
   const agOut = ag ? new Set(ticked.filter((r) => !agConsistent(r)).map((r) => r.saleId)) : null;
-  const trim = opts.trim ? percentileTrim(active, metric, opts.trimLo, opts.trimHi) : null;
+  const trim = opts.trim && !inAdf() ? percentileTrim(active, metric, opts.trimLo, opts.trimHi) : null;
   const applied = !!trim?.applied;
   const fitted = applied ? active.filter((r) => trim.keep.has(r.saleId)) : active;
   const mc1 = marketConditions(active, metric);
@@ -568,7 +593,8 @@ function distContext() {
 
 /** Each page's chart builder. */
 const PAGE_BUILDERS = {
-  rates: () => buildRateCharts(),
+  adf: () => [...buildRateCharts(), ...extraCharts()],
+  rates: () => [...buildRateCharts(), ...extraCharts()],
   ag: () => buildAgCharts(),
   total: () => buildTotalCharts(),
   water: () => buildWaterCharts(),
@@ -960,8 +986,8 @@ function adjusterFor(cms) {
 function chart(spec) {
   return drawChart({
     tooltipRows,
-    onPointClick: opts.frozen ? null : onPointClick,
-    onRestore: opts.frozen ? null : restoreSales,
+    onPointClick: opts.frozen || inAdf() ? null : onPointClick,
+    onRestore: opts.frozen || inAdf() ? null : restoreSales,
     pngName: pngName(spec.title),
     ...spec,
   });
@@ -995,7 +1021,10 @@ function baseCriteriaLine(cms, adjusted) {
   };
   return criteriaText({
     adjusted,
-    criteria: data.meta?.criteria || null,
+    tier: tierWord(),
+    // The main window's filter settings describe the CMS; the near market
+    // is stated by the span of its own sales.
+    criteria: inAdf() ? null : data.meta?.criteria || null,
     unitKey: UNITS[opts.unit] ? opts.unit : 'acres',
     unitWord: unitSpec().range,
     refTitle: distContext().refTitle,
@@ -1481,8 +1510,8 @@ function buildWaterCharts() {
     cms, keyOf, rate, { order, minN, maxGroups, colorOf: (k) => WATER_GROUP_COLORS[k] });
   const box = (spec) => drawBoxChart({
     tooltipRows,
-    onPointClick: opts.frozen ? null : onPointClick,
-    onRestore: opts.frozen ? null : restoreSales,
+    onPointClick: opts.frozen || inAdf() ? null : onPointClick,
+    onRestore: opts.frozen || inAdf() ? null : restoreSales,
     pngName: pngName(spec.title),
     valueFormat: areaFmt,
     axisFormat: fmtAxisDollar,
@@ -1777,8 +1806,8 @@ function buildAgCharts() {
     : '';
   const box = (spec) => drawBoxChart({
     tooltipRows,
-    onPointClick: opts.frozen ? null : onPointClick,
-    onRestore: opts.frozen ? null : restoreSales,
+    onPointClick: opts.frozen || inAdf() ? null : onPointClick,
+    onRestore: opts.frozen || inAdf() ? null : restoreSales,
     pngName: pngName(spec.title),
     valueFormat: areaFmt,
     axisFormat: fmtAxisDollar,
@@ -2004,9 +2033,10 @@ function buildAgCharts() {
 const pageMaps = new Map();
 const mapCounts = new Map();
 function pageMap(key) {
-  if (!pageMaps.has(key)) pageMaps.set(key, createSalesMap({ ...mapHandlers(), pins: isCompMapKey(key) }));
+  if (!pageMaps.has(key)) pageMaps.set(key, createSalesMap({ ...mapHandlers(key), pins: isCompMapKey(key) }));
   return pageMaps.get(key);
 }
+const isAdfMapKey = (key) => String(key).startsWith('adf-');
 
 /**
  * One row per tab holding its maps, two to a row so no map is wider than half
@@ -2065,7 +2095,7 @@ function paintMap(key, { title, cms, adj, colored, context = [], colorOf, legend
   m.setMunisVisible(opts.mapMunis !== false);
   m.setLegend(legend);
   const unlocated = activeRecords().length - activeRecords().filter(located).length;
-  const unticked = (data.records || []).filter((r) => r.excluded).length;
+  const unticked = inAdf() ? 0 : (data.records || []).filter((r) => r.excluded).length;
   m.setNote(sub(note,
     rings.length ? `The circle is the ${fmtNum(rings[0])} km distance filter set in Sales Analysis.` : '',
     subject ? '' : 'Set a subject roll in the main window to mark it on the map.',
@@ -2092,13 +2122,16 @@ function labelRank(key) {
 }
 
 /** Click and popup handlers, shared by every map on the page. */
-function mapHandlers() {
-  const find = (id) => (data.records || []).find((r) => String(r.saleId) === String(id));
+function mapHandlers(key = '') {
+  const adf = isAdfMapKey(key);
+  const find = (id) => (adf ? data.adfRecords : data.records || []).find((r) => String(r.saleId) === String(id));
   return {
-    onPick: (id) => { const rec = find(id); if (rec) onPointClick(rec); },  // prompts for a reason too
+    // An ADF map's sale is not a grid tick: a click there shows its popup only.
+    onPick: (id) => { if (adf) return; const rec = find(id); if (rec) onPointClick(rec); },  // prompts for a reason too
     popupRows: (id) => { const rec = find(id); return rec ? tooltipRows(rec, null).filter(([l]) => l !== '') : []; },
     // Tag buttons under Exclude: one per list, saying what a click will do.
     popupActions: (id) => {
+      if (adf) return [];
       const rec = find(id);
       const key = rec && saleTagKey(rec);
       if (!key) return [];
@@ -2131,7 +2164,7 @@ function linkPair(a, b) {
  * drawn pale beside the pale end of the price ramp read as a real, cheap
  * sale.
  */
-function paintRateMaps(keys) {
+function paintRateMaps(keys, prefix = '') {
   const metric = areaMetric();
   const areaFmt = areaMoneyFmt();
   const cms = cmsFor(metric);
@@ -2141,8 +2174,8 @@ function paintRateMaps(keys) {
   const painters = {
     price: () => {
       const b = priceBuckets(recs.map(adj.adjust), areaFmt);
-      return paintMap('price', {
-        title: `CMS Heatmap – Price per ${spec.perUnit}`,
+      return paintMap(prefix + 'price', {
+        title: `${tierWord()} Heatmap – Price per ${spec.perUnit}`,
         cms,
         adj,
         colored: recs,
@@ -2160,8 +2193,8 @@ function paintRateMaps(keys) {
       const sb = priceBuckets(sized.map(sizeOf), spec.sizeText, SIZE_RAMP);
       const sizeless = recs.length - sized.length;
       const ff = opts.unit === 'ff';
-      return paintMap('size', {
-        title: `CMS Heatmap – ${spec.sizeTitle}`,
+      return paintMap(prefix + 'size', {
+        title: `${tierWord()} Heatmap – ${spec.sizeTitle}`,
         cms,
         adj,
         colored: sized,
@@ -2175,8 +2208,8 @@ function paintRateMaps(keys) {
     year: () => {
       const yearOf = (r) => (Number.isFinite(r.dateMs) ? new Date(r.dateMs).getFullYear() : null);
       const y = yearColors(recs.map(yearOf));
-      return paintMap('year', {
-        title: 'CMS – Map by Year of Sale', cms, adj, colored: recs,
+      return paintMap(prefix + 'year', {
+        title: `${tierWord()} – Map by Year of Sale`, cms, adj, colored: recs,
         colorOf: (r) => y.colorOf(yearOf(r)), legend: y.legend,
         note: 'Pans and zooms with the map beside it.',
       });
@@ -2184,16 +2217,16 @@ function paintRateMaps(keys) {
     zoning: () => {
       const zones = topZones(recs, ZONE_COLORS.length);
       const byZone = new Map(zones.map((z, i) => [z.key, ZONE_COLORS[i]]));
-      return paintMap('zoning', {
-        title: 'CMS – Map by Zoning', cms, adj, colored: recs,
+      return paintMap(prefix + 'zoning', {
+        title: `${tierWord()} – Map by Zoning`, cms, adj, colored: recs,
         colorOf: (r) => byZone.get(String(r.zone || '').trim()) || OTHER_COLOR,
         legend: [...zones.map((z) => ({ label: `${z.key} (${z.count})`, color: byZone.get(z.key) })),
           ...(recs.some((r) => !byZone.has(String(r.zone || '').trim())) ? [{ label: 'Other', color: OTHER_COLOR }] : [])],
         note: 'The eight most common zones; the rest are Other.',
       });
     },
-    waterinf: () => paintMap('waterinf', {
-      title: 'CMS – Map by Water Influence', cms, adj, colored: recs,
+    waterinf: () => paintMap(prefix + 'waterinf', {
+      title: `${tierWord()} – Map by Water Influence`, cms, adj, colored: recs,
       colorOf: (r) => WATER_GROUP_COLORS[waterOf(r).group] || '#dddddd',
       legend: [...WATER_GROUPS.map((g) => ({ label: g, color: WATER_GROUP_COLORS[g] })),
         ...(recs.some((r) => !waterOf(r).group) ? [{ label: 'No water data', color: '#dddddd' }] : [])],
@@ -2203,6 +2236,277 @@ function paintRateMaps(keys) {
   const apis = keys.map((k) => painters[k]());
   if (apis.length === 2) linkPair(apis[0], apis[1]);
   return apis;
+}
+
+// ---------- sales by year, distributions, sale/assessment (2026-11-01) --------
+//
+// Three of the land dashboard's chart tabs the page did not have, built for
+// whichever set is in scope -- the CMS on the CMS Charts page, the near market
+// on ADF Overview:
+//   * Sales by year: one bar per calendar year of sale, a year with no sales
+//     a gap rather than left out.
+//   * Distributions: the price per unit, the time-adjusted rates in front of
+//     the nominal ones on one bin grid (the template's nominal-behind-adjusted
+//     histogram), and the size beside it.
+//   * Sale / Assessment: the ratio over time and its distribution, with the
+//     review-flag thresholds.
+
+function salesByYearChart(cms) {
+  const years = cms.fitted.map((r) => (Number.isFinite(r.dateMs) ? new Date(r.dateMs).getFullYear() : null))
+    .filter((y) => y != null);
+  const bars = [];
+  if (years.length) {
+    const lo = Math.min(...years);
+    const hi = Math.max(...years);
+    const n = new Map();
+    for (const y of years) n.set(y, (n.get(y) || 0) + 1);
+    for (let y = lo; y <= hi; y++) bars.push({ label: String(y), n: n.get(y) || 0 });
+  }
+  const undated = cms.fitted.length - years.length;
+  return drawCountBars({
+    title: 'Sales by Year',
+    subtitle: criteriaLine(cms, false),
+    note: sub('Each sale counted once, in the calendar year it sold.',
+      undated ? `${plural(undated, 'sale')} without a sale date not counted.` : ''),
+    pngName: pngName(`${tierWord()} Sales by Year`),
+    bars,
+    stats: years.length ? [{ label: 'Sales', value: String(years.length) }] : [],
+  });
+}
+
+function distributionCharts(cms, adj) {
+  const spec = unitSpec();
+  const fmt = areaMoneyFmt();
+  const nominal = cms.fitted.map((r) => r[cms.metric]).filter((v) => Number.isFinite(v) && v > 0);
+  const adjusted = adj.adjusted ? cms.fitted.map(adj.adjust).filter((v) => Number.isFinite(v) && v > 0) : null;
+  const front = adjusted || nominal;
+  // A dollar-per-day trend steeper than a cheap sale's price carries it to $0
+  // (timeAdjust clamps there); say how many rather than let the adjusted
+  // series quietly hold fewer sales than the nominal one behind it.
+  const zeroed = adjusted ? nominal.length - adjusted.length : 0;
+  const out = [drawHistogram({
+    title: `Price per ${spec.perUnit} Distribution`,
+    subtitle: criteriaLine(cms, adj.adjusted),
+    note: sub(adjusted ? 'Time-adjusted rates in front, nominal rates behind, on one bin grid.' : 'Nominal rates, as sold.', adj.note,
+      zeroed ? `${plural(zeroed, 'sale')} adjusted to $0 or below by the dollar trend ${zeroed === 1 ? 'is' : 'are'} not in the adjusted series.` : ''),
+    pngName: pngName(`${tierWord()} Price per ${spec.perUnit} Distribution`),
+    values: front,
+    back: adjusted ? nominal : null,
+    labels: ['Time-adjusted', 'Nominal'],
+    xLabel: adjusted ? `Adjusted Price per ${spec.perUnit}` : `Price per ${spec.perUnit}`,
+    axisFormat: fmtAxisDollar,
+    stats: front.length ? [
+      { label: 'Sales', value: String(front.length) },
+      { label: adjusted ? 'Median (adjusted)' : 'Median', value: fmt(median(front)) },
+      ...(adjusted ? [{ label: 'Median (nominal)', value: fmt(median(nominal)) }] : []),
+    ] : [],
+    empty: `No sales in the current filter carry a price per ${spec.perUnit.toLowerCase()}.`,
+  })];
+  const sizes = cms.fitted.map((r) => r[sizeField()]).filter((v) => Number.isFinite(v) && v > 0);
+  out.push(drawHistogram({
+    title: `${spec.sizeTitle} Distribution`,
+    subtitle: criteriaLine(cms, false),
+    note: 'Size is not time-adjusted.',
+    pngName: pngName(`${tierWord()} ${spec.sizeTitle} Distribution`),
+    values: sizes,
+    xLabel: sizeAxisLabel(),
+    axisFormat: fmtAxisComma,
+    stats: sizes.length ? [
+      { label: 'Sales', value: String(sizes.length) },
+      { label: 'Median', value: spec.sizeText(median(sizes)) },
+    ] : [],
+    empty: 'No sales in the current filter carry a size in this unit.',
+  }));
+  return out;
+}
+
+function saleAsmtCharts(cms) {
+  const ratio = (r) => r.saleToAsmt;
+  const pts = pointsFor(cms, (r) => r.dateMs, ratio);
+  const fits = fitsFor(pts, { curve: 'none' });
+  const fitted = inOnly(pts);
+  const med = median(fitted.map((p) => p.y));
+  const vals = cms.fitted.map(ratio).filter((v) => Number.isFinite(v) && v > 0);
+  return [
+    chart({
+      title: 'Sale-to-Assessment Ratio Over Time',
+      subtitle: criteriaLine(cms, false),
+      note: 'Sale price over total assessed value; 1 = sold at assessment.',
+      points: pts, xIsDate: true,
+      xLabel: 'Sale Date', yLabel: 'Sale / Assessment',
+      yFormat: (v) => v.toFixed(2), yAxisFormat: (v) => v.toFixed(1),
+      fits, refLines: [{ y: 1, label: '1.0' }],
+      legend: legendFor(fits, pts),
+      stats: [
+        { label: 'Sales', value: String(fitted.length) },
+        ...(med != null ? [{ label: 'Median ratio', value: med.toFixed(2) }] : []),
+      ],
+      empty: 'No sales in the current filter carry an assessed value.',
+    }),
+    drawHistogram({
+      title: 'Sale-to-Assessment Ratio Distribution',
+      subtitle: criteriaLine(cms, false),
+      note: 'Reference lines at 1 and at the review-flag thresholds (0.25 very low, 0.50 low, 2.50 high).',
+      pngName: pngName(`${tierWord()} Sale-to-Assessment Ratio Distribution`),
+      values: vals,
+      bins: 20,
+      refLines: [
+        { x: 1, label: '1.0', color: R_STYLE.linear },
+        { x: SALE_ASMT_TIERS.veryLow, color: INK.muted },
+        { x: SALE_ASMT_TIERS.low, color: INK.muted },
+        { x: SALE_ASMT_TIERS.high, color: INK.muted },
+      ],
+      xLabel: 'Sale / Assessment',
+      axisFormat: (v) => v.toFixed(1),
+      stats: vals.length ? [
+        { label: 'Sales', value: String(vals.length) },
+        { label: 'Median', value: median(vals).toFixed(2) },
+      ] : [],
+      empty: 'No sales in the current filter carry an assessed value.',
+    }),
+  ];
+}
+
+/** The tabs the CMS Charts and ADF Overview pages share after the rate charts. */
+function extraCharts() {
+  const cms = cmsFor(areaMetric());
+  const adj = adjusterFor(cms);
+  return [salesByYearChart(cms), ...distributionCharts(cms, adj), ...saleAsmtCharts(cms)];
+}
+
+// ---------- the fitted maps (2026-11-01) ---------------------------------
+//
+// ADF Overview's Isovalue and Location effect tabs (lib/locationMaps.js, the
+// land template's helpers.R section 28): fitted in a worker, keyed on what was
+// sent, so a render that finds the answer not yet back draws the sales and
+// says the surface is being fitted, and the answer's arrival re-renders.
+
+let fitWorker = null;
+const fitCache = new Map();
+const fitPending = new Set();
+const FIT_CACHE_MAX = 24;
+
+/** FNV-1a over a string, as a short key. */
+function hashText(t) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < t.length; i++) {
+    h ^= t.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
+}
+
+function getFitWorker() {
+  if (fitWorker) return fitWorker;
+  try {
+    fitWorker = new Worker(new URL('../workers/locationMaps.worker.js', import.meta.url), { type: 'module' });
+  } catch (err) {
+    console.warn('Location-map worker failed to start', err);
+    return null;
+  }
+  fitWorker.addEventListener('message', (e) => {
+    const { key, result } = e.data || {};
+    fitPending.delete(key);
+    fitCache.set(key, result);
+    while (fitCache.size > FIT_CACHE_MAX) fitCache.delete(fitCache.keys().next().value);
+    render();
+  });
+  return fitWorker;
+}
+
+/** The cached result for this request, or null while it is being fitted. */
+function fitFor(kind, payload) {
+  const key = `${kind}:${hashText(JSON.stringify(payload))}`;
+  if (fitCache.has(key)) return fitCache.get(key);
+  if (!fitPending.has(key)) {
+    const w = getFitWorker();
+    if (!w) return { ok: false, reason: 'This browser could not start the worker that fits the surface.', caption: 'This browser could not start the worker that fits the surface.' };
+    fitPending.add(key);
+    w.postMessage({ key, kind, ...payload });
+  }
+  return null;
+}
+
+const subjectPoint = () => {
+  const s = data.meta?.subject;
+  return Number.isFinite(s?.lat) && Number.isFinite(s?.lng) ? { lat: s.lat, lng: s.lng } : null;
+};
+
+/** The location model's controls on Manitoba open data: the land template's
+ *  list (parcel size, sale date, zoning, servicing) as far as the roll and the
+ *  sales archive carry it, plus property type, water and cultivation. A
+ *  control under half recorded is left out and named in the caption. */
+const LOCFX_CONTROLS = [
+  { col: 'acres', kind: 'smooth', log: true, label: 'parcel size' },
+  { col: 'dateMs', kind: 'smooth', label: 'sale date' },
+  { col: 'zone', kind: 'factor', label: 'zoning' },
+  { col: 'family', kind: 'factor', label: 'property type' },
+  { col: 'water', kind: 'factor', label: 'water influence' },
+  { col: 'cult', kind: 'smooth', label: 'cultivated %' },
+];
+
+/** A surface map: the sales as the small grey context dots, so the fitted
+ *  bands under them stay readable. */
+function paintSurfaceMap(key, { title, cms, recs, result, waitingNote }) {
+  const m = paintMap(key, {
+    title, cms, adj: { adjusted: false }, colored: [], context: recs,
+    colorOf: () => null,
+    legend: result?.ok ? result.legend : [],
+    note: result == null ? waitingNote : result.caption,
+  });
+  m.setSurface(result?.ok ? { fills: result.fills, lines: result.lines } : null);
+  // The work file lists a map with no coloured sales as "no data": a
+  // surface map's data is the surface.
+  mapCounts.set(key, result?.ok ? recs.length : 0);
+  return m;
+}
+
+function paintIsovalueMap() {
+  const spec = unitSpec();
+  const cms = cmsFor(areaMetric());
+  const recs = activeRecords().filter(located);
+  const unit = `$/${{ acres: 'ac', sf: 'sf', ff: 'ff' }[opts.unit] || 'ac'}`;
+  const result = fitFor('iso', {
+    sales: recs.map((r) => ({ lon: r.lng, lat: r.lat, value: r[cms.metric], dateMs: r.dateMs })),
+    opts: { effMs: effectiveMs(), subject: subjectPoint(), unit, digits: opts.unit === 'sf' ? 2 : 0 },
+  });
+  return [paintSurfaceMap('adf-iso', {
+    title: `${tierWord()} Isovalue – Price per ${spec.perUnit}`, cms, recs, result,
+    waitingNote: `Fitting the surface on ${plural(recs.length, 'sale')}… (needs at least ${ISO_MIN_N}).`,
+  })];
+}
+
+function paintLocationMaps() {
+  const cms = cmsFor(areaMetric());
+  const recs = activeRecords().filter(located);
+  const result = fitFor('locfx', {
+    sales: recs.map((r) => ({
+      lon: r.lng,
+      lat: r.lat,
+      price: r.price,
+      acres: r.acres ?? r.lotAcres,
+      dateMs: r.dateMs,
+      zone: String(r.zone || '').trim(),
+      family: familyOf(r.saleType, r.primaryProperty),
+      water: waterOf(r).group || '',
+      cult: Number.isFinite(r.ag?.cover?.cult) ? r.ag.cover.cult * 100 : null,
+    })),
+    controls: LOCFX_CONTROLS,
+    opts: { subject: subjectPoint(), what: 'sale price', noun: 'sale' },
+  });
+  const waiting = `Fitting the location model on ${plural(recs.length, 'sale')}… (needs at least ${LOCFX_MIN_N}).`;
+  const half = (part) => {
+    if (result == null) return null;
+    return result.ok ? { ok: true, ...result[part] } : { ok: false, caption: result.reason };
+  };
+  const a = paintSurfaceMap('adf-locfx', {
+    title: `${tierWord()} – Location Effect on Sale Price`, cms, recs, result: half('effect'), waitingNote: waiting,
+  });
+  const b = paintSurfaceMap('adf-locunc', {
+    title: `${tierWord()} – Location Effect Uncertainty (95% band)`, cms, recs, result: half('unc'), waitingNote: waiting,
+  });
+  linkPair(a, b);
+  return [a, b];
 }
 
 // ---------- comparables map ------------------------------------------
@@ -2671,6 +2975,12 @@ function compTableSpec() {
  * them. Every painter runs inside withPageUnit for its page.
  */
 const PAGE_MAPS = {
+  // ADF Overview (2026-11-01): the land dashboard's near-market maps.
+  adf: [
+    { label: 'Price & Year', keys: ['adf-price', 'adf-year'], paint: () => paintRateMaps(['price', 'year'], 'adf-') },
+    { label: 'Isovalue', keys: ['adf-iso'], paint: () => paintIsovalueMap() },
+    { label: 'Location effect', keys: ['adf-locfx', 'adf-locunc'], paint: () => paintLocationMaps() },
+  ],
   rates: [
     // The report map (2026-10-20). `keys` is a getter: the number of comp
     // maps is the user's to change.
@@ -2704,11 +3014,16 @@ function mapHome(key) {
  * per Acre by Size" and "Price per SF by Size" land in the same tab. A
  * chart no pattern names goes to a "More" tab rather than disappearing.
  */
+const SHARED_TABS = [
+  ['Over Time & Size', /^Land Price per .* Over Time$|by Size$/],
+  ['Zoning & Distance', /and Zoning$|by Distance from/],
+  ['Sales by year', /^Sales by Year$/],
+  ['Distributions', /^Price per .* Distribution$|^Lot (Size|Frontage) .*Distribution$/],
+  ['Sale/Assessment', /^Sale-to-Assessment Ratio/],
+];
 const CHART_GROUPS = {
-  rates: [
-    ['Over Time & Size', /Over Time$|by Size$/],
-    ['Zoning & Distance', /and Zoning$|by Distance from/],
-  ],
+  adf: SHARED_TABS,
+  rates: SHARED_TABS,
   ag: [
     ['MASC Rating', /Over Time by MASC Rating$|^Farmland Price/],
     ['Cultivation & Soil', /by Cultivation Ratio$|^Price per .* by Soil Type$/],
@@ -2878,7 +3193,7 @@ function agConsBar() {
 
 function renderPage() {
   const page = pageOf(opts.tab);
-  return withPageUnit(page, () => {
+  return withScope(page, () => withPageUnit(page, () => {
     const out = [];
     if (page === 'ag') out.push(agConsBar());
     const mapTabs = PAGE_MAPS[page] || [];
@@ -2907,7 +3222,7 @@ function renderPage() {
       out.push(sec);
     }
     return out;
-  });
+  }));
 }
 
 // ---------- table view ---------------------------------------------
@@ -3358,7 +3673,7 @@ function syncControls() {
   // Tab state.
   const onTotal = opts.tab === 'total';
   const tab = pageOf(opts.tab);
-  for (const [key, btn] of [['rates', els.tabRates], ['total', els.tabTotal], ['water', els.tabWater], ['ag', els.tabAg]]) {
+  for (const [key, btn] of [['adf', els.tabAdf], ['rates', els.tabRates], ['total', els.tabTotal], ['water', els.tabWater], ['ag', els.tabAg]]) {
     btn.setAttribute('aria-selected', String(tab === key));
     btn.classList.toggle('is-on', tab === key);
   }
@@ -3461,7 +3776,8 @@ function syncControls() {
  * the previous tab back.
  */
 const WORK_TABS = [
-  ['rates', 'Land Price/Unit'],
+  ['adf', 'ADF Overview'],
+  ['rates', 'CMS Charts'],
   ['ag', 'Agricultural'],
   ['total', 'Total/Per Lot Price'],
   ['water', 'Water'],
@@ -3950,6 +4266,7 @@ function setOpt(patch) {
   render();
 }
 
+els.tabAdf.addEventListener('click', () => setOpt({ tab: 'adf' }));
 els.tabRates.addEventListener('click', () => setOpt({ tab: 'rates' }));
 els.tabTotal.addEventListener('click', () => setOpt({ tab: 'total' }));
 els.tabWater.addEventListener('click', () => setOpt({ tab: 'water' }));
@@ -3996,7 +4313,11 @@ channel.addEventListener('message', (e) => {
   const msg = e.data;
   if (!msg || msg.type !== 'sales') return;
   if (opts.frozen) return;
-  data = { records: Array.isArray(msg.records) ? msg.records : [], meta: msg.meta || null };
+  data = {
+    records: Array.isArray(msg.records) ? msg.records : [],
+    adfRecords: Array.isArray(msg.adfRecords) ? msg.adfRecords : [],
+    meta: msg.meta || null,
+  };
   receivedAt = Date.now();
   syncControls();
   render();

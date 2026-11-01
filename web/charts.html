@@ -164,9 +164,15 @@
       </details>
 
       <div class="charts-tabs" role="tablist" aria-label="Chart set">
+        <!-- ADF Overview and CMS Charts (2026-11-01), the land dashboard's
+             first two pages: the near market (every loaded sale less nominal
+             and far-flung ones), then the ticked comparables. -->
+        <button type="button" id="tab-adf" role="tab" aria-selected="false"
+                aria-controls="charts-grid"
+                title="The near market: every sale the search loaded, less nominal and far-flung sales and unticked municipalities — with the isovalue and location-effect maps.">ADF Overview</button>
         <button type="button" id="tab-rates" role="tab" aria-selected="true"
                 aria-controls="charts-grid"
-                title="Price per acre, per square foot or per front foot — the land-rate views.">Land Price/Unit</button>
+                title="The ticked comparables (CMS): price per acre, per square foot or per front foot — the land-rate views.">CMS Charts</button>
         <!-- Order: Jason, 2026-09-23 — Agricultural after Land rates, with
              Water last. The Map tab folded into each page's map row
              (2026-10-06). -->

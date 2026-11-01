@@ -251,7 +251,7 @@ test('the charts tab can reach the grid: set-excluded is handled', () => {
   assert.ok(/type === 'set-excluded'\) applyChartsExclusion\(/.test(main), 'main window ignores set-excluded');
   const charts = readFileSync(path.join(dir, '../src/charts/main.js'), 'utf8').replace(/\/\/.*$/gm, '');
   assert.ok(/type: 'set-excluded'/.test(charts), 'charts tab never sends set-excluded');
-  assert.ok(/onPointClick: opts\.frozen \? null : onPointClick/.test(charts), 'charts never pass the click handler');
+  assert.ok(/onPointClick: opts\.frozen \|\| inAdf\(\) \? null : onPointClick/.test(charts), 'charts never pass the click handler');
 });
 
 console.log(`\n${passed}/${passed} passed`);

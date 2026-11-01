@@ -74,7 +74,7 @@ console.log('contracts');
 test('only the Agricultural page fits the filtered set, and says so', () => {
   const main = code('src/charts/main.js');
   assert.match(main, /const ag = opts\.tab === 'ag' && agConsActive\(\);[\s\S]*?const active = ag \? ticked\.filter\(agConsistent\) : ticked;/);
-  assert.match(main, /const cacheKey = ag \? `\$\{metric\}\|ag` : metric;/);
+  assert.match(main, /const cacheKey = `\$\{scope\}\|\$\{ag \? `\$\{metric\}\|ag` : metric\}`;/);
   assert.match(main, /if \(agOut\?\.has\(rec\.saleId\)\) return 'trimmed';/);
   assert.match(main, /cms\.ag \? `; Ag: \$\{cms\.ag\.words\}` : ''/);
   assert.match(main, /label: 'Per year \(all ticked\)'/);

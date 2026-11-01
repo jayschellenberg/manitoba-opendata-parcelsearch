@@ -55,7 +55,10 @@ function convertSize(v, fromUom, toUom) {
  */
 export function criteriaText(o) {
   const c = o.criteria || {};
-  const parts = [o.adjusted ? 'CMS (Time-Adjusted)' : 'CMS'];
+  // `tier` names the set: the CMS (the grid's ticked sales) or the ADF Overview
+  // page's near market (2026-11-01).
+  const tier = o.tier || 'CMS';
+  const parts = [o.adjusted ? `${tier} (Time-Adjusted)` : tier];
 
   // Distance. The main window's distance filter measures from the SUBJECT,
   // so it can only be stated when the charts measure from the subject too.

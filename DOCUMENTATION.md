@@ -1123,8 +1123,8 @@ subtitle states. Clicking a dot sends `set-excluded` back, and the main window
 unticks those rows (`applyChartsExclusion`): the grid stays the one source of the
 selection, so the charts, the map and the CSV export always agree.
 
-**Pages** (order set by Jason): **Land Price/Unit** · **Agricultural** ·
-**Total/Per Lot Price** · **Water**. Since 2026-10-06 each page follows
+**Pages** (order set by Jason): **ADF Overview** · **CMS Charts** (was Land
+Price/Unit) · **Agricultural** · **Total/Per Lot Price** · **Water**. Since 2026-10-06 each page follows
 LandShiny's layout: a row of **map tabs** on top and a row of **chart tabs**
 below, each tab showing two side by side at half the page width (stacking below
 900px). The tab sets are `PAGE_MAPS` and `CHART_GROUPS` in `main.js`; a chart
@@ -1134,10 +1134,45 @@ old Map tab folded into Land Price/Unit, one map per former colour-by mode.
 
 | Page | Map tabs | Chart tabs |
 |---|---|---|
-| Land Price/Unit | Comparables · Price & Lot Size · Year & Zoning · Water Influence | Over Time & Size · Zoning & Distance |
+| ADF Overview | Price & Year · Isovalue · Location effect | Over Time & Size · Zoning & Distance · Sales by year · Distributions · Sale/Assessment |
+| CMS Charts | Comparables · Price & Lot Size · Year & Zoning · Water Influence | Over Time & Size · Zoning & Distance · Sales by year · Distributions · Sale/Assessment |
 | Agricultural | MASC & CLI | MASC Rating · Cultivation & Soil · CLI & Land Cover · Cover Mix · Sale/Assessment · S/A Distribution |
 | Total/Per Lot Price | Price per Lot | Total Price · Per Lot · Per Lot by Distance & Assessed |
 | Water | Water Class | Influence & Class · Flood & Water Body · Size & Distance · Summary & Premium · Paired Sales |
+
+**ADF Overview** (2026-11-01, the land dashboard's first page). The NEAR
+MARKET where every other page charts the CMS: every sale the search loaded, less
+the first three filter steps -- unticked municipality, nominal and far-flung
+sales -- whatever the analysis filters after them did (`lastAdfRows` in
+`web/src/main.js`; exact because those three run first, and the pass throws if
+`ADF_STEPS` stops being the first steps). Posted as `adfRecords` beside
+`records`. The page runs the CMS page's builders with `scope = 'adf'`
+(`withScope()` in `charts/main.js`): the criteria line says ADF and states the
+span of the near market, the percentile trim is off, and a click does nothing,
+since an ADF sale is not a grid tick.
+
+Its two fitted map tabs port `helpers.R` sections 28 / 28b
+(`web/src/lib/locationMaps.js`, `lib/spatialSmooth.js`), fitted in a worker
+(`workers/locationMaps.worker.js`) keyed on what was sent:
+- **Isovalue** -- price per unit smoothed over location by a thin-plate spline
+  on log value (REML), blank beyond the auto mask, 15 sales minimum, bands over
+  the 2nd-98th percentile. Time-adjusted by the set's own trend fitted on LOG
+  value (a % per year), not the template's dollars: a dollar trend across bare
+  land and house lots took 247 of 1,063 Springfield sales to zero.
+- **Location effect** and its **uncertainty** -- log(price) ~ parcel size + sale
+  date + zoning + property type + water influence + cultivated % + s(x, y); the
+  map is the s(x, y) term as +/- % against the sales' average location, beside
+  the half-width of its 95% band. 150 sales minimum; a control under half
+  recorded is left out and named.
+The smoother is not mgcv (knot-based thin-plate splines, not mgcv's eigen
+basis), so `test/spatialSmooth.test.js` holds it to an mgcv 1.9.4 fit of the
+same data: location term r > 0.995, standard errors within 20%.
+
+**Sales by year, Distributions, Sale/Assessment** (2026-11-01) are on both
+ADF Overview and CMS Charts: count bars per calendar year (`drawCountBars`), the
+price-per-unit histogram with the time-adjusted rates in front of the nominal
+ones on one bin grid (`drawHistogram`'s `back`) beside the size histogram, and
+the sale/assessment ratio over time and its distribution.
 
 **Comparables map** (2026-10-20, Jason's hand-built report maps as the model):
 the subject as a red pin with a "Subject Property" callout, each tagged comp as
