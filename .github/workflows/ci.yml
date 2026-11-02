@@ -31,7 +31,7 @@ jobs:
             !web/public/data
           sparse-checkout-cone-mode: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           # Node 22 (current LTS) — covers vite 7's `^20.19.0 || >=22.12.0`
           # and gives headroom for a future bump to vite 8 (needs >=22.12).
