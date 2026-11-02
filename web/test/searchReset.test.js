@@ -106,7 +106,7 @@ const PER_RESULT = [
   'currentRows', 'currentPage',
   'lastResultFc', 'lastZoningFc', 'lastDevPlanFc',
   'lastAsOfHighlight', 'lastWithheldGeometry', 'pinPoint',
-  'csvFullRows', 'lastSalesSource', 'csvFullBaseMsg', 'csvMatchedMunis', 'lastSalesWaterfall',
+  'csvFullRows', 'lastSalesSource', 'csvFullBaseMsg', 'csvMatchedMunis', 'lastSalesWaterfall', 'lastAdfRows',
   'lastSalesLookupWarning',
   'basicFullRows', 'basicFullMsg',
   'enteredRollOrder', 'salesMuniLoaded',

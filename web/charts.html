@@ -15,6 +15,8 @@
              so a chart can be read (or screenshotted) while the filters
              keep moving next door. -->
         <p id="charts-status" class="charts-status">Waiting for the Sales Analysis tab…</p>
+        <!-- What each page charts and what separates the two sets (2026-11-01). -->
+        <p id="set-note" class="set-note"></p>
         <!-- Signs every chart's caption and PNG, as the R template ends its
              caption "… | {Company}". Saved in this browser; empty = unsigned. -->
         <label class="charts-firm">
@@ -41,6 +43,20 @@
           </div>
         </div>
 
+        <!-- Bare land or improved (2026-11-01), on BOTH pages: a $/acre
+             across bare land and land-and-building sales measures buildings
+             as well as land. -->
+        <div class="ctl" id="ctl-vacancy">
+          <span class="ctl-label" id="vacancy-label">Sales</span>
+          <div class="segmented" role="radiogroup" aria-labelledby="vacancy-label">
+            <button type="button" id="vac-all" role="radio" aria-checked="true">All</button>
+            <button type="button" id="vac-land" role="radio" aria-checked="false"
+                    title="Bare land only: every parcel in the sale has assessment data and no building.">Bare land</button>
+            <button type="button" id="vac-improved" role="radio" aria-checked="false"
+                    title="Improved only: at least one parcel in the sale carries a building.">Improved</button>
+          </div>
+        </div>
+
         <!-- Two separate questions, deliberately not one control:
              WHETHER the by-size and by-distance charts plot adjusted
              rates, and on WHAT BASIS the adjustment (and the over-time
@@ -59,7 +75,8 @@
           <label class="ctl-label" for="adj-basis">Trend basis</label>
           <div class="ctl-pair">
             <select id="adj-basis">
-              <option value="fitted">Fitted trend</option>
+              <option value="pct">Fitted trend, % per year</option>
+              <option value="fitted">Fitted trend, $ per day</option>
               <option value="override">Rate per year…</option>
             </select>
             <input type="number" id="adj-rate" step="0.5" aria-label="Annual adjustment rate, percent" hidden />
@@ -164,9 +181,15 @@
       </details>
 
       <div class="charts-tabs" role="tablist" aria-label="Chart set">
+        <!-- ADF Overview and CMS Charts (2026-11-01), the land dashboard's
+             first two pages: the near market (every loaded sale less nominal
+             and far-flung ones), then the ticked comparables. -->
+        <button type="button" id="tab-adf" role="tab" aria-selected="false"
+                aria-controls="charts-grid"
+                title="The near market: every sale the search loaded, less nominal and far-flung sales and unticked municipalities — with the isovalue and location-effect maps.">ADF Overview</button>
         <button type="button" id="tab-rates" role="tab" aria-selected="true"
                 aria-controls="charts-grid"
-                title="Price per acre, per square foot or per front foot — the land-rate views.">Land Price/Unit</button>
+                title="The ticked comparables (CMS): price per acre, per square foot or per front foot — the land-rate views.">CMS Charts</button>
         <!-- Order: Jason, 2026-09-23 — Agricultural after Land rates, with
              Water last. The Map tab folded into each page's map row
              (2026-10-06). -->

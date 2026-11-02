@@ -24,6 +24,9 @@ import { solveCompLabels, nearestOnBox, pinBox, PIN_HEAD_UP } from '../lib/compL
 
 let protocolAdded = false;
 
+/** The surface bands' opacity: the land template's APPRAISAL_ISO_OPACITY + 0.15 (its PNG value). */
+export const SURFACE_OPACITY = 0.55;
+
 /** Device pixels per CSS pixel the pin is drawn at, so it stays crisp in the 1950px PNG. */
 const PIN_RATIO = 3;
 
@@ -247,6 +250,21 @@ export function createSalesMap({ onPick, popupRows, popupActions = () => [], pin
     // PARCEL_KEY) and coloured like their dots.
     // From zoom 10 (OUTLINE_MINZOOM); further out the dots carry the map alone.
     // Under the rings, dots and pin, which stay the click targets.
+    // A fitted surface (the ADF page's isovalue and location maps,
+    // 2026-11-01): banded cells and their edges, over the basemap and the
+    // municipal lines, under every sale. setSurface() fills it; empty on
+    // every other map.
+    map.addSource('surface', { type: 'geojson', data: EMPTY });
+    map.addSource('surface-edges', { type: 'geojson', data: EMPTY });
+    map.addLayer({
+      id: 'surface-fill', type: 'fill', source: 'surface',
+      paint: { 'fill-color': ['get', 'color'], 'fill-opacity': ['case', ['==', ['get', 'weak'], true], 0.15, SURFACE_OPACITY], 'fill-antialias': false },
+    });
+    map.addLayer({
+      id: 'surface-line', type: 'line', source: 'surface-edges',
+      paint: { 'line-color': '#222222', 'line-width': 0.6, 'line-opacity': 0.55 },
+    });
+    if (pendingSurface) { applySurface(pendingSurface); pendingSurface = null; }
     map.addSource('parcel-tiles', { type: 'vector', url: `pmtiles://${PARCEL_TILES_URL}` });
     map.addLayer({
       id: 'sale-outline-fill', type: 'fill', source: 'parcel-tiles', 'source-layer': 'parcels',
@@ -592,6 +610,12 @@ export function createSalesMap({ onPick, popupRows, popupActions = () => [], pin
     map.getSource('leaders').setData({ type: 'FeatureCollection', features: leaders });
   }
 
+  let pendingSurface = null;
+  function applySurface(sf) {
+    map.getSource('surface').setData(sf?.fills || EMPTY);
+    map.getSource('surface-edges').setData(sf?.lines || EMPTY);
+  }
+
   function apply({ fc, subject, rings, fitKey }) {
     if (pins) preparePins(fc, subject);
     map.getSource('sales').setData(fc);
@@ -691,6 +715,11 @@ export function createSalesMap({ onPick, popupRows, popupActions = () => [], pin
     setData(data) {
       if (ready) apply(data);
       else pending = data;
+    },
+    /** A fitted surface's {fills, lines} GeoJSON, or null to clear it. */
+    setSurface(sf) {
+      if (ready) applySurface(sf);
+      else pendingSurface = sf || null;
     },
     resize() {
       map.resize();

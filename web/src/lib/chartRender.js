@@ -1459,6 +1459,10 @@ export function drawStackedBars(spec) {
  *
  * spec: title, subtitle, note, stats, pngName,
  *       values     numbers
+ *       back       optional numbers drawn BEHIND `values`, pale (the land
+ *                  template's nominal-behind-adjusted distribution, 2026-11-01);
+ *                  both share one bin grid so a bar reads straight across
+ *       labels     [frontLabel, backLabel] for the legend when `back` is given
  *       bins       count (default 20)
  *       refLines   [{x, label, color}]
  *       xLabel, axisFormat (x ticks)
@@ -1467,21 +1471,25 @@ export function drawStackedBars(spec) {
 export function drawHistogram(spec) {
   const {
     title, subtitle = '', note = '', stats = [], pngName = '',
-    values = [], bins = 20, refLines = [], xLabel = '', axisFormat = fmtAxisComma,
+    values = [], back = null, labels = null, bins = 20, refLines = [], xLabel = '', axisFormat = fmtAxisComma,
     empty = 'No sales in the current filter carry this value.',
   } = spec;
   const { figure } = chartShell(title, subtitle);
   const v = values.filter((x) => Number.isFinite(x));
   if (!v.length) return emptyNote(figure, empty);
+  const bv = Array.isArray(back) ? back.filter((x) => Number.isFinite(x)) : [];
 
-  let lo = Math.min(...v);
-  let hi = Math.max(...v);
+  let lo = Math.min(...v, ...bv);
+  let hi = Math.max(...v, ...bv);
   for (const r of refLines) if (Number.isFinite(r.x)) { lo = Math.min(lo, r.x); hi = Math.max(hi, r.x); }
   const xs = niceTicks(lo, hi, 6);
   const width = (xs.hi - xs.lo) / bins || 1;
+  const binOf = (x) => Math.min(bins - 1, Math.max(0, Math.floor((x - xs.lo) / width)));
   const counts = new Array(bins).fill(0);
-  for (const x of v) counts[Math.min(bins - 1, Math.max(0, Math.floor((x - xs.lo) / width)))] += 1;
-  const ys = niceTicks(0, Math.max(...counts), 5);
+  for (const x of v) counts[binOf(x)] += 1;
+  const backCounts = new Array(bins).fill(0);
+  for (const x of bv) backCounts[binOf(x)] += 1;
+  const ys = niceTicks(0, Math.max(...counts, ...backCounts), 5);
 
   const plotW = VB_W - PAD.left - PAD.right;
   const plotH = VB_H - PAD.top - PAD.bottom;
@@ -1506,6 +1514,15 @@ export function drawHistogram(spec) {
       class: 'chart-tick', fill: R_STYLE.tick,
     }));
   }
+  backCounts.forEach((c, i) => {
+    if (!c) return;
+    const x0 = sx(xs.lo + i * width);
+    const x1 = sx(xs.lo + (i + 1) * width);
+    svg.appendChild(el('rect', {
+      x: x0, y: sy(c), width: Math.max(1, x1 - x0), height: sy(0) - sy(c),
+      fill: '#bdbdbd', 'fill-opacity': 0.7, stroke: '#8a8a8a', 'stroke-width': 0.75,
+    }));
+  });
   counts.forEach((c, i) => {
     if (!c) return;
     const x0 = sx(xs.lo + i * width);
@@ -1534,6 +1551,76 @@ export function drawHistogram(spec) {
     }));
   }
   svg.appendChild(text('Sales', {
+    x: 18, y: PAD.top + plotH / 2, 'text-anchor': 'middle', class: 'chart-axis-title', fill: R_STYLE.axisTitle,
+    transform: `rotate(-90 18 ${PAD.top + plotH / 2})`,
+  }));
+  figure.appendChild(svg);
+  const legend = bv.length ? [
+    { label: labels?.[0] || 'Values', color: R_STYLE.pointFill, dot: 'swatch' },
+    { label: labels?.[1] || 'Behind', color: '#bdbdbd', dot: 'swatch' },
+  ] : null;
+  appendChartFooter(figure, { svg, title, subtitle, legend, stats, note, pngName, strip: statStripEl(stats) });
+  return figure;
+}
+
+// ---------- count bars -------------------------------------------------
+
+/**
+ * Vertical count bars over ordered categories -- the land template's Sales
+ * by Year chart (2026-11-01): one bar per year, the count printed on it, a
+ * year with no sales drawn as a gap rather than left out.
+ *
+ * spec: title, subtitle, note, stats, pngName,
+ *       bars   [{label, n}]   in axis order
+ *       yLabel, empty
+ */
+export function drawCountBars(spec) {
+  const {
+    title, subtitle = '', note = '', stats = [], pngName = '', bars = [], yLabel = 'Sales',
+    empty = 'No sales in the current filter carry a sale date.',
+  } = spec;
+  const { figure } = chartShell(title, subtitle);
+  if (!bars.length || !bars.some((b) => b.n > 0)) return emptyNote(figure, empty);
+  const plotW = VB_W - PAD.left - PAD.right;
+  const plotH = VB_H - PAD.top - PAD.bottom;
+  const ys = niceTicks(0, Math.max(...bars.map((b) => b.n)), 5);
+  const sy = (y) => PAD.top + plotH - (y / ((ys.hi - ys.lo) || 1)) * plotH;
+  const slot = plotW / bars.length;
+  const svg = el('svg', {
+    viewBox: `0 0 ${VB_W} ${VB_H}`, class: 'chart-svg', role: 'img',
+    'aria-label': `${title}. ${bars.length} groups.`,
+  });
+  svg.appendChild(el('rect', { x: 0, y: 0, width: VB_W, height: VB_H, fill: R_STYLE.bg }));
+  for (const t of ys.ticks) {
+    svg.appendChild(el('line', {
+      x1: PAD.left, x2: PAD.left + plotW, y1: sy(t), y2: sy(t), stroke: R_STYLE.grid, 'stroke-width': 0.75,
+    }));
+    svg.appendChild(text(String(t), {
+      x: PAD.left - 8, y: sy(t) + 5, 'text-anchor': 'end', class: 'chart-tick', fill: R_STYLE.tick,
+    }));
+  }
+  const every = Math.max(1, Math.ceil(bars.length / 14));
+  bars.forEach((b, i) => {
+    const cx = PAD.left + slot * (i + 0.5);
+    const w = Math.max(2, slot * 0.7);
+    if (b.n > 0) {
+      svg.appendChild(el('rect', {
+        x: cx - w / 2, y: sy(b.n), width: w, height: sy(0) - sy(b.n),
+        fill: R_STYLE.pointFill, 'fill-opacity': 0.85, stroke: R_STYLE.pointStroke, 'stroke-width': 0.75,
+      }));
+      if (bars.length <= 30) {
+        svg.appendChild(text(String(b.n), {
+          x: cx, y: sy(b.n) - 5, 'text-anchor': 'middle', class: 'chart-ref-label', fill: R_STYLE.axisTitle,
+        }));
+      }
+    }
+    if (i % every === 0) {
+      svg.appendChild(text(String(b.label), {
+        x: cx, y: PAD.top + plotH + 22, 'text-anchor': 'middle', class: 'chart-tick', fill: R_STYLE.tick,
+      }));
+    }
+  });
+  svg.appendChild(text(yLabel, {
     x: 18, y: PAD.top + plotH / 2, 'text-anchor': 'middle', class: 'chart-axis-title', fill: R_STYLE.axisTitle,
     transform: `rotate(-90 18 ${PAD.top + plotH / 2})`,
   }));
