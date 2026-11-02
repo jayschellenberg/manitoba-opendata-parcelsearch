@@ -1168,6 +1168,27 @@ The smoother is not mgcv (knot-based thin-plate splines, not mgcv's eigen
 basis), so `test/spatialSmooth.test.js` holds it to an mgcv 1.9.4 fit of the
 same data: location term r > 0.995, standard errors within 20%.
 
+**Honesty rules on both pages** (2026-11-01):
+- **Sales switch: All / Bare land / Improved**, applied to ADF Overview and
+  CMS Charts alike, by the main window's own group rule (`vacancy` on each
+  record: every parcel vacant = bare land, any known building = improved,
+  neither when assessment data is missing). With the switch on All, the line
+  under the status warns whenever the near market mixes the two: a price per
+  acre across both measures buildings as well as land.
+- **Trend basis defaults to a percent per year** fitted on log price
+  (`logTrend` in `lib/salesCharts.js`), with its 95% range, and is NOT applied
+  when that range spans zero ("no measurable trend"). The dollar-per-day basis
+  (the R template's) is still a choice; under it, sales carried to $0 are
+  counted in the note. A stored 'fitted' setting from before moves to the
+  percent basis once (`adjBasisV2`).
+- **Location-effect cells whose 95% band includes zero are drawn faded**, and
+  the caption says what share of the map that is; on Winnipeg's 471 land sales
+  it was 81%.
+- **Isovalue bands are log-spaced** (equal ratios, two significant figures),
+  so a set spanning bare land and town lots does not spend one colour on most
+  of the map; the isovalue map applies its own trend only when measurable;
+  improved sales map total price, not price per acre.
+
 **Sales by year, Distributions, Sale/Assessment** (2026-11-01) are on both
 ADF Overview and CMS Charts: count bars per calendar year (`drawCountBars`), the
 price-per-unit histogram with the time-adjusted rates in front of the nominal

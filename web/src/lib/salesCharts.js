@@ -164,6 +164,12 @@ export function saleRecordsFromRows(rows, { parseDate, centroid, rowKey, isSelec
         excluded: false,
         // MAO's own sale type, for the review flag's basis below.
         saleType: p._saleTypeGroup || '',
+        // Bare land or improved, by the main window's own group rule
+        // (2026-11-01): 'land' when every parcel has assessment data and
+        // passes the vacancy test, 'improved' when any parcel is known to
+        // carry a building, null when the data cannot say -- never guessed
+        // into either side.
+        vacancy: p._saleGroupAllVacant === true ? 'land' : p._saleGroupAnyImproved === true ? 'improved' : null,
         // MAO's primary-structure descriptor: with saleType it decides the
         // sale's Residential / ICI / Farm family (lib/primaryProperty.js),
         // which colours its pin on the comp map.
@@ -497,6 +503,91 @@ export function fitPower(points) {
 /** Epoch milliseconds → days. The x unit every date-axis fit uses, so a
  *  slope reads as dollars per day without a conversion at the call site. */
 export function msToDays(ms) { return ms / MS_PER_DAY; }
+
+/**
+ * Two-sided 97.5% Student t quantile for `df` degrees of freedom, for 95%
+ * ranges. Exact enough for a caption: the table to 30, then 1.96 + 2.4/df.
+ */
+export function t975(df) {
+  const T = [12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228,
+    2.201, 2.179, 2.16, 2.145, 2.131, 2.12, 2.11, 2.101, 2.093, 2.086,
+    2.08, 2.074, 2.069, 2.064, 2.06, 2.056, 2.052, 2.048, 2.045, 2.042];
+  if (!(df >= 1)) return NaN;
+  return df <= 30 ? T[Math.floor(df) - 1] : 1.96 + 2.4 / df;
+}
+
+/**
+ * The market trend as a PERCENT per year (2026-11-01): the slope of
+ * log(metric) on the sale date, with its 95% range.
+ *
+ * Why not dollars per day (marketConditions): a dollar slope fitted across a
+ * set running from $5,000 to $5,000,000 an acre carries the cheap sales to
+ * zero or below when they are brought to the effective date -- on a real
+ * Springfield set, 247 of 1,063 -- and they then fall out of every adjusted
+ * chart. A proportional rate moves a $5,000 sale and a $5,000,000 one by the
+ * same share and cannot reach zero.
+ *
+ * `significant` is false when the 95% range spans zero: the sales do not
+ * show a measurable trend either way, and a caption must say so rather than
+ * print the point estimate as though it were measured.
+ *
+ * Null when fewer than 3 sales carry both a date and the metric, or every
+ * sale is on one date.
+ */
+export function logTrend(records, metric) {
+  const xs = [];
+  const ys = [];
+  for (const r of records || []) {
+    const y = pos(r?.[metric]);
+    if (y == null || !Number.isFinite(r?.dateMs)) continue;
+    xs.push(msToDays(r.dateMs));
+    ys.push(Math.log(y));
+  }
+  const n = xs.length;
+  if (n < 3) return null;
+  const mx = xs.reduce((a, b) => a + b, 0) / n;
+  const my = ys.reduce((a, b) => a + b, 0) / n;
+  let sxx = 0;
+  let sxy = 0;
+  for (let i = 0; i < n; i++) { sxx += (xs[i] - mx) ** 2; sxy += (xs[i] - mx) * (ys[i] - my); }
+  // The degenerate-spread guard fitLinear explains: one date is not a trend.
+  if (!(sxx > 1e-9 * n * Math.max(1, mx * mx))) return null;
+  const slope = sxy / sxx;
+  const icpt = my - slope * mx;
+  let rss = 0;
+  for (let i = 0; i < n; i++) rss += (ys[i] - icpt - slope * xs[i]) ** 2;
+  const se = n > 2 ? Math.sqrt(rss / (n - 2) / sxx) : NaN;
+  const t = t975(n - 2);
+  const yr = (b) => Math.exp(b * 365) - 1;
+  const lo = Number.isFinite(se) ? yr(slope - t * se) : null;
+  const hi = Number.isFinite(se) ? yr(slope + t * se) : null;
+  return {
+    perDay: slope,               // log units per day
+    pctPerYear: yr(slope),       // a share: 0.041 = +4.1%
+    lo, hi,                      // the 95% range, as shares
+    significant: lo != null && hi != null && (lo > 0 || hi < 0),
+    n,
+    predict: (ms) => Math.exp(icpt + slope * msToDays(ms)),
+  };
+}
+
+/** A sale's metric carried to the effective date at a log trend's rate. */
+export function timeAdjustLog(record, metric, logPerDay, effectiveMs) {
+  const raw = pos(record?.[metric]);
+  if (raw == null) return null;
+  if (!Number.isFinite(record?.dateMs) || !Number.isFinite(effectiveMs) || !Number.isFinite(logPerDay)) return raw;
+  return raw * Math.exp(logPerDay * ((effectiveMs - record.dateMs) / MS_PER_DAY));
+}
+
+/** "+4.1% per year (95%: +1.2% to +7.0%)", or the no-trend wording. */
+export function logTrendWords(lt) {
+  if (!lt) return 'too few dated sales to measure a trend';
+  const f = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)}%`;
+  const range = lt.lo != null ? ` (95%: ${f(lt.lo)} to ${f(lt.hi)})` : '';
+  return lt.significant
+    ? `${f(lt.pctPerYear)} per year${range}`
+    : `no measurable trend: ${f(lt.pctPerYear)} per year${range}, a range that spans zero`;
+}
 
 /**
  * The market-conditions regression: how fast `metric` is moving, in

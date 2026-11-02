@@ -258,7 +258,7 @@ export function createSalesMap({ onPick, popupRows, popupActions = () => [], pin
     map.addSource('surface-edges', { type: 'geojson', data: EMPTY });
     map.addLayer({
       id: 'surface-fill', type: 'fill', source: 'surface',
-      paint: { 'fill-color': ['get', 'color'], 'fill-opacity': SURFACE_OPACITY, 'fill-antialias': false },
+      paint: { 'fill-color': ['get', 'color'], 'fill-opacity': ['case', ['==', ['get', 'weak'], true], 0.15, SURFACE_OPACITY], 'fill-antialias': false },
     });
     map.addLayer({
       id: 'surface-line', type: 'line', source: 'surface-edges',

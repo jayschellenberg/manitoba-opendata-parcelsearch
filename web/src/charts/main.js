@@ -24,6 +24,7 @@ import './charts.css';
 import {
   median, marketConditions, timeAdjust, fitLinear, fitPoly, fitPower,
   normalizeOverrideRate, topZones, haversineKm, WINNIPEG_CENTRE,
+  logTrend, timeAdjustLog, logTrendWords,
   percentileTrim, saleAsmtFlag, TRIM_MIN_SALES, SALE_ASMT_TIERS, COVER_KEYS,
 } from '../lib/salesCharts.js';
 import {
@@ -61,6 +62,7 @@ const $ = (id) => document.getElementById(id);
 
 const els = {
   status: $('charts-status'),
+  setNote: $('set-note'),
   empty: $('charts-empty'),
   grid: $('charts-grid'),
   unitAcres: $('unit-acres'),
@@ -69,6 +71,9 @@ const els = {
   ctlUnit: $('ctl-unit'),
   ratesHint: $('rates-hint'),
   tabAdf: $('tab-adf'),
+  vacAll: $('vac-all'),
+  vacLand: $('vac-land'),
+  vacImproved: $('vac-improved'),
   tabRates: $('tab-rates'),
   tabTotal: $('tab-total'),
   tabWater: $('tab-water'),
@@ -226,9 +231,14 @@ const opts = {
   // destroy the trend they exist to show.
   adjusted: true,
   // How the adjustment (and the over-time trend line) is computed:
+  //   'pct'      — a percent per year fitted on log price (2026-11-01, the
+  //                default): carries cheap and dear sales by the same share,
+  //                and is not applied when its 95% range spans zero
   //   'fitted'   — the regression's own dollars per day, as the R engine does
   //   'override' — a judgement percent per year, applied proportionally
-  adjBasis: 'fitted',
+  adjBasis: 'pct',
+  // Bare land / improved / all, on every page (2026-11-01).
+  vacancy: 'all',
   adjRate: 3,
   distRef: 'subject',
   frozen: false,
@@ -280,6 +290,13 @@ function readOpts() {
       // main window's Open job, 2026-10-07): a reopened assignment is about
       // its own date, so that one IS restored.
       const { frozen, effDate, ...rest } = parsed;
+      // The percent trend became the default on 2026-11-01. A saved 'fitted'
+      // from before then was the only fitted choice there was, not a pick of
+      // dollars over percent, so it moves once; afterwards the choice holds.
+      if (!rest.adjBasisV2) {
+        if (rest.adjBasis === 'fitted') rest.adjBasis = 'pct';
+        rest.adjBasisV2 = true;
+      }
       return parsed.effDatePinned && effDate ? { ...rest, effDate } : rest;
     }
     // Migrate the v1 shape, which folded "don't adjust" into the basis
@@ -291,7 +308,8 @@ function readOpts() {
     return {
       ...rest,
       adjusted: adjMode !== 'none',
-      adjBasis: adjMode === 'override' ? 'override' : 'fitted',
+      adjBasis: adjMode === 'override' ? 'override' : 'pct',
+      adjBasisV2: true,
     };
   } catch { return {}; }
 }
@@ -438,15 +456,31 @@ function tooltipRows(rec, pt) {
 
 /** Sales ticked in the grid — the land template's CMS1. */
 function activeRecords() {
-  if (inAdf()) return data.adfRecords || [];
-  return (data.records || []).filter((r) => !r.excluded);
+  if (inAdf()) return (data.adfRecords || []).filter(vacancyKeeps);
+  return (data.records || []).filter((r) => !r.excluded && vacancyKeeps(r));
+}
+
+/** The Sales switch: every sale, bare land only, or improved only. A sale
+ *  whose vacancy the data cannot settle is in "All" and in neither half. */
+function vacancyKeeps(r) {
+  if (opts.vacancy === 'land') return r.vacancy === 'land';
+  if (opts.vacancy === 'improved') return r.vacancy === 'improved';
+  return true;
+}
+const VACANCY_WORDS = { land: 'bare-land', improved: 'improved' };
+
+/** How a set splits by vacancy: {land, improved, unknown}. */
+function vacancySplit(recs) {
+  const out = { land: 0, improved: 0, unknown: 0 };
+  for (const r of recs) out[r.vacancy || 'unknown'] += 1;
+  return out;
 }
 
 /** What the charts draw: every sale, or only the ticked ones when the
  *  "Show excluded" box is off. */
 function drawnRecords() {
   if (inAdf()) return activeRecords();
-  return opts.showExcluded ? (data.records || []) : activeRecords();
+  return opts.showExcluded ? (data.records || []).filter(vacancyKeeps) : activeRecords();
 }
 
 /**
@@ -493,9 +527,11 @@ function cmsFor(metric) {
   const fitted = applied ? active.filter((r) => trim.keep.has(r.saleId)) : active;
   const mc1 = marketConditions(active, metric);
   const mc = applied ? marketConditions(fitted, metric) : mc1;
+  const lt1 = logTrend(active, metric);
+  const lt = applied ? logTrend(fitted, metric) : lt1;
   const fittedIds = new Set(fitted.map((r) => r.saleId));
   const cms = {
-    metric, active, fitted, mc, mc1, trim, applied,
+    metric, active, fitted, mc, mc1, lt, lt1, trim, applied,
     // The Ag set's bookkeeping: how many ticked sales the filters left out,
     // and the rate on every ticked sale for comparison.
     ag: ag ? { out: agOut.size, ticked: ticked.length, mcWide: marketConditions(ticked, metric), words: agConsWords() } : null,
@@ -726,6 +762,22 @@ function trendStats(points, cms, fmt) {
   const stats = [{ label: 'Sales', value: String(fitted.length) }];
   const med = median(fitted.map((p) => p.y));
   if (med != null) stats.push({ label: 'Median', value: fmt(med) });
+  if (opts.adjBasis === 'pct') {
+    const lt = cms.lt;
+    const f = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)}%`;
+    if (lt) {
+      stats.push({
+        label: cms.applied ? 'Per year (trimmed)' : 'Per year',
+        value: lt.significant ? f(lt.pctPerYear) : 'No trend',
+        title: `Slope of log price on the sale date: ${logTrendWords(lt)}.`,
+      });
+      if (lt.lo != null) stats.push({ label: '95% range', value: `${f(lt.lo)} to ${f(lt.hi)}` });
+    }
+    if (cms.applied && cms.lt1) {
+      stats.push({ label: 'Per year (all)', value: f(cms.lt1.pctPerYear), title: `On all ${cms.active.length} sales: ${logTrendWords(cms.lt1)}.` });
+    }
+    return stats;
+  }
   if (mc) {
     stats.push({
       label: 'Per day',
@@ -846,6 +898,17 @@ function timeTrend(cms, points, fmt) {
     };
   }
 
+  if (opts.adjBasis === 'pct') {
+    const lt = cms.lt;
+    const cubic = fitsFor(points, { curve: 'cubic' }).filter((f) => f.label === CUBIC_FIT.label);
+    const fits = lt ? [{ ...LINEAR_FIT, label: lt.significant ? 'Fitted % trend' : 'Fitted % trend (not measurable)', predict: lt.predict }, ...cubic] : cubic;
+    return {
+      fits,
+      stats: trendStats(points, cms, fmt),
+      note: sub(cms.applied ? `Trend fitted on the ${trimWords()} set.` : '',
+        lt ? `Market trend: ${logTrendWords(lt)}.` : ''),
+    };
+  }
   return {
     fits: fitsFor(points, { curve: 'cubic' }),
     stats: trendStats(points, cms, fmt),
@@ -961,6 +1024,28 @@ function adjusterFor(cms) {
       note: `Rates carried to ${opts.effDate} at ${(ovr * 100).toFixed(1)}% per year (judgement rate).`,
     };
   }
+  if (opts.adjBasis === 'pct') {
+    const lt = cms.lt;
+    // An unmeasured trend is not applied: carrying every sale by a slope the
+    // sales cannot tell from zero would put a number on the exhibit that the
+    // data does not support.
+    if (!lt || !lt.significant) {
+      return {
+        adjust: (rec) => rec[metric],
+        adjusted: false,
+        suffix: '',
+        note: `Nominal rates: ${logTrendWords(lt)}, so no adjustment is applied. `
+          + 'Choose "Rate per year…" to carry the sales at a stated rate.',
+      };
+    }
+    return {
+      adjust: (rec) => timeAdjustLog(rec, metric, lt.perDay, effMs),
+      adjusted: true,
+      suffix: ' (adjusted)',
+      note: `Rates carried to ${opts.effDate} at the fitted ${logTrendWords(lt)}`
+        + `${cms.applied ? `, fitted on the ${trimWords()} set` : ''}.`,
+    };
+  }
   if (!mc) {
     return {
       adjust: (rec) => rec[metric],
@@ -969,13 +1054,18 @@ function adjusterFor(cms) {
       note: 'Too few dated sales to measure a trend — showing nominal rates.',
     };
   }
+  // The dollar basis can carry a cheap sale to $0 (timeAdjust clamps there),
+  // and an adjusted chart then drops it: count them, so the note says so.
+  const zeroed = cms.fitted.filter((r) => r[metric] > 0
+    && !(timeAdjust(r, metric, mc.perDay, effMs) > 0)).length;
   return {
     adjust: (rec) => timeAdjust(rec, metric, mc.perDay, effMs),
     adjusted: true,
     suffix: ' (adjusted)',
     note: `Rates carried to ${opts.effDate} at the fitted trend `
       + `(${mc.perDay >= 0 ? '+' : '−'}${fmtRate(Math.abs(mc.perDay))} per day`
-      + `${cms.applied ? `, fitted on the ${trimWords()} set` : ''}).`,
+      + `${cms.applied ? `, fitted on the ${trimWords()} set` : ''}).`
+      + (zeroed ? ` ${zeroed} sale${zeroed === 1 ? ' is' : 's are'} carried to $0 or below and left out of the adjusted charts.` : ''),
   };
 }
 
@@ -2465,13 +2555,17 @@ function paintIsovalueMap() {
   const spec = unitSpec();
   const cms = cmsFor(areaMetric());
   const recs = activeRecords().filter(located);
-  const unit = `$/${{ acres: 'ac', sf: 'sf', ff: 'ff' }[opts.unit] || 'ac'}`;
+  // Improved sales map their TOTAL price (2026-11-01): a price per acre of
+  // land-and-building sales spreads the building's value over the land, and a
+  // surface of it says nothing about either.
+  const total = opts.vacancy === 'improved';
+  const unit = total ? '$' : `$/${{ acres: 'ac', sf: 'sf', ff: 'ff' }[opts.unit] || 'ac'}`;
   const result = fitFor('iso', {
-    sales: recs.map((r) => ({ lon: r.lng, lat: r.lat, value: r[cms.metric], dateMs: r.dateMs })),
-    opts: { effMs: effectiveMs(), subject: subjectPoint(), unit, digits: opts.unit === 'sf' ? 2 : 0 },
+    sales: recs.map((r) => ({ lon: r.lng, lat: r.lat, value: total ? r.price : r[cms.metric], dateMs: r.dateMs })),
+    opts: { effMs: effectiveMs(), subject: subjectPoint(), unit, digits: !total && opts.unit === 'sf' ? 2 : 0 },
   });
   return [paintSurfaceMap('adf-iso', {
-    title: `${tierWord()} Isovalue – Price per ${spec.perUnit}`, cms, recs, result,
+    title: `${tierWord()} Isovalue – ${total ? 'Total Sale Price (improved sales)' : `Price per ${spec.perUnit}`}`, cms, recs, result,
     waitingNote: `Fitting the surface on ${plural(recs.length, 'sale')}… (needs at least ${ISO_MIN_N}).`,
   })];
 }
@@ -2499,6 +2593,12 @@ function paintLocationMaps() {
     if (result == null) return null;
     return result.ok ? { ok: true, ...result[part] } : { ok: false, caption: result.reason };
   };
+  // The open data carries no building size, so with improved sales in the
+  // set the building's differences stay in the location effect: say so.
+  const noBldg = opts.vacancy !== 'land' && recs.some((r) => r.vacancy === 'improved');
+  if (result?.ok && noBldg && !result.effect.caption.includes('No building size')) {
+    result.effect.caption += ' No building size is in the open data, so differences between the buildings in these sales are read as location. Choose Bare land for a cleaner reading.';
+  }
   const a = paintSurfaceMap('adf-locfx', {
     title: `${tierWord()} – Location Effect on Sale Price`, cms, recs, result: half('effect'), waitingNote: waiting,
   });
@@ -3314,7 +3414,7 @@ function renderTable() {
 // ---------- render ---------------------------------------------------
 
 function renderStatus() {
-  const n = activeRecords().length;
+  const n = (data.records || []).filter((r) => !r.excluded).length;
   const nExcluded = data.records.length - n;
   if (!data.meta) {
     els.status.textContent = 'Waiting for the Sales Analysis tab…';
@@ -3338,6 +3438,44 @@ function renderStatus() {
     ? `Frozen — ${sales}${parcels}, as of ${when} · filter changes are being ignored.`
     : `Live — ${sales}${parcels} · tracking the Sales Analysis filters · updated ${when}`;
   els.status.classList.toggle('is-frozen', opts.frozen);
+  renderSetNote();
+}
+
+/**
+ * What each page charts, in one line under the status (2026-11-01): the ADF
+ * and CMS counts, what separates them, and -- with the switch on All -- a
+ * warning when a set mixes bare land and improved sales.
+ */
+function renderSetNote() {
+  const el = els.setNote;
+  if (!el) return;
+  const adfAll = data.adfRecords || [];
+  const cmsAll = (data.records || []).filter((r) => !r.excluded);
+  if (!adfAll.length && !cmsAll.length) { el.textContent = ''; return; }
+  const kept = (recs) => recs.filter(vacancyKeeps).length;
+  const adfN = kept(adfAll);
+  const cmsN = kept(cmsAll);
+  const unticked = (data.records || []).filter((r) => r.excluded && vacancyKeeps(r)).length;
+  const filtered = Math.max(0, adfN - cmsN - unticked);
+  const which = opts.vacancy === 'all' ? '' : ` ${VACANCY_WORDS[opts.vacancy]}`;
+  const parts = [
+    `ADF Overview: ${adfN}${which} sales (every loaded sale, less unticked municipalities, nominal and far-flung sales).`,
+    `CMS: ${cmsN}${which} (${[
+      filtered ? `${filtered} removed by the other filters` : '',
+      unticked ? `${unticked} unticked` : '',
+    ].filter(Boolean).join(', ') || 'the same sales'}).`,
+  ];
+  const split = vacancySplit(adfAll);
+  if (opts.vacancy === 'all' && split.land && split.improved) {
+    parts.push(`The near market mixes ${split.land} bare-land and ${split.improved} improved sales`
+      + `${split.unknown ? ` (and ${split.unknown} the data cannot classify)` : ''}: a price per `
+      + `${unitSpec().perUnit.toLowerCase()} across both measures buildings as well as land. Choose Bare land or Improved.`);
+  } else if (opts.vacancy !== 'all') {
+    const out = adfAll.length - adfN;
+    if (out) parts.push(`${out} other sales left out by the Sales switch${split.unknown ? `, ${split.unknown} of them unclassifiable (missing assessment data)` : ''}.`);
+  }
+  el.textContent = parts.join(' ');
+  el.classList.toggle('is-warning', opts.vacancy === 'all' && !!(split.land && split.improved));
 }
 
 // ---------- filter waterfall -----------------------------------------
@@ -3700,6 +3838,10 @@ function syncControls() {
       ? 'Applies to every price chart on this tab.'
       : 'Applies to the by-size and by-distance charts and the price heatmap.';
 
+  for (const [key, btn] of [['all', els.vacAll], ['land', els.vacLand], ['improved', els.vacImproved]]) {
+    btn.setAttribute('aria-checked', String(opts.vacancy === key));
+    btn.classList.toggle('is-on', opts.vacancy === key);
+  }
   const unit = UNITS[opts.unit] ? opts.unit : 'acres';
   for (const [key, btn] of [['acres', els.unitAcres], ['sf', els.unitSf], ['ff', els.unitFf]]) {
     btn.setAttribute('aria-checked', String(unit === key));
@@ -3733,7 +3875,9 @@ function syncControls() {
   // Nominal/Time-adjusted toggle does not govern.
   els.adjHint.textContent = opts.adjBasis === 'override'
     ? 'Percent per year. "5" and "0.05" both mean 5%.'
-    : 'Dollars per day, measured from the sales on screen.';
+    : opts.adjBasis === 'pct'
+      ? 'Percent per year, measured from the sales on screen; not applied when its 95% range spans zero.'
+      : 'Dollars per day, measured from the sales on screen (the R template\'s basis).';
 
   // Never write .value into a field the user is currently typing in.
   //
@@ -3925,6 +4069,14 @@ function saleCsvColumns() {
   ];
 }
 
+/** A log trend as a table cell: "+4.1% (+1.2% to +7.0%)", or "no trend (...)". */
+function ltCell(lt) {
+  if (!lt) return '—';
+  const f = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)}%`;
+  const range = lt.lo != null ? ` (${f(lt.lo)} to ${f(lt.hi)})` : '';
+  return `${lt.significant ? f(lt.pctPerYear) : 'no trend'}${range}`;
+}
+
 /** The market-conditions table: CMS1, and CMS2 when the trim applies. */
 function ratesTable() {
   const metric = areaMetric();
@@ -3943,6 +4095,7 @@ function ratesTable() {
     adj.adjusted ? med(recs, adj.adjust) : '—',
     mc ? `${mc.perDay >= 0 ? '+' : '−'}${fmtRate(Math.abs(mc.perDay))}` : '—',
     mc?.pctPerYear != null ? `${(mc.pctPerYear * 100).toFixed(1)}%` : '—',
+    ltCell(logTrend(recs, metric)),
   ];
   const rows = [row('CMS1 — ticked sales', cms.active, cms.mc1)];
   if (cms.applied) rows.push(row(`CMS2 — trimmed to ${trimWords()}`, cms.fitted, cms.mc));
@@ -3960,6 +4113,7 @@ function ratesTable() {
         agAdj.adjusted ? (() => { const m = median(agCms.fitted.map(agAdj.adjust).filter((v) => Number.isFinite(v) && v > 0)); return m != null ? fmt(m) : '—'; })() : '—',
         agCms.mc ? `${agCms.mc.perDay >= 0 ? '+' : '−'}${fmtRate(Math.abs(agCms.mc.perDay))}` : '—',
         agCms.mc?.pctPerYear != null ? `${(agCms.mc.pctPerYear * 100).toFixed(1)}%` : '—',
+        ltCell(agCms.lt),
       ]);
     } finally { opts.tab = saved; }
   }
@@ -3967,6 +4121,7 @@ function ratesTable() {
     columns: [
       { label: 'Set' }, { label: 'Sales', num: true }, { label: `Median $/${unit}`, num: true },
       { label: `Median adj $/${unit}`, num: true }, { label: '$/day trend', num: true }, { label: '%/yr', num: true },
+      { label: '%/yr fitted on log price (95% range)' },
     ],
     rows,
   };
@@ -4267,6 +4422,9 @@ function setOpt(patch) {
 }
 
 els.tabAdf.addEventListener('click', () => setOpt({ tab: 'adf' }));
+els.vacAll.addEventListener('click', () => setOpt({ vacancy: 'all' }));
+els.vacLand.addEventListener('click', () => setOpt({ vacancy: 'land' }));
+els.vacImproved.addEventListener('click', () => setOpt({ vacancy: 'improved' }));
 els.tabRates.addEventListener('click', () => setOpt({ tab: 'rates' }));
 els.tabTotal.addEventListener('click', () => setOpt({ tab: 'total' }));
 els.tabWater.addEventListener('click', () => setOpt({ tab: 'water' }));
