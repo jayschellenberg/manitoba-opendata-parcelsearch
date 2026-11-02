@@ -275,7 +275,18 @@ clearer status counts, the Agricultural page's consistency filters (R's
 CMSAG1, own rate) and Land Sets from the grid's ★ menu (#177); then the lighter
 work file, map toggles in the job file and parcel outlines on the charts maps;
 then outlines from zoom 10, the column preset in job files and a recent-jobs
-list. Still open:
+list; then on 2026-11-01 the ADF Overview page with isovalue and location-effect
+maps, Sales by year / Distributions / Sale/Assessment tabs, the Bare land /
+Improved switch and the percent-per-year trend with its range (#245, merged
+2026-11-02). Still open:
+
+- **A size-controlled trend.** The percent trend is fitted on price per unit
+  against date alone, so a set whose lot sizes drift over time reads the drift
+  as a market change: Springfield's bare land (2023+) fitted +91.5% a year
+  (95% +50% to +144%), almost certainly smaller lots selling later rather than
+  land nearly doubling. A trend net of log size would separate the two.
+- **Sale/assessment uses the current roll** (`_asmtTotal`), not the roll in
+  force at the sale, unlike the R templates (helpers.R section 23).
 
 - **Phone (low priority — Jason, 2026-10-07).** The Comparables / Excluded
   records panels, the Shift-click gesture (no Shift on a phone — the map popup

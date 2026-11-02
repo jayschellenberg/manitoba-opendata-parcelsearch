@@ -1026,8 +1026,10 @@ provincial download becoming the archived source-of-record.
 | `web/charts.html` + `web/src/charts/main.js` | the Sales Charts page (§10.0.2): pages, map and chart tabs, controls, builders, Comparables / Excluded records panels, the work file | — |
 | `web/src/charts/chartMap.js` | the charts page's MapLibre maps (boundaries, subject pin and ring, comp labels, hover tip, popup actions, PNG) | — |
 | `web/src/lib/compTags.js` | comp tags and exclusion reasons: keys (rolls + date, `canonicalRoll`), the three ordered lists, labels, shared storage keys (§10.0.2) | — |
-| `web/src/lib/chartRender.js` | SVG renderers (scatter, box plot, stacked bars, histogram, table card), `R_STYLE`, the 6.5×3.5 PNG export | — |
-| `web/src/lib/salesCharts.js` | sale records, regressions, CMS2 trim, S/A flag, ag roll-up; `saleTagInput`, the one derivation of a sale's tag key fields | — |
+| `web/src/lib/chartRender.js` | SVG renderers (scatter, box plot, stacked bars, histogram with a nominal layer behind, count bars, table card), `R_STYLE`, the 6.5×3.5 PNG export | — |
+| `web/src/lib/salesCharts.js` | sale records (incl. `vacancy`), regressions, `logTrend` (% per year with its 95% range), CMS2 trim, S/A flag, ag roll-up; `saleTagInput`, the one derivation of a sale's tag key fields | — |
+| `web/src/lib/spatialSmooth.js` | penalised thin-plate spline regression (REML), held to mgcv by `test/spatialSmooth.test.js` (§10.0.2) | — |
+| `web/src/lib/locationMaps.js` + `web/src/workers/locationMaps.worker.js` | isovalue and location-effect surfaces, bands, captions; fitted off the main thread (§10.0.2). Same file in the Winnipeg app | — |
 | `web/src/lib/workFile.js` | the charts page's work-file zip: CSV (Excel formula guard, BOM), `summary.html`, entry names (§10.0.2) | — |
 | `web/src/lib/salesWater.js` / `salesWaterfall.js` / `salesMapColors.js` / `criteriaLine.js` / `basemapStyle.js` | water analysis; filter waterfall; map colouring; subtitle criteria line; the charts map's basemap (held to `map.js` by `basemapStyle.test.js`) | — |
 | `r/export_rollentry_geojson.R` | gpkg → newline-delimited GeoJSON for the tile build (GDAL vectortranslate, ~12s) | `tiles-build/rollentry.geojsons` |
@@ -1182,8 +1184,8 @@ same data: location term r > 0.995, standard errors within 20%.
   counted in the note. A stored 'fitted' setting from before moves to the
   percent basis once (`adjBasisV2`).
 - **Location-effect cells whose 95% band includes zero are drawn faded**, and
-  the caption says what share of the map that is; on Winnipeg's 471 land sales
-  it was 81%.
+  the caption says what share of the map that is (on the Winnipeg site's 471
+  land sales, which share this code, it was 81%).
 - **Isovalue bands are log-spaced** (equal ratios, two significant figures),
   so a set spanning bare land and town lots does not spend one colour on most
   of the map; the isovalue map applies its own trend only when measurable;

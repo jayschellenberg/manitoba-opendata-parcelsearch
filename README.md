@@ -150,7 +150,7 @@ The page splits into a fixed-width left sidebar holding all controls and a fluid
 - Search · Clear · Export CSV — saved as `MAOADF-YYYY-MM-DD-HHMM.csv` (local time), the name the R land template looks for
 - Result count badge
 - Parcel click popups carry **Copy Roll · GPS Coordinates** (as in the Winnipeg app); clicking the roll number itself still opens the MAO report
-- Sales Analysis → **Charts** opens the Sales Charts page — the land template's CMS charts in LandShiny's layout (map tabs over chart tabs on Land Price/Unit, Agricultural, Total/Per Lot and Water pages), numbered comparables and Land Sets (the grid's ★ is the comp number), exclusion reasons, and a **Work file** zip of PNGs, CSVs and a self-contained summary.html — see DOCUMENTATION.md §10.0.2
+- Sales Analysis → **Charts** opens the Sales Charts page — the land template's CMS charts in LandShiny's layout (map tabs over chart tabs on ADF Overview, CMS Charts, Agricultural, Total/Per Lot and Water pages). ADF Overview charts the near market and carries the isovalue and location-effect maps; a Sales switch (All / Bare land / Improved) and a percent-per-year trend that is applied only when measurable keep the two sets honest. Numbered comparables and Land Sets (the grid's ★ is the comp number), exclusion reasons, and a **Work file** zip of PNGs, CSVs and a self-contained summary.html — see DOCUMENTATION.md §10.0.2
 
 **Sidebar — Map overlays section**. Each category is a collapsible
 `<details>` group, with the toggles laid out two-up inside an inner
