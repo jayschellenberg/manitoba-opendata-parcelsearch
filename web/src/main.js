@@ -14620,7 +14620,7 @@ function setBusy(busy) {
   $search.disabled = busy;
   // The idle label carries the same glyph index.html ships with; resetting
   // to bare 'Search' dropped the magnifier after the first search.
-  $search.textContent = busy ? 'Searching…' : '🔍 Search';
+  $search.textContent = busy ? 'Searching…' : 'Search';  // icon drawn from data-icon
 }
 
 /** Hard-reset the page. A full reload + cache clear guarantees every

@@ -8184,3 +8184,17 @@ body:not(.sales-mode) .number-starred-btn { display: none; }
   border-color: var(--ui-brand);
   color: #fff;
 }
+
+/* Button icons, matching the Winnipeg app. An emoji in the label itself is
+   lost the first time a button rewrites its own text ("Search" ->
+   "Searching…", a toggle's busy "Loading…"), so the icon lives in data-icon
+   and is drawn here. Only on buttons where it adds no line
+   (Development Plan would wrap, so it has none). */
+button[data-icon]::before {
+  content: attr(data-icon);
+  margin-right: 0.35em;
+}
+/* Map-layer toggles are flex boxes whose gap already spaces the icon. */
+.overlay-btn[data-icon]::before {
+  margin-right: 0;
+}
