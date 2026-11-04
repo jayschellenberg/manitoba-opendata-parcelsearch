@@ -417,11 +417,11 @@
                  results but KEEPS the municipality, for working through
                  several properties in one muni; Clear All is the full
                  page reset it always was. -->
-            <button id="search" type="button" class="primary">🔍 Search</button>
+            <button id="search" data-icon="🔍" type="button" class="primary">Search</button>
             <button id="clear-roll-address" type="button" class="danger"
                     title="Clear the Roll # and address fields and the results, keeping the municipality">Clear Roll/Addy</button>
-            <button id="clear" type="button" class="danger"
-                    title="Reset everything: every field, the results, overlays and cached data">🗑️ Clear All</button>
+            <button id="clear" data-icon="🗑️" type="button" class="danger"
+                    title="Reset everything: every field, the results, overlays and cached data">Clear All</button>
           </div>
           <!-- Phase 3: Additional Searches collapsible. Holds the less-
                frequently-touched controls (legal description, certificate
@@ -792,7 +792,7 @@
                 Select a Date Range from below before Searching.
               </p>
               <div class="sales-db-actions">
-                <button type="button" id="sales-db-load" class="parcel-list-modal-btn primary">🔍 Search</button>
+                <button type="button" id="sales-db-load" data-icon="🔍" class="parcel-list-modal-btn primary">Search</button>
                 <!-- Exclude Nominal Sales rides in this row, beside Coverage, by
                      explicit request (Jason, 2026-08-21). KNOWN AND ACCEPTED
                      TRADE-OFF: this row lives inside #sales-db-ready, which is
@@ -1281,7 +1281,7 @@
                page, so it has to be reachable without first expanding a
                panel. -->
           <div class="action-row">
-            <button id="sales-clear" type="button" class="danger" title="Reset the page — clears any uploaded sales CSV, search results, subject, and filters.">Clear</button>
+            <button id="sales-clear" data-icon="🗑️" type="button" class="danger" title="Reset the page — clears any uploaded sales CSV, search results, subject, and filters.">Clear</button>
           </div>
         </section><!-- /tab-panel-sales -->
 
@@ -1317,10 +1317,10 @@
                  assessment polygon (lib/parcelDimensions.js). A display
                  preference: it stays on across searches, and labels draw once
                  there are results and the map is zoomed in (z16+). -->
-            <button id="dims-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Dimensions — label every side of the result parcels with its length in feet, measured from the assessment parcel polygon. Shows once a search has results and the map is zoomed in. Approximate: the polygons are digitized, not surveyed. Where the assessment roll states a frontage and one side measures within 1 ft of it, that side shows the roll figure, marked (roll), and the other sides are scaled by the same ratio. The same figures are in the Sides (ft) column, and the labels carry into the Generate Map image.">
+            <button id="dims-toggle" data-icon="📏" type="button" class="overlay-btn" aria-pressed="false" title="Dimensions — label every side of the result parcels with its length in feet, measured from the assessment parcel polygon. Shows once a search has results and the map is zoomed in. Approximate: the polygons are digitized, not surveyed. Where the assessment roll states a frontage and one side measures within 1 ft of it, that side shows the roll figure, marked (roll), and the other sides are scaled by the same ratio. The same figures are in the Sides (ft) column, and the labels carry into the Generate Map image.">
               <span class="overlay-btn-label">Dimensions</span>
             </button>
-            <button id="mls-toggle" type="button" class="overlay-btn" aria-pressed="false" title="MLS Areas — the real-estate boards' MLS area boundaries: Winnipeg Regional Real Estate Board city (1A … 9A) and rural (R02 … R44) areas, Brandon Area REALTORS' A–D areas and Portage's P01–P07. Click an area for its code and board.">
+            <button id="mls-toggle" data-icon="🏷️" type="button" class="overlay-btn" aria-pressed="false" title="MLS Areas — the real-estate boards' MLS area boundaries: Winnipeg Regional Real Estate Board city (1A … 9A) and rural (R02 … R44) areas, Brandon Area REALTORS' A–D areas and Portage's P01–P07. Click an area for its code and board.">
               <span class="overlay-btn-label">MLS Areas</span>
             </button>
             </div>
@@ -1329,7 +1329,7 @@
           <details class="overlay-group" data-group="planning" open>
             <summary class="overlay-group-title">Planning<span class="overlay-group-count"></span></summary>
             <div class="overlay-group-body">
-            <button id="zoning-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Zoning By-Laws (ZBL)">
+            <button id="zoning-toggle" data-icon="🗺️" type="button" class="overlay-btn" aria-pressed="false" title="Zoning By-Laws (ZBL)">
               <span class="overlay-btn-label">Zoning</span>
             </button>
             <button id="devplan-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Dev Plan — Manitoba Development Plan Designations">
@@ -1362,7 +1362,7 @@
             <button id="contam-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Enviro Sites — Manitoba Contaminated Sites Registry">
               <span class="overlay-btn-label">Environmental Sites</span>
             </button>
-            <button id="stations-toggle" type="button" class="overlay-btn" aria-pressed="false" title="MHTIS traffic-count stations, each carrying its full published AADT series (up to 23 years). Two markers: small dark dots are highway stations on a PTH or PR; larger amber dots are TOWN count stations, an in-town cross-section that typically reads 2-3x its neighbouring highway segment. Counts are parsed from MHTIS's annual 'Traffic on Manitoba Highways' reports, 2008 to 2025 — 2020-2022 are sparse because no report was published and only the permanent counters ran.">
+            <button id="stations-toggle" data-icon="🚗" type="button" class="overlay-btn" aria-pressed="false" title="MHTIS traffic-count stations, each carrying its full published AADT series (up to 23 years). Two markers: small dark dots are highway stations on a PTH or PR; larger amber dots are TOWN count stations, an in-town cross-section that typically reads 2-3x its neighbouring highway segment. Counts are parsed from MHTIS's annual 'Traffic on Manitoba Highways' reports, 2008 to 2025 — 2020-2022 are sparse because no report was published and only the permanent counters ran.">
               <span class="overlay-btn-label">Traffic Counts</span>
             </button>
             <button id="highways-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Manitoba Road Network 2023 — official PTH, PR, access, service, and winter-road geometry">
@@ -1489,7 +1489,7 @@
           <details class="overlay-group" data-group="multifamily">
             <summary class="overlay-group-title">Multi-family<span class="overlay-group-count"></span></summary>
             <div class="overlay-group-body">
-            <button id="mfinv-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Multi-Family &mdash; lights up EXISTING multi-family parcels in the selected municipality, shaded blue by dwelling units (3-5 up to 100+), and lists them in the grid. This is the standing inventory, not new construction: use New Multi-Family beside it for what was recently built. Set the DU threshold to the right to raise the bar (e.g. 20+ units for apartment-block comparables); 3 is the floor the data ships with, and the same threshold filters New Multi-Family. Hutterite colonies are excluded &mdash; 1,222 rolls carry 20-35 units each and would otherwise dominate every list.">
+            <button id="mfinv-toggle" data-icon="🏠" type="button" class="overlay-btn" aria-pressed="false" title="Multi-Family &mdash; lights up EXISTING multi-family parcels in the selected municipality, shaded blue by dwelling units (3-5 up to 100+), and lists them in the grid. This is the standing inventory, not new construction: use New Multi-Family beside it for what was recently built. Set the DU threshold to the right to raise the bar (e.g. 20+ units for apartment-block comparables); 3 is the floor the data ships with, and the same threshold filters New Multi-Family. Hutterite colonies are excluded &mdash; 1,222 rolls carry 20-35 units each and would otherwise dominate every list.">
               <span class="overlay-btn-label">Multi-Family</span>
             </button>
             <!-- The threshold rides in the second grid column, beside the
@@ -1552,7 +1552,7 @@
           <details class="overlay-group" data-group="historical">
             <summary class="overlay-group-title">Historical<span class="overlay-group-count"></span></summary>
             <div class="overlay-group-body">
-            <button id="historical-toggle" type="button" class="overlay-btn" aria-pressed="false" disabled title="Historical (as-of-date) — overlay an earlier year's parcels (dashed amber), zoning, and dev-plan for the selected municipality, to compare against today (e.g. a parcel's size/shape before a subdivision). Select a municipality, then pick a date.">
+            <button id="historical-toggle" data-icon="🕰️" type="button" class="overlay-btn" aria-pressed="false" disabled title="Historical (as-of-date) — overlay an earlier year's parcels (dashed amber), zoning, and dev-plan for the selected municipality, to compare against today (e.g. a parcel's size/shape before a subdivision). Select a municipality, then pick a date.">
               <span class="overlay-btn-label">Show</span>
             </button>
             <label class="overlay-subcontrol" id="historical-year-wrap" hidden>
