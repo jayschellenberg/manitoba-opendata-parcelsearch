@@ -1,4 +1,4 @@
-# build-draft.ps1 - monthly "What's new in Parcel Search" draft.
+# build-draft.ps1 - every-two-months "What's new in Parcel Search" draft.
 #
 # Collects every PR merged into the Manitoba and Winnipeg Parcel Search repos
 # since the last SENT issue, has Claude (claude -p, no tools) turn the PR
@@ -10,9 +10,11 @@
 #   powershell -ExecutionPolicy Bypass -File build-draft.ps1 -NoEmail   # draft file only
 #   ... -ClaudeOutput <file>   # skip claude -p, use a saved SUBJECT:+HTML output
 #
-# Run by the scheduled task "ParcelSearch Monthly Update Email" (1st, 07:00).
+# Run by the Claude desktop scheduled task "parcelsearch-update-email" (1st of
+# Jan/Mar/May/Jul/Sep/Nov, 07:00). The old Windows task is disabled.
 # Needs claude-token.local.txt (gitignored) holding a `claude setup-token` token.
-param([switch]$NoEmail, [string]$ClaudeOutput)
+#   ... -Since 2026-09-01 -Until 2026-10-31   # on-demand window (local dates, both inclusive)
+param([switch]$NoEmail, [string]$ClaudeOutput, [string]$Since, [string]$Until)
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'changelog-lib.ps1')
@@ -45,9 +47,11 @@ function Compress-PrBody([string]$body, [int]$cap = 2500) {
 
 $cfg = Get-AlertConfig $RepoRoot
 try {
-  $windowStart = Get-WindowStart
-  $windowEnd   = (Get-Date).ToUniversalTime()
-  $periodLabel = '{0:MMMM d} to {1:MMMM d, yyyy}' -f $windowStart.ToLocalTime(), $windowEnd.ToLocalTime()
+  $windowStart = if ($Since) { ([DateTime]::Parse($Since)).Date.ToUniversalTime() } else { Get-WindowStart }
+  # -Until is an inclusive day: the window runs to midnight at the end of it.
+  $windowEnd   = if ($Until) { ([DateTime]::Parse($Until)).Date.AddDays(1).ToUniversalTime() } else { (Get-Date).ToUniversalTime() }
+  $labelEnd    = if ($Until) { ([DateTime]::Parse($Until)).Date } else { $windowEnd.ToLocalTime() }
+  $periodLabel = '{0:MMMM d} to {1:MMMM d, yyyy}' -f $windowStart.ToLocalTime(), $labelEnd
   Write-Host "Window: $($windowStart.ToString('o')) .. $($windowEnd.ToString('o'))  ($periodLabel)"
 
   $repos = @(
@@ -133,7 +137,7 @@ try {
     Set-WindowEnd $windowEnd.ToString('o') ''
     if (-not $NoEmail) {
       Send-HtmlMail $cfg "[Parcel Search update] nothing to send for $periodLabel" (New-EmailHtml (
-        "<p>$total pull requests merged in $periodLabel, none of them user-visible, so no update email this month. The next one will start from today.</p>"))
+        "<p>$total pull requests merged in $periodLabel, none of them user-visible, so no update email this time. The next one will start from today.</p>"))
     }
     return
   }

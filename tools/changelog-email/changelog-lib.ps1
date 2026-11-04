@@ -27,15 +27,19 @@ function Get-Recipients {
       Where-Object { $_ -match '^[^@\s]+@[^@\s]+\.[^@\s]+$' })
 }
 
-# The window always starts where the last SENT issue ended, so a draft that was
-# never sent rolls its PRs into the next month instead of losing them.
+# Runs every two months. The window starts where the last SENT issue ended (else
+# two months back), so a draft that was
+# never sent rolls its PRs into the next issue instead of losing them.
 function Get-WindowStart {
   if (Test-Path $StateFile) {
     $s = (Read-Utf8 $StateFile) | ConvertFrom-Json
+    # pwsh 7's ConvertFrom-Json already turns ISO strings into DateTime;
+    # re-parsing that via a string drops the time zone, so use it directly.
+    if ($s.windowEnd -is [DateTime]) { return $s.windowEnd.ToUniversalTime() }
     if ($s.windowEnd) { return [DateTime]::Parse($s.windowEnd).ToUniversalTime() }
   }
   $now = Get-Date
-  return (Get-Date -Year $now.Year -Month $now.Month -Day 1 -Hour 0 -Minute 0 -Second 0).AddMonths(-1).ToUniversalTime()
+  return (Get-Date -Year $now.Year -Month $now.Month -Day 1 -Hour 0 -Minute 0 -Second 0).AddMonths(-2).ToUniversalTime()   # two-month cycle
 }
 
 function Set-WindowEnd([string]$windowEndIso, [string]$draft) {

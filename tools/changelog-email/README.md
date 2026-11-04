@@ -1,14 +1,18 @@
-# Monthly "What's new in Parcel Search" email
+# Every-two-months "What's new in Parcel Search" email
 
-One email a month to the appraisers who use the Manitoba and Winnipeg Parcel
+One email every two months to the appraisers who use the Manitoba and Winnipeg Parcel
 Search apps, summarising what changed and how it helps on an assignment.
 Sections: **Property Search**, **Sales Search**, **Data updates**; each item
 tagged Manitoba / Winnipeg / Both apps.
 
 ## How it runs
 
-1. **1st of the month, 07:00** - task `ParcelSearch Monthly Update Email` runs
-   `build-draft.ps1`: pulls every PR merged into both repos since the last
+1. **1st of Jan, Mar, May, Jul, Sep, Nov, 07:00** - the Claude desktop scheduled
+   task **Parcel Search update email (every 2 months)** (`parcelsearch-update-email`,
+   sidebar > Scheduled; "Run now" for an on-demand run) runs `build-draft.ps1`.
+   It only fires while the Claude app is open; a missed run fires at next launch.
+   (The old Windows task `ParcelSearch Monthly Update Email` is disabled since
+   2026-11-04; `schedule-changelog-email.ps1` would re-create it.) The script: pulls every PR merged into both repos since the last
    *sent* issue (`gh pr list`), feeds the PR descriptions plus `prompt.md` to
    `claude -p` (no tools), saves `drafts\YYYY-MM-DD.html` + `.json`, and emails
    Jason a **[DRAFT]** copy with a banner showing who it would go to.
@@ -16,8 +20,9 @@ tagged Manitoba / Winnipeg / Both apps.
    what gets sent; the banner is not in it).
 3. **Send:** `powershell -ExecutionPolicy Bypass -File send-draft.ps1`
    (`-WhatIf` to preview). Sends the newest unsent draft To: Jason, BCC: every
-   address in `recipients.local.txt`, then records the window end so next
-   month starts there. An unsent draft's PRs roll into the next month.
+   address in `recipients.local.txt`, then records the window end so the next
+   issue starts there (with nothing sent yet, a run looks back two months). An
+   unsent draft's PRs roll into the next issue.
 
 If nothing user-visible merged, the task emails a one-line "nothing to send"
 note and advances the window. Failures email an alert via `alert-lib.ps1`.
@@ -36,3 +41,6 @@ SMTP comes from `..\..\alert-email.local.txt` (same Gmail app password as the al
 
 Edit `prompt.md` - audience, section rules, what to leave out, tone. Test with
 `build-draft.ps1 -NoEmail` (writes the draft, sends nothing).
+
+**On demand for a set period:** `build-draft.ps1 -Since 2026-09-01 -Until 2026-10-31`
+(local dates, both inclusive). Emails you the draft like the scheduled run.
