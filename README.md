@@ -1,6 +1,6 @@
 # Manitoba Open Data Parcel Search
 
-Status: Active | Next: tbd | Blocked: none | Updated: 2026-11-05
+Status: Active | Next: review and merge the CentrePort SPA branch (centreport-spa-overlay) | Blocked: none | Updated: 2026-11-05
 
 A firm-facing web tool for researching Manitoba properties (excluding Winnipeg, which has its [own portal](https://winnipeg-opendata-parcelsearch.vercel.app/)) by **municipality + civic address + roll # + legal description**, with each result enriched from provincial open-data sources and rendered on an interactive map. Pulls together what would otherwise be a multi-tab workflow — Manitoba Assessment Online, the provincial Zoning By-Laws layer, the Development Plan Designations layer, the MHTIS traffic-flow layer, MASC soil ratings, Water Rights Licensing (tile drainage + irrigation), and the Contaminated Sites Registry — into one search window with a single CSV export.
 
@@ -17,6 +17,7 @@ Source: <https://github.com/jayschellenberg/manitoba-opendata-parcelsearch>. Dep
 | `r/parcel_search_app.R` | Shiny app that searches the **local** snapshot for offline / historical lookups. | Personal use |
 | `r/build_legal_index.R` | Converts `../mao-scrape/results/parcels.parquet` into the static browser legal-search index at `web/public/data/legal-index.json`. | Web deploy prep |
 | `r/build_masc_shards.R` | Splits the MASC quarter-section rating CSV into per-municipality static shards for the MASC Rating map layer. | Web deploy prep |
+| `r/build_special_planning_areas.R` | Dissolves the zoning snapshot's Special Planning Area polygons (CentrePort's Inland Port SPA, M.R. 48/2016) into `web/public/special-planning-areas.geojson` for the CentrePort SPA overlay and the Addenda Pack zoning map. | Web deploy prep |
 | `r/build_parcel_masc.R` | Pre-bakes the dominant MASC soil rating per Roll Entry parcel for the Soil table column and writes the rated river-lot MASC overlay when river-lot inputs are present. | Web deploy prep |
 | `r/build_mli_ortho.ps1` | Downloads and builds the full southern-Manitoba MLI historical aerial mosaic as local PMTiles. | Basemap build |
 | `vercel.json` | Build config + production CORS rewrite for the contaminated-sites CSV. | — |

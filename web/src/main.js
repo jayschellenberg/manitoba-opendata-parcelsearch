@@ -316,6 +316,9 @@ import {
 } from './lib/water.js';
 import { rowPassesChangesFilter, changesFilterInert, zoningBylawText } from './lib/amendment.js';
 import {
+  specialPlanningArea, bylawCellText, fetchSpecialPlanningAreas, setSpaData, setSpaVisible, spaInBounds,
+} from './lib/specialPlanningAreas.js';
+import {
   addendaZoningLabelText, addendaZoningSourceNote, zoningBylawDate, zoningMinWidthM,
 } from './lib/addendaZoning.js';
 import { PILL_SPECS, modeFromChecked, checkedFromMode } from './lib/pillBinding.js';
@@ -687,6 +690,8 @@ const $muniParcelsToggle = document.getElementById('muni-parcels-toggle');
 const $mascToggle    = document.getElementById('masc-toggle');
 const $riskAreaToggle = document.getElementById('riskarea-toggle');
 const $mlsToggle = document.getElementById('mls-toggle');
+const $spaToggle = document.getElementById('spa-toggle');
+const $spaLegend = document.getElementById('spa-legend');
 // Flood zones (src/lib/flood.js). Five buttons of identical shape, so they
 // are looked up, wired and registered from FLOOD_GROUPS rather than spelled
 // out five times — the group list is the single source of truth.
@@ -1655,9 +1660,9 @@ const SORT_KEYS = {
   ),
   zone1pct:(r) => finiteOrNeg(r.zoning[0]?.ratio),
   zone2:   (r) => strKey(r.zoning[1]?.feature.properties.ZONE),
-  zbl:     (r) => strKey(r.zoning[0]?.feature.properties.ZBL),
+  zbl:     (r) => strKey(bylawCellText(r.zoning[0]?.feature.properties, 'ZBL')),
   dev1:    (r) => strKey(r.devPlan[0]?.feature.properties.DES_NAME),
-  dpbylaw: (r) => strKey(r.devPlan[0]?.feature.properties.DP_BYLAW),
+  dpbylaw: (r) => strKey(bylawCellText(r.devPlan[0]?.feature.properties, 'DP_BYLAW')),
   // Sort by MASC rating (A best → J worst). Empty cells go last.
   soil:     (r) => strKey(r.parcel.properties._soilRating),
   riskarea: (r) => finiteOrNeg(r.parcel.properties._soilRiskArea),
@@ -2989,6 +2994,7 @@ $highwaysToggle.addEventListener('click', () => toggleAuxOverlay('highways'));
 $priorOutlinesToggle?.addEventListener('click', () => toggleAuxOverlay('priorOutlines'));
 $riskAreaToggle.addEventListener('click', () => toggleAuxOverlay('riskAreas'));
 $mlsToggle?.addEventListener('click', () => toggleAuxOverlay('mlsAreas'));
+$spaToggle?.addEventListener('click', () => toggleAuxOverlay('spa'));
 for (const [key, btn] of $floodToggles) {
   btn?.addEventListener('click', () => toggleAuxOverlay(floodAuxKey(key)));
 }
@@ -4080,10 +4086,15 @@ function addendaZoningLabel(fc, feat) {
       try { return z?.geometry && booleanPointInPolygon(pt, z); } catch { return false; }
     }) || null;
   }
+  const hp = hit?.properties;
   return addendaZoningLabelText({
     muni: addendaMuniLabel(feat?.properties),
-    bylaw: hit ? zoningBylawText(hit.properties).base : null,
-    date: hit ? zoningBylawDate(hit.properties) : null,
+    bylaw: hit ? zoningBylawText(hp).base : null,
+    date: hit ? zoningBylawDate(hp) : null,
+    // CentrePort and any other Special Planning Area: the regulation, with
+    // the amending number when the polygon was rezoned.
+    spa: hit ? specialPlanningArea(hp) : null,
+    amendedBy: hit ? realStr(hp.ZBL_A) : null,
   });
 }
 
@@ -4224,7 +4235,7 @@ async function buildAddendaPack() {
   const userMarks = { pin: !!map._resultPinOn, numbers: !!map._parcelNumbers?.visible, dims: dimsOn };
   const zoningWas = zoningOverlayMode();
   const gridWas = gridMode;
-  const auxWas = { muniParcels: auxOverlayOn('muniParcels'), highways: auxOverlayOn('highways') };
+  const auxWas = { muniParcels: auxOverlayOn('muniParcels'), highways: auxOverlayOn('highways'), spa: auxOverlayOn('spa') };
   // The neighbourhood map's grid / highways / parcel fabric, back as the
   // user had them — straight after that map, and again in the finally.
   const restoreLayers = async () => {
@@ -4393,14 +4404,21 @@ async function buildAddendaPack() {
         const subjectAcres = addendaSubjectAcres(subject.feats);
         const zoningMinM = zoningMinWidthM(subjectAcres);
         const zoningNote = addendaZoningSourceNote(await fetchZoningLayerUpdatedDate());
+        const zoningFrame = framedBounds(subjectBox, { padFrac: 0.2, minWidthM: zoningMinM });
+        // The CentrePort SPA outline and its legend row go on whenever the
+        // area is in frame, and off when it is not, whatever the toggle says
+        // (Jason, 2026-11-05). A failed fetch just leaves the outline off.
+        const spaFc = await fetchSpecialPlanningAreas().catch(() => null);
+        await setAuxOverlay('spa', !!spaFc && spaInBounds(spaFc, zoningFrame));
         try {
           const zoning = await captureAddendaView(
-            framedBounds(subjectBox, { padFrac: 0.2, minWidthM: zoningMinM }), 'streets',
+            zoningFrame, 'streets',
             { withLegend: true, cornerLabel: zoningLabel, scaleNote: zoningNote,
               prepare: () => rebuildZoningLegend(zoningInView(muniZoning)) });
           add('zoning-map.png', zoning.bytes, `Zoning around ${subject.note}${marked}, at least ${zoningMinM < 1000 ? `${zoningMinM} m` : `${(zoningMinM / 1000).toFixed(1)} km`} wide`, zoning.stale);
         } finally {
           rebuildZoningLegend(muniZoning);
+          await setAuxOverlay('spa', auxWas.spa);
         }
       } else {
         notes.push('The zoning map was left out: zoning could not be loaded for this municipality.');
@@ -10927,6 +10945,11 @@ const AUX_META = {
   // MLS area boundaries, a static same-origin file (lib/mlsAreas.js).
   mlsAreas:    { btn: () => $mlsToggle,          on: 'MLS Areas', off: 'MLS Areas', busy: 'Loading…',
                  fetch: () => fetchMlsAreas(),                 setData: (m, fc) => setMlsAreasData(m, fc), setVis: setMlsAreasVisible },
+  // Special Planning Area outline (CentrePort, M.R. 48/2016), a static
+  // same-origin file (lib/specialPlanningAreas.js). Its legend row rides along.
+  spa:         { btn: () => $spaToggle,          on: 'CentrePort SPA', off: 'CentrePort SPA', busy: 'Loading…',
+                 fetch: () => fetchSpecialPlanningAreas(),     setData: (m, fc) => setSpaData(m, fc),
+                 setVis: (m, v) => { setSpaVisible(m, v); if ($spaLegend) $spaLegend.hidden = !v; } },
   // Assessment Parcels is the one overlay with nothing to fetch. Its fabric
   // is the province-wide PMTiles archive, already on the map as a vector
   // source that MapLibre range-requests per viewport, so turning the layer
@@ -15055,13 +15078,13 @@ function renderTable(rows, { resetPage = true } = {}) {
     tr.appendChild(titleCell(p));
     tr.appendChild(td(formatPercent(row.zoning[0]?.ratio), 'num'));
     tr.appendChild(td(z2Show ? badge(formatZoneCode(z2), 'badge-zone') : null));
-    tr.appendChild(td(z1.ZBL));
+    tr.appendChild(td(bylawCellText(z1, 'ZBL')));
     // Dev-Plan cells get the .devplan-only class so they show/hide
     // with the Dev Plan Layer overlay toggle (CSS in style.css).
     const devNameCell = td(formatDes(d1));
     devNameCell.classList.add('devplan-only');
     tr.appendChild(devNameCell);
-    const devBylawCell = td(d1.DP_BYLAW);
+    const devBylawCell = td(bylawCellText(d1, 'DP_BYLAW'));
     devBylawCell.classList.add('devplan-only');
     tr.appendChild(devBylawCell);
     // MASC Rating and Risk Area are both stamped during enrichment
@@ -18857,9 +18880,9 @@ function exportCsv(explicitRows) {
       // the filter. A row the grid shows as "Residential" writing out as
       // "Resdential" would be a discrepancy between the screen and the
       // file, and the file is the one that ends up in a report.
-      formatZoneCode(z1), z1.ZONE_NAME ?? '', normalizeZoneCategory(z1.ZONE_CATEGORY) ?? '', ratioPct(row.zoning[0]?.ratio), z1.ZBL ?? '',
-      formatZoneCode(z2), z2.ZONE_NAME ?? '', normalizeZoneCategory(z2.ZONE_CATEGORY) ?? '', ratioPct(row.zoning[1]?.ratio), z2.ZBL ?? '',
-      formatDes(d1), d1.DES_CATEGORY ?? '', ratioPct(row.devPlan[0]?.ratio), d1.DP_BYLAW ?? '', d1.PLANNINGDISTRICT ?? '',
+      formatZoneCode(z1), z1.ZONE_NAME ?? '', normalizeZoneCategory(z1.ZONE_CATEGORY) ?? '', ratioPct(row.zoning[0]?.ratio), bylawCellText(z1, 'ZBL') ?? '',
+      formatZoneCode(z2), z2.ZONE_NAME ?? '', normalizeZoneCategory(z2.ZONE_CATEGORY) ?? '', ratioPct(row.zoning[1]?.ratio), bylawCellText(z2, 'ZBL') ?? '',
+      formatDes(d1), d1.DES_CATEGORY ?? '', ratioPct(row.devPlan[0]?.ratio), bylawCellText(d1, 'DP_BYLAW') ?? '', d1.PLANNINGDISTRICT ?? '',
       p._soilRating ?? '', p._soilQuarter ?? '', p._soilRiskArea ?? '',
       dominantCliLabel(p) ?? '', dominantSoilTypeLabel(p) ?? '',
       ...slopeCsvCells(p),

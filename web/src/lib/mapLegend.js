@@ -77,9 +77,14 @@ export function readMapLegends(root, opts = {}) {
       items: [...el.querySelectorAll('li')]
         .map((li) => {
           const sw = li.querySelector('.swatch');
+          // data-line="dashed": an outline overlay (the CentrePort SPA), keyed
+          // by a dashed square in its border colour rather than a fill.
+          const line = sw?.dataset?.line || null;
+          const style = sw && computed ? computed(sw) : null;
           return {
-            color: sw && computed ? computed(sw).backgroundColor : null,
+            color: style ? (line ? style.borderTopColor : style.backgroundColor) : null,
             label: li.textContent.replace(/\s+/g, ' ').trim(),
+            ...(line ? { line } : {}),
           };
         })
         .filter((item) => item.label),
@@ -180,7 +185,16 @@ export function paintMapLegends(ctx, boxes, { font, bodyFont, titleFont } = {}) 
     ctx.font = bodyFont;
     for (const item of box.items) {
       const mid = rowY + rowH / 2;
-      if (item.color) {
+      if (item.color && item.line) {
+        const top = Math.round(mid - swatch / 2);
+        ctx.save();
+        ctx.strokeStyle = item.color;
+        ctx.lineWidth = Math.max(2, Math.round(swatch / 6));
+        if (item.line === 'dashed' && ctx.setLineDash) ctx.setLineDash([Math.max(3, swatch / 4), Math.max(2, swatch / 6)]);
+        const inset = ctx.lineWidth / 2;
+        ctx.strokeRect(box.x + padX + inset, top + inset, swatch - inset * 2, swatch - inset * 2);
+        ctx.restore();
+      } else if (item.color) {
         const top = Math.round(mid - swatch / 2);
         ctx.fillStyle = item.color;
         ctx.fillRect(box.x + padX, top, swatch, swatch);

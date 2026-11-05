@@ -20,6 +20,14 @@
 // by-law number for callers that label it themselves.
 
 import { realStr } from './cellFormat.js';
+import { specialPlanningArea, spaBylawLine } from './specialPlanningAreas.js';
+
+// Inside a Special Planning Area the "by-law" is a Manitoba Regulation
+// (CentrePort: M.R. 48/2016), so the line says so instead of "By-law 48/2016".
+function bylawLine(p, base) {
+  if (!base) return null;
+  return spaBylawLine(specialPlanningArea(p)) || `By-law ${base}`;
+}
 
 /** @returns {{ base: string|null, bylaw: string|null, amendment: string|null }} */
 export function zoningBylawText(p = {}) {
@@ -29,7 +37,7 @@ export function zoningBylawText(p = {}) {
   const amendedBy = amendA && amendA !== base ? amendA : null;
   return {
     base,
-    bylaw: base ? `By-law ${base}` : null,
+    bylaw: bylawLine(p, base),
     amendment: amendmentText(amendedBy, desc),
   };
 }
@@ -41,7 +49,7 @@ export function devPlanBylawText(p = {}) {
   const amendedBy = amendA && amendA !== base ? amendA : null;
   return {
     base,
-    bylaw: base ? `By-law ${base}` : null,
+    bylaw: bylawLine(p, base),
     amendment: amendmentText(amendedBy, null),
   };
 }

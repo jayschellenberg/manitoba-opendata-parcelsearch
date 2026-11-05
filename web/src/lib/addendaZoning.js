@@ -6,6 +6,7 @@
 
 import { realStr } from './cellFormat.js';
 import { ZONING_BYLAW_DATES } from './zoningBylawDates.js';
+import { spaLongName } from './specialPlanningAreas.js';
 
 // Minimum frame width by subject size. At 1,500 m a town lot was a speck
 // among the neighbouring blocks (2026-10-12), and 1,000 m was still loose
@@ -53,7 +54,8 @@ export function formatBylawDate(iso) {
  * call: always the municipality, even for a planning-district by-law);
  * each part drops out when unknown, down to plain "Zoning Map".
  */
-export function addendaZoningLabelText({ muni, bylaw, date } = {}) {
+export function addendaZoningLabelText({ muni, bylaw, date, spa, amendedBy } = {}) {
+  if (spa) return addendaSpaLabelText(spa, amendedBy);
   const base = realStr(bylaw);
   const where = realStr(muni);
   const when = formatBylawDate(date);
@@ -61,6 +63,22 @@ export function addendaZoningLabelText({ muni, bylaw, date } = {}) {
   const law = /by-?law/i.test(base) ? base : `By-law ${base}`;
   const text = `Zoning Map — ${where ? `${where} ` : ''}${law}`;
   return when ? `${text} (effective ${when})` : text;
+}
+
+/**
+ * Inside a Special Planning Area the regulation governs, not the host
+ * municipality (Jason, 2026-11-05): "Zoning Map — Inland Port Special
+ * Planning Area (CentrePort), Manitoba Regulation 48/2016 (registered
+ * March 8, 2016), as amended by 10/2021". "Registered", not "effective":
+ * the regulation came into force with S.M. 2015 c. 26, on its own date.
+ */
+export function addendaSpaLabelText(spa, amendedBy) {
+  const when = formatBylawDate(spa?.registered);
+  const amend = realStr(amendedBy);
+  let text = `Zoning Map — ${spaLongName(spa)}`;
+  if (when) text += ` (registered ${when})`;
+  if (amend && amend !== spa.regulation) text += `, as amended by ${amend}`;
+  return text;
 }
 
 /** The zoning map's source line, under the scale bar. The date is the

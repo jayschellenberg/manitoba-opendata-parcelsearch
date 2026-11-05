@@ -1335,6 +1335,13 @@
             <button id="devplan-toggle" type="button" class="overlay-btn" aria-pressed="false" title="Dev Plan — Manitoba Development Plan Designations">
               <span class="overlay-btn-label">Development Plan</span>
             </button>
+            <!-- Special Planning Area outline (lib/specialPlanningAreas.js).
+                 CentrePort's zoning in Rosser is set by M.R. 48/2016, not the
+                 RM's by-law; the dashed violet line marks where that applies.
+                 The Addenda Pack zoning map draws it whenever it is in frame. -->
+            <button id="spa-toggle" type="button" class="overlay-btn" aria-pressed="false" title="CentrePort SPA — the Inland Port Special Planning Area (CentrePort Canada, RM of Rosser). Zoning and development plan inside the dashed violet line are set by Manitoba Regulation 48/2016, not the Rosser by-law. Click inside it for the regulation.">
+              <span class="overlay-btn-label">CentrePort SPA</span>
+            </button>
             <!-- Changes pill — Off / Show / Filter. SHOW highlights the RESULT
                  PARCELS that carry a zoning or development-plan amendment
                  (amber fill + outline, driven by the `_changesText` stamp the
@@ -1713,6 +1720,12 @@
       <div id="zoning-legend" class="map-legend zoning-legend" hidden>
         <strong>Zoning category</strong>
         <ul></ul>
+      </div>
+      <div id="spa-legend" class="map-legend spa-legend" hidden>
+        <strong>Special planning area</strong>
+        <ul>
+          <li><span class="swatch swatch-dashed" data-line="dashed"></span>Inland Port SPA (CentrePort), M.R. 48/2016</li>
+        </ul>
       </div>
       <div id="masc-legend" class="map-legend masc-legend" hidden>
         <strong>MASC soil rating</strong>
