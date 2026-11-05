@@ -57,6 +57,7 @@ import {
   applyMuniParcelsBasemapStyle,
 } from './lib/muniParcelsStyle.js';
 import { polygonBboxMidpoint } from './lib/polygonCentroid.js';
+import { createReachableHover } from './lib/reachableHover.js';
 import { approxFitMaxZoom, unmappedPlacementText, maoLinkTitle } from './lib/unmappedRolls.js';
 import { yieldToOverlay, duLabelFilter, duLabelTextField } from './lib/overlayHighlight.js';
 import { rollDisplay } from './lib/parcelLabelFields.js';
@@ -3593,12 +3594,26 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
         map.getCanvas().style.cursor = isMeasuring() ? '' : cursor;
       };
 
-      // Everything a hover leaves behind, undone in one place: both
-      // tooltips, the pointer cursor and the sale-group highlight. Three
-      // callers need exactly this — an empty hit-test, the pointer
-      // leaving the canvas, and the measurement tool taking over.
+      // The parcel hover popups are reachable (lib/reachableHover.js,
+      // Jason 2026-11-05, ported from Winnipeg): they hold still while the
+      // pointer heads for them and linger 1 s after it leaves, so the
+      // links in them (MAO roll link, Copy Roll, GPS, N1, Jump to list)
+      // can be clicked. muniHover is the Assessment Parcels layer's popup,
+      // created below; the two hand over to each other further down.
+      const mainHover = createReachableHover(map, popup);
+      // Everything a hover leaves behind, undone in one place: the
+      // tooltips, the pointer cursor and the sale-group highlight. For
+      // the measurement / drawing tools taking over the pointer.
       const clearHover = () => {
-        popup.remove();
+        mainHover.hide();
+        cliHoverPopup.remove();
+        setHoverCursor('');
+        clearGroupHover();
+      };
+      // An empty hit-test: the cursor and highlight go at once, the
+      // parcel popup lingers (or holds, if the pointer is on its way).
+      const releaseHover = (pt) => {
+        mainHover.hoverTo(null, pt);
         cliHoverPopup.remove();
         setHoverCursor('');
         clearGroupHover();
@@ -3633,7 +3648,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
         }
         const hits = map.queryRenderedFeatures(e.point, { layers: visibleLayers });
         if (!hits.length) {
-          clearHover();
+          releaseHover(e.point);
           return;
         }
         // Light up parcels that are part of a sale group on hover —
@@ -3669,11 +3684,18 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
         // a comp), the blue subject header should win the header.
         const blocks = [];
         const subject = hits.find((h) => h.layer.id === 'subject-fill');
-        if (subject) {
-          blocks.push(`<div><strong style="color:#1e6fd9">Subject</strong><br>${parcelHtml(subject.properties, { hoverSoil: true })}</div>`);
-        }
         const parcel = hits.find(isParcelHit);
-        if (parcel && !subject) blocks.push(`<div><strong style="color:#7a5c00">Parcel</strong><br>${parcelHtml(parcel.properties, { hoverSoil: true })}</div>`);
+        // The one search-result block (subject wins), whose links the
+        // reachable popup wires: Jump to list needs the row key, GPS the
+        // parcel's own geometry (a withheld parcel's pin IS its centroid).
+        const resultHit = subject || parcel || null;
+        const rowKey = resultHit?.properties?._rowKey;
+        const canJump = rowKey != null && typeof onFeatureClick === 'function';
+        const hoverOpts = { hoverSoil: true, showJumpToList: canJump };
+        if (subject) {
+          blocks.push(`<div><strong style="color:#1e6fd9">Subject</strong><br>${parcelHtml(subject.properties, hoverOpts)}</div>`);
+        }
+        if (parcel && !subject) blocks.push(`<div><strong style="color:#7a5c00">Parcel</strong><br>${parcelHtml(parcel.properties, hoverOpts)}</div>`);
         const zone = hits.find((h) => h.layer.id === 'zoning-fill');
         if (zone) blocks.push(`<div><strong style="color:#1a2a4a">Zoning</strong><br>${zoningHtml(zone.properties)}</div>`);
         const dev = hits.find((h) => h.layer.id === 'devplan-fill');
@@ -3682,13 +3704,30 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
         // Remove when no content blocks remain so we don't render an
         // empty popup over a bare CLI hover (in that case only the
         // BELOW-CURSOR cliHoverPopup will be visible).
-        if (blocks.length) {
-          popup
-            .setLngLat(e.lngLat)
-            .setHTML(blocks.join('<hr style="margin:6px 0;border:none;border-top:1px solid #ddd">'))
-            .addTo(map);
+        // A search result hands over to the Assessment Parcels popup while
+        // the pointer is on its way to that one (crossing a result to
+        // reach it), and closes it otherwise: the two never showed a
+        // parcel each at once. A zoning / dev-plan-only popup leaves it be.
+        if (blocks.length && !(resultHit && muniHover.holds(e.point))) {
+          const html = blocks.join('<hr style="margin:6px 0;border:none;border-top:1px solid #ddd">');
+          const g = resultHit?.geometry;
+          const center = (g?.type === 'Point' ? g.coordinates : polygonBboxMidpoint(g))
+            ?? [e.lngLat.lng, e.lngLat.lat];
+          mainHover.hoverTo({
+            key: html,
+            html,
+            lngLat: e.lngLat,
+            fit: !!resultHit,
+            wire: resultHit ? (pp) => {
+              wireCoordsCopy(pp, center);
+              wireRollCopy(pp);
+              wireN1Copy(pp);
+              if (canJump) wireJumpToList(pp, rowKey, onFeatureClick);
+            } : null,
+          }, e.point);
+          if (resultHit && mainHover.current()?.key === html) muniHover.hide();
         } else {
-          popup.remove();
+          mainHover.hoverTo(null, e.point);
         }
         // BELOW-CURSOR popup: soil-under-cursor breakdown for the CLI
         // polygon under the cursor. Lives in its own popup instance so
@@ -3707,7 +3746,10 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
         const muniParcelsOn = map.getLayer('muni-parcels-fill')
           && map.getLayoutProperty('muni-parcels-fill', 'visibility') === 'visible';
         const cli = hits.find((h) => h.layer.id === 'cli-agr-fill');
-        if (cli && !subject && !parcel && !muniParcelsOn) {
+        // Not while a held search-result popup is waiting for the pointer:
+        // the soil readout would open under the cursor, across its path.
+        const resultHeld = !!mainHover.current()?.fit && mainHover.holds(e.point);
+        if (cli && !subject && !parcel && !muniParcelsOn && !resultHeld) {
           const soil = soilSurveyHoverHtml(cli.properties);
           if (soil) {
             cliHoverPopup
@@ -3721,7 +3763,17 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
           cliHoverPopup.remove();
         }
       });
-      map.on('mouseout', () => clearHover());
+      // Leaving the canvas: the cursor, highlight and soil readout go at
+      // once; the parcel popups linger, or stay put when the pointer went
+      // onto one of them (their own mouseenter takes over).
+      map.on('mouseout', (e) => {
+        const to = e.originalEvent?.relatedTarget;
+        setHoverCursor('');
+        clearGroupHover();
+        cliHoverPopup.remove();
+        mainHover.leave(to);
+        muniHover.leave(to);
+      });
 
       // Click on a search-result parcel → open a sticky popup with the
       // parcel detail. The popup includes an explicit action for scrolling
@@ -3748,12 +3800,12 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
         // true when it found and revealed the card; otherwise (another
         // page, a parcel outside the results) the popup below still opens.
         if (isPhone() && key != null && typeof onFeatureClick === 'function' && onFeatureClick(key) === true) {
-          popup.remove();
+          mainHover.hide();
           return;
         }
         // Hide the hover popup so the sticky popup doesn't render on top
         // of itself when the user hovers back over the same parcel.
-        popup.remove();
+        mainHover.hide();
         parcelClickPopup
           .setLngLat(e.lngLat)
           .setHTML(parcelHtml(f.properties, {
@@ -3790,6 +3842,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
         closeButton: false,
         closeOnClick: false,
       });
+      const muniHover = createReachableHover(map, muniHoverPopup);
       // Rest-triggered soil composition for the hover tooltip. One timer and
       // one key: moving to another parcel cancels the pending timer, and a
       // result that lands after the cursor has moved on is dropped (the
@@ -3818,7 +3871,10 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
             .then((composition) => {
               if (hoverSoilKey !== key || !muniHoverPopup.isOpen() || !lastHoverProps) return;
               if (hoverSoilKeyOf(lastHoverProps) !== key) return;
-              muniHoverPopup.setHTML(muniParcelHtml(muniParcelPropsNow(lastHoverProps), {
+              // refresh() re-wires the links and no-ops if the popup has
+              // since moved on to another parcel.
+              muniHover.refresh(key, muniParcelHtml(muniParcelPropsNow(lastHoverProps), {
+                withReportLink: true,
                 overlay: lastHoverOverlay,
                 soil: composition === undefined ? undefined : (composition || { composition: null, cliRollup: null }),
               }));
@@ -3831,16 +3887,22 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
         if (map.getLayoutProperty('muni-parcels-fill', 'visibility') !== 'visible') return;
         // Stands down with the rest of the hover while measuring — this
         // popup has its own handler, so the global guard doesn't cover it.
-        if (isMeasuring()) {
-          muniHoverPopup.remove();
+        if (isMeasuring() || isShapeDrawing()) {
+          muniHover.hide();
           setHoverCursor('');
           return;
         }
         // If a search-result parcel is also under the cursor, defer to its
-        // popup (handled by the global mousemove above) and hide ours.
+        // popup (handled by the global mousemove above): ours holds if the
+        // pointer is on its way to it, and the result's popup closes it
+        // otherwise.
         const overSearchResult = map.queryRenderedFeatures(e.point, { layers: parcelHitLayers(map) }).length > 0;
-        if (overSearchResult) { muniHoverPopup.remove(); return; }
-        const p = e.features?.[0]?.properties;
+        if (overSearchResult) { muniHover.hoverTo(null, e.point); return; }
+        // While the search-result popup is held for the pointer, don't
+        // open this one across its path.
+        if (mainHover.current()?.fit && mainHover.holds(e.point)) { muniHover.hoverTo(null, e.point); return; }
+        const feature = e.features?.[0];
+        const p = feature?.properties;
         if (!p) return;
         // Pull zoning + dev-plan info from whatever overlay layers are
         // currently visible at the cursor so the muni-parcel popup is
@@ -3870,10 +3932,22 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
           : 'pending';
         lastHoverProps = p;
         lastHoverOverlay = hoverOverlay;
-        muniHoverPopup
-          .setLngLat(e.lngLat)
-          .setHTML(muniParcelHtml(muniParcelPropsNow(p), { overlay: hoverOverlay, soil: hoverSoil }))
-          .addTo(map);
+        const g = feature.geometry;
+        const center = polygonBboxMidpoint(g) ?? [e.lngLat.lng, e.lngLat.lat];
+        muniHover.hoverTo({
+          key: hoverSoilKeyOf(p),
+          html: muniParcelHtml(muniParcelPropsNow(p), { withReportLink: true, overlay: hoverOverlay, soil: hoverSoil }),
+          lngLat: e.lngLat,
+          fit: true,
+          wire: (pp) => {
+            wireCoordsCopy(pp, center);
+            wireRollCopy(pp);
+          },
+        }, e.point);
+        // Swapping onto a fabric parcel from a search result is a swap,
+        // not a linger: the result's popup goes as this one opens (it was
+        // not held, or this handler would have returned above).
+        if (muniHover.current()?.key === hoverSoilKeyOf(p) && mainHover.current()?.fit) mainHover.hide();
         setHoverCursor('pointer');
         if (hoverSoil === 'pending') scheduleHoverSoil(p);
         else cancelHoverSoil();
@@ -3887,8 +3961,12 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
           Promise.resolve(muniParcelResolver.resolve(p)).catch(() => {});
         }
       });
-      map.on('mouseleave', 'muni-parcels-fill', () => {
-        muniHoverPopup.remove();
+      map.on('mouseleave', 'muni-parcels-fill', (e) => {
+        // Off the canvas is the map-wide mouseout's (leave(), above);
+        // onto bare map or another layer lingers / holds like any other
+        // empty hit.
+        if (e.originalEvent?.type === 'mouseout') muniHover.leave(e.originalEvent.relatedTarget);
+        else muniHover.hoverTo(null, e.point);
         setHoverCursor('');
         cancelHoverSoil();
       });
@@ -3905,6 +3983,8 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
         if (overSearchResult) return;
         const p = e.features?.[0]?.properties;
         if (!p) return;
+        // The click popup replaces the (now lingering) hover one.
+        muniHover.hide();
         const overlay = readOverlaysAt(map, e.point);
         // Same Coordinates-copy wiring as the parcel-fill click
         // handler: pull the full geometry via queryRenderedFeatures,
@@ -5459,12 +5539,7 @@ export function wireCopyAnchor(anchor, text) {
       setTimeout(() => { anchor.textContent = original; }, 1500);
     };
     const onFailure = () => { anchor.textContent = 'Copy failed'; };
-    // navigator.clipboard requires a secure context (HTTPS / localhost);
-    // fall back to the legacy execCommand path on http://0.0.0.0-style
-    // dev hosts where it's missing.
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(text).then(onSuccess, onFailure);
-    } else {
+    const legacyCopy = () => {
       try {
         const ta = document.createElement('textarea');
         ta.value = text;
@@ -5472,10 +5547,20 @@ export function wireCopyAnchor(anchor, text) {
         ta.style.opacity = '0';
         document.body.appendChild(ta);
         ta.select();
-        document.execCommand('copy');
+        const ok = document.execCommand('copy');
         document.body.removeChild(ta);
-        onSuccess();
+        if (ok) onSuccess(); else onFailure();
       } catch { onFailure(); }
+    };
+    // navigator.clipboard requires a secure context (HTTPS / localhost);
+    // fall back to the legacy execCommand path on http://0.0.0.0-style
+    // dev hosts where it's missing, AND when it rejects: an embedded
+    // webview can deny clipboard-write even on localhost (Winnipeg's
+    // wireCopyAnchor does the same).
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(onSuccess, legacyCopy);
+    } else {
+      legacyCopy();
     }
   });
 }
@@ -7873,9 +7958,9 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null, soil = unde
   const mascLine = mascRatingParcelHtml(p);
   if (mascLine) lines.push(`<strong>MASC rating</strong>${mascLine}`);
   // GPS Coordinates link sits right after DU so it's a single click
-  // away on the click popup. Only rendered for the sticky/click
-  // variant — the hover popup closes on mouse-out before the user
-  // can click, so showing a dead link there would just add noise.
+  // away. Rendered on the click popup and, since the hover popup became
+  // reachable (lib/reachableHover.js, 2026-11-05), on the hover too;
+  // both wire it (wireCoordsCopy / wireRollCopy).
   if (withReportLink) {
     lines.push(copyActionsLine(p));
   }
