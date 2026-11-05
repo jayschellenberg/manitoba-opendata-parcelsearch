@@ -19,6 +19,7 @@
 // plan polygon while its overlay is visible pops up a small description.
 
 import { addMlsAreaLayers, mlsAreaHtml } from './lib/mlsAreas.js';
+import { addSpaLayers, spaPopupHtml, specialPlanningArea, spaBylawLine } from './lib/specialPlanningAreas.js';
 import maplibregl from 'maplibre-gl';
 import { addLocateControl } from './lib/locateControl.js';
 import bbox from '@turf/bbox';
@@ -1783,6 +1784,10 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
 
       // MLS area boundaries (lib/mlsAreas.js, shared with the Winnipeg app).
       addMlsAreaLayers(map);
+      // Special Planning Area outlines — CentrePort's Inland Port SPA
+      // (lib/specialPlanningAreas.js). Above the zoning fill, so the dashed
+      // line reads over the zones it governs.
+      addSpaLayers(map);
 
       // ---- Flood zones (see src/lib/flood.js) ----
       // Five independently-toggled groups, one GeoJSON source each, all
@@ -4274,6 +4279,15 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
       });
       map.on('mouseleave', 'mls-area-fill', () => { setHoverCursor(''); });
 
+      // Click inside a Special Planning Area -> its name and regulation.
+      const spaPopup = new maplibregl.Popup({ closeButton: true });
+      onLayerClick(map, 'spa-fill', (e) => {
+        if (map.getLayoutProperty('spa-fill', 'visibility') !== 'visible') return;
+        const p = e.features?.[0]?.properties;
+        if (!p) return;
+        spaPopup.setLngLat(e.lngLat).setHTML(spaPopupHtml(p)).addTo(map);
+      });
+
       // Click a CLI polygon → popup listing every class slot the
       // polygon carries (A through F) with class number, percentage,
       // and subclass codes. Most polygons have a single dominant
@@ -6046,7 +6060,8 @@ function historicalZoningHtml(p, year) {
   // ZBL / ZBL_A / AMENDMENT_DESCRIPTION as of the snapshot date, so this
   // says which by-law had rezoned the polygon by then.
   const zb = zoningBylawText(p);
-  if (zb.base)      lines.push(`<strong>By-law</strong> ${escapeHtml(zb.base)}`);
+  const zSpa = spaBylawLine(specialPlanningArea(p));
+  if (zb.base)      lines.push(zSpa ? `<strong>Regulation</strong> ${escapeHtml(zSpa)}` : `<strong>By-law</strong> ${escapeHtml(zb.base)}`);
   if (zb.amendment) lines.push(amendmentHtml(zb.amendment));
   lines.push('<small style="color:#888">Pointer only — verify the by-law as of this date with the municipality / planning district.</small>');
   return `<div class="parcel-popup">${lines.join('<br>')}</div>`;
@@ -6057,7 +6072,8 @@ function historicalDevplanHtml(p, year) {
   if (p.DES_NAME)     lines.push(`<strong>${escapeHtml(p.DES_NAME)}</strong>`);
   if (p.DES_CATEGORY) lines.push(`<em>${escapeHtml(p.DES_CATEGORY)}</em>`);
   const db = devPlanBylawText(p);
-  if (db.base)      lines.push(`<strong>By-law</strong> ${escapeHtml(db.base)}`);
+  const dSpa = spaBylawLine(specialPlanningArea(p));
+  if (db.base)      lines.push(dSpa ? `<strong>Regulation</strong> ${escapeHtml(dSpa)}` : `<strong>By-law</strong> ${escapeHtml(db.base)}`);
   if (db.amendment) lines.push(amendmentHtml(db.amendment));
   lines.push('<small style="color:#888">Pointer only — verify the designation as of this date with the planning district.</small>');
   return `<div class="parcel-popup">${lines.join('<br>')}</div>`;

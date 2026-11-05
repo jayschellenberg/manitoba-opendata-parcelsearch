@@ -3648,6 +3648,14 @@ body.shape-drawing .maplibregl-canvas {
   border-radius: 2px;
 }
 
+/* Outline overlays (the CentrePort SPA): a dashed square in the line colour.
+   mapLegend.js reads border-top-color for data-line swatches. */
+.map-legend .swatch.swatch-dashed {
+  background: transparent;
+  border: 2px dashed #6d28d9;
+  box-sizing: border-box;
+}
+
 .map-legend .swatch.parcel {
   background: rgba(178, 34, 34, 0.32);
   border: 2px solid #690000;
