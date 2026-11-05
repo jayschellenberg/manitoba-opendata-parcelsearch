@@ -7831,6 +7831,11 @@ body.phone .sidebar .result-card-more {
    sheet, under the sticky handle + tab strip, and flashes its outline
    the way a desktop row flashes .row-highlight. */
 body.phone .maplibregl-popup.hover-popup { display: none; }
+/* The parcel hover popups are reachable (lib/reachableHover.js holds them
+   still while the pointer heads for them), so a tall one scrolls inside
+   the height map.js caps it to instead of running past the map's edge
+   with its Copy Roll / GPS / Jump to list links out of reach. */
+.maplibregl-popup.reachable-hover .maplibregl-popup-content { overflow-y: auto; }
 .result-card { scroll-margin-top: 92px; }
 .result-card.card-highlight { animation: card-highlight 1.6s ease-out; }
 @keyframes card-highlight {

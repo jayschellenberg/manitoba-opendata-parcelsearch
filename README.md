@@ -1,5 +1,7 @@
 # Manitoba Open Data Parcel Search
 
+Status: Active | Next: tbd | Blocked: none | Updated: 2026-11-05
+
 A firm-facing web tool for researching Manitoba properties (excluding Winnipeg, which has its [own portal](https://winnipeg-opendata-parcelsearch.vercel.app/)) by **municipality + civic address + roll # + legal description**, with each result enriched from provincial open-data sources and rendered on an interactive map. Pulls together what would otherwise be a multi-tab workflow — Manitoba Assessment Online, the provincial Zoning By-Laws layer, the Development Plan Designations layer, the MHTIS traffic-flow layer, MASC soil ratings, Water Rights Licensing (tile drainage + irrigation), and the Contaminated Sites Registry — into one search window with a single CSV export.
 
 ## Live site
@@ -150,6 +152,7 @@ The page splits into a fixed-width left sidebar holding all controls and a fluid
 - Search · Clear · Export CSV — saved as `MAOADF-YYYY-MM-DD-HHMM.csv` (local time), the name the R land template looks for
 - Result count badge
 - Parcel click popups carry **Copy Roll · GPS Coordinates** (as in the Winnipeg app); clicking the roll number itself still opens the MAO report
+- Parcel **hover** popups (search results and the Assessment Parcels layer) are reachable, as in the Winnipeg app: they hold still while the pointer heads for them and linger about 1 second after it leaves a parcel or the map, so their links can be clicked (MAO roll link, Copy Roll, GPS Coordinates, N1 ID, and Jump to parcel in list on a search result). A tall popup scrolls inside the map. See `web/src/lib/reachableHover.js`
 - Sales Analysis → **Charts** opens the Sales Charts page — the land template's CMS charts in LandShiny's layout (map tabs over chart tabs on ADF Overview, CMS Charts, Agricultural, Total/Per Lot and Water pages). ADF Overview charts the near market and carries the isovalue and location-effect maps; a Sales switch (All / Bare land / Improved) and a percent-per-year trend that is applied only when measurable keep the two sets honest. Numbered comparables and Land Sets (the grid's ★ is the comp number), exclusion reasons, and a **Work file** zip of PNGs, CSVs and a self-contained summary.html — see DOCUMENTATION.md §10.0.2
 
 **Sidebar — Map overlays section**. Each category is a collapsible
