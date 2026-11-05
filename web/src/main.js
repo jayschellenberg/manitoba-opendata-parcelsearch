@@ -903,7 +903,7 @@ const MUNI_WEBSITES = {
   'RIDING MOUNTAIN WEST (RM)':   'https://www.rmwest.ca/',
   'RITCHOT (RM)':                'https://www.ritchot.com/',
   'ROCKWOOD (RM)':               'https://www.rockwood.ca/',
-  'ROLAND (RM)':                 'https://www.rmofroland.com/',
+  'ROLAND (RM)':                 'https://rmofroland.ca/',
   'ROSEDALE (RM)':               'https://www.rmrosedale.com/',
   'ROSSER (RM)':                 'https://www.rmofrosser.com/',
   'SIFTON (RM)':                 'https://www.rmofsifton.com/',
