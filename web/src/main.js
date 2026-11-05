@@ -315,6 +315,7 @@ import {
   waterCsvCells, isWaterfront, isNearWater, WATER_CLASSES, waterDistance,
 } from './lib/water.js';
 import { rowPassesChangesFilter, changesFilterInert, zoningBylawText } from './lib/amendment.js';
+import { fitText } from './lib/textFit.js';
 import {
   specialPlanningArea, bylawCellText, fetchSpecialPlanningAreas, setSpaData, setSpaVisible, spaInBounds,
 } from './lib/specialPlanningAreas.js';
@@ -3454,33 +3455,47 @@ function composeWithAttribution(frame, { withLegend = false, furniture = null } 
 
   // Scale bar bottom-left, north arrow top-right: the corners the credit,
   // the legend and the on-screen controls leave free (lib/mapFurniture.js).
-  if (furniture) drawCaptureFurniture(ctx, w, h, fontSize, furniture);
+  // The credit pill's width is passed on so the bottom-left source note
+  // wraps short of it instead of running underneath.
+  if (furniture) drawCaptureFurniture(ctx, w, h, fontSize, furniture, blockW + 6);
 
   return out;
 }
 
 /** Scale bar + north arrow for a composed capture. */
-function drawCaptureFurniture(ctx, w, h, fontSize, { metersPerPx, bearing, scaleNote = '' }) {
+function drawCaptureFurniture(ctx, w, h, fontSize, { metersPerPx, bearing, scaleNote = '' }, reserveRight = 0) {
   const pad = Math.round(w * 0.008);
-  // An optional note (the aerial's survey disclaimer) sits under the scale
-  // bar in its own pill, and the bar moves up to make room for it.
-  const noteH = scaleNote ? drawScaleNote(ctx, { x: pad, y: h - pad, text: scaleNote, font: fontSize }) : 0;
+  // An optional note (the aerial's survey disclaimer, the zoning source
+  // line) sits under the scale bar in its own pill, and the bar moves up to
+  // make room for it. It wraps before the credit pill on the right.
+  const noteMax = Math.max(w * 0.3, w - pad * 3 - reserveRight);
+  const noteH = scaleNote ? drawScaleNote(ctx, { x: pad, y: h - pad, text: scaleNote, font: fontSize, maxWidth: noteMax }) : 0;
   const barBottom = noteH ? h - pad - noteH - Math.round(pad / 2) : h - pad;
   drawScaleBar(ctx, { x: pad, y: barBottom, metersPerPx, maxWidthPx: w * 0.2, font: fontSize });
   const size = Math.round(w * 0.042);
   drawNorthArrow(ctx, { cx: w - pad - size / 2, cy: pad + size / 2, size, bearing });
 }
 
-/** One line of italic text in a white pill, its bottom-left corner at
- *  (x, y), styled like the scale bar's pill. Returns the pill's height. */
-function drawScaleNote(ctx, { x, y, text, font }) {
-  const fs = Math.max(11, Math.round(font));
-  const padX = Math.round(fs * 0.6);
-  const padY = Math.round(fs * 0.4);
+/** Italic text in a white pill, its bottom-left corner at (x, y), styled
+ *  like the scale bar's pill. Wraps into up to two balanced lines when it
+ *  is wider than `maxWidth` (the pill included), shrinking only if two
+ *  lines are not enough (lib/textFit.js). Returns the pill's height. */
+function drawScaleNote(ctx, { x, y, text, font, maxWidth = Infinity }) {
+  const base = Math.max(11, Math.round(font));
+  const padX = Math.round(base * 0.6);
+  const padY = Math.round(base * 0.4);
+  const family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+  const fontOf = (px) => `italic ${px}px ${family}`;
   ctx.save();
-  ctx.font = `italic ${fs}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
-  const w = Math.ceil(ctx.measureText(text).width + padX * 2);
-  const h = fs + padY * 2;
+  const textMax = Math.max(40, maxWidth - padX * 2);
+  const measure = (t, px) => { ctx.font = fontOf(px); return ctx.measureText(t).width; };
+  const fit = fitText(text, { font: base, maxWidth: textMax, measure, maxLines: 2, floorScale: 0.8 });
+  const fs = Math.max(11, fit.font);
+  const lineH = Math.round(fs * 1.22);
+  ctx.font = fontOf(fs);
+  const widest = Math.min(textMax, Math.max(0, ...fit.lines.map((l) => ctx.measureText(l).width)));
+  const w = Math.ceil(widest + padX * 2);
+  const h = Math.ceil(fs + lineH * (Math.max(1, fit.lines.length) - 1) + padY * 2);
   const x0 = Math.round(x);
   const y0 = Math.round(y - h);
   ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
@@ -3491,7 +3506,7 @@ function drawScaleNote(ctx, { x, y, text, font }) {
   ctx.fillStyle = '#1a1a1a';
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left';
-  ctx.fillText(text, x0 + padX, y0 + h / 2);
+  fit.lines.forEach((line, i) => ctx.fillText(line, x0 + padX, y0 + padY + fs / 2 + i * lineH, textMax));
   ctx.restore();
   return h;
 }
@@ -4116,17 +4131,38 @@ function zoningInView(fc) {
 /** A bold boxed label in the top-left corner of a composed map — the
  *  corner the credit, legend, scale bar and north arrow all leave free.
  *  33 px on a 1950 px map (about 8 pt printed at 6.5 in); `scale` enlarges
- *  it, as on the neighbourhood map. */
+ *  it, as on the neighbourhood map.
+ *
+ *  A label that fits between the left edge and the north arrow stays one
+ *  line at full size, as before. A longer one (a Special Planning Area's
+ *  regulation) first gives up to 10% of its size to stay on one line, then
+ *  wraps into balanced lines no wider than CORNER_LABEL_WRAP of the image,
+ *  shrinking only if three lines are not enough (lib/textFit.js). It used to be one unbounded line, which
+ *  ran off the image (Jason, 2026-11-05). */
+const CORNER_LABEL_WRAP = 0.72;
 function drawCornerLabel(canvas, text, scale = 1) {
   const ctx = canvas.getContext('2d');
   const w = canvas.width;
-  const fontSize = Math.max(14, Math.round(w * 0.017 * scale));
+  const baseFont = Math.max(14, Math.round(w * 0.017 * scale));
   const pad = Math.round(w * 0.008);
-  const padX = Math.round(fontSize * 0.6);
-  const padY = Math.round(fontSize * 0.4);
-  ctx.font = `600 ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
-  const boxW = Math.ceil(ctx.measureText(text).width + padX * 2);
-  const boxH = fontSize + padY * 2;
+  const padX = Math.round(baseFont * 0.6);
+  const padY = Math.round(baseFont * 0.4);
+  const family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+  const fontOf = (px) => `600 ${px}px ${family}`;
+  // The north arrow sits top-right (drawCaptureFurniture: 0.042 w square,
+  // `pad` in from the edge); keep a gap of 2 x pad before it.
+  const arrow = Math.round(w * 0.042);
+  const maxWidth = Math.max(50, w - pad * 4 - arrow - padX * 2);
+  const wrapWidth = Math.max(50, w * CORNER_LABEL_WRAP - padX * 2);
+  const measure = (t, px) => { ctx.font = fontOf(px); return ctx.measureText(t).width; };
+  const fit = fitText(text, { font: baseFont, maxWidth, wrapWidth, measure, maxLines: 3 });
+  if (!fit.lines.length) return;
+  const fontSize = fit.font;
+  const lineH = Math.round(fontSize * 1.22);
+  ctx.font = fontOf(fontSize);
+  const widest = Math.min(maxWidth, Math.max(...fit.lines.map((l) => ctx.measureText(l).width)));
+  const boxW = Math.ceil(widest + padX * 2);
+  const boxH = Math.ceil(fontSize + lineH * (fit.lines.length - 1) + padY * 2);
   ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
   ctx.fillRect(pad, pad, boxW, boxH);
   ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
@@ -4135,7 +4171,11 @@ function drawCornerLabel(canvas, text, scale = 1) {
   ctx.fillStyle = '#1a1a1a';
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left';
-  ctx.fillText(text, pad + padX, pad + boxH / 2);
+  // fillText's maxWidth condenses a line rather than letting it spill, the
+  // last resort when even the floor size would not fit (fit.fits false).
+  fit.lines.forEach((line, i) => {
+    ctx.fillText(line, pad + padX, pad + padY + fontSize / 2 + i * lineH, maxWidth);
+  });
 }
 
 /** The subject's municipality polygon from the boundary file: by its

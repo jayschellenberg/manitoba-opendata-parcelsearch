@@ -15,6 +15,8 @@
  * explain.
  */
 
+import { balancedWrap } from './textFit.js';
+
 /** Share of image height the whole stack may occupy before rows start
  *  collapsing into a "+N more" line. Past this the legend is hiding more
  *  of the map than it is explaining. */
@@ -22,6 +24,9 @@ export const LEGEND_MAX_HEIGHT_RATIO = 0.62;
 
 /** Widest a single legend box may get, as a share of image width. */
 export const LEGEND_MAX_WIDTH_RATIO = 0.42;
+
+/** A label longer than the box wraps onto at most this many rows. */
+export const LEGEND_MAX_LABEL_LINES = 2;
 
 /** Gap left between two on-screen legends stacked in the same corner. */
 export const LEGEND_STACK_GAP_PX = 8;
@@ -121,12 +126,24 @@ export function layoutMapLegends(legends, o) {
   let y = bottomY;
   const boxes = [];
 
+  // Widest a label may run inside a box at the width cap. Longer labels
+  // (a 60-character zone name, the CentrePort SPA row) wrap onto a second
+  // row instead of running past the box and off the image (2026-11-05).
+  const labelMax = Math.max(40, width * LEGEND_MAX_WIDTH_RATIO - padX * 2 - labelX);
+  const bodyMeasure = (t) => measure(t, 'body');
+
   for (const legend of legends || []) {
     if (!legend?.items?.length) continue;
     const titleH = legend.title ? rowH : 0;
-    const fullH = padY * 2 + titleH + legend.items.length * rowH;
+    const wrapped = legend.items.map((item) => {
+      if (bodyMeasure(item.label) <= labelMax) return item;
+      const lines = balancedWrap(item.label, labelMax, bodyMeasure, 0).slice(0, LEGEND_MAX_LABEL_LINES);
+      return lines.length > 1 ? { ...item, lines } : item;
+    });
+    const rowsOf = (item) => item.lines?.length || 1;
+    const fullH = padY * 2 + titleH + wrapped.reduce((n, it) => n + rowsOf(it), 0) * rowH;
 
-    let items = legend.items;
+    let items = wrapped;
     let overflow = 0;
     let boxH = fullH;
     if (fullH > available) {
@@ -134,13 +151,21 @@ export function layoutMapLegends(legends, o) {
       // One row is reserved for the "+N more" line, so below two rows
       // there's nothing worth showing — stop rather than emit a stub.
       if (room < 2) break;
-      items = legend.items.slice(0, room - 1);
+      items = [];
+      let used = 0;
+      for (const it of wrapped) {
+        if (used + rowsOf(it) > room - 1) break;
+        items.push(it);
+        used += rowsOf(it);
+      }
       overflow = legend.items.length - items.length;
-      boxH = padY * 2 + titleH + (items.length + 1) * rowH;
+      boxH = padY * 2 + titleH + (used + 1) * rowH;
     }
 
     let boxW = legend.title ? measure(legend.title, 'title') : 0;
-    for (const item of items) boxW = Math.max(boxW, labelX + measure(item.label, 'body'));
+    for (const item of items) {
+      for (const line of item.lines || [item.label]) boxW = Math.max(boxW, labelX + measure(line, 'body'));
+    }
     if (overflow) boxW = Math.max(boxW, labelX + measure(`+${overflow} more`, 'body'));
     boxW = Math.ceil(Math.min(boxW + padX * 2, width * LEGEND_MAX_WIDTH_RATIO));
 
@@ -202,8 +227,12 @@ export function paintMapLegends(ctx, boxes, { font, bodyFont, titleFont } = {}) 
         ctx.strokeRect(box.x + padX + 0.5, top + 0.5, swatch - 1, swatch - 1);
       }
       ctx.fillStyle = '#1a1a1a';
-      ctx.fillText(item.label, box.x + padX + labelX, mid);
-      rowY += rowH;
+      // maxWidth keeps a line inside the box: a word too long to wrap is
+      // condensed rather than cut off at the image edge.
+      const textMax = Math.max(1, box.w - padX * 2 - labelX);
+      const lines = item.lines || [item.label];
+      lines.forEach((line, i) => ctx.fillText(line, box.x + padX + labelX, mid + i * rowH, textMax));
+      rowY += rowH * lines.length;
     }
     if (box.overflow) {
       ctx.fillStyle = '#6b7280';
