@@ -4269,6 +4269,8 @@ async function buildAddendaPack() {
   await mapReady;
   const label = btn.innerHTML;
   btn.disabled = true;
+  btn.textContent = 'Addenda: municipality…';
+  await ensureMuniBoundariesForAddenda();
   const camera = { center: map.getCenter(), zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() };
   const basemap = currentBasemapKey();
   // The user's own marks and zoning, put back in the finally.
@@ -4317,6 +4319,15 @@ async function buildAddendaPack() {
   const listing = [];
   const stale = [];
   const notes = [];
+  // Say why a location map is missing rather than leave it to be noticed
+  // (Jason, 2026-11-10: a Thompson pack came without its city map and
+  // nothing said why).
+  if (loc && !subjectMuni) {
+    notes.push('The municipality of the subject could not be determined (the boundary layer did not load),',
+      'so the city and RM location maps were skipped and the neighbourhood map is centred on the subject.');
+  } else if (cityMap && !wantCity) {
+    notes.push(`The ${cityMap.label} city map was left out: the subject is off the highway map's ${cityMap.label} page, which shows only the built-up area.`);
+  }
   // Files are numbered in the order they go in, so a pack that leaves the
   // subject views out still reads 1, 2 rather than 1, 5.
   const add = (base, bytes, what, wasStale = false) => {
@@ -5812,6 +5823,35 @@ const muniBoundariesPromise = (async () => {
     return null;
   }
 })();
+
+/** How long the Addenda Pack waits for the live boundaries before it
+ *  reaches for the bundled file. */
+const ADDENDA_MUNI_WAIT_MS = 8000;
+
+/**
+ * Make sure muniBoundariesFc is filled before the Addenda Pack looks up
+ * the subject's municipality. The live fetch at boot is what the rest of
+ * the app uses, but the pack read it without waiting, so a slow or failed
+ * provincial service silently cost it the city map, the RM map and the
+ * community frame (Jason, 2026-11-10: a Thompson pack without its city
+ * map). Waits briefly for the live fetch, then falls back to the bundled
+ * public/mb-municipalities.geojson, which carries the same
+ * MUNI_LIST_NAME_WITH_TYPE and MUNI_TYPE fields. Never throws.
+ */
+async function ensureMuniBoundariesForAddenda() {
+  if (muniBoundariesFc?.features) return;
+  await Promise.race([
+    muniBoundariesPromise,
+    new Promise((resolve) => setTimeout(resolve, ADDENDA_MUNI_WAIT_MS)),
+  ]);
+  if (muniBoundariesFc?.features) return;
+  try {
+    const feats = await municipalityFeatures();
+    if (feats?.length) muniBoundariesFc = { type: 'FeatureCollection', features: feats };
+  } catch (err) {
+    console.warn('addenda: municipality boundaries unavailable (live and bundled)', err);
+  }
+}
 
 async function populateDropdowns() {
   try {
