@@ -3640,6 +3640,9 @@ body.shape-drawing .maplibregl-canvas {
 .map-legend ul { list-style: none; margin: 0; padding: 0; }
 
 .map-legend li { display: flex; align-items: center; gap: 6px; }
+/* A subject zone while the Addenda Pack captures its zoning map (the capture
+   draws the same bold row in an outline box, lib/mapLegend.js). */
+.map-legend li.legend-subject { font-weight: 600; outline: 1.5px solid #1a1a1a; outline-offset: 1px; }
 
 .map-legend .swatch {
   display: inline-block;

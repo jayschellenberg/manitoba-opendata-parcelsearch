@@ -258,7 +258,7 @@ test('the addenda maps carry their own marks (Jason, 2026-10-08)', () => {
   assert.match(site, /closeBounds, 'streets'/, 'the site map is not on the streets basemap over the close-up frame');
   assert.match(site, /'site-parcel-map\.png'/, 'the site map is never added to the pack');
   assert.match(site, /finally \{\s*await restoreLayers\(\)/, 'the site map does not put the parcel layer back');
-  assert.match(body, /cycleZoningTo\('all'\)[\s\S]{0,800}withLegend: true/, 'the zoning map is not all-zones with its legend');
+  assert.match(body, /cycleZoningTo\('all'\)[\s\S]{0,1000}withLegend: true/, 'the zoning map is not all-zones with its legend');
   assert.match(body, /cornerLabel: zoningLabel/, 'the zoning map has lost its "Zoning Map — By-law" label');
   assert.match(fnBodyOf('addendaZoningLabel'), /zoningBylawText\(/, 'the zoning label no longer reads the by-law');
   assert.match(body, /cornerLabel: 'Aerial View \(Subject Highlighted\)'/, 'the aerial has lost its label');

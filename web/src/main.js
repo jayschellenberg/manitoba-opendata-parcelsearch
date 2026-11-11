@@ -299,7 +299,7 @@ import { countSnapshotFrames } from './lib/snapshotGroups.js';
 import { waitForMapIdle, MapRenderTimeoutError } from './lib/snapshotCapture.js';
 import { OUTPUT_MIME, OUTPUT_EXT } from './lib/imageOutput.js';
 import { showLocationMapPanel } from './lib/locationMapPanel.js';
-import { BASE_MAPS, locateOnMap, renderLocationMap } from './lib/locationMap.js';
+import { BASE_MAPS, clusterOnMap, locateOnMap, renderLocationMap } from './lib/locationMap.js';
 import { CITY_MAP_IDS, cityMapForMuni, registerCityMaps } from './lib/cityMaps.js';
 import { fetchMlsAreas, setMlsAreasData, setMlsAreasVisible } from './lib/mlsAreas.js';
 import { loadAreaMaps, pickAreaMap, prepareAreaMap } from './lib/areaMaps.js';
@@ -763,7 +763,7 @@ const $zoningLegend  = document.getElementById('zoning-legend');
  * on screen — much more useful than a static category list when the
  * user is looking at one specific muni.
  */
-function rebuildZoningLegend(zoningFc) {
+function rebuildZoningLegend(zoningFc, { subjectCodes = null } = {}) {
   if (!$zoningLegend) return;
   const ul = $zoningLegend.querySelector('ul');
   const head = $zoningLegend.querySelector('strong');
@@ -781,8 +781,11 @@ function rebuildZoningLegend(zoningFc) {
     ul.appendChild(li);
     return;
   }
-  for (const { label, color } of legend) {
+  for (const { code, label, color } of legend) {
     const li = document.createElement('li');
+    // The subject's zones on the Addenda Pack zoning map: the capture draws
+    // them bold in an outline box (lib/mapLegend.js).
+    if (subjectCodes?.has(code)) { li.dataset.subject = '1'; li.classList.add('legend-subject'); }
     const sw = document.createElement('span');
     sw.className = 'swatch';
     sw.style.background = color;
@@ -3530,17 +3533,18 @@ function drawMapLegends(ctx, w, h, bottomY, baseFont) {
   const family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
   const bodyFont = `${font}px ${family}`;
   const titleFont = `600 ${font + 1}px ${family}`;
+  const strongFont = `600 ${font}px ${family}`;
   const boxes = layoutMapLegends(legends, {
     width: w,
     height: h,
     bottomY,
     font,
     measure: (text, weight) => {
-      ctx.font = weight === 'title' ? titleFont : bodyFont;
+      ctx.font = weight === 'title' ? titleFont : weight === 'strong' ? strongFont : bodyFont;
       return ctx.measureText(text).width;
     },
   });
-  paintMapLegends(ctx, boxes, { font, bodyFont, titleFont });
+  paintMapLegends(ctx, boxes, { font, bodyFont, titleFont, strongFont });
 }
 
 /** Greedy word-wrap: break `text` into lines that each measure ≤ maxWidth
@@ -3949,10 +3953,14 @@ const ADDENDA_AERIAL_PAD = 0.35;
 // lots adjoining it (Jason, 2026-10-15).
 const ADDENDA_CLOSE_PAD = 0.2;
 const ADDENDA_CLOSE_MIN_M = 150;
-// Several results with none picked still make one subject when there are
-// at most ADDENDA_GROUP_MAX of them, in one municipality, within
-// ADDENDA_GROUP_SPAN_M — a property assessed under more than one roll. A
-// section is 1.6 km, so a farm of adjoining quarters fits.
+// Several results with none picked make one subject when there are at most
+// ADDENDA_GROUP_MAX of them — a property assessed under more than one roll,
+// however far apart its parcels are or which municipalities they are in
+// (Jason, 2026-11-11; was one municipality within 2 km). The location maps
+// point an arrow at each cluster. The neighbourhood, aerial, site and
+// zoning maps frame only the main cluster: the largest parcel and the
+// others within ADDENDA_GROUP_SPAN_M of it (a section is 1.6 km, so a farm
+// of adjoining quarters fits); the rest go on the results map.
 const ADDENDA_GROUP_MAX = 10;
 const ADDENDA_GROUP_SPAN_M = 2000;
 const ADDENDA_RESULTS_MIN_M = 800;
@@ -3974,26 +3982,51 @@ function addendaSubjectFeatures() {
   if (!feats.length) return null;
   if (feats.length === 1) return { feats, note: 'the search result', specific: true };
   // A property made of several rolls (Lac du Bonnet 1200 + 1300, Jason
-  // 2026-10-13): a small set of results in one municipality, close
-  // together, is the subject as a group.
-  if (addendaResultsAreOneProperty(feats)) {
-    return { feats, note: `the ${feats.length} subject parcels`, specific: true, group: true };
+  // 2026-10-13): a small set of results is the subject as a group. `all`
+  // is every parcel (the location maps' arrows); `feats` is the main
+  // cluster, largest parcel first (the close-up maps).
+  if (feats.length <= ADDENDA_GROUP_MAX) {
+    const main = addendaMainCluster(feats);
+    const split = main.length < feats.length;
+    return {
+      feats: main,
+      all: feats,
+      note: split
+        ? `${main.length === 1 ? 'the largest' : `the main ${main.length}`} of the ${feats.length} subject parcels`
+        : `the ${feats.length} subject parcels`,
+      specific: true,
+      group: true,
+      split,
+    };
   }
   return { feats, note: `all ${feats.length} result parcels`, specific: false };
 }
 
-/** True when the results read as one multi-roll property rather than a
- *  scattered search: at most ADDENDA_GROUP_MAX parcels, all in the same
- *  municipality, spanning no more than ADDENDA_GROUP_SPAN_M either way. */
-function addendaResultsAreOneProperty(feats) {
-  if (feats.length < 2 || feats.length > ADDENDA_GROUP_MAX) return false;
-  const munis = new Set(feats.map((f) => muniNameFromProps(f.properties) || ''));
-  if (munis.size !== 1 || munis.has('')) return false;
-  const box = bboxOfFeatures(feats);
+/** Does `box` ([minX, minY, maxX, maxY], degrees) fit within
+ *  ADDENDA_GROUP_SPAN_M both ways? */
+function addendaBoxFitsSpan(box) {
   if (!box) return false;
   const midLat = (box[1] + box[3]) / 2;
   return haversineMeters([box[0], midLat], [box[2], midLat]) <= ADDENDA_GROUP_SPAN_M
     && haversineMeters([box[0], box[1]], [box[0], box[3]]) <= ADDENDA_GROUP_SPAN_M;
+}
+
+/** A group subject's main cluster: the largest parcel, then the others
+ *  nearest it for as long as the lot still fits ADDENDA_GROUP_SPAN_M either
+ *  way. The largest comes first, so it names the municipality and zoning. */
+function addendaMainCluster(feats) {
+  const acres = (f) => addendaSubjectAcres([f]) ?? 0;
+  const largest = feats.reduce((a, b) => (acres(b) > acres(a) ? b : a));
+  const c0 = computeCentroid(largest);
+  const others = feats.filter((f) => f !== largest).map((f) => {
+    const c = computeCentroid(f);
+    return { f, d: c0 && c ? haversineMeters([c0.lng, c0.lat], [c.lng, c.lat]) : Infinity };
+  }).sort((a, b) => a.d - b.d);
+  const main = [largest];
+  for (const { f, d } of others) {
+    if (Number.isFinite(d) && addendaBoxFitsSpan(bboxOfFeatures([...main, f]))) main.push(f);
+  }
+  return main;
 }
 
 /** Total acres of the subject features: the stamped _acres where there is
@@ -4111,6 +4144,23 @@ function addendaZoningLabel(fc, feat) {
     spa: hit ? specialPlanningArea(hp) : null,
     amendedBy: hit ? realStr(hp.ZBL_A) : null,
   });
+}
+
+/** The zone codes the subject parcels are in, for the zoning legend's
+ *  highlight: the zone under each parcel's centre point, the same test the
+ *  zoning map's title uses. */
+function addendaSubjectZoneCodes(fc, feats) {
+  const codes = new Set();
+  for (const feat of feats || []) {
+    const c = parcelCentrePoint(feat);
+    if (!c) continue;
+    const hit = (fc?.features || []).find((z) => {
+      try { return z?.geometry && booleanPointInPolygon([c.lng, c.lat], z); } catch { return false; }
+    });
+    const code = (hit?.properties?.ZONE || '').trim();
+    if (code) codes.add(code);
+  }
+  return codes;
 }
 
 /** The zoning polygons whose extent touches the current map view. */
@@ -4294,17 +4344,39 @@ async function buildAddendaPack() {
   const locatorMarks = pinPoint
     ? { pin: true, numbers: false, dims: false }
     : { pin: false, numbers: numberingOn && allFeats.length > 1 && allFeats.length <= ADDENDA_NUMBER_MAX, dims: false };
-  // A grouped subject is the whole result set, which the aerial and zoning
-  // maps already frame, so it gets no separate results map.
-  const wantResults = allFeats.length > 1 && !subject.group;
+  // A grouped subject the aerial and zoning maps already frame whole gets
+  // no separate results map; one spread wider than they frame does.
+  const wantResults = allFeats.length > 1 && (!subject.group || subject.split);
+  // A group subject's location maps point at every parcel: one arrow per
+  // cluster (lib/locationMap.js clusterOnMap). `anchor` is the middle of
+  // the main cluster, which picks the RM map and community plan.
+  const locPoints = subject.group ? subject.all.map(computeCentroid).filter(Boolean) : null;
+  const loc = subject.group
+    ? (() => { const b = bboxOfFeatures(subject.feats); return { lng: (b[0] + b[2]) / 2, lat: (b[1] + b[3]) / 2, note: subject.note }; })()
+    : resolveLocationMapSubject();
+  // How many of the subject's points `m` shows, and the README words for
+  // its arrows.
+  const onMapCount = (m) => (locPoints
+    ? clusterOnMap(m, locPoints).reduce((s, c) => s + c.count, 0)
+    : (locateOnMap(m, loc.lng, loc.lat) ? 1 : 0));
+  const arrowNote = (m) => {
+    if (!locPoints) return `arrow at ${loc.note}`;
+    const cl = clusterOnMap(m, locPoints);
+    const shown = cl.reduce((s, c) => s + c.count, 0);
+    const off = locPoints.length - shown;
+    return (cl.length > 1
+      ? `arrows at ${cl.length} groups of the ${shown} subject parcels on it`
+      : `arrow at the ${shown} subject parcel${shown === 1 ? '' : 's'} on it`)
+      + (off ? ` (${off} off this map)` : '');
+  };
   // The city location map: a subject inside the limits of a city with a
   // highway-map page gets that page as well as the Manitoba one (Jason,
   // 2026-10-21) — by the subject's municipality, not by being on the page,
-  // so a farm just outside Brandon keeps the provincial map alone.
-  const loc = resolveLocationMapSubject();
+  // so a farm just outside Brandon keeps the provincial map alone. A group
+  // goes by its largest parcel's municipality.
   const subjectMuni = addendaMuniFeature(subject.feats[0])?.properties?.MUNI_LIST_NAME_WITH_TYPE;
   const cityMap = loc && cityMapForMuni(subjectMuni);
-  const wantCity = !!(cityMap && locateOnMap(cityMap, loc.lng, loc.lat));
+  const wantCity = !!(cityMap && onMapCount(cityMap) > 0);
   // The RM map (subject in that municipality) and the community plan
   // (subject on one of its sheets), from the R2 index — Jason, 2026-10-21.
   const areaMaps = loc ? await loadAreaMaps() : [];
@@ -4325,7 +4397,12 @@ async function buildAddendaPack() {
   if (loc && !subjectMuni) {
     notes.push('The municipality of the subject could not be determined (the boundary layer did not load),',
       'so the city and RM location maps were skipped and the neighbourhood map is centred on the subject.');
-  } else if (cityMap && !wantCity) {
+  }
+  if (subject.split) {
+    notes.push(`The ${subject.all.length} subject parcels are spread out: the location maps point at all of them, the neighbourhood,`,
+      `aerial, site and zoning maps show ${subject.note} (within ${ADDENDA_GROUP_SPAN_M / 1000} km of the largest), and the results map shows all of them.`);
+  }
+  if (!(loc && !subjectMuni) && cityMap && !wantCity) {
     notes.push(`The ${cityMap.label} city map was left out: the subject is off the highway map's ${cityMap.label} page, which shows only the built-up area.`);
   }
   // Files are numbered in the order they go in, so a pack that leaves the
@@ -4344,26 +4421,28 @@ async function buildAddendaPack() {
     step('location map');
     const baseId = [locationMapState.base, 'manitoba', 'winnipeg']
       .filter((id) => id === 'manitoba' || id === 'winnipeg')
-      .find((id) => BASE_MAPS[id] && loc && locateOnMap(BASE_MAPS[id], loc.lng, loc.lat));
+      // Every subject parcel on it: a group reaching past Winnipeg's page
+      // falls back to the Manitoba map rather than lose an arrow.
+      .find((id) => BASE_MAPS[id] && loc && onMapCount(BASE_MAPS[id]) === (locPoints ? locPoints.length : 1));
     if (baseId) {
       const canvas = await renderLocationMap({
-        map: BASE_MAPS[baseId], lng: loc.lng, lat: loc.lat,
+        map: BASE_MAPS[baseId], lng: loc.lng, lat: loc.lat, points: locPoints,
         label: locationMapState.label, direction: locationMapState.direction, title: true,
       });
       if (canvas) {
         add('location-map.png', await blobBytes(await canvasToBlob(canvas)),
-          `${BASE_MAPS[baseId].label} location map, arrow at ${loc.note}`);
+          `${BASE_MAPS[baseId].label} location map, ${arrowNote(BASE_MAPS[baseId])}`);
       }
     }
     if (wantCity) {
       step(`${cityMap.label} map`);
       const canvas = await renderLocationMap({
-        map: cityMap, lng: loc.lng, lat: loc.lat,
+        map: cityMap, lng: loc.lng, lat: loc.lat, points: locPoints,
         label: locationMapState.label, direction: locationMapState.direction, title: true,
       });
       if (canvas) {
         add('city-location-map.png', await blobBytes(await canvasToBlob(canvas)),
-          `${cityMap.label} city map (Manitoba highway map), arrow at ${loc.note}`);
+          `${cityMap.label} city map (Manitoba highway map), ${arrowNote(cityMap)}`);
       }
     }
     for (const areaMap of areaPicks) {
@@ -4371,13 +4450,13 @@ async function buildAddendaPack() {
       try {
         await prepareAreaMap(areaMap);
         const canvas = await renderLocationMap({
-          map: areaMap, lng: loc.lng, lat: loc.lat,
+          map: areaMap, lng: loc.lng, lat: loc.lat, points: locPoints,
           label: locationMapState.label, direction: locationMapState.direction, title: true,
         });
         if (canvas) {
           add(areaMap.kind === 'rm' ? 'municipal-map.png' : 'community-plan.png',
             await blobBytes(await canvasToBlob(canvas)),
-            `${areaMap.label} ${areaMap.kind === 'rm' ? 'municipal map (Manitoba Infrastructure, 2017)' : 'community plan (Manitoba Highways)'}, arrow at ${loc.note}`);
+            `${areaMap.label} ${areaMap.kind === 'rm' ? 'municipal map (Manitoba Infrastructure, 2017)' : 'community plan (Manitoba Highways)'}, ${arrowNote(areaMap)}`);
         }
       } catch (err) {
         notes.push(`The ${areaMap.label} map was left out: ${err.message}.`);
@@ -4452,6 +4531,7 @@ async function buildAddendaPack() {
         // Colours are per code, so the subset keeps them.
         const muniZoning = lastZoningFc;
         const zoningLabel = addendaZoningLabel(muniZoning, subject.feats[0]);
+        const subjectCodes = addendaSubjectZoneCodes(muniZoning, subject.feats);
         const subjectAcres = addendaSubjectAcres(subject.feats);
         const zoningMinM = zoningMinWidthM(subjectAcres);
         const zoningNote = addendaZoningSourceNote(await fetchZoningLayerUpdatedDate());
@@ -4465,7 +4545,7 @@ async function buildAddendaPack() {
           const zoning = await captureAddendaView(
             zoningFrame, 'streets',
             { withLegend: true, cornerLabel: zoningLabel, scaleNote: zoningNote,
-              prepare: () => rebuildZoningLegend(zoningInView(muniZoning)) });
+              prepare: () => rebuildZoningLegend(zoningInView(muniZoning), { subjectCodes }) });
           add('zoning-map.png', zoning.bytes, `Zoning around ${subject.note}${marked}, at least ${zoningMinM < 1000 ? `${zoningMinM} m` : `${(zoningMinM / 1000).toFixed(1)} km`} wide`, zoning.stale);
         } finally {
           rebuildZoningLegend(muniZoning);

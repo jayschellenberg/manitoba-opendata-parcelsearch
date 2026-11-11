@@ -154,6 +154,24 @@ test('a tall legend gives up rows rather than cover the map', () => {
   assert.ok(box.y >= ceiling, 'and it stays below the ceiling');
 });
 
+test('a cut-off legend keeps the subject zones (emphasised rows) and their order', () => {
+  const lg = legend('Zoning code', 40);
+  lg.items[35] = { ...lg.items[35], emphasis: true };
+  lg.items[2] = { ...lg.items[2], emphasis: true };
+  const [box] = layoutMapLegends([lg], opts());
+  assert.ok(box.overflow > 0, 'still cut off');
+  assert.ok(box.items.includes(lg.items[35]), 'a subject zone near the end survives the cut');
+  const idx = box.items.map((it) => lg.items.indexOf(it));
+  assert.deepEqual(idx, [...idx].sort((a, b) => a - b), 'rows stay in legend order');
+});
+
+test('an emphasised row is measured in the bold font', () => {
+  const seen = [];
+  const m = (text, weight) => { seen.push(weight); return text.length * 7; };
+  layoutMapLegends([{ title: 'Z', items: [{ color: '#000', label: 'R1', emphasis: true }] }], opts({ measure: m }));
+  assert.ok(seen.includes('strong'));
+});
+
 test('the height ceiling is respected across the whole stack', () => {
   const boxes = layoutMapLegends(
     [legend('One', 10), legend('Two', 10), legend('Three', 10), legend('Four', 10)],

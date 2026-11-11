@@ -90,6 +90,9 @@ export function readMapLegends(root, opts = {}) {
             color: style ? (line ? style.borderTopColor : style.backgroundColor) : null,
             label: li.textContent.replace(/\s+/g, ' ').trim(),
             ...(line ? { line } : {}),
+            // data-subject: a zone the subject parcel is in (the Addenda
+            // Pack zoning map) — drawn bold in an outline box.
+            ...(li.dataset?.subject ? { emphasis: true } : {}),
           };
         })
         .filter((item) => item.label),
@@ -107,8 +110,9 @@ export function readMapLegends(root, opts = {}) {
  * @param {number} o.height          output image height
  * @param {number} o.bottomY         y to stack up from (above the credit pill)
  * @param {number} o.font            body font size in px
- * @param {(text:string, weight:'body'|'title') => number} o.measure
- *        text width in px — the canvas' measureText, injectable for tests
+ * @param {(text:string, weight:'body'|'title'|'strong') => number} o.measure
+ *        text width in px — the canvas' measureText, injectable for tests;
+ *        'strong' is the bold body font of an emphasised row
  * @returns {Array<{x,y,w,h,title,items,overflow,metrics}>}
  */
 export function layoutMapLegends(legends, o) {
@@ -130,14 +134,15 @@ export function layoutMapLegends(legends, o) {
   // (a 60-character zone name, the CentrePort SPA row) wrap onto a second
   // row instead of running past the box and off the image (2026-11-05).
   const labelMax = Math.max(40, width * LEGEND_MAX_WIDTH_RATIO - padX * 2 - labelX);
-  const bodyMeasure = (t) => measure(t, 'body');
+  const itemMeasure = (item) => (t) => measure(t, item.emphasis ? 'strong' : 'body');
 
   for (const legend of legends || []) {
     if (!legend?.items?.length) continue;
     const titleH = legend.title ? rowH : 0;
     const wrapped = legend.items.map((item) => {
-      if (bodyMeasure(item.label) <= labelMax) return item;
-      const lines = balancedWrap(item.label, labelMax, bodyMeasure, 0).slice(0, LEGEND_MAX_LABEL_LINES);
+      const m = itemMeasure(item);
+      if (m(item.label) <= labelMax) return item;
+      const lines = balancedWrap(item.label, labelMax, m, 0).slice(0, LEGEND_MAX_LABEL_LINES);
       return lines.length > 1 ? { ...item, lines } : item;
     });
     const rowsOf = (item) => item.lines?.length || 1;
@@ -151,20 +156,26 @@ export function layoutMapLegends(legends, o) {
       // One row is reserved for the "+N more" line, so below two rows
       // there's nothing worth showing — stop rather than emit a stub.
       if (room < 2) break;
-      items = [];
+      // Emphasised rows (the subject's zones) are kept first, then the
+      // rest in order while they fit; the list keeps its original order.
+      const keep = new Set();
       let used = 0;
-      for (const it of wrapped) {
-        if (used + rowsOf(it) > room - 1) break;
-        items.push(it);
-        used += rowsOf(it);
+      for (const pass of [true, false]) {
+        for (const it of wrapped) {
+          if (!!it.emphasis !== pass || keep.has(it)) continue;
+          if (used + rowsOf(it) > room - 1) { if (pass) continue; else break; }
+          keep.add(it);
+          used += rowsOf(it);
+        }
       }
+      items = wrapped.filter((it) => keep.has(it));
       overflow = legend.items.length - items.length;
       boxH = padY * 2 + titleH + (used + 1) * rowH;
     }
 
     let boxW = legend.title ? measure(legend.title, 'title') : 0;
     for (const item of items) {
-      for (const line of item.lines || [item.label]) boxW = Math.max(boxW, labelX + measure(line, 'body'));
+      for (const line of item.lines || [item.label]) boxW = Math.max(boxW, labelX + itemMeasure(item)(line));
     }
     if (overflow) boxW = Math.max(boxW, labelX + measure(`+${overflow} more`, 'body'));
     boxW = Math.ceil(Math.min(boxW + padX * 2, width * LEGEND_MAX_WIDTH_RATIO));
@@ -189,7 +200,7 @@ export function layoutMapLegends(legends, o) {
 
 /** Paint laid-out legend boxes. Styling mirrors the credit pill so the two
  *  overlays read as one family. */
-export function paintMapLegends(ctx, boxes, { font, bodyFont, titleFont } = {}) {
+export function paintMapLegends(ctx, boxes, { font, bodyFont, titleFont, strongFont = `600 ${bodyFont}` } = {}) {
   for (const box of boxes) {
     const { rowH, swatch, padX, padY, labelX } = box.metrics;
 
@@ -231,7 +242,18 @@ export function paintMapLegends(ctx, boxes, { font, bodyFont, titleFont } = {}) 
       // condensed rather than cut off at the image edge.
       const textMax = Math.max(1, box.w - padX * 2 - labelX);
       const lines = item.lines || [item.label];
+      if (item.emphasis) {
+        // The subject's zone: bold, in a dark outline box around the row.
+        ctx.font = strongFont;
+        const pad = Math.max(2, Math.round(padX * 0.35));
+        ctx.save();
+        ctx.strokeStyle = '#1a1a1a';
+        ctx.lineWidth = Math.max(1.5, font / 9);
+        ctx.strokeRect(box.x + padX - pad, rowY + 1, box.w - (padX - pad) * 2, rowH * lines.length - 2);
+        ctx.restore();
+      }
       lines.forEach((line, i) => ctx.fillText(line, box.x + padX + labelX, mid + i * rowH, textMax));
+      if (item.emphasis) ctx.font = bodyFont;
       rowY += rowH * lines.length;
     }
     if (box.overflow) {
