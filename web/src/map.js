@@ -19,6 +19,7 @@
 // plan polygon while its overlay is visible pops up a small description.
 
 import { addMlsAreaLayers, mlsAreaHtml } from './lib/mlsAreas.js';
+import { addUnitLabelLayers } from './lib/unitLabels.js';
 import { addSpaLayers, spaPopupHtml, specialPlanningArea, spaBylawLine } from './lib/specialPlanningAreas.js';
 import maplibregl from 'maplibre-gl';
 import { addLocateControl } from './lib/locateControl.js';
@@ -1782,6 +1783,10 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
         },
       });
 
+      // Unit labels + civic numbers + footprints from Esri Canada's
+      // Community Map tiles (lib/unitLabels.js), as MAO's map shows them.
+      // Footprints sit under the zoning fill; the labels go on top here.
+      addUnitLabelLayers(map, { footprintBeforeId: 'zoning-fill' });
       // MLS area boundaries (lib/mlsAreas.js, shared with the Winnipeg app).
       addMlsAreaLayers(map);
       // Special Planning Area outlines — CentrePort's Inland Port SPA

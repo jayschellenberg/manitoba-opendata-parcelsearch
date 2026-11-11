@@ -302,6 +302,7 @@ import { showLocationMapPanel } from './lib/locationMapPanel.js';
 import { BASE_MAPS, clusterOnMap, locateOnMap, renderLocationMap } from './lib/locationMap.js';
 import { CITY_MAP_IDS, cityMapForMuni, registerCityMaps } from './lib/cityMaps.js';
 import { fetchMlsAreas, setMlsAreasData, setMlsAreasVisible } from './lib/mlsAreas.js';
+import { setUnitLabelsVisible } from './lib/unitLabels.js';
 import { loadAreaMaps, pickAreaMap, prepareAreaMap } from './lib/areaMaps.js';
 import { haversineMeters, drawScaleBar, drawNorthArrow, framedBounds, frameWidthM, localDateStamp } from './lib/mapFurniture.js';
 import { buildStoreZip } from './lib/zipStore.js';
@@ -694,6 +695,7 @@ const $muniParcelsToggle = document.getElementById('muni-parcels-toggle');
 const $mascToggle    = document.getElementById('masc-toggle');
 const $riskAreaToggle = document.getElementById('riskarea-toggle');
 const $mlsToggle = document.getElementById('mls-toggle');
+const $unitLabelsToggle = document.getElementById('unit-labels-toggle');
 const $spaToggle = document.getElementById('spa-toggle');
 const $spaLegend = document.getElementById('spa-legend');
 // Flood zones (src/lib/flood.js). Five buttons of identical shape, so they
@@ -3001,6 +3003,7 @@ $highwaysToggle.addEventListener('click', () => toggleAuxOverlay('highways'));
 $priorOutlinesToggle?.addEventListener('click', () => toggleAuxOverlay('priorOutlines'));
 $riskAreaToggle.addEventListener('click', () => toggleAuxOverlay('riskAreas'));
 $mlsToggle?.addEventListener('click', () => toggleAuxOverlay('mlsAreas'));
+$unitLabelsToggle?.addEventListener('click', () => toggleAuxOverlay('unitLabels'));
 $spaToggle?.addEventListener('click', () => toggleAuxOverlay('spa'));
 for (const [key, btn] of $floodToggles) {
   btn?.addEventListener('click', () => toggleAuxOverlay(floodAuxKey(key)));
@@ -11108,6 +11111,10 @@ const AUX_META = {
   // MLS area boundaries, a static same-origin file (lib/mlsAreas.js).
   mlsAreas:    { btn: () => $mlsToggle,          on: 'MLS Areas', off: 'MLS Areas', busy: 'Loading…',
                  fetch: () => fetchMlsAreas(),                 setData: (m, fc) => setMlsAreasData(m, fc), setVis: setMlsAreasVisible },
+  // Unit labels (lib/unitLabels.js): Esri Canada vector tiles already wired
+  // as a hidden source, so like muniParcels there is nothing to fetch.
+  unitLabels:  { btn: () => $unitLabelsToggle,   on: 'Unit Labels', off: 'Unit Labels', busy: 'Loading…',
+                 fetch: async () => null,                      setData: () => {}, setVis: setUnitLabelsVisible },
   // Special Planning Area outline (CentrePort, M.R. 48/2016), a static
   // same-origin file (lib/specialPlanningAreas.js). Its legend row rides along.
   spa:         { btn: () => $spaToggle,          on: 'CentrePort SPA', off: 'CentrePort SPA', busy: 'Loading…',
