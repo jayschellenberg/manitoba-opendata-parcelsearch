@@ -1,25 +1,25 @@
 {
   "manifest_version": 1,
-  "generated_at": "2026-11-04T15:37:08.967Z",
+  "generated_at": "2026-11-11T15:38:51.454Z",
   "datasets": {
     "legal_index": {
       "file": "legal-index.json",
       "schema_version": 1,
-      "size_bytes": 138462776,
-      "modified_at": "2026-11-04T15:32:42.652Z",
-      "generated_at": "2026-11-04T15:30:50Z",
+      "size_bytes": 138462810,
+      "modified_at": "2026-11-11T15:33:04.589Z",
+      "generated_at": "2026-11-11T15:30:58Z",
       "source": "parcels.parquet",
-      "source_modified": "2026-11-04T14:21:43Z",
+      "source_modified": "2026-11-11T14:22:15Z",
       "row_count": 438439
     },
     "assessment_index": {
       "file": "assessment-index.json",
       "schema_version": 1,
       "size_bytes": 29837359,
-      "modified_at": "2026-11-04T15:35:06.635Z",
-      "generated_at": "2026-11-04T15:33:16Z",
+      "modified_at": "2026-11-11T15:36:07.118Z",
+      "generated_at": "2026-11-11T15:33:50Z",
       "source": "tax_history.parquet",
-      "source_modified": "2026-11-04T14:21:47Z",
+      "source_modified": "2026-11-11T14:22:21Z",
       "row_count": 438561,
       "year_min": 2026,
       "year_max": 2027,
