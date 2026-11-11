@@ -12,7 +12,11 @@ function resolveCommit() {
   const fromEnv = process.env.VERCEL_GIT_COMMIT_SHA;
   if (fromEnv) return fromEnv.slice(0, 12);
   try {
-    return execSync('git rev-parse --short=12 HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+    return execSync('git rev-parse --short=12 HEAD', {
+      // This app's own repo, whatever folder the dev server was started from.
+      cwd: fileURLToPath(new URL('.', import.meta.url)),
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
       .toString().trim() || 'unknown';
   } catch {
     return 'unknown';

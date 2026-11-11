@@ -405,6 +405,9 @@ import {
 } from './lib/format.js';
 import { soilSurveyComponentsFromMatches } from './soilSurvey.js';
 import { soilMatchesFromShard, soilRollKey } from './lib/soilfacts.js';
+import { showBuildStamp } from './lib/buildStamp.js';
+// The commit + build time after the title, to tell which build Vercel serves.
+showBuildStamp();
 
 // The highway map's city pages join the location-map base maps (MB only;
 // locationMap.js itself is shared with the Winnipeg app).
