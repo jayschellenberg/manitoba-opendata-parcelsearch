@@ -154,26 +154,38 @@ _Before recording: wait for it_
 
 _Before recording: wait for it; pick "BRANDON (CITY)" in #municipality; click .chip-input[data-target="roll"] .chip-input-text; type "510875"; press Enter; click #search; wait for it_
 
-**0.** Once a subject is found, the buttons at the bottom of the panel produce the images and files that go into a report. This video shows Capture Map, the overall location map, the Addenda Pack and parcel snapshots.
+**0.** Once a subject is found, the buttons at the bottom of the Map Layers panel produce the images and files that go into a report. This video shows Capture Map, the overall location map, and the three packs: the Addenda Pack, the Parcel Pack and the Aerial Pack.
 <br>_[hover #static-map-btn]_
 
 **1.** Capture Map renders the current view at 1950 by 1050 pixels, which is six and a half by three and a half inches at 300 d p i, the size of a report figure. Turn on zoning first and the legend can be included.
 <br>_[click #zoning-toggle; click #static-map-btn; wait for it]_
 
-**2.** Tick Include legend and the scale bar and north arrow. Copy image puts it on the clipboard for pasting straight into Word. Download P N G or J P G saves a file.
+**2.** Tick Include legend and the scale bar and north arrow. Copy image puts it on the clipboard for pasting straight into Word. Download P N G or J P G saves a file, named for the municipality and the roll number.
 <br>_[click #map-capture-legend; click #map-capture-furniture; hover #map-capture-copy; press Escape]_
 
 **3.** Alt C is the shortcut. It copies the current map view to the clipboard with no dialog at all.
 <br>_[click #zoning-toggle; press Alt+c]_
 
-**4.** M B Overall Map draws the province location map with a subject callout. Change the callout text, move the arrow to any side, and switch to the Winnipeg base for city subjects. Copy or download the image.
-<br>_[click #location-map-btn; wait for it; hover #location-map-output; press Escape]_
+**4.** M B Overall Map draws the province location map with a subject callout. Change the callout text and move the arrow to any side. Where there is a closer map, the base map list offers it: the highway map's city page for thirteen cities and towns, the provincial map of the rural municipality, or a community plan. This subject is in Brandon, so the Brandon map is offered. Copy or download the image.
+<br>_[click #location-map-btn; wait for it; hover #location-map-output; pick "Brandon map" in #location-map-output select[aria-label="Base map"]; press Escape]_
 
-**5.** Addenda Pack builds the whole set in one click. A location map, a neighbourhood map framed on the municipality with the section grid and highways, a subject aerial with dimensions, a zoning map, and an all-results map when there are several parcels.
+**5.** Addenda Pack builds the whole report set in one click. The Manitoba location map comes first, then a city map, a municipal map or a community plan where the subject is on one. After those come a neighbourhood map that names the municipality and shows the highways, a wide aerial and a close-up aerial, a site map of the assessment parcels with the lot dimensions, and a zoning map.
 <br>_[click #addenda-pack-btn]_
 
-**6.** The button reports progress as each map renders. The map view is restored when it finishes, and the zip downloads with a readme listing what is inside. That is the report set for a single subject.
+**6.** The zoning map names the by-law, with its effective date where that is known, and marks the subject's zone in the legend. The button reports progress as each map renders. The map view is restored when it finishes, and the zip downloads with a readme listing what is inside.
+<br>_[hover #addenda-pack-btn; wait for it]_
+
+**7.** A property on several rolls is handled as one subject. With two to ten parcels in the results, the location maps point an arrow at each group of parcels and the other maps frame the main group. A map of all the results is added when the parcels are spread out.
 <br>_[hover #addenda-pack-btn]_
+
+**8.** Parcel Pack works parcel by parcel instead. Each parcel in the results gets three maps of its own: a site map, the same site map with dimensions, and a close-up aerial, with only that parcel highlighted.
+<br>_[click #parcel-pack-btn]_
+
+**9.** With several parcels, a list opens first. Each parcel gets its own maps unless you choose to show it with another, which suits a small parcel beside a large one. A pack holds up to forty parcels, and clicking the button again cancels it.
+<br>_[hover #parcel-pack-btn]_
+
+**10.** Aerial Pack is the quick one: a single satellite image of each parcel, highlighted and zoomed to fit, zipped up and named by roll. It suits a farm with many parcels, and the agricultural video shows it. That is the report set.
+<br>_[hover #snapshot-zip-btn]_
 
 ## mb-06-agricultural-layers (Manitoba, recorded)
 
@@ -221,76 +233,95 @@ _Before recording: wait for it_
 **13.** Every one of these layers is open data from the Government of Manitoba and the Government of Canada, each adds its columns to the table, and Export CSV carries the figures out with the parcel. For sales of farmland, the Sales Charts page has an Agricultural tab that plots price per acre against these same variables.
 <br>_[hover #export]_
 
-## mb-07-sales-paste (Manitoba, NOT YET RECORDED)
+## mb-07-sales-paste (Manitoba, recorded)
 
 _Before recording: load page_
 
-**0.** The Sales Analysis tab analyses sales, and there are two ways to get them in. This video shows the one anyone can use: pasting the results of a sales search on Manitoba Assessment Online. The next video covers the firm's sales database.
+**0.** The Sales Analysis tab analyses sales. This video shows one way to get sales in: pasting the results of a sales search on Manitoba Assessment Online, which anyone with an M A O subscription can do.
 <br>_[hover #tab-btn-sales]_
 
-**1.** On M A O, run a sales search for the area and sale type you need. Here it is residential bare land in the R M of Springfield. Select the results table, including the header row, and copy it.
-<br>_[cursor rests]_
+**1.** Sign in to M A O as a subscriber and open the sales search. Pick the municipality, here the R M of Springfield, and the sale type group, here residential bare land. A tip: set a minimum sale amount of a hundred dollars or so. That keeps nominal, non-arm's-length transfers, like one-dollar sales, out of your results. Then Search.
+<br>_[wait for it; page script; pick "189" in #ctl00_PublicContent_lstSalesMuni; pick "1" in #ctl00_PublicContent_lstSaleTypGrp; type "100" in #ctl00_PublicContent_txtSaleAmt1; click #ctl00_PublicContent_btnSearch; wait for it]_
 
-**2.** Back here, open Upload a C S V or Paste Sales from M A O, and click Paste data.
+**2.** M A O lists the matching sales a page at a time. Select the results table, including the header row, and copy it.
+<br>_[hover #ctl00_PublicContent__ResultDataGrid; press Control+c]_
+
+**3.** Back in Parcel Search, open Upload a C S V or Paste Sales from M A O, and click Paste data.
 <br>_[open Upload/Paste; click #sales-import-trigger; wait for it]_
 
-**3.** Paste the table into the box. The columns are the ones M A O gives you: sale date, consideration, municipality, roll number, street address, legal description and primary property. Roll number and municipality are the two the tool needs to find each parcel.
-<br>_[paste data/paste-springfield.tsv into #sales-import-text]_
+**4.** Paste the table into the box. The columns are the ones M A O gives you: sale date, consideration, municipality, roll number, street address, legal description and primary property. Roll number and municipality are the two the tool needs to find each parcel.
+<br>_[cursor rests]_
 
-**4.** Press Load sales. Each sale is matched to its parcel and plotted. The status line reports how many were placed, any duplicates merged, and any roll not yet on the parcel map, which is shown at an approximate location.
+**5.** Press Load sales. Each sale is matched to its parcel and plotted. The status line reports how many were placed, any duplicates merged, and any roll not yet on the parcel map, which is shown at an approximate location.
 <br>_[click #sales-import-load; wait for it]_
 
-**5.** From here the sales go through exactly the same tools as the database: date presets, assessment class and structure type, vacant or improved, and the additional filters.
+**6.** From here the pasted sales go through the same filters as any other sales: date presets, assessment class and structure type, vacant or improved, and the additional filters.
 <br>_[hover .date-preset-btn[data-months="36"]; hover #vacant-improved; hover details.more-filters summary]_
 
-**6.** Upload sales C S V takes the same columns from a saved file, and Recent brings back earlier pastes and uploads without copying them again.
+**7.** If a search runs to several pages, copy each page into one Excel sheet, keeping a single header row, and save it as a C S V. Upload sales C S V loads that file into this same tool, and Recent brings back earlier pastes and uploads without copying them again.
 <br>_[hover #sales-dropzone; hover #recent-uploads-select]_
 
-**7.** The grid, the comp stars, the exclusion reasons and the Charts window all work on pasted sales. The next video shows the firm's sales database, which skips the copying and covers every municipality.
+**8.** The grid, the comp stars, the exclusion reasons and the Charts window all work on pasted sales the same way.
 <br>_[hover #charts-open]_
 
-## mb-08-sales-database (Manitoba, NOT YET RECORDED)
+## mb-07b-sales-filters-subject (Manitoba, recorded)
+
+_Before recording: open Upload/Paste; click #sales-import-trigger; wait for it; paste data/paste-springfield-min100.tsv into #sales-import-text; click #sales-import-load; wait for it; page script_
+
+**0.** This video picks up with the 73 residential bare land sales pasted from M A O for the R M of Springfield. It shows how to narrow them down with the search filters, and how to set a subject property and a search radius.
+<br>_[hover #results-status]_
+
+**1.** Start with the date. The presets keep sales from the last 3 to 72 months, counted back from today. Here, 12 months. You can also type exact From and To dates. The status line above the grid shows what's left: 39 of the 73 sales.
+<br>_[click .date-preset-btn[data-months="12"]; hover #sale-date-from; hover #results-status]_
+
+**2.** Next, vacant or improved. Vacant Land Only keeps the sales where buildings are only a small part of the assessment. That cut-off is the building threshold under Additional filters, five percent by default, and it can be a percentage or a dollar amount. Twenty-nine sales are left.
+<br>_[pick "vacant" in #vacant-improved; hover #results-status]_
+
+**3.** Additional filters hold the rest. Size works in acres, square feet or front feet. Here, a maximum of one acre keeps the lots and drops the acreages. A sale price range trims what remains: a minimum of fifty thousand dollars drops the lowest sale. Price per acre has a range of its own.
+<br>_[click details.more-filters summary; type "1" in #size-high; press Tab; type "50000" in #sales-price-low; press Tab; hover #sales-ppa-low]_
+
+**4.** The zoning filter keeps only the zones you tick. Ticking R S and R T drops the R C lots on Joerja Way, leaving twelve sales. Zoning type does the same with broader groups, such as residential or rural.
+<br>_[click #zoning-filter summary; click #zoning-filter input[value=RS]; click #zoning-filter input[value=RT]; click #zoning-filter summary; hover #zonecat-filter summary]_
+
+**5.** Far-flung flags sales more than a set distance from the rest of the group, thirty kilometres by default. Keep shows them with a flag, and Exclude drops them. All of these Springfield sales are well inside that.
+<br>_[hover #far-flung-km; hover [data-pill=farflung]]_
+
+**6.** Now the subject property. Type its roll number, here 45 Oak Meadow Drive in Oakbank, a vacant 65-foot lot. Set a maximum distance of five kilometres and click Set. The subject is outlined in blue on the map, a distance column is added at the far right of the grid, and only the four sales within five kilometres remain.
+<br>_[type "163408.240" in #subject-roll; type "5" in #distance-max; click #subject-apply; hover #results-status]_
+
+**7.** Every active filter is listed in the status line, and the grid, the map and the Charts window all follow them. The cross next to Set removes the subject. Clear resets the whole page, including the pasted sales, so use it only to start over.
+<br>_[hover #results-status; hover #subject-clear; hover #sales-clear]_
+
+## mb-08-sales-database (Manitoba, recorded)
 
 _Before recording: load page_
 
-**0.** For firm users, the M A O Sales Database turns the firm's weekly sales export into a searchable database that lives in your browser, covering every municipality at once. This video covers connecting it, searching by municipality, and the first-pass filters.
+**0.** For firm users, there's a faster way to get sales in than copying from M A O. The firm's weekly M A O sales export is kept on Dropbox, and the Sales Analysis tab can link to it directly, covering every municipality at once. This video shows how to connect it.
 <br>_[hover #sales-db]_
 
-**1.** Choose export folder once, and point it at the AppMarketData Sales Data Manitoba folder on Dropbox. Every municipality file imports, and the status line shows the count and newest sale date.
-<br>_[open MAO Sales Database; click #sales-db-import]_
+**1.** Open M A O Sales Database and click Choose export folder.
+<br>_[open MAO Sales Database; hover #sales-db-import]_
 
-**2.** The folder stays connected. Reload picks up new weekly files, Disconnect forgets it, and Coverage shows which municipalities are in the export and how current each one is.
+**2.** Windows opens its folder picker. Go to Dropbox, then Shared Info, App Market Data, Sales Data, and select the Manitoba folder.
+<br>_[cursor rests]_
+
+**3.** The browser then asks, Allow this site to view and copy files? Click Allow. The app keeps its own copy of the sales in this browser on your computer. Nothing is uploaded.
+<br>_[cursor rests]_
+
+**4.** Every municipality file imports. The status line shows how many sales were loaded and the newest sale date.
+<br>_[click #sales-db-import; hover #sales-db]_
+
+**5.** You only do this once. The folder stays connected: Reload picks up new weekly files, Disconnect forgets the folder, and Coverage shows which municipalities are in the export and how current each one is.
 <br>_[click #sales-db-coverage; press Escape]_
 
-**3.** Filter the municipality list, tick the ones you want, and the Adjacent regions pill pulls in the neighbours. A date range is required, so pick a preset, here the last 24 months. Set the sale type, here residential bare land, and Search.
-<br>_[type "Springfield" in #sales-db-muni-search; click #sales-db-munis input[type=checkbox]:not(:checked); type "Tache" in #sales-db-muni-search; click #sales-db-munis input[type=checkbox]:not(:checked); clear #sales-db-muni-search; click .date-preset-btn[data-months="24"]; pick "RESIDENTIAL BARE LAND" in #sales-db-type; click #sales-db-load]_
-
-**4.** Sales land on the map and in the grid. Nominal sales are excluded by default. Flip the pill to include transfers for a dollar.
-<br>_[hover [data-pill=nominal]]_
-
-**5.** Date presets keep the last 12, 24 or 36 months, or type exact dates. Assessment class and structure type narrow by what sold, and the vacant or improved switch separates land sales from improved sales.
-<br>_[click .date-preset-btn[data-months="36"]; hover #vacant-improved]_
-
-**6.** Additional filters add plan number, size in acres, square feet or front feet, price per acre, sale price, zoning, parcel count, and the building threshold that decides what counts as vacant.
-<br>_[click details.more-filters summary; type "5" in #size-low; type "160" in #size-high]_
-
-**7.** Far-flung flags sales more than a set distance from the cluster. Keep shows them with a flag, Exclude drops them.
-<br>_[hover #far-flung-km]_
-
-**8.** Set a subject property to add a distance column and a maximum radius. The charts page uses the subject for distance plots and for naming the work file.
-<br>_[type "313960" in #subject-roll; type "25" in #distance-max; click #subject-apply]_
-
-**9.** Province-wide search goes the other way. Pick a class at sale, a date and price range, and search every municipality in the export at once. Saved searches store the criteria.
-<br>_[hover #sales-prov]_
-
-**10.** Save job writes the whole state, the loaded sales, the filters, the comps and exclusions, to a file you can reopen later from Recent jobs. The next video covers the grid: stars, comps and exclusion reasons.
-<br>_[hover #job-save]_
+**6.** From here, tick the municipalities you want, pick a date range and a sale type, and search. The filters, subject property, grid and Charts then work just as they do for pasted sales.
+<br>_[hover #sales-db-munis; hover #sales-db-load]_
 
 ## mb-09-sales-grid-comps (Manitoba, recorded)
 
-_Before recording: open MAO Sales Database; click #sales-db-import; type "Springfield" in #sales-db-muni-search; click #sales-db-munis input[type=checkbox]:not(:checked); clear #sales-db-muni-search; click .date-preset-btn[data-months="36"]; pick "RESIDENTIAL BARE LAND" in #sales-db-type; click #sales-db-load; pick "vacant" in #vacant-improved_
+_Before recording: upload a file; wait for it; pick "vacant" in #vacant-improved; open Additional filters; type "67600.048" in #subject-roll; click #subject-apply; open Additional filters; page script_
 
-**0.** With sales loaded, the grid is where the comparables get chosen. This video covers the star column, comp tags, exclusion reasons, and the row colours.
+**0.** These are the R M of Hanover's sales, copied from M A O into Excel, saved as a C S V and uploaded, with a vacant lot on Birchwood Lane in Mitchell as the subject. With sales loaded, the grid is where the comparables get chosen. This video covers the star column, comp tags, exclusion reasons, and the row colours.
 <br>_[hover #results]_
 
 **1.** Click the star on a sale to make it the next comparable. Stars are numbered in the order you click, and the numbers appear on the map.
@@ -305,8 +336,8 @@ _Before recording: open MAO Sales Database; click #sales-db-import; type "Spring
 **4.** Row colours flag what needs a second look. Orange is an outlier more than two standard deviations from the rest. Green marks parcels that sold together as one multi-parcel sale.
 <br>_[hover .sales-row-legend]_
 
-**5.** The draw tools narrow the sales by area. Draw a circle around the subject and only sales inside it stay. Click the shape to switch it to exclude.
-<br>_[click #shape-tool-circle; drag on map; clear text selection; click #shape-tool-clear]_
+**5.** The draw tools narrow the sales by area. Pick the circle, click the subject, then click again to set the radius, and only the sales inside it stay. Click the shape to switch it to exclude.
+<br>_[page script; click #shape-tool-circle; clear text selection; click #shape-tool-clear]_
 
 **6.** If an older job has stars that were added before numbering existed, a Number starred button appears and fills in the comp numbers, so the job comes forward cleanly.
 <br>_[hover #results th[data-col=favorite]]_
@@ -316,9 +347,9 @@ _Before recording: open MAO Sales Database; click #sales-db-import; type "Spring
 
 ## mb-10-charts-layout (Manitoba, recorded)
 
-_Before recording: open MAO Sales Database; click #sales-db-import; type "Springfield" in #sales-db-muni-search; click #sales-db-munis input[type=checkbox]:not(:checked); clear #sales-db-muni-search; click .date-preset-btn[data-months="36"]; pick "RESIDENTIAL BARE LAND" in #sales-db-type; click #sales-db-load; pick "vacant" in #vacant-improved; open Additional filters; type "313960" in #subject-roll; click #subject-apply; click #charts-open (opens new window)_
+_Before recording: upload a file; wait for it; pick "vacant" in #vacant-improved; open Additional filters; type "67600.048" in #subject-roll; click #subject-apply; click #charts-open (opens new window)_
 
-**0.** Sales Charts opens from the Charts button on the Sales Analysis tab. It is live: every filter change in the main window updates these charts. The status line reports how many sales arrived and how many are ticked.
+**0.** Sales Charts opens from the Charts button on the Sales Analysis tab. Here it shows the R M of Hanover's sales, uploaded from a C S V, with a vacant lot on Birchwood Lane in Mitchell as the subject. It is live: every filter change in the main window updates these charts. The status line reports how many sales arrived and how many are ticked.
 <br>_[hover #charts-status]_
 
 **1.** Company signs every chart with your firm name in the caption. Size unit switches between acres, square feet and front feet, and the unit is remembered. If a tab looks empty, the first thing to check is the unit.
@@ -341,41 +372,41 @@ _Before recording: open MAO Sales Database; click #sales-db-import; type "Spring
 
 ## mb-11-charts-pages (Manitoba, recorded)
 
-_Before recording: open MAO Sales Database; click #sales-db-import; type "Springfield" in #sales-db-muni-search; click #sales-db-munis input[type=checkbox]:not(:checked); clear #sales-db-muni-search; click .date-preset-btn[data-months="36"]; pick "RESIDENTIAL BARE LAND" in #sales-db-type; click #sales-db-load; pick "vacant" in #vacant-improved; open Additional filters; type "313960" in #subject-roll; click #subject-apply; click #charts-open (opens new window)_
+_Before recording: upload a file; wait for it; pick "vacant" in #vacant-improved; open Additional filters; type "67600.048" in #subject-roll; click #subject-apply; click #charts-open (opens new window)_
 
 **0.** This video walks the four chart pages. Land Price per Unit first. The maps row has Price and Lot Size, Year and Zoning, and Water Influence. Each dot is one sale, sized or coloured by the variable.
-<br>_[click #tab-rates; click .page-maps .row-tabs button:nth-child(2); click .page-maps .row-tabs button:nth-child(3); click .page-maps .row-tabs button:nth-child(1)]_
+<br>_[page script; click #tab-rates; scroll to maps; click .page-maps .row-tabs button:nth-child(2); click .page-maps .row-tabs button:nth-child(3); click .page-maps .row-tabs button:nth-child(1)]_
 
 **1.** The charts row plots the rate over time and against size, then by zoning and by distance from the subject. The fitted trend line and its rate per year are printed on the chart.
-<br>_[click .page-charts .row-tabs button:nth-child(2); click .page-charts .row-tabs button:nth-child(1)]_
+<br>_[scroll to charts; click .page-charts .row-tabs button:nth-child(2); click .page-charts .row-tabs button:nth-child(1)]_
 
 **2.** Agricultural adds the farm variables: M A S C rating, cultivated share, soil, Canada Land Inventory class, and land cover mix, each against the price per acre, plus sale to assessment ratios.
-<br>_[click #tab-ag; click .page-charts .row-tabs button:nth-child(2); click .page-charts .row-tabs button:nth-child(4)]_
+<br>_[click #tab-ag; scroll to charts; click .page-charts .row-tabs button:nth-child(2); click .page-charts .row-tabs button:nth-child(4)]_
 
 **3.** The Ag consistency filters keep only sales that are like the subject: a cultivated band, and M A S C, C L I and cover chips. They apply to this page only and show up as a step in the waterfall.
-<br>_[hover section.ag-cons]_
+<br>_[page script; hover section.ag-cons]_
 
 **4.** Total and Per Lot Price is for lot sales and small holdings, where the whole price matters more than the rate. Total price, per lot, and per lot by distance and assessed value.
-<br>_[click #tab-total; click .page-charts .row-tabs button:nth-child(2); click .page-charts .row-tabs button:nth-child(3)]_
+<br>_[click #tab-total; scroll to charts; click .page-charts .row-tabs button:nth-child(2); click .page-charts .row-tabs button:nth-child(3)]_
 
 **5.** Water looks at the waterfront premium. Influence and class, flood and water body, size and distance, a summary with the premium, and paired sales where a waterfront and a non-waterfront parcel can be matched.
-<br>_[click #tab-water; click .page-charts .row-tabs button:nth-child(4); click .page-charts .row-tabs button:nth-child(5)]_
+<br>_[click #tab-water; scroll to charts; click .page-charts .row-tabs button:nth-child(4); click .page-charts .row-tabs button:nth-child(5)]_
 
 **6.** Municipal boundaries can be drawn on the maps, and every map and chart has its own P N G button at 1950 by 1050. The next video covers excluding sales from the charts and tagging comparables.
-<br>_[click #tab-rates; click #map-munis; click #map-munis]_
+<br>_[click #tab-rates; scroll to maps; click #map-munis; click #map-munis]_
 
 ## mb-12-charts-comps-workfile (Manitoba, recorded)
 
-_Before recording: open MAO Sales Database; click #sales-db-import; type "Springfield" in #sales-db-muni-search; click #sales-db-munis input[type=checkbox]:not(:checked); clear #sales-db-muni-search; click .date-preset-btn[data-months="36"]; pick "RESIDENTIAL BARE LAND" in #sales-db-type; click #sales-db-load; pick "vacant" in #vacant-improved; open Additional filters; type "313960" in #subject-roll; click #subject-apply; click #charts-open (opens new window)_
+_Before recording: upload a file; wait for it; pick "vacant" in #vacant-improved; open Additional filters; type "67600.048" in #subject-roll; click #subject-apply; click #charts-open (opens new window)_
 
 **0.** Charts are interactive. Click a dot and that sale is unticked in the grid. It moves to Excluded records with the reason box focused, so you record why as you go.
-<br>_[scroll to charts; click a chart dot; click #excl-panel input.excl-reason; type "Outlier"; press Enter]_
+<br>_[page script; scroll to charts; click a chart dot; click #excl-panel input.excl-reason; type "Outlier"; press Enter]_
 
 **1.** Excluded records lists every unticked sale with its reason. The suggestions cover the usual cases: nominal transfer, non-arm's length, assembly, outlier, not comparable, includes improvements, forced sale. Include again puts a sale back.
 <br>_[open Excluded records; hover #excl-panel summary]_
 
 **2.** Shift-click a dot to tag it as the next comparable. The comp number appears on the chart and on the map, and in the grid in the main window.
-<br>_[shift-click a chart dot; clear text selection; shift-click a chart dot; clear text selection]_
+<br>_[scroll to charts; shift-click a chart dot; clear text selection; shift-click a chart dot; clear text selection]_
 
 **3.** Comparable sales is the running list. Reorder with the arrows, remove with the cross, copy the roll numbers for the report, or clear all tags. Land Set 1 and 2 are listed separately.
 <br>_[open Comparable sales; hover #comps-panel summary]_

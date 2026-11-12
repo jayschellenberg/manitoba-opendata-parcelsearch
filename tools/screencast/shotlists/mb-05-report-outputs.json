@@ -41,7 +41,7 @@
  ],
  "steps": [
   {
-   "say": "Once a subject is found, the buttons at the bottom of the panel produce the images and files that go into a report. This video shows Capture Map, the overall location map, the Addenda Pack and parcel snapshots.",
+   "say": "Once a subject is found, the buttons at the bottom of the Map Layers panel produce the images and files that go into a report. This video shows Capture Map, the overall location map, and the three packs: the Addenda Pack, the Parcel Pack and the Aerial Pack.",
    "do": [
     {
      "hover": "#static-map-btn"
@@ -72,7 +72,7 @@
    ]
   },
   {
-   "say": "Tick Include legend and the scale bar and north arrow. Copy image puts it on the clipboard for pasting straight into Word. Download P N G or J P G saves a file.",
+   "say": "Tick Include legend and the scale bar and north arrow. Copy image puts it on the clipboard for pasting straight into Word. Download P N G or J P G saves a file, named for the municipality and the roll number.",
    "do": [
     {
      "click": "#map-capture-legend"
@@ -118,7 +118,7 @@
    ]
   },
   {
-   "say": "M B Overall Map draws the province location map with a subject callout. Change the callout text, move the arrow to any side, and switch to the Winnipeg base for city subjects. Copy or download the image.",
+   "say": "M B Overall Map draws the province location map with a subject callout. Change the callout text and move the arrow to any side. Where there is a closer map, the base map list offers it: the highway map's city page for thirteen cities and towns, the provincial map of the rural municipality, or a community plan. This subject is in Brandon, so the Brandon map is offered. Copy or download the image.",
    "do": [
     {
      "click": "#location-map-btn"
@@ -136,6 +136,15 @@
      "wait": 2500
     },
     {
+     "select": [
+      "#location-map-output select[aria-label=\"Base map\"]",
+      "Brandon map"
+     ]
+    },
+    {
+     "wait": 5000
+    },
+    {
      "press": "Escape"
     },
     {
@@ -144,7 +153,7 @@
    ]
   },
   {
-   "say": "Addenda Pack builds the whole set in one click. A location map, a neighbourhood map framed on the municipality with the section grid and highways, a subject aerial with dimensions, a zoning map, and an all-results map when there are several parcels.",
+   "say": "Addenda Pack builds the whole report set in one click. The Manitoba location map comes first, then a city map, a municipal map or a community plan where the subject is on one. After those come a neighbourhood map that names the municipality and shows the highways, a wide aerial and a close-up aerial, a site map of the assessment parcels with the lot dimensions, and a zoning map.",
    "do": [
     {
      "click": "#addenda-pack-btn"
@@ -155,13 +164,63 @@
    ]
   },
   {
-   "say": "The button reports progress as each map renders. The map view is restored when it finishes, and the zip downloads with a readme listing what is inside. That is the report set for a single subject.",
+   "say": "The zoning map names the by-law, with its effective date where that is known, and marks the subject's zone in the legend. The button reports progress as each map renders. The map view is restored when it finishes, and the zip downloads with a readme listing what is inside.",
    "do": [
     {
      "hover": "#addenda-pack-btn"
     },
     {
      "wait": 10000
+    },
+    {
+     "waitfor": "#addenda-pack-btn:not(:disabled)"
+    },
+    {
+     "wait": 1500
+    }
+   ]
+  },
+  {
+   "say": "A property on several rolls is handled as one subject. With two to ten parcels in the results, the location maps point an arrow at each group of parcels and the other maps frame the main group. A map of all the results is added when the parcels are spread out.",
+   "do": [
+    {
+     "hover": "#addenda-pack-btn"
+    },
+    {
+     "wait": 2000
+    }
+   ]
+  },
+  {
+   "say": "Parcel Pack works parcel by parcel instead. Each parcel in the results gets three maps of its own: a site map, the same site map with dimensions, and a close-up aerial, with only that parcel highlighted.",
+   "do": [
+    {
+     "click": "#parcel-pack-btn"
+    },
+    {
+     "wait": 9000
+    }
+   ]
+  },
+  {
+   "say": "With several parcels, a list opens first. Each parcel gets its own maps unless you choose to show it with another, which suits a small parcel beside a large one. A pack holds up to forty parcels, and clicking the button again cancels it.",
+   "do": [
+    {
+     "hover": "#parcel-pack-btn"
+    },
+    {
+     "wait": 9000
+    }
+   ]
+  },
+  {
+   "say": "Aerial Pack is the quick one: a single satellite image of each parcel, highlighted and zoomed to fit, zipped up and named by roll. It suits a farm with many parcels, and the agricultural video shows it. That is the report set.",
+   "do": [
+    {
+     "hover": "#snapshot-zip-btn"
+    },
+    {
+     "wait": 2500
     }
    ]
   }

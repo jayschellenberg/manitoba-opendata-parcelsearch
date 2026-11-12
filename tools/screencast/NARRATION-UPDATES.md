@@ -3,7 +3,7 @@
 The videos were recorded 2026-10-10 (mb-01 to mb-06, wpg-01 to wpg-05) and 2026-10-13 (mb-07 to
 mb-12). This lists what the apps have gained or changed since, video by video, so the shot lists
 can be edited before the next re-record. Line numbers are the `say` steps in each shot list, in
-order. Nothing here has been changed in the shot lists yet.
+order. Only mb-05 has been changed in the shot lists so far.
 
 Three kinds of entry:
 
@@ -17,7 +17,7 @@ from commit subjects only.
 
 ## Priority
 
-1. **mb-05 Report outputs** — most of it is out of date (Addenda Pack contents, Parcel Pack, Aerial Pack).
+1. **mb-05 Report outputs** — shot list updated 2026-11-12; needs re-recording.
 2. **mb-10 / mb-11 Sales Charts** — a fifth page, a renamed page, and the Comparables map and table.
 3. **mb-06 line 13** — names a button that has been renamed and moved.
 4. **mb-01 / mb-03** — Dimensions wording, the address row, three new layers.
@@ -55,6 +55,11 @@ from commit subjects only.
 No narration change needed. Line 04 already says square feet.
 
 ### mb-05 Report outputs
+
+> **Done 2026-11-12** in `shotlists/mb-05-report-outputs.json` (narration rewritten, four steps added
+> for the multi-roll subject, Parcel Pack and Aerial Pack). Not re-recorded: the step timings and the
+> "Brandon map" pick in the overall-map step are untested. The table below is kept as the record of
+> what changed.
 
 | Line | Kind | Change |
 |---|---|---|
