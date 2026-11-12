@@ -295,7 +295,8 @@ import { generateParcelSnapshotsZip } from './snapshotExport.js';
 // Area-selection shape filter (draw radius/rectangle/polygon on the map).
 import { getShapes as getMapShapes, clearShapes as clearMapShapes, onShapesChanged } from './drawShapes.js';
 import { passesShapeFilter } from './lib/shapeFilter.js';
-import { countSnapshotFrames } from './lib/snapshotGroups.js';
+import { countSnapshotFrames, groupParcelsForSnapshots } from './lib/snapshotGroups.js';
+import { suggestMerges, applyMerges, packBaseName, uniqueName, boxGapMeters } from './lib/parcelPackGroups.js';
 import { waitForMapIdle, MapRenderTimeoutError } from './lib/snapshotCapture.js';
 import { OUTPUT_MIME, OUTPUT_EXT } from './lib/imageOutput.js';
 import { showLocationMapPanel } from './lib/locationMapPanel.js';
@@ -3259,6 +3260,9 @@ if ($locationMapBtn) {
 // non-empty, so it serves both entry points the user asked for: an imported
 // parcel list, and Sales Analysis after importing a list.
 const $snapshotBtn = document.getElementById('snapshot-zip-btn');
+// Renamed from "Parcel Snapshots (ZIP)" and moved beside the Addenda and
+// Parcel Packs, 2026-11-12; the export itself is unchanged.
+const AERIAL_PACK_LABEL = $snapshotBtn?.textContent || 'Aerial Pack (ZIP)';
 let snapshotRunning = false;
 let snapshotAbort = null;
 if ($snapshotBtn) $snapshotBtn.addEventListener('click', handleSnapshotExport);
@@ -3268,11 +3272,13 @@ function snapshotResultCount() {
 }
 
 function updateSnapshotButton() {
+  updateParcelPackButton();
   if (!$snapshotBtn) return;
   if (snapshotRunning) return; // mid-run label/handler owns the button
   const n = snapshotResultCount();
   $snapshotBtn.disabled = n === 0;
-  $snapshotBtn.textContent = 'Parcel Snapshots (ZIP)';
+  $snapshotBtn.textContent = AERIAL_PACK_LABEL;
+  $snapshotBtn.classList.toggle('is-empty', n === 0);
   $snapshotBtn.title = n === 0
     ? 'Import a parcel list or run a search first, then generate one satellite JPEG per result parcel.'
     : `Generate ${n} satellite JPEG${n === 1 ? '' : 's'} (1600×900, highlighted, 16:9) and download as a ZIP, `
@@ -4315,7 +4321,7 @@ async function setAuxOverlay(which, on) {
 
 async function buildAddendaPack() {
   const btn = $addendaPackBtn;
-  if (!btn || btn.disabled || captureInFlight) return;
+  if (!btn || btn.disabled || captureInFlight || parcelPackRunning) return;
   const subject = addendaSubjectFeatures();
   const subjectBox = subject && bboxOfFeatures(subject.feats);
   if (!subjectBox) {
@@ -4606,6 +4612,300 @@ async function buildAddendaPack() {
   ].join('\r\n');
   files.push({ name: 'README.txt', data: new TextEncoder().encode(readme) });
   downloadBlob(buildStoreZip(files), captureFilename('zip').replace(/map-(\d{4}-\d{2}-\d{2})\.zip$/, 'addenda-$1.zip'));
+}
+
+// ---------- Parcel Pack ----------
+//
+// Three Addenda-style maps for EACH result parcel (Jason, 2026-11-12): the
+// Addenda Pack's site map without dimensions, the same map with them, and
+// its close-up aerial — all on the close-up's frame, 1950 x 1050 PNG with
+// the credit, scale bar and north arrow. Where the Addenda Pack treats the
+// result set as one subject, this goes parcel by parcel, each drawn as the
+// only highlighted parcel on its maps. A multi-roll sale is one subject, as
+// in the Aerial Pack (lib/snapshotGroups.js).
+//
+// A sliver beside a quarter is not worth three maps of its own, so with
+// more than one subject a dialog first lists them, each with a "Map with"
+// choice. Small parcels beside a much larger one start out merged into it
+// (lib/parcelPackGroups.js); any choice can be changed, and choices are
+// remembered for the session.
+//
+// Built like the Addenda Pack: the live map is driven and put back after.
+
+const $parcelPackBtn   = document.getElementById('parcel-pack-btn');
+const $parcelPackModal = document.getElementById('parcel-pack-modal');
+const $parcelPackRows  = document.getElementById('parcel-pack-rows');
+const $parcelPackSum   = document.getElementById('parcel-pack-summary');
+const $parcelPackBuild = document.getElementById('parcel-pack-build');
+const PARCEL_PACK_LABEL = $parcelPackBtn?.innerHTML || 'Parcel Pack (ZIP)';
+// Most subjects one pack will map. Each is three captures (about 5 s) and
+// some 3 MB of PNG, all held in memory until the ZIP is built; a whole-
+// municipality search would run for hours. The Aerial Pack has no cap.
+const PARCEL_PACK_MAX = 40;
+// How many other parcels each "Map with" list offers, nearest first. A
+// parcel mapped with a distant one would only shrink both on the page.
+const PARCEL_PACK_NEAREST = 12;
+let parcelPackRunning = false;
+let parcelPackAbort = false;
+/** The dialog's choices this session: frame id -> target frame id, or ''
+ *  for "own maps". A frame absent from here takes the suggestion. */
+const parcelPackChoices = new Map();
+
+/** The highlight as it is drawn now: the result set after the as-of swap
+ *  and the boundary withholding, the same terms setMapData pushes on. */
+function currentHighlightFc() {
+  const asOf = asOfHighlight(lastResultFc);
+  const asOfFc = asOf ? asOf.fc : lastResultFc;
+  const withheld = withholdChangedGeometry(asOfFc, { centroid: parcelCentrePoint });
+  return withheld.withheld ? withheld.fc : asOfFc;
+}
+
+/** The pack's subjects before any merging: one per parcel or multi-roll
+ *  sale that has a boundary to frame (a withheld pin has none). */
+function parcelPackFrames() {
+  const feats = (currentHighlightFc()?.features || [])
+    .filter((f) => /Polygon$/.test(f?.geometry?.type || ''));
+  return groupParcelsForSnapshots(feats).map((g) => {
+    const rolls = g.members.map((f) => displayRoll(f.properties?.Roll_No_Txt) || '?');
+    const muni = String(g.members[0]?.properties?.Muni_Name_With_Typ || '').trim();
+    return {
+      id: `${muni}|${rolls.join('_')}`,
+      members: g.members,
+      label: rolls.length > 3 ? `${rolls.slice(0, 3).join(', ')} +${rolls.length - 3}` : rolls.join(', '),
+      muni,
+      acres: addendaSubjectAcres(g.members),
+      box: bboxOfFeatures(g.members),
+    };
+  });
+}
+
+function updateParcelPackButton() {
+  if (!$parcelPackBtn || parcelPackRunning) return;
+  const n = parcelPackFrames().length;
+  $parcelPackBtn.disabled = n === 0;
+  $parcelPackBtn.classList.toggle('is-empty', n === 0);
+}
+
+if ($parcelPackBtn) $parcelPackBtn.addEventListener('click', handleParcelPack);
+if ($parcelPackModal) {
+  for (const el of $parcelPackModal.querySelectorAll('[data-close]')) {
+    el.addEventListener('click', () => $parcelPackModal.close());
+  }
+  $parcelPackModal.addEventListener('click', (e) => { if (e.target === $parcelPackModal) $parcelPackModal.close(); });
+}
+
+function handleParcelPack() {
+  if (parcelPackRunning) { parcelPackAbort = true; return; } // second click cancels
+  if (captureInFlight || $addendaPackBtn?.disabled) return;
+  const frames = parcelPackFrames();
+  if (!frames.length) {
+    window.alert('Search for a property or import a parcel list first — the parcel pack maps each result parcel.');
+    return;
+  }
+  if (frames.length > PARCEL_PACK_MAX) {
+    window.alert(`The parcel pack maps up to ${PARCEL_PACK_MAX} parcels at a time (three maps each) and there are ${frames.length} in the results. `
+      + 'Narrow the search, or untick rows in the grid, and try again. The Aerial Pack has no limit.');
+    return;
+  }
+  if (frames.length === 1 || !$parcelPackModal) {
+    runParcelPack(frames.map((f) => f.members)).catch(parcelPackFailed);
+    return;
+  }
+  openParcelPackDialog(frames);
+}
+
+function parcelPackFailed(err) {
+  console.error('parcel pack failed', err);
+  window.alert(`Parcel pack failed: ${err?.message || err}`);
+}
+
+/** The effective choice for each frame: the user's, else the suggestion. */
+function parcelPackMerges(frames, suggested) {
+  const ids = new Set(frames.map((f) => f.id));
+  const out = new Map();
+  for (const f of frames) {
+    const pick = parcelPackChoices.has(f.id) ? parcelPackChoices.get(f.id) : suggested.get(f.id);
+    if (pick && ids.has(pick)) out.set(f.id, pick);
+  }
+  return out;
+}
+
+function openParcelPackDialog(frames) {
+  const suggested = suggestMerges(frames);
+  const fmtAcres = (ac) => (Number.isFinite(ac) ? `${ac < 10 ? ac.toFixed(2) : ac.toFixed(1)} ac` : '');
+  const summarise = () => {
+    const sets = applyMerges(frames, parcelPackMerges(frames, suggested)).length;
+    $parcelPackSum.textContent = `${frames.length} parcels → ${sets} set${sets === 1 ? '' : 's'} of maps, ${sets * 3} images.`;
+  };
+  $parcelPackRows.replaceChildren();
+  const merges = parcelPackMerges(frames, suggested);
+  for (const f of frames) {
+    const tr = document.createElement('tr');
+    const cell = (text, cls) => { const td = document.createElement('td'); td.textContent = text; if (cls) td.className = cls; tr.appendChild(td); return td; };
+    cell(f.label);
+    cell(f.muni);
+    cell(fmtAcres(f.acres), 'num');
+    const sel = document.createElement('select');
+    sel.setAttribute('aria-label', `Map roll ${f.label} with`);
+    sel.add(new Option('Its own maps', ''));
+    const picked = merges.get(f.id) || '';
+    const nearest = frames.filter((o) => o !== f)
+      .map((o) => ({ o, gap: boxGapMeters(f.box, o.box) }))
+      .sort((a, b) => a.gap - b.gap)
+      .filter(({ o }, i) => i < PARCEL_PACK_NEAREST || o.id === picked);
+    for (const { o: other } of nearest) {
+      sel.add(new Option(`With ${other.label}${other.muni !== f.muni ? ` (${other.muni})` : ''}`, other.id));
+    }
+    sel.value = picked;
+    const note = document.createElement('span');
+    note.className = 'parcel-pack-suggested';
+    const showNote = () => { note.textContent = sel.value && sel.value === suggested.get(f.id) ? 'suggested: small, beside it' : ''; };
+    showNote();
+    sel.addEventListener('change', () => {
+      parcelPackChoices.set(f.id, sel.value);
+      showNote();
+      summarise();
+    });
+    const td = cell('');
+    td.append(sel, note);
+    $parcelPackRows.appendChild(tr);
+  }
+  summarise();
+  $parcelPackBuild.onclick = () => {
+    $parcelPackModal.close();
+    runParcelPack(applyMerges(frames, parcelPackMerges(frames, suggested))).catch(parcelPackFailed);
+  };
+  if (!$parcelPackModal.open) $parcelPackModal.showModal();
+  $parcelPackBuild.focus();
+}
+
+/** Capture the three maps for each member list and download the ZIP. */
+async function runParcelPack(sets) {
+  const btn = $parcelPackBtn;
+  if (!btn || parcelPackRunning || captureInFlight || !sets.length) return;
+  // Claimed before the wait, so a second click is a cancel rather than a
+  // second pack, and the button says something while the map loads.
+  parcelPackRunning = true;
+  parcelPackAbort = false;
+  btn.textContent = 'Parcel Pack: starting…';
+  if ($addendaPackBtn) $addendaPackBtn.disabled = true;
+  await mapReady;
+  const camera = { center: map.getCenter(), zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() };
+  const basemap = currentBasemapKey();
+  const userMarks = { pin: !!map._resultPinOn, numbers: !!map._parcelNumbers?.visible, dims: dimsOn };
+  const gridWas = gridMode;
+  const fabricWas = auxOverlayOn('muniParcels');
+  const highlightWas = currentHighlightFc();
+  const restoreLayers = async () => {
+    if (gridMode !== gridWas) await cycleGridTo(gridWas);
+    await setAuxOverlay('muniParcels', fabricWas);
+  };
+  const withLegend = captureLegendWanted() && visibleMapLegends().length > 0;
+  const total = sets.length * 3;
+  let n = 0;
+  const step = () => {
+    if (parcelPackAbort) throw new DOMException('Parcel pack cancelled', 'AbortError');
+    btn.textContent = `Parcel Pack ${++n}/${total}… (click to cancel)`;
+  };
+  // One subject on the map at a time: its parcels are the only highlight
+  // and the only ones dimensioned.
+  const setSubject = (members) => {
+    showResults(map, { type: 'FeatureCollection', features: members }, { fit: false });
+    setParcelDimensionData(map, members);
+  };
+  const used = new Set();
+  const subjects = sets.map((members) => ({
+    members,
+    base: uniqueName(packBaseName(members), used),
+    bounds: framedBounds(bboxOfFeatures(members), { padFrac: ADDENDA_CLOSE_PAD, minWidthM: ADDENDA_CLOSE_MIN_M }),
+    files: [],
+  }));
+  const stale = [];
+  const keep = (s, suffix, shot) => {
+    const name = `${s.base}-${suffix}.png`;
+    s.files.push({ name, data: shot.bytes });
+    if (shot.stale) stale.push(name);
+  };
+  let fabricOn = true;
+  let cancelled = false;
+  try {
+    // Streets first for every subject, then satellite for every subject:
+    // two basemap changes for the whole pack instead of two per parcel.
+    setAddendaMarks({ pin: false, numbers: false, dims: false });
+    await setAuxOverlay('muniParcels', true);
+    fabricOn = auxOverlayOn('muniParcels');
+    await cycleGridTo(null);
+    for (const s of subjects) {
+      step();
+      setSubject(s.members);
+      setParcelDimensionsVisible(map, false);
+      keep(s, 'site-map', await captureAddendaView(s.bounds, 'streets',
+        { withLegend, cornerLabel: 'Site Map — Assessment Parcels' }));
+      step();
+      setParcelDimensionsVisible(map, true);
+      keep(s, 'site-map-dimensions', await captureAddendaView(s.bounds, 'streets',
+        { withLegend, cornerLabel: 'Site Map — Assessment Parcels',
+          scaleNote: 'Not a legal survey - site dimensions are approximate' }));
+    }
+    setParcelDimensionsVisible(map, false);
+    await restoreLayers();
+    for (const s of subjects) {
+      step();
+      setSubject(s.members);
+      keep(s, 'aerial-close', await captureAddendaView(s.bounds, 'satellite',
+        { withLegend, cornerLabel: 'Aerial View — Close-up (Subject Highlighted)' }));
+    }
+  } catch (err) {
+    if (err?.name !== 'AbortError') throw err;
+    cancelled = true;
+  } finally {
+    // Put the user's map back exactly as it was, whatever happened above.
+    await restoreLayers().catch(() => {});
+    showResults(map, highlightWas, { fit: false });
+    setParcelDimensionData(map, highlightWas.features || []);
+    setAddendaMarks(userMarks);
+    setBasemapByKey(basemap);
+    map.jumpTo(camera);
+    parcelPackRunning = false;
+    parcelPackAbort = false;
+    if ($addendaPackBtn) $addendaPackBtn.disabled = false;
+    btn.innerHTML = PARCEL_PACK_LABEL;
+    updateParcelPackButton();
+  }
+  if (cancelled) { setCount('Parcel pack cancelled.'); return; }
+  const attribEl = $mapEl.querySelector('.maplibregl-ctrl-attrib-inner') || $mapEl.querySelector('.maplibregl-ctrl-attrib');
+  const credit = attribEl ? attribEl.innerText.replace(/\s+/g, ' ').trim() : '';
+  const stamp = localDateStamp();
+  const describe = (s) => {
+    const rolls = s.members.map((f) => displayRoll(f.properties?.Roll_No_Txt) || '?').join(', ');
+    const ac = addendaSubjectAcres(s.members);
+    return `${`${s.base}-*.png`.padEnd(36)}Roll${s.members.length > 1 ? 's' : ''} ${rolls}, `
+      + `${addendaMuniLabel(s.members[0]?.properties) || s.members[0]?.properties?.Muni_Name_With_Typ || ''}`
+      + `${Number.isFinite(ac) ? `, ${ac.toFixed(2)} ac` : ''}`
+      + `${s.members.length > 1 ? ` (${s.members.length} parcels on one set of maps)` : ''}`;
+  };
+  const readme = [
+    `Manitoba Parcel Search — parcel pack, ${stamp}`,
+    '',
+    `${subjects.length} set${subjects.length === 1 ? '' : 's'} of three maps, each framed on its parcel and the lots adjoining it:`,
+    '  -site-map.png             Streets and assessment parcels, the parcel highlighted',
+    '  -site-map-dimensions.png  The same map with the parcel\'s side lengths (approximate; not a legal survey)',
+    '  -aerial-close.png         Satellite close-up, the parcel highlighted',
+    '',
+    ...subjects.map(describe),
+    '',
+    `Every map is ${CAPTURE_W} x ${CAPTURE_H} px (6.5 x 3.5 in at 300 dpi) with a scale bar (measured at the map centre)`,
+    'and a north arrow.',
+    ...(!fabricOn ? ['', 'The Assessment Parcels layer could not be loaded, so the site maps show the highlighted parcel without the lots around it.'] : []),
+    ...(stale.length ? ['', `Still loading when captured (rebuild if a layer looks incomplete): ${stale.join(', ')}`] : []),
+    ...(credit ? ['', `Map data: ${credit}`] : []),
+    '',
+  ].join('\r\n');
+  const files = subjects.flatMap((s) => s.files);
+  files.push({ name: 'README.txt', data: new TextEncoder().encode(readme) });
+  const zipName = captureFilename('zip').replace(/map-(\d{4}-\d{2}-\d{2})\.zip$/, 'parcel-pack-$1.zip');
+  downloadBlob(buildStoreZip(files), zipName);
+  setCount(`Saved ${total} parcel pack maps (${subjects.length} parcel set${subjects.length === 1 ? '' : 's'}) to ${zipName}.`);
 }
 /**
  * Empty the Roll # field when a different municipality is picked.

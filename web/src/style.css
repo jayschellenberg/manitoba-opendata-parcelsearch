@@ -6093,6 +6093,44 @@ body {
   cursor: progress;
 }
 
+/* Parcel Pack / Aerial Pack row under the Addenda Pack. Disabled here
+   usually means "no results yet", not "working". */
+.sidebar .pack-row { margin-top: 6px; }
+.sidebar .pack-row .generate-map-btn-pack.is-empty:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* Parcel Pack dialog: which parcels share a set of maps. */
+.parcel-pack-modal { width: min(760px, 94vw); }
+.parcel-pack-scroll {
+  max-height: 55vh;
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+}
+.parcel-pack-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.parcel-pack-table th,
+.parcel-pack-table td {
+  padding: 5px 10px;
+  text-align: left;
+  border-bottom: 1px solid #eef2f6;
+  white-space: nowrap;
+}
+.parcel-pack-table th {
+  position: sticky;
+  top: 0;
+  background: #f8fafc;
+  font-weight: 600;
+}
+.parcel-pack-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.parcel-pack-table select { max-width: 260px; font: inherit; padding: 2px 4px; }
+.parcel-pack-suggested { margin-left: 8px; font-size: 12px; color: #64748b; }
+.parcel-pack-summary { font-size: 13px; color: #334155; }
+
 /* Export CSV: Excel green, same as the Winnipeg app. */
 .sidebar .export-row > #export.export-btn {
   background: #217346;

@@ -1631,6 +1631,13 @@
             <button id="location-map-btn" type="button" class="generate-map-btn generate-map-btn-location" title="Render the Manitoba overview map (NRCan) with a pin at the searched property and a SUBJECT callout pointing at it — the location figure for a report. A Winnipeg property can be switched to the Winnipeg map, which also marks the downtown inset. Shown below the table as a sharp PNG with Copy and Download; the callout text and side can be changed there.">🗺️ MB Overall Map</button>
           </div>
           <button id="addenda-pack-btn" type="button" class="generate-map-btn generate-map-btn-pack" title="Download a ZIP of the standard report addenda maps for the current search: the MB location map with its title box (plus the highway map's city map in the 13 larger cities and towns, the provincial RM map, and the community plan where the subject is on one), a neighbourhood map (1950 × 1500, municipality named, section grid and Manitoba Highways), a satellite aerial of the subject with its dimensions, a zoning map with its legend and (with more than one parcel) a map of all the results. The neighbourhood and zoning maps mark a single parcel with the locator pin, or number the parcels when there are several. The other maps are 1950 × 1050; all carry the credit, scale bar and north arrow, and the legend follows the Capture Map panel setting except on the zoning map. Your map view, basemap and layers are put back afterwards.">📦 Addenda Pack (ZIP)</button>
+          <!-- Per-parcel packs, under the Addenda Pack (Jason, 2026-11-12).
+               Parcel Pack: three Addenda-style maps per result parcel.
+               Aerial Pack: the former "Parcel Snapshots (ZIP)" export. -->
+          <div class="capture-row pack-row">
+            <button id="parcel-pack-btn" type="button" class="generate-map-btn generate-map-btn-pack" disabled title="Download a ZIP of three maps for each result parcel: a site map (streets and assessment parcels, the parcel highlighted), the same map with the parcel's dimensions, and a close-up satellite aerial. All are 1950 × 1050 PNG with the credit, scale bar and north arrow, framed on the parcel and the lots adjoining it. With several parcels a list opens first, where a small parcel can be put on another parcel's maps. Your map view, basemap and layers are put back afterwards.">🧩 Parcel Pack (ZIP)</button>
+            <button id="snapshot-zip-btn" type="button" class="generate-map-btn generate-map-btn-pack" disabled title="Generate a 1600×900 satellite JPEG of each result parcel (highlighted, zoomed to fit 16:9) and download them all as a single ZIP, named muniCode-roll.jpg. Import a parcel list or run a search first.">🛰️ Aerial Pack (ZIP)</button>
+          </div>
         </section><!-- /map-layers-section -->
 
         <!-- ===================================================
@@ -1654,7 +1661,6 @@
               class="secondary"
               title="Plan a driving route through every loaded parcel. Opens the route planner panel above the table."
             >Plan Route</button>
-            <button id="snapshot-zip-btn" type="button" class="secondary" disabled title="Generate a 1600×900 satellite JPEG of each result parcel (highlighted, zoomed to fit 16:9) and download them all as a single ZIP, named muniCode-roll.jpg. Import a parcel list or run a search first.">Parcel Snapshots (ZIP)</button>
           </div>
           <!-- Map options. Toggles hidden until they can do anything:
                  - Number parcels: needs more than one parcel to number
@@ -2285,6 +2291,30 @@
           <button type="button" id="map-capture-download-jpg" class="parcel-list-modal-btn" title="JPEG is about a tenth the file size of PNG for satellite imagery — lighter in a report, with no visible loss.">Download JPG (smaller)</button>
         </div>
         <p class="map-capture-tip">Tip: <kbd>Alt</kbd>+<kbd>C</kbd> copies the current map view straight to the clipboard, using this legend setting.</p>
+      </div>
+    </dialog>
+
+    <!-- Parcel Pack: which parcels share a set of maps. Rows are built by
+         main.js openParcelPackDialog(). -->
+    <dialog id="parcel-pack-modal" class="map-capture-modal parcel-pack-modal" aria-labelledby="parcel-pack-title">
+      <div class="map-capture-inner">
+        <div class="map-capture-head">
+          <h2 id="parcel-pack-title">Parcel Pack <span class="map-capture-size">3 maps per parcel · 1950 × 1050 px</span></h2>
+          <button type="button" class="map-capture-close" data-close aria-label="Close">×</button>
+        </div>
+        <p class="map-capture-tip">Each parcel gets a site map, a site map with dimensions and a close-up aerial. To leave a small parcel without maps of its own, choose the parcel it should be shown with: both are then highlighted on that parcel's three maps.</p>
+        <div class="parcel-pack-scroll">
+          <table class="parcel-pack-table">
+            <thead><tr><th>Roll</th><th>Municipality</th><th class="num">Area</th><th>Map with</th></tr></thead>
+            <tbody id="parcel-pack-rows"></tbody>
+          </table>
+        </div>
+        <div class="map-capture-actions">
+          <span id="parcel-pack-summary" class="parcel-pack-summary"></span>
+          <span class="map-capture-spacer"></span>
+          <button type="button" class="parcel-list-modal-btn" data-close>Cancel</button>
+          <button type="button" id="parcel-pack-build" class="parcel-list-modal-btn primary">Build pack</button>
+        </div>
       </div>
     </dialog>
 

@@ -2,6 +2,11 @@
 
 ## Status
 
+> 2026-11-12: the button is now **Aerial Pack (ZIP)** and sits under the
+> Addenda Pack beside the new **Parcel Pack (ZIP)** (three Addenda-style maps
+> per parcel; `main.js` "Parcel Pack" section, `lib/parcelPackGroups.js`).
+> The export itself, its id `#snapshot-zip-btn` and the ZIP name are unchanged.
+
 ✅ Implemented and on `origin/main`. Feature commit `edfdb2c` ("Add parcel
 satellite-snapshot export …"), with follow-up tuning on top (section grid on,
 2× roll-number labels, wider frame margin). `npm test` is green (including
