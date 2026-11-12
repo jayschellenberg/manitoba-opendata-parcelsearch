@@ -67,8 +67,9 @@ data agreements. The Property Search videos use open government data only.
    if wanted.
 4. **External version of the sales videos** (optional): re-record mb-07 to mb-12 and wpg-05 from a
    synthetic sales file so they could be shown outside the firm.
-5. **App changes since recording** (no re-record needed yet): Measure now shows square feet (#200), and
-   the Addenda Pack zooms closer for lots under an acre (#199). mb-04 and mb-05 still match what they show.
+5. **App changes since recording:** as of 2026-11-12 several videos no longer match the app (mb-05,
+   mb-10 and mb-11 most of all). The line-by-line list of narration changes is in
+   [NARRATION-UPDATES.md](NARRATION-UPDATES.md).
 6. The recorder code, shot lists and docs are in git (this repo is public). Recordings, the narration
    cache, the paste demo data and the personal drafts are gitignored and live only in Dropbox.
 
