@@ -3400,12 +3400,12 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
       map.addLayer({
         id: 'subject-perimeter-halo', type: 'line', source: 'subject-perimeter',
         layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: { 'line-color': '#ffffff', 'line-width': 7, 'line-opacity': 0.95 },
+        paint: { 'line-color': '#ffffff', 'line-width': 3.5, 'line-opacity': 0.95 },
       });
       map.addLayer({
         id: 'subject-perimeter-line', type: 'line', source: 'subject-perimeter',
         layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: { 'line-color': '#d32f2f', 'line-width': 4 },
+        paint: { 'line-color': '#d32f2f', 'line-width': 1.5 },
       });
       map.addImage('result-pin', resultPinImage(), { pixelRatio: 2 });
       map.addSource('result-pin', { type: 'geojson', data: emptyFc() });
