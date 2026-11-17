@@ -1227,6 +1227,7 @@ export async function fetchDevPlanCategoryList(municipality = null) {
  * signal alone. Not cached — it's a freshness probe.
  */
 export async function fetchRollEntryCount() {
+  rollEntryLiveLocked = false;
   try {
     const usp = new URLSearchParams({ where: '1=1', returnCountOnly: 'true', f: 'json' });
     const res = await fetch(`${ROLL_URL}/query`, {
@@ -1238,13 +1239,38 @@ export async function fetchRollEntryCount() {
       // dropdown with it. Null on timeout — it is only a health probe.
       signal: fetchTimeoutSignal(ROLL_ENTRY_COUNT_TIMEOUT_MS),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) rollEntryLiveLocked = true;
+      return null;
+    }
     const json = await res.json();
-    if (json.error) return null;
+    if (json.error) {
+      if (isArcgisAuthError(json.error)) rollEntryLiveLocked = true;
+      return null;
+    }
     return Number.isFinite(json.count) ? json.count : null;
   } catch {
     return null;
   }
+}
+
+// Set by fetchRollEntryCount when the live service REFUSES the request for
+// want of a token (ArcGIS 498/499, or HTTP 401/403) — observed 2026-11-17,
+// when the province made ROLL_ENTRY non-public. Unlike a timeout or a 5xx,
+// that answer is deterministic: every parcel query would fail the same way,
+// so main.js treats it as "live unavailable" and routes to the snapshot.
+let rollEntryLiveLocked = false;
+
+/** True when the last fetchRollEntryCount saw an auth refusal. */
+export function isRollEntryLiveLocked() {
+  return rollEntryLiveLocked;
+}
+
+/** ArcGIS "Invalid Token" (498) / "Token Required" (499), or the GWM_0003
+ *  message code the hosted services send with the latter. */
+export function isArcgisAuthError(error) {
+  if (!error) return false;
+  return error.code === 498 || error.code === 499 || error.messageCode === 'GWM_0003';
 }
 
 // ---------- Auxiliary overlays (contaminated sites + traffic stations) ----------

@@ -141,6 +141,7 @@ import {
   touchOverlapJoin,
   fetchMunicipalityList,
   fetchRollEntryCount,
+  isRollEntryLiveLocked,
   setRollEntrySnapshot,
   getRollEntrySnapshot,
   MB_PARCEL_DATA_CDN,
@@ -6290,7 +6291,12 @@ async function populateDropdowns() {
     const snapshotMunis = snapshotManifest?.munis
       ? Object.keys(snapshotManifest.munis).sort()
       : [];
-    const incomplete = liveRollEntryIncomplete(liveCount, liveRecordCount, snapshotManifest);
+    // A token refusal is not a blip (dropdownSources rule 3 is about blips):
+    // every live parcel query would fail identically, so it counts as
+    // "incomplete" and flips to snapshot mode like a partial republish.
+    const liveLocked = isRollEntryLiveLocked();
+    const incomplete = liveLocked
+      || liveRollEntryIncomplete(liveCount, liveRecordCount, snapshotManifest);
 
     // Degradation rules live in lib/dropdownSources.js, where node can pin
     // them — which of the two lists each dropdown ends up with, and whether
@@ -6308,7 +6314,7 @@ async function populateDropdowns() {
     repaintSelect($municipality, sources.munis, sources.muniPlaceholder, muniLabel);
     fillSelect($zoneCategory, sources.zoneCats, sources.zonePlaceholder);
     updateRollEntryBanner({
-      liveCount, liveRecordCount, snapshotManifest,
+      liveCount, liveRecordCount, snapshotManifest, liveLocked,
       snapshotActive: !!getRollEntrySnapshot(),
     });
   } catch (err) {
@@ -6406,12 +6412,14 @@ async function recheckRollEntrySnapshotAfterBoot() {
     fetchRollEntryCount(),
   ]);
   if (!manifest || Object.keys(manifest.munis || {}).length === 0) return;
-  if (!liveRollEntryIncomplete(liveMuniCount, liveRecordCount, manifest)) return;
+  const liveLocked = isRollEntryLiveLocked();
+  if (!liveLocked && !liveRollEntryIncomplete(liveMuniCount, liveRecordCount, manifest)) return;
   setRollEntrySnapshot(manifest);
   setMuniNumbers(manifest);
   repaintSelect($municipality, Object.keys(manifest.munis).sort(), MUNI_PLACEHOLDER, muniLabel);
   updateRollEntryBanner({
-    liveCount: liveMuniCount, liveRecordCount, snapshotManifest: manifest, snapshotActive: true,
+    liveCount: liveMuniCount, liveRecordCount, snapshotManifest: manifest, liveLocked,
+    snapshotActive: true,
   });
 }
 
@@ -6425,9 +6433,22 @@ async function recheckRollEntrySnapshotAfterBoot() {
  * The shortfall sentence adapts to whichever signal tripped (too few
  * munis, or too few records).
  */
-function updateRollEntryBanner({ liveCount, liveRecordCount, snapshotManifest, snapshotActive }) {
+function updateRollEntryBanner({ liveCount, liveRecordCount, snapshotManifest, snapshotActive, liveLocked = false }) {
   const banner = document.getElementById('roll-entry-banner');
   if (!banner) return;
+  if (liveLocked) {
+    const link = '<a href="https://geoportal.gov.mb.ca/datasets/manitoba::roll-entry/about" target="_blank" rel="noreferrer" style="color:inherit;text-decoration:underline">Check Roll Entry status ↗</a>';
+    banner.classList.remove('data-staleness-red');
+    banner.classList.add('data-staleness-amber');
+    banner.innerHTML = (snapshotActive && snapshotManifest?.snapshot_date)
+      ? '<strong>Manitoba\'s live Roll Entry service now requires a sign-in token.</strong> ' +
+        `Showing snapshot data from <strong>${snapshotManifest.snapshot_date}</strong> instead; ` +
+        `zoning and development-plan category filters are unavailable on snapshot data. ${link}`
+      : '<strong>Manitoba\'s live Roll Entry service now requires a sign-in token</strong> ' +
+        `and the snapshot could not be loaded, so parcel searches will fail. Reload to retry. ${link}`;
+    banner.hidden = false;
+    return;
+  }
   if (!liveRollEntryIncomplete(liveCount, liveRecordCount, snapshotManifest)) {
     banner.hidden = true;
     banner.textContent = '';
