@@ -66,17 +66,28 @@ datasets <- list(
 
 # Exact server-side row count (returnCountOnly). Without it a truncated
 # download is indistinguishable from a complete one, so no count, no write.
-fetch_count <- function(url) {
-  req <- request(paste0(url, "/query")) |>
-    req_url_query(where = "1=1", returnCountOnly = "true", f = "json") |>
-    req_retry(max_tries = 4)
-  body <- tryCatch(jsonlite::fromJSON(resp_body_string(req_perform(req))),
-                   error = function(e) NULL)
-  n <- suppressWarnings(as.integer(body$count))
-  if (is.null(body) || length(n) != 1 || is.na(n)) {
-    stop("count query failed for ", url, " — refusing to page without a verifiable total")
+# ArcGIS Online can answer HTTP 200 with an {"error": ...} body during a brief
+# outage, which req_retry does not see; a 03:00 blip on 2026-11-15 failed two
+# layers this way. So retry the whole query on a slower clock (about 6 minutes
+# in all) and report what the server actually said.
+fetch_count <- function(url, waits = c(0, 60, 120, 180)) {
+  why <- "no attempt"
+  for (w in waits) {
+    if (w > 0) { message("  count retry in ", w, "s (", why, ")"); Sys.sleep(w) }
+    req <- request(paste0(url, "/query")) |>
+      req_url_query(where = "1=1", returnCountOnly = "true", f = "json") |>
+      req_retry(max_tries = 4)
+    body <- tryCatch(jsonlite::fromJSON(resp_body_string(req_perform(req))),
+                     error = function(e) { why <<- conditionMessage(e); NULL })
+    if (is.null(body)) next
+    n <- suppressWarnings(as.integer(body$count))
+    if (length(n) == 1 && !is.na(n)) return(n)
+    why <- if (!is.null(body$error)) paste("server error:", body$error$code, body$error$message)
+           else "response had no count"
+    # 498/499 is a token refusal (the layer went private), not a blip: waiting won't help.
+    if (!is.null(body$error) && isTRUE(body$error$code %in% c(498, 499))) break
   }
-  n
+  stop("count query failed for ", url, " (", why, ") — refusing to page without a verifiable total")
 }
 
 # Fetch one page of GeoJSON features and parse to an sf data frame.
