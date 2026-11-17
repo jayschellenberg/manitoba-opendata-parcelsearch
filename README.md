@@ -1,6 +1,6 @@
 # Manitoba Open Data Parcel Search
 
-Status: Active | Next: try the new Parcel Pack (ZIP) on a real multi-parcel job (check a merged small parcel), and build a real multi-parcel Addenda Pack (Thompson group) to check the multi-arrow location maps and zoning legend, then commit and deploy | Blocked: none (ROLL_ENTRY was token-locked 2026-11-17 morning, public again by midday) | Updated: 2026-11-17
+Status: Active | Next: commit the zoning-map subject perimeter + split-zone legend (verified on Steinbach 1400), try the new Parcel Pack (ZIP) on a real multi-parcel job (check a merged small parcel), and build a real multi-parcel Addenda Pack (Thompson group) to check the multi-arrow location maps and zoning legend, then commit and deploy | Blocked: none (ROLL_ENTRY was token-locked 2026-11-17 morning, public again by midday) | Updated: 2026-11-17
 
 A firm-facing web tool for researching Manitoba properties (excluding Winnipeg, which has its [own portal](https://winnipeg-opendata-parcelsearch.vercel.app/)) by **municipality + civic address + roll # + legal description**, with each result enriched from provincial open-data sources and rendered on an interactive map. Pulls together what would otherwise be a multi-tab workflow — Manitoba Assessment Online, the provincial Zoning By-Laws layer, the Development Plan Designations layer, the MHTIS traffic-flow layer, MASC soil ratings, Water Rights Licensing (tile drainage + irrigation), and the Contaminated Sites Registry — into one search window with a single CSV export.
 

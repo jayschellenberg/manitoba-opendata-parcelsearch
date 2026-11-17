@@ -3393,6 +3393,20 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
       // standing in for the one parcel found, so it still reads at muni or
       // province zoom. A GL symbol rather than a maplibregl.Marker so
       // Generate Map (a canvas copy) captures it, as it does the callouts.
+      // The subject's perimeter on the Addenda Pack zoning map
+      // (setSubjectPerimeter): red over a white halo so it reads on every
+      // zone colour, with the Locator pin above it (Jason, 2026-11-17).
+      map.addSource('subject-perimeter', { type: 'geojson', data: emptyFc() });
+      map.addLayer({
+        id: 'subject-perimeter-halo', type: 'line', source: 'subject-perimeter',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: { 'line-color': '#ffffff', 'line-width': 7, 'line-opacity': 0.95 },
+      });
+      map.addLayer({
+        id: 'subject-perimeter-line', type: 'line', source: 'subject-perimeter',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: { 'line-color': '#d32f2f', 'line-width': 4 },
+      });
       map.addImage('result-pin', resultPinImage(), { pixelRatio: 2 });
       map.addSource('result-pin', { type: 'geojson', data: emptyFc() });
       map.addLayer({
@@ -8779,6 +8793,17 @@ export function setCommunityMask(map, feature) {
  * The shapes are faded to 0 rather than hidden, so a click on the parcel
  * still opens it; their own opacities are saved and put back as they were.
  */
+/** Draw (or, with null/empty, clear) a red perimeter round the subject
+ *  parcels — used by the Addenda Pack zoning map, where the Locator pin
+ *  alone left a split-zoned lot's extent unclear. */
+export function setSubjectPerimeter(map, feats) {
+  const src = map.getSource('subject-perimeter');
+  if (!src) return;
+  const features = (feats || []).filter((f) => f?.geometry)
+    .map((f) => ({ type: 'Feature', properties: {}, geometry: f.geometry }));
+  src.setData(features.length ? { type: 'FeatureCollection', features } : emptyFc());
+}
+
 export function setResultPin(map, point) {
   const src = map.getSource('result-pin');
   if (!src) return;

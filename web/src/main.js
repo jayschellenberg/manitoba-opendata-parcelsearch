@@ -284,6 +284,7 @@ import {
   setParcelDimensionData,
   setParcelDimensionsVisible,
   setResultPin,
+  setSubjectPerimeter,
   setCommunityMask,
   LANDCOVER_TILES_URL,
 } from './map.js';
@@ -324,6 +325,7 @@ import {
 } from './lib/specialPlanningAreas.js';
 import {
   addendaZoningLabelText, addendaZoningSourceNote, zoningBylawDate, zoningMinWidthM,
+  subjectZoneCodesByArea,
 } from './lib/addendaZoning.js';
 import { PILL_SPECS, modeFromChecked, checkedFromMode } from './lib/pillBinding.js';
 import { cliClassRollup } from './lib/cliRollup.js';
@@ -4544,7 +4546,11 @@ async function buildAddendaPack() {
         // Colours are per code, so the subset keeps them.
         const muniZoning = lastZoningFc;
         const zoningLabel = addendaZoningLabel(muniZoning, subject.feats[0]);
-        const subjectCodes = addendaSubjectZoneCodes(muniZoning, subject.feats);
+        // Every zone over 5% of the subject's land, so a split-zoned lot
+        // (C3 frontage, DR-1 behind) gets both rows highlighted.
+        const subjectCodes = subjectZoneCodesByArea(
+          muniZoning?.features, subject.feats,
+          { fallback: addendaSubjectZoneCodes(muniZoning, subject.feats) });
         const subjectAcres = addendaSubjectAcres(subject.feats);
         const zoningMinM = zoningMinWidthM(subjectAcres);
         const zoningNote = addendaZoningSourceNote(await fetchZoningLayerUpdatedDate());
@@ -4554,6 +4560,7 @@ async function buildAddendaPack() {
         // (Jason, 2026-11-05). A failed fetch just leaves the outline off.
         const spaFc = await fetchSpecialPlanningAreas().catch(() => null);
         await setAuxOverlay('spa', !!spaFc && spaInBounds(spaFc, zoningFrame));
+        setSubjectPerimeter(map, subject.feats);
         try {
           const zoning = await captureAddendaView(
             zoningFrame, 'streets',
@@ -4561,6 +4568,7 @@ async function buildAddendaPack() {
               prepare: () => rebuildZoningLegend(zoningInView(muniZoning), { subjectCodes }) });
           add('zoning-map.png', zoning.bytes, `Zoning around ${subject.note}${marked}, at least ${zoningMinM < 1000 ? `${zoningMinM} m` : `${(zoningMinM / 1000).toFixed(1)} km`} wide`, zoning.stale);
         } finally {
+          setSubjectPerimeter(map, null);
           rebuildZoningLegend(muniZoning);
           await setAuxOverlay('spa', auxWas.spa);
         }
@@ -4583,6 +4591,7 @@ async function buildAddendaPack() {
     // Put the user's map back exactly as it was, whatever happened above.
     if (zoningOverlayMode() !== zoningWas) await cycleZoningTo(zoningWas).catch(() => {});
     setCommunityMask(map, null);
+    setSubjectPerimeter(map, null);
     await restoreLayers().catch(() => {});
     setAddendaMarks(userMarks);
     setBasemapByKey(basemap);

@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict';
 import {
   zoningMinWidthM, zoningBylawDate, formatBylawDate, addendaZoningLabelText, addendaZoningSourceNote,
+  subjectZoneCodesByArea,
 } from '../src/lib/addendaZoning.js';
 import { ZONING_BYLAW_DATES } from '../src/lib/zoningBylawDates.js';
 
@@ -22,6 +23,38 @@ test('frame: under 1 acre is 750 m, 1-5 acres 1 km, larger 1.5 km', () => {
   assert.equal(zoningMinWidthM(4.9), 1000);
   assert.equal(zoningMinWidthM(5), 1500);
   assert.equal(zoningMinWidthM(160), 1500);
+});
+
+// A 100 m x 100 m-ish square parcel near Steinbach, split by a zone line.
+const sq = (x0, y0, x1, y1, props = {}) => ({ type: 'Feature', properties: props,
+  geometry: { type: 'Polygon', coordinates: [[[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]] } });
+const PARCEL = sq(-96.70, 49.520, -96.69, 49.530);
+const zoneSplit = (northFrac) => {
+  const yCut = 49.530 - 0.010 * northFrac;
+  return [sq(-96.71, yCut, -96.68, 49.54, { ZONE: 'C3' }), sq(-96.71, 49.51, -96.68, yCut, { ZONE: 'DR-1' })];
+};
+
+test('split zoning: both zones highlighted when the smaller is over 5%', () => {
+  const got = subjectZoneCodesByArea(zoneSplit(0.3), [PARCEL], { fallback: ['DR-1'] });
+  assert.deepEqual([...got].sort(), ['C3', 'DR-1']);
+});
+
+test('split zoning: a sliver under 5% is left out', () => {
+  const got = subjectZoneCodesByArea(zoneSplit(0.03), [PARCEL], { fallback: ['DR-1'] });
+  assert.deepEqual([...got], ['DR-1']);
+});
+
+test('split zoning: share is of the combined area of all subject parcels', () => {
+  // Second parcel all DR-1, same size: C3 at 8% of one parcel is 4% overall.
+  const second = sq(-96.70, 49.510, -96.69, 49.520);
+  const got = subjectZoneCodesByArea(zoneSplit(0.08), [PARCEL, second]);
+  assert.deepEqual([...got], ['DR-1']);
+});
+
+test('split zoning: no measurable overlap falls back to the centre-point codes', () => {
+  const far = [sq(-90, 50, -89.9, 50.1, { ZONE: 'RLD' })];
+  assert.deepEqual([...subjectZoneCodesByArea(far, [PARCEL], { fallback: ['C3'] })], ['C3']);
+  assert.deepEqual([...subjectZoneCodesByArea(null, [PARCEL])], []);
 });
 
 test('frame: unreadable area falls back to the full 1.5 km', () => {
