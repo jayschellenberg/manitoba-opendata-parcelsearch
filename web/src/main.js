@@ -338,6 +338,7 @@ import {
   landfactsCsvHeaders, landfactsCsvCells, cropRampStep, CROP_RAMP, COVER_GROUPS,
   LANDFACTS_MODES, landfactsFillColor, LANDFACTS_MIN_ACRES,
 } from './lib/landfacts.js';
+import { keyColumnIndexes, pickColumns } from './lib/salesKeyExport.js';
 import {
   mfnbCellText, mfnbTooltip, mfnbSortRank, mfnbCsvHeaders, mfnbCsvCells,
   mfnbFillColor, mfnbLegendSteps, MFNB_MODES, MFNB_MIN_DU, MFNB_FROM_YEAR,
@@ -19168,6 +19169,22 @@ function setExportEnabled(enabled) { $export.disabled = !enabled; }
 // exportCsv without spamming the console once per exported parcel.
 let exportColumnMismatchWarned = false;
 
+// Key fields / Full details choice beside Export CSV, shown in sales mode
+// only. Remembered per browser; storage can throw (private mode), in which
+// case the select simply starts at its HTML default each visit.
+const EXPORT_SCOPE_KEY = 'mb-export-scope';
+const $exportScope = document.getElementById('export-scope');
+function exportScope() { return $exportScope?.value === 'key' ? 'key' : 'full'; }
+if ($exportScope) {
+  try {
+    const saved = localStorage.getItem(EXPORT_SCOPE_KEY);
+    if (saved === 'key' || saved === 'full') $exportScope.value = saved;
+  } catch { /* storage unavailable */ }
+  $exportScope.addEventListener('change', () => {
+    try { localStorage.setItem(EXPORT_SCOPE_KEY, exportScope()); } catch { /* storage unavailable */ }
+  });
+}
+
 function exportCsv(explicitRows) {
   // Phase 5: callers can pass an explicit subset (the parcel-summary
   // card's "Export selected" button does this with a one-element
@@ -19244,6 +19261,40 @@ function exportCsv(explicitRows) {
     'Roll #', 'Muni #', 'Municipality', 'Address',
     'Legal Description', 'Legal Detail', 'Lot', 'Block', 'Plan',
     'Certificates of Title', 'MAO Legal Source URL',
+    // Sale columns sit straight after the identity/legal group (moved
+    // 2026-11-18): they used to start near column 154, behind ~140 columns
+    // of soil and environmental detail. Readers key on names, not position.
+    ...(inSalesMode
+      ? [
+          'Sale Date', 'Sale Price', 'Primary Property', 'Sale Type Group', 'N1 ID',
+          // Repeat sales: 'Sale # for Parcel' is 1-based, most recent
+          // first, so a spreadsheet can filter to first sales only or
+          // pair a parcel's transactions without regrouping by roll.
+          'Sale # for Parcel', 'Sales for Parcel',
+          'Sale Group ID', 'Parcels in Sale', 'Group Rolls',
+          'Group Total Sale Price', 'Group Total Acres', 'Group Total SF', 'Group Acres Complete',
+          'Group $/Lot', 'Group $/SF', 'Group $/Acre',
+          'Group Total Frontage Ft', 'Group $/FF',
+          'Group Assessment Total', 'Group Assessment Complete', 'Sale/Asmt',
+          // Far-flung diagnostics: how spread out the sale's parcels
+          // actually are, and how many munis they touch. Spread Complete
+          // is No when a member had no usable geometry, meaning the km
+          // figure understates the true spread.
+          'Sale Spread (km)', 'Munis in Sale', 'Spread Complete',
+          // What the shape-derived columns (Soil, CLI, Slope, Land Cover,
+          // Cult %, MASC, Water) actually describe on this row. Blank when the
+          // parcel is the one that sold; otherwise it names the parcel they
+          // were sampled from, so a figure lifted into a report carries its
+          // referent with it. See lib/saleSize.js shapeDerivedNote().
+          'Shape-Derived Basis',
+          // Outline at sale, from the parcel change history. The window is
+          // two weekly-snapshot dates bracketing the change, NOT a change
+          // date (the province publishes none); acres only when one earlier
+          // outline is certainly the one that sold.
+          'Outline at Sale', 'Outline Change Window (snapshot dates)', 'Outline Acres at Sale',
+          'Dist (km)', 'Asmt Land', 'Asmt Buildings', 'Asmt Bldg %', 'Asmt Year', 'Asmt Class', 'Asmt Status',
+        ]
+      : []),
     'Zoning 1 Code', 'Zoning 1 Name', 'Zoning 1 Category', 'Zoning 1 %', 'Zoning 1 By-law',
     'Zoning 2 Code', 'Zoning 2 Name', 'Zoning 2 Category', 'Zoning 2 %', 'Zoning 2 By-law',
     'Dev-Plan Designation', 'Dev-Plan Category', 'Dev-Plan %', 'DP By-law', 'Planning District',
@@ -19295,37 +19346,6 @@ function exportCsv(explicitRows) {
     'Sides (ft)', 'Perimeter (ft)',
     csvAssessHeader(currentRows), 'Asmt $/DU', 'Asmt Report URL',
     'Walkscore URL', 'Flood-Map URL', 'Street View URL',
-    ...(inSalesMode
-      ? [
-          'Sale Date', 'Sale Price', 'Primary Property', 'Sale Type Group', 'N1 ID',
-          // Repeat sales: 'Sale # for Parcel' is 1-based, most recent
-          // first, so a spreadsheet can filter to first sales only or
-          // pair a parcel's transactions without regrouping by roll.
-          'Sale # for Parcel', 'Sales for Parcel',
-          'Sale Group ID', 'Parcels in Sale', 'Group Rolls',
-          'Group Total Sale Price', 'Group Total Acres', 'Group Total SF', 'Group Acres Complete',
-          'Group $/Lot', 'Group $/SF', 'Group $/Acre',
-          'Group Total Frontage Ft', 'Group $/FF',
-          'Group Assessment Total', 'Group Assessment Complete', 'Sale/Asmt',
-          // Far-flung diagnostics: how spread out the sale's parcels
-          // actually are, and how many munis they touch. Spread Complete
-          // is No when a member had no usable geometry, meaning the km
-          // figure understates the true spread.
-          'Sale Spread (km)', 'Munis in Sale', 'Spread Complete',
-          // What the shape-derived columns (Soil, CLI, Slope, Land Cover,
-          // Cult %, MASC, Water) actually describe on this row. Blank when the
-          // parcel is the one that sold; otherwise it names the parcel they
-          // were sampled from, so a figure lifted into a report carries its
-          // referent with it. See lib/saleSize.js shapeDerivedNote().
-          'Shape-Derived Basis',
-          // Outline at sale, from the parcel change history. The window is
-          // two weekly-snapshot dates bracketing the change, NOT a change
-          // date (the province publishes none); acres only when one earlier
-          // outline is certainly the one that sold.
-          'Outline at Sale', 'Outline Change Window (snapshot dates)', 'Outline Acres at Sale',
-          'Dist (km)', 'Asmt Land', 'Asmt Buildings', 'Asmt Bldg %', 'Asmt Year', 'Asmt Class', 'Asmt Status',
-        ]
-      : []),
     // Geometry, last in every mode and export-only — there are no
     // matching grid columns. Lat/Lon are the parcel's bounding-box
     // midpoint, the same point the popup's GPS Coordinates link copies
@@ -19355,8 +19375,18 @@ function exportCsv(explicitRows) {
       return q?._tileDrainage !== undefined || q?._irrigation !== undefined;
     }),
   });
+  // Key-fields export (sales mode only): the same rows, a named subset of
+  // the full header. The one-row "Export selected" path always writes the
+  // full set — it is a detail view of one parcel, not a comp list.
+  const keyOnly = inSalesMode && !Array.isArray(explicitRows) && exportScope() === 'key';
+  let keyIdx = null;
+  if (keyOnly) {
+    const { idx, missing } = keyColumnIndexes(header);
+    if (missing.length) console.warn(`Key-fields export: no full-export column named ${missing.join(', ')}`);
+    keyIdx = idx;
+  }
   const lines = provenanceCsvLines(prov).map(csvCell);
-  lines.push(header.map(csvCell).join(','));
+  lines.push((keyIdx ? pickColumns(header, keyIdx) : header).map(csvCell).join(','));
   for (const row of exportRows) {
     const p = row.parcel.properties || {};
     const z1 = row.zoning[0]?.feature.properties || {};
@@ -19376,47 +19406,6 @@ function exportCsv(explicitRows) {
       p._plan ?? '',
       p._certificatesOfTitle ?? '',
       p._legalSourceUrl ?? '',
-      // Category exports NORMALIZED, matching the Zoning Type column and
-      // the filter. A row the grid shows as "Residential" writing out as
-      // "Resdential" would be a discrepancy between the screen and the
-      // file, and the file is the one that ends up in a report.
-      formatZoneCode(z1), z1.ZONE_NAME ?? '', normalizeZoneCategory(z1.ZONE_CATEGORY) ?? '', ratioPct(row.zoning[0]?.ratio), bylawCellText(z1, 'ZBL') ?? '',
-      formatZoneCode(z2), z2.ZONE_NAME ?? '', normalizeZoneCategory(z2.ZONE_CATEGORY) ?? '', ratioPct(row.zoning[1]?.ratio), bylawCellText(z2, 'ZBL') ?? '',
-      formatDes(d1), d1.DES_CATEGORY ?? '', ratioPct(row.devPlan[0]?.ratio), bylawCellText(d1, 'DP_BYLAW') ?? '', d1.PLANNINGDISTRICT ?? '',
-      p._soilRating ?? '', p._soilQuarter ?? '', p._soilRiskArea ?? '',
-      dominantCliLabel(p) ?? '', dominantSoilTypeLabel(p) ?? '',
-      ...slopeCsvCells(p),
-      ...soilCsvCells(p),
-      ...landCoverCsvCells(p, ac),
-      ...waterCsvCells(p._water, !!p._waterLoaded),
-      ...floodCsvCells(p._flood, !!p._floodLoaded),
-      ...landfactsCsvCells(p._landfacts, !!p._landfactsLoaded),
-      ...mfnbCsvCells(p._mfnb, !!p._mfnbLoaded),
-      ...condoCsvCells(p._condoDev, !!p._condoDevLoaded),
-      ...tileDrainageCsvCells(p),
-      ...irrigationCsvCells(p),
-      formatChanges(row),
-      p.Dwelling_Units ?? '',
-      formatRollSize(p),
-      formatAcresCsv(acSize),
-      acSize != null && Number.isFinite(acSize) && acSize > 0 ? Math.round(acSize * 43560) : '',
-      // Where the exported size came from. On a sales row the acreage is the
-      // pipeline's, so naming the current record's source ('assessor' /
-      // 'geometry') would misattribute it — sizeSourceLabel() reads the Size
-      // Source column and distinguishes a property-sales-report figure from a
-      // verified-unchanged current one, which is the difference an appraisal
-      // has to be able to state.
-      areaSourceLabel(p)
-        || (p._acresRollNominal ? 'geometry (roll nominal)' : (p._acresSource ?? '')),
-      areaCheckCsv(p),
-      formatSides(rowDimensions(row)),
-      csvPerimeter(rowDimensions(row)),
-      parseTotalValue(p.Total_Value) ?? '',
-      assessmentPerDu(parseTotalValue(p.Total_Value), p.Dwelling_Units) ?? '',
-      p.Asmt_Rpt_Url ?? '',
-      walkscoreUrl(p),
-      floodMapUrl(row),
-      streetViewUrl(row.parcel),
       ...(inSalesMode
         ? [
             p._saleDate ?? '',
@@ -19463,6 +19452,47 @@ function exportCsv(explicitRows) {
             p._asmtStatus ?? '',
           ]
         : []),
+      // Category exports NORMALIZED, matching the Zoning Type column and
+      // the filter. A row the grid shows as "Residential" writing out as
+      // "Resdential" would be a discrepancy between the screen and the
+      // file, and the file is the one that ends up in a report.
+      formatZoneCode(z1), z1.ZONE_NAME ?? '', normalizeZoneCategory(z1.ZONE_CATEGORY) ?? '', ratioPct(row.zoning[0]?.ratio), bylawCellText(z1, 'ZBL') ?? '',
+      formatZoneCode(z2), z2.ZONE_NAME ?? '', normalizeZoneCategory(z2.ZONE_CATEGORY) ?? '', ratioPct(row.zoning[1]?.ratio), bylawCellText(z2, 'ZBL') ?? '',
+      formatDes(d1), d1.DES_CATEGORY ?? '', ratioPct(row.devPlan[0]?.ratio), bylawCellText(d1, 'DP_BYLAW') ?? '', d1.PLANNINGDISTRICT ?? '',
+      p._soilRating ?? '', p._soilQuarter ?? '', p._soilRiskArea ?? '',
+      dominantCliLabel(p) ?? '', dominantSoilTypeLabel(p) ?? '',
+      ...slopeCsvCells(p),
+      ...soilCsvCells(p),
+      ...landCoverCsvCells(p, ac),
+      ...waterCsvCells(p._water, !!p._waterLoaded),
+      ...floodCsvCells(p._flood, !!p._floodLoaded),
+      ...landfactsCsvCells(p._landfacts, !!p._landfactsLoaded),
+      ...mfnbCsvCells(p._mfnb, !!p._mfnbLoaded),
+      ...condoCsvCells(p._condoDev, !!p._condoDevLoaded),
+      ...tileDrainageCsvCells(p),
+      ...irrigationCsvCells(p),
+      formatChanges(row),
+      p.Dwelling_Units ?? '',
+      formatRollSize(p),
+      formatAcresCsv(acSize),
+      acSize != null && Number.isFinite(acSize) && acSize > 0 ? Math.round(acSize * 43560) : '',
+      // Where the exported size came from. On a sales row the acreage is the
+      // pipeline's, so naming the current record's source ('assessor' /
+      // 'geometry') would misattribute it — sizeSourceLabel() reads the Size
+      // Source column and distinguishes a property-sales-report figure from a
+      // verified-unchanged current one, which is the difference an appraisal
+      // has to be able to state.
+      areaSourceLabel(p)
+        || (p._acresRollNominal ? 'geometry (roll nominal)' : (p._acresSource ?? '')),
+      areaCheckCsv(p),
+      formatSides(rowDimensions(row)),
+      csvPerimeter(rowDimensions(row)),
+      parseTotalValue(p.Total_Value) ?? '',
+      assessmentPerDu(parseTotalValue(p.Total_Value), p.Dwelling_Units) ?? '',
+      p.Asmt_Rpt_Url ?? '',
+      walkscoreUrl(p),
+      floodMapUrl(row),
+      streetViewUrl(row.parcel),
       // Geometry columns — must stay last, matching the header above.
       parcelLat(row.parcel),
       parcelLon(row.parcel),
@@ -19481,7 +19511,7 @@ function exportCsv(explicitRows) {
         + 'A column was added to one list and not the other — later columns are misaligned.',
       );
     }
-    lines.push(cells.map(csvCell).join(','));
+    lines.push((keyIdx ? pickColumns(cells, keyIdx) : cells).map(csvCell).join(','));
   }
   const blob = new Blob(['﻿' + lines.join('\r\n')], {
     type: 'text/csv;charset=utf-8;',
@@ -19491,7 +19521,9 @@ function exportCsv(explicitRows) {
   a.href = url;
   // Filename advertises whether the export is starred-only so the
   // file's purpose reads at-a-glance in the user's downloads folder.
-  a.download = csvExportFilename(starredOnly ? `starred-${exportRows.length}` : '');
+  a.download = csvExportFilename(
+    [keyOnly ? 'key' : '', starredOnly ? `starred-${exportRows.length}` : ''].filter(Boolean).join('-'),
+  );
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

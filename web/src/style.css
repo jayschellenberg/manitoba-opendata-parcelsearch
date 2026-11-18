@@ -6143,6 +6143,13 @@ body {
   color: #fff;
 }
 
+/* Key fields / Full details beside Export CSV: a sales-export choice, so it
+   only appears once a sales table is loaded. */
+.sidebar .export-row > select.export-scope { display: none; }
+body.sales-mode .sidebar .export-row > select.export-scope {
+  display: inline-block; width: auto; flex: 0 0 auto; font: inherit; padding: 2px 4px;
+}
+
 /* .danger — a destructive reset. The Clear button on both tabs, which
    reloads the page and drops the uploaded CSV, the results, the subject
    parcel and every filter; also the sales-database panel's Disconnect
