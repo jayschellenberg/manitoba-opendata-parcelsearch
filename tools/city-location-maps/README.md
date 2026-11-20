@@ -43,6 +43,10 @@ intermediate files into the current directory), with `python -I`.
 
 ## Traps
 
+- **Virden_S2 is a town sheet** (Town of Virden), with no section lines and
+  no MLI DXF, so both RM fitters fail on it. It is fitted to the parcel
+  fabric with `townparcelfit.py` and published as an RM-kind map for
+  `VIRDEN (TOWN)` (2026-11-20).
 - **Check every RM fit lands its own municipality on the page.** MLI's
   Headingley DXF is not in UTM 14N (x ~2.4e6, y ~2.2e7); `rmdxf.py` fitted
   it at 1 m against itself, and the RM landed ~20 km off its page, so the
