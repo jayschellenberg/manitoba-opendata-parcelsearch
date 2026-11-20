@@ -243,7 +243,8 @@ test('the Addenda Pack button builds the pack and always restores the map', () =
 
 test('the addenda maps carry their own marks (Jason, 2026-10-08)', () => {
   const body = fnBodyOf('buildAddendaPack');
-  assert.match(body, /locatorMarks = pinPoint\s*\?\s*\{ pin: true/, 'a lone parcel no longer gets the locator pin');
+  assert.match(body, /locatorMarks = pinFeatureCount === 1 \|\| \(pinOn && pinPoints\.length\)\s*\?\s*\{ pin: true, numbers: false/,
+    'a lone parcel no longer gets the locator pin, or Locator: Pin no longer pins a multi-parcel subject (Jason, 2026-11-20)');
   assert.match(body, /numbers: numberingOn && allFeats\.length > 1 && allFeats\.length <= ADDENDA_NUMBER_MAX/, 'the locator maps number parcels with Number parcels off, no longer number several, or lost the 25-parcel cap');
   // Two aerials without dimensions, then the site map with them (Jason,
   // 2026-10-15).

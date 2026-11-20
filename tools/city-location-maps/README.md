@@ -43,6 +43,11 @@ intermediate files into the current directory), with `python -I`.
 
 ## Traps
 
+- **Check every RM fit lands its own municipality on the page.** MLI's
+  Headingley DXF is not in UTM 14N (x ~2.4e6, y ~2.2e7); `rmdxf.py` fitted
+  it at 1 m against itself, and the RM landed ~20 km off its page, so the
+  pack silently dropped the map until 2026-11-20. Refit with
+  `rmroadfit.py` (provincial highways); the other 99 RMs pass this check.
 - **The yellow city fill is not the city limits.** On Brandon it is
   clipped at the map frame, and Thompson's page shows only the core. A fit
   to the municipal boundary converged on garbage (shear 0.79). Fit to roads.

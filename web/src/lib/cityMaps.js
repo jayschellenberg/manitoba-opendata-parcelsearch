@@ -69,3 +69,18 @@ export function cityMapForMuni(muniName) {
   const name = String(muniName || '').trim().toUpperCase();
   return Object.values(CITY_MAPS).find((m) => m.muni === name) || null;
 }
+
+/** The municipalities that share a boundary with Winnipeg. A subject in
+ *  one of them also gets the Winnipeg location map (the city map with its
+ *  downtown inset) whenever it lands on that page — Jason, 2026-11-20, for
+ *  properties on the edge of the city. From mb-municipalities.geojson:
+ *  every municipality within ~200 m of WINNIPEG (CITY). */
+export const WINNIPEG_NEIGHBOURS = new Set([
+  'EAST ST PAUL (RM)', 'HEADINGLEY (RM)', 'MACDONALD (RM)', 'RITCHOT (RM)',
+  'ROSSER (RM)', 'SPRINGFIELD (RM)', 'WEST ST PAUL (RM)',
+]);
+
+/** True when a subject in `muniName` should also get the Winnipeg map. */
+export function bordersWinnipeg(muniName) {
+  return WINNIPEG_NEIGHBOURS.has(String(muniName || '').trim().toUpperCase());
+}

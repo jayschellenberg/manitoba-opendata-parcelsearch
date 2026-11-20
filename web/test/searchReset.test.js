@@ -105,7 +105,7 @@ const isAssignedIn = (v, text) => new RegExp(`(^|[^.\\w])${v}\\s*=[^=]`).test(te
 const PER_RESULT = [
   'currentRows', 'currentPage',
   'lastResultFc', 'lastZoningFc', 'lastDevPlanFc',
-  'lastAsOfHighlight', 'lastWithheldGeometry', 'pinPoint',
+  'lastAsOfHighlight', 'lastWithheldGeometry', 'pinPoints', 'pinFeatureCount',
   'csvFullRows', 'lastSalesSource', 'csvFullBaseMsg', 'csvMatchedMunis', 'lastSalesWaterfall', 'lastAdfRows',
   'lastSalesLookupWarning',
   'basicFullRows', 'basicFullMsg',
