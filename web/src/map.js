@@ -868,7 +868,15 @@ function applySelectionOpacity(map) {
     ['parcel-line-underlay', 'line-opacity', 0.75],
   ];
   for (const [id, prop, base] of kit) {
-    if (map.getLayer(id)) map.setPaintProperty(id, prop, yieldToOverlay(base, activeOverlays));
+    if (!map.getLayer(id)) continue;
+    const v = yieldToOverlay(base, activeOverlays);
+    // While the Locator pin stands in for the shapes they stay faded out:
+    // the new value goes into what setResultPin puts back (it was being
+    // painted straight over the fade on the next table render, so the
+    // shapes came back under the pin — Jason, 2026-11-20).
+    const saved = map._resultPinOn && map._resultPinSaved?.find(([sid, sprop]) => sid === id && sprop === prop);
+    if (saved) saved[2] = v;
+    else map.setPaintProperty(id, prop, v);
   }
 }
 
@@ -3389,8 +3397,8 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
         },
         paint: { 'text-color': '#ffffff' },
       });
-      // The single-result locator pin (setResultPin): a Google-style pin
-      // standing in for the one parcel found, so it still reads at muni or
+      // The locator pins (setResultPin): a Google-style pin standing in
+      // for the parcel found, or for each group of them, so it still reads at muni or
       // province zoom. A GL symbol rather than a maplibregl.Marker so
       // Generate Map (a canvas copy) captures it, as it does the callouts.
       // The subject's perimeter on the Addenda Pack zoning map
@@ -8804,13 +8812,17 @@ export function setSubjectPerimeter(map, feats) {
   src.setData(features.length ? { type: 'FeatureCollection', features } : emptyFc());
 }
 
-export function setResultPin(map, point) {
+/** `points` is one {lng, lat}, an array of them (one pin per cluster of a
+ *  multi-parcel result, lib/pinClusters.js), or null / [] for none. */
+export function setResultPin(map, points) {
   const src = map.getSource('result-pin');
   if (!src) return;
-  const on = !!point;
+  const list = (Array.isArray(points) ? points : points ? [points] : [])
+    .filter((p) => Number.isFinite(p?.lng) && Number.isFinite(p?.lat));
+  const on = list.length > 0;
   src.setData(on ? {
     type: 'FeatureCollection',
-    features: [{ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [point.lng, point.lat] } }],
+    features: list.map((p) => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [p.lng, p.lat] } })),
   } : emptyFc());
   if (on === !!map._resultPinOn) return;
   if (on) {

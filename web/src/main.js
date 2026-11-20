@@ -303,10 +303,11 @@ import { waitForMapIdle, MapRenderTimeoutError } from './lib/snapshotCapture.js'
 import { OUTPUT_MIME, OUTPUT_EXT } from './lib/imageOutput.js';
 import { showLocationMapPanel } from './lib/locationMapPanel.js';
 import { BASE_MAPS, clusterOnMap, locateOnMap, renderLocationMap } from './lib/locationMap.js';
-import { CITY_MAP_IDS, cityMapForMuni, registerCityMaps } from './lib/cityMaps.js';
+import { CITY_MAP_IDS, bordersWinnipeg, cityMapForMuni, registerCityMaps } from './lib/cityMaps.js';
 import { fetchMlsAreas, setMlsAreasData, setMlsAreasVisible } from './lib/mlsAreas.js';
 import { setUnitLabelsVisible } from './lib/unitLabels.js';
 import { loadAreaMaps, pickAreaMap, prepareAreaMap } from './lib/areaMaps.js';
+import { clusterPinPoints } from './lib/pinClusters.js';
 import { haversineMeters, drawScaleBar, drawNorthArrow, framedBounds, frameWidthM, localDateStamp } from './lib/mapFurniture.js';
 import { buildStoreZip } from './lib/zipStore.js';
 import { assessmentPerDu } from './lib/assessmentRates.js';
@@ -1600,14 +1601,17 @@ let currentSort = { col: 'roll', dir: 'asc' };
 // filtering the grid never renumbers them.
 let numberingOn = false;
 
-// "Locator: Pin" — for a ONE-parcel result, a Google-style pin in place of
-// the parcel shape, which vanishes at muni or province zoom (Jason,
-// 2026-09-23; the Winnipeg app has the same control). `pinOn` is the user's
-// choice and carries across searches like numberingOn; `pinPoint` is where
-// the single result sits, or null whenever the map is not showing exactly
-// one parcel.
+// "Locator: Pin" — Google-style pins in place of the parcel shapes, which
+// vanish at muni or province zoom (Jason, 2026-09-23; the Winnipeg app has
+// the same control). Since 2026-11-20 it covers several parcels too: one pin
+// per group of parcels that sit together (lib/pinClusters.js), so a two-lot
+// subject at municipality zoom reads as one pin. `pinOn` is the user's
+// choice and carries across searches like numberingOn; `pinPoints` are the
+// pins for the parcels on the map ([] when there are none), and
+// `pinFeatureCount` how many parcels they stand for.
 let pinOn = false;
-let pinPoint = null;
+let pinPoints = [];
+let pinFeatureCount = 0;
 
 // "Dimensions: On" — label every side of the result parcels with its length
 // in feet (lib/parcelDimensions.js), in place of measuring each lot by hand.
@@ -3940,7 +3944,8 @@ async function generateLocationMap() {
 // Per map (Jason, 2026-10-08): the location map carries the "Subject
 // Property Location within Manitoba" title box. The neighbourhood and zoning
 // maps mark a lone subject with the Locator pin; when the search holds
-// several parcels they keep the shapes and number them instead. The
+// several parcels they get one pin per group if Locator: Pin is on, and
+// otherwise keep the shapes and number them. The
 // neighbourhood map is taller (6.5 x 5 in), names the municipality top-left,
 // and swaps Assessment Parcels for the section grid + Manitoba Highways.
 // The aerial carries Dimensions.
@@ -4106,7 +4111,7 @@ async function cycleZoningTo(mode) {
 /** Switch the result-parcel marks for one addenda map: the Locator pin,
  *  the number callouts, the side-length labels. */
 function setAddendaMarks({ pin, numbers, dims }) {
-  setResultPin(map, pin ? pinPoint : null);
+  setResultPin(map, pin ? pinPoints : null);
   setParcelNumbersVisible(map, numbers);
   setParcelDimensionsVisible(map, dims);
 }
@@ -4353,11 +4358,13 @@ async function buildAddendaPack() {
   const withLegend = captureLegendWanted() && visibleMapLegends().length > 0;
   const allFeats = (lastResultFc?.features || []).filter((f) => f?.geometry);
   // The neighbourhood and zoning maps' marks: the Locator pin on a lone
-  // parcel, numbered shapes when the map holds several and Number parcels
+  // parcel; with several, one pin per group when Locator: Pin is on (Jason,
+  // 2026-11-20: the shapes of a two-lot subject were specks on the
+  // Headingley neighbourhood map), else numbered shapes when Number parcels
   // is on (Jason, 2026-10-22: off means off in the pack too) — up to
   // ADDENDA_NUMBER_MAX. Past that (a whole-town search with one parcel
   // picked) the callouts bury the map, so the shapes go unnumbered.
-  const locatorMarks = pinPoint
+  const locatorMarks = pinFeatureCount === 1 || (pinOn && pinPoints.length)
     ? { pin: true, numbers: false, dims: false }
     : { pin: false, numbers: numberingOn && allFeats.length > 1 && allFeats.length <= ADDENDA_NUMBER_MAX, dims: false };
   // A grouped subject the aerial and zoning maps already frame whole gets
@@ -4393,6 +4400,18 @@ async function buildAddendaPack() {
   const subjectMuni = addendaMuniFeature(subject.feats[0])?.properties?.MUNI_LIST_NAME_WITH_TYPE;
   const cityMap = loc && cityMapForMuni(subjectMuni);
   const wantCity = !!(cityMap && onMapCount(cityMap) > 0);
+  // The Winnipeg map for a subject just outside the city, in a municipality
+  // that borders it (Jason, 2026-11-20) — when the subject is on that page
+  // and the location map above is not already the Winnipeg one.
+  const nearWinnipeg = !!(loc && bordersWinnipeg(subjectMuni));
+  const winnipegOnPage = nearWinnipeg && onMapCount(BASE_MAPS.winnipeg) > 0;
+  // The location map's base: the one the MB Overall Map panel last used.
+  const baseId = [locationMapState.base, 'manitoba', 'winnipeg']
+    .filter((id) => id === 'manitoba' || id === 'winnipeg')
+    // Every subject parcel on it: a group reaching past Winnipeg's page
+    // falls back to the Manitoba map rather than lose an arrow.
+    .find((id) => BASE_MAPS[id] && loc && onMapCount(BASE_MAPS[id]) === (locPoints ? locPoints.length : 1));
+  const wantWinnipeg = winnipegOnPage && baseId !== 'winnipeg';
   // The RM map (subject in that municipality) and the community plan
   // (subject on one of its sheets), from the R2 index — Jason, 2026-10-21.
   const areaMaps = loc ? await loadAreaMaps() : [];
@@ -4400,7 +4419,7 @@ async function buildAddendaPack() {
     pickAreaMap(areaMaps, 'rm', loc.lng, loc.lat, subjectMuni),
     pickAreaMap(areaMaps, 'community', loc.lng, loc.lat),
   ].filter(Boolean) : [];
-  const total = 1 + (wantCity ? 1 : 0) + areaPicks.length + (subject.specific ? 5 : 0) + (wantResults ? 1 : 0);
+  const total = 1 + (wantWinnipeg ? 1 : 0) + (wantCity ? 1 : 0) + areaPicks.length + (subject.specific ? 5 : 0) + (wantResults ? 1 : 0);
   let n = 0;
   const step = (what) => { btn.textContent = `Addenda ${++n}/${total}: ${what}…`; };
   const files = [];
@@ -4435,11 +4454,6 @@ async function buildAddendaPack() {
     // A city map picked in the panel does not displace the provincial one
     // here; the city map has its own file below.
     step('location map');
-    const baseId = [locationMapState.base, 'manitoba', 'winnipeg']
-      .filter((id) => id === 'manitoba' || id === 'winnipeg')
-      // Every subject parcel on it: a group reaching past Winnipeg's page
-      // falls back to the Manitoba map rather than lose an arrow.
-      .find((id) => BASE_MAPS[id] && loc && onMapCount(BASE_MAPS[id]) === (locPoints ? locPoints.length : 1));
     if (baseId) {
       const canvas = await renderLocationMap({
         map: BASE_MAPS[baseId], lng: loc.lng, lat: loc.lat, points: locPoints,
@@ -4449,6 +4463,22 @@ async function buildAddendaPack() {
         add('location-map.png', await blobBytes(await canvasToBlob(canvas)),
           `${BASE_MAPS[baseId].label} location map, ${arrowNote(BASE_MAPS[baseId])}`);
       }
+    }
+    if (wantWinnipeg) {
+      step('Winnipeg map');
+      // Titled "...within the Winnipeg Area": the subject is outside the city.
+      // A relabelled copy, because locationMap.js is shared with the
+      // Winnipeg app and titles from map.label.
+      const canvas = await renderLocationMap({
+        map: { ...BASE_MAPS.winnipeg, label: 'the Winnipeg Area' }, lng: loc.lng, lat: loc.lat, points: locPoints,
+        label: locationMapState.label, direction: locationMapState.direction, title: true,
+      });
+      if (canvas) {
+        add('winnipeg-location-map.png', await blobBytes(await canvasToBlob(canvas)),
+          `Winnipeg location map (subject in a municipality bordering the city), ${arrowNote(BASE_MAPS.winnipeg)}`);
+      }
+    } else if (nearWinnipeg && !winnipegOnPage) {
+      notes.push('The Winnipeg location map was left out: the subject is beyond the edge of that map.');
     }
     if (wantCity) {
       step(`${cityMap.label} map`);
@@ -4479,7 +4509,7 @@ async function buildAddendaPack() {
       }
     }
     if (subject.specific) {
-      const marked = locatorMarks.pin ? ', locator pin' : locatorMarks.numbers ? ', parcels numbered' : '';
+      const marked = locatorMarks.pin ? (pinPoints.length > 1 ? `, ${pinPoints.length} locator pins` : ', locator pin') : locatorMarks.numbers ? ', parcels numbered' : '';
       // Neighbourhood — streets, wide enough to show the surroundings, a
       // taller frame, the municipality named top-left, and highways for
       // bearings in place of the parcel fabric. No section grid (Jason,
@@ -6079,7 +6109,7 @@ if ($dimsToggle) {
 if ($pinToggle) {
   $pinToggle.addEventListener('change', () => {
     pinOn = $pinToggle.checked;
-    mapReady.then(() => setResultPin(map, pinOn ? pinPoint : null));
+    mapReady.then(() => setResultPin(map, pinOn ? pinPoints : null));
   });
 }
 
@@ -10445,18 +10475,21 @@ function setMapData(parcelFc, zoningFc, devPlanFc, opts = {}) {
   // reports back. Null whenever no as-of date is in force.
   lastAsOfHighlight = asOf;
   lastWithheldGeometry = withheld;
-  // Exactly one parcel on the map: offer the locator pin. Taken from the
-  // HIGHLIGHT set, so an as-of boundary or a withheld one pins where it is
-  // actually drawn, and a culled or filtered-out parcel takes the pin away.
-  const onlyOne = (highlightFc.features?.length || 0) === 1 ? highlightFc.features[0] : null;
-  pinPoint = onlyOne ? parcelCentrePoint(onlyOne) : null;
-  if ($pinLabel) $pinLabel.hidden = !pinPoint;
+  // Parcels on the map: offer the locator pins, one per group. Taken from
+  // the HIGHLIGHT set, so an as-of boundary or a withheld one pins where it
+  // is actually drawn, and a culled or filtered-out parcel takes its pin away.
+  const pinFeats = (highlightFc.features || []).filter((f) => f?.geometry);
+  pinFeatureCount = pinFeats.length;
+  pinPoints = pinFeats.length === 1
+    ? [parcelCentrePoint(pinFeats[0])].filter(Boolean)
+    : clusterPinPoints(pinFeats);
+  if ($pinLabel) $pinLabel.hidden = !pinPoints.length;
   updateMapOptionsRow();
   mapReady.then(() => {
     showResults(map, highlightFc, opts);
     setParcelDimensionData(map, highlightFc.features || []);
     setParcelDimensionsVisible(map, dimsOn);
-    setResultPin(map, pinOn ? pinPoint : null);
+    setResultPin(map, pinOn ? pinPoints : null);
     setZoningData(map, zoningFc);
     setDevPlanData(map, devPlanFc);
     // Parcel-number callouts. The `_seq` values are assigned once per

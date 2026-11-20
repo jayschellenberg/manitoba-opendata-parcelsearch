@@ -9,7 +9,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { BASE_MAPS, locateOnMap, placeCallout, estimateTextWidth } from '../src/lib/locationMap.js';
-import { CITY_MAPS, CITY_MAP_IDS, cityMapForMuni, registerCityMaps } from '../src/lib/cityMaps.js';
+import { CITY_MAPS, CITY_MAP_IDS, cityMapForMuni, registerCityMaps, bordersWinnipeg, WINNIPEG_NEIGHBOURS } from '../src/lib/cityMaps.js';
 import { CITY_MAP_DATA } from '../src/lib/cityMapData.js';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
@@ -147,6 +147,20 @@ test('the callout finds a spot on the page at every crossing', () => {
       assert.ok(x0 >= 0 && y0 >= 0 && x1 <= m.width && y1 <= m.height, `${id} ${name}: callout off the page`);
     }
   }
+});
+
+test('the Winnipeg neighbours are real municipality names, and their edge lands on the Winnipeg page', () => {
+  const munis = JSON.parse(readFileSync(path.join(dir, '..', 'public', 'mb-municipalities.geojson'), 'utf8')).features;
+  const names = new Set(munis.map((f) => f.properties.MUNI_LIST_NAME_WITH_TYPE));
+  for (const n of WINNIPEG_NEIGHBOURS) assert.ok(names.has(n), `${n} is not a municipality name in the boundaries layer`);
+  assert.ok(bordersWinnipeg('headingley (rm)'));
+  assert.ok(!bordersWinnipeg('WINNIPEG (CITY)'));
+  assert.ok(!bordersWinnipeg('BRANDON (CITY)'));
+  assert.ok(!bordersWinnipeg(undefined));
+  // A Headingley lot just west of the Perimeter (rolls 6199 / 6201) and an
+  // Oak Bluff (Macdonald) one are on the Winnipeg page.
+  assert.ok(locateOnMap(BASE_MAPS.winnipeg, -97.330, 49.835), 'Headingley edge is off the Winnipeg page');
+  assert.ok(locateOnMap(BASE_MAPS.winnipeg, -97.33, 49.77), 'Oak Bluff is off the Winnipeg page');
 });
 
 console.log(`\n${passed} passed`);
