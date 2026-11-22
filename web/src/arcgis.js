@@ -2488,7 +2488,7 @@ export function fetchFloodOverlayMeta() {
 // MAINTENANCE: when you republish mb-parcel-history (new snapshot or a data
 // fix), update this SHA to the new commit — see MAINTENANCE.md.
 const HISTORICAL_CDN =
-  `${GH_DATA_ORIGIN}/gh-data/mb-parcel-history/a8da6136c4474c4d2e64a4b370e12a2d8c9a273a`;
+  `${GH_DATA_ORIGIN}/gh-data/mb-parcel-history/dae959fb97c764ecc5706c7b9e39ba33f63a0dea`;
 const HISTORICAL_INDEX_TTL_MS = 24 * 60 * 60 * 1000;        // 1 day — so new years surface
 const HISTORICAL_MANIFEST_TTL_MS = 6 * 60 * 60 * 1000;     // 6 h — gates the shard version token, keep fresh
 const HISTORICAL_SHARD_TTL_MS = 30 * 24 * 60 * 60 * 1000;   // 30 days — safe: the key is version-stamped, so a rebuild changes it
