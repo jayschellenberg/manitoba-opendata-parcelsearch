@@ -7,7 +7,7 @@
       "wait": 3500
     },
     {
-      "eval": "const d=document.querySelector('#sales-manual'); if(d&&!d.open) d.open=true"
+      "eval": "for (const s of ['#sales-db','#sales-manual']) { const d=document.querySelector(s); if(d&&!d.open) d.open=true }"
     },
     {
       "click": "#sales-import-trigger"
@@ -47,7 +47,7 @@
       ]
     },
     {
-      "say": "Start with the date. The presets keep sales from the last 3 to 72 months, counted back from today. Here, 12 months. You can also type exact From and To dates. The status line above the grid shows what's left: 39 of the 73 sales.",
+      "say": "Start with the date, in the Search group. The presets keep sales from the last 3 to 72 months, counted back from today. Here, 12 months. You can also type exact From and To dates. The status line above the grid shows what's left: 39 of the 73 sales.",
       "do": [
         {
           "click": ".date-preset-btn[data-months=\"12\"]"
@@ -70,7 +70,7 @@
       ]
     },
     {
-      "say": "Next, vacant or improved. Vacant Land Only keeps the sales where buildings are only a small part of the assessment. That cut-off is the building threshold under Additional filters, five percent by default, and it can be a percentage or a dollar amount. Twenty-nine sales are left.",
+      "say": "Next, vacant or improved, under Refine results. Vacant Land Only keeps the sales where buildings are only a small part of the assessment. That cut-off is the building threshold, which appears on the line below, five percent by default, and it can be a percentage or a dollar amount. Twenty-nine sales are left.",
       "do": [
         {
           "select": [
@@ -79,7 +79,13 @@
           ]
         },
         {
-          "wait": 2500
+          "wait": 2000
+        },
+        {
+          "hover": "#vacant-threshold"
+        },
+        {
+          "wait": 1500
         },
         {
           "hover": "#results-status"
@@ -90,14 +96,8 @@
       ]
     },
     {
-      "say": "Additional filters hold the rest. Size works in acres, square feet or front feet. Here, a maximum of one acre keeps the lots and drops the acreages. A sale price range trims what remains: a minimum of fifty thousand dollars drops the lowest sale. Price per acre has a range of its own.",
+      "say": "Refine results holds the rest, and each one applies as soon as you set it. Size works in acres, square feet or front feet. Here, a maximum of one acre keeps the lots and drops the acreages. Price per acre has a range of its own. A sale price range, up in the Search group, trims what remains: a minimum of fifty thousand dollars drops the lowest sale.",
       "do": [
-        {
-          "click": "details.more-filters summary"
-        },
-        {
-          "wait": 1500
-        },
         {
           "fill": [
             "#size-high",
@@ -111,6 +111,12 @@
           "wait": 2000
         },
         {
+          "hover": "#sales-ppa-low"
+        },
+        {
+          "wait": 1000
+        },
+        {
           "fill": [
             "#sales-price-low",
             "50000"
@@ -121,12 +127,6 @@
         },
         {
           "wait": 2000
-        },
-        {
-          "hover": "#sales-ppa-low"
-        },
-        {
-          "wait": 1000
         }
       ]
     },
@@ -166,7 +166,7 @@
       ]
     },
     {
-      "say": "Far-flung flags sales more than a set distance from the rest of the group, thirty kilometres by default. Keep shows them with a flag, and Exclude drops them. All of these Springfield sales are well inside that.",
+      "say": "Far-flung flags sales more than a set distance from the rest of the group, thirty kilometres by default. Keep shows them with a flag, and Exclude drops them; the count underneath says how many are flagged. All of these Springfield sales are well inside that.",
       "do": [
         {
           "hover": "#far-flung-km"
@@ -183,7 +183,7 @@
       ]
     },
     {
-      "say": "Now the subject property. Type its roll number, here 45 Oak Meadow Drive in Oakbank, a vacant 65-foot lot. Set a maximum distance of five kilometres and click Set. The subject is outlined in blue on the map, a distance column is added at the far right of the grid, and only the four sales within five kilometres remain.",
+      "say": "Now the subject property, in its own group above Refine results. Type its roll number, here 45 Oak Meadow Drive in Oakbank, a vacant 65-foot lot. Set a maximum distance of five kilometres and click Set. The subject is outlined in blue on the map, a distance column is added at the far right of the grid, and only the four sales within five kilometres remain.",
       "do": [
         {
           "fill": [
@@ -218,7 +218,7 @@
       ]
     },
     {
-      "say": "Every active filter is listed in the status line, and the grid, the map and the Charts window all follow them. The cross next to Set removes the subject. Clear resets the whole page, including the pasted sales, so use it only to start over.",
+      "say": "Every active filter is listed in the status line, and the grid, the map and the Charts window all follow them. The cross next to Set removes the subject. Clear, at the top beside the job buttons, resets the whole page, including the pasted sales, so use it only to start over.",
       "do": [
         {
           "hover": "#results-status"

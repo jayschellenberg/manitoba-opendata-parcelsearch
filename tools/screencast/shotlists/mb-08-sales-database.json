@@ -24,7 +24,7 @@
       ]
     },
     {
-      "say": "Open M A O Sales Database and click Choose export folder.",
+      "say": "Under M A O Sales Database, click Choose export folder.",
       "do": [
         {
           "eval": "const d=document.querySelector('#sales-db'); if(d&&!d.open) d.open=true"
@@ -63,7 +63,7 @@
       ]
     },
     {
-      "say": "Every municipality file imports. The status line shows how many sales were loaded and the newest sale date.",
+      "say": "Every municipality file imports. The status line shows how many sales were loaded and the newest sale date, and the block folds down to that one line.",
       "do": [
         {
           "unstill": true
@@ -83,8 +83,14 @@
       ]
     },
     {
-      "say": "You only do this once. The folder stays connected: Reload picks up new weekly files, Disconnect forgets the folder, and Coverage shows which municipalities are in the export and how current each one is.",
+      "say": "You only do this once. The folder stays connected. Open the block again for its housekeeping: Reload picks up new weekly files, Disconnect forgets the folder, and Coverage shows which municipalities are in the export and how current each one is.",
       "do": [
+        {
+          "eval": "const d=document.querySelector('#sales-db'); if(d&&!d.open) d.open=true"
+        },
+        {
+          "wait": 1200
+        },
         {
           "click": "#sales-db-coverage"
         },
@@ -100,13 +106,31 @@
       ]
     },
     {
-      "say": "From here, tick the municipalities you want, pick a date range and a sale type, and search. The filters, subject property, grid and Charts then work just as they do for pasted sales.",
+      "say": "From here the Search group takes over. Tick the municipalities you want, or switch Where to Whole province to search every municipality by assessment class. Set a date range, and a sale type or price range if you want them, then press Search at the bottom of the group. The subject property, Refine results, grid and Charts then work just as they do for pasted sales.",
       "do": [
         {
           "hover": "#sales-db-munis"
         },
         {
           "wait": 2000
+        },
+        {
+          "hover": "[data-pill=searchmode]"
+        },
+        {
+          "wait": 1500
+        },
+        {
+          "hover": ".date-preset-btn[data-months=\"36\"]"
+        },
+        {
+          "wait": 1500
+        },
+        {
+          "hover": "#sales-db-type"
+        },
+        {
+          "wait": 1200
         },
         {
           "hover": "#sales-db-load"

@@ -101,7 +101,7 @@
           "wait": 4000
         },
         {
-          "eval": "const d=document.querySelector('#sales-manual'); if(d&&!d.open) d.open=true; d?.scrollIntoView({block:'center'})"
+          "eval": "for (const s of ['#sales-db','#sales-manual']) { const d=document.querySelector(s); if(d&&!d.open) d.open=true }; document.querySelector('#sales-manual')?.scrollIntoView({block:'center'})"
         },
         {
           "wait": 600
@@ -146,7 +146,7 @@
       ]
     },
     {
-      "say": "From here the pasted sales go through the same filters as any other sales: date presets, assessment class and structure type, vacant or improved, and the additional filters.",
+      "say": "From here the pasted sales go through the same filters as any other sales: the date presets in the Search group, then assessment class, structure type, vacant or improved and the rest under Refine results.",
       "do": [
         {
           "hover": ".date-preset-btn[data-months=\"36\"]"
@@ -155,13 +155,13 @@
           "wait": 1500
         },
         {
-          "hover": "#vacant-improved"
+          "hover": "details.more-filters summary"
         },
         {
           "wait": 1500
         },
         {
-          "hover": "details.more-filters summary"
+          "hover": "#vacant-improved"
         },
         {
           "wait": 1500

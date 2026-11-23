@@ -255,8 +255,8 @@ _Before recording: load page_
 **5.** Press Load sales. Each sale is matched to its parcel and plotted. The status line reports how many were placed, any duplicates merged, and any roll not yet on the parcel map, which is shown at an approximate location.
 <br>_[click #sales-import-load; wait for it]_
 
-**6.** From here the pasted sales go through the same filters as any other sales: date presets, assessment class and structure type, vacant or improved, and the additional filters.
-<br>_[hover .date-preset-btn[data-months="36"]; hover #vacant-improved; hover details.more-filters summary]_
+**6.** From here the pasted sales go through the same filters as any other sales: the date presets in the Search group, then assessment class, structure type, vacant or improved and the rest under Refine results.
+<br>_[hover .date-preset-btn[data-months="36"]; hover details.more-filters summary; hover #vacant-improved]_
 
 **7.** If a search runs to several pages, copy each page into one Excel sheet, keeping a single header row, and save it as a C S V. Upload sales C S V loads that file into this same tool, and Recent brings back earlier pastes and uploads without copying them again.
 <br>_[hover #sales-dropzone; hover #recent-uploads-select]_
@@ -271,25 +271,25 @@ _Before recording: open Upload/Paste; click #sales-import-trigger; wait for it; 
 **0.** This video picks up with the 73 residential bare land sales pasted from M A O for the R M of Springfield. It shows how to narrow them down with the search filters, and how to set a subject property and a search radius.
 <br>_[hover #results-status]_
 
-**1.** Start with the date. The presets keep sales from the last 3 to 72 months, counted back from today. Here, 12 months. You can also type exact From and To dates. The status line above the grid shows what's left: 39 of the 73 sales.
+**1.** Start with the date, in the Search group. The presets keep sales from the last 3 to 72 months, counted back from today. Here, 12 months. You can also type exact From and To dates. The status line above the grid shows what's left: 39 of the 73 sales.
 <br>_[click .date-preset-btn[data-months="12"]; hover #sale-date-from; hover #results-status]_
 
-**2.** Next, vacant or improved. Vacant Land Only keeps the sales where buildings are only a small part of the assessment. That cut-off is the building threshold under Additional filters, five percent by default, and it can be a percentage or a dollar amount. Twenty-nine sales are left.
-<br>_[pick "vacant" in #vacant-improved; hover #results-status]_
+**2.** Next, vacant or improved, under Refine results. Vacant Land Only keeps the sales where buildings are only a small part of the assessment. That cut-off is the building threshold, which appears on the line below, five percent by default, and it can be a percentage or a dollar amount. Twenty-nine sales are left.
+<br>_[pick "vacant" in #vacant-improved; hover #vacant-threshold; hover #results-status]_
 
-**3.** Additional filters hold the rest. Size works in acres, square feet or front feet. Here, a maximum of one acre keeps the lots and drops the acreages. A sale price range trims what remains: a minimum of fifty thousand dollars drops the lowest sale. Price per acre has a range of its own.
-<br>_[click details.more-filters summary; type "1" in #size-high; press Tab; type "50000" in #sales-price-low; press Tab; hover #sales-ppa-low]_
+**3.** Refine results holds the rest, and each one applies as soon as you set it. Size works in acres, square feet or front feet. Here, a maximum of one acre keeps the lots and drops the acreages. Price per acre has a range of its own. A sale price range, up in the Search group, trims what remains: a minimum of fifty thousand dollars drops the lowest sale.
+<br>_[type "1" in #size-high; press Tab; hover #sales-ppa-low; type "50000" in #sales-price-low; press Tab]_
 
 **4.** The zoning filter keeps only the zones you tick. Ticking R S and R T drops the R C lots on Joerja Way, leaving twelve sales. Zoning type does the same with broader groups, such as residential or rural.
 <br>_[click #zoning-filter summary; click #zoning-filter input[value=RS]; click #zoning-filter input[value=RT]; click #zoning-filter summary; hover #zonecat-filter summary]_
 
-**5.** Far-flung flags sales more than a set distance from the rest of the group, thirty kilometres by default. Keep shows them with a flag, and Exclude drops them. All of these Springfield sales are well inside that.
+**5.** Far-flung flags sales more than a set distance from the rest of the group, thirty kilometres by default. Keep shows them with a flag, and Exclude drops them; the count underneath says how many are flagged. All of these Springfield sales are well inside that.
 <br>_[hover #far-flung-km; hover [data-pill=farflung]]_
 
-**6.** Now the subject property. Type its roll number, here 45 Oak Meadow Drive in Oakbank, a vacant 65-foot lot. Set a maximum distance of five kilometres and click Set. The subject is outlined in blue on the map, a distance column is added at the far right of the grid, and only the four sales within five kilometres remain.
+**6.** Now the subject property, in its own group above Refine results. Type its roll number, here 45 Oak Meadow Drive in Oakbank, a vacant 65-foot lot. Set a maximum distance of five kilometres and click Set. The subject is outlined in blue on the map, a distance column is added at the far right of the grid, and only the four sales within five kilometres remain.
 <br>_[type "163408.240" in #subject-roll; type "5" in #distance-max; click #subject-apply; hover #results-status]_
 
-**7.** Every active filter is listed in the status line, and the grid, the map and the Charts window all follow them. The cross next to Set removes the subject. Clear resets the whole page, including the pasted sales, so use it only to start over.
+**7.** Every active filter is listed in the status line, and the grid, the map and the Charts window all follow them. The cross next to Set removes the subject. Clear, at the top beside the job buttons, resets the whole page, including the pasted sales, so use it only to start over.
 <br>_[hover #results-status; hover #subject-clear; hover #sales-clear]_
 
 ## mb-08-sales-database (Manitoba, recorded)
@@ -299,7 +299,7 @@ _Before recording: load page_
 **0.** For firm users, there's a faster way to get sales in than copying from M A O. The firm's weekly M A O sales export is kept on Dropbox, and the Sales Analysis tab can link to it directly, covering every municipality at once. This video shows how to connect it.
 <br>_[hover #sales-db]_
 
-**1.** Open M A O Sales Database and click Choose export folder.
+**1.** Under M A O Sales Database, click Choose export folder.
 <br>_[open MAO Sales Database; hover #sales-db-import]_
 
 **2.** Windows opens its folder picker. Go to Dropbox, then Shared Info, App Market Data, Sales Data, and select the Manitoba folder.
@@ -308,18 +308,18 @@ _Before recording: load page_
 **3.** The browser then asks, Allow this site to view and copy files? Click Allow. The app keeps its own copy of the sales in this browser on your computer. Nothing is uploaded.
 <br>_[cursor rests]_
 
-**4.** Every municipality file imports. The status line shows how many sales were loaded and the newest sale date.
+**4.** Every municipality file imports. The status line shows how many sales were loaded and the newest sale date, and the block folds down to that one line.
 <br>_[click #sales-db-import; hover #sales-db]_
 
-**5.** You only do this once. The folder stays connected: Reload picks up new weekly files, Disconnect forgets the folder, and Coverage shows which municipalities are in the export and how current each one is.
-<br>_[click #sales-db-coverage; press Escape]_
+**5.** You only do this once. The folder stays connected. Open the block again for its housekeeping: Reload picks up new weekly files, Disconnect forgets the folder, and Coverage shows which municipalities are in the export and how current each one is.
+<br>_[open MAO Sales Database; click #sales-db-coverage; press Escape]_
 
-**6.** From here, tick the municipalities you want, pick a date range and a sale type, and search. The filters, subject property, grid and Charts then work just as they do for pasted sales.
-<br>_[hover #sales-db-munis; hover #sales-db-load]_
+**6.** From here the Search group takes over. Tick the municipalities you want, or switch Where to Whole province to search every municipality by assessment class. Set a date range, and a sale type or price range if you want them, then press Search at the bottom of the group. The subject property, Refine results, grid and Charts then work just as they do for pasted sales.
+<br>_[hover #sales-db-munis; hover [data-pill=searchmode]; hover .date-preset-btn[data-months="36"]; hover #sales-db-type; hover #sales-db-load]_
 
 ## mb-09-sales-grid-comps (Manitoba, recorded)
 
-_Before recording: upload a file; wait for it; pick "vacant" in #vacant-improved; open Additional filters; type "67600.048" in #subject-roll; click #subject-apply; open Additional filters; page script_
+_Before recording: upload a file; wait for it; pick "vacant" in #vacant-improved; open Refine results; type "67600.048" in #subject-roll; click #subject-apply; page script_
 
 **0.** These are the R M of Hanover's sales, copied from M A O into Excel, saved as a C S V and uploaded, with a vacant lot on Birchwood Lane in Mitchell as the subject. With sales loaded, the grid is where the comparables get chosen. This video covers the star column, comp tags, exclusion reasons, and the row colours.
 <br>_[hover #results]_
@@ -347,7 +347,7 @@ _Before recording: upload a file; wait for it; pick "vacant" in #vacant-improved
 
 ## mb-10-charts-layout (Manitoba, recorded)
 
-_Before recording: upload a file; wait for it; pick "vacant" in #vacant-improved; open Additional filters; type "67600.048" in #subject-roll; click #subject-apply; click #charts-open (opens new window)_
+_Before recording: upload a file; wait for it; pick "vacant" in #vacant-improved; open Refine results; type "67600.048" in #subject-roll; click #subject-apply; click #charts-open (opens new window)_
 
 **0.** Sales Charts opens from the Charts button on the Sales Analysis tab. Here it shows the R M of Hanover's sales, uploaded from a C S V, with a vacant lot on Birchwood Lane in Mitchell as the subject. It is live: every filter change in the main window updates these charts. The status line reports how many sales arrived and how many are ticked.
 <br>_[hover #charts-status]_
@@ -372,7 +372,7 @@ _Before recording: upload a file; wait for it; pick "vacant" in #vacant-improved
 
 ## mb-11-charts-pages (Manitoba, recorded)
 
-_Before recording: upload a file; wait for it; pick "vacant" in #vacant-improved; open Additional filters; type "67600.048" in #subject-roll; click #subject-apply; click #charts-open (opens new window)_
+_Before recording: upload a file; wait for it; pick "vacant" in #vacant-improved; open Refine results; type "67600.048" in #subject-roll; click #subject-apply; click #charts-open (opens new window)_
 
 **0.** This video walks the four chart pages. Land Price per Unit first. The maps row has Price and Lot Size, Year and Zoning, and Water Influence. Each dot is one sale, sized or coloured by the variable.
 <br>_[page script; click #tab-rates; scroll to maps; click .page-maps .row-tabs button:nth-child(2); click .page-maps .row-tabs button:nth-child(3); click .page-maps .row-tabs button:nth-child(1)]_
@@ -397,7 +397,7 @@ _Before recording: upload a file; wait for it; pick "vacant" in #vacant-improved
 
 ## mb-12-charts-comps-workfile (Manitoba, recorded)
 
-_Before recording: upload a file; wait for it; pick "vacant" in #vacant-improved; open Additional filters; type "67600.048" in #subject-roll; click #subject-apply; click #charts-open (opens new window)_
+_Before recording: upload a file; wait for it; pick "vacant" in #vacant-improved; open Refine results; type "67600.048" in #subject-roll; click #subject-apply; click #charts-open (opens new window)_
 
 **0.** Charts are interactive. Click a dot and that sale is unticked in the grid. It moves to Excluded records with the reason box focused, so you record why as you go.
 <br>_[page script; scroll to charts; click a chart dot; click #excl-panel input.excl-reason; type "Outlier"; press Enter]_
