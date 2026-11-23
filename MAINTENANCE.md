@@ -584,7 +584,7 @@ two places (`web/src/lib/parcelHistory.js`):
 - **Historical → Prior outlines** overlays every superseded outline in the
   result municipalities;
 - the sales CSV carries `Outline at Sale`, `Outline Change Window (snapshot
-  dates)` and `Outline Acres at Sale`, and Additional filters has an
+  dates)` and `Outline Acres at Sale`, and Refine results has an
   **Outline** filter (Any / Same as today / Changed). Details: DOCUMENTATION.md §5.9.
 
 Try freshly built shards before publishing:

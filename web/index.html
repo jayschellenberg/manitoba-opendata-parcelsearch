@@ -624,35 +624,49 @@
           aria-labelledby="tab-btn-sales"
           hidden
         >
-          <!-- MAO sales database. Nothing here ships with the site: the
-               archive is paid MAO subscriber data, so the user nominates a
-               folder on their own disk (the scraper's export, kept current
-               by Dropbox) and it is read locally into IndexedDB. Nothing is
-               uploaded and the server never sees it — a visitor without that
-               folder simply has no database, which is the access control.
-               Chrome/Edge keep a handle so a refreshed export is picked up
-               automatically; other browsers use the folder input fallback. -->
-          <!-- A <details> so the whole block folds to its title. Collapsed on a
-               first visit (nothing imported: the one-time folder pick does not
-               need to occupy the sidebar), and opened by salesDbPanel once a
-               database exists, when it becomes the main way in. The status line
-               rides in the summary so the collapsed state still says whether an
-               archive is present and how fresh it is. -->
+          <!-- SALES ANALYSIS, top to bottom in the order the work is done
+               (regrouped 2026-11-23):
+                 1. Job            save / open / clear
+                 2. Source         the MAO database folder, or an upload
+                 3. Search         what gets LOADED - needs the Search button
+                 4. Subject        the subject parcel and its radius
+                 5. Refine         filters on what is already loaded - instant
+                 6. Charts
+               The split between 3 and 5 is the point: a control in Search
+               reads the archive again, a control in Refine never does. -->
+
           <!-- Job file (2026-10-07): save the whole assignment — the loaded
                sales, filters, subject, grid state, comp numbers, exclusion
                reasons and chart settings — to one file, and open it again here
-               or on another machine. -->
+               or on another machine. Clear rides here too: it resets the whole
+               page, so it sits with the other whole-job actions and stays
+               outside every collapsible. -->
           <div class="job-row">
             <span class="job-row-label">Job</span>
             <button type="button" id="job-save" class="secondary" title="Save the loaded sales, filters, subject, unticked rows, stars, comp numbers, exclusion reasons and Sales Charts settings to one .json file. It holds the sales themselves (MAO subscriber data when they came from the database) — keep it as privately as a CSV export.">Save job</button>
             <button type="button" id="job-open" class="secondary" title="Open a saved job file: reloads its sales and puts every filter, tag and setting back.">Open job…</button>
             <input type="file" id="job-open-input" accept=".json,application/json" hidden />
+            <button id="sales-clear" data-icon="🗑️" type="button" class="danger" title="Reset the page — clears any uploaded sales CSV, search results, subject, and filters.">Clear</button>
           </div>
           <!-- The last few jobs saved or opened in this browser (2026-10-07). -->
           <div class="job-recent-row" hidden>
             <select id="job-recent" aria-label="Open a recent job"><option value="">Recent jobs</option></select>
           </div>
-          <details class="sales-db" id="sales-db">
+
+          <!-- SOURCE. Nothing here ships with the site: the archive is paid
+               MAO subscriber data, so the user nominates a folder on their own
+               disk (the scraper's export, kept current by Dropbox) and it is
+               read locally into IndexedDB. Nothing is uploaded and the server
+               never sees it — a visitor without that folder simply has no
+               database, which is the access control. Chrome/Edge keep a handle
+               so a refreshed export is picked up automatically; other browsers
+               use the folder input fallback.
+
+               A <details> that folds to its title and status. OPEN while no
+               database exists (the folder pick and the upload are then the way
+               in); folded by salesDbPanel once one does, when the Search group
+               below takes over and this is housekeeping. -->
+          <details class="sales-db" id="sales-db" open>
             <summary class="sales-db-head">
               <strong>MAO Sales Database</strong>
               <span class="sales-db-status" id="sales-db-status">Not imported</span>
@@ -672,166 +686,26 @@
               <input id="sales-db-folder-input" type="file" webkitdirectory directory multiple hidden />
             </div>
 
-            <!-- Shown once a database is present. -->
+            <!-- Shown once a database is present: housekeeping that acts on
+                 the archive itself, not on a search. -->
             <div class="sales-db-ready" id="sales-db-ready" hidden>
-              <!-- Database housekeeping, directly under the title (Jason,
-                   2026-09-24): these act on the archive itself, not on a
-                   search, so they sit apart from Search / Nominal sales,
-                   which stay with the municipality picker below. -->
               <div class="sales-db-actions sales-db-actions-top">
                 <button type="button" id="sales-db-refresh" class="parcel-list-modal-btn" title="Re-reads the latest sales files from your hard drive">🔄 Reload</button>
                 <button type="button" id="sales-db-forget" class="parcel-list-modal-btn danger" title="Disconnect the imported sales database from this browser">🔌 Disconnect</button>
                 <button type="button" id="sales-db-coverage" class="parcel-list-modal-btn"
                         title="When each municipality was last scraped for sales">📅 Coverage</button>
               </div>
-              <!-- Province-wide search (Jason, 2026-09-24): every sale in the
-                   archive by assessment class AT THE SALE, then the property
-                   types found in that class, with date, sale type and a
-                   whole-sale price window at the same step. Sits in front of
-                   the municipality picker and loads into the same table and
-                   map. Driven by lib/salesProvincePanel.js over the index in
-                   lib/provinceSearch.js; nothing leaves the device. -->
-              <details class="sales-prov" id="sales-prov">
-                <summary class="sales-prov-head">
-                  <strong>Province-wide search</strong>
-                  <span class="sales-db-status" id="sales-prov-status">All of Manitoba, by class</span>
-                </summary>
-                <div class="sales-prov-saved-row">
-                  <select id="sales-prov-saved" aria-label="Saved searches">
-                    <option value="">Saved searches…</option>
-                  </select>
-                  <button type="button" id="sales-prov-delete" class="parcel-list-modal-btn" disabled
-                          title="Delete the selected saved search from this browser">Delete</button>
-                </div>
-                <label class="sales-db-typefilter" for="sales-prov-class">
-                  <span>Class at sale</span>
-                  <select id="sales-prov-class">
-                    <option value="">Choose a class…</option>
-                  </select>
-                </label>
-                <label class="sales-prov-unknown">
-                  <input type="checkbox" id="sales-prov-unknown" />
-                  <span>Also include sales with no class recorded at the sale (all before 1996, most before 2008)</span>
-                </label>
-                <div class="sales-prov-pair">
-                  <span class="sales-prov-prefix">Sale date</span>
-                  <input id="sales-prov-from" type="date" aria-label="Province search: sale date from" />
-                  <input id="sales-prov-to" type="date" aria-label="Province search: sale date to" />
-                </div>
-                <div class="sales-prov-pair">
-                  <span class="sales-prov-prefix">Sale price</span>
-                  <input id="sales-prov-min" type="number" min="0" step="1000" placeholder="Min $"
-                         aria-label="Province search: minimum sale price" />
-                  <input id="sales-prov-max" type="number" min="0" step="1000" placeholder="Max $ (optional)"
-                         aria-label="Province search: maximum sale price" />
-                </div>
-                <span class="sales-db-label">Sale type group <span class="sales-prov-any">(none ticked = any)</span></span>
-                <div id="sales-prov-types" class="sales-prov-list" role="group" aria-label="Sale type group"></div>
-                <span class="sales-db-label">Primary property types in this class <span class="sales-prov-any">(none ticked = any)</span></span>
-                <div id="sales-prov-subs" class="sales-prov-list" role="group" aria-label="Primary property types">
-                  <p class="sales-db-hint">Choose a class to list its property types.</p>
-                </div>
-                <div class="sales-db-selcount" id="sales-prov-count" aria-live="polite"></div>
-                <div class="sales-db-actions">
-                  <button type="button" id="sales-prov-search" class="parcel-list-modal-btn primary" disabled>🔍 Search province</button>
-                  <button type="button" id="sales-prov-save" class="parcel-list-modal-btn" disabled
-                          title="Save these settings under a name, in this browser">💾 Save search</button>
-                </div>
-              </details>
-              <label class="sales-db-label" for="sales-db-muni-search">Municipalities</label>
-              <input id="sales-db-muni-search" type="search" class="sales-db-search"
-                     placeholder="Filter municipalities…" aria-label="Filter municipalities" />
-              <!-- Hidden box stays the source of truth (lib/salesDbPanel.js reads
-                   it); the pill is a view — lib/pillBinding.js. -->
-              <input type="checkbox" id="sales-db-adjacent" class="pill-backing" hidden />
-              <div class="mode-pill-row sales-db-adjacent" title="Also select every municipality sharing a boundary with the ones you tick.">
-                <span class="mode-pill-prefix">Adjacent regions:</span>
-                <div class="mode-pill compact" role="radiogroup" aria-label="Also select adjacent regions" data-pill="adjacent">
-                  <button type="button" class="mode-btn active mode-btn-off" data-mode="off" aria-pressed="true">Off</button>
-                  <button type="button" class="mode-btn" data-mode="on" aria-pressed="false">On</button>
-                </div>
-              </div>
-              <!-- Region groups + per-municipality checkboxes, built by
-                   lib/salesDbPanel.js from the manifest. A flat 186-entry
-                   <select multiple> was unusable at that length, and its
-                   "CITY OF / RM OF" labels sorted by prefix rather than by
-                   place. -->
-              <div id="sales-db-munis" class="sales-db-munis" role="group"
-                   aria-label="Municipalities" aria-describedby="sales-db-hint"></div>
-              <div class="sales-db-selcount" id="sales-db-selcount" aria-live="polite"></div>
-              <!-- Sale type narrows the load the same way the date range
-                   does: rows outside it are never read, never parsed and
-                   never trigger a parcel-geometry fetch. A suggestion, not
-                   a requirement — "Any" is the default and always available.
-                   Values must match the export's "Sale Type Group" column,
-                   which carries the EFFECTIVE category (condos already
-                   reclassified out of ICI). -->
-              <label class="sales-db-typefilter" for="sales-db-type">
-                <span>Sale type</span>
-                <select id="sales-db-type">
-                  <option value="">Any (all types)</option>
-                  <option value="RESIDENTIAL LAND AND BUILDINGS">Residential land &amp; buildings</option>
-                  <option value="RESIDENTIAL BARE LAND">Residential bare land</option>
-                  <option value="RESIDENTIAL CONDOMINIUM UNITS">Residential condominium units</option>
-                  <option value="RESIDENTIAL CONDOMINIUM BARE LAND">Residential condominium bare land</option>
-                  <option value="ICI LAND AND BUILDINGS">ICI land &amp; buildings</option>
-                  <option value="ICI BARE LAND">ICI bare land</option>
-                  <option value="FARM LAND AND BUILDINGS">Farm land &amp; buildings</option>
-                  <option value="FARM BARE LAND">Farm bare land</option>
-                  <option value="UNCATEGORIZED">Uncategorized</option>
-                </select>
-              </label>
-              <p class="sales-db-hint" id="sales-db-hint">
-                Tick a region to take it whole, or open it to pick municipalities.
-              </p>
-              <!-- Shown while no date range is set. The date inputs live
-                   further down the sidebar, so say WHERE to look before the
-                   user searches the whole archive by accident; the Search
-                   button backs this up with an are-you-sure confirm. -->
-              <p class="sales-db-daterange-hint" id="sales-db-daterange-hint" hidden>
-                Select a Date Range from below before Searching.
-              </p>
-              <div class="sales-db-actions">
-                <button type="button" id="sales-db-load" data-icon="🔍" class="parcel-list-modal-btn primary">Search</button>
-                <!-- Exclude Nominal Sales rides in this row, beside Coverage, by
-                     explicit request (Jason, 2026-08-21). KNOWN AND ACCEPTED
-                     TRADE-OFF: this row lives inside #sales-db-ready, which is
-                     hidden until a sales database is connected, and inside a
-                     <details> that collapses in that state — so the checkbox is
-                     unreachable on a CSV-upload-only workflow even though the
-                     filter still applies to uploaded sales. It sat below the
-                     panel, and before that beside Clear, for exactly that
-                     reason. Move it back out if CSV-only work ever needs it. -->
-                <!-- Checked by default (Jason, 2026-09-22): nominal transfers
-                     are not market evidence, so excluding them is the normal
-                     starting point for an analysis rather than something to
-                     remember to tick. `data-default` on the Exclude segment
-                     below is what keeps shared links honest — see the URL
-                     writer in main.js. -->
-                <input type="checkbox" id="exclude-nominal" class="pill-backing" hidden checked />
-                <div class="mode-pill-row sales-nominal-exclude" title="Sales where consideration &lt;$1000 — the $0 / $1 nominal transfers (family conveyances, corrective transfers) that are not market evidence. Applies to both the MAO database and an uploaded CSV. Tested against the whole sale's consideration, so a multi-parcel sale drops as one; a sale with no readable consideration is kept.">
-                  <span class="mode-pill-prefix">Nominal sales:</span>
-                  <div class="mode-pill compact" role="radiogroup" aria-label="Nominal sales" data-pill="nominal">
-                    <button type="button" class="mode-btn mode-btn-off" data-mode="include" aria-pressed="false">Include</button>
-                    <button type="button" class="mode-btn active" data-mode="exclude" aria-pressed="true" data-default>Exclude</button>
-                  </div>
-                </div>
-              </div>
-              <p class="sales-db-update" id="sales-db-update" hidden></p>
+              <!-- "N municipalities have newer data — click Reload." -->
+              <p class="sales-db-update" id="sales-db-newer" hidden></p>
             </div>
-          </details>
 
-
-
-          <!-- Manual import (upload / paste / recent). Once the MAO Sales
-               Database is imported these are the fallback path, not the
-               main one, so main.js collapses this <details> and hides the
-               "or" divider to give the sidebar back to the filters. It
-               stays a plain open block until then, and the user can always
-               re-open it — collapsing is a default, not a lockout. -->
-          <div class="sales-paste-row" id="sales-manual-or"><span>or</span></div>
-          <details class="sales-manual" id="sales-manual" open>
-            <summary class="sales-manual-summary">Upload a CSV or Paste Sales from MAO</summary>
+            <!-- Manual import (upload / paste / recent). With a database
+                 imported these are the fallback, so salesDbPanel folds this
+                 inner <details>; without one it is the main way in and stays
+                 open. A default, not a lockout. -->
+            <div class="sales-paste-row" id="sales-manual-or"><span>or</span></div>
+            <details class="sales-manual" id="sales-manual" open>
+              <summary class="sales-manual-summary">Upload a CSV or Paste Sales from MAO</summary>
 
           <!-- Phase 3 dropzone. The hidden #sales-upload-input is the
                actual <input type="file">; clicking or dropping on the
@@ -873,33 +747,336 @@
             <select id="recent-uploads-select"><option value="">—</option></select>
             <button id="recent-uploads-clear" type="button" class="secondary" title="Forget all recent uploads">×</button>
           </div>
+            </details>
           </details>
 
-          <!-- The occasional filters. Collapsed by default so the
-               sales panel opens at a readable length; the controls
-               inside are the ones reached for on particular jobs
-               rather than on every upload.
+          <!-- SEARCH: everything that decides what is loaded, in one form with
+               one Search button at its foot. "Where" switches between ticked
+               municipalities and the whole province by class; date range, sale
+               type, sale price and nominal sales are shared by both and appear
+               once. The date, price and nominal rows also filter an uploaded
+               CSV, so they show without a database; the parts marked needs-db
+               are hidden until one is imported (#sales-search.no-db).
+               lib/salesDbPanel.js drives the municipality side,
+               lib/salesProvincePanel.js the province side, and
+               lib/salesSearchForm.js the mode switch and saved searches. -->
+          <section class="sales-group sales-search no-db" id="sales-search" data-mode="muni" aria-labelledby="sales-search-title">
+            <h3 class="sales-group-title" id="sales-search-title">Search <span class="sales-group-note">loads sales — press Search to apply</span></h3>
 
-               Directly under the upload line and shown BEFORE a load
-               (Jason, 2026-10-22), so size, price, $/Ac and the rest can
-               be set up front instead of after the slow part has run.
-               Sale Price also narrows a database Search the way the date
-               range does (lib/salesStore.js). The zoning pickers list
-               only values in the loaded results, so they stay greyed out
-               until a load. The Subject Property controls need an
-               import's municipalities and stay hidden until then. -->
-          <details class="more-filters sales-filters sales-only">
-            <!-- The badge is a WARNING that names every control in here
-                 that is set. It lives inside <summary> so it shows when
-                 the group is collapsed — the case where a forgotten Plan #
-                 or a persisted Far-Flung Exclude silently drops comps.
-                 Filled by renderSalesFiltersBadge() in main.js, which also
-                 repeats the list on the count line above the table. -->
-            <summary><span class="more-filters-title">Additional filters</span><span
+            <!-- Saved searches: the whole form, either mode, under a name.
+                 This browser only; settings, never sales. -->
+            <div class="sales-prov-saved-row needs-db">
+              <select id="sales-prov-saved" aria-label="Saved searches">
+                <option value="">Saved searches…</option>
+              </select>
+              <button type="button" id="sales-prov-delete" class="parcel-list-modal-btn" disabled
+                      title="Delete the selected saved search from this browser">Delete</button>
+            </div>
+
+            <!-- Where. Hidden box is the source of truth (lib/pillBinding.js);
+                 unticked = municipalities, ticked = whole province. -->
+            <input type="checkbox" id="sales-db-province" class="pill-backing" hidden />
+            <div class="mode-pill-row sales-search-mode needs-db" title="Municipalities: load the sales of the municipalities you tick. Whole province: every sale in the archive by its assessment class at the sale.">
+              <span class="mode-pill-prefix">Where:</span>
+              <div class="mode-pill compact" role="radiogroup" aria-label="Search where" data-pill="searchmode">
+                <button type="button" class="mode-btn active" data-mode="muni" aria-pressed="true">Municipalities</button>
+                <button type="button" class="mode-btn" data-mode="province" aria-pressed="false">Whole province</button>
+              </div>
+            </div>
+
+            <!-- Where: municipalities. -->
+            <div class="sales-where needs-db mode-muni">
+              <input id="sales-db-muni-search" type="search" class="sales-db-search"
+                     placeholder="Filter municipalities…" aria-label="Filter municipalities" />
+              <!-- Hidden box stays the source of truth (lib/salesDbPanel.js reads
+                   it); the pill is a view — lib/pillBinding.js. -->
+              <input type="checkbox" id="sales-db-adjacent" class="pill-backing" hidden />
+              <div class="mode-pill-row sales-db-adjacent" title="Also select every municipality sharing a boundary with the ones you tick.">
+                <span class="mode-pill-prefix">Adjacent regions:</span>
+                <div class="mode-pill compact" role="radiogroup" aria-label="Also select adjacent regions" data-pill="adjacent">
+                  <button type="button" class="mode-btn active mode-btn-off" data-mode="off" aria-pressed="true">Off</button>
+                  <button type="button" class="mode-btn" data-mode="on" aria-pressed="false">On</button>
+                </div>
+              </div>
+              <!-- Region groups + per-municipality checkboxes, built by
+                   lib/salesDbPanel.js from the manifest. A flat 186-entry
+                   <select multiple> was unusable at that length, and its
+                   "CITY OF / RM OF" labels sorted by prefix rather than by
+                   place. -->
+              <div id="sales-db-munis" class="sales-db-munis" role="group"
+                   aria-label="Municipalities" aria-describedby="sales-db-hint"></div>
+              <p class="sales-db-hint" id="sales-db-hint">
+                Tick a region to take it whole, or open it to pick municipalities. Clicking a municipality on the map ticks it too.
+              </p>
+            </div>
+
+            <!-- Where: whole province, by assessment class AT THE SALE, then
+                 the property types found in that class (Jason, 2026-09-24). -->
+            <div class="sales-where needs-db mode-prov">
+                <label class="sales-db-typefilter" for="sales-prov-class">
+                  <span>Class at sale</span>
+                  <select id="sales-prov-class">
+                    <option value="">Choose a class…</option>
+                  </select>
+                </label>
+                <label class="sales-prov-unknown">
+                  <input type="checkbox" id="sales-prov-unknown" />
+                  <span>Also include sales with no class recorded at the sale (all before 1996, most before 2008)</span>
+                </label>
+              <span class="sales-db-label">Primary property types in this class <span class="sales-prov-any">(none ticked = any)</span></span>
+              <div id="sales-prov-subs" class="sales-prov-list" role="group" aria-label="Primary property types">
+                <p class="sales-db-hint">Choose a class to list its property types.</p>
+              </div>
+            </div>
+
+          <!-- Sale Date range. The quick picks and the two date inputs
+               below drive the SAME pair of values; the inputs are the
+               source of truth and the presets just fill them in, so a
+               preset can be nudged by hand afterwards instead of being
+               an either/or choice.
+
+               Six presets + clear cannot fit one 288px line, so the row
+               wraps — the buttons flex to fill each line evenly rather
+               than leaving the × stranded alone on the second. -->
+          <div class="date-presets sales-only" role="group" aria-label="Date range presets">
+            <!-- "Date:" not "Date Range:" — the shorter label buys back a
+                 whole button's width. The From/To boxes below say "range". -->
+            <span class="date-presets-prefix">Date:</span>
+            <button type="button" class="date-preset-btn" data-months="3">3 mo</button>
+            <button type="button" class="date-preset-btn" data-months="6">6 mo</button>
+            <button type="button" class="date-preset-btn" data-months="12">12 mo</button>
+            <button type="button" class="date-preset-btn" data-months="24">24</button>
+            <button type="button" class="date-preset-btn" data-months="36">36</button>
+            <button type="button" class="date-preset-btn" data-months="48">48</button>
+            <button type="button" class="date-preset-btn" data-months="60">60</button>
+            <button type="button" class="date-preset-btn" data-months="72">72</button>
+            <button type="button" class="date-preset-btn date-preset-clear" data-clear="1" title="Clear date range">×</button>
+          </div>
+          <div class="date-custom sales-only" role="group" aria-label="Custom date range">
+            <label class="date-custom-field">
+              <span class="date-custom-label">From</span>
+              <input id="sale-date-from" type="date" aria-label="Sale date from" />
+            </label>
+            <label class="date-custom-field">
+              <span class="date-custom-label">To</span>
+              <input id="sale-date-to" type="date" aria-label="Sale date to" />
+            </label>
+          </div>
+            <!-- Shown in municipality mode while no date range is set: the
+                 range is the load WINDOW, so without it Search reads the full
+                 history. The Search button backs this with a confirm. -->
+            <p class="sales-db-daterange-hint needs-db mode-muni" id="sales-db-daterange-hint" hidden>
+              No date range set — Search will load the full sales history.
+            </p>
+
+            <!-- Sale type narrows the load the same way the date range does:
+                 rows outside it are never read, never parsed and never trigger
+                 a parcel-geometry fetch. None ticked = any. Values are the
+                 export's "Sale Type Group" column, which carries the EFFECTIVE
+                 category (condos already reclassified out of ICI). One control
+                 for both modes; filled by main.js. -->
+            <div class="sales-db-typefilter needs-db">
+              <span>Sale type</span>
+              <span class="field sales-type-field">
+                <details class="multiselect" id="sales-db-type">
+                  <summary aria-label="Sale type">
+                    <span class="multiselect-label">Any sale type</span>
+                  </summary>
+                  <div class="multiselect-menu"></div>
+                </details>
+              </span>
+            </div>
+
+            <!-- Total consideration bounds. Deliberately a separate
+                 pair from $/Ac rather than a shared box with a unit
+                 toggle: the two express different things and combining
+                 them ("$3k-$6k an acre, under $2M all in") is a real
+                 screen. -->
+            <div class="sale-price-row">
+              <span class="sale-price-prefix">Sale Price:</span>
+              <span class="field sale-price-low-field">
+                <input id="sales-price-low" type="number" min="0" step="1000" placeholder="Min $" />
+              </span>
+              <span class="field sale-price-high-field">
+                <input id="sales-price-high" type="number" min="0" step="1000" placeholder="Max $" />
+                <span class="tip">Total sale price bounds (the Consideration from the uploaded CSV). For a multi-parcel sale this is the whole transaction, so the entire sale passes or fails together. Sales with no readable price drop out while either bound is set; empty = no limit on that side. Set before a database Search, it also limits which sales are loaded, like the date range — widen it afterwards and search again to bring the rest in.</span>
+              </span>
+            </div>
+
+                <!-- Checked by default (Jason, 2026-09-22): nominal transfers
+                     are not market evidence, so excluding them is the normal
+                     starting point for an analysis rather than something to
+                     remember to tick. `data-default` on the Exclude segment
+                     below is what keeps shared links honest — see the URL
+                     writer in main.js. -->
+                <input type="checkbox" id="exclude-nominal" class="pill-backing" hidden checked />
+                <div class="mode-pill-row sales-nominal-exclude" title="Sales where consideration &lt;$1000 — the $0 / $1 nominal transfers (family conveyances, corrective transfers) that are not market evidence. Applies to both the MAO database and an uploaded CSV. Tested against the whole sale's consideration, so a multi-parcel sale drops as one; a sale with no readable consideration is kept.">
+                  <span class="mode-pill-prefix">Nominal sales:</span>
+                  <div class="mode-pill compact" role="radiogroup" aria-label="Nominal sales" data-pill="nominal">
+                    <button type="button" class="mode-btn mode-btn-off" data-mode="include" aria-pressed="false">Include</button>
+                    <button type="button" class="mode-btn active" data-mode="exclude" aria-pressed="true" data-default>Exclude</button>
+                  </div>
+                </div>
+
+            <!-- What a Search would load, and whether the table still matches
+                 the form. One line per mode; the stale warning is the
+                 municipality side's. -->
+            <div class="sales-db-selcount needs-db mode-muni" id="sales-db-selcount" aria-live="polite"></div>
+            <div class="sales-db-selcount needs-db mode-prov" id="sales-prov-count" aria-live="polite"></div>
+            <p class="sales-db-update needs-db mode-muni" id="sales-db-update" hidden></p>
+            <div class="sales-db-actions needs-db">
+              <button type="button" id="sales-db-load" data-icon="🔍" class="parcel-list-modal-btn primary mode-muni">Search</button>
+              <button type="button" id="sales-prov-search" class="parcel-list-modal-btn primary mode-prov" disabled>🔍 Search province</button>
+              <button type="button" id="sales-prov-save" class="parcel-list-modal-btn"
+                      title="Save this search — where, dates, sale type and price — under a name, in this browser">💾 Save search</button>
+            </div>
+          </section>
+
+          <!-- SUBJECT PROPERTY. Its own group (2026-11-23): it sat at the foot
+               of the collapsed filters, yet subject + radius is often the
+               first thing set. Needs an import's municipalities, so the whole
+               group stays hidden until sales are loaded (style.css). -->
+          <section class="sales-group sales-subject-group" aria-label="Subject property">
+            <!-- Subject parcel. The muni picker leads deliberately: the
+                 roll number alone does not identify a parcel — the same
+                 roll exists in many municipalities — so the question
+                 "which muni is this roll in" has to be answered before
+                 the roll means anything. It used to sit BELOW the roll
+                 and only appear on multi-muni uploads, which made the
+                 resolution invisible on the single-muni imports that are
+                 the common case. -->
+            <!-- A header over the subject controls (Jason, 2026-10-06): they
+                 sit at the foot of the filters and read as one more filter
+                 without it. -->
+            <h3 class="sales-subject-title sales-only">Subject Property</h3>
+            <!-- Starts hidden and is revealed once an import has munis to
+                 offer, so an empty select never claims to name one. -->
+            <div id="subject-muni-row" class="subject-muni-row sales-only" hidden>
+              <span class="field subject-muni-field">
+                <select id="subject-muni" aria-label="Municipality for the subject roll"></select>
+                <span class="tip">Municipality the subject roll # is fetched from. Lists every municipality in the current import, defaulting to the one with the most matched parcels.</span>
+              </span>
+            </div>
+            <!-- Roll # and radius sit together because they are one thought —
+                 "how far from THIS parcel" — and the buttons that commit it
+                 follow both rather than splitting the pair. One tip for the
+                 row, on the radius field: two icons a few pixels apart said
+                 half the story each, and the half about the subject roll was
+                 the half you needed to read the radius (Jason, 2026-08-19). -->
+            <div class="subject-row sales-only">
+              <span class="field subject-roll-field">
+                <input id="subject-roll" type="text" placeholder="Subject roll #" autocomplete="off" />
+              </span>
+              <span class="field distance-max-field">
+                <input id="distance-max" type="number" min="0" step="0.1" placeholder="Max km" />
+                <span class="tip">Sets the subject property and filters the sales around it. Subject roll # is the roll of the subject, fetched from the municipality selected above; Max km then keeps only sales within that many kilometres of the subject's centroid. Hit Set to apply — the radius does nothing until a subject is set — and × to clear the subject and its distance column.</span>
+              </span>
+              <button id="subject-apply" type="button" class="secondary subject-apply-btn">Set</button>
+              <button id="subject-clear" type="button" class="secondary subject-clear-btn" title="Clear the subject parcel">×</button>
+            </div>
+          </section>
+
+          <!-- REFINE: filters on the sales already loaded. Instant, no Search.
+               Open by default, with the three reached for on most jobs (class,
+               structure type, vacant/improved) first; each pair that works as
+               one control sits together.
+
+               Shown BEFORE a load (Jason, 2026-10-22), so size, $/Ac and the
+               rest can be set up front. The class, structure and zoning
+               pickers list only values in the loaded results, so they wait
+               for a load. -->
+          <details class="more-filters sales-filters sales-only" open>
+            <!-- The badge is a WARNING that names every filter that is set. It
+                 lives inside <summary> so it shows when the group is collapsed
+                 — the case where a forgotten Plan # or a persisted Far-Flung
+                 Exclude silently drops comps. Filled by
+                 renderSalesFiltersBadge() in main.js, which also repeats the
+                 list on the count line above the table. -->
+            <summary><span class="more-filters-title">Refine results</span><span class="sales-group-note">instant</span><span
               class="sales-filters-badge"
               id="sales-filters-badge"
               hidden
             ></span></summary>
+
+          <!-- Assessment class. A compact <details> multi-select (see
+               lib/multiSelect.js) rather than an always-open list box:
+               the closed control is one line and states the current
+               selection in words, and the menu overlays the rows below
+               instead of pushing them down the panel. -->
+          <div class="class-row sales-only">
+            <span class="field class-field">
+              <details class="multiselect" id="asmt-class">
+                <summary aria-label="Assessment class filter">
+                  <span class="multiselect-label">Any Assessment Class</span>
+                </summary>
+                <div class="multiselect-menu"></div>
+              </details>
+            </span>
+            <!-- Primary Property — MAO's primary-STRUCTURE descriptor, in
+                 two layers: Residential / ICI / Farm on top (taken from
+                 the sale's own Sale Type Group, not guessed from the
+                 text), then the kind of structure underneath. Flat, the
+                 descriptor runs to 565 distinct values province-wide,
+                 which is unusable as a checkbox list. -->
+            <span class="field primaryprop-field">
+              <details class="multiselect" id="primaryprop-filter">
+                <summary aria-label="Structure type filter">
+                  <span class="multiselect-label">Any Structure Type</span>
+                </summary>
+                <div class="multiselect-menu"></div>
+              </details>
+              <span class="tip">Assessment Class filters to one or more MAO assessment classes — tick what you want, unticked = no filter. Structure Type filters by what actually stands on the parcel — MAO's Primary Property descriptor in two layers: Residential, ICI or Farm on top (taken from the sale's own Sale Type Group, not guessed from the text), structure types underneath (One storey, Bi-level, Cottage, Warehouse, Grain storage…). Most sales carry NO descriptor — bare land — so every family also offers "(no primary structure)": 45% of residential, 71% of ICI, 96% of farm sales. A multi-parcel sale is kept or dropped whole when any parcel matches, so its $/Acre keeps describing the land actually bought. Both lists hold only values your current results contain.</span>
+            </span>
+          </div>
+
+            <!-- Vacant / improved, then the threshold that tunes it, directly
+                 underneath (they were a panel apart until 2026-11-23). -->
+            <div class="far-flung-row refine-vacant-row sales-only">
+            <label class="vacant-only-label" for="vacant-improved" title="Vacant/improved proxy from the MAO assessment split. Vacant Land Only keeps sales where EVERY parcel in the group has Buildings below the Bldg Threshold on the next line; Improved Only keeps sales where at least one parcel has Buildings at or above it. Sales missing assessment data drop out of both. Heuristic — not a legal vacancy determination; verify with the municipality.">
+              <select id="vacant-improved">
+                <option value="all" selected>All Sales</option>
+                <option value="vacant">Vacant Land Only</option>
+                <option value="improved">Improved Only</option>
+              </select>
+            </label>
+            </div>
+            <!-- Vacant-land threshold. Single input + a %/$ pill
+                 toggle decides how to interpret the number:
+                 building-percentage cap (% mode) or building-dollar
+                 cap ($ mode). Tunes the Vacant Only selector below. -->
+            <div class="vacant-threshold-row">
+              <span class="vacant-threshold-prefix">Bldg Threshold:</span>
+              <span class="field vacant-threshold-field">
+                <input id="vacant-threshold" type="number" min="0" step="0.1" placeholder="5" value="5" />
+              </span>
+              <div class="vacant-mode-pill" role="radiogroup" aria-label="Vacant threshold mode">
+                <button type="button" class="vacant-mode-btn active" data-mode="pct" aria-pressed="true">%</button>
+                <button type="button" class="vacant-mode-btn" data-mode="dollar" aria-pressed="false">$</button>
+              </div>
+              <!-- Sale/Asmt ratio cap as a small dropdown. Empty value
+                   (default) reads "Max Sale/Asmt" and applies no
+                   filter. Picking a numeric option caps Sale ÷
+                   Assessed Total at that value — surfaces quirky
+                   sales where the assessment hadn't caught up to a
+                   newly built improvement. -->
+              <span class="field sale-asmt-max-field">
+                <select id="sale-asmt-max" aria-label="Max Sale/Asmt ratio cap">
+                  <option value="">Max Sale/Asmt</option>
+                  <option value="0.5">≤ 0.5</option>
+                  <option value="0.75">≤ 0.75</option>
+                  <option value="1">≤ 1</option>
+                  <option value="1.25">≤ 1.25</option>
+                  <option value="1.5">≤ 1.5</option>
+                  <option value="1.75">≤ 1.75</option>
+                  <option value="2">≤ 2</option>
+                  <option value="3">≤ 3</option>
+                  <option value="4">≤ 4</option>
+                  <option value="5">≤ 5</option>
+                </select>
+                <span class="tip">Bldg Threshold tunes the Vacant Land Only / Improved Only selector on the line above: in % mode (default) a parcel reads as vacant when Buildings ÷ Total is below this percent, in $ mode when Buildings $ is below this dollar value — heuristic only, verify with the municipality. Max Sale/Asmt separately caps Sale ÷ Assessed Total, surfacing sales where buildings sold before the assessment caught up (Sale/Asmt &gt;&gt; 1); leave it on "Max Sale/Asmt" for no cap. Both apply alongside Vacant Only.</span>
+              </span>
+            </div>
+
             <div class="size-vacant-row">
               <!-- A plan number is at most 7 digits, usually 3-5, so this is
                    sized for 7 and fixed — see the CSS. `title` rather than a
@@ -962,21 +1139,6 @@
               </span>
               <!-- Street suggestions for the ticked municipalities. -->
               <div id="sales-street-suggest" class="street-suggest" role="listbox" aria-label="Street suggestions" hidden></div>
-            </div>
-            <!-- Total consideration bounds. Deliberately a separate
-                 pair from $/Ac rather than a shared box with a unit
-                 toggle: the two express different things and combining
-                 them ("$3k-$6k an acre, under $2M all in") is a real
-                 screen. -->
-            <div class="sale-price-row">
-              <span class="sale-price-prefix">Sale Price:</span>
-              <span class="field sale-price-low-field">
-                <input id="sales-price-low" type="number" min="0" step="1000" placeholder="Min $" />
-              </span>
-              <span class="field sale-price-high-field">
-                <input id="sales-price-high" type="number" min="0" step="1000" placeholder="Max $" />
-                <span class="tip">Total sale price bounds (the Consideration from the uploaded CSV). For a multi-parcel sale this is the whole transaction, so the entire sale passes or fails together. Sales with no readable price drop out while either bound is set; empty = no limit on that side. Set before a database Search, it also limits which sales are loaded, like the date range — widen it afterwards and search again to bring the rest in.</span>
-              </span>
             </div>
             <!-- Zoning code + Zoning Type. Moved in here 2026-08-18 (Jason):
                  both narrow an already-chosen set rather than describing it,
@@ -1056,46 +1218,12 @@
                 </span>
               </span>
             </div>
-            <!-- Vacant-land threshold. Single input + a %/$ pill
-                 toggle decides how to interpret the number:
-                 building-percentage cap (% mode) or building-dollar
-                 cap ($ mode). Tunes the Vacant Only selector below. -->
-            <div class="vacant-threshold-row">
-              <span class="vacant-threshold-prefix">Bldg Threshold:</span>
-              <span class="field vacant-threshold-field">
-                <input id="vacant-threshold" type="number" min="0" step="0.1" placeholder="5" value="5" />
-              </span>
-              <div class="vacant-mode-pill" role="radiogroup" aria-label="Vacant threshold mode">
-                <button type="button" class="vacant-mode-btn active" data-mode="pct" aria-pressed="true">%</button>
-                <button type="button" class="vacant-mode-btn" data-mode="dollar" aria-pressed="false">$</button>
-              </div>
-              <!-- Sale/Asmt ratio cap as a small dropdown. Empty value
-                   (default) reads "Max Sale/Asmt" and applies no
-                   filter. Picking a numeric option caps Sale ÷
-                   Assessed Total at that value — surfaces quirky
-                   sales where the assessment hadn't caught up to a
-                   newly built improvement. -->
-              <span class="field sale-asmt-max-field">
-                <select id="sale-asmt-max" aria-label="Max Sale/Asmt ratio cap">
-                  <option value="">Max Sale/Asmt</option>
-                  <option value="0.5">≤ 0.5</option>
-                  <option value="0.75">≤ 0.75</option>
-                  <option value="1">≤ 1</option>
-                  <option value="1.25">≤ 1.25</option>
-                  <option value="1.5">≤ 1.5</option>
-                  <option value="1.75">≤ 1.75</option>
-                  <option value="2">≤ 2</option>
-                  <option value="3">≤ 3</option>
-                  <option value="4">≤ 4</option>
-                  <option value="5">≤ 5</option>
-                </select>
-                <span class="tip">Bldg Threshold tunes the Vacant Only proxy below the date range: in % mode (default) a parcel reads as vacant when Buildings ÷ Total is below this percent, in $ mode when Buildings $ is below this dollar value — heuristic only, verify with the municipality. Max Sale/Asmt separately caps Sale ÷ Assessed Total, surfacing sales where buildings sold before the assessment caught up (Sale/Asmt &gt;&gt; 1); leave it on "Max Sale/Asmt" for no cap. Both apply alongside Vacant Only.</span>
-              </span>
-            </div>
 
-            <!-- Far-Flung threshold + Exclude. The tally that says whether
-                 either is biting stays outside this disclosure, down beside
-                 All Sales. -->
+            <!-- Far-Flung: threshold, Exclude and the live tally together. A
+                 multi-parcel sale whose parcels are spread wider than the
+                 threshold is marked in the grid and popup with a ⚠ on its
+                 $/Acre — the rate a portfolio or estate transaction most
+                 distorts. -->
             <div class="far-flung-controls-row">
               <span class="far-flung-field">
                 <label for="far-flung-km">Far-Flung &gt;</label>
@@ -1120,168 +1248,21 @@
                 <span class="tip">Far-Flung marks multi-parcel sales whose parcels lie farther apart than the km threshold, measured between parcel centroids. Portfolio and estate sales sweep up land across a wide area, so their blended $/Acre is not a local comparable. Blank or 0 turns the marking off, and marking alone removes nothing — tick Exclude to drop the flagged sales from the table, the map and the CSV export. Sales whose spread can't be measured (a parcel with no geometry) are never excluded.</span>
               </span>
             </div>
-
-            <!-- Subject parcel. The muni picker leads deliberately: the
-                 roll number alone does not identify a parcel — the same
-                 roll exists in many municipalities — so the question
-                 "which muni is this roll in" has to be answered before
-                 the roll means anything. It used to sit BELOW the roll
-                 and only appear on multi-muni uploads, which made the
-                 resolution invisible on the single-muni imports that are
-                 the common case. -->
-            <!-- A header over the subject controls (Jason, 2026-10-06): they
-                 sit at the foot of the filters and read as one more filter
-                 without it. -->
-            <h3 class="sales-subject-title sales-only">Subject Property</h3>
-            <!-- Starts hidden and is revealed once an import has munis to
-                 offer, so an empty select never claims to name one. -->
-            <div id="subject-muni-row" class="subject-muni-row sales-only" hidden>
-              <span class="field subject-muni-field">
-                <select id="subject-muni" aria-label="Municipality for the subject roll"></select>
-                <span class="tip">Municipality the subject roll # is fetched from. Lists every municipality in the current import, defaulting to the one with the most matched parcels.</span>
-              </span>
-            </div>
-            <!-- Roll # and radius sit together because they are one thought —
-                 "how far from THIS parcel" — and the buttons that commit it
-                 follow both rather than splitting the pair. One tip for the
-                 row, on the radius field: two icons a few pixels apart said
-                 half the story each, and the half about the subject roll was
-                 the half you needed to read the radius (Jason, 2026-08-19). -->
-            <div class="subject-row sales-only">
-              <span class="field subject-roll-field">
-                <input id="subject-roll" type="text" placeholder="Subject roll #" autocomplete="off" />
-              </span>
-              <span class="field distance-max-field">
-                <input id="distance-max" type="number" min="0" step="0.1" placeholder="Max km" />
-                <span class="tip">Sets the subject property and filters the sales around it. Subject roll # is the roll of the subject, fetched from the municipality selected above; Max km then keeps only sales within that many kilometres of the subject's centroid. Hit Set to apply — the radius does nothing until a subject is set — and × to clear the subject and its distance column.</span>
-              </span>
-              <button id="subject-apply" type="button" class="secondary subject-apply-btn">Set</button>
-              <button id="subject-clear" type="button" class="secondary subject-clear-btn" title="Clear the subject parcel">×</button>
+            <div class="far-flung-tally sales-only">
+              <span id="far-flung-count" class="far-flung-count"></span>
             </div>
           </details>
 
-          <!-- Sales filters. Each .sales-only row is hidden by
-               body:not(.sales-mode) CSS until a CSV upload completes.
-               Order is by how often the filter gets touched: date
-               range, assessment class and the far-flung/vacant line
-               stay out in the open; everything else lives one click
-               away in the "Additional filters" disclosure above them,
-               under the upload line. -->
-
-          <!-- Sale Date range. The quick picks and the two date inputs
-               below drive the SAME pair of values; the inputs are the
-               source of truth and the presets just fill them in, so a
-               preset can be nudged by hand afterwards instead of being
-               an either/or choice.
-
-               Six presets + clear cannot fit one 288px line, so the row
-               wraps — the buttons flex to fill each line evenly rather
-               than leaving the × stranded alone on the second. -->
-          <div class="date-presets sales-only" role="group" aria-label="Date range presets">
-            <!-- "Date:" not "Date Range:" — the shorter label buys back a
-                 whole button's width. The From/To boxes below say "range". -->
-            <span class="date-presets-prefix">Date:</span>
-            <button type="button" class="date-preset-btn" data-months="3">3 mo</button>
-            <button type="button" class="date-preset-btn" data-months="6">6 mo</button>
-            <button type="button" class="date-preset-btn" data-months="12">12 mo</button>
-            <button type="button" class="date-preset-btn" data-months="24">24</button>
-            <button type="button" class="date-preset-btn" data-months="36">36</button>
-            <button type="button" class="date-preset-btn" data-months="48">48</button>
-            <button type="button" class="date-preset-btn" data-months="60">60</button>
-            <button type="button" class="date-preset-btn" data-months="72">72</button>
-            <button type="button" class="date-preset-btn date-preset-clear" data-clear="1" title="Clear date range">×</button>
-          </div>
-          <div class="date-custom sales-only" role="group" aria-label="Custom date range">
-            <label class="date-custom-field">
-              <span class="date-custom-label">From</span>
-              <input id="sale-date-from" type="date" aria-label="Sale date from" />
-            </label>
-            <label class="date-custom-field">
-              <span class="date-custom-label">To</span>
-              <input id="sale-date-to" type="date" aria-label="Sale date to" />
-            </label>
-          </div>
-          <!-- Assessment class. A compact <details> multi-select (see
-               lib/multiSelect.js) rather than an always-open list box:
-               the closed control is one line and states the current
-               selection in words, and the menu overlays the rows below
-               instead of pushing them down the panel. -->
-          <div class="class-row sales-only">
-            <span class="field class-field">
-              <details class="multiselect" id="asmt-class">
-                <summary aria-label="Assessment class filter">
-                  <span class="multiselect-label">Any Assessment Class</span>
-                </summary>
-                <div class="multiselect-menu"></div>
-              </details>
-            </span>
-            <!-- Primary Property — MAO's primary-STRUCTURE descriptor, in
-                 two layers: Residential / ICI / Farm on top (taken from
-                 the sale's own Sale Type Group, not guessed from the
-                 text), then the kind of structure underneath. Flat, the
-                 descriptor runs to 565 distinct values province-wide,
-                 which is unusable as a checkbox list. -->
-            <span class="field primaryprop-field">
-              <details class="multiselect" id="primaryprop-filter">
-                <summary aria-label="Structure type filter">
-                  <span class="multiselect-label">Any Structure Type</span>
-                </summary>
-                <div class="multiselect-menu"></div>
-              </details>
-              <span class="tip">Assessment Class filters to one or more MAO assessment classes — tick what you want, unticked = no filter. Structure Type filters by what actually stands on the parcel — MAO's Primary Property descriptor in two layers: Residential, ICI or Farm on top (taken from the sale's own Sale Type Group, not guessed from the text), structure types underneath (One storey, Bi-level, Cottage, Warehouse, Grain storage…). Most sales carry NO descriptor — bare land — so every family also offers "(no primary structure)": 45% of residential, 71% of ICI, 96% of farm sales. A multi-parcel sale is kept or dropped whole when any parcel matches, so its $/Acre keeps describing the land actually bought. Both lists hold only values your current results contain.</span>
-            </span>
-          </div>
-          <!-- The two sale-level exclusions. Vacant Land Only takes a
-               line of its own; the far-flung threshold, its Exclude
-               toggle and the live tally share the line below, so the
-               three parts of one control read as one control.
-
-               A multi-parcel sale whose parcels are spread wider than
-               the threshold is marked in the grid and popup with a ⚠
-               on its $/Acre — the rate a portfolio or estate
-               transaction most distorts.
-
-               The tally wraps to a third line whenever its text is too
-               long to fit beside the controls, which is most of the
-               time: the threshold, Exclude and its info icon take
-               ~230px of the 288px column, and "⚠ 4 sales · 9 parcels
-               flagged" needs about 150. Short states like "none
-               flagged" stay inline. The far-flung field carries no
-               `field` class of its own — one info icon for the whole
-               control is enough, and it lives on Exclude. -->
-          <div class="far-flung-row sales-only">
-            <label class="vacant-only-label" for="vacant-improved" title="Vacant/improved proxy from the MAO assessment split. Vacant Land Only keeps sales where EVERY parcel in the group has Buildings below the threshold set under Additional filters; Improved Only keeps sales where at least one parcel has Buildings at or above it. Sales missing assessment data drop out of both. Heuristic — not a legal vacancy determination; verify with the municipality.">
-              <select id="vacant-improved">
-                <option value="all" selected>All Sales</option>
-                <option value="vacant">Vacant Land Only</option>
-                <option value="improved">Improved Only</option>
-              </select>
-            </label>
-            <!-- Sits on the right half of the All Sales line, where it is
-                 in view beside the filters it charts. Its old home at the
-                 foot of the sidebar was ~500px below the fold.
-                 Sales-mode only — without a sale date and price there is
-                 nothing for it to plot (see the body:not(.sales-mode)
-                 rule in style.css). -->
+          <!-- Charts: opens the scatter charts of the filtered sales in a new
+               tab. Sales-mode only — without a sale date and price there is
+               nothing to plot (body:not(.sales-mode) rule in style.css). -->
+          <div class="charts-row">
             <button
               id="charts-open"
               type="button"
               class="secondary"
               title="Open scatter charts of the filtered sales in a new tab — price per lot and per acre/SF over time, by size, by zoning and by distance. The tab tracks these filters live."
             >📈 Charts</button>
-            <!-- The Far-Flung CONTROLS live under Additional filters; this
-                 read-out stays here, outside the collapsible, and speaks
-                 up only when the filter is actually marking or removing
-                 sales. Otherwise a filter hidden behind a disclosure could
-                 be silently dropping comps. -->
-            <span id="far-flung-count" class="far-flung-count"></span>
-          </div>
-
-          <!-- Clear stays OUTSIDE the collapsible: it resets the whole
-               page, so it has to be reachable without first expanding a
-               panel. -->
-          <div class="action-row">
-            <button id="sales-clear" data-icon="🗑️" type="button" class="danger" title="Reset the page — clears any uploaded sales CSV, search results, subject, and filters.">Clear</button>
           </div>
         </section><!-- /tab-panel-sales -->
 
@@ -2090,8 +2071,8 @@
             <th data-col="primaryprop" class="sales-only" title="Primary Property — MAO's description of the main structure on the parcel (&quot;1 STY RES AVG QUALITY&quot;, &quot;AVERAGE FRAME WAREHOUSE&quot;). Blank means no primary structure, i.e. bare land, which is the majority of sales — 45% of residential, 71% of ICI and 96% of farm. Available on subscriber sales data only.">Primary Property</th>
             <!-- N1 comp-database link, from the hand-curated crosswalk column
                  in the sales export. Blank = the sale is not matched to an
-                 N1 record yet (see the N1 filter under Additional filters). -->
-            <th data-col="n1id" class="sales-only" title="N1 database ID for this sale, from the MAO↔N1 crosswalk. Blank = not matched to an N1 record yet — filter to Unmatched under Additional filters to work the data-entry queue.">N1 ID</th>
+                 N1 record yet (see the N1 filter under Refine results). -->
+            <th data-col="n1id" class="sales-only" title="N1 database ID for this sale, from the MAO↔N1 crosswalk. Blank = not matched to an N1 record yet — filter N1 to Unmatched under Refine results to work the data-entry queue.">N1 ID</th>
             <!-- Multi-parcel-sale group columns — populated by
                  computeSaleGroupTotals after a sales CSV upload. Group
                  Size = N parcels in the same sale; $/ac = total
@@ -2147,7 +2128,7 @@
                  comp is genuinely vacant or partially improved. -->
             <th data-col="asmtland" class="sales-only" title="Latest-year assessed Land value (MAO scrape).">Land $</th>
             <th data-col="asmtbldg" class="sales-only" title="Latest-year assessed Buildings value (MAO scrape).">Bldg $</th>
-            <th data-col="asmtpct"  class="sales-only" title="Buildings as a percentage of Total assessed value. The vacant-land cutoff is whatever the Bldg Threshold control under Additional filters is set to — no fixed number is baked in here.">Bldg %</th>
+            <th data-col="asmtpct"  class="sales-only" title="Buildings as a percentage of Total assessed value. The vacant-land cutoff is whatever the Bldg Threshold control under Refine results is set to — no fixed number is baked in here.">Bldg %</th>
             <th data-col="asmtyear" class="sales-only" title="Assessment year the Land/Bldg values are from. Single year for most rolls.">Asmt Yr</th>
             <!-- Legal and Title populate from the MAO scrape legal-index
                  join in main.js's attachLegalMetadata(). renderTable

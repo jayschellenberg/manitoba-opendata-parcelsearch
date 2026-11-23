@@ -9,8 +9,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 TITLES = {"mb": "Manitoba", "wpg": "Winnipeg"}
 EVAL_LABELS = [
-    ("advanced-filters", "open Additional Searches"), ("more-filters", "open Additional filters"),
-    ("sales-db", "open MAO Sales Database"), ("sales-manual", "open Upload/Paste"),
+    ("advanced-filters", "open Additional Searches"), ("more-filters", "open Refine results"),
+    ("sales-manual", "open Upload/Paste"), ("sales-db", "open MAO Sales Database"),
     ("historical", "pick latest as-of date"), ("removeAllRanges", "clear text selection"),
     ("excl-panel", "open Excluded records"), ("comps-panel", "open Comparable sales"),
     ("page-charts", "scroll to charts"), ("page-maps", "scroll to maps"), ("hint-page", "scroll to hint"),

@@ -45,12 +45,6 @@
       "wait": 4000
     },
     {
-      "eval": "const d=document.querySelector('details.more-filters'); if(d) d.open=false"
-    },
-    {
-      "wait": 1500
-    },
-    {
       "eval": "window.scrollTo(0,0)"
     }
   ],

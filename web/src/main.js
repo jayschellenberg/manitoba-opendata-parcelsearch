@@ -19,6 +19,7 @@ import { initSalesDbPanel } from './lib/salesDbPanel.js';
 import { createStreetSuggest, exactStreetPick } from './lib/streetSuggest.js';
 import { addressOnStreet } from './lib/streetIndex.js';
 import { initSalesProvincePanel } from './lib/salesProvincePanel.js';
+import { initSalesSearchForm } from './lib/salesSearchForm.js';
 import { listShardKeys } from './lib/salesStore.js';
 import { showMuniLayer, hideMuniLayer, paintMuniSelection, wireMuniInteractions, fitToSelection }
   from './lib/muniLayer.js';
@@ -597,6 +598,27 @@ const primaryPropFilter = initMultiSelect($primaryPropEl, {
   noun: 'structure types',
   emptyLabel: 'No values yet — upload sales first.',
 });
+// Sale type, in the Search form: which Sale Type Groups a database Search
+// loads, municipality or province-wide. None ticked = any. The values are
+// the export's own "Sale Type Group" strings — the EFFECTIVE category, with
+// condos already reclassified out of ICI — and the labels are the readable
+// form. A load control, not a filter on the table, so it is not in
+// JOB_MULTIS: a job file carries the sales themselves.
+const salesTypeFilter = initMultiSelect(document.getElementById('sales-db-type'), {
+  placeholder: 'Any sale type',
+  noun: 'sale types',
+});
+salesTypeFilter.setOptions([
+  { value: 'RESIDENTIAL LAND AND BUILDINGS', label: 'Residential land & buildings' },
+  { value: 'RESIDENTIAL BARE LAND', label: 'Residential bare land' },
+  { value: 'RESIDENTIAL CONDOMINIUM UNITS', label: 'Residential condominium units' },
+  { value: 'RESIDENTIAL CONDOMINIUM BARE LAND', label: 'Residential condominium bare land' },
+  { value: 'ICI LAND AND BUILDINGS', label: 'ICI land & buildings' },
+  { value: 'ICI BARE LAND', label: 'ICI bare land' },
+  { value: 'FARM LAND AND BUILDINGS', label: 'Farm land & buildings' },
+  { value: 'FARM BARE LAND', label: 'Farm bare land' },
+  { value: 'UNCATEGORIZED', label: 'Uncategorized' },
+]);
 // Total-consideration bounds. Distinct from the $/Ac pair: this is the
 // whole transaction, so a multi-parcel sale passes or fails as one.
 const $salesPriceLow  = document.getElementById('sales-price-low');
@@ -2773,6 +2795,17 @@ function salesMuniNarrowSet() {
   return salesMuniSelection.size < salesMuniLoaded.size ? salesMuniSelection : null;
 }
 
+// The Search form's shared window — the date range and the Sale Price pair —
+// read by both search panels and by the form's saved searches.
+const salesDateWindow = () => ({
+  from: ($saleDateFrom?.value || '').trim(),
+  to:   ($saleDateTo?.value   || '').trim(),
+});
+const salesPriceWindow = () => ({
+  min: ($salesPriceLow?.value  || '').trim(),
+  max: ($salesPriceHigh?.value || '').trim(),
+});
+
 const salesDbPanel = initSalesDbPanel({
   setStatus: setSalesPanelStatus,
   // Shade the municipalities the current selection would load. Two tints:
@@ -2795,17 +2828,12 @@ const salesDbPanel = initSalesDbPanel({
   // are never read out of the archive, so they are never parsed and never
   // trigger a parcel-geometry fetch. The shards are written newest-first,
   // so this is a cheap early-exit scan rather than a full pass.
-  getDateWindow: () => ({
-    from: ($saleDateFrom?.value || '').trim(),
-    to:   ($saleDateTo?.value   || '').trim(),
-  }),
-  // Sale Price (Additional filters) narrows the load the same way when it is
-  // set before Search (Jason, 2026-10-22). The sidebar filter still applies
-  // afterwards, so the two can never disagree.
-  getPriceWindow: () => ({
-    min: ($salesPriceLow?.value  || '').trim(),
-    max: ($salesPriceHigh?.value || '').trim(),
-  }),
+  getDateWindow: salesDateWindow,
+  // Sale Price narrows the load the same way when it is set before Search
+  // (Jason, 2026-10-22). The sidebar filter still applies afterwards, so the
+  // two can never disagree.
+  getPriceWindow: salesPriceWindow,
+  getTypes: () => salesTypeFilter.getSelected(),
   // Fired once a Search is committed (after the no-date-range confirm) and
   // before anything is read. Drops the previous result set so a search that
   // finds nothing — or fails — can never leave the last one on screen
@@ -2856,17 +2884,34 @@ async function loadSalesDbPayload({ name, text, scope }) {
   }
 }
 
-// Province-wide class search, in front of the municipality picker. Same
-// load path; its date and price window is copied into the sidebar filters
-// so a narrower window left from an earlier job cannot hide the results.
-initSalesProvincePanel({
+// Province-wide class search: the Search form's other "where". Same load
+// path, and the same date range, sale price and sale type controls as the
+// municipality side — so what it searched by IS what the table is filtered
+// by, with nothing to copy across.
+const salesProvincePanel = initSalesProvincePanel({
   setStatus: setSalesPanelStatus,
   onSearchStart: clearSalesResults,
   onLoad: loadSalesDbPayload,
+  getDateWindow: salesDateWindow,
+  getPriceWindow: salesPriceWindow,
+  getTypes: () => salesTypeFilter.getSelected(),
+});
+
+// The form itself: the Municipalities / Whole province switch and the saved
+// searches, which store the whole form in either mode.
+initSalesSearchForm({
+  dbPanel: salesDbPanel,
+  provPanel: salesProvincePanel,
+  typeFilter: salesTypeFilter,
+  setStatus: setSalesPanelStatus,
+  hasLoadedSales: () => csvFullRows != null,
+  getWindow: () => ({ ...salesDateWindow(), ...salesPriceWindow() }),
+  // Fires 'input' on each box that changes, as typing would, so the table
+  // filter, the date presets and both panels' counts all follow.
   applyWindow: ({ from, to, min, max }) => {
     const set = (el, v) => {
-      if (!el) return;
-      el.value = v || '';
+      if (!el || el.value === String(v ?? '')) return;
+      el.value = String(v ?? '');
       el.dispatchEvent(new Event('input', { bubbles: true }));
     };
     set($saleDateFrom, from);
@@ -5308,8 +5353,8 @@ function applyFarFlungFlags(rows) {
       $farFlungCount.textContent =
         `⚠ Far-Flung: ${tally.sales} sale${tally.sales === 1 ? '' : 's'} · ${tally.parcels} parcels ${verb}`;
       $farFlungCount.title = farFlungExcludeOn()
-        ? `Sales whose parcels lie more than ${threshold} km apart are being REMOVED from the table, map and export. Change the threshold or untick Exclude under Additional filters.`
-        : `Sales whose parcels lie more than ${threshold} km apart are marked with a ⚠ on $/Acre. Nothing is removed unless you tick Exclude under Additional filters.`;
+        ? `Sales whose parcels lie more than ${threshold} km apart are being REMOVED from the table, map and export. Change the threshold or switch Flagged to Keep under Refine results.`
+        : `Sales whose parcels lie more than ${threshold} km apart are marked with a ⚠ on $/Acre. Nothing is removed unless Flagged is set to Exclude under Refine results.`;
       $farFlungCount.classList.add('has-flagged');
     }
   }
@@ -5434,12 +5479,12 @@ function renderSalesFiltersBadge() {
   }
   badge.hidden = false;
   badge.textContent = `⚠ ${salesFilterChipText(chips)}`;
-  badge.title = `${chips.length} additional filter${chips.length === 1 ? '' : 's'} set — `
+  badge.title = `${chips.length} filter${chips.length === 1 ? '' : 's'} set — `
     + chips.map((c) => c.detail).join('; ');
   return chips;
 }
 
-// Delegated so every control in the disclosure is covered — the text and
+// Delegated so every control the badge reports is covered — the text and
 // number inputs (`input`); the selects, checkboxes and the two zoning
 // pickers, which dispatch a bubbling `change` from their root; and the %/$
 // pill, whose buttons only ever `click`. This keeps the badge honest before
@@ -5447,7 +5492,11 @@ function renderSalesFiltersBadge() {
 // otherwise leave it stale. The subject's Set / × are async or reset state
 // of their own, so applySubjectFromInput and clearSubjectParcel call the
 // repaint themselves.
-const $salesFiltersGroup = document.querySelector('details.more-filters.sales-filters');
+//
+// On the whole Sales panel rather than the Refine disclosure: since the
+// 2026-11-23 regroup the Sale Price pair sits in the Search form and the
+// subject in its own group, and both are still chips.
+const $salesFiltersGroup = document.getElementById('tab-panel-sales');
 for (const evt of ['input', 'change', 'click']) {
   $salesFiltersGroup?.addEventListener(evt, () => renderSalesFiltersBadge());
 }
@@ -9175,7 +9224,7 @@ function refilterCsvIfActive() {
   const setChips = renderSalesFiltersBadge()
     .filter((c) => !(c.key === 'farFlung' && ff.sales > 0));
   const afNote = setChips.length
-    ? ` · ⚠ Additional filters: ${salesFilterChipText(setChips)}`
+    ? ` · ⚠ Filters set: ${salesFilterChipText(setChips)}`
     : '';
   const msg = (filtered.length === total
     ? `${csvFullBaseMsg}${ffNote}`

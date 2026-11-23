@@ -40,13 +40,17 @@ Report outputs: `#static-map-btn` (Alt+C) → `#map-capture-modal` (`#map-captur
 Pills: `[data-pill=numbering]` Off/By muni/Entry order (>1 parcel); `[data-pill=locator]` Shape/Pin (1 parcel).
 
 ## index.html — Sales Analysis (`#tab-panel-sales`)
-Job: `#job-save #job-open #job-recent`. MAO Sales Database `#sales-db` (`#sales-db-status` "Not imported"; `#sales-db-import` folder picker → `#sales-db-refresh #sales-db-forget #sales-db-coverage`).
-Province-wide `#sales-prov`: `#sales-prov-saved #sales-prov-class #sales-prov-unknown #sales-prov-from/-to #sales-prov-min/-max #sales-prov-types #sales-prov-subs #sales-prov-search #sales-prov-save`.
-`#sales-db-muni-search`, pill `[data-pill=adjacent]`, `#sales-db-munis`, `#sales-db-type`, `#sales-db-load`, pill `[data-pill=nominal]`.
-Manual `#sales-manual`: `#sales-dropzone #sales-upload-input`, `#sales-import-trigger` → `#sales-import-modal` (`#sales-import-text #sales-import-load`; cols Sale Date, Consideration, Municipality, Roll Number, Street Address, Legal Description, Primary Property), `#recent-uploads-select`.
-Filters (`.sales-only`): `.date-preset-btn[data-months=3..72]`, `#sale-date-from/-to`, `#asmt-class`, `#primaryprop-filter`, `#vacant-improved`, `#charts-open`, `#far-flung-count`.
-`details.more-filters`: `#sales-plan #size-uom #size-low #size-high #sales-street-name #sales-ppa-low/-high #sales-price-low/-high #zoning-filter #zonecat-filter #sales-groupsize-filter #sales-n1-filter #sales-outline-filter #vacant-threshold .vacant-mode-btn #sale-asmt-max #far-flung-km [data-pill=farflung]`,
-Subject: `#subject-muni #subject-roll #distance-max #subject-apply #subject-clear`. `#sales-clear`.
+Regrouped 2026-11-23, top to bottom: Job, MAO Sales Database, Search, Subject Property, Refine results, Charts (DOCUMENTATION.md §10.0.3).
+Job: `#job-save #job-open #job-recent #sales-clear`.
+MAO Sales Database `#sales-db` (a `<details>`: open while not imported, folded once it is; `#sales-db-status` "Not imported"; `#sales-db-import` folder picker → `#sales-db-refresh #sales-db-forget #sales-db-coverage`, `#sales-db-newer`).
+Manual `#sales-manual` (nested inside `#sales-db`): `#sales-dropzone #sales-upload-input`, `#sales-import-trigger` → `#sales-import-modal` (`#sales-import-text #sales-import-load`; cols Sale Date, Consideration, Municipality, Roll Number, Street Address, Legal Description, Primary Property), `#recent-uploads-select`.
+Search `#sales-search` (`data-mode` muni / province; `.no-db` hides its database-only parts): `#sales-prov-saved #sales-prov-delete`, pill `[data-pill=searchmode]` Municipalities / Whole province.
+Municipalities mode: `#sales-db-muni-search`, pill `[data-pill=adjacent]`, `#sales-db-munis`, `#sales-db-selcount`, `#sales-db-update`, `#sales-db-load`.
+Whole province mode: `#sales-prov-class #sales-prov-unknown #sales-prov-subs #sales-prov-count #sales-prov-search`.
+Shared by both modes: `.date-preset-btn[data-months=3..72]`, `#sale-date-from/-to`, `#sales-db-type` (multi-select `<details>`), `#sales-price-low/-high`, pill `[data-pill=nominal]`, `#sales-prov-save`.
+Subject (own group, shown once sales are loaded): `#subject-muni #subject-roll #distance-max #subject-apply #subject-clear`.
+Refine results `details.more-filters` (open by default): `#asmt-class #primaryprop-filter #vacant-improved #vacant-threshold .vacant-mode-btn #sale-asmt-max #sales-plan #size-uom #size-low #size-high #sales-street-name #sales-ppa-low/-high #zoning-filter #zonecat-filter #sales-groupsize-filter #sales-n1-filter #sales-outline-filter #far-flung-km [data-pill=farflung] #far-flung-count`.
+Charts: `#charts-open`.
 Grid: ★ `th[data-col=favorite]` (click = next comp; right/Alt-click = tag menu: Comparable #n, Land Set 1, Land Set 2); untick row → "Why exclude this sale?" popover; `#number-starred`; orange = outlier, green = multi-parcel.
 
 ## charts.html — Sales Charts

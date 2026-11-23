@@ -3,7 +3,26 @@
 The videos were recorded 2026-10-10 (mb-01 to mb-06, wpg-01 to wpg-05) and 2026-10-13 (mb-07 to
 mb-12). This lists what the apps have gained or changed since, video by video, so the shot lists
 can be edited before the next re-record. Line numbers are the `say` steps in each shot list, in
-order. Only mb-05 has been changed in the shot lists so far.
+order. Changed in the shot lists so far: mb-05 (2026-11-12), and mb-07, mb-07b, mb-08 and mb-09
+for the Sales tab regroup (2026-11-23, below). None of them has been re-recorded.
+
+## Sales tab regroup (2026-11-23)
+
+The Manitoba Sales Analysis panel was regrouped into Job, MAO Sales Database, Search, Subject
+Property, Refine results and Charts (DOCUMENTATION.md §10.0.3). "Additional filters" no longer
+exists under that name: it is **Refine results**, open by default, and it now also holds assessment
+class, structure type and vacant / improved. Sale price moved into the Search group. The province
+search is a **Where** switch on the one Search form.
+
+- The shot lists for **mb-07, mb-07b, mb-08 and mb-09** are updated for this, narration and
+  actions. `SCRIPTS.md` is regenerated. Not re-recorded, and not run through the recorder, so the
+  step timings and the new hovers are untested.
+- The shot lists point at production. They will only play correctly **after the regroup is live**
+  there; until then the recorded videos still match the site.
+- mb-10, mb-11 and mb-12 needed no change: their setup opens Refine results (a no-op now) and sets
+  the subject, which still works.
+- The recorded mb-07b, mb-08 and mb-09 videos show the old layout and are dated once it is live.
+- Winnipeg (wpg-05) is a different site and is untouched.
 
 Three kinds of entry:
 
@@ -84,25 +103,28 @@ No narration change needed. Line 04 already says square feet.
 | Line | Kind | Change |
 |---|---|---|
 | 06 | Missing | When the parcel lookup for a municipality fails, the status line now says so ("parcel lookup failed … search again") instead of showing every roll at an approximate location. Only worth a clause. |
-| 07 | Wrong | "the additional filters" are described as something applied after loading. Additional filters now sit directly under the Upload / Paste line and can be set before any sales are loaded. |
+| 07 | Done 2026-11-23 | Was: "the additional filters" described as something applied after loading. The line now names the date presets in the Search group and the rest under Refine results. |
 
 ### mb-07b Filters and subject
 
 | Line | Kind | Change |
 |---|---|---|
-| 04 | Picture | Additional filters has moved up under the Upload / Paste line. Street name there now has the street typeahead. The zoning pickers are greyed with a note until sales are loaded. |
+| 02 to 08 | Done 2026-11-23 | Rewritten for the regroup: date in the Search group; vacant / improved under Refine results with the building threshold on the line below it; Refine results for size and price per acre; sale price in the Search group; subject in its own group; Clear at the top. The step no longer clicks the filter group's summary, which would now close it. |
+| 04 | Picture | Street name now has the street typeahead. The zoning pickers are greyed with a note until sales are loaded. Still not mentioned in the narration. |
 
 ### mb-08 Sales database
 
 | Line | Kind | Change |
 |---|---|---|
 | 03 | Wrong (minor) | The folder path is still right, but picking `AppMarketData` itself, `AppMarketData-Limited`, or a folder holding the tier shares now works too; the app steps down to `SalesData`. Worth saying, since staff on the limited tier see a different folder name. |
-| 07 | Missing | A Sale Price range now narrows the database search itself, the way the date range does. |
+| 07 | Done 2026-11-23 | A sale price range narrowing the search is now in the closing line, with the Where switch and the Search button at the foot of the group. |
+| 02, 05, 06 | Done 2026-11-23 | The block is open before an import and folds to its status line after one, so line 02 no longer says "Open", line 05 mentions the fold, and line 06 reopens the block before clicking Coverage. |
 
 ### mb-09 Sales grid and comparables
 
 | Line | Kind | Change |
 |---|---|---|
+| setup | Done 2026-11-23 | The setup no longer folds the filter group after setting the subject: the subject is outside it now, and folding Refine results would hide the Vacant Land Only pick. |
 | 08 | Missing | The Charts window now has a **Comparables map** (subject pin, comps as labelled pins coloured by property type, up to four maps) and a **comp table with comments** beside it (Copy for Excel, CSV, in the work file). This is where the stars chosen in this video end up, so the hand-off line should mention it. |
 | — | Missing | Route planning has grown (real road times up to 50 stops, a printable checklist) and there is a separate Route Optimizer page. No video covers routing; decide whether one should. |
 

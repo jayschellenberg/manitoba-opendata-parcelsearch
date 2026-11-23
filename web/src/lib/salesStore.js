@@ -382,7 +382,11 @@ function priceBound(v) {
 function sliceShardByDate(body, header, from, to, type, min = null, max = null) {
   const lo = priceBound(min);
   const hi = priceBound(max);
-  if (!from && !to && !type && lo === null && hi === null) {
+  // One sale type or several (the Search form's picker ticks any number):
+  // a row passes when its type is any of them.
+  const wantTypes = new Set([].concat(type || [])
+    .map((t) => String(t || '').trim().toUpperCase()).filter(Boolean));
+  if (!from && !to && !wantTypes.size && lo === null && hi === null) {
     return { text: body.replace(/\s+$/, ''), kept: null };
   }
   const cols = tokenizeRows(header, ',')[0] || [];
@@ -392,10 +396,9 @@ function sliceShardByDate(body, header, from, to, type, min = null, max = null) 
   // An older export without the columns we filter on ignores that filter
   // rather than testing the wrong column and silently returning nothing.
   const useDate = dateIdx >= 0 && (from || to);
-  const useType = typeIdx >= 0 && Boolean(type);
+  const useType = typeIdx >= 0 && wantTypes.size > 0;
   const usePrice = priceIdx >= 0 && (lo !== null || hi !== null);
   if (!useDate && !useType && !usePrice) return { text: body.replace(/\s+$/, ''), kept: null };
-  const wantType = String(type || '').trim().toUpperCase();
 
   const keptRows = [];
   forEachCsvRow(body, (row) => {
@@ -414,7 +417,7 @@ function sliceShardByDate(body, header, from, to, type, min = null, max = null) 
     // Type is NOT sorted, so it filters without ever ending the scan.
     if (useType) {
       const t = String(cells[typeIdx] ?? '').split('\n')[0].trim().toUpperCase();
-      if (t && t !== wantType) return true;             // wrong type: skip, keep going
+      if (t && !wantTypes.has(t)) return true;          // wrong type: skip, keep going
     }
     // Price is not sorted either.
     if (usePrice) {
@@ -432,6 +435,11 @@ export async function buildCsvFor(muniNos, {
 } = {}) {
   const recs = await getSalesFor(muniNos);
   if (!recs.length) return null;
+  // `type` is one sale type or an array of them. Normalised to null / a
+  // string / an array so an empty array is "any" and the reported window
+  // keeps its single-type shape.
+  const typeList = [].concat(type || []).filter(Boolean);
+  type = typeList.length === 0 ? null : typeList.length === 1 ? typeList[0] : typeList;
 
   let header = null;
   const bodies = [];

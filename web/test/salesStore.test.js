@@ -306,6 +306,16 @@ await test('buildCsvFor filters by sale type without ending the scan early', asy
   assert.equal((await store.buildCsvFor(['400'], {})).sales, 3);
   // A type nothing matches returns null rather than a header-only CSV.
   assert.equal(await store.buildCsvFor(['400'], { type: 'FARM BARE LAND' }), null);
+
+  // Several types (the Search form's picker): a row passes on any of them.
+  const two = await store.buildCsvFor(['400'], { type: ['FARM BARE LAND', 'RESIDENTIAL LAND AND BUILDINGS'] });
+  assert.equal(two.sales, 1);
+  assert.deepEqual(two.window.type, ['FARM BARE LAND', 'RESIDENTIAL LAND AND BUILDINGS']);
+  // One type in an array reports as the plain string; none is no filter.
+  assert.equal((await store.buildCsvFor(['400'], { type: ['ICI LAND AND BUILDINGS'] })).window.type, 'ICI LAND AND BUILDINGS');
+  const none = await store.buildCsvFor(['400'], { type: [] });
+  assert.equal(none.sales, 3);
+  assert.equal(none.window, null);
 });
 
 await test('buildCsvFor windows by whole-sale price, dropping unpriced sales', async () => {

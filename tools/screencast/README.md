@@ -8,6 +8,10 @@ from JSON shot lists so any video can be re-recorded after the app changes. Stat
 **18 videos planned, all 18 recorded.** All recorded against production on 2026-10-10/12, after
 the search-race fix, map re-centre, popup change badge and R2 indexes were live.
 
+**Shot lists ahead of the videos (2026-11-23):** mb-07, mb-07b, mb-08 and mb-09 were edited for the
+Sales tab regroup and have not been re-recorded or run. They only match production once the regroup
+is live there. See `NARRATION-UPDATES.md`.
+
 | # | Video | Length | Audience | State |
 |---|---|---|---|---|
 | mb-01 | Search basics | 3:20 | external OK | recorded |
@@ -170,9 +174,21 @@ when the voice service is rate-limiting; `record.py` then uses the cached clips.
   sticky settings bar before every chart step.
 - Clip sidecars: every pre-2026-10-13 clip now has a `.txt` with the text it was recorded from (taken
   from the committed shot lists). Before that, an edited line silently kept its old audio (bit mb-09/10).
-- `#sales-db` and `#sales-manual` are closed `<details>`; open them before clicking inside.
-- A date preset must be set before `#sales-db-load`, or nothing loads.
-- `#subject-muni` stays hidden; set the subject with `#subject-roll` inside the opened Additional filters.
+- Manitoba Sales tab, since the 2026-11-23 regroup (Job, MAO Sales Database, Search, Subject
+  Property, Refine results, Charts):
+  - `#sales-db` is open while no database is imported and folds once one is. Reload, Disconnect and
+    Coverage are inside it, so open it before clicking them. `#sales-manual` (upload / paste) is
+    nested inside `#sales-db`: open both.
+  - `details.more-filters` is now **Refine results** and is open by default. Do not click its summary
+    to "open" it; that closes it. `#vacant-improved`, `#asmt-class` and the Far-Flung tally are inside.
+  - `#vacant-threshold` only shows once `#vacant-improved` is off All Sales.
+  - `#subject-roll` is in its own group, outside any `<details>`, and appears once sales are loaded.
+  - `#sales-price-low` / `-high`, the date presets and `#sales-db-type` (a tick list, not a
+    `<select>`) are in the Search group. `[data-pill=searchmode]` switches Municipalities / Whole
+    province; the province Search button is `#sales-prov-search`.
+  - `#sales-clear` is in the Job row at the top.
+- A date preset must be set before `#sales-db-load`, or the browser shows a confirm that stalls the run.
+- `#subject-muni` stays hidden; set the subject with `#subject-roll`.
 - Chart dots are SVG circles: use `clickdot`, never fixed coordinates. Clear the text selection after a
   shift-click with `getSelection().removeAllRanges()`.
 - Click `#excl-panel input.excl-reason` before typing a reason; focus is lost when the grid republishes.

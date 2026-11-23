@@ -288,10 +288,16 @@ export function initMultiSelect(root, {
     refreshBoxes();
   }
 
-  /** Flat mode: a plain list of strings, value and label being the same. */
+  /**
+   * Flat mode: a plain list of strings, value and label being the same — or
+   * of { value, label } objects where the two differ (the sale-type picker's
+   * values are the export's upper-case groups).
+   */
   function setOptions(values) {
     groups = [];
-    options = (values || []).map((v) => ({ value: v, label: v }));
+    options = (values || []).map((v) => (v && typeof v === 'object'
+      ? { value: v.value, label: v.label ?? v.value }
+      : { value: v, label: v }));
     selected = retainSelection(selected, optionValues());
     renderMenu();
     renderLabel();
