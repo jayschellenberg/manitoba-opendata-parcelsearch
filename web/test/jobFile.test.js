@@ -94,7 +94,10 @@ test('data sources, file inputs, pill backers and display toggles are left out',
   assert.equal(isJobControl({ id: 'far-flung-exclude', type: 'checkbox', className: 'pill-backing' }), false);
   assert.equal(isJobControl({ id: 'numbering-toggle', type: 'checkbox' }), false);
   assert.equal(isJobControl({ id: '', type: 'text' }), false);
-  assert.deepEqual(JOB_SKIPPED_PILLS, ['adjacent']);
+  assert.deepEqual(JOB_SKIPPED_PILLS, ['adjacent', 'searchmode']);
+  // The Search form's mode box and saved-search picker are data-source controls too.
+  assert.equal(isJobControl({ id: 'sales-db-province', type: 'checkbox', className: 'pill-backing' }), false);
+  assert.equal(isJobControl({ id: 'sales-prov-saved', type: 'select-one' }), false);
 });
 
 console.log('contracts');

@@ -46,6 +46,9 @@ export const PILL_SPECS = {
   // on the segment), because that is what the URL writer has to compare
   // against. Keep the two ideas apart when adding a pill.
   adjacent: { inputs: ['sales-db-adjacent'], modes: { off: [false], on: [true] } },
+  // The Search form's "Where": ticked municipalities, or the whole province
+  // by class at sale (lib/salesSearchForm.js).
+  searchmode: { inputs: ['sales-db-province'], modes: { muni: [false], province: [true] } },
   nominal:  { inputs: ['exclude-nominal'],   modes: { include: [false], exclude: [true] } },
   farflung: { inputs: ['far-flung-exclude'], modes: { keep: [false], exclude: [true] } },
 };

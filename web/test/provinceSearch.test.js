@@ -25,7 +25,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   classBitsOf, classMask, indexShard, KeyTable, runSearch, extractRows, describeCriteria,
-  listSaved, saveSearch, deleteSaved, SAVED_KEY, dateKey, CLASS_CODES, defaultDateWindow,
+  listSaved, saveSearch, deleteSaved, savedMode, SAVED_KEY, dateKey, CLASS_CODES, defaultDateWindow,
 } from '../src/lib/provinceSearch.js';
 
 const results = [];
@@ -220,13 +220,60 @@ test('main.js initialises the province panel with the shared load path', () => {
   assert.match(main, /scope === 'province' \? null/);
 });
 
-test('index.html carries every element the panel reads', () => {
-  for (const id of ['sales-prov', 'sales-prov-class', 'sales-prov-unknown', 'sales-prov-from',
-    'sales-prov-to', 'sales-prov-min', 'sales-prov-max', 'sales-prov-types', 'sales-prov-subs',
-    'sales-prov-count', 'sales-prov-search', 'sales-prov-save', 'sales-prov-saved',
-    'sales-prov-delete', 'sales-prov-status']) {
+test('index.html carries every element the province side and the form read', () => {
+  for (const id of ['sales-search', 'sales-db-province', 'sales-prov-class', 'sales-prov-unknown',
+    'sales-prov-subs', 'sales-prov-count', 'sales-prov-search', 'sales-prov-save',
+    'sales-prov-saved', 'sales-prov-delete', 'sales-db-type',
+    // The shared window both modes search by.
+    'sale-date-from', 'sale-date-to', 'sales-price-low', 'sales-price-high']) {
     assert.ok(html.includes(`id="${id}"`), `missing #${id}`);
   }
+});
+
+test('the Search form has one date, price and sale-type set, not a second province copy', () => {
+  // The 2026-11-23 regroup: province search used to carry its own date, price
+  // and sale-type fields beside the main ones.
+  for (const id of ['sales-prov-from', 'sales-prov-to', 'sales-prov-min', 'sales-prov-max', 'sales-prov-types']) {
+    assert.ok(!html.includes(`id="${id}"`), `#${id} is back: province search has its own copy again`);
+  }
+  assert.match(main, /initSalesProvincePanel\(\{[\s\S]*?getDateWindow:\s*salesDateWindow[\s\S]*?getTypes:/);
+  assert.match(main, /initSalesDbPanel\(\{[\s\S]*?getDateWindow:\s*salesDateWindow[\s\S]*?getTypes:/);
+  assert.match(main, /initSalesSearchForm\(\{/);
+});
+
+test('Search comes after everything it reads, and Refine after Search', () => {
+  // The order IS the fix: Search sat above its own date and price inputs.
+  const at = (needle) => {
+    const i = html.indexOf(needle);
+    assert.notEqual(i, -1, `missing ${needle}`);
+    return i;
+  };
+  const search = at('id="sales-db-load"');
+  for (const id of ['sales-db-munis', 'sales-prov-class', 'sale-date-from', 'sale-date-to',
+    'sales-db-type', 'sales-price-low', 'sales-price-high', 'exclude-nominal']) {
+    assert.ok(at(`id="${id}"`) < search, `#${id} is below the Search button`);
+  }
+  const refine = at('class="more-filters sales-filters');
+  assert.ok(search < at('id="subject-roll"'), 'subject is above Search');
+  assert.ok(at('id="subject-roll"') < refine, 'subject is inside or below Refine');
+  for (const id of ['asmt-class', 'vacant-improved', 'vacant-threshold', 'size-low', 'far-flung-km', 'far-flung-count']) {
+    assert.ok(at(`id="${id}"`) > refine, `#${id} is not in Refine`);
+  }
+  // The pairs that were a panel apart.
+  assert.ok(at('id="vacant-improved"') < at('id="vacant-threshold"'));
+  assert.ok(at('id="far-flung-km"') < at('id="far-flung-count"'));
+});
+
+test('a municipality search describes and restores as one', () => {
+  const s = describeCriteria({ mode: 'muni', munis: ['400', '463'], adjacent: true, from: '2023-01-01', types: ['FARM BARE LAND'] });
+  assert.match(s, /^2 municipalities \+ adjacent/);
+  assert.match(s, /2023-01-01/);
+  assert.match(s, /1 sale type/);
+  assert.match(describeCriteria({ mode: 'muni', munis: ['400'] }), /^1 municipality$/);
+  assert.equal(savedMode({ mode: 'muni' }), 'muni');
+  // Saved before the form had modes: a province search.
+  assert.equal(savedMode({ classes: ['60'] }), 'province');
+  assert.equal(savedMode(null), 'province');
 });
 
 let failed = 0;

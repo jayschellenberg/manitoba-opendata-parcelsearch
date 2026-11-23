@@ -1,4 +1,7 @@
-// salesDbPanel.js — drives the "MAO sales database" panel on the Sales tab.
+// salesDbPanel.js — drives the "MAO Sales Database" source block on the Sales
+// tab and the municipality side of its Search form. (The whole-province side
+// is salesProvincePanel.js; the mode switch and saved searches are
+// salesSearchForm.js.)
 //
 // Kept out of main.js deliberately: main.js is already ~520 KB and this is a
 // self-contained feature whose only contract with the rest of the app is a
@@ -37,15 +40,19 @@ const fmt = (n) => Number(n || 0).toLocaleString();
  * @param {Function} [opts.getPriceWindow] returns {min, max} (either may be
  *   empty): the sidebar's Sale Price pair, applied to the load the same way as
  *   the date range so sales outside it are never parsed or geometry-fetched.
+ * @param {() => string[]} [opts.getTypes] the form's ticked sale types (none
+ *   = any), applied to the load like the date range.
  * @param {Function} [opts.onSelectionChange] called with (effective, picked)
  *   Sets of muni_no whenever the selection changes, so the map can shade the
  *   chosen municipalities. Fires for adjacency changes too, since those change
  *   what a load would cover.
- * @returns {{refresh: Function, toggleMuni: Function}} toggleMuni(no, on?) lets
- *   the map drive the same selection the checkboxes do.
+ * @returns {{refresh: Function, toggleMuni: Function, getSelection: Function,
+ *   setSelection: Function}} toggleMuni(no, on?) lets the map drive the same
+ *   selection the checkboxes do; getSelection / setSelection carry the
+ *   municipality side of a search for the form's saved searches.
  */
 export function initSalesDbPanel({
-  onLoad, setStatus, getDateWindow, getPriceWindow, onSelectionChange, onSearchStart,
+  onLoad, setStatus, getDateWindow, getPriceWindow, getTypes, onSelectionChange, onSearchStart,
 } = {}) {
   const $root    = document.getElementById('sales-db');
   if (!$root) return { refresh: () => {} };
@@ -69,6 +76,13 @@ export function initSalesDbPanel({
   const $refresh = document.getElementById('sales-db-refresh');
   const $forget  = document.getElementById('sales-db-forget');
   const $update  = document.getElementById('sales-db-update');
+  // "Newer data — click Reload" lives with Reload in the source block; the
+  // stale-search warning above lives with Search. One element used to do both
+  // jobs, and the staleness repaint would wipe the reload notice.
+  const $newer   = document.getElementById('sales-db-newer');
+  // The Search form. Its database-only parts are hidden while it carries
+  // .no-db; the date, price and nominal rows stay for an uploaded CSV.
+  const $form    = document.getElementById('sales-search');
   const $rangeHint = document.getElementById('sales-db-daterange-hint');
 
   const say = (m) => { if (typeof setStatus === 'function') setStatus(m); };
@@ -95,11 +109,12 @@ export function initSalesDbPanel({
     if ($manualOr) $manualOr.hidden = collapsed;
   }
 
-  // The database block itself folds to its title. Markup ships it CLOSED, so a
-  // first visit shows a heading rather than a card for a one-time folder pick;
-  // once an archive exists this is the main way in, so it opens on load. Same
-  // "default, not a lockout" rule as the manual block: once the user works the
-  // disclosure by hand we stop steering it.
+  // The source block folds to its title and status. OPEN while there is no
+  // archive — the folder pick and the upload inside it are then the way in —
+  // and folded once one exists, when the Search form below takes over and
+  // this is housekeeping (Reload / Disconnect / Coverage). Same "default, not
+  // a lockout" rule as the manual block: once the user works the disclosure
+  // by hand we stop steering it.
   let dbTouched = false;
   $root.addEventListener('toggle', () => { dbTouched = true; });
   function setDbOpen(open) {
@@ -114,7 +129,8 @@ export function initSalesDbPanel({
       $status.textContent = 'Not imported';
       $empty.hidden = false;
       $ready.hidden = true;
-      setDbOpen(false);            // zero state: title only
+      $form?.classList.add('no-db');
+      setDbOpen(true);             // no database: the folder pick and upload are the way in
       setManualCollapsed(false);   // no database yet: upload IS the main path
       return info;
     }
@@ -130,7 +146,8 @@ export function initSalesDbPanel({
       (gen ? ` · exported ${gen}` : '');
     $empty.hidden = true;
     $ready.hidden = false;
-    setDbOpen(true);               // an archive exists: this is the main path
+    $form?.classList.remove('no-db');
+    setDbOpen(false);              // an archive exists: Search is the main path
     setManualCollapsed(true);
     await populateMunis();
     return info;
@@ -154,7 +171,10 @@ export function initSalesDbPanel({
   const $search   = document.getElementById('sales-db-muni-search');
   const $adjacent = document.getElementById('sales-db-adjacent');
   const $selcount = document.getElementById('sales-db-selcount');
+  // The form's sale-type picker (shared with the province side). Its ticks
+  // come through getTypes; the element is only watched for changes.
   const $type     = document.getElementById('sales-db-type');
+  const types = () => [...(getTypes?.() || [])];
 
   /**
    * A manifest's `adjacent` field as a list of muni_no strings, whatever
@@ -237,7 +257,7 @@ export function initSalesDbPanel({
     // The warning names the two filters that actually shrink the load, since
     // "this is big" without a remedy is just nagging.
     const { from, to } = dateWindow();
-    const wide = sales >= BIG_LOAD_SALES && !$type?.value && !(from || to);
+    const wide = sales >= BIG_LOAD_SALES && !types().length && !(from || to);
     $selcount.classList.toggle('is-warning', wide);
     if (wide) {
       $selcount.textContent += ' — large load; set a date range or sale type to speed it up';
@@ -254,7 +274,7 @@ export function initSalesDbPanel({
   const stateKey = () => {
     const { from, to } = dateWindow();
     const { min, max } = priceWindow();
-    return { munis: [...effectiveSelection()].sort().join(','), from, to, type: $type?.value || '', min, max };
+    return { munis: [...effectiveSelection()].sort().join(','), from, to, type: types().sort().join('|'), min, max };
   };
 
   /**
@@ -342,7 +362,7 @@ export function initSalesDbPanel({
       : !hasWindow ? 'No date range set — searching loads the full history and can take a long time'
       : 'Search the selected municipalities for the chosen date range';
   }
-  // The date inputs live in the sidebar filters, so watch them rather than
+  // The date inputs are main.js's, so watch them rather than
   // polling; both the presets and hand-typed dates fire 'input'.
   for (const id of ['sale-date-from', 'sale-date-to']) {
     document.getElementById(id)?.addEventListener('input', updateLoadEnabled);
@@ -546,7 +566,7 @@ export function initSalesDbPanel({
     if (!win.from && !win.to) {
       const ok = window.confirm('Are you sure? No date range is set, so this will '
         + 'load the full sales history for the selection and can take a long time. '
-        + 'Cancel and set a date range below to speed it up.');
+        + 'Cancel and set a date range to speed it up.');
       if (!ok) return;
     }
     // The search is now committed, so the previous result set stops being the
@@ -568,8 +588,9 @@ export function initSalesDbPanel({
       // The Sale Price pair narrows the load the same way, when it is set
       // before Search.
       const { min, max } = priceWindow();
+      const wantTypes = types();
       const payload = await buildCsvFor(chosen, {
-        manifest, from, to, type: $type?.value || null, min, max,
+        manifest, from, to, type: wantTypes.length ? wantTypes : null, min, max,
       });
       if (!payload) {
         // The table was emptied by onSearchStart, so this state IS what the
@@ -580,7 +601,7 @@ export function initSalesDbPanel({
         loadedState = stateKey();
         updateStaleness();
         const scope = [
-          $type?.value ? `sale type "${$type.options[$type.selectedIndex]?.text || $type.value}"` : '',
+          wantTypes.length === 1 ? `sale type "${wantTypes[0]}"` : wantTypes.length ? 'those sale types' : '',
           (from || to) ? 'that date range' : '',
           (min !== null || max !== null) ? 'that price range' : '',
         ].filter(Boolean).join(' in ');
@@ -695,7 +716,7 @@ export function initSalesDbPanel({
       const perm = await directoryPermission(handle, { request: true });
       if (perm !== 'granted') { say('Folder access was not granted.'); return; }
       await runImport(handle, { force: true });
-      if ($update) $update.hidden = true;
+      if ($newer) $newer.hidden = true;
     } catch (err) { say(`Reload failed: ${err.message}`); }
   });
 
@@ -724,9 +745,12 @@ export function initSalesDbPanel({
       if (!handle) return;
       const upd = await checkForUpdates(handle);      // null when not granted
       if (!upd || !upd.count) return;
-      if ($update) {
-        $update.hidden = false;
-        $update.textContent =
+      if ($newer) {
+        // Reload is inside the folded source block: open it so the notice
+        // and the button it points at are both on screen.
+        setDbOpen(true);
+        $newer.hidden = false;
+        $newer.textContent =
           `${upd.count} municipalit${upd.count === 1 ? 'y has' : 'ies have'} newer data — click Reload.`;
       }
     } catch { /* never block the tab on this */ }
@@ -734,5 +758,30 @@ export function initSalesDbPanel({
 
   render().then((info) => { if (info?.present) checkQuietly(); });
 
-  return { refresh: render, toggleMuni };
+  // ---- saved searches (salesSearchForm.js) --------------------------------
+  /** The municipality side of a search: explicit picks, not the derived set. */
+  function getSelection() {
+    return { munis: [...picked].sort(), adjacent: !!$adjacent?.checked, excluded: [...excluded].sort() };
+  }
+
+  /**
+   * Restore a saved selection. Municipalities the archive no longer holds are
+   * dropped, the same rule populateMunis applies after a re-import. The
+   * adjacent box is set through a change event so its pill repaints.
+   */
+  function setSelection({ munis = [], adjacent = false, excluded: off = [] } = {}) {
+    const live = new Set(muniIndex.map((m) => m.no));
+    picked.clear();
+    for (const no of munis.map(String)) if (live.has(no)) picked.add(no);
+    excluded.clear();
+    if ($adjacent && $adjacent.checked !== !!adjacent) {
+      $adjacent.checked = !!adjacent;
+      $adjacent.dispatchEvent(new Event('change', { bubbles: true }));   // also clears the waive-offs when turned off
+    }
+    if (adjacent) for (const no of off.map(String)) if (live.has(no)) excluded.add(no);
+    renderMuniList();
+    updateSelCount();
+  }
+
+  return { refresh: render, toggleMuni, getSelection, setSelection };
 }

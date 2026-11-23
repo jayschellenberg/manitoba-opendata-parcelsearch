@@ -1,5 +1,8 @@
-// salesProvincePanel.js — drives the "Province-wide search" card on the Sales
-// tab. The search itself (index, matching, row extraction) is pure and lives
+// salesProvincePanel.js — drives the "Whole province" side of the Sales tab's
+// Search form: the class-at-sale picker, its property-type list and the live
+// match count. The date range, sale price and sale type it searches by are the
+// form's shared controls, read through injected getters (2026-11-23); the mode
+// switch and saved searches live in salesSearchForm.js. The search itself (index, matching, row extraction) is pure and lives
 // in provinceSearch.js; this file is the DOM and the IndexedDB reads.
 //
 // Same single contract as salesDbPanel: hand the existing pipeline a
@@ -15,60 +18,37 @@
 import { getManifest, listShardKeys, getShard } from './salesStore.js';
 import {
   CLASS_CODES, UNKNOWN_CLASS, KeyTable, indexShard, runSearch, extractRows,
-  describeCriteria, listSaved, saveSearch, deleteSaved, defaultDateWindow,
+  describeCriteria,
 } from './provinceSearch.js';
 
 const fmt = (n) => Number(n || 0).toLocaleString();
 
-// The effective Sale Type Group values the export writes (condos already
-// reclassified out of ICI) — the same list as the municipality picker's.
-const SALE_TYPES = [
-  ['RESIDENTIAL LAND AND BUILDINGS', 'Residential land & buildings'],
-  ['RESIDENTIAL BARE LAND', 'Residential bare land'],
-  ['RESIDENTIAL CONDOMINIUM UNITS', 'Residential condominium units'],
-  ['RESIDENTIAL CONDOMINIUM BARE LAND', 'Residential condominium bare land'],
-  ['ICI LAND AND BUILDINGS', 'ICI land & buildings'],
-  ['ICI BARE LAND', 'ICI bare land'],
-  ['FARM LAND AND BUILDINGS', 'Farm land & buildings'],
-  ['FARM BARE LAND', 'Farm bare land'],
-  ['UNCATEGORIZED', 'Uncategorized'],
-];
-
 // Beyond this a load is minutes of parcel-geometry fetching (80 rolls per
 // request), so ask first. Not a block — the same rule as BIG_LOAD_SALES.
 const CONFIRM_ABOVE = 5000;
-
-function safeStorage() {
-  try { return window.localStorage; } catch { return null; }
-}
 
 /**
  * @param {Object} opts
  * @param {(payload:Object) => (void|Promise<void>)} opts.onLoad
  * @param {() => void} [opts.onSearchStart]
  * @param {(msg:string) => void} [opts.setStatus]
- * @param {(w:{from:string,to:string,min:string,max:string}) => void} [opts.applyWindow]
- *   Mirrors the search's date and price window into the sidebar filters, so
- *   a narrower window left over from an earlier job cannot hide the results.
+ * @param {() => {from:string,to:string}} [opts.getDateWindow] the form's date range
+ * @param {() => {min:string,max:string}} [opts.getPriceWindow] the form's Sale Price pair
+ * @param {() => string[]} [opts.getTypes] the form's ticked sale types (none = any)
+ * @returns {{recount: Function, getCriteria: Function, setCriteria: Function}}
+ *   getCriteria / setCriteria carry only this side's own part of a search —
+ *   { classes, subcats } — for the form's saved searches.
  */
-export function initSalesProvincePanel({ onLoad, onSearchStart, setStatus, applyWindow } = {}) {
-  const $root = document.getElementById('sales-prov');
-  if (!$root) return {};
+export function initSalesProvincePanel({
+  onLoad, onSearchStart, setStatus, getDateWindow, getPriceWindow, getTypes,
+} = {}) {
   const $ = (id) => document.getElementById(id);
   const $class = $('sales-prov-class');
+  if (!$class) return {};
   const $unknown = $('sales-prov-unknown');
-  const $from = $('sales-prov-from');
-  const $to = $('sales-prov-to');
-  const $min = $('sales-prov-min');
-  const $max = $('sales-prov-max');
-  const $types = $('sales-prov-types');
   const $subs = $('sales-prov-subs');
   const $count = $('sales-prov-count');
   const $search = $('sales-prov-search');
-  const $save = $('sales-prov-save');
-  const $saved = $('sales-prov-saved');
-  const $delete = $('sales-prov-delete');
-  const $status = $('sales-prov-status');
 
   const say = (m) => { if (typeof setStatus === 'function') setStatus(m); };
 
@@ -78,31 +58,6 @@ export function initSalesProvincePanel({ onLoad, onSearchStart, setStatus, apply
     o.textContent = `${code} — ${label}`;
     $class.appendChild(o);
   }
-  for (const [value, label] of SALE_TYPES) {
-    const row = document.createElement('label');
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.value = value;
-    cb.addEventListener('change', recount);
-    row.append(cb, document.createTextNode(label));
-    $types.appendChild(row);
-  }
-
-  // ---- default date window ------------------------------------------------------
-  // Jan 1 five years back through the newest sale in the database (Jason,
-  // 2026-09-24). Only a DEFAULT: once the user edits either date, or loads a
-  // saved search, we stop touching them. Re-applied when the archive is
-  // re-imported, so the end date follows the newest sale after a Reload.
-  let datesTouched = false;
-  for (const el of [$from, $to]) el.addEventListener('input', () => { datesTouched = true; });
-  function applyDefaultDates(manifest) {
-    if (datesTouched) return;
-    const w = defaultDateWindow(new Date(), manifest?.newest_sale);
-    $from.value = w.from;
-    $to.value = w.to;
-  }
-  getManifest().then(applyDefaultDates).catch(() => { /* no archive yet */ });
-
   // ---- index ----------------------------------------------------------------
   let index = null;          // { stamp, keys, shards: Map<muni, ix>, header }
   let building = null;       // in-flight build promise, so two changes share one pass
@@ -111,7 +66,6 @@ export function initSalesProvincePanel({ onLoad, onSearchStart, setStatus, apply
     const manifest = await getManifest();
     const stamp = manifest?.imported_at || null;
     if (index && index.stamp === stamp) return index;
-    applyDefaultDates(manifest);   // a re-import can move the newest sale
     if (building) return building;
     building = (async () => {
       const keys = new KeyTable();
@@ -151,27 +105,28 @@ export function initSalesProvincePanel({ onLoad, onSearchStart, setStatus, apply
     const classes = [];
     if ($class.value) classes.push($class.value);
     if ($unknown.checked) classes.push(UNKNOWN_CLASS);
+    const d = getDateWindow?.() || {};
+    const p = getPriceWindow?.() || {};
     return {
       classes,
-      from: $from.value || '',
-      to: $to.value || '',
-      min: $min.value || '',
-      max: $max.value || '',
-      types: checked($types),
+      from: (d.from || '').trim(),
+      to: (d.to || '').trim(),
+      min: (p.min || '').trim(),
+      max: (p.max || '').trim(),
+      types: [...(getTypes?.() || [])],
       subcats: checked($subs),
     };
+  }
+
+  /** This side's own part of a search, for the form's saved searches. */
+  function getCriteria() {
+    const c = criteria();
+    return { classes: c.classes, subcats: c.subcats };
   }
 
   function setCriteria(c) {
     $class.value = (c.classes || []).find((v) => v !== UNKNOWN_CLASS) || '';
     $unknown.checked = (c.classes || []).includes(UNKNOWN_CLASS);
-    datesTouched = true;            // a saved search's dates win over the default
-    $from.value = c.from || '';
-    $to.value = c.to || '';
-    $min.value = c.min ?? '';
-    $max.value = c.max ?? '';
-    const types = new Set(c.types || []);
-    for (const b of $types.querySelectorAll('input')) b.checked = types.has(b.value);
     // Property types render from the index, so park the wanted ticks until
     // the list is rebuilt by recount().
     pendingSubs = new Set(c.subcats || []);
@@ -215,7 +170,6 @@ export function initSalesProvincePanel({ onLoad, onSearchStart, setStatus, apply
     const my = ++seq;
     const c = criteria();
     const ready = c.classes.length > 0;
-    $save.disabled = !ready;
     if (!ready) {
       $search.disabled = true;
       $count.textContent = '';
@@ -243,8 +197,14 @@ export function initSalesProvincePanel({ onLoad, onSearchStart, setStatus, apply
       + (result.total > CONFIRM_ABOVE ? ' — large; narrow the price, dates or types to speed the load' : '');
   }
 
-  for (const el of [$class, $unknown, $from, $to]) el.addEventListener('change', recount);
-  for (const el of [$min, $max]) el.addEventListener('input', recount);
+  for (const el of [$class, $unknown]) el.addEventListener('change', recount);
+  // The shared date, price and sale-type controls belong to the form; watch
+  // them by id, as salesDbPanel does. Presets and typed dates both fire
+  // 'input'; the sale-type picker dispatches a bubbling 'change' from its root.
+  for (const id of ['sale-date-from', 'sale-date-to', 'sales-price-low', 'sales-price-high']) {
+    $(id)?.addEventListener('input', recount);
+  }
+  $('sales-db-type')?.addEventListener('change', recount);
 
   // ---- search -----------------------------------------------------------------
   $search.addEventListener('click', async () => {
@@ -270,7 +230,6 @@ export function initSalesProvincePanel({ onLoad, onSearchStart, setStatus, apply
         bodies.push(...got.rows);
       }
       if (!header || !bodies.length) { say('No sales found for that search.'); return; }
-      applyWindow?.({ from: c.from, to: c.to, min: c.min, max: c.max });
       const manifest = await getManifest();
       const desc = describeCriteria(c);
       const loaded = await onLoad?.({
@@ -283,7 +242,6 @@ export function initSalesProvincePanel({ onLoad, onSearchStart, setStatus, apply
         salesAvailable: bodies.length,
         scope: 'province',
       });
-      if ($status) $status.textContent = desc;
       // A failed parcel lookup leads the line: left to the "Loaded" text alone,
       // every sale came back "(not mapped)" with nothing saying why.
       const warn = loaded?.warning ? `⚠ ${loaded.warning.replace(/^⚠ /, '')} · ` : '';
@@ -293,45 +251,5 @@ export function initSalesProvincePanel({ onLoad, onSearchStart, setStatus, apply
     }
   });
 
-  // ---- saved searches ---------------------------------------------------------
-  function renderSaved(select = '') {
-    const list = listSaved(safeStorage());
-    $saved.length = 1;                      // keep the placeholder option
-    for (const s of list) {
-      const o = document.createElement('option');
-      o.value = s.name;
-      o.textContent = s.name;
-      o.title = describeCriteria(s.criteria);
-      $saved.appendChild(o);
-    }
-    $saved.value = select && list.some((s) => s.name === select) ? select : '';
-    $delete.disabled = !$saved.value;
-  }
-
-  $saved.addEventListener('change', () => {
-    $delete.disabled = !$saved.value;
-    const s = listSaved(safeStorage()).find((x) => x.name === $saved.value);
-    if (s) setCriteria(s.criteria);
-  });
-
-  $save.addEventListener('click', () => {
-    const c = criteria();
-    const name = window.prompt('Name this search (saved in this browser only):',
-      $saved.value || describeCriteria(c));
-    if (!name) return;
-    const list = saveSearch(safeStorage(), name, c);
-    if (!list) { say('Could not save — this browser is blocking site storage.'); return; }
-    renderSaved(name.trim());
-    say(`Saved search "${name.trim()}".`);
-  });
-
-  $delete.addEventListener('click', () => {
-    const name = $saved.value;
-    if (!name || !window.confirm(`Delete the saved search "${name}"?`)) return;
-    deleteSaved(safeStorage(), name);
-    renderSaved();
-  });
-
-  renderSaved();
-  return { recount };
+  return { recount, getCriteria, setCriteria };
 }

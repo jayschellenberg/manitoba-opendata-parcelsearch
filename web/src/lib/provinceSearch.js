@@ -292,9 +292,15 @@ export function extractRows(csv, rowIndexes) {
   return { header, rows };
 }
 
-/** One-line description of a search, for status lines and saved-search names. */
+/**
+ * One-line description of a search, for status lines and saved-search names.
+ * A municipality-mode search (c.mode === 'muni', saved by the Search form)
+ * leads with how many municipalities it ticks instead of a class.
+ */
 export function describeCriteria(c = {}) {
   const label = new Map(CLASS_CODES);
+  const n = (c.munis || []).length;
+  const where = `${n} municipalit${n === 1 ? 'y' : 'ies'}${c.adjacent ? ' + adjacent' : ''}`;
   const cls = (c.classes || []).filter((v) => v !== UNKNOWN_CLASS)
     .map((v) => `Class ${v}${label.has(v) ? ` ${label.get(v).split(' — ')[0]}` : ''}`);
   if ((c.classes || []).includes(UNKNOWN_CLASS)) cls.push('unknown class');
@@ -305,17 +311,27 @@ export function describeCriteria(c = {}) {
   const types = (c.types || []).length ? `${c.types.length} sale type${c.types.length > 1 ? 's' : ''}` : '';
   const subs = (c.subcats || []).length
     ? `${c.subcats.length} property type${c.subcats.length > 1 ? 's' : ''}` : '';
+  if (c.mode === 'muni') return [where, price, dates, types].filter(Boolean).join(' · ');
   return [cls.join(' + '), price, dates, types, subs].filter(Boolean).join(' · ');
 }
 
 // ---------------------------------------------------------------------------
-// Saved searches — this browser only (Jason, 2026-09-24). Only the SETTINGS
+// Saved searches — this browser only (Jason, 2026-09-24). Since 2026-11-23
+// they cover the whole Search form in either mode: criteria.mode is 'muni'
+// or 'province', and an entry saved before then has no mode and is a
+// province search (savedMode). The storage key keeps its old name so those
+// entries carry over. Only the SETTINGS
 // are stored, never sales, so nothing subscriber-derived ever sits outside
 // the sales database. Storage is injected so node can test it; every access
 // is guarded because a private window or blocked site data makes
 // localStorage throw, and a saved-search failure must never break a search.
 // ---------------------------------------------------------------------------
 export const SAVED_KEY = 'mb-parcel-sales.provinceSearches';
+
+/** The mode a saved search restores into. */
+export function savedMode(criteria) {
+  return criteria?.mode === 'muni' ? 'muni' : 'province';
+}
 
 export function listSaved(storage) {
   try {

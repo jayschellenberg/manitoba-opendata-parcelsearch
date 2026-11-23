@@ -119,4 +119,4 @@ export function isJobControl({ id = '', type = '', className = '' } = {}) {
 }
 
 /** Pills a job leaves alone: data-source ones. */
-export const JOB_SKIPPED_PILLS = ['adjacent'];
+export const JOB_SKIPPED_PILLS = ['adjacent', 'searchmode'];

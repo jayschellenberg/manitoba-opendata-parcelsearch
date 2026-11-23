@@ -434,8 +434,9 @@ hold. The Entry order segment carries `#numbering-order-label` so the existing
 tables are unit-tested (`test/pillBinding.test.js`). The group badge counts a
 pill as ONE setting whenever it is off Off (`.mode-btn.active:not([data-mode="off"])`),
 not its backing boxes — so Water Proximity = Both reads "1 on", not "2 on". The Sales
-tab's boxes are pills on the same binder: **Adjacent regions: Off / On**
-(sales-database picker), **Nominal sales: Include / Exclude**, and
+tab's boxes are pills on the same binder: **Where: Municipalities / Whole
+province** (the Search form's mode, §10.0.3), **Adjacent regions: Off / On**
+(municipality picker), **Nominal sales: Include / Exclude**, and
 **Flagged: Keep / Exclude** beside the Far-Flung km box (its persisted value
 is restored in `loadFarFlungExclude`, which repaints the pill by hand). A
 spec's first mode is its all-unticked default, named for the question the
@@ -873,7 +874,7 @@ MAINTENANCE.md §4a; this section is what the data means and where the app uses 
   `Outline Change Window (snapshot dates)` — the two snapshots bracketing the
   change, `YYYY-MM-DD to YYYY-MM-DD` — and `Outline Acres at Sale`, filled only
   when one earlier outline certainly sold (`outlineCsvCells()`).
-- **Outline filter** (Additional filters): Any / Same as today / Changed.
+- **Outline filter** (Refine results): Any / Same as today / Changed.
   Group-level (`groupOutlineStatus()`): an assembly is *Changed* if any parcel
   changed, *Same as today* only if every parcel is known unchanged. Censored
   ("since history began"), approximate-pin and not-yet-loaded sales pass neither.
@@ -1503,6 +1504,81 @@ than half-applied (`JOB_VERSION`).
 - Tags, reasons and work-file choices live in this browser's storage: another
   browser or device starts empty, and clearing site data loses them — save a
   job file to carry or keep them.
+
+### 10.0.3 Sales Analysis panel layout (`#tab-panel-sales`)
+
+Regrouped 2026-11-23 so the panel reads top to bottom in working order. The
+rule behind the grouping: a control that decides what is **loaded** lives in
+Search and needs the Search button; a control that filters what is already
+loaded lives in Refine results and applies at once. Before this the two kinds
+were interleaved, the Search button sat above its own date and price inputs,
+and province search was a second form with its own copies of them.
+
+| Group | Holds | Notes |
+|---|---|---|
+| **Job** | Save job, Open job, Recent jobs, Clear | Clear resets the whole page, so it stays outside every collapsible. |
+| **MAO Sales Database** (source) | status line; Reload, Disconnect, Coverage; upload / paste / recent uploads | A `<details>`. Open while no archive is imported (the folder pick and the upload are the way in), folded to its status line once one is. The "newer data — click Reload" notice (`#sales-db-newer`) shows here and opens the block. |
+| **Search** | saved searches; Where pill; municipality picker *or* class at sale + property types; date range; sale type; sale price; nominal sales; match count; Search; Save search | One form, two modes. See below. |
+| **Subject Property** | subject municipality, roll #, max km, Set / × | Hidden until sales are loaded: it needs an import's municipalities. |
+| **Refine results** | assessment class, structure type; Vacant / Improved with its Bldg Threshold and Max Sale/Asmt; plan, size, street, $/Ac; zoning and zoning type; parcels per sale, N1, outline; Far-Flung threshold, Flagged pill and tally | A `<details>`, open by default. Its summary badge names every filter that is set, and the count line above the table repeats it as "⚠ Filters set: …". |
+| **Charts** | the Charts button | Sales mode only. |
+
+**The Search form** (`#sales-search`). The **Where** pill switches
+`data-mode` between `muni` and `province`; elements carrying `.mode-muni`
+or `.mode-prov` show for one mode only (style.css). Everything else is shared
+and appears once:
+
+- **Date range** (`#sale-date-from` / `#sale-date-to`, with the month
+  presets) and **Sale price** (`#sales-price-low` / `#sales-price-high`) are
+  both the load window and a filter on the table, so what a search loaded and
+  what the table shows cannot disagree. Narrowing either re-filters what is in
+  memory; widening needs Search again, and the municipality side says so
+  (`#sales-db-update`).
+- **Sale type** (`#sales-db-type`) is a multi-select of the export's
+  effective Sale Type Groups; none ticked = any. `buildCsvFor()` accepts one
+  type or an array.
+- **Nominal sales** is a filter, not a load control, but rides here by request.
+- Each mode keeps its own count line and Search button (`#sales-db-load`,
+  `#sales-prov-search`) in the same place at the foot of the form.
+
+Without a database the form carries `.no-db` and its `.needs-db` parts are
+hidden, leaving date range, sale price and nominal sales, which also filter an
+uploaded CSV.
+
+Three modules drive it, each handing the pipeline a `{ name, text }` CSV
+through `loadSalesDbPayload` in main.js:
+
+| Module | Owns |
+|---|---|
+| `lib/salesDbPanel.js` | the source block (import, reload, coverage) and municipality mode: picker, adjacency, count, staleness, Search |
+| `lib/salesProvincePanel.js` | whole-province mode: class at sale, property-type list, live count from the in-memory index, Search |
+| `lib/salesSearchForm.js` | the mode switch and saved searches |
+
+The shared controls belong to main.js, which passes `getDateWindow`,
+`getPriceWindow` and `getTypes` to both panels.
+
+**Saved searches** store the whole form in either mode, in this browser only
+(`localStorage` key `mb-parcel-sales.provinceSearches`, kept from when only
+province searches could be saved). `criteria.mode` is `muni` or `province`;
+an entry with no mode predates the regroup and restores as a province search
+(`savedMode()`). A municipality search stores its explicit picks, the adjacent
+setting and any waived-off neighbours; a province search stores its classes
+and property types. Both store dates, price and sale types. Settings only,
+never sales.
+
+**Default dates.** Switching to Whole province with no date range set and
+nothing loaded fills Jan 1 five years back through the newest sale in the
+archive (`defaultDateWindow()`). It does not fill over a loaded table, because
+the date range also filters it.
+
+**Job files** leave the form's data-source controls alone: ids beginning
+`sales-db-` or `sales-prov-` and the `adjacent` and `searchmode` pills are
+skipped (`isJobControl`, `JOB_SKIPPED_PILLS`). The date range and sale price
+are ordinary filters and are saved.
+
+`test/provinceSearch.test.js` pins the order: every input Search reads sits
+above the Search button, Subject below it, and the Refine controls inside
+Refine.
 
 ### 10.1 Basemaps
 `map.js` `BASEMAP_STYLE` stacks the basemaps; the top-right menu selects them:

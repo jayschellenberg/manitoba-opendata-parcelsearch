@@ -680,6 +680,86 @@ header small a {
 }
 .sales-nominal-exclude input { cursor: pointer; margin: 0; }
 .sales-nominal-exclude:hover { color: var(--ui-ink, #151916); }
+
+/* ---------------------------------------------------------------------
+   Sales Analysis groups (regrouped 2026-11-23). The panel reads top to
+   bottom in working order: Job, Source, Search, Subject, Refine, Charts.
+   A group is a ruled-off block with the sidebar's section-title look.
+   --------------------------------------------------------------------- */
+.sales-group {
+  margin: 10px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border, #e2e8f0);
+}
+.sales-group-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-primary-500, #1e293b);
+}
+/* What kind of group this is, in a few words beside the title: Search
+   needs its button, Refine applies at once. The distinction the old layout
+   left the user to learn by trial. */
+.sales-group-note {
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--color-neutral-600, #52525b);
+}
+/* The subject group brings its own ruled title (.sales-subject-title), and
+   has nothing to show until an import supplies municipalities. */
+.sales-subject-group { margin: 0; padding: 0; border-top: 0; }
+body:not(.sales-mode) .sidebar .sales-subject-group { display: none; }
+
+/* Search form. Its database-only parts hide while no archive is imported;
+   the date, price and nominal rows stay, because they filter an uploaded CSV
+   too. The id keeps these ahead of the rows' own display rules. */
+#sales-search.no-db .needs-db { display: none; }
+#sales-search.no-db .sales-group-note { display: none; }
+/* Where: municipalities or whole province. Each mode's own controls, count
+   line and Search button carry .mode-muni / .mode-prov. */
+#sales-search[data-mode="muni"] .mode-prov,
+#sales-search[data-mode="province"] .mode-muni { display: none; }
+.sidebar .mode-pill-row.sales-search-mode { margin: 6px 0; }
+.sales-prov-saved-row { margin-top: 0; }
+.sales-prov-saved-row select { font-size: 12.5px; }
+.sales-where { margin-bottom: 8px; }
+.sales-where .sales-db-hint { margin-bottom: 0; }
+/* The date rows carry their own spacing; these sit under them. */
+.sales-search .sales-db-typefilter,
+.sidebar .sales-search .sale-price-row { margin-top: 6px; }
+.sales-db-typefilter > span:first-child { flex: 0 0 auto; }
+.sales-db-typefilter .sales-type-field { flex: 1 1 auto; min-width: 0; }
+.sidebar .sales-db-typefilter .multiselect { width: 100%; }
+.sales-search .sales-nominal-exclude { margin-top: 4px; padding-left: 0; }
+/* Search and Save search close the form; Search takes the room. */
+.sales-search .sales-db-actions .primary { flex: 1 1 auto; }
+
+/* Upload / paste, now inside the source block. */
+.sales-db > .sales-paste-row { margin-top: 8px; }
+
+/* Clear sits at the end of the Job row. */
+.job-row #sales-clear { margin-left: 2px; }
+
+/* Refine: Vacant / Improved takes its line (Charts used to share it), with
+   the Bldg Threshold row that tunes it directly underneath. */
+.sidebar .far-flung-row.refine-vacant-row { margin-top: 6px; }
+.sidebar .far-flung-row.refine-vacant-row .vacant-only-label { flex: 1 1 100%; }
+.sidebar .far-flung-row.refine-vacant-row .vacant-only-label select { flex: 1 1 auto; width: 100%; max-width: none; }
+/* Threshold + Flagged pill are ~350px together, wider than the column. That
+   never showed while the group shipped collapsed; open by default, it gave
+   the sidebar a sideways scroll. Let the pill drop to its own line. */
+.sidebar .far-flung-controls-row { flex-wrap: wrap; }
+.sidebar .far-flung-tally { margin: 2px 0 4px; }
+.sidebar .far-flung-tally:has(.far-flung-count:empty) { display: none; }
+.sidebar .more-filters > summary .sales-group-note { flex: 0 0 auto; }
 /* Data Status tab: three disclosure blocks of small tables. Same table
    treatment as the sales coverage dialog; unknown vintages read muted
    rather than alarming — absence of a date is normal for some sources. */
@@ -1254,7 +1334,7 @@ body.sales-mode .sidebar .sales-filters-preload-hint { display: none; }
   border-radius: 3px;
 }
 .sidebar .more-filters[open] > summary { margin-bottom: 6px; }
-/* Active-filter WARNING in the Sales tab's "Additional filters" summary.
+/* Active-filter WARNING in the Sales tab's "Refine results" summary.
    Same construction as the Property tab's advanced-filters badge (a chip
    inside the summary, visible collapsed), but this one is a warning, not
    a tint: these controls drop comps, the disclosure is closed by default,
@@ -2952,8 +3032,9 @@ body.sales-mode .sidebar .sales-filters-preload-hint { display: none; }
    button sizing wins over a 0 basis even with min-width: 0 — which left
    the two visibly uneven. A fixed basis takes intrinsic width out of it
    entirely. The 3px is half the row's 6px gap. */
-.sidebar .far-flung-row #charts-open {
-  flex: 0 0 calc(50% - 3px);
+.sidebar .charts-row { margin: 8px 0 4px; }
+.sidebar .charts-row #charts-open {
+  width: 100%;
   min-width: 0;
   /* Blue, by request (Jason, 2026-09-05). Every other control on this
      panel is a filter in white or a commit in the brand black; Charts
@@ -2967,16 +3048,14 @@ body.sales-mode .sidebar .sales-filters-preload-hint { display: none; }
   color: #fff;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.16) inset, 0 8px 18px rgba(56, 103, 214, 0.18);
 }
-.sidebar .far-flung-row #charts-open:hover:not(:disabled) {
+.sidebar .charts-row #charts-open:hover:not(:disabled) {
   background: #2d55b8;
   border-color: #2d55b8;
   color: #fff;
 }
-/* The Far-Flung threshold + Exclude now live under Additional filters;
-   this row keeps All Sales, Charts, and the tally that reports whether
-   the hidden filter is biting. The tally takes the full next line so a
-   long "⚠ Far-Flung: 4 sales · 9 parcels excluded" never wraps mid-phrase
-   against the Charts button. */
+/* Since the 2026-11-23 regroup this row holds only the Vacant / Improved
+   select (.refine-vacant-row); Charts has its own row, and the Far-Flung
+   tally sits under the Far-Flung controls (.far-flung-tally). */
 .sidebar .far-flung-row .far-flung-count { flex-basis: 100%; }
 /* Threshold + Exclude on one line inside the disclosure. */
 .sidebar .far-flung-controls-row {
