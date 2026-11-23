@@ -2774,7 +2774,7 @@ function salesMuniNarrowSet() {
 }
 
 const salesDbPanel = initSalesDbPanel({
-  setStatus: setCount,
+  setStatus: setSalesPanelStatus,
   // Shade the municipalities the current selection would load. Two tints:
   // explicit picks solid, adjacency-derived ones weaker — the same
   // distinction the checkbox list draws, so map and list never disagree.
@@ -2819,6 +2819,25 @@ const salesDbPanel = initSalesDbPanel({
  * same pipeline an upload takes. Resolves to `{ warning }` — a failed parcel
  * lookup, or '' — which the panels lead their "Loaded N sales" line with.
  */
+/**
+ * Status line for the sales-database panels. Their closing "Loaded 1,024 of
+ * 3,893 sales …" is written AFTER the upload has run the sidebar filters, so
+ * on its own it replaced refilterCsvIfActive's "N of M shown (filtered)" and
+ * a Street filter left the table at a handful of rows under a line claiming
+ * 1,024 (Jason, 2026-11-23, Headingley / ROCKALL RD). When the table is
+ * narrower than the load, lead with what is actually shown and why.
+ */
+function setSalesPanelStatus(msg) {
+  const total = csvFullRows?.length || 0;
+  if (total && currentRows.length !== total) {
+    const chips = renderSalesFiltersBadge();
+    const af = chips.length ? ` (⚠ ${salesFilterChipText(chips)})` : '';
+    setCount(`${currentRows.length.toLocaleString()} of ${total.toLocaleString()} loaded sales shown (filtered)${af} · ${msg}`);
+    return;
+  }
+  setCount(msg);
+}
+
 async function loadSalesDbPayload({ name, text, scope }) {
   try {
     await handleSalesUpload({ name, text });
@@ -2841,7 +2860,7 @@ async function loadSalesDbPayload({ name, text, scope }) {
 // load path; its date and price window is copied into the sidebar filters
 // so a narrower window left from an earlier job cannot hide the results.
 initSalesProvincePanel({
-  setStatus: setCount,
+  setStatus: setSalesPanelStatus,
   onSearchStart: clearSalesResults,
   onLoad: loadSalesDbPayload,
   applyWindow: ({ from, to, min, max }) => {
