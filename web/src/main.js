@@ -3287,11 +3287,14 @@ function updateSnapshotButton() {
   $snapshotBtn.disabled = n === 0;
   $snapshotBtn.textContent = AERIAL_PACK_LABEL;
   $snapshotBtn.classList.toggle('is-empty', n === 0);
+  const aerialVs = ' Quick photos for a comparables list or sales grid, any number of parcels; no dimensions, '
+    + 'scale bar or north arrow. For report figures use the Addenda Pack (the subject as a whole) or the '
+    + 'Parcel Pack (close-up maps of each parcel with dimensions).';
   $snapshotBtn.title = n === 0
-    ? 'Import a parcel list or run a search first, then generate one satellite JPEG per result parcel.'
-    : `Generate ${n} satellite JPEG${n === 1 ? '' : 's'} (1600×900, highlighted, 16:9) and download as a ZIP, `
-      + 'each named muniCode-roll.jpg. A multi-parcel sale is captured as one image of the whole holding, '
-      + 'named for its first 3 rolls plus a parcel count.';
+    ? 'One plain satellite photo per result parcel. Import a parcel list or run a search first.' + aerialVs
+    : `One plain satellite photo per result parcel: ${n} JPEG${n === 1 ? '' : 's'} (1600 × 900, parcel highlighted) `
+      + 'in a ZIP, each named muniCode-roll.jpg. A multi-parcel sale is one photo of the whole holding, '
+      + 'named for its first 3 rolls plus a parcel count.' + aerialVs;
 }
 
 async function handleSnapshotExport() {
@@ -4683,6 +4686,14 @@ const PARCEL_PACK_LABEL = $parcelPackBtn?.innerHTML || 'Parcel Pack (ZIP)';
 // some 3 MB of PNG, all held in memory until the ZIP is built; a whole-
 // municipality search would run for hours. The Aerial Pack has no cap.
 const PARCEL_PACK_MAX = 40;
+const PARCEL_PACK_TITLE_ON = 'Close-up maps of EACH parcel, for multi-parcel jobs. Three maps per parcel: '
+  + 'a site map (streets and assessment parcels, that parcel highlighted), the same map with its dimensions, '
+  + 'and a satellite aerial. 1950 × 1050 PNG with credit, scale bar and north arrow, framed on the parcel and '
+  + 'the lots next to it. A list opens first, where a small parcel can be put on another parcel\'s maps. '
+  + 'Use it with the Addenda Pack, which maps the subject as a whole (location, neighbourhood, zoning, '
+  + 'one aerial) but has no close-up of each parcel.';
+const PARCEL_PACK_TITLE_OFF = 'Multi-parcel searches only: needs two or more parcels in the results. '
+  + 'For a single parcel, the Addenda Pack\'s aerial with dimensions already covers these maps.';
 // How many other parcels each "Map with" list offers, nearest first. A
 // parcel mapped with a distant one would only shrink both on the page.
 const PARCEL_PACK_NEAREST = 12;
@@ -4722,10 +4733,15 @@ function parcelPackFrames() {
 
 function updateParcelPackButton() {
   if (!$parcelPackBtn || parcelPackRunning) return;
+  // Multi-parcel searches only (Jason, 2026-11-23): for a single parcel the
+  // Addenda Pack's aerial with dimensions already covers what this adds.
   const n = parcelPackFrames().length;
-  $parcelPackBtn.disabled = n === 0;
-  $parcelPackBtn.classList.toggle('is-empty', n === 0);
+  const off = n < 2;
+  $parcelPackBtn.disabled = off;
+  $parcelPackBtn.classList.toggle('is-empty', off);
+  $parcelPackBtn.title = off ? PARCEL_PACK_TITLE_OFF : PARCEL_PACK_TITLE_ON;
 }
+
 
 if ($parcelPackBtn) $parcelPackBtn.addEventListener('click', handleParcelPack);
 if ($parcelPackModal) {
