@@ -40,10 +40,10 @@ Report outputs: `#static-map-btn` (Alt+C) → `#map-capture-modal` (`#map-captur
 Pills: `[data-pill=numbering]` Off/By muni/Entry order (>1 parcel); `[data-pill=locator]` Shape/Pin (1 parcel).
 
 ## index.html — Sales Analysis (`#tab-panel-sales`)
-Regrouped 2026-11-23, top to bottom: Job, MAO Sales Database, Search, Subject Property, Refine results, Charts (DOCUMENTATION.md §10.0.3).
+Regrouped 2026-11-23, top to bottom: Job, Source (two tabs since 2026-11-24), Search, Subject Property, Refine results, Charts (DOCUMENTATION.md §10.0.3).
 Job: `#job-save #job-open #job-recent #sales-clear`.
-MAO Sales Database `#sales-db` (a `<details>`: open while not imported, folded once it is; `#sales-db-status` "Not imported"; `#sales-db-import` folder picker → `#sales-db-refresh #sales-db-forget #sales-db-coverage`, `#sales-db-newer`).
-Manual `#sales-manual` (nested inside `#sales-db`): `#sales-dropzone #sales-upload-input`, `#sales-import-trigger` → `#sales-import-modal` (`#sales-import-text #sales-import-load`; cols Sale Date, Consideration, Municipality, Roll Number, Street Address, Legal Description, Primary Property), `#recent-uploads-select`.
+Source `#sales-db` (two tabs, `#sales-source-tab-manual` Upload / Paste and `#sales-source-tab-db` MAO Sales Database; the database tab shows by default only when an archive is connected, so click the tab first). Database tab `#sales-source-db`: `#sales-db-status` "Not imported"; `#sales-db-import` folder picker → `#sales-db-refresh #sales-db-forget #sales-db-coverage`, `#sales-db-newer`).
+Upload / Paste tab `#sales-manual`: `#sales-dropzone #sales-upload-input`, `#sales-import-trigger` → `#sales-import-modal` (`#sales-import-text #sales-import-load`; cols Sale Date, Consideration, Municipality, Roll Number, Street Address, Legal Description, Primary Property), `#recent-uploads-select`.
 Search `#sales-search` (`data-mode` muni / province; `.no-db` hides its database-only parts): `#sales-prov-saved #sales-prov-delete`, pill `[data-pill=searchmode]` Municipalities / Whole province.
 Municipalities mode: `#sales-db-muni-search`, pill `[data-pill=adjacent]`, `#sales-db-munis`, `#sales-db-selcount`, `#sales-db-update`, `#sales-db-load`.
 Whole province mode: `#sales-prov-class #sales-prov-unknown #sales-prov-subs #sales-prov-count #sales-prov-search`.

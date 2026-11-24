@@ -454,26 +454,50 @@ header small a {
   background: var(--color-neutral-50, #fafafa);
   margin-bottom: 10px;
 }
-/* Now a <summary>: keep the flex row, add the pointer + hover the rest of
-   the sidebar's disclosures have. list-style stays native so the triangle
-   marks it as expandable. */
-.sales-db-head {
+/* Source tabs: Upload / Paste and MAO Sales Database, one showing at a
+   time. The tab strip bleeds to the card's edges so the active tab joins
+   the panel under it. Three classes deep because `.controls button` paints
+   every sidebar button in the brand colour. */
+.sales-db > .sales-source-tabs {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-  cursor: pointer;
-  padding: 2px 0;
-  border-radius: 3px;
+  margin: -10px -12px 10px;
+  border-bottom: 1px solid var(--color-neutral-300, #d4d4d8);
 }
-.sales-db-head:hover { background: var(--color-neutral-100, #f4f4f5); }
-/* The status is secondary information inside a clickable row — let clicks
-   fall through to the summary rather than looking like a separate target. */
-.sales-db-head > .sales-db-status { pointer-events: none; }
-/* Collapsed, the block is just a title: drop the inner padding to a line's
-   worth so it reads as a heading rather than an empty card. */
-.sales-db:not([open]) { padding: 6px 12px; }
+.controls .sales-source-tabs button.sales-source-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  padding: 7px 6px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: var(--color-neutral-100, #f4f4f5);
+  color: var(--color-neutral-600, #52525b);
+  font-size: 0.82rem;
+  font-weight: 600;
+  box-shadow: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.controls .sales-source-tabs button.sales-source-tab:first-child { border-top-left-radius: 5px; }
+.controls .sales-source-tabs button.sales-source-tab:last-child { border-top-right-radius: 5px; }
+.controls .sales-source-tabs button.sales-source-tab + .sales-source-tab {
+  border-left: 1px solid var(--color-neutral-300, #d4d4d8);
+}
+.controls .sales-source-tabs button.sales-source-tab:hover {
+  background: var(--color-neutral-200, #e4e4e7);
+  color: var(--color-neutral-900, #18181b);
+}
+.controls .sales-source-tabs button.sales-source-tab[aria-selected="true"] {
+  background: var(--color-neutral-50, #fafafa);
+  color: var(--color-primary-500, #1e293b);
+  border-bottom-color: var(--color-primary-500, #1e293b);
+}
+.controls .sales-source-tabs button.sales-source-tab:focus-visible {
+  outline: 2px solid var(--color-primary-500, #1e293b);
+  outline-offset: -2px;
+}
+.sales-source-panel > .sales-db-status { margin: 0 0 6px; }
 .sales-db-status {
   font-size: 0.78rem;
   color: var(--color-neutral-600, #52525b);
@@ -739,14 +763,21 @@ body:not(.sales-mode) .sidebar .sales-subject-group { display: none; }
 .sales-db-typefilter .sales-type-field { flex: 1 1 auto; min-width: 0; }
 .sidebar .sales-db-typefilter .multiselect { width: 100%; }
 .sales-search .sales-nominal-exclude { margin-top: 4px; padding-left: 0; }
-/* Search and Save search close the form; Search takes the room. */
-/* Search takes the full width; Save search and Clear search share the line
-   under it, so three buttons never wrap raggedly in the narrow sidebar. */
-.sales-search .sales-db-actions .primary { flex: 1 1 100%; }
-.sales-search .sales-db-actions > button:not(.primary) { flex: 1 1 0; white-space: nowrap; }
-
-/* Upload / paste, now inside the source block. */
-.sales-db > .sales-paste-row { margin-top: 8px; }
+/* Search, Save search and Clear search share one line (Jason, 2026-11-24):
+   shorter and tighter than the sidebar's other buttons so the three fit, with
+   Search taking whatever room is left. They wrap only if the sidebar is too
+   narrow for all three. The selector carries .controls so the padding beats
+   the Disconnect-sized `.sales-db-actions .parcel-list-modal-btn.danger`. */
+.controls .sales-search .sales-db-actions { gap: 4px; }
+.controls .sales-search .sales-db-actions > button.parcel-list-modal-btn {
+  flex: 0 0 auto;
+  min-height: 28px;              /* the sidebar's buttons are 36px */
+  padding: 3px 6px;
+  font-size: 11.5px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.controls .sales-search .sales-db-actions > button.parcel-list-modal-btn.primary { flex: 1 1 auto; }
 
 /* Clear sits at the end of the Job row. */
 .job-row #sales-clear { margin-left: 2px; }
@@ -1524,26 +1555,6 @@ body.sales-mode .sidebar .sales-filters-preload-hint { display: none; }
   flex-wrap: wrap;
   align-items: center;
 }
-/* Manual import block (upload / paste / recent). Collapsed by default once
-   the MAO Sales Database is imported — see salesDbPanel.setManualCollapsed.
-   Styled as a quiet disclosure, not a section header: it is the fallback
-   path at that point and should not compete with the database controls. */
-.sidebar .sales-manual { margin-top: 6px; }
-/* Same size and weight as the MAO Sales Database title above it — the two
-   are peers (database vs manual import), and sizing this one down read as
-   a sub-item of the database block rather than the alternative to it. */
-.sidebar .sales-manual-summary {
-  cursor: pointer;
-  font-size: 1rem;
-  font-weight: 700;
-  color: inherit;
-  padding: 3px 0;
-  list-style: revert;            /* keep the native disclosure triangle */
-}
-.sidebar .sales-manual-summary:hover { color: var(--color-neutral-900, #18181b); }
-/* Open state gets a little breathing room before the dropzone. */
-.sidebar .sales-manual[open] > .sales-manual-summary { margin-bottom: 4px; }
-
 /* Custom from/to range — its own row because two native date inputs are
    ~116px each in Chrome, so with the "Date Range:" prefix and the quick
    picks they cannot share a line inside the 336px sidebar. Each input

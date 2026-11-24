@@ -7,7 +7,7 @@
       "wait": 3500
     },
     {
-      "eval": "for (const s of ['#sales-db','#sales-manual']) { const d=document.querySelector(s); if(d&&!d.open) d.open=true }"
+      "eval": "document.querySelector('#sales-source-tab-manual')?.click()"
     },
     {
       "click": "#sales-import-trigger"
