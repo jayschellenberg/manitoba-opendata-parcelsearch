@@ -355,45 +355,51 @@ _Before recording: upload a file; wait for it; pick "vacant" in #vacant-improved
 **1.** Company signs every chart with your firm name in the caption. Size unit switches between acres, square feet and front feet, and the unit is remembered. If a tab looks empty, the first thing to check is the unit.
 <br>_[hover #company; click #unit-sf; click #unit-acres]_
 
-**2.** Rates can be nominal or time-adjusted to the effective date. Trend basis uses the fitted trend from the sales themselves, or a rate per year you type.
-<br>_[click #rates-adjusted; hover #adj-basis; click #rates-nominal]_
+**2.** The Sales switch keeps all sales, bare land only, or improved only. A price per acre taken across both measures the buildings as well as the land, so pick one when the sales are mixed.
+<br>_[hover #ctl-vacancy; click #vac-land; click #vac-all]_
 
-**3.** Distance from chooses the subject parcel or Portage and Main as the reference for the distance plots. Trim to percentiles drops the extremes from the fits without excluding the sales.
+**3.** Rates can be nominal or time-adjusted to the effective date. Trend basis is the trend fitted from the sales themselves, as a percent per year by default. Dollars per day, or a rate per year you type, are the alternatives.
+<br>_[click #rates-nominal; click #rates-adjusted; hover #adj-basis]_
+
+**4.** Distance from chooses the subject parcel or Portage and Main as the reference for the distance plots. Trim to percentiles drops the extremes from the fits without excluding the sales.
 <br>_[hover #dist-ref; click #trim-on; click #trim-on]_
 
-**4.** Freeze stops live updates while you read or capture. Table view shows the numbers behind the charts. Show excluded brings unticked sales back as hollow points.
+**5.** Freeze stops live updates while you read or capture. Table view shows the numbers behind the charts. Show excluded brings unticked sales back as hollow points.
 <br>_[click #show-table; click #show-table; click #show-excluded; click #show-excluded]_
 
-**5.** The filter waterfall explains the count. Sales loaded, then after the Sales Analysis filters, then unticked in the grid, then the agricultural consistency filters, so you can always say why a sale is not on the chart.
+**6.** The filter waterfall explains the count. Sales loaded, then after the Sales Analysis filters, then unticked in the grid, then the agricultural consistency filters, so you can always say why a sale is not on the chart.
 <br>_[hover #waterfall-panel]_
 
-**6.** Four pages: Land Price per Unit, Agricultural, Total and Per Lot Price, and Water. Each has a row of maps and a row of charts. Every card has a P N G button that renders it at report size.
-<br>_[click #tab-ag; click #tab-total; click #tab-water; click #tab-rates]_
+**7.** Five pages: A D F Overview, C M S Charts, Agricultural, Total and Per Lot Price, and Water. Each has a row of maps and a row of charts. Every card has a P N G button that renders it at report size.
+<br>_[click #tab-adf; click #tab-ag; click #tab-total; click #tab-water; click #tab-rates]_
 
 ## mb-11-charts-pages (Manitoba, recorded)
 
 _Before recording: upload a file; wait for it; pick "vacant" in #vacant-improved; open Refine results; type "67600.048" in #subject-roll; click #subject-apply; click #charts-open (opens new window)_
 
-**0.** This video walks the four chart pages. Land Price per Unit first. The maps row has Price and Lot Size, Year and Zoning, and Water Influence. Each dot is one sale, sized or coloured by the variable.
-<br>_[page script; click #tab-rates; scroll to maps; click .page-maps .row-tabs button:nth-child(2); click .page-maps .row-tabs button:nth-child(3); click .page-maps .row-tabs button:nth-child(1)]_
+**0.** This video walks the five chart pages. C M S Charts first, since it is the page that opens. The maps row starts on the Comparables map, then Price and Lot Size, Year and Zoning, and Water Influence. Each dot is one sale, sized or coloured by the variable.
+<br>_[page script; click #tab-rates; scroll to maps; click .page-maps .row-tabs button:nth-child(2); click .page-maps .row-tabs button:nth-child(3); click .page-maps .row-tabs button:nth-child(4); click .page-maps .row-tabs button:nth-child(2)]_
 
-**1.** The charts row plots the rate over time and against size, then by zoning and by distance from the subject. The fitted trend line and its rate per year are printed on the chart.
+**1.** The charts row plots the rate over time and against size, then by zoning and by distance from the subject. The fitted trend is printed on the chart as a percent per year, with its range.
 <br>_[scroll to charts; click .page-charts .row-tabs button:nth-child(2); click .page-charts .row-tabs button:nth-child(1)]_
 
-**2.** Agricultural adds the farm variables: M A S C rating, cultivated share, soil, Canada Land Inventory class, and land cover mix, each against the price per acre, plus sale to assessment ratios.
+**2.** A D F Overview takes the wider view. It works on the near market: every loaded sale, less unticked municipalities, nominal sales and far-flung sales. Its maps are Price and Year, Isovalue and Location effect, and its charts add Sales by year, Distributions and Sale to Assessment.
+<br>_[click #tab-adf; scroll to maps; click .page-maps .row-tabs button:nth-child(2); click .page-maps .row-tabs button:nth-child(3); scroll to charts; click .page-charts .row-tabs button:nth-child(3); click .page-charts .row-tabs button:nth-child(4)]_
+
+**3.** Agricultural adds the farm variables: M A S C rating, cultivated share, soil, Canada Land Inventory class, and land cover mix, each against the price per acre, plus sale to assessment ratios.
 <br>_[click #tab-ag; scroll to charts; click .page-charts .row-tabs button:nth-child(2); click .page-charts .row-tabs button:nth-child(4)]_
 
-**3.** The Ag consistency filters keep only sales that are like the subject: a cultivated band, and M A S C, C L I and cover chips. They apply to this page only and show up as a step in the waterfall.
+**4.** The Ag consistency filters keep only sales that are like the subject: a cultivated band, and M A S C, C L I and cover chips. They apply to this page only and show up as a step in the waterfall.
 <br>_[page script; hover section.ag-cons]_
 
-**4.** Total and Per Lot Price is for lot sales and small holdings, where the whole price matters more than the rate. Total price, per lot, and per lot by distance and assessed value.
+**5.** Total and Per Lot Price is for lot sales and small holdings, where the whole price matters more than the rate. Total price, per lot, and per lot by distance and assessed value.
 <br>_[click #tab-total; scroll to charts; click .page-charts .row-tabs button:nth-child(2); click .page-charts .row-tabs button:nth-child(3)]_
 
-**5.** Water looks at the waterfront premium. Influence and class, flood and water body, size and distance, a summary with the premium, and paired sales where a waterfront and a non-waterfront parcel can be matched.
+**6.** Water looks at the waterfront premium. Influence and class, flood and water body, size and distance, a summary with the premium, and paired sales where a waterfront and a non-waterfront parcel can be matched.
 <br>_[click #tab-water; scroll to charts; click .page-charts .row-tabs button:nth-child(4); click .page-charts .row-tabs button:nth-child(5)]_
 
-**6.** Municipal boundaries can be drawn on the maps, and every map and chart has its own P N G button at 1950 by 1050. The next video covers excluding sales from the charts and tagging comparables.
-<br>_[click #tab-rates; scroll to maps; click #map-munis; click #map-munis]_
+**7.** Municipal boundaries can be drawn on the maps, and every map and chart has its own P N G button at 1950 by 1050. The next video covers excluding sales from the charts and tagging comparables.
+<br>_[click #tab-rates; scroll to maps; click .page-maps .row-tabs button:nth-child(2); click #map-munis; click #map-munis]_
 
 ## mb-12-charts-comps-workfile (Manitoba, recorded)
 
@@ -411,14 +417,14 @@ _Before recording: upload a file; wait for it; pick "vacant" in #vacant-improved
 **3.** Comparable sales is the running list. Reorder with the arrows, remove with the cross, copy the roll numbers for the report, or clear all tags. Land Set 1 and 2 are listed separately.
 <br>_[open Comparable sales; hover #comps-panel summary]_
 
-**4.** On the maps, clicking a dot opens a popup with Exclude this sale, Add as Comp, and Add to Land Set 1 or 2, so the same decisions can be made spatially.
-<br>_[scroll to maps; hover .page-maps .chart-card .maplibregl-canvas]_
+**4.** The Comparables map pins the subject and each tagged comp, and the table beside it takes a title and comments and copies to Excel. On the other maps, clicking a dot opens a popup with Exclude this sale, Add as Comp, and Add to Land Set 1 or 2, so the same decisions can be made spatially.
+<br>_[scroll to maps; click .page-maps .row-tabs button:nth-child(1); hover .comp-table-card; click .page-maps .row-tabs button:nth-child(2); hover .page-maps .chart-card .maplibregl-canvas]_
 
 **5.** Work file packages the whole analysis. Choose which charts and tables to include, embed the images in the summary, and download a zip named for the subject roll and date.
 <br>_[click #workfile-open; wait for it; click #workfile-embed]_
 
-**6.** Inside are summary dot H T M L, comps dot C S V, the C M S table, excluded dot C S V with reasons, the land set files, every chart as P N G, and every table as C S V. Keep this window in front while it renders or map images can come out blank.
-<br>_[hover #workfile-list; press Escape]_
+**6.** Inside are summary dot H T M L, comps dot C S V, the C M S table, the Comparables maps and comp table, excluded dot C S V with reasons, the land set files, every chart as P N G, and every table as C S V. Keep this window in front while it renders or map images can come out blank.
+<br>_[hover #workfile-list; scroll the table sideways; press Escape]_
 
 **7.** Back in the main window, Save job stores the sales, filters, comps and exclusions together. Open it later and the charts page picks up exactly where you left off.
 <br>_[cursor rests]_

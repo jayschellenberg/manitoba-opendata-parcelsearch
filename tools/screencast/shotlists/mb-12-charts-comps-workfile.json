@@ -159,16 +159,31 @@
       ]
     },
     {
-      "say": "On the maps, clicking a dot opens a popup with Exclude this sale, Add as Comp, and Add to Land Set 1 or 2, so the same decisions can be made spatially.",
+      "say": "The Comparables map pins the subject and each tagged comp, and the table beside it takes a title and comments and copies to Excel. On the other maps, clicking a dot opens a popup with Exclude this sale, Add as Comp, and Add to Land Set 1 or 2, so the same decisions can be made spatially.",
       "do": [
         {
           "eval": "(() => { const e = document.querySelector('.page-maps'); if (!e) return; window.scrollTo({top: e.getBoundingClientRect().top + scrollY - 232, behavior: 'smooth'}); })()"
         },
         {
-          "wait": 1100
+          "wait": 1900
         },
         {
-          "wait": 800
+          "click": ".page-maps .row-tabs button:nth-child(1)"
+        },
+        {
+          "wait": 2500
+        },
+        {
+          "hover": ".comp-table-card"
+        },
+        {
+          "wait": 4000
+        },
+        {
+          "click": ".page-maps .row-tabs button:nth-child(2)"
+        },
+        {
+          "wait": 2500
         },
         {
           "hover": ".page-maps .chart-card .maplibregl-canvas"
@@ -199,13 +214,23 @@
       ]
     },
     {
-      "say": "Inside are summary dot H T M L, comps dot C S V, the C M S table, excluded dot C S V with reasons, the land set files, every chart as P N G, and every table as C S V. Keep this window in front while it renders or map images can come out blank.",
+      "say": "Inside are summary dot H T M L, comps dot C S V, the C M S table, the Comparables maps and comp table, excluded dot C S V with reasons, the land set files, every chart as P N G, and every table as C S V. Keep this window in front while it renders or map images can come out blank.",
       "do": [
         {
           "hover": "#workfile-list"
         },
         {
-          "wait": 4000
+          "wait": 6000
+        },
+        {
+          "scroll": [
+            "#workfile-list",
+            0,
+            400
+          ]
+        },
+        {
+          "wait": 13000
         },
         {
           "press": "Escape"

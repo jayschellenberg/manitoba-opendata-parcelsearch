@@ -60,7 +60,7 @@ from commit subjects only.
 ## Priority
 
 1. **mb-05 Report outputs** — shot list updated 2026-11-12; needs re-recording.
-2. **mb-10 / mb-11 Sales Charts** — a fifth page, a renamed page, and the Comparables map and table.
+2. ~~mb-10 / mb-11 Sales Charts~~ — done and re-recorded 2026-11-24, with mb-12.
 3. **mb-06 line 13** — names a button that has been renamed and moved.
 4. **mb-01 / mb-03** — Dimensions wording, the address row, three new layers.
 5. The rest are small.
@@ -153,6 +153,10 @@ No narration change needed. Line 04 already says square feet.
 
 ### mb-10 Sales Charts: layout and settings
 
+> **Done 2026-11-24** and re-recorded: the trend basis line names percent per year as the default, a
+> Sales switch step is added, and the closing line lists five pages. The 95% range and the
+> near-market warning line are on screen but not narrated.
+
 | Line | Kind | Change |
 |---|---|---|
 | 03 | Wrong | "Trend basis uses the fitted trend from the sales themselves, or a rate per year you type." The default is now a percent per year fitted on log price, shown with its 95% range, and it is not applied when the range spans zero. The dollar basis remains as an option. |
@@ -161,6 +165,10 @@ No narration change needed. Line 04 already says square feet.
 
 ### mb-11 Sales Charts: the chart pages
 
+> **Done 2026-11-24** and re-recorded: five pages, CMS Charts opening on the Comparables map, the
+> trend as a percent per year with its range, and a new ADF Overview step. The live page has no
+> Uncertainty map tab: its maps are Price & Year, Isovalue and Location effect.
+
 | Line | Kind | Change |
 |---|---|---|
 | 01 | Wrong | "This video walks the four chart pages. Land Price per Unit first. The maps row has Price and Lot Size, Year and Zoning, and Water Influence." Five pages; the page is now CMS Charts; its first map tab is the new Comparables map. |
@@ -168,6 +176,10 @@ No narration change needed. Line 04 already says square feet.
 | 02 | Wrong | "The fitted trend line and its rate per year are printed on the chart" — now a percent per year with its range (see mb-10 line 03). |
 
 ### mb-12 Comparables and work file
+
+> **Done 2026-11-24** and re-recorded: the maps step opens on the Comparables map and comp table,
+> the work file contents name them, and the work file dialog now stays open through its narration
+> (it used to close four seconds in).
 
 | Line | Kind | Change |
 |---|---|---|

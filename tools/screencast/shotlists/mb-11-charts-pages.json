@@ -53,7 +53,7 @@
   ],
   "steps": [
     {
-      "say": "This video walks the four chart pages. Land Price per Unit first. The maps row has Price and Lot Size, Year and Zoning, and Water Influence. Each dot is one sale, sized or coloured by the variable.",
+      "say": "This video walks the five chart pages. C M S Charts first, since it is the page that opens. The maps row starts on the Comparables map, then Price and Lot Size, Year and Zoning, and Water Influence. Each dot is one sale, sized or coloured by the variable.",
       "do": [
         {
           "eval": "document.body.style.minHeight='6000px'"
@@ -65,10 +65,7 @@
           "eval": "(() => { const e = document.querySelector('.page-maps'); if (!e) return; window.scrollTo({top: e.getBoundingClientRect().top + scrollY - 232, behavior: 'smooth'}); })()"
         },
         {
-          "wait": 1100
-        },
-        {
-          "wait": 1000
+          "wait": 2100
         },
         {
           "click": ".page-maps .row-tabs button:nth-child(2)"
@@ -83,12 +80,18 @@
           "wait": 3500
         },
         {
-          "click": ".page-maps .row-tabs button:nth-child(1)"
+          "click": ".page-maps .row-tabs button:nth-child(4)"
+        },
+        {
+          "wait": 3000
+        },
+        {
+          "click": ".page-maps .row-tabs button:nth-child(2)"
         }
       ]
     },
     {
-      "say": "The charts row plots the rate over time and against size, then by zoning and by distance from the subject. The fitted trend line and its rate per year are printed on the chart.",
+      "say": "The charts row plots the rate over time and against size, then by zoning and by distance from the subject. The fitted trend is printed on the chart as a percent per year, with its range.",
       "do": [
         {
           "eval": "(() => { const e = document.querySelector('.page-charts'); if (!e) return; window.scrollTo({top: e.getBoundingClientRect().top + scrollY - 232, behavior: 'smooth'}); })()"
@@ -107,6 +110,50 @@
         },
         {
           "wait": 2000
+        }
+      ]
+    },
+    {
+      "say": "A D F Overview takes the wider view. It works on the near market: every loaded sale, less unticked municipalities, nominal sales and far-flung sales. Its maps are Price and Year, Isovalue and Location effect, and its charts add Sales by year, Distributions and Sale to Assessment.",
+      "do": [
+        {
+          "click": "#tab-adf"
+        },
+        {
+          "eval": "(() => { const e = document.querySelector('.page-maps'); if (!e) return; window.scrollTo({top: e.getBoundingClientRect().top + scrollY - 232, behavior: 'smooth'}); })()"
+        },
+        {
+          "wait": 3000
+        },
+        {
+          "click": ".page-maps .row-tabs button:nth-child(2)"
+        },
+        {
+          "wait": 3500
+        },
+        {
+          "click": ".page-maps .row-tabs button:nth-child(3)"
+        },
+        {
+          "wait": 3500
+        },
+        {
+          "eval": "(() => { const e = document.querySelector('.page-charts'); if (!e) return; window.scrollTo({top: e.getBoundingClientRect().top + scrollY - 232, behavior: 'smooth'}); })()"
+        },
+        {
+          "wait": 1100
+        },
+        {
+          "click": ".page-charts .row-tabs button:nth-child(3)"
+        },
+        {
+          "wait": 3000
+        },
+        {
+          "click": ".page-charts .row-tabs button:nth-child(4)"
+        },
+        {
+          "wait": 3000
         }
       ]
     },
@@ -227,7 +274,10 @@
           "wait": 1100
         },
         {
-          "wait": 1000
+          "click": ".page-maps .row-tabs button:nth-child(2)"
+        },
+        {
+          "wait": 1500
         },
         {
           "click": "#map-munis"

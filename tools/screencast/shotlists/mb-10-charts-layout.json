@@ -87,22 +87,48 @@
       ]
     },
     {
-      "say": "Rates can be nominal or time-adjusted to the effective date. Trend basis uses the fitted trend from the sales themselves, or a rate per year you type.",
+      "say": "The Sales switch keeps all sales, bare land only, or improved only. A price per acre taken across both measures the buildings as well as the land, so pick one when the sales are mixed.",
       "do": [
         {
-          "click": "#rates-adjusted"
-        },
-        {
-          "wait": 2500
-        },
-        {
-          "hover": "#adj-basis"
+          "hover": "#ctl-vacancy"
         },
         {
           "wait": 1500
         },
         {
+          "click": "#vac-land"
+        },
+        {
+          "wait": 2500
+        },
+        {
+          "click": "#vac-all"
+        },
+        {
+          "wait": 1500
+        }
+      ]
+    },
+    {
+      "say": "Rates can be nominal or time-adjusted to the effective date. Trend basis is the trend fitted from the sales themselves, as a percent per year by default. Dollars per day, or a rate per year you type, are the alternatives.",
+      "do": [
+        {
           "click": "#rates-nominal"
+        },
+        {
+          "wait": 2500
+        },
+        {
+          "click": "#rates-adjusted"
+        },
+        {
+          "wait": 1500
+        },
+        {
+          "hover": "#adj-basis"
+        },
+        {
+          "wait": 2500
         }
       ]
     },
@@ -161,25 +187,31 @@
       ]
     },
     {
-      "say": "Four pages: Land Price per Unit, Agricultural, Total and Per Lot Price, and Water. Each has a row of maps and a row of charts. Every card has a P N G button that renders it at report size.",
+      "say": "Five pages: A D F Overview, C M S Charts, Agricultural, Total and Per Lot Price, and Water. Each has a row of maps and a row of charts. Every card has a P N G button that renders it at report size.",
       "do": [
+        {
+          "click": "#tab-adf"
+        },
+        {
+          "wait": 3000
+        },
         {
           "click": "#tab-ag"
         },
         {
-          "wait": 3000
+          "wait": 2500
         },
         {
           "click": "#tab-total"
         },
         {
-          "wait": 3000
+          "wait": 2500
         },
         {
           "click": "#tab-water"
         },
         {
-          "wait": 3000
+          "wait": 2500
         },
         {
           "click": "#tab-rates"
