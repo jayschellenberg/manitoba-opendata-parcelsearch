@@ -38,7 +38,8 @@ search is a **Where** switch on the one Search form.
   Sales Database, and the upload box is shorter. Narration changed in mb-07 line 04 (the Upload and
   Paste tab) and mb-08 lines 02, 05 and 06 (click the tab; the status line is at the top of the tab;
   nothing folds). mb-07b and mb-08 were re-recorded that afternoon on build b5f49ad with no failed
-  actions. mb-07 is not re-recorded: it needs a live MAO sign-in.
+  actions. mb-07 was re-recorded the same afternoon with a live MAO sign-in; its live search returned
+  77 sales, where mb-07b opens on the 73 in the saved paste file.
 
 Three kinds of entry:
 
