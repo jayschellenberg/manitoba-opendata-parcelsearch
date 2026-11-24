@@ -20,9 +20,9 @@ is live there. See `NARRATION-UPDATES.md`.
 | mb-04 | Map tools and history | 2:02 | external OK | recorded |
 | mb-05 | Report outputs | 1:39 | external OK | recorded |
 | mb-06 | Agricultural features | 4:01 | external OK | recorded |
-| mb-07 | Pasting sales from MAO | 2:07 | staff only | re-recorded 2026-11-24 for the Sales tab regroup (edge-tts voice, live MAO sign-in); previous: recorded 2026-10-13 (Azure voice, live MAO sign-in) |
-| mb-07b | Filters and subject property (on the pasted sales) | 2:23 | staff only | re-recorded 2026-11-24 for the Sales tab regroup, Clear search and Condo filter (edge-tts voice); previous: recorded 2026-10-13 |
-| mb-08 | Linking the MAO Sales Database on Dropbox (link only) | 1:24 | staff only | re-recorded 2026-11-24 for the Sales tab regroup, Clear search and Condo filter (edge-tts voice); previous: recorded 2026-10-13; stills of the real Windows picker and Chrome "Allow" prompt in `data/still-*.png`; all 186 export files seeded (`"files": "*"`) |
+| mb-07 | Pasting sales from MAO | 2:07 | staff only | **shows the layout before the source tabs (PR 266); shot list updated, re-record pending a live MAO sign-in**; re-recorded 2026-11-24 for the Sales tab regroup (edge-tts voice, live MAO sign-in); previous: recorded 2026-10-13 (Azure voice, live MAO sign-in) |
+| mb-07b | Filters and subject property (on the pasted sales) | 2:35 | staff only | re-recorded 2026-11-24 (afternoon, build b5f49ad) for the source tabs and compact upload box, not yet copied to the staff folder; re-recorded that morning for the Sales tab regroup, Clear search and Condo filter (edge-tts voice); previous: recorded 2026-10-13 |
+| mb-08 | Linking the MAO Sales Database on Dropbox (link only) | 1:51 | staff only | re-recorded 2026-11-24 (afternoon, build b5f49ad) for the source tabs and the one-row Search / Save search / Clear search, narration changed to match; not yet copied to the staff folder; re-recorded that morning for the Sales tab regroup, Clear search and Condo filter (edge-tts voice); previous: recorded 2026-10-13; stills of the real Windows picker and Chrome "Allow" prompt in `data/still-*.png`; all 186 export files seeded (`"files": "*"`) |
 | mb-09 | Sales grid and comparables | 1:49 | staff only | re-recorded 2026-11-24 for the Sales tab regroup, Clear search and Condo filter (edge-tts voice); re-recorded again the same day on the build with Condo Plan and Condo Unit in the Key fields export; previous: re-recorded 2026-10-13 on Hanover (same data and subject as mb-10..12) |
 | mb-10 | Sales Charts: layout and settings | 1:41 | staff only | re-recorded 2026-10-13 on Hanover (`data/hanover-sales.csv` from Jason's HanoverSales.xlsx, subject 73 Birchwood Lane, Mitchell, roll 67600.048) |
 | mb-11 | Sales Charts: the chart pages | 1:39 | staff only | re-recorded 2026-10-13 on Hanover |
@@ -176,9 +176,13 @@ when the voice service is rate-limiting; `record.py` then uses the cached clips.
   from the committed shot lists). Before that, an edited line silently kept its old audio (bit mb-09/10).
 - Manitoba Sales tab, since the 2026-11-23 regroup (Job, MAO Sales Database, Search, Subject
   Property, Refine results, Charts):
-  - `#sales-db` is open while no database is imported and folds once one is. Reload, Disconnect and
-    Coverage are inside it, so open it before clicking them. `#sales-manual` (upload / paste) is
-    nested inside `#sales-db`: open both.
+  - `#sales-db` is two tabs since 2026-11-24 (PR 266): `#sales-source-tab-manual` (Upload / Paste,
+    panel `#sales-manual`) and `#sales-source-tab-db` (MAO Sales Database, with Reload, Disconnect
+    and Coverage). A fresh recording browser has no archive, so it opens on Upload / Paste: click
+    the database tab before `#sales-db-import`. Nothing folds any more.
+  - The shot lists name the Azure voice, whose key returns 401. To record with edge-tts, copy the
+    shot list outside the repo with `"voice": "en-US-AndrewMultilingualNeural"` and record that
+    copy; `data/` paths still resolve against this folder.
   - `details.more-filters` is now **Refine results** and is open by default. Do not click its summary
     to "open" it; that closes it. `#vacant-improved`, `#asmt-class` and the Far-Flung tally are inside.
   - `#vacant-threshold` only shows once `#vacant-improved` is off All Sales.

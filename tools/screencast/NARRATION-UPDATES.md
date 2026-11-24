@@ -34,6 +34,11 @@ search is a **Where** switch on the one Search form.
   `AppMarketData-Limited`), and `data/still-picker.png` / `data/still-permission.png` were re-captured
   from a real Chrome picker on 2026-11-24 to match; mb-08 re-recorded the same day.
 - The Azure Speech key returned 401 on 2026-11-23; check it before recording.
+- **Source tabs (2026-11-24, PR 266 and 268).** The source block is two tabs, Upload / Paste and MAO
+  Sales Database, and the upload box is shorter. Narration changed in mb-07 line 04 (the Upload and
+  Paste tab) and mb-08 lines 02, 05 and 06 (click the tab; the status line is at the top of the tab;
+  nothing folds). mb-07b and mb-08 were re-recorded that afternoon on build b5f49ad with no failed
+  actions. mb-07 is not re-recorded: it needs a live MAO sign-in.
 
 Three kinds of entry:
 
