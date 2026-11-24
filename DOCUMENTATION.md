@@ -1539,7 +1539,7 @@ read across all its parcels (any unit makes it a condo sale); a roll with no
 legal-index record is not known to be a unit; bare-land condominium plans
 carry the same marker. The **Condo** grid column (gear, off by default) shows
 plan and unit and sorts a building's units together; the CSV export gains
-`Condo Plan` and `Condo Unit` after `Plan`.
+`Condo Plan` and `Condo Unit` after `Plan`. Both are in the Key fields export too.
 
 **The Search form** (`#sales-search`). The **Where** pill switches
 `data-mode` between `muni` and `province`; elements carrying `.mode-muni`

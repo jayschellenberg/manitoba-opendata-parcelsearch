@@ -1,4 +1,4 @@
-// "Key fields" sales export — a short CSV of the ~33 columns an appraiser
+// "Key fields" sales export — a short CSV of the ~35 columns an appraiser
 // reaches for first, picked BY NAME out of the full export.
 //
 // Why by name and not a second hand-written header/cell list: exportCsv's two
@@ -9,6 +9,8 @@
 // same name.
 //
 // The list is Jason's (2026-11-18), one list for farm and urban sales alike.
+// Condo Plan / Condo Unit joined it 2026-11-24: without them a Condo units
+// search exported at the default scope lost which unit each sale was.
 // Farm and urban lots will want different lists later; that is a second array
 // here plus a third option in the export choice, not a change to the picker.
 
@@ -17,6 +19,7 @@ const ASSESSMENT_RE = /^(Assess-\d{4}|Assessment) \(\$\)$/;
 
 export const KEY_SALES_COLUMNS = [
   'Map #', 'Roll #', 'Municipality', 'Address', 'Legal Description',
+  'Condo Plan', 'Condo Unit',
   'Sale Date', 'Sale Price', 'Sale Type Group', 'Primary Property',
   'Parcels in Sale', 'Group Rolls', 'Group Total Sale Price', 'Group Total Acres',
   'Group $/Acre', 'Group $/SF', 'Group $/FF', 'Sale/Asmt',
