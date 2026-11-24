@@ -6569,15 +6569,17 @@ function updateRollEntryBanner({ liveCount, liveRecordCount, snapshotManifest, s
   const banner = document.getElementById('roll-entry-banner');
   if (!banner) return;
   if (liveLocked) {
-    const link = '<a href="https://geoportal.gov.mb.ca/datasets/manitoba::roll-entry/about" target="_blank" rel="noreferrer" style="color:inherit;text-decoration:underline">Check Roll Entry status ↗</a>';
+    const link = '<a href="https://geoportal.gov.mb.ca/datasets/manitoba::roll-entry/about" target="_blank" rel="noreferrer" style="color:inherit;text-decoration:underline">Check status ↗</a>';
     banner.classList.remove('data-staleness-red');
     banner.classList.add('data-staleness-amber');
     banner.innerHTML = (snapshotActive && snapshotManifest?.snapshot_date)
-      ? '<strong>Manitoba\'s live Roll Entry service now requires a sign-in token.</strong> ' +
-        `Showing snapshot data from <strong>${snapshotManifest.snapshot_date}</strong> instead; ` +
-        `zoning and development-plan category filters are unavailable on snapshot data. ${link}`
-      : '<strong>Manitoba\'s live Roll Entry service now requires a sign-in token</strong> ' +
-        `and the snapshot could not be loaded, so parcel searches will fail. Reload to retry. ${link}`;
+      ? '<strong>DataMB\'s live Roll Entry service is temporarily asking for a sign-in token</strong>; ' +
+        'this should clear in a day or two. ' +
+        `Showing snapshot data from <strong>${snapshotManifest.snapshot_date}</strong>; ` +
+        `zoning and development-plan filters are unavailable. ${link}`
+      : '<strong>DataMB\'s live Roll Entry service is temporarily asking for a sign-in token</strong> ' +
+        'and the snapshot could not be loaded, so parcel searches will fail. ' +
+        `This should clear in a day or two; reload to retry. ${link}`;
     banner.hidden = false;
     return;
   }
