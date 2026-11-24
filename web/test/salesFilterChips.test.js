@@ -120,6 +120,12 @@ test('Parcels and N1 selects count when moved off Any', () => {
   assert.equal(matched[0].label, 'N1 matched');
 });
 
+test('Condo units counts when moved off Any', () => {
+  assert.deepEqual(salesFilterChips(defaults({ condo: 'any' })), []);
+  assert.equal(salesFilterChips(defaults({ condo: 'only' }))[0].label, 'Condo only');
+  assert.equal(salesFilterChips(defaults({ condo: 'exclude' }))[0].label, 'No condos');
+});
+
 test('Bldg Threshold at its default is not set; away from it, it is — idle until Vacant/Improved is picked', () => {
   assert.deepEqual(salesFilterChips(defaults({ vacantThreshold: '5' })), []);
   assert.deepEqual(salesFilterChips(defaults({ vacantThreshold: '5.0' })), []);

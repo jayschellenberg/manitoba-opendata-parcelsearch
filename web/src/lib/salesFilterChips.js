@@ -21,7 +21,7 @@
  *   ppaLow, ppaHigh, priceLow, priceHigh  number inputs (strings from the DOM)
  *   zoning, zoneCat                       arrays of ticked values
  *   groupSize ('any'|'single'|'multi'), n1 ('any'|'matched'|'unmatched'),
- *   outline ('any'|'unchanged'|'changed')
+ *   outline ('any'|'unchanged'|'changed'), condo ('any'|'only'|'exclude')
  *   vacantImproved ('all'|'vacant'|'improved')  — the selector OUTSIDE the
  *                                         disclosure that the two below tune
  *   vacantThreshold, vacantMode ('pct'|'dollar'), saleAsmtMax
@@ -137,6 +137,10 @@ export function salesFilterChips(s = {}) {
   const outline = text(s.outline);
   if (outline === 'unchanged') push('outline', 'Outline unchanged', 'Outline at sale: same outline as today only');
   else if (outline === 'changed') push('outline', 'Outline changed', 'Outline at sale: changed or not yet mapped only');
+
+  const condo = text(s.condo);
+  if (condo === 'only') push('condo', 'Condo only', 'Condo units: condominium unit sales only');
+  else if (condo === 'exclude') push('condo', 'No condos', 'Condo units: condominium unit sales excluded');
 
   // Bldg Threshold tunes the Vacant/Improved selector, which lives OUTSIDE
   // the disclosure. Away from its default it is set — and worth naming,
