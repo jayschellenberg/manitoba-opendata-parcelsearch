@@ -47,6 +47,7 @@ import {
 import { toCsv, buildSummaryHtml, figureFileName, workFileName } from '../lib/workFile.js';
 import { LAND_COVER_BUCKETS } from '../lib/landcover.js';
 import { familyOf } from '../lib/primaryProperty.js';
+import { loadMlsAreaLookup, mlsAreaAt } from '../lib/mlsAreaLookup.js';
 import {
   drawChart, drawBoxChart, drawTableCard, drawStackedBars, drawHistogram, drawCountBars, setChartCompany, ZONE_COLORS, OTHER_COLOR, INK, R_STYLE, slugify,
   chartExportSpec, renderChartPng, downloadBlob, setPointLabeler,
@@ -59,6 +60,10 @@ const OPTS_KEY_V1 = 'mbps_charts_opts_v1';
 const MS_PER_DAY = 86400000;
 
 const $ = (id) => document.getElementById(id);
+
+// The MLS areas, for the MLS Area row in the sale tooltips. Loaded in the
+// background; a tooltip drawn before they land just has no such row.
+loadMlsAreaLookup();
 
 const els = {
   status: $('charts-status'),
@@ -426,6 +431,10 @@ function tooltipRows(rec, pt) {
       `${fmtNum(d)} km`]);
   }
   if (rec.zone) rows.push(['Zoning', rec.zone]);
+  // The sale's MLS area, where one of the three boards covers it
+  // (lib/mlsAreaLookup.js); nothing until the areas have loaded.
+  const mls = mlsAreaAt([rec.lng, rec.lat]);
+  if (mls?.area) rows.push(['MLS Area', mls.area]);
   if (opts.tab === 'ag' && rec.ag) {
     if (rec.ag.masc) rows.push(['MASC', rec.ag.masc]);
     if (rec.ag.cli) rows.push(['CLI', rec.ag.cli]);
