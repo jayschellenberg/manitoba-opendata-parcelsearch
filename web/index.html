@@ -662,15 +662,25 @@
                so a refreshed export is picked up automatically; other browsers
                use the folder input fallback.
 
-               A <details> that folds to its title and status. OPEN while no
-               database exists (the folder pick and the upload are then the way
-               in); folded by salesDbPanel once one does, when the Search group
-               below takes over and this is housekeeping. -->
-          <details class="sales-db" id="sales-db" open>
-            <summary class="sales-db-head">
-              <strong>MAO Sales Database</strong>
-              <span class="sales-db-status" id="sales-db-status">Not imported</span>
-            </summary>
+               Two tabs, one source at a time (Jason, 2026-11-24): a user
+               either has the MAO Sales Database or uploads / pastes sales,
+               so the two are peers rather than upload sitting inside the
+               database block. salesDbPanel picks the tab — the database when
+               one is connected, otherwise Upload / Paste; a tab chosen by
+               hand is remembered — and the Search form below shows its
+               database-only parts on the database tab alone. -->
+          <section class="sales-db" id="sales-db" data-source="manual" aria-label="Sales source">
+            <div class="sales-source-tabs" role="tablist" aria-label="Sales source">
+              <button type="button" role="tab" class="sales-source-tab" id="sales-source-tab-manual"
+                      data-source="manual" aria-controls="sales-manual" aria-selected="true"
+                      title="Upload a sales CSV, or paste sales copied from MAO">Upload / Paste</button>
+              <button type="button" role="tab" class="sales-source-tab" id="sales-source-tab-db"
+                      data-source="db" aria-controls="sales-source-db" aria-selected="false" tabindex="-1"
+                      title="Search your scraped MAO sales archive, read from a folder on this device">MAO Sales Database</button>
+            </div>
+
+            <div class="sales-source-panel" id="sales-source-db" role="tabpanel" aria-labelledby="sales-source-tab-db" hidden>
+            <p class="sales-db-status" id="sales-db-status">Not imported</p>
 
             <!-- Shown when nothing is imported yet. -->
             <div class="sales-db-empty" id="sales-db-empty">
@@ -700,13 +710,10 @@
               <p class="sales-db-update" id="sales-db-newer" hidden></p>
             </div>
 
-            <!-- Manual import (upload / paste / recent). With a database
-                 imported these are the fallback, so salesDbPanel folds this
-                 inner <details>; without one it is the main way in and stays
-                 open. A default, not a lockout. -->
-            <div class="sales-paste-row" id="sales-manual-or"><span>or</span></div>
-            <details class="sales-manual" id="sales-manual" open>
-              <summary class="sales-manual-summary">Upload a CSV or Paste Sales from MAO</summary>
+            </div>
+
+            <!-- Upload / paste / recent uploads: the other tab. -->
+            <div class="sales-source-panel sales-manual" id="sales-manual" role="tabpanel" aria-labelledby="sales-source-tab-manual">
 
           <!-- Phase 3 dropzone. The hidden #sales-upload-input is the
                actual <input type="file">; clicking or dropping on the
@@ -748,8 +755,8 @@
             <select id="recent-uploads-select"><option value="">—</option></select>
             <button id="recent-uploads-clear" type="button" class="secondary" title="Forget all recent uploads">×</button>
           </div>
-            </details>
-          </details>
+            </div>
+          </section>
 
           <!-- SEARCH: everything that decides what is loaded, in one form with
                one Search button at its foot. "Where" switches between ticked
@@ -757,7 +764,8 @@
                type, sale price and nominal sales are shared by both and appear
                once. The date, price and nominal rows also filter an uploaded
                CSV, so they show without a database; the parts marked needs-db
-               are hidden until one is imported (#sales-search.no-db).
+               are hidden until one is imported AND its tab is the one showing
+               (#sales-search.no-db).
                lib/salesDbPanel.js drives the municipality side,
                lib/salesProvincePanel.js the province side, and
                lib/salesSearchForm.js the mode switch and saved searches. -->
@@ -927,11 +935,11 @@
             <p class="sales-db-update needs-db mode-muni" id="sales-db-update" hidden></p>
             <div class="sales-db-actions needs-db">
               <button type="button" id="sales-db-load" data-icon="🔍" class="parcel-list-modal-btn primary mode-muni">Search</button>
-              <button type="button" id="sales-prov-search" class="parcel-list-modal-btn primary mode-prov" disabled>🔍 Search province</button>
+              <button type="button" id="sales-prov-search" class="parcel-list-modal-btn primary mode-prov" disabled title="Search the whole province by assessment class">🔍 Search</button>
               <button type="button" id="sales-prov-save" class="parcel-list-modal-btn"
                       title="Save this search — where, dates, sale type and price — under a name, in this browser">💾 Save search</button>
-              <button type="button" id="sales-search-clear" class="parcel-list-modal-btn"
-                      title="Empty this Search form — where, dates, sale type and price — to start a new search. Sales already loaded, the subject and Refine results are left alone; the top Clear resets the whole page.">✖ Clear search</button>
+              <button type="button" id="sales-search-clear" class="parcel-list-modal-btn danger"
+                      title="Empty this Search form — where, dates, sale type and price — to start a new search. Sales already loaded, the subject and Refine results are left alone; the top Clear resets the whole page.">🗑️ Clear search</button>
             </div>
           </section>
 

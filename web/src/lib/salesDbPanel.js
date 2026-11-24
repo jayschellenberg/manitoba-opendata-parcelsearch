@@ -87,39 +87,59 @@ export function initSalesDbPanel({
 
   const say = (m) => { if (typeof setStatus === 'function') setStatus(m); };
 
+  // ---- source tabs --------------------------------------------------------
+  // Upload / Paste and MAO Sales Database are two tabs of one block: a user
+  // has one source or the other (Jason, 2026-11-24). Until a tab is picked by
+  // hand the panel follows the archive — the database tab when one is
+  // connected, Upload / Paste when not. A hand pick is remembered in this
+  // browser and wins from then on. The Search form's database-only parts show
+  // on the database tab alone, so Upload / Paste reads the same with or
+  // without an archive.
+  const SOURCE_KEY = 'mbps.salesSource';
+  const $tabs = [...$root.querySelectorAll('.sales-source-tab')];
+  const $panels = { db: document.getElementById('sales-source-db'), manual: document.getElementById('sales-manual') };
+  const readSource = () => {
+    try {
+      const v = localStorage.getItem(SOURCE_KEY);
+      return v === 'db' || v === 'manual' ? v : null;
+    } catch { return null; }
+  };
+  let chosenSource = readSource();   // null until the user picks a tab
+  let source = chosenSource || 'manual';
+  let dbPresent = false;
+
+  function showSource(next) {
+    source = next === 'db' ? 'db' : 'manual';
+    $root.dataset.source = source;
+    for (const t of $tabs) {
+      const on = t.dataset.source === source;
+      t.setAttribute('aria-selected', String(on));
+      t.tabIndex = on ? 0 : -1;
+    }
+    for (const [key, el] of Object.entries($panels)) if (el) el.hidden = key !== source;
+    $form?.classList.toggle('no-db', !(dbPresent && source === 'db'));
+  }
+  function chooseSource(next) {
+    chosenSource = next;
+    try { localStorage.setItem(SOURCE_KEY, next); } catch { /* private window: not remembered */ }
+    showSource(next);
+  }
+  for (const t of $tabs) {
+    t.addEventListener('click', () => chooseSource(t.dataset.source));
+    t.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      e.preventDefault();
+      const other = $tabs[($tabs.indexOf(t) + (e.key === 'ArrowRight' ? 1 : $tabs.length - 1)) % $tabs.length];
+      chooseSource(other.dataset.source);
+      other.focus();
+    });
+  }
+  showSource(source);
+
   if (!salesDbAvailable()) {
     if ($status) $status.textContent = 'Unavailable in this browser';
     if ($empty) $empty.hidden = true;
     return { refresh: () => {} };
-  }
-
-  // The manual upload / paste / recent block. Once the MAO database is
-  // imported those become the fallback path, so the block collapses to give
-  // the sidebar back to the filters (Jason, 2026-08-11). Only ever set as a
-  // DEFAULT: once the user opens it by hand we stop touching it, or a render()
-  // triggered by an unrelated refresh would shut it while they were reaching
-  // for the dropzone.
-  const $manual   = document.getElementById('sales-manual');
-  const $manualOr = document.getElementById('sales-manual-or');
-  let manualTouched = false;
-  $manual?.addEventListener('toggle', () => { manualTouched = true; });
-  function setManualCollapsed(collapsed) {
-    if (!$manual || manualTouched) return;
-    $manual.open = !collapsed;
-    if ($manualOr) $manualOr.hidden = collapsed;
-  }
-
-  // The source block folds to its title and status. OPEN while there is no
-  // archive — the folder pick and the upload inside it are then the way in —
-  // and folded once one exists, when the Search form below takes over and
-  // this is housekeeping (Reload / Disconnect / Coverage). Same "default, not
-  // a lockout" rule as the manual block: once the user works the disclosure
-  // by hand we stop steering it.
-  let dbTouched = false;
-  $root.addEventListener('toggle', () => { dbTouched = true; });
-  function setDbOpen(open) {
-    if (dbTouched) return;
-    $root.open = open;
   }
 
   // ---- rendering ----------------------------------------------------------
@@ -129,9 +149,8 @@ export function initSalesDbPanel({
       $status.textContent = 'Not imported';
       $empty.hidden = false;
       $ready.hidden = true;
-      $form?.classList.add('no-db');
-      setDbOpen(true);             // no database: the folder pick and upload are the way in
-      setManualCollapsed(false);   // no database yet: upload IS the main path
+      dbPresent = false;
+      showSource(chosenSource || 'manual');   // no database: upload is the way in
       return info;
     }
     const gen = info.generated_at ? String(info.generated_at).slice(0, 10) : null;
@@ -146,9 +165,8 @@ export function initSalesDbPanel({
       (gen ? ` · exported ${gen}` : '');
     $empty.hidden = true;
     $ready.hidden = false;
-    $form?.classList.remove('no-db');
-    setDbOpen(false);              // an archive exists: Search is the main path
-    setManualCollapsed(true);
+    dbPresent = true;
+    showSource(chosenSource || 'db');       // an archive exists: it is the source
     await populateMunis();
     return info;
   }
@@ -746,9 +764,8 @@ export function initSalesDbPanel({
       const upd = await checkForUpdates(handle);      // null when not granted
       if (!upd || !upd.count) return;
       if ($newer) {
-        // Reload is inside the folded source block: open it so the notice
-        // and the button it points at are both on screen.
-        setDbOpen(true);
+        // The notice sits with Reload on the database tab. Someone who
+        // chose Upload / Paste is not using the archive, so the tab stays.
         $newer.hidden = false;
         $newer.textContent =
           `${upd.count} municipalit${upd.count === 1 ? 'y has' : 'ies have'} newer data — click Reload.`;

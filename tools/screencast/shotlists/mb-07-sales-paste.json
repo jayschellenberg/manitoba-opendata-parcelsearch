@@ -101,7 +101,7 @@
           "wait": 4000
         },
         {
-          "eval": "for (const s of ['#sales-db','#sales-manual']) { const d=document.querySelector(s); if(d&&!d.open) d.open=true }; document.querySelector('#sales-manual')?.scrollIntoView({block:'center'})"
+          "eval": "document.querySelector('#sales-source-tab-manual')?.click(); document.querySelector('#sales-manual')?.scrollIntoView({block:'center'})"
         },
         {
           "wait": 600

@@ -27,7 +27,7 @@
       "say": "Under M A O Sales Database, click Choose export folder.",
       "do": [
         {
-          "eval": "const d=document.querySelector('#sales-db'); if(d&&!d.open) d.open=true"
+          "eval": "document.querySelector('#sales-source-tab-db')?.click()"
         },
         {
           "wait": 600
@@ -86,7 +86,7 @@
       "say": "You only do this once. The folder stays connected. Open the block again for its housekeeping: Reload picks up new weekly files, Disconnect forgets the folder, and Coverage shows which municipalities are in the export and how current each one is.",
       "do": [
         {
-          "eval": "const d=document.querySelector('#sales-db'); if(d&&!d.open) d.open=true"
+          "eval": "document.querySelector('#sales-source-tab-db')?.click()"
         },
         {
           "wait": 1200
