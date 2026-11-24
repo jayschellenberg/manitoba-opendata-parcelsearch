@@ -20,10 +20,10 @@ is live there. See `NARRATION-UPDATES.md`.
 | mb-04 | Map tools and history | 2:02 | external OK | recorded |
 | mb-05 | Report outputs | 1:39 | external OK | recorded |
 | mb-06 | Agricultural features | 4:01 | external OK | recorded |
-| mb-07 | Pasting sales from MAO | 2:07 | staff only | recorded 2026-10-13 (Azure voice, live MAO sign-in) |
-| mb-07b | Filters and subject property (on the pasted sales) | 2:23 | staff only | recorded 2026-10-13 |
-| mb-08 | Linking the MAO Sales Database on Dropbox (link only) | 1:24 | staff only | recorded 2026-10-13; stills of the real Windows picker and Chrome "Allow" prompt in `data/still-*.png`; all 186 export files seeded (`"files": "*"`) |
-| mb-09 | Sales grid and comparables | 1:50 | staff only | re-recorded 2026-10-13 on Hanover (same data and subject as mb-10..12) |
+| mb-07 | Pasting sales from MAO | 2:07 | staff only | re-recorded 2026-11-24 for the Sales tab regroup (edge-tts voice, live MAO sign-in); previous: recorded 2026-10-13 (Azure voice, live MAO sign-in) |
+| mb-07b | Filters and subject property (on the pasted sales) | 2:23 | staff only | re-recorded 2026-11-24 for the Sales tab regroup, Clear search and Condo filter (edge-tts voice); previous: recorded 2026-10-13 |
+| mb-08 | Linking the MAO Sales Database on Dropbox (link only) | 1:24 | staff only | re-recorded 2026-11-24 for the Sales tab regroup, Clear search and Condo filter (edge-tts voice); previous: recorded 2026-10-13; stills of the real Windows picker and Chrome "Allow" prompt in `data/still-*.png`; all 186 export files seeded (`"files": "*"`) |
+| mb-09 | Sales grid and comparables | 1:50 | staff only | re-recorded 2026-11-24 for the Sales tab regroup, Clear search and Condo filter (edge-tts voice); previous: re-recorded 2026-10-13 on Hanover (same data and subject as mb-10..12) |
 | mb-10 | Sales Charts: layout and settings | 1:41 | staff only | re-recorded 2026-10-13 on Hanover (`data/hanover-sales.csv` from Jason's HanoverSales.xlsx, subject 73 Birchwood Lane, Mitchell, roll 67600.048) |
 | mb-11 | Sales Charts: the chart pages | 1:39 | staff only | re-recorded 2026-10-13 on Hanover |
 | mb-12 | Sales Charts: comparables and work file | 1:47 | staff only | re-recorded 2026-10-13 on Hanover |
