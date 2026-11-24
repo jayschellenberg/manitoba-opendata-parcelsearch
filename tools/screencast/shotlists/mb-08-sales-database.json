@@ -24,7 +24,7 @@
       ]
     },
     {
-      "say": "Under M A O Sales Database, click Choose export folder.",
+      "say": "Click the M A O Sales Database tab, then Choose export folder.",
       "do": [
         {
           "eval": "document.querySelector('#sales-source-tab-db')?.click()"
@@ -63,7 +63,7 @@
       ]
     },
     {
-      "say": "Every municipality file imports. The status line shows how many sales were loaded and the newest sale date, and the block folds down to that one line.",
+      "say": "Every municipality file imports. The status line at the top of the tab shows how many sales were loaded and the newest sale date.",
       "do": [
         {
           "unstill": true
@@ -83,7 +83,7 @@
       ]
     },
     {
-      "say": "You only do this once. The folder stays connected. Open the block again for its housekeeping: Reload picks up new weekly files, Disconnect forgets the folder, and Coverage shows which municipalities are in the export and how current each one is.",
+      "say": "You only do this once. The folder stays connected, and this tab opens by default from now on. It also holds the housekeeping: Reload picks up new weekly files, Disconnect forgets the folder, and Coverage shows which municipalities are in the export and how current each one is.",
       "do": [
         {
           "eval": "document.querySelector('#sales-source-tab-db')?.click()"

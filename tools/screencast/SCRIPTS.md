@@ -246,8 +246,8 @@ _Before recording: load page_
 **2.** M A O lists the matching sales a page at a time. Select the results table, including the header row, and copy it.
 <br>_[hover #ctl00_PublicContent__ResultDataGrid; press Control+c]_
 
-**3.** Back in Parcel Search, open Upload a C S V or Paste Sales from M A O, and click Paste data.
-<br>_[open Upload/Paste; click #sales-import-trigger; wait for it]_
+**3.** Back in Parcel Search, on the Upload and Paste tab, click Paste data.
+<br>_[open the Upload / Paste tab; click #sales-import-trigger; wait for it]_
 
 **4.** Paste the table into the box. The columns are the ones M A O gives you: sale date, consideration, municipality, roll number, street address, legal description and primary property. Roll number and municipality are the two the tool needs to find each parcel.
 <br>_[cursor rests]_
@@ -266,7 +266,7 @@ _Before recording: load page_
 
 ## mb-07b-sales-filters-subject (Manitoba, recorded)
 
-_Before recording: open Upload/Paste; click #sales-import-trigger; wait for it; paste data/paste-springfield-min100.tsv into #sales-import-text; click #sales-import-load; wait for it; page script_
+_Before recording: open the Upload / Paste tab; click #sales-import-trigger; wait for it; paste data/paste-springfield-min100.tsv into #sales-import-text; click #sales-import-load; wait for it; page script_
 
 **0.** This video picks up with the 73 residential bare land sales pasted from M A O for the R M of Springfield. It shows how to narrow them down with the search filters, and how to set a subject property and a search radius.
 <br>_[hover #results-status]_
@@ -299,8 +299,8 @@ _Before recording: load page_
 **0.** For firm users, there's a faster way to get sales in than copying from M A O. The firm's weekly M A O sales export is kept on Dropbox, and the Sales Analysis tab can link to it directly, covering every municipality at once. This video shows how to connect it.
 <br>_[hover #sales-db]_
 
-**1.** Under M A O Sales Database, click Choose export folder.
-<br>_[open MAO Sales Database; hover #sales-db-import]_
+**1.** Click the M A O Sales Database tab, then Choose export folder.
+<br>_[open the MAO Sales Database tab; hover #sales-db-import]_
 
 **2.** Windows opens its folder picker. Go to Dropbox, then Shared Info, and select the App Market Data folder. The app finds the sales inside it. If you see App Market Data Limited instead, select that.
 <br>_[cursor rests]_
@@ -308,11 +308,11 @@ _Before recording: load page_
 **3.** The browser then asks, Allow this site to view and copy files? Click Allow. The app keeps its own copy of the sales in this browser on your computer. Nothing is uploaded.
 <br>_[cursor rests]_
 
-**4.** Every municipality file imports. The status line shows how many sales were loaded and the newest sale date, and the block folds down to that one line.
+**4.** Every municipality file imports. The status line at the top of the tab shows how many sales were loaded and the newest sale date.
 <br>_[click #sales-db-import; hover #sales-db]_
 
-**5.** You only do this once. The folder stays connected. Open the block again for its housekeeping: Reload picks up new weekly files, Disconnect forgets the folder, and Coverage shows which municipalities are in the export and how current each one is.
-<br>_[open MAO Sales Database; click #sales-db-coverage; press Escape]_
+**5.** You only do this once. The folder stays connected, and this tab opens by default from now on. It also holds the housekeeping: Reload picks up new weekly files, Disconnect forgets the folder, and Coverage shows which municipalities are in the export and how current each one is.
+<br>_[open the MAO Sales Database tab; click #sales-db-coverage; press Escape]_
 
 **6.** From here the Search group takes over. Tick the municipalities you want, or switch Where to Whole province to search every municipality by assessment class. Set a date range, and a sale type or price range if you want them, then press Search at the bottom of the group. Save search keeps the form under a name, and Clear search empties it to start a new one, leaving any loaded sales in place. The subject property, Refine results, grid and Charts then work just as they do for pasted sales.
 <br>_[hover #sales-db-munis; hover [data-pill=searchmode]; hover .date-preset-btn[data-months="36"]; hover #sales-db-type; hover #sales-db-load; hover #sales-prov-save; hover #sales-search-clear]_

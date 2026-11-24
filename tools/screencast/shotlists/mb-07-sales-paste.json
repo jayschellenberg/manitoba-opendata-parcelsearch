@@ -92,7 +92,7 @@
       ]
     },
     {
-      "say": "Back in Parcel Search, open Upload a C S V or Paste Sales from M A O, and click Paste data.",
+      "say": "Back in Parcel Search, on the Upload and Paste tab, click Paste data.",
       "do": [
         {
           "goto": "https://manitoba-opendata-parcelsearch.vercel.app/?t=sales"
