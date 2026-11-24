@@ -1520,13 +1520,26 @@ and province search was a second form with its own copies of them.
 | **MAO Sales Database** (source) | status line; Reload, Disconnect, Coverage; upload / paste / recent uploads | A `<details>`. Open while no archive is imported (the folder pick and the upload are the way in), folded to its status line once one is. The "newer data — click Reload" notice (`#sales-db-newer`) shows here and opens the block. |
 | **Search** | saved searches; Where pill; municipality picker *or* class at sale + property types; date range; sale type; sale price; nominal sales; match count; Search; Save search; Clear search | One form, two modes. See below. |
 | **Subject Property** | subject municipality, roll #, max km, Set / × | Hidden until sales are loaded: it needs an import's municipalities. |
-| **Refine results** | assessment class, structure type; Vacant / Improved with its Bldg Threshold and Max Sale/Asmt; plan, size, street, $/Ac; zoning and zoning type; parcels per sale, N1, outline; Far-Flung threshold, Flagged pill and tally | A `<details>`, open by default. Its summary badge names every filter that is set, and the count line above the table repeats it as "⚠ Filters set: …". |
+| **Refine results** | assessment class, structure type; Vacant / Improved with its Bldg Threshold and Max Sale/Asmt; plan, size, street, $/Ac; zoning and zoning type; parcels per sale, N1, outline, condo units; Far-Flung threshold, Flagged pill and tally | A `<details>`, open by default. Its summary badge names every filter that is set, and the count line above the table repeats it as "⚠ Filters set: …". |
 | **Charts** | the Charts button | Sales mode only. |
 
 **Clear search** (`#sales-search-clear`) empties the Search form in the mode
 it is in: where, dates, sale type and price. It leaves the loaded sales, the
 subject and Refine results alone. The Job row's **Clear** is the whole-page
 reset.
+
+**Condo units** (`#sales-condo-filter`, Refine results: Any / Only / Exclude)
+finds condominium unit sales, which neither the export's short legal nor its
+Sale Type Group marks for commercial units. The marker is the legal index's
+detail field: a unit's detail opens with a single-dash `plan-unit` pair, the
+signature `deriveCondoTokens()` already parses for the Property Search condo
+search. `attachLegalMetadata()` stamps `_condoPlan` / `_condoUnits` from it.
+For commercial condos: Whole province on class 60, then Condo: Only. A sale is
+read across all its parcels (any unit makes it a condo sale); a roll with no
+legal-index record is not known to be a unit; bare-land condominium plans
+carry the same marker. The **Condo** grid column (gear, off by default) shows
+plan and unit and sorts a building's units together; the CSV export gains
+`Condo Plan` and `Condo Unit` after `Plan`.
 
 **The Search form** (`#sales-search`). The **Where** pill switches
 `data-mode` between `muni` and `province`; elements carrying `.mode-muni`
@@ -1558,6 +1571,7 @@ through `loadSalesDbPayload` in main.js:
 | `lib/salesDbPanel.js` | the source block (import, reload, coverage) and municipality mode: picker, adjacency, count, staleness, Search |
 | `lib/salesProvincePanel.js` | whole-province mode: class at sale, property-type list, live count from the in-memory index, Search |
 | `lib/salesSearchForm.js` | the mode switch, saved searches and Clear search |
+| `lib/condoUnit.js` | the Condo units filter and Condo column: which rolls are condominium units |
 
 The shared controls belong to main.js, which passes `getDateWindow`,
 `getPriceWindow` and `getTypes` to both panels.

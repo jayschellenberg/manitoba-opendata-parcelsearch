@@ -49,7 +49,7 @@ Municipalities mode: `#sales-db-muni-search`, pill `[data-pill=adjacent]`, `#sal
 Whole province mode: `#sales-prov-class #sales-prov-unknown #sales-prov-subs #sales-prov-count #sales-prov-search`.
 Shared by both modes: `.date-preset-btn[data-months=3..72]`, `#sale-date-from/-to`, `#sales-db-type` (multi-select `<details>`), `#sales-price-low/-high`, pill `[data-pill=nominal]`, `#sales-prov-save`.
 Subject (own group, shown once sales are loaded): `#subject-muni #subject-roll #distance-max #subject-apply #subject-clear`.
-Refine results `details.more-filters` (open by default): `#asmt-class #primaryprop-filter #vacant-improved #vacant-threshold .vacant-mode-btn #sale-asmt-max #sales-plan #size-uom #size-low #size-high #sales-street-name #sales-ppa-low/-high #zoning-filter #zonecat-filter #sales-groupsize-filter #sales-n1-filter #sales-outline-filter #far-flung-km [data-pill=farflung] #far-flung-count`.
+Refine results `details.more-filters` (open by default): `#asmt-class #primaryprop-filter #vacant-improved #vacant-threshold .vacant-mode-btn #sale-asmt-max #sales-plan #size-uom #size-low #size-high #sales-street-name #sales-ppa-low/-high #zoning-filter #zonecat-filter #sales-groupsize-filter #sales-n1-filter #sales-outline-filter #sales-condo-filter #far-flung-km [data-pill=farflung] #far-flung-count`.
 Charts: `#charts-open`.
 Grid: ★ `th[data-col=favorite]` (click = next comp; right/Alt-click = tag menu: Comparable #n, Land Set 1, Land Set 2); untick row → "Why exclude this sale?" popover; `#number-starred`; orange = outlier, green = multi-parcel.
 

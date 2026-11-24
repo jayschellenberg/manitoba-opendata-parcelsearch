@@ -1219,6 +1219,19 @@
                   </select>
                 </span>
               </span>
+              <!-- Condo units, from the legal index's plan-unit signature
+                   (lib/condoUnit.js). Group-level like Outline. -->
+              <span class="sale-price-half">
+                <span class="sale-price-prefix">Condo:</span>
+                <span class="field">
+                  <select id="sales-condo-filter" aria-label="Condo units filter"
+                          title="Filter by whether the sale is a condominium unit, read from the legal index: a unit's legal detail opens with its condo plan and unit number. Only keeps condo sales; Exclude drops them. To find commercial condos, search Whole province on class 60 (or tick the municipalities), then set this to Only. A multi-parcel sale counts as a condo sale when any of its parcels is a unit. Bare-land condominium plans carry the same marker, so their lots count as units. A roll the legal index has no record for is not known to be a unit. Tick the Condo column in the gear to see each plan and unit.">
+                    <option value="any" selected>Any</option>
+                    <option value="only">Only</option>
+                    <option value="exclude">Exclude</option>
+                  </select>
+                </span>
+              </span>
             </div>
 
             <!-- Far-Flung: threshold, Exclude and the live tally together. A
@@ -2137,6 +2150,7 @@
                  appends a cell at each position; styling rules below in
                  style.css align them as text columns. -->
             <th data-col="legal">Legal</th>
+            <th data-col="condo" title="Condo plan and unit number, for a roll that is a unit on a condominium plan — read from the legal index, whose legal detail opens with the pair. Blank for everything else. Sorts by plan, then unit, so one building's units sit together. Bare-land condominium plans show here too.">Condo</th>
             <th data-col="title">Title</th>
             <th data-col="zone1pct">%</th>
             <th data-col="zone2">Zoning 2</th>

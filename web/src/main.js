@@ -351,6 +351,9 @@ import {
   condoTooltip, condoCsvHeaders, condoCsvCells, condoLegendSteps,
   CONDO_TYPES, CONDO_MODES, CONDO_MIN_UNITS, CONDO_FROM_YEAR, condoDuLabelPoints,
 } from './lib/condoDev.js';
+import {
+  condoUnitOf, condoUnitLabel, condoSortKey, condoSaleKeys, saleKeyOf, passesCondoFilter,
+} from './lib/condoUnit.js';
 import { polygonBboxMidpoint } from './lib/polygonCentroid.js';
 import {
   strRefsFromRecord, distinctSections, sectionWhere, placeFromSurvey,
@@ -653,6 +656,9 @@ const $salesStreetName = document.getElementById('sales-street-name');
 // into the browsable queue of sales not yet entered in N1.
 const $salesN1 = document.getElementById('sales-n1-filter');
 const $salesOutline = document.getElementById('sales-outline-filter');
+// Condo units — Any / Only / Exclude, from the legal index's plan-unit
+// signature stamped by attachLegalMetadata (lib/condoUnit.js).
+const $salesCondo = document.getElementById('sales-condo-filter');
 // Parcels-per-sale filter — 'any' | 'single' | 'multi', tested against the
 // _saleGroupSize stamped by computeSaleGroupTotals. Shares a row with the N1
 // filter. Separates assemblies (one price, several rolls) from ordinary
@@ -1374,7 +1380,7 @@ const ADF_STEPS = ['Municipality', 'Nominal sales', 'Far-flung sales'];
 const SALES_FILTER_STEPS = [
   'Municipality', 'Nominal sales', 'Far-flung sales', 'Water influence',
   'Zoning/Dev Plan changes', 'Plan #', 'Street name', 'N1 match',
-  'Outline at sale',
+  'Outline at sale', 'Condo units',
   'Parcels per sale', '$/Acre range', 'Sale price range', 'Dwelling units',
   'Drawn area', 'Vacant / improved', 'Max Sale/Asmt', 'Size range',
   'Sale date range', 'Assessment class', 'Zoning code', 'Distance from subject',
@@ -1819,6 +1825,7 @@ const SORT_KEYS = {
   // trusted rise to the top rather than scattering through the set.
   boundary:     (r) => boundaryTrustRank(r.parcel.properties._geomTrust),
   outline:      (r) => Number(r.parcel.properties._histRank ?? 9),
+  condo:        (r) => condoSortKey(r.parcel.properties._condoPlan, r.parcel.properties._condoUnits),
   groupacres:   (r) => finiteOrNeg(r.parcel.properties._saleGroupTotalAcres),
   // Group SF is Group Acres × 43,560, so it sorts on the same underlying
   // total — the multiplier is positive and constant, so the ordering is
@@ -5414,7 +5421,7 @@ for (const el of [
   $primaryPropEl,
   $distanceMax, $salesPlan,
   $salesStreetName, $salesPpaLow, $salesPpaHigh, $saleAsmtMax,
-  $salesPriceLow, $salesPriceHigh, $salesN1, $salesOutline, $salesGroupSize, $excludeNominal,
+  $salesPriceLow, $salesPriceHigh, $salesN1, $salesOutline, $salesCondo, $salesGroupSize, $excludeNominal,
 ].filter(Boolean)) {
   el.addEventListener('change', refilterCsvIfActive);
   el.addEventListener('input',  refilterCsvIfActive);
@@ -5454,6 +5461,7 @@ function readSalesFilterState() {
     groupSize: $salesGroupSize?.value,
     n1: $salesN1?.value,
     outline: $salesOutline?.value,
+    condo: $salesCondo?.value,
     vacantImproved: $vacantImproved?.value,
     vacantThreshold: $thr?.value,
     vacantMode: $pill?.dataset.mode,
@@ -6735,6 +6743,7 @@ async function runSearch() {
   if ($salesStreetName) $salesStreetName.value = '';
   if ($salesN1)       $salesN1.value = 'any';
   if ($salesOutline)  $salesOutline.value = 'any';
+  if ($salesCondo)    $salesCondo.value = 'any';
   if ($salesGroupSize) $salesGroupSize.value = 'any';
   if ($salesPpaLow)   $salesPpaLow.value = '';
   if ($salesPpaHigh)  $salesPpaHigh.value = '';
@@ -9418,6 +9427,12 @@ function filterCsvRowsByOtherSearches(rows) {
     });
     for (const [key, list] of bySale) outlineOfSale.set(key, groupOutlineStatus(list));
   }
+  // Condo units filter — 'any' is off. Group-level like Outline: a sale is a
+  // condo sale when any of its parcels is a unit on a condominium plan, so an
+  // assembly is kept or dropped whole. A roll the legal index has no record
+  // for is not known to be a unit: it passes Exclude and fails Only.
+  const condoMode = $salesCondo?.value || 'any';
+  const condoSales = condoMode !== 'any' ? condoSaleKeys(rows) : null;
   // Parcels-per-sale filter — 'any' is off. See the predicate below for why
   // the two live options are not symmetrical.
   const groupSizeMode = $salesGroupSize?.value || 'any';
@@ -9538,6 +9553,10 @@ function filterCsvRowsByOtherSearches(rows) {
     if (outlineMode !== 'any') {
       const key = p._saleGroupId != null ? `g:${p._saleGroupId}` : `r:${rowIdx}`;
       if (outlineOfSale.get(key) !== outlineMode) return fail('Outline at sale');
+    }
+
+    if (condoSales && !passesCondoFilter(condoMode, condoSales.has(saleKeyOf(p, rowIdx)))) {
+      return fail('Condo units');
     }
 
     // Parcels-per-sale filter. Group-level by construction: _saleGroupSize is
@@ -10495,6 +10514,12 @@ function attachLegalMetadata(parcelFc, legalMatches) {
     p._lot = rec.lot || null;
     p._block = rec.block || null;
     p._plan = rec.plan || null;
+    // Condo plan + unit(s), from the detail's leading plan-unit pair. Units
+    // are a comma string, not an array: feature properties cross to the map
+    // as JSON and come back flattened.
+    const condo = condoUnitOf(rec.legal_description, rec.legal_detail);
+    p._condoPlan = condo ? condo.plan : null;
+    p._condoUnits = condo ? condo.units.join(',') : null;
     p._certificatesOfTitle = rec.certificates_of_title || null;
     p._legalSourceUrl = rec.source_url || null;
   }
@@ -15693,6 +15718,9 @@ function renderTable(rows, { resetPage = true } = {}) {
     yearCell.classList.add('sales-only');
     tr.appendChild(yearCell);
     tr.appendChild(legalCell(p));
+    // Condo plan - unit. Positional: in step with the data-col="condo" <th>
+    // between Legal and Title.
+    tr.appendChild(td(condoUnitLabel(p._condoPlan, p._condoUnits) || null));
     tr.appendChild(titleCell(p));
     tr.appendChild(td(formatPercent(row.zoning[0]?.ratio), 'num'));
     tr.appendChild(td(z2Show ? badge(formatZoneCode(z2), 'badge-zone') : null));
@@ -19377,6 +19405,7 @@ function exportCsv(explicitRows) {
     ...(withSeq ? ['Map #'] : []),
     'Roll #', 'Muni #', 'Municipality', 'Address',
     'Legal Description', 'Legal Detail', 'Lot', 'Block', 'Plan',
+    'Condo Plan', 'Condo Unit',
     'Certificates of Title', 'MAO Legal Source URL',
     // Sale columns sit straight after the identity/legal group (moved
     // 2026-11-18): they used to start near column 154, behind ~140 columns
@@ -19521,6 +19550,8 @@ function exportCsv(explicitRows) {
       p._lot ?? '',
       p._block ?? '',
       p._plan ?? '',
+      p._condoPlan ?? '',
+      p._condoUnits ?? '',
       p._certificatesOfTitle ?? '',
       p._legalSourceUrl ?? '',
       ...(inSalesMode
