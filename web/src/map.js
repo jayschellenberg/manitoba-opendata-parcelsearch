@@ -19,6 +19,7 @@
 // plan polygon while its overlay is visible pops up a small description.
 
 import { addMlsAreaLayers, mlsAreaHtml } from './lib/mlsAreas.js';
+import { loadMlsAreaLookup, mlsAreaAt } from './lib/mlsAreaLookup.js';
 import { addUnitLabelLayers } from './lib/unitLabels.js';
 import { addSpaLayers, spaPopupHtml, specialPlanningArea, spaBylawLine } from './lib/specialPlanningAreas.js';
 import maplibregl from 'maplibre-gl';
@@ -1797,6 +1798,9 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
       addUnitLabelLayers(map, { footprintBeforeId: 'zoning-fill' });
       // MLS area boundaries (lib/mlsAreas.js, shared with the Winnipeg app).
       addMlsAreaLayers(map);
+      // Load the areas now, overlay on or off, so every parcel popup can
+      // name its MLS area (lib/mlsAreaLookup.js).
+      loadMlsAreaLookup();
       // Special Planning Area outlines — CentrePort's Inland Port SPA
       // (lib/specialPlanningAreas.js). Above the zoning fill, so the dashed
       // line reads over the zones it governs.
@@ -3723,7 +3727,14 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
         const resultHit = subject || parcel || null;
         const rowKey = resultHit?.properties?._rowKey;
         const canJump = rowKey != null && typeof onFeatureClick === 'function';
-        const hoverOpts = { hoverSoil: true, showJumpToList: canJump };
+        // The parcel's own midpoint (a withheld parcel's pin IS its
+        // centroid): the GPS link copies it and the MLS Area line is looked
+        // up there, not at the pointer, so the html (the popup's key) stays
+        // the same while the pointer moves within one parcel.
+        const resultGeom = resultHit?.geometry;
+        const center = (resultGeom?.type === 'Point' ? resultGeom.coordinates : polygonBboxMidpoint(resultGeom))
+          ?? [e.lngLat.lng, e.lngLat.lat];
+        const hoverOpts = { hoverSoil: true, showJumpToList: canJump, point: center };
         if (subject) {
           blocks.push(`<div><strong style="color:#1e6fd9">Subject</strong><br>${parcelHtml(subject.properties, hoverOpts)}</div>`);
         }
@@ -3742,9 +3753,6 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
         // parcel each at once. A zoning / dev-plan-only popup leaves it be.
         if (blocks.length && !(resultHit && muniHover.holds(e.point))) {
           const html = blocks.join('<hr style="margin:6px 0;border:none;border-top:1px solid #ddd">');
-          const g = resultHit?.geometry;
-          const center = (g?.type === 'Point' ? g.coordinates : polygonBboxMidpoint(g))
-            ?? [e.lngLat.lng, e.lngLat.lat];
           mainHover.hoverTo({
             key: html,
             html,
@@ -3838,23 +3846,24 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
         // Hide the hover popup so the sticky popup doesn't render on top
         // of itself when the user hovers back over the same parcel.
         mainHover.hide();
-        parcelClickPopup
-          .setLngLat(e.lngLat)
-          .setHTML(parcelHtml(f.properties, {
-            showJumpToList: key != null && typeof onFeatureClick === 'function',
-          }))
-          .addTo(map);
-        wireJumpToList(parcelClickPopup, key, onFeatureClick);
-        // Wire the Coordinates copy link. e.features only carries
-        // properties from the symbol/fill layer hit; for the geometry
-        // we need the rendered feature. Fall back to the click point
-        // when no polygon geometry is available.
+        // The parcel's midpoint, for the Coordinates copy link and the MLS
+        // Area line. e.features only carries properties from the symbol/fill
+        // layer hit; for the geometry we need the rendered feature. Fall
+        // back to the click point when no polygon geometry is available.
         const rendered = map.queryRenderedFeatures(e.point, { layers: parcelHitLayers(map) })[0];
         // polygonBboxMidpoint returns null for a Point, so a withheld parcel
         // falls through to the click point — which IS its centroid, since the
         // pin is drawn there. Same answer, no special case.
         const center = polygonBboxMidpoint(rendered?.geometry)
           ?? [e.lngLat.lng, e.lngLat.lat];
+        parcelClickPopup
+          .setLngLat(e.lngLat)
+          .setHTML(parcelHtml(f.properties, {
+            showJumpToList: key != null && typeof onFeatureClick === 'function',
+            point: center,
+          }))
+          .addTo(map);
+        wireJumpToList(parcelClickPopup, key, onFeatureClick);
         wireCoordsCopy(parcelClickPopup, center);
         wireRollCopy(parcelClickPopup);
         wireN1Copy(parcelClickPopup);
@@ -3885,6 +3894,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
       let hoverSoilKey = null;
       let lastHoverProps = null;
       let lastHoverOverlay = null;
+      let lastHoverCenter = null;
       const hoverSoilKeyOf = (p) => `${p?.Muni_Name_With_Typ || ''}|${p?.Roll_No_Txt || ''}`;
       const cancelHoverSoil = () => {
         if (hoverSoilTimer) clearTimeout(hoverSoilTimer);
@@ -3908,6 +3918,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
               muniHover.refresh(key, muniParcelHtml(muniParcelPropsNow(lastHoverProps), {
                 withReportLink: true,
                 overlay: lastHoverOverlay,
+                point: lastHoverCenter,
                 soil: composition === undefined ? undefined : (composition || { composition: null, cliRollup: null }),
               }));
             })
@@ -3966,9 +3977,10 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
         lastHoverOverlay = hoverOverlay;
         const g = feature.geometry;
         const center = polygonBboxMidpoint(g) ?? [e.lngLat.lng, e.lngLat.lat];
+        lastHoverCenter = center;
         muniHover.hoverTo({
           key: hoverSoilKeyOf(p),
-          html: muniParcelHtml(muniParcelPropsNow(p), { withReportLink: true, overlay: hoverOverlay, soil: hoverSoil }),
+          html: muniParcelHtml(muniParcelPropsNow(p), { withReportLink: true, overlay: hoverOverlay, soil: hoverSoil, point: center }),
           lngLat: e.lngLat,
           fit: true,
           wire: (pp) => {
@@ -4042,6 +4054,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
             withReportLink: true,
             overlay: overlay.zoning ? overlay : { ...overlay, zoning: shownZoning },
             soil: shownSoil,
+            point: center,
           }));
           wireCoordsCopy(muniClickPopup, center);
           wireRollCopy(muniClickPopup);
@@ -4120,7 +4133,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
           }
           const p = e.features?.[0]?.properties;
           if (!p) return;
-          histClickPopup.setLngLat(e.lngLat).setHTML(htmlFn(p, historicalYear ?? '')).addTo(map);
+          histClickPopup.setLngLat(e.lngLat).setHTML(htmlFn(p, historicalYear ?? '', [e.lngLat.lng, e.lngLat.lat])).addTo(map);
         });
         map.on('mouseenter', layerId, () => { setHoverCursor('pointer'); });
         map.on('mouseleave', layerId, () => { setHoverCursor(''); });
@@ -6036,7 +6049,7 @@ export function setHistoricalVisible(map, on) {
   }
 }
 
-function historicalParcelHtml(p, year) {
+function historicalParcelHtml(p, year, point = null) {
   const lines = [`<strong style="color:#b45309">Historical parcel${year ? ` (${escapeHtml(year)})` : ''}</strong>`];
   if (p.Roll_No_Txt) {
     // Link the roll to TODAY's MAO page when the parcel still exists (current
@@ -6053,6 +6066,8 @@ function historicalParcelHtml(p, year) {
   if (p.Frontage_or_Area)   lines.push(`<strong>Area</strong> ${escapeHtml(p.Frontage_or_Area)}`);
   if (p.Total_Value)        lines.push(`<strong>Assessed</strong> ${escapeHtml(p.Total_Value)}`);
   if (p.Asmt_Roll)          lines.push(`<small style="color:#777">${escapeHtml(p.Asmt_Roll)}</small>`);
+  const mlsLine = mlsAreaLineHtml(point);
+  if (mlsLine) lines.push(mlsLine);
   lines.push('<small style="color:#888">Display geometry simplified — verify boundary/area against the archived source-of-record.</small>');
   return `<div class="parcel-popup">${lines.join('<br>')}${sizeChangeHtml(p)}${lineageHtml(p.Roll_No_Txt || '')}</div>`;
 }
@@ -6132,7 +6147,17 @@ export function setLandCoverRasterOpacity(map, opacity) {
 
 // ---------- popup builders ----------
 
-export function parcelHtml(p, { showJumpToList = false, hoverSoil = false } = {}) {
+/** One "MLS Area 1A" line for the parcel at [lng, lat] (the board's name
+ *  on hover); '' until the areas have loaded, for a point outside every
+ *  board's areas, or with no point given. Goes last in the parcel's own
+ *  lines, as in the Winnipeg app. */
+function mlsAreaLineHtml(point) {
+  const a = point ? mlsAreaAt(point) : null;
+  if (!a?.area) return '';
+  return `<span title="${escapeHtml(a.board || '')}"><strong>MLS Area</strong> ${escapeHtml(a.area)}</span>`;
+}
+
+export function parcelHtml(p, { showJumpToList = false, hoverSoil = false, point = null } = {}) {
   const lines = [];
   // Subject parcel gets a distinctive blue header above the standard
   // identity block. _isSubject is stamped onto the subject feature by
@@ -6497,6 +6522,8 @@ export function parcelHtml(p, { showJumpToList = false, hoverSoil = false } = {}
     if (ppaFmt)  lines.push(`<strong>Price/Acre</strong> ${escapeHtml(ppaFmt)}`);
     if (pplFmt)  lines.push(`<strong>Price/Lot</strong> ${escapeHtml(pplFmt)} (${escapeHtml(groupSize)})`);
   }
+  const mlsLine = mlsAreaLineHtml(point);
+  if (mlsLine) lines.push(mlsLine);
   // (Assessment Report + GPS Coordinates links now live inline in
   // the `lines` array above — the Roll # is hyperlinked to the
   // assessment report, and the GPS Coordinates link sits under the
@@ -7954,7 +7981,7 @@ let muniPopupToken = 0;
  * — same behaviour as the search-result hover, but for arbitrary muni
  * parcels.
  */
-function muniParcelHtml(p, { withReportLink = false, overlay = null, soil = undefined } = {}) {
+function muniParcelHtml(p, { withReportLink = false, overlay = null, soil = undefined, point = null } = {}) {
   const lines = [];
   if (p.Roll_No_Txt) {
     // Roll # is hyperlinked to the Manitoba Assessment Online report
@@ -8057,6 +8084,8 @@ function muniParcelHtml(p, { withReportLink = false, overlay = null, soil = unde
     if (db.amendment) bits.push(amendmentHtml(db.amendment));
     if (bits.length) lines.push(`<strong style="color:#1a3a4a">Dev Plan</strong>: ${bits.join(' &middot; ')}`);
   }
+  const mlsLine = mlsAreaLineHtml(point);
+  if (mlsLine) lines.push(mlsLine);
   // (Assessment Report + GPS Coordinates links now live inline in the
   // `lines` array above — the Roll # is hyperlinked to the assessment
   // report, and the GPS Coordinates link sits right after DU. No

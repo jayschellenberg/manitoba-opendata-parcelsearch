@@ -332,6 +332,24 @@ request per parcel crossed.
 **Zoning** is read off the rendered layer when the zoning overlay is on, and
 fetched per parcel when it is off.
 
+**MLS Area** is the last line of every parcel popup (Nov 2026, as in the
+Winnipeg app): the search-result hover and click popups, the Assessment
+Parcels hover and click popups, and the historical (as-of) parcel popup each
+end the parcel's own lines with `MLS Area B07`, the board's name in the
+line's hover title. `lib/mlsAreaLookup.js` loads `public/mls-areas.geojson`
+at map start (the same once-per-page fetch the MLS Areas overlay uses, so the
+line shows whether or not the overlay is on) and `mlsAreaAt([lng, lat])`
+returns the last, i.e. top-drawn, area containing the point. The point is the
+parcel's bbox midpoint, not the pointer, so the line cannot change while the
+pointer moves within one parcel; a withheld-boundary parcel uses its pin, and
+the historical popup uses the click point. The file covers the Winnipeg
+Regional, Brandon and Portage la Prairie boards only: a parcel anywhere else,
+or a popup opened before the file has loaded, simply has no such line. The
+Sales Charts page loads the same lookup and adds an **MLS Area** row to its
+sale tooltips (chart dots, map hover and click popups), from the sale's
+lat/lng. The lookup is its own module because `lib/mlsAreas.js` is kept
+byte-identical with the Winnipeg app.
+
 **Amendments show on the map, not just in the table.** A zoning polygon
 carries its parent by-law (`ZBL`), the by-law that amended it into its
 current zone (`ZBL_A`) and usually a from→to text (`AMENDMENT_DESCRIPTION`,
@@ -1037,6 +1055,7 @@ provincial download becoming the archived source-of-record.
 | `web/scripts/build-parcel-tiles.js` | derives `_rollDisplay`/`_civicAddress`/`_acres`, writes both tile layers, runs tippecanoe, band-checks and promotes. `--promote-only` finishes a run whose tiling already succeeded | `web/public/parcels.pmtiles` + `parcels-pmtiles-meta.json` |
 | `rebuild-parcel-tiles.ps1` | both steps with logging + failure alerts. `-IfStale` skips when the gpkg is unchanged, `-Publish` uploads to R2 and size-verifies, `-TestAlert` proves the alert path | `logs/parcel-tiles-*.log` |
 | `schedule_parcel_tiles.ps1` | registers `mb-parcelsearch-parcel-tiles` (16th, 03:00, S4U). **Run elevated** | — |
+| `web/src/lib/mlsAreaLookup.js` | MLS area at a point, for the MLS Area line in parcel popups and chart tooltips | — |
 | `web/src/lib/muniParcelRecords.js` | popup resolver — full record + zoning by roll number, on click | — |
 | `web/src/lib/polygonCentroid.js` | bbox midpoint, shared by the map and the tile builder so label placement cannot drift | — |
 | `web/eslint.config.js` | `no-undef` as an error, gating `npm test`. Exists because Rollup treats an unresolved identifier as a global, so a missing import ships green | — |
