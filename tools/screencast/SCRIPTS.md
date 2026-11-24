@@ -302,7 +302,7 @@ _Before recording: load page_
 **1.** Under M A O Sales Database, click Choose export folder.
 <br>_[open MAO Sales Database; hover #sales-db-import]_
 
-**2.** Windows opens its folder picker. Go to Dropbox, then Shared Info, App Market Data, Sales Data, and select the Manitoba folder.
+**2.** Windows opens its folder picker. Go to Dropbox, then Shared Info, and select the App Market Data folder. The app finds the sales inside it. If you see App Market Data Limited instead, select that.
 <br>_[cursor rests]_
 
 **3.** The browser then asks, Allow this site to view and copy files? Click Allow. The app keeps its own copy of the sales in this browser on your computer. Nothing is uploaded.

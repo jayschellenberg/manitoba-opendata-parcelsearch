@@ -30,7 +30,9 @@ search is a **Where** switch on the one Search form.
   line, with hovers on Save search and Clear search. That step only plays once the button is live,
   and it has not been run.
 - The `opfs` folder in mb-08 and wpg-05 now points at `AppMarketData/AppMarketData-Limited/SalesData`
-  (the tier split). mb-08 line 03 and `data/still-picker.png` still describe the old path.
+  (the tier split). mb-08 line 03 now says to select the `AppMarketData` folder (or
+  `AppMarketData-Limited`), and `data/still-picker.png` / `data/still-permission.png` were re-captured
+  from a real Chrome picker on 2026-11-24 to match; mb-08 re-recorded the same day.
 - The Azure Speech key returned 401 on 2026-11-23; check it before recording.
 
 Three kinds of entry:
@@ -125,7 +127,7 @@ No narration change needed. Line 04 already says square feet.
 
 | Line | Kind | Change |
 |---|---|---|
-| 03 | Wrong (minor) | The folder path is still right, but picking `AppMarketData` itself, `AppMarketData-Limited`, or a folder holding the tier shares now works too; the app steps down to `SalesData`. Worth saying, since staff on the limited tier see a different folder name. |
+| 03 | Done 2026-11-24 | Narration now picks `AppMarketData` itself (or `AppMarketData-Limited`) and lets the app step down to `SalesData`; picker and permission stills re-captured to match. |
 | 07 | Done 2026-11-23 | A sale price range narrowing the search is now in the closing line, with the Where switch and the Search button at the foot of the group. |
 | 02, 05, 06 | Done 2026-11-23 | The block is open before an import and folds to its status line after one, so line 02 no longer says "Open", line 05 mentions the fold, and line 06 reopens the block before clicking Coverage. |
 
