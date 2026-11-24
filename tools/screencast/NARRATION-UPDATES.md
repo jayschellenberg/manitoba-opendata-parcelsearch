@@ -44,6 +44,8 @@ search is a **Where** switch on the one Search form.
   on it. Its old counts were wrong on screen even before that, because the 12-month preset had
   rolled forward (narrated 39, showed 26). Now: 6 months leaves 27, vacant 24, size and price 13,
   zoning R T alone 8, within 5 km of the subject 2. `count_mb07b.py` prints these for a recount.
+- **mb-09 (2026-11-24).** Re-recorded the same afternoon so its sidebar shows the source tabs. Its
+  shot list needed no change: it uploads through the hidden file input and narrates no counts.
 
 Three kinds of entry:
 
