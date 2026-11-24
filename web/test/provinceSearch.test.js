@@ -25,7 +25,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   classBitsOf, classMask, indexShard, KeyTable, runSearch, extractRows, describeCriteria,
-  listSaved, saveSearch, deleteSaved, savedMode, SAVED_KEY, dateKey, CLASS_CODES, defaultDateWindow,
+  listSaved, saveSearch, deleteSaved, savedMode, emptyCriteria, SAVED_KEY, dateKey, CLASS_CODES, defaultDateWindow,
 } from '../src/lib/provinceSearch.js';
 
 const results = [];
@@ -223,11 +223,27 @@ test('main.js initialises the province panel with the shared load path', () => {
 test('index.html carries every element the province side and the form read', () => {
   for (const id of ['sales-search', 'sales-db-province', 'sales-prov-class', 'sales-prov-unknown',
     'sales-prov-subs', 'sales-prov-count', 'sales-prov-search', 'sales-prov-save',
-    'sales-prov-saved', 'sales-prov-delete', 'sales-db-type',
+    'sales-prov-saved', 'sales-prov-delete', 'sales-search-clear', 'sales-db-type',
     // The shared window both modes search by.
     'sale-date-from', 'sale-date-to', 'sales-price-low', 'sales-price-high']) {
     assert.ok(html.includes(`id="${id}"`), `missing #${id}`);
   }
+});
+
+test('Clear search empties the form in the mode it is in, and is not the page reset', () => {
+  assert.deepEqual(emptyCriteria('muni'),
+    { mode: 'muni', from: '', to: '', min: '', max: '', types: [], munis: [], adjacent: false, excluded: [] });
+  assert.deepEqual(emptyCriteria('province'),
+    { mode: 'province', from: '', to: '', min: '', max: '', types: [], classes: [], subcats: [] });
+  assert.equal(savedMode(emptyCriteria('muni')), 'muni');
+  assert.equal(savedMode(emptyCriteria('province')), 'province');
+  // It sits in the Search group's action row, after Save search.
+  const row = html.slice(html.indexOf('id="sales-db-load"'));
+  assert.ok(row.indexOf('id="sales-prov-save"') < row.indexOf('id="sales-search-clear"'));
+  assert.ok(row.indexOf('id="sales-search-clear"') < row.indexOf('</section>'));
+  const form = stripComments(fs.readFileSync(path.join(here, '..', 'src', 'lib', 'salesSearchForm.js'), 'utf8'));
+  assert.match(form, /\$clear\?\.addEventListener\('click',[\s\S]*?apply\(emptyCriteria\(getMode\(\)\)\)/);
+  assert.doesNotMatch(form, /clearAll/);
 });
 
 test('the Search form has one date, price and sale-type set, not a second province copy', () => {

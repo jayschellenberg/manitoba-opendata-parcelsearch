@@ -314,8 +314,8 @@ _Before recording: load page_
 **5.** You only do this once. The folder stays connected. Open the block again for its housekeeping: Reload picks up new weekly files, Disconnect forgets the folder, and Coverage shows which municipalities are in the export and how current each one is.
 <br>_[open MAO Sales Database; click #sales-db-coverage; press Escape]_
 
-**6.** From here the Search group takes over. Tick the municipalities you want, or switch Where to Whole province to search every municipality by assessment class. Set a date range, and a sale type or price range if you want them, then press Search at the bottom of the group. The subject property, Refine results, grid and Charts then work just as they do for pasted sales.
-<br>_[hover #sales-db-munis; hover [data-pill=searchmode]; hover .date-preset-btn[data-months="36"]; hover #sales-db-type; hover #sales-db-load]_
+**6.** From here the Search group takes over. Tick the municipalities you want, or switch Where to Whole province to search every municipality by assessment class. Set a date range, and a sale type or price range if you want them, then press Search at the bottom of the group. Save search keeps the form under a name, and Clear search empties it to start a new one, leaving any loaded sales in place. The subject property, Refine results, grid and Charts then work just as they do for pasted sales.
+<br>_[hover #sales-db-munis; hover [data-pill=searchmode]; hover .date-preset-btn[data-months="36"]; hover #sales-db-type; hover #sales-db-load; hover #sales-prov-save; hover #sales-search-clear]_
 
 ## mb-09-sales-grid-comps (Manitoba, recorded)
 

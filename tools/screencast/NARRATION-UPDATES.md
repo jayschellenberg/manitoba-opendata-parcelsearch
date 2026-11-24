@@ -23,6 +23,15 @@ search is a **Where** switch on the one Search form.
   the subject, which still works.
 - The recorded mb-07b, mb-08 and mb-09 videos show the old layout and are dated once it is live.
 - Winnipeg (wpg-05) is a different site and is untouched.
+- **Rehearsed 2026-11-23** (after the regroup went live): mb-08, mb-07b and mb-09 ran headless
+  against production with the local Kokoro voice, into a scratch folder. No failed actions and no
+  step overran its narration. mb-07 was not rehearsed (it needs a live MAO sign-in).
+- **Clear search** (`#sales-search-clear`, branch `feat/clear-search`) is named in mb-08's closing
+  line, with hovers on Save search and Clear search. That step only plays once the button is live,
+  and it has not been run.
+- The `opfs` folder in mb-08 and wpg-05 now points at `AppMarketData/AppMarketData-Limited/SalesData`
+  (the tier split). mb-08 line 03 and `data/still-picker.png` still describe the old path.
+- The Azure Speech key returned 401 on 2026-11-23; check it before recording.
 
 Three kinds of entry:
 
