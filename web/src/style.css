@@ -891,18 +891,22 @@ body:not(.sales-mode) .sidebar .sales-subject-group { display: none; }
    hidden <input type="file">. The hover/drag-over state lights up
    the border in accent blue so dropping reads as "release here".
    The cloud icon is an inline SVG with currentColor fill. */
+/* Compact (Jason, 2026-11-24): the icon sits beside the two lines of text
+   rather than stacked above them, which more than halves the box's height. */
 .sales-dropzone {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: auto minmax(0, auto);
+  justify-content: center;
   align-items: center;
-  gap: 4px;
-  padding: 16px 12px;
+  column-gap: 10px;
+  row-gap: 1px;
+  padding: 7px 10px;
   border: 2px dashed var(--color-neutral-300, #d4d4d8);
   border-radius: 6px;
   background: var(--color-neutral-50, #fafafa);
   cursor: pointer;
   color: var(--color-neutral-700, #3f3f46);
-  text-align: center;
+  text-align: left;
   transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
 }
 .sales-dropzone:hover,
@@ -925,8 +929,9 @@ body:not(.sales-mode) .sidebar .sales-subject-group { display: none; }
   color: var(--color-neutral-500, #71717a);
 }
 .sales-dropzone-icon {
-  width: 32px;
-  height: 32px;
+  grid-row: 1 / span 2;
+  width: 28px;
+  height: 28px;
   fill: var(--color-neutral-400, #a1a1aa);
 }
 .sales-dropzone:hover .sales-dropzone-icon,
