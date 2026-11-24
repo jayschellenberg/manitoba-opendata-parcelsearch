@@ -20,8 +20,8 @@ is live there. See `NARRATION-UPDATES.md`.
 | mb-04 | Map tools and history | 2:02 | external OK | recorded |
 | mb-05 | Report outputs | 1:39 | external OK | recorded |
 | mb-06 | Agricultural features | 4:01 | external OK | recorded |
-| mb-07 | Pasting sales from MAO | 2:19 | staff only | re-recorded 2026-11-24 (afternoon, live MAO sign-in) for the source tabs and compact upload box, copied to the staff folder the same day; the live search now returns 77 sales where mb-07b's saved paste has 73; re-recorded that morning for the Sales tab regroup (edge-tts voice, live MAO sign-in); previous: recorded 2026-10-13 (Azure voice, live MAO sign-in) |
-| mb-07b | Filters and subject property (on the pasted sales) | 2:35 | staff only | re-recorded 2026-11-24 (afternoon, build b5f49ad) for the source tabs and compact upload box, copied to the staff folder the same day; re-recorded that morning for the Sales tab regroup, Clear search and Condo filter (edge-tts voice); previous: recorded 2026-10-13 |
+| mb-07 | Pasting sales from MAO | 2:19 | staff only | re-recorded 2026-11-24 (afternoon, live MAO sign-in) for the source tabs and compact upload box, copied to the staff folder the same day; re-recorded that morning for the Sales tab regroup (edge-tts voice, live MAO sign-in); previous: recorded 2026-10-13 (Azure voice, live MAO sign-in) |
+| mb-07b | Filters and subject property (on the pasted sales) | 2:40 | staff only | re-recorded a third time 2026-11-24 on the paste file re-captured that day (77 sales, the same page mb-07 pastes), with every narrated count redone: 6 months 27, vacant 24, size and price 13, zoning RT 8, within 5 km 2; copied to the staff folder the same day; before that, re-recorded 2026-11-24 (afternoon, build b5f49ad) for the source tabs and compact upload box; re-recorded that morning for the Sales tab regroup, Clear search and Condo filter (edge-tts voice); previous: recorded 2026-10-13 |
 | mb-08 | Linking the MAO Sales Database on Dropbox (link only) | 1:51 | staff only | re-recorded 2026-11-24 (afternoon, build b5f49ad) for the source tabs and the one-row Search / Save search / Clear search, narration changed to match; copied to the staff folder the same day; re-recorded that morning for the Sales tab regroup, Clear search and Condo filter (edge-tts voice); previous: recorded 2026-10-13; stills of the real Windows picker and Chrome "Allow" prompt in `data/still-*.png`; all 186 export files seeded (`"files": "*"`) |
 | mb-09 | Sales grid and comparables | 1:49 | staff only | re-recorded 2026-11-24 for the Sales tab regroup, Clear search and Condo filter (edge-tts voice); re-recorded again the same day on the build with Condo Plan and Condo Unit in the Key fields export; previous: re-recorded 2026-10-13 on Hanover (same data and subject as mb-10..12) |
 | mb-10 | Sales Charts: layout and settings | 1:41 | staff only | re-recorded 2026-10-13 on Hanover (`data/hanover-sales.csv` from Jason's HanoverSales.xlsx, subject 73 Birchwood Lane, Mitchell, roll 67600.048) |
@@ -44,7 +44,7 @@ data agreements. The Property Search videos use open government data only.
 | Recorder, shot lists, scripts | this folder (`tools/screencast/`) |
 | Raw recordings, captions, timings | `out/` (gitignored) |
 | Narration clip cache | `out/_work/<video>/NN.mp3` |
-| Paste demo data (real MAO rows) | `data/paste-springfield.tsv` and `data/paste-springfield-min100.tsv` (the 73 sales in mb-07/07b; re-capture with `capture_mao_paste.py`, which needs a MAO sign-in). Gitignored, private |
+| Paste demo data (real MAO rows) | `data/paste-springfield.tsv` and `data/paste-springfield-min100.tsv` (mb-07b's sales: 77 since the 2026-11-24 re-capture; the 73-sale October capture is kept as `paste-springfield-min100-2026-10-13.tsv`; re-capture with `capture_mao_paste.py`, which needs a MAO sign-in). Gitignored, private |
 | Shared copy for outside viewers | `D:\Dropbox\SharedInfo\Parcel Search Training Videos`: the 10 Property Search videos plus `.srt` captions, with readable names |
 | Staff copy of the sales videos | `D:\Dropbox\SharedInfo\Parcel Sales Training Videos`: `Manitoba 1-6 - <title>` in viewing order (1 = mb-07 paste, 2 = mb-07b filters and subject, 3-6 = mb-09..12; 7 = mb-08 Dropbox link) and `Winnipeg 1` = wpg-05, each with `.srt`. 3-6 and Winnipeg 1 copied 2026-10-13; copy 1 and 2 there once recorded |
 | Review copy of every script | `SCRIPTS.md` (rebuild with `python make_scripts.py`) |
@@ -191,6 +191,11 @@ when the voice service is rate-limiting; `record.py` then uses the cached clips.
     `<select>`) are in the Search group. `[data-pill=searchmode]` switches Municipalities / Whole
     province; the province Search button is `#sales-prov-search`.
   - `#sales-clear` is in the Job row at the top.
+- mb-07b narrates a count after every filter. They go stale when the paste file is re-captured and
+  as the date presets roll forward, and mb-07 pastes the live MAO page, so the two drift apart
+  (77 against 73 on 2026-11-24, with the 12-month count narrated as 39 and showing 26). Before
+  re-recording either, re-capture the paste file and run
+  `python count_mb07b.py data/paste-springfield-min100.tsv 6 RT`, then fix the shot list's numbers.
 - A date preset must be set before `#sales-db-load`, or the browser shows a confirm that stalls the run.
 - `#subject-muni` stays hidden; set the subject with `#subject-roll`.
 - Chart dots are SVG circles: use `clickdot`, never fixed coordinates. Clear the text selection after a
