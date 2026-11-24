@@ -39,7 +39,11 @@ search is a **Where** switch on the one Search form.
   Paste tab) and mb-08 lines 02, 05 and 06 (click the tab; the status line is at the top of the tab;
   nothing folds). mb-07b and mb-08 were re-recorded that afternoon on build b5f49ad with no failed
   actions. mb-07 was re-recorded the same afternoon with a live MAO sign-in; its live search returned
-  77 sales, where mb-07b opens on the 73 in the saved paste file.
+  77 sales, where mb-07b opened on the 73 in the saved paste file.
+- **mb-07b counts (2026-11-24).** The paste file was re-captured (77 sales) and mb-07b re-recorded
+  on it. Its old counts were wrong on screen even before that, because the 12-month preset had
+  rolled forward (narrated 39, showed 26). Now: 6 months leaves 27, vacant 24, size and price 13,
+  zoning R T alone 8, within 5 km of the subject 2. `count_mb07b.py` prints these for a recount.
 
 Three kinds of entry:
 

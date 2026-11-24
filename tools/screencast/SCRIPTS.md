@@ -268,25 +268,25 @@ _Before recording: load page_
 
 _Before recording: open the Upload / Paste tab; click #sales-import-trigger; wait for it; paste data/paste-springfield-min100.tsv into #sales-import-text; click #sales-import-load; wait for it; page script_
 
-**0.** This video picks up with the 73 residential bare land sales pasted from M A O for the R M of Springfield. It shows how to narrow them down with the search filters, and how to set a subject property and a search radius.
+**0.** This video picks up with the 77 residential bare land sales pasted from M A O for the R M of Springfield. It shows how to narrow them down with the search filters, and how to set a subject property and a search radius.
 <br>_[hover #results-status]_
 
-**1.** Start with the date, in the Search group. The presets keep sales from the last 3 to 72 months, counted back from today. Here, 12 months. You can also type exact From and To dates. The status line above the grid shows what's left: 39 of the 73 sales.
-<br>_[click .date-preset-btn[data-months="12"]; hover #sale-date-from; hover #results-status]_
+**1.** Start with the date, in the Search group. The presets keep sales from the last 3 to 72 months, counted back from today. Here, 6 months. You can also type exact From and To dates. The status line above the grid shows what's left: 27 of the 77 sales.
+<br>_[click .date-preset-btn[data-months="6"]; hover #sale-date-from; hover #results-status]_
 
-**2.** Next, vacant or improved, under Refine results. Vacant Land Only keeps the sales where buildings are only a small part of the assessment. That cut-off is the building threshold, which appears on the line below, five percent by default, and it can be a percentage or a dollar amount. Twenty-nine sales are left.
+**2.** Next, vacant or improved, under Refine results. Vacant Land Only keeps the sales where buildings are only a small part of the assessment. That cut-off is the building threshold, which appears on the line below, five percent by default, and it can be a percentage or a dollar amount. Twenty-four sales are left.
 <br>_[pick "vacant" in #vacant-improved; hover #vacant-threshold; hover #results-status]_
 
-**3.** Refine results holds the rest, and each one applies as soon as you set it. Size works in acres, square feet or front feet. Here, a maximum of one acre keeps the lots and drops the acreages. Price per acre has a range of its own. A sale price range, up in the Search group, trims what remains: a minimum of fifty thousand dollars drops the lowest sale.
+**3.** Refine results holds the rest, and each one applies as soon as you set it. Size works in acres, square feet or front feet. Here, a maximum of one acre keeps the lots and drops the acreages. Price per acre has a range of its own. A sale price range, up in the Search group, trims what remains: a minimum of fifty thousand dollars drops the two lowest sales.
 <br>_[type "1" in #size-high; press Tab; hover #sales-ppa-low; type "50000" in #sales-price-low; press Tab]_
 
-**4.** The zoning filter keeps only the zones you tick. Ticking R S and R T drops the R C lots on Joerja Way, leaving twelve sales. Zoning type does the same with broader groups, such as residential or rural.
-<br>_[click #zoning-filter summary; click #zoning-filter input[value=RS]; click #zoning-filter input[value=RT]; click #zoning-filter summary; hover #zonecat-filter summary]_
+**4.** The zoning filter keeps only the zones you tick. Ticking R T alone drops the R S lots, leaving eight sales. Zoning type does the same with broader groups, such as residential or rural.
+<br>_[click #zoning-filter summary; click #zoning-filter input[value=RT]; click #zoning-filter summary; hover #zonecat-filter summary]_
 
 **5.** Far-flung flags sales more than a set distance from the rest of the group, thirty kilometres by default. Keep shows them with a flag, and Exclude drops them; the count underneath says how many are flagged. All of these Springfield sales are well inside that.
 <br>_[hover #far-flung-km; hover [data-pill=farflung]]_
 
-**6.** Now the subject property, in its own group above Refine results. Type its roll number, here 45 Oak Meadow Drive in Oakbank, a vacant 65-foot lot. Set a maximum distance of five kilometres and click Set. The subject is outlined in blue on the map, a distance column is added at the far right of the grid, and only the four sales within five kilometres remain.
+**6.** Now the subject property, in its own group above Refine results. Type its roll number, here 45 Oak Meadow Drive in Oakbank, a vacant 65-foot lot. Set a maximum distance of five kilometres and click Set. The subject is outlined in blue on the map, a distance column is added at the far right of the grid, and only the two sales within five kilometres remain.
 <br>_[type "163408.240" in #subject-roll; type "5" in #distance-max; click #subject-apply; hover #results-status]_
 
 **7.** Every active filter is listed in the status line, and the grid, the map and the Charts window all follow them. The cross next to Set removes the subject. Clear, at the top beside the job buttons, resets the whole page, including the pasted sales, so use it only to start over.
