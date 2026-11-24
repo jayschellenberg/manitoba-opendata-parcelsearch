@@ -41,7 +41,7 @@
       ]
     },
     {
-      "say": "Windows opens its folder picker. Go to Dropbox, then Shared Info, App Market Data, Sales Data, and select the Manitoba folder.",
+      "say": "Windows opens its folder picker. Go to Dropbox, then Shared Info, and select the App Market Data folder. The app finds the sales inside it. If you see App Market Data Limited instead, select that.",
       "do": [
         {
           "still": "data/still-picker.png"
