@@ -333,6 +333,17 @@ export function savedMode(criteria) {
   return criteria?.mode === 'muni' ? 'muni' : 'province';
 }
 
+/**
+ * The Search form with nothing chosen, in the given mode: what Clear search
+ * applies. It keeps the mode, so the form stays on the side the user is on.
+ */
+export function emptyCriteria(mode) {
+  const shared = { mode: mode === 'province' ? 'province' : 'muni', from: '', to: '', min: '', max: '', types: [] };
+  return shared.mode === 'province'
+    ? { ...shared, classes: [], subcats: [] }
+    : { ...shared, munis: [], adjacent: false, excluded: [] };
+}
+
 export function listSaved(storage) {
   try {
     const v = JSON.parse(storage?.getItem(SAVED_KEY) || '[]');

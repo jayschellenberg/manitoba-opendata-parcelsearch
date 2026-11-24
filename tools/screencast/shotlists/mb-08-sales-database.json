@@ -3,7 +3,7 @@
   "url": "https://manitoba-opendata-parcelsearch.vercel.app/?t=sales",
   "voice": "azure:en-US-AndrewMultilingualNeural",
   "opfs": {
-    "dir": "D:/Dropbox/SharedInfo/AppMarketData/SalesData/Manitoba",
+    "dir": "D:/Dropbox/SharedInfo/AppMarketData/AppMarketData-Limited/SalesData/Manitoba",
     "files": "*"
   },
   "setup": [
@@ -106,7 +106,7 @@
       ]
     },
     {
-      "say": "From here the Search group takes over. Tick the municipalities you want, or switch Where to Whole province to search every municipality by assessment class. Set a date range, and a sale type or price range if you want them, then press Search at the bottom of the group. The subject property, Refine results, grid and Charts then work just as they do for pasted sales.",
+      "say": "From here the Search group takes over. Tick the municipalities you want, or switch Where to Whole province to search every municipality by assessment class. Set a date range, and a sale type or price range if you want them, then press Search at the bottom of the group. Save search keeps the form under a name, and Clear search empties it to start a new one, leaving any loaded sales in place. The subject property, Refine results, grid and Charts then work just as they do for pasted sales.",
       "do": [
         {
           "hover": "#sales-db-munis"
@@ -137,6 +137,18 @@
         },
         {
           "wait": 1500
+        },
+        {
+          "hover": "#sales-prov-save"
+        },
+        {
+          "wait": 1500
+        },
+        {
+          "hover": "#sales-search-clear"
+        },
+        {
+          "wait": 1800
         }
       ]
     }

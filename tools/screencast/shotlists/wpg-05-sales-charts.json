@@ -2,7 +2,7 @@
  "name": "wpg-05-sales-charts",
  "url": "https://winnipeg-opendata-parcelsearch.vercel.app/?t=sales",
  "opfs": {
-  "dir": "D:/Dropbox/SharedInfo/AppMarketData/SalesData/Winnipeg",
+  "dir": "D:/Dropbox/SharedInfo/AppMarketData/AppMarketData-Limited/SalesData/Winnipeg",
   "files": [
    "wpg-sales-with-n1.csv"
   ]

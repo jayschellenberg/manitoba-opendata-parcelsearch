@@ -740,7 +740,10 @@ body:not(.sales-mode) .sidebar .sales-subject-group { display: none; }
 .sidebar .sales-db-typefilter .multiselect { width: 100%; }
 .sales-search .sales-nominal-exclude { margin-top: 4px; padding-left: 0; }
 /* Search and Save search close the form; Search takes the room. */
-.sales-search .sales-db-actions .primary { flex: 1 1 auto; }
+/* Search takes the full width; Save search and Clear search share the line
+   under it, so three buttons never wrap raggedly in the narrow sidebar. */
+.sales-search .sales-db-actions .primary { flex: 1 1 100%; }
+.sales-search .sales-db-actions > button:not(.primary) { flex: 1 1 0; white-space: nowrap; }
 
 /* Upload / paste, now inside the source block. */
 .sales-db > .sales-paste-row { margin-top: 8px; }

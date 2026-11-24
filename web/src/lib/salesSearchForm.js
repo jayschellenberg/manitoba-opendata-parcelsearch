@@ -7,8 +7,8 @@
 //
 // Date range, sale price and sale type are the same controls in both, and
 // each panel reads them through getters main.js injects. This file owns only
-// what sits across the two: the mode switch and the saved searches, which
-// store the whole form in either mode.
+// what sits across the two: the mode switch, the saved searches, which
+// store the whole form in either mode, and Clear search, which empties it.
 //
 // The mode is a hidden checkbox (#sales-db-province) behind a segmented pill
 // (lib/pillBinding.js), like the sidebar's other pills; the form mirrors it
@@ -16,7 +16,7 @@
 
 import { getManifest } from './salesStore.js';
 import {
-  describeCriteria, listSaved, saveSearch, deleteSaved, savedMode, defaultDateWindow,
+  describeCriteria, listSaved, saveSearch, deleteSaved, savedMode, defaultDateWindow, emptyCriteria,
 } from './provinceSearch.js';
 
 function safeStorage() {
@@ -47,6 +47,7 @@ export function initSalesSearchForm({
   const $saved = document.getElementById('sales-prov-saved');
   const $delete = document.getElementById('sales-prov-delete');
   const $save = document.getElementById('sales-prov-save');
+  const $clear = document.getElementById('sales-search-clear');
 
   const say = (m) => { if (typeof setStatus === 'function') setStatus(m); };
   const getMode = () => ($province.checked ? 'province' : 'muni');
@@ -163,6 +164,19 @@ export function initSalesSearchForm({
     if (!name || !window.confirm(`Delete the saved search "${name}"?`)) return;
     deleteSaved(safeStorage(), name);
     renderSaved();
+  });
+
+  // Clear search (Jason, 2026-11-23): empties the form only. The top Clear
+  // reloads the page and drops the loaded sales, subject and filters, which
+  // is too much for "start a different search". Loaded sales stay; the date
+  // and price boxes also filter the table, so emptying them shows every
+  // loaded row again.
+  $clear?.addEventListener('click', () => {
+    apply(emptyCriteria(getMode()));
+    renderSaved();                          // no saved search is the current one now
+    say(hasLoadedSales?.()
+      ? 'Search form cleared. The loaded sales are still in the table.'
+      : 'Search form cleared.');
   });
 
   renderSaved();
