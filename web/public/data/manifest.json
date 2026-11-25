@@ -1,31 +1,31 @@
 {
   "manifest_version": 1,
-  "generated_at": "2026-11-18T15:38:17.754Z",
+  "generated_at": "2026-11-25T15:36:50.408Z",
   "datasets": {
     "legal_index": {
       "file": "legal-index.json",
       "schema_version": 1,
-      "size_bytes": 138465328,
-      "modified_at": "2026-11-18T15:32:50.123Z",
-      "generated_at": "2026-11-18T15:30:50Z",
+      "size_bytes": 138480359,
+      "modified_at": "2026-11-25T15:32:23.839Z",
+      "generated_at": "2026-11-25T15:30:46Z",
       "source": "parcels.parquet",
-      "source_modified": "2026-11-18T14:29:08Z",
-      "row_count": 438445
+      "source_modified": "2026-11-25T14:21:17Z",
+      "row_count": 438467
     },
     "assessment_index": {
       "file": "assessment-index.json",
       "schema_version": 1,
-      "size_bytes": 29838079,
-      "modified_at": "2026-11-18T15:35:48.610Z",
-      "generated_at": "2026-11-18T15:33:31Z",
+      "size_bytes": 29840266,
+      "modified_at": "2026-11-25T15:34:47.146Z",
+      "generated_at": "2026-11-25T15:32:59Z",
       "source": "tax_history.parquet",
-      "source_modified": "2026-11-18T14:29:12Z",
-      "row_count": 438572,
+      "source_modified": "2026-11-25T14:21:21Z",
+      "row_count": 438606,
       "year_min": 2026,
       "year_max": 2027,
       "vacant_threshold_pct": 2,
-      "nominal_vacant_count": 201725,
-      "zero_buildings_count": 195636
+      "nominal_vacant_count": 201757,
+      "zero_buildings_count": 195668
     },
     "muni_vintage": {
       "file": "muni-vintage.json",
