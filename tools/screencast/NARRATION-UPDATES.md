@@ -167,7 +167,8 @@ No narration change needed. Line 04 already says square feet.
 
 > **Done 2026-11-24** and re-recorded: five pages, CMS Charts opening on the Comparables map, the
 > trend as a percent per year with its range, and a new ADF Overview step. The live page has no
-> Uncertainty map tab: its maps are Price & Year, Isovalue and Location effect.
+> Uncertainty map tab: its maps are Price & Year, Isovalue and Location effect. Re-recorded again the
+> same evening so the Comparables map holds until it has been named.
 
 | Line | Kind | Change |
 |---|---|---|
@@ -179,7 +180,8 @@ No narration change needed. Line 04 already says square feet.
 
 > **Done 2026-11-24** and re-recorded: the maps step opens on the Comparables map and comp table,
 > the work file contents name them, and the work file dialog now stays open through its narration
-> (it used to close four seconds in).
+> (it used to close four seconds in). Re-recorded again the same evening with a real dot click
+> (`clickmapdot`), so the popup is on screen while it is described.
 
 | Line | Kind | Change |
 |---|---|---|

@@ -165,37 +165,47 @@
           "eval": "(() => { const e = document.querySelector('.page-maps'); if (!e) return; window.scrollTo({top: e.getBoundingClientRect().top + scrollY - 232, behavior: 'smooth'}); })()"
         },
         {
-          "wait": 1900
+          "wait": 1200
         },
         {
           "click": ".page-maps .row-tabs button:nth-child(1)"
         },
         {
-          "wait": 2500
+          "wait": 2000
         },
         {
           "hover": ".comp-table-card"
         },
         {
-          "wait": 4000
+          "wait": 3000
         },
         {
           "click": ".page-maps .row-tabs button:nth-child(2)"
         },
         {
-          "wait": 2500
+          "wait": 1500
         },
         {
-          "hover": ".page-maps .chart-card .maplibregl-canvas"
+          "clickmapdot": [
+            ".page-maps .chart-card .maplibregl-canvas",
+            0.52,
+            0.8
+          ]
         },
         {
-          "wait": 3500
+          "wait": 8000
         }
       ]
     },
     {
       "say": "Work file packages the whole analysis. Choose which charts and tables to include, embed the images in the summary, and download a zip named for the subject roll and date.",
       "do": [
+        {
+          "eval": "document.querySelector('.maplibregl-popup-close-button')?.click()"
+        },
+        {
+          "wait": 400
+        },
         {
           "click": "#workfile-open"
         },
