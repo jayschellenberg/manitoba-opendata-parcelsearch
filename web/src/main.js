@@ -15244,6 +15244,7 @@ function endResultsSettling() {
  *  Split out of setCount so the busy state can change without a caller
  *  having to re-send the same message. */
 function renderResultsStatus() {
+  updateRollSummary();
   const el = document.getElementById('results-status');
   if (!el) return;
   const base = lastCountText.trim();
@@ -15278,6 +15279,89 @@ function renderResultsStatus() {
   el.classList.toggle('results-status-error', looksLikeError);
   el.classList.toggle('results-status-busy', busy);
 }
+
+// ---------- Roll summary (toolbar) ----------
+// Distinct roll numbers among the rows the grid shows AND has ticked (the
+// same set the map and the export carry), their total area, and a Copy rolls
+// button that joins them with | (Winnipeg parity, 2026-11-25). Deduped on
+// municipality + roll so a parcel that sold twice counts its land once, while
+// the same roll number in two municipalities stays two parcels. The area is
+// the grid's own Acres figure (rowSizeAcres), so the total matches the column.
+
+function rollSummaryRows() {
+  const seen = new Map();
+  for (const r of currentRows || []) {
+    if (!rowIsSelected(r)) continue;
+    const p = r.parcel?.properties || {};
+    const roll = displayRoll(p.Roll_No_Txt ?? p.TaxID ?? '').trim();
+    if (!roll) continue;
+    const key = `${p.Municipality ?? p.Muni_Name_With_Typ ?? ''}|${roll}`;
+    if (seen.has(key)) continue;
+    let acres = NaN;
+    try { acres = Number(rowSizeAcres(p, parcelAcres(r.parcel))); } catch { /* no area */ }
+    seen.set(key, { roll, acres });
+  }
+  return seen;
+}
+
+function updateRollSummary() {
+  const box = document.getElementById('roll-summary');
+  const text = document.getElementById('roll-summary-text');
+  if (!box || !text) return;
+  const rows = [...rollSummaryRows().values()];
+  if (!rows.length) { box.hidden = true; return; }
+  let ac = 0;
+  let missing = 0;
+  for (const { acres } of rows) {
+    if (Number.isFinite(acres) && acres > 0) ac += acres;
+    else missing += 1;
+  }
+  const n = rows.length;
+  const parts = [`${n} roll${n === 1 ? '' : 's'}`];
+  if (ac > 0) {
+    const sf = Math.round(ac * 43560).toLocaleString('en-CA');
+    parts.push(`land ${sf} sf (${ac < 10 ? ac.toFixed(2) : ac.toFixed(1)} ac)`);
+  }
+  if (missing > 0) parts.push(`${missing} without an area`);
+  text.textContent = parts.join(' · ');
+  text.title = missing > 0
+    ? `Total area of ${n - missing} of ${n} rolls, as the grid's Acres column shows it; ${missing} have none.`
+    : `Total area of the ${n} distinct rolls in the ticked rows, as the grid's Acres column shows it.`;
+  box.hidden = false;
+}
+
+function wireRollSummary() {
+  const btn = document.getElementById('roll-copy-btn');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    const rolls = [...new Set([...rollSummaryRows().values()].map((v) => v.roll))];
+    if (!rolls.length) return;
+    const textOut = rolls.join('|');
+    const flash = (msg) => {
+      btn.textContent = msg;
+      setTimeout(() => { btn.textContent = 'Copy rolls'; }, 1400);
+    };
+    const legacy = () => {
+      const ta = document.createElement('textarea');
+      ta.value = textOut;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      let ok;
+      try { ok = document.execCommand('copy'); } catch { ok = false; }
+      ta.remove();
+      flash(ok ? `Copied ${rolls.length}` : 'Copy failed');
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(textOut).then(() => flash(`Copied ${rolls.length}`), legacy);
+    } else {
+      legacy();
+    }
+  });
+}
+wireRollSummary();
 
 function setCount(text) {
   lastCountText = text ?? '';
@@ -15421,6 +15505,7 @@ function renderTable(rows, { resetPage = true } = {}) {
   // columns appear and disappear with the toggles.
   if ($resultsTable) $resultsTable.classList.toggle('water-mode', wantsWaterRightsEnrichment());
   currentRows = rows;
+  updateRollSummary();
   // Prior outlines follow the result munis while that overlay is on (no-op
   // when it is off or the munis are unchanged).
   refreshPriorOutlinesForResults();
