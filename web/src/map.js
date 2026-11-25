@@ -365,6 +365,12 @@ const BASEMAP_STYLE = {
         'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
       ],
       tileSize: 256,
+      // Deepest tile level fetched; past it MapLibre stretches z19 tiles.
+      // Esri serves z20 outside the big cities as grey "Map data not yet
+      // available" placeholders, and with 256 px tiles on MapLibre's 512 px
+      // grid a camera at z19 already asks for z20 — the Aerial Pack's small
+      // town lots came out grey or blank (Stonewall, 2026-11-25).
+      maxzoom: 19,
       attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community',
     },
     // Esri Wayback historical imagery. Same imagery archive as
