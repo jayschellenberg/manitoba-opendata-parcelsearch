@@ -288,6 +288,32 @@ class Driver:
             if "shift" in mods:
                 await p.keyboard.up("Shift")
             await p.wait_for_timeout(CLICK_SETTLE)
+        elif kind == "clickmapdot":     # [canvas selector, fx?, fy?]: click a sale dot on a MapLibre map
+            # The map is not reachable from the page, but it sets the canvas
+            # cursor to "pointer" over a sale, so probe outward from the centre.
+            # fx, fy (0-1, default centre) say where on the map to start: a dot low
+            # on the map leaves room for the popup, which opens upward there.
+            sel, fx, fy = (arg, 0.5, 0.5) if isinstance(arg, str) else (list(arg) + [0.5, 0.5])[:3]
+            loc = p.locator(sel).first
+            await loc.wait_for(state="visible", timeout=15000)
+            box = await loc.bounding_box()
+            cx, cy = box["x"] + box["width"] * fx, box["y"] + box["height"] * fy
+            rx, ry = box["width"] * 0.3, box["height"] * min(0.22, fy - 0.04, 0.96 - fy)
+            pts = [(cx + i * 12, cy + j * 12) for i in range(-int(rx // 12), int(rx // 12) + 1)
+                   for j in range(-int(ry // 12), int(ry // 12) + 1)]
+            pts.sort(key=lambda q: (q[0] - cx) ** 2 + (q[1] - cy) ** 2)
+            await self.move_to(cx, cy)
+            for x, y in pts:
+                await p.mouse.move(x, y)
+                if await loc.evaluate("c => c.style.cursor === 'pointer'"):
+                    self.pos = (x, y)
+                    break
+            else:
+                raise RuntimeError(f"no sale dot found on {sel}")
+            await p.wait_for_timeout(500)
+            await p.mouse.down(); await p.mouse.up()
+            await p.wait_for_selector(".maplibregl-popup .map-popup-btn", timeout=5000)
+            await p.wait_for_timeout(CLICK_SETTLE)
         elif kind == "fill":
             sel, text = arg
             x, y = await self._centre(sel)

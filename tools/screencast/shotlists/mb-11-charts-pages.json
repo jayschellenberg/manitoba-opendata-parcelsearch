@@ -65,25 +65,25 @@
           "eval": "(() => { const e = document.querySelector('.page-maps'); if (!e) return; window.scrollTo({top: e.getBoundingClientRect().top + scrollY - 232, behavior: 'smooth'}); })()"
         },
         {
-          "wait": 2100
+          "wait": 7000
         },
         {
           "click": ".page-maps .row-tabs button:nth-child(2)"
         },
         {
-          "wait": 3500
+          "wait": 2500
         },
         {
           "click": ".page-maps .row-tabs button:nth-child(3)"
         },
         {
-          "wait": 3500
+          "wait": 2500
         },
         {
           "click": ".page-maps .row-tabs button:nth-child(4)"
         },
         {
-          "wait": 3000
+          "wait": 2200
         },
         {
           "click": ".page-maps .row-tabs button:nth-child(2)"

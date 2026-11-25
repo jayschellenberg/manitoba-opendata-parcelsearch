@@ -25,8 +25,8 @@ is live there. See `NARRATION-UPDATES.md`.
 | mb-08 | Linking the MAO Sales Database on Dropbox (link only) | 1:51 | staff only | re-recorded 2026-11-24 (afternoon, build b5f49ad) for the source tabs and the one-row Search / Save search / Clear search, narration changed to match; copied to the staff folder the same day; re-recorded that morning for the Sales tab regroup, Clear search and Condo filter (edge-tts voice); previous: recorded 2026-10-13; stills of the real Windows picker and Chrome "Allow" prompt in `data/still-*.png`; all 186 export files seeded (`"files": "*"`) |
 | mb-09 | Sales grid and comparables | 1:48 | staff only | re-recorded 2026-11-24 (afternoon, build e406e0b) for the source tabs and compact upload box, shot list unchanged, copied to the staff folder the same day; re-recorded that morning for the Sales tab regroup, Clear search and Condo filter (edge-tts voice); re-recorded again the same day on the build with Condo Plan and Condo Unit in the Key fields export; previous: re-recorded 2026-10-13 on Hanover (same data and subject as mb-10..12) |
 | mb-10 | Sales Charts: layout and settings | 2:01 | staff only | re-recorded 2026-11-24 (build e406e0b, edge-tts voice) with the narration brought up to the five-page Charts window; copied to the staff folder the same day; previous: re-recorded 2026-10-13 on Hanover (`data/hanover-sales.csv` from Jason's HanoverSales.xlsx, subject 73 Birchwood Lane, Mitchell, roll 67600.048) |
-| mb-11 | Sales Charts: the chart pages | 2:08 | staff only | re-recorded 2026-11-24 (build e406e0b, edge-tts voice) with the narration brought up to the five-page Charts window; copied to the staff folder the same day; previous: re-recorded 2026-10-13 on Hanover |
-| mb-12 | Sales Charts: comparables and work file | 2:01 | staff only | re-recorded 2026-11-24 (build e406e0b, edge-tts voice) with the narration brought up to the five-page Charts window; copied to the staff folder the same day; previous: re-recorded 2026-10-13 on Hanover |
+| mb-11 | Sales Charts: the chart pages | 2:08 | staff only | re-recorded 2026-11-24 (build e406e0b, edge-tts voice) and once more that evening for on-screen timing, with the narration brought up to the five-page Charts window; copied to the staff folder the same day; previous: re-recorded 2026-10-13 on Hanover |
+| mb-12 | Sales Charts: comparables and work file | 2:00 | staff only | re-recorded 2026-11-24 (build e406e0b, edge-tts voice) and once more that evening for on-screen timing, with the narration brought up to the five-page Charts window; copied to the staff folder the same day; previous: re-recorded 2026-10-13 on Hanover |
 | wpg-01 | Search basics | 1:45 | external OK | recorded |
 | wpg-02 | More searches | 1:55 | external OK | recorded |
 | wpg-03 | Map layers | 2:08 | external OK | recorded |
@@ -137,7 +137,9 @@ Actions: `click` `dblclick` `hover` `fill [sel,text]` `fillfile [sel,path]` `typ
 `select [sel,value-or-label]` `wait ms` `waitfor sel` `scroll [sel,dx,dy]` `drag [[x1,y1],[x2,y2]]`
 `clickxy [x,y]` `dblclickxy [x,y]` `move [x,y]` `upload [sel,path]` `eval js` `goto url` `zoom n`
 `popup sel` (opens a window; recording follows it) `clickdot [card selector, n, "shift"?]` (clicks the
-n-th plotted SVG dot in a chart card). A failed action is logged and the step continues.
+n-th plotted SVG dot in a chart card) `clickmapdot canvas-selector` or `[canvas-selector, fx, fy]`
+(clicks a sale dot on a Charts map, searching outward from that fraction of the map, and waits for its
+popup). A failed action is logged and the step continues.
 
 `opfs` (sales videos only, Jason-approved 2026-10-10): serves the listed export files from disk into the
 recording browser's private file system and overrides the folder picker, so "Choose export folder…"
@@ -200,6 +202,11 @@ when the voice service is rate-limiting; `record.py` then uses the cached clips.
 - `#subject-muni` stays hidden; set the subject with `#subject-roll`.
 - Chart dots are SVG circles: use `clickdot`, never fixed coordinates. Clear the text selection after a
   shift-click with `getSelection().removeAllRanges()`.
+- Map dots are drawn in WebGL and the map object is not reachable from the page: use `clickmapdot`,
+  which probes outward from the map centre until the canvas cursor turns to a pointer. Start low on the map
+  (`fy` about 0.8): the popup is nearly as tall as the map and only fits when it opens upward. Close the popup
+  before the next step with an `eval` that clicks `.maplibregl-popup-close-button`: the button can sit
+  outside the map, where a mouse click misses it.
 - Click `#excl-panel input.excl-reason` before typing a reason; focus is lost when the grid republishes.
 - Open the Charts window with `popup`, which uses a locator click. A coordinate click missed while the
   panel was still re-laying out.

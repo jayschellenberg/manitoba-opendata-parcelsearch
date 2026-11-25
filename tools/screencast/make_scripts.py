@@ -13,6 +13,7 @@ EVAL_LABELS = [
     ("sales-source-tab-manual", "open the Upload / Paste tab"), ("sales-source-tab-db", "open the MAO Sales Database tab"),
     ("sales-manual", "open Upload/Paste"), ("sales-db", "open MAO Sales Database"),
     ("historical", "pick latest as-of date"), ("removeAllRanges", "clear text selection"),
+    ("maplibregl-popup-close-button", "close the map popup"),
     ("excl-panel", "open Excluded records"), ("comps-panel", "open Comparable sales"),
     ("page-charts", "scroll to charts"), ("page-maps", "scroll to maps"), ("hint-page", "scroll to hint"),
 ]
@@ -34,6 +35,8 @@ def describe(a):
         return f'pick "{v[1]}" in {v[0]}'
     if k == "clickdot":
         return "shift-click a chart dot" if len(v) > 2 else "click a chart dot"
+    if k == "clickmapdot":
+        return "click a sale dot on the map"
     if k == "eval":
         return next((label for key, label in EVAL_LABELS if key in v), "page script")
     return None  # wait, move: not worth listing

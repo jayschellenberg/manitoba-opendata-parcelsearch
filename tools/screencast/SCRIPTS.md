@@ -418,10 +418,10 @@ _Before recording: upload a file; wait for it; pick "vacant" in #vacant-improved
 <br>_[open Comparable sales; hover #comps-panel summary]_
 
 **4.** The Comparables map pins the subject and each tagged comp, and the table beside it takes a title and comments and copies to Excel. On the other maps, clicking a dot opens a popup with Exclude this sale, Add as Comp, and Add to Land Set 1 or 2, so the same decisions can be made spatially.
-<br>_[scroll to maps; click .page-maps .row-tabs button:nth-child(1); hover .comp-table-card; click .page-maps .row-tabs button:nth-child(2); hover .page-maps .chart-card .maplibregl-canvas]_
+<br>_[scroll to maps; click .page-maps .row-tabs button:nth-child(1); hover .comp-table-card; click .page-maps .row-tabs button:nth-child(2); click a sale dot on the map]_
 
 **5.** Work file packages the whole analysis. Choose which charts and tables to include, embed the images in the summary, and download a zip named for the subject roll and date.
-<br>_[click #workfile-open; wait for it; click #workfile-embed]_
+<br>_[close the map popup; click #workfile-open; wait for it; click #workfile-embed]_
 
 **6.** Inside are summary dot H T M L, comps dot C S V, the C M S table, the Comparables maps and comp table, excluded dot C S V with reasons, the land set files, every chart as P N G, and every table as C S V. Keep this window in front while it renders or map images can come out blank.
 <br>_[hover #workfile-list; scroll the table sideways; press Escape]_
