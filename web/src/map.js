@@ -381,6 +381,9 @@ const BASEMAP_STYLE = {
       type: 'raster',
       tiles: [waybackTileUrl(WAYBACK_VERSIONS[0].release)],
       tileSize: 256,
+      // Same archive as esri-imagery, same limit: past z19 stretch, rather
+      // than fetch Esri's grey placeholder tiles.
+      maxzoom: 19,
       attribution: 'Historical imagery &copy; Esri, Maxar, Earthstar Geographics (Esri Wayback)',
     },
     // Transparent reference overlay (place names, road names,
@@ -459,11 +462,14 @@ const BASEMAP_STYLE = {
     // skipping the explicit default tripped a two-click toggle
     // bug because the initial undefined read inverted the swap.
     ...STREETS_LAYERS,
-    { id: 'esri-imagery',        type: 'raster', source: 'esri-imagery',        minzoom: 0, maxzoom: 20, layout: { visibility: 'none' } },
+    // Both imagery layers stay on to the map's max zoom (22). At maxzoom 20
+    // they switched off, so Satellite and Wayback went blank when zoomed
+    // right in (2026-11-25); their sources stretch z19 tiles beyond z19.
+    { id: 'esri-imagery',        type: 'raster', source: 'esri-imagery',        minzoom: 0, maxzoom: 22, layout: { visibility: 'none' } },
     // Wayback historical imagery — sits directly above esri-imagery and
     // below the reference/transportation overlays so place names + roads
     // still draw on top of the dated aerial.
-    { id: 'wayback-imagery',     type: 'raster', source: 'wayback',            minzoom: 0, maxzoom: 20, layout: { visibility: 'none' } },
+    { id: 'wayback-imagery',     type: 'raster', source: 'wayback',            minzoom: 0, maxzoom: 22, layout: { visibility: 'none' } },
     { id: 'nrcan-transportation-geometry', type: 'raster', source: 'nrcan-transportation-geometry', minzoom: 0, maxzoom: 24, layout: { visibility: 'none' } },
     { id: 'nrcan-elevation',     type: 'raster', source: 'nrcan-elevation',     minzoom: 0, maxzoom: 19, layout: { visibility: 'none' } },
     { id: 'esri-transportation', type: 'raster', source: 'esri-transportation', minzoom: 0, maxzoom: 20, layout: { visibility: 'none' } },

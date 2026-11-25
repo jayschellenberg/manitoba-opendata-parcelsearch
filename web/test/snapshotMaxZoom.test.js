@@ -24,4 +24,12 @@ assert.ok(cap < layerMax, `EXPORT_MAX_ZOOM ${cap} must stay below the esri-image
 const srcBlock = mapSrc.slice(mapSrc.indexOf("'esri-imagery': {"), mapSrc.indexOf("'esri-imagery': {") + 900);
 const srcMax = Number(srcBlock.match(/maxzoom: (\d+)/)?.[1]);
 assert.ok(Number.isFinite(srcMax) && srcMax <= 19, `esri-imagery source maxzoom must be set and at most 19 (got ${srcMax})`);
-console.log('snapshotMaxZoom.test.js: 2 passed');
+// The live map zooms to 22; an imagery layer that stops short of it leaves
+// Satellite / Wayback blank when zoomed right in (2026-11-25).
+assert.ok(layerMax >= 22, `esri-imagery layer maxzoom must reach the map's max zoom 22 (got ${layerMax})`);
+const wbLayerMax = Number(mapSrc.match(/id: 'wayback-imagery',[^}]*maxzoom: (\d+)/)?.[1]);
+assert.ok(wbLayerMax >= 22, `wayback-imagery layer maxzoom must reach 22 (got ${wbLayerMax})`);
+const wbAt = mapSrc.indexOf("'wayback': {");
+const wbSrcMax = Number(mapSrc.slice(wbAt, wbAt + 600).match(/maxzoom: (\d+)/)?.[1]);
+assert.ok(Number.isFinite(wbSrcMax) && wbSrcMax <= 19, `wayback source maxzoom must be set and at most 19 (got ${wbSrcMax})`);
+console.log('snapshotMaxZoom.test.js: 5 passed');
