@@ -2316,6 +2316,29 @@
       </div>
     </dialog>
 
+    <!-- Pack review: every map an Addenda / Parcel Pack built, before it is
+         saved. Filled by main.js openPackReview() (Winnipeg parity). -->
+    <dialog id="pack-review-modal" class="map-capture-modal pack-review-modal" aria-labelledby="pack-review-title">
+      <div class="map-capture-inner">
+        <div class="map-capture-head">
+          <h2 id="pack-review-title">Pack <span class="map-capture-size" id="pack-review-summary"></span></h2>
+          <button type="button" class="map-capture-close" data-close aria-label="Close">×</button>
+        </div>
+        <p class="map-capture-tip">Check each map, then download them all as one ZIP or just the ones you need. Click a map to see it full size.</p>
+        <div class="pack-review-grid" id="pack-review-grid"></div>
+        <div class="pack-review-zoom" id="pack-review-zoom" hidden title="Click to close">
+          <img id="pack-review-zoom-img" alt="">
+          <span class="pack-review-zoom-cap" id="pack-review-zoom-cap"></span>
+        </div>
+        <div class="map-capture-actions">
+          <span class="pack-review-zipname">ZIP: <code id="pack-review-zip"></code></span>
+          <span class="map-capture-spacer"></span>
+          <button type="button" class="parcel-list-modal-btn" data-close>Close</button>
+          <button type="button" id="pack-review-all" class="parcel-list-modal-btn primary">Download all (ZIP)</button>
+        </div>
+      </div>
+    </dialog>
+
     <!-- Parcel Pack: which parcels share a set of maps. Rows are built by
          main.js openParcelPackDialog(). -->
     <dialog id="parcel-pack-modal" class="map-capture-modal parcel-pack-modal" aria-labelledby="parcel-pack-title">

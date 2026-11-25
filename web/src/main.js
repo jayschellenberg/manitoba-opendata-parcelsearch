@@ -4726,7 +4726,12 @@ async function buildAddendaPack() {
     '',
   ].join('\r\n');
   files.push({ name: 'README.txt', data: new TextEncoder().encode(readme) });
-  downloadBlob(buildStoreZip(files), captureFilename('zip').replace(/map-(\d{4}-\d{2}-\d{2})\.zip$/, 'addenda-$1.zip'));
+  openPackReview({
+    title: 'Addenda Pack',
+    files,
+    zipName: captureFilename('zip').replace(/map-(\d{4}-\d{2}-\d{2})\.zip$/, 'addenda-$1.zip'),
+    stale,
+  });
 }
 
 // ---------- Parcel Pack ----------
@@ -5032,9 +5037,104 @@ async function runParcelPack(sets) {
   const files = subjects.flatMap((s) => s.files);
   files.push({ name: 'README.txt', data: new TextEncoder().encode(readme) });
   const zipName = captureFilename('zip').replace(/map-(\d{4}-\d{2}-\d{2})\.zip$/, 'parcel-pack-$1.zip');
-  downloadBlob(buildStoreZip(files), zipName);
-  setCount(`Saved ${total} parcel pack maps (${subjects.length} parcel set${subjects.length === 1 ? '' : 's'}) to ${zipName}.`);
+  openPackReview({ title: 'Parcel Pack', files, zipName, stale });
+  setCount(`Built ${total} parcel pack maps (${subjects.length} parcel set${subjects.length === 1 ? '' : 's'}): review them in the pop-up, then download.`);
 }
+
+// ---------- Pack review ----------
+//
+// Both packs open here instead of saving the ZIP straight away (Jason,
+// 2026-11-25, as in the Winnipeg app): a thumbnail of every map, so a blank
+// or half-loaded one is caught before it reaches a report, with Download all
+// (ZIP) as the main action and a Download on each map for when only one is
+// wanted. Clicking a thumbnail shows it full size. The ZIP is built only when
+// asked for; the object URLs are released when the window closes.
+
+function openPackReview({ title, files, zipName, stale = [] }) {
+  const modal = document.getElementById('pack-review-modal');
+  if (!modal) { downloadBlob(buildStoreZip(files), zipName); return; }
+  const grid = document.getElementById('pack-review-grid');
+  const sum = document.getElementById('pack-review-summary');
+  const zoom = document.getElementById('pack-review-zoom');
+  const zoomImg = document.getElementById('pack-review-zoom-img');
+  const zoomCap = document.getElementById('pack-review-zoom-cap');
+  const allBtn = document.getElementById('pack-review-all');
+  document.getElementById('pack-review-title').firstChild.textContent = `${title} `;
+  document.getElementById('pack-review-zip').textContent = zipName;
+  const staleSet = new Set(stale);
+  const images = files.filter((f) => /\.(png|jpe?g)$/i.test(f.name));
+  const typeOf = (name) => (/\.jpe?g$/i.test(name) ? 'image/jpeg' : 'image/png');
+  const urls = [];
+  grid.replaceChildren();
+  for (const f of images) {
+    const url = URL.createObjectURL(new Blob([f.data], { type: typeOf(f.name) }));
+    urls.push(url);
+    const card = document.createElement('figure');
+    card.className = 'pack-review-card';
+    if (staleSet.has(f.name)) card.classList.add('is-stale');
+    const thumb = document.createElement('button');
+    thumb.type = 'button';
+    thumb.className = 'pack-review-thumb';
+    thumb.title = 'Show full size';
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = f.name;
+    img.loading = 'lazy';
+    thumb.appendChild(img);
+    thumb.addEventListener('click', () => {
+      zoomImg.src = url;
+      zoomCap.textContent = f.name;
+      zoom.hidden = false;
+    });
+    const cap = document.createElement('figcaption');
+    const name = document.createElement('span');
+    name.className = 'pack-review-name';
+    name.textContent = f.name;
+    cap.appendChild(name);
+    if (staleSet.has(f.name)) {
+      const warn = document.createElement('span');
+      warn.className = 'pack-review-warn';
+      warn.textContent = 'may be incomplete';
+      warn.title = 'A layer was still loading when this map was captured. Check it, and rebuild the pack if it looks wrong.';
+      cap.appendChild(warn);
+    }
+    const dl = document.createElement('button');
+    dl.type = 'button';
+    dl.className = 'parcel-list-modal-btn pack-review-dl';
+    dl.textContent = 'Download';
+    dl.addEventListener('click', () => downloadBlob(new Blob([f.data], { type: typeOf(f.name) }), f.name));
+    cap.appendChild(dl);
+    card.append(thumb, cap);
+    grid.appendChild(card);
+  }
+  const mb = files.reduce((n, f) => n + (f.data?.length || 0), 0) / 1048576;
+  sum.textContent = `${images.length} map${images.length === 1 ? '' : 's'}, ${mb.toFixed(1)} MB`
+    + (stale.length ? ` · ${stale.length} may be incomplete` : '');
+  allBtn.onclick = () => downloadBlob(buildStoreZip(files), zipName);
+  zoom.hidden = true;
+  zoom.onclick = () => { zoom.hidden = true; };
+  const release = () => {
+    for (const u of urls) URL.revokeObjectURL(u);
+    grid.replaceChildren();
+    zoomImg.removeAttribute('src');
+    modal.removeEventListener('close', release);
+  };
+  modal.addEventListener('close', release);
+  if (!modal.open) modal.showModal();
+  allBtn.focus();
+}
+
+function wirePackReview() {
+  const modal = document.getElementById('pack-review-modal');
+  if (!modal) return;
+  for (const el of modal.querySelectorAll('[data-close]')) el.addEventListener('click', () => modal.close());
+  // Escape closes the full-size view first, then the window.
+  modal.addEventListener('cancel', (e) => {
+    const zoom = document.getElementById('pack-review-zoom');
+    if (zoom && !zoom.hidden) { e.preventDefault(); zoom.hidden = true; }
+  });
+}
+wirePackReview();
 /**
  * Empty the Roll # field when a different municipality is picked.
  *

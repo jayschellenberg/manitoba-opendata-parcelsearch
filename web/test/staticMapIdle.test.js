@@ -236,7 +236,10 @@ test('the Addenda Pack button builds the pack and always restores the map', () =
   assert.match(fin, /map\.jumpTo\(camera\)/, 'the pack does not put the camera back in its finally');
   assert.match(fin, /setAddendaMarks\(userMarks\)/, 'the pack does not put the pin / numbers / dimensions back in its finally');
   assert.match(fin, /cycleZoningTo\(zoningWas\)/, 'the pack does not put the zoning overlay back in its finally');
-  assert.match(body, /buildStoreZip\(/, 'the pack never zips anything');
+  // Since 2026-11-25 the pack opens the review window, which zips on
+  // Download all.
+  assert.match(body, /openPackReview\(/, 'the pack never opens the review window');
+  assert.match(fnBodyOf('openPackReview'), /buildStoreZip\(/, 'the review window never zips anything');
   assert.match(fnBodyOf('captureAddendaView'), /furniture:\s*capture/,
     'addenda maps are composed without their scale bar / north arrow');
 });
