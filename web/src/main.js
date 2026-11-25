@@ -15299,7 +15299,12 @@ function rollSummaryRows() {
     if (seen.has(key)) continue;
     let acres = NaN;
     try { acres = Number(rowSizeAcres(p, parcelAcres(r.parcel))); } catch { /* no area */ }
-    seen.set(key, { roll, acres });
+    seen.set(key, {
+      roll,
+      acres,
+      du: Number(p.Dwelling_Units),
+      value: Number(parseTotalValue(p.Total_Value)),
+    });
   }
   return seen;
 }
@@ -15312,9 +15317,13 @@ function updateRollSummary() {
   if (!rows.length) { box.hidden = true; return; }
   let ac = 0;
   let missing = 0;
-  for (const { acres } of rows) {
-    if (Number.isFinite(acres) && acres > 0) ac += acres;
+  let du = 0;
+  let value = 0;
+  for (const r of rows) {
+    if (Number.isFinite(r.acres) && r.acres > 0) ac += r.acres;
     else missing += 1;
+    if (Number.isFinite(r.du) && r.du > 0) du += r.du;
+    if (Number.isFinite(r.value) && r.value > 0) value += r.value;
   }
   const n = rows.length;
   const parts = [`${n} roll${n === 1 ? '' : 's'}`];
@@ -15323,10 +15332,15 @@ function updateRollSummary() {
     parts.push(`land ${sf} sf (${ac < 10 ? ac.toFixed(2) : ac.toFixed(1)} ac)`);
   }
   if (missing > 0) parts.push(`${missing} without an area`);
+  // Dwelling units and total assessed value of the same rolls (Jason,
+  // 2026-11-25), as the grid's DU and Assessment columns have them.
+  parts.push(`${du.toLocaleString('en-CA')} DU`);
+  if (value > 0) parts.push(`assessed ${fmtCurrency(value)}`);
   text.textContent = parts.join(' · ');
   text.title = missing > 0
     ? `Total area of ${n - missing} of ${n} rolls, as the grid's Acres column shows it; ${missing} have none.`
     : `Total area of the ${n} distinct rolls in the ticked rows, as the grid's Acres column shows it.`;
+  text.title += ' Dwelling units and assessed value are the totals of the same rolls.';
   box.hidden = false;
 }
 
