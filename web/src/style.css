@@ -8362,3 +8362,27 @@ button[data-icon]::before {
    line so it never widens the crowded top bar. */
 .topbar-title .app-build { display: block; margin-top: 2px; line-height: 1.1; font-size: 10px; font-weight: 400; opacity: 0.65; letter-spacing: 0; text-transform: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
 body.phone .topbar-title .app-build { display: none; }
+
+/* Roll summary in the results toolbar (Winnipeg parity, 2026-11-25). */
+.roll-summary {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.roll-summary[hidden] { display: none; }
+.roll-summary-text { color: #1e293b; }
+.roll-copy-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  color: #1a3a4a;
+  background: #fff;
+  border: 1px solid #c2c5cc;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.roll-copy-btn:hover { background: #f1f5f9; }
