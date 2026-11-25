@@ -3398,7 +3398,7 @@ async function handleSnapshotExport() {
   }));
 
   try {
-    const { blob, count, skipped } = await generateParcelSnapshotsZip(fcSnapshot, {
+    const { blob, files, count, skipped } = await generateParcelSnapshotsZip(fcSnapshot, {
       signal: snapshotAbort.signal,
       fetchSurveyGrid: buildSurveyGridForSnapshot,
       provenanceText: snapProvText,
@@ -3409,14 +3409,27 @@ async function handleSnapshotExport() {
     // Local date, not toISOString() (UTC): an evening's export in Manitoba
     // would otherwise be named after tomorrow.
     const stamp = localDateStamp();
-    downloadBlob(blob, `parcel-snapshots-${stamp}.zip`);
+    const zipName = `parcel-snapshots-${stamp}.zip`;
     // Skipped subjects are named rather than merely counted — the whole point
     // is that the user can re-run and know which images they're still missing.
     // They're listed in PROVENANCE.txt too, in case this line scrolls away.
     const missed = skipped?.length
       ? ` ${skipped.length} skipped (imagery didn't load in time): ${skipped.join(', ')} — re-run to fill the gaps.`
       : '';
-    setCount(`Saved ${count} parcel snapshot${count === 1 ? '' : 's'} to parcel-snapshots-${stamp}.zip.${missed}`);
+    // The pack review window, like the Addenda and Parcel Packs (2026-11-25):
+    // check the photos, then Download all (ZIP) or just the ones needed.
+    if (Array.isArray(files)) {
+      openPackReview({
+        title: 'Aerial Pack',
+        files,
+        zipName,
+        note: skipped?.length ? `${skipped.length} skipped (imagery didn't load in time)` : '',
+      });
+      setCount(`Built ${count} parcel snapshot${count === 1 ? '' : 's'}: review them in the pop-up, then download.${missed}`);
+    } else {
+      downloadBlob(blob, zipName);
+      setCount(`Saved ${count} parcel snapshot${count === 1 ? '' : 's'} to ${zipName}.${missed}`);
+    }
   } catch (err) {
     if (err?.name === 'AbortError') {
       setCount('Parcel snapshot export cancelled.');
@@ -5050,7 +5063,7 @@ async function runParcelPack(sets) {
 // wanted. Clicking a thumbnail shows it full size. The ZIP is built only when
 // asked for; the object URLs are released when the window closes.
 
-function openPackReview({ title, files, zipName, stale = [] }) {
+function openPackReview({ title, files, zipName, stale = [], note = '' }) {
   const modal = document.getElementById('pack-review-modal');
   if (!modal) { downloadBlob(buildStoreZip(files), zipName); return; }
   const grid = document.getElementById('pack-review-grid');
@@ -5108,8 +5121,10 @@ function openPackReview({ title, files, zipName, stale = [] }) {
     grid.appendChild(card);
   }
   const mb = files.reduce((n, f) => n + (f.data?.length || 0), 0) / 1048576;
-  sum.textContent = `${images.length} map${images.length === 1 ? '' : 's'}, ${mb.toFixed(1)} MB`
-    + (stale.length ? ` · ${stale.length} may be incomplete` : '');
+  const noun = images.every((f) => /\.jpe?g$/i.test(f.name)) ? 'photo' : 'map';
+  sum.textContent = `${images.length} ${noun}${images.length === 1 ? '' : 's'}, ${mb.toFixed(1)} MB`
+    + (stale.length ? ` · ${stale.length} may be incomplete` : '')
+    + (note ? ` · ${note}` : '');
   allBtn.onclick = () => downloadBlob(buildStoreZip(files), zipName);
   zoom.hidden = true;
   zoom.onclick = () => { zoom.hidden = true; };

@@ -67,10 +67,13 @@ const FRAME_PADDING = 96;
 // parcels framed at a further-out zoom, where the base label ramp comes out
 // too small to read in a saved image.
 const ROLL_LABEL_SCALE = 2;
-// Esri World Imagery tiles top out around z20; allow overzoom to this so
-// tiny urban parcels still fill the frame (accepting some softness — see
-// PARCEL_SNAPSHOTS_PLAN.md caveat). Rural/ag parcels rarely reach it.
-const EXPORT_MAX_ZOOM = 20;
+// Deepest camera zoom a snapshot is framed at. Was 20, which came out blank
+// for small town lots (Stonewall, 2026-11-25): the esri-imagery LAYER has
+// maxzoom 20, so at exactly z20 it is switched off. The other half of that
+// bug, grey placeholder tiles, is the esri-imagery SOURCE's maxzoom (map.js).
+// 19.9 keeps the layer on while still letting a tiny urban lot fill the
+// frame; past z19 the imagery is z19 stretched, so it is a little soft.
+export const EXPORT_MAX_ZOOM = 19.9;
 // Safety net so a stuck tile fetch can't hang the whole batch.
 const IDLE_TIMEOUT_MS = 9000;
 // Slow imagery is retried, but never silently accepted. Three attempts cap a
@@ -242,7 +245,9 @@ export async function generateParcelSnapshotsZip(parcelFc, opts = {}) {
         data: new TextEncoder().encode(provenanceWithSkipped(provenanceText, skipped)),
       });
     }
-    return { blob: buildStoreZip(files), count, skipped };
+    // `files` as well as the built ZIP: the Aerial Pack shows them in the
+    // pack review window before anything is saved (2026-11-25).
+    return { blob: buildStoreZip(files), files, count, skipped };
   } finally {
     try { map?.remove(); } catch { /* ignore teardown errors */ }
     container.remove();
