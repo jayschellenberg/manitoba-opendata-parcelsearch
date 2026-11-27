@@ -24,7 +24,7 @@ export function readPins(arcgisSource) {
 }
 
 const OGL_MB = 'Open Government Licence - Manitoba. Credit "Contains information licensed under the Open Government Licence - Manitoba."';
-const MAO_TERMS = 'Derived from Manitoba Assessment Online public summaries. Terms of reuse not confirmed; use for screening and cite MAO, do not republish in bulk.';
+const MAO_TERMS = 'Derived from Manitoba Assessment Online public summaries: Government of Manitoba information under the OpenMB Information and Data Use Licence (gov.mb.ca/legal/copyright.html). Credit "Contains information from the Government of Manitoba, licensed under the OpenMB Information and Data Use Licence." Not an official assessment record; do not present it as one or imply government endorsement. Contains no owner names.';
 
 export function buildAgentsIndex({ parcelData, history }, builtAt = new Date().toISOString()) {
   if (!parcelData || !history) throw new Error('agentsIndex: missing data-repo pin');
