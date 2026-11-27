@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" version="1.1" width="518" height="615.1684" viewBox="0 0 518 615.1684">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" version="1.1" width="518" height="627.4368" viewBox="0 0 518 627.4368">
 <defs>
 <clipPath id="clip_1">
 <path transform="matrix(1,0,0,-1,-37,730.1684)" d="M37 115H555V730.1684H37Z" clip-rule="evenodd"/>
@@ -2919,4 +2919,5 @@ BICapvIiQKl60F5fPckPsdiwNPwGk8U+AjNutGPlCIVT2eOPXiNggeWXFGVtRUpA
 <use data-text="&#xfffd;" xlink:href="#font_156_80" stroke-width=".028600002" stroke-linecap="butt" stroke-miterlimit="10" stroke-linejoin="miter" transform="matrix(5,0,0,-5,289.468,600.15139)" fill="none" stroke="#231f20"/>
 </g>
 </g>
+<rect x="0" y="615.1684" width="518" height="12.2684" fill="#ffffff"/><text id="mb-highway-credit" x="510.639" y="622.775" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="6.380" fill="#555555">Base map: Manitoba Official Highway Map 2026 (Manitoba Transportation and Infrastructure), OpenMB licence</text>
 </svg>
