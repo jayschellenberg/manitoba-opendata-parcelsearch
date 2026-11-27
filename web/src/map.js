@@ -126,6 +126,12 @@ const MB_ZOOM = 7;
 // whole callout reads as one mark.
 const PARCEL_NUM_COLOR = '#95121e';
 
+// Credits for provincial overlays (shown in the map's attribution while the
+// layer is on). Most gov.mb.ca data is licensed under the OpenMB Information
+// and Data Use Licence, per the province's copyright page.
+const OPENMB_LINK = '<a href="https://www.gov.mb.ca/legal/copyright.html" target="_blank" rel="noreferrer">OpenMB licence</a>';
+const MHTIS_CREDIT = `Traffic counts: Manitoba Highway Traffic Information System (Manitoba Transportation and Infrastructure / University of Manitoba), ${OPENMB_LINK}`;
+
 /** Build a legend descriptor [{ label, color }] from a flat MapLibre
  *  match-expression palette ([key, color, key, color, ...]). De-dupes
  *  aliases (the source data has typos like "Residental"/"Residential"
@@ -1393,7 +1399,10 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
       // below the parcel highlight so a search result still wins. Coloured
       // by CSGROUP: red = Designated Contaminated, orange = Designated
       // Impacted, grey = Not Designated. Hidden until the user toggles it.
-      map.addSource('contam', { type: 'geojson', data: emptyFc() });
+      map.addSource('contam', {
+        type: 'geojson', data: emptyFc(),
+        attribution: `Contaminated Sites Registry: Government of Manitoba, ${OPENMB_LINK}`,
+      });
       map.addLayer({
         id: 'contam-circle',
         type: 'circle',
@@ -1427,7 +1436,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
       // the station points so the points still pop out when both are on.
       // The colour breaks roughly match MHTIS's own flow-map convention
       // (light → green → yellow → orange → red → dark red as AADT climbs).
-      map.addSource('traffic-flow', { type: 'geojson', data: emptyFc() });
+      map.addSource('traffic-flow', { type: 'geojson', data: emptyFc(), attribution: MHTIS_CREDIT });
       map.addLayer({
         id: 'traffic-flow-line',
         type: 'line',
@@ -1587,7 +1596,7 @@ export function initMap(container, { onFeatureClick, onPlacePick, getMunis, onLo
       // MHTIS traffic-count station locations. Small dark dot with a yellow
       // ring — distinct from the contam circles so both can be visible
       // simultaneously without confusion.
-      map.addSource('traffic', { type: 'geojson', data: emptyFc() });
+      map.addSource('traffic', { type: 'geojson', data: emptyFc(), attribution: MHTIS_CREDIT });
       // Town count stations get their own marker. They are a different
       // measurement in a different place — an in-town cross-section rather
       // than a rural highway one — and they routinely read 2-3x their
