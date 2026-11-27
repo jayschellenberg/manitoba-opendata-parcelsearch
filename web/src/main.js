@@ -4739,6 +4739,10 @@ async function buildAddendaPack() {
       ? ['Tip: turn on "Number parcels" before building the pack to number the results map.'] : []),
     ...(stale.length ? ['', `Still loading when captured (rebuild if a layer looks incomplete): ${stale.join(', ')}`] : []),
     ...(credit ? ['', `Map data: ${credit}`] : []),
+    // The city pages carry this credit in their own bottom band too
+    // (tools/city-location-maps/credit.py); OpenMB asks for it.
+    ...(wantCity ? ['', `${cityMap.label} city map base: Manitoba Official Highway Map 2026, Manitoba Transportation and Infrastructure.`,
+      'Contains information from the Government of Manitoba, licensed under the OpenMB Information and Data Use Licence.'] : []),
     '',
   ].join('\r\n');
   files.push({ name: 'README.txt', data: new TextEncoder().encode(readme) });

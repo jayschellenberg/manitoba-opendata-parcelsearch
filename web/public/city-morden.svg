@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" version="1.1" width="257" height="335.93684" viewBox="0 0 257 335.93684">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" version="1.1" width="257" height="342.0237" viewBox="0 0 257 342.0237">
 <defs>
 <clipPath id="clip_1">
 <path transform="matrix(1,0,0,-1,-175,578.9368)" d="M175 243H432V578.9368H175Z" clip-rule="evenodd"/>
@@ -1694,4 +1694,5 @@
 <use data-text="&#xfffd;" xlink:href="#font_53_78" transform="matrix(5,0,0,-5,158.163,320.49385)" fill="#231f20"/>
 <use data-text="&#xfffd;" xlink:href="#font_53_80" transform="matrix(5,0,0,-5,160.663,320.49385)" fill="#231f20"/>
 </g>
+<rect x="0" y="335.9368" width="257" height="6.0868" fill="#ffffff"/><text id="mb-highway-credit" x="253.348" y="339.711" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="3.165" fill="#555555">Base map: Manitoba Official Highway Map 2026 (Manitoba Transportation and Infrastructure), OpenMB licence</text>
 </svg>
