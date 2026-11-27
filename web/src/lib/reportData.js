@@ -1,3 +1,4 @@
+// SHARED FILE: kept byte-identical with mb-parcelsearch web/src/lib/reportData.js.
 // Pure helpers for the preliminary property report (report.html,
 // src/report/main.js). Everything that decides WHAT the report says lives
 // here so it can be unit-tested (test/reportData.test.js); the page module
