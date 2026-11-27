@@ -155,6 +155,8 @@ export default defineConfig({
         route: fileURLToPath(new URL('./route.html', import.meta.url)),
         // agents.html is the human view of /agents.json (the data index).
         agents: fileURLToPath(new URL('./agents.html', import.meta.url)),
+        // report.html is the one-parcel preliminary report (src/report/).
+        report: fileURLToPath(new URL('./report.html', import.meta.url)),
       },
       output: {
         // Split heavy third-party deps into named vendor chunks so a

@@ -13,6 +13,7 @@ import { municipalityAt, municipalityFeatures } from './lib/muniAt.js';
 // Phase 4 form controls.
 import { initChipInput } from './lib/chipInput.js';
 import { initInfoIcons } from './lib/infoIcon.js';
+import { reportUrl } from './lib/reportData.js';
 import { initParcelListImport } from './lib/parcelListImport.js';
 import { initSalesPasteImport } from './lib/salesPasteImport.js';
 import { initSalesDbPanel } from './lib/salesDbPanel.js';
@@ -15092,6 +15093,7 @@ const $psOpenMao     = document.getElementById('ps-open-mao');
 const $psOpenMuni    = document.getElementById('ps-open-muni');
 const $psCopySource  = document.getElementById('ps-copy-source');
 const $psExportSel   = document.getElementById('ps-export-selected');
+const $psReport      = document.getElementById('ps-report');
 const $psClose       = document.getElementById('ps-close');
 const $psVerify      = document.getElementById('ps-verify');
 const $psVerifyList  = document.getElementById('ps-verify-list');
@@ -15213,6 +15215,11 @@ function populateSelectedParcel(row) {
     } else {
       $psOpenMuni.hidden = true;
     }
+  }
+  if ($psReport) {
+    const ok = p.Muni_Name_With_Typ && p.Roll_No_Txt;
+    $psReport.hidden = !ok;
+    if (ok) $psReport.href = reportUrl(p.Muni_Name_With_Typ, p.Roll_No_Txt);
   }
   // Phase 6 verify-this state: restore the user's prior ticks for
   // this parcel from localStorage, keyed by muni|roll.
