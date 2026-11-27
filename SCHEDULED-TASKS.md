@@ -106,8 +106,7 @@ tags or categories match an appraisal keyword list first; the list only sets the
 Known set: `logs\geoportal-known-datasets.json`, advanced only on verified email delivery;
 without that file the next run records a baseline and sends nothing. `-Report` prints the
 last 365 days of additions, `-DryRun` and `-TestAlert` as elsewhere. No credentials needed.
-Registered unelevated on 2026-11-27, so it is **Interactive until the registrar is re-run
-elevated**.
+S4U since the elevated registrar run on 2026-11-27.
 
 **task-health.** The cross-project watchdog. Scans `schedule_*.ps1` in `mb-parcelsearch`,
 `mao-assembly`, `mao-scrape` and `MBFloodMapping` for `$TaskName = 'literal'`, then reads
