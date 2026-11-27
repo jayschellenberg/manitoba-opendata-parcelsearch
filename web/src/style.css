@@ -8445,3 +8445,7 @@ body.phone .topbar-title .app-build { display: none; }
 .pack-review-zoom[hidden] { display: none; }
 .pack-review-zoom img { max-width: 100%; max-height: calc(100% - 28px); object-fit: contain; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2); }
 .pack-review-zoom-cap { font-size: 12px; color: #334155; }
+
+/* Parcel summary card: assessment History row (compact chart + trend). */
+.parcel-summary #ps-asmt-hist svg { display: block; margin-top: 2px; }
+.parcel-summary .ps-hist-note { font-size: 11px; color: #5b6670; line-height: 1.3; }

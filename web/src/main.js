@@ -13,6 +13,8 @@ import { municipalityAt, municipalityFeatures } from './lib/muniAt.js';
 // Phase 4 form controls.
 import { initChipInput } from './lib/chipInput.js';
 import { initInfoIcons } from './lib/infoIcon.js';
+import { reportUrl } from './lib/reportData.js';
+import { expandHistory, historySvg, historySummary, valueInYear, rollYear } from './lib/assessmentHistory.js';
 import { initParcelListImport } from './lib/parcelListImport.js';
 import { initSalesPasteImport } from './lib/salesPasteImport.js';
 import { initSalesDbPanel } from './lib/salesDbPanel.js';
@@ -187,6 +189,7 @@ import {
   fetchRollLayerPublishedDate,
   fetchZoningLayerUpdatedDate,
   fetchSectionSurveyPoints,
+  fetchAssessmentHistoryForMuni,
 } from './arcgis.js';
 import {
   quartersToFc,
@@ -12508,6 +12511,28 @@ async function stampHistoricalSizeChanges(parcels, muniName) {
   }
 }
 
+// Stamp each as-of parcel with its assessed total in the snapshot's roll
+// year and in the latest year, from the assessment-history shard, so the
+// as-of popup can say "then -> now". Best-effort: no shard, no stamp.
+async function stampHistoricalAssessment(parcels, muniNo, snap) {
+  try {
+    const shard = await fetchAssessmentHistoryForMuni(muniNo);
+    if (!shard?.rolls) return;
+    for (const f of parcels.features || []) {
+      const p = f.properties;
+      const series = p?.Roll_No_Txt ? expandHistory(shard.rolls[p.Roll_No_Txt]) : [];
+      if (series.length < 2) continue;
+      const then = valueInYear(series, rollYear(p.Asmt_Roll, snap));
+      const now = series.at(-1);
+      if (!then || !now) continue;
+      p._asmtThen = then.total; p._asmtThenYear = then.year;
+      p._asmtNow = now.total; p._asmtNowYear = now.year;
+    }
+  } catch (err) {
+    console.warn('historical assessment stamp failed', err);
+  }
+}
+
 async function loadHistorical(snap, muniName) {
   $historicalToggle.disabled = true;
   setOverlayBtnLabel($historicalToggle, 'Loading…');
@@ -12526,7 +12551,10 @@ async function loadHistorical(snap, muniName) {
     if (!parcels) { setCount(`Historical: couldn't load ${snap} parcels for ${muniName}.`); deactivateHistorical(); return; }
     // Stamp size-change bands + current-MAO links BEFORE setHistoricalData so
     // the colour expression and popups see them on the first render.
-    const enrich = await stampHistoricalSizeChanges(parcels, muniName);
+    const [enrich] = await Promise.all([
+      stampHistoricalSizeChanges(parcels, muniName),
+      stampHistoricalAssessment(parcels, muniNo, snap),
+    ]);
     const sizeSummary = enrich?.summary || null;
     setHistoricalData(map, {
       parcels, zoning, devplan, year: snap,
@@ -15092,6 +15120,7 @@ const $psOpenMao     = document.getElementById('ps-open-mao');
 const $psOpenMuni    = document.getElementById('ps-open-muni');
 const $psCopySource  = document.getElementById('ps-copy-source');
 const $psExportSel   = document.getElementById('ps-export-selected');
+const $psReport      = document.getElementById('ps-report');
 const $psClose       = document.getElementById('ps-close');
 const $psVerify      = document.getElementById('ps-verify');
 const $psVerifyList  = document.getElementById('ps-verify-list');
@@ -15143,6 +15172,33 @@ function clearSelectedParcel() {
   if ($parcelSummary) $parcelSummary.hidden = true;
 }
 
+// Summary card "History" row: a compact land/buildings chart by tax year
+// and a one-line trend, from the assessment-history shard for the parcel's
+// municipality. Async and best-effort: the row stays hidden until a series
+// arrives, and a late answer for a parcel no longer shown is dropped.
+let summaryHistoryToken = 0;
+async function fillSummaryAssessmentHistory(p) {
+  const $row = document.getElementById('ps-asmt-hist-row');
+  const $dd = document.getElementById('ps-asmt-hist');
+  if (!$row || !$dd) return;
+  const token = ++summaryHistoryToken;
+  $row.hidden = true;
+  const key = parcelLegalKey(p);
+  if (!key) return;
+  const [muniNo, roll] = key.split('|');
+  try {
+    const shard = await fetchAssessmentHistoryForMuni(muniNo);
+    if (token !== summaryHistoryToken) return;
+    const series = expandHistory(shard?.rolls?.[roll]);
+    if (series.length < 2) return;
+    $dd.innerHTML = `${historySvg(series, { width: 220, height: 36, compact: true })}`
+      + `<div class="ps-hist-note">${escapeHtmlText(`${series[0].year}-${series.at(-1).year}: ${historySummary(series)}`)}</div>`;
+    $row.hidden = false;
+  } catch (err) {
+    console.warn('assessment history unavailable', err);
+  }
+}
+
 function populateSelectedParcel(row) {
   if (!$parcelSummary) return;
   selectedParcelRow = row;
@@ -15170,6 +15226,7 @@ function populateSelectedParcel(row) {
     const total = parseTotalValue(p.Total_Value);
     $psAsmt.textContent = fmtCurrency(total) || '—';
   }
+  fillSummaryAssessmentHistory(p);
   if ($psZoning) {
     const z1Code = formatZoneCode(z1);
     const z2Code = formatZoneCode(z2);
@@ -15213,6 +15270,11 @@ function populateSelectedParcel(row) {
     } else {
       $psOpenMuni.hidden = true;
     }
+  }
+  if ($psReport) {
+    const ok = p.Muni_Name_With_Typ && p.Roll_No_Txt;
+    $psReport.hidden = !ok;
+    if (ok) $psReport.href = reportUrl(p.Muni_Name_With_Typ, p.Roll_No_Txt);
   }
   // Phase 6 verify-this state: restore the user's prior ticks for
   // this parcel from localStorage, keyed by muni|roll.

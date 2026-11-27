@@ -6081,7 +6081,21 @@ function historicalParcelHtml(p, year, point = null) {
   const mlsLine = mlsAreaLineHtml(point);
   if (mlsLine) lines.push(mlsLine);
   lines.push('<small style="color:#888">Display geometry simplified — verify boundary/area against the archived source-of-record.</small>');
-  return `<div class="parcel-popup">${lines.join('<br>')}${sizeChangeHtml(p)}${lineageHtml(p.Roll_No_Txt || '')}</div>`;
+  return `<div class="parcel-popup">${lines.join('<br>')}${assessmentChangeHtml(p)}${sizeChangeHtml(p)}${lineageHtml(p.Roll_No_Txt || '')}</div>`;
+}
+
+// Assessed value then vs now (stamped by main.js stampHistoricalAssessment
+// from the assessment-history shard). Assessed values, not taxes.
+function assessmentChangeHtml(p) {
+  const a = Number(p._asmtThen);
+  const b = Number(p._asmtNow);
+  if (!(a > 0) || !(b > 0) || p._asmtThenYear === p._asmtNowYear) return '';
+  const pct = (100 * (b - a)) / a;
+  const fmt = (v) => `$${Math.round(v).toLocaleString('en-CA')}`;
+  const color = pct > 0 ? '#047857' : pct < 0 ? '#b91c1c' : '#6b7280';
+  return `<div style="margin-top:6px;padding-top:6px;border-top:1px solid #eee">`
+    + `<strong>Assessed</strong> ${escapeHtml(String(p._asmtThenYear))} ${fmt(a)} → ${escapeHtml(String(p._asmtNowYear))} ${fmt(b)} `
+    + `(<strong style="color:${color}">${pct > 0 ? '+' : ''}${pct.toFixed(0)}%</strong>)</div>`;
 }
 
 // Size-change block: this snapshot's acreage vs today's for the same roll

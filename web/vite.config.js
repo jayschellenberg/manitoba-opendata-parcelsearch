@@ -76,12 +76,45 @@ function routeGoogleDevPlugin() {
   };
 }
 
+// /agents.json and /openapi.json: the machine-readable data index
+// (src/lib/agentsIndex.js). Generated rather than committed so the pinned
+// data-repo SHAs it names are always the ones src/arcgis.js is reading;
+// emitted into dist at build and served from memory in dev.
+function agentsIndexPlugin() {
+  const files = async () => {
+    const { readFile } = await import('node:fs/promises');
+    const { readPins, buildAgentsIndex, buildOpenApi } = await import('./src/lib/agentsIndex.js');
+    const src = await readFile(fileURLToPath(new URL('./src/arcgis.js', import.meta.url)), 'utf8');
+    const pins = readPins(src);
+    return {
+      'agents.json': JSON.stringify(buildAgentsIndex(pins, APP_BUILD_TIME), null, 2),
+      'openapi.json': JSON.stringify(buildOpenApi(pins), null, 2),
+    };
+  };
+  return {
+    name: 'agents-index',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        const name = (req.url || '').split('?')[0].replace(/^\//, '');
+        if (name !== 'agents.json' && name !== 'openapi.json') return next();
+        res.setHeader('Content-Type', 'application/json');
+        res.end((await files())[name]);
+      });
+    },
+    async generateBundle() {
+      for (const [fileName, source] of Object.entries(await files())) {
+        this.emitFile({ type: 'asset', fileName, source });
+      }
+    },
+  };
+}
+
 export default defineConfig({
   // Plain static site. The only framework plugin is Tailwind v4's
   // Vite integration, which scans source files for utility classes
   // and emits the generated stylesheet for the `tailwind.css` entry.
   // localChangesPlugin is a no-op unless LOCAL_CHANGES_DIR is set (dev only).
-  plugins: [tailwindcss(), localChangesPlugin(), routeGoogleDevPlugin()],
+  plugins: [tailwindcss(), localChangesPlugin(), routeGoogleDevPlugin(), agentsIndexPlugin()],
   cacheDir: process.env.VITE_CACHE_DIR || 'node_modules/.vite',
   // Escape hatch: VITE_SKIP_PUBLIC=1 disables the public/ → dist/ asset copy.
   // Useful for a code-only compile check on Windows/Dropbox, where copying the
@@ -120,6 +153,10 @@ export default defineConfig({
         dataSources: fileURLToPath(new URL('./data-sources.html', import.meta.url)),
         // route.html is the Route Optimizer (src/route/), linked from the topbar.
         route: fileURLToPath(new URL('./route.html', import.meta.url)),
+        // agents.html is the human view of /agents.json (the data index).
+        agents: fileURLToPath(new URL('./agents.html', import.meta.url)),
+        // report.html is the one-parcel preliminary report (src/report/).
+        report: fileURLToPath(new URL('./report.html', import.meta.url)),
       },
       output: {
         // Split heavy third-party deps into named vendor chunks so a
