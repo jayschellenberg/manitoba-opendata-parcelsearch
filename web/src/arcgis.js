@@ -235,7 +235,7 @@ const PARCEL_OUTFIELDS = 'OBJECTID,Roll_No_Txt,Property_Address,Municipality,Mun
 // The province-wide section grid is not here either: it renders from
 // section-grid.pmtiles on R2 (map.js SECTION_GRID_TILES_URL).
 export const MB_PARCEL_DATA_REVISION =
-  '14161f6c4f0f4254a6ae227bdca21b275af79e66';
+  'bfc05596f973720fb24a8b2b3510aba7f0467f29';
 // Origin-absolute rather than a bare /gh-data/... path, so the URL is usable
 // anywhere (it once fed a MapLibre tile template, which requires absolute
 // URLs; the land-cover pyramid is now a PMTiles archive on R2). Node imports
