@@ -136,6 +136,7 @@ const PERSISTENT = {
   listImportNotices: 'travels with listParcelKeys',
   listSiteByKey: 'travels with listParcelKeys',
   exportColumnMismatchWarned: 'warn-once-per-session flag; resetting it would nag',
+  summaryHistoryToken: 'monotonic race guard for the summary card History row; only ever increments',
   currentSort: "the user's sort preference, not a property of the results",
   numberingOn: 'a display preference that should carry across searches',
   numberingEntryOrder: 'travels with numberingOn',

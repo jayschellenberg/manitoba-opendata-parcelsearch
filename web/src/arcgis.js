@@ -2181,6 +2181,39 @@ let mfNewbuildIndexPromise = null;
 /** MF new-build shard manifest: muni -> { file, count }, plus `_meta` with the
  *  window, thresholds, exclusions and confidence rules (read by the Data
  *  Status dialog). */
+// ---------- Assessed-value history (assessment-history/<muni_no>.json) ----------
+//
+// Every tax year from 2008 for every roll, stored at change points
+// (r/build_assessment_history.R; expand with lib/assessmentHistory.js).
+// Keyed by municipality NUMBER like the assessment family. Dev only:
+// VITE_ASSESSMENT_HISTORY_BASE points at a local build before it is
+// published to mb-parcel-data.
+const ASSESSMENT_HISTORY_BASE = (typeof import.meta !== 'undefined' && String(import.meta.env?.VITE_ASSESSMENT_HISTORY_BASE ?? '').trim())
+  || `${MB_PARCEL_DATA_CDN}/assessment-history`;
+const assessmentHistoryMemo = new Map();
+
+/** The muni's {version, muni_no, first_year, last_year, fields, rolls}, or
+ *  null when the family or the muni is not published. Memoised per session;
+ *  a failure drops the memo so a later call retries. */
+export function fetchAssessmentHistoryForMuni(muniNo) {
+  const n = Number(muniNo);
+  if (!Number.isFinite(n)) return Promise.resolve(null);
+  if (assessmentHistoryMemo.has(n)) return assessmentHistoryMemo.get(n);
+  const p = (async () => {
+    const cacheKey = `mb_asmt_history_${n}_v1_${MB_PARCEL_DATA_REVISION}`;
+    const cached = await readCache(cacheKey, MUNI_BOUNDARIES_TTL_MS);
+    if (cached) return cached;
+    const res = await fetch(`${ASSESSMENT_HISTORY_BASE}/${n}.json`);
+    if (!res.ok) return null;
+    const shard = await res.json();
+    await writeCache(cacheKey, shard);
+    return shard;
+  })();
+  p.catch(() => assessmentHistoryMemo.delete(n));
+  assessmentHistoryMemo.set(n, p);
+  return p;
+}
+
 export async function fetchMfNewbuildIndex() {
   if (mfNewbuildIndexPromise) return mfNewbuildIndexPromise;
   mfNewbuildIndexPromise = (async () => {

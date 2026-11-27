@@ -78,6 +78,7 @@ export function buildAgentsIndex({ parcelData, history }, builtAt = new Date().t
         steps: [
           `GET ${pd}/assessment/{muni_no}.json; rows are arrays in the order of "fields"; match roll_no_txt.`,
           `Province-wide alternative (about 4 MB gzipped): GET ${SITE}/api/assessment-index, keyed "muni_no|Roll_No_Txt".`,
+          `Year by year since 2008: GET ${pd}/assessment-history/{muni_no}.json -> rolls[Roll_No_Txt], change points [year, land, buildings]; carry each forward.`,
         ],
       },
       {
@@ -126,6 +127,17 @@ export function buildAgentsIndex({ parcelData, history }, builtAt = new Date().t
         fields: ['muni_no', 'roll_no_txt', 'year', 'land', 'buildings', 'total', 'class', 'tax_status'],
         notes: 'Latest year only, summed across classes; class and tax_status are the dominant class by value. No tax dollar amounts.',
         vintage: 'metadata.generated_at and source_modified in _index.json',
+        licence: MAO_TERMS,
+      },
+      {
+        id: 'assessment-history', title: 'Assessed values by tax year, 2008 on',
+        index_url: `${pd}/assessment-history/_index.json`,
+        url_template: `${pd}/assessment-history/{muni_no}.json`,
+        key: 'muni_no; rolls[Roll_No_Txt]',
+        format: 'json',
+        fields: ['rolls[roll]: [[year, land, buildings], ...] at change points; total = land + buildings'],
+        notes: 'Stored only in years a value changed (plus first and last year); carry each forward. Values are frozen between reassessments. No tax dollars.',
+        vintage: 'metadata.generated_at, source_modified, first_year, last_year in _index.json',
         licence: MAO_TERMS,
       },
       {
