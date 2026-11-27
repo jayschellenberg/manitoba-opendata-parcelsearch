@@ -1,6 +1,6 @@
 # Scheduled tasks — mb-parcelsearch
 
-Fifteen Windows Task Scheduler tasks refresh, publish and watch the Manitoba parcel-search
+Sixteen Windows Task Scheduler tasks refresh, publish and watch the Manitoba parcel-search
 site's data. This file records what each one is, what it needs on a new PC, and how to
 recreate it. Live settings verified against Task Scheduler on 2026-09-20.
 
@@ -19,7 +19,7 @@ Operational detail beyond scheduling is in `MAINTENANCE.md`.
 - **WSL** with `tippecanoe` installed inside the distro. `pmtiles` is self-installed by `rebuild-basemap.ps1` into `%LOCALAPPDATA%\Programs\pmtiles`.
 - **Git push credentials** (Git Credential Manager) for three remotes: this app repo, `mb-parcel-data`, `mb-parcel-history`. Three tasks push to `main` unattended.
 - **Alert config:** `alert-email.local.txt` in this folder (gitignored; keys `to`, `smtp_host`, `smtp_port`, `smtp_user`, `smtp_pass`, optional `from`). This one file also serves mao-scrape, mao-assembly, MBFloodMapping and RentalDashboard. rclone config holds the R2 keys; gh holds the GitHub token.
-- **ntfy topics** to subscribe: `mbps-monthly-refresh-jks`, `mbps-publish-indexes-jks`, `mbps-semiannual-archive-jks`, `mbps-hpi-staleness-jks`, `mbps-upstream-vintage-jks`, `mbps-task-health-jks`, `mbps-basemap-jks`, `mbps-parcel-tiles-jks`, `mbps-traffic-refresh-jks`.
+- **ntfy topics** to subscribe: `mbps-monthly-refresh-jks`, `mbps-publish-indexes-jks`, `mbps-semiannual-archive-jks`, `mbps-hpi-staleness-jks`, `mbps-upstream-vintage-jks`, `mbps-geoportal-datasets-jks`, `mbps-task-health-jks`, `mbps-basemap-jks`, `mbps-parcel-tiles-jks`, `mbps-traffic-refresh-jks`.
 - Mark `logs\` as Dropbox-ignored (see `MAINTENANCE.md`); a Dropbox lock on a log file killed a run on 2026-09-16.
 
 ## The tasks
@@ -31,6 +31,7 @@ Operational detail beyond scheduling is in `MAINTENANCE.md`.
 | mb-parcelsearch-history-staleness | daily 09:10 | `schedule_history_check.ps1` | `history-staleness-check.ps1` |
 | mb-parcelsearch-basemap-staleness | daily 09:15 | `schedule_basemap_check.ps1` | `basemap-staleness-check.ps1` |
 | mb-parcelsearch-upstream-vintage | Mon 09:30 | `schedule_vintage_check.ps1` | `upstream-vintage-check.ps1` |
+| mb-parcelsearch-geoportal-datasets | 1 Jan, Apr, Jul, Oct 09:50 | `schedule_geoportal_check.ps1` | `geoportal-new-datasets-check.ps1` |
 | mb-parcelsearch-task-health | daily 09:40 | `schedule_task_health_check.ps1` | `task-health-check.ps1` |
 | mb-parcelsearch-du-snapshot | 14th 03:40 | `schedule_du_snapshot.ps1` | `du-snapshot-wrapper.ps1` |
 | mb-parcelsearch-landfacts-refresh | 14th 22:00 | `schedule_landfacts.ps1` | `landfacts-refresh-wrapper.ps1` |
@@ -42,7 +43,7 @@ Operational detail beyond scheduling is in `MAINTENANCE.md`.
 | mb-parcelsearch-semiannual-archive | 1 Jan and 1 Jul 04:30 | `schedule_semiannual.ps1` | `semiannual-publish-wrapper.ps1` |
 | mb-parcelsearch-basemap-refresh | 2 Jan and 2 Jul 03:00 | `schedule_basemap.ps1` | `rebuild-basemap.ps1 -IfStale -Publish` |
 
-All fifteen: LogonType S4U, RunLevel Limited, `powershell.exe` 5.1 (except publish-indexes,
+All sixteen: LogonType S4U, RunLevel Limited, `powershell.exe` 5.1 (except publish-indexes,
 which runs pwsh 7), StartWhenAvailable, allowed on battery, MultipleInstances IgnoreNew, no
 working directory (each script locates itself).
 
@@ -97,6 +98,16 @@ if OSM data is older than 400 days or the buckets disagree. No credentials neede
 service referenced in `web\src\*.js`. Superseded or unreachable services alert at most
 once a month; a QUIET layer (no upstream edit in 730+ days) at most once a year per layer,
 tracked in `logs\vintage-quiet-stamp.txt`.
+
+**geoportal-datasets.** Added 2026-11-27. Quarterly read of the Manitoba GeoPortal
+catalogue (`geoportal.gov.mb.ca/api/search/v1/collections/dataset/items`, 122 datasets
+that day). Emails every dataset not seen at the previous run, with the ones whose title,
+tags or categories match an appraisal keyword list first; the list only sets the order.
+Known set: `logs\geoportal-known-datasets.json`, advanced only on verified email delivery;
+without that file the next run records a baseline and sends nothing. `-Report` prints the
+last 365 days of additions, `-DryRun` and `-TestAlert` as elsewhere. No credentials needed.
+Registered unelevated on 2026-11-27, so it is **Interactive until the registrar is re-run
+elevated**.
 
 **task-health.** The cross-project watchdog. Scans `schedule_*.ps1` in `mb-parcelsearch`,
 `mao-assembly`, `mao-scrape` and `MBFloodMapping` for `$TaskName = 'literal'`, then reads
