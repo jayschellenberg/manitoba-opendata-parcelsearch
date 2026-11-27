@@ -126,7 +126,7 @@ async function main() {
       ['Class', esc(asmt.class)],
       ['Tax status', esc(asmt.tax_status)],
     ]) + '<div id="rp-asmt-history"></div>');
-    cite('Assessment', `Manitoba Assessment Online public summaries${asmtMeta?.source_modified ? `, archive as of ${String(asmtMeta.source_modified).slice(0, 10)}` : ''}. Confirm with MAO before relying on it.`);
+    cite('Assessment', `Manitoba Assessment Online public summaries${asmtMeta?.source_modified ? `, archive as of ${String(asmtMeta.source_modified).slice(0, 10)}` : ''}. Contains information from the Government of Manitoba, licensed under the OpenMB Information and Data Use Licence. Not an official assessment record; confirm with MAO before relying on it.`);
     await settle(renderAssessmentHistory($('rp-asmt-history'), { muniNo, roll, cite }));
   } else {
     section('rp-assessment', 'Assessment', `<p>Roll total on the ${esc(manifest.snapshot_date)} snapshot: <strong>${esc(p.Total_Value || '—')}</strong>. No assessment-archive row was found for this roll.</p>`);

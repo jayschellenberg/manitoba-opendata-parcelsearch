@@ -21,5 +21,5 @@ export async function renderAssessmentHistory(el, { muniNo, roll, cite }) {
     ${rows.length ? `<table class="rp-table"><thead><tr><th>Tax year</th><th>Land</th><th>Buildings</th><th>Total</th><th>Change</th></tr></thead><tbody>${
       rows.map((r) => `<tr><td>${r.year}</td><td>${fmtMoney(r.land)}</td><td>${fmtMoney(r.buildings)}</td><td>${fmtMoney(r.total)}</td><td>${pct(r.pct)}</td></tr>`).join('')
     }</tbody></table>` : ''}`;
-  cite?.('Assessment history', `Manitoba Assessment Online public summaries, tax years ${series[0].year}-${series.at(-1).year}, summable classes summed. Assessed values, not taxes.`);
+  cite?.('Assessment history', `Manitoba Assessment Online public summaries, tax years ${series[0].year}-${series.at(-1).year}, summable classes summed (OpenMB licence). Assessed values, not taxes; not an official record.`);
 }
