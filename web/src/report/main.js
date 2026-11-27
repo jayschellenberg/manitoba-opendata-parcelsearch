@@ -178,7 +178,7 @@ async function main() {
     nearHtml.push(`<h3>Contaminated and impacted sites within 1 km</h3>${hits.length
       ? `<table class="rp-table"><thead><tr><th>Site</th><th>Address</th><th>Group</th><th>Distance</th></tr></thead><tbody>${hits.map((h) => `<tr><td>${esc(h.properties?.NAME)}</td><td>${esc(h.properties?.ADDRESS)}</td><td>${esc(h.properties?.CSGROUP)}</td><td>${fmtDistance(h._m)}</td></tr>`).join('')}</tbody></table>`
       : '<p>None listed in the provincial registry.</p>'}`);
-    cite('Contaminated sites', 'Manitoba Contaminated Sites Registry (live CSV).');
+    cite('Contaminated sites', 'Manitoba Contaminated Sites Registry (live CSV). Contains information from the Government of Manitoba, licensed under the OpenMB Information and Data Use Licence.');
   }
   if (mfnb && muniFc) {
     const rolls = new Map(muniFc.features.map((f) => [f.properties?.Roll_No_Txt, f]));
@@ -194,7 +194,7 @@ async function main() {
     nearHtml.push(`<h3>Highway traffic counts within 10 km</h3>${tr.length
       ? `<table class="rp-table"><thead><tr><th>Highway</th><th>Location</th><th>AADT</th><th>Annual change</th><th>Distance</th></tr></thead><tbody>${tr.map((t) => `<tr><td>${esc(t.highway)}</td><td>${esc(t.location)}</td><td>${fmtInt(t.aadt)} (${t.year})</td><td>${t.cagr != null ? `${t.cagr >= 0 ? '+' : ''}${t.cagr.toFixed(1)}%/yr since ${t.fromYear}` : '—'}</td><td>${fmtDistance(t.m)}</td></tr>`).join('')}</tbody></table>`
       : '<p>No count station within 10 km.</p>'}`);
-    cite('Traffic', 'Manitoba Highway Traffic Information System stations and annual reports.');
+    cite('Traffic', 'Traffic on Manitoba Highways, Manitoba Highway Traffic Information System (Manitoba Transportation and Infrastructure / University of Manitoba). Contains information from the Government of Manitoba, licensed under the OpenMB Information and Data Use Licence.');
   }
   if (nearHtml.length) section('rp-nearby', 'Nearby', nearHtml.join(''));
 
